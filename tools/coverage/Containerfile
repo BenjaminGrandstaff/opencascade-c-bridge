@@ -1,0 +1,6 @@
+# Toolchain for tools/coverage/run.sh. Fedora's rustc uses the system LLVM,
+# so one llvm-profdata/llvm-cov reads both the Rust and the clang profiles.
+FROM registry.fedoraproject.org/fedora:44
+RUN dnf -y install --setopt=install_weak_deps=False \
+        rust cargo clang compiler-rt llvm opencascade-devel cmake gcc-c++ make \
+    && dnf clean all

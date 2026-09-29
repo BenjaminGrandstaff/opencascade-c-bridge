@@ -116,6 +116,18 @@ host packages are needed. It exits non-zero on any finding:
 tools/cpp-lint/run.sh
 ```
 
+Coverage uses LLVM source-based instrumentation for both languages in the
+same kind of container. The C API test and every Rust suite run against the
+instrumented library, and the merged result is printed as a summary and
+written to `build/coverage/html/index.html` and `build/coverage/lcov.info`:
+
+```bash
+tools/coverage/run.sh
+```
+
+Rust unit tests live inside each crate's `lib.rs`, so Rust percentages include
+test code. Rust branch coverage needs a nightly toolchain and is not reported.
+
 Application-specific construction belongs in the dependency-free
 [`occt-recipes`](rust/occt-recipes) crate. Its wall-torch recipe is composed
 entirely from generic bridge primitives; the faceted-stone recipe currently
