@@ -1038,6 +1038,11 @@ occt_bridge_status_t occt_bridge_create_polygon_prism(
         if (!prism.IsDone()) {
             return fail(session, OCCT_BRIDGE_KERNEL_ERROR, "prism construction failed");
         }
+        /* Degenerate outlines, such as collinear points, sweep to invalid zero-volume solids. */
+        BRepCheck_Analyzer analyzer(prism.Shape(), Standard_True);
+        if (!analyzer.IsValid()) {
+            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "polygon prism is not a valid BREP");
+        }
         return store_shape(session, prism.Shape(), out_shape);
     });
 }

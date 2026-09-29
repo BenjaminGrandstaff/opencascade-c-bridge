@@ -71,6 +71,14 @@ if(BUILD_TESTING)
     )
     target_link_libraries(occt_bridge_c_test PRIVATE OpenCascadeCBridge::occt_bridge m)
     add_test(NAME occt_bridge_c_api COMMAND occt_bridge_c_test)
+
+    add_executable(occt_bridge_c_errors_test tests/c_api_errors_test.c)
+    target_compile_options(
+        occt_bridge_c_errors_test PRIVATE
+        $<$<C_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic;-Werror>
+    )
+    target_link_libraries(occt_bridge_c_errors_test PRIVATE OpenCascadeCBridge::occt_bridge m)
+    add_test(NAME occt_bridge_c_api_errors COMMAND occt_bridge_c_errors_test)
 endif()
 
 install(
