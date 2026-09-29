@@ -60,7 +60,8 @@ rebuilds dirty features plus their downstream dependents. Graph regeneration
 runs the feature graph once per distinct resolved parameter set and places
 clones that differ only in placement or assembly frame independently. Richer
 verification remains planned work.
-See [Parametric architecture](PARAMETRIC_ARCHITECTURE.md) for the
+See [Roadmap](ROADMAP.md) for current status and what comes next, and
+[Parametric architecture](PARAMETRIC_ARCHITECTURE.md) for the
 definition/instance/clone/result model and the boundary between that layer and
 the C ABI.
 
