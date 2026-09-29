@@ -1,0 +1,5 @@
+# Toolchain for tools/cpp-lint/run.sh; matches the Fedora OCCT used for builds.
+FROM registry.fedoraproject.org/fedora:44
+RUN dnf -y install --setopt=install_weak_deps=False \
+        clang clang-tools-extra cppcheck opencascade-devel cmake gcc-c++ make \
+    && dnf clean all

@@ -97,8 +97,12 @@ bool finite(double value) {
     return std::isfinite(value);
 }
 
-bool finite(occt_bridge_vec3_t value) {
+bool finite(const occt_bridge_vec3_t& value) {
     return finite(value.x) && finite(value.y) && finite(value.z);
+}
+
+gp_Pnt to_point(const occt_bridge_vec3_t& value) {
+    return {value.x, value.y, value.z};
 }
 
 occt_bridge_status_t fail(
@@ -457,6 +461,97 @@ bool add_ring_band(
     return true;
 }
 
+/* Insets the base ring toward its centroid and raises the side ring by the chamfer. */
+bool chamfer_rings(
+    const std::vector<gp_Pnt>& bottom,
+    double chamfer,
+    std::vector<gp_Pnt>& base,
+    std::vector<gp_Pnt>& lower_side) {
+    double center_x = 0.0;
+    double center_y = 0.0;
+    for (const gp_Pnt& point : bottom) {
+        center_x += point.X();
+        center_y += point.Y();
+    }
+    center_x /= static_cast<double>(bottom.size());
+    center_y /= static_cast<double>(bottom.size());
+    for (size_t index = 0; index < bottom.size(); ++index) {
+        const double dx = center_x - bottom[index].X();
+        const double dy = center_y - bottom[index].Y();
+        const double length = std::hypot(dx, dy);
+        if (length <= chamfer) {
+            return false;
+        }
+        base[index].SetX(bottom[index].X() + chamfer * dx / length);
+        base[index].SetY(bottom[index].Y() + chamfer * dy / length);
+        lower_side[index].SetZ(bottom[index].Z() + chamfer);
+    }
+    return true;
+}
+
+/* Quarter-round rings from the side wall into the top ring, or the top ring alone. */
+bool shoulder_rings(
+    const std::vector<gp_Pnt>& top,
+    const gp_Pnt& top_center,
+    double fillet,
+    std::vector<std::vector<gp_Pnt>>& rings) {
+    if (fillet <= 0.0) {
+        rings.push_back(top);
+        return true;
+    }
+    constexpr size_t segments = 5;
+    constexpr double half_pi = 1.57079632679489661923;
+    rings.reserve(segments + 1);
+    for (size_t step = 0; step <= segments; ++step) {
+        const double angle = half_pi * static_cast<double>(step) / static_cast<double>(segments);
+        const double horizontal_offset = fillet * std::cos(angle);
+        const double vertical_offset = fillet * (1.0 - std::sin(angle));
+        std::vector<gp_Pnt> ring;
+        ring.reserve(top.size());
+        for (const gp_Pnt& point : top) {
+            const double dx = point.X() - top_center.X();
+            const double dy = point.Y() - top_center.Y();
+            const double length = std::hypot(dx, dy);
+            if (length <= fillet) {
+                return false;
+            }
+            ring.emplace_back(
+                point.X() + horizontal_offset * dx / length,
+                point.Y() + horizontal_offset * dy / length,
+                point.Z() - vertical_offset);
+        }
+        rings.push_back(std::move(ring));
+    }
+    return true;
+}
+
+/* Fans the crown ring into triangles meeting at the top center. */
+bool add_crown(BRepBuilderAPI_Sewing& sewing, const std::vector<gp_Pnt>& crown_edge, const gp_Pnt& top_center) {
+    for (size_t index = 0; index < crown_edge.size(); ++index) {
+        const size_t next = (index + 1) % crown_edge.size();
+        const TopoDS_Face top_face = triangle_face(crown_edge[index], crown_edge[next], top_center);
+        if (top_face.IsNull()) {
+            return false;
+        }
+        sewing.Add(top_face);
+    }
+    return true;
+}
+
+/* The single shell of a sewing result, or a null shell when there is not exactly one. */
+TopoDS_Shell single_shell(const TopoDS_Shape& sewed) {
+    if (sewed.ShapeType() == TopAbs_SHELL) {
+        return TopoDS::Shell(sewed);
+    }
+    TopExp_Explorer shells(sewed, TopAbs_SHELL);
+    if (!shells.More()) {
+        return {};
+    }
+    const TopoDS_Shell shell = TopoDS::Shell(shells.Current());
+    shells.Next();
+    return shells.More() ? TopoDS_Shell() : shell;
+}
+
 TopoDS_Shape build_faceted_solid(
     const std::vector<gp_Pnt>& bottom,
     const std::vector<gp_Pnt>& top,
@@ -467,26 +562,8 @@ TopoDS_Shape build_faceted_solid(
 
     std::vector<gp_Pnt> base = bottom;
     std::vector<gp_Pnt> lower_side = bottom;
-    if (bottom_chamfer > 0.0) {
-        double center_x = 0.0;
-        double center_y = 0.0;
-        for (const gp_Pnt& point : bottom) {
-            center_x += point.X();
-            center_y += point.Y();
-        }
-        center_x /= static_cast<double>(bottom.size());
-        center_y /= static_cast<double>(bottom.size());
-        for (size_t index = 0; index < bottom.size(); ++index) {
-            const double dx = center_x - bottom[index].X();
-            const double dy = center_y - bottom[index].Y();
-            const double length = std::hypot(dx, dy);
-            if (length <= bottom_chamfer) {
-                return {};
-            }
-            base[index].SetX(bottom[index].X() + bottom_chamfer * dx / length);
-            base[index].SetY(bottom[index].Y() + bottom_chamfer * dy / length);
-            lower_side[index].SetZ(bottom[index].Z() + bottom_chamfer);
-        }
+    if (bottom_chamfer > 0.0 && !chamfer_rings(bottom, bottom_chamfer, base, lower_side)) {
+        return {};
     }
 
     TopoDS_Face bottom_face = polygon_face(base);
@@ -495,74 +572,30 @@ TopoDS_Shape build_faceted_solid(
     }
     sewing.Add(bottom_face);
 
+    // NOLINTNEXTLINE(readability-suspicious-call-argument): base is the lower ring; lower_side is the raised upper ring.
     if (bottom_chamfer > 0.0 && !add_ring_band(sewing, base, lower_side)) {
         return {};
     }
 
-    std::vector<std::vector<gp_Pnt>> shoulder_rings;
-    if (top_fillet > 0.0) {
-        constexpr size_t segments = 5;
-        constexpr double half_pi = 1.57079632679489661923;
-        shoulder_rings.reserve(segments + 1);
-        for (size_t step = 0; step <= segments; ++step) {
-            const double angle = half_pi * static_cast<double>(step) / static_cast<double>(segments);
-            const double horizontal_offset = top_fillet * std::cos(angle);
-            const double vertical_offset = top_fillet * (1.0 - std::sin(angle));
-            std::vector<gp_Pnt> ring;
-            ring.reserve(top.size());
-            for (const gp_Pnt& point : top) {
-                const double dx = point.X() - top_center.X();
-                const double dy = point.Y() - top_center.Y();
-                const double length = std::hypot(dx, dy);
-                if (length <= top_fillet) {
-                    return {};
-                }
-                ring.emplace_back(
-                    point.X() + horizontal_offset * dx / length,
-                    point.Y() + horizontal_offset * dy / length,
-                    point.Z() - vertical_offset);
-            }
-            shoulder_rings.push_back(std::move(ring));
-        }
-    } else {
-        shoulder_rings.push_back(top);
-    }
-
-    if (!add_ring_band(sewing, lower_side, shoulder_rings.front())) {
+    std::vector<std::vector<gp_Pnt>> rings;
+    if (!shoulder_rings(top, top_center, top_fillet, rings)
+        || !add_ring_band(sewing, lower_side, rings.front())) {
         return {};
     }
-    for (size_t index = 1; index < shoulder_rings.size(); ++index) {
-        if (!add_ring_band(sewing, shoulder_rings[index - 1], shoulder_rings[index])) {
+    for (size_t index = 1; index < rings.size(); ++index) {
+        if (!add_ring_band(sewing, rings[index - 1], rings[index])) {
             return {};
         }
     }
-    const std::vector<gp_Pnt>& crown_edge = shoulder_rings.back();
-    for (size_t index = 0; index < crown_edge.size(); ++index) {
-        const size_t next = (index + 1) % crown_edge.size();
-        const TopoDS_Face top_face = triangle_face(crown_edge[index], crown_edge[next], top_center);
-        if (top_face.IsNull()) {
-            return {};
-        }
-        sewing.Add(top_face);
+    if (!add_crown(sewing, rings.back(), top_center)) {
+        return {};
     }
 
     sewing.Perform();
-    const TopoDS_Shape& sewed = sewing.SewedShape();
-    TopoDS_Shell shell;
-    if (sewed.ShapeType() == TopAbs_SHELL) {
-        shell = TopoDS::Shell(sewed);
-    } else {
-        TopExp_Explorer shells(sewed, TopAbs_SHELL);
-        if (!shells.More()) {
-            return {};
-        }
-        shell = TopoDS::Shell(shells.Current());
-        shells.Next();
-        if (shells.More()) {
-            return {};
-        }
+    const TopoDS_Shell shell = single_shell(sewing.SewedShape());
+    if (shell.IsNull()) {
+        return {};
     }
-
     BRepBuilderAPI_MakeSolid solid_builder(shell);
     if (!solid_builder.IsDone()) {
         return {};
@@ -616,7 +649,7 @@ occt_bridge_status_t occt_bridge_session_create(
 void occt_bridge_session_destroy(occt_bridge_session_t* session) {
     try {
         delete session;
-    } catch (...) {
+    } catch (...) {  // NOLINT(bugprone-empty-catch): no exception may cross the C ABI and there is no status to report.
     }
 }
 
@@ -772,6 +805,32 @@ occt_bridge_status_t occt_bridge_create_sphere(
     });
 }
 
+}  // extern "C"
+
+namespace {
+
+/* Rejects non-finite points, zero-length segments, and a repeated closing point. */
+const char* polyline_point_error(const occt_bridge_vec3_t* points, size_t point_count, bool closed) {
+    for (size_t index = 0; index < point_count; ++index) {
+        if (!finite(points[index])) {
+            return "wire point is not finite";
+        }
+        if (index != 0 && to_point(points[index - 1]).Distance(to_point(points[index]))
+                <= std::numeric_limits<double>::epsilon()) {
+            return "wire contains a zero-length segment";
+        }
+    }
+    if (closed && to_point(points[0]).Distance(to_point(points[point_count - 1]))
+            <= std::numeric_limits<double>::epsilon()) {
+        return "closed wire must not repeat its first point";
+    }
+    return nullptr;
+}
+
+}  // namespace
+
+extern "C" {
+
 occt_bridge_status_t occt_bridge_create_polyline_wire(
     occt_bridge_session_t* session,
     const occt_bridge_vec3_t* points,
@@ -787,33 +846,14 @@ occt_bridge_status_t occt_bridge_create_polyline_wire(
         if (points == nullptr || (closed != 0 && closed != 1) || point_count < minimum_points) {
             return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "invalid polyline-wire parameters");
         }
+        if (const char* error = polyline_point_error(points, point_count, closed == 1)) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, error);
+        }
         BRepBuilderAPI_MakePolygon builder;
         for (size_t index = 0; index < point_count; ++index) {
-            if (!finite(points[index])) {
-                return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "wire point is not finite");
-            }
-            if (index != 0) {
-                const gp_Pnt previous(
-                    points[index - 1].x, points[index - 1].y, points[index - 1].z);
-                const gp_Pnt current(points[index].x, points[index].y, points[index].z);
-                if (previous.Distance(current) <= std::numeric_limits<double>::epsilon()) {
-                    return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "wire contains a zero-length segment");
-                }
-            }
-            builder.Add(gp_Pnt(points[index].x, points[index].y, points[index].z));
+            builder.Add(to_point(points[index]));
         }
         if (closed == 1) {
-            const gp_Pnt first(points[0].x, points[0].y, points[0].z);
-            const gp_Pnt last(
-                points[point_count - 1].x,
-                points[point_count - 1].y,
-                points[point_count - 1].z);
-            if (first.Distance(last) <= std::numeric_limits<double>::epsilon()) {
-                return fail(
-                    session,
-                    OCCT_BRIDGE_INVALID_ARGUMENT,
-                    "closed wire must not repeat its first point");
-            }
             builder.Close();
         }
         if (!builder.IsDone()) {
@@ -1152,6 +1192,40 @@ occt_bridge_status_t occt_bridge_create_wall_torch(
     });
 }
 
+}  // extern "C"
+
+namespace {
+
+/* Builds the straight-segment sweep path; on failure records the error and returns its status. */
+occt_bridge_status_t make_tube_spine(
+    occt_bridge_session_t* session,
+    const occt_bridge_vec3_t* path_points,
+    size_t point_count,
+    TopoDS_Wire& spine) {
+    BRepBuilderAPI_MakeWire spine_builder;
+    for (size_t index = 1; index < point_count; ++index) {
+        const gp_Pnt first = to_point(path_points[index - 1]);
+        const gp_Pnt second = to_point(path_points[index]);
+        if (first.Distance(second) <= std::numeric_limits<double>::epsilon()) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "tube path contains a zero-length segment");
+        }
+        BRepBuilderAPI_MakeEdge edge(first, second);
+        if (!edge.IsDone()) {
+            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "tube path edge construction failed");
+        }
+        spine_builder.Add(edge.Edge());
+    }
+    if (!spine_builder.IsDone()) {
+        return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "tube path wire construction failed");
+    }
+    spine = spine_builder.Wire();
+    return OCCT_BRIDGE_OK;
+}
+
+}  // namespace
+
+extern "C" {
+
 occt_bridge_status_t occt_bridge_create_polyline_tube(
     occt_bridge_session_t* session,
     const occt_bridge_vec3_t* path_points,
@@ -1166,38 +1240,19 @@ occt_bridge_status_t occt_bridge_create_polyline_tube(
         if (path_points == nullptr || point_count < 2 || !std::isfinite(radius) || radius <= 0.0) {
             return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "invalid polyline-tube parameters");
         }
-        for (size_t index = 0; index < point_count; ++index) {
-            if (!finite(path_points[index])) {
-                return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "tube path point is not finite");
-            }
+        if (!std::all_of(path_points, path_points + point_count, [](const occt_bridge_vec3_t& point) {
+                return finite(point);
+            })) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "tube path point is not finite");
+        }
+        TopoDS_Wire spine;
+        const occt_bridge_status_t spine_status = make_tube_spine(session, path_points, point_count, spine);
+        if (spine_status != OCCT_BRIDGE_OK) {
+            return spine_status;
         }
 
-        BRepBuilderAPI_MakeWire spine_builder;
-        for (size_t index = 1; index < point_count; ++index) {
-            const gp_Pnt first(
-                path_points[index - 1].x,
-                path_points[index - 1].y,
-                path_points[index - 1].z);
-            const gp_Pnt second(
-                path_points[index].x,
-                path_points[index].y,
-                path_points[index].z);
-            if (first.Distance(second) <= std::numeric_limits<double>::epsilon()) {
-                return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "tube path contains a zero-length segment");
-            }
-            BRepBuilderAPI_MakeEdge edge(first, second);
-            if (!edge.IsDone()) {
-                return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "tube path edge construction failed");
-            }
-            spine_builder.Add(edge.Edge());
-        }
-        if (!spine_builder.IsDone()) {
-            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "tube path wire construction failed");
-        }
-
-        const gp_Pnt start(path_points[0].x, path_points[0].y, path_points[0].z);
-        const gp_Pnt next(path_points[1].x, path_points[1].y, path_points[1].z);
-        const gp_Vec initial_tangent(start, next);
+        const gp_Pnt start = to_point(path_points[0]);
+        const gp_Vec initial_tangent(start, to_point(path_points[1]));
         const gp_Circ profile_circle(gp_Ax2(start, gp_Dir(initial_tangent)), radius);
         BRepBuilderAPI_MakeEdge profile_edge(profile_circle);
         BRepBuilderAPI_MakeWire profile_wire(profile_edge.Edge());
@@ -1205,7 +1260,7 @@ occt_bridge_status_t occt_bridge_create_polyline_tube(
             return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "tube profile construction failed");
         }
 
-        BRepOffsetAPI_MakePipe pipe(spine_builder.Wire(), profile_wire.Wire());
+        BRepOffsetAPI_MakePipe pipe(spine, profile_wire.Wire());
         pipe.Build();
         if (!pipe.IsDone() || pipe.Shape().IsNull()) {
             return fail(session, OCCT_BRIDGE_KERNEL_ERROR, "polyline tube sweep failed");
@@ -1217,6 +1272,36 @@ occt_bridge_status_t occt_bridge_create_polyline_tube(
         return store_shape(session, pipe.Shape(), out_shape);
     });
 }
+
+}  // extern "C"
+
+namespace {
+
+/* Validates section sizes (at least three points, no overflow) and point finiteness. */
+occt_bridge_status_t validate_loft_points(
+    occt_bridge_session_t* session,
+    const occt_bridge_vec3_t* points,
+    const size_t* section_point_counts,
+    size_t section_count) {
+    size_t total_points = 0;
+    for (size_t section = 0; section < section_count; ++section) {
+        const size_t count = section_point_counts[section];
+        if (count < 3 || total_points > std::numeric_limits<size_t>::max() - count) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "invalid loft section size");
+        }
+        total_points += count;
+    }
+    if (!std::all_of(points, points + total_points, [](const occt_bridge_vec3_t& point) {
+            return finite(point);
+        })) {
+        return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "loft point is not finite");
+    }
+    return OCCT_BRIDGE_OK;
+}
+
+}  // namespace
+
+extern "C" {
 
 occt_bridge_status_t occt_bridge_create_loft(
     occt_bridge_session_t* session,
@@ -1235,19 +1320,10 @@ occt_bridge_status_t occt_bridge_create_loft(
             || (make_solid != 0 && make_solid != 1) || (ruled != 0 && ruled != 1)) {
             return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "invalid loft parameters");
         }
-
-        size_t total_points = 0;
-        for (size_t section = 0; section < section_count; ++section) {
-            const size_t count = section_point_counts[section];
-            if (count < 3 || total_points > std::numeric_limits<size_t>::max() - count) {
-                return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "invalid loft section size");
-            }
-            total_points += count;
-        }
-        for (size_t index = 0; index < total_points; ++index) {
-            if (!finite(points[index])) {
-                return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "loft point is not finite");
-            }
+        const occt_bridge_status_t points_status =
+            validate_loft_points(session, points, section_point_counts, section_count);
+        if (points_status != OCCT_BRIDGE_OK) {
+            return points_status;
         }
 
         BRepOffsetAPI_ThruSections loft(
@@ -1990,6 +2066,8 @@ occt_bridge_status_t occt_bridge_shape_edge_curvature_range(
     });
 }
 
+}  // extern "C"
+
 namespace {
 
 struct CurvatureExtrema {
@@ -2201,7 +2279,7 @@ bool bound_polynomial_curvature(
     constexpr double absolute_tolerance = 1e-10;
     BinomialTable binomial;
     struct Entry {
-        double excess;
+        double excess = 0.0;
         BezierPiece piece;
         PieceBounds bounds;
         bool operator<(const Entry& other) const { return excess < other.excess; }
@@ -2275,18 +2353,96 @@ bool bound_polynomial_curvature(
     return true;
 }
 
-/* Includes the ends and every multiple of step strictly inside the range. */
+/*
+ * Returns the range ends plus up to three consecutive multiples of step inside it.
+ * Critical values alternate between two kinds with period 2 * step, so two
+ * consecutive multiples cover every extremum without iterating the range.
+ */
 std::vector<double> critical_parameters(double first, double last, double step) {
     std::vector<double> parameters{first, last};
-    for (double k = std::ceil(first / step); k * step < last; k += 1.0) {
-        if (k * step > first) {
-            parameters.push_back(k * step);
+    const double lowest = std::ceil(first / step);
+    for (int offset = 0; offset < 3; ++offset) {
+        const double parameter = (lowest + offset) * step;
+        if (parameter > first && parameter < last) {
+            parameters.push_back(parameter);
         }
     }
     return parameters;
 }
 
+/* Conic curvature from closed forms at the analytic critical parameters. */
+bool analytic_curvature_extrema(
+    const BRepAdaptor_Curve& curve,
+    double first,
+    double last,
+    CurvatureExtrema& extrema) {
+    const auto with_vertex = [&] {
+        std::vector<double> parameters{first, last};
+        if (first < 0.0 && last > 0.0) {
+            parameters.push_back(0.0);
+        }
+        return parameters;
+    };
+    switch (curve.GetType()) {
+    case GeomAbs_Line:
+        extrema.attain(0.0);
+        return true;
+    case GeomAbs_Circle:
+        extrema.attain(1.0 / curve.Circle().Radius());
+        return true;
+    case GeomAbs_Ellipse: {
+        const double a = curve.Ellipse().MajorRadius();
+        const double b = curve.Ellipse().MinorRadius();
+        for (const double t : critical_parameters(first, last, M_PI_2)) {
+            const double s = std::sin(t);
+            const double c = std::cos(t);
+            extrema.attain(a * b / std::pow(a * a * s * s + b * b * c * c, 1.5));
+        }
+        return true;
+    }
+    case GeomAbs_Parabola: {
+        const double focal = curve.Parabola().Focal();
+        for (const double u : with_vertex()) {
+            extrema.attain((0.5 / focal) / std::pow(1.0 + u * u / (4.0 * focal * focal), 1.5));
+        }
+        return true;
+    }
+    case GeomAbs_Hyperbola: {
+        const double a = curve.Hyperbola().MajorRadius();
+        const double b = curve.Hyperbola().MinorRadius();
+        for (const double u : with_vertex()) {
+            const double sh = std::sinh(u);
+            const double ch = std::cosh(u);
+            extrema.attain(a * b / std::pow(a * a * sh * sh + b * b * ch * ch, 1.5));
+        }
+        return true;
+    }
+    default:
+        return false;
+    }
+}
+
+/* Trimmed Bezier or B-spline edge geometry as homogeneous Bezier pieces. */
+std::vector<BezierPiece> bezier_pieces(const BRepAdaptor_Curve& curve, double first, double last) {
+    std::vector<BezierPiece> pieces;
+    if (curve.GetType() == GeomAbs_BezierCurve) {
+        Handle(Geom_BezierCurve) bezier = Handle(Geom_BezierCurve)::DownCast(curve.Bezier()->Copy());
+        bezier->Segment(first, last);
+        pieces.push_back(homogeneous_piece(bezier));
+        return pieces;
+    }
+    Handle(Geom_BSplineCurve) spline = Handle(Geom_BSplineCurve)::DownCast(curve.BSpline()->Copy());
+    spline->Segment(first, last);
+    GeomConvert_BSplineCurveToBezierCurve converter(spline);
+    for (int index = 1; index <= converter.NbArcs(); ++index) {
+        pieces.push_back(homogeneous_piece(converter.Arc(index)));
+    }
+    return pieces;
+}
+
 }  // namespace
+
+extern "C" {
 
 occt_bridge_status_t occt_bridge_shape_edge_curvature_extrema(
     occt_bridge_session_t* session,
@@ -2304,6 +2460,7 @@ occt_bridge_status_t occt_bridge_shape_edge_curvature_extrema(
         }
         *out_minimum = *out_minimum_lower_bound = *out_maximum = *out_maximum_upper_bound = 0.0;
         *out_is_exact = 0;
+        // NOLINTNEXTLINE(readability-simplify-boolean-expr): the negated form also rejects NaN.
         if (!(relative_tolerance > 0.0 && relative_tolerance <= 1.0)) {
             return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "curvature relative tolerance must be in (0, 1]");
         }
@@ -2317,75 +2474,18 @@ occt_bridge_status_t occt_bridge_shape_edge_curvature_extrema(
         const BRepAdaptor_Curve curve(TopoDS::Edge(*value));
         const double first = curve.FirstParameter();
         const double last = curve.LastParameter();
-        if (!std::isfinite(first) || !std::isfinite(last) || !(first < last)) {
+        if (!std::isfinite(first) || !std::isfinite(last) || first >= last) {
             return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "edge has no finite parameter range");
         }
 
         CurvatureExtrema extrema;
-        switch (curve.GetType()) {
-        case GeomAbs_Line:
-            extrema.attain(0.0);
-            break;
-        case GeomAbs_Circle:
-            extrema.attain(1.0 / curve.Circle().Radius());
-            break;
-        case GeomAbs_Ellipse: {
-            const double a = curve.Ellipse().MajorRadius();
-            const double b = curve.Ellipse().MinorRadius();
-            for (const double t : critical_parameters(first, last, M_PI_2)) {
-                const double s = std::sin(t);
-                const double c = std::cos(t);
-                extrema.attain(a * b / std::pow(a * a * s * s + b * b * c * c, 1.5));
-            }
-            break;
-        }
-        case GeomAbs_Parabola: {
-            const double focal = curve.Parabola().Focal();
-            std::vector<double> parameters{first, last};
-            if (first < 0.0 && last > 0.0) {
-                parameters.push_back(0.0);
-            }
-            for (const double u : parameters) {
-                extrema.attain((0.5 / focal) / std::pow(1.0 + u * u / (4.0 * focal * focal), 1.5));
-            }
-            break;
-        }
-        case GeomAbs_Hyperbola: {
-            const double a = curve.Hyperbola().MajorRadius();
-            const double b = curve.Hyperbola().MinorRadius();
-            std::vector<double> parameters{first, last};
-            if (first < 0.0 && last > 0.0) {
-                parameters.push_back(0.0);
-            }
-            for (const double u : parameters) {
-                const double sh = std::sinh(u);
-                const double ch = std::cosh(u);
-                extrema.attain(a * b / std::pow(a * a * sh * sh + b * b * ch * ch, 1.5));
-            }
-            break;
-        }
-        case GeomAbs_BezierCurve:
-        case GeomAbs_BSplineCurve: {
-            std::vector<BezierPiece> pieces;
-            if (curve.GetType() == GeomAbs_BezierCurve) {
-                Handle(Geom_BezierCurve) bezier = Handle(Geom_BezierCurve)::DownCast(curve.Bezier()->Copy());
-                bezier->Segment(first, last);
-                pieces.push_back(homogeneous_piece(bezier));
-            } else {
-                Handle(Geom_BSplineCurve) spline = Handle(Geom_BSplineCurve)::DownCast(curve.BSpline()->Copy());
-                spline->Segment(first, last);
-                GeomConvert_BSplineCurveToBezierCurve converter(spline);
-                for (int index = 1; index <= converter.NbArcs(); ++index) {
-                    pieces.push_back(homogeneous_piece(converter.Arc(index)));
-                }
-            }
+        const GeomAbs_CurveType type = curve.GetType();
+        if (type == GeomAbs_BezierCurve || type == GeomAbs_BSplineCurve) {
             std::string message;
-            if (!bound_polynomial_curvature(std::move(pieces), relative_tolerance, extrema, message)) {
-                return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, message.c_str());
+            if (!bound_polynomial_curvature(bezier_pieces(curve, first, last), relative_tolerance, extrema, message)) {
+                return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, std::move(message));
             }
-            break;
-        }
-        default:
+        } else if (!analytic_curvature_extrema(curve, first, last, extrema)) {
             return fail(
                 session,
                 OCCT_BRIDGE_INVALID_GEOMETRY,
@@ -2470,6 +2570,28 @@ occt_bridge_status_t occt_bridge_shape_is_same(
     });
 }
 
+}  // extern "C"
+
+namespace {
+
+/* True when the faces share an edge with recorded G1-or-better continuity. */
+bool faces_share_tangent_edge(const TopoDS_Face& first, const TopoDS_Face& second) {
+    for (TopExp_Explorer first_edges(first, TopAbs_EDGE); first_edges.More(); first_edges.Next()) {
+        const TopoDS_Edge edge = TopoDS::Edge(first_edges.Current());
+        for (TopExp_Explorer second_edges(second, TopAbs_EDGE); second_edges.More(); second_edges.Next()) {
+            if (edge.IsSame(second_edges.Current()) && BRep_Tool::HasContinuity(edge, first, second)
+                && BRep_Tool::Continuity(edge, first, second) >= GeomAbs_G1) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+}  // namespace
+
+extern "C" {
+
 occt_bridge_status_t occt_bridge_shape_faces_are_tangent(
     occt_bridge_session_t* session,
     occt_bridge_shape_id_t parent,
@@ -2496,25 +2618,9 @@ occt_bridge_status_t occt_bridge_shape_faces_are_tangent(
                 OCCT_BRIDGE_INVALID_ARGUMENT,
                 "tangency faces must belong to the parent");
         }
-        if (first_shape->IsSame(*second_shape)) {
-            return succeed(session);
-        }
-        const TopoDS_Face first = TopoDS::Face(*first_shape);
-        const TopoDS_Face second = TopoDS::Face(*second_shape);
-        for (TopExp_Explorer first_edges(first, TopAbs_EDGE); first_edges.More(); first_edges.Next()) {
-            const TopoDS_Edge edge = TopoDS::Edge(first_edges.Current());
-            for (TopExp_Explorer second_edges(second, TopAbs_EDGE);
-                 second_edges.More();
-                 second_edges.Next()) {
-                if (!edge.IsSame(second_edges.Current())) {
-                    continue;
-                }
-                if (BRep_Tool::HasContinuity(edge, first, second)
-                    && BRep_Tool::Continuity(edge, first, second) >= GeomAbs_G1) {
-                    *out_are_tangent = 1;
-                    return succeed(session);
-                }
-            }
+        if (!first_shape->IsSame(*second_shape)
+            && faces_share_tangent_edge(TopoDS::Face(*first_shape), TopoDS::Face(*second_shape))) {
+            *out_are_tangent = 1;
         }
         return succeed(session);
     });

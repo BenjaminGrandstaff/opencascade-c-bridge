@@ -108,6 +108,14 @@ LD_LIBRARY_PATH="$PWD/build" \
 The project currently requires OCCT 7.9 or newer. Fedora's Open Cascade CMake
 package is discovered automatically.
 
+C and C++ static analysis runs clang-tidy (configured by
+[`.clang-tidy`](.clang-tidy)) and cppcheck inside a podman container, so no
+host packages are needed. It exits non-zero on any finding:
+
+```bash
+tools/cpp-lint/run.sh
+```
+
 Application-specific construction belongs in the dependency-free
 [`occt-recipes`](rust/occt-recipes) crate. Its wall-torch recipe is composed
 entirely from generic bridge primitives; the faceted-stone recipe currently

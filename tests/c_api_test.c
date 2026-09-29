@@ -6,16 +6,16 @@
 
 static void require_true(int condition, const char* message) {
     if (!condition) {
-        fprintf(stderr, "test failure: %s\n", message);
+        (void)fprintf(stderr, "test failure: %s\n", message);
         abort();
     }
 }
 
-static void require_ok(occt_bridge_session_t* session, occt_bridge_status_t status) {
+static void require_ok(const occt_bridge_session_t* session, occt_bridge_status_t status) {
     if (status != OCCT_BRIDGE_OK) {
         char error[512] = {0};
-        occt_bridge_session_last_error(session, error, sizeof(error));
-        fprintf(stderr, "%s: %s\n", occt_bridge_status_string(status), error);
+        (void)occt_bridge_session_last_error(session, error, sizeof(error));
+        (void)fprintf(stderr, "%s: %s\n", occt_bridge_status_string(status), error);
         abort();
     }
 }

@@ -1,0 +1,29 @@
+# Curated for a C ABI over OCCT: bug-finding and performance checks stay on;
+# guideline checks that forbid raw pointers, owning new/delete, or C-style
+# parameter lists are off because the exported ABI requires them. The C11
+# Annex K (*_s) suggestions are off because glibc does not provide them.
+Checks: >
+  -*,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  cert-*,
+  clang-analyzer-*,
+  -clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling,
+  concurrency-*,
+  performance-*,
+  -performance-enum-size,
+  portability-*,
+  misc-*,
+  -misc-include-cleaner,
+  -misc-non-private-member-variables-in-classes,
+  -misc-const-correctness,
+  -misc-use-internal-linkage,
+  readability-suspicious-call-argument,
+  readability-redundant-string-cstr,
+  readability-simplify-boolean-expr,
+  readability-function-cognitive-complexity
+WarningsAsErrors: ''
+HeaderFilterRegex: '(src|include)/.*'
+CheckOptions:
+  readability-function-cognitive-complexity.Threshold: 25
+  readability-function-cognitive-complexity.IgnoreMacros: true
