@@ -259,7 +259,9 @@ releasing every intermediate shape. Moving a frame moves everything inside it
 without editing member placements. A pattern may also name a frame: its rule
 and every member placement are expressed in that frame, and members move with
 the pattern frame rather than being reassigned individually. Detaching a clone
-keeps its frame. Unknown frames, frame cycles (reported with their path), and
+keeps its frame and placement and removes it from its pattern, since it is no
+longer linked to the pattern source; a pattern left without members is
+removed. Unknown frames, frame cycles (reported with their path), and
 pattern members outside their pattern frame are rejected. All nodes in one
 graph currently share one family definition. Pattern-level member overrides
 are not yet implemented.

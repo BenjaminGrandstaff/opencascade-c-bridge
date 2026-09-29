@@ -1592,6 +1592,8 @@ impl<'definition> InstanceGraph<'definition> {
         }
     }
 
+    /// Replaces a linked clone with an independent base carrying its resolved
+    /// parameters, placement, and frame. It also leaves any pattern.
     pub fn detach(&mut self, id: &str) -> Result<(), ModelError> {
         let resolved = self.resolve(id)?;
         let node = self
@@ -1610,6 +1612,12 @@ impl<'definition> InstanceGraph<'definition> {
                 provenance: format!("detached from linked source; {}", resolved.provenance),
             },
         );
+        // A detached instance is no longer a linked pattern member; a pattern
+        // left without members is removed.
+        for pattern in &mut self.patterns {
+            pattern.members.retain(|member| member != id);
+        }
+        self.patterns.retain(|pattern| !pattern.members.is_empty());
         Ok(())
     }
 
@@ -5552,6 +5560,45 @@ mod tests {
                 .is_err()
             );
         }
+    }
+
+    #[test]
+    fn detaching_a_pattern_member_removes_it_from_the_pattern() {
+        let mut definition = family(RequirementPriority::Required, 100_000.0);
+        definition.requirements.clear();
+        let mut graph = InstanceGraph::new(&definition);
+        graph
+            .add_frame("row", None, Placement::identity(), "layout")
+            .unwrap();
+        graph.add_base("source", HashMap::new(), "test").unwrap();
+        graph
+            .add_linear_pattern(
+                "pews",
+                "pew",
+                "source",
+                2,
+                VectorQuantity::lengths(50.0, 0.0, 0.0, LengthUnit::Millimeter),
+                "pattern",
+            )
+            .unwrap();
+        graph.set_pattern_frame("pews", Some("row")).unwrap();
+
+        graph.detach("pew[1]").unwrap();
+        assert_eq!(graph.patterns()[0].members, ["pew[0]"]);
+        assert!(matches!(
+            graph.node("pew[1]"),
+            Some(InstanceNode::Base { .. })
+        ));
+        assert_eq!(graph.node("pew[1]").unwrap().frame(), Some("row"));
+        // Now independent, so it may leave the pattern frame on its own.
+        graph.set_instance_frame("pew[1]", None).unwrap();
+        let document = ModelDocument::from_graph(&graph);
+        let loaded = ModelDocument::from_json(&document.to_json_pretty().unwrap()).unwrap();
+        assert_eq!(loaded, document);
+
+        graph.detach("pew[0]").unwrap();
+        assert!(graph.patterns().is_empty());
+        ModelDocument::from_graph(&graph).to_json_pretty().unwrap();
     }
 
     #[test]
