@@ -726,6 +726,30 @@ impl InstanceNode {
     }
 }
 
+/// Upper bound on members a constraint-driven pattern may produce.
+pub const MAX_PATTERN_MEMBERS: usize = 10_000;
+
+/// How a linear fit chooses its member count along the span.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LinearSpacing {
+    /// Exactly this many members, ends included.
+    Count(usize),
+    /// As many members as fit with gaps at least this long.
+    Minimum(Quantity),
+    /// As few members as keep gaps at most this long.
+    Maximum(Quantity),
+}
+
+/// How a circular fit chooses its member count over the sweep.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AngularSpacing {
+    Count(usize),
+    MinimumRadians(f64),
+    MaximumRadians(f64),
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PatternRule {
@@ -737,29 +761,175 @@ pub enum PatternRule {
         axis: VectorQuantity,
         angle_step_radians: f64,
     },
+    /// Members spread evenly from the source placement to `span`; the count
+    /// is derived from the spacing constraint.
+    LinearFit {
+        span: VectorQuantity,
+        spacing: LinearSpacing,
+    },
+    /// Members spread evenly over `sweep_radians` in (0, 2π]. A full turn is
+    /// closed: members divide it into equal gaps without doubling up at 2π.
+    CircularFit {
+        origin: VectorQuantity,
+        axis: VectorQuantity,
+        sweep_radians: f64,
+        spacing: AngularSpacing,
+    },
 }
 
 impl PatternRule {
     fn validate(&self) -> Result<(), ModelError> {
-        self.member_placement(1).normalized().map(|_| ())
+        let count = self.fitted_count()?.unwrap_or(2).max(2);
+        self.member_placement(1, count).normalized().map(|_| ())
     }
 
-    fn member_placement(&self, index: usize) -> Placement {
+    /// The member count a constraint-driven rule requires; `None` for rules
+    /// whose count is chosen freely.
+    pub fn fitted_count(&self) -> Result<Option<usize>, ModelError> {
+        match *self {
+            Self::Linear { .. } | Self::Circular { .. } => Ok(None),
+            Self::LinearFit { span, spacing } => {
+                let span = span.normalized(Dimension::Length)?;
+                let length = span.x.hypot(span.y.hypot(span.z));
+                if length <= 0.0 {
+                    return Err(ModelError::new("linear fit span must be nonzero"));
+                }
+                spacing.count(length).map(Some)
+            }
+            Self::CircularFit {
+                sweep_radians,
+                spacing,
+                ..
+            } => {
+                if !(sweep_radians > 0.0
+                    && sweep_radians <= std::f64::consts::TAU + CLOSED_SWEEP_TOLERANCE)
+                {
+                    return Err(ModelError::new("circular fit sweep must be in (0, 2π]"));
+                }
+                spacing
+                    .count(sweep_radians, is_closed_sweep(sweep_radians))
+                    .map(Some)
+            }
+        }
+    }
+
+    /// Placement of rule slot `index` in a pattern with `count` slots.
+    fn member_placement(&self, index: usize, count: usize) -> Placement {
         match *self {
             Self::Linear { step } => Placement::translated(step.scaled(index as f64)),
             Self::Circular {
                 origin,
                 axis,
                 angle_step_radians,
-            } => Placement {
-                translation: VectorQuantity::lengths(0.0, 0.0, 0.0, LengthUnit::Millimeter),
-                rotation: Some(AxisAngle {
-                    origin,
-                    axis,
-                    angle_radians: angle_step_radians * index as f64,
-                }),
-            },
+            } => rotation_about(origin, axis, angle_step_radians * index as f64),
+            Self::LinearFit { span, .. } => {
+                Placement::translated(span.scaled(slot_fraction(index, count.saturating_sub(1))))
+            }
+            Self::CircularFit {
+                origin,
+                axis,
+                sweep_radians,
+                ..
+            } => {
+                let gaps = if is_closed_sweep(sweep_radians) {
+                    count
+                } else {
+                    count.saturating_sub(1)
+                };
+                rotation_about(origin, axis, sweep_radians * slot_fraction(index, gaps))
+            }
         }
+    }
+}
+
+const CLOSED_SWEEP_TOLERANCE: f64 = 1e-9;
+
+fn is_closed_sweep(sweep_radians: f64) -> bool {
+    (sweep_radians - std::f64::consts::TAU).abs() <= CLOSED_SWEEP_TOLERANCE
+}
+
+fn slot_fraction(index: usize, gaps: usize) -> f64 {
+    if gaps == 0 {
+        0.0
+    } else {
+        index as f64 / gaps as f64
+    }
+}
+
+fn rotation_about(origin: VectorQuantity, axis: VectorQuantity, angle_radians: f64) -> Placement {
+    Placement {
+        translation: VectorQuantity::lengths(0.0, 0.0, 0.0, LengthUnit::Millimeter),
+        rotation: Some(AxisAngle {
+            origin,
+            axis,
+            angle_radians,
+        }),
+    }
+}
+
+/// `value / divisor`, snapped to the nearest integer when within
+/// floating-point noise, so a 9 m span at 3 m spacing has exactly 3 gaps.
+fn snapped_ratio(value: f64, divisor: f64) -> f64 {
+    let ratio = value / divisor;
+    let nearest = ratio.round();
+    if (ratio - nearest).abs() <= 1e-9 * nearest.abs().max(1.0) {
+        nearest
+    } else {
+        ratio
+    }
+}
+
+fn checked_member_count(count: f64) -> Result<usize, ModelError> {
+    if count.is_finite() && (1.0..=MAX_PATTERN_MEMBERS as f64).contains(&count) {
+        Ok(count as usize)
+    } else {
+        Err(ModelError::new(format!(
+            "pattern constraints must yield 1..={MAX_PATTERN_MEMBERS} members"
+        )))
+    }
+}
+
+impl LinearSpacing {
+    fn count(self, length: f64) -> Result<usize, ModelError> {
+        let gaps = match self {
+            Self::Count(count) => return checked_member_count(count as f64),
+            Self::Minimum(spacing) => snapped_ratio(length, positive_spacing(spacing)?).floor(),
+            Self::Maximum(spacing) => snapped_ratio(length, positive_spacing(spacing)?).ceil(),
+        };
+        checked_member_count(gaps + 1.0)
+    }
+}
+
+fn positive_spacing(spacing: Quantity) -> Result<f64, ModelError> {
+    if spacing.dimension != Dimension::Length {
+        return Err(ModelError::new("linear pattern spacing must be a length"));
+    }
+    let value = spacing.normalized()?;
+    if value > 0.0 {
+        Ok(value)
+    } else {
+        Err(ModelError::new("linear pattern spacing must be positive"))
+    }
+}
+
+impl AngularSpacing {
+    fn count(self, sweep: f64, closed: bool) -> Result<usize, ModelError> {
+        let gaps = match self {
+            Self::Count(count) => return checked_member_count(count as f64),
+            Self::MinimumRadians(angle) => snapped_ratio(sweep, positive_angle(angle)?).floor(),
+            Self::MaximumRadians(angle) => snapped_ratio(sweep, positive_angle(angle)?).ceil(),
+        };
+        checked_member_count(if closed { gaps } else { gaps + 1.0 })
+    }
+}
+
+fn positive_angle(angle: f64) -> Result<f64, ModelError> {
+    if angle.is_finite() && angle > 0.0 {
+        Ok(angle)
+    } else {
+        Err(ModelError::new(
+            "angular pattern spacing must be positive and finite",
+        ))
     }
 }
 
@@ -786,6 +956,12 @@ pub struct Pattern {
     /// Assembly frame in which the rule and every member placement are expressed.
     #[serde(default)]
     pub frame: Option<String>,
+    /// Number of rule slots; members occupy a subset of `0..slot_count`.
+    #[serde(default)]
+    pub slot_count: usize,
+    /// Members created when the pattern grows are named `prefix[slot]`.
+    #[serde(default)]
+    pub member_prefix: String,
 }
 
 impl Pattern {
@@ -801,7 +977,7 @@ impl Pattern {
     pub fn member_placement(&self, member: &PatternMember) -> Placement {
         member
             .placement_override
-            .unwrap_or_else(|| self.rule.member_placement(member.index))
+            .unwrap_or_else(|| self.rule.member_placement(member.index, self.slot_count))
     }
 }
 
@@ -826,7 +1002,7 @@ pub struct GenerationRecord {
     pub last_error: Option<String>,
 }
 
-pub const CURRENT_SCHEMA_VERSION: u32 = 17;
+pub const CURRENT_SCHEMA_VERSION: u32 = 18;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ModelDocument {
@@ -883,6 +1059,9 @@ impl ModelDocument {
         }
         let mut document: Self = serde_json::from_value(value)
             .map_err(|error| ModelError::new(format!("decode model document: {error}")))?;
+        if version < 18 {
+            document.adopt_pattern_slots();
+        }
         if version < 17 {
             document.adopt_member_placements();
         }
@@ -919,9 +1098,27 @@ impl ModelDocument {
             let rule = pattern.rule;
             for member in &mut pattern.members {
                 let stored = placements.get(member.id.as_str()).copied();
-                if stored.is_some_and(|stored| stored != rule.member_placement(member.index)) {
+                let expected = rule.member_placement(member.index, pattern.slot_count);
+                if stored.is_some_and(|stored| stored != expected) {
                     member.placement_override = stored;
                 }
+            }
+        }
+    }
+
+    /// Schema 18 records the slot count and the prefix for grown members.
+    fn adopt_pattern_slots(&mut self) {
+        for pattern in &mut self.patterns {
+            if pattern.slot_count == 0 {
+                pattern.slot_count = pattern
+                    .members
+                    .iter()
+                    .map(|member| member.index + 1)
+                    .max()
+                    .unwrap_or(0);
+            }
+            if pattern.member_prefix.is_empty() {
+                pattern.member_prefix = derived_member_prefix(pattern);
             }
         }
     }
@@ -1039,6 +1236,7 @@ fn validate_pattern<'document>(
         )));
     }
     pattern.rule.validate().map_err(context)?;
+    validate_pattern_slots(pattern).map_err(context)?;
     graph
         .frame_chain(pattern.frame.as_deref())
         .map_err(context)?;
@@ -1059,6 +1257,33 @@ fn validate_pattern<'document>(
         validate_pattern_member(pattern, member, graph, node_ids)?;
     }
     Ok(())
+}
+
+/// Slot count, prefix, and member slots must agree with each other and with
+/// any count the rule's constraints require.
+fn validate_pattern_slots(pattern: &Pattern) -> Result<(), ModelError> {
+    if pattern.slot_count == 0 || pattern.member_prefix.is_empty() {
+        return Err(ModelError::new(
+            "pattern requires slots and a member prefix",
+        ));
+    }
+    if let Some(member) = pattern
+        .members
+        .iter()
+        .find(|member| member.index >= pattern.slot_count)
+    {
+        return Err(ModelError::new(format!(
+            "member '{}' slot {} is outside the {} pattern slots",
+            member.id, member.index, pattern.slot_count
+        )));
+    }
+    match pattern.rule.fitted_count()? {
+        Some(required) if required != pattern.slot_count => Err(ModelError::new(format!(
+            "constraints require {required} slots but the pattern has {}",
+            pattern.slot_count
+        ))),
+        _ => Ok(()),
+    }
 }
 
 /// A member must be a clone of the pattern source, in the pattern frame, at
@@ -1130,6 +1355,19 @@ fn validate_generation_record(
         )));
     }
     Ok(())
+}
+
+/// `pew` from a first member named `pew[0]`, otherwise the pattern id.
+fn derived_member_prefix(pattern: &Pattern) -> String {
+    pattern
+        .members
+        .first()
+        .and_then(|member| {
+            let (prefix, slot) = member.id.strip_suffix(']')?.rsplit_once('[')?;
+            let numeric = !slot.is_empty() && slot.bytes().all(|byte| byte.is_ascii_digit());
+            (numeric && !prefix.is_empty()).then(|| prefix.to_owned())
+        })
+        .unwrap_or_else(|| pattern.id.clone())
 }
 
 /// Schema 17 replaced member id strings with slot records numbered by position.
@@ -1241,6 +1479,12 @@ impl<'session> GraphRegeneration<'session> {
     }
 }
 
+/// Member changes a checked pattern resize will make.
+struct ResizePlan {
+    removed: Vec<String>,
+    added: Vec<(String, usize)>,
+}
+
 pub struct InstanceGraph<'definition> {
     definition: &'definition FamilyDefinition,
     nodes: HashMap<String, InstanceNode>,
@@ -1345,6 +1589,8 @@ impl<'definition> InstanceGraph<'definition> {
         )
     }
 
+    /// Adds a pattern with a freely chosen member count. Constraint-driven
+    /// rules derive their count; use [`Self::add_fitted_pattern`] for them.
     pub fn add_pattern(
         &mut self,
         id: impl Into<String>,
@@ -1354,7 +1600,53 @@ impl<'definition> InstanceGraph<'definition> {
         rule: PatternRule,
         provenance: impl Into<String>,
     ) -> Result<Vec<String>, ModelError> {
-        let id = id.into();
+        if rule.fitted_count()?.is_some() {
+            return Err(ModelError::new(
+                "constraint-driven rules derive their count; use add_fitted_pattern",
+            ));
+        }
+        self.insert_pattern(
+            id.into(),
+            member_prefix,
+            source,
+            count,
+            rule,
+            provenance.into(),
+        )
+    }
+
+    /// Adds a pattern whose member count and spacing are solved from a
+    /// `LinearFit` or `CircularFit` rule.
+    pub fn add_fitted_pattern(
+        &mut self,
+        id: impl Into<String>,
+        member_prefix: &str,
+        source: &str,
+        rule: PatternRule,
+        provenance: impl Into<String>,
+    ) -> Result<Vec<String>, ModelError> {
+        let count = rule
+            .fitted_count()?
+            .ok_or_else(|| ModelError::new("rule has no count constraint; use add_pattern"))?;
+        self.insert_pattern(
+            id.into(),
+            member_prefix,
+            source,
+            count,
+            rule,
+            provenance.into(),
+        )
+    }
+
+    fn insert_pattern(
+        &mut self,
+        id: String,
+        member_prefix: &str,
+        source: &str,
+        count: usize,
+        rule: PatternRule,
+        provenance: String,
+    ) -> Result<Vec<String>, ModelError> {
         if id.is_empty() || self.patterns.iter().any(|pattern| pattern.id == id) {
             return Err(ModelError::new("pattern id must be nonempty and unique"));
         }
@@ -1371,7 +1663,6 @@ impl<'definition> InstanceGraph<'definition> {
         if members.iter().any(|member| self.nodes.contains_key(member)) {
             return Err(ModelError::new("pattern member id already exists"));
         }
-        let provenance = provenance.into();
         for (index, member) in members.iter().enumerate() {
             self.nodes.insert(
                 member.clone(),
@@ -1379,7 +1670,7 @@ impl<'definition> InstanceGraph<'definition> {
                     id: member.clone(),
                     source: source.into(),
                     overrides: HashMap::new(),
-                    placement: rule.member_placement(index),
+                    placement: rule.member_placement(index, count),
                     frame: None,
                     provenance: provenance.clone(),
                 },
@@ -1400,6 +1691,8 @@ impl<'definition> InstanceGraph<'definition> {
                 .collect(),
             rule,
             frame: None,
+            slot_count: count,
+            member_prefix: member_prefix.to_owned(),
         });
         Ok(members)
     }
@@ -1493,21 +1786,118 @@ impl<'definition> InstanceGraph<'definition> {
     }
 
     /// Replaces a pattern rule and re-places every member without a
-    /// placement override.
+    /// placement override. A constraint-driven rule also resizes the pattern
+    /// to the count its constraints require.
     pub fn set_pattern_rule(
         &mut self,
         pattern_id: &str,
         rule: PatternRule,
     ) -> Result<(), ModelError> {
         rule.validate()?;
-        let pattern = self
-            .patterns
-            .iter_mut()
-            .find(|pattern| pattern.id == pattern_id)
-            .ok_or_else(|| ModelError::new(format!("unknown pattern '{pattern_id}'")))?;
-        pattern.rule = rule;
-        self.sync_pattern_placements(pattern_id);
+        let index = self.pattern_index(pattern_id)?;
+        let count = rule
+            .fitted_count()?
+            .unwrap_or(self.patterns[index].slot_count);
+        let plan = self.plan_resize(&self.patterns[index], count)?;
+        self.patterns[index].rule = rule;
+        self.apply_resize(index, count, plan);
         Ok(())
+    }
+
+    /// Grows or shrinks a freely counted pattern to `count` rule slots.
+    /// Growing adds linked members named `prefix[slot]`; shrinking deletes
+    /// the members in removed slots. Slots vacated by detaching stay empty.
+    pub fn set_pattern_count(&mut self, pattern_id: &str, count: usize) -> Result<(), ModelError> {
+        let index = self.pattern_index(pattern_id)?;
+        if self.patterns[index].rule.fitted_count()?.is_some() {
+            return Err(ModelError::new(format!(
+                "pattern '{pattern_id}' count is driven by its constraints"
+            )));
+        }
+        let plan = self.plan_resize(&self.patterns[index], count)?;
+        self.apply_resize(index, count, plan);
+        Ok(())
+    }
+
+    fn pattern_index(&self, pattern_id: &str) -> Result<usize, ModelError> {
+        self.patterns
+            .iter()
+            .position(|pattern| pattern.id == pattern_id)
+            .ok_or_else(|| ModelError::new(format!("unknown pattern '{pattern_id}'")))
+    }
+
+    /// Checks a resize without changing the graph.
+    fn plan_resize(&self, pattern: &Pattern, count: usize) -> Result<ResizePlan, ModelError> {
+        if !(1..=MAX_PATTERN_MEMBERS).contains(&count) {
+            return Err(ModelError::new(format!(
+                "pattern count must be 1..={MAX_PATTERN_MEMBERS}"
+            )));
+        }
+        let removed = pattern
+            .members
+            .iter()
+            .filter(|member| member.index >= count)
+            .map(|member| member.id.clone())
+            .collect::<Vec<_>>();
+        if let Some((dependent, source)) = self.nodes.values().find_map(|node| match node {
+            InstanceNode::Clone { id, source, .. }
+                if removed.contains(source) && !removed.contains(id) =>
+            {
+                Some((id, source))
+            }
+            _ => None,
+        }) {
+            return Err(ModelError::new(format!(
+                "cannot remove pattern member '{source}': '{dependent}' is cloned from it"
+            )));
+        }
+        let added = (pattern.slot_count..count)
+            .map(|slot| (format!("{}[{slot}]", pattern.member_prefix), slot))
+            .collect::<Vec<_>>();
+        if let Some((existing, _)) = added.iter().find(|(id, _)| self.nodes.contains_key(id)) {
+            return Err(ModelError::new(format!(
+                "cannot grow pattern '{}': instance '{existing}' already exists",
+                pattern.id
+            )));
+        }
+        let remaining = pattern.members.len() - removed.len();
+        if remaining == 0 && added.is_empty() {
+            return Err(ModelError::new(format!(
+                "pattern '{}' would have no members",
+                pattern.id
+            )));
+        }
+        Ok(ResizePlan { removed, added })
+    }
+
+    fn apply_resize(&mut self, index: usize, count: usize, plan: ResizePlan) {
+        for id in &plan.removed {
+            self.nodes.remove(id);
+        }
+        let pattern = &mut self.patterns[index];
+        pattern.members.retain(|member| member.index < count);
+        pattern.slot_count = count;
+        for (id, slot) in plan.added {
+            self.nodes.insert(
+                id.clone(),
+                InstanceNode::Clone {
+                    id: id.clone(),
+                    source: pattern.source.clone(),
+                    overrides: HashMap::new(),
+                    placement: Placement::identity(),
+                    frame: pattern.frame.clone(),
+                    provenance: format!("grown by pattern '{}'", pattern.id),
+                },
+            );
+            pattern.members.push(PatternMember {
+                id,
+                index: slot,
+                placement_override: None,
+                suppressed: false,
+            });
+        }
+        let pattern_id = pattern.id.clone();
+        self.sync_pattern_placements(&pattern_id);
     }
 
     /// Returns a pattern member to its rule placement. Returns the override
@@ -6023,6 +6413,276 @@ mod tests {
         duplicated.patterns[0].members[2].index = 0;
         let error = duplicated.to_json_pretty().unwrap_err();
         assert!(error.message.contains("slot 0"), "{error}");
+    }
+
+    fn member_ids(graph: &InstanceGraph<'_>) -> Vec<String> {
+        let mut ids = graph.patterns()[0]
+            .member_ids()
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        ids.sort();
+        ids
+    }
+
+    #[test]
+    fn pattern_count_edits_add_and_remove_rule_slots() {
+        let mut definition = family(RequirementPriority::Required, 100_000.0);
+        definition.requirements.clear();
+        let mut graph = pew_row(&definition);
+        graph
+            .add_frame("aisle", None, along_x(1000.0), "layout")
+            .unwrap();
+        graph.set_pattern_frame("pews", Some("aisle")).unwrap();
+
+        graph.set_pattern_count("pews", 5).unwrap();
+        assert_eq!(graph.patterns()[0].slot_count, 5);
+        assert_eq!(graph.node("pew[4]").unwrap().placement(), along_x(200.0));
+        assert_eq!(graph.node("pew[4]").unwrap().frame(), Some("aisle"));
+        assert!(matches!(
+            graph.node("pew[3]"),
+            Some(InstanceNode::Clone { source, .. }) if source == "source"
+        ));
+
+        graph.set_pattern_count("pews", 2).unwrap();
+        assert_eq!(member_ids(&graph), ["pew[0]", "pew[1]"]);
+        assert!(graph.node("pew[2]").is_none() && graph.node("pew[4]").is_none());
+
+        // A detached slot stays empty when the pattern grows again.
+        graph.detach("pew[1]").unwrap();
+        graph.set_pattern_count("pews", 3).unwrap();
+        assert_eq!(member_ids(&graph), ["pew[0]", "pew[2]"]);
+        let document = ModelDocument::from_graph(&graph);
+        let loaded = ModelDocument::from_json(&document.to_json_pretty().unwrap()).unwrap();
+        assert_eq!(loaded, document);
+
+        graph
+            .add_clone("fan", "pew[2]", HashMap::new(), "test")
+            .unwrap();
+        let error = graph.set_pattern_count("pews", 1).unwrap_err();
+        assert!(error.message.contains("'fan' is cloned from it"), "{error}");
+        graph.add_base("pew[3]", HashMap::new(), "test").unwrap();
+        let error = graph.set_pattern_count("pews", 4).unwrap_err();
+        assert!(error.message.contains("'pew[3]' already exists"), "{error}");
+        assert!(graph.set_pattern_count("pews", 0).is_err());
+        assert!(graph.set_pattern_count("missing", 2).is_err());
+        assert_eq!(graph.patterns()[0].slot_count, 3);
+    }
+
+    fn linear_fit(span_millimeters: f64, spacing: LinearSpacing) -> PatternRule {
+        PatternRule::LinearFit {
+            span: VectorQuantity::lengths(span_millimeters, 0.0, 0.0, LengthUnit::Millimeter),
+            spacing,
+        }
+    }
+
+    #[test]
+    fn linear_fit_solves_member_count_from_spacing_constraints() {
+        let mut definition = family(RequirementPriority::Required, 100_000.0);
+        definition.requirements.clear();
+        let mut graph = InstanceGraph::new(&definition);
+        graph.add_base("source", HashMap::new(), "test").unwrap();
+        let minimum = LinearSpacing::Minimum(Quantity::length(900.0, LengthUnit::Millimeter));
+        let members = graph
+            .add_fitted_pattern(
+                "pews",
+                "pew",
+                "source",
+                linear_fit(10_000.0, minimum),
+                "fit",
+            )
+            .unwrap();
+        // floor(10000 / 900) = 11 gaps of 909.09 mm.
+        assert_eq!(members.len(), 12);
+        let last = graph.node("pew[11]").unwrap().placement();
+        assert_eq!(last, along_x(10_000.0));
+        let gap = graph
+            .node("pew[1]")
+            .unwrap()
+            .placement()
+            .translation
+            .x
+            .value;
+        assert!((gap - 10_000.0 / 11.0).abs() < 1e-9);
+
+        // A 9 m span at 3 m maximum spacing is exactly 3 gaps, not 4.
+        let maximum = LinearSpacing::Maximum(Quantity::length(3.0, LengthUnit::Meter));
+        graph
+            .set_pattern_rule("pews", linear_fit(9_000.0, maximum))
+            .unwrap();
+        assert_eq!(member_ids(&graph).len(), 4);
+        assert_eq!(graph.node("pew[3]").unwrap().placement(), along_x(9_000.0));
+        assert!(graph.node("pew[4]").is_none());
+
+        graph
+            .set_pattern_rule("pews", linear_fit(9_000.0, LinearSpacing::Count(1)))
+            .unwrap();
+        assert_eq!(member_ids(&graph), ["pew[0]"]);
+        let error = graph.set_pattern_count("pews", 3).unwrap_err();
+        assert!(error.message.contains("driven by its constraints"));
+
+        let too_many = LinearSpacing::Minimum(Quantity::length(0.01, LengthUnit::Millimeter));
+        assert!(
+            graph
+                .set_pattern_rule("pews", linear_fit(10_000.0, too_many))
+                .is_err()
+        );
+        let wrong_unit = LinearSpacing::Minimum(Quantity::scalar(1.0));
+        assert!(
+            graph
+                .set_pattern_rule("pews", linear_fit(1_000.0, wrong_unit))
+                .is_err()
+        );
+        assert!(
+            graph
+                .set_pattern_rule("pews", linear_fit(0.0, LinearSpacing::Count(2)))
+                .is_err()
+        );
+        assert!(
+            graph
+                .add_pattern(
+                    "free",
+                    "free",
+                    "source",
+                    2,
+                    linear_fit(10.0, LinearSpacing::Count(2)),
+                    "x"
+                )
+                .is_err()
+        );
+        assert!(
+            graph
+                .add_fitted_pattern("free", "free", "source", step_x(10.0), "x")
+                .is_err()
+        );
+
+        let document = ModelDocument::from_graph(&graph);
+        let loaded = ModelDocument::from_json(&document.to_json_pretty().unwrap()).unwrap();
+        assert_eq!(loaded, document);
+    }
+
+    fn circular_fit(sweep_radians: f64, spacing: AngularSpacing) -> PatternRule {
+        PatternRule::CircularFit {
+            origin: VectorQuantity::lengths(0.0, 0.0, 0.0, LengthUnit::Millimeter),
+            axis: VectorQuantity::scalars(0.0, 0.0, 1.0),
+            sweep_radians,
+            spacing,
+        }
+    }
+
+    #[test]
+    fn circular_fit_divides_closed_and_open_sweeps() {
+        use std::f64::consts::{PI, TAU};
+        let mut definition = family(RequirementPriority::Required, 100_000.0);
+        definition.requirements.clear();
+        let mut graph = InstanceGraph::new(&definition);
+        graph.add_base("source", HashMap::new(), "test").unwrap();
+        let angle = |graph: &InstanceGraph<'_>, id: &str| {
+            graph
+                .node(id)
+                .unwrap()
+                .placement()
+                .rotation
+                .unwrap()
+                .angle_radians
+        };
+
+        graph
+            .add_fitted_pattern(
+                "bolts",
+                "bolt",
+                "source",
+                circular_fit(TAU, AngularSpacing::Count(6)),
+                "fit",
+            )
+            .unwrap();
+        // A closed turn does not repeat the first bolt at 360 degrees.
+        assert!((angle(&graph, "bolt[5]") - 5.0 * PI / 3.0).abs() < 1e-12);
+
+        graph
+            .set_pattern_rule("bolts", circular_fit(PI, AngularSpacing::Count(5)))
+            .unwrap();
+        assert!((angle(&graph, "bolt[4]") - PI).abs() < 1e-12);
+        assert!(graph.node("bolt[5]").is_none());
+
+        graph
+            .set_pattern_rule(
+                "bolts",
+                circular_fit(TAU, AngularSpacing::MaximumRadians(PI / 4.0)),
+            )
+            .unwrap();
+        assert_eq!(member_ids(&graph).len(), 8);
+        graph
+            .set_pattern_rule(
+                "bolts",
+                circular_fit(PI, AngularSpacing::MinimumRadians(PI / 3.0)),
+            )
+            .unwrap();
+        assert_eq!(member_ids(&graph).len(), 4);
+
+        for invalid in [
+            circular_fit(TAU, AngularSpacing::MinimumRadians(7.0)),
+            circular_fit(0.0, AngularSpacing::Count(2)),
+            circular_fit(7.0, AngularSpacing::Count(2)),
+            circular_fit(PI, AngularSpacing::MaximumRadians(f64::NAN)),
+        ] {
+            assert!(
+                graph.set_pattern_rule("bolts", invalid).is_err(),
+                "{invalid:?}"
+            );
+        }
+        assert_eq!(member_ids(&graph).len(), 4);
+    }
+
+    #[test]
+    fn schema_seventeen_patterns_gain_slot_counts_and_prefixes() {
+        let mut definition = family(RequirementPriority::Required, 100_000.0);
+        definition.requirements.clear();
+        let mut graph = pew_row(&definition);
+        graph.detach("pew[2]").unwrap();
+        let current = ModelDocument::from_graph(&graph);
+
+        let mut legacy = serde_json::to_value(&current).unwrap();
+        legacy["schema_version"] = serde_json::json!(17);
+        let pattern = legacy["patterns"][0].as_object_mut().unwrap();
+        pattern.remove("slot_count");
+        pattern.remove("member_prefix");
+        let migrated = ModelDocument::from_json(&legacy.to_string()).unwrap();
+        // Slot 2 was detached, so the highest remaining slot sets the count.
+        assert_eq!(migrated.patterns[0].slot_count, 2);
+        assert_eq!(migrated.patterns[0].member_prefix, "pew");
+
+        let mut renamed = legacy.clone();
+        renamed["patterns"][0]["members"][0]["id"] = serde_json::json!("alpha");
+        let instances = renamed["instances"].as_array_mut().unwrap();
+        for node in instances.iter_mut() {
+            let variant = node.as_object_mut().unwrap().values_mut().next().unwrap();
+            if variant["id"] == "pew[0]" {
+                variant["id"] = serde_json::json!("alpha");
+            }
+        }
+        let migrated = ModelDocument::from_json(&renamed.to_string()).unwrap();
+        assert_eq!(migrated.patterns[0].member_prefix, "pews");
+    }
+
+    #[test]
+    fn documents_reject_slot_counts_that_disagree_with_members_or_constraints() {
+        let mut definition = family(RequirementPriority::Required, 100_000.0);
+        definition.requirements.clear();
+        let graph = pew_row(&definition);
+        let document = ModelDocument::from_graph(&graph);
+
+        let mut short = document.clone();
+        short.patterns[0].slot_count = 2;
+        let error = short.to_json_pretty().unwrap_err();
+        assert!(
+            error.message.contains("outside the 2 pattern slots"),
+            "{error}"
+        );
+
+        let mut constrained = document;
+        constrained.patterns[0].rule = linear_fit(100.0, LinearSpacing::Count(5));
+        let error = constrained.to_json_pretty().unwrap_err();
+        assert!(error.message.contains("require 5 slots"), "{error}");
     }
 
     #[test]

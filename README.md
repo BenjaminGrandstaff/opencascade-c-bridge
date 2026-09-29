@@ -53,7 +53,7 @@ adjacency, extrema, nearest-center, longest-edge, circular-radius,
 curvature-radius, sampled full-edge curvature-radius range, proven-bound
 curvature-radius range,
 largest-planar-face, tangent-neighbor, set composition, and operation-history
-rules. Schema v1 through v16 documents migrate to v17 during load; unsupported
+rules. Schema v1 through v17 documents migrate to v18 during load; unsupported
 future versions are rejected.
 Managed regeneration incrementally reuses unchanged outputs and
 rebuilds dirty features plus their downstream dependents. Graph regeneration
@@ -138,8 +138,9 @@ engineering-model layer: typed unit-aware parameters, versioned families,
 instances with overrides and provenance, dependency-ordered feature graphs,
 named results, linked clone inheritance, accepted and stale regeneration
 states, axis-angle placement, nested assembly frames, linear and circular
-patterns placed relative to those frames with editable rules, per-member
-placement overrides, and member suppression, frozen accepted generations, and
+patterns placed relative to those frames with editable rules and counts,
+span- and sweep-fitting constraints, per-member placement overrides, and
+member suppression, frozen accepted generations, and
 required/preferred/advisory verification. Derived scalar parameters support
 dimension-checked arithmetic and dependency-cycle diagnostics; hard parameter
 constraints reject invalid instances before geometry is created.

@@ -46,7 +46,8 @@ Rust layers:
 
 The following major capabilities remain planned:
 
-- constraint-driven patterns and kernel-level (location-only) shape sharing;
+- patterns driven by parameters or geometry, and kernel-level (location-only)
+  shape sharing;
 - additional domain-specific expression functions;
 - additional schema migrations and integration with the broader EIL source
   model;
@@ -276,6 +277,24 @@ regeneration, and requesting it explicitly is an error. Parameter overrides
 on members use ordinary sparse clone overrides. Documents are rejected when a
 slot repeats or a member's placement disagrees with its override or rule.
 
+A pattern records its slot count and a member prefix. `set_pattern_count`
+grows a freely counted pattern by adding linked members named `prefix[slot]`
+in the pattern frame, or shrinks it by deleting members in removed slots.
+Slots vacated by detaching stay empty. Shrinking is refused when another
+instance is cloned from a member it would delete, and growing is refused when
+a new member id is already taken; neither changes the graph on failure.
+
+Constraint-driven rules derive the count. `LinearFit` spreads members evenly
+from the source placement to a span, with an exact count, the most members
+whose gaps are at least a minimum spacing, or the fewest whose gaps are at
+most a maximum spacing. `CircularFit` does the same over a sweep in (0, 2π]
+by angle; a full turn is closed, so six bolts sit 60° apart rather than
+doubling up at 360°. Ratios within floating-point noise of an integer snap to
+it, so a 9 m span at 3 m maximum spacing yields exactly three gaps. Fits are
+capped at 10,000 members. Replacing a fitted rule re-solves and resizes the
+pattern; the count of a fitted pattern cannot be set directly, and documents
+whose slot count disagrees with their constraints are rejected.
+
 `InstanceGraph::regenerate_instances` and `regenerate_all` implement the
 shared-shape execution mode. Requested instances are grouped by their complete
 resolved parameter set, with defaults filled in, so an explicit override equal
@@ -474,14 +493,17 @@ information, so they are delivery artifacts and cannot replace the parametric
 source model.
 
 `ModelDocument` is the implemented local persistence boundary. Schema version
-17 serializes the complete family definition, requirements, derived parameters,
+18 serializes the complete family definition, requirements, derived parameters,
 constraints, base and clone nodes, sparse overrides, placements, linear and
-circular pattern rules, member slots, placement overrides, and suppression,
+circular pattern rules, linear and circular fit constraints, slot counts,
+member slots, placement overrides, and suppression,
 nested assembly frames, semantic selectors, provenance, and regeneration audit records. Live
 OCCT handles and generated BREPs are never serialized. Loading reconstructs a
 validated `InstanceGraph`; regeneration creates fresh session-owned handles.
-Schema versions 1 through 16 migrate to version 17, supplying explicit defaults
-for fields absent from older documents. Version 17 replaced member id strings
+Schema versions 1 through 17 migrate to version 18, supplying explicit defaults
+for fields absent from older documents. Version 18 added slot counts, taken
+from the highest member slot, and member prefixes, taken from a first member
+named `prefix[n]` or else the pattern id. Version 17 replaced member id strings
 with slot records numbered by position; a stored member placement that differs
 from its rule slot becomes an explicit override, so geometry is preserved.
 Version 16 added the bounded curvature-radius selector, version 15 added assembly frames, and
@@ -497,8 +519,8 @@ model is accepted.
 The next kernel work should prioritize generic sewing, shell-to-solid
 construction, broader exchange formats, and the remaining operations needed by
 feature definitions. The next parametric work should prioritize additional
-schema migrations, pattern count edits that add or remove slots, and
-constraint-driven patterns.
+schema migrations, patterns driven by family parameters or assembly
+geometry, and multi-family graphs.
 
 The broader serialized source model lives in the sibling
 [`engineering-intent-language`](../engineering-intent-language) project. Its
