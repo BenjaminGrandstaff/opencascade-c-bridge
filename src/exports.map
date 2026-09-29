@@ -1,0 +1,6 @@
+OCCT_BRIDGE_1.0 {
+    global:
+        occt_bridge_*;
+    local:
+        *;
+};

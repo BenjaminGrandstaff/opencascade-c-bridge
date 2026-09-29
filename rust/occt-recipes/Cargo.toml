@@ -1,0 +1,10 @@
+[package]
+name = "occt-recipes"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Application-level geometry recipes built on opencascade-c-bridge"
+
+[dependencies]
+occt-bridge = { path = "../occt-bridge" }
+

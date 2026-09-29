@@ -1,0 +1,10 @@
+[package]
+name = "occt-bridge"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Safe Rust wrapper for the opencascade-c-bridge C ABI"
+build = "build.rs"
+
+[lib]
+path = "src/lib.rs"

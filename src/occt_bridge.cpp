@@ -1,0 +1,2696 @@
+#include "occt_bridge.h"
+
+#include <BRepAlgoAPI_Cut.hxx>
+#include <BRepAlgoAPI_Fuse.hxx>
+#include <BRepAlgoAPI_Common.hxx>
+#include <BRepAdaptor_Curve.hxx>
+#include <BRepAdaptor_Surface.hxx>
+#include <BRepBndLib.hxx>
+#include <BRepBuilderAPI_MakeFace.hxx>
+#include <BRepBuilderAPI_MakeEdge.hxx>
+#include <BRepBuilderAPI_MakePolygon.hxx>
+#include <BRepBuilderAPI_MakeSolid.hxx>
+#include <BRepBuilderAPI_MakeWire.hxx>
+#include <BRepBuilderAPI_Sewing.hxx>
+#include <BRepBuilderAPI_Transform.hxx>
+#include <BRepCheck_Analyzer.hxx>
+#include <BRepGProp.hxx>
+#include <BRepFilletAPI_MakeChamfer.hxx>
+#include <BRepFilletAPI_MakeFillet.hxx>
+#include <BRepLib.hxx>
+#include <BRepLProp_CLProps.hxx>
+#include <BRepLProp_SLProps.hxx>
+#include <BRepOffsetAPI_ThruSections.hxx>
+#include <BRepOffsetAPI_MakePipe.hxx>
+#include <BRepOffsetAPI_MakeOffsetShape.hxx>
+#include <BRepOffsetAPI_MakeThickSolid.hxx>
+#include <BRepPrimAPI_MakeBox.hxx>
+#include <BRepPrimAPI_MakeCone.hxx>
+#include <BRepPrimAPI_MakeCylinder.hxx>
+#include <BRepPrimAPI_MakePrism.hxx>
+#include <BRepPrimAPI_MakeSphere.hxx>
+#include <BRepTools.hxx>
+#include <BRep_Tool.hxx>
+#include <BRep_Builder.hxx>
+#include <Bnd_Box.hxx>
+#include <GeomConvert_BSplineCurveToBezierCurve.hxx>
+#include <Geom_BSplineCurve.hxx>
+#include <Geom_BezierCurve.hxx>
+#include <TColStd_Array1OfReal.hxx>
+#include <TColgp_Array1OfPnt.hxx>
+#include <Standard_Failure.hxx>
+#include <TopoDS_Shape.hxx>
+#include <TopoDS.hxx>
+#include <TopoDS_Compound.hxx>
+#include <TopoDS_Shell.hxx>
+#include <TopoDS_Solid.hxx>
+#include <TopoDS_Wire.hxx>
+#include <TopAbs_ShapeEnum.hxx>
+#include <TopExp_Explorer.hxx>
+#include <Precision.hxx>
+#include <gp_Ax2.hxx>
+#include <gp_Ax1.hxx>
+#include <gp_Circ.hxx>
+#include <gp_Elips.hxx>
+#include <gp_Hypr.hxx>
+#include <gp_Parab.hxx>
+#include <gp_Dir.hxx>
+#include <gp_Pnt.hxx>
+#include <gp_Trsf.hxx>
+#include <gp_Vec.hxx>
+#include <GProp_GProps.hxx>
+#include <TopTools_IndexedMapOfShape.hxx>
+#include <TopTools_ListIteratorOfListOfShape.hxx>
+#include <TopTools_ListOfShape.hxx>
+
+#include <algorithm>
+#include <cmath>
+#include <cstring>
+#include <exception>
+#include <limits>
+#include <mutex>
+#include <new>
+#include <queue>
+#include <string>
+#include <unordered_map>
+#include <utility>
+#include <vector>
+
+struct occt_bridge_history_entry {
+    TopoDS_Shape source;
+    std::vector<TopoDS_Shape> generated;
+    std::vector<TopoDS_Shape> modified;
+    bool deleted = false;
+};
+
+struct occt_bridge_session {
+    mutable std::mutex mutex;
+    std::unordered_map<occt_bridge_shape_id_t, TopoDS_Shape> shapes;
+    std::unordered_map<occt_bridge_shape_id_t, std::vector<occt_bridge_history_entry>> histories;
+    occt_bridge_shape_id_t next_shape_id = 1;
+    std::string last_error;
+};
+
+namespace {
+
+bool finite(double value) {
+    return std::isfinite(value);
+}
+
+bool finite(occt_bridge_vec3_t value) {
+    return finite(value.x) && finite(value.y) && finite(value.z);
+}
+
+occt_bridge_status_t fail(
+    occt_bridge_session_t* session,
+    occt_bridge_status_t status,
+    std::string message) {
+    if (session != nullptr) {
+        session->last_error = std::move(message);
+    }
+    return status;
+}
+
+occt_bridge_status_t succeed(occt_bridge_session_t* session) {
+    session->last_error.clear();
+    return OCCT_BRIDGE_OK;
+}
+
+template <typename Function>
+occt_bridge_status_t guarded(occt_bridge_session_t* session, Function&& function) noexcept {
+    if (session == nullptr) {
+        return OCCT_BRIDGE_INVALID_ARGUMENT;
+    }
+    try {
+        std::lock_guard<std::mutex> lock(session->mutex);
+        return function();
+    } catch (const Standard_Failure& error) {
+        const char* message = error.GetMessageString();
+        return fail(
+            session,
+            OCCT_BRIDGE_KERNEL_ERROR,
+            message == nullptr ? "Open Cascade operation failed" : message);
+    } catch (const std::bad_alloc&) {
+        return fail(session, OCCT_BRIDGE_ALLOCATION_FAILED, "allocation failed");
+    } catch (const std::exception& error) {
+        return fail(session, OCCT_BRIDGE_INTERNAL_ERROR, error.what());
+    } catch (...) {
+        return fail(session, OCCT_BRIDGE_INTERNAL_ERROR, "unknown internal error");
+    }
+}
+
+const TopoDS_Shape* find_shape(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t id) {
+    const auto found = session->shapes.find(id);
+    return found == session->shapes.end() ? nullptr : &found->second;
+}
+
+occt_bridge_status_t store_shape(
+    occt_bridge_session_t* session,
+    const TopoDS_Shape& shape,
+    occt_bridge_shape_id_t* out_shape) {
+    if (out_shape == nullptr) {
+        return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_shape is null");
+    }
+    *out_shape = OCCT_BRIDGE_INVALID_SHAPE_ID;
+    if (shape.IsNull()) {
+        return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "operation produced a null shape");
+    }
+    if (session->next_shape_id == OCCT_BRIDGE_INVALID_SHAPE_ID) {
+        return fail(session, OCCT_BRIDGE_INTERNAL_ERROR, "shape handle space exhausted");
+    }
+    const occt_bridge_shape_id_t id = session->next_shape_id++;
+    session->shapes.emplace(id, shape);
+    *out_shape = id;
+    return succeed(session);
+}
+
+void append_unique_shape(std::vector<TopoDS_Shape>& shapes, const TopoDS_Shape& candidate) {
+    if (candidate.IsNull()) {
+        return;
+    }
+    const auto duplicate = std::find_if(
+        shapes.begin(),
+        shapes.end(),
+        [&](const TopoDS_Shape& shape) { return shape.IsSame(candidate); });
+    if (duplicate == shapes.end()) {
+        shapes.push_back(candidate);
+    }
+}
+
+std::vector<TopoDS_Shape> history_sources(const std::vector<const TopoDS_Shape*>& roots) {
+    static constexpr TopAbs_ShapeEnum topology_types[] = {
+        TopAbs_COMPOUND,
+        TopAbs_COMPSOLID,
+        TopAbs_SOLID,
+        TopAbs_SHELL,
+        TopAbs_FACE,
+        TopAbs_WIRE,
+        TopAbs_EDGE,
+        TopAbs_VERTEX,
+    };
+    std::vector<TopoDS_Shape> sources;
+    for (const TopoDS_Shape* root : roots) {
+        append_unique_shape(sources, *root);
+        for (TopAbs_ShapeEnum type : topology_types) {
+            for (TopExp_Explorer explorer(*root, type); explorer.More(); explorer.Next()) {
+                append_unique_shape(sources, explorer.Current());
+            }
+        }
+    }
+    return sources;
+}
+
+template <typename Operation>
+std::vector<occt_bridge_history_entry> collect_history(
+    Operation& operation,
+    const std::vector<const TopoDS_Shape*>& roots) {
+    std::vector<occt_bridge_history_entry> history;
+    for (const TopoDS_Shape& source : history_sources(roots)) {
+        occt_bridge_history_entry entry;
+        entry.source = source;
+        const TopTools_ListOfShape& generated = operation.Generated(source);
+        for (TopTools_ListIteratorOfListOfShape iterator(generated); iterator.More(); iterator.Next()) {
+            append_unique_shape(entry.generated, iterator.Value());
+        }
+        const TopTools_ListOfShape& modified = operation.Modified(source);
+        for (TopTools_ListIteratorOfListOfShape iterator(modified); iterator.More(); iterator.Next()) {
+            append_unique_shape(entry.modified, iterator.Value());
+        }
+        entry.deleted = operation.IsDeleted(source);
+        history.push_back(std::move(entry));
+    }
+    return history;
+}
+
+template <typename Operation>
+occt_bridge_status_t store_shape_with_history(
+    occt_bridge_session_t* session,
+    const TopoDS_Shape& shape,
+    occt_bridge_shape_id_t* out_shape,
+    Operation& operation,
+    const std::vector<const TopoDS_Shape*>& roots) {
+    std::vector<occt_bridge_history_entry> history = collect_history(operation, roots);
+    const occt_bridge_status_t status = store_shape(session, shape, out_shape);
+    if (status != OCCT_BRIDGE_OK) {
+        return status;
+    }
+    try {
+        session->histories.emplace(*out_shape, std::move(history));
+    } catch (...) {
+        session->shapes.erase(*out_shape);
+        *out_shape = OCCT_BRIDGE_INVALID_SHAPE_ID;
+        throw;
+    }
+    return succeed(session);
+}
+
+template <typename Operation>
+occt_bridge_status_t boolean_operation(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t left,
+    occt_bridge_shape_id_t right,
+    occt_bridge_shape_id_t* out_shape,
+    const char* operation_name) {
+    if (out_shape == nullptr) {
+        return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_shape is null");
+    }
+    *out_shape = OCCT_BRIDGE_INVALID_SHAPE_ID;
+    const TopoDS_Shape* left_shape = find_shape(session, left);
+    const TopoDS_Shape* right_shape = find_shape(session, right);
+    if (left_shape == nullptr || right_shape == nullptr) {
+        return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "boolean input shape was not found");
+    }
+    Operation operation(*left_shape, *right_shape);
+    operation.Build();
+    if (!operation.IsDone() || operation.HasErrors()) {
+        return fail(
+            session,
+            OCCT_BRIDGE_KERNEL_ERROR,
+            std::string(operation_name) + " operation failed");
+    }
+    return store_shape_with_history(
+        session,
+        operation.Shape(),
+        out_shape,
+        operation,
+        {left_shape, right_shape});
+}
+
+occt_bridge_status_t transformed_shape(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t shape,
+    const gp_Trsf& transform,
+    occt_bridge_shape_id_t* out_shape) {
+    if (out_shape == nullptr) {
+        return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_shape is null");
+    }
+    *out_shape = OCCT_BRIDGE_INVALID_SHAPE_ID;
+    const TopoDS_Shape* value = find_shape(session, shape);
+    if (value == nullptr) {
+        return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "shape was not found");
+    }
+    BRepBuilderAPI_Transform operation(*value, transform, Standard_True);
+    operation.Build();
+    if (!operation.IsDone() || operation.Shape().IsNull()) {
+        return fail(session, OCCT_BRIDGE_KERNEL_ERROR, "shape transform failed");
+    }
+    return store_shape_with_history(
+        session,
+        operation.Shape(),
+        out_shape,
+        operation,
+        {value});
+}
+
+bool bridge_shape_type(occt_bridge_shape_type_t type, TopAbs_ShapeEnum& out_type) {
+    switch (type) {
+        case OCCT_BRIDGE_SHAPE_COMPOUND: out_type = TopAbs_COMPOUND; return true;
+        case OCCT_BRIDGE_SHAPE_COMPSOLID: out_type = TopAbs_COMPSOLID; return true;
+        case OCCT_BRIDGE_SHAPE_SOLID: out_type = TopAbs_SOLID; return true;
+        case OCCT_BRIDGE_SHAPE_SHELL: out_type = TopAbs_SHELL; return true;
+        case OCCT_BRIDGE_SHAPE_FACE: out_type = TopAbs_FACE; return true;
+        case OCCT_BRIDGE_SHAPE_WIRE: out_type = TopAbs_WIRE; return true;
+        case OCCT_BRIDGE_SHAPE_EDGE: out_type = TopAbs_EDGE; return true;
+        case OCCT_BRIDGE_SHAPE_VERTEX: out_type = TopAbs_VERTEX; return true;
+        default: return false;
+    }
+}
+
+occt_bridge_shape_type_t public_shape_type(TopAbs_ShapeEnum type) {
+    switch (type) {
+        case TopAbs_COMPOUND: return OCCT_BRIDGE_SHAPE_COMPOUND;
+        case TopAbs_COMPSOLID: return OCCT_BRIDGE_SHAPE_COMPSOLID;
+        case TopAbs_SOLID: return OCCT_BRIDGE_SHAPE_SOLID;
+        case TopAbs_SHELL: return OCCT_BRIDGE_SHAPE_SHELL;
+        case TopAbs_FACE: return OCCT_BRIDGE_SHAPE_FACE;
+        case TopAbs_WIRE: return OCCT_BRIDGE_SHAPE_WIRE;
+        case TopAbs_EDGE: return OCCT_BRIDGE_SHAPE_EDGE;
+        case TopAbs_VERTEX: return OCCT_BRIDGE_SHAPE_VERTEX;
+        default: return 0;
+    }
+}
+
+TopTools_IndexedMapOfShape descendant_shapes(
+    const TopoDS_Shape& shape,
+    TopAbs_ShapeEnum type) {
+    TopTools_IndexedMapOfShape result;
+    for (TopExp_Explorer explorer(shape, type); explorer.More(); explorer.Next()) {
+        result.Add(explorer.Current());
+    }
+    return result;
+}
+
+bool contains_topology(const TopoDS_Shape& shape, TopAbs_ShapeEnum type) {
+    return shape.ShapeType() == type || TopExp_Explorer(shape, type).More();
+}
+
+bool is_descendant(
+    const TopoDS_Shape& parent,
+    const TopoDS_Shape& candidate,
+    TopAbs_ShapeEnum type) {
+    for (TopExp_Explorer explorer(parent, type); explorer.More(); explorer.Next()) {
+        if (explorer.Current().IsSame(candidate)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool belongs_to(const TopoDS_Shape& parent, const TopoDS_Shape& candidate) {
+    return parent.IsSame(candidate) || is_descendant(parent, candidate, candidate.ShapeType());
+}
+
+bool shares_descendant(
+    const TopoDS_Shape& first,
+    const TopoDS_Shape& second,
+    TopAbs_ShapeEnum type) {
+    for (TopExp_Explorer explorer(first, type); explorer.More(); explorer.Next()) {
+        if (is_descendant(second, explorer.Current(), type)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+const occt_bridge_history_entry* find_history_entry(
+    const std::vector<occt_bridge_history_entry>& history,
+    const TopoDS_Shape& source) {
+    const auto found = std::find_if(
+        history.begin(),
+        history.end(),
+        [&](const occt_bridge_history_entry& entry) { return entry.source.IsSame(source); });
+    return found == history.end() ? nullptr : &*found;
+}
+
+const std::vector<TopoDS_Shape>* history_relation_shapes(
+    const occt_bridge_history_entry& entry,
+    occt_bridge_history_relation_t relation) {
+    switch (relation) {
+        case OCCT_BRIDGE_HISTORY_GENERATED: return &entry.generated;
+        case OCCT_BRIDGE_HISTORY_MODIFIED: return &entry.modified;
+        default: return nullptr;
+    }
+}
+
+TopoDS_Face triangle_face(const gp_Pnt& first, const gp_Pnt& second, const gp_Pnt& third) {
+    BRepBuilderAPI_MakePolygon wire;
+    wire.Add(first);
+    wire.Add(second);
+    wire.Add(third);
+    wire.Close();
+    if (!wire.IsDone()) {
+        return {};
+    }
+    BRepBuilderAPI_MakeFace face(wire.Wire());
+    return face.IsDone() ? face.Face() : TopoDS_Face{};
+}
+
+TopoDS_Face polygon_face(const std::vector<gp_Pnt>& points) {
+    BRepBuilderAPI_MakePolygon wire;
+    for (const gp_Pnt& point : points) {
+        wire.Add(point);
+    }
+    wire.Close();
+    if (!wire.IsDone()) {
+        return {};
+    }
+    BRepBuilderAPI_MakeFace face(wire.Wire());
+    return face.IsDone() ? face.Face() : TopoDS_Face{};
+}
+
+TopoDS_Wire polygon_wire(const occt_bridge_vec3_t* points, size_t point_count) {
+    BRepBuilderAPI_MakePolygon wire;
+    for (size_t index = 0; index < point_count; ++index) {
+        wire.Add(gp_Pnt(points[index].x, points[index].y, points[index].z));
+    }
+    wire.Close();
+    return wire.IsDone() ? wire.Wire() : TopoDS_Wire{};
+}
+
+TopoDS_Shape cylinder_between(const gp_Pnt& start, const gp_Pnt& end, double radius) {
+    const gp_Vec axis(start, end);
+    const double length = axis.Magnitude();
+    if (length <= std::numeric_limits<double>::epsilon()) {
+        return {};
+    }
+    BRepPrimAPI_MakeCylinder cylinder(gp_Ax2(start, gp_Dir(axis)), radius, length);
+    cylinder.Build();
+    return cylinder.IsDone() ? cylinder.Shape() : TopoDS_Shape{};
+}
+
+bool add_ring_band(
+    BRepBuilderAPI_Sewing& sewing,
+    const std::vector<gp_Pnt>& lower,
+    const std::vector<gp_Pnt>& upper) {
+    for (size_t index = 0; index < lower.size(); ++index) {
+        const size_t next = (index + 1) % lower.size();
+        const TopoDS_Face first = triangle_face(lower[index], lower[next], upper[next]);
+        const TopoDS_Face second = triangle_face(lower[index], upper[next], upper[index]);
+        if (first.IsNull() || second.IsNull()) {
+            return false;
+        }
+        sewing.Add(first);
+        sewing.Add(second);
+    }
+    return true;
+}
+
+TopoDS_Shape build_faceted_solid(
+    const std::vector<gp_Pnt>& bottom,
+    const std::vector<gp_Pnt>& top,
+    const gp_Pnt& top_center,
+    double bottom_chamfer,
+    double top_fillet) {
+    BRepBuilderAPI_Sewing sewing(1.0e-6, Standard_True, Standard_True, Standard_True, Standard_False);
+
+    std::vector<gp_Pnt> base = bottom;
+    std::vector<gp_Pnt> lower_side = bottom;
+    if (bottom_chamfer > 0.0) {
+        double center_x = 0.0;
+        double center_y = 0.0;
+        for (const gp_Pnt& point : bottom) {
+            center_x += point.X();
+            center_y += point.Y();
+        }
+        center_x /= static_cast<double>(bottom.size());
+        center_y /= static_cast<double>(bottom.size());
+        for (size_t index = 0; index < bottom.size(); ++index) {
+            const double dx = center_x - bottom[index].X();
+            const double dy = center_y - bottom[index].Y();
+            const double length = std::hypot(dx, dy);
+            if (length <= bottom_chamfer) {
+                return {};
+            }
+            base[index].SetX(bottom[index].X() + bottom_chamfer * dx / length);
+            base[index].SetY(bottom[index].Y() + bottom_chamfer * dy / length);
+            lower_side[index].SetZ(bottom[index].Z() + bottom_chamfer);
+        }
+    }
+
+    TopoDS_Face bottom_face = polygon_face(base);
+    if (bottom_face.IsNull()) {
+        return {};
+    }
+    sewing.Add(bottom_face);
+
+    if (bottom_chamfer > 0.0 && !add_ring_band(sewing, base, lower_side)) {
+        return {};
+    }
+
+    std::vector<std::vector<gp_Pnt>> shoulder_rings;
+    if (top_fillet > 0.0) {
+        constexpr size_t segments = 5;
+        constexpr double half_pi = 1.57079632679489661923;
+        shoulder_rings.reserve(segments + 1);
+        for (size_t step = 0; step <= segments; ++step) {
+            const double angle = half_pi * static_cast<double>(step) / static_cast<double>(segments);
+            const double horizontal_offset = top_fillet * std::cos(angle);
+            const double vertical_offset = top_fillet * (1.0 - std::sin(angle));
+            std::vector<gp_Pnt> ring;
+            ring.reserve(top.size());
+            for (const gp_Pnt& point : top) {
+                const double dx = point.X() - top_center.X();
+                const double dy = point.Y() - top_center.Y();
+                const double length = std::hypot(dx, dy);
+                if (length <= top_fillet) {
+                    return {};
+                }
+                ring.emplace_back(
+                    point.X() + horizontal_offset * dx / length,
+                    point.Y() + horizontal_offset * dy / length,
+                    point.Z() - vertical_offset);
+            }
+            shoulder_rings.push_back(std::move(ring));
+        }
+    } else {
+        shoulder_rings.push_back(top);
+    }
+
+    if (!add_ring_band(sewing, lower_side, shoulder_rings.front())) {
+        return {};
+    }
+    for (size_t index = 1; index < shoulder_rings.size(); ++index) {
+        if (!add_ring_band(sewing, shoulder_rings[index - 1], shoulder_rings[index])) {
+            return {};
+        }
+    }
+    const std::vector<gp_Pnt>& crown_edge = shoulder_rings.back();
+    for (size_t index = 0; index < crown_edge.size(); ++index) {
+        const size_t next = (index + 1) % crown_edge.size();
+        const TopoDS_Face top_face = triangle_face(crown_edge[index], crown_edge[next], top_center);
+        if (top_face.IsNull()) {
+            return {};
+        }
+        sewing.Add(top_face);
+    }
+
+    sewing.Perform();
+    const TopoDS_Shape& sewed = sewing.SewedShape();
+    TopoDS_Shell shell;
+    if (sewed.ShapeType() == TopAbs_SHELL) {
+        shell = TopoDS::Shell(sewed);
+    } else {
+        TopExp_Explorer shells(sewed, TopAbs_SHELL);
+        if (!shells.More()) {
+            return {};
+        }
+        shell = TopoDS::Shell(shells.Current());
+        shells.Next();
+        if (shells.More()) {
+            return {};
+        }
+    }
+
+    BRepBuilderAPI_MakeSolid solid_builder(shell);
+    if (!solid_builder.IsDone()) {
+        return {};
+    }
+    TopoDS_Solid solid = solid_builder.Solid();
+    BRepLib::OrientClosedSolid(solid);
+    return solid;
+}
+
+}  // namespace
+
+extern "C" {
+
+uint32_t occt_bridge_abi_version(void) {
+    return OCCT_BRIDGE_ABI_VERSION;
+}
+
+const char* occt_bridge_status_string(occt_bridge_status_t status) {
+    switch (status) {
+        case OCCT_BRIDGE_OK: return "ok";
+        case OCCT_BRIDGE_INVALID_ARGUMENT: return "invalid argument";
+        case OCCT_BRIDGE_UNSUPPORTED_ABI: return "unsupported ABI version";
+        case OCCT_BRIDGE_SHAPE_NOT_FOUND: return "shape not found";
+        case OCCT_BRIDGE_INVALID_GEOMETRY: return "invalid geometry";
+        case OCCT_BRIDGE_IO_ERROR: return "I/O error";
+        case OCCT_BRIDGE_KERNEL_ERROR: return "Open Cascade kernel error";
+        case OCCT_BRIDGE_ALLOCATION_FAILED: return "allocation failed";
+        case OCCT_BRIDGE_INTERNAL_ERROR: return "internal error";
+        default: return "unknown status";
+    }
+}
+
+occt_bridge_status_t occt_bridge_session_create(
+    uint32_t requested_abi_version,
+    occt_bridge_session_t** out_session) {
+    if (out_session == nullptr) {
+        return OCCT_BRIDGE_INVALID_ARGUMENT;
+    }
+    *out_session = nullptr;
+    if (requested_abi_version != OCCT_BRIDGE_ABI_VERSION) {
+        return OCCT_BRIDGE_UNSUPPORTED_ABI;
+    }
+    try {
+        *out_session = new (std::nothrow) occt_bridge_session_t();
+        return *out_session == nullptr ? OCCT_BRIDGE_ALLOCATION_FAILED : OCCT_BRIDGE_OK;
+    } catch (...) {
+        return OCCT_BRIDGE_INTERNAL_ERROR;
+    }
+}
+
+void occt_bridge_session_destroy(occt_bridge_session_t* session) {
+    try {
+        delete session;
+    } catch (...) {
+    }
+}
+
+occt_bridge_status_t occt_bridge_session_clear(occt_bridge_session_t* session) {
+    return guarded(session, [&] {
+        session->shapes.clear();
+        session->histories.clear();
+        return succeed(session);
+    });
+}
+
+occt_bridge_status_t occt_bridge_session_shape_count(
+    occt_bridge_session_t* session,
+    size_t* out_count) {
+    return guarded(session, [&] {
+        if (out_count == nullptr) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_count is null");
+        }
+        *out_count = session->shapes.size();
+        return succeed(session);
+    });
+}
+
+size_t occt_bridge_session_last_error(
+    const occt_bridge_session_t* session,
+    char* buffer,
+    size_t buffer_capacity) {
+    if (session == nullptr) {
+        return 0;
+    }
+    try {
+        std::lock_guard<std::mutex> lock(session->mutex);
+        const size_t required = session->last_error.size() + 1;
+        if (buffer != nullptr && buffer_capacity != 0) {
+            const size_t amount = std::min(buffer_capacity - 1, session->last_error.size());
+            std::memcpy(buffer, session->last_error.data(), amount);
+            buffer[amount] = '\0';
+        }
+        return required;
+    } catch (...) {
+        return 0;
+    }
+}
+
+occt_bridge_status_t occt_bridge_create_box(
+    occt_bridge_session_t* session,
+    occt_bridge_vec3_t origin,
+    occt_bridge_vec3_t size,
+    occt_bridge_shape_id_t* out_shape) {
+    return guarded(session, [&] {
+        if (out_shape == nullptr) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_shape is null");
+        }
+        *out_shape = OCCT_BRIDGE_INVALID_SHAPE_ID;
+        if (!finite(origin) || !finite(size) || size.x <= 0.0 || size.y <= 0.0 || size.z <= 0.0) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "box size must be finite and positive");
+        }
+        BRepPrimAPI_MakeBox builder(
+            gp_Pnt(origin.x, origin.y, origin.z), size.x, size.y, size.z);
+        builder.Build();
+        if (!builder.IsDone()) {
+            return fail(session, OCCT_BRIDGE_KERNEL_ERROR, "box construction failed");
+        }
+        return store_shape(session, builder.Shape(), out_shape);
+    });
+}
+
+occt_bridge_status_t occt_bridge_create_cylinder(
+    occt_bridge_session_t* session,
+    occt_bridge_vec3_t origin,
+    occt_bridge_vec3_t axis,
+    double radius,
+    double height,
+    occt_bridge_shape_id_t* out_shape) {
+    return guarded(session, [&] {
+        if (out_shape == nullptr) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_shape is null");
+        }
+        *out_shape = OCCT_BRIDGE_INVALID_SHAPE_ID;
+        if (!finite(origin) || !finite(axis) || !std::isfinite(radius) || !std::isfinite(height)
+            || radius <= 0.0 || height <= 0.0) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "invalid cylinder parameters");
+        }
+        const gp_Vec direction(axis.x, axis.y, axis.z);
+        if (direction.Magnitude() <= std::numeric_limits<double>::epsilon()) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "cylinder axis must be nonzero");
+        }
+        BRepPrimAPI_MakeCylinder builder(
+            gp_Ax2(gp_Pnt(origin.x, origin.y, origin.z), gp_Dir(direction)), radius, height);
+        builder.Build();
+        if (!builder.IsDone()) {
+            return fail(session, OCCT_BRIDGE_KERNEL_ERROR, "cylinder construction failed");
+        }
+        return store_shape(session, builder.Shape(), out_shape);
+    });
+}
+
+occt_bridge_status_t occt_bridge_create_cone(
+    occt_bridge_session_t* session,
+    occt_bridge_vec3_t origin,
+    occt_bridge_vec3_t axis,
+    double base_radius,
+    double top_radius,
+    double height,
+    occt_bridge_shape_id_t* out_shape) {
+    return guarded(session, [&] {
+        if (out_shape == nullptr) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_shape is null");
+        }
+        *out_shape = OCCT_BRIDGE_INVALID_SHAPE_ID;
+        if (!finite(origin) || !finite(axis) || !std::isfinite(base_radius)
+            || !std::isfinite(top_radius) || !std::isfinite(height)
+            || base_radius < 0.0 || top_radius < 0.0
+            || (base_radius == 0.0 && top_radius == 0.0) || height <= 0.0) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "invalid cone parameters");
+        }
+        const gp_Vec direction(axis.x, axis.y, axis.z);
+        if (direction.Magnitude() <= std::numeric_limits<double>::epsilon()) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "cone axis must be nonzero");
+        }
+        BRepPrimAPI_MakeCone builder(
+            gp_Ax2(gp_Pnt(origin.x, origin.y, origin.z), gp_Dir(direction)),
+            base_radius,
+            top_radius,
+            height);
+        builder.Build();
+        if (!builder.IsDone()) {
+            return fail(session, OCCT_BRIDGE_KERNEL_ERROR, "cone construction failed");
+        }
+        return store_shape(session, builder.Shape(), out_shape);
+    });
+}
+
+occt_bridge_status_t occt_bridge_create_sphere(
+    occt_bridge_session_t* session,
+    occt_bridge_vec3_t center,
+    double radius,
+    occt_bridge_shape_id_t* out_shape) {
+    return guarded(session, [&] {
+        if (out_shape == nullptr) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_shape is null");
+        }
+        *out_shape = OCCT_BRIDGE_INVALID_SHAPE_ID;
+        if (!finite(center) || !std::isfinite(radius) || radius <= 0.0) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "invalid sphere parameters");
+        }
+        BRepPrimAPI_MakeSphere builder(gp_Pnt(center.x, center.y, center.z), radius);
+        builder.Build();
+        if (!builder.IsDone()) {
+            return fail(session, OCCT_BRIDGE_KERNEL_ERROR, "sphere construction failed");
+        }
+        return store_shape(session, builder.Shape(), out_shape);
+    });
+}
+
+occt_bridge_status_t occt_bridge_create_polyline_wire(
+    occt_bridge_session_t* session,
+    const occt_bridge_vec3_t* points,
+    size_t point_count,
+    int closed,
+    occt_bridge_shape_id_t* out_shape) {
+    return guarded(session, [&] {
+        if (out_shape == nullptr) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_shape is null");
+        }
+        *out_shape = OCCT_BRIDGE_INVALID_SHAPE_ID;
+        const size_t minimum_points = closed == 1 ? 3 : 2;
+        if (points == nullptr || (closed != 0 && closed != 1) || point_count < minimum_points) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "invalid polyline-wire parameters");
+        }
+        BRepBuilderAPI_MakePolygon builder;
+        for (size_t index = 0; index < point_count; ++index) {
+            if (!finite(points[index])) {
+                return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "wire point is not finite");
+            }
+            if (index != 0) {
+                const gp_Pnt previous(
+                    points[index - 1].x, points[index - 1].y, points[index - 1].z);
+                const gp_Pnt current(points[index].x, points[index].y, points[index].z);
+                if (previous.Distance(current) <= std::numeric_limits<double>::epsilon()) {
+                    return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "wire contains a zero-length segment");
+                }
+            }
+            builder.Add(gp_Pnt(points[index].x, points[index].y, points[index].z));
+        }
+        if (closed == 1) {
+            const gp_Pnt first(points[0].x, points[0].y, points[0].z);
+            const gp_Pnt last(
+                points[point_count - 1].x,
+                points[point_count - 1].y,
+                points[point_count - 1].z);
+            if (first.Distance(last) <= std::numeric_limits<double>::epsilon()) {
+                return fail(
+                    session,
+                    OCCT_BRIDGE_INVALID_ARGUMENT,
+                    "closed wire must not repeat its first point");
+            }
+            builder.Close();
+        }
+        if (!builder.IsDone()) {
+            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "polyline wire construction failed");
+        }
+        return store_shape(session, builder.Wire(), out_shape);
+    });
+}
+
+occt_bridge_status_t occt_bridge_create_circle_wire(
+    occt_bridge_session_t* session,
+    occt_bridge_vec3_t center,
+    occt_bridge_vec3_t normal,
+    double radius,
+    occt_bridge_shape_id_t* out_shape) {
+    return guarded(session, [&] {
+        if (out_shape == nullptr) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_shape is null");
+        }
+        *out_shape = OCCT_BRIDGE_INVALID_SHAPE_ID;
+        if (!finite(center) || !finite(normal) || !std::isfinite(radius) || radius <= 0.0) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "invalid circle-wire parameters");
+        }
+        const gp_Vec direction(normal.x, normal.y, normal.z);
+        if (direction.Magnitude() <= std::numeric_limits<double>::epsilon()) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "circle normal must be nonzero");
+        }
+        BRepBuilderAPI_MakeEdge edge(
+            gp_Circ(
+                gp_Ax2(gp_Pnt(center.x, center.y, center.z), gp_Dir(direction)),
+                radius));
+        if (!edge.IsDone()) {
+            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "circle edge construction failed");
+        }
+        BRepBuilderAPI_MakeWire wire(edge.Edge());
+        if (!wire.IsDone()) {
+            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "circle wire construction failed");
+        }
+        return store_shape(session, wire.Wire(), out_shape);
+    });
+}
+
+occt_bridge_status_t occt_bridge_create_ellipse_wire(
+    occt_bridge_session_t* session,
+    occt_bridge_vec3_t center,
+    occt_bridge_vec3_t normal,
+    double major_radius,
+    double minor_radius,
+    occt_bridge_shape_id_t* out_shape) {
+    return guarded(session, [&] {
+        if (out_shape == nullptr) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_shape is null");
+        }
+        *out_shape = OCCT_BRIDGE_INVALID_SHAPE_ID;
+        if (!finite(center) || !finite(normal) || !std::isfinite(major_radius)
+            || !std::isfinite(minor_radius) || minor_radius <= 0.0
+            || major_radius < minor_radius) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "invalid ellipse-wire parameters");
+        }
+        const gp_Vec direction(normal.x, normal.y, normal.z);
+        if (direction.Magnitude() <= std::numeric_limits<double>::epsilon()) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "ellipse normal must be nonzero");
+        }
+        BRepBuilderAPI_MakeEdge edge(gp_Elips(
+            gp_Ax2(gp_Pnt(center.x, center.y, center.z), gp_Dir(direction)),
+            major_radius,
+            minor_radius));
+        if (!edge.IsDone()) {
+            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "ellipse edge construction failed");
+        }
+        BRepBuilderAPI_MakeWire wire(edge.Edge());
+        if (!wire.IsDone()) {
+            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "ellipse wire construction failed");
+        }
+        return store_shape(session, wire.Wire(), out_shape);
+    });
+}
+
+occt_bridge_status_t occt_bridge_create_face_from_wire(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t wire,
+    occt_bridge_shape_id_t* out_shape) {
+    return guarded(session, [&] {
+        if (out_shape == nullptr) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_shape is null");
+        }
+        *out_shape = OCCT_BRIDGE_INVALID_SHAPE_ID;
+        const TopoDS_Shape* value = find_shape(session, wire);
+        if (value == nullptr) {
+            return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "wire was not found");
+        }
+        if (value->ShapeType() != TopAbs_WIRE) {
+            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "shape is not a wire");
+        }
+        BRepBuilderAPI_MakeFace builder(TopoDS::Wire(*value));
+        if (!builder.IsDone()) {
+            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "wire does not define a planar face");
+        }
+        return store_shape_with_history(
+            session,
+            builder.Face(),
+            out_shape,
+            builder,
+            {value});
+    });
+}
+
+occt_bridge_status_t occt_bridge_create_prism_from_face(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t face,
+    occt_bridge_vec3_t direction,
+    occt_bridge_shape_id_t* out_shape) {
+    return guarded(session, [&] {
+        if (out_shape == nullptr) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_shape is null");
+        }
+        *out_shape = OCCT_BRIDGE_INVALID_SHAPE_ID;
+        if (!finite(direction)) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "prism direction must be finite");
+        }
+        const gp_Vec vector(direction.x, direction.y, direction.z);
+        if (vector.Magnitude() <= std::numeric_limits<double>::epsilon()) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "prism direction must be nonzero");
+        }
+        const TopoDS_Shape* value = find_shape(session, face);
+        if (value == nullptr) {
+            return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "face was not found");
+        }
+        if (value->ShapeType() != TopAbs_FACE) {
+            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "shape is not a face");
+        }
+        BRepPrimAPI_MakePrism builder(TopoDS::Face(*value), vector, Standard_True);
+        builder.Build();
+        if (!builder.IsDone()) {
+            return fail(session, OCCT_BRIDGE_KERNEL_ERROR, "prism construction failed");
+        }
+        return store_shape_with_history(
+            session,
+            builder.Shape(),
+            out_shape,
+            builder,
+            {value});
+    });
+}
+
+occt_bridge_status_t occt_bridge_create_polygon_prism(
+    occt_bridge_session_t* session,
+    const occt_bridge_vec3_t* points,
+    size_t point_count,
+    occt_bridge_vec3_t direction,
+    occt_bridge_shape_id_t* out_shape) {
+    return guarded(session, [&] {
+        if (out_shape == nullptr) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_shape is null");
+        }
+        *out_shape = OCCT_BRIDGE_INVALID_SHAPE_ID;
+        if (points == nullptr || point_count < 3 || !finite(direction)) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "a polygon prism requires at least three finite points");
+        }
+        const double direction_length = std::hypot(direction.x, std::hypot(direction.y, direction.z));
+        if (direction_length <= std::numeric_limits<double>::epsilon()) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "prism direction must be nonzero");
+        }
+        BRepBuilderAPI_MakePolygon polygon;
+        for (size_t index = 0; index < point_count; ++index) {
+            if (!finite(points[index])) {
+                return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "polygon point is not finite");
+            }
+            polygon.Add(gp_Pnt(points[index].x, points[index].y, points[index].z));
+        }
+        polygon.Close();
+        if (!polygon.IsDone()) {
+            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "polygon wire could not be closed");
+        }
+        BRepBuilderAPI_MakeFace face(polygon.Wire());
+        if (!face.IsDone()) {
+            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "polygon does not define a planar face");
+        }
+        BRepPrimAPI_MakePrism prism(
+            face.Face(), gp_Vec(direction.x, direction.y, direction.z), Standard_True);
+        prism.Build();
+        if (!prism.IsDone()) {
+            return fail(session, OCCT_BRIDGE_KERNEL_ERROR, "prism construction failed");
+        }
+        return store_shape(session, prism.Shape(), out_shape);
+    });
+}
+
+occt_bridge_status_t occt_bridge_create_faceted_stone(
+    occt_bridge_session_t* session,
+    const occt_bridge_vec3_t* bottom_points,
+    const occt_bridge_vec3_t* top_points,
+    size_t point_count,
+    occt_bridge_vec3_t top_center,
+    double bottom_chamfer,
+    double top_fillet,
+    occt_bridge_shape_id_t* out_shape) {
+    return guarded(session, [&] {
+        if (out_shape == nullptr) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_shape is null");
+        }
+        *out_shape = OCCT_BRIDGE_INVALID_SHAPE_ID;
+        if (bottom_points == nullptr || top_points == nullptr || point_count < 3
+            || !finite(top_center) || !std::isfinite(bottom_chamfer) || !std::isfinite(top_fillet)
+            || bottom_chamfer < 0.0 || top_fillet < 0.0) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "invalid faceted-stone parameters");
+        }
+
+        std::vector<gp_Pnt> bottom;
+        std::vector<gp_Pnt> top;
+        bottom.reserve(point_count);
+        top.reserve(point_count);
+        for (size_t index = 0; index < point_count; ++index) {
+            if (!finite(bottom_points[index]) || !finite(top_points[index])) {
+                return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "stone point is not finite");
+            }
+            bottom.emplace_back(
+                bottom_points[index].x, bottom_points[index].y, bottom_points[index].z);
+            top.emplace_back(top_points[index].x, top_points[index].y, top_points[index].z);
+        }
+
+        TopoDS_Shape shape = build_faceted_solid(
+            bottom,
+            top,
+            gp_Pnt(top_center.x, top_center.y, top_center.z),
+            bottom_chamfer,
+            top_fillet);
+        if (shape.IsNull()) {
+            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "faceted stone could not be closed into a solid");
+        }
+        BRepCheck_Analyzer analyzer(shape, Standard_True);
+        if (!analyzer.IsValid()) {
+            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "faceted stone is not a valid BREP");
+        }
+        return store_shape(session, shape, out_shape);
+    });
+}
+
+occt_bridge_status_t occt_bridge_create_wall_torch(
+    occt_bridge_session_t* session,
+    occt_bridge_vec3_t wall_anchor,
+    occt_bridge_vec3_t wall_normal,
+    double scale,
+    occt_bridge_wall_torch_result_t* out_torch) {
+    return guarded(session, [&] {
+        if (out_torch == nullptr) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_torch is null");
+        }
+        *out_torch = {};
+        if (!finite(wall_anchor) || !finite(wall_normal) || !std::isfinite(scale) || scale <= 0.0) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "invalid wall-torch parameters");
+        }
+        const double horizontal_length = std::hypot(wall_normal.x, wall_normal.y);
+        if (horizontal_length <= std::numeric_limits<double>::epsilon()) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "wall normal must have an XY component");
+        }
+        const double normal_x = wall_normal.x / horizontal_length;
+        const double normal_y = wall_normal.y / horizontal_length;
+        const gp_Dir outward(normal_x, normal_y, 0.0);
+        const gp_Dir up(0.0, 0.0, 1.0);
+        const gp_Pnt anchor(wall_anchor.x, wall_anchor.y, wall_anchor.z);
+
+        BRepPrimAPI_MakeCylinder plate_builder(
+            gp_Ax2(anchor, outward), 16.0 * scale, 6.0 * scale);
+        plate_builder.Build();
+
+        const gp_Pnt arm_start(
+            wall_anchor.x + normal_x * 5.0 * scale,
+            wall_anchor.y + normal_y * 5.0 * scale,
+            wall_anchor.z - 7.0 * scale);
+        const gp_Pnt arm_end(
+            wall_anchor.x + normal_x * 49.0 * scale,
+            wall_anchor.y + normal_y * 49.0 * scale,
+            wall_anchor.z + 4.0 * scale);
+        const TopoDS_Shape arm = cylinder_between(arm_start, arm_end, 4.0 * scale);
+
+        const gp_Pnt stem_start(arm_end.X(), arm_end.Y(), arm_end.Z() - 18.0 * scale);
+        const gp_Pnt stem_end(arm_end.X(), arm_end.Y(), arm_end.Z() + 17.0 * scale);
+        const TopoDS_Shape stem = cylinder_between(stem_start, stem_end, 4.5 * scale);
+
+        const gp_Pnt cup_base(arm_end.X(), arm_end.Y(), wall_anchor.z + 12.0 * scale);
+        BRepPrimAPI_MakeCone cup_builder(
+            gp_Ax2(cup_base, up), 8.0 * scale, 15.0 * scale, 18.0 * scale);
+        cup_builder.Build();
+        if (!plate_builder.IsDone() || arm.IsNull() || stem.IsNull() || !cup_builder.IsDone()) {
+            return fail(session, OCCT_BRIDGE_KERNEL_ERROR, "wall-torch fixture construction failed");
+        }
+
+        TopoDS_Compound fixture;
+        BRep_Builder fixture_builder;
+        fixture_builder.MakeCompound(fixture);
+        fixture_builder.Add(fixture, plate_builder.Shape());
+        fixture_builder.Add(fixture, arm);
+        fixture_builder.Add(fixture, stem);
+        fixture_builder.Add(fixture, cup_builder.Shape());
+
+        const gp_Pnt flame_base(arm_end.X(), arm_end.Y(), wall_anchor.z + 30.0 * scale);
+        BRepPrimAPI_MakeCone lower_flame(
+            gp_Ax2(flame_base, up), 11.0 * scale, 4.0 * scale, 25.0 * scale);
+        lower_flame.Build();
+        const gp_Pnt upper_flame_base(
+            flame_base.X(), flame_base.Y(), flame_base.Z() + 17.0 * scale);
+        BRepPrimAPI_MakeCone upper_flame(
+            gp_Ax2(upper_flame_base, up), 6.0 * scale, 0.0, 22.0 * scale);
+        upper_flame.Build();
+        if (!lower_flame.IsDone() || !upper_flame.IsDone()) {
+            return fail(session, OCCT_BRIDGE_KERNEL_ERROR, "wall-torch flame construction failed");
+        }
+        TopoDS_Compound flame;
+        BRep_Builder flame_builder;
+        flame_builder.MakeCompound(flame);
+        flame_builder.Add(flame, lower_flame.Shape());
+        flame_builder.Add(flame, upper_flame.Shape());
+
+        occt_bridge_status_t status = store_shape(session, fixture, &out_torch->fixture_shape);
+        if (status != OCCT_BRIDGE_OK) {
+            return status;
+        }
+        status = store_shape(session, flame, &out_torch->flame_shape);
+        if (status != OCCT_BRIDGE_OK) {
+            session->shapes.erase(out_torch->fixture_shape);
+            out_torch->fixture_shape = OCCT_BRIDGE_INVALID_SHAPE_ID;
+            return status;
+        }
+
+        out_torch->light.type = OCCT_BRIDGE_LIGHT_POSITIONAL;
+        out_torch->light.position = {
+            flame_base.X(), flame_base.Y(), flame_base.Z() + 14.0 * scale};
+        out_torch->light.direction = {0.0, 0.0, 0.0};
+        out_torch->light.color = {1.0, 0.32, 0.06};
+        out_torch->light.intensity = 2000000.0;
+        out_torch->light.range = 0.0;
+        out_torch->light.spot_angle_degrees = 0.0;
+        out_torch->light.cast_shadows = 0;
+        return succeed(session);
+    });
+}
+
+occt_bridge_status_t occt_bridge_create_polyline_tube(
+    occt_bridge_session_t* session,
+    const occt_bridge_vec3_t* path_points,
+    size_t point_count,
+    double radius,
+    occt_bridge_shape_id_t* out_shape) {
+    return guarded(session, [&] {
+        if (out_shape == nullptr) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_shape is null");
+        }
+        *out_shape = OCCT_BRIDGE_INVALID_SHAPE_ID;
+        if (path_points == nullptr || point_count < 2 || !std::isfinite(radius) || radius <= 0.0) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "invalid polyline-tube parameters");
+        }
+        for (size_t index = 0; index < point_count; ++index) {
+            if (!finite(path_points[index])) {
+                return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "tube path point is not finite");
+            }
+        }
+
+        BRepBuilderAPI_MakeWire spine_builder;
+        for (size_t index = 1; index < point_count; ++index) {
+            const gp_Pnt first(
+                path_points[index - 1].x,
+                path_points[index - 1].y,
+                path_points[index - 1].z);
+            const gp_Pnt second(
+                path_points[index].x,
+                path_points[index].y,
+                path_points[index].z);
+            if (first.Distance(second) <= std::numeric_limits<double>::epsilon()) {
+                return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "tube path contains a zero-length segment");
+            }
+            BRepBuilderAPI_MakeEdge edge(first, second);
+            if (!edge.IsDone()) {
+                return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "tube path edge construction failed");
+            }
+            spine_builder.Add(edge.Edge());
+        }
+        if (!spine_builder.IsDone()) {
+            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "tube path wire construction failed");
+        }
+
+        const gp_Pnt start(path_points[0].x, path_points[0].y, path_points[0].z);
+        const gp_Pnt next(path_points[1].x, path_points[1].y, path_points[1].z);
+        const gp_Vec initial_tangent(start, next);
+        const gp_Circ profile_circle(gp_Ax2(start, gp_Dir(initial_tangent)), radius);
+        BRepBuilderAPI_MakeEdge profile_edge(profile_circle);
+        BRepBuilderAPI_MakeWire profile_wire(profile_edge.Edge());
+        if (!profile_edge.IsDone() || !profile_wire.IsDone()) {
+            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "tube profile construction failed");
+        }
+
+        BRepOffsetAPI_MakePipe pipe(spine_builder.Wire(), profile_wire.Wire());
+        pipe.Build();
+        if (!pipe.IsDone() || pipe.Shape().IsNull()) {
+            return fail(session, OCCT_BRIDGE_KERNEL_ERROR, "polyline tube sweep failed");
+        }
+        BRepCheck_Analyzer analyzer(pipe.Shape(), Standard_True);
+        if (!analyzer.IsValid()) {
+            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "polyline tube is not a valid BREP");
+        }
+        return store_shape(session, pipe.Shape(), out_shape);
+    });
+}
+
+occt_bridge_status_t occt_bridge_create_loft(
+    occt_bridge_session_t* session,
+    const occt_bridge_vec3_t* points,
+    const size_t* section_point_counts,
+    size_t section_count,
+    int make_solid,
+    int ruled,
+    occt_bridge_shape_id_t* out_shape) {
+    return guarded(session, [&] {
+        if (out_shape == nullptr) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_shape is null");
+        }
+        *out_shape = OCCT_BRIDGE_INVALID_SHAPE_ID;
+        if (points == nullptr || section_point_counts == nullptr || section_count < 2
+            || (make_solid != 0 && make_solid != 1) || (ruled != 0 && ruled != 1)) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "invalid loft parameters");
+        }
+
+        size_t total_points = 0;
+        for (size_t section = 0; section < section_count; ++section) {
+            const size_t count = section_point_counts[section];
+            if (count < 3 || total_points > std::numeric_limits<size_t>::max() - count) {
+                return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "invalid loft section size");
+            }
+            total_points += count;
+        }
+        for (size_t index = 0; index < total_points; ++index) {
+            if (!finite(points[index])) {
+                return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "loft point is not finite");
+            }
+        }
+
+        BRepOffsetAPI_ThruSections loft(
+            make_solid ? Standard_True : Standard_False,
+            ruled ? Standard_True : Standard_False);
+        size_t offset = 0;
+        for (size_t section = 0; section < section_count; ++section) {
+            const size_t count = section_point_counts[section];
+            const TopoDS_Wire wire = polygon_wire(points + offset, count);
+            if (wire.IsNull()) {
+                return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "loft section could not be closed");
+            }
+            loft.AddWire(wire);
+            offset += count;
+        }
+        loft.CheckCompatibility(Standard_True);
+        loft.Build();
+        if (!loft.IsDone()) {
+            return fail(session, OCCT_BRIDGE_KERNEL_ERROR, "loft construction failed");
+        }
+        const TopoDS_Shape shape = loft.Shape();
+        if (shape.IsNull()) {
+            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "loft produced a null shape");
+        }
+        BRepCheck_Analyzer analyzer(shape, Standard_True);
+        if (!analyzer.IsValid()) {
+            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "loft produced an invalid BREP");
+        }
+        return store_shape(session, shape, out_shape);
+    });
+}
+
+occt_bridge_status_t occt_bridge_create_compound(
+    occt_bridge_session_t* session,
+    const occt_bridge_shape_id_t* shapes,
+    size_t shape_count,
+    occt_bridge_shape_id_t* out_shape) {
+    return guarded(session, [&] {
+        if (out_shape == nullptr) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_shape is null");
+        }
+        *out_shape = OCCT_BRIDGE_INVALID_SHAPE_ID;
+        if (shapes == nullptr || shape_count == 0) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "compound requires at least one shape");
+        }
+        TopoDS_Compound compound;
+        BRep_Builder builder;
+        builder.MakeCompound(compound);
+        for (size_t index = 0; index < shape_count; ++index) {
+            const TopoDS_Shape* shape = find_shape(session, shapes[index]);
+            if (shape == nullptr) {
+                return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "compound child shape was not found");
+            }
+            builder.Add(compound, *shape);
+        }
+        return store_shape(session, compound, out_shape);
+    });
+}
+
+occt_bridge_status_t occt_bridge_fuse(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t left,
+    occt_bridge_shape_id_t right,
+    occt_bridge_shape_id_t* out_shape) {
+    return guarded(session, [&] {
+        return boolean_operation<BRepAlgoAPI_Fuse>(session, left, right, out_shape, "fuse");
+    });
+}
+
+occt_bridge_status_t occt_bridge_cut(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t object,
+    occt_bridge_shape_id_t tool,
+    occt_bridge_shape_id_t* out_shape) {
+    return guarded(session, [&] {
+        return boolean_operation<BRepAlgoAPI_Cut>(session, object, tool, out_shape, "cut");
+    });
+}
+
+occt_bridge_status_t occt_bridge_common(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t left,
+    occt_bridge_shape_id_t right,
+    occt_bridge_shape_id_t* out_shape) {
+    return guarded(session, [&] {
+        return boolean_operation<BRepAlgoAPI_Common>(session, left, right, out_shape, "common");
+    });
+}
+
+occt_bridge_status_t occt_bridge_fillet(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t shape,
+    const occt_bridge_shape_id_t* edges,
+    size_t edge_count,
+    double radius,
+    occt_bridge_shape_id_t* out_shape) {
+    return guarded(session, [&] {
+        if (out_shape == nullptr) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_shape is null");
+        }
+        *out_shape = OCCT_BRIDGE_INVALID_SHAPE_ID;
+        if (edges == nullptr || edge_count == 0 || !std::isfinite(radius) || radius <= 0.0) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "invalid fillet parameters");
+        }
+        const TopoDS_Shape* value = find_shape(session, shape);
+        if (value == nullptr) {
+            return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "shape was not found");
+        }
+        BRepFilletAPI_MakeFillet builder(*value);
+        for (size_t index = 0; index < edge_count; ++index) {
+            const TopoDS_Shape* edge = find_shape(session, edges[index]);
+            if (edge == nullptr) {
+                return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "fillet edge was not found");
+            }
+            if (edge->ShapeType() != TopAbs_EDGE || !is_descendant(*value, *edge, TopAbs_EDGE)) {
+                return fail(
+                    session,
+                    OCCT_BRIDGE_INVALID_GEOMETRY,
+                    "fillet selection is not an edge of the input shape");
+            }
+            builder.Add(radius, TopoDS::Edge(*edge));
+        }
+        builder.Build();
+        if (!builder.IsDone() || builder.Shape().IsNull()) {
+            return fail(session, OCCT_BRIDGE_KERNEL_ERROR, "fillet construction failed");
+        }
+        return store_shape_with_history(
+            session,
+            builder.Shape(),
+            out_shape,
+            builder,
+            {value});
+    });
+}
+
+occt_bridge_status_t occt_bridge_chamfer(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t shape,
+    const occt_bridge_shape_id_t* edges,
+    size_t edge_count,
+    double distance,
+    occt_bridge_shape_id_t* out_shape) {
+    return guarded(session, [&] {
+        if (out_shape == nullptr) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_shape is null");
+        }
+        *out_shape = OCCT_BRIDGE_INVALID_SHAPE_ID;
+        if (edges == nullptr || edge_count == 0 || !std::isfinite(distance) || distance <= 0.0) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "invalid chamfer parameters");
+        }
+        const TopoDS_Shape* value = find_shape(session, shape);
+        if (value == nullptr) {
+            return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "shape was not found");
+        }
+        BRepFilletAPI_MakeChamfer builder(*value);
+        for (size_t index = 0; index < edge_count; ++index) {
+            const TopoDS_Shape* edge = find_shape(session, edges[index]);
+            if (edge == nullptr) {
+                return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "chamfer edge was not found");
+            }
+            if (edge->ShapeType() != TopAbs_EDGE || !is_descendant(*value, *edge, TopAbs_EDGE)) {
+                return fail(
+                    session,
+                    OCCT_BRIDGE_INVALID_GEOMETRY,
+                    "chamfer selection is not an edge of the input shape");
+            }
+            builder.Add(distance, TopoDS::Edge(*edge));
+        }
+        builder.Build();
+        if (!builder.IsDone() || builder.Shape().IsNull()) {
+            return fail(session, OCCT_BRIDGE_KERNEL_ERROR, "chamfer construction failed");
+        }
+        return store_shape_with_history(
+            session,
+            builder.Shape(),
+            out_shape,
+            builder,
+            {value});
+    });
+}
+
+occt_bridge_status_t occt_bridge_offset(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t shape,
+    double offset,
+    double tolerance,
+    occt_bridge_shape_id_t* out_shape) {
+    return guarded(session, [&] {
+        if (out_shape == nullptr) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_shape is null");
+        }
+        *out_shape = OCCT_BRIDGE_INVALID_SHAPE_ID;
+        if (!std::isfinite(offset) || offset == 0.0
+            || !std::isfinite(tolerance) || tolerance <= 0.0) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "invalid offset parameters");
+        }
+        const TopoDS_Shape* value = find_shape(session, shape);
+        if (value == nullptr) {
+            return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "shape was not found");
+        }
+        BRepOffsetAPI_MakeOffsetShape builder;
+        builder.PerformByJoin(*value, offset, tolerance);
+        if (!builder.IsDone() || builder.Shape().IsNull()) {
+            return fail(session, OCCT_BRIDGE_KERNEL_ERROR, "offset construction failed");
+        }
+        return store_shape_with_history(
+            session,
+            builder.Shape(),
+            out_shape,
+            builder,
+            {value});
+    });
+}
+
+occt_bridge_status_t occt_bridge_hollow(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t shape,
+    const occt_bridge_shape_id_t* faces_to_remove,
+    size_t face_count,
+    double thickness,
+    double tolerance,
+    occt_bridge_shape_id_t* out_shape) {
+    return guarded(session, [&] {
+        if (out_shape == nullptr) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_shape is null");
+        }
+        *out_shape = OCCT_BRIDGE_INVALID_SHAPE_ID;
+        if (faces_to_remove == nullptr || face_count == 0 || !std::isfinite(thickness)
+            || thickness == 0.0 || !std::isfinite(tolerance) || tolerance <= 0.0) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "invalid hollow parameters");
+        }
+        const TopoDS_Shape* value = find_shape(session, shape);
+        if (value == nullptr) {
+            return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "shape was not found");
+        }
+        TopTools_ListOfShape closing_faces;
+        for (size_t index = 0; index < face_count; ++index) {
+            const TopoDS_Shape* face = find_shape(session, faces_to_remove[index]);
+            if (face == nullptr) {
+                return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "hollow face was not found");
+            }
+            if (face->ShapeType() != TopAbs_FACE || !is_descendant(*value, *face, TopAbs_FACE)) {
+                return fail(
+                    session,
+                    OCCT_BRIDGE_INVALID_GEOMETRY,
+                    "hollow selection is not a face of the input shape");
+            }
+            closing_faces.Append(*face);
+        }
+        BRepOffsetAPI_MakeThickSolid builder;
+        builder.MakeThickSolidByJoin(*value, closing_faces, thickness, tolerance);
+        if (!builder.IsDone() || builder.Shape().IsNull()) {
+            return fail(session, OCCT_BRIDGE_KERNEL_ERROR, "hollow construction failed");
+        }
+        return store_shape_with_history(
+            session,
+            builder.Shape(),
+            out_shape,
+            builder,
+            {value});
+    });
+}
+
+occt_bridge_status_t occt_bridge_translate(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t shape,
+    occt_bridge_vec3_t offset,
+    occt_bridge_shape_id_t* out_shape) {
+    return guarded(session, [&] {
+        if (!finite(offset)) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "translation offset must be finite");
+        }
+        gp_Trsf transform;
+        transform.SetTranslation(gp_Vec(offset.x, offset.y, offset.z));
+        return transformed_shape(session, shape, transform, out_shape);
+    });
+}
+
+occt_bridge_status_t occt_bridge_rotate(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t shape,
+    occt_bridge_vec3_t axis_origin,
+    occt_bridge_vec3_t axis_direction,
+    double angle_radians,
+    occt_bridge_shape_id_t* out_shape) {
+    return guarded(session, [&] {
+        if (!finite(axis_origin) || !finite(axis_direction) || !std::isfinite(angle_radians)) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "invalid rotation parameters");
+        }
+        const gp_Vec direction(axis_direction.x, axis_direction.y, axis_direction.z);
+        if (direction.Magnitude() <= std::numeric_limits<double>::epsilon()) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "rotation axis must be nonzero");
+        }
+        gp_Trsf transform;
+        transform.SetRotation(
+            gp_Ax1(
+                gp_Pnt(axis_origin.x, axis_origin.y, axis_origin.z),
+                gp_Dir(direction)),
+            angle_radians);
+        return transformed_shape(session, shape, transform, out_shape);
+    });
+}
+
+occt_bridge_status_t occt_bridge_scale(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t shape,
+    occt_bridge_vec3_t center,
+    double factor,
+    occt_bridge_shape_id_t* out_shape) {
+    return guarded(session, [&] {
+        if (!finite(center) || !std::isfinite(factor) || factor <= 0.0) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "scale factor must be finite and positive");
+        }
+        gp_Trsf transform;
+        transform.SetScale(gp_Pnt(center.x, center.y, center.z), factor);
+        return transformed_shape(session, shape, transform, out_shape);
+    });
+}
+
+occt_bridge_status_t occt_bridge_shape_duplicate(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t shape,
+    occt_bridge_shape_id_t* out_shape) {
+    return guarded(session, [&] {
+        const TopoDS_Shape* value = find_shape(session, shape);
+        if (value == nullptr) {
+            return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "shape was not found");
+        }
+        const TopoDS_Shape copied_shape = *value;
+        const auto history = session->histories.find(shape);
+        std::vector<occt_bridge_history_entry> copied_history;
+        if (history != session->histories.end()) {
+            copied_history = history->second;
+        }
+        const occt_bridge_status_t status = store_shape(session, copied_shape, out_shape);
+        if (status != OCCT_BRIDGE_OK || copied_history.empty()) {
+            return status;
+        }
+        try {
+            session->histories.emplace(*out_shape, std::move(copied_history));
+        } catch (...) {
+            session->shapes.erase(*out_shape);
+            *out_shape = OCCT_BRIDGE_INVALID_SHAPE_ID;
+            throw;
+        }
+        return succeed(session);
+    });
+}
+
+occt_bridge_status_t occt_bridge_shape_type(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t shape,
+    occt_bridge_shape_type_t* out_type) {
+    return guarded(session, [&] {
+        if (out_type == nullptr) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_type is null");
+        }
+        const TopoDS_Shape* value = find_shape(session, shape);
+        if (value == nullptr) {
+            return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "shape was not found");
+        }
+        *out_type = public_shape_type(value->ShapeType());
+        if (*out_type == 0) {
+            return fail(session, OCCT_BRIDGE_INTERNAL_ERROR, "shape has an unknown topology type");
+        }
+        return succeed(session);
+    });
+}
+
+occt_bridge_status_t occt_bridge_shape_subshape_count(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t shape,
+    occt_bridge_shape_type_t subshape_type,
+    size_t* out_count) {
+    return guarded(session, [&] {
+        if (out_count == nullptr) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_count is null");
+        }
+        *out_count = 0;
+        TopAbs_ShapeEnum topology_type = TopAbs_SHAPE;
+        if (!bridge_shape_type(subshape_type, topology_type)) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "unknown subshape type");
+        }
+        const TopoDS_Shape* value = find_shape(session, shape);
+        if (value == nullptr) {
+            return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "shape was not found");
+        }
+        *out_count = static_cast<size_t>(descendant_shapes(*value, topology_type).Extent());
+        return succeed(session);
+    });
+}
+
+occt_bridge_status_t occt_bridge_shape_subshape_at(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t shape,
+    occt_bridge_shape_type_t subshape_type,
+    size_t index,
+    occt_bridge_shape_id_t* out_subshape) {
+    return guarded(session, [&] {
+        if (out_subshape == nullptr) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_subshape is null");
+        }
+        *out_subshape = OCCT_BRIDGE_INVALID_SHAPE_ID;
+        TopAbs_ShapeEnum topology_type = TopAbs_SHAPE;
+        if (!bridge_shape_type(subshape_type, topology_type)) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "unknown subshape type");
+        }
+        const TopoDS_Shape* value = find_shape(session, shape);
+        if (value == nullptr) {
+            return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "shape was not found");
+        }
+        const TopTools_IndexedMapOfShape subshapes = descendant_shapes(*value, topology_type);
+        if (index >= static_cast<size_t>(subshapes.Extent())) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "subshape index is out of range");
+        }
+        return store_shape(
+            session,
+            subshapes.FindKey(static_cast<Standard_Integer>(index + 1)),
+            out_subshape);
+    });
+}
+
+occt_bridge_status_t occt_bridge_shape_bounds(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t shape,
+    occt_bridge_bounds_t* out_bounds) {
+    return guarded(session, [&] {
+        if (out_bounds == nullptr) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_bounds is null");
+        }
+        const TopoDS_Shape* value = find_shape(session, shape);
+        if (value == nullptr) {
+            return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "shape was not found");
+        }
+        Bnd_Box bounds;
+        BRepBndLib::Add(*value, bounds);
+        if (bounds.IsVoid() || bounds.IsOpen()) {
+            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "shape has no finite bounds");
+        }
+        bounds.Get(
+            out_bounds->min.x, out_bounds->min.y, out_bounds->min.z,
+            out_bounds->max.x, out_bounds->max.y, out_bounds->max.z);
+        return succeed(session);
+    });
+}
+
+occt_bridge_status_t occt_bridge_shape_surface_area(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t shape,
+    double* out_area) {
+    return guarded(session, [&] {
+        if (out_area == nullptr) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_area is null");
+        }
+        *out_area = 0.0;
+        const TopoDS_Shape* value = find_shape(session, shape);
+        if (value == nullptr) {
+            return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "shape was not found");
+        }
+        if (!contains_topology(*value, TopAbs_FACE)) {
+            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "shape contains no faces");
+        }
+        GProp_GProps properties;
+        BRepGProp::SurfaceProperties(*value, properties);
+        *out_area = std::abs(properties.Mass());
+        return succeed(session);
+    });
+}
+
+occt_bridge_status_t occt_bridge_shape_volume(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t shape,
+    double* out_volume) {
+    return guarded(session, [&] {
+        if (out_volume == nullptr) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_volume is null");
+        }
+        *out_volume = 0.0;
+        const TopoDS_Shape* value = find_shape(session, shape);
+        if (value == nullptr) {
+            return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "shape was not found");
+        }
+        if (!contains_topology(*value, TopAbs_SOLID)) {
+            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "shape contains no solids");
+        }
+        GProp_GProps properties;
+        BRepGProp::VolumeProperties(*value, properties);
+        *out_volume = std::abs(properties.Mass());
+        return succeed(session);
+    });
+}
+
+occt_bridge_status_t occt_bridge_shape_center_of_mass(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t shape,
+    occt_bridge_vec3_t* out_center) {
+    return guarded(session, [&] {
+        if (out_center == nullptr) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_center is null");
+        }
+        *out_center = {};
+        const TopoDS_Shape* value = find_shape(session, shape);
+        if (value == nullptr) {
+            return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "shape was not found");
+        }
+        GProp_GProps properties;
+        if (contains_topology(*value, TopAbs_SOLID)) {
+            BRepGProp::VolumeProperties(*value, properties);
+        } else if (contains_topology(*value, TopAbs_FACE)) {
+            BRepGProp::SurfaceProperties(*value, properties);
+        } else if (contains_topology(*value, TopAbs_EDGE)) {
+            BRepGProp::LinearProperties(*value, properties);
+        } else {
+            return fail(
+                session,
+                OCCT_BRIDGE_INVALID_GEOMETRY,
+                "shape has no measurable solid, face, or edge topology");
+        }
+        if (std::abs(properties.Mass()) <= std::numeric_limits<double>::epsilon()) {
+            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "shape has zero measure");
+        }
+        const gp_Pnt center = properties.CentreOfMass();
+        *out_center = {center.X(), center.Y(), center.Z()};
+        return succeed(session);
+    });
+}
+
+occt_bridge_status_t occt_bridge_shape_face_normal(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t face,
+    occt_bridge_vec3_t* out_normal) {
+    return guarded(session, [&] {
+        if (out_normal == nullptr) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_normal is null");
+        }
+        *out_normal = {};
+        const TopoDS_Shape* value = find_shape(session, face);
+        if (value == nullptr) {
+            return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "face was not found");
+        }
+        if (value->ShapeType() != TopAbs_FACE) {
+            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "shape is not a face");
+        }
+        const TopoDS_Face topology_face = TopoDS::Face(*value);
+        double first_u = 0.0;
+        double last_u = 0.0;
+        double first_v = 0.0;
+        double last_v = 0.0;
+        BRepTools::UVBounds(topology_face, first_u, last_u, first_v, last_v);
+        if (!std::isfinite(first_u) || !std::isfinite(last_u)
+            || !std::isfinite(first_v) || !std::isfinite(last_v)) {
+            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "face has no finite UV bounds");
+        }
+        BRepAdaptor_Surface surface(topology_face, Standard_True);
+        BRepLProp_SLProps properties(
+            surface,
+            (first_u + last_u) * 0.5,
+            (first_v + last_v) * 0.5,
+            1,
+            Precision::Confusion());
+        if (!properties.IsNormalDefined()) {
+            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "face normal is undefined");
+        }
+        gp_Dir normal = properties.Normal();
+        if (topology_face.Orientation() == TopAbs_REVERSED) {
+            normal.Reverse();
+        }
+        *out_normal = {normal.X(), normal.Y(), normal.Z()};
+        return succeed(session);
+    });
+}
+
+occt_bridge_status_t occt_bridge_shape_face_is_planar(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t face,
+    int* out_is_planar) {
+    return guarded(session, [&] {
+        if (out_is_planar == nullptr) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_is_planar is null");
+        }
+        *out_is_planar = 0;
+        const TopoDS_Shape* value = find_shape(session, face);
+        if (value == nullptr) {
+            return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "face was not found");
+        }
+        if (value->ShapeType() != TopAbs_FACE) {
+            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "shape is not a face");
+        }
+        const BRepAdaptor_Surface surface(TopoDS::Face(*value), Standard_True);
+        *out_is_planar = surface.GetType() == GeomAbs_Plane ? 1 : 0;
+        return succeed(session);
+    });
+}
+
+occt_bridge_status_t occt_bridge_shape_edge_length(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t edge,
+    double* out_length) {
+    return guarded(session, [&] {
+        if (out_length == nullptr) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_length is null");
+        }
+        *out_length = 0.0;
+        const TopoDS_Shape* value = find_shape(session, edge);
+        if (value == nullptr) {
+            return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "edge was not found");
+        }
+        if (value->ShapeType() != TopAbs_EDGE) {
+            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "shape is not an edge");
+        }
+        GProp_GProps properties;
+        BRepGProp::LinearProperties(*value, properties);
+        const double length = std::abs(properties.Mass());
+        if (!std::isfinite(length) || length <= std::numeric_limits<double>::epsilon()) {
+            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "edge has zero or invalid length");
+        }
+        *out_length = length;
+        return succeed(session);
+    });
+}
+
+occt_bridge_status_t occt_bridge_shape_edge_circle_radius(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t edge,
+    int* out_is_circle,
+    double* out_radius) {
+    return guarded(session, [&] {
+        if (out_is_circle == nullptr || out_radius == nullptr) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "circle query output is null");
+        }
+        *out_is_circle = 0;
+        *out_radius = 0.0;
+        const TopoDS_Shape* value = find_shape(session, edge);
+        if (value == nullptr) {
+            return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "edge was not found");
+        }
+        if (value->ShapeType() != TopAbs_EDGE) {
+            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "shape is not an edge");
+        }
+        const BRepAdaptor_Curve curve(TopoDS::Edge(*value));
+        if (curve.GetType() == GeomAbs_Circle) {
+            *out_is_circle = 1;
+            *out_radius = curve.Circle().Radius();
+        }
+        return succeed(session);
+    });
+}
+
+occt_bridge_status_t occt_bridge_shape_edge_curvature(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t edge,
+    int* out_is_defined,
+    double* out_curvature) {
+    return guarded(session, [&] {
+        if (out_is_defined == nullptr || out_curvature == nullptr) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "curvature query output is null");
+        }
+        *out_is_defined = 0;
+        *out_curvature = 0.0;
+        const TopoDS_Shape* value = find_shape(session, edge);
+        if (value == nullptr) {
+            return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "edge was not found");
+        }
+        if (value->ShapeType() != TopAbs_EDGE) {
+            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "shape is not an edge");
+        }
+        const BRepAdaptor_Curve curve(TopoDS::Edge(*value));
+        const double first = curve.FirstParameter();
+        const double last = curve.LastParameter();
+        if (!std::isfinite(first) || !std::isfinite(last)) {
+            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "edge has no finite parameter range");
+        }
+        BRepLProp_CLProps properties(
+            curve,
+            (first + last) * 0.5,
+            2,
+            Precision::Confusion());
+        if (properties.IsTangentDefined()) {
+            const double curvature = std::abs(properties.Curvature());
+            if (!std::isfinite(curvature)) {
+                return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "edge curvature is not finite");
+            }
+            *out_is_defined = 1;
+            *out_curvature = curvature;
+        }
+        return succeed(session);
+    });
+}
+
+occt_bridge_status_t occt_bridge_shape_edge_curvature_range(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t edge,
+    size_t sample_count,
+    double* out_minimum_curvature,
+    double* out_maximum_curvature) {
+    return guarded(session, [&] {
+        if (out_minimum_curvature == nullptr || out_maximum_curvature == nullptr) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "curvature-range output is null");
+        }
+        *out_minimum_curvature = 0.0;
+        *out_maximum_curvature = 0.0;
+        if (sample_count < 2 || sample_count > 100000) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "curvature sample count must be 2..100000");
+        }
+        const TopoDS_Shape* value = find_shape(session, edge);
+        if (value == nullptr) {
+            return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "edge was not found");
+        }
+        if (value->ShapeType() != TopAbs_EDGE) {
+            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "shape is not an edge");
+        }
+        const BRepAdaptor_Curve curve(TopoDS::Edge(*value));
+        const double first = curve.FirstParameter();
+        const double last = curve.LastParameter();
+        if (!std::isfinite(first) || !std::isfinite(last)) {
+            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "edge has no finite parameter range");
+        }
+        double minimum = std::numeric_limits<double>::infinity();
+        double maximum = 0.0;
+        for (size_t index = 0; index < sample_count; ++index) {
+            const double fraction = static_cast<double>(index) / static_cast<double>(sample_count - 1);
+            BRepLProp_CLProps properties(
+                curve,
+                first + (last - first) * fraction,
+                2,
+                Precision::Confusion());
+            if (!properties.IsTangentDefined()) {
+                return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "edge curvature is undefined at a sample");
+            }
+            const double curvature = std::abs(properties.Curvature());
+            if (!std::isfinite(curvature)) {
+                return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "edge curvature is not finite");
+            }
+            minimum = std::min(minimum, curvature);
+            maximum = std::max(maximum, curvature);
+        }
+        *out_minimum_curvature = minimum;
+        *out_maximum_curvature = maximum;
+        return succeed(session);
+    });
+}
+
+namespace {
+
+struct CurvatureExtrema {
+    double minimum = std::numeric_limits<double>::infinity();
+    double minimum_lower = std::numeric_limits<double>::infinity();
+    double maximum = 0.0;
+    double maximum_upper = 0.0;
+    bool exact = true;
+
+    void attain(double curvature) {
+        minimum = std::min(minimum, curvature);
+        maximum = std::max(maximum, curvature);
+        minimum_lower = std::min(minimum_lower, curvature);
+        maximum_upper = std::max(maximum_upper, curvature);
+    }
+};
+
+/* Scalar polynomial in Bernstein form on [0, 1]; degree is size() - 1. */
+using Bernstein = std::vector<double>;
+
+class BinomialTable {
+public:
+    double operator()(size_t n, size_t k) {
+        while (rows_.size() <= n) {
+            const size_t row = rows_.size();
+            std::vector<double> values(row + 1, 1.0);
+            for (size_t index = 1; index < row; ++index) {
+                values[index] = rows_[row - 1][index - 1] + rows_[row - 1][index];
+            }
+            rows_.push_back(std::move(values));
+        }
+        return rows_[n][k];
+    }
+
+private:
+    std::vector<std::vector<double>> rows_;
+};
+
+Bernstein bernstein_derivative(const Bernstein& value) {
+    const size_t degree = value.size() - 1;
+    if (degree == 0) {
+        return Bernstein{0.0};
+    }
+    Bernstein result(degree);
+    for (size_t index = 0; index < degree; ++index) {
+        result[index] = static_cast<double>(degree) * (value[index + 1] - value[index]);
+    }
+    return result;
+}
+
+Bernstein bernstein_product(const Bernstein& left, const Bernstein& right, BinomialTable& binomial) {
+    const size_t m = left.size() - 1;
+    const size_t n = right.size() - 1;
+    Bernstein result(m + n + 1, 0.0);
+    for (size_t i = 0; i <= m; ++i) {
+        for (size_t j = 0; j <= n; ++j) {
+            result[i + j] += binomial(m, i) * binomial(n, j) * left[i] * right[j];
+        }
+    }
+    for (size_t k = 0; k <= m + n; ++k) {
+        result[k] /= binomial(m + n, k);
+    }
+    return result;
+}
+
+Bernstein bernstein_combine(const Bernstein& left, double scale, const Bernstein& right) {
+    Bernstein result(left.size());
+    for (size_t index = 0; index < left.size(); ++index) {
+        result[index] = left[index] + scale * right[index];
+    }
+    return result;
+}
+
+/* Homogeneous Bezier piece: point numerator coordinates and weight. */
+struct BezierPiece {
+    Bernstein x, y, z, w;
+    size_t depth = 0;
+};
+
+struct PieceBounds {
+    double lower = 0.0;
+    double upper = std::numeric_limits<double>::infinity();
+    double start = 0.0;
+    double end = 0.0;
+    bool start_defined = false;
+    bool end_defined = false;
+};
+
+/*
+ * For C = P / w with D = P'w - Pw', curvature is |D x D'| w^2 / |D|^3.
+ * Every factor is a Bernstein polynomial, whose coefficients bound it and
+ * whose end coefficients equal its end values.
+ */
+PieceBounds bound_piece(const BezierPiece& piece, BinomialTable& binomial) {
+    const Bernstein dw = bernstein_derivative(piece.w);
+    const Bernstein* coordinates[] = {&piece.x, &piece.y, &piece.z};
+    Bernstein d[3];
+    Bernstein dd[3];
+    for (int axis = 0; axis < 3; ++axis) {
+        const Bernstein& p = *coordinates[axis];
+        d[axis] = bernstein_combine(
+            bernstein_product(bernstein_derivative(p), piece.w, binomial),
+            -1.0,
+            bernstein_product(p, dw, binomial));
+        dd[axis] = bernstein_derivative(d[axis]);
+    }
+    Bernstein cross[3];
+    for (int axis = 0; axis < 3; ++axis) {
+        const int a = (axis + 1) % 3;
+        const int b = (axis + 2) % 3;
+        cross[axis] = bernstein_combine(
+            bernstein_product(d[a], dd[b], binomial),
+            -1.0,
+            bernstein_product(d[b], dd[a], binomial));
+    }
+    Bernstein numerator = bernstein_product(cross[0], cross[0], binomial);
+    Bernstein speed = bernstein_product(d[0], d[0], binomial);
+    for (int axis = 1; axis < 3; ++axis) {
+        numerator = bernstein_combine(numerator, 1.0, bernstein_product(cross[axis], cross[axis], binomial));
+        speed = bernstein_combine(speed, 1.0, bernstein_product(d[axis], d[axis], binomial));
+    }
+    const Bernstein weight_squared = bernstein_product(piece.w, piece.w, binomial);
+    /* Squared curvature is ratio / cube: both have degree 12n - 6. */
+    const Bernstein ratio = bernstein_product(
+        numerator,
+        bernstein_product(weight_squared, weight_squared, binomial),
+        binomial);
+    const Bernstein cube = bernstein_product(bernstein_product(speed, speed, binomial), speed, binomial);
+
+    PieceBounds bounds;
+    const auto curvature_value = [&](size_t index) {
+        return std::sqrt(std::max(ratio[index], 0.0) / cube[index]);
+    };
+    const double floor = std::numeric_limits<double>::min();
+    const size_t last = cube.size() - 1;
+    bounds.start_defined = cube.front() > floor;
+    bounds.end_defined = cube.back() > floor;
+    if (bounds.start_defined) {
+        bounds.start = curvature_value(0);
+    }
+    if (bounds.end_defined) {
+        bounds.end = curvature_value(last);
+    }
+    /*
+     * With positive denominator coefficients, a Bernstein ratio is a convex
+     * combination of its coefficient ratios, which converge quadratically.
+     */
+    if (ratio.size() != cube.size()
+        || std::any_of(cube.begin(), cube.end(), [&](double value) { return !(value > floor); })) {
+        return bounds;
+    }
+    bounds.lower = std::numeric_limits<double>::infinity();
+    bounds.upper = 0.0;
+    for (size_t index = 0; index <= last; ++index) {
+        const double value = curvature_value(index);
+        bounds.lower = std::min(bounds.lower, value);
+        bounds.upper = std::max(bounds.upper, value);
+    }
+    return bounds;
+}
+
+void split_bernstein(const Bernstein& value, Bernstein& left, Bernstein& right) {
+    Bernstein work = value;
+    const size_t count = value.size();
+    left.assign(count, 0.0);
+    right.assign(count, 0.0);
+    for (size_t level = 0; level < count; ++level) {
+        left[level] = work[0];
+        right[count - 1 - level] = work[count - 1 - level];
+        for (size_t index = 0; index + 1 < count - level; ++index) {
+            work[index] = 0.5 * (work[index] + work[index + 1]);
+        }
+    }
+}
+
+std::pair<BezierPiece, BezierPiece> split_piece(const BezierPiece& piece) {
+    std::pair<BezierPiece, BezierPiece> halves;
+    split_bernstein(piece.x, halves.first.x, halves.second.x);
+    split_bernstein(piece.y, halves.first.y, halves.second.y);
+    split_bernstein(piece.z, halves.first.z, halves.second.z);
+    split_bernstein(piece.w, halves.first.w, halves.second.w);
+    halves.first.depth = halves.second.depth = piece.depth + 1;
+    return halves;
+}
+
+BezierPiece homogeneous_piece(const Handle(Geom_BezierCurve)& curve) {
+    const int count = curve->NbPoles();
+    TColgp_Array1OfPnt poles(1, count);
+    curve->Poles(poles);
+    BezierPiece piece;
+    for (int index = 1; index <= count; ++index) {
+        const double weight = curve->IsRational() ? curve->Weight(index) : 1.0;
+        piece.x.push_back(poles(index).X() * weight);
+        piece.y.push_back(poles(index).Y() * weight);
+        piece.z.push_back(poles(index).Z() * weight);
+        piece.w.push_back(weight);
+    }
+    return piece;
+}
+
+bool bound_polynomial_curvature(
+    std::vector<BezierPiece> initial,
+    double relative_tolerance,
+    CurvatureExtrema& extrema,
+    std::string& message) {
+    constexpr size_t max_depth = 60;
+    constexpr size_t max_splits = 200000;
+    /* Radius 1e10 model units: below this, curvature is numerically straight. */
+    constexpr double absolute_tolerance = 1e-10;
+    BinomialTable binomial;
+    struct Entry {
+        double excess;
+        BezierPiece piece;
+        PieceBounds bounds;
+        bool operator<(const Entry& other) const { return excess < other.excess; }
+    };
+    extrema = CurvatureExtrema{};
+    extrema.exact = false;
+    std::vector<Entry> pending;
+    const auto record = [&](const PieceBounds& bounds) -> bool {
+        if (!bounds.start_defined || !bounds.end_defined) {
+            return false;
+        }
+        extrema.attain(bounds.start);
+        extrema.attain(bounds.end);
+        return true;
+    };
+    for (BezierPiece& piece : initial) {
+        const PieceBounds bounds = bound_piece(piece, binomial);
+        if (!record(bounds)) {
+            message = "edge curvature is undefined at a Bezier segment end";
+            return false;
+        }
+        pending.push_back(Entry{0.0, std::move(piece), bounds});
+    }
+    const auto tolerance = [&] {
+        return std::max(relative_tolerance * extrema.maximum, absolute_tolerance);
+    };
+    const auto excess = [&](const PieceBounds& bounds) {
+        return std::max(bounds.upper - extrema.maximum, extrema.minimum - bounds.lower);
+    };
+    std::priority_queue<Entry> queue;
+    for (Entry& entry : pending) {
+        entry.excess = excess(entry.bounds);
+        queue.push(std::move(entry));
+    }
+    size_t splits = 0;
+    while (!queue.empty()) {
+        Entry top = queue.top();
+        const double current = excess(top.bounds);
+        if (current < top.excess) {
+            queue.pop();
+            top.excess = current;
+            queue.push(std::move(top));
+            continue;
+        }
+        if (current <= tolerance()) {
+            break;
+        }
+        queue.pop();
+        if (top.piece.depth >= max_depth || ++splits > max_splits) {
+            message = std::isfinite(top.bounds.upper)
+                ? "edge curvature bounds did not converge"
+                : "edge curvature is unbounded or undefined on the edge";
+            return false;
+        }
+        auto halves = split_piece(top.piece);
+        for (BezierPiece* half : {&halves.first, &halves.second}) {
+            const PieceBounds bounds = bound_piece(*half, binomial);
+            if (!record(bounds)) {
+                message = "edge curvature is undefined at an interior point";
+                return false;
+            }
+            queue.push(Entry{excess(bounds), std::move(*half), bounds});
+        }
+    }
+    while (!queue.empty()) {
+        const PieceBounds& bounds = queue.top().bounds;
+        extrema.minimum_lower = std::min(extrema.minimum_lower, bounds.lower);
+        extrema.maximum_upper = std::max(extrema.maximum_upper, bounds.upper);
+        queue.pop();
+    }
+    return true;
+}
+
+/* Includes the ends and every multiple of step strictly inside the range. */
+std::vector<double> critical_parameters(double first, double last, double step) {
+    std::vector<double> parameters{first, last};
+    for (double k = std::ceil(first / step); k * step < last; k += 1.0) {
+        if (k * step > first) {
+            parameters.push_back(k * step);
+        }
+    }
+    return parameters;
+}
+
+}  // namespace
+
+occt_bridge_status_t occt_bridge_shape_edge_curvature_extrema(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t edge,
+    double relative_tolerance,
+    double* out_minimum,
+    double* out_minimum_lower_bound,
+    double* out_maximum,
+    double* out_maximum_upper_bound,
+    int* out_is_exact) {
+    return guarded(session, [&] {
+        if (out_minimum == nullptr || out_minimum_lower_bound == nullptr || out_maximum == nullptr
+            || out_maximum_upper_bound == nullptr || out_is_exact == nullptr) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "curvature-extrema output is null");
+        }
+        *out_minimum = *out_minimum_lower_bound = *out_maximum = *out_maximum_upper_bound = 0.0;
+        *out_is_exact = 0;
+        if (!(relative_tolerance > 0.0 && relative_tolerance <= 1.0)) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "curvature relative tolerance must be in (0, 1]");
+        }
+        const TopoDS_Shape* value = find_shape(session, edge);
+        if (value == nullptr) {
+            return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "edge was not found");
+        }
+        if (value->ShapeType() != TopAbs_EDGE) {
+            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "shape is not an edge");
+        }
+        const BRepAdaptor_Curve curve(TopoDS::Edge(*value));
+        const double first = curve.FirstParameter();
+        const double last = curve.LastParameter();
+        if (!std::isfinite(first) || !std::isfinite(last) || !(first < last)) {
+            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "edge has no finite parameter range");
+        }
+
+        CurvatureExtrema extrema;
+        switch (curve.GetType()) {
+        case GeomAbs_Line:
+            extrema.attain(0.0);
+            break;
+        case GeomAbs_Circle:
+            extrema.attain(1.0 / curve.Circle().Radius());
+            break;
+        case GeomAbs_Ellipse: {
+            const double a = curve.Ellipse().MajorRadius();
+            const double b = curve.Ellipse().MinorRadius();
+            for (const double t : critical_parameters(first, last, M_PI_2)) {
+                const double s = std::sin(t);
+                const double c = std::cos(t);
+                extrema.attain(a * b / std::pow(a * a * s * s + b * b * c * c, 1.5));
+            }
+            break;
+        }
+        case GeomAbs_Parabola: {
+            const double focal = curve.Parabola().Focal();
+            std::vector<double> parameters{first, last};
+            if (first < 0.0 && last > 0.0) {
+                parameters.push_back(0.0);
+            }
+            for (const double u : parameters) {
+                extrema.attain((0.5 / focal) / std::pow(1.0 + u * u / (4.0 * focal * focal), 1.5));
+            }
+            break;
+        }
+        case GeomAbs_Hyperbola: {
+            const double a = curve.Hyperbola().MajorRadius();
+            const double b = curve.Hyperbola().MinorRadius();
+            std::vector<double> parameters{first, last};
+            if (first < 0.0 && last > 0.0) {
+                parameters.push_back(0.0);
+            }
+            for (const double u : parameters) {
+                const double sh = std::sinh(u);
+                const double ch = std::cosh(u);
+                extrema.attain(a * b / std::pow(a * a * sh * sh + b * b * ch * ch, 1.5));
+            }
+            break;
+        }
+        case GeomAbs_BezierCurve:
+        case GeomAbs_BSplineCurve: {
+            std::vector<BezierPiece> pieces;
+            if (curve.GetType() == GeomAbs_BezierCurve) {
+                Handle(Geom_BezierCurve) bezier = Handle(Geom_BezierCurve)::DownCast(curve.Bezier()->Copy());
+                bezier->Segment(first, last);
+                pieces.push_back(homogeneous_piece(bezier));
+            } else {
+                Handle(Geom_BSplineCurve) spline = Handle(Geom_BSplineCurve)::DownCast(curve.BSpline()->Copy());
+                spline->Segment(first, last);
+                GeomConvert_BSplineCurveToBezierCurve converter(spline);
+                for (int index = 1; index <= converter.NbArcs(); ++index) {
+                    pieces.push_back(homogeneous_piece(converter.Arc(index)));
+                }
+            }
+            std::string message;
+            if (!bound_polynomial_curvature(std::move(pieces), relative_tolerance, extrema, message)) {
+                return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, message.c_str());
+            }
+            break;
+        }
+        default:
+            return fail(
+                session,
+                OCCT_BRIDGE_INVALID_GEOMETRY,
+                "curvature extrema require a line, conic, Bezier, or B-spline edge");
+        }
+        if (!std::isfinite(extrema.minimum_lower) || !std::isfinite(extrema.maximum_upper)) {
+            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "edge curvature is not finite");
+        }
+        *out_minimum = extrema.minimum;
+        *out_minimum_lower_bound = extrema.minimum_lower;
+        *out_maximum = extrema.maximum;
+        *out_maximum_upper_bound = extrema.maximum_upper;
+        *out_is_exact = extrema.exact ? 1 : 0;
+        return succeed(session);
+    });
+}
+
+occt_bridge_status_t occt_bridge_shape_is_adjacent(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t parent,
+    occt_bridge_shape_id_t first,
+    occt_bridge_shape_id_t second,
+    int* out_is_adjacent) {
+    return guarded(session, [&] {
+        if (out_is_adjacent == nullptr) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_is_adjacent is null");
+        }
+        *out_is_adjacent = 0;
+        const TopoDS_Shape* parent_shape = find_shape(session, parent);
+        const TopoDS_Shape* first_shape = find_shape(session, first);
+        const TopoDS_Shape* second_shape = find_shape(session, second);
+        if (parent_shape == nullptr || first_shape == nullptr || second_shape == nullptr) {
+            return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "adjacency shape was not found");
+        }
+        if (!belongs_to(*parent_shape, *first_shape) || !belongs_to(*parent_shape, *second_shape)) {
+            return fail(
+                session,
+                OCCT_BRIDGE_INVALID_ARGUMENT,
+                "adjacency shapes must belong to the parent");
+        }
+        const TopAbs_ShapeEnum first_type = first_shape->ShapeType();
+        const TopAbs_ShapeEnum second_type = second_shape->ShapeType();
+        bool adjacent = false;
+        if (first_shape->IsSame(*second_shape)) {
+            adjacent = false;
+        } else if (first_type == TopAbs_FACE && second_type == TopAbs_EDGE) {
+            adjacent = is_descendant(*first_shape, *second_shape, TopAbs_EDGE);
+        } else if (first_type == TopAbs_EDGE && second_type == TopAbs_FACE) {
+            adjacent = is_descendant(*second_shape, *first_shape, TopAbs_EDGE);
+        } else if (first_type == TopAbs_FACE && second_type == TopAbs_FACE) {
+            adjacent = shares_descendant(*first_shape, *second_shape, TopAbs_EDGE);
+        } else if (first_type == TopAbs_EDGE && second_type == TopAbs_EDGE) {
+            adjacent = shares_descendant(*first_shape, *second_shape, TopAbs_VERTEX);
+        } else {
+            return fail(
+                session,
+                OCCT_BRIDGE_INVALID_ARGUMENT,
+                "unsupported adjacency topology pair");
+        }
+        *out_is_adjacent = adjacent ? 1 : 0;
+        return succeed(session);
+    });
+}
+
+occt_bridge_status_t occt_bridge_shape_is_same(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t first,
+    occt_bridge_shape_id_t second,
+    int* out_is_same) {
+    return guarded(session, [&] {
+        if (out_is_same == nullptr) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_is_same is null");
+        }
+        *out_is_same = 0;
+        const TopoDS_Shape* first_shape = find_shape(session, first);
+        const TopoDS_Shape* second_shape = find_shape(session, second);
+        if (first_shape == nullptr || second_shape == nullptr) {
+            return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "identity shape was not found");
+        }
+        *out_is_same = first_shape->IsSame(*second_shape) ? 1 : 0;
+        return succeed(session);
+    });
+}
+
+occt_bridge_status_t occt_bridge_shape_faces_are_tangent(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t parent,
+    occt_bridge_shape_id_t first_face,
+    occt_bridge_shape_id_t second_face,
+    int* out_are_tangent) {
+    return guarded(session, [&] {
+        if (out_are_tangent == nullptr) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_are_tangent is null");
+        }
+        *out_are_tangent = 0;
+        const TopoDS_Shape* parent_shape = find_shape(session, parent);
+        const TopoDS_Shape* first_shape = find_shape(session, first_face);
+        const TopoDS_Shape* second_shape = find_shape(session, second_face);
+        if (parent_shape == nullptr || first_shape == nullptr || second_shape == nullptr) {
+            return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "tangency shape was not found");
+        }
+        if (first_shape->ShapeType() != TopAbs_FACE || second_shape->ShapeType() != TopAbs_FACE) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "tangency requires two faces");
+        }
+        if (!belongs_to(*parent_shape, *first_shape) || !belongs_to(*parent_shape, *second_shape)) {
+            return fail(
+                session,
+                OCCT_BRIDGE_INVALID_ARGUMENT,
+                "tangency faces must belong to the parent");
+        }
+        if (first_shape->IsSame(*second_shape)) {
+            return succeed(session);
+        }
+        const TopoDS_Face first = TopoDS::Face(*first_shape);
+        const TopoDS_Face second = TopoDS::Face(*second_shape);
+        for (TopExp_Explorer first_edges(first, TopAbs_EDGE); first_edges.More(); first_edges.Next()) {
+            const TopoDS_Edge edge = TopoDS::Edge(first_edges.Current());
+            for (TopExp_Explorer second_edges(second, TopAbs_EDGE);
+                 second_edges.More();
+                 second_edges.Next()) {
+                if (!edge.IsSame(second_edges.Current())) {
+                    continue;
+                }
+                if (BRep_Tool::HasContinuity(edge, first, second)
+                    && BRep_Tool::Continuity(edge, first, second) >= GeomAbs_G1) {
+                    *out_are_tangent = 1;
+                    return succeed(session);
+                }
+            }
+        }
+        return succeed(session);
+    });
+}
+
+occt_bridge_status_t occt_bridge_shape_history_count(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t result,
+    occt_bridge_shape_id_t source,
+    occt_bridge_history_relation_t relation,
+    size_t* out_count) {
+    return guarded(session, [&] {
+        if (out_count == nullptr) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_count is null");
+        }
+        *out_count = 0;
+        const TopoDS_Shape* result_shape = find_shape(session, result);
+        const TopoDS_Shape* source_shape = find_shape(session, source);
+        if (result_shape == nullptr || source_shape == nullptr) {
+            return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "history shape was not found");
+        }
+        static_cast<void>(result_shape);
+        const auto result_history = session->histories.find(result);
+        if (result_history == session->histories.end()) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "result shape has no operation history");
+        }
+        const occt_bridge_history_entry* entry =
+            find_history_entry(result_history->second, *source_shape);
+        if (entry == nullptr) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "source is not an input to the result operation");
+        }
+        const std::vector<TopoDS_Shape>* related = history_relation_shapes(*entry, relation);
+        if (related == nullptr) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "unknown history relation");
+        }
+        *out_count = related->size();
+        return succeed(session);
+    });
+}
+
+occt_bridge_status_t occt_bridge_shape_history_at(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t result,
+    occt_bridge_shape_id_t source,
+    occt_bridge_history_relation_t relation,
+    size_t index,
+    occt_bridge_shape_id_t* out_shape) {
+    return guarded(session, [&] {
+        if (out_shape == nullptr) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_shape is null");
+        }
+        *out_shape = OCCT_BRIDGE_INVALID_SHAPE_ID;
+        const TopoDS_Shape* result_shape = find_shape(session, result);
+        const TopoDS_Shape* source_shape = find_shape(session, source);
+        if (result_shape == nullptr || source_shape == nullptr) {
+            return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "history shape was not found");
+        }
+        static_cast<void>(result_shape);
+        const auto result_history = session->histories.find(result);
+        if (result_history == session->histories.end()) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "result shape has no operation history");
+        }
+        const occt_bridge_history_entry* entry =
+            find_history_entry(result_history->second, *source_shape);
+        if (entry == nullptr) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "source is not an input to the result operation");
+        }
+        const std::vector<TopoDS_Shape>* related = history_relation_shapes(*entry, relation);
+        if (related == nullptr) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "unknown history relation");
+        }
+        if (index >= related->size()) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "history index is out of range");
+        }
+        return store_shape(session, (*related)[index], out_shape);
+    });
+}
+
+occt_bridge_status_t occt_bridge_shape_history_is_deleted(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t result,
+    occt_bridge_shape_id_t source,
+    int* out_is_deleted) {
+    return guarded(session, [&] {
+        if (out_is_deleted == nullptr) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_is_deleted is null");
+        }
+        *out_is_deleted = 0;
+        const TopoDS_Shape* result_shape = find_shape(session, result);
+        const TopoDS_Shape* source_shape = find_shape(session, source);
+        if (result_shape == nullptr || source_shape == nullptr) {
+            return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "history shape was not found");
+        }
+        static_cast<void>(result_shape);
+        const auto result_history = session->histories.find(result);
+        if (result_history == session->histories.end()) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "result shape has no operation history");
+        }
+        const occt_bridge_history_entry* entry =
+            find_history_entry(result_history->second, *source_shape);
+        if (entry == nullptr) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "source is not an input to the result operation");
+        }
+        *out_is_deleted = entry->deleted ? 1 : 0;
+        return succeed(session);
+    });
+}
+
+occt_bridge_status_t occt_bridge_shape_is_valid(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t shape,
+    int* out_is_valid) {
+    return guarded(session, [&] {
+        if (out_is_valid == nullptr) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_is_valid is null");
+        }
+        const TopoDS_Shape* value = find_shape(session, shape);
+        if (value == nullptr) {
+            return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "shape was not found");
+        }
+        BRepCheck_Analyzer analyzer(*value, Standard_True);
+        *out_is_valid = analyzer.IsValid() ? 1 : 0;
+        return succeed(session);
+    });
+}
+
+occt_bridge_status_t occt_bridge_shape_remove(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t shape) {
+    return guarded(session, [&] {
+        if (session->shapes.erase(shape) == 0) {
+            return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "shape was not found");
+        }
+        session->histories.erase(shape);
+        return succeed(session);
+    });
+}
+
+occt_bridge_status_t occt_bridge_brep_save(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t shape,
+    const char* path) {
+    return guarded(session, [&] {
+        if (path == nullptr || path[0] == '\0') {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "path is empty");
+        }
+        const TopoDS_Shape* value = find_shape(session, shape);
+        if (value == nullptr) {
+            return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "shape was not found");
+        }
+        if (!BRepTools::Write(*value, path)) {
+            return fail(session, OCCT_BRIDGE_IO_ERROR, "failed to write BREP file");
+        }
+        return succeed(session);
+    });
+}
+
+occt_bridge_status_t occt_bridge_brep_load(
+    occt_bridge_session_t* session,
+    const char* path,
+    occt_bridge_shape_id_t* out_shape) {
+    return guarded(session, [&] {
+        if (out_shape == nullptr) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_shape is null");
+        }
+        *out_shape = OCCT_BRIDGE_INVALID_SHAPE_ID;
+        if (path == nullptr || path[0] == '\0') {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "path is empty");
+        }
+        TopoDS_Shape shape;
+        BRep_Builder builder;
+        if (!BRepTools::Read(shape, path, builder) || shape.IsNull()) {
+            return fail(session, OCCT_BRIDGE_IO_ERROR, "failed to read BREP file");
+        }
+        return store_shape(session, shape, out_shape);
+    });
+}
+
+}  // extern "C"

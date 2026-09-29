@@ -1,0 +1,6 @@
+/build/
+/rust/occt-bridge/target/
+/rust/occt-recipes/target/
+/rust/occt-parametric/target/
+*.brep
+!/tests/fixtures/*.brep
