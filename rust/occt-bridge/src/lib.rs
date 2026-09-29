@@ -1670,6 +1670,80 @@ mod tests {
     }
 
     #[test]
+    fn curvature_extrema_are_exact_for_parabola_and_hyperbola_edges() {
+        let session = Session::new().unwrap();
+        let assert_exact = |extrema: CurvatureExtrema, minimum: f64, maximum: f64| {
+            assert!(extrema.is_exact, "{extrema:?}");
+            assert_eq!(extrema.minimum, extrema.minimum_lower_bound);
+            assert_eq!(extrema.maximum, extrema.maximum_upper_bound);
+            assert!((extrema.minimum - minimum).abs() < 1e-12, "{extrema:?}");
+            assert!((extrema.maximum - maximum).abs() < 1e-12, "{extrema:?}");
+        };
+
+        // Focal 0.5 on u in [-1, 2]: the vertex (u = 0) is interior and the
+        // flattest point is the far end u = 2.
+        let parabola = session
+            .edge_curvature_extrema(&curvature_fixture_edge(&session, 5), 1e-6)
+            .unwrap();
+        assert_exact(parabola, 1.0 / 5.0_f64.powf(1.5), 1.0);
+
+        // a = 3, b = 2 on u in [-0.5, 1]: vertex curvature a / b^2, flattest at u = 1.
+        let hyperbola = session
+            .edge_curvature_extrema(&curvature_fixture_edge(&session, 6), 1e-6)
+            .unwrap();
+        let curvature = |u: f64| 6.0 / (9.0 * u.sinh().powi(2) + 4.0 * u.cosh().powi(2)).powf(1.5);
+        assert_exact(hyperbola, curvature(1.0), 0.75);
+    }
+
+    #[test]
+    fn box_face_and_edge_adjacency_follows_shared_topology() {
+        let session = Session::new().unwrap();
+        let box_shape = session
+            .create_box(Vec3::new(0.0, 0.0, 0.0), Vec3::new(1.0, 2.0, 3.0))
+            .unwrap();
+        let subshapes = |kind| {
+            (0..session.subshape_count(&box_shape, kind).unwrap())
+                .map(|index| session.subshape(&box_shape, kind, index).unwrap())
+                .collect::<Vec<_>>()
+        };
+        let adjacent_pairs = |shapes: &[Shape<'_>]| {
+            let mut count = 0;
+            for (index, first) in shapes.iter().enumerate() {
+                assert!(!session.is_adjacent(&box_shape, first, first).unwrap());
+                for second in &shapes[index + 1..] {
+                    let forward = session.is_adjacent(&box_shape, first, second).unwrap();
+                    assert_eq!(
+                        forward,
+                        session.is_adjacent(&box_shape, second, first).unwrap()
+                    );
+                    count += usize::from(forward);
+                }
+            }
+            count
+        };
+
+        // Each of the 12 edges joins exactly two faces; only the 3 opposite
+        // face pairs share nothing.
+        let faces = subshapes(ShapeType::Face);
+        assert_eq!(faces.len(), 6);
+        assert_eq!(adjacent_pairs(&faces), 12);
+
+        // Three edges meet at each of the 8 corners: 8 * C(3, 2) pairs.
+        let edges = subshapes(ShapeType::Edge);
+        assert_eq!(edges.len(), 12);
+        assert_eq!(adjacent_pairs(&edges), 24);
+
+        let vertex = session.subshape(&box_shape, ShapeType::Vertex, 0).unwrap();
+        assert_eq!(
+            session
+                .is_adjacent(&box_shape, &faces[0], &vertex)
+                .unwrap_err()
+                .status,
+            1
+        );
+    }
+
+    #[test]
     fn constructs_and_inspects_shapes() {
         let session = Session::new().unwrap();
         let block = session

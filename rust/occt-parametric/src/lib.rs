@@ -5538,12 +5538,14 @@ mod tests {
         assert!(error.message.contains("edge 2"), "{error}");
         assert!(error.message.contains("tighten relative_tolerance"));
         assert_eq!(session.shape_count().unwrap(), before);
-        // Rational circle, spline, and ellipse arc; not the parabola or line.
+        // Rational circle, spline, ellipse arc, and the conic parabola
+        // (radius 1..11.2) and hyperbola (radius 1.33..17.1); not the Bezier
+        // parabola (radius 0.5 at its vertex) or the line.
         let resolved = select_edges_by_bounded_curvature_radius(
             &session, &compound, boundary, 100.0, 1e-6, true,
         )
         .unwrap();
-        assert_eq!(resolved.len(), 3);
+        assert_eq!(resolved.len(), 5);
         cleanup_shapes(&session, resolved);
         assert_eq!(session.shape_count().unwrap(), before);
 

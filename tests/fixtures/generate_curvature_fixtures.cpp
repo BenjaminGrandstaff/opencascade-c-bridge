@@ -8,12 +8,17 @@
 //   2  non-rational cubic B-spline with three spans: no closed form
 //   3  ellipse a = 4, b = 2 trimmed to t in [0.3, 2.0]: minimum 0.125 at t = pi / 2
 //   4  collinear cubic Bezier: curvature 0
+//   5  parabola, focal 0.5, u in [-1, 2]: curvature 1 / (1 + u^2)^1.5, maximum 1 at the vertex
+//   6  hyperbola a = 3, b = 2, u in [-0.5, 1]: curvature 6 / (9 sinh^2 u + 4 cosh^2 u)^1.5,
+//      maximum 0.75 at the vertex
 #include <BRepBuilderAPI_MakeEdge.hxx>
 #include <BRepTools.hxx>
 #include <BRep_Builder.hxx>
 #include <Geom_BSplineCurve.hxx>
 #include <Geom_BezierCurve.hxx>
 #include <Geom_Ellipse.hxx>
+#include <Geom_Hyperbola.hxx>
+#include <Geom_Parabola.hxx>
 #include <TColStd_Array1OfInteger.hxx>
 #include <TColStd_Array1OfReal.hxx>
 #include <TColgp_Array1OfPnt.hxx>
@@ -76,6 +81,13 @@ int main() {
         line(index) = gp_Pnt(index - 1, 0, 0);
     }
     builder.Add(compound, BRepBuilderAPI_MakeEdge(new Geom_BezierCurve(line)).Edge());
+
+    builder.Add(
+        compound,
+        BRepBuilderAPI_MakeEdge(new Geom_Parabola(gp_Ax2(), 0.5), -1.0, 2.0).Edge());
+    builder.Add(
+        compound,
+        BRepBuilderAPI_MakeEdge(new Geom_Hyperbola(gp_Ax2(), 3.0, 2.0), -0.5, 1.0).Edge());
 
     return BRepTools::Write(compound, "curvature_edges.brep") ? 0 : 1;
 }
