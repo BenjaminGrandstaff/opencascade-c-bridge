@@ -195,6 +195,12 @@ struct NormalizedPlacement {
     rotation: Option<(Vec3, Vec3, f64)>,
 }
 
+impl NormalizedPlacement {
+    fn translation_is_zero(&self) -> bool {
+        self.translation.x == 0.0 && self.translation.y == 0.0 && self.translation.z == 0.0
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ParameterValue {
@@ -880,15 +886,7 @@ impl ModelDocument {
         }
         validate_definition(&self.family)?;
         resolve_parameters(&self.family, &HashMap::new())?;
-        let mut node_ids = HashSet::new();
-        for node in &self.instances {
-            if node.id().is_empty() || !node_ids.insert(node.id()) {
-                return Err(ModelError::new(
-                    "document instance ids must be nonempty and unique",
-                ));
-            }
-            node.placement().normalized()?;
-        }
+        let node_ids = self.validate_instance_ids()?;
         let graph = InstanceGraph {
             definition: &self.family,
             nodes: self
@@ -900,22 +898,7 @@ impl ModelDocument {
             patterns: self.patterns.clone(),
             frames: self.frame_map(),
         };
-        let mut frame_ids = HashSet::new();
-        for frame in &self.frames {
-            if frame.id.is_empty() || !frame_ids.insert(frame.id.as_str()) {
-                return Err(ModelError::new(
-                    "document frame ids must be nonempty and unique",
-                ));
-            }
-        }
-        for frame in &self.frames {
-            graph.frame_chain(Some(&frame.id))?;
-        }
-        for node in &self.instances {
-            graph.frame_chain(node.frame()).map_err(|error| {
-                ModelError::new(format!("instance '{}': {}", node.id(), error.message))
-            })?;
-        }
+        self.validate_frames(&graph)?;
         for node in &self.instances {
             let resolved = graph.resolve(node.id())?;
             resolve_parameters(&self.family, &resolved.overrides)?;
@@ -928,88 +911,139 @@ impl ModelDocument {
                     "document pattern ids must be nonempty and unique",
                 ));
             }
-            if !node_ids.contains(pattern.source.as_str()) {
-                return Err(ModelError::new(format!(
-                    "pattern '{}' references unknown source '{}'",
-                    pattern.id, pattern.source
-                )));
-            }
-            if pattern.members.is_empty() {
-                return Err(ModelError::new(format!(
-                    "pattern '{}' has no members",
-                    pattern.id
-                )));
-            }
-            pattern.rule.validate().map_err(|error| {
-                ModelError::new(format!("pattern '{}': {}", pattern.id, error.message))
-            })?;
-            graph
-                .frame_chain(pattern.frame.as_deref())
-                .map_err(|error| {
-                    ModelError::new(format!("pattern '{}': {}", pattern.id, error.message))
-                })?;
-            for member in &pattern.members {
-                if !node_ids.contains(member.as_str()) {
-                    return Err(ModelError::new(format!(
-                        "pattern '{}' references unknown member '{member}'",
-                        pattern.id
-                    )));
-                }
-                if !patterned_members.insert(member.as_str()) {
-                    return Err(ModelError::new(format!(
-                        "instance '{member}' belongs to more than one pattern"
-                    )));
-                }
-                match graph.node(member) {
-                    Some(node @ InstanceNode::Clone { source, .. })
-                        if source == &pattern.source
-                            && node.frame() == pattern.frame.as_deref() => {}
-                    _ => {
-                        return Err(ModelError::new(format!(
-                            "pattern '{}' member '{member}' is not linked to source '{}' in the pattern frame",
-                            pattern.id, pattern.source
-                        )));
-                    }
-                }
-            }
+            validate_pattern(pattern, &graph, &node_ids, &mut patterned_members)?;
         }
         let mut recorded_instances = HashSet::new();
         for record in &self.generation_records {
-            if !node_ids.contains(record.instance_id.as_str()) {
-                return Err(ModelError::new(format!(
-                    "generation record references unknown instance '{}'",
-                    record.instance_id
-                )));
-            }
             if !recorded_instances.insert(record.instance_id.as_str()) {
                 return Err(ModelError::new(format!(
                     "duplicate generation record for instance '{}'",
                     record.instance_id
                 )));
             }
-            if record
-                .accepted_revision
-                .is_some_and(|revision| revision > record.attempted_revision)
-            {
-                return Err(ModelError::new(format!(
-                    "generation record for '{}' has an invalid accepted revision",
-                    record.instance_id
-                )));
-            }
-            let has_accepted = record.accepted_revision.is_some();
-            let state_is_accepted = matches!(
-                record.state,
-                RegenerationState::Current | RegenerationState::Frozen | RegenerationState::Stale
-            );
-            if has_accepted != state_is_accepted {
-                return Err(ModelError::new(format!(
-                    "generation record for '{}' has an inconsistent state",
-                    record.instance_id
-                )));
-            }
+            validate_generation_record(record, &node_ids)?;
         }
         Ok(())
     }
+
+    fn validate_instance_ids(&self) -> Result<HashSet<&str>, ModelError> {
+        let mut node_ids = HashSet::new();
+        for node in &self.instances {
+            if node.id().is_empty() || !node_ids.insert(node.id()) {
+                return Err(ModelError::new(
+                    "document instance ids must be nonempty and unique",
+                ));
+            }
+            node.placement().normalized()?;
+        }
+        Ok(node_ids)
+    }
+
+    fn validate_frames(&self, graph: &InstanceGraph<'_>) -> Result<(), ModelError> {
+        let mut frame_ids = HashSet::new();
+        if self
+            .frames
+            .iter()
+            .any(|frame| frame.id.is_empty() || !frame_ids.insert(frame.id.as_str()))
+        {
+            return Err(ModelError::new(
+                "document frame ids must be nonempty and unique",
+            ));
+        }
+        for frame in &self.frames {
+            graph.frame_chain(Some(&frame.id))?;
+        }
+        for node in &self.instances {
+            graph.frame_chain(node.frame()).map_err(|error| {
+                ModelError::new(format!("instance '{}': {}", node.id(), error.message))
+            })?;
+        }
+        Ok(())
+    }
+}
+
+fn validate_pattern<'document>(
+    pattern: &'document Pattern,
+    graph: &InstanceGraph<'_>,
+    node_ids: &HashSet<&str>,
+    patterned_members: &mut HashSet<&'document str>,
+) -> Result<(), ModelError> {
+    let context =
+        |error: ModelError| ModelError::new(format!("pattern '{}': {}", pattern.id, error.message));
+    if !node_ids.contains(pattern.source.as_str()) {
+        return Err(ModelError::new(format!(
+            "pattern '{}' references unknown source '{}'",
+            pattern.id, pattern.source
+        )));
+    }
+    if pattern.members.is_empty() {
+        return Err(ModelError::new(format!(
+            "pattern '{}' has no members",
+            pattern.id
+        )));
+    }
+    pattern.rule.validate().map_err(context)?;
+    graph
+        .frame_chain(pattern.frame.as_deref())
+        .map_err(context)?;
+    for member in &pattern.members {
+        if !node_ids.contains(member.as_str()) {
+            return Err(ModelError::new(format!(
+                "pattern '{}' references unknown member '{member}'",
+                pattern.id
+            )));
+        }
+        if !patterned_members.insert(member.as_str()) {
+            return Err(ModelError::new(format!(
+                "instance '{member}' belongs to more than one pattern"
+            )));
+        }
+        let linked = matches!(
+            graph.node(member),
+            Some(node @ InstanceNode::Clone { source, .. })
+                if source == &pattern.source && node.frame() == pattern.frame.as_deref()
+        );
+        if !linked {
+            return Err(ModelError::new(format!(
+                "pattern '{}' member '{member}' is not linked to source '{}' in the pattern frame",
+                pattern.id, pattern.source
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn validate_generation_record(
+    record: &GenerationRecord,
+    node_ids: &HashSet<&str>,
+) -> Result<(), ModelError> {
+    if !node_ids.contains(record.instance_id.as_str()) {
+        return Err(ModelError::new(format!(
+            "generation record references unknown instance '{}'",
+            record.instance_id
+        )));
+    }
+    if record
+        .accepted_revision
+        .is_some_and(|revision| revision > record.attempted_revision)
+    {
+        return Err(ModelError::new(format!(
+            "generation record for '{}' has an invalid accepted revision",
+            record.instance_id
+        )));
+    }
+    let has_accepted = record.accepted_revision.is_some();
+    let state_is_accepted = matches!(
+        record.state,
+        RegenerationState::Current | RegenerationState::Frozen | RegenerationState::Stale
+    );
+    if has_accepted != state_is_accepted {
+        return Err(ModelError::new(format!(
+            "generation record for '{}' has an inconsistent state",
+            record.instance_id
+        )));
+    }
+    Ok(())
 }
 
 /// Schema 14 replaced the flat linear `step` with a tagged pattern `rule`.
@@ -1442,11 +1476,41 @@ impl<'definition> InstanceGraph<'definition> {
         session: &'session Session,
         ids: &[&str],
     ) -> Result<GraphRegeneration<'session>, ModelError> {
-        let with_id = |id: &str, error: ModelError| {
-            ModelError::new(format!("instance '{id}': {}", error.message))
+        let groups = self.group_by_parameters(ids)?;
+        let mut output = GraphRegeneration {
+            results: HashMap::new(),
+            shared_from: HashMap::new(),
+            generated_variants: groups.len(),
         };
+        for members in groups {
+            let representative = members[0].0.to_owned();
+            match self.regenerate_group(session, &members) {
+                Ok(results) => {
+                    for (id, result) in results {
+                        output
+                            .shared_from
+                            .insert(id.clone(), representative.clone());
+                        output.results.insert(id, result);
+                    }
+                }
+                Err(error) => {
+                    release_results(session, output.results.into_values());
+                    return Err(error);
+                }
+            }
+        }
+        Ok(output)
+    }
+
+    /// Groups requested instances by their complete resolved parameter set,
+    /// preserving request order within and across groups.
+    fn group_by_parameters<'ids>(
+        &self,
+        ids: &[&'ids str],
+    ) -> Result<Vec<Vec<(&'ids str, ResolvedInstance<'definition>)>>, ModelError> {
         let mut seen = HashSet::new();
-        let mut groups: Vec<(String, Vec<(&str, ResolvedInstance<'definition>)>)> = Vec::new();
+        let mut keys: Vec<String> = Vec::new();
+        let mut groups: Vec<Vec<(&str, ResolvedInstance<'definition>)>> = Vec::new();
         for &id in ids {
             if !seen.insert(id) {
                 return Err(ModelError::new(format!(
@@ -1455,76 +1519,77 @@ impl<'definition> InstanceGraph<'definition> {
             }
             let resolved = self
                 .resolve_with_placement(id)
-                .map_err(|error| with_id(id, error))?;
+                .map_err(|error| instance_error(id, error))?;
             let parameters = resolve_parameters(self.definition, &resolved.instance.overrides)
-                .map_err(|error| with_id(id, error))?;
+                .map_err(|error| instance_error(id, error))?;
             let key = serde_json::to_string(&parameters.into_iter().collect::<BTreeMap<_, _>>())
                 .map_err(|error| ModelError::new(format!("create parameter key: {error}")))?;
-            match groups.iter_mut().find(|(existing, _)| *existing == key) {
-                Some((_, members)) => members.push((id, resolved)),
-                None => groups.push((key, vec![(id, resolved)])),
-            }
-        }
-
-        let mut output = GraphRegeneration {
-            results: HashMap::new(),
-            shared_from: HashMap::new(),
-            generated_variants: groups.len(),
-        };
-        let fail = |session: &Session, output: GraphRegeneration<'_>, error: ModelError| {
-            for result in output.results.into_values() {
-                cleanup(session, result.shapes);
-            }
-            Err(error)
-        };
-        for (_, members) in groups {
-            let (representative, first) = &members[0];
-            let mut local = match first.instance.regenerate(session) {
-                Ok(local) => Some(local),
-                Err(error) => return fail(session, output, with_id(representative, error)),
-            };
-            let last = members.len() - 1;
-            for (index, (id, resolved)) in members.iter().enumerate() {
-                let shared = if index == last {
-                    local
-                        .take()
-                        .expect("local result remains for the last member")
-                } else {
-                    match duplicate_result(session, local.as_ref().expect("local result exists")) {
-                        Ok(copy) => copy,
-                        Err(error) => {
-                            cleanup(session, local.take().expect("local result exists").shapes);
-                            return fail(session, output, with_id(id, error));
-                        }
-                    }
-                };
-                let mut placed = match resolved.place(session, shared) {
-                    Ok(placed) => placed,
-                    Err(error) => {
-                        if let Some(local) = local.take() {
-                            cleanup(session, local.shapes);
-                        }
-                        return fail(session, output, with_id(id, error));
-                    }
-                };
-                if index > 0 {
-                    placed.regeneration = RegenerationReport {
-                        rebuilt: Vec::new(),
-                        reused: self
-                            .definition
-                            .features
-                            .iter()
-                            .map(|feature| feature.id.clone())
-                            .collect(),
-                    };
+            match keys.iter().position(|existing| *existing == key) {
+                Some(index) => groups[index].push((id, resolved)),
+                None => {
+                    keys.push(key);
+                    groups.push(vec![(id, resolved)]);
                 }
-                output.results.insert((*id).to_owned(), placed);
-                output
-                    .shared_from
-                    .insert((*id).to_owned(), (*representative).to_owned());
             }
         }
-        Ok(output)
+        Ok(groups)
+    }
+
+    /// Generates one group's local result once and places a copy for each
+    /// member. On failure every handle created for the group is released.
+    fn regenerate_group<'session>(
+        &self,
+        session: &'session Session,
+        members: &[(&str, ResolvedInstance<'definition>)],
+    ) -> Result<Vec<(String, GeneratedResult<'session>)>, ModelError> {
+        let (representative, first) = &members[0];
+        let local = first
+            .instance
+            .regenerate(session)
+            .map_err(|error| instance_error(representative, error))?;
+        let mut unplaced = Vec::with_capacity(members.len());
+        for (id, _) in &members[1..] {
+            match duplicate_result(session, &local) {
+                Ok(copy) => unplaced.push(copy),
+                Err(error) => {
+                    release_results(session, unplaced.into_iter().chain([local]));
+                    return Err(instance_error(id, error));
+                }
+            }
+        }
+        unplaced.insert(0, local);
+
+        let mut pending = unplaced.into_iter();
+        let mut placed = Vec::with_capacity(members.len());
+        for (index, (id, resolved)) in members.iter().enumerate() {
+            let shared = pending.next().expect("one local result per member");
+            match resolved.place(session, shared) {
+                Ok(mut result) => {
+                    if index > 0 {
+                        result.regeneration = self.all_features_reused();
+                    }
+                    placed.push(((*id).to_owned(), result));
+                }
+                Err(error) => {
+                    let placed = placed.into_iter().map(|(_, result)| result);
+                    release_results(session, placed.chain(pending));
+                    return Err(instance_error(id, error));
+                }
+            }
+        }
+        Ok(placed)
+    }
+
+    fn all_features_reused(&self) -> RegenerationReport {
+        RegenerationReport {
+            rebuilt: Vec::new(),
+            reused: self
+                .definition
+                .features
+                .iter()
+                .map(|feature| feature.id.clone())
+                .collect(),
+        }
     }
 
     pub fn detach(&mut self, id: &str) -> Result<(), ModelError> {
@@ -1808,117 +1873,150 @@ impl PartInstance<'_> {
     ) -> Result<GeneratedResult<'session>, ModelError> {
         validate_definition(self.definition)?;
         let parameters = resolve_parameters(self.definition, &self.overrides)?;
-        let mut shapes = HashMap::new();
-        let mut feature_signatures = HashMap::new();
-        let mut dirty_features = HashSet::new();
-        let mut regeneration = RegenerationReport::default();
-        let mut pending: Vec<&FeatureDefinition> = self.definition.features.iter().collect();
+        let mut build = FeatureBuild::default();
+        if let Err(error) = build.run(session, self.definition, &parameters, previous) {
+            cleanup(session, build.shapes);
+            return Err(error);
+        }
+        match verify_requirements(session, self.definition, &build.shapes) {
+            Ok(verification) => Ok(GeneratedResult {
+                shapes: build.shapes,
+                feature_signatures: build.feature_signatures,
+                verification,
+                regeneration: build.regeneration,
+            }),
+            Err(error) => {
+                cleanup(session, build.shapes);
+                Err(error)
+            }
+        }
+    }
+}
 
+/// Feature outputs accumulated during one regeneration. The caller releases
+/// `shapes` if any step fails.
+#[derive(Default)]
+struct FeatureBuild<'session> {
+    shapes: HashMap<String, Shape<'session>>,
+    feature_signatures: HashMap<String, Vec<u8>>,
+    dirty_features: HashSet<String>,
+    regeneration: RegenerationReport,
+}
+
+impl<'session> FeatureBuild<'session> {
+    /// Executes features in dependency order. Each pass runs every ready
+    /// feature in declaration order; a pass without progress is a cycle or a
+    /// missing input.
+    fn run(
+        &mut self,
+        session: &'session Session,
+        definition: &FamilyDefinition,
+        parameters: &HashMap<String, ParameterValue>,
+        previous: Option<&GeneratedResult<'session>>,
+    ) -> Result<(), ModelError> {
+        let mut pending: Vec<&FeatureDefinition> = definition.features.iter().collect();
         while !pending.is_empty() {
-            let mut progress = false;
+            let before = pending.len();
             let mut index = 0;
             while index < pending.len() {
-                let feature = pending[index];
-                if feature
-                    .operation
-                    .dependencies()
-                    .iter()
-                    .all(|dependency| shapes.contains_key(*dependency))
-                {
-                    let signature = feature_signature(feature, &parameters)?;
-                    let dependencies = feature.operation.dependencies();
-                    let dependency_is_dirty = dependencies
-                        .iter()
-                        .any(|dependency| dirty_features.contains(*dependency));
-                    let can_reuse = previous.is_some_and(|previous| {
-                        !dependency_is_dirty
-                            && previous.feature_signatures.get(&feature.id) == Some(&signature)
-                            && previous.shapes.contains_key(&feature.id)
-                    });
-                    let generated = if can_reuse {
-                        session
-                            .duplicate(
-                                previous
-                                    .and_then(|result| result.shapes.get(&feature.id))
-                                    .expect("reusable feature shape exists"),
-                            )
-                            .map_err(Into::into)
-                    } else {
-                        dirty_features.insert(feature.id.clone());
-                        execute_feature(session, feature, &parameters, &shapes)
-                    };
-                    match generated {
-                        Ok(shape) => {
-                            shapes.insert(feature.id.clone(), shape);
-                            feature_signatures.insert(feature.id.clone(), signature);
-                            if can_reuse {
-                                regeneration.reused.push(feature.id.clone());
-                            } else {
-                                regeneration.rebuilt.push(feature.id.clone());
-                            }
-                            pending.remove(index);
-                            progress = true;
-                        }
-                        Err(error) => {
-                            cleanup(session, shapes);
-                            return Err(ModelError::new(format!(
-                                "feature '{}': {error}",
-                                feature.id
-                            )));
-                        }
-                    }
+                if self.is_ready(pending[index]) {
+                    let feature = pending.remove(index);
+                    self.add_feature(session, feature, parameters, previous)?;
                 } else {
                     index += 1;
                 }
             }
-            if !progress {
+            if pending.len() == before {
                 let blocked = pending
                     .iter()
                     .map(|feature| feature.id.as_str())
                     .collect::<Vec<_>>();
-                cleanup(session, shapes);
                 return Err(ModelError::new(format!(
                     "feature dependency cycle or unresolved input: {}",
                     blocked.join(", ")
                 )));
             }
         }
-
-        let mut verification = Vec::new();
-        let mut required_failures = Vec::new();
-        for requirement in &self.definition.requirements {
-            let result = match verify_requirement(session, requirement, &shapes) {
-                Ok(result) => result,
-                Err(error) => {
-                    cleanup(session, shapes);
-                    return Err(ModelError::new(format!(
-                        "requirement '{}': {error}",
-                        requirement.id
-                    )));
-                }
-            };
-            if requirement.priority == RequirementPriority::Required
-                && result.status == VerificationStatus::Failed
-            {
-                required_failures.push(requirement.id.clone());
-            }
-            verification.push(result);
-        }
-        if !required_failures.is_empty() {
-            cleanup(session, shapes);
-            return Err(ModelError::new(format!(
-                "required verification failed: {}",
-                required_failures.join(", ")
-            )));
-        }
-
-        Ok(GeneratedResult {
-            shapes,
-            feature_signatures,
-            verification,
-            regeneration,
-        })
+        Ok(())
     }
+
+    fn is_ready(&self, feature: &FeatureDefinition) -> bool {
+        feature
+            .operation
+            .dependencies()
+            .iter()
+            .all(|dependency| self.shapes.contains_key(*dependency))
+    }
+
+    /// Reuses the previous output through a duplicate handle when the feature
+    /// signature is unchanged and no dependency was rebuilt; otherwise executes it.
+    fn add_feature(
+        &mut self,
+        session: &'session Session,
+        feature: &FeatureDefinition,
+        parameters: &HashMap<String, ParameterValue>,
+        previous: Option<&GeneratedResult<'session>>,
+    ) -> Result<(), ModelError> {
+        let signature = feature_signature(feature, parameters)?;
+        let dependency_is_dirty = feature
+            .operation
+            .dependencies()
+            .iter()
+            .any(|dependency| self.dirty_features.contains(*dependency));
+        let reusable = previous
+            .filter(|previous| {
+                !dependency_is_dirty
+                    && previous.feature_signatures.get(&feature.id) == Some(&signature)
+            })
+            .and_then(|previous| previous.shapes.get(&feature.id));
+        let generated = match reusable {
+            Some(shape) => session.duplicate(shape).map_err(Into::into),
+            None => {
+                self.dirty_features.insert(feature.id.clone());
+                execute_feature(session, feature, parameters, &self.shapes)
+            }
+        };
+        let shape = generated
+            .map_err(|error| ModelError::new(format!("feature '{}': {error}", feature.id)))?;
+        self.shapes.insert(feature.id.clone(), shape);
+        self.feature_signatures
+            .insert(feature.id.clone(), signature);
+        let report = if reusable.is_some() {
+            &mut self.regeneration.reused
+        } else {
+            &mut self.regeneration.rebuilt
+        };
+        report.push(feature.id.clone());
+        Ok(())
+    }
+}
+
+/// Evaluates every requirement; required failures reject the generation.
+fn verify_requirements(
+    session: &Session,
+    definition: &FamilyDefinition,
+    shapes: &HashMap<String, Shape<'_>>,
+) -> Result<Vec<VerificationResult>, ModelError> {
+    let mut verification = Vec::new();
+    let mut required_failures = Vec::new();
+    for requirement in &definition.requirements {
+        let result = verify_requirement(session, requirement, shapes).map_err(|error| {
+            ModelError::new(format!("requirement '{}': {error}", requirement.id))
+        })?;
+        if requirement.priority == RequirementPriority::Required
+            && result.status == VerificationStatus::Failed
+        {
+            required_failures.push(requirement.id.clone());
+        }
+        verification.push(result);
+    }
+    if !required_failures.is_empty() {
+        return Err(ModelError::new(format!(
+            "required verification failed: {}",
+            required_failures.join(", ")
+        )));
+    }
+    Ok(verification)
 }
 
 #[derive(Serialize)]
@@ -2168,58 +2266,86 @@ fn validate_definition(definition: &FamilyDefinition) -> Result<(), ModelError> 
         return Err(ModelError::new("family id and version are required"));
     }
     let mut feature_ids = HashSet::new();
+    insert_unique_ids(
+        &mut feature_ids,
+        definition
+            .features
+            .iter()
+            .map(|feature| feature.id.as_str()),
+        "feature ids must be nonempty and unique",
+    )?;
     for feature in &definition.features {
-        if feature.id.is_empty() || !feature_ids.insert(feature.id.as_str()) {
-            return Err(ModelError::new("feature ids must be nonempty and unique"));
-        }
-    }
-    for feature in &definition.features {
-        for dependency in feature.operation.dependencies() {
-            if !feature_ids.contains(dependency) {
-                return Err(ModelError::new(format!(
-                    "feature '{}' references unknown output '{dependency}'",
-                    feature.id
-                )));
-            }
+        if let Some(dependency) = feature
+            .operation
+            .dependencies()
+            .into_iter()
+            .find(|dependency| !feature_ids.contains(dependency))
+        {
+            return Err(ModelError::new(format!(
+                "feature '{}' references unknown output '{dependency}'",
+                feature.id
+            )));
         }
     }
     let mut parameter_ids = HashSet::new();
-    for parameter in &definition.parameters {
-        if parameter.id.is_empty() || !parameter_ids.insert(parameter.id.as_str()) {
-            return Err(ModelError::new("parameter ids must be nonempty and unique"));
-        }
+    insert_unique_ids(
+        &mut parameter_ids,
+        definition
+            .parameters
+            .iter()
+            .map(|parameter| parameter.id.as_str()),
+        "parameter ids must be nonempty and unique",
+    )?;
+    insert_unique_ids(
+        &mut parameter_ids,
+        definition
+            .derived_parameters
+            .iter()
+            .map(|parameter| parameter.id.as_str())
+            .chain(
+                definition
+                    .derived_vector_parameters
+                    .iter()
+                    .map(|parameter| parameter.id.as_str()),
+            ),
+        "input and derived parameter ids must be nonempty and unique",
+    )?;
+    insert_unique_ids(
+        &mut HashSet::new(),
+        definition
+            .constraints
+            .iter()
+            .map(|constraint| constraint.id.as_str()),
+        "constraint ids must be nonempty and unique",
+    )?;
+    if definition
+        .requirements
+        .iter()
+        .any(|requirement| requirement.version == 0)
+    {
+        return Err(ModelError::new(
+            "requirement ids must be nonempty, versioned, and unique",
+        ));
     }
-    for parameter in &definition.derived_parameters {
-        if parameter.id.is_empty() || !parameter_ids.insert(parameter.id.as_str()) {
-            return Err(ModelError::new(
-                "input and derived parameter ids must be nonempty and unique",
-            ));
-        }
-    }
-    for parameter in &definition.derived_vector_parameters {
-        if parameter.id.is_empty() || !parameter_ids.insert(parameter.id.as_str()) {
-            return Err(ModelError::new(
-                "input and derived parameter ids must be nonempty and unique",
-            ));
-        }
-    }
-    let mut constraint_ids = HashSet::new();
-    for constraint in &definition.constraints {
-        if constraint.id.is_empty() || !constraint_ids.insert(constraint.id.as_str()) {
-            return Err(ModelError::new(
-                "constraint ids must be nonempty and unique",
-            ));
-        }
-    }
-    let mut requirement_ids = HashSet::new();
-    for requirement in &definition.requirements {
-        if requirement.id.is_empty()
-            || requirement.version == 0
-            || !requirement_ids.insert(requirement.id.as_str())
-        {
-            return Err(ModelError::new(
-                "requirement ids must be nonempty, versioned, and unique",
-            ));
+    insert_unique_ids(
+        &mut HashSet::new(),
+        definition
+            .requirements
+            .iter()
+            .map(|requirement| requirement.id.as_str()),
+        "requirement ids must be nonempty, versioned, and unique",
+    )
+}
+
+/// Adds every id to `seen`, failing on the first empty or repeated id.
+fn insert_unique_ids<'a>(
+    seen: &mut HashSet<&'a str>,
+    ids: impl IntoIterator<Item = &'a str>,
+    message: &str,
+) -> Result<(), ModelError> {
+    for id in ids {
+        if id.is_empty() || !seen.insert(id) {
+            return Err(ModelError::new(message));
         }
     }
     Ok(())
@@ -2804,50 +2930,63 @@ fn validate_parameter(
                 )));
             }
             let normalized = quantity.normalized()?;
-            if let Some(minimum) = definition.minimum {
-                if minimum.dimension != *dimension {
-                    return Err(ModelError::new(format!(
-                        "parameter '{}' minimum has the wrong dimension",
-                        definition.id
-                    )));
-                }
-                if normalized < minimum.normalized()? {
-                    return Err(ModelError::new(format!(
-                        "parameter '{}' is below its minimum",
-                        definition.id
-                    )));
-                }
-            }
-            if let Some(maximum) = definition.maximum {
-                if maximum.dimension != *dimension {
-                    return Err(ModelError::new(format!(
-                        "parameter '{}' maximum has the wrong dimension",
-                        definition.id
-                    )));
-                }
-                if normalized > maximum.normalized()? {
-                    return Err(ModelError::new(format!(
-                        "parameter '{}' is above its maximum",
-                        definition.id
-                    )));
-                }
-            }
+            check_parameter_bound(
+                definition,
+                *dimension,
+                definition.minimum,
+                "minimum",
+                |bound| (normalized < bound).then_some("below"),
+            )?;
+            check_parameter_bound(
+                definition,
+                *dimension,
+                definition.maximum,
+                "maximum",
+                |bound| (normalized > bound).then_some("above"),
+            )
         }
         (ParameterType::Vector(dimension), ParameterValue::Vector(vector)) => {
-            vector.normalized(*dimension)?;
+            vector.normalized(*dimension).map(|_| ())
         }
         (ParameterType::Integer, ParameterValue::Integer(_))
-        | (ParameterType::Boolean, ParameterValue::Boolean(_)) => {}
+        | (ParameterType::Boolean, ParameterValue::Boolean(_)) => Ok(()),
         (ParameterType::Choice(options), ParameterValue::Choice(choice))
-            if options.contains(choice) => {}
-        _ => {
-            return Err(ModelError::new(format!(
-                "parameter '{}' has the wrong value type",
-                definition.id
-            )));
+            if options.contains(choice) =>
+        {
+            Ok(())
         }
+        _ => Err(ModelError::new(format!(
+            "parameter '{}' has the wrong value type",
+            definition.id
+        ))),
     }
-    Ok(())
+}
+
+/// Checks one optional bound; `violated` returns "below" or "above" when the
+/// normalized value lies outside the normalized bound.
+fn check_parameter_bound(
+    definition: &ParameterDefinition,
+    dimension: Dimension,
+    bound: Option<Quantity>,
+    name: &str,
+    violated: impl Fn(f64) -> Option<&'static str>,
+) -> Result<(), ModelError> {
+    let Some(bound) = bound else {
+        return Ok(());
+    };
+    if bound.dimension != dimension {
+        return Err(ModelError::new(format!(
+            "parameter '{}' {name} has the wrong dimension",
+            definition.id
+        )));
+    }
+    match violated(bound.normalized()?) {
+        Some(side) => Err(ModelError::new(format!(
+            "parameter '{}' is {side} its {name}",
+            definition.id
+        ))),
+        None => Ok(()),
+    }
 }
 
 fn scalar(
@@ -3460,7 +3599,7 @@ fn cleanup_shape_sets<'session>(session: &'session Session, sets: Vec<Vec<Shape<
 
 fn compose_shape_sets<'session>(
     session: &'session Session,
-    mut sets: Vec<Vec<Shape<'session>>>,
+    sets: Vec<Vec<Shape<'session>>>,
     operation: ShapeSetOperation,
 ) -> Result<Vec<Shape<'session>>, ModelError> {
     if sets.is_empty() || matches!(operation, ShapeSetOperation::Difference) && sets.len() != 2 {
@@ -3470,85 +3609,92 @@ fn compose_shape_sets<'session>(
         ));
     }
     let result = match operation {
-        ShapeSetOperation::Union => {
-            let mut union = Vec::new();
-            sets.reverse();
-            while let Some(mut set) = sets.pop() {
-                set.reverse();
-                while let Some(candidate) = set.pop() {
-                    match shape_set_contains(session, &union, &candidate) {
-                        Ok(true) => {
-                            let _ = session.remove(candidate);
-                        }
-                        Ok(false) => union.push(candidate),
-                        Err(error) => {
-                            let _ = session.remove(candidate);
-                            cleanup_shapes(session, set);
-                            cleanup_shapes(session, union);
-                            cleanup_shape_sets(session, sets);
-                            return Err(error);
-                        }
-                    }
-                }
-            }
-            union
-        }
-        ShapeSetOperation::Intersection => {
-            let mut ordered = sets;
-            ordered.reverse();
-            let mut intersection = ordered.pop().unwrap_or_default();
-            while let Some(set) = ordered.pop() {
-                let mut pending = intersection;
-                pending.reverse();
-                intersection = Vec::new();
-                while let Some(candidate) = pending.pop() {
-                    match shape_set_contains(session, &set, &candidate) {
-                        Ok(true) => intersection.push(candidate),
-                        Ok(false) => {
-                            let _ = session.remove(candidate);
-                        }
-                        Err(error) => {
-                            let _ = session.remove(candidate);
-                            cleanup_shapes(session, pending);
-                            cleanup_shapes(session, intersection);
-                            cleanup_shapes(session, set);
-                            cleanup_shape_sets(session, ordered);
-                            return Err(error);
-                        }
-                    }
-                }
-                cleanup_shapes(session, set);
-            }
-            intersection
-        }
+        ShapeSetOperation::Union => union_shapes(session, sets)?,
+        ShapeSetOperation::Intersection => intersect_shapes(session, sets)?,
         ShapeSetOperation::Difference => {
-            let subtract = sets.pop().unwrap_or_default();
-            let mut pending = sets.pop().unwrap_or_default();
-            pending.reverse();
-            let mut difference = Vec::new();
-            while let Some(candidate) = pending.pop() {
-                match shape_set_contains(session, &subtract, &candidate) {
-                    Ok(true) => {
-                        let _ = session.remove(candidate);
-                    }
-                    Ok(false) => difference.push(candidate),
-                    Err(error) => {
-                        let _ = session.remove(candidate);
-                        cleanup_shapes(session, pending);
-                        cleanup_shapes(session, difference);
-                        cleanup_shapes(session, subtract);
-                        return Err(error);
-                    }
-                }
-            }
+            let mut sets = sets.into_iter();
+            let base = sets.next().unwrap_or_default();
+            let subtract = sets.next().unwrap_or_default();
+            let difference = filter_by_membership(session, base, &subtract, false);
             cleanup_shapes(session, subtract);
-            difference
+            difference?
         }
     };
     if result.is_empty() {
         return Err(ModelError::new("selector composition found no matches"));
     }
     Ok(result)
+}
+
+/// Keeps the first occurrence of each topologically distinct shape, in order.
+fn union_shapes<'session>(
+    session: &'session Session,
+    sets: Vec<Vec<Shape<'session>>>,
+) -> Result<Vec<Shape<'session>>, ModelError> {
+    let mut union = Vec::new();
+    let mut pending = sets.into_iter().flatten();
+    while let Some(candidate) = pending.next() {
+        match shape_set_contains(session, &union, &candidate) {
+            Ok(true) => {
+                let _ = session.remove(candidate);
+            }
+            Ok(false) => union.push(candidate),
+            Err(error) => {
+                let _ = session.remove(candidate);
+                cleanup_shapes(session, pending);
+                cleanup_shapes(session, union);
+                return Err(error);
+            }
+        }
+    }
+    Ok(union)
+}
+
+fn intersect_shapes<'session>(
+    session: &'session Session,
+    sets: Vec<Vec<Shape<'session>>>,
+) -> Result<Vec<Shape<'session>>, ModelError> {
+    let mut sets = sets.into_iter();
+    let mut intersection = sets.next().unwrap_or_default();
+    for set in sets.by_ref() {
+        let kept = filter_by_membership(session, intersection, &set, true);
+        cleanup_shapes(session, set);
+        match kept {
+            Ok(kept) => intersection = kept,
+            Err(error) => {
+                cleanup_shapes(session, sets.flatten());
+                return Err(error);
+            }
+        }
+    }
+    Ok(intersection)
+}
+
+/// Keeps candidates whose membership in `reference` equals `keep_members`,
+/// in order, releasing the rest. On error every candidate handle is released.
+fn filter_by_membership<'session>(
+    session: &'session Session,
+    candidates: Vec<Shape<'session>>,
+    reference: &[Shape<'session>],
+    keep_members: bool,
+) -> Result<Vec<Shape<'session>>, ModelError> {
+    let mut kept = Vec::new();
+    let mut pending = candidates.into_iter();
+    while let Some(candidate) = pending.next() {
+        match shape_set_contains(session, reference, &candidate) {
+            Ok(member) if member == keep_members => kept.push(candidate),
+            Ok(_) => {
+                let _ = session.remove(candidate);
+            }
+            Err(error) => {
+                let _ = session.remove(candidate);
+                cleanup_shapes(session, pending);
+                cleanup_shapes(session, kept);
+                return Err(error);
+            }
+        }
+    }
+    Ok(kept)
 }
 
 fn validate_relative_tolerance(value: f64, kind: &str) -> Result<(), ModelError> {
@@ -3661,6 +3807,30 @@ fn select_edges_by_curvature_radius<'session>(
             "curvature-radius range must be positive and ordered",
         ));
     }
+    filter_edges(
+        session,
+        shape,
+        "curvature-radius selector found no matches",
+        |_, edge| {
+            Ok(match session.edge_curvature(edge)? {
+                Some(curvature) if curvature > f64::EPSILON => {
+                    (minimum..=maximum).contains(&(1.0 / curvature))
+                }
+                _ => false,
+            })
+        },
+    )
+}
+
+/// Visits every edge of `shape` and keeps those `matches` accepts. Rejected
+/// edges are released immediately; on error, or when nothing matches, every
+/// selected handle is released as well.
+fn filter_edges<'session>(
+    session: &'session Session,
+    shape: &Shape<'session>,
+    no_match_message: &str,
+    mut matches: impl FnMut(usize, &Shape<'session>) -> Result<bool, ModelError>,
+) -> Result<Vec<Shape<'session>>, ModelError> {
     let count = session.subshape_count(shape, ShapeType::Edge)?;
     let mut selected = Vec::new();
     for index in 0..count {
@@ -3671,29 +3841,20 @@ fn select_edges_by_curvature_radius<'session>(
                 return Err(error.into());
             }
         };
-        match session.edge_curvature(&edge) {
-            Ok(Some(curvature)) if curvature > f64::EPSILON => {
-                let radius = 1.0 / curvature;
-                if (minimum..=maximum).contains(&radius) {
-                    selected.push(edge);
-                } else {
-                    let _ = session.remove(edge);
-                }
-            }
-            Ok(_) => {
+        match matches(index, &edge) {
+            Ok(true) => selected.push(edge),
+            Ok(false) => {
                 let _ = session.remove(edge);
             }
             Err(error) => {
                 let _ = session.remove(edge);
                 cleanup_shapes(session, selected);
-                return Err(error.into());
+                return Err(error);
             }
         }
     }
     if selected.is_empty() {
-        return Err(ModelError::new(
-            "curvature-radius selector found no matches",
-        ));
+        return Err(ModelError::new(no_match_message));
     }
     Ok(selected)
 }
@@ -3742,55 +3903,34 @@ fn select_edges_by_bounded_curvature_radius<'session>(
             "curvature-radius relative tolerance must be in (0, 1]",
         ));
     }
-    let count = session.subshape_count(shape, ShapeType::Edge)?;
-    let mut selected = Vec::new();
-    for index in 0..count {
-        let edge = match session.subshape(shape, ShapeType::Edge, index) {
-            Ok(edge) => edge,
-            Err(error) => {
-                cleanup_shapes(session, selected);
-                return Err(error.into());
-            }
-        };
-        let extrema = match session.edge_curvature_extrema(&edge, relative_tolerance) {
-            Ok(extrema) => extrema,
-            Err(error) => {
-                let _ = session.remove(edge);
-                cleanup_shapes(session, selected);
-                return Err(ModelError::new(format!(
-                    "curvature-radius bounds for edge {index}: {}",
-                    error.message
-                )));
-            }
-        };
-        match classify_curvature_bounds(&extrema, 1.0 / maximum, 1.0 / minimum, require_entire_edge)
-        {
-            Some(true) => selected.push(edge),
-            Some(false) => {
-                let _ = session.remove(edge);
-            }
-            None => {
-                let _ = session.remove(edge);
-                cleanup_shapes(session, selected);
-                let radius = |curvature: f64| 1.0 / curvature;
-                return Err(ModelError::new(format!(
-                    "edge {index} curvature radius bounds straddle the selector range \
-                     (minimum radius in [{:.9}, {:.9}] mm, maximum radius in [{:.9}, {:.9}] mm); \
-                     tighten relative_tolerance",
-                    radius(extrema.maximum_upper_bound),
-                    radius(extrema.maximum),
-                    radius(extrema.minimum),
-                    radius(extrema.minimum_lower_bound),
-                )));
-            }
-        }
-    }
-    if selected.is_empty() {
-        return Err(ModelError::new(
-            "bounded curvature-radius selector found no matches",
-        ));
-    }
-    Ok(selected)
+    filter_edges(
+        session,
+        shape,
+        "bounded curvature-radius selector found no matches",
+        |index, edge| {
+            let extrema = session
+                .edge_curvature_extrema(edge, relative_tolerance)
+                .map_err(|error| {
+                    ModelError::new(format!(
+                        "curvature-radius bounds for edge {index}: {}",
+                        error.message
+                    ))
+                })?;
+            classify_curvature_bounds(&extrema, 1.0 / maximum, 1.0 / minimum, require_entire_edge)
+                .ok_or_else(|| {
+                    let radius = |curvature: f64| 1.0 / curvature;
+                    ModelError::new(format!(
+                        "edge {index} curvature radius bounds straddle the selector range \
+                         (minimum radius in [{:.9}, {:.9}] mm, maximum radius in [{:.9}, {:.9}] mm); \
+                         tighten relative_tolerance",
+                        radius(extrema.maximum_upper_bound),
+                        radius(extrema.maximum),
+                        radius(extrema.minimum),
+                        radius(extrema.minimum_lower_bound),
+                    ))
+                })
+        },
+    )
 }
 
 fn select_edges_by_curvature_radius_range<'session>(
@@ -3811,51 +3951,29 @@ fn select_edges_by_curvature_radius_range<'session>(
             "curvature-radius sample count must be 2..100000",
         ));
     }
-    let count = session.subshape_count(shape, ShapeType::Edge)?;
-    let mut selected = Vec::new();
-    for index in 0..count {
-        let edge = match session.subshape(shape, ShapeType::Edge, index) {
-            Ok(edge) => edge,
-            Err(error) => {
-                cleanup_shapes(session, selected);
-                return Err(error.into());
+    filter_edges(
+        session,
+        shape,
+        "curvature-radius range selector found no matches",
+        |_, edge| {
+            let (minimum_curvature, maximum_curvature) =
+                session.edge_curvature_range(edge, sample_count)?;
+            if maximum_curvature <= f64::EPSILON {
+                return Ok(false);
             }
-        };
-        match session.edge_curvature_range(&edge, sample_count) {
-            Ok((_, maximum_curvature)) if maximum_curvature <= f64::EPSILON => {
-                let _ = session.remove(edge);
-            }
-            Ok((minimum_curvature, maximum_curvature)) => {
-                let minimum_radius = 1.0 / maximum_curvature;
-                let maximum_radius = if minimum_curvature <= f64::EPSILON {
-                    f64::INFINITY
-                } else {
-                    1.0 / minimum_curvature
-                };
-                let matches = if require_entire_edge {
-                    minimum_radius >= minimum && maximum_radius <= maximum
-                } else {
-                    maximum_radius >= minimum && minimum_radius <= maximum
-                };
-                if matches {
-                    selected.push(edge);
-                } else {
-                    let _ = session.remove(edge);
-                }
-            }
-            Err(error) => {
-                let _ = session.remove(edge);
-                cleanup_shapes(session, selected);
-                return Err(error.into());
-            }
-        }
-    }
-    if selected.is_empty() {
-        return Err(ModelError::new(
-            "curvature-radius range selector found no matches",
-        ));
-    }
-    Ok(selected)
+            let minimum_radius = 1.0 / maximum_curvature;
+            let maximum_radius = if minimum_curvature <= f64::EPSILON {
+                f64::INFINITY
+            } else {
+                1.0 / minimum_curvature
+            };
+            Ok(if require_entire_edge {
+                minimum_radius >= minimum && maximum_radius <= maximum
+            } else {
+                maximum_radius >= minimum && minimum_radius <= maximum
+            })
+        },
+    )
 }
 
 fn select_largest_faces<'session>(
@@ -4314,6 +4432,19 @@ fn verify_requirement(
     })
 }
 
+fn instance_error(id: &str, error: ModelError) -> ModelError {
+    ModelError::new(format!("instance '{id}': {}", error.message))
+}
+
+fn release_results<'session>(
+    session: &Session,
+    results: impl IntoIterator<Item = GeneratedResult<'session>>,
+) {
+    for result in results {
+        cleanup(session, result.shapes);
+    }
+}
+
 /// Duplicates every named shape so another instance can own and place it.
 fn duplicate_result<'session>(
     session: &'session Session,
@@ -4357,10 +4488,7 @@ fn apply_placement<'session>(
             return Err(error);
         }
     };
-    let translation_is_zero = normalized.translation.x == 0.0
-        && normalized.translation.y == 0.0
-        && normalized.translation.z == 0.0;
-    if normalized.rotation.is_none() && translation_is_zero {
+    if normalized.rotation.is_none() && normalized.translation_is_zero() {
         return Ok(result);
     }
 
@@ -4372,40 +4500,16 @@ fn apply_placement<'session>(
     } = result;
     let mut placed = HashMap::new();
     for (name, source) in &shapes {
-        let mut rotated = match normalized.rotation {
-            Some((origin, axis, angle)) => match session.rotate(source, origin, axis, angle) {
-                Ok(shape) => Some(shape),
-                Err(error) => {
-                    cleanup(session, placed);
-                    cleanup(session, shapes);
-                    return Err(error.into());
-                }
-            },
-            None => None,
-        };
-
-        let final_shape = if translation_is_zero {
-            rotated
-                .take()
-                .expect("rotation exists for non-identity placement")
-        } else {
-            let input = rotated.as_ref().unwrap_or(source);
-            match session.translate(input, normalized.translation) {
-                Ok(shape) => shape,
-                Err(error) => {
-                    if let Some(intermediate) = rotated.take() {
-                        let _ = session.remove(intermediate);
-                    }
-                    cleanup(session, placed);
-                    cleanup(session, shapes);
-                    return Err(error.into());
-                }
+        match place_shape(session, source, &normalized) {
+            Ok(shape) => {
+                placed.insert(name.clone(), shape);
             }
-        };
-        if let Some(intermediate) = rotated {
-            let _ = session.remove(intermediate);
+            Err(error) => {
+                cleanup(session, placed);
+                cleanup(session, shapes);
+                return Err(error);
+            }
         }
-        placed.insert(name.clone(), final_shape);
     }
     cleanup(session, shapes);
     Ok(GeneratedResult {
@@ -4414,6 +4518,27 @@ fn apply_placement<'session>(
         verification,
         regeneration,
     })
+}
+
+/// Rotates then translates one shape for a non-identity placement, releasing
+/// the intermediate rotated handle.
+fn place_shape<'session>(
+    session: &'session Session,
+    source: &Shape<'session>,
+    placement: &NormalizedPlacement,
+) -> Result<Shape<'session>, ModelError> {
+    let rotated = match placement.rotation {
+        Some((origin, axis, angle)) => Some(session.rotate(source, origin, axis, angle)?),
+        None => None,
+    };
+    if placement.translation_is_zero() {
+        return Ok(rotated.expect("rotation exists for non-identity placement"));
+    }
+    let translated = session.translate(rotated.as_ref().unwrap_or(source), placement.translation);
+    if let Some(intermediate) = rotated {
+        let _ = session.remove(intermediate);
+    }
+    Ok(translated?)
 }
 
 #[cfg(test)]
