@@ -263,8 +263,18 @@ keeps its frame and placement and removes it from its pattern, since it is no
 longer linked to the pattern source; a pattern left without members is
 removed. Unknown frames, frame cycles (reported with their path), and
 pattern members outside their pattern frame are rejected. All nodes in one
-graph currently share one family definition. Pattern-level member overrides
-are not yet implemented.
+graph currently share one family definition.
+
+Pattern members record a rule slot, an optional placement override, and a
+suppression flag. A member's placement is its override or the rule placement
+for its slot. Slots stay fixed when a neighbor is detached, so removing one
+bolt from a circle does not shift the others. Replacing the rule re-places
+every member without an override; setting a member's placement records an
+override, and clearing it returns the member to the rule. A suppressed member
+keeps its identity, inheritance, and overrides but is skipped by graph
+regeneration, and requesting it explicitly is an error. Parameter overrides
+on members use ordinary sparse clone overrides. Documents are rejected when a
+slot repeats or a member's placement disagrees with its override or rule.
 
 `InstanceGraph::regenerate_instances` and `regenerate_all` implement the
 shared-shape execution mode. Requested instances are grouped by their complete
@@ -464,14 +474,17 @@ information, so they are delivery artifacts and cannot replace the parametric
 source model.
 
 `ModelDocument` is the implemented local persistence boundary. Schema version
-16 serializes the complete family definition, requirements, derived parameters,
+17 serializes the complete family definition, requirements, derived parameters,
 constraints, base and clone nodes, sparse overrides, placements, linear and
-circular pattern rules, nested assembly frames, semantic selectors, provenance, and regeneration audit records. Live
+circular pattern rules, member slots, placement overrides, and suppression,
+nested assembly frames, semantic selectors, provenance, and regeneration audit records. Live
 OCCT handles and generated BREPs are never serialized. Loading reconstructs a
 validated `InstanceGraph`; regeneration creates fresh session-owned handles.
-Schema versions 1 through 15 migrate to version 16, supplying explicit defaults
-for fields absent from older documents; version 16 added the bounded
-curvature-radius selector, version 15 added assembly frames, and
+Schema versions 1 through 16 migrate to version 17, supplying explicit defaults
+for fields absent from older documents. Version 17 replaced member id strings
+with slot records numbered by position; a stored member placement that differs
+from its rule slot becomes an explicit override, so geometry is preserved.
+Version 16 added the bounded curvature-radius selector, version 15 added assembly frames, and
 older documents load with every node and pattern at model level. Version 14 replaced the flat linear
 pattern `step` with a tagged `rule`; older documents are rewritten to
 `{"linear": {"step": ...}}` before decoding, and a legacy pattern without a
@@ -484,7 +497,8 @@ model is accepted.
 The next kernel work should prioritize generic sewing, shell-to-solid
 construction, broader exchange formats, and the remaining operations needed by
 feature definitions. The next parametric work should prioritize additional
-schema migrations and pattern-level member overrides.
+schema migrations, pattern count edits that add or remove slots, and
+constraint-driven patterns.
 
 The broader serialized source model lives in the sibling
 [`engineering-intent-language`](../engineering-intent-language) project. Its

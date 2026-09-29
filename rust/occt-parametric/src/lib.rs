@@ -763,15 +763,46 @@ impl PatternRule {
     }
 }
 
+/// One linked copy in a pattern. `index` is its slot in the rule and stays
+/// fixed when other members leave the pattern.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PatternMember {
+    pub id: String,
+    pub index: usize,
+    /// Replaces the rule placement for this member until cleared.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub placement_override: Option<Placement>,
+    /// Kept in the pattern and linked, but excluded from graph regeneration.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub suppressed: bool,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Pattern {
     pub id: String,
     pub source: String,
-    pub members: Vec<String>,
+    pub members: Vec<PatternMember>,
     pub rule: PatternRule,
     /// Assembly frame in which the rule and every member placement are expressed.
     #[serde(default)]
     pub frame: Option<String>,
+}
+
+impl Pattern {
+    pub fn member(&self, id: &str) -> Option<&PatternMember> {
+        self.members.iter().find(|member| member.id == id)
+    }
+
+    pub fn member_ids(&self) -> impl Iterator<Item = &str> {
+        self.members.iter().map(|member| member.id.as_str())
+    }
+
+    /// The member's override, or the rule placement for its slot.
+    pub fn member_placement(&self, member: &PatternMember) -> Placement {
+        member
+            .placement_override
+            .unwrap_or_else(|| self.rule.member_placement(member.index))
+    }
 }
 
 /// A named assembly coordinate frame. Its placement maps frame-local
@@ -795,7 +826,7 @@ pub struct GenerationRecord {
     pub last_error: Option<String>,
 }
 
-pub const CURRENT_SCHEMA_VERSION: u32 = 16;
+pub const CURRENT_SCHEMA_VERSION: u32 = 17;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ModelDocument {
@@ -847,8 +878,14 @@ impl ModelDocument {
         if version < 14 {
             migrate_linear_pattern_steps(&mut value)?;
         }
+        if version < 17 {
+            migrate_pattern_member_slots(&mut value)?;
+        }
         let mut document: Self = serde_json::from_value(value)
             .map_err(|error| ModelError::new(format!("decode model document: {error}")))?;
+        if version < 17 {
+            document.adopt_member_placements();
+        }
         document.schema_version = CURRENT_SCHEMA_VERSION;
         document.validate()?;
         Ok(document)
@@ -868,6 +905,25 @@ impl ModelDocument {
             patterns: self.patterns.clone(),
             frames: self.frame_map(),
         })
+    }
+
+    /// Schema 17 derives member placements from the rule; a stored placement
+    /// that differs from its rule slot becomes an explicit override.
+    fn adopt_member_placements(&mut self) {
+        let placements: HashMap<&str, Placement> = self
+            .instances
+            .iter()
+            .map(|node| (node.id(), node.placement()))
+            .collect();
+        for pattern in &mut self.patterns {
+            let rule = pattern.rule;
+            for member in &mut pattern.members {
+                let stored = placements.get(member.id.as_str()).copied();
+                if stored.is_some_and(|stored| stored != rule.member_placement(member.index)) {
+                    member.placement_override = stored;
+                }
+            }
+        }
     }
 
     fn frame_map(&self) -> HashMap<String, AssemblyFrame> {
@@ -986,29 +1042,59 @@ fn validate_pattern<'document>(
     graph
         .frame_chain(pattern.frame.as_deref())
         .map_err(context)?;
+    let mut slots = HashSet::new();
     for member in &pattern.members {
-        if !node_ids.contains(member.as_str()) {
+        if !slots.insert(member.index) {
             return Err(ModelError::new(format!(
-                "pattern '{}' references unknown member '{member}'",
-                pattern.id
+                "pattern '{}' uses rule slot {} more than once",
+                pattern.id, member.index
             )));
         }
-        if !patterned_members.insert(member.as_str()) {
+        if !patterned_members.insert(member.id.as_str()) {
             return Err(ModelError::new(format!(
-                "instance '{member}' belongs to more than one pattern"
+                "instance '{}' belongs to more than one pattern",
+                member.id
             )));
         }
-        let linked = matches!(
-            graph.node(member),
-            Some(node @ InstanceNode::Clone { source, .. })
-                if source == &pattern.source && node.frame() == pattern.frame.as_deref()
-        );
-        if !linked {
-            return Err(ModelError::new(format!(
-                "pattern '{}' member '{member}' is not linked to source '{}' in the pattern frame",
-                pattern.id, pattern.source
-            )));
-        }
+        validate_pattern_member(pattern, member, graph, node_ids)?;
+    }
+    Ok(())
+}
+
+/// A member must be a clone of the pattern source, in the pattern frame, at
+/// its override or rule placement.
+fn validate_pattern_member(
+    pattern: &Pattern,
+    member: &PatternMember,
+    graph: &InstanceGraph<'_>,
+    node_ids: &HashSet<&str>,
+) -> Result<(), ModelError> {
+    let id = member.id.as_str();
+    if !node_ids.contains(id) {
+        return Err(ModelError::new(format!(
+            "pattern '{}' references unknown member '{id}'",
+            pattern.id
+        )));
+    }
+    if let Some(placement) = member.placement_override {
+        placement.normalized()?;
+    }
+    let linked = matches!(
+        graph.node(id),
+        Some(node @ InstanceNode::Clone { source, .. })
+            if source == &pattern.source && node.frame() == pattern.frame.as_deref()
+    );
+    if !linked {
+        return Err(ModelError::new(format!(
+            "pattern '{}' member '{id}' is not linked to source '{}' in the pattern frame",
+            pattern.id, pattern.source
+        )));
+    }
+    if graph.node(id).map(InstanceNode::placement) != Some(pattern.member_placement(member)) {
+        return Err(ModelError::new(format!(
+            "pattern '{}' member '{id}' placement does not match its rule slot or override",
+            pattern.id
+        )));
     }
     Ok(())
 }
@@ -1042,6 +1128,30 @@ fn validate_generation_record(
             "generation record for '{}' has an inconsistent state",
             record.instance_id
         )));
+    }
+    Ok(())
+}
+
+/// Schema 17 replaced member id strings with slot records numbered by position.
+fn migrate_pattern_member_slots(document: &mut serde_json::Value) -> Result<(), ModelError> {
+    let Some(patterns) = document
+        .get_mut("patterns")
+        .and_then(serde_json::Value::as_array_mut)
+    else {
+        return Ok(());
+    };
+    for pattern in patterns {
+        let Some(members) = pattern
+            .get_mut("members")
+            .and_then(serde_json::Value::as_array_mut)
+        else {
+            return Err(ModelError::new("model document pattern requires members"));
+        };
+        for (index, member) in members.iter_mut().enumerate() {
+            if let Some(id) = member.as_str() {
+                *member = serde_json::json!({ "id": id, "index": index });
+            }
+        }
     }
     Ok(())
 }
@@ -1190,12 +1300,17 @@ impl<'definition> InstanceGraph<'definition> {
         &self.patterns
     }
 
+    /// Sets an instance placement. On a pattern member this records a
+    /// placement override that later rule edits leave in place.
     pub fn set_placement(
         &mut self,
         instance_id: &str,
         placement: Placement,
     ) -> Result<(), ModelError> {
         placement.normalized()?;
+        if let Some(member) = self.pattern_member_mut(instance_id) {
+            member.placement_override = Some(placement);
+        }
         let node = self
             .nodes
             .get_mut(instance_id)
@@ -1273,7 +1388,16 @@ impl<'definition> InstanceGraph<'definition> {
         self.patterns.push(Pattern {
             id,
             source: source.into(),
-            members: members.clone(),
+            members: members
+                .iter()
+                .enumerate()
+                .map(|(index, member)| PatternMember {
+                    id: member.clone(),
+                    index,
+                    placement_override: None,
+                    suppressed: false,
+                })
+                .collect(),
             rule,
             frame: None,
         });
@@ -1333,7 +1457,7 @@ impl<'definition> InstanceGraph<'definition> {
         if let Some(pattern) = self
             .patterns
             .iter()
-            .find(|pattern| pattern.members.iter().any(|member| member == instance_id))
+            .find(|pattern| pattern.member(instance_id).is_some())
         {
             return Err(ModelError::new(format!(
                 "instance '{instance_id}' belongs to pattern '{}'; set the pattern frame instead",
@@ -1361,11 +1485,105 @@ impl<'definition> InstanceGraph<'definition> {
             .ok_or_else(|| ModelError::new(format!("unknown pattern '{pattern_id}'")))?;
         pattern.frame = frame.map(str::to_owned);
         for member in &pattern.members {
-            if let Some(node) = self.nodes.get_mut(member) {
+            if let Some(node) = self.nodes.get_mut(&member.id) {
                 *node.frame_mut() = frame.map(str::to_owned);
             }
         }
         Ok(())
+    }
+
+    /// Replaces a pattern rule and re-places every member without a
+    /// placement override.
+    pub fn set_pattern_rule(
+        &mut self,
+        pattern_id: &str,
+        rule: PatternRule,
+    ) -> Result<(), ModelError> {
+        rule.validate()?;
+        let pattern = self
+            .patterns
+            .iter_mut()
+            .find(|pattern| pattern.id == pattern_id)
+            .ok_or_else(|| ModelError::new(format!("unknown pattern '{pattern_id}'")))?;
+        pattern.rule = rule;
+        self.sync_pattern_placements(pattern_id);
+        Ok(())
+    }
+
+    /// Returns a pattern member to its rule placement. Returns the override
+    /// that was removed, if any.
+    pub fn clear_placement_override(
+        &mut self,
+        instance_id: &str,
+    ) -> Result<Option<Placement>, ModelError> {
+        let member = self.pattern_member_mut(instance_id).ok_or_else(|| {
+            ModelError::new(format!("instance '{instance_id}' is not a pattern member"))
+        })?;
+        let removed = member.placement_override.take();
+        let pattern_id = self
+            .pattern_of(instance_id)
+            .map(|pattern| pattern.id.clone())
+            .expect("member belongs to a pattern");
+        self.sync_pattern_placements(&pattern_id);
+        Ok(removed)
+    }
+
+    /// Suppresses or restores one pattern member. A suppressed member keeps
+    /// its identity, links, and overrides but is skipped by graph regeneration.
+    pub fn set_member_suppressed(
+        &mut self,
+        instance_id: &str,
+        suppressed: bool,
+    ) -> Result<(), ModelError> {
+        self.pattern_member_mut(instance_id)
+            .ok_or_else(|| {
+                ModelError::new(format!("instance '{instance_id}' is not a pattern member"))
+            })?
+            .suppressed = suppressed;
+        Ok(())
+    }
+
+    pub fn is_suppressed(&self, instance_id: &str) -> bool {
+        self.pattern_of(instance_id)
+            .and_then(|pattern| pattern.member(instance_id))
+            .is_some_and(|member| member.suppressed)
+    }
+
+    fn pattern_of(&self, instance_id: &str) -> Option<&Pattern> {
+        self.patterns
+            .iter()
+            .find(|pattern| pattern.member(instance_id).is_some())
+    }
+
+    fn pattern_member_mut(&mut self, instance_id: &str) -> Option<&mut PatternMember> {
+        self.patterns
+            .iter_mut()
+            .flat_map(|pattern| pattern.members.iter_mut())
+            .find(|member| member.id == instance_id)
+    }
+
+    /// Writes each member's override or rule placement onto its node.
+    fn sync_pattern_placements(&mut self, pattern_id: &str) {
+        let Some(pattern) = self
+            .patterns
+            .iter()
+            .find(|pattern| pattern.id == pattern_id)
+        else {
+            return;
+        };
+        for member in &pattern.members {
+            let placement = pattern.member_placement(member);
+            if let Some(node) = self.nodes.get_mut(&member.id) {
+                match node {
+                    InstanceNode::Base {
+                        placement: value, ..
+                    }
+                    | InstanceNode::Clone {
+                        placement: value, ..
+                    } => *value = placement,
+                }
+            }
+        }
     }
 
     /// Returns frame placements from `frame` outward to the model root.
@@ -1456,12 +1674,18 @@ impl<'definition> InstanceGraph<'definition> {
         })
     }
 
-    /// Regenerates every instance in the graph; see [`Self::regenerate_instances`].
+    /// Regenerates every instance in the graph except suppressed pattern
+    /// members; see [`Self::regenerate_instances`].
     pub fn regenerate_all<'session>(
         &self,
         session: &'session Session,
     ) -> Result<GraphRegeneration<'session>, ModelError> {
-        let mut ids = self.nodes.keys().map(String::as_str).collect::<Vec<_>>();
+        let mut ids = self
+            .nodes
+            .keys()
+            .map(String::as_str)
+            .filter(|id| !self.is_suppressed(id))
+            .collect::<Vec<_>>();
         ids.sort_unstable();
         self.regenerate_instances(session, &ids)
     }
@@ -1515,6 +1739,11 @@ impl<'definition> InstanceGraph<'definition> {
             if !seen.insert(id) {
                 return Err(ModelError::new(format!(
                     "instance '{id}' requested more than once"
+                )));
+            }
+            if self.is_suppressed(id) {
+                return Err(ModelError::new(format!(
+                    "instance '{id}' is suppressed in its pattern"
                 )));
             }
             let resolved = self
@@ -1615,7 +1844,7 @@ impl<'definition> InstanceGraph<'definition> {
         // A detached instance is no longer a linked pattern member; a pattern
         // left without members is removed.
         for pattern in &mut self.patterns {
-            pattern.members.retain(|member| member != id);
+            pattern.members.retain(|member| member.id != id);
         }
         self.patterns.retain(|pattern| !pattern.members.is_empty());
         Ok(())
@@ -5586,7 +5815,10 @@ mod tests {
         graph.set_pattern_frame("pews", Some("row")).unwrap();
 
         graph.detach("pew[1]").unwrap();
-        assert_eq!(graph.patterns()[0].members, ["pew[0]"]);
+        assert_eq!(
+            graph.patterns()[0].member_ids().collect::<Vec<_>>(),
+            ["pew[0]"]
+        );
         assert!(matches!(
             graph.node("pew[1]"),
             Some(InstanceNode::Base { .. })
@@ -5601,6 +5833,196 @@ mod tests {
         graph.detach("pew[0]").unwrap();
         assert!(graph.patterns().is_empty());
         ModelDocument::from_graph(&graph).to_json_pretty().unwrap();
+    }
+
+    fn pew_row(definition: &FamilyDefinition) -> InstanceGraph<'_> {
+        let mut graph = InstanceGraph::new(definition);
+        graph.add_base("source", HashMap::new(), "test").unwrap();
+        graph
+            .add_linear_pattern(
+                "pews",
+                "pew",
+                "source",
+                3,
+                VectorQuantity::lengths(50.0, 0.0, 0.0, LengthUnit::Millimeter),
+                "pattern",
+            )
+            .unwrap();
+        graph
+    }
+
+    fn along_x(millimeters: f64) -> Placement {
+        Placement::translated(VectorQuantity::lengths(
+            millimeters,
+            0.0,
+            0.0,
+            LengthUnit::Millimeter,
+        ))
+    }
+
+    fn step_x(millimeters: f64) -> PatternRule {
+        PatternRule::Linear {
+            step: VectorQuantity::lengths(millimeters, 0.0, 0.0, LengthUnit::Millimeter),
+        }
+    }
+
+    #[test]
+    fn rule_edits_move_members_except_placement_overrides() {
+        let mut definition = family(RequirementPriority::Required, 100_000.0);
+        definition.requirements.clear();
+        let mut graph = pew_row(&definition);
+        let placement = |graph: &InstanceGraph<'_>, id: &str| graph.node(id).unwrap().placement();
+
+        graph.set_placement("pew[1]", along_x(500.0)).unwrap();
+        assert_eq!(
+            graph.patterns()[0]
+                .member("pew[1]")
+                .unwrap()
+                .placement_override,
+            Some(along_x(500.0))
+        );
+        graph.set_pattern_rule("pews", step_x(100.0)).unwrap();
+        assert_eq!(placement(&graph, "pew[0]"), along_x(0.0));
+        assert_eq!(placement(&graph, "pew[1]"), along_x(500.0));
+        assert_eq!(placement(&graph, "pew[2]"), along_x(200.0));
+
+        let document = ModelDocument::from_graph(&graph);
+        let loaded = ModelDocument::from_json(&document.to_json_pretty().unwrap()).unwrap();
+        assert_eq!(loaded, document);
+
+        assert_eq!(
+            graph.clear_placement_override("pew[1]").unwrap(),
+            Some(along_x(500.0))
+        );
+        assert_eq!(placement(&graph, "pew[1]"), along_x(100.0));
+        assert_eq!(graph.clear_placement_override("pew[1]").unwrap(), None);
+        assert!(graph.clear_placement_override("source").is_err());
+        assert!(graph.set_pattern_rule("missing", step_x(1.0)).is_err());
+        assert!(
+            graph
+                .set_pattern_rule(
+                    "pews",
+                    PatternRule::Circular {
+                        origin: VectorQuantity::lengths(0.0, 0.0, 0.0, LengthUnit::Millimeter),
+                        axis: VectorQuantity::scalars(0.0, 0.0, 0.0),
+                        angle_step_radians: 1.0,
+                    },
+                )
+                .is_err()
+        );
+        assert_eq!(placement(&graph, "pew[2]"), along_x(200.0));
+
+        // Moving the base instance is not a pattern override.
+        graph.set_placement("source", along_x(7.0)).unwrap();
+        assert!(
+            graph.patterns()[0]
+                .members
+                .iter()
+                .all(|member| member.placement_override.is_none())
+        );
+    }
+
+    #[test]
+    fn member_slots_survive_detaching_a_neighbor() {
+        let mut definition = family(RequirementPriority::Required, 100_000.0);
+        definition.requirements.clear();
+        let mut graph = pew_row(&definition);
+        graph.detach("pew[1]").unwrap();
+        graph.set_pattern_rule("pews", step_x(100.0)).unwrap();
+        assert_eq!(graph.node("pew[2]").unwrap().placement(), along_x(200.0));
+        assert_eq!(graph.patterns()[0].member("pew[2]").unwrap().index, 2);
+        // The detached instance keeps its last placement.
+        assert_eq!(graph.node("pew[1]").unwrap().placement(), along_x(50.0));
+        ModelDocument::from_graph(&graph).to_json_pretty().unwrap();
+    }
+
+    #[test]
+    fn suppressed_members_stay_linked_but_skip_regeneration() {
+        let mut definition = family(RequirementPriority::Required, 100_000.0);
+        definition.requirements.clear();
+        let mut graph = pew_row(&definition);
+        graph.set_member_suppressed("pew[1]", true).unwrap();
+        assert!(graph.is_suppressed("pew[1]"));
+        assert!(!graph.is_suppressed("pew[0]"));
+        assert!(graph.set_member_suppressed("source", true).is_err());
+
+        let session = Session::new().unwrap();
+        let generation = graph.regenerate_all(&session).unwrap();
+        assert!(generation.result("pew[1]").is_none());
+        assert!(generation.result("pew[2]").is_some());
+        assert_eq!(generation.shared_from("pew[2]"), Some("pew[0]"));
+        drop(generation);
+        let error = graph
+            .regenerate_instances(&session, &["pew[1]"])
+            .err()
+            .unwrap();
+        assert!(error.message.contains("suppressed"), "{error}");
+
+        // Inheritance still reaches a suppressed member.
+        graph
+            .set_override(
+                "source",
+                "width",
+                ParameterValue::Scalar(Quantity::length(12.0, LengthUnit::Millimeter)),
+            )
+            .unwrap();
+        assert_eq!(
+            graph.resolve("pew[1]").unwrap().overrides["width"],
+            ParameterValue::Scalar(Quantity::length(12.0, LengthUnit::Millimeter))
+        );
+
+        let document = ModelDocument::from_graph(&graph);
+        let loaded = ModelDocument::from_json(&document.to_json_pretty().unwrap()).unwrap();
+        assert_eq!(loaded, document);
+        assert!(loaded.instance_graph().unwrap().is_suppressed("pew[1]"));
+
+        graph.set_member_suppressed("pew[1]", false).unwrap();
+        let generation = graph.regenerate_all(&session).unwrap();
+        assert!(generation.result("pew[1]").is_some());
+    }
+
+    #[test]
+    fn schema_sixteen_member_placements_become_overrides() {
+        let mut definition = family(RequirementPriority::Required, 100_000.0);
+        definition.requirements.clear();
+        let mut graph = pew_row(&definition);
+        graph.set_placement("pew[2]", along_x(900.0)).unwrap();
+        let current = ModelDocument::from_graph(&graph);
+
+        let mut legacy = serde_json::to_value(&current).unwrap();
+        legacy["schema_version"] = serde_json::json!(16);
+        legacy["patterns"][0]["members"] = serde_json::json!(["pew[0]", "pew[1]", "pew[2]"]);
+        let migrated = ModelDocument::from_json(&legacy.to_string()).unwrap();
+        assert_eq!(migrated, current);
+        let members = &migrated.patterns[0].members;
+        assert_eq!(members[1].index, 1);
+        assert_eq!(members[1].placement_override, None);
+        assert_eq!(members[2].placement_override, Some(along_x(900.0)));
+    }
+
+    #[test]
+    fn documents_reject_inconsistent_member_slots() {
+        let mut definition = family(RequirementPriority::Required, 100_000.0);
+        definition.requirements.clear();
+        let graph = pew_row(&definition);
+        let document = ModelDocument::from_graph(&graph);
+
+        let mut moved = document.clone();
+        let node = moved
+            .instances
+            .iter_mut()
+            .find(|node| node.id() == "pew[1]")
+            .unwrap();
+        if let InstanceNode::Clone { placement, .. } = node {
+            *placement = along_x(3.0);
+        }
+        let error = moved.to_json_pretty().unwrap_err();
+        assert!(error.message.contains("does not match"), "{error}");
+
+        let mut duplicated = document;
+        duplicated.patterns[0].members[2].index = 0;
+        let error = duplicated.to_json_pretty().unwrap_err();
+        assert!(error.message.contains("slot 0"), "{error}");
     }
 
     #[test]
