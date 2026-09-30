@@ -10,7 +10,7 @@ use std::{
     ptr::{self, NonNull},
 };
 
-const ABI_VERSION: u32 = 21;
+const ABI_VERSION: u32 = 22;
 
 #[repr(C)]
 struct RawVec3 {
@@ -260,6 +260,11 @@ unsafe extern "C" {
         out: *mut RawShapeId,
     ) -> RawStatus;
     fn occt_bridge_shape_bounds(
+        session: *mut c_void,
+        shape: RawShapeId,
+        out: *mut RawBounds,
+    ) -> RawStatus;
+    fn occt_bridge_shape_exact_bounds(
         session: *mut c_void,
         shape: RawShapeId,
         out: *mut RawBounds,
@@ -1119,7 +1124,22 @@ impl Session {
         })
     }
 
+    /// Axis-aligned bounds, enlarged by shape tolerances as OCCT reports them.
     pub fn bounds(&self, shape: &Shape<'_>) -> Result<Bounds, BridgeError> {
+        self.query_bounds(shape, occt_bridge_shape_bounds)
+    }
+
+    /// Axis-aligned bounds that follow the geometry without tolerance
+    /// enlargement; use these to measure lengths.
+    pub fn exact_bounds(&self, shape: &Shape<'_>) -> Result<Bounds, BridgeError> {
+        self.query_bounds(shape, occt_bridge_shape_exact_bounds)
+    }
+
+    fn query_bounds(
+        &self,
+        shape: &Shape<'_>,
+        query: unsafe extern "C" fn(*mut c_void, RawShapeId, *mut RawBounds) -> RawStatus,
+    ) -> Result<Bounds, BridgeError> {
         self.validate_shape(shape)?;
         let mut bounds = RawBounds {
             min: RawVec3 {
@@ -1134,7 +1154,7 @@ impl Session {
             },
         };
         // SAFETY: The session and output pointers are valid.
-        self.check(unsafe { occt_bridge_shape_bounds(self.raw.as_ptr(), shape.id, &mut bounds) })?;
+        self.check(unsafe { query(self.raw.as_ptr(), shape.id, &mut bounds) })?;
         Ok(Bounds {
             min: bounds.min.into(),
             max: bounds.max.into(),
@@ -1867,9 +1887,37 @@ mod tests {
         assert!(fine_triangles > coarse_triangles);
         assert_eq!(session.shape_count().unwrap(), 2);
 
+        // Each export meshes independently: a coarse export after a fine one
+        // must not reuse the finer triangulation.
+        let recoarse_path = step_test_path("recoarse-stl").with_extension("stl");
+        session
+            .save_stl(
+                &sphere,
+                &recoarse_path,
+                StlOptions {
+                    linear_deflection: 2.0,
+                    angular_deflection_radians: 1.0,
+                    format: StlFormat::Binary,
+                },
+            )
+            .unwrap();
+        assert_eq!(binary_stl_triangle_count(&recoarse_path), coarse_triangles);
+
+        // Exporting leaves no triangulation on the session's shape.
+        let brep_path = step_test_path("after-stl").with_extension("brep");
+        session.save_brep(&sphere, &brep_path).unwrap();
+        let brep = fs::read_to_string(&brep_path).unwrap();
+        assert!(
+            brep.lines()
+                .filter(|line| line.starts_with("Triangulations"))
+                .all(|line| line == "Triangulations 0")
+        );
+
         fs::remove_file(ascii_path).unwrap();
         fs::remove_file(coarse_path).unwrap();
         fs::remove_file(fine_path).unwrap();
+        fs::remove_file(recoarse_path).unwrap();
+        fs::remove_file(brep_path).unwrap();
     }
 
     #[test]
@@ -2109,6 +2157,26 @@ mod tests {
             4
         );
         assert_eq!(session.make_solid_from_shells(&[]).unwrap_err().status, 1);
+    }
+
+    #[test]
+    fn exact_bounds_follow_geometry_without_tolerance_padding() {
+        let session = Session::new().unwrap();
+        let box_shape = session
+            .create_box(Vec3::new(0.0, 0.0, 0.0), Vec3::new(120.0, 20.0, 30.0))
+            .unwrap();
+        let padded = session.bounds(&box_shape).unwrap();
+        let exact = session.exact_bounds(&box_shape).unwrap();
+        assert!(padded.max.x - padded.min.x > 120.0);
+        assert!((exact.max.x - exact.min.x - 120.0).abs() < 1e-12);
+        assert!((exact.max.z - exact.min.z - 30.0).abs() < 1e-12);
+
+        let cylinder = session
+            .create_cylinder(Vec3::new(0.0, 0.0, 0.0), Vec3::new(0.0, 0.0, 1.0), 2.0, 5.0)
+            .unwrap();
+        let exact = session.exact_bounds(&cylinder).unwrap();
+        assert!((exact.max.z - exact.min.z - 5.0).abs() < 1e-9);
+        assert!((exact.max.x - exact.min.x - 4.0).abs() < 1e-9);
     }
 
     #[test]
@@ -2882,6 +2950,7 @@ mod tests {
 
         assert_wrong_session(second.create_compound(&[&first_shape]).unwrap_err());
         assert_wrong_session(second.sew(&[&first_shape], 1e-6).unwrap_err());
+        assert_wrong_session(second.exact_bounds(&first_shape).unwrap_err());
         assert_wrong_session(second.make_solid(&first_shape).unwrap_err());
         assert_wrong_session(second.make_solid_from_shells(&[&first_shape]).unwrap_err());
         assert_wrong_session(second.fuse(&first_shape, &second_shape).unwrap_err());

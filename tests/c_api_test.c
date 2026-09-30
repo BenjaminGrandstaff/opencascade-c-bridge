@@ -150,6 +150,11 @@ static void test_sewing_and_solids(occt_bridge_session_t* session) {
     double volume = 0.0;
     require_ok(session, occt_bridge_shape_volume(session, solid, &volume));
     require_true(close_enough(volume, 1.0), "sewn cube encloses unit volume");
+    occt_bridge_bounds_t exact;
+    require_ok(session, occt_bridge_shape_exact_bounds(session, solid, &exact));
+    require_true(
+        fabs(exact.max.x - exact.min.x - 1.0) < 1e-12 && fabs(exact.max.z - exact.min.z - 1.0) < 1e-12,
+        "exact bounds of the sewn cube have no tolerance padding");
     int is_valid = 0;
     require_ok(session, occt_bridge_shape_is_valid(session, solid, &is_valid));
     require_true(is_valid == 1, "sewn cube solid is valid");

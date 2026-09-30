@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define OCCT_BRIDGE_ABI_VERSION 21u
+#define OCCT_BRIDGE_ABI_VERSION 22u
 #define OCCT_BRIDGE_INVALID_SHAPE_ID UINT64_C(0)
 
 #if defined(_WIN32) && defined(OCCT_BRIDGE_BUILD_SHARED)
@@ -418,7 +418,18 @@ OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_shape_subshape_at(
     occt_bridge_shape_id_t* out_subshape
 );
 
+/* Axis-aligned bounds, enlarged by shape tolerances as OCCT reports them. */
 OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_shape_bounds(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t shape,
+    occt_bridge_bounds_t* out_bounds
+);
+
+/*
+ * Axis-aligned bounds that follow the geometry without tolerance enlargement,
+ * for measuring lengths such as a box width or a cylinder height.
+ */
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_shape_exact_bounds(
     occt_bridge_session_t* session,
     occt_bridge_shape_id_t shape,
     occt_bridge_bounds_t* out_bounds

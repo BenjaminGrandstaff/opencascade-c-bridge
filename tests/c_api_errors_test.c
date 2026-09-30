@@ -418,6 +418,8 @@ static void queries(occt_bridge_session_t* session) {
 
     EXPECT(occt_bridge_shape_bounds(session, box, NULL), ARG);
     EXPECT(occt_bridge_shape_bounds(session, unknown, &bounds), MISSING);
+    EXPECT(occt_bridge_shape_exact_bounds(session, box, NULL), ARG);
+    EXPECT(occt_bridge_shape_exact_bounds(session, unknown, &bounds), MISSING);
     EXPECT(occt_bridge_shape_surface_area(session, box, NULL), ARG);
     EXPECT(occt_bridge_shape_surface_area(session, unknown, &value), MISSING);
     EXPECT(occt_bridge_shape_surface_area(session, edge, &value), GEOMETRY);

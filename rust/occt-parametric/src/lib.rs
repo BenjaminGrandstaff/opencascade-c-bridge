@@ -2172,9 +2172,11 @@ impl<'definition> InstanceGraph<'definition> {
         }
     }
 
+    /// The output must be a feature of the measured instance's own family,
+    /// which may differ from the graph's primary family.
     fn validate_measurement_target(&self, instance: &str, output: &str) -> Result<(), ModelError> {
-        self.resolve(instance)?;
-        if !self
+        let resolved = self.resolve(instance)?;
+        if !resolved
             .definition
             .features
             .iter()
@@ -2298,7 +2300,9 @@ impl<'definition> InstanceGraph<'definition> {
                     "instance '{instance}' did not generate pattern measurement output '{output}'"
                 ))
             })?;
-            let bounds = session.bounds(shape).map_err(ModelError::from)?;
+            // Tolerance-padded bounds overstate lengths and would tip exact
+            // multiples of a spacing into an extra member.
+            let bounds = session.exact_bounds(shape).map_err(ModelError::from)?;
             Ok(match axis {
                 CoordinateAxis::X => bounds.max.x - bounds.min.x,
                 CoordinateAxis::Y => bounds.max.y - bounds.min.y,
@@ -7415,6 +7419,104 @@ mod tests {
     }
 
     #[test]
+    fn measured_drivers_use_exact_extents_of_the_measured_family() {
+        let mut primary = family(RequirementPriority::Required, 100_000.0);
+        primary.requirements.clear();
+        let mut secondary = primary.clone();
+        secondary.id = "MarkedBlockFamily".into();
+        secondary.features.push(FeatureDefinition {
+            id: "marker".into(),
+            operation: FeatureOperation::Cylinder {
+                origin: VectorExpr::Literal(VectorQuantity::lengths(
+                    50.0,
+                    0.0,
+                    0.0,
+                    LengthUnit::Millimeter,
+                )),
+                axis: VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, 1.0)),
+                radius: ScalarExpr::Literal(Quantity::length(2.0, LengthUnit::Millimeter)),
+                height: ScalarExpr::Literal(Quantity::length(5.0, LengthUnit::Millimeter)),
+            },
+        });
+        let mut graph = InstanceGraph::new(&primary);
+        graph.add_family(&secondary).unwrap();
+        graph
+            .add_base(
+                "source",
+                HashMap::from([(
+                    "width".into(),
+                    ParameterValue::Scalar(Quantity::length(120.0, LengthUnit::Millimeter)),
+                )]),
+                "test",
+            )
+            .unwrap();
+        graph
+            .add_base_from_family("marked", "MarkedBlockFamily", HashMap::new(), "test")
+            .unwrap();
+        graph
+            .add_linear_pattern(
+                "bolts",
+                "bolt",
+                "source",
+                2,
+                VectorQuantity::lengths(10.0, 0.0, 0.0, LengthUnit::Millimeter),
+                "test",
+            )
+            .unwrap();
+        let session = Session::new().unwrap();
+
+        // 120 mm at 30 mm maximum spacing is exactly 4 gaps. Tolerance-padded
+        // bounds measured 120.0000002 mm and produced a sixth member.
+        graph
+            .set_pattern_count_driver(
+                "bolts",
+                Some(PatternCountDriver::BoundsExtent {
+                    instance: "source".into(),
+                    output: "body".into(),
+                    axis: CoordinateAxis::X,
+                    maximum_spacing: Quantity::length(30.0, LengthUnit::Millimeter),
+                }),
+            )
+            .unwrap();
+        graph.refresh_driven_patterns(&session).unwrap();
+        assert_eq!(graph.patterns()[0].slot_count, 5);
+
+        // `marker` exists only in the secondary family of the measured
+        // instance; its 5 mm curved height at 1 mm spacing is 5 gaps.
+        graph
+            .set_pattern_count_driver(
+                "bolts",
+                Some(PatternCountDriver::BoundsExtent {
+                    instance: "marked".into(),
+                    output: "marker".into(),
+                    axis: CoordinateAxis::Z,
+                    maximum_spacing: Quantity::length(1.0, LengthUnit::Millimeter),
+                }),
+            )
+            .unwrap();
+        graph.refresh_driven_patterns(&session).unwrap();
+        assert_eq!(graph.patterns()[0].slot_count, 6);
+        assert_eq!(session.shape_count().unwrap(), 0);
+
+        let missing = graph
+            .set_pattern_count_driver(
+                "bolts",
+                Some(PatternCountDriver::BoundsExtent {
+                    instance: "source".into(),
+                    output: "marker".into(),
+                    axis: CoordinateAxis::Z,
+                    maximum_spacing: Quantity::length(1.0, LengthUnit::Millimeter),
+                }),
+            )
+            .unwrap_err();
+        assert!(
+            missing
+                .message
+                .contains("unknown pattern measurement output")
+        );
+    }
+
+    #[test]
     fn invalid_pattern_drivers_are_rejected_before_mutation() {
         let mut definition = family(RequirementPriority::Required, 100_000.0);
         definition.requirements.clear();
@@ -7568,7 +7670,7 @@ mod tests {
         assert_eq!(graph.patterns()[0].slot_count, 5);
         let measured_placement = graph.node("pew[4]").unwrap().placement();
         assert!(measured_placement.translation.x.value.abs() < 1e-9);
-        assert!((measured_placement.translation.y.value - 110.0).abs() < 1e-5);
+        assert!((measured_placement.translation.y.value - 110.0).abs() < 1e-9);
         assert!(measured_placement.translation.z.value.abs() < 1e-9);
         assert_eq!(session.shape_count().unwrap(), 0);
         for member in &graph.patterns()[0].members {

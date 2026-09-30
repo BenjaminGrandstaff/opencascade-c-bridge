@@ -8,14 +8,14 @@ tracks status and order.
 
 | Layer | Version | State |
 |---|---|---|
-| C ABI (`src/`, `include/`) | ABI 21 | Stable; exact version match required |
+| C ABI (`src/`, `include/`) | ABI 22 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
 | `occt-parametric` (engineering layer) | Schema 21 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 2/2, bridge 33, recipes 3, parametric 67 | `ctest`, `cargo test` (see README) |
+| Tests | C 2/2, bridge 34, recipes 3, parametric 68 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 92.7% line coverage | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Coverage | 92.96% lines overall; C++ 94.23% lines, 88.16% branches, 100% functions | `tools/coverage/run.sh` |

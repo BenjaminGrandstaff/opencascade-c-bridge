@@ -7,6 +7,7 @@
 #include <BRepAdaptor_Surface.hxx>
 #include <BRepBndLib.hxx>
 #include <BRepBuilderAPI_MakeFace.hxx>
+#include <BRepBuilderAPI_Copy.hxx>
 #include <BRepBuilderAPI_MakeEdge.hxx>
 #include <BRepBuilderAPI_MakePolygon.hxx>
 #include <BRepBuilderAPI_MakeSolid.hxx>
@@ -2036,28 +2037,58 @@ occt_bridge_status_t occt_bridge_shape_subshape_at(
     });
 }
 
+}  // extern "C"
+
+namespace {
+
+/*
+ * Axis-aligned bounds of a stored shape. Exact bounds follow the geometry
+ * without enlarging the box by shape tolerances; the default bounds keep
+ * OCCT's tolerance-padded box.
+ */
+occt_bridge_status_t shape_bounds(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t shape,
+    occt_bridge_bounds_t* out_bounds,
+    bool exact) {
+    if (out_bounds == nullptr) {
+        return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_bounds is null");
+    }
+    const TopoDS_Shape* value = find_shape(session, shape);
+    if (value == nullptr) {
+        return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "shape was not found");
+    }
+    Bnd_Box bounds;
+    if (exact) {
+        BRepBndLib::AddOptimal(*value, bounds, Standard_False, Standard_False);
+    } else {
+        BRepBndLib::Add(*value, bounds);
+    }
+    if (bounds.IsVoid() || bounds.IsOpen()) {
+        return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "shape has no finite bounds");
+    }
+    bounds.Get(
+        out_bounds->min.x, out_bounds->min.y, out_bounds->min.z,
+        out_bounds->max.x, out_bounds->max.y, out_bounds->max.z);
+    return succeed(session);
+}
+
+}  // namespace
+
+extern "C" {
+
 occt_bridge_status_t occt_bridge_shape_bounds(
     occt_bridge_session_t* session,
     occt_bridge_shape_id_t shape,
     occt_bridge_bounds_t* out_bounds) {
-    return guarded(session, [&] {
-        if (out_bounds == nullptr) {
-            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_bounds is null");
-        }
-        const TopoDS_Shape* value = find_shape(session, shape);
-        if (value == nullptr) {
-            return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "shape was not found");
-        }
-        Bnd_Box bounds;
-        BRepBndLib::Add(*value, bounds);
-        if (bounds.IsVoid() || bounds.IsOpen()) {
-            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "shape has no finite bounds");
-        }
-        bounds.Get(
-            out_bounds->min.x, out_bounds->min.y, out_bounds->min.z,
-            out_bounds->max.x, out_bounds->max.y, out_bounds->max.z);
-        return succeed(session);
-    });
+    return guarded(session, [&] { return shape_bounds(session, shape, out_bounds, false); });
+}
+
+occt_bridge_status_t occt_bridge_shape_exact_bounds(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t shape,
+    occt_bridge_bounds_t* out_bounds) {
+    return guarded(session, [&] { return shape_bounds(session, shape, out_bounds, true); });
 }
 
 occt_bridge_status_t occt_bridge_shape_surface_area(
@@ -3169,8 +3200,18 @@ occt_bridge_status_t occt_bridge_stl_save(
         if (value == nullptr) {
             return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "shape was not found");
         }
+        /*
+         * Mesh a topology copy that shares geometry. Triangulations are cached
+         * on faces, so meshing the session's shape would keep a finer earlier
+         * mesh for later exports and leak it into BREP output.
+         */
+        BRepBuilderAPI_Copy copy(*value, Standard_False, Standard_False);
+        if (!copy.IsDone()) {
+            return fail(session, OCCT_BRIDGE_KERNEL_ERROR, "failed to copy shape for STL export");
+        }
+        const TopoDS_Shape exported = copy.Shape();
         BRepMesh_IncrementalMesh mesh(
-            *value,
+            exported,
             linear_deflection,
             Standard_False,
             angular_deflection_radians,
@@ -3180,7 +3221,7 @@ occt_bridge_status_t occt_bridge_stl_save(
         }
         StlAPI_Writer writer;
         writer.ASCIIMode() = binary == 0 ? Standard_True : Standard_False;
-        if (!writer.Write(*value, path)) {
+        if (!writer.Write(exported, path)) {
             return fail(session, OCCT_BRIDGE_IO_ERROR, "failed to write STL file");
         }
         return succeed(session);

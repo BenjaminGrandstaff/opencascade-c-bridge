@@ -7,7 +7,7 @@ so they can generate and regenerate families of related parts.
 ## Implementation status
 
 The architecture in this document is both a description of implemented
-boundaries and a roadmap. As of ABI version 21, the repository contains three
+boundaries and a roadmap. As of ABI version 22, the repository contains three
 Rust layers:
 
 1. **`occt-bridge`** safely wraps session-owned OCCT handles. It includes
@@ -311,7 +311,10 @@ A pattern may bind a freely counted linear or circular rule to an integer
 parameter on any resolvable instance, or fit its count to the measured bounds
 extent of a named output and a maximum spacing. A `LinearFit` may bind its span
 to a length parameter, or measure an output extent and apply that length along
-a typed direction. `refresh_driven_patterns`,
+a typed direction. Measurements use exact bounds without tolerance
+enlargement, so an extent that is an exact multiple of the spacing does not
+gain a member, and the output must belong to the measured instance's own
+family. `refresh_driven_patterns`,
 `regenerate_instances`, and `regenerate_all` resolve all drivers before
 mutation, then reuse the existing stable-slot resize and placement machinery.
 Geometry measurements use a temporary placed generation and release every
@@ -494,9 +497,10 @@ application code should use the recipe crate.
 
 ## Compatibility rule
 
-The C interface currently requires an exact ABI version match. ABI version 21
-adds validated multi-shell solid construction with internal voids to the
-existing STEP exchange, configurable ASCII/binary STL tessellation export,
+The C interface currently requires an exact ABI version match. ABI version 22
+adds exact bounds without tolerance enlargement, used for measured pattern
+drivers, to the existing validated multi-shell solid construction with
+internal voids, STEP exchange, configurable ASCII/binary STL tessellation export,
 sewing, single-shell solid construction,
 curvature-extrema, topological-identity, elliptical-wire, tangency, traversal,
 measurement, generic-modeling, and operation-history API while preserving the

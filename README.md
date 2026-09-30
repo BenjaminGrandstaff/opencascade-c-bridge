@@ -3,7 +3,7 @@
 A small, stable C ABI over Open Cascade (OCCT), designed to be wrapped safely
 from Rust and other languages. Open Cascade C++ objects never cross the ABI.
 
-The current C ABI version is **21**.
+The current C ABI version is **22**.
 
 ## Current API
 
@@ -29,7 +29,8 @@ The current C ABI version is **21**.
   and direct topology-adjacency queries
 - Recorded G1-or-better tangency queries between adjacent faces
 - Generated, modified, and deleted operation-history queries
-- Bounds, surface area, volume, center-of-mass, and BREP validity inspection
+- Tolerance-padded and exact bounds, surface area, volume, center-of-mass, and
+  BREP validity inspection
 - BREP persistence, STEP import/export, and configurable ASCII/binary STL export
 - Caller-owned diagnostic buffers
 - Exception containment at every C entry point
