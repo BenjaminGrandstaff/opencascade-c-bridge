@@ -1,12 +1,14 @@
 //! Unit-aware part families, instances, feature graphs, and verification.
 
 mod assembly;
+mod solve;
 
 pub use assembly::{
     AssemblyRelationship, AssemblySemantics, Configuration, DatumDefinition, DatumKind, DatumRef,
     Material, RELATIONSHIP_ANGULAR_TOLERANCE, RELATIONSHIP_LINEAR_TOLERANCE, RelationKind,
     RelationshipCheck, ResolvedDatum,
 };
+pub use solve::PlacementSolution;
 
 use occt_bridge::{
     BridgeError, CurvatureExtrema, HistoryRelation, Session, Shape, ShapeType, Vec3,

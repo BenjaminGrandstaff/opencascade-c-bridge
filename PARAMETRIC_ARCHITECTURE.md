@@ -56,7 +56,6 @@ The following major capabilities remain planned:
   model;
 - broader requirement rules such as clearance, interference, minimum radius,
   wall thickness, connectivity, and manufacturing checks;
-- solving instance placements from assembly relationships;
 - mass-, clearance-, and datum-based requirement verification.
 
 ## Assembly semantics
@@ -70,8 +69,8 @@ document.
   coordinates through its parameters, placement, and enclosing frames.
   Families reject duplicate datum ids, wrong dimensions, and zero directions.
 - **Relationships.** `Coincident`, `Parallel`, `Perpendicular`, and
-  `Distance` relate two instance datums. They record design intent and are
-  checked, not solved: `check_relationships` reports each as satisfied or
+  `Distance` relate two instance datums. They record design intent:
+  `check_relationships` reports each as satisfied or
   violated with its linear residual in millimeters and angular residual in
   radians, against tolerances of 1e-6 mm and 1e-9 rad. Coincidence covers
   point, axis, and plane pairs, including an axis lying in a plane; parallel
@@ -90,6 +89,21 @@ document.
 - **Materials.** Named materials carry a density. An instance uses its own
   assignment or inherits its clone source's; detaching keeps the inherited
   material. `mass` multiplies a generated output's volume by that density.
+
+- **Placement solving.** `solve_placements` moves named free instances so
+  that every relationship touching them holds, keeping all other instances
+  fixed. Each free instance contributes a rotation vector and a translation
+  of its local placement, inside any frames it already belongs to. Every
+  involved relationship becomes a smooth residual vector, and
+  Levenberg–Marquardt with a central-difference Jacobian drives it to zero
+  from the current placements. Freedoms no relationship constrains have no
+  gradient and keep their values, so under-constrained instances move as
+  little as possible. The report gives the free degrees and redundant
+  equations from the Jacobian rank at the best fit, and checks every involved
+  relationship there. Placements are applied only when every involved
+  relationship is satisfied; conflicting sets leave the graph unchanged and
+  show which relationships disagree. Solved pattern members keep their
+  placements as overrides.
 
 Pattern resizing refuses to delete a member that a relationship,
 configuration, or material assignment names, and document validation rejects
@@ -592,8 +606,8 @@ defaults, units, constraints, placements, clone cycles, missing links,
 inconsistent pattern membership, and invalid regeneration revisions before the
 model is accepted.
 
-The next cross-layer work should prioritize solving instance placements from
-assembly relationships and requirement rules built on datums and mass,
+The next cross-layer work should prioritize requirement rules built on
+datums, relationships, and mass,
 followed by kernel-level location-only sharing for placed clones.
 
 The broader serialized source model lives in the sibling

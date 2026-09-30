@@ -15,10 +15,10 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 2/2, bridge 34, recipes 3, parametric 73 | `ctest`, `cargo test` (see README) |
-| SonarQube (indexed Rust) | Gate OK, 0 issues, 93.3% line coverage | `tools/sonar/run.sh` |
+| Tests | C 2/2, bridge 34, recipes 3, parametric 79 | `ctest`, `cargo test` (see README) |
+| SonarQube (indexed Rust) | Gate OK, 0 issues, 93.1% line coverage | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
-| Coverage | 93.34% lines overall; C++ 94.18% lines, 88.11% branches, 100% functions | `tools/coverage/run.sh` |
+| Coverage | 93.24% lines overall; C++ 94% lines, 88% branches, 100% functions | `tools/coverage/run.sh` |
 
 ## Done
 
@@ -64,6 +64,9 @@ tracks status and order.
   placement and frames; checked coincident, parallel, perpendicular, and
   distance relationships; configurations layering overrides and suppression;
   materials with inheritance and mass.
+- Relationship solving: free instances placed by Levenberg–Marquardt so
+  their relationships hold, with free-degree and redundancy reporting and
+  no change to the graph when relationships conflict.
 - Versioned JSON documents with migrations from every schema since v1.
 
 ### Recipes
@@ -84,10 +87,7 @@ tracks status and order.
 Ordered by priority. Each item should land with tests, a schema bump when the
 document format changes, and updates to this file.
 
-1. **Relationship solving.** Place instances to satisfy their relationships,
-   starting with rigid coincident and distance chains, and report
-   over-constrained or conflicting sets.
-2. **Datum- and mass-based requirements.** Verification rules for mass
+1. **Datum- and mass-based requirements.** Verification rules for mass
    limits, datum clearances, and relationship satisfaction alongside the
    existing validity and volume rules.
 

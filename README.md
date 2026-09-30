@@ -59,7 +59,8 @@ curvature-radius, sampled full-edge curvature-radius range, proven-bound
 curvature-radius range,
 largest-planar-face, tangent-neighbor, set composition, and operation-history
 rules. Families declare named datums; graphs record checked datum
-relationships, configurations, and materials with mass. Schema v1 through
+relationships that can be solved to place free instances, configurations, and
+materials with mass. Schema v1 through
 v21 documents migrate to v22 during load; unsupported
 future versions are rejected.
 Managed regeneration incrementally reuses unchanged outputs and

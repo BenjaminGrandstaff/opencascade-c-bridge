@@ -42,7 +42,7 @@ pub enum ResolvedDatum {
 }
 
 impl DatumKind {
-    fn evaluate(
+    pub(crate) fn evaluate(
         &self,
         parameters: &HashMap<String, ParameterValue>,
     ) -> Result<ResolvedDatum, ModelError> {
@@ -69,7 +69,7 @@ impl DatumKind {
 }
 
 impl ResolvedDatum {
-    fn transformed(self, placement: &NormalizedPlacement) -> Self {
+    pub(crate) fn transformed(self, placement: &NormalizedPlacement) -> Self {
         let point = |value| transform_point(value, placement);
         let direction = |value| rotate_by(value, placement);
         match self {
@@ -317,7 +317,7 @@ impl<'definition> InstanceGraph<'definition> {
             .collect()
     }
 
-    fn check_relationship(
+    pub(crate) fn check_relationship(
         &self,
         relationship: &AssemblyRelationship,
     ) -> Result<RelationshipCheck, ModelError> {
@@ -762,11 +762,11 @@ fn perpendicular_angle(u: Vec3, v: Vec3) -> f64 {
 
 // ---- vector math
 
-fn dot(a: Vec3, b: Vec3) -> f64 {
+pub(crate) fn dot(a: Vec3, b: Vec3) -> f64 {
     a.x * b.x + a.y * b.y + a.z * b.z
 }
 
-fn cross(a: Vec3, b: Vec3) -> Vec3 {
+pub(crate) fn cross(a: Vec3, b: Vec3) -> Vec3 {
     Vec3::new(
         a.y * b.z - a.z * b.y,
         a.z * b.x - a.x * b.z,
@@ -774,23 +774,23 @@ fn cross(a: Vec3, b: Vec3) -> Vec3 {
     )
 }
 
-fn add(a: Vec3, b: Vec3) -> Vec3 {
+pub(crate) fn add(a: Vec3, b: Vec3) -> Vec3 {
     Vec3::new(a.x + b.x, a.y + b.y, a.z + b.z)
 }
 
-fn subtract(a: Vec3, b: Vec3) -> Vec3 {
+pub(crate) fn subtract(a: Vec3, b: Vec3) -> Vec3 {
     Vec3::new(a.x - b.x, a.y - b.y, a.z - b.z)
 }
 
-fn scale(a: Vec3, factor: f64) -> Vec3 {
+pub(crate) fn scale(a: Vec3, factor: f64) -> Vec3 {
     Vec3::new(a.x * factor, a.y * factor, a.z * factor)
 }
 
-fn length(a: Vec3) -> f64 {
+pub(crate) fn length(a: Vec3) -> f64 {
     a.x.hypot(a.y.hypot(a.z))
 }
 
-fn unit(a: Vec3) -> Result<Vec3, ModelError> {
+pub(crate) fn unit(a: Vec3) -> Result<Vec3, ModelError> {
     let size = length(a);
     if size > f64::EPSILON {
         Ok(scale(a, 1.0 / size))
@@ -800,7 +800,7 @@ fn unit(a: Vec3) -> Result<Vec3, ModelError> {
 }
 
 /// Rodrigues rotation of a direction by the placement's axis-angle, if any.
-fn rotate_by(value: Vec3, placement: &NormalizedPlacement) -> Vec3 {
+pub(crate) fn rotate_by(value: Vec3, placement: &NormalizedPlacement) -> Vec3 {
     let Some((_, axis, angle)) = placement.rotation else {
         return value;
     };
@@ -813,7 +813,7 @@ fn rotate_by(value: Vec3, placement: &NormalizedPlacement) -> Vec3 {
 }
 
 /// Rotates a point about the placement's axis through its origin, then translates.
-fn transform_point(point: Vec3, placement: &NormalizedPlacement) -> Vec3 {
+pub(crate) fn transform_point(point: Vec3, placement: &NormalizedPlacement) -> Vec3 {
     let rotated = match placement.rotation {
         Some((origin, _, _)) => add(origin, rotate_by(subtract(point, origin), placement)),
         None => point,
@@ -822,7 +822,7 @@ fn transform_point(point: Vec3, placement: &NormalizedPlacement) -> Vec3 {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use std::f64::consts::FRAC_PI_2;
 
@@ -861,7 +861,7 @@ mod tests {
 
     /// A width x depth x height block with datums on its top, bottom, right
     /// face, top center, and vertical center axis.
-    fn block() -> FamilyDefinition {
+    pub(crate) fn block() -> FamilyDefinition {
         FamilyDefinition {
             id: "Block".into(),
             version: 1,
@@ -929,11 +929,11 @@ mod tests {
         ParameterValue::Scalar(Quantity::length(millimeters, LengthUnit::Millimeter))
     }
 
-    fn translated(x: f64, y: f64, z: f64) -> Placement {
+    pub(crate) fn translated(x: f64, y: f64, z: f64) -> Placement {
         Placement::translated(VectorQuantity::lengths(x, y, z, LengthUnit::Millimeter))
     }
 
-    fn assert_point(datum: ResolvedDatum, expected: (f64, f64, f64)) {
+    pub(crate) fn assert_point(datum: ResolvedDatum, expected: (f64, f64, f64)) {
         let ResolvedDatum::Point { origin } = datum else {
             panic!("expected a point, got {datum:?}");
         };
@@ -945,7 +945,7 @@ mod tests {
     }
 
     /// Block `a` at the origin and its clone `b` stacked on top of it.
-    fn stacked(definition: &FamilyDefinition) -> InstanceGraph<'_> {
+    pub(crate) fn stacked(definition: &FamilyDefinition) -> InstanceGraph<'_> {
         let mut graph = InstanceGraph::new(definition);
         graph.add_base("a", HashMap::new(), "test").unwrap();
         graph.add_clone("b", "a", HashMap::new(), "test").unwrap();
@@ -955,7 +955,7 @@ mod tests {
         graph
     }
 
-    fn relationship(
+    pub(crate) fn relationship(
         id: &str,
         kind: RelationKind,
         first: (&str, &str),
