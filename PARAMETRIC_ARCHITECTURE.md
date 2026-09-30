@@ -56,7 +56,44 @@ The following major capabilities remain planned:
   model;
 - broader requirement rules such as clearance, interference, minimum radius,
   wall thickness, connectivity, and manufacturing checks;
-- assembly relationships, configurations, materials, and named datums.
+- solving instance placements from assembly relationships;
+- mass-, clearance-, and datum-based requirement verification.
+
+## Assembly semantics
+
+Assembly semantics live in the `assembly` module and serialize with the
+document.
+
+- **Named datums.** A family declares points, axes, and planes from parameter
+  expressions in its own coordinates, such as a hinge axis at a parameterized
+  offset. `InstanceGraph::datum` resolves one for an instance in model
+  coordinates through its parameters, placement, and enclosing frames.
+  Families reject duplicate datum ids, wrong dimensions, and zero directions.
+- **Relationships.** `Coincident`, `Parallel`, `Perpendicular`, and
+  `Distance` relate two instance datums. They record design intent and are
+  checked, not solved: `check_relationships` reports each as satisfied or
+  violated with its linear residual in millimeters and angular residual in
+  radians, against tolerances of 1e-6 mm and 1e-9 rad. Coincidence covers
+  point, axis, and plane pairs, including an axis lying in a plane; parallel
+  and perpendicular treat a plane by its normal, so an axis is parallel to a
+  plane when it is normal to the plane's normal. Unsupported pairs, such as a
+  distance between an axis and a plane, are rejected when added.
+- **Configurations.** A configuration layers per-instance parameter
+  overrides and instance suppression over the base graph without changing it.
+  Its overrides apply after each instance's own overrides and are inherited
+  by clones like ordinary overrides, while a clone's own override still wins
+  over a configured value on its source. Setting the active configuration
+  makes resolution, datums, relationship checks, pattern drivers, and graph
+  regeneration follow it. A configuration change is rejected when any
+  instance would no longer resolve. Documents always store the base graph;
+  the active configuration is evaluation state.
+- **Materials.** Named materials carry a density. An instance uses its own
+  assignment or inherits its clone source's; detaching keeps the inherited
+  material. `mass` multiplies a generated output's volume by that density.
+
+Pattern resizing refuses to delete a member that a relationship,
+configuration, or material assignment names, and document validation rejects
+references to unknown instances, datums, configurations, or materials.
 
 ## Definition, instance, and result
 
@@ -526,7 +563,8 @@ information, so they are delivery artifacts and cannot replace the parametric
 source model.
 
 `ModelDocument` is the implemented local persistence boundary. Schema version
-21 serializes the primary and additional family definitions, requirements, derived parameters,
+22 serializes the primary and additional family definitions with their datums,
+assembly relationships, configurations, materials and material assignments, requirements, derived parameters,
 constraints, base and clone nodes, sparse overrides, placements, linear and
 circular pattern rules, linear and circular fit constraints, slot counts,
 member slots, placement overrides, suppression, count drivers, and parameter-
@@ -534,8 +572,9 @@ or bounds-driven fitted spans,
 nested assembly frames, semantic selectors, provenance, and regeneration audit records. Live
 OCCT handles and generated BREPs are never serialized. Loading reconstructs a
 validated `InstanceGraph`; regeneration creates fresh session-owned handles.
-Schema versions 1 through 20 migrate to version 21, supplying explicit defaults
-for fields absent from older documents. Version 21 added sewing and single- or
+Schema versions 1 through 21 migrate to version 22, supplying explicit defaults
+for fields absent from older documents. Version 22 added family datums and
+assembly semantics; older documents load with none. Version 21 added sewing and single- or
 multi-shell solid feature operations. Version 20 added additional family
 definitions and per-base family references. Version 19 added optional pattern count
 and span drivers. Version 18 added slot counts, taken
@@ -553,9 +592,9 @@ defaults, units, constraints, placements, clone cycles, missing links,
 inconsistent pattern membership, and invalid regeneration revisions before the
 model is accepted.
 
-The next cross-layer work should prioritize assembly relationships,
-configurations, materials, and named datums, followed by kernel-level
-location-only sharing for placed clones.
+The next cross-layer work should prioritize solving instance placements from
+assembly relationships and requirement rules built on datums and mass,
+followed by kernel-level location-only sharing for placed clones.
 
 The broader serialized source model lives in the sibling
 [`engineering-intent-language`](../engineering-intent-language) project. Its

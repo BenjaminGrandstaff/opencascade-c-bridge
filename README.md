@@ -58,7 +58,9 @@ adjacency, extrema, nearest-center, longest-edge, circular-radius,
 curvature-radius, sampled full-edge curvature-radius range, proven-bound
 curvature-radius range,
 largest-planar-face, tangent-neighbor, set composition, and operation-history
-rules. Schema v1 through v20 documents migrate to v21 during load; unsupported
+rules. Families declare named datums; graphs record checked datum
+relationships, configurations, and materials with mass. Schema v1 through
+v21 documents migrate to v22 during load; unsupported
 future versions are rejected.
 Managed regeneration incrementally reuses unchanged outputs and
 rebuilds dirty features plus their downstream dependents. Graph regeneration

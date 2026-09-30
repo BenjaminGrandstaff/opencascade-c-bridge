@@ -11,14 +11,14 @@ tracks status and order.
 | C ABI (`src/`, `include/`) | ABI 22 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 21 | Active development |
+| `occt-parametric` (engineering layer) | Schema 22 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 2/2, bridge 34, recipes 3, parametric 68 | `ctest`, `cargo test` (see README) |
-| SonarQube (indexed Rust) | Gate OK, 0 issues, 92.7% line coverage | `tools/sonar/run.sh` |
+| Tests | C 2/2, bridge 34, recipes 3, parametric 73 | `ctest`, `cargo test` (see README) |
+| SonarQube (indexed Rust) | Gate OK, 0 issues, 93.3% line coverage | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
-| Coverage | 92.96% lines overall; C++ 94.23% lines, 88.16% branches, 100% functions | `tools/coverage/run.sh` |
+| Coverage | 93.34% lines overall; C++ 94.18% lines, 88.11% branches, 100% functions | `tools/coverage/run.sh` |
 
 ## Done
 
@@ -60,6 +60,10 @@ tracks status and order.
   stable member slots; per-member placement overrides and suppression;
   counts driven by integer family parameters or measured output bounds;
   fitted spans driven by length parameters or measured output bounds.
+- Assembly semantics: family datums (points, axes, planes) resolved through
+  placement and frames; checked coincident, parallel, perpendicular, and
+  distance relationships; configurations layering overrides and suppression;
+  materials with inheritance and mass.
 - Versioned JSON documents with migrations from every schema since v1.
 
 ### Recipes
@@ -80,8 +84,12 @@ tracks status and order.
 Ordered by priority. Each item should land with tests, a schema bump when the
 document format changes, and updates to this file.
 
-1. **Assembly semantics.** Add relationships, configurations, materials, and
-   named datums to the runtime model and versioned document schema.
+1. **Relationship solving.** Place instances to satisfy their relationships,
+   starting with rigid coincident and distance chains, and report
+   over-constrained or conflicting sets.
+2. **Datum- and mass-based requirements.** Verification rules for mass
+   limits, datum clearances, and relationship satisfaction alongside the
+   existing validity and volume rules.
 
 ## Later
 

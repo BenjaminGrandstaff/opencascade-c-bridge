@@ -1,5 +1,13 @@
 //! Unit-aware part families, instances, feature graphs, and verification.
 
+mod assembly;
+
+pub use assembly::{
+    AssemblyRelationship, AssemblySemantics, Configuration, DatumDefinition, DatumKind, DatumRef,
+    Material, RELATIONSHIP_ANGULAR_TOLERANCE, RELATIONSHIP_LINEAR_TOLERANCE, RelationKind,
+    RelationshipCheck, ResolvedDatum,
+};
+
 use occt_bridge::{
     BridgeError, CurvatureExtrema, HistoryRelation, Session, Shape, ShapeType, Vec3,
 };
@@ -685,6 +693,9 @@ pub struct FamilyDefinition {
     pub constraints: Vec<ParameterConstraint>,
     pub features: Vec<FeatureDefinition>,
     pub requirements: Vec<Requirement>,
+    /// Named points, axes, and planes in family coordinates.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub datums: Vec<DatumDefinition>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -1112,7 +1123,7 @@ pub struct GenerationRecord {
     pub last_error: Option<String>,
 }
 
-pub const CURRENT_SCHEMA_VERSION: u32 = 21;
+pub const CURRENT_SCHEMA_VERSION: u32 = 22;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ModelDocument {
@@ -1127,6 +1138,9 @@ pub struct ModelDocument {
     pub frames: Vec<AssemblyFrame>,
     #[serde(default)]
     pub generation_records: Vec<GenerationRecord>,
+    /// Relationships, configurations, and materials.
+    #[serde(default)]
+    pub assembly: AssemblySemantics,
 }
 
 impl ModelDocument {
@@ -1149,6 +1163,10 @@ impl ModelDocument {
             patterns: graph.patterns.clone(),
             frames,
             generation_records: Vec::new(),
+            assembly: AssemblySemantics {
+                active_configuration: None,
+                ..graph.assembly.clone()
+            },
         }
     }
 
@@ -1207,6 +1225,7 @@ impl ModelDocument {
             nodes,
             patterns: self.patterns.clone(),
             frames: self.frame_map(),
+            assembly: self.assembly.clone(),
         })
     }
 
@@ -1289,6 +1308,7 @@ impl ModelDocument {
                 .collect(),
             patterns: self.patterns.clone(),
             frames: self.frame_map(),
+            assembly: self.assembly.clone(),
         };
         self.validate_frames(&graph)?;
         for node in &self.instances {
@@ -1315,7 +1335,7 @@ impl ModelDocument {
             }
             validate_generation_record(record, &node_ids)?;
         }
-        Ok(())
+        graph.validate_assembly()
     }
 
     fn validate_instance_ids(&self) -> Result<HashSet<&str>, ModelError> {
@@ -1640,12 +1660,14 @@ struct ResizePlan {
     added: Vec<(String, usize)>,
 }
 
+#[derive(Clone)]
 pub struct InstanceGraph<'definition> {
     definition: &'definition FamilyDefinition,
     additional_definitions: HashMap<String, &'definition FamilyDefinition>,
     nodes: HashMap<String, InstanceNode>,
     patterns: Vec<Pattern>,
     frames: HashMap<String, AssemblyFrame>,
+    assembly: AssemblySemantics,
 }
 
 impl<'definition> InstanceGraph<'definition> {
@@ -1656,6 +1678,7 @@ impl<'definition> InstanceGraph<'definition> {
             nodes: HashMap::new(),
             patterns: Vec::new(),
             frames: HashMap::new(),
+            assembly: AssemblySemantics::default(),
         }
     }
 
@@ -2345,6 +2368,14 @@ impl<'definition> InstanceGraph<'definition> {
                 "cannot remove pattern member '{source}': '{dependent}' is cloned from it"
             )));
         }
+        if let Some((member, reference)) = removed
+            .iter()
+            .find_map(|member| Some((member, self.assembly.reference_to(member)?)))
+        {
+            return Err(ModelError::new(format!(
+                "cannot remove pattern member '{member}': it is named by {reference}"
+            )));
+        }
         let added = (pattern.slot_count..count)
             .map(|slot| (format!("{}[{slot}]", pattern.member_prefix), slot))
             .collect::<Vec<_>>();
@@ -2427,10 +2458,14 @@ impl<'definition> InstanceGraph<'definition> {
         Ok(())
     }
 
+    /// True for suppressed pattern members and for instances the active
+    /// configuration suppresses.
     pub fn is_suppressed(&self, instance_id: &str) -> bool {
-        self.pattern_of(instance_id)
-            .and_then(|pattern| pattern.member(instance_id))
-            .is_some_and(|member| member.suppressed)
+        self.assembly.configuration_suppresses(instance_id)
+            || self
+                .pattern_of(instance_id)
+                .and_then(|pattern| pattern.member(instance_id))
+                .is_some_and(|member| member.suppressed)
     }
 
     fn pattern_of(&self, instance_id: &str) -> Option<&Pattern> {
@@ -2764,6 +2799,7 @@ impl<'definition> InstanceGraph<'definition> {
     /// parameters, placement, and frame. It also leaves any pattern.
     pub fn detach(&mut self, id: &str) -> Result<(), ModelError> {
         let resolved = self.resolve(id)?;
+        let inherited_material = self.material_of(id)?.map(|material| material.id.clone());
         let node = self
             .nodes
             .get(id)
@@ -2782,6 +2818,7 @@ impl<'definition> InstanceGraph<'definition> {
                 provenance: format!("detached from linked source; {}", resolved.provenance),
             },
         );
+        self.pin_material(id, inherited_material);
         // A detached instance is no longer a linked pattern member; a pattern
         // left without members is removed.
         for pattern in &mut self.patterns {
@@ -2834,6 +2871,9 @@ impl<'definition> InstanceGraph<'definition> {
             }
         };
         visiting.pop();
+        if let Some(configured) = self.assembly.configured_overrides(id) {
+            resolved.extend(configured.clone());
+        }
         resolved.shrink_to_fit();
         Ok(resolved)
     }
@@ -3531,7 +3571,8 @@ fn validate_definition(definition: &FamilyDefinition) -> Result<(), ModelError> 
             .iter()
             .map(|requirement| requirement.id.as_str()),
         "requirement ids must be nonempty, versioned, and unique",
-    )
+    )?;
+    assembly::validate_datums(definition)
 }
 
 /// Adds every id to `seen`, failing on the first empty or repeated id.
@@ -5818,6 +5859,7 @@ mod tests {
                     },
                 },
             ],
+            datums: Vec::new(),
             requirements: vec![
                 Requirement {
                     id: "block.valid".into(),
@@ -5925,6 +5967,7 @@ mod tests {
                     },
                 },
             ],
+            datums: Vec::new(),
             requirements: vec![Requirement {
                 id: "void.valid".into(),
                 version: 1,
@@ -9182,6 +9225,7 @@ mod tests {
                     },
                 },
             ],
+            datums: Vec::new(),
             requirements: Vec::new(),
         };
         let instance = PartInstance {
