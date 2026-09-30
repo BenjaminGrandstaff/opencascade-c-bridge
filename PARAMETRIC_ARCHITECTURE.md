@@ -7,22 +7,26 @@ so they can generate and regenerate families of related parts.
 ## Implementation status
 
 The architecture in this document is both a description of implemented
-boundaries and a roadmap. As of ABI version 17, the repository contains three
+boundaries and a roadmap. As of ABI version 21, the repository contains three
 Rust layers:
 
 1. **`occt-bridge`** safely wraps session-owned OCCT handles. It includes
    generic primitives, reusable wires and faces, transforms, booleans, sweeps,
-   lofts, selected-edge treatments, offsets, hollowing, topology traversal,
+   lofts, face sewing with operation history, single- and multi-shell solid
+   construction, selected-edge treatments, offsets, hollowing, topology traversal,
    oriented face normals, face planarity, edge length, circular radius, and
    midpoint, deterministic sampled, and exact or error-bounded full-edge
    curvature, direct topology
    adjacency, recorded face tangency, physical measurements, BREP persistence,
+   STEP import/export, configurable ASCII/binary STL tessellation export,
+   validated multi-shell solids with internal voids,
    generated/modified/deleted operation history, and
    history-preserving duplicate handles for transactional reuse.
 2. **`occt-recipes`** owns application-level construction. Its wall-torch
-   recipe is composed entirely from generic bridge operations. Faceted stone
-   construction is exposed here but temporarily delegates to the compatibility
-   ABI until generic sewing and shell-to-solid operations are available.
+   recipe is composed entirely from generic bridge operations. The faceted
+   stone recipe builds planar facets, sews them, and closes the shell into a
+   solid, matching the volume of the legacy compatibility constructor it
+   replaces.
 3. **`occt-parametric`** implements the first executable engineering layer:
    typed scalar, vector, integer, Boolean, and choice parameters; explicit
    length units; versioned families; persistent instance identity; sparse
@@ -39,15 +43,14 @@ Rust layers:
    midpoint, sampled, and proven-bound full-edge curvature radius, oriented
    normals,
    adjacency, G1 tangent neighbors, recursive set composition, multi-result and
-   operation-history tracking;
-   versioned JSON persistence with
-   schema migration and validation; incremental dirty-feature rebuilding; and
+   operation-history tracking; serializable sewing and single- or multi-shell
+   solid feature operations; versioned JSON persistence with schema migration
+   and validation; incremental dirty-feature rebuilding; and transactional
    cleanup when regeneration or placement fails.
 
 The following major capabilities remain planned:
 
-- patterns driven by parameters or geometry, and kernel-level (location-only)
-  shape sharing;
+- kernel-level (location-only) shape sharing;
 - additional domain-specific expression functions;
 - additional schema migrations and integration with the broader EIL source
   model;
@@ -263,8 +266,17 @@ the pattern frame rather than being reassigned individually. Detaching a clone
 keeps its frame and placement and removes it from its pattern, since it is no
 longer linked to the pattern source; a pattern left without members is
 removed. Unknown frames, frame cycles (reported with their path), and
-pattern members outside their pattern frame are rejected. All nodes in one
-graph currently share one family definition.
+pattern members outside their pattern frame are rejected.
+
+An `InstanceGraph` has a primary family and may register additional family
+definitions. A base instance selects a registered family; linked clones and
+pattern members inherit the family of their root base, and detachment records
+that resolved family explicitly. Overrides, constraints, features, and
+requirements are resolved against the selected family. Regeneration groups
+equivalent parameter sets only within the same family id and version, so two
+families with coincidentally identical parameter maps never share incompatible
+feature results. Family ids must be nonempty and unique, and unknown family
+references are rejected before a document is accepted.
 
 Pattern members record a rule slot, an optional placement override, and a
 suppression flag. A member's placement is its override or the rule placement
@@ -294,6 +306,20 @@ it, so a 9 m span at 3 m maximum spacing yields exactly three gaps. Fits are
 capped at 10,000 members. Replacing a fitted rule re-solves and resizes the
 pattern; the count of a fitted pattern cannot be set directly, and documents
 whose slot count disagrees with their constraints are rejected.
+
+A pattern may bind a freely counted linear or circular rule to an integer
+parameter on any resolvable instance, or fit its count to the measured bounds
+extent of a named output and a maximum spacing. A `LinearFit` may bind its span
+to a length parameter, or measure an output extent and apply that length along
+a typed direction. `refresh_driven_patterns`,
+`regenerate_instances`, and `regenerate_all` resolve all drivers before
+mutation, then reuse the existing stable-slot resize and placement machinery.
+Geometry measurements use a temporary placed generation and release every
+shape afterwards. Invalid parameter types, missing instances or outputs, zero
+directions, nonpositive spans, incompatible rules, and counts outside
+1..=10,000 are rejected. Drivers and their resolved rules survive document
+round-tripping; normalized placement comparisons tolerate serialization noise
+without accepting material placement changes.
 
 `InstanceGraph::regenerate_instances` and `regenerate_all` implement the
 shared-shape execution mode. Requested instances are grouped by their complete
@@ -446,7 +472,8 @@ The C ABI exposes general, language-neutral OCCT capabilities:
 - primitives, profiles, wires, faces, solids, and transforms;
 - booleans, sweeps, lofts, offsets, shells, fillets, and chamfers;
 - topology traversal, geometry queries, validation, and measurements;
-- BREP import/export and operation-history information.
+- BREP persistence, STEP import/export, configurable STL mesh export, and
+  operation-history information.
 
 The Rust parametric layer owns or is intended to own:
 
@@ -467,11 +494,13 @@ application code should use the recipe crate.
 
 ## Compatibility rule
 
-The C interface currently requires an exact ABI version match. ABI version 17
-adds exact or error-bounded edge curvature extrema to the existing
-topological-identity, elliptical-wire, curvature, tangency, traversal, measurement, generic-modeling, and
-operation-history API while preserving the rule that OCCT objects never cross
-the boundary. The ELF library retains symbol version `OCCT_BRIDGE_1.0`; the
+The C interface currently requires an exact ABI version match. ABI version 21
+adds validated multi-shell solid construction with internal voids to the
+existing STEP exchange, configurable ASCII/binary STL tessellation export,
+sewing, single-shell solid construction,
+curvature-extrema, topological-identity, elliptical-wire, tangency, traversal,
+measurement, generic-modeling, and operation-history API while preserving the
+rule that OCCT objects never cross the boundary. The ELF library retains symbol version `OCCT_BRIDGE_1.0`; the
 explicit runtime ABI number is the authoritative API contract checked during
 session creation.
 
@@ -493,15 +522,19 @@ information, so they are delivery artifacts and cannot replace the parametric
 source model.
 
 `ModelDocument` is the implemented local persistence boundary. Schema version
-18 serializes the complete family definition, requirements, derived parameters,
+21 serializes the primary and additional family definitions, requirements, derived parameters,
 constraints, base and clone nodes, sparse overrides, placements, linear and
 circular pattern rules, linear and circular fit constraints, slot counts,
-member slots, placement overrides, and suppression,
+member slots, placement overrides, suppression, count drivers, and parameter-
+or bounds-driven fitted spans,
 nested assembly frames, semantic selectors, provenance, and regeneration audit records. Live
 OCCT handles and generated BREPs are never serialized. Loading reconstructs a
 validated `InstanceGraph`; regeneration creates fresh session-owned handles.
-Schema versions 1 through 17 migrate to version 18, supplying explicit defaults
-for fields absent from older documents. Version 18 added slot counts, taken
+Schema versions 1 through 20 migrate to version 21, supplying explicit defaults
+for fields absent from older documents. Version 21 added sewing and single- or
+multi-shell solid feature operations. Version 20 added additional family
+definitions and per-base family references. Version 19 added optional pattern count
+and span drivers. Version 18 added slot counts, taken
 from the highest member slot, and member prefixes, taken from a first member
 named `prefix[n]` or else the pattern id. Version 17 replaced member id strings
 with slot records numbered by position; a stored member placement that differs
@@ -516,11 +549,9 @@ defaults, units, constraints, placements, clone cycles, missing links,
 inconsistent pattern membership, and invalid regeneration revisions before the
 model is accepted.
 
-The next kernel work should prioritize generic sewing, shell-to-solid
-construction, broader exchange formats, and the remaining operations needed by
-feature definitions. The next parametric work should prioritize additional
-schema migrations, patterns driven by family parameters or assembly
-geometry, and multi-family graphs.
+The next cross-layer work should prioritize assembly relationships,
+configurations, materials, and named datums, followed by kernel-level
+location-only sharing for placed clones.
 
 The broader serialized source model lives in the sibling
 [`engineering-intent-language`](../engineering-intent-language) project. Its

@@ -295,6 +295,24 @@ static void combinations_and_features(occt_bridge_session_t* session) {
     EXPECT(occt_bridge_create_compound(session, edges, 0, &out), ARG);
     EXPECT(occt_bridge_create_compound(session, missing_list, 1, &out), MISSING);
 
+    EXPECT(occt_bridge_sew(session, faces, 1, 1e-6, NULL), ARG);
+    EXPECT(occt_bridge_sew(session, NULL, 1, 1e-6, &out), ARG);
+    EXPECT(occt_bridge_sew(session, faces, 0, 1e-6, &out), ARG);
+    EXPECT(occt_bridge_sew(session, faces, 1, NAN, &out), ARG);
+    EXPECT(occt_bridge_sew(session, faces, 1, 0, &out), ARG);
+    EXPECT(occt_bridge_sew(session, missing_list, 1, 1e-6, &out), MISSING);
+    EXPECT(occt_bridge_sew(session, wrong_faces, 1, 1e-6, &out), GEOMETRY);
+    EXPECT(occt_bridge_make_solid(session, box, NULL), ARG);
+    EXPECT(occt_bridge_make_solid(session, unknown, &out), MISSING);
+    EXPECT(occt_bridge_make_solid(session, face, &out), GEOMETRY);
+    EXPECT(occt_bridge_make_solid(session, box, &out), OK);
+    EXPECT(occt_bridge_make_solid_from_shells(session, faces, 1, NULL), ARG);
+    EXPECT(occt_bridge_make_solid_from_shells(session, NULL, 1, &out), ARG);
+    EXPECT(occt_bridge_make_solid_from_shells(session, faces, 0, &out), ARG);
+    EXPECT(occt_bridge_make_solid_from_shells(session, missing_list, 1, &out), MISSING);
+    EXPECT(occt_bridge_make_solid_from_shells(session, faces, 1, &out), GEOMETRY);
+    EXPECT(occt_bridge_make_solid_from_shells(session, &box, 1, &out), OK);
+
     EXPECT(occt_bridge_fuse(session, box, other, NULL), ARG);
     EXPECT(occt_bridge_fuse(session, unknown, other, &out), MISSING);
     EXPECT(occt_bridge_cut(session, box, unknown, &out), MISSING);
@@ -546,6 +564,37 @@ static void persistence(occt_bridge_session_t* session) {
     EXPECT(occt_bridge_brep_load(session, NULL, &out), ARG);
     EXPECT(occt_bridge_brep_load(session, "", &out), ARG);
     EXPECT(occt_bridge_brep_load(session, "/nonexistent-directory/shape.brep", &out), IO);
+
+    EXPECT(occt_bridge_step_save(session, box, NULL), ARG);
+    EXPECT(occt_bridge_step_save(session, box, ""), ARG);
+    EXPECT(occt_bridge_step_save(session, unknown, "unused.step"), MISSING);
+    EXPECT(occt_bridge_step_save(session, box, "/nonexistent-directory/shape.step"), IO);
+    EXPECT(occt_bridge_step_load(session, "unused.step", NULL), ARG);
+    EXPECT(occt_bridge_step_load(session, NULL, &out), ARG);
+    EXPECT(occt_bridge_step_load(session, "", &out), ARG);
+    EXPECT(occt_bridge_step_load(session, "/nonexistent-directory/shape.step", &out), IO);
+    FILE* malformed = fopen("c-api-malformed.step", "wb");
+    if (malformed == NULL) {
+        abort();
+    }
+    (void)fputs("not a STEP file\n", malformed);
+    (void)fclose(malformed);
+    EXPECT(occt_bridge_step_load(session, "c-api-malformed.step", &out), IO);
+    if (remove("c-api-malformed.step") != 0) {
+        abort();
+    }
+
+    EXPECT(occt_bridge_stl_save(session, box, NULL, 0.1, 0.5, 1), ARG);
+    EXPECT(occt_bridge_stl_save(session, box, "", 0.1, 0.5, 1), ARG);
+    EXPECT(occt_bridge_stl_save(session, unknown, "unused.stl", 0.1, 0.5, 1), MISSING);
+    EXPECT(occt_bridge_stl_save(session, box, "unused.stl", 0.0, 0.5, 1), ARG);
+    EXPECT(occt_bridge_stl_save(session, box, "unused.stl", -1.0, 0.5, 1), ARG);
+    EXPECT(occt_bridge_stl_save(session, box, "unused.stl", NAN, 0.5, 1), ARG);
+    EXPECT(occt_bridge_stl_save(session, box, "unused.stl", 0.1, 0.0, 1), ARG);
+    EXPECT(occt_bridge_stl_save(session, box, "unused.stl", 0.1, INFINITY, 1), ARG);
+    EXPECT(occt_bridge_stl_save(session, box, "unused.stl", 0.1, 0.5, 2), ARG);
+    EXPECT(occt_bridge_stl_save(
+        session, box, "/nonexistent-directory/shape.stl", 0.1, 0.5, 1), IO);
 }
 
 int main(void) {

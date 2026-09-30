@@ -3,7 +3,7 @@
 A small, stable C ABI over Open Cascade (OCCT), designed to be wrapped safely
 from Rust and other languages. Open Cascade C++ objects never cross the ABI.
 
-The current C ABI version is **17**.
+The current C ABI version is **21**.
 
 ## Current API
 
@@ -17,6 +17,8 @@ The current C ABI version is **17**.
 - Compatibility constructors for existing natural-stone and wall-torch callers
 - Circular tubes swept along arbitrary 3D polylines for rails, scrollwork, and ornament
 - Multi-section solid/shell lofts and assembly compounds
+- Face and shell sewing with operation history, single-shell solid
+  construction, and multi-shell solids with internal voids
 - Fuse, cut, and common boolean operations
 - Selected-edge fillets and chamfers, joined offsets, and face-selected hollowing
 - Shape-kind and unique-subshape traversal
@@ -28,7 +30,7 @@ The current C ABI version is **17**.
 - Recorded G1-or-better tangency queries between adjacent faces
 - Generated, modified, and deleted operation-history queries
 - Bounds, surface area, volume, center-of-mass, and BREP validity inspection
-- BREP load/save
+- BREP persistence, STEP import/export, and configurable ASCII/binary STL export
 - Caller-owned diagnostic buffers
 - Exception containment at every C entry point
 - Dependency-free safe Rust wrapper
@@ -43,17 +45,19 @@ machine-readable requirements and verification results, preserving why
 geometry exists instead of only how it was constructed. Linked clone graphs,
 sparse inherited overrides, explicit detachment, accepted-result revisions,
 stale-result retention, independent axis-angle placement, linear clone
-patterns, explicit generation freezing, unit-aware derived scalar arithmetic
+patterns, parameter- or geometry-driven counts and fitted spans,
+multi-family instance graphs, explicit generation freezing, unit-aware derived scalar arithmetic
 with negate, absolute, minimum, maximum, and clamp functions, derived vector
 composition with add, subtract, scale, and normalize operations, dimension-safe
 comparison-driven conditional scalar expressions,
 pre-generation parameter constraints, semantic face and edge selectors, and
-versioned JSON model documents are implemented. Selectors support orientation,
+versioned JSON model documents are implemented. Feature graphs include sewing
+and single- or multi-shell solid construction. Selectors support orientation,
 adjacency, extrema, nearest-center, longest-edge, circular-radius,
 curvature-radius, sampled full-edge curvature-radius range, proven-bound
 curvature-radius range,
 largest-planar-face, tangent-neighbor, set composition, and operation-history
-rules. Schema v1 through v17 documents migrate to v18 during load; unsupported
+rules. Schema v1 through v20 documents migrate to v21 during load; unsupported
 future versions are rejected.
 Managed regeneration incrementally reuses unchanged outputs and
 rebuilds dirty features plus their downstream dependents. Graph regeneration
@@ -129,10 +133,27 @@ tools/coverage/run.sh
 Rust unit tests live inside each crate's `lib.rs`, so Rust percentages include
 test code. Rust branch coverage needs a nightly toolchain and is not reported.
 
+SonarQube analysis converts the merged LCOV report to Sonar's generic coverage
+format, runs the containerized scanner, waits for the quality gate, and fails
+on a failed gate or any open issue:
+
+```bash
+SONAR_TOKEN=... tools/sonar/run.sh
+```
+
+Set `SONAR_HOST_URL` when the server is not at `http://127.0.0.1:9000`. A token
+may instead be read from `SONAR_TOKEN_FILE`; local automation can provide
+`SONAR_ADMIN_AUTH=user:password` to create and revoke a temporary analysis
+token. Pass `--no-coverage` to reuse an existing `build/coverage/lcov.info`.
+SonarQube Community Build indexes the Rust sources but not C/C++; the generic
+report still contains both languages, so editions with the CFamily analyzer
+can import the C/C++ records as well.
+
 Application-specific construction belongs in the dependency-free
 [`occt-recipes`](rust/occt-recipes) crate. Its wall-torch recipe is composed
-entirely from generic bridge primitives; the faceted-stone recipe currently
-uses the compatibility ABI until generic sewing is available.
+entirely from generic bridge primitives, and its faceted-stone recipe sews
+planar facets and closes them into a solid. The corresponding C entry points
+remain exported only for compatibility.
 
 The [`occt-parametric`](rust/occt-parametric) crate provides the first local
 engineering-model layer: typed unit-aware parameters, versioned families,
@@ -230,13 +251,14 @@ occt_bridge_create_box(
 );
 
 occt_bridge_brep_save(session, box, "floor.brep");
+occt_bridge_step_save(session, box, "floor.step");
 occt_bridge_session_destroy(session);
 ```
 
 ## Rust example
 
 ```rust
-use occt_bridge::{Session, Vec3};
+use occt_bridge::{Session, StlOptions, Vec3};
 
 let session = Session::new()?;
 let floor = session.create_box(
@@ -244,6 +266,8 @@ let floor = session.create_box(
     Vec3::new(400.0, 400.0, 10.0),
 )?;
 session.save_brep(&floor, "floor.brep")?;
+session.save_step(&floor, "floor.step")?;
+session.save_stl(&floor, "floor.stl", StlOptions::default())?;
 ```
 
 ## Scope

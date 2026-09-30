@@ -47,6 +47,10 @@ target_link_libraries(
     TKBool
     TKFillet
     TKOffset
+    TKXSBase
+    TKDESTEP
+    TKMesh
+    TKDESTL
 )
 set_target_properties(
     occt_bridge PROPERTIES

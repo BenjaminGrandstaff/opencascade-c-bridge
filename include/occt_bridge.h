@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define OCCT_BRIDGE_ABI_VERSION 17u
+#define OCCT_BRIDGE_ABI_VERSION 21u
 #define OCCT_BRIDGE_INVALID_SHAPE_ID UINT64_C(0)
 
 #if defined(_WIN32) && defined(OCCT_BRIDGE_BUILD_SHARED)
@@ -257,6 +257,46 @@ OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_create_loft(
     size_t section_count,
     int make_solid,
     int ruled,
+    occt_bridge_shape_id_t* out_shape
+);
+
+/*
+ * Sews faces and shells whose boundary edges lie within tolerance of each
+ * other. Each input may be a face, shell, solid, or compound and must contain
+ * at least one face; inputs are not modified. The result is a shell when
+ * everything joins and a compound of shells and free faces otherwise.
+ * Operation history records modified and deleted vertices, edges, and faces.
+ */
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_sew(
+    occt_bridge_session_t* session,
+    const occt_bridge_shape_id_t* shapes,
+    size_t shape_count,
+    double tolerance,
+    occt_bridge_shape_id_t* out_shape
+);
+
+/*
+ * Builds an outward-oriented solid from a shape containing exactly one
+ * closed shell, such as the result of occt_bridge_sew. Open shells, several
+ * shells, and invalid results return OCCT_BRIDGE_INVALID_GEOMETRY.
+ */
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_make_solid(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t shell,
+    occt_bridge_shape_id_t* out_shape
+);
+
+/*
+ * Builds a solid from one outer closed shell and zero or more closed shells
+ * that bound internal voids. Inputs may be shells or shapes containing shells;
+ * the largest enclosed volume is selected as the outer boundary. Every other
+ * shell must lie inside it. Open, intersecting, or disjoint boundaries and
+ * invalid results return OCCT_BRIDGE_INVALID_GEOMETRY.
+ */
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_make_solid_from_shells(
+    occt_bridge_session_t* session,
+    const occt_bridge_shape_id_t* shells,
+    size_t shell_count,
     occt_bridge_shape_id_t* out_shape
 );
 
@@ -542,6 +582,30 @@ OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_brep_load(
     occt_bridge_session_t* session,
     const char* path,
     occt_bridge_shape_id_t* out_shape
+);
+
+/* STEP exchange. Geometry and topology are preserved; OCCT session handles,
+ * operation history, and application metadata are not part of STEP files. */
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_step_save(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t shape,
+    const char* path
+);
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_step_load(
+    occt_bridge_session_t* session,
+    const char* path,
+    occt_bridge_shape_id_t* out_shape
+);
+
+/* STL mesh export. Deflections must be finite and positive. `binary` must be
+ * 0 for ASCII STL or 1 for binary STL. */
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_stl_save(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t shape,
+    const char* path,
+    double linear_deflection,
+    double angular_deflection_radians,
+    int binary
 );
 
 #ifdef __cplusplus

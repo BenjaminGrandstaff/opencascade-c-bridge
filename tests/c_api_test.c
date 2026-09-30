@@ -25,6 +25,158 @@ static int close_enough(double left, double right) {
     return fabs(left - right) < 1e-6;
 }
 
+static void test_step_round_trip(occt_bridge_session_t* session) {
+    const char* path = "c-api-test-output.step";
+    occt_bridge_shape_id_t source = OCCT_BRIDGE_INVALID_SHAPE_ID;
+    require_ok(session, occt_bridge_create_box(
+        session, (occt_bridge_vec3_t){-2.0, 3.0, 5.0},
+        (occt_bridge_vec3_t){10.0, 20.0, 30.0}, &source));
+    occt_bridge_bounds_t source_bounds;
+    double source_volume = 0.0;
+    require_ok(session, occt_bridge_shape_bounds(session, source, &source_bounds));
+    require_ok(session, occt_bridge_shape_volume(session, source, &source_volume));
+    require_ok(session, occt_bridge_step_save(session, source, path));
+
+    occt_bridge_shape_id_t loaded = OCCT_BRIDGE_INVALID_SHAPE_ID;
+    require_ok(session, occt_bridge_step_load(session, path, &loaded));
+    int is_valid = 0;
+    occt_bridge_shape_type_t type = 0;
+    occt_bridge_bounds_t loaded_bounds;
+    double loaded_volume = 0.0;
+    size_t faces = 0;
+    size_t edges = 0;
+    require_ok(session, occt_bridge_shape_is_valid(session, loaded, &is_valid));
+    require_ok(session, occt_bridge_shape_type(session, loaded, &type));
+    require_ok(session, occt_bridge_shape_bounds(session, loaded, &loaded_bounds));
+    require_ok(session, occt_bridge_shape_volume(session, loaded, &loaded_volume));
+    require_ok(session, occt_bridge_shape_subshape_count(
+        session, loaded, OCCT_BRIDGE_SHAPE_FACE, &faces));
+    require_ok(session, occt_bridge_shape_subshape_count(
+        session, loaded, OCCT_BRIDGE_SHAPE_EDGE, &edges));
+    require_true(is_valid == 1, "STEP round-trip validity");
+    require_true(type == OCCT_BRIDGE_SHAPE_SOLID, "STEP round-trip topology type");
+    require_true(faces == 6 && edges == 12, "STEP round-trip topology counts");
+    require_true(close_enough(source_bounds.min.x, loaded_bounds.min.x), "STEP minimum x");
+    require_true(close_enough(source_bounds.min.y, loaded_bounds.min.y), "STEP minimum y");
+    require_true(close_enough(source_bounds.min.z, loaded_bounds.min.z), "STEP minimum z");
+    require_true(close_enough(source_bounds.max.x, loaded_bounds.max.x), "STEP maximum x");
+    require_true(close_enough(source_bounds.max.y, loaded_bounds.max.y), "STEP maximum y");
+    require_true(close_enough(source_bounds.max.z, loaded_bounds.max.z), "STEP maximum z");
+    require_true(fabs(source_volume - loaded_volume) < 1e-6, "STEP round-trip volume");
+
+    size_t count = 0;
+    require_ok(session, occt_bridge_session_shape_count(session, &count));
+    require_true(count == 2, "STEP round-trip handle count");
+    require_ok(session, occt_bridge_shape_remove(session, loaded));
+    require_ok(session, occt_bridge_shape_remove(session, source));
+    require_true(remove(path) == 0, "remove STEP test output");
+}
+
+static void test_stl_export(occt_bridge_session_t* session) {
+    const char* path = "c-api-test-output.stl";
+    occt_bridge_shape_id_t box = OCCT_BRIDGE_INVALID_SHAPE_ID;
+    require_ok(session, occt_bridge_create_box(
+        session, (occt_bridge_vec3_t){0.0, 0.0, 0.0},
+        (occt_bridge_vec3_t){10.0, 20.0, 30.0}, &box));
+    require_ok(session, occt_bridge_stl_save(session, box, path, 0.1, 0.5, 1));
+
+    FILE* file = fopen(path, "rb");
+    if (file == NULL) {
+        (void)fprintf(stderr, "test failure: open binary STL output\n");
+        abort();
+    }
+    unsigned char header[84] = {0};
+    require_true(fread(header, 1, sizeof(header), file) == sizeof(header), "read STL header");
+    const uint32_t triangles = (uint32_t)header[80]
+        | ((uint32_t)header[81] << 8u)
+        | ((uint32_t)header[82] << 16u)
+        | ((uint32_t)header[83] << 24u);
+    require_true(triangles == 12u, "box STL triangle count");
+    require_true(fseek(file, 0, SEEK_END) == 0, "seek STL end");
+    const long size = ftell(file);
+    require_true(size == 84L + 50L * (long)triangles, "binary STL byte count");
+    const int close_status = fclose(file);
+    file = NULL;
+    require_true(close_status == 0, "close STL output");
+
+    size_t count = 0;
+    require_ok(session, occt_bridge_session_shape_count(session, &count));
+    require_true(count == 1, "STL export creates no shape handles");
+    require_ok(session, occt_bridge_shape_remove(session, box));
+    require_true(remove(path) == 0, "remove STL test output");
+}
+
+static occt_bridge_shape_id_t square_face(
+    occt_bridge_session_t* session,
+    occt_bridge_vec3_t a,
+    occt_bridge_vec3_t b,
+    occt_bridge_vec3_t c,
+    occt_bridge_vec3_t d) {
+    const occt_bridge_vec3_t corners[] = {a, b, c, d};
+    occt_bridge_shape_id_t wire = OCCT_BRIDGE_INVALID_SHAPE_ID;
+    occt_bridge_shape_id_t face = OCCT_BRIDGE_INVALID_SHAPE_ID;
+    require_ok(session, occt_bridge_create_polyline_wire(session, corners, 4, 1, &wire));
+    require_ok(session, occt_bridge_create_face_from_wire(session, wire, &face));
+    require_ok(session, occt_bridge_shape_remove(session, wire));
+    return face;
+}
+
+/* Six independent unit squares share no topology until they are sewn. */
+static void test_sewing_and_solids(occt_bridge_session_t* session) {
+    const occt_bridge_vec3_t p000 = {0, 0, 0}, p100 = {1, 0, 0}, p110 = {1, 1, 0}, p010 = {0, 1, 0};
+    const occt_bridge_vec3_t p001 = {0, 0, 1}, p101 = {1, 0, 1}, p111 = {1, 1, 1}, p011 = {0, 1, 1};
+    const occt_bridge_shape_id_t faces[] = {
+        square_face(session, p000, p010, p110, p100),
+        square_face(session, p001, p101, p111, p011),
+        square_face(session, p000, p100, p101, p001),
+        square_face(session, p010, p011, p111, p110),
+        square_face(session, p000, p001, p011, p010),
+        square_face(session, p100, p110, p111, p101),
+    };
+    occt_bridge_shape_id_t sewn = OCCT_BRIDGE_INVALID_SHAPE_ID;
+    require_ok(session, occt_bridge_sew(session, faces, 6, 1e-6, &sewn));
+    occt_bridge_shape_type_t type = 0;
+    require_ok(session, occt_bridge_shape_type(session, sewn, &type));
+    require_true(type == OCCT_BRIDGE_SHAPE_SHELL, "six joined squares sew into a shell");
+    size_t count = 0;
+    require_ok(session, occt_bridge_shape_subshape_count(session, sewn, OCCT_BRIDGE_SHAPE_EDGE, &count));
+    require_true(count == 12, "sewing merges shared cube edges");
+    require_ok(session, occt_bridge_shape_history_count(
+        session, sewn, faces[0], OCCT_BRIDGE_HISTORY_MODIFIED, &count));
+    require_true(count == 1, "each input face maps to one sewn face");
+
+    occt_bridge_shape_id_t solid = OCCT_BRIDGE_INVALID_SHAPE_ID;
+    require_ok(session, occt_bridge_make_solid(session, sewn, &solid));
+    double volume = 0.0;
+    require_ok(session, occt_bridge_shape_volume(session, solid, &volume));
+    require_true(close_enough(volume, 1.0), "sewn cube encloses unit volume");
+    int is_valid = 0;
+    require_ok(session, occt_bridge_shape_is_valid(session, solid, &is_valid));
+    require_true(is_valid == 1, "sewn cube solid is valid");
+
+    occt_bridge_shape_id_t outer = OCCT_BRIDGE_INVALID_SHAPE_ID;
+    occt_bridge_shape_id_t inner = OCCT_BRIDGE_INVALID_SHAPE_ID;
+    require_ok(session, occt_bridge_create_box(session, (occt_bridge_vec3_t){0, 0, 0},
+        (occt_bridge_vec3_t){10, 10, 10}, &outer));
+    require_ok(session, occt_bridge_create_box(session, (occt_bridge_vec3_t){2, 2, 2},
+        (occt_bridge_vec3_t){2, 2, 2}, &inner));
+    const occt_bridge_shape_id_t boundaries[] = {inner, outer};
+    require_ok(session, occt_bridge_make_solid_from_shells(session, boundaries, 2, &solid));
+    require_ok(session, occt_bridge_shape_volume(session, solid, &volume));
+    require_true(close_enough(volume, 992.0), "inner shell subtracts a void from the outer shell");
+    require_ok(session, occt_bridge_shape_subshape_count(
+        session, solid, OCCT_BRIDGE_SHAPE_SHELL, &count));
+    require_true(count == 2, "void solid retains outer and inner shells");
+    require_ok(session, occt_bridge_shape_is_valid(session, solid, &is_valid));
+    require_true(is_valid == 1, "multi-shell solid is valid");
+
+    occt_bridge_shape_id_t open_shell = OCCT_BRIDGE_INVALID_SHAPE_ID;
+    require_ok(session, occt_bridge_sew(session, faces, 5, 1e-6, &open_shell));
+    require_true(
+        occt_bridge_make_solid(session, open_shell, &solid) == OCCT_BRIDGE_INVALID_GEOMETRY,
+        "an open shell does not make a solid");
+}
+
 int main(void) {
     require_true(occt_bridge_abi_version() == OCCT_BRIDGE_ABI_VERSION, "ABI version");
 
@@ -523,6 +675,9 @@ int main(void) {
     require_ok(session, occt_bridge_session_shape_count(session, &count));
     require_true(count == 0, "shape count after clear");
 
+    test_step_round_trip(session);
+    test_stl_export(session);
+    test_sewing_and_solids(session);
     occt_bridge_session_destroy(session);
     puts("C ABI smoke test passed");
     return 0;

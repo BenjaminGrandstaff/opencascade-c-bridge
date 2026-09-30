@@ -201,6 +201,28 @@ impl NormalizedPlacement {
     }
 }
 
+fn placements_equivalent(left: Placement, right: Placement) -> Result<bool, ModelError> {
+    let left = left.normalized()?;
+    let right = right.normalized()?;
+    let close = |a: f64, b: f64| (a - b).abs() <= 1e-9 * a.abs().max(b.abs()).max(1.0);
+    let vector_close = |a: Vec3, b: Vec3| close(a.x, b.x) && close(a.y, b.y) && close(a.z, b.z);
+    if !vector_close(left.translation, right.translation) {
+        return Ok(false);
+    }
+    Ok(match (left.rotation, right.rotation) {
+        (None, None) => true,
+        (
+            Some((left_origin, left_axis, left_angle)),
+            Some((right_origin, right_axis, right_angle)),
+        ) => {
+            vector_close(left_origin, right_origin)
+                && vector_close(left_axis, right_axis)
+                && close(left_angle, right_angle)
+        }
+        _ => false,
+    })
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ParameterValue {
@@ -500,6 +522,13 @@ pub enum FeatureOperation {
         left: String,
         right: String,
     },
+    Sew {
+        inputs: Vec<String>,
+        tolerance: ScalarExpr,
+    },
+    MakeSolid {
+        shells: Vec<String>,
+    },
     Fillet {
         input: String,
         edges: Vec<EdgeSelector>,
@@ -538,6 +567,8 @@ impl FeatureOperation {
             }
             Self::Fuse { left, right } | Self::Common { left, right } => vec![left, right],
             Self::Cut { object, tool } => vec![object, tool],
+            Self::Sew { inputs, .. } => inputs.iter().map(String::as_str).collect(),
+            Self::MakeSolid { shells } => shells.iter().map(String::as_str).collect(),
             Self::Box { .. } | Self::Cylinder { .. } => Vec::new(),
         }
     }
@@ -669,6 +700,10 @@ pub struct PartInstance<'definition> {
 pub enum InstanceNode {
     Base {
         id: String,
+        /// `None` selects the graph's primary family. Named families are
+        /// registered on the graph and serialized in the document.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        family: Option<String>,
         overrides: HashMap<String, ParameterValue>,
         #[serde(default)]
         placement: Placement,
@@ -774,6 +809,44 @@ pub enum PatternRule {
         axis: VectorQuantity,
         sweep_radians: f64,
         spacing: AngularSpacing,
+    },
+}
+
+/// Resolves a freely counted pattern's slot count from an instance parameter
+/// or from the measured extent of generated assembly geometry.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PatternCountDriver {
+    Parameter {
+        instance: String,
+        parameter: String,
+    },
+    /// Fits the fewest members whose gaps do not exceed `maximum_spacing`
+    /// across the measured output extent.
+    BoundsExtent {
+        instance: String,
+        output: String,
+        axis: CoordinateAxis,
+        maximum_spacing: Quantity,
+    },
+}
+
+/// Resolves the span of a `LinearFit` rule. A scalar parameter supplies a
+/// length along `direction`; a bounds extent measures a named generated
+/// output along `axis` and applies that length along `direction`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PatternSpanDriver {
+    Parameter {
+        instance: String,
+        parameter: String,
+        direction: VectorQuantity,
+    },
+    BoundsExtent {
+        instance: String,
+        output: String,
+        axis: CoordinateAxis,
+        direction: VectorQuantity,
     },
 }
 
@@ -933,6 +1006,37 @@ fn positive_angle(angle: f64) -> Result<f64, ModelError> {
     }
 }
 
+fn validate_pattern_driver_rule(
+    rule: &PatternRule,
+    count_driver: Option<&PatternCountDriver>,
+    span_driver: Option<&PatternSpanDriver>,
+) -> Result<(), ModelError> {
+    if count_driver.is_some() && rule.fitted_count()?.is_some() {
+        return Err(ModelError::new(
+            "a parameter count driver requires a freely counted linear or circular rule",
+        ));
+    }
+    if span_driver.is_some() && !matches!(rule, PatternRule::LinearFit { .. }) {
+        return Err(ModelError::new(
+            "a span driver requires a linear_fit pattern rule",
+        ));
+    }
+    Ok(())
+}
+
+fn normalized_pattern_direction(direction: VectorQuantity) -> Result<Vec3, ModelError> {
+    let direction = direction.normalized(Dimension::Scalar)?;
+    let magnitude = direction.x.hypot(direction.y.hypot(direction.z));
+    if !magnitude.is_finite() || magnitude <= f64::EPSILON {
+        return Err(ModelError::new("pattern span direction is zero"));
+    }
+    Ok(Vec3::new(
+        direction.x / magnitude,
+        direction.y / magnitude,
+        direction.z / magnitude,
+    ))
+}
+
 /// One linked copy in a pattern. `index` is its slot in the rule and stays
 /// fixed when other members leave the pattern.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -962,6 +1066,12 @@ pub struct Pattern {
     /// Members created when the pattern grows are named `prefix[slot]`.
     #[serde(default)]
     pub member_prefix: String,
+    /// Optional parameter or measured-geometry source for the slot count.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub count_driver: Option<PatternCountDriver>,
+    /// Optional source for a `LinearFit` rule's span.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub span_driver: Option<PatternSpanDriver>,
 }
 
 impl Pattern {
@@ -1002,12 +1112,14 @@ pub struct GenerationRecord {
     pub last_error: Option<String>,
 }
 
-pub const CURRENT_SCHEMA_VERSION: u32 = 18;
+pub const CURRENT_SCHEMA_VERSION: u32 = 21;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ModelDocument {
     pub schema_version: u32,
     pub family: FamilyDefinition,
+    #[serde(default)]
+    pub additional_families: Vec<FamilyDefinition>,
     pub instances: Vec<InstanceNode>,
     #[serde(default)]
     pub patterns: Vec<Pattern>,
@@ -1023,9 +1135,16 @@ impl ModelDocument {
         instances.sort_by(|left, right| left.id().cmp(right.id()));
         let mut frames = graph.frames.values().cloned().collect::<Vec<_>>();
         frames.sort_by(|left, right| left.id.cmp(&right.id));
+        let mut additional_families = graph
+            .additional_definitions
+            .values()
+            .map(|definition| (*definition).clone())
+            .collect::<Vec<_>>();
+        additional_families.sort_by(|left, right| left.id.cmp(&right.id));
         Self {
             schema_version: CURRENT_SCHEMA_VERSION,
             family: graph.definition.clone(),
+            additional_families,
             instances,
             patterns: graph.patterns.clone(),
             frames,
@@ -1080,6 +1199,11 @@ impl ModelDocument {
             .collect();
         Ok(InstanceGraph {
             definition: &self.family,
+            additional_definitions: self
+                .additional_families
+                .iter()
+                .map(|definition| (definition.id.clone(), definition))
+                .collect(),
             nodes,
             patterns: self.patterns.clone(),
             frames: self.frame_map(),
@@ -1139,9 +1263,24 @@ impl ModelDocument {
         }
         validate_definition(&self.family)?;
         resolve_parameters(&self.family, &HashMap::new())?;
+        let mut family_ids = HashSet::from([self.family.id.as_str()]);
+        for family in &self.additional_families {
+            if family.id.is_empty() || !family_ids.insert(family.id.as_str()) {
+                return Err(ModelError::new(
+                    "document family ids must be nonempty and unique",
+                ));
+            }
+            validate_definition(family)?;
+            resolve_parameters(family, &HashMap::new())?;
+        }
         let node_ids = self.validate_instance_ids()?;
         let graph = InstanceGraph {
             definition: &self.family,
+            additional_definitions: self
+                .additional_families
+                .iter()
+                .map(|definition| (definition.id.clone(), definition))
+                .collect(),
             nodes: self
                 .instances
                 .iter()
@@ -1154,7 +1293,7 @@ impl ModelDocument {
         self.validate_frames(&graph)?;
         for node in &self.instances {
             let resolved = graph.resolve(node.id())?;
-            resolve_parameters(&self.family, &resolved.overrides)?;
+            resolve_parameters(resolved.definition, &resolved.overrides)?;
         }
         let mut pattern_ids = HashSet::new();
         let mut patterned_members = HashSet::new();
@@ -1236,6 +1375,18 @@ fn validate_pattern<'document>(
         )));
     }
     pattern.rule.validate().map_err(context)?;
+    validate_pattern_driver_rule(
+        &pattern.rule,
+        pattern.count_driver.as_ref(),
+        pattern.span_driver.as_ref(),
+    )
+    .map_err(context)?;
+    if let Some(driver) = &pattern.count_driver {
+        graph.validate_count_driver(driver).map_err(context)?;
+    }
+    if let Some(driver) = &pattern.span_driver {
+        graph.validate_span_driver(driver).map_err(context)?;
+    }
     validate_pattern_slots(pattern).map_err(context)?;
     graph
         .frame_chain(pattern.frame.as_deref())
@@ -1315,7 +1466,11 @@ fn validate_pattern_member(
             pattern.id, pattern.source
         )));
     }
-    if graph.node(id).map(InstanceNode::placement) != Some(pattern.member_placement(member)) {
+    let stored = graph
+        .node(id)
+        .expect("pattern member existence was checked")
+        .placement();
+    if !placements_equivalent(stored, pattern.member_placement(member))? {
         return Err(ModelError::new(format!(
             "pattern '{}' member '{id}' placement does not match its rule slot or override",
             pattern.id
@@ -1487,6 +1642,7 @@ struct ResizePlan {
 
 pub struct InstanceGraph<'definition> {
     definition: &'definition FamilyDefinition,
+    additional_definitions: HashMap<String, &'definition FamilyDefinition>,
     nodes: HashMap<String, InstanceNode>,
     patterns: Vec<Pattern>,
     frames: HashMap<String, AssemblyFrame>,
@@ -1496,6 +1652,7 @@ impl<'definition> InstanceGraph<'definition> {
     pub fn new(definition: &'definition FamilyDefinition) -> Self {
         Self {
             definition,
+            additional_definitions: HashMap::new(),
             nodes: HashMap::new(),
             patterns: Vec::new(),
             frames: HashMap::new(),
@@ -1511,6 +1668,46 @@ impl<'definition> InstanceGraph<'definition> {
         let id = id.into();
         self.insert(InstanceNode::Base {
             id,
+            family: None,
+            overrides,
+            placement: Placement::identity(),
+            frame: None,
+            provenance: provenance.into(),
+        })
+    }
+
+    /// Registers another family definition for use by base instances.
+    pub fn add_family(
+        &mut self,
+        definition: &'definition FamilyDefinition,
+    ) -> Result<(), ModelError> {
+        validate_definition(definition)?;
+        resolve_parameters(definition, &HashMap::new())?;
+        if definition.id.is_empty()
+            || definition.id == self.definition.id
+            || self.additional_definitions.contains_key(&definition.id)
+        {
+            return Err(ModelError::new(
+                "family ids in an instance graph must be nonempty and unique",
+            ));
+        }
+        self.additional_definitions
+            .insert(definition.id.clone(), definition);
+        Ok(())
+    }
+
+    /// Adds a base instance belonging to a registered family.
+    pub fn add_base_from_family(
+        &mut self,
+        id: impl Into<String>,
+        family: &str,
+        overrides: HashMap<String, ParameterValue>,
+        provenance: impl Into<String>,
+    ) -> Result<(), ModelError> {
+        self.definition_by_id(family)?;
+        self.insert(InstanceNode::Base {
+            id: id.into(),
+            family: (family != self.definition.id).then(|| family.to_owned()),
             overrides,
             placement: Placement::identity(),
             frame: None,
@@ -1693,6 +1890,8 @@ impl<'definition> InstanceGraph<'definition> {
             frame: None,
             slot_count: count,
             member_prefix: member_prefix.to_owned(),
+            count_driver: None,
+            span_driver: None,
         });
         Ok(members)
     }
@@ -1795,6 +1994,11 @@ impl<'definition> InstanceGraph<'definition> {
     ) -> Result<(), ModelError> {
         rule.validate()?;
         let index = self.pattern_index(pattern_id)?;
+        validate_pattern_driver_rule(
+            &rule,
+            self.patterns[index].count_driver.as_ref(),
+            self.patterns[index].span_driver.as_ref(),
+        )?;
         let count = rule
             .fitted_count()?
             .unwrap_or(self.patterns[index].slot_count);
@@ -1809,6 +2013,11 @@ impl<'definition> InstanceGraph<'definition> {
     /// the members in removed slots. Slots vacated by detaching stay empty.
     pub fn set_pattern_count(&mut self, pattern_id: &str, count: usize) -> Result<(), ModelError> {
         let index = self.pattern_index(pattern_id)?;
+        if self.patterns[index].count_driver.is_some() {
+            return Err(ModelError::new(format!(
+                "pattern '{pattern_id}' count is driven"
+            )));
+        }
         if self.patterns[index].rule.fitted_count()?.is_some() {
             return Err(ModelError::new(format!(
                 "pattern '{pattern_id}' count is driven by its constraints"
@@ -1817,6 +2026,287 @@ impl<'definition> InstanceGraph<'definition> {
         let plan = self.plan_resize(&self.patterns[index], count)?;
         self.apply_resize(index, count, plan);
         Ok(())
+    }
+
+    /// Binds a freely counted pattern's slot count to an integer parameter or
+    /// a generated output's measured bounds extent.
+    /// The driver is resolved on the next graph regeneration or explicit
+    /// [`Self::refresh_driven_patterns`] call.
+    pub fn set_pattern_count_driver(
+        &mut self,
+        pattern_id: &str,
+        driver: Option<PatternCountDriver>,
+    ) -> Result<(), ModelError> {
+        let index = self.pattern_index(pattern_id)?;
+        validate_pattern_driver_rule(
+            &self.patterns[index].rule,
+            driver.as_ref(),
+            self.patterns[index].span_driver.as_ref(),
+        )?;
+        if let Some(driver) = &driver {
+            self.validate_count_driver(driver)?;
+        }
+        self.patterns[index].count_driver = driver;
+        Ok(())
+    }
+
+    /// Binds a `LinearFit` span to a length parameter or measured bounds.
+    /// The resolved span retains the rule's spacing constraint.
+    pub fn set_pattern_span_driver(
+        &mut self,
+        pattern_id: &str,
+        driver: Option<PatternSpanDriver>,
+    ) -> Result<(), ModelError> {
+        let index = self.pattern_index(pattern_id)?;
+        validate_pattern_driver_rule(
+            &self.patterns[index].rule,
+            self.patterns[index].count_driver.as_ref(),
+            driver.as_ref(),
+        )?;
+        if let Some(driver) = &driver {
+            self.validate_span_driver(driver)?;
+        }
+        self.patterns[index].span_driver = driver;
+        Ok(())
+    }
+
+    /// Resolves every pattern driver and updates rule placements and stable
+    /// member slots. All drivers are evaluated before the graph is mutated.
+    pub fn refresh_driven_patterns(&mut self, session: &Session) -> Result<(), ModelError> {
+        let mut updates = Vec::new();
+        for (index, pattern) in self.patterns.iter().enumerate() {
+            if pattern.count_driver.is_none() && pattern.span_driver.is_none() {
+                continue;
+            }
+            let mut rule = pattern.rule;
+            if let Some(driver) = &pattern.span_driver {
+                let span = self.resolve_span_driver(session, driver)?;
+                match &mut rule {
+                    PatternRule::LinearFit {
+                        span: rule_span, ..
+                    } => *rule_span = span,
+                    _ => unreachable!("span-driver compatibility was validated"),
+                }
+            }
+            rule.validate()?;
+            let count = if let Some(driver) = &pattern.count_driver {
+                self.resolve_count_driver(session, driver)?
+            } else {
+                rule.fitted_count()?.unwrap_or(pattern.slot_count)
+            };
+            let plan = self.plan_resize(pattern, count)?;
+            updates.push((index, rule, count, plan));
+        }
+        for (index, rule, count, plan) in updates {
+            self.patterns[index].rule = rule;
+            self.apply_resize(index, count, plan);
+        }
+        Ok(())
+    }
+
+    fn validate_count_driver(&self, driver: &PatternCountDriver) -> Result<(), ModelError> {
+        match driver {
+            PatternCountDriver::Parameter {
+                instance,
+                parameter,
+            } => {
+                let resolved = self.resolve(instance)?;
+                let parameters = resolve_parameters(resolved.definition, &resolved.overrides)?;
+                match parameters.get(parameter) {
+                    Some(ParameterValue::Integer(_)) => Ok(()),
+                    Some(_) => Err(ModelError::new(format!(
+                        "pattern count parameter '{parameter}' on instance '{instance}' must be an integer"
+                    ))),
+                    None => Err(ModelError::new(format!(
+                        "unknown pattern count parameter '{parameter}' on instance '{instance}'"
+                    ))),
+                }
+            }
+            PatternCountDriver::BoundsExtent {
+                instance,
+                output,
+                maximum_spacing,
+                ..
+            } => {
+                self.validate_measurement_target(instance, output)?;
+                positive_spacing(*maximum_spacing).map(|_| ())
+            }
+        }
+    }
+
+    fn resolve_count_driver(
+        &self,
+        session: &Session,
+        driver: &PatternCountDriver,
+    ) -> Result<usize, ModelError> {
+        self.validate_count_driver(driver)?;
+        match driver {
+            PatternCountDriver::Parameter {
+                instance,
+                parameter,
+            } => {
+                let resolved = self.resolve(instance)?;
+                let parameters = resolve_parameters(resolved.definition, &resolved.overrides)?;
+                let ParameterValue::Integer(count) = parameters[parameter] else {
+                    unreachable!("count parameter type was validated")
+                };
+                let count = usize::try_from(count).map_err(|_| {
+                    ModelError::new(format!(
+                        "pattern count parameter '{parameter}' on instance '{instance}' must be positive"
+                    ))
+                })?;
+                if !(1..=MAX_PATTERN_MEMBERS).contains(&count) {
+                    return Err(ModelError::new(format!(
+                        "pattern count parameter '{parameter}' on instance '{instance}' must be 1..={MAX_PATTERN_MEMBERS}"
+                    )));
+                }
+                Ok(count)
+            }
+            PatternCountDriver::BoundsExtent {
+                instance,
+                output,
+                axis,
+                maximum_spacing,
+            } => LinearSpacing::Maximum(*maximum_spacing)
+                .count(self.measure_output_extent(session, instance, output, *axis)?),
+        }
+    }
+
+    fn validate_measurement_target(&self, instance: &str, output: &str) -> Result<(), ModelError> {
+        self.resolve(instance)?;
+        if !self
+            .definition
+            .features
+            .iter()
+            .any(|feature| feature.id == output)
+        {
+            return Err(ModelError::new(format!(
+                "unknown pattern measurement output '{output}' on instance '{instance}'"
+            )));
+        }
+        Ok(())
+    }
+
+    fn validate_span_driver(&self, driver: &PatternSpanDriver) -> Result<(), ModelError> {
+        let (instance, direction) = match driver {
+            PatternSpanDriver::Parameter {
+                instance,
+                parameter,
+                direction,
+            } => {
+                let resolved = self.resolve(instance)?;
+                let parameters = resolve_parameters(resolved.definition, &resolved.overrides)?;
+                match parameters.get(parameter) {
+                    Some(ParameterValue::Scalar(value)) if value.dimension == Dimension::Length => {
+                        value.normalized()?;
+                    }
+                    Some(_) => {
+                        return Err(ModelError::new(format!(
+                            "pattern span parameter '{parameter}' on instance '{instance}' must be a length"
+                        )));
+                    }
+                    None => {
+                        return Err(ModelError::new(format!(
+                            "unknown pattern span parameter '{parameter}' on instance '{instance}'"
+                        )));
+                    }
+                }
+                (instance, direction)
+            }
+            PatternSpanDriver::BoundsExtent {
+                instance,
+                output,
+                direction,
+                ..
+            } => {
+                self.validate_measurement_target(instance, output)?;
+                (instance, direction)
+            }
+        };
+        normalized_pattern_direction(*direction).map_err(|error| {
+            ModelError::new(format!(
+                "pattern span driver for instance '{instance}': {}",
+                error.message
+            ))
+        })?;
+        Ok(())
+    }
+
+    fn resolve_span_driver(
+        &self,
+        session: &Session,
+        driver: &PatternSpanDriver,
+    ) -> Result<VectorQuantity, ModelError> {
+        self.validate_span_driver(driver)?;
+        let (length, direction) = match driver {
+            PatternSpanDriver::Parameter {
+                instance,
+                parameter,
+                direction,
+            } => {
+                let resolved = self.resolve(instance)?;
+                let parameters = resolve_parameters(resolved.definition, &resolved.overrides)?;
+                let ParameterValue::Scalar(value) = &parameters[parameter] else {
+                    unreachable!("span parameter type was validated")
+                };
+                (value.normalized()?, *direction)
+            }
+            PatternSpanDriver::BoundsExtent {
+                instance,
+                output,
+                axis,
+                direction,
+            } => (
+                self.measure_output_extent(session, instance, output, *axis)?,
+                *direction,
+            ),
+        };
+        if !length.is_finite() || length <= 0.0 {
+            return Err(ModelError::new(
+                "driven pattern span must be positive and finite",
+            ));
+        }
+        let direction = normalized_pattern_direction(direction)?;
+        Ok(VectorQuantity::lengths(
+            direction.x * length,
+            direction.y * length,
+            direction.z * length,
+            LengthUnit::Millimeter,
+        ))
+    }
+
+    fn measure_output_extent(
+        &self,
+        session: &Session,
+        instance: &str,
+        output: &str,
+        axis: CoordinateAxis,
+    ) -> Result<f64, ModelError> {
+        self.validate_measurement_target(instance, output)?;
+        let generated = self
+            .resolve_with_placement(instance)?
+            .regenerate(session)
+            .map_err(|error| {
+                ModelError::new(format!(
+                    "measure pattern geometry from instance '{instance}': {}",
+                    error.message
+                ))
+            })?;
+        let measured: Result<f64, ModelError> = (|| {
+            let shape = generated.shape(output).ok_or_else(|| {
+                ModelError::new(format!(
+                    "instance '{instance}' did not generate pattern measurement output '{output}'"
+                ))
+            })?;
+            let bounds = session.bounds(shape).map_err(ModelError::from)?;
+            Ok(match axis {
+                CoordinateAxis::X => bounds.max.x - bounds.min.x,
+                CoordinateAxis::Y => bounds.max.y - bounds.min.y,
+                CoordinateAxis::Z => bounds.max.z - bounds.min.z,
+            })
+        })();
+        cleanup(session, generated.shapes);
+        measured
     }
 
     fn pattern_index(&self, pattern_id: &str) -> Result<usize, ModelError> {
@@ -2028,9 +2518,50 @@ impl<'definition> InstanceGraph<'definition> {
         Ok(node.overrides_mut().remove(parameter))
     }
 
+    fn definition_by_id(&self, family: &str) -> Result<&'definition FamilyDefinition, ModelError> {
+        if family == self.definition.id {
+            return Ok(self.definition);
+        }
+        self.additional_definitions
+            .get(family)
+            .copied()
+            .ok_or_else(|| ModelError::new(format!("unknown family definition '{family}'")))
+    }
+
+    fn resolve_definition(
+        &self,
+        id: &str,
+        visiting: &mut Vec<String>,
+    ) -> Result<&'definition FamilyDefinition, ModelError> {
+        if let Some(position) = visiting.iter().position(|visited| visited == id) {
+            let mut cycle = visiting[position..].to_vec();
+            cycle.push(id.into());
+            return Err(ModelError::new(format!(
+                "clone inheritance cycle: {}",
+                cycle.join(" -> ")
+            )));
+        }
+        let node = self
+            .nodes
+            .get(id)
+            .ok_or_else(|| ModelError::new(format!("unknown clone source '{id}'")))?;
+        match node {
+            InstanceNode::Base { family, .. } => family
+                .as_deref()
+                .map_or(Ok(self.definition), |family| self.definition_by_id(family)),
+            InstanceNode::Clone { source, .. } => {
+                visiting.push(id.into());
+                let definition = self.resolve_definition(source, visiting);
+                visiting.pop();
+                definition
+            }
+        }
+    }
+
     pub fn resolve(&self, id: &str) -> Result<PartInstance<'definition>, ModelError> {
         let mut visiting = Vec::new();
         let overrides = self.resolve_overrides(id, &mut visiting)?;
+        let definition = self.resolve_definition(id, &mut Vec::new())?;
         let node = self
             .nodes
             .get(id)
@@ -2042,7 +2573,7 @@ impl<'definition> InstanceGraph<'definition> {
         };
         Ok(PartInstance {
             id: id.into(),
-            definition: self.definition,
+            definition,
             overrides,
             provenance,
         })
@@ -2067,9 +2598,10 @@ impl<'definition> InstanceGraph<'definition> {
     /// Regenerates every instance in the graph except suppressed pattern
     /// members; see [`Self::regenerate_instances`].
     pub fn regenerate_all<'session>(
-        &self,
+        &mut self,
         session: &'session Session,
     ) -> Result<GraphRegeneration<'session>, ModelError> {
+        self.refresh_driven_patterns(session)?;
         let mut ids = self
             .nodes
             .keys()
@@ -2077,7 +2609,7 @@ impl<'definition> InstanceGraph<'definition> {
             .filter(|id| !self.is_suppressed(id))
             .collect::<Vec<_>>();
         ids.sort_unstable();
-        self.regenerate_instances(session, &ids)
+        self.regenerate_instances_current(session, &ids)
     }
 
     /// Regenerates the requested instances, running the feature graph once per
@@ -2086,6 +2618,15 @@ impl<'definition> InstanceGraph<'definition> {
     /// then placed independently. On failure every handle created by the call
     /// is released.
     pub fn regenerate_instances<'session>(
+        &mut self,
+        session: &'session Session,
+        ids: &[&str],
+    ) -> Result<GraphRegeneration<'session>, ModelError> {
+        self.refresh_driven_patterns(session)?;
+        self.regenerate_instances_current(session, ids)
+    }
+
+    fn regenerate_instances_current<'session>(
         &self,
         session: &'session Session,
         ids: &[&str],
@@ -2139,10 +2680,15 @@ impl<'definition> InstanceGraph<'definition> {
             let resolved = self
                 .resolve_with_placement(id)
                 .map_err(|error| instance_error(id, error))?;
-            let parameters = resolve_parameters(self.definition, &resolved.instance.overrides)
-                .map_err(|error| instance_error(id, error))?;
-            let key = serde_json::to_string(&parameters.into_iter().collect::<BTreeMap<_, _>>())
-                .map_err(|error| ModelError::new(format!("create parameter key: {error}")))?;
+            let parameters =
+                resolve_parameters(resolved.instance.definition, &resolved.instance.overrides)
+                    .map_err(|error| instance_error(id, error))?;
+            let key = serde_json::to_string(&(
+                &resolved.instance.definition.id,
+                resolved.instance.definition.version,
+                parameters.into_iter().collect::<BTreeMap<_, _>>(),
+            ))
+            .map_err(|error| ModelError::new(format!("create parameter key: {error}")))?;
             match keys.iter().position(|existing| *existing == key) {
                 Some(index) => groups[index].push((id, resolved)),
                 None => {
@@ -2185,7 +2731,7 @@ impl<'definition> InstanceGraph<'definition> {
             match resolved.place(session, shared) {
                 Ok(mut result) => {
                     if index > 0 {
-                        result.regeneration = self.all_features_reused();
+                        result.regeneration = Self::all_features_reused(first.instance.definition);
                     }
                     placed.push(((*id).to_owned(), result));
                 }
@@ -2199,11 +2745,10 @@ impl<'definition> InstanceGraph<'definition> {
         Ok(placed)
     }
 
-    fn all_features_reused(&self) -> RegenerationReport {
+    fn all_features_reused(definition: &FamilyDefinition) -> RegenerationReport {
         RegenerationReport {
             rebuilt: Vec::new(),
-            reused: self
-                .definition
+            reused: definition
                 .features
                 .iter()
                 .map(|feature| feature.id.clone())
@@ -2225,6 +2770,8 @@ impl<'definition> InstanceGraph<'definition> {
             id.into(),
             InstanceNode::Base {
                 id: id.into(),
+                family: (resolved.definition.id != self.definition.id)
+                    .then(|| resolved.definition.id.clone()),
                 overrides: resolved.overrides,
                 placement,
                 frame,
@@ -2730,6 +3277,10 @@ fn collect_operation_parameters<'a>(operation: &'a FeatureOperation, names: &mut
             collect_scalar_parameters(thickness, names);
             collect_scalar_parameters(tolerance, names);
         }
+        FeatureOperation::Sew { tolerance, .. } => {
+            collect_scalar_parameters(tolerance, names);
+        }
+        FeatureOperation::MakeSolid { .. } => {}
         FeatureOperation::Fuse { .. }
         | FeatureOperation::Cut { .. }
         | FeatureOperation::Common { .. } => {}
@@ -2902,6 +3453,21 @@ fn validate_definition(definition: &FamilyDefinition) -> Result<(), ModelError> 
         "feature ids must be nonempty and unique",
     )?;
     for feature in &definition.features {
+        match &feature.operation {
+            FeatureOperation::Sew { inputs, .. } if inputs.is_empty() => {
+                return Err(ModelError::new(format!(
+                    "feature '{}' requires at least one sewing input",
+                    feature.id
+                )));
+            }
+            FeatureOperation::MakeSolid { shells } if shells.is_empty() => {
+                return Err(ModelError::new(format!(
+                    "feature '{}' requires at least one shell input",
+                    feature.id
+                )));
+            }
+            _ => {}
+        }
         if let Some(dependency) = feature
             .operation
             .dependencies()
@@ -3791,6 +4357,20 @@ fn execute_feature<'session>(
         }
         FeatureOperation::Common { left, right } => {
             session.common(shape(shapes, left)?, shape(shapes, right)?)
+        }
+        FeatureOperation::Sew { inputs, tolerance } => {
+            let inputs = inputs
+                .iter()
+                .map(|input| shape(shapes, input))
+                .collect::<Result<Vec<_>, _>>()?;
+            session.sew(&inputs, scalar(tolerance, parameters, Dimension::Length)?)
+        }
+        FeatureOperation::MakeSolid { shells } => {
+            let shells = shells
+                .iter()
+                .map(|shell| shape(shapes, shell))
+                .collect::<Result<Vec<_>, _>>()?;
+            session.make_solid_from_shells(&shells)
         }
         FeatureOperation::Fillet {
             input,
@@ -5182,6 +5762,16 @@ mod tests {
         }
     }
 
+    fn integer_parameter(id: &str, default: i64) -> ParameterDefinition {
+        ParameterDefinition {
+            id: id.into(),
+            parameter_type: ParameterType::Integer,
+            default: ParameterValue::Integer(default),
+            minimum: None,
+            maximum: None,
+        }
+    }
+
     fn family(priority: RequirementPriority, maximum_volume: f64) -> FamilyDefinition {
         FamilyDefinition {
             id: "BlockFamily".into(),
@@ -5286,6 +5876,82 @@ mod tests {
                 .all(|item| item.status == VerificationStatus::Passed)
         );
         assert_eq!(session.shape_count().unwrap(), 2);
+    }
+
+    #[test]
+    fn sewing_and_multi_shell_solids_are_feature_graph_operations() {
+        let millimeters =
+            |x, y, z| VectorExpr::Literal(VectorQuantity::lengths(x, y, z, LengthUnit::Millimeter));
+        let definition = FamilyDefinition {
+            id: "VoidBlock".into(),
+            version: 1,
+            parameters: Vec::new(),
+            derived_parameters: Vec::new(),
+            derived_vector_parameters: Vec::new(),
+            constraints: Vec::new(),
+            features: vec![
+                FeatureDefinition {
+                    id: "void-solid".into(),
+                    operation: FeatureOperation::MakeSolid {
+                        shells: vec!["inner".into(), "outer".into()],
+                    },
+                },
+                FeatureDefinition {
+                    id: "outer-sewn".into(),
+                    operation: FeatureOperation::Sew {
+                        inputs: vec!["outer".into()],
+                        tolerance: ScalarExpr::Literal(Quantity::length(
+                            1.0e-6,
+                            LengthUnit::Millimeter,
+                        )),
+                    },
+                },
+                FeatureDefinition {
+                    id: "inner".into(),
+                    operation: FeatureOperation::Box {
+                        origin: millimeters(2.0, 2.0, 2.0),
+                        size: millimeters(2.0, 2.0, 2.0),
+                    },
+                },
+                FeatureDefinition {
+                    id: "outer".into(),
+                    operation: FeatureOperation::Box {
+                        origin: millimeters(0.0, 0.0, 0.0),
+                        size: millimeters(10.0, 10.0, 10.0),
+                    },
+                },
+            ],
+            requirements: vec![Requirement {
+                id: "void.valid".into(),
+                version: 1,
+                kind: RequirementKind::Validation,
+                priority: RequirementPriority::Required,
+                statement: "The multi-shell result must be valid.".into(),
+                rule: VerificationRule::ShapeValid {
+                    output: "void-solid".into(),
+                },
+                provenance: "test".into(),
+            }],
+        };
+        let instance = PartInstance {
+            id: "void-block-01".into(),
+            definition: &definition,
+            overrides: HashMap::new(),
+            provenance: "test".into(),
+        };
+        let session = Session::new().unwrap();
+        let result = instance.regenerate(&session).unwrap();
+
+        assert!(result.shape("outer-sewn").is_some());
+        let solid = result.shape("void-solid").unwrap();
+        assert_eq!(session.subshape_count(solid, ShapeType::Shell).unwrap(), 2);
+        assert!((session.volume(solid).unwrap() - 992.0).abs() < 1e-9);
+
+        let document = ModelDocument::from_graph(&InstanceGraph::new(&definition));
+        let json = document.to_json_pretty().unwrap();
+        assert!(json.contains("\"make_solid\""));
+        assert!(json.contains("\"sew\""));
+        assert_eq!(ModelDocument::from_json(&json).unwrap(), document);
     }
 
     #[test]
@@ -5505,6 +6171,117 @@ mod tests {
 
         let error = graph.resolve("a").err().unwrap();
         assert!(error.message.contains("a -> b -> a"));
+    }
+
+    #[test]
+    fn one_graph_regenerates_and_round_trips_multiple_families() {
+        let mut primary = family(RequirementPriority::Required, 100_000.0);
+        primary.requirements.clear();
+        let mut secondary = primary.clone();
+        secondary.id = "MarkedBlockFamily".into();
+        secondary.features.push(FeatureDefinition {
+            id: "marker".into(),
+            operation: FeatureOperation::Cylinder {
+                origin: VectorExpr::Literal(VectorQuantity::lengths(
+                    50.0,
+                    0.0,
+                    0.0,
+                    LengthUnit::Millimeter,
+                )),
+                axis: VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, 1.0)),
+                radius: ScalarExpr::Literal(Quantity::length(2.0, LengthUnit::Millimeter)),
+                height: ScalarExpr::Literal(Quantity::length(5.0, LengthUnit::Millimeter)),
+            },
+        });
+
+        let mut graph = InstanceGraph::new(&primary);
+        graph.add_family(&secondary).unwrap();
+        graph.add_base("plain", HashMap::new(), "test").unwrap();
+        graph
+            .add_base_from_family("marked", "MarkedBlockFamily", HashMap::new(), "test")
+            .unwrap();
+        graph
+            .add_clone("marked-copy", "marked", HashMap::new(), "test")
+            .unwrap();
+
+        assert_eq!(graph.resolve("plain").unwrap().definition.id, "BlockFamily");
+        assert_eq!(
+            graph.resolve("marked-copy").unwrap().definition.id,
+            "MarkedBlockFamily"
+        );
+
+        let session = Session::new().unwrap();
+        let generated = graph.regenerate_all(&session).unwrap();
+        // Identical parameter maps do not cause distinct families to share a
+        // feature graph result.
+        assert_eq!(generated.generated_variants(), 2);
+        assert!(generated.result("plain").unwrap().shape("marker").is_none());
+        assert!(
+            generated
+                .result("marked")
+                .unwrap()
+                .shape("marker")
+                .is_some()
+        );
+        assert!(
+            generated
+                .result("marked-copy")
+                .unwrap()
+                .shape("marker")
+                .is_some()
+        );
+        assert_eq!(generated.shared_from("marked-copy"), Some("marked"));
+        drop(generated);
+
+        graph.detach("marked-copy").unwrap();
+        assert!(matches!(
+            graph.node("marked-copy"),
+            Some(InstanceNode::Base {
+                family: Some(family),
+                ..
+            }) if family == "MarkedBlockFamily"
+        ));
+
+        let document = ModelDocument::from_graph(&graph);
+        assert_eq!(document.additional_families, [secondary.clone()]);
+        let loaded = ModelDocument::from_json(&document.to_json_pretty().unwrap()).unwrap();
+        assert_eq!(loaded, document);
+        let loaded_graph = loaded.instance_graph().unwrap();
+        assert_eq!(
+            loaded_graph.resolve("marked-copy").unwrap().definition.id,
+            "MarkedBlockFamily"
+        );
+    }
+
+    #[test]
+    fn multi_family_graphs_reject_unknown_and_duplicate_family_ids() {
+        let mut primary = family(RequirementPriority::Required, 100_000.0);
+        primary.requirements.clear();
+        let mut graph = InstanceGraph::new(&primary);
+        assert!(graph.add_family(&primary).is_err());
+        assert!(
+            graph
+                .add_base_from_family("unknown", "MissingFamily", HashMap::new(), "test")
+                .is_err()
+        );
+        assert!(graph.node("unknown").is_none());
+
+        graph.add_base("plain", HashMap::new(), "test").unwrap();
+        let document = ModelDocument::from_graph(&graph);
+        let mut unknown = document.clone();
+        if let InstanceNode::Base { family, .. } = &mut unknown.instances[0] {
+            *family = Some("MissingFamily".into());
+        }
+        let error = unknown.to_json_pretty().unwrap_err();
+        assert!(
+            error.message.contains("unknown family definition"),
+            "{error}"
+        );
+
+        let mut duplicate = document;
+        duplicate.additional_families.push(primary.clone());
+        let error = duplicate.to_json_pretty().unwrap_err();
+        assert!(error.message.contains("family ids"), "{error}");
     }
 
     #[test]
@@ -6558,6 +7335,260 @@ mod tests {
         let document = ModelDocument::from_graph(&graph);
         let loaded = ModelDocument::from_json(&document.to_json_pretty().unwrap()).unwrap();
         assert_eq!(loaded, document);
+    }
+
+    #[test]
+    fn integer_parameters_drive_pattern_counts() {
+        let mut definition = family(RequirementPriority::Required, 100_000.0);
+        definition.requirements.clear();
+        definition
+            .parameters
+            .push(integer_parameter("bolt_count", 5));
+        let mut graph = InstanceGraph::new(&definition);
+        graph.add_base("source", HashMap::new(), "test").unwrap();
+        graph
+            .add_linear_pattern(
+                "bolts",
+                "bolt",
+                "source",
+                2,
+                VectorQuantity::lengths(25.0, 0.0, 0.0, LengthUnit::Millimeter),
+                "parameter-driven",
+            )
+            .unwrap();
+        graph
+            .set_pattern_count_driver(
+                "bolts",
+                Some(PatternCountDriver::Parameter {
+                    instance: "source".into(),
+                    parameter: "bolt_count".into(),
+                }),
+            )
+            .unwrap();
+
+        let session = Session::new().unwrap();
+        let generated = graph.regenerate_all(&session).unwrap();
+        assert_eq!(graph.patterns()[0].slot_count, 5);
+        assert!(generated.result("bolt[4]").is_some());
+        assert_eq!(graph.node("bolt[4]").unwrap().placement(), along_x(100.0));
+        drop(generated);
+
+        graph
+            .set_override("source", "bolt_count", ParameterValue::Integer(3))
+            .unwrap();
+        let generated = graph.regenerate_all(&session).unwrap();
+        assert_eq!(graph.patterns()[0].slot_count, 3);
+        assert!(generated.result("bolt[2]").is_some());
+        assert!(graph.node("bolt[4]").is_none());
+        drop(generated);
+
+        assert!(graph.set_pattern_count("bolts", 7).is_err());
+        let document = ModelDocument::from_graph(&graph);
+        let loaded = ModelDocument::from_json(&document.to_json_pretty().unwrap()).unwrap();
+        assert_eq!(loaded, document);
+
+        graph
+            .set_override(
+                "source",
+                "width",
+                ParameterValue::Scalar(Quantity::length(110.0, LengthUnit::Millimeter)),
+            )
+            .unwrap();
+        graph
+            .set_pattern_count_driver(
+                "bolts",
+                Some(PatternCountDriver::BoundsExtent {
+                    instance: "source".into(),
+                    output: "body".into(),
+                    axis: CoordinateAxis::X,
+                    maximum_spacing: Quantity::length(30.0, LengthUnit::Millimeter),
+                }),
+            )
+            .unwrap();
+        let measurement_session = Session::new().unwrap();
+        graph.refresh_driven_patterns(&measurement_session).unwrap();
+        assert_eq!(graph.patterns()[0].slot_count, 5);
+        assert_eq!(measurement_session.shape_count().unwrap(), 0);
+        let document = ModelDocument::from_graph(&graph);
+        let loaded = ModelDocument::from_json(&document.to_json_pretty().unwrap()).unwrap();
+        assert_eq!(loaded, document);
+    }
+
+    #[test]
+    fn invalid_pattern_drivers_are_rejected_before_mutation() {
+        let mut definition = family(RequirementPriority::Required, 100_000.0);
+        definition.requirements.clear();
+        definition
+            .parameters
+            .push(integer_parameter("bolt_count", 4));
+        let mut graph = InstanceGraph::new(&definition);
+        graph.add_base("source", HashMap::new(), "test").unwrap();
+        graph
+            .add_linear_pattern(
+                "free",
+                "free_member",
+                "source",
+                2,
+                VectorQuantity::lengths(10.0, 0.0, 0.0, LengthUnit::Millimeter),
+                "test",
+            )
+            .unwrap();
+
+        let wrong_type = graph
+            .set_pattern_count_driver(
+                "free",
+                Some(PatternCountDriver::Parameter {
+                    instance: "source".into(),
+                    parameter: "width".into(),
+                }),
+            )
+            .unwrap_err();
+        assert!(wrong_type.message.contains("must be an integer"));
+        assert!(graph.patterns()[0].count_driver.is_none());
+
+        let missing_output = graph
+            .set_pattern_count_driver(
+                "free",
+                Some(PatternCountDriver::BoundsExtent {
+                    instance: "source".into(),
+                    output: "missing".into(),
+                    axis: CoordinateAxis::X,
+                    maximum_spacing: Quantity::length(10.0, LengthUnit::Millimeter),
+                }),
+            )
+            .unwrap_err();
+        assert!(
+            missing_output
+                .message
+                .contains("unknown pattern measurement output")
+        );
+        assert!(graph.patterns()[0].count_driver.is_none());
+
+        let incompatible_span = graph
+            .set_pattern_span_driver(
+                "free",
+                Some(PatternSpanDriver::Parameter {
+                    instance: "source".into(),
+                    parameter: "width".into(),
+                    direction: VectorQuantity::scalars(1.0, 0.0, 0.0),
+                }),
+            )
+            .unwrap_err();
+        assert!(incompatible_span.message.contains("requires a linear_fit"));
+
+        graph
+            .add_fitted_pattern(
+                "fit",
+                "fit_member",
+                "source",
+                linear_fit(100.0, LinearSpacing::Count(3)),
+                "test",
+            )
+            .unwrap();
+        let incompatible_count = graph
+            .set_pattern_count_driver(
+                "fit",
+                Some(PatternCountDriver::Parameter {
+                    instance: "source".into(),
+                    parameter: "bolt_count".into(),
+                }),
+            )
+            .unwrap_err();
+        assert!(incompatible_count.message.contains("freely counted"));
+        let zero_direction = graph
+            .set_pattern_span_driver(
+                "fit",
+                Some(PatternSpanDriver::Parameter {
+                    instance: "source".into(),
+                    parameter: "width".into(),
+                    direction: VectorQuantity::scalars(0.0, 0.0, 0.0),
+                }),
+            )
+            .unwrap_err();
+        assert!(zero_direction.message.contains("direction is zero"));
+        assert!(graph.patterns()[1].span_driver.is_none());
+    }
+
+    #[test]
+    fn parameters_and_measured_geometry_drive_linear_fit_spans() {
+        let mut definition = family(RequirementPriority::Required, 100_000.0);
+        definition.requirements.clear();
+        definition
+            .parameters
+            .push(length_parameter("aisle_length", 120.0));
+        let mut graph = InstanceGraph::new(&definition);
+        graph.add_base("source", HashMap::new(), "test").unwrap();
+        graph
+            .add_fitted_pattern(
+                "pews",
+                "pew",
+                "source",
+                linear_fit(
+                    30.0,
+                    LinearSpacing::Maximum(Quantity::length(30.0, LengthUnit::Millimeter)),
+                ),
+                "parameter-driven",
+            )
+            .unwrap();
+        graph
+            .set_pattern_span_driver(
+                "pews",
+                Some(PatternSpanDriver::Parameter {
+                    instance: "source".into(),
+                    parameter: "aisle_length".into(),
+                    direction: VectorQuantity::scalars(1.0, 0.0, 0.0),
+                }),
+            )
+            .unwrap();
+        let session = Session::new().unwrap();
+        graph.refresh_driven_patterns(&session).unwrap();
+        assert_eq!(graph.patterns()[0].slot_count, 5);
+        assert_eq!(graph.node("pew[4]").unwrap().placement(), along_x(120.0));
+        assert_eq!(session.shape_count().unwrap(), 0);
+
+        graph
+            .set_override(
+                "source",
+                "width",
+                ParameterValue::Scalar(Quantity::length(110.0, LengthUnit::Millimeter)),
+            )
+            .unwrap();
+        graph
+            .set_pattern_span_driver(
+                "pews",
+                Some(PatternSpanDriver::BoundsExtent {
+                    instance: "source".into(),
+                    output: "body".into(),
+                    axis: CoordinateAxis::X,
+                    direction: VectorQuantity::scalars(0.0, 1.0, 0.0),
+                }),
+            )
+            .unwrap();
+        graph.refresh_driven_patterns(&session).unwrap();
+        assert_eq!(graph.patterns()[0].slot_count, 5);
+        let measured_placement = graph.node("pew[4]").unwrap().placement();
+        assert!(measured_placement.translation.x.value.abs() < 1e-9);
+        assert!((measured_placement.translation.y.value - 110.0).abs() < 1e-5);
+        assert!(measured_placement.translation.z.value.abs() < 1e-9);
+        assert_eq!(session.shape_count().unwrap(), 0);
+        for member in &graph.patterns()[0].members {
+            assert_eq!(
+                graph.node(&member.id).unwrap().placement(),
+                graph.patterns()[0].member_placement(member),
+                "{}",
+                member.id
+            );
+        }
+
+        let document = ModelDocument::from_graph(&graph);
+        let json = document.to_json_pretty().unwrap();
+        let loaded = ModelDocument::from_json(&json).unwrap();
+        assert_eq!(loaded.schema_version, CURRENT_SCHEMA_VERSION);
+        assert_eq!(loaded.patterns[0].slot_count, 5);
+        assert_eq!(
+            loaded.patterns[0].span_driver,
+            document.patterns[0].span_driver
+        );
     }
 
     fn circular_fit(sweep_radians: f64, spacing: AngularSpacing) -> PatternRule {

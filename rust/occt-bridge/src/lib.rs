@@ -10,7 +10,7 @@ use std::{
     ptr::{self, NonNull},
 };
 
-const ABI_VERSION: u32 = 17;
+const ABI_VERSION: u32 = 21;
 
 #[repr(C)]
 struct RawVec3 {
@@ -162,6 +162,24 @@ unsafe extern "C" {
         section_count: usize,
         make_solid: c_int,
         ruled: c_int,
+        out: *mut RawShapeId,
+    ) -> RawStatus;
+    fn occt_bridge_sew(
+        session: *mut c_void,
+        shapes: *const RawShapeId,
+        shape_count: usize,
+        tolerance: f64,
+        out: *mut RawShapeId,
+    ) -> RawStatus;
+    fn occt_bridge_make_solid(
+        session: *mut c_void,
+        shell: RawShapeId,
+        out: *mut RawShapeId,
+    ) -> RawStatus;
+    fn occt_bridge_make_solid_from_shells(
+        session: *mut c_void,
+        shells: *const RawShapeId,
+        shell_count: usize,
         out: *mut RawShapeId,
     ) -> RawStatus;
     fn occt_bridge_create_compound(
@@ -385,6 +403,24 @@ unsafe extern "C" {
         path: *const c_char,
         out: *mut RawShapeId,
     ) -> RawStatus;
+    fn occt_bridge_step_save(
+        session: *mut c_void,
+        shape: RawShapeId,
+        path: *const c_char,
+    ) -> RawStatus;
+    fn occt_bridge_step_load(
+        session: *mut c_void,
+        path: *const c_char,
+        out: *mut RawShapeId,
+    ) -> RawStatus;
+    fn occt_bridge_stl_save(
+        session: *mut c_void,
+        shape: RawShapeId,
+        path: *const c_char,
+        linear_deflection: f64,
+        angular_deflection_radians: f64,
+        binary: c_int,
+    ) -> RawStatus;
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -392,6 +428,29 @@ pub struct Vec3 {
     pub x: f64,
     pub y: f64,
     pub z: f64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StlFormat {
+    Ascii,
+    Binary,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct StlOptions {
+    pub linear_deflection: f64,
+    pub angular_deflection_radians: f64,
+    pub format: StlFormat,
+}
+
+impl Default for StlOptions {
+    fn default() -> Self {
+        Self {
+            linear_deflection: 0.1,
+            angular_deflection_radians: 0.5,
+            format: StlFormat::Binary,
+        }
+    }
 }
 
 impl Vec3 {
@@ -865,6 +924,55 @@ impl Session {
             )
         })?;
         Ok(self.shape(shape))
+    }
+
+    /// Sews faces and shells whose edges lie within `tolerance` into a shell,
+    /// or a compound of shells and free faces when not everything joins.
+    /// Records modified and deleted history for the inputs.
+    pub fn sew(&self, shapes: &[&Shape<'_>], tolerance: f64) -> Result<Shape<'_>, BridgeError> {
+        for shape in shapes {
+            self.validate_shape(shape)?;
+        }
+        let ids: Vec<RawShapeId> = shapes.iter().map(|shape| shape.id).collect();
+        let mut sewn = 0;
+        // SAFETY: The ID slice and output remain valid for the call.
+        self.check(unsafe {
+            occt_bridge_sew(
+                self.raw.as_ptr(),
+                ids.as_ptr(),
+                ids.len(),
+                tolerance,
+                &mut sewn,
+            )
+        })?;
+        Ok(self.shape(sewn))
+    }
+
+    /// Builds an outward-oriented solid from a shape with exactly one closed shell.
+    pub fn make_solid<'a>(&'a self, shell: &Shape<'_>) -> Result<Shape<'a>, BridgeError> {
+        self.derived_shape(shell, |out| unsafe {
+            occt_bridge_make_solid(self.raw.as_ptr(), shell.id, out)
+        })
+    }
+
+    /// Builds one solid from the largest outer boundary and any enclosed void
+    /// boundaries found in `shells`.
+    pub fn make_solid_from_shells(&self, shells: &[&Shape<'_>]) -> Result<Shape<'_>, BridgeError> {
+        for shell in shells {
+            self.validate_shape(shell)?;
+        }
+        let ids: Vec<RawShapeId> = shells.iter().map(|shell| shell.id).collect();
+        let mut solid = 0;
+        // SAFETY: The ID slice and output remain valid for the duration of the call.
+        self.check(unsafe {
+            occt_bridge_make_solid_from_shells(
+                self.raw.as_ptr(),
+                ids.as_ptr(),
+                ids.len(),
+                &mut solid,
+            )
+        })?;
+        Ok(self.shape(solid))
     }
 
     pub fn create_compound(&self, shapes: &[&Shape<'_>]) -> Result<Shape<'_>, BridgeError> {
@@ -1421,6 +1529,47 @@ impl Session {
         Ok(self.shape(shape))
     }
 
+    /// Exports geometry and topology to a STEP file. Session handles,
+    /// operation history, and application metadata are not serialized.
+    pub fn save_step(&self, shape: &Shape<'_>, path: impl AsRef<Path>) -> Result<(), BridgeError> {
+        self.validate_shape(shape)?;
+        let path = path_to_c_string(path.as_ref())?;
+        // SAFETY: The session and NUL-terminated path remain valid for the call.
+        self.check(unsafe { occt_bridge_step_save(self.raw.as_ptr(), shape.id, path.as_ptr()) })
+    }
+
+    pub fn load_step(&self, path: impl AsRef<Path>) -> Result<Shape<'_>, BridgeError> {
+        let path = path_to_c_string(path.as_ref())?;
+        let mut shape = 0;
+        // SAFETY: The session, NUL-terminated path, and output pointer are valid.
+        self.check(unsafe { occt_bridge_step_load(self.raw.as_ptr(), path.as_ptr(), &mut shape) })?;
+        Ok(self.shape(shape))
+    }
+
+    /// Tessellates a shape and exports it as STL. STL contains triangles only;
+    /// it does not preserve exact CAD geometry, topology, or operation history.
+    pub fn save_stl(
+        &self,
+        shape: &Shape<'_>,
+        path: impl AsRef<Path>,
+        options: StlOptions,
+    ) -> Result<(), BridgeError> {
+        self.validate_shape(shape)?;
+        let path = path_to_c_string(path.as_ref())?;
+        let binary = i32::from(options.format == StlFormat::Binary);
+        // SAFETY: The session and NUL-terminated path remain valid for the call.
+        self.check(unsafe {
+            occt_bridge_stl_save(
+                self.raw.as_ptr(),
+                shape.id,
+                path.as_ptr(),
+                options.linear_deflection,
+                options.angular_deflection_radians,
+                binary,
+            )
+        })
+    }
+
     fn boolean<'a>(
         &'a self,
         left: &Shape<'_>,
@@ -1574,11 +1723,195 @@ fn path_to_c_string(path: &Path) -> Result<CString, BridgeError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::{fs, path::PathBuf};
 
     fn unit_box(session: &Session, x: f64) -> Shape<'_> {
         session
             .create_box(Vec3::new(x, 0.0, 0.0), Vec3::new(1.0, 1.0, 1.0))
             .unwrap()
+    }
+
+    fn step_test_path(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "occt-bridge-{name}-{}-{}.step",
+            std::process::id(),
+            std::thread::current().name().unwrap_or("test")
+        ))
+    }
+
+    fn binary_stl_triangle_count(path: &Path) -> u32 {
+        let bytes = fs::read(path).unwrap();
+        assert!(bytes.len() >= 84);
+        let count = u32::from_le_bytes(bytes[80..84].try_into().unwrap());
+        assert_eq!(bytes.len(), 84 + 50 * count as usize);
+        count
+    }
+
+    #[test]
+    fn step_round_trip_preserves_geometry_and_topology() {
+        let session = Session::new().unwrap();
+        let source = session
+            .create_box(Vec3::new(-2.0, 3.0, 5.0), Vec3::new(10.0, 20.0, 30.0))
+            .unwrap();
+        let path = step_test_path("round-trip");
+        session.save_step(&source, &path).unwrap();
+        let loaded = session.load_step(&path).unwrap();
+
+        assert!(session.is_valid(&loaded).unwrap());
+        assert_eq!(session.shape_type(&loaded).unwrap(), ShapeType::Solid);
+        assert_eq!(
+            session.subshape_count(&loaded, ShapeType::Face).unwrap(),
+            session.subshape_count(&source, ShapeType::Face).unwrap()
+        );
+        assert_eq!(
+            session.subshape_count(&loaded, ShapeType::Edge).unwrap(),
+            session.subshape_count(&source, ShapeType::Edge).unwrap()
+        );
+        let source_bounds = session.bounds(&source).unwrap();
+        let loaded_bounds = session.bounds(&loaded).unwrap();
+        for (actual, expected) in [
+            (loaded_bounds.min.x, source_bounds.min.x),
+            (loaded_bounds.min.y, source_bounds.min.y),
+            (loaded_bounds.min.z, source_bounds.min.z),
+            (loaded_bounds.max.x, source_bounds.max.x),
+            (loaded_bounds.max.y, source_bounds.max.y),
+            (loaded_bounds.max.z, source_bounds.max.z),
+        ] {
+            assert!((actual - expected).abs() < 1e-6);
+        }
+        assert!((session.volume(&loaded).unwrap() - session.volume(&source).unwrap()).abs() < 1e-6);
+        assert_eq!(session.shape_count().unwrap(), 2);
+
+        session.remove(loaded).unwrap();
+        session.remove(source).unwrap();
+        assert_eq!(session.shape_count().unwrap(), 0);
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn step_exchange_reports_io_and_session_errors_without_leaking_handles() {
+        let session = Session::new().unwrap();
+        let missing = step_test_path("missing");
+        let _ = fs::remove_file(&missing);
+        let error = session.load_step(&missing).unwrap_err();
+        assert_eq!(error.status, 5);
+        assert_eq!(error.category, "I/O error");
+        assert_eq!(session.shape_count().unwrap(), 0);
+
+        let malformed = step_test_path("malformed");
+        fs::write(&malformed, b"not a STEP file\n").unwrap();
+        let error = session.load_step(&malformed).unwrap_err();
+        assert_eq!(error.status, 5);
+        assert_eq!(session.shape_count().unwrap(), 0);
+        fs::remove_file(malformed).unwrap();
+
+        let first = Session::new().unwrap();
+        let second = Session::new().unwrap();
+        let shape = unit_box(&first, 0.0);
+        let output = step_test_path("wrong-session");
+        assert_wrong_session(second.save_step(&shape, &output).unwrap_err());
+        assert!(!output.exists());
+    }
+
+    #[test]
+    fn stl_export_writes_verified_ascii_and_tessellated_binary_meshes() {
+        let session = Session::new().unwrap();
+        let box_shape = session
+            .create_box(Vec3::new(0.0, 0.0, 0.0), Vec3::new(10.0, 20.0, 30.0))
+            .unwrap();
+        let ascii_path = step_test_path("ascii-stl").with_extension("stl");
+        session
+            .save_stl(
+                &box_shape,
+                &ascii_path,
+                StlOptions {
+                    format: StlFormat::Ascii,
+                    ..StlOptions::default()
+                },
+            )
+            .unwrap();
+        let ascii = fs::read_to_string(&ascii_path).unwrap();
+        assert!(ascii.starts_with("solid"));
+        assert_eq!(ascii.matches("facet normal").count(), 12);
+
+        let sphere = session
+            .create_sphere(Vec3::new(0.0, 0.0, 0.0), 10.0)
+            .unwrap();
+        let coarse_path = step_test_path("coarse-stl").with_extension("stl");
+        let fine_path = step_test_path("fine-stl").with_extension("stl");
+        session
+            .save_stl(
+                &sphere,
+                &coarse_path,
+                StlOptions {
+                    linear_deflection: 2.0,
+                    angular_deflection_radians: 1.0,
+                    format: StlFormat::Binary,
+                },
+            )
+            .unwrap();
+        session
+            .save_stl(
+                &sphere,
+                &fine_path,
+                StlOptions {
+                    linear_deflection: 0.1,
+                    angular_deflection_radians: 0.2,
+                    format: StlFormat::Binary,
+                },
+            )
+            .unwrap();
+        let coarse_triangles = binary_stl_triangle_count(&coarse_path);
+        let fine_triangles = binary_stl_triangle_count(&fine_path);
+        assert!(coarse_triangles > 0);
+        assert!(fine_triangles > coarse_triangles);
+        assert_eq!(session.shape_count().unwrap(), 2);
+
+        fs::remove_file(ascii_path).unwrap();
+        fs::remove_file(coarse_path).unwrap();
+        fs::remove_file(fine_path).unwrap();
+    }
+
+    #[test]
+    fn stl_export_rejects_invalid_options_paths_and_sessions() {
+        let first = Session::new().unwrap();
+        let second = Session::new().unwrap();
+        let shape = unit_box(&first, 0.0);
+        let output = step_test_path("invalid-stl").with_extension("stl");
+        assert_wrong_session(
+            second
+                .save_stl(&shape, &output, StlOptions::default())
+                .unwrap_err(),
+        );
+        assert!(!output.exists());
+
+        for options in [
+            StlOptions {
+                linear_deflection: 0.0,
+                ..StlOptions::default()
+            },
+            StlOptions {
+                linear_deflection: f64::NAN,
+                ..StlOptions::default()
+            },
+            StlOptions {
+                angular_deflection_radians: -1.0,
+                ..StlOptions::default()
+            },
+        ] {
+            let error = first.save_stl(&shape, &output, options).unwrap_err();
+            assert_eq!(error.status, 1);
+            assert!(!output.exists());
+        }
+        let error = first
+            .save_stl(
+                &shape,
+                "/nonexistent-directory/shape.stl",
+                StlOptions::default(),
+            )
+            .unwrap_err();
+        assert_eq!(error.status, 5);
+        assert_eq!(first.shape_count().unwrap(), 1);
     }
 
     fn assert_wrong_session(error: BridgeError) {
@@ -1693,6 +2026,89 @@ mod tests {
             .unwrap();
         let curvature = |u: f64| 6.0 / (9.0 * u.sinh().powi(2) + 4.0 * u.cosh().powi(2)).powf(1.5);
         assert_exact(hyperbola, curvature(1.0), 0.75);
+    }
+
+    #[test]
+    fn sewing_independent_faces_builds_a_closed_solid() {
+        let session = Session::new().unwrap();
+        let corner = |x, y, z| Vec3::new(x, y, z);
+        let square = |points: [Vec3; 4]| {
+            let wire = session.create_polyline_wire(&points, true).unwrap();
+            session.create_face_from_wire(&wire).unwrap()
+        };
+        let (p000, p100, p110, p010) = (
+            corner(0.0, 0.0, 0.0),
+            corner(2.0, 0.0, 0.0),
+            corner(2.0, 3.0, 0.0),
+            corner(0.0, 3.0, 0.0),
+        );
+        let (p001, p101, p111, p011) = (
+            corner(0.0, 0.0, 4.0),
+            corner(2.0, 0.0, 4.0),
+            corner(2.0, 3.0, 4.0),
+            corner(0.0, 3.0, 4.0),
+        );
+        let faces = [
+            square([p000, p010, p110, p100]),
+            square([p001, p101, p111, p011]),
+            square([p000, p100, p101, p001]),
+            square([p010, p011, p111, p110]),
+            square([p000, p001, p011, p010]),
+            square([p100, p110, p111, p101]),
+        ];
+        let face_refs = faces.iter().collect::<Vec<_>>();
+
+        let shell = session.sew(&face_refs, 1e-6).unwrap();
+        assert_eq!(session.shape_type(&shell).unwrap(), ShapeType::Shell);
+        assert_eq!(session.subshape_count(&shell, ShapeType::Edge).unwrap(), 12);
+        assert_eq!(
+            session
+                .history_count(&shell, &faces[2], HistoryRelation::Modified)
+                .unwrap(),
+            1
+        );
+        let solid = session.make_solid(&shell).unwrap();
+        assert!((session.volume(&solid).unwrap() - 24.0).abs() < 1e-9);
+        assert!(session.is_valid(&solid).unwrap());
+
+        // Without the last face the shell stays open; far-apart faces do not join.
+        let open = session.sew(&face_refs[..5], 1e-6).unwrap();
+        assert_eq!(session.make_solid(&open).unwrap_err().status, 4);
+        let apart = session
+            .translate(&faces[1], Vec3::new(0.0, 0.0, 10.0))
+            .unwrap();
+        let loose = session.sew(&[&faces[0], &apart], 1e-6).unwrap();
+        assert_eq!(session.make_solid(&loose).unwrap_err().status, 4);
+        assert_eq!(session.sew(&[], 1e-6).unwrap_err().status, 1);
+        assert_eq!(session.sew(&face_refs, 0.0).unwrap_err().status, 1);
+    }
+
+    #[test]
+    fn multiple_shells_build_a_solid_with_an_internal_void() {
+        let session = Session::new().unwrap();
+        let outer = session
+            .create_box(Vec3::new(0.0, 0.0, 0.0), Vec3::new(10.0, 10.0, 10.0))
+            .unwrap();
+        let void = session
+            .create_box(Vec3::new(2.0, 2.0, 2.0), Vec3::new(2.0, 2.0, 2.0))
+            .unwrap();
+        let solid = session.make_solid_from_shells(&[&void, &outer]).unwrap();
+        assert_eq!(session.shape_type(&solid).unwrap(), ShapeType::Solid);
+        assert_eq!(session.subshape_count(&solid, ShapeType::Shell).unwrap(), 2);
+        assert!((session.volume(&solid).unwrap() - 992.0).abs() < 1e-9);
+        assert!(session.is_valid(&solid).unwrap());
+
+        let crossing = session
+            .create_box(Vec3::new(9.0, 9.0, 9.0), Vec3::new(2.0, 2.0, 2.0))
+            .unwrap();
+        assert_eq!(
+            session
+                .make_solid_from_shells(&[&outer, &crossing])
+                .unwrap_err()
+                .status,
+            4
+        );
+        assert_eq!(session.make_solid_from_shells(&[]).unwrap_err().status, 1);
     }
 
     #[test]
@@ -2465,6 +2881,9 @@ mod tests {
         let second_shape = unit_box(&second, 10.0);
 
         assert_wrong_session(second.create_compound(&[&first_shape]).unwrap_err());
+        assert_wrong_session(second.sew(&[&first_shape], 1e-6).unwrap_err());
+        assert_wrong_session(second.make_solid(&first_shape).unwrap_err());
+        assert_wrong_session(second.make_solid_from_shells(&[&first_shape]).unwrap_err());
         assert_wrong_session(second.fuse(&first_shape, &second_shape).unwrap_err());
         assert_wrong_session(second.cut(&second_shape, &first_shape).unwrap_err());
         assert_wrong_session(second.common(&second_shape, &first_shape).unwrap_err());
@@ -2557,6 +2976,20 @@ mod tests {
                 .save_brep(&first_shape, "cross-session-must-not-exist.brep")
                 .unwrap_err(),
         );
+        assert_wrong_session(
+            second
+                .save_step(&first_shape, "cross-session-must-not-exist.step")
+                .unwrap_err(),
+        );
+        assert_wrong_session(
+            second
+                .save_stl(
+                    &first_shape,
+                    "cross-session-must-not-exist.stl",
+                    StlOptions::default(),
+                )
+                .unwrap_err(),
+        );
         assert_wrong_session(second.remove(first_shape_to_remove).unwrap_err());
 
         assert_eq!(first.shape_count().unwrap(), 2);
@@ -2642,6 +3075,20 @@ mod tests {
         assert_cleared(
             session
                 .save_brep(&old_shape, "cleared-shape-must-not-exist.brep")
+                .unwrap_err(),
+        );
+        assert_cleared(
+            session
+                .save_step(&old_shape, "cleared-shape-must-not-exist.step")
+                .unwrap_err(),
+        );
+        assert_cleared(
+            session
+                .save_stl(
+                    &old_shape,
+                    "cleared-shape-must-not-exist.stl",
+                    StlOptions::default(),
+                )
                 .unwrap_err(),
         );
         assert_cleared(session.remove(old_shape_to_remove).unwrap_err());
