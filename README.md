@@ -3,7 +3,7 @@
 A small, stable C ABI over Open Cascade (OCCT), designed to be wrapped safely
 from Rust and other languages. Open Cascade C++ objects never cross the ABI.
 
-The current C ABI version is **24**.
+The current C ABI version is **25**.
 
 ## Current API
 
@@ -36,7 +36,8 @@ The current C ABI version is **24**.
 - Per-session result validation (on by default) for booleans, fillets,
   chamfers, offsets, hollowing, sewing, and STEP and BREP import, with
   optional shape healing that carries operation history, fuzzy booleans,
-  and per-call warnings
+  and per-call warnings. Faces with many holes use scalable checks that
+  preserve `BRepCheck_Analyzer` verdicts and diagnostic statuses.
 - Structured failure diagnostics: failed fillets, chamfers, offsets,
   hollows, and booleans, and results rejected by validation, report OCCT's
   own codes and names, the selected edge, face, or operand at fault, and a
@@ -153,9 +154,9 @@ test code. Rust branch coverage needs a nightly toolchain and is not reported.
 The scale benchmark suite enforces the roadmap's scaling requirement. It
 builds an optimized copy of the library in `build/bench`, runs every case at
 the target sizes (10,000-member patterns, deep clone chains, 1,000-part solver
-stacks and grids, repeated regeneration), and fails when a required case misses its
-time budget or correctness check. Cases tied to open roadmap items are
-reported as known gaps:
+stacks and grids, repeated regeneration, validation chains, and many-hole
+faces), and fails when a required case misses its time budget or correctness
+check. The current suite has 21 passing cases:
 
 ```bash
 tools/bench/run.sh

@@ -11,7 +11,7 @@
 //! Run with `tools/bench/run.sh`. The process exits non-zero when any
 //! non-gap case fails.
 
-use occt_bridge::{Session, SessionOptions, Vec3};
+use occt_bridge::{Session, SessionOptions, ShapeType, Vec3};
 use occt_parametric::{
     AssemblyRelationship, AxisAngle, DatumDefinition, DatumKind, DatumRef, Dimension,
     FamilyDefinition, FeatureDefinition, FeatureOperation, InstanceGraph, LengthUnit,
@@ -32,11 +32,15 @@ const PLACED_COPIES: usize = 5_000;
 /// 20-hole plate, against about 168 KiB when transforms copied geometry.
 const PLACED_COPY_BUDGET_KIB: f64 = 4.0;
 /// Largest acceptable slowdown of a boolean chain from result validation.
-/// Measured: 1.65x at 25 cuts, 1.75x at 50, 1.97x at 100, 2.18x at 200.
-/// Each cut and each check are O(part size), but checking a face with many
-/// holes includes pairwise wire-intersection tests, so the ratio grows
-/// slowly; cheaper checks for such faces are a roadmap item.
-const VALIDATION_OVERHEAD_LIMIT: f64 = 2.5;
+/// Measured: 1.45x at 25 cuts, 1.53x at 50, 1.57x at 100 (BRepCheck_Analyzer
+/// alone took 1.65x, 1.75x, and 1.97x, growing with holes per face).
+const VALIDATION_OVERHEAD_LIMIT: f64 = 2.0;
+/// Holes drilled into one plate face by a single boolean.
+const MANY_HOLES: usize = 400;
+/// Largest acceptable slowdown of that boolean from validation. Measured
+/// about 1.1x; BRepCheck_Analyzer alone took 1.5x, and its share grows
+/// quadratically with holes per face (3.5x of a cut at 400, 5.6x at 800).
+const MANY_HOLES_OVERHEAD_LIMIT: f64 = 1.5;
 /// Clone resolution recurses once per chain link, so a 20,000-deep chain
 /// overflows a default 2 MiB thread stack; the case runs on a 16 MiB stack
 /// until resolution is iterative (roadmap item).
@@ -322,6 +326,72 @@ fn validation_cases() -> Vec<Outcome> {
             } else {
                 Err(failure(format!(
                     "validation costs {ratio:.2}x, limit {VALIDATION_OVERHEAD_LIMIT}x"
+                )))
+            }
+        },
+    );
+    let mut outcomes = vec![unchecked, checked];
+    outcomes.extend(many_hole_validation_cases());
+    outcomes
+}
+
+/// Drills `MANY_HOLES` holes into one plate with a single boolean, with
+/// validation off and on, and bounds the overhead of checking a face with
+/// hundreds of wires.
+fn many_hole_validation_cases() -> Vec<Outcome> {
+    let drill = |validate: bool| -> Result<Duration, ModelError> {
+        let session = Session::new()?;
+        session.set_options(SessionOptions {
+            validate_results: validate,
+            ..SessionOptions::default()
+        })?;
+        let plate = session.create_box(Vec3::new(0.0, 0.0, 0.0), Vec3::new(420.0, 420.0, 10.0))?;
+        let holes = (0..MANY_HOLES)
+            .map(|index| {
+                let (row, column) = ((index / 20) as f64, (index % 20) as f64);
+                session.create_cylinder(
+                    Vec3::new(10.0 + column * 20.0, 10.0 + row * 20.0, -1.0),
+                    Vec3::new(0.0, 0.0, 1.0),
+                    4.0,
+                    12.0,
+                )
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let tools = session.create_compound(&holes.iter().collect::<Vec<_>>())?;
+        let start = Instant::now();
+        let drilled = session.cut(&plate, &tools)?;
+        let elapsed = start.elapsed();
+        let faces = session.subshape_count(&drilled, ShapeType::Face)?;
+        if faces != MANY_HOLES + 6 {
+            return Err(failure(format!(
+                "expected {} faces, found {faces}",
+                MANY_HOLES + 6
+            )));
+        }
+        Ok(elapsed)
+    };
+    let mut baseline = Duration::ZERO;
+    let unchecked = timed(
+        format!("{MANY_HOLES}-hole plate in one cut: validation off"),
+        ms(5_000),
+        Expectation::Required,
+        || {
+            baseline = drill(false)?;
+            Ok("baseline".into())
+        },
+    );
+    let checked = timed(
+        format!("{MANY_HOLES}-hole plate in one cut: validation on"),
+        ms(7_500),
+        Expectation::Required,
+        || {
+            let elapsed = drill(true)?;
+            let ratio = elapsed.as_secs_f64() / baseline.as_secs_f64().max(1e-9);
+            if ratio <= MANY_HOLES_OVERHEAD_LIMIT {
+                Ok(format!("{ratio:.2}x of unvalidated"))
+            } else {
+                Err(failure(format!(
+                    "validation costs {ratio:.2}x, limit {MANY_HOLES_OVERHEAD_LIMIT}x"
                 )))
             }
         },

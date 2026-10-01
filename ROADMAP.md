@@ -15,11 +15,11 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 2/2, bridge 41, recipes 3, parametric 86 | `ctest`, `cargo test` (see README) |
+| Tests | C 3/3, bridge 41, recipes 3, parametric 86 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.3% line coverage | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
-| Coverage | 93.34% lines overall; C++ 94% lines, 87% branches, 100% functions | `tools/coverage/run.sh` |
-| Scale benchmarks | 19 pass within budget; no known gaps | `tools/bench/run.sh` |
+| Coverage | 93.20% lines overall; C++ 93.46% lines, 86.45% branches, 100% functions | `tools/coverage/run.sh` |
+| Scale benchmarks | 21 passing within budget | `tools/bench/run.sh` |
 
 ## Done
 
@@ -40,7 +40,13 @@ tracks status and order.
   sewing, and STEP and BREP import (on by default), optional shape healing
   that carries operation history to the repaired faces, fuzzy booleans, and
   per-call warnings with OCCT alert names; boolean failures name OCCT's
-  reason. Measured overhead on a 100-cut chain: 2.05x.
+  reason. Faces with at least 16 wires use equivalent per-wire proxy checks
+  and bounding-box-pruned classification instead of repeated whole-face
+  checks. The differential test matches `BRepCheck_Analyzer` verdicts and
+  statuses across valid and deliberately invalid topology. Final benchmarks:
+  1.59x validation overhead on a 100-cut chain and 1.12x on a 400-hole
+  single cut; direct validation of that plate takes 0.045 s instead of
+  0.212 s with `BRepCheck_Analyzer`.
 - Structured failure diagnostics: a failed fillet, chamfer, offset, hollow,
   or boolean, or a result rejected by validation, reports what OCCT said
   caused it, using OCCT's own codes and names (`ChFiDS_ErrorStatus`,
@@ -116,6 +122,8 @@ tracks status and order.
   enforcement, and issue-count enforcement. Community Build reports the Rust
   portion; C/C++ records remain in the report for servers with CFamily.
 - Argument-validation conformance test for every C entry point.
+- Differential scalable-validator conformance tests against
+  `BRepCheck_Analyzer`, including many-wire valid and invalid topology.
 - Scale benchmark suite with time budgets and correctness checks at the
   target sizes, reporting known gaps against open roadmap items.
 
@@ -152,15 +160,11 @@ every item below is defined in documents and the API, and verified in tests.
 
 ### Robustness and scale
 
-1. **Cheaper validation of faces with many holes.** Result validation
-   costs 1.65x a boolean chain at 25 cuts and 2.2x at 200, because checking
-   a face with many holes includes pairwise wire-intersection tests; check
-   only wires an operation changed, or use spatial indexing.
-2. **Iterative clone resolution.** Resolving an instance recurses once per
+1. **Iterative clone resolution.** Resolving an instance recurses once per
    clone link, so a 20,000-deep chain needs a 16 MiB stack and would
    overflow a default 2 MiB thread. Resolve chains iteratively with
    memoized parents so depth costs neither stack nor repeated work.
-3. **Configurable tolerances.** Per-model linear and angular tolerances for
+2. **Configurable tolerances.** Per-model linear and angular tolerances for
    relationships and checks, replacing the fixed 1e-6 mm and 1e-9 rad.
    Kilometer-scale stacks now converge within them, but models mixing
    micron features with kilometer extents still need tolerances set per
@@ -168,34 +172,34 @@ every item below is defined in documents and the API, and verified in tests.
 
 ### Capabilities
 
-4. **Datum- and mass-based requirements.** Verification rules for mass
+3. **Datum- and mass-based requirements.** Verification rules for mass
    limits, datum clearances, and relationship satisfaction alongside the
    existing validity and volume rules.
-5. **Constraint-solved 2D sketches.** Lines, arcs, and circles on a datum
+4. **Constraint-solved 2D sketches.** Lines, arcs, and circles on a datum
     plane with geometric constraints (coincident, tangent, parallel,
     perpendicular, horizontal, vertical, equal) and dimensional constraints
     driven by parameter expressions. Solve with the relationship solver's
     machinery, report free degrees and conflicts, and emit closed profiles as
     wires and faces for features.
-6. **Feature breadth.** Extrude and revolve from sketch profiles (adds a
+5. **Feature breadth.** Extrude and revolve from sketch profiles (adds a
     revolve operation to the C ABI), holes with standard sizes, counterbores,
     countersinks, and recorded thread specifications, draft, ribs, and
     variable-radius fillets; sheet metal (flanges, bends, flat patterns)
     after the rest.
-7. **Assembly depth.** Joints (revolute, prismatic, cylindrical, planar,
+6. **Assembly depth.** Joints (revolute, prismatic, cylindrical, planar,
     fixed) with limits on top of relationships; interference and minimum
     clearance between instances using exact boolean and distance queries; and
     motion studies that sweep joint values and report collisions.
-8. **Generated drawings.** Projected views (orthographic, section, detail)
+7. **Generated drawings.** Projected views (orthographic, section, detail)
     by hidden-line removal, exported as SVG and DXF; dimensions and notes
     placed from datums and parameters; title blocks from document metadata.
     Drawings regenerate with the model rather than being edited by hand.
-9. **Analysis and manufacturing hand-off.** Full mass properties (center of
+8. **Analysis and manufacturing hand-off.** Full mass properties (center of
     mass, inertia tensor) per instance and assembly; tagged surface and
     volume meshes for external FEA; manufacturability checks (minimum wall
     thickness, draft angle, 3D-printing overhang); glTF export with material
     appearance for rendering.
-10. **Model data management.** Semantic diff and three-way merge of model
+9. **Model data management.** Semantic diff and three-way merge of model
     documents (parameters, features, instances, relationships), recorded
     revision history inside documents, and change-impact reports listing the
     instances and features a change affects, with a git merge driver.

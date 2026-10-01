@@ -17,7 +17,7 @@ if(OCCT_BRIDGE_OCCT_VERSION VERSION_LESS 7.9.0)
     message(FATAL_ERROR "OCCT 7.9.0 or newer is required; found ${OCCT_BRIDGE_OCCT_VERSION}")
 endif()
 
-add_library(occt_bridge SHARED src/occt_bridge.cpp)
+add_library(occt_bridge SHARED src/occt_bridge.cpp src/shape_validator.cpp)
 add_library(OpenCascadeCBridge::occt_bridge ALIAS occt_bridge)
 
 target_compile_features(occt_bridge PRIVATE cxx_std_17)
@@ -34,8 +34,8 @@ target_include_directories(
     PRIVATE
         ${OpenCASCADE_INCLUDE_DIR}
 )
-target_link_libraries(
-    occt_bridge PRIVATE
+set(
+    OCCT_BRIDGE_OCCT_LIBRARIES
     TKernel
     TKMath
     TKG2d
@@ -53,6 +53,7 @@ target_link_libraries(
     TKDESTL
     TKShHealing
 )
+target_link_libraries(occt_bridge PRIVATE ${OCCT_BRIDGE_OCCT_LIBRARIES})
 set_target_properties(
     occt_bridge PROPERTIES
     CXX_VISIBILITY_PRESET hidden
@@ -84,6 +85,17 @@ if(BUILD_TESTING)
     )
     target_link_libraries(occt_bridge_c_errors_test PRIVATE OpenCascadeCBridge::occt_bridge m)
     add_test(NAME occt_bridge_c_api_errors COMMAND occt_bridge_c_errors_test)
+
+    # Internal validator, compiled in directly because the library hides it.
+    add_executable(occt_bridge_shape_validator_test tests/shape_validator_test.cpp src/shape_validator.cpp)
+    target_compile_features(occt_bridge_shape_validator_test PRIVATE cxx_std_17)
+    target_compile_options(
+        occt_bridge_shape_validator_test PRIVATE
+        $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic;-Werror>
+    )
+    target_include_directories(occt_bridge_shape_validator_test PRIVATE ${OpenCASCADE_INCLUDE_DIR})
+    target_link_libraries(occt_bridge_shape_validator_test PRIVATE ${OCCT_BRIDGE_OCCT_LIBRARIES})
+    add_test(NAME occt_bridge_shape_validator COMMAND occt_bridge_shape_validator_test)
 endif()
 
 install(

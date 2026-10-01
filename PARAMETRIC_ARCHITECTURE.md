@@ -7,7 +7,7 @@ so they can generate and regenerate families of related parts.
 ## Implementation status
 
 The architecture in this document is both a description of implemented
-boundaries and a roadmap. As of ABI version 24, the repository contains three
+boundaries and a roadmap. As of ABI version 25, the repository contains three
 Rust layers:
 
 1. **`occt-bridge`** safely wraps session-owned OCCT handles. It includes
@@ -49,10 +49,22 @@ Rust layers:
    cleanup when regeneration or placement fails; and kernel failures reported
    with OCCT's codes and located at the failing feature's selector or input.
 
+Result validation retains OCCT's `BRepCheck` verdicts and diagnostic statuses.
+Faces with fewer than 16 wires take the same unpruned checks as
+`BRepCheck_Analyzer`. Larger faces check each subshape against a proxy carrying
+only its own wire and use bounding boxes to prune wire-containment candidates,
+reducing classification from unconditional quadratic comparisons to
+O(w log w + candidate pairs).
+A differential C++ test compares every reported subshape status across valid
+and deliberately invalid planar, periodic, located, intersecting, nested, and
+misoriented topology. On the final benchmark build, validation costs 1.59x on
+a 100-cut chain and 1.12x on a 400-hole single cut; validating the resulting
+400-hole plate directly takes 0.045 s instead of 0.212 s with
+`BRepCheck_Analyzer`.
+
 The following major capabilities remain planned:
 
-- cheaper validation of faces with many holes and configurable model
-  tolerances;
+- configurable model tolerances;
 - iterative clone resolution for deep chains on default thread stacks;
 - additional domain-specific expression functions;
 - additional schema migrations and integration with the broader EIL source
@@ -576,13 +588,16 @@ application code should use the recipe crate.
 
 ## Compatibility rule
 
-The C interface currently requires an exact ABI version match. ABI version 24
-adds a diagnostics-preserving handle release used by the Rust bindings to
-free shapes when handles are dropped; ABI version 23 added per-session result validation, optional healing with history, fuzzy
-booleans, and per-call warnings; ABI version 22 added exact bounds without tolerance enlargement, used for measured pattern
-drivers, to the existing validated multi-shell solid construction with
-internal voids, STEP exchange, configurable ASCII/binary STL tessellation export,
-sewing, single-shell solid construction,
+The C interface currently requires an exact ABI version match. ABI version 25
+adds structured kernel-failure diagnostics that identify OCCT's code and the
+input at fault; ABI version 24 added a diagnostics-preserving handle release
+used by the Rust bindings to free shapes when handles are dropped; ABI version
+23 added per-session result validation, optional healing with history, fuzzy
+booleans, and per-call warnings; ABI version 22 added exact bounds without
+tolerance enlargement, used for measured pattern drivers, to the existing
+validated multi-shell solid construction with internal voids, STEP exchange,
+configurable ASCII/binary STL tessellation export, sewing, single-shell solid
+construction,
 curvature-extrema, topological-identity, elliptical-wire, tangency, traversal,
 measurement, generic-modeling, and operation-history API while preserving the
 rule that OCCT objects never cross the boundary. The ELF library retains symbol version `OCCT_BRIDGE_1.0`; the
@@ -636,9 +651,9 @@ defaults, units, constraints, placements, clone cycles, missing links,
 inconsistent pattern membership, and invalid regeneration revisions before the
 model is accepted.
 
-The next cross-layer work should prioritize robustness and scale:
-scalable relationship solving and kernel failure diagnostics, each measured
-by the scale benchmark suite (`tools/bench/run.sh`). Scale is a requirement for every change; see the
+The next cross-layer work should prioritize iterative clone resolution and
+configurable model tolerances, each measured by the scale benchmark suite
+(`tools/bench/run.sh`). Scale is a requirement for every change; see the
 [Roadmap](ROADMAP.md) for target sizes and the checks each change must pass.
 
 The broader serialized source model lives in the sibling

@@ -1,4 +1,5 @@
 #include "occt_bridge.h"
+#include "shape_validator.hpp"
 
 #include <BRepAlgoAPI_Cut.hxx>
 #include <BRepAlgoAPI_Fuse.hxx>
@@ -14,7 +15,6 @@
 #include <BRepBuilderAPI_MakeWire.hxx>
 #include <BRepBuilderAPI_Sewing.hxx>
 #include <BRepBuilderAPI_Transform.hxx>
-#include <BRepCheck_Analyzer.hxx>
 #include <BRepCheck_ListOfStatus.hxx>
 #include <BRepCheck_Result.hxx>
 #include <BRepClass3d_SolidClassifier.hxx>
@@ -138,6 +138,8 @@ struct occt_bridge_session {
 };
 
 namespace {
+
+using occt_bridge_internal::ShapeValidator;
 
 bool finite(double value) {
     return std::isfinite(value);
@@ -555,7 +557,7 @@ std::string with_diagnostics(const occt_bridge_session_t* session, std::string m
  */
 void record_invalid_subshapes(
     occt_bridge_session_t* session,
-    const BRepCheck_Analyzer& analyzer,
+    const ShapeValidator& analyzer,
     const TopoDS_Shape& shape) {
     static const TopAbs_ShapeEnum types[] = {
         TopAbs_COMPSOLID, TopAbs_SOLID, TopAbs_SHELL, TopAbs_FACE, TopAbs_WIRE, TopAbs_EDGE, TopAbs_VERTEX,
@@ -609,7 +611,7 @@ occt_bridge_status_t check_result(
     if (session->options.validate_results == 0) {
         return OCCT_BRIDGE_OK;
     }
-    const BRepCheck_Analyzer analyzer(shape, Standard_True);
+    const ShapeValidator analyzer(shape);
     if (analyzer.IsValid()) {
         return OCCT_BRIDGE_OK;
     }
@@ -623,7 +625,7 @@ occt_bridge_status_t check_result(
     Handle(ShapeFix_Shape) fixer = new ShapeFix_Shape(shape);
     fixer->Perform();
     const TopoDS_Shape healed = fixer->Shape();
-    if (healed.IsNull() || !BRepCheck_Analyzer(healed, Standard_True).IsValid()) {
+    if (healed.IsNull() || !ShapeValidator(healed).IsValid()) {
         record_invalid_subshapes(session, analyzer, shape);
         return fail(
             session,
@@ -1861,7 +1863,7 @@ occt_bridge_status_t occt_bridge_create_polygon_prism(
             return fail(session, OCCT_BRIDGE_KERNEL_ERROR, "prism construction failed");
         }
         /* Degenerate outlines, such as collinear points, sweep to invalid zero-volume solids. */
-        BRepCheck_Analyzer analyzer(prism.Shape(), Standard_True);
+        const ShapeValidator analyzer(prism.Shape());
         if (!analyzer.IsValid()) {
             return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "polygon prism is not a valid BREP");
         }
@@ -1911,7 +1913,7 @@ occt_bridge_status_t occt_bridge_create_faceted_stone(
         if (shape.IsNull()) {
             return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "faceted stone could not be closed into a solid");
         }
-        BRepCheck_Analyzer analyzer(shape, Standard_True);
+        const ShapeValidator analyzer(shape);
         if (!analyzer.IsValid()) {
             return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "faceted stone is not a valid BREP");
         }
@@ -2092,7 +2094,7 @@ occt_bridge_status_t occt_bridge_create_polyline_tube(
         if (!pipe.IsDone() || pipe.Shape().IsNull()) {
             return fail(session, OCCT_BRIDGE_KERNEL_ERROR, "polyline tube sweep failed");
         }
-        BRepCheck_Analyzer analyzer(pipe.Shape(), Standard_True);
+        const ShapeValidator analyzer(pipe.Shape());
         if (!analyzer.IsValid()) {
             return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "polyline tube is not a valid BREP");
         }
@@ -2175,7 +2177,7 @@ occt_bridge_status_t occt_bridge_create_loft(
         if (shape.IsNull()) {
             return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "loft produced a null shape");
         }
-        BRepCheck_Analyzer analyzer(shape, Standard_True);
+        const ShapeValidator analyzer(shape);
         if (!analyzer.IsValid()) {
             return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "loft produced an invalid BREP");
         }
@@ -2304,7 +2306,7 @@ occt_bridge_status_t collect_solid_boundaries(
         }
         TopoDS_Solid solid = builder.Solid();
         BRepLib::OrientClosedSolid(solid);
-        BRepCheck_Analyzer analyzer(solid, Standard_True);
+        const ShapeValidator analyzer(solid);
         if (!analyzer.IsValid()) {
             return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "solid boundary is not a valid BREP");
         }
@@ -2386,7 +2388,7 @@ occt_bridge_status_t build_solid_from_inputs(
         return fail(session, OCCT_BRIDGE_KERNEL_ERROR, "solid construction failed");
     }
     TopoDS_Solid solid = builder.Solid();
-    BRepCheck_Analyzer analyzer(solid, Standard_True);
+    const ShapeValidator analyzer(solid);
     const double result_volume = solid_volume(solid);
     const double volume_tolerance = std::max(Precision::Confusion(), expected_volume * 1.0e-9);
     if (!analyzer.IsValid() || std::abs(result_volume - expected_volume) > volume_tolerance) {
@@ -3813,7 +3815,7 @@ occt_bridge_status_t occt_bridge_shape_is_valid(
         if (value == nullptr) {
             return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "shape was not found");
         }
-        BRepCheck_Analyzer analyzer(*value, Standard_True);
+        const ShapeValidator analyzer(*value);
         *out_is_valid = analyzer.IsValid() ? 1 : 0;
         return succeed(session);
     });
