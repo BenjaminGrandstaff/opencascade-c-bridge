@@ -107,12 +107,20 @@ document.
 - **Placement solving.** `solve_placements` moves named free instances so
   that every relationship touching them holds, keeping all other instances
   fixed. Each free instance contributes a rotation vector and a translation
-  of its local placement, inside any frames it already belongs to. Every
-  involved relationship becomes a smooth residual vector, and
-  Levenberg–Marquardt with a central-difference Jacobian drives it to zero
-  from the current placements. Freedoms no relationship constrains have no
-  gradient and keep their values, so under-constrained instances move as
-  little as possible. The report gives the free degrees and redundant
+  of its local placement, inside any frames it already belongs to; the
+  rotation turns the instance about its own pivot, the centroid of its
+  involved datums, so rotation and translation stay independent for parts
+  far from the model origin. Every involved relationship becomes a smooth
+  residual vector, with angular components scaled by a characteristic length
+  so millimeters and radians weigh alike, and Levenberg–Marquardt with a
+  relative-step central-difference Jacobian drives it to zero. Damping
+  starts near Gauss–Newton, since chains of parts are close to linear but
+  poorly conditioned. After convergence, the solution is moved back toward
+  the starting placements along the directions no relationship constrains
+  (the Jacobian's null space, measured in millimeters) and polished, so
+  under-constrained instances move as little as possible. Convergence is
+  judged relative to the model's length scale. The report gives the free
+  degrees and redundant
   equations from the Jacobian rank at the best fit, and checks every involved
   relationship there. Placements are applied only when every involved
   relationship is satisfied; conflicting sets leave the graph unchanged and

@@ -15,7 +15,7 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 2/2, bridge 34, recipes 3, parametric 79 | `ctest`, `cargo test` (see README) |
+| Tests | C 2/2, bridge 34, recipes 3, parametric 81 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.1% line coverage | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Coverage | 93.24% lines overall; C++ 94% lines, 88% branches, 100% functions | `tools/coverage/run.sh` |
@@ -66,7 +66,11 @@ tracks status and order.
   materials with inheritance and mass.
 - Relationship solving: free instances placed by Levenberg–Marquardt so
   their relationships hold, with free-degree and redundancy reporting and
-  no change to the graph when relationships conflict.
+  no change to the graph when relationships conflict. Rotations pivot about
+  each instance, angular residuals are length-scaled, damping starts near
+  Gauss–Newton, and free directions are restored toward the start; measured
+  50-part stacks solve in 0.17 s (seated) and 2.5 s (fully constrained) at
+  the origin and 1 m from it, with no drift in unconstrained directions.
 - Versioned JSON documents with migrations from every schema since v1.
 
 ### Recipes
@@ -113,66 +117,62 @@ every item below is defined in documents and the API, and verified in tests.
 
 ### Robustness and scale
 
-1. **Fix solver conditioning away from the origin (bug).** Rotation unknowns
-   are taken about the model origin, so for parts far from it rotation and
-   translation are nearly interchangeable; a five-block coincident stack
-   fails to converge in 200 iterations and ends tilted about 0.03 rad.
-   Rotate each free instance about its own reference point, scale angular
-   residuals by a characteristic length, and add regression tests with parts
-   far from the origin.
-2. **Scale benchmark suite.** A committed benchmark with budgets covering
+1. **Scale benchmark suite.** A committed benchmark with budgets covering
    10,000-member patterns (create, edit, save, load, regenerate), deep clone
    chains, configuration edits, solver sizes, and session handle counts after
    repeated regeneration, run by a script alongside lint and coverage.
-3. **Result validation and healing in the kernel.** Check validity after
+2. **Result validation and healing in the kernel.** Check validity after
    booleans, fillets, chamfers, offsets, hollowing, sewing, and STEP import;
    offer optional healing (shape fixing, tolerance repair) and fuzzy
    booleans for near-coincident faces; report OCCT warnings instead of
    dropping them.
-4. **Automatic handle cleanup.** Release generated shapes when results are
+3. **Automatic handle cleanup.** Release generated shapes when results are
    dropped so long-running sessions stay bounded, keeping explicit removal
    and the existing ownership rules.
-5. **Location-only sharing for placed copies.** Store one shape and a
+4. **Location-only sharing for placed copies.** Store one shape and a
    location per copy when only placement differs, so memory stops growing
    with copy count.
-6. **Scalable relationship solving.** Analytic Jacobians, sparse linear
+5. **Scalable relationship solving.** Analytic Jacobians, sparse linear
    algebra, and decomposition into independent connected groups, so
    1,000-part assemblies solve in seconds.
-7. **Kernel failure diagnostics.** Report which edge, face, or input caused a
+6. **Kernel failure diagnostics.** Report which edge, face, or input caused a
    fillet, chamfer, offset, or boolean failure, with OCCT's own error codes.
-8. **Configurable tolerances.** Per-model linear and angular tolerances for
+7. **Configurable tolerances.** Per-model linear and angular tolerances for
    relationships and checks, replacing the fixed 1e-6 mm and 1e-9 rad.
+   Measured: 50-part stacks 1 km from the origin converge to residuals near
+   1e-8 mm but are reported unsolved because the fixed tolerances sit at
+   double precision for million-millimeter coordinates.
 
 ### Capabilities
 
-9. **Datum- and mass-based requirements.** Verification rules for mass
+8. **Datum- and mass-based requirements.** Verification rules for mass
    limits, datum clearances, and relationship satisfaction alongside the
    existing validity and volume rules.
-10. **Constraint-solved 2D sketches.** Lines, arcs, and circles on a datum
+9. **Constraint-solved 2D sketches.** Lines, arcs, and circles on a datum
     plane with geometric constraints (coincident, tangent, parallel,
     perpendicular, horizontal, vertical, equal) and dimensional constraints
     driven by parameter expressions. Solve with the relationship solver's
     machinery, report free degrees and conflicts, and emit closed profiles as
     wires and faces for features.
-11. **Feature breadth.** Extrude and revolve from sketch profiles (adds a
+10. **Feature breadth.** Extrude and revolve from sketch profiles (adds a
     revolve operation to the C ABI), holes with standard sizes, counterbores,
     countersinks, and recorded thread specifications, draft, ribs, and
     variable-radius fillets; sheet metal (flanges, bends, flat patterns)
     after the rest.
-12. **Assembly depth.** Joints (revolute, prismatic, cylindrical, planar,
+11. **Assembly depth.** Joints (revolute, prismatic, cylindrical, planar,
     fixed) with limits on top of relationships; interference and minimum
     clearance between instances using exact boolean and distance queries; and
     motion studies that sweep joint values and report collisions.
-13. **Generated drawings.** Projected views (orthographic, section, detail)
+12. **Generated drawings.** Projected views (orthographic, section, detail)
     by hidden-line removal, exported as SVG and DXF; dimensions and notes
     placed from datums and parameters; title blocks from document metadata.
     Drawings regenerate with the model rather than being edited by hand.
-14. **Analysis and manufacturing hand-off.** Full mass properties (center of
+13. **Analysis and manufacturing hand-off.** Full mass properties (center of
     mass, inertia tensor) per instance and assembly; tagged surface and
     volume meshes for external FEA; manufacturability checks (minimum wall
     thickness, draft angle, 3D-printing overhang); glTF export with material
     appearance for rendering.
-15. **Model data management.** Semantic diff and three-way merge of model
+14. **Model data management.** Semantic diff and three-way merge of model
     documents (parameters, features, instances, relationships), recorded
     revision history inside documents, and change-impact reports listing the
     instances and features a change affects, with a git merge driver.

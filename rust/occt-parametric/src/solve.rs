@@ -1,20 +1,33 @@
 //! Placing free instances so that their assembly relationships hold.
 //!
 //! Each free instance contributes six unknowns, a rotation vector and a
-//! translation of its local placement. Every relationship that touches a
+//! translation of its local placement. The rotation turns the instance about
+//! its own pivot, the centroid of its involved datums, so rotating does not
+//! move it; rotating about the model origin would make rotation and
+//! translation nearly interchangeable for distant parts and stall the solve. Every relationship that touches a
 //! free instance becomes a smooth residual vector, and Levenberg–Marquardt
 //! drives those residuals to zero from the current placements. Unknowns that
 //! no relationship constrains have no gradient and keep their current values,
 //! so an under-constrained instance moves as little as possible.
 
 use super::*;
-use crate::assembly::{add, cross, dot, length, rotate_by, scale, subtract};
+use crate::assembly::{add, cross, dot, length, scale, subtract, transform_point};
 
 const MAX_ITERATIONS: usize = 200;
-const RESIDUAL_TOLERANCE: f64 = 1e-11;
+/// Convergence tolerance relative to the problem's length scale (the largest
+/// translation unknown, characteristic length, or 1 mm); a fixed absolute
+/// tolerance is unreachable in floating point for parts far from the origin.
+const RELATIVE_TOLERANCE: f64 = 1e-12;
+/// Initial Marquardt damping. Assembly problems are close to linear, so the
+/// solver starts near Gauss–Newton and damps only after a rejected step;
+/// heavier initial damping crawls along chains, whose weakest mode shrinks
+/// like 1/n^2.
+const INITIAL_DAMPING: f64 = 1e-9;
 const DIFFERENCE_STEP: f64 = 1e-7;
 const MAX_DAMPING: f64 = 1e12;
 const RANK_TOLERANCE: f64 = 1e-8;
+/// Tikhonov weight relative to the largest normal-equation diagonal.
+const REGULARIZATION: f64 = 1e-9;
 const UNKNOWNS_PER_INSTANCE: usize = 6;
 
 /// Outcome of [`InstanceGraph::solve_placements`].
@@ -52,6 +65,63 @@ struct Term {
     second: Endpoint,
 }
 
+/// Residual terms plus the pivot of each free instance (in its placement's
+/// local coordinates) and the length that converts angular residuals to
+/// millimeters so both kinds carry comparable weight.
+struct Problem {
+    terms: Vec<Term>,
+    pivots: Vec<Vec3>,
+    angular_scale: f64,
+}
+
+impl Problem {
+    /// Pivots are the centroids of each free instance's involved local datum
+    /// origins; the angular scale is the largest pivot-to-datum distance,
+    /// at least 1 mm. O(terms).
+    fn new(terms: Vec<Term>, free_count: usize) -> Self {
+        let mut sums = vec![(Vec3::new(0.0, 0.0, 0.0), 0usize); free_count];
+        for (instance, local) in terms.iter().flat_map(Term::free_endpoints) {
+            sums[instance].0 = add(sums[instance].0, datum_origin(local));
+            sums[instance].1 += 1;
+        }
+        let pivots = sums
+            .iter()
+            .map(|(sum, count)| scale(*sum, 1.0 / (*count).max(1) as f64))
+            .collect::<Vec<_>>();
+        let angular_scale = terms
+            .iter()
+            .flat_map(Term::free_endpoints)
+            .map(|(instance, local)| length(subtract(datum_origin(local), pivots[instance])))
+            .fold(1.0_f64, f64::max);
+        Self {
+            terms,
+            pivots,
+            angular_scale,
+        }
+    }
+}
+
+impl Term {
+    fn free_endpoints(&self) -> impl Iterator<Item = (usize, ResolvedDatum)> + '_ {
+        [&self.first, &self.second]
+            .into_iter()
+            .filter_map(|endpoint| match endpoint {
+                Endpoint::Free {
+                    instance, local, ..
+                } => Some((*instance, *local)),
+                Endpoint::Fixed(_) => None,
+            })
+    }
+}
+
+fn datum_origin(datum: ResolvedDatum) -> Vec3 {
+    match datum {
+        ResolvedDatum::Point { origin }
+        | ResolvedDatum::Axis { origin, .. }
+        | ResolvedDatum::Plane { origin, .. } => origin,
+    }
+}
+
 impl<'definition> InstanceGraph<'definition> {
     /// Moves the `free` instances so that every relationship involving them
     /// holds, keeping all other instances fixed. The graph changes only when
@@ -78,18 +148,20 @@ impl<'definition> InstanceGraph<'definition> {
             .iter()
             .map(|relationship| self.term(relationship, free))
             .collect::<Result<Vec<_>, _>>()?;
+        let problem = Problem::new(terms, free.len());
         let start = free
             .iter()
-            .map(|instance| self.placement_unknowns(instance))
+            .zip(&problem.pivots)
+            .map(|(instance, pivot)| self.placement_unknowns(instance, *pivot))
             .collect::<Result<Vec<_>, _>>()?
             .concat();
 
-        let fit = least_squares(&terms, start)?;
+        let fit = closest_solution(&problem, start)?;
         let rank = matrix_rank(&fit.jacobian);
         let mut candidate = self.clone();
-        for (index, instance) in free.iter().enumerate() {
+        for (index, (instance, pivot)) in free.iter().zip(&problem.pivots).enumerate() {
             let unknowns = &fit.unknowns[index * UNKNOWNS_PER_INSTANCE..][..UNKNOWNS_PER_INSTANCE];
-            candidate.set_placement(instance, placement_from_unknowns(unknowns))?;
+            candidate.set_placement(instance, placement_from_unknowns(unknowns, *pivot))?;
         }
         let checks = involved
             .iter()
@@ -173,23 +245,19 @@ impl<'definition> InstanceGraph<'definition> {
         })
     }
 
-    /// The instance's placement as a rotation vector about the model origin
-    /// followed by a translation.
-    fn placement_unknowns(&self, instance: &str) -> Result<Vec<f64>, ModelError> {
+    /// The instance's placement as a rotation vector about `pivot` followed
+    /// by a translation: `x -> R(x - pivot) + pivot + t` with `t = P(pivot) - pivot`.
+    fn placement_unknowns(&self, instance: &str, pivot: Vec3) -> Result<Vec<f64>, ModelError> {
         let placement = self
             .node(instance)
             .ok_or_else(|| ModelError::new(format!("unknown instance '{instance}'")))?
             .placement()
             .normalized()?;
-        let (rotation, origin) = match placement.rotation {
-            Some((origin, axis, angle)) => (scale(axis, angle / length(axis)), origin),
-            None => (Vec3::new(0.0, 0.0, 0.0), Vec3::new(0.0, 0.0, 0.0)),
+        let rotation = match placement.rotation {
+            Some((_, axis, angle)) => scale(axis, angle / length(axis)),
+            None => Vec3::new(0.0, 0.0, 0.0),
         };
-        // x -> R(x - o) + o + t is x -> Rx + (o - Ro + t).
-        let translation = add(
-            subtract(origin, rotate_by(origin, &placement)),
-            placement.translation,
-        );
+        let translation = subtract(transform_point(pivot, &placement), pivot);
         Ok(vec![
             rotation.x,
             rotation.y,
@@ -201,19 +269,19 @@ impl<'definition> InstanceGraph<'definition> {
     }
 }
 
-fn unknown_placement(unknowns: &[f64]) -> NormalizedPlacement {
+fn unknown_placement(unknowns: &[f64], pivot: Vec3) -> NormalizedPlacement {
     let rotation = Vec3::new(unknowns[0], unknowns[1], unknowns[2]);
     let angle = length(rotation);
     NormalizedPlacement {
         translation: Vec3::new(unknowns[3], unknowns[4], unknowns[5]),
-        rotation: (angle > 0.0).then(|| (Vec3::new(0.0, 0.0, 0.0), rotation, angle)),
+        rotation: (angle > 0.0).then_some((pivot, rotation, angle)),
     }
 }
 
-fn placement_from_unknowns(unknowns: &[f64]) -> Placement {
+fn placement_from_unknowns(unknowns: &[f64], pivot: Vec3) -> Placement {
     let rotation = Vec3::new(unknowns[0], unknowns[1], unknowns[2]);
     let angle = length(rotation);
-    let origin = VectorQuantity::lengths(0.0, 0.0, 0.0, LengthUnit::Millimeter);
+    let origin = VectorQuantity::lengths(pivot.x, pivot.y, pivot.z, LengthUnit::Millimeter);
     Placement {
         translation: VectorQuantity::lengths(
             unknowns[3],
@@ -234,7 +302,7 @@ fn placement_from_unknowns(unknowns: &[f64]) -> Placement {
 }
 
 impl Endpoint {
-    fn datum(&self, unknowns: &[f64]) -> ResolvedDatum {
+    fn datum(&self, unknowns: &[f64], pivots: &[Vec3]) -> ResolvedDatum {
         match self {
             Self::Fixed(datum) => *datum,
             Self::Free {
@@ -244,6 +312,7 @@ impl Endpoint {
             } => {
                 let placement = unknown_placement(
                     &unknowns[instance * UNKNOWNS_PER_INSTANCE..][..UNKNOWNS_PER_INSTANCE],
+                    pivots[*instance],
                 );
                 frames
                     .iter()
@@ -257,13 +326,14 @@ impl Endpoint {
 
 // ---- residuals
 
-fn residuals(terms: &[Term], unknowns: &[f64]) -> Vec<f64> {
+fn residuals(problem: &Problem, unknowns: &[f64]) -> Vec<f64> {
     let mut values = Vec::new();
-    for term in terms {
+    for term in &problem.terms {
         term_residuals(
             term.kind,
-            term.first.datum(unknowns),
-            term.second.datum(unknowns),
+            term.first.datum(unknowns, &problem.pivots),
+            term.second.datum(unknowns, &problem.pivots),
+            problem.angular_scale,
             &mut values,
         );
     }
@@ -275,25 +345,35 @@ fn push(values: &mut Vec<f64>, vector: Vec3) {
 }
 
 /// Smooth residual components that vanish exactly when the relationship
-/// holds. Datum pairs were validated when the relationship was added.
+/// holds. Angular components are multiplied by `angular` (a length) so they
+/// weigh like millimeters. Datum pairs were validated when the relationship
+/// was added.
 fn term_residuals(
     kind: RelationKind,
     first: ResolvedDatum,
     second: ResolvedDatum,
+    angular: f64,
     values: &mut Vec<f64>,
 ) {
     match kind {
-        RelationKind::Coincident => coincident_residuals(first, second, values),
-        RelationKind::Parallel => directional_residuals(first, second, false, values),
-        RelationKind::Perpendicular => directional_residuals(first, second, true, values),
+        RelationKind::Coincident => coincident_residuals(first, second, angular, values),
+        RelationKind::Parallel => directional_residuals(first, second, false, angular, values),
+        RelationKind::Perpendicular => {
+            directional_residuals(first, second, true, angular, values);
+        }
         RelationKind::Distance(target) => {
             let target = target.normalized().unwrap_or(0.0);
-            distance_residuals(first, second, target, values);
+            distance_residuals(first, second, target, angular, values);
         }
     }
 }
 
-fn coincident_residuals(first: ResolvedDatum, second: ResolvedDatum, values: &mut Vec<f64>) {
+fn coincident_residuals(
+    first: ResolvedDatum,
+    second: ResolvedDatum,
+    angular: f64,
+    values: &mut Vec<f64>,
+) {
     use ResolvedDatum::{Axis, Plane, Point};
     match (first, second) {
         (Point { origin: p }, Point { origin: q }) => push(values, subtract(p, q)),
@@ -315,7 +395,7 @@ fn coincident_residuals(first: ResolvedDatum, second: ResolvedDatum, values: &mu
                 direction: e,
             },
         ) => {
-            push(values, cross(d, e));
+            push(values, scale(cross(d, e), angular));
             push(values, cross(subtract(b, a), d));
         }
         (
@@ -328,7 +408,7 @@ fn coincident_residuals(first: ResolvedDatum, second: ResolvedDatum, values: &mu
                 normal: m,
             },
         ) => {
-            push(values, cross(n, m));
+            push(values, scale(cross(n, m), angular));
             values.push(dot(subtract(b, a), n));
         }
         (
@@ -346,7 +426,7 @@ fn coincident_residuals(first: ResolvedDatum, second: ResolvedDatum, values: &mu
             Axis { origin, direction },
         ) => {
             values.push(dot(subtract(origin, plane), normal));
-            values.push(dot(direction, normal));
+            values.push(dot(direction, normal) * angular);
         }
     }
 }
@@ -363,14 +443,15 @@ fn directional_residuals(
     first: ResolvedDatum,
     second: ResolvedDatum,
     perpendicular: bool,
+    angular: f64,
     values: &mut Vec<f64>,
 ) {
     let (u, first_is_plane) = direction_of(first);
     let (v, second_is_plane) = direction_of(second);
     if perpendicular != (first_is_plane != second_is_plane) {
-        values.push(dot(u, v));
+        values.push(dot(u, v) * angular);
     } else {
-        push(values, cross(u, v));
+        push(values, scale(cross(u, v), angular));
     }
 }
 
@@ -378,6 +459,7 @@ fn distance_residuals(
     first: ResolvedDatum,
     second: ResolvedDatum,
     target: f64,
+    angular: f64,
     values: &mut Vec<f64>,
 ) {
     use ResolvedDatum::{Axis, Plane, Point};
@@ -402,7 +484,7 @@ fn distance_residuals(
                 direction: e,
             },
         ) => {
-            push(values, cross(d, e));
+            push(values, scale(cross(d, e), angular));
             values.push(length(cross(subtract(b, a), d)) - target);
         }
         (
@@ -415,7 +497,7 @@ fn distance_residuals(
                 normal: m,
             },
         ) => {
-            push(values, cross(n, m));
+            push(values, scale(cross(n, m), angular));
             values.push(dot(subtract(b, a), n).abs() - target);
         }
         (Axis { .. }, Plane { .. }) | (Plane { .. }, Axis { .. }) => {}
@@ -431,17 +513,120 @@ struct Fit {
     iterations: usize,
 }
 
-fn least_squares(terms: &[Term], mut unknowns: Vec<f64>) -> Result<Fit, ModelError> {
-    let mut values = residuals(terms, &unknowns);
+/// Upper bound on null-space restoration rounds after the first fit; each
+/// round shrinks the remaining drift by about three orders of magnitude.
+const RESTORATION_ROUNDS: usize = 8;
+
+/// Solves, then repeatedly moves the solution back toward `start` along the
+/// directions no relationship constrains and polishes it again. Solving
+/// alone can drift along those directions on the way (a temporary tilt makes
+/// a free slide matter), so restoration is what makes under-constrained
+/// instances move as little as possible.
+fn closest_solution(problem: &Problem, start: Vec<f64>) -> Result<Fit, ModelError> {
+    let weights = unknown_weights(problem, start.len());
+    let tolerance = problem_tolerance(problem, &start);
+    let mut fit = least_squares(problem, start.clone())?;
+    let mut previous = f64::INFINITY;
+    for _ in 0..RESTORATION_ROUNDS {
+        let offset = start
+            .iter()
+            .zip(&fit.unknowns)
+            .map(|(initial, current)| initial - current)
+            .collect::<Vec<_>>();
+        let Some(restoring) = null_space_component(&fit.jacobian, &offset, &weights) else {
+            break;
+        };
+        // Stop once restoration is negligible or no longer shrinking, which
+        // happens at the floating-point floor.
+        let size = max_abs(&restoring);
+        if size <= tolerance || size >= 0.5 * previous {
+            break;
+        }
+        previous = size;
+        let iterations = fit.iterations;
+        fit = least_squares(problem, add_step(&fit.unknowns, &restoring))?;
+        fit.iterations += iterations;
+    }
+    Ok(fit)
+}
+
+fn problem_tolerance(problem: &Problem, unknowns: &[f64]) -> f64 {
+    let largest_translation = unknowns
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| index % UNKNOWNS_PER_INSTANCE >= 3)
+        .fold(0.0_f64, |largest, (_, value)| largest.max(value.abs()));
+    RELATIVE_TOLERANCE * largest_translation.max(problem.angular_scale).max(1.0)
+}
+
+/// Rotation unknowns weigh the squared characteristic length so that every
+/// move is measured in millimeters.
+fn unknown_weights(problem: &Problem, count: usize) -> Vec<f64> {
+    let rotation_weight = problem.angular_scale * problem.angular_scale;
+    (0..count)
+        .map(|index| {
+            if index % UNKNOWNS_PER_INSTANCE < 3 {
+                rotation_weight
+            } else {
+                1.0
+            }
+        })
+        .collect()
+}
+
+/// Projection passes; each removes the regularization's row-space leak by a
+/// further factor of about `eps / sigma^2`.
+const PROJECTION_PASSES: usize = 3;
+
+/// The part of `offset` the Jacobian does not see, in the weighted metric.
+/// Each pass subtracts `y` minimizing `|J(y - r)|^2 + eps |y|_W^2` from the
+/// remainder `r`, so `J r -> 0` while null-space components are untouched.
+/// O(unknowns^3) per pass for the dense solve.
+fn null_space_component(
+    jacobian: &[Vec<f64>],
+    offset: &[f64],
+    weights: &[f64],
+) -> Option<Vec<f64>> {
+    let (normal, _) = normal_equations(jacobian, &vec![0.0; jacobian.len()]);
+    let largest =
+        (0..normal.len()).fold(0.0_f64, |largest, index| largest.max(normal[index][index]));
+    let epsilon = REGULARIZATION * largest.max(1.0);
+    let mut regularized = normal.clone();
+    for (index, row) in regularized.iter_mut().enumerate() {
+        row[index] += epsilon * weights[index];
+    }
+    let mut component = offset.to_vec();
+    for _ in 0..PROJECTION_PASSES {
+        let rhs = normal
+            .iter()
+            .map(|row| {
+                row.iter()
+                    .zip(&component)
+                    .map(|(entry, value)| entry * value)
+                    .sum()
+            })
+            .collect::<Vec<f64>>();
+        let seen = solve_linear(regularized.clone(), rhs)?;
+        for (value, seen) in component.iter_mut().zip(seen) {
+            *value -= seen;
+        }
+    }
+    Some(component)
+}
+
+fn least_squares(problem: &Problem, mut unknowns: Vec<f64>) -> Result<Fit, ModelError> {
+    let mut values = residuals(problem, &unknowns);
     let mut cost = squared_norm(&values);
-    let mut damping = 1e-3;
+    let mut damping = INITIAL_DAMPING;
+    let tolerance = problem_tolerance(problem, &unknowns);
     let mut iterations = 0;
-    while iterations < MAX_ITERATIONS && max_abs(&values) > RESIDUAL_TOLERANCE {
+    let weights = unknown_weights(problem, unknowns.len());
+    while iterations < MAX_ITERATIONS && max_abs(&values) > tolerance {
         iterations += 1;
-        let jacobian = numeric_jacobian(terms, &unknowns);
-        let Some(step) = damped_step(&jacobian, &values, &mut damping, |step| {
+        let jacobian = numeric_jacobian(problem, &unknowns);
+        let Some(step) = damped_step(&jacobian, &values, &weights, &mut damping, |step| {
             let trial = add_step(&unknowns, step);
-            let trial_values = residuals(terms, &trial);
+            let trial_values = residuals(problem, &trial);
             (squared_norm(&trial_values) < cost).then_some((trial, trial_values))
         }) else {
             break;
@@ -452,7 +637,7 @@ fn least_squares(terms: &[Term], mut unknowns: Vec<f64>) -> Result<Fit, ModelErr
     if values.iter().any(|value| !value.is_finite()) {
         return Err(ModelError::new("placement solve diverged"));
     }
-    let jacobian = numeric_jacobian(terms, &unknowns);
+    let jacobian = numeric_jacobian(problem, &unknowns);
     Ok(Fit {
         unknowns,
         residuals: values,
@@ -468,14 +653,21 @@ type Accepted = (Vec<f64>, Vec<f64>);
 fn damped_step(
     jacobian: &[Vec<f64>],
     values: &[f64],
+    weights: &[f64],
     damping: &mut f64,
     mut try_step: impl FnMut(&[f64]) -> Option<Accepted>,
 ) -> Option<Accepted> {
     let (normal, gradient) = normal_equations(jacobian, values);
+    // A fixed Tikhonov term keeps unknowns that no relationship constrains at
+    // their current values; Marquardt damping alone is zero along them, so
+    // Jacobian noise would otherwise produce arbitrarily large free moves.
+    let largest =
+        (0..normal.len()).fold(0.0_f64, |largest, index| largest.max(normal[index][index]));
+    let tikhonov = REGULARIZATION * largest.max(1.0);
     while *damping <= MAX_DAMPING {
         let mut damped = normal.clone();
         for (index, row) in damped.iter_mut().enumerate() {
-            row[index] += *damping * normal[index][index] + 1e-12;
+            row[index] += *damping * normal[index][index] + tikhonov * weights[index];
         }
         let rhs = gradient.iter().map(|value| -value).collect::<Vec<_>>();
         if let Some(step) = solve_linear(damped, rhs)
@@ -489,17 +681,20 @@ fn damped_step(
     None
 }
 
-fn numeric_jacobian(terms: &[Term], unknowns: &[f64]) -> Vec<Vec<f64>> {
+fn numeric_jacobian(problem: &Problem, unknowns: &[f64]) -> Vec<Vec<f64>> {
     let columns = (0..unknowns.len())
         .map(|column| {
+            // Relative steps keep rounding noise small for coordinates far
+            // from the origin.
+            let step = DIFFERENCE_STEP * unknowns[column].abs().max(1.0);
             let mut forward = unknowns.to_vec();
             let mut backward = unknowns.to_vec();
-            forward[column] += DIFFERENCE_STEP;
-            backward[column] -= DIFFERENCE_STEP;
-            residuals(terms, &forward)
+            forward[column] += step;
+            backward[column] -= step;
+            residuals(problem, &forward)
                 .iter()
-                .zip(residuals(terms, &backward))
-                .map(|(ahead, behind)| (ahead - behind) / (2.0 * DIFFERENCE_STEP))
+                .zip(residuals(problem, &backward))
+                .map(|(ahead, behind)| (ahead - behind) / (2.0 * step))
                 .collect::<Vec<_>>()
         })
         .collect::<Vec<_>>();
@@ -760,6 +955,93 @@ mod tests {
         assert!(solution.solved, "{solution:?}");
         assert_point(graph.datum("b", "top_center").unwrap(), (5.0, 10.0, 60.0));
         assert_eq!(graph.node("b").unwrap().frame(), Some("shelf"));
+    }
+
+    /// Far from the origin, positions are checked to the relationship
+    /// tolerance; doubles cannot hold 1e-9 mm at meter-scale coordinates.
+    fn assert_near(datum: ResolvedDatum, expected: (f64, f64, f64)) {
+        let ResolvedDatum::Point { origin } = datum else {
+            panic!("expected a point, got {datum:?}");
+        };
+        let error = length(subtract(
+            origin,
+            Vec3::new(expected.0, expected.1, expected.2),
+        ));
+        assert!(
+            error < RELATIONSHIP_LINEAR_TOLERANCE,
+            "{origin:?} != {expected:?}"
+        );
+    }
+
+    /// Rotation about the model origin made rotation and translation nearly
+    /// interchangeable for distant parts; this stack used to stall tilted.
+    #[test]
+    fn coincident_stack_far_from_the_origin_converges() {
+        let definition = block();
+        let mut graph = InstanceGraph::new(&definition);
+        graph.add_base("i0", HashMap::new(), "test").unwrap();
+        graph
+            .set_placement("i0", translated(1000.0, -500.0, 0.0))
+            .unwrap();
+        let mut free = Vec::new();
+        for index in 1..=5 {
+            let id = format!("i{index}");
+            graph
+                .add_clone(id.clone(), "i0", HashMap::new(), "test")
+                .unwrap();
+            graph
+                .set_placement(
+                    &id,
+                    translated(1000.0 + index as f64 * 3.0, -502.0, index as f64 * 25.0),
+                )
+                .unwrap();
+            graph
+                .add_relationship(relationship(
+                    &format!("r{index}"),
+                    RelationKind::Coincident,
+                    (&format!("i{}", index - 1), "top"),
+                    (&id, "bottom"),
+                ))
+                .unwrap();
+            free.push(id);
+        }
+        let ids = free.iter().map(String::as_str).collect::<Vec<_>>();
+
+        let solution = graph.solve_placements(&ids).unwrap();
+        assert!(solution.solved, "{solution:?}");
+        // Each block keeps its X/Y offset and rotation about Z free.
+        assert_eq!(solution.free_degrees, 15);
+        for index in 1..=5 {
+            assert_near(
+                graph.datum(&format!("i{index}"), "top_center").unwrap(),
+                (
+                    1005.0 + index as f64 * 3.0,
+                    -492.0,
+                    30.0 * (index as f64 + 1.0),
+                ),
+            );
+        }
+    }
+
+    #[test]
+    fn fully_constrained_seat_far_from_the_origin_converges() {
+        let definition = block();
+        let mut graph = stacked(&definition);
+        graph
+            .set_placement("a", translated(5000.0, -3000.0, 200.0))
+            .unwrap();
+        graph
+            .set_placement("b", turned(FRAC_PI_6, 5040.0, -3015.0, 270.0))
+            .unwrap();
+        seat(&mut graph, "b", "a");
+
+        let solution = graph.solve_placements(&["b"]).unwrap();
+        assert!(solution.solved, "{solution:?}");
+        assert_eq!(solution.free_degrees, 0);
+        assert_near(
+            graph.datum("b", "top_center").unwrap(),
+            (5005.0, -2990.0, 260.0),
+        );
     }
 
     #[test]
