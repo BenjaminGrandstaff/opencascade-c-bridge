@@ -47,6 +47,8 @@ enum Expectation {
     /// Must meet its budget and correctness check.
     Required,
     /// Tied to an open roadmap item; reported but does not fail the run.
+    /// Kept for the next measured gap even while no case uses it.
+    #[allow(dead_code)]
     KnownGap(&'static str),
 }
 
@@ -74,6 +76,7 @@ fn main() -> ExitCode {
     outcomes.push(deep_clone_chain(definition));
     outcomes.extend(regeneration_handle_cases(definition));
     outcomes.extend(solver_cases(definition));
+    outcomes.push(solver_grid(definition));
     outcomes.extend(validation_cases());
     report(&outcomes)
 }
@@ -237,14 +240,10 @@ fn solver_cases(definition: &'static FamilyDefinition) -> Vec<Outcome> {
     let cases = [
         (50, 1_000.0, false, ms(1_000), Expectation::Required),
         (20, 1_000.0, true, ms(500), Expectation::Required),
-        (50, 1_000.0, true, ms(8_000), Expectation::Required),
-        (
-            50,
-            1_000_000.0,
-            false,
-            ms(1_000),
-            Expectation::KnownGap("roadmap: configurable tolerances"),
-        ),
+        (50, 1_000.0, true, ms(1_000), Expectation::Required),
+        (1_000, 1_000.0, false, ms(2_000), Expectation::Required),
+        (1_000, 1_000.0, true, ms(5_000), Expectation::Required),
+        (50, 1_000_000.0, false, ms(1_000), Expectation::Required),
     ];
     cases
         .into_iter()
@@ -480,6 +479,127 @@ fn block() -> FamilyDefinition {
             ),
         ],
     }
+}
+
+const GRID_ROWS: usize = 30;
+const GRID_COLUMNS: usize = 34;
+const GRID_PITCH: f64 = 50.0;
+
+/// A grid of blocks, each tied to its left and upper neighbors (coplanar
+/// tops, parallel sides, axis distances), so elimination meets
+/// two-dimensional fill-in rather than a chain.
+fn solver_grid(definition: &'static FamilyDefinition) -> Outcome {
+    let at = |x: f64, y: f64, z: f64| VectorQuantity::lengths(x, y, z, LengthUnit::Millimeter);
+    let id = |row: usize, column: usize| format!("g{row}_{column}");
+    let mut graph = InstanceGraph::new(definition);
+    for row in 0..GRID_ROWS {
+        for column in 0..GRID_COLUMNS {
+            let name = id(row, column);
+            let (x, y) = (column as f64 * GRID_PITCH, row as f64 * GRID_PITCH);
+            if row == 0 && column == 0 {
+                graph
+                    .add_base(name.clone(), HashMap::new(), "bench")
+                    .unwrap();
+                continue;
+            }
+            graph
+                .add_clone(name.clone(), id(0, 0), HashMap::new(), "bench")
+                .unwrap();
+            // Start a few millimeters and a small turn away from the solution.
+            let wobble = ((row * 31 + column * 17) % 7) as f64 - 3.0;
+            graph
+                .set_placement(
+                    &name,
+                    Placement {
+                        translation: at(x + wobble, y - wobble, wobble),
+                        rotation: Some(AxisAngle {
+                            origin: at(0.0, 0.0, 0.0),
+                            axis: VectorQuantity::scalars(0.0, 0.0, 1.0),
+                            angle_radians: 0.01 * wobble,
+                        }),
+                    },
+                )
+                .unwrap();
+            let mut relate = |suffix: &str, kind, other: String, first: &str, second: &str| {
+                graph
+                    .add_relationship(AssemblyRelationship {
+                        id: format!("{name}-{suffix}"),
+                        kind,
+                        first: DatumRef::new(other, first),
+                        second: DatumRef::new(name.clone(), second),
+                    })
+                    .unwrap();
+            };
+            let pitch =
+                RelationKind::Distance(Quantity::length(GRID_PITCH, LengthUnit::Millimeter));
+            if column > 0 {
+                relate(
+                    "level",
+                    RelationKind::Coincident,
+                    id(row, column - 1),
+                    "top",
+                    "top",
+                );
+                relate("left", pitch, id(row, column - 1), "axis", "axis");
+                relate(
+                    "square",
+                    RelationKind::Parallel,
+                    id(row, column - 1),
+                    "right",
+                    "right",
+                );
+            }
+            if row > 0 {
+                relate("up", pitch, id(row - 1, column), "axis", "axis");
+                if column == 0 {
+                    relate(
+                        "level",
+                        RelationKind::Coincident,
+                        id(row - 1, column),
+                        "top",
+                        "top",
+                    );
+                    relate(
+                        "square",
+                        RelationKind::Parallel,
+                        id(row - 1, column),
+                        "right",
+                        "right",
+                    );
+                }
+            }
+        }
+    }
+    let free = (0..GRID_ROWS)
+        .flat_map(|row| (0..GRID_COLUMNS).map(move |column| (row, column)))
+        .filter(|&cell| cell != (0, 0))
+        .map(|(row, column)| id(row, column))
+        .collect::<Vec<_>>();
+    let ids = free.iter().map(String::as_str).collect::<Vec<_>>();
+    timed(
+        format!(
+            "solve {}x{} grid ({} parts)",
+            GRID_ROWS,
+            GRID_COLUMNS,
+            ids.len()
+        ),
+        ms(20_000),
+        Expectation::Required,
+        || {
+            let solution = graph.solve_placements(&ids)?;
+            if solution.solved {
+                Ok(format!(
+                    "{} iterations, {} free degrees",
+                    solution.iterations, solution.free_degrees
+                ))
+            } else {
+                Err(failure(format!(
+                    "unsolved, max residual {:.1e}",
+                    solution.max_residual
+                )))
+            }
+        },
+    )
 }
 
 /// A fixed base block and `count` free clones stacked on it, offset from the

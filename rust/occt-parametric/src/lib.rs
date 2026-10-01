@@ -2,6 +2,7 @@
 
 mod assembly;
 mod solve;
+mod sparse;
 
 pub use assembly::{
     AssemblyRelationship, AssemblySemantics, Configuration, DatumDefinition, DatumKind, DatumRef,

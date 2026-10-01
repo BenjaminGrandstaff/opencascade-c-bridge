@@ -148,8 +148,8 @@ test code. Rust branch coverage needs a nightly toolchain and is not reported.
 
 The scale benchmark suite enforces the roadmap's scaling requirement. It
 builds an optimized copy of the library in `build/bench`, runs every case at
-the target sizes (10,000-member patterns, deep clone chains, 50-part solver
-stacks, repeated regeneration), and fails when a required case misses its
+the target sizes (10,000-member patterns, deep clone chains, 1,000-part solver
+stacks and grids, repeated regeneration), and fails when a required case misses its
 time budget or correctness check. Cases tied to open roadmap items are
 reported as known gaps:
 

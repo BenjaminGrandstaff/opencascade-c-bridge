@@ -12,6 +12,7 @@
 
 use super::*;
 use crate::assembly::{add, cross, dot, length, scale, subtract, transform_point};
+use crate::sparse::{SparseJacobian, SymmetricMatrix};
 
 const MAX_ITERATIONS: usize = 200;
 /// Convergence tolerance relative to the problem's length scale (the largest
@@ -22,12 +23,16 @@ const RELATIVE_TOLERANCE: f64 = 1e-12;
 /// solver starts near Gauss–Newton and damps only after a rejected step;
 /// heavier initial damping crawls along chains, whose weakest mode shrinks
 /// like 1/n^2.
-const INITIAL_DAMPING: f64 = 1e-9;
+const INITIAL_DAMPING: f64 = 1e-15;
 const DIFFERENCE_STEP: f64 = 1e-7;
 const MAX_DAMPING: f64 = 1e12;
-const RANK_TOLERANCE: f64 = 1e-8;
-/// Tikhonov weight relative to the largest normal-equation diagonal.
-const REGULARIZATION: f64 = 1e-9;
+/// Rank tolerance on `JᵀJ` pivots relative to its largest diagonal; it
+/// corresponds to singular values of `J` above about 1e-6 of the largest.
+const NORMAL_RANK_TOLERANCE: f64 = 1e-12;
+/// Levenberg share of the damping, relative to the largest diagonal. It
+/// tames directions that are only nearly unconstrained (weakly coupled while
+/// parts are slightly tilted) and vanishes with the damping itself.
+const LEVENBERG_FLOOR: f64 = 1e-6;
 const UNKNOWNS_PER_INSTANCE: usize = 6;
 
 /// Outcome of [`InstanceGraph::solve_placements`].
@@ -102,6 +107,16 @@ impl Problem {
 }
 
 impl Term {
+    /// The distinct free instances this term depends on (at most two).
+    fn free_instances(&self) -> Vec<usize> {
+        let mut instances = self
+            .free_endpoints()
+            .map(|(instance, _)| instance)
+            .collect::<Vec<_>>();
+        instances.dedup();
+        instances
+    }
+
     fn free_endpoints(&self) -> impl Iterator<Item = (usize, ResolvedDatum)> + '_ {
         [&self.first, &self.second]
             .into_iter()
@@ -157,7 +172,7 @@ impl<'definition> InstanceGraph<'definition> {
             .concat();
 
         let fit = closest_solution(&problem, start)?;
-        let rank = matrix_rank(&fit.jacobian);
+        let rank = fit.jacobian.normal_matrix().rank(NORMAL_RANK_TOLERANCE);
         let mut candidate = self.clone();
         for (index, (instance, pivot)) in free.iter().zip(&problem.pivots).enumerate() {
             let unknowns = &fit.unknowns[index * UNKNOWNS_PER_INSTANCE..][..UNKNOWNS_PER_INSTANCE];
@@ -329,15 +344,19 @@ impl Endpoint {
 fn residuals(problem: &Problem, unknowns: &[f64]) -> Vec<f64> {
     let mut values = Vec::new();
     for term in &problem.terms {
-        term_residuals(
-            term.kind,
-            term.first.datum(unknowns, &problem.pivots),
-            term.second.datum(unknowns, &problem.pivots),
-            problem.angular_scale,
-            &mut values,
-        );
+        push_term_values(problem, term, unknowns, &mut values);
     }
     values
+}
+
+fn push_term_values(problem: &Problem, term: &Term, unknowns: &[f64], values: &mut Vec<f64>) {
+    term_residuals(
+        term.kind,
+        term.first.datum(unknowns, &problem.pivots),
+        term.second.datum(unknowns, &problem.pivots),
+        problem.angular_scale,
+        values,
+    );
 }
 
 fn push(values: &mut Vec<f64>, vector: Vec3) {
@@ -509,9 +528,13 @@ fn distance_residuals(
 struct Fit {
     unknowns: Vec<f64>,
     residuals: Vec<f64>,
-    jacobian: Vec<Vec<f64>>,
+    jacobian: SparseJacobian,
     iterations: usize,
 }
+
+/// Largest residual growth a restoring move may cause before restoration
+/// stops; true null-space moves change the residual only at second order.
+const RESTORATION_GROWTH: f64 = 10.0;
 
 /// Upper bound on null-space restoration rounds after the first fit; each
 /// round shrinks the remaining drift by about three orders of magnitude.
@@ -523,7 +546,6 @@ const RESTORATION_ROUNDS: usize = 8;
 /// a free slide matter), so restoration is what makes under-constrained
 /// instances move as little as possible.
 fn closest_solution(problem: &Problem, start: Vec<f64>) -> Result<Fit, ModelError> {
-    let weights = unknown_weights(problem, start.len());
     let tolerance = problem_tolerance(problem, &start);
     let mut fit = least_squares(problem, start.clone())?;
     let mut previous = f64::INFINITY;
@@ -533,7 +555,7 @@ fn closest_solution(problem: &Problem, start: Vec<f64>) -> Result<Fit, ModelErro
             .zip(&fit.unknowns)
             .map(|(initial, current)| initial - current)
             .collect::<Vec<_>>();
-        let Some(restoring) = null_space_component(&fit.jacobian, &offset, &weights) else {
+        let Some(restoring) = null_space_component(&fit.jacobian, &offset) else {
             break;
         };
         // Stop once restoration is negligible or no longer shrinking, which
@@ -543,8 +565,16 @@ fn closest_solution(problem: &Problem, start: Vec<f64>) -> Result<Fit, ModelErro
             break;
         }
         previous = size;
+        // A null-space move leaves the residual unchanged to first order; a
+        // move that raises it means the fit is not converged enough for its
+        // Jacobian to identify the free directions, so keep the fit.
+        let restored = add_step(&fit.unknowns, &restoring);
+        let current = max_abs(&fit.residuals);
+        if max_abs(&residuals(problem, &restored)) > RESTORATION_GROWTH * current.max(tolerance) {
+            break;
+        }
         let iterations = fit.iterations;
-        fit = least_squares(problem, add_step(&fit.unknowns, &restoring))?;
+        fit = least_squares(problem, restored)?;
         fit.iterations += iterations;
     }
     Ok(fit)
@@ -559,54 +589,20 @@ fn problem_tolerance(problem: &Problem, unknowns: &[f64]) -> f64 {
     RELATIVE_TOLERANCE * largest_translation.max(problem.angular_scale).max(1.0)
 }
 
-/// Rotation unknowns weigh the squared characteristic length so that every
-/// move is measured in millimeters.
-fn unknown_weights(problem: &Problem, count: usize) -> Vec<f64> {
-    let rotation_weight = problem.angular_scale * problem.angular_scale;
-    (0..count)
-        .map(|index| {
-            if index % UNKNOWNS_PER_INSTANCE < 3 {
-                rotation_weight
-            } else {
-                1.0
-            }
-        })
-        .collect()
-}
-
-/// Projection passes; each removes the regularization's row-space leak by a
-/// further factor of about `eps / sigma^2`.
+/// Projection passes that remove rounding residue from the null-space part.
 const PROJECTION_PASSES: usize = 3;
 
-/// The part of `offset` the Jacobian does not see, in the weighted metric.
-/// Each pass subtracts `y` minimizing `|J(y - r)|^2 + eps |y|_W^2` from the
-/// remainder `r`, so `J r -> 0` while null-space components are untouched.
-/// O(unknowns^3) per pass for the dense solve.
-fn null_space_component(
-    jacobian: &[Vec<f64>],
-    offset: &[f64],
-    weights: &[f64],
-) -> Option<Vec<f64>> {
-    let (normal, _) = normal_equations(jacobian, &vec![0.0; jacobian.len()]);
-    let largest =
-        (0..normal.len()).fold(0.0_f64, |largest, index| largest.max(normal[index][index]));
-    let epsilon = REGULARIZATION * largest.max(1.0);
-    let mut regularized = normal.clone();
-    for (index, row) in regularized.iter_mut().enumerate() {
-        row[index] += epsilon * weights[index];
-    }
+/// The part of `offset` the Jacobian does not see: `offset - y`, where `y`
+/// solves `JᵀJ y = JᵀJ r` with unconstrained variables held at zero, so
+/// `J (offset - y) = 0`. Repeated passes remove rounding residue. One sparse
+/// factorization per pass.
+fn null_space_component(jacobian: &SparseJacobian, offset: &[f64]) -> Option<Vec<f64>> {
+    let normal = jacobian.normal_matrix();
     let mut component = offset.to_vec();
     for _ in 0..PROJECTION_PASSES {
-        let rhs = normal
-            .iter()
-            .map(|row| {
-                row.iter()
-                    .zip(&component)
-                    .map(|(entry, value)| entry * value)
-                    .sum()
-            })
-            .collect::<Vec<f64>>();
-        let seen = solve_linear(regularized.clone(), rhs)?;
+        let seen = normal
+            .clone()
+            .solve_dropping_null(normal.times(&component), NORMAL_RANK_TOLERANCE)?;
         for (value, seen) in component.iter_mut().zip(seen) {
             *value -= seen;
         }
@@ -620,11 +616,10 @@ fn least_squares(problem: &Problem, mut unknowns: Vec<f64>) -> Result<Fit, Model
     let mut damping = INITIAL_DAMPING;
     let tolerance = problem_tolerance(problem, &unknowns);
     let mut iterations = 0;
-    let weights = unknown_weights(problem, unknowns.len());
     while iterations < MAX_ITERATIONS && max_abs(&values) > tolerance {
         iterations += 1;
-        let jacobian = numeric_jacobian(problem, &unknowns);
-        let Some(step) = damped_step(&jacobian, &values, &weights, &mut damping, |step| {
+        let jacobian = sparse_jacobian(problem, &unknowns);
+        let Some(step) = damped_step(&jacobian, &values, &mut damping, |step| {
             let trial = add_step(&unknowns, step);
             let trial_values = residuals(problem, &trial);
             (squared_norm(&trial_values) < cost).then_some((trial, trial_values))
@@ -637,7 +632,7 @@ fn least_squares(problem: &Problem, mut unknowns: Vec<f64>) -> Result<Fit, Model
     if values.iter().any(|value| !value.is_finite()) {
         return Err(ModelError::new("placement solve diverged"));
     }
-    let jacobian = numeric_jacobian(problem, &unknowns);
+    let jacobian = sparse_jacobian(problem, &unknowns);
     Ok(Fit {
         unknowns,
         residuals: values,
@@ -649,31 +644,32 @@ fn least_squares(problem: &Problem, mut unknowns: Vec<f64>) -> Result<Fit, Model
 type Accepted = (Vec<f64>, Vec<f64>);
 
 /// Increases damping until a step lowers the cost; `None` when damping
-/// saturates without progress.
+/// saturates without progress. Steps solve the Marquardt-damped normal
+/// equations with unconstrained directions held fixed, so free unknowns never
+/// move on rounding noise and constrained ones carry no regularization bias,
+/// which matters for chains whose solution moves far from the start.
 fn damped_step(
-    jacobian: &[Vec<f64>],
+    jacobian: &SparseJacobian,
     values: &[f64],
-    weights: &[f64],
     damping: &mut f64,
     mut try_step: impl FnMut(&[f64]) -> Option<Accepted>,
 ) -> Option<Accepted> {
-    let (normal, gradient) = normal_equations(jacobian, values);
-    // A fixed Tikhonov term keeps unknowns that no relationship constrains at
-    // their current values; Marquardt damping alone is zero along them, so
-    // Jacobian noise would otherwise produce arbitrarily large free moves.
-    let largest =
-        (0..normal.len()).fold(0.0_f64, |largest, index| largest.max(normal[index][index]));
-    let tikhonov = REGULARIZATION * largest.max(1.0);
+    let normal = jacobian.normal_matrix();
+    let rhs = jacobian
+        .transpose_times(values)
+        .iter()
+        .map(|value| -value)
+        .collect::<Vec<_>>();
+    let levenberg = LEVENBERG_FLOOR * normal.largest_diagonal().max(f64::MIN_POSITIVE);
     while *damping <= MAX_DAMPING {
-        let mut damped = normal.clone();
-        for (index, row) in damped.iter_mut().enumerate() {
-            row[index] += *damping * normal[index][index] + tikhonov * weights[index];
+        let mut damped: SymmetricMatrix = normal.clone();
+        for index in 0..normal.size() {
+            damped.add_diagonal(index, *damping * (normal.diagonal(index) + levenberg));
         }
-        let rhs = gradient.iter().map(|value| -value).collect::<Vec<_>>();
-        if let Some(step) = solve_linear(damped, rhs)
+        if let Some(step) = damped.solve_dropping_null(rhs.clone(), NORMAL_RANK_TOLERANCE)
             && let Some(accepted) = try_step(&step)
         {
-            *damping = (*damping / 10.0).max(1e-12);
+            *damping = (*damping / 10.0).max(INITIAL_DAMPING);
             return Some(accepted);
         }
         *damping *= 10.0;
@@ -681,108 +677,46 @@ fn damped_step(
     None
 }
 
-fn numeric_jacobian(problem: &Problem, unknowns: &[f64]) -> Vec<Vec<f64>> {
-    let columns = (0..unknowns.len())
-        .map(|column| {
-            // Relative steps keep rounding noise small for coordinates far
-            // from the origin.
-            let step = DIFFERENCE_STEP * unknowns[column].abs().max(1.0);
-            let mut forward = unknowns.to_vec();
-            let mut backward = unknowns.to_vec();
-            forward[column] += step;
-            backward[column] -= step;
-            residuals(problem, &forward)
-                .iter()
-                .zip(residuals(problem, &backward))
-                .map(|(ahead, behind)| (ahead - behind) / (2.0 * step))
-                .collect::<Vec<_>>()
-        })
-        .collect::<Vec<_>>();
-    let rows = columns.first().map_or(0, Vec::len);
-    (0..rows)
-        .map(|row| columns.iter().map(|column| column[row]).collect())
-        .collect()
-}
-
-fn normal_equations(jacobian: &[Vec<f64>], values: &[f64]) -> (Vec<Vec<f64>>, Vec<f64>) {
-    let columns = jacobian.first().map_or(0, Vec::len);
-    let mut normal = vec![vec![0.0; columns]; columns];
-    let mut gradient = vec![0.0; columns];
-    for (row, value) in jacobian.iter().zip(values) {
-        for i in 0..columns {
-            gradient[i] += row[i] * value;
-            for j in 0..columns {
-                normal[i][j] += row[i] * row[j];
+/// Central differences per relationship: each term depends on at most two
+/// free instances, so only their twelve unknowns are perturbed and only that
+/// term is re-evaluated. O(terms) term evaluations instead of
+/// O(unknowns x terms) for a dense Jacobian.
+fn sparse_jacobian(problem: &Problem, unknowns: &[f64]) -> SparseJacobian {
+    let mut rows = Vec::new();
+    let mut perturbed = unknowns.to_vec();
+    let mut ahead = Vec::new();
+    let mut behind = Vec::new();
+    for term in &problem.terms {
+        let mut base = Vec::new();
+        push_term_values(problem, term, unknowns, &mut base);
+        let mut term_rows = vec![Vec::new(); base.len()];
+        for instance in term.free_instances() {
+            for column in instance * UNKNOWNS_PER_INSTANCE..(instance + 1) * UNKNOWNS_PER_INSTANCE {
+                // Relative steps keep rounding noise small for coordinates
+                // far from the origin.
+                let step = DIFFERENCE_STEP * unknowns[column].abs().max(1.0);
+                ahead.clear();
+                behind.clear();
+                perturbed[column] = unknowns[column] + step;
+                push_term_values(problem, term, &perturbed, &mut ahead);
+                perturbed[column] = unknowns[column] - step;
+                push_term_values(problem, term, &perturbed, &mut behind);
+                perturbed[column] = unknowns[column];
+                for (row, (forward, backward)) in
+                    term_rows.iter_mut().zip(ahead.iter().zip(&behind))
+                {
+                    let derivative = (forward - backward) / (2.0 * step);
+                    if derivative != 0.0 {
+                        row.push((column, derivative));
+                    }
+                }
             }
         }
+        rows.extend(term_rows);
     }
-    (normal, gradient)
-}
-
-/// Gaussian elimination with partial pivoting; `None` for a singular system.
-fn solve_linear(mut matrix: Vec<Vec<f64>>, mut rhs: Vec<f64>) -> Option<Vec<f64>> {
-    let size = rhs.len();
-    for column in 0..size {
-        let pivot = (column..size)
-            .max_by(|&a, &b| matrix[a][column].abs().total_cmp(&matrix[b][column].abs()))?;
-        if matrix[pivot][column].abs() <= f64::MIN_POSITIVE {
-            return None;
-        }
-        matrix.swap(column, pivot);
-        rhs.swap(column, pivot);
-        for row in column + 1..size {
-            let factor = matrix[row][column] / matrix[column][column];
-            subtract_row(&mut matrix, column, row, column, factor);
-            rhs[row] -= factor * rhs[column];
-        }
-    }
-    let mut solution = vec![0.0; size];
-    for row in (0..size).rev() {
-        let known = (row + 1..size)
-            .map(|index| matrix[row][index] * solution[index])
-            .sum::<f64>();
-        solution[row] = (rhs[row] - known) / matrix[row][row];
-    }
-    solution
-        .iter()
-        .all(|value| value.is_finite())
-        .then_some(solution)
-}
-
-/// Numerical rank by elimination with a tolerance relative to the largest entry.
-fn matrix_rank(matrix: &[Vec<f64>]) -> usize {
-    let mut rows = matrix.to_vec();
-    let columns = rows.first().map_or(0, Vec::len);
-    let largest = rows
-        .iter()
-        .flatten()
-        .fold(0.0_f64, |largest, value| largest.max(value.abs()));
-    let tolerance = RANK_TOLERANCE * largest.max(1.0);
-    let mut rank = 0;
-    for column in 0..columns {
-        let Some(pivot) = (rank..rows.len())
-            .max_by(|&a, &b| rows[a][column].abs().total_cmp(&rows[b][column].abs()))
-        else {
-            break;
-        };
-        if rows[pivot][column].abs() <= tolerance {
-            continue;
-        }
-        rows.swap(rank, pivot);
-        for row in rank + 1..rows.len() {
-            let factor = rows[row][column] / rows[rank][column];
-            subtract_row(&mut rows, rank, row, column, factor);
-        }
-        rank += 1;
-    }
-    rank
-}
-
-/// `rows[target] -= factor * rows[pivot]` from `column` onward, for `pivot < target`.
-fn subtract_row(rows: &mut [Vec<f64>], pivot: usize, target: usize, column: usize, factor: f64) {
-    let (upper, lower) = rows.split_at_mut(target);
-    for (value, pivot_value) in lower[0][column..].iter_mut().zip(&upper[pivot][column..]) {
-        *value -= factor * pivot_value;
+    SparseJacobian {
+        rows,
+        columns: unknowns.len(),
     }
 }
 

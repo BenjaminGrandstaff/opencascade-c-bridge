@@ -50,8 +50,6 @@ Rust layers:
 
 The following major capabilities remain planned:
 
-- relationship-solver conditioning away from the origin, analytic and sparse
-  solving, and decomposition for large assemblies;
 - cheaper validation of faces with many holes, failure diagnostics after
   kernel operations, and configurable model tolerances;
 - iterative clone resolution for deep chains on default thread stacks;
@@ -110,16 +108,25 @@ document.
   involved datums, so rotation and translation stay independent for parts
   far from the model origin. Every involved relationship becomes a smooth
   residual vector, with angular components scaled by a characteristic length
-  so millimeters and radians weigh alike, and Levenberg–Marquardt with a
-  relative-step central-difference Jacobian drives it to zero. Damping
-  starts near Gauss–Newton, since chains of parts are close to linear but
+  so millimeters and radians weigh alike, and Levenberg–Marquardt drives it
+  to zero. The Jacobian is sparse: each relationship touches at most two
+  free instances, so its rows are differentiated by relative-step central
+  differences in those twelve unknowns only, and its normal matrix is
+  solved by symmetric elimination in minimum-degree order. Elimination
+  drops variables whose pivot vanishes, which leaves directions no
+  relationship constrains unmoved instead of regularizing them, so weak but
+  real modes of long chains are solved exactly; disconnected groups of
+  instances never interact, and chains and trees produce almost no fill-in,
+  while cycles such as grids cost more. Damping starts near Gauss–Newton
+  with a small Levenberg floor, since chains of parts are close to linear but
   poorly conditioned. After convergence, the solution is moved back toward
   the starting placements along the directions no relationship constrains
   (the Jacobian's null space, measured in millimeters) and polished, so
-  under-constrained instances move as little as possible. Convergence is
-  judged relative to the model's length scale. The report gives the free
-  degrees and redundant
-  equations from the Jacobian rank at the best fit, and checks every involved
+  under-constrained instances move as little as possible; a restoration
+  round that would grow the residual is abandoned. Convergence is judged
+  relative to the model's length scale. The report gives the free degrees
+  and redundant equations from the rank of the same elimination at the best
+  fit, and checks every involved
   relationship there. Placements are applied only when every involved
   relationship is satisfied; conflicting sets leave the graph unchanged and
   show which relationships disagree. Solved pattern members keep their
