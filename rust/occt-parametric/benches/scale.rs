@@ -663,7 +663,10 @@ fn stacked_blocks(
 // ---- measurement and reporting
 
 fn failure(message: String) -> ModelError {
-    ModelError { message }
+    ModelError {
+        message,
+        diagnostics: Vec::new(),
+    }
 }
 
 fn timed(

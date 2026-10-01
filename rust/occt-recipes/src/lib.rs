@@ -263,6 +263,7 @@ fn invalid_geometry(message: &str) -> BridgeError {
         status: 4,
         category: "invalid geometry".into(),
         message: message.into(),
+        diagnostics: Vec::new(),
     }
 }
 
@@ -271,6 +272,7 @@ fn invalid_argument(message: &str) -> BridgeError {
         status: 1,
         category: "invalid argument".into(),
         message: message.into(),
+        diagnostics: Vec::new(),
     }
 }
 

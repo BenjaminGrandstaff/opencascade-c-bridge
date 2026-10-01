@@ -90,6 +90,25 @@ static void session_and_diagnostics(occt_bridge_session_t* session) {
             ++failures;
         }
     }
+    {
+        occt_bridge_diagnostic_t diagnostic;
+        occt_bridge_shape_id_t shape = UINT64_C(7);
+        EXPECT(occt_bridge_session_diagnostic_count(NULL, &count), ARG);
+        EXPECT(occt_bridge_session_diagnostic_count(session, NULL), ARG);
+        EXPECT(occt_bridge_session_diagnostic_count(session, &count), OK);
+        EXPECT(occt_bridge_session_diagnostic_at(NULL, 0, &diagnostic, &shape), ARG);
+        EXPECT(occt_bridge_session_diagnostic_at(session, 0, NULL, &shape), ARG);
+        EXPECT(occt_bridge_session_diagnostic_at(session, count, &diagnostic, &shape), ARG);
+        if (shape != OCCT_BRIDGE_INVALID_SHAPE_ID) {
+            (void)fprintf(stderr, "diagnostic_at must clear out_shape on a range error\n");
+            ++failures;
+        }
+        if (occt_bridge_session_diagnostic_name(NULL, 0, buffer, sizeof(buffer)) != 0
+            || occt_bridge_session_diagnostic_name(session, count, buffer, sizeof(buffer)) != 0) {
+            (void)fprintf(stderr, "diagnostic_name without a session or diagnostic must be empty\n");
+            ++failures;
+        }
+    }
     EXPECT(occt_bridge_session_clear(NULL), ARG);
     EXPECT(occt_bridge_create_box(NULL, vec(0, 0, 0), vec(1, 1, 1), NULL), ARG);
     EXPECT(occt_bridge_session_create(OCCT_BRIDGE_ABI_VERSION, &created), OK);

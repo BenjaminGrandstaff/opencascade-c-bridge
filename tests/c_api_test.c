@@ -3,6 +3,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 static void require_true(int condition, const char* message) {
     if (!condition) {
@@ -223,6 +224,224 @@ static void test_session_options(occt_bridge_session_t* session) {
     require_true(
         occt_bridge_session_last_warnings(session, warnings, sizeof(warnings)) == 1 && warnings[0] == '\0',
         "a successful call without warnings leaves none");
+}
+
+static occt_bridge_shape_id_t make_box(occt_bridge_session_t* session, double x, double size) {
+    occt_bridge_shape_id_t box = OCCT_BRIDGE_INVALID_SHAPE_ID;
+    require_ok(session, occt_bridge_create_box(
+        session, (occt_bridge_vec3_t){x, 0, 0}, (occt_bridge_vec3_t){size, size, size}, &box));
+    return box;
+}
+
+static size_t diagnostic_count(occt_bridge_session_t* session) {
+    size_t count = 0;
+    require_ok(session, occt_bridge_session_diagnostic_count(session, &count));
+    return count;
+}
+
+static int error_mentions(const occt_bridge_session_t* session, const char* text) {
+    char error[512] = {0};
+    (void)occt_bridge_session_last_error(session, error, sizeof(error));
+    return strstr(error, text) != NULL;
+}
+
+static int diagnostic_named(const occt_bridge_session_t* session, size_t index, const char* name) {
+    char buffer[128] = {0};
+    const size_t size = occt_bridge_session_diagnostic_name(session, index, buffer, sizeof(buffer));
+    return size == strlen(name) + 1 && strcmp(buffer, name) == 0;
+}
+
+static void test_failure_diagnostics(occt_bridge_session_t* session) {
+    const occt_bridge_shape_id_t box = make_box(session, 0, 10);
+    occt_bridge_shape_id_t edges[12];
+    for (size_t index = 0; index < 12; ++index) {
+        require_ok(session, occt_bridge_shape_subshape_at(
+            session, box, OCCT_BRIDGE_SHAPE_EDGE, index, &edges[index]));
+    }
+    occt_bridge_shape_id_t result = OCCT_BRIDGE_INVALID_SHAPE_ID;
+
+    /* A fillet wider than the faces names the selected edge and its contour status. */
+    require_true(
+        occt_bridge_fillet(session, box, &edges[3], 1, 20.0, &result) == OCCT_BRIDGE_KERNEL_ERROR,
+        "oversized fillet fails in the kernel");
+    require_true(diagnostic_count(session) == 1, "oversized fillet reports one faulty edge");
+    occt_bridge_diagnostic_t diagnostic;
+    occt_bridge_shape_id_t culprit = OCCT_BRIDGE_INVALID_SHAPE_ID;
+    require_ok(session, occt_bridge_session_diagnostic_at(session, 0, &diagnostic, &culprit));
+    require_true(
+        diagnostic.kind == OCCT_BRIDGE_DIAGNOSTIC_FILLET_EDGE && diagnostic.input_index == 0
+            && diagnostic.has_shape == 1 && culprit != OCCT_BRIDGE_INVALID_SHAPE_ID,
+        "fillet diagnostic names the selected edge");
+    require_true(diagnostic_count(session) == 1, "diagnostic queries keep the diagnostics");
+    require_true(diagnostic_named(session, 0, "ChFiDS_StartsolFailure"), "fillet code uses OCCT's name");
+    require_true(diagnostic.code == 3, "fillet code is OCCT's ChFiDS_ErrorStatus value");
+    require_true(
+        error_mentions(session, "fillet construction failed: ChFiDS_StartsolFailure on selection 0"),
+        "fillet error summarizes the diagnostic, even after handles were created");
+    occt_bridge_shape_id_t no_shape = UINT64_C(7);
+    require_ok(session, occt_bridge_session_diagnostic_at(session, 0, &diagnostic, NULL));
+    require_true(
+        occt_bridge_session_diagnostic_at(session, 1, &diagnostic, &no_shape) == OCCT_BRIDGE_INVALID_ARGUMENT
+            && no_shape == OCCT_BRIDGE_INVALID_SHAPE_ID,
+        "diagnostic index is range-checked");
+    require_true(
+        occt_bridge_session_diagnostic_name(session, 1, NULL, 0) == 0,
+        "diagnostic name index is range-checked");
+    /* Any other call starts afresh, so compare identity last. */
+    int same = 0;
+    require_ok(session, occt_bridge_shape_is_same(session, culprit, edges[3], &same));
+    require_true(same == 1, "fillet diagnostic shape is the selected edge");
+    require_true(diagnostic_count(session) == 0, "other calls clear diagnostics");
+    occt_bridge_shape_release(session, culprit);
+
+    /* Chamfers report no faulty contours; rebuilding each one alone finds them. */
+    const occt_bridge_shape_id_t chamfer_edges[2] = {edges[0], edges[5]};
+    require_true(
+        occt_bridge_chamfer(session, box, chamfer_edges, 2, 20.0, &result) == OCCT_BRIDGE_KERNEL_ERROR,
+        "oversized chamfer fails in the kernel");
+    require_true(diagnostic_count(session) == 2, "each failing chamfer contour is reported");
+    for (size_t index = 0; index < 2; ++index) {
+        require_ok(session, occt_bridge_session_diagnostic_at(session, index, &diagnostic, NULL));
+        require_true(
+            diagnostic.kind == OCCT_BRIDGE_DIAGNOSTIC_ISOLATED_EDGE
+                && diagnostic.input_index == (int64_t)index && diagnostic.has_shape == 1,
+            "chamfer diagnostics follow the selection order");
+    }
+
+    /* The next call starts without diagnostics. */
+    const occt_bridge_shape_id_t other = make_box(session, 20, 10);
+    require_true(diagnostic_count(session) == 0, "a successful call clears diagnostics");
+
+    /* Results rejected by validation name their invalid subshapes. */
+    require_true(
+        occt_bridge_fillet(session, box, edges, 12, 6.0, &result) == OCCT_BRIDGE_INVALID_GEOMETRY,
+        "self-intersecting fillet result is rejected");
+    const size_t invalid = diagnostic_count(session);
+    require_true(invalid > 1, "invalid fillet reports its invalid subshapes");
+    require_true(invalid <= OCCT_BRIDGE_MAX_DIAGNOSTICS, "diagnostics are capped");
+    require_true(error_mentions(session, "fillet produced an invalid shape: BRepCheck_"), "invalid result error summary");
+    /* Read every diagnostic before inspecting shapes, which starts a new call. */
+    occt_bridge_shape_id_t self_intersecting = OCCT_BRIDGE_INVALID_SHAPE_ID;
+    for (size_t index = 0; index < invalid; ++index) {
+        occt_bridge_shape_id_t subshape = OCCT_BRIDGE_INVALID_SHAPE_ID;
+        require_ok(session, occt_bridge_session_diagnostic_at(session, index, &diagnostic, &subshape));
+        require_true(
+            diagnostic.kind == OCCT_BRIDGE_DIAGNOSTIC_INVALID_SUBSHAPE && diagnostic.input_index == -1
+                && subshape != OCCT_BRIDGE_INVALID_SHAPE_ID,
+            "invalid subshape diagnostics carry the subshape");
+        if (self_intersecting == OCCT_BRIDGE_INVALID_SHAPE_ID
+            && diagnostic_named(session, index, "BRepCheck_SelfIntersectingWire")) {
+            self_intersecting = subshape;
+        } else {
+            occt_bridge_shape_release(session, subshape);
+        }
+    }
+    require_true(self_intersecting != OCCT_BRIDGE_INVALID_SHAPE_ID, "a self-intersecting wire is reported");
+    occt_bridge_shape_type_t type = 0;
+    require_ok(session, occt_bridge_shape_type(session, self_intersecting, &type));
+    require_true(type == OCCT_BRIDGE_SHAPE_WIRE, "the self-intersecting subshape is a wire");
+    occt_bridge_shape_release(session, self_intersecting);
+
+    /* Offsets report OCCT's offset error code. */
+    const occt_bridge_shape_id_t pair[2] = {box, other};
+    occt_bridge_shape_id_t separate = OCCT_BRIDGE_INVALID_SHAPE_ID;
+    require_ok(session, occt_bridge_create_compound(session, pair, 2, &separate));
+    require_true(
+        occt_bridge_offset(session, separate, 1.0, 1e-6, &result) == OCCT_BRIDGE_KERNEL_ERROR,
+        "offset of disconnected solids fails");
+    require_true(diagnostic_count(session) == 1, "offset reports its error code");
+    require_ok(session, occt_bridge_session_diagnostic_at(session, 0, &diagnostic, NULL));
+    require_true(
+        diagnostic.kind == OCCT_BRIDGE_DIAGNOSTIC_OFFSET && diagnostic.code == 5
+            && diagnostic_named(session, 0, "BRepOffset_NotConnectedShell"),
+        "offset diagnostic uses BRepOffset_Error");
+
+    /* Boolean alerts carry OCCT's alert key. */
+    occt_bridge_shape_id_t face = OCCT_BRIDGE_INVALID_SHAPE_ID;
+    require_ok(session, occt_bridge_shape_subshape_at(session, other, OCCT_BRIDGE_SHAPE_FACE, 0, &face));
+    require_true(
+        occt_bridge_fuse(session, box, face, &result) == OCCT_BRIDGE_KERNEL_ERROR,
+        "fusing a solid with a face is not allowed");
+    require_true(diagnostic_count(session) >= 1, "boolean failure reports its alerts");
+    require_ok(session, occt_bridge_session_diagnostic_at(session, 0, &diagnostic, NULL));
+    require_true(
+        diagnostic.kind == OCCT_BRIDGE_DIAGNOSTIC_BOOLEAN_ALERT
+            && diagnostic_named(session, 0, "BOPAlgo_AlertBOPNotAllowed"),
+        "boolean diagnostic is OCCT's alert");
+    require_true(error_mentions(session, "fuse operation failed: BOPAlgo_AlertBOPNotAllowed"), "boolean error summary");
+
+    /* Isolation blames only the contour that fails alone: a 5 mm chamfer fits
+       the vertical edge of a 4 mm thick plate but not its top edges. */
+    occt_bridge_shape_id_t plate = OCCT_BRIDGE_INVALID_SHAPE_ID;
+    require_ok(session, occt_bridge_create_box(
+        session, (occt_bridge_vec3_t){0, 0, 0}, (occt_bridge_vec3_t){30, 30, 4}, &plate));
+    occt_bridge_shape_id_t plate_edges[2] = {OCCT_BRIDGE_INVALID_SHAPE_ID, OCCT_BRIDGE_INVALID_SHAPE_ID};
+    size_t plate_edge_count = 0;
+    require_ok(session, occt_bridge_shape_subshape_count(session, plate, OCCT_BRIDGE_SHAPE_EDGE, &plate_edge_count));
+    for (size_t index = 0; index < plate_edge_count; ++index) {
+        occt_bridge_shape_id_t edge = OCCT_BRIDGE_INVALID_SHAPE_ID;
+        double length = 0.0;
+        require_ok(session, occt_bridge_shape_subshape_at(session, plate, OCCT_BRIDGE_SHAPE_EDGE, index, &edge));
+        require_ok(session, occt_bridge_shape_edge_length(session, edge, &length));
+        const size_t slot = close_enough(length, 4.0) ? 0 : 1;
+        if (plate_edges[slot] == OCCT_BRIDGE_INVALID_SHAPE_ID) {
+            plate_edges[slot] = edge;
+        } else {
+            occt_bridge_shape_release(session, edge);
+        }
+    }
+    require_true(
+        occt_bridge_chamfer(session, plate, plate_edges, 2, 5.0, &result) == OCCT_BRIDGE_KERNEL_ERROR,
+        "chamfer wider than the plate fails");
+    require_true(diagnostic_count(session) == 1, "only the failing contour is reported");
+    require_ok(session, occt_bridge_session_diagnostic_at(session, 0, &diagnostic, NULL));
+    require_true(
+        diagnostic.kind == OCCT_BRIDGE_DIAGNOSTIC_ISOLATED_EDGE && diagnostic.input_index == 1,
+        "isolation names the top edge, not the vertical one");
+
+    /* Many failing contours: diagnostics are capped and isolation is bounded. */
+    enum { BLOCKS = 70 };
+    occt_bridge_shape_id_t blocks[BLOCKS];
+    for (size_t index = 0; index < BLOCKS; ++index) {
+        blocks[index] = make_box(session, 20.0 * (double)index, 10);
+    }
+    occt_bridge_shape_id_t row = OCCT_BRIDGE_INVALID_SHAPE_ID;
+    require_ok(session, occt_bridge_create_compound(session, blocks, BLOCKS, &row));
+    occt_bridge_shape_id_t block_edges[BLOCKS];
+    for (size_t index = 0; index < BLOCKS; ++index) {
+        require_ok(session, occt_bridge_shape_subshape_at(
+            session, blocks[index], OCCT_BRIDGE_SHAPE_EDGE, 0, &block_edges[index]));
+    }
+    require_true(
+        occt_bridge_chamfer(session, row, block_edges, BLOCKS, 20.0, &result) == OCCT_BRIDGE_KERNEL_ERROR,
+        "oversized chamfer on every block fails");
+    require_true(
+        diagnostic_count(session) == OCCT_BRIDGE_MAX_DIAGNOSTICS,
+        "isolation stops after the bounded number of contours");
+    char warnings[256] = {0};
+    (void)occt_bridge_session_last_warnings(session, warnings, sizeof(warnings));
+    require_true(strstr(warnings, "first 64 of 70 contours") != NULL, "bounded isolation is reported");
+    require_true(
+        occt_bridge_fillet(session, row, block_edges, BLOCKS, 20.0, &result) == OCCT_BRIDGE_KERNEL_ERROR,
+        "oversized fillet on every block fails");
+    require_true(diagnostic_count(session) == OCCT_BRIDGE_MAX_DIAGNOSTICS, "fillet diagnostics are capped");
+    require_true(error_mentions(session, "(6 more diagnostics omitted)"), "omitted diagnostics are counted");
+    for (size_t index = 0; index < BLOCKS; ++index) {
+        occt_bridge_shape_release(session, block_edges[index]);
+        occt_bridge_shape_release(session, blocks[index]);
+    }
+    occt_bridge_shape_release(session, row);
+    occt_bridge_shape_release(session, plate_edges[0]);
+    occt_bridge_shape_release(session, plate_edges[1]);
+    occt_bridge_shape_release(session, plate);
+
+    for (size_t index = 0; index < 12; ++index) {
+        occt_bridge_shape_release(session, edges[index]);
+    }
+    occt_bridge_shape_release(session, face);
+    occt_bridge_shape_release(session, separate);
+    occt_bridge_shape_release(session, other);
+    occt_bridge_shape_release(session, box);
 }
 
 int main(void) {
@@ -727,6 +946,7 @@ int main(void) {
     test_stl_export(session);
     test_sewing_and_solids(session);
     test_session_options(session);
+    test_failure_diagnostics(session);
     occt_bridge_session_destroy(session);
     puts("C ABI smoke test passed");
     return 0;

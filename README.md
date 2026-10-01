@@ -37,6 +37,10 @@ The current C ABI version is **24**.
   chamfers, offsets, hollowing, sewing, and STEP and BREP import, with
   optional shape healing that carries operation history, fuzzy booleans,
   and per-call warnings
+- Structured failure diagnostics: failed fillets, chamfers, offsets,
+  hollows, and booleans, and results rejected by validation, report OCCT's
+  own codes and names, the selected edge, face, or operand at fault, and a
+  handle to the offending subshape
 - Caller-owned diagnostic buffers
 - Exception containment at every C entry point
 - Dependency-free safe Rust wrapper

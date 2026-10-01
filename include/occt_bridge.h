@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define OCCT_BRIDGE_ABI_VERSION 24u
+#define OCCT_BRIDGE_ABI_VERSION 25u
 #define OCCT_BRIDGE_INVALID_SHAPE_ID UINT64_C(0)
 
 #if defined(_WIN32) && defined(OCCT_BRIDGE_BUILD_SHARED)
@@ -104,6 +104,52 @@ enum {
  * boolean_fuzzy_tolerance: treat boolean input faces and edges closer than
  *   this distance as coincident; 0 performs exact booleans.
  */
+/*
+ * Structured failure diagnostics. A fillet, chamfer, offset, hollow, or
+ * boolean that fails in the kernel, and any operation or import whose result
+ * fails validation, records what OCCT reported about the cause. Diagnostics
+ * describe the most recent call and are cleared when the next call starts;
+ * the diagnostic queries and occt_bridge_shape_release leave them intact.
+ * At most OCCT_BRIDGE_MAX_DIAGNOSTICS are kept per call, and the last error
+ * notes how many were omitted.
+ */
+#define OCCT_BRIDGE_MAX_DIAGNOSTICS 64u
+
+typedef int32_t occt_bridge_diagnostic_kind_t;
+enum {
+    /* A selected edge whose fillet contour failed; code is a ChFiDS_ErrorStatus. */
+    OCCT_BRIDGE_DIAGNOSTIC_FILLET_EDGE = 1,
+    /* A vertex where fillet contours could not be joined; code is 0. */
+    OCCT_BRIDGE_DIAGNOSTIC_FILLET_VERTEX = 2,
+    /*
+     * A selected fillet or chamfer edge whose contour fails even when built
+     * alone. Chamfers report no faulty contours, and fillets sometimes name
+     * none, so failing contours are found by rebuilding each one; code is 0
+     * and the name is the OCCT exception the rebuild raised, if any.
+     */
+    OCCT_BRIDGE_DIAGNOSTIC_ISOLATED_EDGE = 3,
+    /* Offset or hollow failure; code is a BRepOffset_Error, shape the input subshape OCCT blamed. */
+    OCCT_BRIDGE_DIAGNOSTIC_OFFSET = 4,
+    /* A boolean error or warning alert; the name is its OCCT alert key, code is 0. */
+    OCCT_BRIDGE_DIAGNOSTIC_BOOLEAN_ALERT = 5,
+    /* A subshape of a rejected result that failed validation; code is a BRepCheck_Status. */
+    OCCT_BRIDGE_DIAGNOSTIC_INVALID_SUBSHAPE = 6
+};
+
+typedef struct occt_bridge_diagnostic {
+    occt_bridge_diagnostic_kind_t kind;
+    /* OCCT's enumeration value for the kind; its name is available by index. */
+    int32_t code;
+    /*
+     * Index into the call's selection (fillet or chamfer edges, hollow
+     * faces) or boolean operand (0 for left or object, 1 for right or
+     * tool) that the diagnostic concerns; -1 when it concerns none.
+     */
+    int64_t input_index;
+    /* Nonzero when the diagnostic names a subshape. */
+    int has_shape;
+} occt_bridge_diagnostic_t;
+
 typedef struct occt_bridge_session_options {
     int validate_results;
     int heal_invalid_results;
@@ -150,6 +196,35 @@ OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_session_set_options(
 );
 OCCT_BRIDGE_API size_t occt_bridge_session_last_error(
     const occt_bridge_session_t* session,
+    char* buffer,
+    size_t buffer_capacity
+);
+
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_session_diagnostic_count(
+    occt_bridge_session_t* session,
+    size_t* out_count
+);
+/*
+ * Reads one diagnostic. When out_shape is not NULL and the diagnostic names
+ * a subshape, a new session-owned handle to it is returned (each call makes
+ * another); otherwise out_shape receives OCCT_BRIDGE_INVALID_SHAPE_ID. The
+ * subshape may belong to the input or to a rejected result.
+ */
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_session_diagnostic_at(
+    occt_bridge_session_t* session,
+    size_t index,
+    occt_bridge_diagnostic_t* out_diagnostic,
+    occt_bridge_shape_id_t* out_shape
+);
+/*
+ * Copies OCCT's name for a diagnostic's code, such as ChFiDS_WalkingFailure,
+ * BRepOffset_C0Geometry, BOPAlgo_AlertBOPNotAllowed, or BRepCheck_NotClosed,
+ * and returns the required buffer size including the terminator; 0 for an
+ * index out of range.
+ */
+OCCT_BRIDGE_API size_t occt_bridge_session_diagnostic_name(
+    const occt_bridge_session_t* session,
+    size_t index,
     char* buffer,
     size_t buffer_capacity
 );
@@ -629,7 +704,7 @@ OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_shape_remove(
 /*
  * Releases a handle for automatic cleanup in language bindings. Unlike
  * occt_bridge_shape_remove it ignores unknown or already released handles
- * and leaves the last error and warnings untouched, so releasing temporaries
+ * and leaves the last error, warnings, and diagnostics untouched, so releasing temporaries
  * between a call and reading its diagnostics loses nothing. Never throws;
  * a null session is ignored.
  */

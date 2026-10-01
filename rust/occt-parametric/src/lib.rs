@@ -11,8 +11,9 @@ pub use assembly::{
 };
 pub use solve::PlacementSolution;
 
+pub use occt_bridge::DiagnosticKind;
 use occt_bridge::{
-    BridgeError, CurvatureExtrema, HistoryRelation, Session, Shape, ShapeType, Vec3,
+    BridgeError, CurvatureExtrema, Diagnostic, HistoryRelation, Session, Shape, ShapeType, Vec3,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -3047,13 +3048,121 @@ impl Drop for ManagedPartInstance<'_, '_> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModelError {
     pub message: String,
+    /// Structured causes of a kernel failure, located in the model; empty
+    /// for failures the kernel did not explain.
+    pub diagnostics: Vec<FeatureDiagnostic>,
+}
+
+/// What OCCT reported about a failed feature, located by the feature's own
+/// selectors and inputs.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FeatureDiagnostic {
+    /// The feature whose operation failed.
+    pub feature: String,
+    pub kind: DiagnosticKind,
+    /// OCCT's enumeration value for the kind.
+    pub code: i32,
+    /// OCCT's name for the code, such as `ChFiDS_WalkingFailure`.
+    pub name: String,
+    /// Index among the edges or faces the feature's selectors resolved to.
+    pub selection: Option<usize>,
+    /// Index of the feature's edge or face selector that produced the
+    /// selection at fault.
+    pub selector: Option<usize>,
+    /// The boolean input, by output name, that the diagnostic concerns.
+    pub input: Option<String>,
+}
+
+impl FeatureDiagnostic {
+    fn from_kernel(diagnostic: Diagnostic) -> Self {
+        Self {
+            feature: String::new(),
+            kind: diagnostic.kind,
+            code: diagnostic.code,
+            name: diagnostic.name,
+            selection: diagnostic.input_index,
+            selector: None,
+            input: None,
+        }
+    }
 }
 
 impl ModelError {
     fn new(message: impl Into<String>) -> Self {
         Self {
             message: message.into(),
+            diagnostics: Vec::new(),
         }
+    }
+
+    /// Prefixes the message, keeping the diagnostics.
+    fn context(mut self, prefix: &str) -> Self {
+        self.message = format!("{prefix}: {}", self.message);
+        self
+    }
+
+    /// Attributes kernel diagnostics to selectors from the number of shapes
+    /// each selector resolved to, and names them in the message.
+    fn locate_selections(mut self, selector_sizes: &[usize], noun: &str) -> Self {
+        let mut faulty = Vec::new();
+        for diagnostic in &mut self.diagnostics {
+            let Some(selection) = diagnostic.selection else {
+                continue;
+            };
+            let mut end = 0;
+            diagnostic.selector = selector_sizes.iter().position(|size| {
+                end += size;
+                selection < end
+            });
+            if let Some(selector) = diagnostic.selector
+                && !faulty.contains(&selector)
+            {
+                faulty.push(selector);
+            }
+        }
+        if !faulty.is_empty() {
+            let list = faulty
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(", ");
+            let plural = if faulty.len() == 1 { "" } else { "s" };
+            self.message = format!("{}; at fault: {noun} selector{plural} {list}", self.message);
+        }
+        self
+    }
+
+    /// Attributes boolean diagnostics to the named inputs.
+    fn locate_operands(mut self, operands: [&str; 2]) -> Self {
+        let mut faulty = Vec::new();
+        for diagnostic in &mut self.diagnostics {
+            if let Some(operand) = diagnostic
+                .selection
+                .take()
+                .and_then(|index| operands.get(index))
+            {
+                diagnostic.input = Some((*operand).to_owned());
+                if !faulty.contains(operand) {
+                    faulty.push(*operand);
+                }
+            }
+        }
+        if !faulty.is_empty() {
+            let list = faulty
+                .iter()
+                .map(|name| format!("'{name}'"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            self.message = format!("{}; at fault: input {list}", self.message);
+        }
+        self
+    }
+
+    fn in_feature(mut self, feature: &str) -> Self {
+        for diagnostic in &mut self.diagnostics {
+            diagnostic.feature = feature.to_owned();
+        }
+        self.context(&format!("feature '{feature}'"))
     }
 }
 
@@ -3067,7 +3176,14 @@ impl Error for ModelError {}
 
 impl From<BridgeError> for ModelError {
     fn from(error: BridgeError) -> Self {
-        Self::new(error.to_string())
+        Self {
+            message: error.to_string(),
+            diagnostics: error
+                .diagnostics
+                .into_iter()
+                .map(FeatureDiagnostic::from_kernel)
+                .collect(),
+        }
     }
 }
 
@@ -3197,8 +3313,7 @@ impl<'session> FeatureBuild<'session> {
                 execute_feature(session, feature, parameters, &self.shapes)
             }
         };
-        let shape = generated
-            .map_err(|error| ModelError::new(format!("feature '{}': {error}", feature.id)))?;
+        let shape = generated.map_err(|error| error.in_feature(&feature.id))?;
         self.shapes.insert(feature.id.clone(), shape);
         self.feature_signatures
             .insert(feature.id.clone(), signature);
@@ -4398,13 +4513,19 @@ fn execute_feature<'session>(
             scalar(angle_radians, parameters, Dimension::Scalar)?,
         ),
         FeatureOperation::Fuse { left, right } => {
-            session.fuse(shape(shapes, left)?, shape(shapes, right)?)
+            return session
+                .fuse(shape(shapes, left)?, shape(shapes, right)?)
+                .map_err(|error| ModelError::from(error).locate_operands([left, right]));
         }
         FeatureOperation::Cut { object, tool } => {
-            session.cut(shape(shapes, object)?, shape(shapes, tool)?)
+            return session
+                .cut(shape(shapes, object)?, shape(shapes, tool)?)
+                .map_err(|error| ModelError::from(error).locate_operands([object, tool]));
         }
         FeatureOperation::Common { left, right } => {
-            session.common(shape(shapes, left)?, shape(shapes, right)?)
+            return session
+                .common(shape(shapes, left)?, shape(shapes, right)?)
+                .map_err(|error| ModelError::from(error).locate_operands([left, right]));
         }
         FeatureOperation::Sew { inputs, tolerance } => {
             let inputs = inputs
@@ -4476,11 +4597,12 @@ fn execute_fillet<'session>(
     parameters: &HashMap<String, ParameterValue>,
     shapes: &HashMap<String, Shape<'session>>,
 ) -> Result<Shape<'session>, ModelError> {
-    let selected = resolve_edge_selectors(session, input, selectors, parameters, shapes, "fillet")?;
+    let (selected, sizes) =
+        resolve_edge_selectors(session, input, selectors, parameters, shapes, "fillet")?;
     let references = selected.iter().collect::<Vec<_>>();
     let result = session
         .fillet(input, &references, radius)
-        .map_err(Into::into);
+        .map_err(|error| ModelError::from(error).locate_selections(&sizes, "edge"));
     cleanup_shapes(session, selected);
     result
 }
@@ -4493,12 +4615,12 @@ fn execute_chamfer<'session>(
     parameters: &HashMap<String, ParameterValue>,
     shapes: &HashMap<String, Shape<'session>>,
 ) -> Result<Shape<'session>, ModelError> {
-    let selected =
+    let (selected, sizes) =
         resolve_edge_selectors(session, input, selectors, parameters, shapes, "chamfer")?;
     let references = selected.iter().collect::<Vec<_>>();
     let result = session
         .chamfer(input, &references, distance)
-        .map_err(Into::into);
+        .map_err(|error| ModelError::from(error).locate_selections(&sizes, "edge"));
     cleanup_shapes(session, selected);
     result
 }
@@ -4518,9 +4640,13 @@ fn execute_hollow<'session>(
         ));
     }
     let mut selected = Vec::new();
+    let mut sizes = Vec::with_capacity(selectors.len());
     for selector in selectors {
         match resolve_face_selector(session, input, selector, parameters, shapes) {
-            Ok(faces) => selected.extend(faces),
+            Ok(faces) => {
+                sizes.push(faces.len());
+                selected.extend(faces);
+            }
             Err(error) => {
                 cleanup_shapes(session, selected);
                 return Err(error);
@@ -4530,7 +4656,7 @@ fn execute_hollow<'session>(
     let references = selected.iter().collect::<Vec<_>>();
     let result = session
         .hollow(input, &references, thickness, tolerance)
-        .map_err(Into::into);
+        .map_err(|error| ModelError::from(error).locate_selections(&sizes, "face"));
     cleanup_shapes(session, selected);
     result
 }
@@ -4542,23 +4668,27 @@ fn resolve_edge_selectors<'session>(
     parameters: &HashMap<String, ParameterValue>,
     shapes: &HashMap<String, Shape<'session>>,
     operation: &str,
-) -> Result<Vec<Shape<'session>>, ModelError> {
+) -> Result<(Vec<Shape<'session>>, Vec<usize>), ModelError> {
     if selectors.is_empty() {
         return Err(ModelError::new(format!(
             "{operation} requires at least one edge selector"
         )));
     }
     let mut selected = Vec::new();
+    let mut sizes = Vec::with_capacity(selectors.len());
     for selector in selectors {
         match resolve_edge_selector(session, input, selector, parameters, shapes) {
-            Ok(edges) => selected.extend(edges),
+            Ok(edges) => {
+                sizes.push(edges.len());
+                selected.extend(edges);
+            }
             Err(error) => {
                 cleanup_shapes(session, selected);
                 return Err(error);
             }
         }
     }
-    Ok(selected)
+    Ok((selected, sizes))
 }
 
 fn resolve_edge_selector<'session>(
@@ -5688,7 +5818,7 @@ fn verify_requirement(
 }
 
 fn instance_error(id: &str, error: ModelError) -> ModelError {
-    ModelError::new(format!("instance '{id}': {}", error.message))
+    error.context(&format!("instance '{id}'"))
 }
 
 fn release_results<'session>(
@@ -8808,6 +8938,93 @@ mod tests {
         assert!(session.is_valid(filleted).unwrap());
         assert!(session.volume(filleted).unwrap() < 6_000.0);
         assert_eq!(session.shape_count().unwrap(), 3);
+    }
+
+    fn nearest_edge(x: f64, y: f64, z: f64) -> EdgeSelector {
+        EdgeSelector::NearestCenter {
+            target: VectorExpr::Literal(VectorQuantity::lengths(x, y, z, LengthUnit::Millimeter)),
+            maximum_distance: ScalarExpr::Literal(Quantity::length(0.01, LengthUnit::Millimeter)),
+        }
+    }
+
+    #[test]
+    fn kernel_failures_name_the_feature_and_selector_at_fault() {
+        let mut definition = family(RequirementPriority::Required, 100_000.0);
+        definition.requirements.clear();
+        // A 12 mm round fits the 10 mm edge between the 20 mm and 30 mm faces
+        // but not the 30 mm edge beside the 10 mm face.
+        definition.features.push(FeatureDefinition {
+            id: "round".into(),
+            operation: FeatureOperation::Fillet {
+                input: "body".into(),
+                edges: vec![nearest_edge(5.0, 0.0, 30.0), nearest_edge(10.0, 20.0, 15.0)],
+                radius: ScalarExpr::Literal(Quantity::length(12.0, LengthUnit::Millimeter)),
+            },
+        });
+        let instance = PartInstance {
+            id: "rounded".into(),
+            definition: &definition,
+            overrides: HashMap::new(),
+            provenance: "test".into(),
+        };
+        let session = Session::new().unwrap();
+        let error = instance.regenerate(&session).err().unwrap();
+        assert!(!error.diagnostics.is_empty(), "{}", error.message);
+        for diagnostic in &error.diagnostics {
+            assert_eq!(diagnostic.feature, "round");
+            assert_eq!(diagnostic.kind, DiagnosticKind::FilletEdge);
+            assert_eq!(diagnostic.selection, Some(1));
+            assert_eq!(diagnostic.selector, Some(1));
+        }
+        assert!(error.message.starts_with("feature 'round': "));
+        assert!(
+            error.message.ends_with("; at fault: edge selector 1"),
+            "{}",
+            error.message
+        );
+        assert_eq!(session.shape_count().unwrap(), 0);
+    }
+
+    #[test]
+    fn boolean_diagnostics_name_the_input_at_fault() {
+        let diagnostic = |operand| FeatureDiagnostic {
+            feature: String::new(),
+            kind: DiagnosticKind::BooleanAlert,
+            code: 0,
+            name: "BOPAlgo_AlertSelfInterferingShape".into(),
+            selection: operand,
+            selector: None,
+            input: None,
+        };
+        let error = ModelError {
+            message: "kernel error: cut operation failed".into(),
+            diagnostics: vec![diagnostic(Some(1)), diagnostic(None), diagnostic(Some(1))],
+        }
+        .locate_operands(["stock", "cutter"])
+        .in_feature("pocket");
+        assert_eq!(
+            error.message,
+            "feature 'pocket': kernel error: cut operation failed; at fault: input 'cutter'"
+        );
+        let inputs = error
+            .diagnostics
+            .iter()
+            .map(|diagnostic| {
+                (
+                    diagnostic.feature.as_str(),
+                    diagnostic.input.as_deref(),
+                    diagnostic.selection,
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            inputs,
+            vec![
+                ("pocket", Some("cutter"), None),
+                ("pocket", None, None),
+                ("pocket", Some("cutter"), None),
+            ]
+        );
     }
 
     #[test]

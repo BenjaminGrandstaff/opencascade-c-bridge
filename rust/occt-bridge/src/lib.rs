@@ -10,7 +10,7 @@ use std::{
     ptr::{self, NonNull},
 };
 
-const ABI_VERSION: u32 = 24;
+const ABI_VERSION: u32 = 25;
 
 #[repr(C)]
 struct RawVec3 {
@@ -64,6 +64,19 @@ unsafe extern "C" {
     ) -> usize;
     fn occt_bridge_session_last_warnings(
         session: *const c_void,
+        buffer: *mut c_char,
+        capacity: usize,
+    ) -> usize;
+    fn occt_bridge_session_diagnostic_count(session: *mut c_void, out: *mut usize) -> RawStatus;
+    fn occt_bridge_session_diagnostic_at(
+        session: *mut c_void,
+        index: usize,
+        out_diagnostic: *mut RawDiagnostic,
+        out_shape: *mut RawShapeId,
+    ) -> RawStatus;
+    fn occt_bridge_session_diagnostic_name(
+        session: *const c_void,
+        index: usize,
         buffer: *mut c_char,
         capacity: usize,
     ) -> usize;
@@ -495,6 +508,66 @@ impl From<RawVec3> for Vec3 {
 }
 
 #[repr(C)]
+#[derive(Clone, Copy, Default)]
+struct RawDiagnostic {
+    kind: i32,
+    code: i32,
+    input_index: i64,
+    has_shape: c_int,
+}
+
+/// What a failure diagnostic describes, and which OCCT enumeration its code
+/// belongs to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DiagnosticKind {
+    /// A selected edge whose fillet contour failed; code is `ChFiDS_ErrorStatus`.
+    FilletEdge,
+    /// A vertex where fillet contours could not be joined.
+    FilletVertex,
+    /// A selected fillet or chamfer edge whose contour fails even when built
+    /// alone; the name is the OCCT exception the rebuild raised, if any.
+    IsolatedEdge,
+    /// An offset or hollow failure; code is `BRepOffset_Error`.
+    Offset,
+    /// A boolean alert; the name is its OCCT alert key.
+    BooleanAlert,
+    /// A subshape of a rejected result; code is `BRepCheck_Status`.
+    InvalidSubshape,
+    /// A kind added by a newer library.
+    Other(i32),
+}
+
+impl DiagnosticKind {
+    fn from_raw(kind: i32) -> Self {
+        match kind {
+            1 => Self::FilletEdge,
+            2 => Self::FilletVertex,
+            3 => Self::IsolatedEdge,
+            4 => Self::Offset,
+            5 => Self::BooleanAlert,
+            6 => Self::InvalidSubshape,
+            other => Self::Other(other),
+        }
+    }
+}
+
+/// What OCCT reported about the cause of a failed call. The subshape it
+/// names, if any, is available from [`Session::last_diagnostic_shape`] until
+/// the next call.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Diagnostic {
+    pub kind: DiagnosticKind,
+    /// OCCT's enumeration value for the kind.
+    pub code: i32,
+    /// OCCT's name for the code, such as `ChFiDS_WalkingFailure`.
+    pub name: String,
+    /// The selected edge or face, or boolean operand (0 left, 1 right), the
+    /// diagnostic concerns.
+    pub input_index: Option<usize>,
+    pub has_shape: bool,
+}
+
+#[repr(C)]
 #[derive(Clone, Copy)]
 struct RawSessionOptions {
     validate_results: c_int,
@@ -626,6 +699,9 @@ pub struct BridgeError {
     pub status: i32,
     pub category: String,
     pub message: String,
+    /// Structured causes of a kernel failure, in the order OCCT reported
+    /// them; empty when the failure has none.
+    pub diagnostics: Vec<Diagnostic>,
 }
 
 impl fmt::Display for BridgeError {
@@ -654,6 +730,7 @@ impl Session {
                 status: 2,
                 category: "unsupported ABI version".into(),
                 message: format!("Rust expects {ABI_VERSION}, library provides {actual_version}"),
+                diagnostics: Vec::new(),
             });
         }
         let mut raw = ptr::null_mut();
@@ -666,6 +743,7 @@ impl Session {
             status: 8,
             category: "internal error".into(),
             message: "library returned a null session".into(),
+            diagnostics: Vec::new(),
         })?;
         Ok(Self {
             raw,
@@ -863,6 +941,7 @@ impl Session {
                 status: 1,
                 category: "invalid argument".into(),
                 message: "bottom and top rings must have the same point count".into(),
+                diagnostics: Vec::new(),
             });
         }
         let bottom: Vec<RawVec3> = bottom_points.iter().copied().map(Into::into).collect();
@@ -929,6 +1008,7 @@ impl Session {
                             status: 8,
                             category: "internal error".into(),
                             message: format!("library returned unknown light type {value}"),
+                            diagnostics: Vec::new(),
                         });
                     }
                 },
@@ -1241,6 +1321,7 @@ impl Session {
                 status: 8,
                 category: "internal error".into(),
                 message: format!("library returned unknown shape type {value}"),
+                diagnostics: Vec::new(),
             }),
         }
     }
@@ -1728,6 +1809,7 @@ impl Session {
                 status: 1,
                 category: "invalid argument".into(),
                 message: "shape belongs to a different session".into(),
+                diagnostics: Vec::new(),
             });
         }
         if shape.generation != self.generation.get() {
@@ -1735,6 +1817,7 @@ impl Session {
                 status: 3,
                 category: "shape not found".into(),
                 message: "shape was invalidated by clearing its session".into(),
+                diagnostics: Vec::new(),
             });
         }
         Ok(())
@@ -1751,7 +1834,79 @@ impl Session {
     fn error(&self, status: RawStatus) -> BridgeError {
         let mut error = Self::error_without_session(status);
         error.message = self.read_text(occt_bridge_session_last_error);
+        error.diagnostics = self.last_diagnostics();
         error
+    }
+
+    /// Diagnostics of the most recent call; failed calls also carry them in
+    /// [`BridgeError::diagnostics`].
+    pub fn last_diagnostics(&self) -> Vec<Diagnostic> {
+        let mut count = 0;
+        // SAFETY: The session and output pointers are valid.
+        if unsafe { occt_bridge_session_diagnostic_count(self.raw.as_ptr(), &mut count) } != OK {
+            return Vec::new();
+        }
+        (0..count)
+            .filter_map(|index| {
+                let mut raw = RawDiagnostic::default();
+                // SAFETY: A null shape output asks for no handle.
+                let status = unsafe {
+                    occt_bridge_session_diagnostic_at(
+                        self.raw.as_ptr(),
+                        index,
+                        &mut raw,
+                        ptr::null_mut(),
+                    )
+                };
+                (status == OK).then(|| Diagnostic {
+                    kind: DiagnosticKind::from_raw(raw.kind),
+                    code: raw.code,
+                    name: self.read_text_at(index, occt_bridge_session_diagnostic_name),
+                    input_index: usize::try_from(raw.input_index).ok(),
+                    has_shape: raw.has_shape != 0,
+                })
+            })
+            .collect()
+    }
+
+    /// The subshape the most recent call's diagnostic `index` names, as a
+    /// new handle; `None` when it names none. It may belong to an input or
+    /// to a rejected result. Reading it keeps the diagnostics, but any other
+    /// call clears them.
+    pub fn last_diagnostic_shape(&self, index: usize) -> Result<Option<Shape<'_>>, BridgeError> {
+        let mut raw = RawDiagnostic::default();
+        let mut shape = 0;
+        // SAFETY: The session and output pointers are valid.
+        self.check(unsafe {
+            occt_bridge_session_diagnostic_at(self.raw.as_ptr(), index, &mut raw, &mut shape)
+        })?;
+        Ok((shape != 0).then(|| self.shape(shape)))
+    }
+
+    /// Reads an indexed session text buffer through the size-query protocol.
+    fn read_text_at(
+        &self,
+        index: usize,
+        read: unsafe extern "C" fn(*const c_void, usize, *mut c_char, usize) -> usize,
+    ) -> String {
+        // SAFETY: A null buffer with zero capacity is the documented size query.
+        let required = unsafe { read(self.raw.as_ptr(), index, ptr::null_mut(), 0) };
+        if required <= 1 {
+            return String::new();
+        }
+        let mut buffer = vec![0u8; required];
+        // SAFETY: `buffer` has exactly the capacity reported by the library.
+        unsafe {
+            read(
+                self.raw.as_ptr(),
+                index,
+                buffer.as_mut_ptr().cast(),
+                buffer.len(),
+            );
+            CStr::from_ptr(buffer.as_ptr().cast())
+                .to_string_lossy()
+                .into_owned()
+        }
     }
 
     /// Reads a session text buffer through the library's size-query protocol.
@@ -1824,6 +1979,7 @@ impl Session {
             status,
             category,
             message: String::new(),
+            diagnostics: Vec::new(),
         }
     }
 }
@@ -1840,6 +1996,7 @@ fn path_to_c_string(path: &Path) -> Result<CString, BridgeError> {
         status: 1,
         category: "invalid argument".into(),
         message: "path contains an interior NUL byte".into(),
+        diagnostics: Vec::new(),
     })
 }
 
@@ -2364,6 +2521,46 @@ mod tests {
             error.message.contains("healing could not repair"),
             "{error}"
         );
+    }
+
+    #[test]
+    fn kernel_failures_name_their_cause_and_culprit() {
+        let session = Session::new().unwrap();
+        let block = session
+            .create_box(Vec3::new(0.0, 0.0, 0.0), Vec3::new(10.0, 10.0, 10.0))
+            .unwrap();
+        let first = session.subshape(&block, ShapeType::Edge, 0).unwrap();
+        let second = session.subshape(&block, ShapeType::Edge, 3).unwrap();
+        let error = session
+            .fillet(&block, &[&first, &second], 20.0)
+            .unwrap_err();
+        assert_eq!(error.status, 6);
+        assert_eq!(error.diagnostics.len(), 2);
+        let selected = error
+            .diagnostics
+            .iter()
+            .map(|diagnostic| {
+                assert_eq!(diagnostic.kind, DiagnosticKind::FilletEdge);
+                assert_eq!(diagnostic.name, "ChFiDS_StartsolFailure");
+                assert!(diagnostic.has_shape);
+                diagnostic.input_index.unwrap()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(selected, vec![0, 1]);
+        assert!(
+            error
+                .message
+                .contains("ChFiDS_StartsolFailure on selection 0 and 1 more")
+        );
+        let culprit = session.last_diagnostic_shape(1).unwrap().unwrap();
+        assert_eq!(session.last_diagnostics(), error.diagnostics);
+        assert!(session.is_same(&culprit, &second).unwrap());
+        assert!(session.last_diagnostics().is_empty());
+        assert!(session.last_diagnostic_shape(0).is_err());
+
+        let error = session.fillet(&block, &[&first], 1.0).map(|_| ());
+        assert!(error.is_ok());
+        assert!(session.last_diagnostics().is_empty());
     }
 
     #[test]

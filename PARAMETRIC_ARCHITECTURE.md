@@ -45,13 +45,14 @@ Rust layers:
    adjacency, G1 tangent neighbors, recursive set composition, multi-result and
    operation-history tracking; serializable sewing and single- or multi-shell
    solid feature operations; versioned JSON persistence with schema migration
-   and validation; incremental dirty-feature rebuilding; and transactional
-   cleanup when regeneration or placement fails.
+   and validation; incremental dirty-feature rebuilding; transactional
+   cleanup when regeneration or placement fails; and kernel failures reported
+   with OCCT's codes and located at the failing feature's selector or input.
 
 The following major capabilities remain planned:
 
-- cheaper validation of faces with many holes, failure diagnostics after
-  kernel operations, and configurable model tolerances;
+- cheaper validation of faces with many holes and configurable model
+  tolerances;
 - iterative clone resolution for deep chains on default thread stacks;
 - additional domain-specific expression functions;
 - additional schema migrations and integration with the broader EIL source

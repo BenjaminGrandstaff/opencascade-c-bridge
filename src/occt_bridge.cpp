@@ -15,6 +15,8 @@
 #include <BRepBuilderAPI_Sewing.hxx>
 #include <BRepBuilderAPI_Transform.hxx>
 #include <BRepCheck_Analyzer.hxx>
+#include <BRepCheck_ListOfStatus.hxx>
+#include <BRepCheck_Result.hxx>
 #include <BRepClass3d_SolidClassifier.hxx>
 #include <BRepGProp.hxx>
 #include <BRepFilletAPI_MakeChamfer.hxx>
@@ -58,7 +60,11 @@
 #include <TopoDS_Wire.hxx>
 #include <TopAbs_ShapeEnum.hxx>
 #include <TopAbs_State.hxx>
+#include <TopExp.hxx>
 #include <TopExp_Explorer.hxx>
+#include <TopoDS_AlertWithShape.hxx>
+#include <Message_Report.hxx>
+#include <Standard_Type.hxx>
 #include <Precision.hxx>
 #include <gp_Ax2.hxx>
 #include <gp_Ax1.hxx>
@@ -108,6 +114,15 @@ struct occt_bridge_operation_history {
     TopLoc_Location location;
 };
 
+/* One failure diagnostic; see occt_bridge_diagnostic_t. */
+struct occt_bridge_diagnostic_record {
+    occt_bridge_diagnostic_kind_t kind = 0;
+    int32_t code = 0;
+    int64_t input_index = -1;
+    std::string name;
+    TopoDS_Shape shape;
+};
+
 struct occt_bridge_session {
     mutable std::mutex mutex;
     std::unordered_map<occt_bridge_shape_id_t, TopoDS_Shape> shapes;
@@ -116,6 +131,9 @@ struct occt_bridge_session {
     std::string last_error;
     /* Warnings from the most recent call; cleared when the next call starts. */
     std::string last_warnings;
+    /* Diagnostics from the most recent call, capped; cleared like warnings. */
+    std::vector<occt_bridge_diagnostic_record> last_diagnostics;
+    size_t omitted_diagnostics = 0;
     occt_bridge_session_options_t options{1, 0, 0.0};
 };
 
@@ -155,6 +173,14 @@ void add_warning(occt_bridge_session_t* session, const std::string& warning) {
     session->last_warnings += warning;
 }
 
+void add_diagnostic(occt_bridge_session_t* session, occt_bridge_diagnostic_record record) {
+    if (session->last_diagnostics.size() < OCCT_BRIDGE_MAX_DIAGNOSTICS) {
+        session->last_diagnostics.push_back(std::move(record));
+    } else {
+        ++session->omitted_diagnostics;
+    }
+}
+
 size_t copy_text(const std::string& text, char* buffer, size_t buffer_capacity) {
     if (buffer != nullptr && buffer_capacity != 0) {
         const size_t amount = std::min(buffer_capacity - 1, text.size());
@@ -164,15 +190,32 @@ size_t copy_text(const std::string& text, char* buffer, size_t buffer_capacity) 
     return text.size() + 1;
 }
 
+/*
+ * Runs an entry point under the session lock with exceptions contained.
+ * Calls start with no warnings or diagnostics unless `keep_diagnostics` is
+ * set, which the diagnostic queries use to read the previous call's.
+ */
 template <typename Function>
-occt_bridge_status_t guarded(occt_bridge_session_t* session, Function&& function) noexcept {
+occt_bridge_status_t guarded(
+    occt_bridge_session_t* session,
+    Function&& function,
+    bool keep_diagnostics = false) noexcept {
     if (session == nullptr) {
         return OCCT_BRIDGE_INVALID_ARGUMENT;
     }
     try {
         std::lock_guard<std::mutex> lock(session->mutex);
-        session->last_warnings.clear();
-        return function();
+        if (!keep_diagnostics) {
+            session->last_warnings.clear();
+            session->last_diagnostics.clear();
+            session->omitted_diagnostics = 0;
+        }
+        const occt_bridge_status_t status = function();
+        if (status != OCCT_BRIDGE_OK && !keep_diagnostics && session->omitted_diagnostics != 0) {
+            session->last_error += " (" + std::to_string(session->omitted_diagnostics)
+                + " more diagnostics omitted)";
+        }
+        return status;
     } catch (const Standard_Failure& error) {
         const char* message = error.GetMessageString();
         return fail(
@@ -384,6 +427,173 @@ void compose_with_reshape(std::vector<occt_bridge_history_entry>& history, const
     }
 }
 
+/* OCCT's name for an enumeration value, or "<prefix><value>" if unknown. */
+template <size_t Count>
+std::string enum_name(const char* const (&names)[Count], int32_t value, const char* prefix) {
+    if (value >= 0 && static_cast<size_t>(value) < Count) {
+        return names[value];
+    }
+    return std::string(prefix) + std::to_string(value);
+}
+
+std::string fillet_status_name(ChFiDS_ErrorStatus status) {
+    static const char* const names[] = {
+        "ChFiDS_Ok",
+        "ChFiDS_Error",
+        "ChFiDS_WalkingFailure",
+        "ChFiDS_StartsolFailure",
+        "ChFiDS_TwistedSurface",
+    };
+    static_assert(ChFiDS_TwistedSurface == 4, "ChFiDS_ErrorStatus changed");
+    return enum_name(names, static_cast<int32_t>(status), "ChFiDS_ErrorStatus_");
+}
+
+std::string offset_error_name(BRepOffset_Error error) {
+    static const char* const names[] = {
+        "BRepOffset_NoError",
+        "BRepOffset_UnknownError",
+        "BRepOffset_BadNormalsOnGeometry",
+        "BRepOffset_C0Geometry",
+        "BRepOffset_NullOffset",
+        "BRepOffset_NotConnectedShell",
+        "BRepOffset_CannotTrimEdges",
+        "BRepOffset_CannotFuseVertices",
+        "BRepOffset_CannotExtentEdge",
+        "BRepOffset_UserBreak",
+        "BRepOffset_MixedConnectivity",
+    };
+    static_assert(BRepOffset_MixedConnectivity == 10, "BRepOffset_Error changed");
+    return enum_name(names, static_cast<int32_t>(error), "BRepOffset_Error_");
+}
+
+std::string check_status_name(BRepCheck_Status status) {
+    static const char* const names[] = {
+        "BRepCheck_NoError",
+        "BRepCheck_InvalidPointOnCurve",
+        "BRepCheck_InvalidPointOnCurveOnSurface",
+        "BRepCheck_InvalidPointOnSurface",
+        "BRepCheck_No3DCurve",
+        "BRepCheck_Multiple3DCurve",
+        "BRepCheck_Invalid3DCurve",
+        "BRepCheck_NoCurveOnSurface",
+        "BRepCheck_InvalidCurveOnSurface",
+        "BRepCheck_InvalidCurveOnClosedSurface",
+        "BRepCheck_InvalidSameRangeFlag",
+        "BRepCheck_InvalidSameParameterFlag",
+        "BRepCheck_InvalidDegeneratedFlag",
+        "BRepCheck_FreeEdge",
+        "BRepCheck_InvalidMultiConnexity",
+        "BRepCheck_InvalidRange",
+        "BRepCheck_EmptyWire",
+        "BRepCheck_RedundantEdge",
+        "BRepCheck_SelfIntersectingWire",
+        "BRepCheck_NoSurface",
+        "BRepCheck_InvalidWire",
+        "BRepCheck_RedundantWire",
+        "BRepCheck_IntersectingWires",
+        "BRepCheck_InvalidImbricationOfWires",
+        "BRepCheck_EmptyShell",
+        "BRepCheck_RedundantFace",
+        "BRepCheck_InvalidImbricationOfShells",
+        "BRepCheck_UnorientableShape",
+        "BRepCheck_NotClosed",
+        "BRepCheck_NotConnected",
+        "BRepCheck_SubshapeNotInShape",
+        "BRepCheck_BadOrientation",
+        "BRepCheck_BadOrientationOfSubshape",
+        "BRepCheck_InvalidPolygonOnTriangulation",
+        "BRepCheck_InvalidToleranceValue",
+        "BRepCheck_EnclosedRegion",
+        "BRepCheck_CheckFail",
+    };
+    static_assert(BRepCheck_CheckFail == 36, "BRepCheck_Status changed");
+    return enum_name(names, static_cast<int32_t>(status), "BRepCheck_Status_");
+}
+
+const char* shape_type_noun(TopAbs_ShapeEnum type) {
+    switch (type) {
+        case TopAbs_COMPOUND: return "compound";
+        case TopAbs_COMPSOLID: return "compsolid";
+        case TopAbs_SOLID: return "solid";
+        case TopAbs_SHELL: return "shell";
+        case TopAbs_FACE: return "face";
+        case TopAbs_WIRE: return "wire";
+        case TopAbs_EDGE: return "edge";
+        case TopAbs_VERTEX: return "vertex";
+        default: return "shape";
+    }
+}
+
+/*
+ * Appends a summary of the call's diagnostics to a failure message, such as
+ * "fillet construction failed: ChFiDS_StartsolFailure on selection 0".
+ */
+std::string with_diagnostics(const occt_bridge_session_t* session, std::string message) {
+    const std::vector<occt_bridge_diagnostic_record>& diagnostics = session->last_diagnostics;
+    if (diagnostics.empty()) {
+        return message;
+    }
+    const occt_bridge_diagnostic_record& first = diagnostics.front();
+    message += ": " + (first.name.empty() ? std::string("failure") : first.name);
+    if (first.input_index >= 0) {
+        message += first.kind == OCCT_BRIDGE_DIAGNOSTIC_BOOLEAN_ALERT ? " on operand " : " on selection ";
+        message += std::to_string(first.input_index);
+    } else if (!first.shape.IsNull()) {
+        message += std::string(" on a ") + shape_type_noun(first.shape.ShapeType());
+    }
+    const size_t more = diagnostics.size() - 1 + session->omitted_diagnostics;
+    if (more != 0) {
+        message += " and " + std::to_string(more) + " more";
+    }
+    return message;
+}
+
+/*
+ * Records every validation failure of `shape`, outermost subshapes first,
+ * with BRepCheck's status for the subshape alone and within its parents.
+ * O(subshapes); runs only for results being rejected.
+ */
+void record_invalid_subshapes(
+    occt_bridge_session_t* session,
+    const BRepCheck_Analyzer& analyzer,
+    const TopoDS_Shape& shape) {
+    static const TopAbs_ShapeEnum types[] = {
+        TopAbs_COMPSOLID, TopAbs_SOLID, TopAbs_SHELL, TopAbs_FACE, TopAbs_WIRE, TopAbs_EDGE, TopAbs_VERTEX,
+    };
+    for (const TopAbs_ShapeEnum type : types) {
+        TopTools_IndexedMapOfShape subshapes;
+        TopExp::MapShapes(shape, type, subshapes);
+        for (int index = 1; index <= subshapes.Extent(); ++index) {
+            const Handle(BRepCheck_Result)& result = analyzer.Result(subshapes(index));
+            if (result.IsNull()) {
+                continue;
+            }
+            std::vector<BRepCheck_Status> statuses;
+            const auto collect = [&statuses](const BRepCheck_ListOfStatus& list) {
+                for (BRepCheck_ListIteratorOfListOfStatus status(list); status.More(); status.Next()) {
+                    if (status.Value() != BRepCheck_NoError
+                        && std::find(statuses.begin(), statuses.end(), status.Value()) == statuses.end()) {
+                        statuses.push_back(status.Value());
+                    }
+                }
+            };
+            collect(result->Status());
+            for (result->InitContextIterator(); result->MoreShapeInContext(); result->NextShapeInContext()) {
+                collect(result->StatusOnShape());
+            }
+            for (const BRepCheck_Status status : statuses) {
+                add_diagnostic(
+                    session,
+                    {OCCT_BRIDGE_DIAGNOSTIC_INVALID_SUBSHAPE,
+                     static_cast<int32_t>(status),
+                     -1,
+                     check_status_name(status),
+                     subshapes(index)});
+            }
+        }
+    }
+}
+
 /*
  * Validates an operation result when the session asks for it and, if it is
  * invalid and healing is enabled, repairs it with shape fixing. Replaces
@@ -396,20 +606,29 @@ occt_bridge_status_t check_result(
     const std::string& operation,
     TopoDS_Shape& shape,
     std::vector<occt_bridge_history_entry>* history) {
-    if (session->options.validate_results == 0 || BRepCheck_Analyzer(shape, Standard_True).IsValid()) {
+    if (session->options.validate_results == 0) {
+        return OCCT_BRIDGE_OK;
+    }
+    const BRepCheck_Analyzer analyzer(shape, Standard_True);
+    if (analyzer.IsValid()) {
         return OCCT_BRIDGE_OK;
     }
     if (session->options.heal_invalid_results == 0) {
-        return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, operation + " produced an invalid shape");
+        record_invalid_subshapes(session, analyzer, shape);
+        return fail(
+            session,
+            OCCT_BRIDGE_INVALID_GEOMETRY,
+            with_diagnostics(session, operation + " produced an invalid shape"));
     }
     Handle(ShapeFix_Shape) fixer = new ShapeFix_Shape(shape);
     fixer->Perform();
     const TopoDS_Shape healed = fixer->Shape();
     if (healed.IsNull() || !BRepCheck_Analyzer(healed, Standard_True).IsValid()) {
+        record_invalid_subshapes(session, analyzer, shape);
         return fail(
             session,
             OCCT_BRIDGE_INVALID_GEOMETRY,
-            operation + " produced an invalid shape that healing could not repair");
+            with_diagnostics(session, operation + " produced an invalid shape that healing could not repair"));
     }
     if (history != nullptr) {
         compose_with_reshape(*history, fixer->Context()->History());
@@ -447,6 +666,37 @@ occt_bridge_status_t store_checked_import(
         return status;
     }
     return store_shape(session, shape, out_shape);
+}
+
+bool belongs_to(const TopoDS_Shape& parent, const TopoDS_Shape& candidate);
+
+/*
+ * Records a failed boolean's alerts, errors first, with the operand each
+ * alert's shape belongs to. O(alerts * operand subshapes) on failure only.
+ */
+template <typename Operation>
+void record_boolean_alerts(
+    occt_bridge_session_t* session,
+    const Operation& operation,
+    const TopoDS_Shape& left,
+    const TopoDS_Shape& right) {
+    for (const Message_Gravity gravity : {Message_Fail, Message_Warning}) {
+        const Message_ListOfAlert& alerts = operation.GetReport()->GetAlerts(gravity);
+        for (Message_ListOfAlert::Iterator alert(alerts); alert.More(); alert.Next()) {
+            TopoDS_Shape shape;
+            const Handle(TopoDS_AlertWithShape) with_shape = Handle(TopoDS_AlertWithShape)::DownCast(alert.Value());
+            if (!with_shape.IsNull()) {
+                shape = with_shape->GetShape();
+            }
+            int64_t operand = -1;
+            if (!shape.IsNull()) {
+                operand = belongs_to(left, shape) ? 0 : (belongs_to(right, shape) ? 1 : -1);
+            }
+            add_diagnostic(
+                session,
+                {OCCT_BRIDGE_DIAGNOSTIC_BOOLEAN_ALERT, 0, operand, alert.Value()->GetMessageKey(), shape});
+        }
+    }
 }
 
 template <typename Operation>
@@ -487,17 +737,11 @@ occt_bridge_status_t boolean_operation(
         }
     }
     if (!operation.IsDone() || operation.HasErrors()) {
-        std::ostringstream errors;
-        operation.DumpErrors(errors);
-        std::string reasons = errors.str();
-        std::replace(reasons.begin(), reasons.end(), '\n', ' ');
-        while (!reasons.empty() && reasons.back() == ' ') {
-            reasons.pop_back();
-        }
+        record_boolean_alerts(session, operation, *left_shape, *right_shape);
         return fail(
             session,
             OCCT_BRIDGE_KERNEL_ERROR,
-            std::string(operation_name) + " operation failed: " + reasons);
+            with_diagnostics(session, std::string(operation_name) + " operation failed"));
     }
     return store_checked_result(
         session,
@@ -612,6 +856,224 @@ bool shares_descendant(
     }
     return false;
 }
+
+/* Runs a kernel step, returning the OCCT exception's type name or "". */
+template <typename Step>
+std::string perform_reporting_exception(Step&& step) {
+    try {
+        step();
+    } catch (const Standard_Failure& error) {
+        return error.DynamicType()->Name();
+    }
+    return {};
+}
+
+/*
+ * Fails an offset or hollow with OCCT's offset error code and the input
+ * subshape it blamed, mapped to the selected face it matches if any.
+ */
+occt_bridge_status_t offset_failure(
+    occt_bridge_session_t* session,
+    const BRepOffsetAPI_MakeOffsetShape& builder,
+    const std::string& name,
+    const std::string& exception,
+    const TopTools_ListOfShape& selection) {
+    const BRepOffset_MakeOffset& offset = builder.MakeOffset();
+    const BRepOffset_Error error = offset.Error();
+    if (error != BRepOffset_NoError) {
+        const TopoDS_Shape& bad = offset.GetBadShape();
+        int64_t selected = -1;
+        int64_t index = 0;
+        for (TopTools_ListIteratorOfListOfShape face(selection); face.More(); face.Next(), ++index) {
+            if (!bad.IsNull() && face.Value().IsSame(bad)) {
+                selected = index;
+                break;
+            }
+        }
+        add_diagnostic(
+            session,
+            {OCCT_BRIDGE_DIAGNOSTIC_OFFSET, static_cast<int32_t>(error), selected, offset_error_name(error), bad});
+    }
+    std::string message = name + " construction failed";
+    if (!exception.empty()) {
+        message += " (" + exception + ")";
+    }
+    return fail(session, OCCT_BRIDGE_KERNEL_ERROR, with_diagnostics(session, message));
+}
+
+/*
+ * Builds a fillet or chamfer and reports OCCT exceptions as a failed build:
+ * returns the exception's type name, or an empty string. Partial builders
+ * stay inspectable after either kind of failure.
+ */
+template <typename Builder>
+std::string build_reporting_exception(Builder& builder) {
+    return perform_reporting_exception([&] { builder.Build(); });
+}
+
+/*
+ * Selected edge indices per contour, in selection order; contour 0 holds
+ * edges OCCT placed in no contour. O(selected edges).
+ */
+std::vector<std::vector<size_t>> group_by_contour(const std::vector<int>& contours) {
+    const int largest = contours.empty() ? 0 : *std::max_element(contours.begin(), contours.end());
+    std::vector<std::vector<size_t>> members(static_cast<size_t>(std::max(largest, 0)) + 1);
+    for (size_t index = 0; index < contours.size(); ++index) {
+        if (contours[index] > 0) {
+            members[static_cast<size_t>(contours[index])].push_back(index);
+        }
+    }
+    return members;
+}
+
+/*
+ * Records the faulty contours and vertices OCCT reports for a failed fillet.
+ * `members` lists each contour's selected edges, read before building
+ * because a build that throws forgets them. O(faulty contours + their edges).
+ */
+void record_faulty_fillet(
+    occt_bridge_session_t* session,
+    const BRepFilletAPI_MakeFillet& builder,
+    const std::vector<TopoDS_Edge>& selection,
+    const std::vector<std::vector<size_t>>& members) {
+    for (int faulty = 1; faulty <= builder.NbFaultyContours(); ++faulty) {
+        const int contour = builder.FaultyContour(faulty);
+        if (contour <= 0 || static_cast<size_t>(contour) >= members.size()) {
+            continue;
+        }
+        const ChFiDS_ErrorStatus status = builder.StripeStatus(contour);
+        for (const size_t index : members[static_cast<size_t>(contour)]) {
+            add_diagnostic(
+                session,
+                {OCCT_BRIDGE_DIAGNOSTIC_FILLET_EDGE,
+                 static_cast<int32_t>(status),
+                 static_cast<int64_t>(index),
+                 fillet_status_name(status),
+                 selection[index]});
+        }
+    }
+    for (int vertex = 1; vertex <= builder.NbFaultyVertices(); ++vertex) {
+        add_diagnostic(
+            session,
+            {OCCT_BRIDGE_DIAGNOSTIC_FILLET_VERTEX, 0, -1, "", builder.FaultyVertex(vertex)});
+    }
+}
+
+void record_faulty_fillet(
+    occt_bridge_session_t*,
+    const BRepFilletAPI_MakeChamfer&,
+    const std::vector<TopoDS_Edge>&,
+    const std::vector<std::vector<size_t>>&) {
+    /* OCCT reports no faulty contours for chamfers; isolation finds them. */
+}
+
+/* Contours rebuilt alone to locate a failure; bounds the work on failure. */
+constexpr size_t MAX_ISOLATED_CONTOURS = 64;
+
+/*
+ * Rebuilds each contour of a failed fillet or chamfer on its own and records
+ * the selected edges of contours that still fail. Costs one local build per
+ * contour, at most MAX_ISOLATED_CONTOURS, and runs only after a failure.
+ */
+template <typename Builder>
+void record_isolated_contours(
+    occt_bridge_session_t* session,
+    const TopoDS_Shape& shape,
+    const std::vector<TopoDS_Edge>& selection,
+    const std::vector<std::vector<size_t>>& members,
+    double value) {
+    const auto selected_contours = static_cast<size_t>(std::count_if(
+        members.begin(), members.end(), [](const std::vector<size_t>& edges) { return !edges.empty(); }));
+    if (selected_contours > MAX_ISOLATED_CONTOURS) {
+        add_warning(
+            session,
+            "located failures in the first " + std::to_string(MAX_ISOLATED_CONTOURS) + " of "
+                + std::to_string(selected_contours) + " contours");
+    }
+    size_t rebuilt = 0;
+    for (size_t contour = 1; contour < members.size() && rebuilt < MAX_ISOLATED_CONTOURS; ++contour) {
+        if (members[contour].empty()) {
+            continue;
+        }
+        ++rebuilt;
+        Builder alone(shape);
+        for (const size_t index : members[contour]) {
+            alone.Add(value, selection[index]);
+        }
+        const std::string exception = build_reporting_exception(alone);
+        if (exception.empty() && alone.IsDone() && !alone.Shape().IsNull()) {
+            continue;
+        }
+        for (const size_t index : members[contour]) {
+            add_diagnostic(
+                session,
+                {OCCT_BRIDGE_DIAGNOSTIC_ISOLATED_EDGE, 0, static_cast<int64_t>(index), exception, selection[index]});
+        }
+    }
+}
+
+/*
+ * Fillets or chamfers selected edges. On failure, records the faulty
+ * contours OCCT reports or, when it names none, the contours that fail on
+ * their own, so the error says which selected edges are at fault.
+ */
+template <typename Builder>
+occt_bridge_status_t edge_treatment(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t shape,
+    const occt_bridge_shape_id_t* edges,
+    size_t edge_count,
+    double value,
+    occt_bridge_shape_id_t* out_shape,
+    const std::string& name) {
+    if (out_shape == nullptr) {
+        return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_shape is null");
+    }
+    *out_shape = OCCT_BRIDGE_INVALID_SHAPE_ID;
+    if (edges == nullptr || edge_count == 0 || !std::isfinite(value) || value <= 0.0) {
+        return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "invalid " + name + " parameters");
+    }
+    const TopoDS_Shape* input = find_shape(session, shape);
+    if (input == nullptr) {
+        return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "shape was not found");
+    }
+    std::vector<TopoDS_Edge> selection;
+    selection.reserve(edge_count);
+    Builder builder(*input);
+    for (size_t index = 0; index < edge_count; ++index) {
+        const TopoDS_Shape* edge = find_shape(session, edges[index]);
+        if (edge == nullptr) {
+            return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, name + " edge was not found");
+        }
+        if (edge->ShapeType() != TopAbs_EDGE || !is_descendant(*input, *edge, TopAbs_EDGE)) {
+            return fail(
+                session,
+                OCCT_BRIDGE_INVALID_GEOMETRY,
+                name + " selection is not an edge of the input shape");
+        }
+        selection.push_back(TopoDS::Edge(*edge));
+        builder.Add(value, selection.back());
+    }
+    std::vector<int> contours(selection.size());
+    std::transform(selection.begin(), selection.end(), contours.begin(), [&builder](const TopoDS_Edge& edge) {
+        return builder.Contour(edge);
+    });
+    const std::string exception = build_reporting_exception(builder);
+    if (!exception.empty() || !builder.IsDone() || builder.Shape().IsNull()) {
+        const std::vector<std::vector<size_t>> members = group_by_contour(contours);
+        record_faulty_fillet(session, builder, selection, members);
+        if (session->last_diagnostics.empty()) {
+            record_isolated_contours<Builder>(session, *input, selection, members, value);
+        }
+        std::string message = name + " construction failed";
+        if (!exception.empty()) {
+            message += " (" + exception + ")";
+        }
+        return fail(session, OCCT_BRIDGE_KERNEL_ERROR, with_diagnostics(session, message));
+    }
+    return store_checked_result(session, name, builder.Shape(), out_shape, builder, {input});
+}
+
 
 /*
  * Resolves `source` against a result's history. For a rigid move a source
@@ -950,6 +1412,73 @@ size_t occt_bridge_session_last_warnings(
     try {
         std::lock_guard<std::mutex> lock(session->mutex);
         return copy_text(session->last_warnings, buffer, buffer_capacity);
+    } catch (...) {
+        return 0;
+    }
+}
+
+occt_bridge_status_t occt_bridge_session_diagnostic_count(
+    occt_bridge_session_t* session,
+    size_t* out_count) {
+    return guarded(
+        session,
+        [&] {
+            if (out_count == nullptr) {
+                return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_count is null");
+            }
+            *out_count = session->last_diagnostics.size();
+            return occt_bridge_status_t{OCCT_BRIDGE_OK};
+        },
+        true);
+}
+
+occt_bridge_status_t occt_bridge_session_diagnostic_at(
+    occt_bridge_session_t* session,
+    size_t index,
+    occt_bridge_diagnostic_t* out_diagnostic,
+    occt_bridge_shape_id_t* out_shape) {
+    return guarded(
+        session,
+        [&] {
+            if (out_diagnostic == nullptr) {
+                return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_diagnostic is null");
+            }
+            if (out_shape != nullptr) {
+                *out_shape = OCCT_BRIDGE_INVALID_SHAPE_ID;
+            }
+            if (index >= session->last_diagnostics.size()) {
+                return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "diagnostic index is out of range");
+            }
+            const occt_bridge_diagnostic_record& record = session->last_diagnostics[index];
+            *out_diagnostic = {record.kind, record.code, record.input_index, record.shape.IsNull() ? 0 : 1};
+            if (out_shape != nullptr && !record.shape.IsNull()) {
+                /* Storing succeeds by clearing the last error; keep the failure's. */
+                std::string error = session->last_error;
+                const occt_bridge_status_t status = store_shape(session, record.shape, out_shape);
+                if (status == OCCT_BRIDGE_OK) {
+                    session->last_error = std::move(error);
+                }
+                return status;
+            }
+            return occt_bridge_status_t{OCCT_BRIDGE_OK};
+        },
+        true);
+}
+
+size_t occt_bridge_session_diagnostic_name(
+    const occt_bridge_session_t* session,
+    size_t index,
+    char* buffer,
+    size_t buffer_capacity) {
+    if (session == nullptr) {
+        return 0;
+    }
+    try {
+        std::lock_guard<std::mutex> lock(session->mutex);
+        if (index >= session->last_diagnostics.size()) {
+            return 0;
+        }
+        return copy_text(session->last_diagnostics[index].name, buffer, buffer_capacity);
     } catch (...) {
         return 0;
     }
@@ -1995,42 +2524,8 @@ occt_bridge_status_t occt_bridge_fillet(
     double radius,
     occt_bridge_shape_id_t* out_shape) {
     return guarded(session, [&] {
-        if (out_shape == nullptr) {
-            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_shape is null");
-        }
-        *out_shape = OCCT_BRIDGE_INVALID_SHAPE_ID;
-        if (edges == nullptr || edge_count == 0 || !std::isfinite(radius) || radius <= 0.0) {
-            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "invalid fillet parameters");
-        }
-        const TopoDS_Shape* value = find_shape(session, shape);
-        if (value == nullptr) {
-            return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "shape was not found");
-        }
-        BRepFilletAPI_MakeFillet builder(*value);
-        for (size_t index = 0; index < edge_count; ++index) {
-            const TopoDS_Shape* edge = find_shape(session, edges[index]);
-            if (edge == nullptr) {
-                return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "fillet edge was not found");
-            }
-            if (edge->ShapeType() != TopAbs_EDGE || !is_descendant(*value, *edge, TopAbs_EDGE)) {
-                return fail(
-                    session,
-                    OCCT_BRIDGE_INVALID_GEOMETRY,
-                    "fillet selection is not an edge of the input shape");
-            }
-            builder.Add(radius, TopoDS::Edge(*edge));
-        }
-        builder.Build();
-        if (!builder.IsDone() || builder.Shape().IsNull()) {
-            return fail(session, OCCT_BRIDGE_KERNEL_ERROR, "fillet construction failed");
-        }
-        return store_checked_result(
-            session,
-            "fillet",
-            builder.Shape(),
-            out_shape,
-            builder,
-            {value});
+        return edge_treatment<BRepFilletAPI_MakeFillet>(
+            session, shape, edges, edge_count, radius, out_shape, "fillet");
     });
 }
 
@@ -2042,42 +2537,8 @@ occt_bridge_status_t occt_bridge_chamfer(
     double distance,
     occt_bridge_shape_id_t* out_shape) {
     return guarded(session, [&] {
-        if (out_shape == nullptr) {
-            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_shape is null");
-        }
-        *out_shape = OCCT_BRIDGE_INVALID_SHAPE_ID;
-        if (edges == nullptr || edge_count == 0 || !std::isfinite(distance) || distance <= 0.0) {
-            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "invalid chamfer parameters");
-        }
-        const TopoDS_Shape* value = find_shape(session, shape);
-        if (value == nullptr) {
-            return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "shape was not found");
-        }
-        BRepFilletAPI_MakeChamfer builder(*value);
-        for (size_t index = 0; index < edge_count; ++index) {
-            const TopoDS_Shape* edge = find_shape(session, edges[index]);
-            if (edge == nullptr) {
-                return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "chamfer edge was not found");
-            }
-            if (edge->ShapeType() != TopAbs_EDGE || !is_descendant(*value, *edge, TopAbs_EDGE)) {
-                return fail(
-                    session,
-                    OCCT_BRIDGE_INVALID_GEOMETRY,
-                    "chamfer selection is not an edge of the input shape");
-            }
-            builder.Add(distance, TopoDS::Edge(*edge));
-        }
-        builder.Build();
-        if (!builder.IsDone() || builder.Shape().IsNull()) {
-            return fail(session, OCCT_BRIDGE_KERNEL_ERROR, "chamfer construction failed");
-        }
-        return store_checked_result(
-            session,
-            "chamfer",
-            builder.Shape(),
-            out_shape,
-            builder,
-            {value});
+        return edge_treatment<BRepFilletAPI_MakeChamfer>(
+            session, shape, edges, edge_count, distance, out_shape, "chamfer");
     });
 }
 
@@ -2101,9 +2562,10 @@ occt_bridge_status_t occt_bridge_offset(
             return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "shape was not found");
         }
         BRepOffsetAPI_MakeOffsetShape builder;
-        builder.PerformByJoin(*value, offset, tolerance);
-        if (!builder.IsDone() || builder.Shape().IsNull()) {
-            return fail(session, OCCT_BRIDGE_KERNEL_ERROR, "offset construction failed");
+        const std::string exception = perform_reporting_exception(
+            [&] { builder.PerformByJoin(*value, offset, tolerance); });
+        if (!exception.empty() || !builder.IsDone() || builder.Shape().IsNull()) {
+            return offset_failure(session, builder, "offset", exception, {});
         }
         return store_checked_result(
             session,
@@ -2151,9 +2613,10 @@ occt_bridge_status_t occt_bridge_hollow(
             closing_faces.Append(*face);
         }
         BRepOffsetAPI_MakeThickSolid builder;
-        builder.MakeThickSolidByJoin(*value, closing_faces, thickness, tolerance);
-        if (!builder.IsDone() || builder.Shape().IsNull()) {
-            return fail(session, OCCT_BRIDGE_KERNEL_ERROR, "hollow construction failed");
+        const std::string exception = perform_reporting_exception(
+            [&] { builder.MakeThickSolidByJoin(*value, closing_faces, thickness, tolerance); });
+        if (!exception.empty() || !builder.IsDone() || builder.Shape().IsNull()) {
+            return offset_failure(session, builder, "hollow", exception, closing_faces);
         }
         return store_checked_result(
             session,
