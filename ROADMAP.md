@@ -8,18 +8,18 @@ tracks status and order.
 
 | Layer | Version | State |
 |---|---|---|
-| C ABI (`src/`, `include/`) | ABI 22 | Stable; exact version match required |
+| C ABI (`src/`, `include/`) | ABI 23 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
 | `occt-parametric` (engineering layer) | Schema 22 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 2/2, bridge 34, recipes 3, parametric 81 | `ctest`, `cargo test` (see README) |
-| SonarQube (indexed Rust) | Gate OK, 0 issues, 93.1% line coverage | `tools/sonar/run.sh` |
+| Tests | C 2/2, bridge 38, recipes 3, parametric 81 | `ctest`, `cargo test` (see README) |
+| SonarQube (indexed Rust) | Gate OK, 0 issues, 93.3% line coverage | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
-| Coverage | 93.24% lines overall; C++ 94% lines, 88% branches, 100% functions | `tools/coverage/run.sh` |
-| Scale benchmarks | 11 pass within budget; 2 known gaps (handle cleanup, km-scale tolerances) | `tools/bench/run.sh` |
+| Coverage | 93.42% lines overall; C++ 94% lines, 88% branches, 100% functions | `tools/coverage/run.sh` |
+| Scale benchmarks | 13 pass within budget; 2 known gaps (handle cleanup, km-scale tolerances) | `tools/bench/run.sh` |
 
 ## Done
 
@@ -28,6 +28,11 @@ tracks status and order.
 - Sessions, integer shape handles, history-preserving duplicates, exception
   containment at every entry point.
 - Primitives, wires, faces, prisms, polyline tubes, lofts, compounds.
+- Result validation after booleans, fillets, chamfers, offsets, hollowing,
+  sewing, and STEP and BREP import (on by default), optional shape healing
+  that carries operation history to the repaired faces, fuzzy booleans, and
+  per-call warnings with OCCT alert names; boolean failures name OCCT's
+  reason. Measured overhead on a 100-cut chain: 2.05x.
 - Sewing faces and shells (with operation history), closing a single shell,
   and constructing validated solids with one outer shell and internal void
   shells. Multi-shell construction rejects open, intersecting, overlapping,
@@ -122,22 +127,21 @@ every item below is defined in documents and the API, and verified in tests.
 
 ### Robustness and scale
 
-1. **Result validation and healing in the kernel.** Check validity after
-   booleans, fillets, chamfers, offsets, hollowing, sewing, and STEP import;
-   offer optional healing (shape fixing, tolerance repair) and fuzzy
-   booleans for near-coincident faces; report OCCT warnings instead of
-   dropping them.
-2. **Automatic handle cleanup.** Release generated shapes when results are
+1. **Automatic handle cleanup.** Release generated shapes when results are
    dropped so long-running sessions stay bounded, keeping explicit removal
    and the existing ownership rules.
-3. **Location-only sharing for placed copies.** Store one shape and a
+2. **Location-only sharing for placed copies.** Store one shape and a
    location per copy when only placement differs, so memory stops growing
    with copy count.
-4. **Scalable relationship solving.** Analytic Jacobians, sparse linear
+3. **Scalable relationship solving.** Analytic Jacobians, sparse linear
    algebra, and decomposition into independent connected groups, so
    1,000-part assemblies solve in seconds.
-5. **Kernel failure diagnostics.** Report which edge, face, or input caused a
+4. **Kernel failure diagnostics.** Report which edge, face, or input caused a
    fillet, chamfer, offset, or boolean failure, with OCCT's own error codes.
+5. **Cheaper validation of faces with many holes.** Result validation
+   costs 1.65x a boolean chain at 25 cuts and 2.2x at 200, because checking
+   a face with many holes includes pairwise wire-intersection tests; check
+   only wires an operation changed, or use spatial indexing.
 6. **Iterative clone resolution.** Resolving an instance recurses once per
    clone link, so a 20,000-deep chain needs a 16 MiB stack and would
    overflow a default 2 MiB thread. Resolve chains iteratively with

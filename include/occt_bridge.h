@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define OCCT_BRIDGE_ABI_VERSION 22u
+#define OCCT_BRIDGE_ABI_VERSION 23u
 #define OCCT_BRIDGE_INVALID_SHAPE_ID UINT64_C(0)
 
 #if defined(_WIN32) && defined(OCCT_BRIDGE_BUILD_SHARED)
@@ -91,6 +91,25 @@ enum {
     OCCT_BRIDGE_INTERNAL_ERROR = 8
 };
 
+/*
+ * Per-session behavior for kernel results. Defaults: validate_results = 1,
+ * heal_invalid_results = 0, boolean_fuzzy_tolerance = 0.0.
+ *
+ * validate_results: check results of booleans, fillets, chamfers, offsets,
+ *   hollowing, sewing, and STEP and BREP import with BRepCheck; an invalid
+ *   result returns OCCT_BRIDGE_INVALID_GEOMETRY instead of being stored.
+ * heal_invalid_results: repair an invalid result with shape fixing and store
+ *   it when the repair is valid, recording a warning; requires validation.
+ *   Operation history is carried through the repair.
+ * boolean_fuzzy_tolerance: treat boolean input faces and edges closer than
+ *   this distance as coincident; 0 performs exact booleans.
+ */
+typedef struct occt_bridge_session_options {
+    int validate_results;
+    int heal_invalid_results;
+    double boolean_fuzzy_tolerance;
+} occt_bridge_session_options_t;
+
 /* ABI and diagnostics. No function allows a C++ exception to cross this boundary. */
 OCCT_BRIDGE_API uint32_t occt_bridge_abi_version(void);
 OCCT_BRIDGE_API const char* occt_bridge_status_string(occt_bridge_status_t status);
@@ -110,6 +129,25 @@ OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_session_shape_count(
 );
 
 /* Returns the required byte count including NUL. A NULL/zero buffer is a size query. */
+/*
+ * Copies newline-separated warnings from the most recent call (boolean
+ * warnings, healed results) and returns the required buffer size including
+ * the terminator; an empty string means the call raised no warnings.
+ */
+OCCT_BRIDGE_API size_t occt_bridge_session_last_warnings(
+    const occt_bridge_session_t* session,
+    char* buffer,
+    size_t buffer_capacity
+);
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_session_get_options(
+    occt_bridge_session_t* session,
+    occt_bridge_session_options_t* out_options
+);
+/* Rejects non-flag values, negative or non-finite fuzziness, and healing without validation. */
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_session_set_options(
+    occt_bridge_session_t* session,
+    const occt_bridge_session_options_t* options
+);
 OCCT_BRIDGE_API size_t occt_bridge_session_last_error(
     const occt_bridge_session_t* session,
     char* buffer,

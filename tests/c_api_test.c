@@ -182,6 +182,28 @@ static void test_sewing_and_solids(occt_bridge_session_t* session) {
         "an open shell does not make a solid");
 }
 
+/* Result validation is on by default; options round-trip; warnings clear. */
+static void test_session_options(occt_bridge_session_t* session) {
+    occt_bridge_session_options_t options;
+    require_ok(session, occt_bridge_session_get_options(session, &options));
+    require_true(
+        options.validate_results == 1 && options.heal_invalid_results == 0
+            && options.boolean_fuzzy_tolerance == 0.0,
+        "default session options validate without healing or fuzziness");
+    occt_bridge_session_options_t healing = {1, 1, 1e-5};
+    require_ok(session, occt_bridge_session_set_options(session, &healing));
+    require_ok(session, occt_bridge_session_get_options(session, &options));
+    require_true(
+        options.heal_invalid_results == 1 && options.boolean_fuzzy_tolerance == 1e-5,
+        "session options round-trip");
+    occt_bridge_session_options_t defaults = {1, 0, 0.0};
+    require_ok(session, occt_bridge_session_set_options(session, &defaults));
+    char warnings[64] = {0};
+    require_true(
+        occt_bridge_session_last_warnings(session, warnings, sizeof(warnings)) == 1 && warnings[0] == '\0',
+        "a successful call without warnings leaves none");
+}
+
 int main(void) {
     require_true(occt_bridge_abi_version() == OCCT_BRIDGE_ABI_VERSION, "ABI version");
 
@@ -683,6 +705,7 @@ int main(void) {
     test_step_round_trip(session);
     test_stl_export(session);
     test_sewing_and_solids(session);
+    test_session_options(session);
     occt_bridge_session_destroy(session);
     puts("C ABI smoke test passed");
     return 0;

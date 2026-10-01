@@ -3,7 +3,7 @@
 A small, stable C ABI over Open Cascade (OCCT), designed to be wrapped safely
 from Rust and other languages. Open Cascade C++ objects never cross the ABI.
 
-The current C ABI version is **22**.
+The current C ABI version is **23**.
 
 ## Current API
 
@@ -32,6 +32,10 @@ The current C ABI version is **22**.
 - Tolerance-padded and exact bounds, surface area, volume, center-of-mass, and
   BREP validity inspection
 - BREP persistence, STEP import/export, and configurable ASCII/binary STL export
+- Per-session result validation (on by default) for booleans, fillets,
+  chamfers, offsets, hollowing, sewing, and STEP and BREP import, with
+  optional shape healing that carries operation history, fuzzy booleans,
+  and per-call warnings
 - Caller-owned diagnostic buffers
 - Exception containment at every C entry point
 - Dependency-free safe Rust wrapper

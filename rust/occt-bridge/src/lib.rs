@@ -10,7 +10,7 @@ use std::{
     ptr::{self, NonNull},
 };
 
-const ABI_VERSION: u32 = 22;
+const ABI_VERSION: u32 = 23;
 
 #[repr(C)]
 struct RawVec3 {
@@ -62,6 +62,19 @@ unsafe extern "C" {
         buffer: *mut c_char,
         capacity: usize,
     ) -> usize;
+    fn occt_bridge_session_last_warnings(
+        session: *const c_void,
+        buffer: *mut c_char,
+        capacity: usize,
+    ) -> usize;
+    fn occt_bridge_session_get_options(
+        session: *mut c_void,
+        out: *mut RawSessionOptions,
+    ) -> RawStatus;
+    fn occt_bridge_session_set_options(
+        session: *mut c_void,
+        options: *const RawSessionOptions,
+    ) -> RawStatus;
     fn occt_bridge_create_box(
         session: *mut c_void,
         origin: RawVec3,
@@ -477,6 +490,39 @@ impl From<Vec3> for RawVec3 {
 impl From<RawVec3> for Vec3 {
     fn from(value: RawVec3) -> Self {
         Self::new(value.x, value.y, value.z)
+    }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct RawSessionOptions {
+    validate_results: c_int,
+    heal_invalid_results: c_int,
+    boolean_fuzzy_tolerance: f64,
+}
+
+/// How a session treats kernel results.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SessionOptions {
+    /// Check results of booleans, fillets, chamfers, offsets, hollowing,
+    /// sewing, and STEP and BREP import; invalid results become errors.
+    pub validate_results: bool,
+    /// Repair invalid results with shape fixing when possible, carrying
+    /// operation history through the repair and recording a warning.
+    /// Requires `validate_results`.
+    pub heal_invalid_results: bool,
+    /// Distance below which boolean inputs are treated as coincident; zero
+    /// performs exact booleans.
+    pub boolean_fuzzy_tolerance: f64,
+}
+
+impl Default for SessionOptions {
+    fn default() -> Self {
+        Self {
+            validate_results: true,
+            heal_invalid_results: false,
+            boolean_fuzzy_tolerance: 0.0,
+        }
     }
 }
 
@@ -1683,28 +1729,65 @@ impl Session {
     }
 
     fn error(&self, status: RawStatus) -> BridgeError {
-        // SAFETY: A null buffer with zero capacity is the documented size query.
-        let required =
-            unsafe { occt_bridge_session_last_error(self.raw.as_ptr(), ptr::null_mut(), 0) };
-        let message = if required > 1 {
-            let mut buffer = vec![0u8; required];
-            // SAFETY: `buffer` has exactly the capacity reported by the library.
-            unsafe {
-                occt_bridge_session_last_error(
-                    self.raw.as_ptr(),
-                    buffer.as_mut_ptr().cast(),
-                    buffer.len(),
-                );
-                CStr::from_ptr(buffer.as_ptr().cast())
-                    .to_string_lossy()
-                    .into_owned()
-            }
-        } else {
-            String::new()
-        };
         let mut error = Self::error_without_session(status);
-        error.message = message;
+        error.message = self.read_text(occt_bridge_session_last_error);
         error
+    }
+
+    /// Reads a session text buffer through the library's size-query protocol.
+    fn read_text(
+        &self,
+        read: unsafe extern "C" fn(*const c_void, *mut c_char, usize) -> usize,
+    ) -> String {
+        // SAFETY: A null buffer with zero capacity is the documented size query.
+        let required = unsafe { read(self.raw.as_ptr(), ptr::null_mut(), 0) };
+        if required <= 1 {
+            return String::new();
+        }
+        let mut buffer = vec![0u8; required];
+        // SAFETY: `buffer` has exactly the capacity reported by the library.
+        unsafe {
+            read(self.raw.as_ptr(), buffer.as_mut_ptr().cast(), buffer.len());
+            CStr::from_ptr(buffer.as_ptr().cast())
+                .to_string_lossy()
+                .into_owned()
+        }
+    }
+
+    /// Warnings raised by the most recent call, such as boolean warnings or
+    /// a healed result; empty when the call raised none.
+    pub fn last_warnings(&self) -> Vec<String> {
+        self.read_text(occt_bridge_session_last_warnings)
+            .lines()
+            .map(str::to_owned)
+            .collect()
+    }
+
+    pub fn options(&self) -> Result<SessionOptions, BridgeError> {
+        let mut raw = RawSessionOptions {
+            validate_results: 0,
+            heal_invalid_results: 0,
+            boolean_fuzzy_tolerance: 0.0,
+        };
+        // SAFETY: The session and output pointers are valid.
+        self.check(unsafe { occt_bridge_session_get_options(self.raw.as_ptr(), &mut raw) })?;
+        Ok(SessionOptions {
+            validate_results: raw.validate_results != 0,
+            heal_invalid_results: raw.heal_invalid_results != 0,
+            boolean_fuzzy_tolerance: raw.boolean_fuzzy_tolerance,
+        })
+    }
+
+    /// Changes how later calls treat kernel results. Rejects negative or
+    /// non-finite fuzziness and healing without validation.
+    pub fn set_options(&self, options: SessionOptions) -> Result<(), BridgeError> {
+        let raw = RawSessionOptions {
+            validate_results: c_int::from(options.validate_results),
+            heal_invalid_results: c_int::from(options.heal_invalid_results),
+            boolean_fuzzy_tolerance: options.boolean_fuzzy_tolerance,
+        };
+        // SAFETY: The session and input pointers are valid.
+        self.check(unsafe { occt_bridge_session_set_options(self.raw.as_ptr(), &raw) })
     }
 
     fn error_without_session(status: RawStatus) -> BridgeError {
@@ -2177,6 +2260,177 @@ mod tests {
         let exact = session.exact_bounds(&cylinder).unwrap();
         assert!((exact.max.z - exact.min.z - 5.0).abs() < 1e-9);
         assert!((exact.max.x - exact.min.x - 4.0).abs() < 1e-9);
+    }
+
+    fn fixture(name: &str) -> String {
+        format!("{}/../../tests/fixtures/{name}", env!("CARGO_MANIFEST_DIR"))
+    }
+
+    #[test]
+    fn session_options_round_trip_and_reject_invalid_values() {
+        let session = Session::new().unwrap();
+        assert_eq!(session.options().unwrap(), SessionOptions::default());
+        let healing = SessionOptions {
+            heal_invalid_results: true,
+            boolean_fuzzy_tolerance: 1e-5,
+            ..SessionOptions::default()
+        };
+        session.set_options(healing).unwrap();
+        assert_eq!(session.options().unwrap(), healing);
+        for invalid in [
+            SessionOptions {
+                boolean_fuzzy_tolerance: -1.0,
+                ..healing
+            },
+            SessionOptions {
+                boolean_fuzzy_tolerance: f64::NAN,
+                ..healing
+            },
+            SessionOptions {
+                validate_results: false,
+                ..healing
+            },
+        ] {
+            assert_eq!(session.set_options(invalid).unwrap_err().status, 1);
+        }
+        assert_eq!(session.options().unwrap(), healing);
+    }
+
+    #[test]
+    fn invalid_results_are_rejected_healed_or_allowed_by_option() {
+        let session = Session::new().unwrap();
+        let error = session.load_brep(fixture("bowtie_face.brep")).unwrap_err();
+        assert_eq!(error.status, 4);
+        assert!(
+            error
+                .message
+                .contains("BREP load produced an invalid shape"),
+            "{error}"
+        );
+        // OCCT's STEP reader heals during transfer, so the same defect
+        // arrives valid; validation still guards what it produces.
+        let imported = session.load_step(fixture("bowtie_face.step")).unwrap();
+        assert!(session.is_valid(&imported).unwrap());
+
+        session
+            .set_options(SessionOptions {
+                validate_results: false,
+                ..SessionOptions::default()
+            })
+            .unwrap();
+        let unchecked = session.load_brep(fixture("bowtie_face.brep")).unwrap();
+        assert!(!session.is_valid(&unchecked).unwrap());
+
+        session
+            .set_options(SessionOptions {
+                heal_invalid_results: true,
+                ..SessionOptions::default()
+            })
+            .unwrap();
+        let healed = session.load_brep(fixture("bowtie_face.brep")).unwrap();
+        assert_eq!(
+            session.last_warnings(),
+            ["BREP load result was invalid and was healed"]
+        );
+        assert!(session.is_valid(&healed).unwrap());
+        session.shape_count().unwrap();
+        assert!(
+            session.last_warnings().is_empty(),
+            "warnings clear on the next call"
+        );
+
+        let error = session.load_brep(fixture("gapped_face.brep")).unwrap_err();
+        assert!(
+            error.message.contains("healing could not repair"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn healing_carries_operation_history_and_booleans_report_warnings() {
+        let session = Session::new().unwrap();
+        session
+            .set_options(SessionOptions {
+                validate_results: false,
+                ..SessionOptions::default()
+            })
+            .unwrap();
+        let bowtie = session.load_brep(fixture("bowtie_face.brep")).unwrap();
+        let shifted = session
+            .translate(&bowtie, Vec3::new(1.0, 0.0, 0.0))
+            .unwrap();
+        session
+            .set_options(SessionOptions {
+                heal_invalid_results: true,
+                ..SessionOptions::default()
+            })
+            .unwrap();
+
+        // Sewing two overlapping bow-ties yields an invalid shell that
+        // healing repairs; history must lead from each input face to the
+        // repaired result.
+        let sewn = session.sew(&[&bowtie, &shifted], 1e-3).unwrap();
+        // Warnings describe the most recent call, so read them first.
+        assert_eq!(
+            session.last_warnings(),
+            ["sewing result was invalid and was healed"]
+        );
+        assert!(session.is_valid(&sewn).unwrap());
+        let input_face = session.subshape(&bowtie, ShapeType::Face, 0).unwrap();
+        let healed_faces = session
+            .history_count(&sewn, &input_face, HistoryRelation::Modified)
+            .unwrap();
+        assert!(healed_faces >= 1);
+        for index in 0..healed_faces {
+            let face = session
+                .history(&sewn, &input_face, HistoryRelation::Modified, index)
+                .unwrap();
+            assert_eq!(session.shape_type(&face).unwrap(), ShapeType::Face);
+            assert!(session.is_adjacent(&sewn, &face, &face).is_ok());
+        }
+
+        // OCCT boolean alerts surface as warnings, one per line with the
+        // operation name, instead of being dropped.
+        let block = session
+            .create_box(Vec3::new(2.0, 2.0, -1.0), Vec3::new(3.0, 3.0, 2.0))
+            .unwrap();
+        session.common(&bowtie, &block).unwrap();
+        let warnings = session.last_warnings();
+        assert!(!warnings.is_empty());
+        assert!(
+            warnings
+                .iter()
+                .all(|warning| warning.starts_with("common: ")),
+            "{warnings:?}"
+        );
+        let error = session.fuse(&bowtie, &block).unwrap_err();
+        assert!(error.message.contains("BOPAlgo_Alert"), "{error}");
+    }
+
+    #[test]
+    fn fuzzy_booleans_merge_nearly_touching_inputs() {
+        let session = Session::new().unwrap();
+        let left = session
+            .create_box(Vec3::new(0.0, 0.0, 0.0), Vec3::new(10.0, 10.0, 10.0))
+            .unwrap();
+        let right = session
+            .create_box(
+                Vec3::new(10.0 + 1e-6, 0.0, 0.0),
+                Vec3::new(10.0, 10.0, 10.0),
+            )
+            .unwrap();
+        let exact = session.fuse(&left, &right).unwrap();
+        assert_eq!(session.subshape_count(&exact, ShapeType::Solid).unwrap(), 2);
+        session
+            .set_options(SessionOptions {
+                boolean_fuzzy_tolerance: 1e-5,
+                ..SessionOptions::default()
+            })
+            .unwrap();
+        let fuzzy = session.fuse(&left, &right).unwrap();
+        assert_eq!(session.subshape_count(&fuzzy, ShapeType::Solid).unwrap(), 1);
+        assert_eq!(session.subshape_count(&fuzzy, ShapeType::Face).unwrap(), 10);
+        assert!(session.is_valid(&fuzzy).unwrap());
     }
 
     #[test]

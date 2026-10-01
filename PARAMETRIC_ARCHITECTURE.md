@@ -7,7 +7,7 @@ so they can generate and regenerate families of related parts.
 ## Implementation status
 
 The architecture in this document is both a description of implemented
-boundaries and a roadmap. As of ABI version 22, the repository contains three
+boundaries and a roadmap. As of ABI version 23, the repository contains three
 Rust layers:
 
 1. **`occt-bridge`** safely wraps session-owned OCCT handles. It includes
@@ -52,8 +52,8 @@ The following major capabilities remain planned:
 
 - relationship-solver conditioning away from the origin, analytic and sparse
   solving, and decomposition for large assemblies;
-- result validation, optional healing, and failure diagnostics after kernel
-  operations, with configurable model tolerances;
+- cheaper validation of faces with many holes, failure diagnostics after
+  kernel operations, and configurable model tolerances;
 - automatic release of generated shapes and kernel-level (location-only)
   shape sharing;
 - iterative clone resolution for deep chains on default thread stacks;
@@ -570,8 +570,9 @@ application code should use the recipe crate.
 
 ## Compatibility rule
 
-The C interface currently requires an exact ABI version match. ABI version 22
-adds exact bounds without tolerance enlargement, used for measured pattern
+The C interface currently requires an exact ABI version match. ABI version 23
+adds per-session result validation, optional healing with history, fuzzy
+booleans, and per-call warnings; ABI version 22 added exact bounds without tolerance enlargement, used for measured pattern
 drivers, to the existing validated multi-shell solid construction with
 internal voids, STEP exchange, configurable ASCII/binary STL tessellation export,
 sewing, single-shell solid construction,
@@ -628,9 +629,8 @@ defaults, units, constraints, placements, clone cycles, missing links,
 inconsistent pattern membership, and invalid regeneration revisions before the
 model is accepted.
 
-The next cross-layer work should prioritize robustness and scale: result
-validation and healing after kernel operations, automatic release of
-generated shapes, and location-only sharing for placed clones, each measured
+The next cross-layer work should prioritize robustness and scale: automatic
+release of generated shapes and location-only sharing for placed clones, each measured
 by the scale benchmark suite (`tools/bench/run.sh`). Scale is a requirement for every change; see the
 [Roadmap](ROADMAP.md) for target sizes and the checks each change must pass.
 

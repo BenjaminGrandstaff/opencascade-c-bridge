@@ -70,6 +70,26 @@ static void session_and_diagnostics(occt_bridge_session_t* session) {
     EXPECT(occt_bridge_session_create(OCCT_BRIDGE_ABI_VERSION, NULL), ARG);
     EXPECT(occt_bridge_session_shape_count(session, NULL), ARG);
     EXPECT(occt_bridge_session_shape_count(NULL, &count), ARG);
+    {
+        occt_bridge_session_options_t options = {1, 0, 0.0};
+        const occt_bridge_session_options_t not_flag = {2, 0, 0.0};
+        const occt_bridge_session_options_t heal_flag = {1, 2, 0.0};
+        const occt_bridge_session_options_t negative = {1, 0, -1.0};
+        const occt_bridge_session_options_t not_finite = {1, 0, NAN};
+        const occt_bridge_session_options_t heal_unvalidated = {0, 1, 0.0};
+        EXPECT(occt_bridge_session_get_options(session, NULL), ARG);
+        EXPECT(occt_bridge_session_set_options(session, NULL), ARG);
+        EXPECT(occt_bridge_session_set_options(session, &not_flag), ARG);
+        EXPECT(occt_bridge_session_set_options(session, &heal_flag), ARG);
+        EXPECT(occt_bridge_session_set_options(session, &negative), ARG);
+        EXPECT(occt_bridge_session_set_options(session, &not_finite), ARG);
+        EXPECT(occt_bridge_session_set_options(session, &heal_unvalidated), ARG);
+        EXPECT(occt_bridge_session_get_options(session, &options), OK);
+        if (occt_bridge_session_last_warnings(NULL, buffer, sizeof(buffer)) != 0) {
+            (void)fprintf(stderr, "last_warnings without a session must be empty\n");
+            ++failures;
+        }
+    }
     EXPECT(occt_bridge_session_clear(NULL), ARG);
     EXPECT(occt_bridge_create_box(NULL, vec(0, 0, 0), vec(1, 1, 1), NULL), ARG);
     EXPECT(occt_bridge_session_create(OCCT_BRIDGE_ABI_VERSION, &created), OK);

@@ -11,7 +11,7 @@
 //! Run with `tools/bench/run.sh`. The process exits non-zero when any
 //! non-gap case fails.
 
-use occt_bridge::Session;
+use occt_bridge::{Session, SessionOptions, Vec3};
 use occt_parametric::{
     AssemblyRelationship, AxisAngle, DatumDefinition, DatumKind, DatumRef, Dimension,
     FamilyDefinition, FeatureDefinition, FeatureOperation, InstanceGraph, LengthUnit,
@@ -26,6 +26,13 @@ const PATTERN_MEMBERS: usize = 10_000;
 const CLONE_CHAIN_DEPTH: usize = 20_000;
 const REGENERATION_ROUNDS: usize = 10;
 const REGENERATION_MEMBERS: usize = 1_000;
+const VALIDATED_CUTS: usize = 100;
+/// Largest acceptable slowdown of a boolean chain from result validation.
+/// Measured: 1.65x at 25 cuts, 1.75x at 50, 1.97x at 100, 2.18x at 200.
+/// Each cut and each check are O(part size), but checking a face with many
+/// holes includes pairwise wire-intersection tests, so the ratio grows
+/// slowly; cheaper checks for such faces are a roadmap item.
+const VALIDATION_OVERHEAD_LIMIT: f64 = 2.5;
 /// Clone resolution recurses once per chain link, so a 20,000-deep chain
 /// overflows a default 2 MiB thread stack; the case runs on a 16 MiB stack
 /// until resolution is iterative (roadmap item).
@@ -61,6 +68,7 @@ fn main() -> ExitCode {
     outcomes.push(deep_clone_chain(definition));
     outcomes.extend(regeneration_handle_cases(definition));
     outcomes.extend(solver_cases(definition));
+    outcomes.extend(validation_cases());
     report(&outcomes)
 }
 
@@ -259,6 +267,61 @@ fn solver_cases(definition: &'static FamilyDefinition) -> Vec<Outcome> {
             )
         })
         .collect()
+}
+
+/// Drills `VALIDATED_CUTS` holes into a plate one boolean at a time, with
+/// result validation off and on, and bounds the validation overhead.
+fn validation_cases() -> Vec<Outcome> {
+    let drill = |validate: bool| -> Result<Duration, ModelError> {
+        let session = Session::new()?;
+        session.set_options(SessionOptions {
+            validate_results: validate,
+            ..SessionOptions::default()
+        })?;
+        let mut plate =
+            session.create_box(Vec3::new(0.0, 0.0, 0.0), Vec3::new(400.0, 400.0, 10.0))?;
+        let start = Instant::now();
+        for index in 0..VALIDATED_CUTS {
+            let (row, column) = ((index / 10) as f64, (index % 10) as f64);
+            let hole = session.create_cylinder(
+                Vec3::new(20.0 + column * 38.0, 20.0 + row * 38.0, -1.0),
+                Vec3::new(0.0, 0.0, 1.0),
+                6.0,
+                12.0,
+            )?;
+            let drilled = session.cut(&plate, &hole)?;
+            session.remove(hole)?;
+            session.remove(std::mem::replace(&mut plate, drilled))?;
+        }
+        Ok(start.elapsed())
+    };
+    let mut baseline = Duration::ZERO;
+    let unchecked = timed(
+        format!("{VALIDATED_CUTS} sequential cuts: validation off"),
+        ms(10_000),
+        Expectation::Required,
+        || {
+            baseline = drill(false)?;
+            Ok("baseline".into())
+        },
+    );
+    let checked = timed(
+        format!("{VALIDATED_CUTS} sequential cuts: validation on"),
+        ms(15_000),
+        Expectation::Required,
+        || {
+            let elapsed = drill(true)?;
+            let ratio = elapsed.as_secs_f64() / baseline.as_secs_f64().max(1e-9);
+            if ratio <= VALIDATION_OVERHEAD_LIMIT {
+                Ok(format!("{ratio:.2}x of unvalidated"))
+            } else {
+                Err(failure(format!(
+                    "validation costs {ratio:.2}x, limit {VALIDATION_OVERHEAD_LIMIT}x"
+                )))
+            }
+        },
+    );
+    vec![unchecked, checked]
 }
 
 // ---- fixtures

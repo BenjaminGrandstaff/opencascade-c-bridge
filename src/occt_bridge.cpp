@@ -33,6 +33,8 @@
 #include <BRepPrimAPI_MakePrism.hxx>
 #include <BRepPrimAPI_MakeSphere.hxx>
 #include <BRepTools.hxx>
+#include <ShapeBuild_ReShape.hxx>
+#include <ShapeFix_Shape.hxx>
 #include <BRepTools_History.hxx>
 #include <BRepTools_ReShape.hxx>
 #include <BRep_Tool.hxx>
@@ -81,6 +83,7 @@
 #include <mutex>
 #include <new>
 #include <queue>
+#include <sstream>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -99,6 +102,9 @@ struct occt_bridge_session {
     std::unordered_map<occt_bridge_shape_id_t, std::vector<occt_bridge_history_entry>> histories;
     occt_bridge_shape_id_t next_shape_id = 1;
     std::string last_error;
+    /* Warnings from the most recent call; cleared when the next call starts. */
+    std::string last_warnings;
+    occt_bridge_session_options_t options{1, 0, 0.0};
 };
 
 namespace {
@@ -130,6 +136,22 @@ occt_bridge_status_t succeed(occt_bridge_session_t* session) {
     return OCCT_BRIDGE_OK;
 }
 
+void add_warning(occt_bridge_session_t* session, const std::string& warning) {
+    if (!session->last_warnings.empty()) {
+        session->last_warnings += '\n';
+    }
+    session->last_warnings += warning;
+}
+
+size_t copy_text(const std::string& text, char* buffer, size_t buffer_capacity) {
+    if (buffer != nullptr && buffer_capacity != 0) {
+        const size_t amount = std::min(buffer_capacity - 1, text.size());
+        std::memcpy(buffer, text.data(), amount);
+        buffer[amount] = '\0';
+    }
+    return text.size() + 1;
+}
+
 template <typename Function>
 occt_bridge_status_t guarded(occt_bridge_session_t* session, Function&& function) noexcept {
     if (session == nullptr) {
@@ -137,6 +159,7 @@ occt_bridge_status_t guarded(occt_bridge_session_t* session, Function&& function
     }
     try {
         std::lock_guard<std::mutex> lock(session->mutex);
+        session->last_warnings.clear();
         return function();
     } catch (const Standard_Failure& error) {
         const char* message = error.GetMessageString();
@@ -238,14 +261,11 @@ std::vector<occt_bridge_history_entry> collect_history(
     return history;
 }
 
-template <typename Operation>
-occt_bridge_status_t store_shape_with_history(
+occt_bridge_status_t store_shape_with_entries(
     occt_bridge_session_t* session,
     const TopoDS_Shape& shape,
     occt_bridge_shape_id_t* out_shape,
-    Operation& operation,
-    const std::vector<const TopoDS_Shape*>& roots) {
-    std::vector<occt_bridge_history_entry> history = collect_history(operation, roots);
+    std::vector<occt_bridge_history_entry> history) {
     const occt_bridge_status_t status = store_shape(session, shape, out_shape);
     if (status != OCCT_BRIDGE_OK) {
         return status;
@@ -258,6 +278,138 @@ occt_bridge_status_t store_shape_with_history(
         throw;
     }
     return succeed(session);
+}
+
+template <typename Operation>
+occt_bridge_status_t store_shape_with_history(
+    occt_bridge_session_t* session,
+    const TopoDS_Shape& shape,
+    occt_bridge_shape_id_t* out_shape,
+    Operation& operation,
+    const std::vector<const TopoDS_Shape*>& roots) {
+    return store_shape_with_entries(session, shape, out_shape, collect_history(operation, roots));
+}
+
+/*
+ * Appends `replacement`, or its subshapes of `type` when healing replaced a
+ * shape with a container (a face split into a compound of faces), so history
+ * stays type-consistent.
+ */
+void append_same_type(std::vector<TopoDS_Shape>& shapes, const TopoDS_Shape& replacement, TopAbs_ShapeEnum type) {
+    if (replacement.ShapeType() == type) {
+        append_unique_shape(shapes, replacement);
+        return;
+    }
+    for (TopExp_Explorer explorer(replacement, type); explorer.More(); explorer.Next()) {
+        append_unique_shape(shapes, explorer.Current());
+    }
+}
+
+/* Maps history targets through a healing reshape; removed targets drop out. */
+void map_through_reshape(std::vector<TopoDS_Shape>& targets, const Handle(BRepTools_History)& reshape) {
+    std::vector<TopoDS_Shape> mapped;
+    for (const TopoDS_Shape& target : targets) {
+        if (!BRepTools_History::IsSupportedType(target)) {
+            append_unique_shape(mapped, target);
+        } else if (!reshape->IsRemoved(target)) {
+            const TopTools_ListOfShape& modified = reshape->Modified(target);
+            if (modified.IsEmpty()) {
+                append_unique_shape(mapped, target);
+            }
+            for (TopTools_ListIteratorOfListOfShape iterator(modified); iterator.More(); iterator.Next()) {
+                append_same_type(mapped, iterator.Value(), target.ShapeType());
+            }
+        }
+    }
+    targets = std::move(mapped);
+}
+
+/*
+ * Composes operation history with the healing that followed it, so sources
+ * still lead to the faces, edges, and vertices of the healed result. A
+ * source the operation left untouched but healing replaced becomes modified.
+ */
+void compose_with_reshape(std::vector<occt_bridge_history_entry>& history, const Handle(BRepTools_History)& reshape) {
+    if (reshape.IsNull()) {
+        return;
+    }
+    for (occt_bridge_history_entry& entry : history) {
+        const bool untouched = entry.generated.empty() && entry.modified.empty() && !entry.deleted;
+        if (untouched && BRepTools_History::IsSupportedType(entry.source)) {
+            entry.deleted = reshape->IsRemoved(entry.source);
+            entry.modified = {entry.source};
+        }
+        map_through_reshape(entry.generated, reshape);
+        map_through_reshape(entry.modified, reshape);
+        if (untouched && entry.modified.size() == 1 && entry.modified.front().IsSame(entry.source)) {
+            entry.modified.clear();
+        }
+    }
+}
+
+/*
+ * Validates an operation result when the session asks for it and, if it is
+ * invalid and healing is enabled, repairs it with shape fixing. Replaces
+ * `shape` (and maps `history`) with the healed result and records a warning;
+ * fails with OCCT_BRIDGE_INVALID_GEOMETRY when the result stays invalid.
+ * Costs one BRepCheck pass, plus a fixing pass only for invalid results.
+ */
+occt_bridge_status_t check_result(
+    occt_bridge_session_t* session,
+    const std::string& operation,
+    TopoDS_Shape& shape,
+    std::vector<occt_bridge_history_entry>* history) {
+    if (session->options.validate_results == 0 || BRepCheck_Analyzer(shape, Standard_True).IsValid()) {
+        return OCCT_BRIDGE_OK;
+    }
+    if (session->options.heal_invalid_results == 0) {
+        return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, operation + " produced an invalid shape");
+    }
+    Handle(ShapeFix_Shape) fixer = new ShapeFix_Shape(shape);
+    fixer->Perform();
+    const TopoDS_Shape healed = fixer->Shape();
+    if (healed.IsNull() || !BRepCheck_Analyzer(healed, Standard_True).IsValid()) {
+        return fail(
+            session,
+            OCCT_BRIDGE_INVALID_GEOMETRY,
+            operation + " produced an invalid shape that healing could not repair");
+    }
+    if (history != nullptr) {
+        compose_with_reshape(*history, fixer->Context()->History());
+    }
+    shape = healed;
+    add_warning(session, operation + " result was invalid and was healed");
+    return OCCT_BRIDGE_OK;
+}
+
+/* Checks, optionally heals, and stores an operation result with history. */
+template <typename Operation>
+occt_bridge_status_t store_checked_result(
+    occt_bridge_session_t* session,
+    const std::string& name,
+    TopoDS_Shape shape,
+    occt_bridge_shape_id_t* out_shape,
+    Operation& operation,
+    const std::vector<const TopoDS_Shape*>& roots) {
+    std::vector<occt_bridge_history_entry> history = collect_history(operation, roots);
+    const occt_bridge_status_t status = check_result(session, name, shape, &history);
+    if (status != OCCT_BRIDGE_OK) {
+        return status;
+    }
+    return store_shape_with_entries(session, shape, out_shape, std::move(history));
+}
+
+/* Checks, optionally heals, and stores an imported shape. */
+occt_bridge_status_t store_checked_import(
+    occt_bridge_session_t* session,
+    const std::string& name,
+    TopoDS_Shape shape,
+    occt_bridge_shape_id_t* out_shape) {
+    const occt_bridge_status_t status = check_result(session, name, shape, nullptr);
+    if (status != OCCT_BRIDGE_OK) {
+        return status;
+    }
+    return store_shape(session, shape, out_shape);
 }
 
 template <typename Operation>
@@ -276,16 +428,43 @@ occt_bridge_status_t boolean_operation(
     if (left_shape == nullptr || right_shape == nullptr) {
         return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "boolean input shape was not found");
     }
-    Operation operation(*left_shape, *right_shape);
+    Operation operation;
+    TopTools_ListOfShape arguments;
+    TopTools_ListOfShape tools;
+    arguments.Append(*left_shape);
+    tools.Append(*right_shape);
+    operation.SetArguments(arguments);
+    operation.SetTools(tools);
+    if (session->options.boolean_fuzzy_tolerance > 0.0) {
+        operation.SetFuzzyValue(session->options.boolean_fuzzy_tolerance);
+    }
     operation.Build();
+    if (operation.HasWarnings()) {
+        std::ostringstream warnings;
+        operation.DumpWarnings(warnings);
+        std::istringstream lines(warnings.str());
+        for (std::string line; std::getline(lines, line);) {
+            if (!line.empty()) {
+                add_warning(session, std::string(operation_name) + ": " + line);
+            }
+        }
+    }
     if (!operation.IsDone() || operation.HasErrors()) {
+        std::ostringstream errors;
+        operation.DumpErrors(errors);
+        std::string reasons = errors.str();
+        std::replace(reasons.begin(), reasons.end(), '\n', ' ');
+        while (!reasons.empty() && reasons.back() == ' ') {
+            reasons.pop_back();
+        }
         return fail(
             session,
             OCCT_BRIDGE_KERNEL_ERROR,
-            std::string(operation_name) + " operation failed");
+            std::string(operation_name) + " operation failed: " + reasons);
     }
-    return store_shape_with_history(
+    return store_checked_result(
         session,
+        operation_name,
         operation.Shape(),
         out_shape,
         operation,
@@ -692,16 +871,57 @@ size_t occt_bridge_session_last_error(
     }
     try {
         std::lock_guard<std::mutex> lock(session->mutex);
-        const size_t required = session->last_error.size() + 1;
-        if (buffer != nullptr && buffer_capacity != 0) {
-            const size_t amount = std::min(buffer_capacity - 1, session->last_error.size());
-            std::memcpy(buffer, session->last_error.data(), amount);
-            buffer[amount] = '\0';
-        }
-        return required;
+        return copy_text(session->last_error, buffer, buffer_capacity);
     } catch (...) {
         return 0;
     }
+}
+
+size_t occt_bridge_session_last_warnings(
+    const occt_bridge_session_t* session,
+    char* buffer,
+    size_t buffer_capacity) {
+    if (session == nullptr) {
+        return 0;
+    }
+    try {
+        std::lock_guard<std::mutex> lock(session->mutex);
+        return copy_text(session->last_warnings, buffer, buffer_capacity);
+    } catch (...) {
+        return 0;
+    }
+}
+
+occt_bridge_status_t occt_bridge_session_get_options(
+    occt_bridge_session_t* session,
+    occt_bridge_session_options_t* out_options) {
+    return guarded(session, [&] {
+        if (out_options == nullptr) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_options is null");
+        }
+        *out_options = session->options;
+        return succeed(session);
+    });
+}
+
+occt_bridge_status_t occt_bridge_session_set_options(
+    occt_bridge_session_t* session,
+    const occt_bridge_session_options_t* options) {
+    return guarded(session, [&] {
+        if (options == nullptr) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "options is null");
+        }
+        const auto is_flag = [](int value) { return value == 0 || value == 1; };
+        if (!is_flag(options->validate_results) || !is_flag(options->heal_invalid_results)
+            || !std::isfinite(options->boolean_fuzzy_tolerance) || options->boolean_fuzzy_tolerance < 0.0) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "invalid session options");
+        }
+        if (options->heal_invalid_results == 1 && options->validate_results == 0) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "healing requires result validation");
+        }
+        session->options = *options;
+        return succeed(session);
+    });
 }
 
 occt_bridge_status_t occt_bridge_create_box(
@@ -1616,7 +1836,7 @@ occt_bridge_status_t occt_bridge_sew(
             return fail(session, OCCT_BRIDGE_KERNEL_ERROR, "sewing produced no shape");
         }
         SewingHistory history(sewing.GetContext()->History());
-        return store_shape_with_history(session, sewed, out_shape, history, inputs);
+        return store_checked_result(session, "sewing", sewed, out_shape, history, inputs);
     });
 }
 
@@ -1741,8 +1961,9 @@ occt_bridge_status_t occt_bridge_fillet(
         if (!builder.IsDone() || builder.Shape().IsNull()) {
             return fail(session, OCCT_BRIDGE_KERNEL_ERROR, "fillet construction failed");
         }
-        return store_shape_with_history(
+        return store_checked_result(
             session,
+            "fillet",
             builder.Shape(),
             out_shape,
             builder,
@@ -1787,8 +2008,9 @@ occt_bridge_status_t occt_bridge_chamfer(
         if (!builder.IsDone() || builder.Shape().IsNull()) {
             return fail(session, OCCT_BRIDGE_KERNEL_ERROR, "chamfer construction failed");
         }
-        return store_shape_with_history(
+        return store_checked_result(
             session,
+            "chamfer",
             builder.Shape(),
             out_shape,
             builder,
@@ -1820,8 +2042,9 @@ occt_bridge_status_t occt_bridge_offset(
         if (!builder.IsDone() || builder.Shape().IsNull()) {
             return fail(session, OCCT_BRIDGE_KERNEL_ERROR, "offset construction failed");
         }
-        return store_shape_with_history(
+        return store_checked_result(
             session,
+            "offset",
             builder.Shape(),
             out_shape,
             builder,
@@ -1869,8 +2092,9 @@ occt_bridge_status_t occt_bridge_hollow(
         if (!builder.IsDone() || builder.Shape().IsNull()) {
             return fail(session, OCCT_BRIDGE_KERNEL_ERROR, "hollow construction failed");
         }
-        return store_shape_with_history(
+        return store_checked_result(
             session,
+            "hollow",
             builder.Shape(),
             out_shape,
             builder,
@@ -3116,7 +3340,7 @@ occt_bridge_status_t occt_bridge_brep_load(
         if (!BRepTools::Read(shape, path, builder) || shape.IsNull()) {
             return fail(session, OCCT_BRIDGE_IO_ERROR, "failed to read BREP file");
         }
-        return store_shape(session, shape, out_shape);
+        return store_checked_import(session, "BREP load", shape, out_shape);
     });
 }
 
@@ -3166,7 +3390,7 @@ occt_bridge_status_t occt_bridge_step_load(
         if (shape.IsNull()) {
             return fail(session, OCCT_BRIDGE_IO_ERROR, "STEP file contains no shape");
         }
-        return store_shape(session, shape, out_shape);
+        return store_checked_import(session, "STEP import", shape, out_shape);
     });
 }
 

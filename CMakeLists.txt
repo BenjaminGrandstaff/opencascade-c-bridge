@@ -51,6 +51,7 @@ target_link_libraries(
     TKDESTEP
     TKMesh
     TKDESTL
+    TKShHealing
 )
 set_target_properties(
     occt_bridge PROPERTIES
