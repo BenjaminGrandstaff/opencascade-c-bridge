@@ -70,8 +70,9 @@ The following major capabilities remain planned:
   model;
 - broader requirement rules such as clearance, interference, minimum radius,
   wall thickness, connectivity, and manufacturing checks;
-- constraint-solved 2D sketches feeding extrude, revolve, hole, draft, rib,
-  variable-fillet, and later sheet-metal features;
+- exact arc and circle sketch entities, tangent constraints, sparse
+  large-sketch solving, and sketch profiles feeding extrude, revolve, hole,
+  draft, rib, variable-fillet, and later sheet-metal features;
 - joints, interference and clearance detection, and motion studies;
 - generated drawings with projected views and dimensions;
 - full mass properties, FEA mesh hand-off, manufacturability checks, and
@@ -179,6 +180,24 @@ provide its station, local chord, airfoil, thickness, lightening-hole pattern,
 spar intersections, and utility-pass-through locations. Changing the wing
 span or spar position should regenerate every affected rib from the same
 definition.
+
+## Constraint-solved sketches
+
+Schema 25 introduces the first sketch slice. A `SketchDefinition` places
+parameter-driven 2D points and ordered line entities in a typed 3D plane.
+Coincident, horizontal, vertical, parallel, perpendicular, equal-length, and
+dimensional distance constraints are solved before kernel generation.
+`SketchSolution` reports convergence, maximum residual, free degrees, and
+redundant equations; conflicting constraints reject generation. A
+`SketchFace` feature requires at least three continuous, closed lines and
+emits an exact planar face through the kernel's polyline-wire constructor.
+
+The current finite-difference dense least-squares implementation costs
+O(i(c v^2 + v^3)) time and O(c v + v^2) memory for `v` free coordinates, `c`
+residual components, and `i` iterations. It targets small feature sketches:
+10,000 independent constrained sketches solve in 0.018 s. Exact arc and circle
+entities, tangent constraints, and a sparse decomposition for large individual
+sketches remain open; the roadmap item is not complete until those land.
 
 ## Requirements preserve intent
 
@@ -644,7 +663,7 @@ information, so they are delivery artifacts and cannot replace the parametric
 source model.
 
 `ModelDocument` is the implemented local persistence boundary. Schema version
-24 serializes the primary and additional family definitions with their datums,
+25 serializes the primary and additional family definitions with their datums,
 assembly relationships, configurations, materials and material assignments, requirements, derived parameters,
 constraints, base and clone nodes, sparse overrides, placements, linear and
 circular pattern rules, linear and circular fit constraints, slot counts,
@@ -653,8 +672,9 @@ or bounds-driven fitted spans,
 nested assembly frames, semantic selectors, provenance, and regeneration audit records. Live
 OCCT handles and generated BREPs are never serialized. Loading reconstructs a
 validated `InstanceGraph`; regeneration creates fresh session-owned handles.
-Schema versions 1 through 23 migrate to version 24, supplying explicit defaults
-for fields absent from older documents. Version 24 added assembly-level mass,
+Schema versions 1 through 24 migrate to version 25, supplying explicit defaults
+for fields absent from older documents. Version 25 added constraint-solved line
+sketches and exact closed polygon face features. Version 24 added assembly-level mass,
 datum-clearance, and relationship-satisfaction requirements. Older documents
 load with none. Version 23 added per-model relationship
 tolerances and migrates older documents to 1e-6 mm and 1e-9 rad. Version 22

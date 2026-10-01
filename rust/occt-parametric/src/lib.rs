@@ -1,6 +1,7 @@
 //! Unit-aware part families, instances, feature graphs, and verification.
 
 mod assembly;
+mod sketch;
 mod solve;
 mod sparse;
 
@@ -9,6 +10,9 @@ pub use assembly::{
     Configuration, DatumDefinition, DatumKind, DatumRef, Material, RELATIONSHIP_ANGULAR_TOLERANCE,
     RELATIONSHIP_LINEAR_TOLERANCE, RelationKind, RelationshipCheck, RelationshipTolerances,
     ResolvedDatum,
+};
+pub use sketch::{
+    SketchConstraint, SketchDefinition, SketchLine, SketchPoint, SketchPoint2, SketchSolution,
 };
 pub use solve::PlacementSolution;
 
@@ -513,6 +517,9 @@ pub enum FeatureOperation {
         radius: ScalarExpr,
         height: ScalarExpr,
     },
+    SketchFace {
+        sketch: SketchDefinition,
+    },
     Translate {
         input: String,
         offset: VectorExpr,
@@ -582,7 +589,7 @@ impl FeatureOperation {
             Self::Cut { object, tool } => vec![object, tool],
             Self::Sew { inputs, .. } => inputs.iter().map(String::as_str).collect(),
             Self::MakeSolid { shells } => shells.iter().map(String::as_str).collect(),
-            Self::Box { .. } | Self::Cylinder { .. } => Vec::new(),
+            Self::Box { .. } | Self::Cylinder { .. } | Self::SketchFace { .. } => Vec::new(),
         }
     }
 }
@@ -1128,7 +1135,7 @@ pub struct GenerationRecord {
     pub last_error: Option<String>,
 }
 
-pub const CURRENT_SCHEMA_VERSION: u32 = 24;
+pub const CURRENT_SCHEMA_VERSION: u32 = 25;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ModelDocument {
@@ -3422,6 +3429,7 @@ fn collect_operation_parameters<'a>(operation: &'a FeatureOperation, names: &mut
             collect_scalar_parameters(radius, names);
             collect_scalar_parameters(height, names);
         }
+        FeatureOperation::SketchFace { sketch } => sketch.collect_parameters(names),
         FeatureOperation::Translate { offset, .. } => collect_vector_parameters(offset, names),
         FeatureOperation::Rotate {
             origin,
@@ -3636,6 +3644,11 @@ fn validate_definition(definition: &FamilyDefinition) -> Result<(), ModelError> 
     )?;
     for feature in &definition.features {
         match &feature.operation {
+            FeatureOperation::SketchFace { sketch } => {
+                sketch
+                    .validate_structure()
+                    .map_err(|error| error.in_feature(&feature.id))?;
+            }
             FeatureOperation::Sew { inputs, .. } if inputs.is_empty() => {
                 return Err(ModelError::new(format!(
                     "feature '{}' requires at least one sewing input",
@@ -4517,6 +4530,9 @@ fn execute_feature<'session>(
             scalar(radius, parameters, Dimension::Length)?,
             scalar(height, parameters, Dimension::Length)?,
         ),
+        FeatureOperation::SketchFace { sketch } => {
+            return sketch.face(session, parameters);
+        }
         FeatureOperation::Translate { input, offset } => session.translate(
             shape(shapes, input)?,
             vector(offset, parameters, Dimension::Length)?,

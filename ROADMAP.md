@@ -11,15 +11,15 @@ tracks status and order.
 | C ABI (`src/`, `include/`) | ABI 25 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 24 | Active development |
+| `occt-parametric` (engineering layer) | Schema 25 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 3/3, bridge 41, recipes 3, parametric 89 | `ctest`, `cargo test` (see README) |
+| Tests | C 3/3, bridge 41, recipes 3, parametric 91 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.3% line coverage | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
-| Coverage | 93.25% lines overall; C++ 93.46% lines, 86.57% branches, 100% functions | `tools/coverage/run.sh` |
-| Scale benchmarks | 24 passing within budget | `tools/bench/run.sh` |
+| Coverage | 93.22% lines overall; C++ 93.46% lines, 86.45% branches, 100% functions | `tools/coverage/run.sh` |
+| Scale benchmarks | 25 passing within budget | `tools/bench/run.sh` |
 
 ## Done
 
@@ -186,6 +186,13 @@ every item below is defined in documents and the API, and verified in tests.
     driven by parameter expressions. Solve with the relationship solver's
     machinery, report free degrees and conflicts, and emit closed profiles as
     wires and faces for features.
+   **In progress:** schema 25 adds parameter-driven line sketches in typed 3D
+   planes, nonlinear constraint solving for coincident, parallel,
+   perpendicular, horizontal, vertical, equal-length, and distance rules,
+   free-degree/redundancy/conflict reporting, and exact closed polygon faces.
+   It solves 10,000 small sketches in 0.018 s. Exact arc and circle entities,
+   tangent constraints, and sparse solving for large individual sketches
+   remain before this item moves to Done.
 2. **Feature breadth.** Extrude and revolve from sketch profiles (adds a
     revolve operation to the C ABI), holes with standard sizes, counterbores,
     countersinks, and recorded thread specifications, draft, ribs, and

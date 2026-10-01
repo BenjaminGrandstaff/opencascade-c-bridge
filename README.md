@@ -66,7 +66,8 @@ multi-family instance graphs, explicit generation freezing, unit-aware derived s
 with negate, absolute, minimum, maximum, and clamp functions, derived vector
 composition with add, subtract, scale, and normalize operations, dimension-safe
 comparison-driven conditional scalar expressions,
-pre-generation parameter constraints, semantic face and edge selectors, and
+pre-generation parameter constraints, constraint-solved line sketches that
+emit exact planar faces, semantic face and edge selectors, and
 versioned JSON model documents are implemented. Feature graphs include sewing
 and single- or multi-shell solid construction. Selectors support orientation,
 adjacency, extrema, nearest-center, longest-edge, circular-radius,
@@ -79,7 +80,7 @@ per-model linear and angular tolerances, plus configurations and materials
 with mass. Full graph regeneration verifies mass ranges, datum clearances, and
 recorded relationship satisfaction with required, preferred, or advisory
 priority. Schema v1 through
-v23 documents migrate to v24 during load; unsupported
+v24 documents migrate to v25 during load; unsupported
 future versions are rejected.
 Managed regeneration incrementally reuses unchanged outputs and
 rebuilds dirty features plus their downstream dependents. Graph regeneration
@@ -160,10 +161,10 @@ builds an optimized copy of the library in `build/bench`, runs every case at
 the target sizes (10,000-member patterns, deep clone chains, 1,000-part solver
 stacks and grids, repeated regeneration, validation chains, and many-hole
 faces), and fails when a required case misses its time budget or correctness
-check. The current suite has 24 passing cases, including single-leaf and
+check. The current suite has 25 passing cases, including single-leaf and
 memoized all-node resolution of a 20,000-link clone chain and a 50-part stack
 1 km from the origin solved at a 1e-8 mm model tolerance, plus 10,000 checked
-datum-clearance requirements:
+datum-clearance requirements and 10,000 small constrained-sketch solves:
 
 ```bash
 tools/bench/run.sh
@@ -219,7 +220,8 @@ handles and retain the prior accepted generation.
 
 `ModelDocument` persists the family definition, requirements, instance and
 clone identities, sparse overrides, placements, assembly frames, pattern rules, provenance, and
-regeneration audit records. Schema 24 persists assembly mass, datum-clearance,
+regeneration audit records. Schema 25 persists constraint-solved line sketches
+and closed sketch-face features. Schema 24 persists assembly mass, datum-clearance,
 and relationship-satisfaction requirements. Schema 23 persists per-model linear
 (millimeter) and angular (radian) relationship tolerances; new graphs and older
 documents default to 1e-6 mm and 1e-9 rad. Generated OCCT handles and BREPs are deliberately

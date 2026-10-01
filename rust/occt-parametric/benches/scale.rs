@@ -17,8 +17,8 @@ use occt_parametric::{
     DatumDefinition, DatumKind, DatumRef, Dimension, FamilyDefinition, FeatureDefinition,
     FeatureOperation, InstanceGraph, LengthUnit, ModelDocument, ModelError, ParameterDefinition,
     ParameterType, ParameterValue, PatternRule, Placement, Quantity, RelationKind,
-    RelationshipTolerances, RequirementKind, RequirementPriority, ScalarExpr, VectorExpr,
-    VectorQuantity,
+    RelationshipTolerances, RequirementKind, RequirementPriority, ScalarExpr, SketchConstraint,
+    SketchDefinition, SketchLine, SketchPoint, VectorExpr, VectorQuantity,
 };
 use std::collections::HashMap;
 use std::process::ExitCode;
@@ -78,9 +78,70 @@ fn main() -> ExitCode {
     outcomes.extend(deep_clone_chain(definition));
     outcomes.extend(regeneration_handle_cases(definition));
     outcomes.extend(solver_cases(definition));
+    outcomes.push(sketch_solver_case());
     outcomes.push(solver_grid(definition));
     outcomes.extend(validation_cases());
     report(&outcomes)
+}
+
+fn sketch_solver_case() -> Outcome {
+    const SOLVES: usize = 10_000;
+    let value =
+        |millimeters| ScalarExpr::Literal(Quantity::length(millimeters, LengthUnit::Millimeter));
+    let sketch = SketchDefinition {
+        id: "bench-line".into(),
+        origin: VectorExpr::Literal(VectorQuantity::lengths(
+            0.0,
+            0.0,
+            0.0,
+            LengthUnit::Millimeter,
+        )),
+        x_axis: VectorExpr::Literal(VectorQuantity::scalars(1.0, 0.0, 0.0)),
+        y_axis: VectorExpr::Literal(VectorQuantity::scalars(0.0, 1.0, 0.0)),
+        points: vec![
+            SketchPoint {
+                id: "fixed".into(),
+                x: value(0.0),
+                y: value(0.0),
+                fixed: true,
+            },
+            SketchPoint {
+                id: "free".into(),
+                x: value(9.0),
+                y: value(1.0),
+                fixed: false,
+            },
+        ],
+        lines: vec![SketchLine {
+            id: "line".into(),
+            start: "fixed".into(),
+            end: "free".into(),
+        }],
+        constraints: vec![
+            SketchConstraint::Horizontal {
+                line: "line".into(),
+            },
+            SketchConstraint::Distance {
+                first: "fixed".into(),
+                second: "free".into(),
+                value: value(10.0),
+            },
+        ],
+    };
+    timed(
+        format!("solve {SOLVES} small constrained sketches"),
+        ms(2_000),
+        Expectation::Required,
+        || {
+            for _ in 0..SOLVES {
+                let solution = sketch.solve(&HashMap::new())?;
+                if !solution.solved || (solution.points["free"].x - 10.0).abs() > 1e-8 {
+                    return Err(failure("sketch did not reach its dimension".into()));
+                }
+            }
+            Ok(format!("{SOLVES} solved"))
+        },
+    )
 }
 
 // ---- cases
