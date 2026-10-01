@@ -157,7 +157,8 @@ builds an optimized copy of the library in `build/bench`, runs every case at
 the target sizes (10,000-member patterns, deep clone chains, 1,000-part solver
 stacks and grids, repeated regeneration, validation chains, and many-hole
 faces), and fails when a required case misses its time budget or correctness
-check. The current suite has 21 passing cases:
+check. The current suite has 22 passing cases, including single-leaf and
+memoized all-node resolution of a 20,000-link clone chain:
 
 ```bash
 tools/bench/run.sh

@@ -338,8 +338,12 @@ placement, and linear and circular patterns. Clone inheritance is resolved by
 one iterative O(depth) leaf-to-base walk with a visited-position map; the same
 collected chain supplies the family and is folded base-to-leaf for ordinary and
 active-configuration overrides. This preserves exact cycle-path diagnostics
-without consuming call stack. The 20,000-link benchmark resolves on a
-default-stack thread in 0.004 s. A placement rotates every named result about a
+without consuming call stack. Bulk operations retain resolved parents in a
+local cache, stopping later walks at the nearest cached ancestor. The cache is
+discarded after document validation, configuration validation, or regeneration,
+so graph mutations cannot expose stale resolutions. The 20,000-link benchmark
+resolves one leaf on a default-stack thread in 0.010 s and validates all 20,000
+instances in 0.035 s. A placement rotates every named result about a
 typed origin and scalar axis, then translates it; failed transforms clean up
 both generated and intermediate shapes. Patterns remain linked clones and
 record their source, member identities, and a typed rule. A linear rule

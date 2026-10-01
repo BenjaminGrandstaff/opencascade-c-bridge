@@ -467,8 +467,9 @@ impl<'definition> InstanceGraph<'definition> {
         }
         let mut configured = self.clone();
         configured.assembly.active_configuration = Some(id.to_owned());
+        let mut resolutions = HashMap::new();
         for instance in self.nodes.keys() {
-            let resolved = configured.resolve(instance)?;
+            let resolved = configured.resolve_cached(instance, &mut resolutions)?;
             resolve_parameters(resolved.definition, &resolved.overrides).map_err(|error| {
                 ModelError::new(format!(
                     "configuration '{id}' instance '{instance}': {}",

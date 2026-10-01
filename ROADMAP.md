@@ -18,8 +18,8 @@ tracks status and order.
 | Tests | C 3/3, bridge 41, recipes 3, parametric 86 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.3% line coverage | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
-| Coverage | 93.26% lines overall; C++ 93.46% lines, 86.33% branches, 100% functions | `tools/coverage/run.sh` |
-| Scale benchmarks | 21 passing within budget | `tools/bench/run.sh` |
+| Coverage | 93.26% lines overall; C++ 93.46% lines, 86.51% branches, 100% functions | `tools/coverage/run.sh` |
+| Scale benchmarks | 22 passing within budget | `tools/bench/run.sh` |
 
 ## Done
 
@@ -82,11 +82,14 @@ tracks status and order.
   operation history.
 - Linked clones with sparse overrides, detachment, freezing, and managed
   regeneration.
-- Iterative clone inheritance resolution walks each parent once, preserves
-  exact cycle paths and base-to-leaf override precedence, and uses O(depth)
-  time and memory without consuming call stack. A 20,000-link chain resolves
-  on a default-stack thread in 0.004 s, versus 0.386 s for the recursive
-  implementation on a custom 16 MiB stack.
+- Iterative clone inheritance resolution preserves exact cycle paths and
+  base-to-leaf override precedence without consuming call stack. Bulk graph
+  operations memoize every resolved parent in an operation-local cache, so
+  document validation, configuration validation, and regeneration resolve a
+  clone forest in O(nodes + inherited override copies) without stale cache
+  state after mutation. A 20,000-link chain resolves on a default-stack thread
+  in 0.010 s, and validating all 20,000 instances takes 0.035 s; the recursive
+  single-leaf implementation took 0.386 s on a custom 16 MiB stack.
 - Nested assembly frames; shared generation for clones that differ only in
   placement.
 - Multi-family graphs and documents; clones inherit their root family's

@@ -1315,8 +1315,9 @@ impl ModelDocument {
             assembly: self.assembly.clone(),
         };
         self.validate_frames(&graph)?;
+        let mut resolutions = HashMap::new();
         for node in &self.instances {
-            let resolved = graph.resolve(node.id())?;
+            let resolved = graph.resolve_cached(node.id(), &mut resolutions)?;
             resolve_parameters(resolved.definition, &resolved.overrides)?;
         }
         let mut pattern_ids = HashSet::new();
@@ -1673,6 +1674,8 @@ pub struct InstanceGraph<'definition> {
     frames: HashMap<String, AssemblyFrame>,
     assembly: AssemblySemantics,
 }
+
+type ResolutionCache<'definition> = HashMap<String, PartInstance<'definition>>;
 
 impl<'definition> InstanceGraph<'definition> {
     pub fn new(definition: &'definition FamilyDefinition) -> Self {
@@ -2571,19 +2574,27 @@ impl<'definition> InstanceGraph<'definition> {
             .ok_or_else(|| ModelError::new(format!("unknown family definition '{family}'")))
     }
 
-    /// Collects one clone inheritance chain from leaf to base in O(depth)
-    /// time and memory. The visited-position map avoids recursion and retains
-    /// the exact repeated segment for cycle diagnostics.
-    fn inheritance_chain<'graph>(
-        &'graph self,
+    /// Resolves one clone in O(uncached depth), memoizing every parent crossed
+    /// by the walk. A shared operation-local cache makes resolving a forest
+    /// O(nodes + inherited override copies), while avoiding stale state after
+    /// graph mutations. The visited-position map retains exact cycle paths.
+    pub(crate) fn resolve_cached(
+        &self,
         id: &str,
-    ) -> Result<Vec<&'graph InstanceNode>, ModelError> {
-        let mut chain: Vec<&InstanceNode> = Vec::new();
+        cache: &mut ResolutionCache<'definition>,
+    ) -> Result<PartInstance<'definition>, ModelError> {
+        if let Some(resolved) = cache.get(id) {
+            return Ok(resolved.clone());
+        }
+        let mut path: Vec<&InstanceNode> = Vec::new();
         let mut positions = HashMap::new();
         let mut current = id;
-        loop {
+        let (definition, mut overrides) = loop {
+            if let Some(resolved) = cache.get(current) {
+                break (resolved.definition, resolved.overrides.clone());
+            }
             if let Some(position) = positions.get(current).copied() {
-                let mut cycle = chain[position..]
+                let mut cycle = path[position..]
                     .iter()
                     .map(|node| node.id())
                     .collect::<Vec<_>>();
@@ -2597,49 +2608,61 @@ impl<'definition> InstanceGraph<'definition> {
                 .nodes
                 .get(current)
                 .ok_or_else(|| ModelError::new(format!("unknown clone source '{current}'")))?;
-            positions.insert(node.id(), chain.len());
-            chain.push(node);
+            positions.insert(node.id(), path.len());
+            path.push(node);
             match node {
-                InstanceNode::Base { .. } => return Ok(chain),
+                InstanceNode::Base { family, .. } => {
+                    let definition = family
+                        .as_deref()
+                        .map_or(Ok(self.definition), |family| self.definition_by_id(family))?;
+                    break (definition, HashMap::new());
+                }
                 InstanceNode::Clone { source, .. } => current = source,
             }
-        }
-    }
-
-    pub fn resolve(&self, id: &str) -> Result<PartInstance<'definition>, ModelError> {
-        let chain = self.inheritance_chain(id)?;
-        let definition = match chain.last().expect("inheritance chains are nonempty") {
-            InstanceNode::Base { family, .. } => family
-                .as_deref()
-                .map_or(Ok(self.definition), |family| self.definition_by_id(family))?,
-            InstanceNode::Clone { .. } => unreachable!("inheritance chains end at a base"),
         };
-        let mut overrides = HashMap::new();
-        for node in chain.iter().rev() {
+        for node in path.iter().rev() {
             overrides.extend(node.overrides().clone());
             if let Some(configured) = self.assembly.configured_overrides(node.id()) {
                 overrides.extend(configured.clone());
             }
+            let provenance = match node {
+                InstanceNode::Base { provenance, .. } | InstanceNode::Clone { provenance, .. } => {
+                    provenance.clone()
+                }
+            };
+            cache.insert(
+                node.id().to_owned(),
+                PartInstance {
+                    id: node.id().to_owned(),
+                    definition,
+                    overrides: overrides.clone(),
+                    provenance,
+                },
+            );
         }
-        overrides.shrink_to_fit();
-        let provenance = match chain[0] {
-            InstanceNode::Base { provenance, .. } | InstanceNode::Clone { provenance, .. } => {
-                provenance.clone()
-            }
-        };
-        Ok(PartInstance {
-            id: id.into(),
-            definition,
-            overrides,
-            provenance,
-        })
+        cache
+            .get(id)
+            .cloned()
+            .ok_or_else(|| ModelError::new(format!("unknown instance '{id}'")))
+    }
+
+    pub fn resolve(&self, id: &str) -> Result<PartInstance<'definition>, ModelError> {
+        self.resolve_cached(id, &mut HashMap::new())
     }
 
     pub fn resolve_with_placement(
         &self,
         id: &str,
     ) -> Result<ResolvedInstance<'definition>, ModelError> {
-        let instance = self.resolve(id)?;
+        self.resolve_with_placement_cached(id, &mut HashMap::new())
+    }
+
+    fn resolve_with_placement_cached(
+        &self,
+        id: &str,
+        cache: &mut ResolutionCache<'definition>,
+    ) -> Result<ResolvedInstance<'definition>, ModelError> {
+        let instance = self.resolve_cached(id, cache)?;
         let node = self
             .nodes
             .get(id)
@@ -2722,6 +2745,7 @@ impl<'definition> InstanceGraph<'definition> {
         let mut seen = HashSet::new();
         let mut keys: Vec<String> = Vec::new();
         let mut groups: Vec<Vec<(&str, ResolvedInstance<'definition>)>> = Vec::new();
+        let mut resolutions = HashMap::new();
         for &id in ids {
             if !seen.insert(id) {
                 return Err(ModelError::new(format!(
@@ -2734,7 +2758,7 @@ impl<'definition> InstanceGraph<'definition> {
                 )));
             }
             let resolved = self
-                .resolve_with_placement(id)
+                .resolve_with_placement_cached(id, &mut resolutions)
                 .map_err(|error| instance_error(id, error))?;
             let parameters =
                 resolve_parameters(resolved.instance.definition, &resolved.instance.overrides)

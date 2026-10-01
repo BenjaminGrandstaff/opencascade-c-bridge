@@ -73,7 +73,7 @@ fn main() -> ExitCode {
     // First, so freed memory from other cases cannot hide growth.
     outcomes.push(placed_copy_memory());
     outcomes.extend(pattern_cases(definition));
-    outcomes.push(deep_clone_chain(definition));
+    outcomes.extend(deep_clone_chain(definition));
     outcomes.extend(regeneration_handle_cases(definition));
     outcomes.extend(solver_cases(definition));
     outcomes.push(solver_grid(definition));
@@ -159,7 +159,7 @@ fn pattern_cases(definition: &'static FamilyDefinition) -> Vec<Outcome> {
     outcomes
 }
 
-fn deep_clone_chain(definition: &'static FamilyDefinition) -> Outcome {
+fn deep_clone_chain(definition: &'static FamilyDefinition) -> Vec<Outcome> {
     let mut graph = InstanceGraph::new(definition);
     graph.add_base("c0", HashMap::new(), "bench").unwrap();
     for index in 1..CLONE_CHAIN_DEPTH {
@@ -174,7 +174,7 @@ fn deep_clone_chain(definition: &'static FamilyDefinition) -> Outcome {
     }
     let deepest = format!("c{}", CLONE_CHAIN_DEPTH - 1);
     std::thread::spawn(move || {
-        timed(
+        let deepest = timed(
             format!("clone chain {CLONE_CHAIN_DEPTH}: resolve deepest"),
             ms(2_000),
             Expectation::Required,
@@ -183,7 +183,19 @@ fn deep_clone_chain(definition: &'static FamilyDefinition) -> Outcome {
                     .resolve(&deepest)
                     .map(|_| "resolved iteratively on default stack".into())
             },
-        )
+        );
+        graph.add_configuration("deep").unwrap();
+        let all = timed(
+            format!("clone chain {CLONE_CHAIN_DEPTH}: validate all with memoized parents"),
+            ms(2_000),
+            Expectation::Required,
+            || {
+                graph
+                    .set_configuration_override("deep", "c0", "width", length(12.0))
+                    .map(|()| format!("validated {CLONE_CHAIN_DEPTH} instances"))
+            },
+        );
+        vec![deepest, all]
     })
     .join()
     .unwrap()
