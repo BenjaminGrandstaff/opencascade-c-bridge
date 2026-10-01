@@ -220,12 +220,49 @@ pub struct Material {
     pub density_kg_per_cubic_meter: f64,
 }
 
+/// A graph-level rule evaluated after every requested instance is generated.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AssemblyVerificationRule {
+    MassRange {
+        instance: String,
+        output: String,
+        minimum_kilograms: f64,
+        maximum_kilograms: f64,
+    },
+    DatumClearance {
+        first: DatumRef,
+        second: DatumRef,
+        minimum: Quantity,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        maximum: Option<Quantity>,
+    },
+    RelationshipSatisfied {
+        relationship: String,
+    },
+}
+
+/// Stable assembly intent with the same priority semantics as family
+/// requirements, but evaluated with instance, datum, and material context.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct AssemblyRequirement {
+    pub id: String,
+    pub version: u32,
+    pub kind: RequirementKind,
+    pub priority: RequirementPriority,
+    pub statement: String,
+    pub rule: AssemblyVerificationRule,
+    pub provenance: String,
+}
+
 /// Relationships, configurations, and materials of one instance graph.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct AssemblySemantics {
     /// Tolerances used by every relationship in this model.
     #[serde(default, skip_serializing_if = "RelationshipTolerances::is_default")]
     pub tolerances: RelationshipTolerances,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub requirements: Vec<AssemblyRequirement>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub relationships: Vec<AssemblyRelationship>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -268,6 +305,21 @@ impl AssemblySemantics {
 
     /// What in the assembly semantics names this instance, if anything.
     pub(crate) fn reference_to(&self, instance: &str) -> Option<String> {
+        if let Some(requirement) =
+            self.requirements
+                .iter()
+                .find(|requirement| match &requirement.rule {
+                    AssemblyVerificationRule::MassRange {
+                        instance: target, ..
+                    } => target == instance,
+                    AssemblyVerificationRule::DatumClearance { first, second, .. } => {
+                        first.instance == instance || second.instance == instance
+                    }
+                    AssemblyVerificationRule::RelationshipSatisfied { .. } => false,
+                })
+        {
+            return Some(format!("assembly requirement '{}'", requirement.id));
+        }
         if let Some(relationship) = self.relationships.iter().find(|relationship| {
             relationship.first.instance == instance || relationship.second.instance == instance
         }) {
@@ -351,6 +403,18 @@ impl<'definition> InstanceGraph<'definition> {
     }
 
     pub fn remove_relationship(&mut self, id: &str) -> Result<AssemblyRelationship, ModelError> {
+        if let Some(requirement) = self.assembly.requirements.iter().find(|requirement| {
+            matches!(
+                &requirement.rule,
+                AssemblyVerificationRule::RelationshipSatisfied { relationship }
+                    if relationship == id
+            )
+        }) {
+            return Err(ModelError::new(format!(
+                "relationship '{id}' is referenced by assembly requirement '{}'",
+                requirement.id
+            )));
+        }
         let index = self
             .assembly
             .relationships
@@ -394,6 +458,260 @@ impl<'definition> InstanceGraph<'definition> {
                 && angular.is_none_or(|value| value <= self.assembly.tolerances.angular_radians),
             linear_residual: linear,
             angular_residual: angular,
+        })
+    }
+
+    // ---- assembly requirements
+
+    /// Adds a graph-level requirement after validating all of its references
+    /// and units against the current model.
+    pub fn add_assembly_requirement(
+        &mut self,
+        requirement: AssemblyRequirement,
+    ) -> Result<(), ModelError> {
+        self.add_assembly_requirements([requirement])
+    }
+
+    /// Atomically validates and adds a batch in O(existing + new requirements
+    /// times referenced clone depth). No requirement is added on failure.
+    pub fn add_assembly_requirements(
+        &mut self,
+        requirements: impl IntoIterator<Item = AssemblyRequirement>,
+    ) -> Result<(), ModelError> {
+        let requirements = requirements.into_iter().collect::<Vec<_>>();
+        let mut ids = self
+            .assembly
+            .requirements
+            .iter()
+            .map(|requirement| requirement.id.as_str())
+            .collect::<HashSet<_>>();
+        for requirement in &requirements {
+            if requirement.id.is_empty() || !ids.insert(&requirement.id) {
+                return Err(ModelError::new(
+                    "assembly requirement ids must be nonempty, versioned, and unique",
+                ));
+            }
+            self.validate_assembly_requirement(requirement)?;
+        }
+        self.assembly.requirements.extend(requirements);
+        Ok(())
+    }
+
+    pub fn remove_assembly_requirement(
+        &mut self,
+        id: &str,
+    ) -> Result<AssemblyRequirement, ModelError> {
+        let index = self
+            .assembly
+            .requirements
+            .iter()
+            .position(|requirement| requirement.id == id)
+            .ok_or_else(|| ModelError::new(format!("unknown assembly requirement '{id}'")))?;
+        Ok(self.assembly.requirements.remove(index))
+    }
+
+    fn validate_assembly_requirement(
+        &self,
+        requirement: &AssemblyRequirement,
+    ) -> Result<(), ModelError> {
+        if requirement.id.is_empty() || requirement.version == 0 {
+            return Err(ModelError::new(
+                "assembly requirement ids must be nonempty, versioned, and unique",
+            ));
+        }
+        match &requirement.rule {
+            AssemblyVerificationRule::MassRange {
+                instance,
+                output,
+                minimum_kilograms,
+                maximum_kilograms,
+            } => {
+                validate_range(*minimum_kilograms, *maximum_kilograms, "mass", "kg")?;
+                let resolved = self.resolve(instance)?;
+                if !resolved
+                    .definition
+                    .features
+                    .iter()
+                    .any(|feature| feature.id == *output)
+                {
+                    return Err(ModelError::new(format!(
+                        "assembly requirement '{}' references unknown output '{output}' on instance '{instance}'",
+                        requirement.id
+                    )));
+                }
+                if self.material_of(instance)?.is_none() {
+                    return Err(ModelError::new(format!(
+                        "assembly requirement '{}' needs a material on instance '{instance}'",
+                        requirement.id
+                    )));
+                }
+            }
+            AssemblyVerificationRule::DatumClearance {
+                first,
+                second,
+                minimum,
+                maximum,
+            } => {
+                let minimum = clearance_value(*minimum, "minimum")?;
+                let maximum = maximum
+                    .map(|value| clearance_value(value, "maximum"))
+                    .transpose()?;
+                if maximum.is_some_and(|maximum| minimum > maximum) {
+                    return Err(ModelError::new("datum clearance minimum exceeds maximum"));
+                }
+                separation(
+                    self.datum(&first.instance, &first.datum)?,
+                    self.datum(&second.instance, &second.datum)?,
+                )?;
+            }
+            AssemblyVerificationRule::RelationshipSatisfied { relationship } => {
+                if !self
+                    .assembly
+                    .relationships
+                    .iter()
+                    .any(|candidate| candidate.id == *relationship)
+                {
+                    return Err(ModelError::new(format!(
+                        "assembly requirement '{}' references unknown relationship '{relationship}'",
+                        requirement.id
+                    )));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) fn verify_assembly_requirements(
+        &self,
+        session: &Session,
+        results: &HashMap<String, GeneratedResult<'_>>,
+    ) -> Result<Vec<VerificationResult>, ModelError> {
+        let mut verification = Vec::with_capacity(self.assembly.requirements.len());
+        let mut required_failures = Vec::new();
+        for requirement in &self.assembly.requirements {
+            let result = self
+                .verify_assembly_requirement(session, results, requirement)
+                .map_err(|error| {
+                    ModelError::new(format!(
+                        "assembly requirement '{}': {}",
+                        requirement.id, error.message
+                    ))
+                })?;
+            if requirement.priority == RequirementPriority::Required
+                && result.status == VerificationStatus::Failed
+            {
+                required_failures.push(requirement.id.clone());
+            }
+            verification.push(result);
+        }
+        if !required_failures.is_empty() {
+            return Err(ModelError::new(format!(
+                "required assembly verification failed: {}",
+                required_failures.join(", ")
+            )));
+        }
+        Ok(verification)
+    }
+
+    fn verify_assembly_requirement(
+        &self,
+        session: &Session,
+        results: &HashMap<String, GeneratedResult<'_>>,
+        requirement: &AssemblyRequirement,
+    ) -> Result<VerificationResult, ModelError> {
+        let (passed, message) = match &requirement.rule {
+            AssemblyVerificationRule::MassRange {
+                instance,
+                output,
+                minimum_kilograms,
+                maximum_kilograms,
+            } => {
+                let result = results.get(instance).ok_or_else(|| {
+                    ModelError::new(format!("instance '{instance}' was not generated"))
+                })?;
+                let shape = result.shape(output).ok_or_else(|| {
+                    ModelError::new(format!(
+                        "instance '{instance}' has no generated output '{output}'"
+                    ))
+                })?;
+                let density = self
+                    .material_of(instance)?
+                    .ok_or_else(|| {
+                        ModelError::new(format!("instance '{instance}' has no material"))
+                    })?
+                    .density_kg_per_cubic_meter;
+                let mass = session.volume(shape)? * CUBIC_MILLIMETERS_TO_CUBIC_METERS * density;
+                (
+                    mass >= *minimum_kilograms && mass <= *maximum_kilograms,
+                    format!(
+                        "mass {mass} kg; expected {minimum_kilograms}..={maximum_kilograms} kg"
+                    ),
+                )
+            }
+            AssemblyVerificationRule::DatumClearance {
+                first,
+                second,
+                minimum,
+                maximum,
+            } => {
+                let minimum = clearance_value(*minimum, "minimum")?;
+                let maximum = maximum
+                    .map(|value| clearance_value(value, "maximum"))
+                    .transpose()?;
+                let (clearance, angular) = separation(
+                    self.datum(&first.instance, &first.datum)?,
+                    self.datum(&second.instance, &second.datum)?,
+                )?;
+                let parallel =
+                    angular.is_none_or(|angle| angle <= self.assembly.tolerances.angular_radians);
+                let passed = parallel
+                    && clearance >= minimum
+                    && maximum.is_none_or(|maximum| clearance <= maximum);
+                let expected = maximum
+                    .map(|maximum| format!("{minimum}..={maximum}"))
+                    .unwrap_or_else(|| format!(">={minimum}"));
+                let angular = angular
+                    .map(|angle| format!("; angular deviation {angle} rad"))
+                    .unwrap_or_default();
+                (
+                    passed,
+                    format!("datum clearance {clearance} mm; expected {expected} mm{angular}"),
+                )
+            }
+            AssemblyVerificationRule::RelationshipSatisfied { relationship } => {
+                let relationship = self
+                    .assembly
+                    .relationships
+                    .iter()
+                    .find(|candidate| candidate.id == *relationship)
+                    .ok_or_else(|| {
+                        ModelError::new(format!("unknown relationship '{relationship}'"))
+                    })?;
+                let check = self.check_relationship(relationship)?;
+                (
+                    check.satisfied,
+                    format!(
+                        "relationship '{}' {}; linear residual {:?} mm; angular residual {:?} rad",
+                        relationship.id,
+                        if check.satisfied {
+                            "is satisfied"
+                        } else {
+                            "is violated"
+                        },
+                        check.linear_residual,
+                        check.angular_residual
+                    ),
+                )
+            }
+        };
+        Ok(VerificationResult {
+            requirement_id: requirement.id.clone(),
+            status: if passed {
+                VerificationStatus::Passed
+            } else {
+                VerificationStatus::Failed
+            },
+            message,
         })
     }
 
@@ -558,6 +876,7 @@ impl<'definition> InstanceGraph<'definition> {
         material: Option<&str>,
     ) -> Result<(), ModelError> {
         self.require_instance(instance)?;
+        let previous = self.assembly.material_assignments.get(instance).cloned();
         match material {
             Some(id) => {
                 self.material(id)?;
@@ -568,6 +887,24 @@ impl<'definition> InstanceGraph<'definition> {
             None => {
                 self.assembly.material_assignments.remove(instance);
             }
+        }
+        if let Err(error) = self
+            .assembly
+            .requirements
+            .iter()
+            .try_for_each(|requirement| self.validate_assembly_requirement(requirement))
+        {
+            match previous {
+                Some(material) => {
+                    self.assembly
+                        .material_assignments
+                        .insert(instance.to_owned(), material);
+                }
+                None => {
+                    self.assembly.material_assignments.remove(instance);
+                }
+            }
+            return Err(error);
         }
         Ok(())
     }
@@ -664,6 +1001,17 @@ impl<'definition> InstanceGraph<'definition> {
         for relationship in &self.assembly.relationships {
             self.check_relationship(relationship)?;
         }
+        insert_unique_ids(
+            &mut HashSet::new(),
+            self.assembly
+                .requirements
+                .iter()
+                .map(|requirement| requirement.id.as_str()),
+            "assembly requirement ids must be nonempty, versioned, and unique",
+        )?;
+        for requirement in &self.assembly.requirements {
+            self.validate_assembly_requirement(requirement)?;
+        }
         Ok(())
     }
 }
@@ -683,6 +1031,30 @@ fn validate_material(material: &Material) -> Result<(), ModelError> {
         )));
     }
     Ok(())
+}
+
+fn validate_range(minimum: f64, maximum: f64, kind: &str, unit: &str) -> Result<(), ModelError> {
+    if !(minimum.is_finite() && maximum.is_finite() && minimum >= 0.0 && minimum <= maximum) {
+        return Err(ModelError::new(format!(
+            "{kind} range must be finite, nonnegative, and ordered in {unit}"
+        )));
+    }
+    Ok(())
+}
+
+fn clearance_value(value: Quantity, bound: &str) -> Result<f64, ModelError> {
+    if value.dimension != Dimension::Length {
+        return Err(ModelError::new(format!(
+            "datum clearance {bound} must be a length"
+        )));
+    }
+    let value = value.normalized()?;
+    if !(value.is_finite() && value >= 0.0) {
+        return Err(ModelError::new(format!(
+            "datum clearance {bound} must be finite and nonnegative"
+        )));
+    }
+    Ok(value)
 }
 
 // ---- relationship geometry
@@ -1394,6 +1766,243 @@ pub(crate) mod tests {
         let document = ModelDocument::from_graph(&graph);
         let loaded = ModelDocument::from_json(&document.to_json_pretty().unwrap()).unwrap();
         assert_eq!(loaded, document);
+    }
+
+    #[test]
+    fn assembly_requirements_verify_mass_datum_clearance_and_relationships() {
+        let definition = block();
+        let mut graph = stacked(&definition);
+        graph
+            .add_material(Material {
+                id: "steel".into(),
+                name: "Structural steel".into(),
+                density_kg_per_cubic_meter: 7850.0,
+            })
+            .unwrap();
+        graph.assign_material("a", Some("steel")).unwrap();
+        graph
+            .add_relationship(relationship(
+                "seated",
+                RelationKind::Coincident,
+                ("a", "top"),
+                ("b", "bottom"),
+            ))
+            .unwrap();
+
+        let requirement = |id: &str, priority, rule| AssemblyRequirement {
+            id: id.into(),
+            version: 1,
+            kind: RequirementKind::Validation,
+            priority,
+            statement: format!("verify {id}"),
+            rule,
+            provenance: "test".into(),
+        };
+        graph
+            .add_assembly_requirement(requirement(
+                "mass",
+                RequirementPriority::Required,
+                AssemblyVerificationRule::MassRange {
+                    instance: "b".into(),
+                    output: "body".into(),
+                    minimum_kilograms: 0.047,
+                    maximum_kilograms: 0.048,
+                },
+            ))
+            .unwrap();
+        graph
+            .add_assembly_requirement(requirement(
+                "clearance",
+                RequirementPriority::Preferred,
+                AssemblyVerificationRule::DatumClearance {
+                    first: DatumRef::new("a", "top_center"),
+                    second: DatumRef::new("b", "top_center"),
+                    minimum: Quantity::length(29.0, LengthUnit::Millimeter),
+                    maximum: Some(Quantity::length(30.5, LengthUnit::Millimeter)),
+                },
+            ))
+            .unwrap();
+        graph
+            .add_assembly_requirement(requirement(
+                "relationship",
+                RequirementPriority::Advisory,
+                AssemblyVerificationRule::RelationshipSatisfied {
+                    relationship: "seated".into(),
+                },
+            ))
+            .unwrap();
+
+        let session = Session::new().unwrap();
+        let partial = graph.regenerate_instances(&session, &["a"]).unwrap();
+        assert!(partial.verification().is_empty());
+        drop(partial);
+        let generation = graph.regenerate_all(&session).unwrap();
+        assert_eq!(generation.verification().len(), 3);
+        assert!(
+            generation
+                .verification()
+                .iter()
+                .all(|result| result.status == VerificationStatus::Passed)
+        );
+        drop(generation);
+        assert_eq!(session.shape_count().unwrap(), 0);
+
+        graph
+            .set_placement("b", translated(0.0, 0.0, 31.0))
+            .unwrap();
+        let generation = graph.regenerate_all(&session).unwrap();
+        assert_eq!(
+            generation.verification()[0].status,
+            VerificationStatus::Passed
+        );
+        assert_eq!(
+            generation.verification()[1].status,
+            VerificationStatus::Failed
+        );
+        assert_eq!(
+            generation.verification()[2].status,
+            VerificationStatus::Failed
+        );
+        assert!(generation.verification()[1].message.contains("31"));
+        drop(generation);
+
+        let advisory = graph.remove_assembly_requirement("relationship").unwrap();
+        graph
+            .add_assembly_requirement(AssemblyRequirement {
+                priority: RequirementPriority::Required,
+                ..advisory
+            })
+            .unwrap();
+        let error = graph.regenerate_all(&session).err().unwrap();
+        assert!(
+            error
+                .message
+                .contains("required assembly verification failed")
+        );
+        assert!(error.message.contains("relationship"));
+        assert_eq!(session.shape_count().unwrap(), 0);
+        assert!(graph.remove_relationship("seated").is_err());
+        assert!(graph.assign_material("a", None).is_err());
+
+        let document = ModelDocument::from_graph(&graph);
+        let loaded = ModelDocument::from_json(&document.to_json_pretty().unwrap()).unwrap();
+        assert_eq!(loaded, document);
+    }
+
+    #[test]
+    fn assembly_requirements_reject_invalid_ranges_units_and_references() {
+        let definition = block();
+        let mut graph = stacked(&definition);
+        let base = AssemblyRequirement {
+            id: "invalid".into(),
+            version: 1,
+            kind: RequirementKind::Validation,
+            priority: RequirementPriority::Required,
+            statement: "invalid test".into(),
+            rule: AssemblyVerificationRule::DatumClearance {
+                first: DatumRef::new("a", "top_center"),
+                second: DatumRef::new("b", "top_center"),
+                minimum: Quantity::scalar(1.0),
+                maximum: None,
+            },
+            provenance: "test".into(),
+        };
+        assert!(graph.add_assembly_requirement(base.clone()).is_err());
+
+        let mut valid = base.clone();
+        valid.rule = AssemblyVerificationRule::DatumClearance {
+            first: DatumRef::new("a", "top_center"),
+            second: DatumRef::new("b", "top_center"),
+            minimum: Quantity::length(0.0, LengthUnit::Millimeter),
+            maximum: None,
+        };
+        assert!(
+            graph
+                .add_assembly_requirements([valid.clone(), valid])
+                .is_err()
+        );
+        assert!(graph.assembly().requirements.is_empty());
+
+        let mut unknown = base.clone();
+        unknown.rule = AssemblyVerificationRule::RelationshipSatisfied {
+            relationship: "missing".into(),
+        };
+        assert!(graph.add_assembly_requirement(unknown).is_err());
+
+        let mut mass = base;
+        mass.rule = AssemblyVerificationRule::MassRange {
+            instance: "a".into(),
+            output: "body".into(),
+            minimum_kilograms: 2.0,
+            maximum_kilograms: 1.0,
+        };
+        assert!(graph.add_assembly_requirement(mass).is_err());
+
+        let mut no_material = AssemblyRequirement {
+            id: "mass".into(),
+            version: 1,
+            kind: RequirementKind::Validation,
+            priority: RequirementPriority::Required,
+            statement: "mass test".into(),
+            rule: AssemblyVerificationRule::MassRange {
+                instance: "a".into(),
+                output: "body".into(),
+                minimum_kilograms: 0.0,
+                maximum_kilograms: 1.0,
+            },
+            provenance: "test".into(),
+        };
+        assert!(
+            graph
+                .add_assembly_requirement(no_material.clone())
+                .unwrap_err()
+                .message
+                .contains("needs a material")
+        );
+        graph
+            .add_material(Material {
+                id: "steel".into(),
+                name: "Steel".into(),
+                density_kg_per_cubic_meter: 7850.0,
+            })
+            .unwrap();
+        graph.assign_material("a", Some("steel")).unwrap();
+        no_material.rule = AssemblyVerificationRule::MassRange {
+            instance: "a".into(),
+            output: "missing".into(),
+            minimum_kilograms: 0.0,
+            maximum_kilograms: 1.0,
+        };
+        assert!(
+            graph
+                .add_assembly_requirement(no_material)
+                .unwrap_err()
+                .message
+                .contains("unknown output")
+        );
+
+        let reversed_clearance = AssemblyRequirement {
+            id: "clearance".into(),
+            version: 1,
+            kind: RequirementKind::Assembly,
+            priority: RequirementPriority::Required,
+            statement: "clearance test".into(),
+            rule: AssemblyVerificationRule::DatumClearance {
+                first: DatumRef::new("a", "top_center"),
+                second: DatumRef::new("b", "top_center"),
+                minimum: Quantity::length(2.0, LengthUnit::Millimeter),
+                maximum: Some(Quantity::length(1.0, LengthUnit::Millimeter)),
+            },
+            provenance: "test".into(),
+        };
+        assert!(
+            graph
+                .add_assembly_requirement(reversed_clearance)
+                .unwrap_err()
+                .message
+                .contains("exceeds maximum")
+        );
+        assert!(graph.remove_assembly_requirement("missing").is_err());
     }
 
     #[test]

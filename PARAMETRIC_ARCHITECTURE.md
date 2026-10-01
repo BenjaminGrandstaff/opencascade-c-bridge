@@ -31,7 +31,8 @@ Rust layers:
    typed scalar, vector, integer, Boolean, and choice parameters; explicit
    length units; versioned families; persistent instance identity; sparse
    instance overrides; dependency-ordered feature execution; named results;
-   requirement priorities and provenance; validity and volume verification;
+   requirement priorities and provenance; validity, volume, mass, datum
+   clearance, and relationship-satisfaction verification;
    clone inheritance with cycle detection and explicit detachment; accepted
    result revisions with stale-result retention and explicit freezing;
    independent translation/axis-angle placement; nested assembly frames;
@@ -69,7 +70,6 @@ The following major capabilities remain planned:
   model;
 - broader requirement rules such as clearance, interference, minimum radius,
   wall thickness, connectivity, and manufacturing checks;
-- mass-, clearance-, and datum-based requirement verification;
 - constraint-solved 2D sketches feeding extrude, revolve, hole, draft, rib,
   variable-fillet, and later sheet-metal features;
 - joints, interference and clearance detection, and motion studies;
@@ -113,6 +113,18 @@ document.
 - **Materials.** Named materials carry a density. An instance uses its own
   assignment or inherits its clone source's; detaching keeps the inherited
   material. `mass` multiplies a generated output's volume by that density.
+- **Assembly requirements.** `MassRange`, `DatumClearance`, and
+  `RelationshipSatisfied` rules are evaluated after full graph regeneration.
+  Required failures release every result; preferred and advisory failures stay
+  visible in `GraphRegeneration::verification`. Rules validate instance,
+  output, datum, relationship, material, unit, and range references before
+  use. `add_assembly_requirements` validates a batch atomically in O(existing
+  requirements + new requirements times referenced clone depth). Partial
+  instance regeneration intentionally does not evaluate them
+  because it may omit referenced instances. Adding and validating 10,000
+  datum-clearance requirements takes 0.013 s; evaluating them is
+  O(requirements times clone depth), included in a 0.379 s shared regeneration
+  at that scale.
 
 - **Placement solving.** `solve_placements` moves named free instances so
   that every relationship touching them holds, keeping all other instances
@@ -632,7 +644,7 @@ information, so they are delivery artifacts and cannot replace the parametric
 source model.
 
 `ModelDocument` is the implemented local persistence boundary. Schema version
-23 serializes the primary and additional family definitions with their datums,
+24 serializes the primary and additional family definitions with their datums,
 assembly relationships, configurations, materials and material assignments, requirements, derived parameters,
 constraints, base and clone nodes, sparse overrides, placements, linear and
 circular pattern rules, linear and circular fit constraints, slot counts,
@@ -641,8 +653,10 @@ or bounds-driven fitted spans,
 nested assembly frames, semantic selectors, provenance, and regeneration audit records. Live
 OCCT handles and generated BREPs are never serialized. Loading reconstructs a
 validated `InstanceGraph`; regeneration creates fresh session-owned handles.
-Schema versions 1 through 22 migrate to version 23, supplying explicit defaults
-for fields absent from older documents. Version 23 added per-model relationship
+Schema versions 1 through 23 migrate to version 24, supplying explicit defaults
+for fields absent from older documents. Version 24 added assembly-level mass,
+datum-clearance, and relationship-satisfaction requirements. Older documents
+load with none. Version 23 added per-model relationship
 tolerances and migrates older documents to 1e-6 mm and 1e-9 rad. Version 22
 added family datums and assembly semantics; older documents load with none.
 Version 21 added sewing and single- or
@@ -663,8 +677,8 @@ defaults, units, constraints, placements, clone cycles, missing links,
 inconsistent pattern membership, and invalid regeneration revisions before the
 model is accepted.
 
-The next cross-layer work should prioritize datum- and mass-based requirement
-verification, measured by the scale
+The next cross-layer work should prioritize constraint-solved 2D sketches,
+measured by the scale
 benchmark suite (`tools/bench/run.sh`). Scale is a requirement for every change; see the
 [Roadmap](ROADMAP.md) for target sizes and the checks each change must pass.
 

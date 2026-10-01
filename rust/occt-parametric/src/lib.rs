@@ -5,9 +5,10 @@ mod solve;
 mod sparse;
 
 pub use assembly::{
-    AssemblyRelationship, AssemblySemantics, Configuration, DatumDefinition, DatumKind, DatumRef,
-    Material, RELATIONSHIP_ANGULAR_TOLERANCE, RELATIONSHIP_LINEAR_TOLERANCE, RelationKind,
-    RelationshipCheck, RelationshipTolerances, ResolvedDatum,
+    AssemblyRelationship, AssemblyRequirement, AssemblySemantics, AssemblyVerificationRule,
+    Configuration, DatumDefinition, DatumKind, DatumRef, Material, RELATIONSHIP_ANGULAR_TOLERANCE,
+    RELATIONSHIP_LINEAR_TOLERANCE, RelationKind, RelationshipCheck, RelationshipTolerances,
+    ResolvedDatum,
 };
 pub use solve::PlacementSolution;
 
@@ -1127,7 +1128,7 @@ pub struct GenerationRecord {
     pub last_error: Option<String>,
 }
 
-pub const CURRENT_SCHEMA_VERSION: u32 = 23;
+pub const CURRENT_SCHEMA_VERSION: u32 = 24;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ModelDocument {
@@ -1636,6 +1637,7 @@ pub struct GraphRegeneration<'session> {
     results: HashMap<String, GeneratedResult<'session>>,
     shared_from: HashMap<String, String>,
     generated_variants: usize,
+    verification: Vec<VerificationResult>,
 }
 
 impl<'session> GraphRegeneration<'session> {
@@ -1652,6 +1654,12 @@ impl<'session> GraphRegeneration<'session> {
     /// Number of feature-graph regenerations performed.
     pub fn generated_variants(&self) -> usize {
         self.generated_variants
+    }
+
+    /// Results of graph-level assembly requirements. Partial regeneration
+    /// leaves this empty because it may not contain every referenced instance.
+    pub fn verification(&self) -> &[VerificationResult] {
+        &self.verification
     }
 
     pub fn into_results(self) -> HashMap<String, GeneratedResult<'session>> {
@@ -2688,7 +2696,17 @@ impl<'definition> InstanceGraph<'definition> {
             .filter(|id| !self.is_suppressed(id))
             .collect::<Vec<_>>();
         ids.sort_unstable();
-        self.regenerate_instances_current(session, &ids)
+        let mut generation = self.regenerate_instances_current(session, &ids)?;
+        match self.verify_assembly_requirements(session, &generation.results) {
+            Ok(verification) => {
+                generation.verification = verification;
+                Ok(generation)
+            }
+            Err(error) => {
+                release_results(session, generation.results.into_values());
+                Err(error)
+            }
+        }
     }
 
     /// Regenerates the requested instances, running the feature graph once per
@@ -2715,6 +2733,7 @@ impl<'definition> InstanceGraph<'definition> {
             results: HashMap::new(),
             shared_from: HashMap::new(),
             generated_variants: groups.len(),
+            verification: Vec::new(),
         };
         for members in groups {
             let representative = members[0].0.to_owned();

@@ -13,10 +13,11 @@
 
 use occt_bridge::{Session, SessionOptions, ShapeType, Vec3};
 use occt_parametric::{
-    AssemblyRelationship, AxisAngle, DatumDefinition, DatumKind, DatumRef, Dimension,
-    FamilyDefinition, FeatureDefinition, FeatureOperation, InstanceGraph, LengthUnit,
-    ModelDocument, ModelError, ParameterDefinition, ParameterType, ParameterValue, PatternRule,
-    Placement, Quantity, RelationKind, RelationshipTolerances, ScalarExpr, VectorExpr,
+    AssemblyRelationship, AssemblyRequirement, AssemblyVerificationRule, AxisAngle,
+    DatumDefinition, DatumKind, DatumRef, Dimension, FamilyDefinition, FeatureDefinition,
+    FeatureOperation, InstanceGraph, LengthUnit, ModelDocument, ModelError, ParameterDefinition,
+    ParameterType, ParameterValue, PatternRule, Placement, Quantity, RelationKind,
+    RelationshipTolerances, RequirementKind, RequirementPriority, ScalarExpr, VectorExpr,
     VectorQuantity,
 };
 use std::collections::HashMap;
@@ -111,6 +112,31 @@ fn pattern_cases(definition: &'static FamilyDefinition) -> Vec<Outcome> {
                 .map(|()| "re-placed".into())
         },
     ));
+    outcomes.push(timed(
+        format!("assembly requirements {size}: add datum clearances"),
+        ms(2_000),
+        Expectation::Required,
+        || {
+            let requirements = (0..size)
+                .map(|index| AssemblyRequirement {
+                    id: format!("clearance[{index}]"),
+                    version: 1,
+                    kind: RequirementKind::Assembly,
+                    priority: RequirementPriority::Advisory,
+                    statement: "Pattern member datum stays measurable from its source".into(),
+                    rule: AssemblyVerificationRule::DatumClearance {
+                        first: DatumRef::new("source", "axis"),
+                        second: DatumRef::new(format!("m[{index}]"), "axis"),
+                        minimum: Quantity::length(0.0, LengthUnit::Millimeter),
+                        maximum: None,
+                    },
+                    provenance: "bench".into(),
+                })
+                .collect::<Vec<_>>();
+            graph.add_assembly_requirements(requirements)?;
+            Ok(format!("{size} validated requirements"))
+        },
+    ));
     let mut json = String::new();
     outcomes.push(timed(
         format!("pattern {size}: save document"),
@@ -152,6 +178,12 @@ fn pattern_cases(definition: &'static FamilyDefinition) -> Vec<Outcome> {
                 return Err(failure(format!(
                     "{} variants, expected 1 shared generation",
                     generation.generated_variants()
+                )));
+            }
+            if generation.verification().len() != size {
+                return Err(failure(format!(
+                    "{} assembly verification results, expected {size}",
+                    generation.verification().len()
                 )));
             }
             Ok(format!("{} shapes", session.shape_count()?))
