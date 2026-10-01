@@ -3304,6 +3304,18 @@ occt_bridge_status_t occt_bridge_shape_remove(
     });
 }
 
+void occt_bridge_shape_release(occt_bridge_session_t* session, occt_bridge_shape_id_t shape) {
+    if (session == nullptr) {
+        return;
+    }
+    try {
+        std::lock_guard<std::mutex> lock(session->mutex);
+        session->shapes.erase(shape);
+        session->histories.erase(shape);
+    } catch (...) {  // NOLINT(bugprone-empty-catch): release has no status to report and must not throw across the C ABI.
+    }
+}
+
 occt_bridge_status_t occt_bridge_brep_save(
     occt_bridge_session_t* session,
     occt_bridge_shape_id_t shape,

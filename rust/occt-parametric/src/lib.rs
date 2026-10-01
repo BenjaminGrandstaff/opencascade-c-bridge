@@ -7864,6 +7864,24 @@ mod tests {
     }
 
     #[test]
+    fn dropped_graph_results_release_every_generated_shape() {
+        let mut definition = family(RequirementPriority::Required, 100_000.0);
+        definition.requirements.clear();
+        let mut graph = pew_row(&definition);
+        let session = Session::new().unwrap();
+        for _ in 0..5 {
+            let generation = graph.regenerate_all(&session).unwrap();
+            assert!(session.shape_count().unwrap() > 0);
+            drop(generation);
+            assert_eq!(session.shape_count().unwrap(), 0);
+        }
+        let kept = graph.regenerate_all(&session).unwrap().into_results();
+        assert_eq!(session.shape_count().unwrap(), kept.len() * 2);
+        drop(kept);
+        assert_eq!(session.shape_count().unwrap(), 0);
+    }
+
+    #[test]
     fn invalid_pattern_rules_are_rejected() {
         let definition = family(RequirementPriority::Required, 100_000.0);
         let mut graph = InstanceGraph::new(&definition);

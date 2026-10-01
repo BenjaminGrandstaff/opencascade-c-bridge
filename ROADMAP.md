@@ -8,18 +8,18 @@ tracks status and order.
 
 | Layer | Version | State |
 |---|---|---|
-| C ABI (`src/`, `include/`) | ABI 23 | Stable; exact version match required |
+| C ABI (`src/`, `include/`) | ABI 24 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
 | `occt-parametric` (engineering layer) | Schema 22 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 2/2, bridge 38, recipes 3, parametric 81 | `ctest`, `cargo test` (see README) |
+| Tests | C 2/2, bridge 39, recipes 3, parametric 82 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.3% line coverage | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Coverage | 93.42% lines overall; C++ 94% lines, 88% branches, 100% functions | `tools/coverage/run.sh` |
-| Scale benchmarks | 13 pass within budget; 2 known gaps (handle cleanup, km-scale tolerances) | `tools/bench/run.sh` |
+| Scale benchmarks | 14 pass within budget; 1 known gap (km-scale tolerances) | `tools/bench/run.sh` |
 
 ## Done
 
@@ -28,6 +28,10 @@ tracks status and order.
 - Sessions, integer shape handles, history-preserving duplicates, exception
   containment at every entry point.
 - Primitives, wires, faces, prisms, polyline tubes, lofts, compounds.
+- Automatic handle cleanup: dropping a Rust shape handle releases the
+  kernel shape and its history without disturbing the session's last error
+  or warnings, so repeated regeneration returns the session to its starting
+  shape count. Measured cost: about 10-15% on regenerating 10,000 copies.
 - Result validation after booleans, fillets, chamfers, offsets, hollowing,
   sewing, and STEP and BREP import (on by default), optional shape healing
   that carries operation history to the repaired faces, fuzzy booleans, and
@@ -127,26 +131,23 @@ every item below is defined in documents and the API, and verified in tests.
 
 ### Robustness and scale
 
-1. **Automatic handle cleanup.** Release generated shapes when results are
-   dropped so long-running sessions stay bounded, keeping explicit removal
-   and the existing ownership rules.
-2. **Location-only sharing for placed copies.** Store one shape and a
+1. **Location-only sharing for placed copies.** Store one shape and a
    location per copy when only placement differs, so memory stops growing
    with copy count.
-3. **Scalable relationship solving.** Analytic Jacobians, sparse linear
+2. **Scalable relationship solving.** Analytic Jacobians, sparse linear
    algebra, and decomposition into independent connected groups, so
    1,000-part assemblies solve in seconds.
-4. **Kernel failure diagnostics.** Report which edge, face, or input caused a
+3. **Kernel failure diagnostics.** Report which edge, face, or input caused a
    fillet, chamfer, offset, or boolean failure, with OCCT's own error codes.
-5. **Cheaper validation of faces with many holes.** Result validation
+4. **Cheaper validation of faces with many holes.** Result validation
    costs 1.65x a boolean chain at 25 cuts and 2.2x at 200, because checking
    a face with many holes includes pairwise wire-intersection tests; check
    only wires an operation changed, or use spatial indexing.
-6. **Iterative clone resolution.** Resolving an instance recurses once per
+5. **Iterative clone resolution.** Resolving an instance recurses once per
    clone link, so a 20,000-deep chain needs a 16 MiB stack and would
    overflow a default 2 MiB thread. Resolve chains iteratively with
    memoized parents so depth costs neither stack nor repeated work.
-7. **Configurable tolerances.** Per-model linear and angular tolerances for
+6. **Configurable tolerances.** Per-model linear and angular tolerances for
    relationships and checks, replacing the fixed 1e-6 mm and 1e-9 rad.
    Measured: 50-part stacks 1 km from the origin converge to residuals near
    1e-8 mm but are reported unsolved because the fixed tolerances sit at
@@ -154,34 +155,34 @@ every item below is defined in documents and the API, and verified in tests.
 
 ### Capabilities
 
-8. **Datum- and mass-based requirements.** Verification rules for mass
+7. **Datum- and mass-based requirements.** Verification rules for mass
    limits, datum clearances, and relationship satisfaction alongside the
    existing validity and volume rules.
-9. **Constraint-solved 2D sketches.** Lines, arcs, and circles on a datum
+8. **Constraint-solved 2D sketches.** Lines, arcs, and circles on a datum
     plane with geometric constraints (coincident, tangent, parallel,
     perpendicular, horizontal, vertical, equal) and dimensional constraints
     driven by parameter expressions. Solve with the relationship solver's
     machinery, report free degrees and conflicts, and emit closed profiles as
     wires and faces for features.
-10. **Feature breadth.** Extrude and revolve from sketch profiles (adds a
+9. **Feature breadth.** Extrude and revolve from sketch profiles (adds a
     revolve operation to the C ABI), holes with standard sizes, counterbores,
     countersinks, and recorded thread specifications, draft, ribs, and
     variable-radius fillets; sheet metal (flanges, bends, flat patterns)
     after the rest.
-11. **Assembly depth.** Joints (revolute, prismatic, cylindrical, planar,
+10. **Assembly depth.** Joints (revolute, prismatic, cylindrical, planar,
     fixed) with limits on top of relationships; interference and minimum
     clearance between instances using exact boolean and distance queries; and
     motion studies that sweep joint values and report collisions.
-12. **Generated drawings.** Projected views (orthographic, section, detail)
+11. **Generated drawings.** Projected views (orthographic, section, detail)
     by hidden-line removal, exported as SVG and DXF; dimensions and notes
     placed from datums and parameters; title blocks from document metadata.
     Drawings regenerate with the model rather than being edited by hand.
-13. **Analysis and manufacturing hand-off.** Full mass properties (center of
+12. **Analysis and manufacturing hand-off.** Full mass properties (center of
     mass, inertia tensor) per instance and assembly; tagged surface and
     volume meshes for external FEA; manufacturability checks (minimum wall
     thickness, draft angle, 3D-printing overhang); glTF export with material
     appearance for rendering.
-14. **Model data management.** Semantic diff and three-way merge of model
+13. **Model data management.** Semantic diff and three-way merge of model
     documents (parameters, features, instances, relationships), recorded
     revision history inside documents, and change-impact reports listing the
     instances and features a change affects, with a git merge driver.

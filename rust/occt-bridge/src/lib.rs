@@ -10,7 +10,7 @@ use std::{
     ptr::{self, NonNull},
 };
 
-const ABI_VERSION: u32 = 23;
+const ABI_VERSION: u32 = 24;
 
 #[repr(C)]
 struct RawVec3 {
@@ -411,6 +411,7 @@ unsafe extern "C" {
         out: *mut c_int,
     ) -> RawStatus;
     fn occt_bridge_shape_remove(session: *mut c_void, shape: RawShapeId) -> RawStatus;
+    fn occt_bridge_shape_release(session: *mut c_void, shape: RawShapeId);
     fn occt_bridge_brep_save(
         session: *mut c_void,
         shape: RawShapeId,
@@ -586,12 +587,25 @@ pub struct LightDesc {
     pub cast_shadows: bool,
 }
 
+/// A session-owned shape handle. Dropping it releases the kernel shape and
+/// its operation history; [`Session::remove`] releases it immediately and
+/// reports errors. Handles are not `Clone`; use [`Session::duplicate`] for a
+/// second handle to the same geometry.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Shape<'session> {
     id: RawShapeId,
     owner: NonNull<c_void>,
     generation: u64,
     _session: PhantomData<&'session Session>,
+}
+
+impl Drop for Shape<'_> {
+    fn drop(&mut self) {
+        // SAFETY: The `'session` lifetime keeps the owning session alive.
+        // Release ignores handles already removed or cleared (ids are never
+        // reused) and leaves the session's diagnostics untouched.
+        unsafe { occt_bridge_shape_release(self.owner.as_ptr(), self.id) };
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -1574,10 +1588,16 @@ impl Session {
     /// session.remove(shape).unwrap();
     /// session.is_valid(&shape).unwrap();
     /// ```
+    /// Releases a shape now and reports failures; dropping the handle does
+    /// the same silently. A handle rejected because it belongs to another
+    /// session is still consumed and released in its own session.
     pub fn remove(&self, shape: Shape<'_>) -> Result<(), BridgeError> {
         self.validate_shape(&shape)?;
         // SAFETY: The session pointer is valid; the C layer validates the handle.
-        self.check(unsafe { occt_bridge_shape_remove(self.raw.as_ptr(), shape.id) })
+        let status = unsafe { occt_bridge_shape_remove(self.raw.as_ptr(), shape.id) };
+        // The handle is gone; skip the release its Drop would perform.
+        std::mem::forget(shape);
+        self.check(status)
     }
 
     pub fn save_brep(&self, shape: &Shape<'_>, path: impl AsRef<Path>) -> Result<(), BridgeError> {
@@ -2431,6 +2451,52 @@ mod tests {
         assert_eq!(session.subshape_count(&fuzzy, ShapeType::Solid).unwrap(), 1);
         assert_eq!(session.subshape_count(&fuzzy, ShapeType::Face).unwrap(), 10);
         assert!(session.is_valid(&fuzzy).unwrap());
+    }
+
+    #[test]
+    fn dropped_handles_release_their_shapes_without_losing_diagnostics() {
+        let session = Session::new().unwrap();
+        let block = session
+            .create_box(Vec3::new(0.0, 0.0, 0.0), Vec3::new(1.0, 1.0, 1.0))
+            .unwrap();
+        {
+            let _temporary = session.translate(&block, Vec3::new(5.0, 0.0, 0.0)).unwrap();
+            let _faces = (0..6)
+                .map(|index| session.subshape(&block, ShapeType::Face, index).unwrap())
+                .collect::<Vec<_>>();
+            assert_eq!(session.shape_count().unwrap(), 8);
+        }
+        assert_eq!(session.shape_count().unwrap(), 1);
+
+        // Two handles to one geometry are independent.
+        let copy = session.duplicate(&block).unwrap();
+        drop(copy);
+        assert!(session.is_valid(&block).unwrap());
+
+        // Releasing temporaries between a call and reading its diagnostics
+        // keeps both the warnings and the last error.
+        session
+            .set_options(SessionOptions {
+                validate_results: false,
+                ..SessionOptions::default()
+            })
+            .unwrap();
+        let bowtie = session.load_brep(fixture("bowtie_face.brep")).unwrap();
+        let cutter = session
+            .create_box(Vec3::new(2.0, 2.0, -1.0), Vec3::new(3.0, 3.0, 2.0))
+            .unwrap();
+        let common = session.common(&bowtie, &cutter).unwrap();
+        drop(common);
+        drop(cutter);
+        assert!(!session.last_warnings().is_empty());
+
+        // Dropping handles invalidated by clearing is harmless.
+        let stale = session.duplicate(&block).unwrap();
+        session.clear().unwrap();
+        drop(stale);
+        drop(block);
+        drop(bowtie);
+        assert_eq!(session.shape_count().unwrap(), 0);
     }
 
     #[test]
@@ -3315,7 +3381,9 @@ mod tests {
         );
         assert_wrong_session(second.remove(first_shape_to_remove).unwrap_err());
 
-        assert_eq!(first.shape_count().unwrap(), 2);
+        // The rejected handle was moved into `remove`; dropping it releases
+        // the shape in its own session rather than leaking it.
+        assert_eq!(first.shape_count().unwrap(), 1);
         assert_eq!(second.shape_count().unwrap(), 1);
         assert!(first.is_valid(&first_shape).unwrap());
         assert!(second.is_valid(&second_shape).unwrap());

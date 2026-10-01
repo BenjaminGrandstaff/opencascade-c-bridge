@@ -198,6 +198,27 @@ static void test_session_options(occt_bridge_session_t* session) {
         "session options round-trip");
     occt_bridge_session_options_t defaults = {1, 0, 0.0};
     require_ok(session, occt_bridge_session_set_options(session, &defaults));
+    /* Releasing keeps the last error and ignores unknown or released handles. */
+    occt_bridge_shape_id_t released = OCCT_BRIDGE_INVALID_SHAPE_ID;
+    require_ok(session, occt_bridge_create_box(
+        session, (occt_bridge_vec3_t){0, 0, 0}, (occt_bridge_vec3_t){1, 1, 1}, &released));
+    size_t before = 0;
+    require_ok(session, occt_bridge_session_shape_count(session, &before));
+    require_true(
+        occt_bridge_shape_remove(session, 999999) == OCCT_BRIDGE_SHAPE_NOT_FOUND,
+        "removing an unknown handle reports not found");
+    char error[64] = {0};
+    const size_t error_size = occt_bridge_session_last_error(session, error, sizeof(error));
+    occt_bridge_shape_release(session, released);
+    occt_bridge_shape_release(session, released);
+    occt_bridge_shape_release(session, 999999);
+    occt_bridge_shape_release(NULL, released);
+    require_true(
+        occt_bridge_session_last_error(session, NULL, 0) == error_size && error_size > 1,
+        "release leaves the last error untouched");
+    size_t after = 0;
+    require_ok(session, occt_bridge_session_shape_count(session, &after));
+    require_true(after + 1 == before, "release frees exactly the released handle");
     char warnings[64] = {0};
     require_true(
         occt_bridge_session_last_warnings(session, warnings, sizeof(warnings)) == 1 && warnings[0] == '\0',

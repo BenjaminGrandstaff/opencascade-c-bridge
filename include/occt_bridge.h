@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define OCCT_BRIDGE_ABI_VERSION 23u
+#define OCCT_BRIDGE_ABI_VERSION 24u
 #define OCCT_BRIDGE_INVALID_SHAPE_ID UINT64_C(0)
 
 #if defined(_WIN32) && defined(OCCT_BRIDGE_BUILD_SHARED)
@@ -617,6 +617,17 @@ OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_shape_is_valid(
     int* out_is_valid
 );
 OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_shape_remove(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t shape
+);
+/*
+ * Releases a handle for automatic cleanup in language bindings. Unlike
+ * occt_bridge_shape_remove it ignores unknown or already released handles
+ * and leaves the last error and warnings untouched, so releasing temporaries
+ * between a call and reading its diagnostics loses nothing. Never throws;
+ * a null session is ignored.
+ */
+OCCT_BRIDGE_API void occt_bridge_shape_release(
     occt_bridge_session_t* session,
     occt_bridge_shape_id_t shape
 );

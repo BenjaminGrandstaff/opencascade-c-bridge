@@ -3,7 +3,7 @@
 A small, stable C ABI over Open Cascade (OCCT), designed to be wrapped safely
 from Rust and other languages. Open Cascade C++ objects never cross the ABI.
 
-The current C ABI version is **23**.
+The current C ABI version is **24**.
 
 ## Current API
 
@@ -41,7 +41,11 @@ The current C ABI version is **23**.
 - Dependency-free safe Rust wrapper
 
 Operations that create geometry return new handles; they do not mutate their
-inputs. Destroying a session releases all shapes belonging to it.
+inputs. Destroying a session releases all shapes belonging to it. In Rust,
+dropping a shape handle releases it (and its operation history) through
+`occt_bridge_shape_release`, which leaves the session's last error and
+warnings untouched; `Session::remove` releases immediately and reports
+errors.
 
 The C ABI is a direct-modeling API. The Rust engineering layer uses these
 operations to regenerate reusable part families from typed, unit-aware

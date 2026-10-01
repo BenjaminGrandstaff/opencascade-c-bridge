@@ -222,7 +222,7 @@ fn regeneration_handle_cases(definition: &'static FamilyDefinition) -> Vec<Outco
             Some(last) => Err(format!("{last} shapes left after dropping results")),
             None => Err("no rounds ran".into()),
         },
-        expectation: Expectation::KnownGap("roadmap: automatic handle cleanup"),
+        expectation: Expectation::Required,
     };
     vec![timing, handles]
 }
