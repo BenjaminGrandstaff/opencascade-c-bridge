@@ -27,6 +27,10 @@ const CLONE_CHAIN_DEPTH: usize = 20_000;
 const REGENERATION_ROUNDS: usize = 10;
 const REGENERATION_MEMBERS: usize = 1_000;
 const VALIDATED_CUTS: usize = 100;
+const PLACED_COPIES: usize = 5_000;
+/// Rigid placement shares geometry; measured about 0.7 KiB per copy of a
+/// 20-hole plate, against about 168 KiB when transforms copied geometry.
+const PLACED_COPY_BUDGET_KIB: f64 = 4.0;
 /// Largest acceptable slowdown of a boolean chain from result validation.
 /// Measured: 1.65x at 25 cuts, 1.75x at 50, 1.97x at 100, 2.18x at 200.
 /// Each cut and each check are O(part size), but checking a face with many
@@ -64,6 +68,8 @@ impl Outcome {
 fn main() -> ExitCode {
     let definition: &'static FamilyDefinition = Box::leak(Box::new(block()));
     let mut outcomes = Vec::new();
+    // First, so freed memory from other cases cannot hide growth.
+    outcomes.push(placed_copy_memory());
     outcomes.extend(pattern_cases(definition));
     outcomes.push(deep_clone_chain(definition));
     outcomes.extend(regeneration_handle_cases(definition));
@@ -322,6 +328,74 @@ fn validation_cases() -> Vec<Outcome> {
         },
     );
     vec![unchecked, checked]
+}
+
+/// Places `PLACED_COPIES` rigid copies of a 20-hole plate and bounds the
+/// resident memory each copy adds; shared geometry keeps it near constant.
+fn placed_copy_memory() -> Outcome {
+    timed(
+        format!("place {PLACED_COPIES} copies: memory per copy"),
+        ms(5_000),
+        Expectation::Required,
+        || {
+            let session = Session::new()?;
+            let mut plate =
+                session.create_box(Vec3::new(0.0, 0.0, 0.0), Vec3::new(200.0, 200.0, 10.0))?;
+            for index in 0..20 {
+                let (row, column) = ((index / 5) as f64, (index % 5) as f64);
+                let hole = session.create_cylinder(
+                    Vec3::new(20.0 + column * 40.0, 20.0 + row * 40.0, -1.0),
+                    Vec3::new(0.0, 0.0, 1.0),
+                    6.0,
+                    12.0,
+                )?;
+                plate = session.cut(&plate, &hole)?;
+            }
+            let before = resident_kib();
+            let copies = (0..PLACED_COPIES)
+                .map(|index| {
+                    let turned = session.rotate(
+                        &plate,
+                        Vec3::new(0.0, 0.0, 0.0),
+                        Vec3::new(0.0, 0.0, 1.0),
+                        0.1,
+                    )?;
+                    session.translate(&turned, Vec3::new(index as f64 * 250.0, 0.0, 0.0))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let Some(grown) = resident_kib()
+                .zip(before)
+                .map(|(after, start)| after.saturating_sub(start))
+            else {
+                return Ok(format!(
+                    "{} copies; memory not measurable here",
+                    copies.len()
+                ));
+            };
+            let per_copy = grown as f64 / PLACED_COPIES as f64;
+            if per_copy <= PLACED_COPY_BUDGET_KIB {
+                Ok(format!(
+                    "{per_copy:.2} KiB per copy (budget {PLACED_COPY_BUDGET_KIB} KiB)"
+                ))
+            } else {
+                Err(failure(format!(
+                    "{per_copy:.1} KiB per copy exceeds {PLACED_COPY_BUDGET_KIB} KiB"
+                )))
+            }
+        },
+    )
+}
+
+/// Resident set size in KiB on Linux; `None` elsewhere.
+fn resident_kib() -> Option<u64> {
+    std::fs::read_to_string("/proc/self/status")
+        .ok()?
+        .lines()
+        .find_map(|line| line.strip_prefix("VmRSS:"))?
+        .split_whitespace()
+        .next()?
+        .parse()
+        .ok()
 }
 
 // ---- fixtures

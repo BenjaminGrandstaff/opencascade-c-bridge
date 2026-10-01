@@ -54,7 +54,6 @@ The following major capabilities remain planned:
   solving, and decomposition for large assemblies;
 - cheaper validation of faces with many holes, failure diagnostics after
   kernel operations, and configurable model tolerances;
-- kernel-level (location-only) shape sharing;
 - iterative clone resolution for deep chains on default thread stacks;
 - additional domain-specific expression functions;
 - additional schema migrations and integration with the broader EIL source
@@ -408,9 +407,9 @@ Parameters with equal values in different units are conservatively treated
 as distinct. The result reports the representative each instance was shared
 from and how many variants were generated; shared members report every
 feature as reused. Clone identity and inheritance are unchanged. A failure in
-any group releases every handle created by the call. The C transform still
-copies geometry, so placed members own separate OCCT shapes; location-only
-sharing inside the kernel remains a possible later optimization.
+any group releases every handle created by the call. Rigid placement in the
+kernel only attaches a location, so placed members share the group's
+geometry and each adds about a handle's worth of memory.
 
 ## Reuse levels
 
@@ -630,8 +629,7 @@ inconsistent pattern membership, and invalid regeneration revisions before the
 model is accepted.
 
 The next cross-layer work should prioritize robustness and scale:
-location-only sharing for placed clones and scalable relationship solving,
-each measured
+scalable relationship solving and kernel failure diagnostics, each measured
 by the scale benchmark suite (`tools/bench/run.sh`). Scale is a requirement for every change; see the
 [Roadmap](ROADMAP.md) for target sizes and the checks each change must pass.
 

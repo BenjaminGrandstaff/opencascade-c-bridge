@@ -13,7 +13,8 @@ The current C ABI version is **24**.
 - Boxes, cylinders, cones, spheres, and arbitrary planar polygon prisms
 - Reusable polyline, circular, and elliptical wires, planar faces, and face
   extrusion
-- Non-mutating translation, axis-angle rotation, and uniform scaling
+- Non-mutating translation, axis-angle rotation, and uniform scaling; rigid
+  moves share geometry through locations, so placed copies stay small
 - Compatibility constructors for existing natural-stone and wall-torch callers
 - Circular tubes swept along arbitrary 3D polylines for rails, scrollwork, and ornament
 - Multi-section solid/shell lofts and assembly compounds

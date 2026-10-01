@@ -2500,6 +2500,80 @@ mod tests {
     }
 
     #[test]
+    fn rigid_moves_share_geometry_and_keep_history() {
+        let session = Session::new().unwrap();
+        let block = session
+            .create_box(Vec3::new(0.0, 0.0, 0.0), Vec3::new(10.0, 20.0, 30.0))
+            .unwrap();
+        let turned = session
+            .rotate(
+                &block,
+                Vec3::new(0.0, 0.0, 0.0),
+                Vec3::new(0.0, 0.0, 1.0),
+                std::f64::consts::FRAC_PI_2,
+            )
+            .unwrap();
+        let placed = session
+            .translate(&turned, Vec3::new(100.0, 0.0, 0.0))
+            .unwrap();
+        let bounds = session.exact_bounds(&placed).unwrap();
+        assert!((bounds.min.x - 80.0).abs() < 1e-9 && (bounds.max.x - 100.0).abs() < 1e-9);
+
+        // Each source face maps to exactly one moved face of the result.
+        for index in 0..6 {
+            let source = session.subshape(&turned, ShapeType::Face, index).unwrap();
+            assert_eq!(
+                session
+                    .history_count(&placed, &source, HistoryRelation::Modified)
+                    .unwrap(),
+                1
+            );
+            let moved = session
+                .history(&placed, &source, HistoryRelation::Modified, 0)
+                .unwrap();
+            assert!(session.is_adjacent(&placed, &moved, &moved).is_ok());
+            assert!(!session.is_same(&moved, &source).unwrap());
+            let source_area = session.surface_area(&source).unwrap();
+            assert!((session.surface_area(&moved).unwrap() - source_area).abs() < 1e-9);
+            assert!(!session.history_is_deleted(&placed, &source).unwrap());
+        }
+        let stranger = session
+            .create_box(Vec3::new(0.0, 0.0, 0.0), Vec3::new(1.0, 1.0, 1.0))
+            .unwrap();
+        assert_eq!(
+            session
+                .history_count(&placed, &stranger, HistoryRelation::Modified)
+                .unwrap_err()
+                .status,
+            1
+        );
+
+        // Copies sharing geometry stay independent: cutting one leaves the
+        // original and the other copy unchanged.
+        let tool = session
+            .create_box(Vec3::new(85.0, 5.0, -1.0), Vec3::new(5.0, 5.0, 40.0))
+            .unwrap();
+        let cut = session.cut(&placed, &tool).unwrap();
+        assert!(session.volume(&cut).unwrap() < 6000.0 - 1e-6);
+        assert!((session.volume(&placed).unwrap() - 6000.0).abs() < 1e-6);
+        assert!((session.volume(&block).unwrap() - 6000.0).abs() < 1e-6);
+
+        // Scaling cannot be a location; it copies geometry and keeps
+        // explicit history.
+        let scaled = session
+            .scale(&block, Vec3::new(0.0, 0.0, 0.0), 2.0)
+            .unwrap();
+        assert!((session.volume(&scaled).unwrap() - 48_000.0).abs() < 1e-6);
+        let face = session.subshape(&block, ShapeType::Face, 0).unwrap();
+        assert_eq!(
+            session
+                .history_count(&scaled, &face, HistoryRelation::Modified)
+                .unwrap(),
+            1
+        );
+    }
+
+    #[test]
     fn box_face_and_edge_adjacency_follows_shared_topology() {
         let session = Session::new().unwrap();
         let box_shape = session

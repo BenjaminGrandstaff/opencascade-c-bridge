@@ -96,10 +96,22 @@ struct occt_bridge_history_entry {
     bool deleted = false;
 };
 
+/*
+ * Operation history of one result: explicit per-source records for general
+ * operations, or for a rigid move only the moved source and its location,
+ * from which any source subshape's counterpart is computed on demand. The
+ * located form keeps placed copies O(1) in memory instead of O(subshapes).
+ */
+struct occt_bridge_operation_history {
+    std::vector<occt_bridge_history_entry> entries;
+    TopoDS_Shape located_source;
+    TopLoc_Location location;
+};
+
 struct occt_bridge_session {
     mutable std::mutex mutex;
     std::unordered_map<occt_bridge_shape_id_t, TopoDS_Shape> shapes;
-    std::unordered_map<occt_bridge_shape_id_t, std::vector<occt_bridge_history_entry>> histories;
+    std::unordered_map<occt_bridge_shape_id_t, occt_bridge_operation_history> histories;
     occt_bridge_shape_id_t next_shape_id = 1;
     std::string last_error;
     /* Warnings from the most recent call; cleared when the next call starts. */
@@ -265,12 +277,37 @@ occt_bridge_status_t store_shape_with_entries(
     occt_bridge_session_t* session,
     const TopoDS_Shape& shape,
     occt_bridge_shape_id_t* out_shape,
-    std::vector<occt_bridge_history_entry> history) {
+    std::vector<occt_bridge_history_entry> entries) {
+    occt_bridge_operation_history history;
+    history.entries = std::move(entries);
     const occt_bridge_status_t status = store_shape(session, shape, out_shape);
     if (status != OCCT_BRIDGE_OK) {
         return status;
     }
     try {
+        session->histories.emplace(*out_shape, std::move(history));
+    } catch (...) {
+        session->shapes.erase(*out_shape);
+        *out_shape = OCCT_BRIDGE_INVALID_SHAPE_ID;
+        throw;
+    }
+    return succeed(session);
+}
+
+/* Stores a rigidly moved shape with located history. */
+occt_bridge_status_t store_located_shape(
+    occt_bridge_session_t* session,
+    const TopoDS_Shape& source,
+    const TopLoc_Location& location,
+    occt_bridge_shape_id_t* out_shape) {
+    const occt_bridge_status_t status = store_shape(session, source.Moved(location), out_shape);
+    if (status != OCCT_BRIDGE_OK) {
+        return status;
+    }
+    try {
+        occt_bridge_operation_history history;
+        history.located_source = source;
+        history.location = location;
         session->histories.emplace(*out_shape, std::move(history));
     } catch (...) {
         session->shapes.erase(*out_shape);
@@ -484,6 +521,15 @@ occt_bridge_status_t transformed_shape(
     if (value == nullptr) {
         return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "shape was not found");
     }
+    /*
+     * Rigid moves (translation, rotation) only attach a location, so placed
+     * copies share one geometry instead of each owning a deep copy. Scaling
+     * cannot be expressed as a location and still copies geometry.
+     */
+    const bool rigid = std::abs(std::abs(transform.ScaleFactor()) - 1.0) <= Precision::Confusion();
+    if (rigid) {
+        return store_located_shape(session, *value, TopLoc_Location(transform), out_shape);
+    }
     BRepBuilderAPI_Transform operation(*value, transform, Standard_True);
     operation.Build();
     if (!operation.IsDone() || operation.Shape().IsNull()) {
@@ -567,14 +613,31 @@ bool shares_descendant(
     return false;
 }
 
-const occt_bridge_history_entry* find_history_entry(
-    const std::vector<occt_bridge_history_entry>& history,
-    const TopoDS_Shape& source) {
+/*
+ * Resolves `source` against a result's history. For a rigid move a source
+ * subshape is modified into itself moved by the location (O(source size) to
+ * confirm membership); explicit records are searched directly.
+ */
+bool resolve_history_entry(
+    const occt_bridge_operation_history& history,
+    const TopoDS_Shape& source,
+    occt_bridge_history_entry& out_entry) {
+    if (!history.located_source.IsNull()) {
+        if (!belongs_to(history.located_source, source)) {
+            return false;
+        }
+        out_entry = occt_bridge_history_entry{source, {}, {source.Moved(history.location)}, false};
+        return true;
+    }
     const auto found = std::find_if(
-        history.begin(),
-        history.end(),
+        history.entries.begin(),
+        history.entries.end(),
         [&](const occt_bridge_history_entry& entry) { return entry.source.IsSame(source); });
-    return found == history.end() ? nullptr : &*found;
+    if (found == history.entries.end()) {
+        return false;
+    }
+    out_entry = *found;
+    return true;
 }
 
 const std::vector<TopoDS_Shape>* history_relation_shapes(
@@ -2169,12 +2232,13 @@ occt_bridge_status_t occt_bridge_shape_duplicate(
         }
         const TopoDS_Shape copied_shape = *value;
         const auto history = session->histories.find(shape);
-        std::vector<occt_bridge_history_entry> copied_history;
-        if (history != session->histories.end()) {
+        const bool has_history = history != session->histories.end();
+        occt_bridge_operation_history copied_history;
+        if (has_history) {
             copied_history = history->second;
         }
         const occt_bridge_status_t status = store_shape(session, copied_shape, out_shape);
-        if (status != OCCT_BRIDGE_OK || copied_history.empty()) {
+        if (status != OCCT_BRIDGE_OK || !has_history) {
             return status;
         }
         try {
@@ -3192,11 +3256,11 @@ occt_bridge_status_t occt_bridge_shape_history_count(
         if (result_history == session->histories.end()) {
             return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "result shape has no operation history");
         }
-        const occt_bridge_history_entry* entry =
-            find_history_entry(result_history->second, *source_shape);
-        if (entry == nullptr) {
+        occt_bridge_history_entry resolved;
+        if (!resolve_history_entry(result_history->second, *source_shape, resolved)) {
             return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "source is not an input to the result operation");
         }
+        const occt_bridge_history_entry* entry = &resolved;
         const std::vector<TopoDS_Shape>* related = history_relation_shapes(*entry, relation);
         if (related == nullptr) {
             return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "unknown history relation");
@@ -3228,11 +3292,11 @@ occt_bridge_status_t occt_bridge_shape_history_at(
         if (result_history == session->histories.end()) {
             return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "result shape has no operation history");
         }
-        const occt_bridge_history_entry* entry =
-            find_history_entry(result_history->second, *source_shape);
-        if (entry == nullptr) {
+        occt_bridge_history_entry resolved;
+        if (!resolve_history_entry(result_history->second, *source_shape, resolved)) {
             return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "source is not an input to the result operation");
         }
+        const occt_bridge_history_entry* entry = &resolved;
         const std::vector<TopoDS_Shape>* related = history_relation_shapes(*entry, relation);
         if (related == nullptr) {
             return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "unknown history relation");
@@ -3264,11 +3328,11 @@ occt_bridge_status_t occt_bridge_shape_history_is_deleted(
         if (result_history == session->histories.end()) {
             return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "result shape has no operation history");
         }
-        const occt_bridge_history_entry* entry =
-            find_history_entry(result_history->second, *source_shape);
-        if (entry == nullptr) {
+        occt_bridge_history_entry resolved;
+        if (!resolve_history_entry(result_history->second, *source_shape, resolved)) {
             return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "source is not an input to the result operation");
         }
+        const occt_bridge_history_entry* entry = &resolved;
         *out_is_deleted = entry->deleted ? 1 : 0;
         return succeed(session);
     });

@@ -404,7 +404,13 @@ OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_hollow(
     occt_bridge_shape_id_t* out_shape
 );
 
-/* Transforms create new handles and leave the input shape unchanged. */
+/*
+ * Transforms create new handles and leave the input shape unchanged.
+ * Translation and rotation are rigid: the result shares the input's geometry
+ * and differs only by a location, so placed copies cost a handle rather than
+ * a deep copy, and their history maps each input subshape to its moved
+ * counterpart. Scaling copies geometry.
+ */
 OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_translate(
     occt_bridge_session_t* session,
     occt_bridge_shape_id_t shape,
