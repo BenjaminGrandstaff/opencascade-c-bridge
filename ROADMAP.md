@@ -82,30 +82,116 @@ tracks status and order.
   portion; C/C++ records remain in the report for servers with CFamily.
 - Argument-validation conformance test for every C entry point.
 
+## Scaling requirement
+
+Scale is a requirement for every change, not a later optimization. Target
+sizes are 10,000 instances or pattern members per graph, assemblies of
+1,000 parts, and long-running processes that regenerate repeatedly in one
+session. Before a change lands:
+
+- **Complexity is stated.** Note the time and memory complexity of new
+  algorithms in their doc comments; avoid scans of every node, member, or
+  relationship inside per-item loops, and justify anything above
+  O(n log n) in graph size.
+- **It is measured.** Add or extend a case in the scale benchmark suite at
+  the target sizes and keep it inside its time and memory budget.
+- **Handles are bounded.** Session shape counts must return to their
+  starting value after a regeneration result is released, and repeated
+  regeneration must not grow memory.
+- **Geometry is not duplicated needlessly.** Prefer shared or
+  location-only shapes when only placement differs.
+- **Numerics are scale-aware.** Tolerances and solver conditioning must hold
+  for parts far from the model origin and for both millimeter and
+  kilometer-sized models.
+
 ## Next
 
 Ordered by priority. Each item should land with tests, a schema bump when the
-document format changes, and updates to this file.
+document format changes, the scaling requirement above, and updates to this
+file. The project is a code-first engine, not an interactive application:
+every item below is defined in documents and the API, and verified in tests.
 
-1. **Datum- and mass-based requirements.** Verification rules for mass
+### Robustness and scale
+
+1. **Fix solver conditioning away from the origin (bug).** Rotation unknowns
+   are taken about the model origin, so for parts far from it rotation and
+   translation are nearly interchangeable; a five-block coincident stack
+   fails to converge in 200 iterations and ends tilted about 0.03 rad.
+   Rotate each free instance about its own reference point, scale angular
+   residuals by a characteristic length, and add regression tests with parts
+   far from the origin.
+2. **Scale benchmark suite.** A committed benchmark with budgets covering
+   10,000-member patterns (create, edit, save, load, regenerate), deep clone
+   chains, configuration edits, solver sizes, and session handle counts after
+   repeated regeneration, run by a script alongside lint and coverage.
+3. **Result validation and healing in the kernel.** Check validity after
+   booleans, fillets, chamfers, offsets, hollowing, sewing, and STEP import;
+   offer optional healing (shape fixing, tolerance repair) and fuzzy
+   booleans for near-coincident faces; report OCCT warnings instead of
+   dropping them.
+4. **Automatic handle cleanup.** Release generated shapes when results are
+   dropped so long-running sessions stay bounded, keeping explicit removal
+   and the existing ownership rules.
+5. **Location-only sharing for placed copies.** Store one shape and a
+   location per copy when only placement differs, so memory stops growing
+   with copy count.
+6. **Scalable relationship solving.** Analytic Jacobians, sparse linear
+   algebra, and decomposition into independent connected groups, so
+   1,000-part assemblies solve in seconds.
+7. **Kernel failure diagnostics.** Report which edge, face, or input caused a
+   fillet, chamfer, offset, or boolean failure, with OCCT's own error codes.
+8. **Configurable tolerances.** Per-model linear and angular tolerances for
+   relationships and checks, replacing the fixed 1e-6 mm and 1e-9 rad.
+
+### Capabilities
+
+9. **Datum- and mass-based requirements.** Verification rules for mass
    limits, datum clearances, and relationship satisfaction alongside the
    existing validity and volume rules.
+10. **Constraint-solved 2D sketches.** Lines, arcs, and circles on a datum
+    plane with geometric constraints (coincident, tangent, parallel,
+    perpendicular, horizontal, vertical, equal) and dimensional constraints
+    driven by parameter expressions. Solve with the relationship solver's
+    machinery, report free degrees and conflicts, and emit closed profiles as
+    wires and faces for features.
+11. **Feature breadth.** Extrude and revolve from sketch profiles (adds a
+    revolve operation to the C ABI), holes with standard sizes, counterbores,
+    countersinks, and recorded thread specifications, draft, ribs, and
+    variable-radius fillets; sheet metal (flanges, bends, flat patterns)
+    after the rest.
+12. **Assembly depth.** Joints (revolute, prismatic, cylindrical, planar,
+    fixed) with limits on top of relationships; interference and minimum
+    clearance between instances using exact boolean and distance queries; and
+    motion studies that sweep joint values and report collisions.
+13. **Generated drawings.** Projected views (orthographic, section, detail)
+    by hidden-line removal, exported as SVG and DXF; dimensions and notes
+    placed from datums and parameters; title blocks from document metadata.
+    Drawings regenerate with the model rather than being edited by hand.
+14. **Analysis and manufacturing hand-off.** Full mass properties (center of
+    mass, inertia tensor) per instance and assembly; tagged surface and
+    volume meshes for external FEA; manufacturability checks (minimum wall
+    thickness, draft angle, 3D-printing overhang); glTF export with material
+    appearance for rendering.
+15. **Model data management.** Semantic diff and three-way merge of model
+    documents (parameters, features, instances, relationships), recorded
+    revision history inside documents, and change-impact reports listing the
+    instances and features a change affects, with a git merge driver.
 
 ## Later
 
-- Richer requirement rules: clearance, interference, minimum radius, wall
-  thickness, connectivity, manufacturing checks.
+- Richer requirement rules: interference, minimum radius, wall thickness,
+  connectivity, manufacturing checks.
 - Assumptions and requirement-to-feature trace links in the document schema.
 - Semantic naming beyond feature outputs, and geometric tangency inference
   when continuity metadata is absent.
 - Additional domain-specific expression functions.
-- Kernel-level (location-only) shape sharing for placed clones.
 - Integration with the broader EIL source model in the sibling
   [`engineering-intent-language`](../engineering-intent-language) project.
 
 ## Keeping this current
 
-When a feature lands, move it from **Next** to **Done**, refresh the status
-tables (ABI and schema versions, test counts, coverage), and adjust the
+When a feature lands, confirm it meets the scaling requirement, move it from
+**Next** to **Done**, refresh the status tables (ABI and schema versions,
+test counts, coverage, benchmark results), and adjust the
 "next work" paragraph in [Parametric architecture](PARAMETRIC_ARCHITECTURE.md)
 to match.

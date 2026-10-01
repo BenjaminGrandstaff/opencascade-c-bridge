@@ -50,13 +50,27 @@ Rust layers:
 
 The following major capabilities remain planned:
 
-- kernel-level (location-only) shape sharing;
+- relationship-solver conditioning away from the origin, analytic and sparse
+  solving, and decomposition for large assemblies;
+- result validation, optional healing, and failure diagnostics after kernel
+  operations, with configurable model tolerances;
+- automatic release of generated shapes and kernel-level (location-only)
+  shape sharing;
+- a committed scale benchmark suite with budgets;
 - additional domain-specific expression functions;
 - additional schema migrations and integration with the broader EIL source
   model;
 - broader requirement rules such as clearance, interference, minimum radius,
   wall thickness, connectivity, and manufacturing checks;
-- mass-, clearance-, and datum-based requirement verification.
+- mass-, clearance-, and datum-based requirement verification;
+- constraint-solved 2D sketches feeding extrude, revolve, hole, draft, rib,
+  variable-fillet, and later sheet-metal features;
+- joints, interference and clearance detection, and motion studies;
+- generated drawings with projected views and dimensions;
+- full mass properties, FEA mesh hand-off, manufacturability checks, and
+  glTF export;
+- semantic diff, merge, revision history, and change impact for model
+  documents.
 
 ## Assembly semantics
 
@@ -606,9 +620,12 @@ defaults, units, constraints, placements, clone cycles, missing links,
 inconsistent pattern membership, and invalid regeneration revisions before the
 model is accepted.
 
-The next cross-layer work should prioritize requirement rules built on
-datums, relationships, and mass,
-followed by kernel-level location-only sharing for placed clones.
+The next cross-layer work should prioritize robustness and scale: fixing
+relationship-solver conditioning for parts far from the origin, a committed
+scale benchmark suite, result validation and healing after kernel
+operations, automatic release of generated shapes, and location-only sharing
+for placed clones. Scale is a requirement for every change; see the
+[Roadmap](ROADMAP.md) for target sizes and the checks each change must pass.
 
 The broader serialized source model lives in the sibling
 [`engineering-intent-language`](../engineering-intent-language) project. Its
