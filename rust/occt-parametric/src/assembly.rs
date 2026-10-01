@@ -9,6 +9,42 @@ pub const RELATIONSHIP_LINEAR_TOLERANCE: f64 = 1e-6;
 /// Angular tolerance, in radians, for relationship checks.
 pub const RELATIONSHIP_ANGULAR_TOLERANCE: f64 = 1e-9;
 
+/// Per-model tolerances used to solve and check assembly relationships.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct RelationshipTolerances {
+    pub linear_millimeters: f64,
+    pub angular_radians: f64,
+}
+
+impl Default for RelationshipTolerances {
+    fn default() -> Self {
+        Self {
+            linear_millimeters: RELATIONSHIP_LINEAR_TOLERANCE,
+            angular_radians: RELATIONSHIP_ANGULAR_TOLERANCE,
+        }
+    }
+}
+
+impl RelationshipTolerances {
+    fn validate(self) -> Result<(), ModelError> {
+        if !(self.linear_millimeters.is_finite() && self.linear_millimeters > 0.0) {
+            return Err(ModelError::new(
+                "relationship linear tolerance must be finite and positive",
+            ));
+        }
+        if !(self.angular_radians.is_finite() && self.angular_radians > 0.0) {
+            return Err(ModelError::new(
+                "relationship angular tolerance must be finite and positive",
+            ));
+        }
+        Ok(())
+    }
+
+    fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+}
+
 /// A named reference point, axis, or plane defined in a family's local
 /// coordinates from parameter expressions.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -187,6 +223,9 @@ pub struct Material {
 /// Relationships, configurations, and materials of one instance graph.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct AssemblySemantics {
+    /// Tolerances used by every relationship in this model.
+    #[serde(default, skip_serializing_if = "RelationshipTolerances::is_default")]
+    pub tolerances: RelationshipTolerances,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub relationships: Vec<AssemblyRelationship>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -249,6 +288,20 @@ impl AssemblySemantics {
 impl<'definition> InstanceGraph<'definition> {
     pub fn assembly(&self) -> &AssemblySemantics {
         &self.assembly
+    }
+
+    pub fn relationship_tolerances(&self) -> RelationshipTolerances {
+        self.assembly.tolerances
+    }
+
+    /// Changes the tolerances used to solve and check every relationship.
+    pub fn set_relationship_tolerances(
+        &mut self,
+        tolerances: RelationshipTolerances,
+    ) -> Result<(), ModelError> {
+        tolerances.validate()?;
+        self.assembly.tolerances = tolerances;
+        Ok(())
     }
 
     // ---- datums
@@ -336,8 +389,9 @@ impl<'definition> InstanceGraph<'definition> {
         let (linear, angular) = residuals(relationship.kind, first, second).map_err(context)?;
         Ok(RelationshipCheck {
             id: relationship.id.clone(),
-            satisfied: linear.is_none_or(|value| value <= RELATIONSHIP_LINEAR_TOLERANCE)
-                && angular.is_none_or(|value| value <= RELATIONSHIP_ANGULAR_TOLERANCE),
+            satisfied: linear
+                .is_none_or(|value| value <= self.assembly.tolerances.linear_millimeters)
+                && angular.is_none_or(|value| value <= self.assembly.tolerances.angular_radians),
             linear_residual: linear,
             angular_residual: angular,
         })
@@ -576,6 +630,7 @@ impl<'definition> InstanceGraph<'definition> {
 
     /// Checks every assembly reference, configuration, and relationship.
     pub(crate) fn validate_assembly(&self) -> Result<(), ModelError> {
+        self.assembly.tolerances.validate()?;
         let mut ids = HashSet::new();
         for material in &self.assembly.materials {
             validate_material(material)?;
@@ -1163,6 +1218,75 @@ pub(crate) mod tests {
         }
         assert_eq!(graph.remove_relationship("in_top").unwrap().id, "in_top");
         assert!(graph.remove_relationship("in_top").is_err());
+    }
+
+    #[test]
+    fn relationship_checks_use_validated_model_tolerances() {
+        let definition = block();
+        let mut graph = stacked(&definition);
+        graph
+            .add_relationship(relationship(
+                "seated",
+                RelationKind::Coincident,
+                ("a", "top"),
+                ("b", "bottom"),
+            ))
+            .unwrap();
+        graph
+            .set_placement("b", translated(0.0, 0.0, 30.000_5))
+            .unwrap();
+        assert!(!graph.check_relationships().unwrap()[0].satisfied);
+
+        let tolerances = RelationshipTolerances {
+            linear_millimeters: 0.001,
+            angular_radians: 0.000_02,
+        };
+        graph.set_relationship_tolerances(tolerances).unwrap();
+        assert_eq!(graph.relationship_tolerances(), tolerances);
+        assert!(graph.check_relationships().unwrap()[0].satisfied);
+
+        graph.remove_relationship("seated").unwrap();
+        graph
+            .set_placement(
+                "b",
+                Placement {
+                    translation: VectorQuantity::lengths(0.0, 0.0, 30.0, LengthUnit::Millimeter),
+                    rotation: Some(AxisAngle {
+                        origin: VectorQuantity::lengths(0.0, 0.0, 0.0, LengthUnit::Millimeter),
+                        axis: VectorQuantity::scalars(1.0, 0.0, 0.0),
+                        angle_radians: 0.000_01,
+                    }),
+                },
+            )
+            .unwrap();
+        graph
+            .add_relationship(relationship(
+                "level",
+                RelationKind::Parallel,
+                ("a", "top"),
+                ("b", "top"),
+            ))
+            .unwrap();
+        assert!(graph.check_relationships().unwrap()[0].satisfied);
+
+        for invalid in [0.0, -1.0, f64::INFINITY, f64::NAN] {
+            let error = graph
+                .set_relationship_tolerances(RelationshipTolerances {
+                    linear_millimeters: invalid,
+                    angular_radians: RELATIONSHIP_ANGULAR_TOLERANCE,
+                })
+                .unwrap_err();
+            assert!(error.message.contains("linear tolerance"));
+
+            let error = graph
+                .set_relationship_tolerances(RelationshipTolerances {
+                    linear_millimeters: RELATIONSHIP_LINEAR_TOLERANCE,
+                    angular_radians: invalid,
+                })
+                .unwrap_err();
+            assert!(error.message.contains("angular tolerance"));
+        }
+        assert_eq!(graph.relationship_tolerances(), tolerances);
     }
 
     #[test]

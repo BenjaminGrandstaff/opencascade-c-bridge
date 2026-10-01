@@ -16,7 +16,8 @@ use occt_parametric::{
     AssemblyRelationship, AxisAngle, DatumDefinition, DatumKind, DatumRef, Dimension,
     FamilyDefinition, FeatureDefinition, FeatureOperation, InstanceGraph, LengthUnit,
     ModelDocument, ModelError, ParameterDefinition, ParameterType, ParameterValue, PatternRule,
-    Placement, Quantity, RelationKind, ScalarExpr, VectorExpr, VectorQuantity,
+    Placement, Quantity, RelationKind, RelationshipTolerances, ScalarExpr, VectorExpr,
+    VectorQuantity,
 };
 use std::collections::HashMap;
 use std::process::ExitCode;
@@ -247,26 +248,38 @@ fn regeneration_handle_cases(definition: &'static FamilyDefinition) -> Vec<Outco
 
 fn solver_cases(definition: &'static FamilyDefinition) -> Vec<Outcome> {
     let cases = [
-        (50, 1_000.0, false, ms(1_000), Expectation::Required),
-        (20, 1_000.0, true, ms(500), Expectation::Required),
-        (50, 1_000.0, true, ms(1_000), Expectation::Required),
-        (1_000, 1_000.0, false, ms(2_000), Expectation::Required),
-        (1_000, 1_000.0, true, ms(5_000), Expectation::Required),
-        (50, 1_000_000.0, false, ms(1_000), Expectation::Required),
+        (50, 1_000.0, false, None, ms(1_000)),
+        (20, 1_000.0, true, None, ms(500)),
+        (50, 1_000.0, true, None, ms(1_000)),
+        (1_000, 1_000.0, false, None, ms(2_000)),
+        (1_000, 1_000.0, true, None, ms(5_000)),
+        (50, 1_000_000.0, false, None, ms(1_000)),
+        (50, 1_000_000.0, false, Some(1e-8), ms(1_000)),
     ];
     cases
         .into_iter()
-        .map(|(count, offset, constrained, budget, expectation)| {
+        .map(|(count, offset, constrained, linear_tolerance, budget)| {
             let mut graph = stacked_blocks(definition, count, offset, constrained);
+            if let Some(linear_millimeters) = linear_tolerance {
+                graph
+                    .set_relationship_tolerances(RelationshipTolerances {
+                        linear_millimeters,
+                        ..RelationshipTolerances::default()
+                    })
+                    .unwrap();
+            }
             let ids = (1..=count)
                 .map(|index| format!("i{index}"))
                 .collect::<Vec<_>>();
             let ids = ids.iter().map(String::as_str).collect::<Vec<_>>();
             let kind = if constrained { "constrained" } else { "seated" };
+            let tolerance = linear_tolerance
+                .map(|value| format!(" at {value:.0e} mm tolerance"))
+                .unwrap_or_default();
             timed(
-                format!("solve {count} {kind} parts at {offset} mm"),
+                format!("solve {count} {kind} parts at {offset} mm{tolerance}"),
                 budget,
-                expectation,
+                Expectation::Required,
                 || {
                     let solution = graph.solve_placements(&ids)?;
                     if solution.solved {

@@ -7,7 +7,7 @@ mod sparse;
 pub use assembly::{
     AssemblyRelationship, AssemblySemantics, Configuration, DatumDefinition, DatumKind, DatumRef,
     Material, RELATIONSHIP_ANGULAR_TOLERANCE, RELATIONSHIP_LINEAR_TOLERANCE, RelationKind,
-    RelationshipCheck, ResolvedDatum,
+    RelationshipCheck, RelationshipTolerances, ResolvedDatum,
 };
 pub use solve::PlacementSolution;
 
@@ -1127,7 +1127,7 @@ pub struct GenerationRecord {
     pub last_error: Option<String>,
 }
 
-pub const CURRENT_SCHEMA_VERSION: u32 = 22;
+pub const CURRENT_SCHEMA_VERSION: u32 = 23;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ModelDocument {
@@ -8609,6 +8609,12 @@ mod tests {
                 ParameterValue::Scalar(Quantity::length(25.0, LengthUnit::Millimeter)),
             )
             .unwrap();
+        graph
+            .set_relationship_tolerances(RelationshipTolerances {
+                linear_millimeters: 0.002,
+                angular_radians: 0.000_003,
+            })
+            .unwrap();
         let mut document = ModelDocument::from_graph(&graph);
         document.generation_records.push(GenerationRecord {
             instance_id: "source".into(),
@@ -8622,6 +8628,7 @@ mod tests {
         let loaded = ModelDocument::from_json(&json).unwrap();
         assert_eq!(loaded, document);
         assert_eq!(loaded.schema_version, CURRENT_SCHEMA_VERSION);
+        assert_eq!(loaded.assembly.tolerances, graph.relationship_tolerances());
         assert_eq!(loaded.generation_records[0].accepted_revision, Some(2));
 
         let loaded_graph = loaded.instance_graph().unwrap();
@@ -8677,6 +8684,10 @@ mod tests {
         assert!(migrated.frames.is_empty());
         assert_eq!(migrated.instances[0].frame(), None);
         assert!(migrated.generation_records.is_empty());
+        assert_eq!(
+            migrated.assembly.tolerances,
+            RelationshipTolerances::default()
+        );
         assert_eq!(migrated.instances[0].placement(), Placement::identity());
         assert!(migrated.instance_graph().unwrap().resolve("legacy").is_ok());
 
@@ -8895,6 +8906,11 @@ mod tests {
         });
         let error = broken.to_json_pretty().err().unwrap();
         assert!(error.message.contains("missing"));
+
+        let mut invalid_tolerance = ModelDocument::from_graph(&graph);
+        invalid_tolerance.assembly.tolerances.linear_millimeters = f64::NAN;
+        let error = invalid_tolerance.to_json_pretty().err().unwrap();
+        assert!(error.message.contains("linear tolerance"));
     }
 
     #[test]

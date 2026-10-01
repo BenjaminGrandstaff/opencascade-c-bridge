@@ -74,9 +74,10 @@ curvature-radius, sampled full-edge curvature-radius range, proven-bound
 curvature-radius range,
 largest-planar-face, tangent-neighbor, set composition, and operation-history
 rules. Families declare named datums; graphs record checked datum
-relationships that can be solved to place free instances, configurations, and
-materials with mass. Schema v1 through
-v21 documents migrate to v22 during load; unsupported
+relationships that can be solved to place free instances under finite positive
+per-model linear and angular tolerances, plus configurations and materials
+with mass. Schema v1 through
+v22 documents migrate to v23 during load; unsupported
 future versions are rejected.
 Managed regeneration incrementally reuses unchanged outputs and
 rebuilds dirty features plus their downstream dependents. Graph regeneration
@@ -157,8 +158,9 @@ builds an optimized copy of the library in `build/bench`, runs every case at
 the target sizes (10,000-member patterns, deep clone chains, 1,000-part solver
 stacks and grids, repeated regeneration, validation chains, and many-hole
 faces), and fails when a required case misses its time budget or correctness
-check. The current suite has 22 passing cases, including single-leaf and
-memoized all-node resolution of a 20,000-link clone chain:
+check. The current suite has 23 passing cases, including single-leaf and
+memoized all-node resolution of a 20,000-link clone chain and a 50-part stack
+1 km from the origin solved at a 1e-8 mm model tolerance:
 
 ```bash
 tools/bench/run.sh
@@ -214,7 +216,9 @@ handles and retain the prior accepted generation.
 
 `ModelDocument` persists the family definition, requirements, instance and
 clone identities, sparse overrides, placements, assembly frames, pattern rules, provenance, and
-regeneration audit records. Generated OCCT handles and BREPs are deliberately
+regeneration audit records. Schema 23 also persists per-model linear
+(millimeter) and angular (radian) relationship tolerances; new graphs and older
+documents default to 1e-6 mm and 1e-9 rad. Generated OCCT handles and BREPs are deliberately
 excluded: loading a document reconstructs a validated `InstanceGraph`, which
 then regenerates fresh session-owned geometry.
 

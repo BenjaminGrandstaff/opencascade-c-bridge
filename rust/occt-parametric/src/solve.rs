@@ -15,10 +15,13 @@ use crate::assembly::{add, cross, dot, length, scale, subtract, transform_point}
 use crate::sparse::{SparseJacobian, SymmetricMatrix};
 
 const MAX_ITERATIONS: usize = 200;
-/// Convergence tolerance relative to the problem's length scale (the largest
-/// translation unknown, characteristic length, or 1 mm); a fixed absolute
-/// tolerance is unreachable in floating point for parts far from the origin.
+/// Scale-relative convergence target used when it is stricter than the
+/// model's configured relationship tolerances.
 const RELATIVE_TOLERANCE: f64 = 1e-12;
+/// The solver works on vector components and sine-like angular residuals,
+/// while final checks use vector lengths and angles. Staying inside half the
+/// configured boundary guarantees those final checks have geometric margin.
+const CHECK_TOLERANCE_MARGIN: f64 = 0.5;
 /// Initial Marquardt damping. Assembly problems are close to linear, so the
 /// solver starts near Gauss–Newton and damps only after a rejected step;
 /// heavier initial damping crawls along chains, whose weakest mode shrinks
@@ -171,7 +174,7 @@ impl<'definition> InstanceGraph<'definition> {
             .collect::<Result<Vec<_>, _>>()?
             .concat();
 
-        let fit = closest_solution(&problem, start)?;
+        let fit = closest_solution(&problem, start, self.assembly.tolerances)?;
         let rank = fit.jacobian.normal_matrix().rank(NORMAL_RANK_TOLERANCE);
         let mut candidate = self.clone();
         for (index, (instance, pivot)) in free.iter().zip(&problem.pivots).enumerate() {
@@ -545,9 +548,13 @@ const RESTORATION_ROUNDS: usize = 8;
 /// alone can drift along those directions on the way (a temporary tilt makes
 /// a free slide matter), so restoration is what makes under-constrained
 /// instances move as little as possible.
-fn closest_solution(problem: &Problem, start: Vec<f64>) -> Result<Fit, ModelError> {
-    let tolerance = problem_tolerance(problem, &start);
-    let mut fit = least_squares(problem, start.clone())?;
+fn closest_solution(
+    problem: &Problem,
+    start: Vec<f64>,
+    tolerances: RelationshipTolerances,
+) -> Result<Fit, ModelError> {
+    let tolerance = problem_tolerance(problem, &start, tolerances);
+    let mut fit = least_squares(problem, start.clone(), tolerances)?;
     let mut previous = f64::INFINITY;
     for _ in 0..RESTORATION_ROUNDS {
         let offset = start
@@ -574,19 +581,28 @@ fn closest_solution(problem: &Problem, start: Vec<f64>) -> Result<Fit, ModelErro
             break;
         }
         let iterations = fit.iterations;
-        fit = least_squares(problem, restored)?;
+        fit = least_squares(problem, restored, tolerances)?;
         fit.iterations += iterations;
     }
     Ok(fit)
 }
 
-fn problem_tolerance(problem: &Problem, unknowns: &[f64]) -> f64 {
+fn problem_tolerance(
+    problem: &Problem,
+    unknowns: &[f64],
+    tolerances: RelationshipTolerances,
+) -> f64 {
     let largest_translation = unknowns
         .iter()
         .enumerate()
         .filter(|(index, _)| index % UNKNOWNS_PER_INSTANCE >= 3)
         .fold(0.0_f64, |largest, (_, value)| largest.max(value.abs()));
-    RELATIVE_TOLERANCE * largest_translation.max(problem.angular_scale).max(1.0)
+    let scale_target = RELATIVE_TOLERANCE * largest_translation.max(problem.angular_scale).max(1.0);
+    let relationship_target = tolerances
+        .linear_millimeters
+        .min(tolerances.angular_radians * problem.angular_scale)
+        * CHECK_TOLERANCE_MARGIN;
+    scale_target.min(relationship_target)
 }
 
 /// Projection passes that remove rounding residue from the null-space part.
@@ -610,11 +626,15 @@ fn null_space_component(jacobian: &SparseJacobian, offset: &[f64]) -> Option<Vec
     Some(component)
 }
 
-fn least_squares(problem: &Problem, mut unknowns: Vec<f64>) -> Result<Fit, ModelError> {
+fn least_squares(
+    problem: &Problem,
+    mut unknowns: Vec<f64>,
+    tolerances: RelationshipTolerances,
+) -> Result<Fit, ModelError> {
     let mut values = residuals(problem, &unknowns);
     let mut cost = squared_norm(&values);
     let mut damping = INITIAL_DAMPING;
-    let tolerance = problem_tolerance(problem, &unknowns);
+    let tolerance = problem_tolerance(problem, &unknowns, tolerances);
     let mut iterations = 0;
     while iterations < MAX_ITERATIONS && max_abs(&values) > tolerance {
         iterations += 1;

@@ -64,7 +64,6 @@ a 100-cut chain and 1.12x on a 400-hole single cut; validating the resulting
 
 The following major capabilities remain planned:
 
-- configurable model tolerances;
 - additional domain-specific expression functions;
 - additional schema migrations and integration with the broader EIL source
   model;
@@ -94,7 +93,10 @@ document.
   `Distance` relate two instance datums. They record design intent:
   `check_relationships` reports each as satisfied or
   violated with its linear residual in millimeters and angular residual in
-  radians, against tolerances of 1e-6 mm and 1e-9 rad. Coincidence covers
+  radians. Each model stores finite positive linear and angular tolerances,
+  used by both `solve_placements` and the final checks; defaults retain the
+  former 1e-6 mm and 1e-9 rad behavior. `set_relationship_tolerances` changes
+  them without exposing mutable assembly state. Coincidence covers
   point, axis, and plane pairs, including an axis lying in a plane; parallel
   and perpendicular treat a plane by its normal, so an axis is parallel to a
   plane when it is normal to the plane's normal. Unsupported pairs, such as a
@@ -630,7 +632,7 @@ information, so they are delivery artifacts and cannot replace the parametric
 source model.
 
 `ModelDocument` is the implemented local persistence boundary. Schema version
-22 serializes the primary and additional family definitions with their datums,
+23 serializes the primary and additional family definitions with their datums,
 assembly relationships, configurations, materials and material assignments, requirements, derived parameters,
 constraints, base and clone nodes, sparse overrides, placements, linear and
 circular pattern rules, linear and circular fit constraints, slot counts,
@@ -639,9 +641,11 @@ or bounds-driven fitted spans,
 nested assembly frames, semantic selectors, provenance, and regeneration audit records. Live
 OCCT handles and generated BREPs are never serialized. Loading reconstructs a
 validated `InstanceGraph`; regeneration creates fresh session-owned handles.
-Schema versions 1 through 21 migrate to version 22, supplying explicit defaults
-for fields absent from older documents. Version 22 added family datums and
-assembly semantics; older documents load with none. Version 21 added sewing and single- or
+Schema versions 1 through 22 migrate to version 23, supplying explicit defaults
+for fields absent from older documents. Version 23 added per-model relationship
+tolerances and migrates older documents to 1e-6 mm and 1e-9 rad. Version 22
+added family datums and assembly semantics; older documents load with none.
+Version 21 added sewing and single- or
 multi-shell solid feature operations. Version 20 added additional family
 definitions and per-base family references. Version 19 added optional pattern count
 and span drivers. Version 18 added slot counts, taken
@@ -659,8 +663,8 @@ defaults, units, constraints, placements, clone cycles, missing links,
 inconsistent pattern membership, and invalid regeneration revisions before the
 model is accepted.
 
-The next cross-layer work should prioritize configurable model tolerances and
-datum- and mass-based requirement verification, each measured by the scale
+The next cross-layer work should prioritize datum- and mass-based requirement
+verification, measured by the scale
 benchmark suite (`tools/bench/run.sh`). Scale is a requirement for every change; see the
 [Roadmap](ROADMAP.md) for target sizes and the checks each change must pass.
 
