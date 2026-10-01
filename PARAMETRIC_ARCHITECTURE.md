@@ -56,7 +56,7 @@ The following major capabilities remain planned:
   operations, with configurable model tolerances;
 - automatic release of generated shapes and kernel-level (location-only)
   shape sharing;
-- a committed scale benchmark suite with budgets;
+- iterative clone resolution for deep chains on default thread stacks;
 - additional domain-specific expression functions;
 - additional schema migrations and integration with the broader EIL source
   model;
@@ -628,11 +628,10 @@ defaults, units, constraints, placements, clone cycles, missing links,
 inconsistent pattern membership, and invalid regeneration revisions before the
 model is accepted.
 
-The next cross-layer work should prioritize robustness and scale: fixing
-relationship-solver conditioning for parts far from the origin, a committed
-scale benchmark suite, result validation and healing after kernel
-operations, automatic release of generated shapes, and location-only sharing
-for placed clones. Scale is a requirement for every change; see the
+The next cross-layer work should prioritize robustness and scale: result
+validation and healing after kernel operations, automatic release of
+generated shapes, and location-only sharing for placed clones, each measured
+by the scale benchmark suite (`tools/bench/run.sh`). Scale is a requirement for every change; see the
 [Roadmap](ROADMAP.md) for target sizes and the checks each change must pass.
 
 The broader serialized source model lives in the sibling

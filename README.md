@@ -137,6 +137,17 @@ tools/coverage/run.sh
 Rust unit tests live inside each crate's `lib.rs`, so Rust percentages include
 test code. Rust branch coverage needs a nightly toolchain and is not reported.
 
+The scale benchmark suite enforces the roadmap's scaling requirement. It
+builds an optimized copy of the library in `build/bench`, runs every case at
+the target sizes (10,000-member patterns, deep clone chains, 50-part solver
+stacks, repeated regeneration), and fails when a required case misses its
+time budget or correctness check. Cases tied to open roadmap items are
+reported as known gaps:
+
+```bash
+tools/bench/run.sh
+```
+
 SonarQube analysis converts the merged LCOV report to Sonar's generic coverage
 format, runs the containerized scanner, waits for the quality gate, and fails
 on a failed gate or any open issue:

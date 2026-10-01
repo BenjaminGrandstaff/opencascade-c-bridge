@@ -19,6 +19,7 @@ tracks status and order.
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.1% line coverage | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Coverage | 93.24% lines overall; C++ 94% lines, 88% branches, 100% functions | `tools/coverage/run.sh` |
+| Scale benchmarks | 11 pass within budget; 2 known gaps (handle cleanup, km-scale tolerances) | `tools/bench/run.sh` |
 
 ## Done
 
@@ -85,6 +86,8 @@ tracks status and order.
   enforcement, and issue-count enforcement. Community Build reports the Rust
   portion; C/C++ records remain in the report for servers with CFamily.
 - Argument-validation conformance test for every C entry point.
+- Scale benchmark suite with time budgets and correctness checks at the
+  target sizes, reporting known gaps against open roadmap items.
 
 ## Scaling requirement
 
@@ -97,8 +100,10 @@ session. Before a change lands:
   algorithms in their doc comments; avoid scans of every node, member, or
   relationship inside per-item loops, and justify anything above
   O(n log n) in graph size.
-- **It is measured.** Add or extend a case in the scale benchmark suite at
-  the target sizes and keep it inside its time and memory budget.
+- **It is measured.** Add or extend a case in the scale benchmark suite
+  (`rust/occt-parametric/benches/scale.rs`, run by `tools/bench/run.sh`) at
+  the target sizes and keep it inside its budget; a case tied to an open
+  roadmap item is marked as a known gap until that item lands.
 - **Handles are bounded.** Session shape counts must return to their
   starting value after a regeneration result is released, and repeated
   regeneration must not grow memory.
@@ -117,26 +122,26 @@ every item below is defined in documents and the API, and verified in tests.
 
 ### Robustness and scale
 
-1. **Scale benchmark suite.** A committed benchmark with budgets covering
-   10,000-member patterns (create, edit, save, load, regenerate), deep clone
-   chains, configuration edits, solver sizes, and session handle counts after
-   repeated regeneration, run by a script alongside lint and coverage.
-2. **Result validation and healing in the kernel.** Check validity after
+1. **Result validation and healing in the kernel.** Check validity after
    booleans, fillets, chamfers, offsets, hollowing, sewing, and STEP import;
    offer optional healing (shape fixing, tolerance repair) and fuzzy
    booleans for near-coincident faces; report OCCT warnings instead of
    dropping them.
-3. **Automatic handle cleanup.** Release generated shapes when results are
+2. **Automatic handle cleanup.** Release generated shapes when results are
    dropped so long-running sessions stay bounded, keeping explicit removal
    and the existing ownership rules.
-4. **Location-only sharing for placed copies.** Store one shape and a
+3. **Location-only sharing for placed copies.** Store one shape and a
    location per copy when only placement differs, so memory stops growing
    with copy count.
-5. **Scalable relationship solving.** Analytic Jacobians, sparse linear
+4. **Scalable relationship solving.** Analytic Jacobians, sparse linear
    algebra, and decomposition into independent connected groups, so
    1,000-part assemblies solve in seconds.
-6. **Kernel failure diagnostics.** Report which edge, face, or input caused a
+5. **Kernel failure diagnostics.** Report which edge, face, or input caused a
    fillet, chamfer, offset, or boolean failure, with OCCT's own error codes.
+6. **Iterative clone resolution.** Resolving an instance recurses once per
+   clone link, so a 20,000-deep chain needs a 16 MiB stack and would
+   overflow a default 2 MiB thread. Resolve chains iteratively with
+   memoized parents so depth costs neither stack nor repeated work.
 7. **Configurable tolerances.** Per-model linear and angular tolerances for
    relationships and checks, replacing the fixed 1e-6 mm and 1e-9 rad.
    Measured: 50-part stacks 1 km from the origin converge to residuals near
