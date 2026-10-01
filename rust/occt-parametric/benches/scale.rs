@@ -41,10 +41,6 @@ const MANY_HOLES: usize = 400;
 /// about 1.1x; BRepCheck_Analyzer alone took 1.5x, and its share grows
 /// quadratically with holes per face (3.5x of a cut at 400, 5.6x at 800).
 const MANY_HOLES_OVERHEAD_LIMIT: f64 = 1.5;
-/// Clone resolution recurses once per chain link, so a 20,000-deep chain
-/// overflows a default 2 MiB thread stack; the case runs on a 16 MiB stack
-/// until resolution is iterative (roadmap item).
-const DEEP_CHAIN_STACK_BYTES: usize = 16 << 20;
 
 #[derive(Clone, Copy, PartialEq)]
 enum Expectation {
@@ -177,23 +173,20 @@ fn deep_clone_chain(definition: &'static FamilyDefinition) -> Outcome {
             .unwrap();
     }
     let deepest = format!("c{}", CLONE_CHAIN_DEPTH - 1);
-    std::thread::Builder::new()
-        .stack_size(DEEP_CHAIN_STACK_BYTES)
-        .spawn(move || {
-            timed(
-                format!("clone chain {CLONE_CHAIN_DEPTH}: resolve deepest"),
-                ms(2_000),
-                Expectation::Required,
-                || {
-                    graph
-                        .resolve(&deepest)
-                        .map(|_| "resolved (needs a 16 MiB stack)".into())
-                },
-            )
-        })
-        .unwrap()
-        .join()
-        .unwrap()
+    std::thread::spawn(move || {
+        timed(
+            format!("clone chain {CLONE_CHAIN_DEPTH}: resolve deepest"),
+            ms(2_000),
+            Expectation::Required,
+            || {
+                graph
+                    .resolve(&deepest)
+                    .map(|_| "resolved iteratively on default stack".into())
+            },
+        )
+    })
+    .join()
+    .unwrap()
 }
 
 /// Repeated regeneration must return the session to its starting shape count

@@ -2571,45 +2571,58 @@ impl<'definition> InstanceGraph<'definition> {
             .ok_or_else(|| ModelError::new(format!("unknown family definition '{family}'")))
     }
 
-    fn resolve_definition(
-        &self,
+    /// Collects one clone inheritance chain from leaf to base in O(depth)
+    /// time and memory. The visited-position map avoids recursion and retains
+    /// the exact repeated segment for cycle diagnostics.
+    fn inheritance_chain<'graph>(
+        &'graph self,
         id: &str,
-        visiting: &mut Vec<String>,
-    ) -> Result<&'definition FamilyDefinition, ModelError> {
-        if let Some(position) = visiting.iter().position(|visited| visited == id) {
-            let mut cycle = visiting[position..].to_vec();
-            cycle.push(id.into());
-            return Err(ModelError::new(format!(
-                "clone inheritance cycle: {}",
-                cycle.join(" -> ")
-            )));
-        }
-        let node = self
-            .nodes
-            .get(id)
-            .ok_or_else(|| ModelError::new(format!("unknown clone source '{id}'")))?;
-        match node {
-            InstanceNode::Base { family, .. } => family
-                .as_deref()
-                .map_or(Ok(self.definition), |family| self.definition_by_id(family)),
-            InstanceNode::Clone { source, .. } => {
-                visiting.push(id.into());
-                let definition = self.resolve_definition(source, visiting);
-                visiting.pop();
-                definition
+    ) -> Result<Vec<&'graph InstanceNode>, ModelError> {
+        let mut chain: Vec<&InstanceNode> = Vec::new();
+        let mut positions = HashMap::new();
+        let mut current = id;
+        loop {
+            if let Some(position) = positions.get(current).copied() {
+                let mut cycle = chain[position..]
+                    .iter()
+                    .map(|node| node.id())
+                    .collect::<Vec<_>>();
+                cycle.push(current);
+                return Err(ModelError::new(format!(
+                    "clone inheritance cycle: {}",
+                    cycle.join(" -> ")
+                )));
+            }
+            let node = self
+                .nodes
+                .get(current)
+                .ok_or_else(|| ModelError::new(format!("unknown clone source '{current}'")))?;
+            positions.insert(node.id(), chain.len());
+            chain.push(node);
+            match node {
+                InstanceNode::Base { .. } => return Ok(chain),
+                InstanceNode::Clone { source, .. } => current = source,
             }
         }
     }
 
     pub fn resolve(&self, id: &str) -> Result<PartInstance<'definition>, ModelError> {
-        let mut visiting = Vec::new();
-        let overrides = self.resolve_overrides(id, &mut visiting)?;
-        let definition = self.resolve_definition(id, &mut Vec::new())?;
-        let node = self
-            .nodes
-            .get(id)
-            .ok_or_else(|| ModelError::new(format!("unknown instance '{id}'")))?;
-        let provenance = match node {
+        let chain = self.inheritance_chain(id)?;
+        let definition = match chain.last().expect("inheritance chains are nonempty") {
+            InstanceNode::Base { family, .. } => family
+                .as_deref()
+                .map_or(Ok(self.definition), |family| self.definition_by_id(family))?,
+            InstanceNode::Clone { .. } => unreachable!("inheritance chains end at a base"),
+        };
+        let mut overrides = HashMap::new();
+        for node in chain.iter().rev() {
+            overrides.extend(node.overrides().clone());
+            if let Some(configured) = self.assembly.configured_overrides(node.id()) {
+                overrides.extend(configured.clone());
+            }
+        }
+        overrides.shrink_to_fit();
+        let provenance = match chain[0] {
             InstanceNode::Base { provenance, .. } | InstanceNode::Clone { provenance, .. } => {
                 provenance.clone()
             }
@@ -2844,42 +2857,6 @@ impl<'definition> InstanceGraph<'definition> {
         }
         self.nodes.insert(node.id().into(), node);
         Ok(())
-    }
-
-    fn resolve_overrides(
-        &self,
-        id: &str,
-        visiting: &mut Vec<String>,
-    ) -> Result<HashMap<String, ParameterValue>, ModelError> {
-        if let Some(position) = visiting.iter().position(|visited| visited == id) {
-            let mut cycle = visiting[position..].to_vec();
-            cycle.push(id.into());
-            return Err(ModelError::new(format!(
-                "clone inheritance cycle: {}",
-                cycle.join(" -> ")
-            )));
-        }
-        let node = self
-            .nodes
-            .get(id)
-            .ok_or_else(|| ModelError::new(format!("unknown clone source '{id}'")))?;
-        visiting.push(id.into());
-        let mut resolved = match node {
-            InstanceNode::Base { overrides, .. } => overrides.clone(),
-            InstanceNode::Clone {
-                source, overrides, ..
-            } => {
-                let mut inherited = self.resolve_overrides(source, visiting)?;
-                inherited.extend(overrides.clone());
-                inherited
-            }
-        };
-        visiting.pop();
-        if let Some(configured) = self.assembly.configured_overrides(id) {
-            resolved.extend(configured.clone());
-        }
-        resolved.shrink_to_fit();
-        Ok(resolved)
     }
 }
 

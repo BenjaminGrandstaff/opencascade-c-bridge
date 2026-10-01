@@ -18,7 +18,7 @@ tracks status and order.
 | Tests | C 3/3, bridge 41, recipes 3, parametric 86 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.3% line coverage | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
-| Coverage | 93.20% lines overall; C++ 93.46% lines, 86.45% branches, 100% functions | `tools/coverage/run.sh` |
+| Coverage | 93.26% lines overall; C++ 93.46% lines, 86.33% branches, 100% functions | `tools/coverage/run.sh` |
 | Scale benchmarks | 21 passing within budget | `tools/bench/run.sh` |
 
 ## Done
@@ -82,6 +82,11 @@ tracks status and order.
   operation history.
 - Linked clones with sparse overrides, detachment, freezing, and managed
   regeneration.
+- Iterative clone inheritance resolution walks each parent once, preserves
+  exact cycle paths and base-to-leaf override precedence, and uses O(depth)
+  time and memory without consuming call stack. A 20,000-link chain resolves
+  on a default-stack thread in 0.004 s, versus 0.386 s for the recursive
+  implementation on a custom 16 MiB stack.
 - Nested assembly frames; shared generation for clones that differ only in
   placement.
 - Multi-family graphs and documents; clones inherit their root family's
@@ -160,11 +165,7 @@ every item below is defined in documents and the API, and verified in tests.
 
 ### Robustness and scale
 
-1. **Iterative clone resolution.** Resolving an instance recurses once per
-   clone link, so a 20,000-deep chain needs a 16 MiB stack and would
-   overflow a default 2 MiB thread. Resolve chains iteratively with
-   memoized parents so depth costs neither stack nor repeated work.
-2. **Configurable tolerances.** Per-model linear and angular tolerances for
+1. **Configurable tolerances.** Per-model linear and angular tolerances for
    relationships and checks, replacing the fixed 1e-6 mm and 1e-9 rad.
    Kilometer-scale stacks now converge within them, but models mixing
    micron features with kilometer extents still need tolerances set per
@@ -172,34 +173,34 @@ every item below is defined in documents and the API, and verified in tests.
 
 ### Capabilities
 
-3. **Datum- and mass-based requirements.** Verification rules for mass
+2. **Datum- and mass-based requirements.** Verification rules for mass
    limits, datum clearances, and relationship satisfaction alongside the
    existing validity and volume rules.
-4. **Constraint-solved 2D sketches.** Lines, arcs, and circles on a datum
+3. **Constraint-solved 2D sketches.** Lines, arcs, and circles on a datum
     plane with geometric constraints (coincident, tangent, parallel,
     perpendicular, horizontal, vertical, equal) and dimensional constraints
     driven by parameter expressions. Solve with the relationship solver's
     machinery, report free degrees and conflicts, and emit closed profiles as
     wires and faces for features.
-5. **Feature breadth.** Extrude and revolve from sketch profiles (adds a
+4. **Feature breadth.** Extrude and revolve from sketch profiles (adds a
     revolve operation to the C ABI), holes with standard sizes, counterbores,
     countersinks, and recorded thread specifications, draft, ribs, and
     variable-radius fillets; sheet metal (flanges, bends, flat patterns)
     after the rest.
-6. **Assembly depth.** Joints (revolute, prismatic, cylindrical, planar,
+5. **Assembly depth.** Joints (revolute, prismatic, cylindrical, planar,
     fixed) with limits on top of relationships; interference and minimum
     clearance between instances using exact boolean and distance queries; and
     motion studies that sweep joint values and report collisions.
-7. **Generated drawings.** Projected views (orthographic, section, detail)
+6. **Generated drawings.** Projected views (orthographic, section, detail)
     by hidden-line removal, exported as SVG and DXF; dimensions and notes
     placed from datums and parameters; title blocks from document metadata.
     Drawings regenerate with the model rather than being edited by hand.
-8. **Analysis and manufacturing hand-off.** Full mass properties (center of
+7. **Analysis and manufacturing hand-off.** Full mass properties (center of
     mass, inertia tensor) per instance and assembly; tagged surface and
     volume meshes for external FEA; manufacturability checks (minimum wall
     thickness, draft angle, 3D-printing overhang); glTF export with material
     appearance for rendering.
-9. **Model data management.** Semantic diff and three-way merge of model
+8. **Model data management.** Semantic diff and three-way merge of model
     documents (parameters, features, instances, relationships), recorded
     revision history inside documents, and change-impact reports listing the
     instances and features a change affects, with a git merge driver.

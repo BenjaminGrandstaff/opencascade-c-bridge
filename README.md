@@ -60,7 +60,8 @@ machine-readable requirements and verification results, preserving why
 geometry exists instead of only how it was constructed. Linked clone graphs,
 sparse inherited overrides, explicit detachment, accepted-result revisions,
 stale-result retention, independent axis-angle placement, linear clone
-patterns, parameter- or geometry-driven counts and fitted spans,
+patterns, iterative stack-safe clone inheritance, parameter- or
+geometry-driven counts and fitted spans,
 multi-family instance graphs, explicit generation freezing, unit-aware derived scalar arithmetic
 with negate, absolute, minimum, maximum, and clamp functions, derived vector
 composition with add, subtract, scale, and normalize operations, dimension-safe

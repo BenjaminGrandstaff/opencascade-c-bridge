@@ -65,7 +65,6 @@ a 100-cut chain and 1.12x on a 400-hole single cut; validating the resulting
 The following major capabilities remain planned:
 
 - configurable model tolerances;
-- iterative clone resolution for deep chains on default thread stacks;
 - additional domain-specific expression functions;
 - additional schema migrations and integration with the broader EIL source
   model;
@@ -335,7 +334,12 @@ operations; saving or exporting geometry must not silently break the link.
 The current `InstanceGraph` implements stable base and clone identities,
 source references, sparse overrides, multi-level inheritance, override removal
 to restore inheritance, cycle diagnostics, explicit detachment, independent
-placement, and linear and circular patterns. A placement rotates every named result about a
+placement, and linear and circular patterns. Clone inheritance is resolved by
+one iterative O(depth) leaf-to-base walk with a visited-position map; the same
+collected chain supplies the family and is folded base-to-leaf for ordinary and
+active-configuration overrides. This preserves exact cycle-path diagnostics
+without consuming call stack. The 20,000-link benchmark resolves on a
+default-stack thread in 0.004 s. A placement rotates every named result about a
 typed origin and scalar axis, then translates it; failed transforms clean up
 both generated and intermediate shapes. Patterns remain linked clones and
 record their source, member identities, and a typed rule. A linear rule
@@ -651,9 +655,9 @@ defaults, units, constraints, placements, clone cycles, missing links,
 inconsistent pattern membership, and invalid regeneration revisions before the
 model is accepted.
 
-The next cross-layer work should prioritize iterative clone resolution and
-configurable model tolerances, each measured by the scale benchmark suite
-(`tools/bench/run.sh`). Scale is a requirement for every change; see the
+The next cross-layer work should prioritize configurable model tolerances and
+datum- and mass-based requirement verification, each measured by the scale
+benchmark suite (`tools/bench/run.sh`). Scale is a requirement for every change; see the
 [Roadmap](ROADMAP.md) for target sizes and the checks each change must pass.
 
 The broader serialized source model lives in the sibling
