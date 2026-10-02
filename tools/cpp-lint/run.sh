@@ -17,7 +17,7 @@ podman run --rm -v "$root:$root:ro,Z" "$image" bash -c "
     cmake --build /tmp/build -j 2>&1 | grep -E '(error|warning):' && exit 1
     status=0
     echo '== clang-tidy'
-    clang-tidy -p /tmp/build --quiet '$root/src/occt_bridge.cpp' '$root/src/shape_validator.cpp' '$root/tests/shape_validator_test.cpp' '$root/tests/c_api_test.c' '$root/tests/c_api_errors_test.c' \
+    clang-tidy -p /tmp/build --quiet '$root'/src/*.cpp '$root'/tests/*.cpp '$root'/tests/*.c \
         2>/dev/null | tee /tmp/tidy.txt
     grep -q 'warning:' /tmp/tidy.txt && status=1
     echo '== cppcheck'

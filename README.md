@@ -101,8 +101,26 @@ is the kernel-facing execution layer for an initial subset of that model.
 ## Repository layout
 
 - [`include/occt_bridge.h`](include/occt_bridge.h): stable C ABI contract.
-- [`src/occt_bridge.cpp`](src/occt_bridge.cpp): OCCT ownership, operations,
-  diagnostics, topology traversal, measurements, and operation history.
+- [`src/`](src): the C ABI implementation, one file per area:
+  - [`session.cpp`](src/session.cpp): sessions, last error, warnings,
+    diagnostics, options, and handle removal.
+  - [`construction.cpp`](src/construction.cpp): primitives, wires, faces,
+    prisms, revolutions, tubes, lofts, and compounds.
+  - [`recipes.cpp`](src/recipes.cpp): the faceted stone and wall torch.
+  - [`solids.cpp`](src/solids.cpp): sewing and solid construction.
+  - [`operations.cpp`](src/operations.cpp): booleans, fillets, chamfers,
+    offsets, hollowing, and transforms, with failure diagnostics.
+  - [`inspection.cpp`](src/inspection.cpp): topology, measurements,
+    adjacency, tangency, operation history, and validity.
+  - [`curvature.cpp`](src/curvature.cpp): curvature sampling and exact or
+    error-bounded extrema.
+  - [`exchange.cpp`](src/exchange.cpp): BREP, STEP, and STL.
+  - [`core.cpp`](src/core.cpp) and
+    [`bridge_internal.hpp`](src/bridge_internal.hpp): helpers shared by the
+    entry points (failure reporting, result storage with history, validation,
+    healing, and diagnostics).
+  - [`shape_validator.cpp`](src/shape_validator.cpp): BRepCheck validation
+    that scales to faces with many holes.
 - [`rust/occt-bridge`](rust/occt-bridge): safe Rust wrapper with session-owned,
   generation-checked shape handles.
 - [`rust/occt-recipes`](rust/occt-recipes): application-level geometry recipes

@@ -17,7 +17,19 @@ if(OCCT_BRIDGE_OCCT_VERSION VERSION_LESS 7.9.0)
     message(FATAL_ERROR "OCCT 7.9.0 or newer is required; found ${OCCT_BRIDGE_OCCT_VERSION}")
 endif()
 
-add_library(occt_bridge SHARED src/occt_bridge.cpp src/shape_validator.cpp)
+add_library(
+    occt_bridge SHARED
+    src/core.cpp
+    src/session.cpp
+    src/construction.cpp
+    src/recipes.cpp
+    src/solids.cpp
+    src/operations.cpp
+    src/inspection.cpp
+    src/curvature.cpp
+    src/exchange.cpp
+    src/shape_validator.cpp
+)
 add_library(OpenCascadeCBridge::occt_bridge ALIAS occt_bridge)
 
 target_compile_features(occt_bridge PRIVATE cxx_std_17)
