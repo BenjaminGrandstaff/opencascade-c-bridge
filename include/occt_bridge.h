@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define OCCT_BRIDGE_ABI_VERSION 25u
+#define OCCT_BRIDGE_ABI_VERSION 26u
 #define OCCT_BRIDGE_INVALID_SHAPE_ID UINT64_C(0)
 
 #if defined(_WIN32) && defined(OCCT_BRIDGE_BUILD_SHARED)
@@ -270,6 +270,26 @@ OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_create_polyline_wire(
     occt_bridge_session_t* session,
     const occt_bridge_vec3_t* points,
     size_t point_count,
+    int closed,
+    occt_bridge_shape_id_t* out_shape
+);
+
+/* A line (kind 0, middle ignored) or circular arc (kind 1, passing through
+ * middle). Arc points must be distinct and non-collinear. Segments must be
+ * ordered and connected within kernel tolerance. closed is 0 or 1; 1 requires
+ * closure, 0 permits open or closed wires. At least one segment is required.
+ * This constructs a wire, not necessarily a planar or simple face boundary. */
+typedef struct occt_bridge_wire_segment {
+    int kind;
+    occt_bridge_vec3_t start;
+    occt_bridge_vec3_t middle;
+    occt_bridge_vec3_t end;
+} occt_bridge_wire_segment_t;
+
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_create_segment_wire(
+    occt_bridge_session_t* session,
+    const occt_bridge_wire_segment_t* segments,
+    size_t segment_count,
     int closed,
     occt_bridge_shape_id_t* out_shape
 );

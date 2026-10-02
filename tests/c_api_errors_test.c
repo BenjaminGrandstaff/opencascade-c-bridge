@@ -199,6 +199,37 @@ static void wires_and_faces(occt_bridge_session_t* session) {
     EXPECT(occt_bridge_create_polyline_wire(session, repeated_end, 4, 1, &out), ARG);
     EXPECT(occt_bridge_create_polyline_wire(session, repeated_end, 4, 0, &out), OK);
 
+    occt_bridge_wire_segment_t segments[] = {
+        {1, {1, 0, 0}, {0, 1, 0}, {-1, 0, 0}},
+        {0, {-1, 0, 0}, {NAN, NAN, NAN}, {1, 0, 0}}
+    };
+    EXPECT(occt_bridge_create_segment_wire(NULL, segments, 2, 1, &out), ARG);
+    EXPECT(occt_bridge_create_segment_wire(session, segments, 2, 1, NULL), ARG);
+    EXPECT(occt_bridge_create_segment_wire(session, NULL, 2, 1, &out), ARG);
+    EXPECT(occt_bridge_create_segment_wire(session, segments, 0, 1, &out), ARG);
+    EXPECT(occt_bridge_create_segment_wire(session, segments, 2, 2, &out), ARG);
+    EXPECT(occt_bridge_create_segment_wire(session, segments, 1, 1, &out), ARG);
+    EXPECT(occt_bridge_create_segment_wire(session, segments, 1, 0, &out), OK);
+    EXPECT(occt_bridge_create_segment_wire(session, segments, 2, 1, &out), OK);
+    segments[0].kind = 2;
+    EXPECT(occt_bridge_create_segment_wire(session, segments, 2, 1, &out), ARG);
+    segments[0].kind = 1;
+    segments[0].middle = nan_x;
+    EXPECT(occt_bridge_create_segment_wire(session, segments, 2, 1, &out), ARG);
+    segments[0].middle = zero;
+    EXPECT(occt_bridge_create_segment_wire(session, segments, 2, 1, &out), GEOMETRY);
+    segments[0].middle = vec(0, 1, 0);
+    segments[1].start = zero;
+    EXPECT(occt_bridge_create_segment_wire(session, segments, 2, 1, &out), ARG);
+    segments[1].start = segments[1].end;
+    EXPECT(occt_bridge_create_segment_wire(session, segments, 2, 1, &out), ARG);
+    segments[0].start = nan_x;
+    EXPECT(occt_bridge_create_segment_wire(session, segments, 1, 0, &out), ARG);
+    segments[0].start = vec(1, 0, 0);
+    segments[0].end = nan_x;
+    EXPECT(occt_bridge_create_segment_wire(session, segments, 1, 0, &out), ARG);
+    EXPECT(out, OCCT_BRIDGE_INVALID_SHAPE_ID);
+
     EXPECT(occt_bridge_create_circle_wire(session, zero, up, 1, NULL), ARG);
     EXPECT(occt_bridge_create_circle_wire(session, nan_x, up, 1, &out), ARG);
     EXPECT(occt_bridge_create_circle_wire(session, zero, nan_x, 1, &out), ARG);

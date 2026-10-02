@@ -3,7 +3,7 @@
 A small, stable C ABI over Open Cascade (OCCT), designed to be wrapped safely
 from Rust and other languages. Open Cascade C++ objects never cross the ABI.
 
-The current C ABI version is **25**.
+The current C ABI version is **26**.
 
 ## Current API
 
@@ -11,7 +11,7 @@ The current C ABI version is **25**.
 - Integer shape handles scoped to a session
 - History-preserving duplicate handles for transactional geometry reuse
 - Boxes, cylinders, cones, spheres, and arbitrary planar polygon prisms
-- Reusable polyline, circular, and elliptical wires, planar faces, and face
+- Reusable polyline, mixed line/circular-arc, circular, and elliptical wires, planar faces, and face
   extrusion
 - Non-mutating translation, axis-angle rotation, and uniform scaling; rigid
   moves share geometry through locations, so placed copies stay small
@@ -66,8 +66,9 @@ multi-family instance graphs, explicit generation freezing, unit-aware derived s
 with negate, absolute, minimum, maximum, and clamp functions, derived vector
 composition with add, subtract, scale, and normalize operations, dimension-safe
 comparison-driven conditional scalar expressions,
-pre-generation parameter constraints, constraint-solved line sketches that
-emit exact planar faces, semantic face and edge selectors, and
+pre-generation parameter constraints, constraint-solved line/arc/circle sketches that
+emit exact closed wires and planar faces on inline or named datum planes,
+semantic face and edge selectors, and
 versioned JSON model documents are implemented. Feature graphs include sewing
 and single- or multi-shell solid construction. Selectors support orientation,
 adjacency, extrema, nearest-center, longest-edge, circular-radius,
@@ -161,10 +162,12 @@ builds an optimized copy of the library in `build/bench`, runs every case at
 the target sizes (10,000-member patterns, deep clone chains, 1,000-part solver
 stacks and grids, repeated regeneration, validation chains, and many-hole
 faces), and fails when a required case misses its time budget or correctness
-check. The current suite has 25 passing cases, including single-leaf and
+check. The current suite has 29 passing cases, including single-leaf and
 memoized all-node resolution of a 20,000-link clone chain and a 50-part stack
 1 km from the origin solved at a 1e-8 mm model tolerance, plus 10,000 checked
-datum-clearance requirements and 10,000 small constrained-sketch solves:
+datum-clearance requirements, 10,000 small constrained-sketch solves,
+10,000 arc/tangent sketch solves, 10,000 datum-linked sketch-wire features, and
+individual sparse sketches with 10,000 independent or 1,000 connected lines:
 
 ```bash
 tools/bench/run.sh
@@ -220,8 +223,16 @@ handles and retain the prior accepted generation.
 
 `ModelDocument` persists the family definition, requirements, instance and
 clone identities, sparse overrides, placements, assembly frames, pattern rules, provenance, and
-regeneration audit records. Schema 25 persists constraint-solved line sketches
-and closed sketch-face features. Schema 24 persists assembly mass, datum-clearance,
+regeneration audit records. Schema 27 adds `SketchWire` feature outputs and
+optional sketch `datum_plane` references to family plane datums. A linked sketch
+uses the datum's origin and normal with its own perpendicular x-axis; the
+y-axis is normal cross x. Datum expressions and edits drive incremental
+regeneration. Older sketches keep their inline planes.
+Schema 26 adds exact circle/arc sketch entities,
+implicit equal arc radii, tangent constraints at shared contact points, and
+explicit ordered profiles with construction geometry. Schema 25 line sketches
+load with empty curve/profile arrays. Sketches emit exact closed wires or planar faces.
+Schema 24 persists assembly mass, datum-clearance,
 and relationship-satisfaction requirements. Schema 23 persists per-model linear
 (millimeter) and angular (radian) relationship tolerances; new graphs and older
 documents default to 1e-6 mm and 1e-9 rad. Generated OCCT handles and BREPs are deliberately

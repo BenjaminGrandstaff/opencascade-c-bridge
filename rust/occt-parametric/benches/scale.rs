@@ -16,9 +16,10 @@ use occt_parametric::{
     AssemblyRelationship, AssemblyRequirement, AssemblyVerificationRule, AxisAngle,
     DatumDefinition, DatumKind, DatumRef, Dimension, FamilyDefinition, FeatureDefinition,
     FeatureOperation, InstanceGraph, LengthUnit, ModelDocument, ModelError, ParameterDefinition,
-    ParameterType, ParameterValue, PatternRule, Placement, Quantity, RelationKind,
-    RelationshipTolerances, RequirementKind, RequirementPriority, ScalarExpr, SketchConstraint,
-    SketchDefinition, SketchLine, SketchPoint, VectorExpr, VectorQuantity,
+    ParameterType, ParameterValue, PartInstance, PatternRule, Placement, Quantity, RelationKind,
+    RelationshipTolerances, RequirementKind, RequirementPriority, ScalarExpr, SketchArc,
+    SketchCircle, SketchConstraint, SketchDefinition, SketchLine, SketchPoint, VectorExpr,
+    VectorQuantity,
 };
 use std::collections::HashMap;
 use std::process::ExitCode;
@@ -79,9 +80,190 @@ fn main() -> ExitCode {
     outcomes.extend(regeneration_handle_cases(definition));
     outcomes.extend(solver_cases(definition));
     outcomes.push(sketch_solver_case());
+    outcomes.push(curved_sketch_solver_case());
+    outcomes.push(datum_sketch_wire_case());
+    outcomes.push(large_sketch_case(false));
+    outcomes.push(large_sketch_case(true));
     outcomes.push(solver_grid(definition));
     outcomes.extend(validation_cases());
     report(&outcomes)
+}
+
+fn datum_sketch_wire_case() -> Outcome {
+    const COUNT: usize = 10_000;
+    let value = |x| ScalarExpr::Literal(Quantity::length(x, LengthUnit::Millimeter));
+    let mut sketch = SketchDefinition {
+        id: "circle".into(),
+        datum_plane: None,
+        origin: VectorExpr::Literal(VectorQuantity::lengths(
+            0.0,
+            0.0,
+            0.0,
+            LengthUnit::Millimeter,
+        )),
+        x_axis: VectorExpr::Literal(VectorQuantity::scalars(1.0, 0.0, 0.0)),
+        y_axis: VectorExpr::Literal(VectorQuantity::scalars(0.0, 1.0, 0.0)),
+        points: vec![
+            SketchPoint {
+                id: "c".into(),
+                x: value(0.0),
+                y: value(0.0),
+                fixed: true,
+            },
+            SketchPoint {
+                id: "r".into(),
+                x: value(2.0),
+                y: value(0.0),
+                fixed: true,
+            },
+        ],
+        lines: Vec::new(),
+        circles: vec![SketchCircle {
+            id: "circle".into(),
+            center: "c".into(),
+            rim: "r".into(),
+        }],
+        arcs: Vec::new(),
+        profile: Vec::new(),
+        constraints: Vec::new(),
+    };
+    let mut definition = block();
+    definition.features.clear();
+    definition.datums.clear();
+    for index in 0..COUNT {
+        let datum = format!("plane{index}");
+        definition.datums.push(DatumDefinition {
+            id: datum.clone(),
+            kind: DatumKind::Plane {
+                origin: VectorExpr::Literal(VectorQuantity::lengths(
+                    0.0,
+                    0.0,
+                    index as f64,
+                    LengthUnit::Millimeter,
+                )),
+                normal: VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, 1.0)),
+            },
+        });
+        sketch.datum_plane = Some(datum);
+        definition.features.push(FeatureDefinition {
+            id: format!("wire{index}"),
+            operation: FeatureOperation::SketchWire {
+                sketch: Box::new(sketch.clone()),
+            },
+        });
+    }
+    timed(
+        format!("{COUNT} datum-linked sketch wires: regenerate"),
+        Duration::from_secs(5),
+        Expectation::Required,
+        || {
+            let session = Session::new()?;
+            let part = PartInstance {
+                id: "part".into(),
+                definition: &definition,
+                overrides: HashMap::new(),
+                provenance: "bench".into(),
+            };
+            let generated = part.regenerate(&session)?;
+            if generated.regeneration.rebuilt.len() != COUNT || session.shape_count()? != COUNT {
+                return Err(failure(
+                    "datum-linked wire output or handle count differs".into(),
+                ));
+            }
+            let last = generated
+                .shape(&format!("wire{}", COUNT - 1))
+                .ok_or_else(|| failure("last datum-linked wire is missing".into()))?;
+            if session.shape_type(last)? != ShapeType::Wire
+                || (session.bounds(last)?.min.z - (COUNT - 1) as f64).abs() > 1e-6
+            {
+                return Err(failure(
+                    "datum-linked wire is not on its named plane".into(),
+                ));
+            }
+            drop(generated);
+            if session.shape_count()? != 0 {
+                return Err(failure("datum-linked wire handles were retained".into()));
+            }
+            Ok(format!("{COUNT} indexed plane lookups; handles released"))
+        },
+    )
+}
+
+fn curved_sketch_solver_case() -> Outcome {
+    const SOLVES: usize = 10_000;
+    let value = |x| ScalarExpr::Literal(Quantity::length(x, LengthUnit::Millimeter));
+    let point = |id: &str, x, y, fixed| SketchPoint {
+        id: id.into(),
+        x: value(x),
+        y: value(y),
+        fixed,
+    };
+    let sketch = SketchDefinition {
+        id: "curved".into(),
+        datum_plane: None,
+        origin: VectorExpr::Literal(VectorQuantity::lengths(
+            0.0,
+            0.0,
+            0.0,
+            LengthUnit::Millimeter,
+        )),
+        x_axis: VectorExpr::Literal(VectorQuantity::scalars(1.0, 0.0, 0.0)),
+        y_axis: VectorExpr::Literal(VectorQuantity::scalars(0.0, 1.0, 0.0)),
+        points: vec![
+            point("c", 0.0, 0.0, true),
+            point("a", 2.0, 0.0, true),
+            point("b", 0.0, 3.0, false),
+            point("tip", 2.5, 3.0, false),
+        ],
+        lines: vec![SketchLine {
+            id: "line".into(),
+            start: "a".into(),
+            end: "tip".into(),
+        }],
+        arcs: vec![SketchArc {
+            id: "arc".into(),
+            center: "c".into(),
+            start: "a".into(),
+            end: "b".into(),
+            clockwise: false,
+        }],
+        circles: Vec::new(),
+        profile: Vec::new(),
+        constraints: vec![
+            SketchConstraint::Tangent {
+                first: "arc".into(),
+                second: "line".into(),
+                point: "a".into(),
+            },
+            SketchConstraint::Distance {
+                first: "a".into(),
+                second: "tip".into(),
+                value: value(3.0),
+            },
+        ],
+    };
+    timed(
+        format!("solve {SOLVES} arc/tangent sketches"),
+        Duration::from_secs(2),
+        Expectation::Required,
+        || {
+            for _ in 0..SOLVES {
+                let solution = sketch.solve(&HashMap::new())?;
+                if !solution.solved
+                    || solution.free_degrees != 1
+                    || (solution.points["b"].y - 2.0).abs() > 1e-8
+                    || (solution.points["tip"].x - 2.0).abs() > 1e-8
+                {
+                    return Err(failure(format!(
+                        "unexpected curved sketch solution: {solution:?}"
+                    )));
+                }
+            }
+            Ok(format!(
+                "{SOLVES} solved with exact arc radii and tangent contact"
+            ))
+        },
+    )
 }
 
 fn sketch_solver_case() -> Outcome {
@@ -90,6 +272,10 @@ fn sketch_solver_case() -> Outcome {
         |millimeters| ScalarExpr::Literal(Quantity::length(millimeters, LengthUnit::Millimeter));
     let sketch = SketchDefinition {
         id: "bench-line".into(),
+        datum_plane: None,
+        circles: Vec::new(),
+        arcs: Vec::new(),
+        profile: Vec::new(),
         origin: VectorExpr::Literal(VectorQuantity::lengths(
             0.0,
             0.0,
@@ -145,6 +331,94 @@ fn sketch_solver_case() -> Outcome {
 }
 
 // ---- cases
+
+/// One large sketch, either independent line components or a connected
+/// chain. Exercises sparse storage, local derivatives, rank, and elimination.
+fn large_sketch_case(chain: bool) -> Outcome {
+    let count = if chain { 1_000 } else { 10_000 };
+    let value = |x| ScalarExpr::Literal(Quantity::length(x, LengthUnit::Millimeter));
+    let mut sketch = SketchDefinition {
+        id: "large".into(),
+        datum_plane: None,
+        circles: Vec::new(),
+        arcs: Vec::new(),
+        profile: Vec::new(),
+        origin: VectorExpr::Literal(VectorQuantity::lengths(
+            0.0,
+            0.0,
+            0.0,
+            LengthUnit::Millimeter,
+        )),
+        x_axis: VectorExpr::Literal(VectorQuantity::scalars(1.0, 0.0, 0.0)),
+        y_axis: VectorExpr::Literal(VectorQuantity::scalars(0.0, 1.0, 0.0)),
+        points: Vec::new(),
+        lines: Vec::new(),
+        constraints: Vec::new(),
+    };
+    sketch.points.push(SketchPoint {
+        id: "p0".into(),
+        x: value(0.0),
+        y: value(0.0),
+        fixed: true,
+    });
+    for index in 1..=count {
+        let end = format!("p{index}");
+        let start = if chain {
+            format!("p{}", index - 1)
+        } else {
+            "p0".into()
+        };
+        let line = format!("l{index}");
+        sketch.points.push(SketchPoint {
+            id: end.clone(),
+            x: value(if chain { index as f64 * 9.0 } else { 9.0 }),
+            y: value(1.0),
+            fixed: false,
+        });
+        sketch.lines.push(SketchLine {
+            id: line.clone(),
+            start: start.clone(),
+            end: end.clone(),
+        });
+        sketch
+            .constraints
+            .push(SketchConstraint::Horizontal { line });
+        sketch.constraints.push(SketchConstraint::Distance {
+            first: start,
+            second: end,
+            value: value(10.0),
+        });
+    }
+    timed(
+        format!(
+            "one sketch: {count} {} lines",
+            if chain { "connected" } else { "independent" }
+        ),
+        ms(5_000),
+        Expectation::Required,
+        || {
+            let solution = sketch.solve(&HashMap::new())?;
+            let target = if chain { count as f64 * 10.0 } else { 10.0 };
+            let last = solution.points[&format!("p{count}")];
+            if !solution.solved
+                || solution.free_degrees != 0
+                || solution.redundant_equations != 0
+                || (last.x - target).abs() > 1e-6
+                || last.y.abs() > 1e-8
+            {
+                return Err(failure(format!(
+                    "residual {}, freedoms {}, endpoint {last:?}",
+                    solution.max_residual, solution.free_degrees
+                )));
+            }
+            Ok(format!(
+                "{} iterations; {} free coordinates",
+                solution.iterations,
+                count * 2
+            ))
+        },
+    )
+}
 
 fn pattern_cases(definition: &'static FamilyDefinition) -> Vec<Outcome> {
     let size = PATTERN_MEMBERS;

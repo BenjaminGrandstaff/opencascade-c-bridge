@@ -12,7 +12,8 @@ pub use assembly::{
     ResolvedDatum,
 };
 pub use sketch::{
-    SketchConstraint, SketchDefinition, SketchLine, SketchPoint, SketchPoint2, SketchSolution,
+    SketchArc, SketchCircle, SketchConstraint, SketchDefinition, SketchLine, SketchPoint,
+    SketchPoint2, SketchSolution,
 };
 pub use solve::PlacementSolution;
 
@@ -518,7 +519,10 @@ pub enum FeatureOperation {
         height: ScalarExpr,
     },
     SketchFace {
-        sketch: SketchDefinition,
+        sketch: Box<SketchDefinition>,
+    },
+    SketchWire {
+        sketch: Box<SketchDefinition>,
     },
     Translate {
         input: String,
@@ -589,7 +593,10 @@ impl FeatureOperation {
             Self::Cut { object, tool } => vec![object, tool],
             Self::Sew { inputs, .. } => inputs.iter().map(String::as_str).collect(),
             Self::MakeSolid { shells } => shells.iter().map(String::as_str).collect(),
-            Self::Box { .. } | Self::Cylinder { .. } | Self::SketchFace { .. } => Vec::new(),
+            Self::Box { .. }
+            | Self::Cylinder { .. }
+            | Self::SketchFace { .. }
+            | Self::SketchWire { .. } => Vec::new(),
         }
     }
 }
@@ -1135,7 +1142,7 @@ pub struct GenerationRecord {
     pub last_error: Option<String>,
 }
 
-pub const CURRENT_SCHEMA_VERSION: u32 = 25;
+pub const CURRENT_SCHEMA_VERSION: u32 = 27;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ModelDocument {
@@ -3278,6 +3285,11 @@ impl<'session> FeatureBuild<'session> {
         parameters: &HashMap<String, ParameterValue>,
         previous: Option<&GeneratedResult<'session>>,
     ) -> Result<(), ModelError> {
+        let datums = definition
+            .datums
+            .iter()
+            .map(|datum| (datum.id.as_str(), datum))
+            .collect::<HashMap<_, _>>();
         let mut pending: Vec<&FeatureDefinition> = definition.features.iter().collect();
         while !pending.is_empty() {
             let before = pending.len();
@@ -3285,7 +3297,7 @@ impl<'session> FeatureBuild<'session> {
             while index < pending.len() {
                 if self.is_ready(pending[index]) {
                     let feature = pending.remove(index);
-                    self.add_feature(session, feature, parameters, previous)?;
+                    self.add_feature(session, &datums, feature, parameters, previous)?;
                 } else {
                     index += 1;
                 }
@@ -3317,11 +3329,12 @@ impl<'session> FeatureBuild<'session> {
     fn add_feature(
         &mut self,
         session: &'session Session,
+        datums: &HashMap<&str, &DatumDefinition>,
         feature: &FeatureDefinition,
         parameters: &HashMap<String, ParameterValue>,
         previous: Option<&GeneratedResult<'session>>,
     ) -> Result<(), ModelError> {
-        let signature = feature_signature(feature, parameters)?;
+        let signature = feature_signature(datums, feature, parameters)?;
         let dependency_is_dirty = feature
             .operation
             .dependencies()
@@ -3337,7 +3350,7 @@ impl<'session> FeatureBuild<'session> {
             Some(shape) => session.duplicate(shape).map_err(Into::into),
             None => {
                 self.dirty_features.insert(feature.id.clone());
-                execute_feature(session, feature, parameters, &self.shapes)
+                execute_feature(session, datums, feature, parameters, &self.shapes)
             }
         };
         let shape = generated.map_err(|error| error.in_feature(&feature.id))?;
@@ -3386,14 +3399,48 @@ fn verify_requirements(
 struct FeatureSignature<'a> {
     feature: &'a FeatureDefinition,
     parameters: Vec<(&'a str, &'a ParameterValue)>,
+    datum: Option<&'a DatumDefinition>,
+}
+
+fn sketch_datum<'a>(
+    datums: &HashMap<&str, &'a DatumDefinition>,
+    operation: &FeatureOperation,
+) -> Result<Option<&'a DatumDefinition>, ModelError> {
+    let sketch = match operation {
+        FeatureOperation::SketchFace { sketch } | FeatureOperation::SketchWire { sketch } => sketch,
+        _ => return Ok(None),
+    };
+    let Some(id) = &sketch.datum_plane else {
+        return Ok(None);
+    };
+    let datum = datums
+        .get(id.as_str())
+        .copied()
+        .ok_or_else(|| ModelError::new(format!("unknown sketch plane datum '{id}'")))?;
+    if !matches!(datum.kind, DatumKind::Plane { .. }) {
+        return Err(ModelError::new(format!(
+            "sketch datum '{id}' must be a plane"
+        )));
+    }
+    Ok(Some(datum))
 }
 
 fn feature_signature(
+    datums: &HashMap<&str, &DatumDefinition>,
     feature: &FeatureDefinition,
     parameters: &HashMap<String, ParameterValue>,
 ) -> Result<Vec<u8>, ModelError> {
     let mut names = HashSet::new();
     collect_operation_parameters(&feature.operation, &mut names);
+    let datum = sketch_datum(datums, &feature.operation)?;
+    if let Some(DatumDefinition {
+        kind: DatumKind::Plane { origin, normal },
+        ..
+    }) = datum
+    {
+        collect_vector_parameters(origin, &mut names);
+        collect_vector_parameters(normal, &mut names);
+    }
     let mut names = names.into_iter().collect::<Vec<_>>();
     names.sort_unstable();
     let values = names
@@ -3408,6 +3455,7 @@ fn feature_signature(
     serde_json::to_vec(&FeatureSignature {
         feature,
         parameters: values,
+        datum,
     })
     .map_err(|error| ModelError::new(format!("create feature signature: {error}")))
 }
@@ -3429,7 +3477,9 @@ fn collect_operation_parameters<'a>(operation: &'a FeatureOperation, names: &mut
             collect_scalar_parameters(radius, names);
             collect_scalar_parameters(height, names);
         }
-        FeatureOperation::SketchFace { sketch } => sketch.collect_parameters(names),
+        FeatureOperation::SketchFace { sketch } | FeatureOperation::SketchWire { sketch } => {
+            sketch.collect_parameters(names)
+        }
         FeatureOperation::Translate { offset, .. } => collect_vector_parameters(offset, names),
         FeatureOperation::Rotate {
             origin,
@@ -3642,11 +3692,18 @@ fn validate_definition(definition: &FamilyDefinition) -> Result<(), ModelError> 
             .map(|feature| feature.id.as_str()),
         "feature ids must be nonempty and unique",
     )?;
+    let datums = definition
+        .datums
+        .iter()
+        .map(|datum| (datum.id.as_str(), datum))
+        .collect::<HashMap<_, _>>();
     for feature in &definition.features {
         match &feature.operation {
-            FeatureOperation::SketchFace { sketch } => {
+            FeatureOperation::SketchFace { sketch } | FeatureOperation::SketchWire { sketch } => {
                 sketch
                     .validate_structure()
+                    .map_err(|error| error.in_feature(&feature.id))?;
+                sketch_datum(&datums, &feature.operation)
                     .map_err(|error| error.in_feature(&feature.id))?;
             }
             FeatureOperation::Sew { inputs, .. } if inputs.is_empty() => {
@@ -4510,6 +4567,7 @@ fn evaluate_resolved_vector_expression(
 
 fn execute_feature<'session>(
     session: &'session Session,
+    datums: &HashMap<&str, &DatumDefinition>,
     feature: &FeatureDefinition,
     parameters: &HashMap<String, ParameterValue>,
     shapes: &HashMap<String, Shape<'session>>,
@@ -4530,8 +4588,15 @@ fn execute_feature<'session>(
             scalar(radius, parameters, Dimension::Length)?,
             scalar(height, parameters, Dimension::Length)?,
         ),
-        FeatureOperation::SketchFace { sketch } => {
-            return sketch.face(session, parameters);
+        FeatureOperation::SketchFace { sketch } | FeatureOperation::SketchWire { sketch } => {
+            let datum = sketch_datum(datums, &feature.operation)?
+                .map(|datum| datum.kind.evaluate(parameters))
+                .transpose()?;
+            return if matches!(feature.operation, FeatureOperation::SketchWire { .. }) {
+                sketch.wire(session, parameters, datum)
+            } else {
+                sketch.face_on_plane(session, parameters, datum)
+            };
         }
         FeatureOperation::Translate { input, offset } => session.translate(
             shape(shapes, input)?,

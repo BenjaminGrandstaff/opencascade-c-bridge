@@ -10,13 +10,21 @@ use std::{
     ptr::{self, NonNull},
 };
 
-const ABI_VERSION: u32 = 25;
+const ABI_VERSION: u32 = 26;
 
 #[repr(C)]
 struct RawVec3 {
     x: f64,
     y: f64,
     z: f64,
+}
+
+#[repr(C)]
+struct RawWireSegment {
+    kind: c_int,
+    start: RawVec3,
+    middle: RawVec3,
+    end: RawVec3,
 }
 
 #[repr(C)]
@@ -121,6 +129,13 @@ unsafe extern "C" {
         session: *mut c_void,
         points: *const RawVec3,
         point_count: usize,
+        closed: c_int,
+        out: *mut RawShapeId,
+    ) -> RawStatus;
+    fn occt_bridge_create_segment_wire(
+        session: *mut c_void,
+        segments: *const RawWireSegment,
+        count: usize,
         closed: c_int,
         out: *mut RawShapeId,
     ) -> RawStatus;
@@ -460,6 +475,21 @@ pub struct Vec3 {
     pub x: f64,
     pub y: f64,
     pub z: f64,
+}
+
+/// An exact line or circular arc in an ordered wire.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum WireSegment {
+    Line {
+        start: Vec3,
+        end: Vec3,
+    },
+    /// The arc runs from `start` through `middle` to `end`.
+    Arc {
+        start: Vec3,
+        middle: Vec3,
+        end: Vec3,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -842,6 +872,45 @@ impl Session {
                 self.raw.as_ptr(),
                 points.as_ptr(),
                 points.len(),
+                i32::from(closed),
+                &mut shape,
+            )
+        })?;
+        Ok(self.shape(shape))
+    }
+
+    /// Creates an ordered, connected wire of exact lines and circular arcs.
+    /// `closed` requires closure when true; false permits either open or closed
+    /// wires. Planarity and absence of self-intersections are not required.
+    pub fn create_segment_wire(
+        &self,
+        segments: &[WireSegment],
+        closed: bool,
+    ) -> Result<Shape<'_>, BridgeError> {
+        let raw = segments
+            .iter()
+            .map(|segment| match *segment {
+                WireSegment::Line { start, end } => RawWireSegment {
+                    kind: 0,
+                    start: start.into(),
+                    middle: start.into(),
+                    end: end.into(),
+                },
+                WireSegment::Arc { start, middle, end } => RawWireSegment {
+                    kind: 1,
+                    start: start.into(),
+                    middle: middle.into(),
+                    end: end.into(),
+                },
+            })
+            .collect::<Vec<_>>();
+        let mut shape = 0;
+        // SAFETY: The segment slice, session and output remain valid during the call.
+        self.check(unsafe {
+            occt_bridge_create_segment_wire(
+                self.raw.as_ptr(),
+                raw.as_ptr(),
+                raw.len(),
                 i32::from(closed),
                 &mut shape,
             )
@@ -3029,6 +3098,86 @@ mod tests {
         );
         assert_eq!(session.shape_count().unwrap(), 1);
         assert!(session.is_valid(&source).unwrap());
+    }
+
+    #[test]
+    fn mixed_segment_wires_preserve_exact_arcs() {
+        let session = Session::new().unwrap();
+        // Both orientations and a major arc: area of the circular segment.
+        for (middle, end, area) in [
+            (
+                Vec3::new(0.0, 1.0, 0.0),
+                Vec3::new(-1.0, 0.0, 0.0),
+                std::f64::consts::PI / 2.0,
+            ),
+            (
+                Vec3::new(0.0, -1.0, 0.0),
+                Vec3::new(-1.0, 0.0, 0.0),
+                std::f64::consts::PI / 2.0,
+            ),
+            (
+                Vec3::new(-1.0, 0.0, 0.0),
+                Vec3::new(0.0, -1.0, 0.0),
+                3.0 * std::f64::consts::PI / 4.0 + 0.5,
+            ),
+        ] {
+            let start = Vec3::new(1.0, 0.0, 0.0);
+            let wire = session
+                .create_segment_wire(
+                    &[
+                        WireSegment::Arc { start, middle, end },
+                        WireSegment::Line {
+                            start: end,
+                            end: start,
+                        },
+                    ],
+                    true,
+                )
+                .unwrap();
+            let face = session.create_face_from_wire(&wire).unwrap();
+            assert!(session.is_valid(&face).unwrap());
+            assert!((session.surface_area(&face).unwrap() - area).abs() < 1e-9);
+            let prism = session
+                .create_prism_from_face(&face, Vec3::new(0.0, 0.0, 3.0))
+                .unwrap();
+            assert!((session.volume(&prism).unwrap() - 3.0 * area).abs() < 1e-9);
+        }
+        assert_eq!(session.shape_count().unwrap(), 0);
+    }
+
+    #[test]
+    fn invalid_segment_wires_do_not_leak_handles() {
+        let session = Session::new().unwrap();
+        assert!(session.create_segment_wire(&[], false).is_err());
+        let start = Vec3::new(1.0, 0.0, 0.0);
+        let end = Vec3::new(-1.0, 0.0, 0.0);
+        let arc = WireSegment::Arc {
+            start,
+            middle: Vec3::new(0.0, 1.0, 0.0),
+            end,
+        };
+        assert!(session.create_segment_wire(&[arc], true).is_err());
+        assert!(
+            session
+                .create_segment_wire(&[arc, WireSegment::Line { start, end }], false)
+                .is_err()
+        );
+        assert!(
+            session
+                .create_segment_wire(
+                    &[WireSegment::Arc {
+                        start,
+                        middle: Vec3::new(0.0, 0.0, 0.0),
+                        end
+                    }],
+                    false
+                )
+                .is_err()
+        );
+        let open = session.create_segment_wire(&[arc], false).unwrap();
+        assert!(session.is_valid(&open).unwrap());
+        drop(open);
+        assert_eq!(session.shape_count().unwrap(), 0);
     }
 
     #[test]

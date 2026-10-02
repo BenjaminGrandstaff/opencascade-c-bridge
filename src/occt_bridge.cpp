@@ -77,6 +77,8 @@
 #include <gp_Trsf.hxx>
 #include <gp_Vec.hxx>
 #include <GProp_GProps.hxx>
+#include <GC_MakeArcOfCircle.hxx>
+#include <Geom_TrimmedCurve.hxx>
 #include <TopTools_IndexedMapOfShape.hxx>
 #include <TopTools_ListIteratorOfListOfShape.hxx>
 #include <TopTools_ListOfShape.hxx>
@@ -1633,6 +1635,41 @@ occt_bridge_status_t occt_bridge_create_sphere(
 
 namespace {
 
+const char* wire_segment_error(const occt_bridge_wire_segment_t& segment) {
+    if ((segment.kind != 0 && segment.kind != 1) || !finite(segment.start)
+        || !finite(segment.end) || (segment.kind == 1 && !finite(segment.middle))) {
+        return "invalid wire segment";
+    }
+    if (to_point(segment.start).Distance(to_point(segment.end)) <= Precision::Confusion()) {
+        return "wire segment endpoints coincide";
+    }
+    return nullptr;
+}
+
+const char* add_wire_segment(BRepBuilderAPI_MakeWire& wire,
+                             const occt_bridge_wire_segment_t& segment) {
+    const gp_Pnt start = to_point(segment.start);
+    const gp_Pnt end = to_point(segment.end);
+    if (segment.kind == 1) {
+        GC_MakeArcOfCircle arc(start, to_point(segment.middle), end);
+        if (!arc.IsDone()) {
+            return "invalid circular arc";
+        }
+        BRepBuilderAPI_MakeEdge edge(arc.Value());
+        if (!edge.IsDone()) {
+            return "arc edge construction failed";
+        }
+        wire.Add(edge.Edge());
+    } else {
+        BRepBuilderAPI_MakeEdge edge(start, end);
+        if (!edge.IsDone()) {
+            return "line edge construction failed";
+        }
+        wire.Add(edge.Edge());
+    }
+    return wire.IsDone() ? nullptr : "segment wire construction failed";
+}
+
 /* Rejects non-finite points, zero-length segments, and a repeated closing point. */
 const char* polyline_point_error(const occt_bridge_vec3_t* points, size_t point_count, bool closed) {
     for (size_t index = 0; index < point_count; ++index) {
@@ -1684,6 +1721,40 @@ occt_bridge_status_t occt_bridge_create_polyline_wire(
             return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "polyline wire construction failed");
         }
         return store_shape(session, builder.Wire(), out_shape);
+    });
+}
+
+occt_bridge_status_t occt_bridge_create_segment_wire(
+    occt_bridge_session_t* session,
+    const occt_bridge_wire_segment_t* segments,
+    size_t segment_count,
+    int closed,
+    occt_bridge_shape_id_t* out_shape) {
+    return guarded(session, [&] {
+        if (out_shape == nullptr) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_shape is null");
+        }
+        *out_shape = OCCT_BRIDGE_INVALID_SHAPE_ID;
+        if (segments == nullptr || segment_count == 0 || (closed != 0 && closed != 1)) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "invalid segment-wire parameters");
+        }
+        BRepBuilderAPI_MakeWire wire;
+        for (size_t index = 0; index < segment_count; ++index) {
+            const auto& segment = segments[index];
+            if (const char* error = wire_segment_error(segment)) {
+                return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, error);
+            }
+            if (index > 0 && to_point(segment.start).Distance(to_point(segments[index - 1].end)) > Precision::Confusion()) {
+                return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "wire segments are disconnected");
+            }
+            if (const char* error = add_wire_segment(wire, segment)) {
+                return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, error);
+            }
+        }
+        if (closed == 1 && to_point(segments[0].start).Distance(to_point(segments[segment_count - 1].end)) > Precision::Confusion()) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "segment wire is not closed");
+        }
+        return store_shape(session, wire.Wire(), out_shape);
     });
 }
 

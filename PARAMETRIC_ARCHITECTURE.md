@@ -7,7 +7,7 @@ so they can generate and regenerate families of related parts.
 ## Implementation status
 
 The architecture in this document is both a description of implemented
-boundaries and a roadmap. As of ABI version 25, the repository contains three
+boundaries and a roadmap. As of ABI version 26, the repository contains three
 Rust layers:
 
 1. **`occt-bridge`** safely wraps session-owned OCCT handles. It includes
@@ -70,8 +70,7 @@ The following major capabilities remain planned:
   model;
 - broader requirement rules such as clearance, interference, minimum radius,
   wall thickness, connectivity, and manufacturing checks;
-- exact arc and circle sketch entities, tangent constraints, sparse
-  large-sketch solving, and sketch profiles feeding extrude, revolve, hole,
+- sketch profiles feeding extrude, revolve, hole,
   draft, rib, variable-fillet, and later sheet-metal features;
 - joints, interference and clearance detection, and motion studies;
 - generated drawings with projected views and dimensions;
@@ -183,21 +182,58 @@ definition.
 
 ## Constraint-solved sketches
 
-Schema 25 introduces the first sketch slice. A `SketchDefinition` places
-parameter-driven 2D points and ordered line entities in a typed 3D plane.
-Coincident, horizontal, vertical, parallel, perpendicular, equal-length, and
-dimensional distance constraints are solved before kernel generation.
+Schema 26 extends the schema 25 line sketches with exact circles, arcs, and
+tangency. A `SketchDefinition` places parameter-driven 2D points and named
+entities in a typed 3D plane. `SketchCircle` names a center and rim point;
+`SketchArc` names a center, start, end, and clockwise flag. An implicit equation
+enforces equal arc radii. Existing dimensional distance expressions can drive
+center-to-boundary radii. Coincident, horizontal, vertical, parallel,
+perpendicular, equal-length, distance, and tangent constraints are solved before
+kernel generation. `Tangent { first, second, point }` requires a shared named
+endpoint (or circle rim); it compares line directions and circular tangents at
+that contact, not tangency to extensions of the entities.
 `SketchSolution` reports convergence, maximum residual, free degrees, and
 redundant equations; conflicting constraints reject generation. A
-`SketchFace` feature requires at least three continuous, closed lines and
-emits an exact planar face through the kernel's polyline-wire constructor.
+`SketchFace` feature emits an exact planar face from an ordered, closed
+`profile` of entity IDs, or a single circle. Entities omitted from an explicit
+profile are construction geometry. For compatibility an empty profile uses
+all lines in order, or a sole circle when no lines/arcs exist; other curved
+sketches require an explicit profile. Arcs retain their directed minor/major
+sweeps. Invalid references, repeated profile IDs, degenerate curves, open
+boundaries, and invalid generated faces are rejected with temporary handles
+released. Schema 25 documents default the new arrays to empty. Rust callers
+now supply `Box<SketchDefinition>` to `SketchFace` to keep the feature enum
+compact; this indirection does not alter JSON structure.
 
-The current finite-difference dense least-squares implementation costs
-O(i(c v^2 + v^3)) time and O(c v + v^2) memory for `v` free coordinates, `c`
-residual components, and `i` iterations. It targets small feature sketches:
-10,000 independent constrained sketches solve in 0.018 s. Exact arc and circle
-entities, tangent constraints, and a sparse decomposition for large individual
-sketches remain open; the roadmap item is not complete until those land.
+Schema 27 adds `SketchWire`, which emits the same exact closed profile as a
+reusable wire output, and optional `SketchDefinition::datum_plane` references
+to a plane datum in the owning family. The datum supplies the origin and unit
+normal. The sketch's explicit x-axis must be perpendicular to that normal;
+the y-axis is normal cross x, preserving a deterministic right-handed frame.
+The inline origin/y-axis expressions are unused for linked sketches.
+Missing or non-plane datums and incompatible axes are rejected. Datum lookup
+is indexed during definition validation and generation. Feature signatures
+include the referenced datum definition and its expression parameters, so
+datum parameter changes and definition edits rebuild sketches and dependent
+features while unrelated outputs remain reusable. Older documents default
+`datum_plane` to none and retain their inline plane behavior.
+
+Sketch solving reuses the assembly solver's sparse normal-matrix algebra.
+Each constraint differentiates only its referenced points (at most eight
+coordinates), using central differences and indexed line lookup. Jacobian
+assembly takes O(points + constraints) time and memory per iteration;
+minimum-degree elimination depends on fill-in, which stays small for chains
+and disconnected components. Rank is computed from the undamped normal matrix,
+and coordinates absent from constraints remain unchanged. Non-finite residuals
+and derivatives are rejected.
+
+One sketch with 10,000 independent lines (20,000 free coordinates) solves in
+0.036 s; a connected 1,000-line chain solves in 0.005 s. The separate benchmark
+of 10,000 small sketches takes 0.037 s; an additional 10,000-solve
+arc/tangent case takes 0.117 s and checks implicit radii and contact coordinates
+(both have a 2 s budget). A further benchmark creates 10,000 wire features on
+10,000 named datum planes, checks the final placement, and verifies all handles
+are released in 0.082 s (5 s budget).
 
 ## Requirements preserve intent
 
@@ -629,8 +665,13 @@ application code should use the recipe crate.
 
 ## Compatibility rule
 
-The C interface currently requires an exact ABI version match. ABI version 25
-adds structured kernel-failure diagnostics that identify OCCT's code and the
+The C interface currently requires an exact ABI version match. ABI version 26
+adds ordered mixed line/circular-arc wires (`occt_bridge_create_segment_wire`,
+Rust `Session::create_segment_wire`). Arcs pass through three supplied points,
+preserving exact circular geometry, including major arcs; requested closure
+and segment connectivity are checked. Schema 26 uses this API for mixed
+line/arc sketch profiles and adds circle entities and contact tangency.
+ABI version 25 added structured kernel-failure diagnostics that identify OCCT's code and the
 input at fault; ABI version 24 added a diagnostics-preserving handle release
 used by the Rust bindings to free shapes when handles are dropped; ABI version
 23 added per-session result validation, optional healing with history, fuzzy
@@ -672,8 +713,12 @@ or bounds-driven fitted spans,
 nested assembly frames, semantic selectors, provenance, and regeneration audit records. Live
 OCCT handles and generated BREPs are never serialized. Loading reconstructs a
 validated `InstanceGraph`; regeneration creates fresh session-owned handles.
-Schema versions 1 through 24 migrate to version 25, supplying explicit defaults
-for fields absent from older documents. Version 25 added constraint-solved line
+Schema versions 1 through 26 migrate to version 27, supplying explicit defaults
+for fields absent from older documents. Version 27 adds sketch-wire feature
+outputs and optional family plane-datum references; older sketches retain
+their inline planes. Version 26 adds circle/arc sketch
+entities, contact tangency, and explicit ordered profile IDs; old sketches
+load with empty circles, arcs, and profile arrays. Version 25 added constraint-solved line
 sketches and exact closed polygon face features. Version 24 added assembly-level mass,
 datum-clearance, and relationship-satisfaction requirements. Older documents
 load with none. Version 23 added per-model relationship
@@ -697,7 +742,7 @@ defaults, units, constraints, placements, clone cycles, missing links,
 inconsistent pattern membership, and invalid regeneration revisions before the
 model is accepted.
 
-The next cross-layer work should prioritize constraint-solved 2D sketches,
+The next cross-layer work should prioritize extrude and revolve features from sketch profiles,
 measured by the scale
 benchmark suite (`tools/bench/run.sh`). Scale is a requirement for every change; see the
 [Roadmap](ROADMAP.md) for target sizes and the checks each change must pass.

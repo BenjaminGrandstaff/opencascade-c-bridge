@@ -8,18 +8,18 @@ tracks status and order.
 
 | Layer | Version | State |
 |---|---|---|
-| C ABI (`src/`, `include/`) | ABI 25 | Stable; exact version match required |
+| C ABI (`src/`, `include/`) | ABI 26 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 25 | Active development |
+| `occt-parametric` (engineering layer) | Schema 27 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 3/3, bridge 41, recipes 3, parametric 91 | `ctest`, `cargo test` (see README) |
-| SonarQube (indexed Rust) | Gate OK, 0 issues, 93.3% line coverage | `tools/sonar/run.sh` |
+| Tests | C 3/3, bridge 43, recipes 3, parametric 104 | `ctest`, `cargo test` (see README) |
+| SonarQube (indexed Rust) | Last recorded: Gate OK, 0 issues, 93.3% line coverage; not rerun for current changes | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
-| Coverage | 93.22% lines overall; C++ 93.46% lines, 86.45% branches, 100% functions | `tools/coverage/run.sh` |
-| Scale benchmarks | 25 passing within budget | `tools/bench/run.sh` |
+| Coverage | 93.69% lines overall; C++ 93.49% lines, 86.75% branches, 100% functions | `tools/coverage/run.sh` |
+| Scale benchmarks | 29 passing within budget | `tools/bench/run.sh` |
 
 ## Done
 
@@ -28,6 +28,10 @@ tracks status and order.
 - Sessions, integer shape handles, history-preserving duplicates, exception
   containment at every entry point.
 - Primitives, wires, faces, prisms, polyline tubes, lofts, compounds.
+- Exact mixed line/circular-arc wires (ABI 26), including major arcs, with
+  ordered connectivity and optional closure checks. Safe Rust bindings expose
+  `WireSegment` and `Session::create_segment_wire`; schema 26 uses them for
+  exact curved sketch faces.
 - Location-only sharing for placed copies: translation and rotation attach
   a location to shared geometry and record located history computed on
   demand. Measured: 0.7 KiB per placed copy of a 20-hole plate instead of
@@ -77,6 +81,22 @@ tracks status and order.
   features; required, preferred, and advisory verification.
 - Sewing and single- or multi-shell solid construction as serializable feature
   operations.
+- Constraint-solved 2D sketches: lines, exact arcs/circles, construction
+  geometry, coincident, horizontal, vertical, parallel, perpendicular,
+  equal-length, distance, and contact-tangent constraints. Radius dimensions
+  use center-to-boundary distance expressions; arcs enforce equal radii.
+  The sparse solver reports convergence, free degrees, and redundancy;
+  conflicting constraints reject generation. `SketchFace` and `SketchWire`
+  emit exact closed profiles, with minor/major and clockwise arc sweeps.
+  Schema 27 adds optional family plane-datum linkage; origin and normal come
+  from the datum, x-axis defines the in-plane orientation, and y-axis is
+  normal cross x. Datum definitions and their parameters participate in
+  incremental regeneration; missing/non-plane datums and incompatible axes
+  are rejected. Tests cover exact area/perimeter, parameter and datum edits,
+  selective reuse, invalid inputs, schema migration, and handle cleanup.
+  Measured: 10,000 independent lines solve in 0.036 s, a 1,000-line chain in
+  0.005 s, and 10,000 arc/tangent sketches in 0.117 s. Generating 10,000 wires
+  on 10,000 indexed datum planes takes 0.082 s (5 s budget), including cleanup.
 - Semantic edge and face selectors: extrema, size, curvature (midpoint,
   sampled, proven-bound), normals, adjacency, tangency, set composition,
   operation history.
@@ -180,38 +200,25 @@ every item below is defined in documents and the API, and verified in tests.
 
 ### Capabilities
 
-1. **Constraint-solved 2D sketches.** Lines, arcs, and circles on a datum
-    plane with geometric constraints (coincident, tangent, parallel,
-    perpendicular, horizontal, vertical, equal) and dimensional constraints
-    driven by parameter expressions. Solve with the relationship solver's
-    machinery, report free degrees and conflicts, and emit closed profiles as
-    wires and faces for features.
-   **In progress:** schema 25 adds parameter-driven line sketches in typed 3D
-   planes, nonlinear constraint solving for coincident, parallel,
-   perpendicular, horizontal, vertical, equal-length, and distance rules,
-   free-degree/redundancy/conflict reporting, and exact closed polygon faces.
-   It solves 10,000 small sketches in 0.018 s. Exact arc and circle entities,
-   tangent constraints, and sparse solving for large individual sketches
-   remain before this item moves to Done.
-2. **Feature breadth.** Extrude and revolve from sketch profiles (adds a
+1. **Feature breadth.** Extrude and revolve from sketch profiles (adds a
     revolve operation to the C ABI), holes with standard sizes, counterbores,
     countersinks, and recorded thread specifications, draft, ribs, and
     variable-radius fillets; sheet metal (flanges, bends, flat patterns)
     after the rest.
-3. **Assembly depth.** Joints (revolute, prismatic, cylindrical, planar,
+2. **Assembly depth.** Joints (revolute, prismatic, cylindrical, planar,
     fixed) with limits on top of relationships; interference and minimum
     clearance between instances using exact boolean and distance queries; and
     motion studies that sweep joint values and report collisions.
-4. **Generated drawings.** Projected views (orthographic, section, detail)
+3. **Generated drawings.** Projected views (orthographic, section, detail)
     by hidden-line removal, exported as SVG and DXF; dimensions and notes
     placed from datums and parameters; title blocks from document metadata.
     Drawings regenerate with the model rather than being edited by hand.
-5. **Analysis and manufacturing hand-off.** Full mass properties (center of
+4. **Analysis and manufacturing hand-off.** Full mass properties (center of
     mass, inertia tensor) per instance and assembly; tagged surface and
     volume meshes for external FEA; manufacturability checks (minimum wall
     thickness, draft angle, 3D-printing overhang); glTF export with material
     appearance for rendering.
-6. **Model data management.** Semantic diff and three-way merge of model
+5. **Model data management.** Semantic diff and three-way merge of model
     documents (parameters, features, instances, relationships), recorded
     revision history inside documents, and change-impact reports listing the
     instances and features a change affects, with a git merge driver.
