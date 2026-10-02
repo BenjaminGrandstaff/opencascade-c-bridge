@@ -82,11 +82,155 @@ fn main() -> ExitCode {
     outcomes.push(sketch_solver_case());
     outcomes.push(curved_sketch_solver_case());
     outcomes.push(datum_sketch_wire_case());
+    outcomes.push(profile_sweep_case(false));
+    outcomes.push(profile_sweep_case(true));
     outcomes.push(large_sketch_case(false));
     outcomes.push(large_sketch_case(true));
     outcomes.push(solver_grid(definition));
     outcomes.extend(validation_cases());
     report(&outcomes)
+}
+
+fn profile_sweep_case(revolve: bool) -> Outcome {
+    const COUNT: usize = 1_000;
+    let value = |x| ScalarExpr::Literal(Quantity::length(x, LengthUnit::Millimeter));
+    let mut definition = block();
+    definition.datums.clear();
+    definition.features.clear();
+    let sketch = SketchDefinition {
+        id: "circle".into(),
+        datum_plane: None,
+        origin: VectorExpr::Literal(VectorQuantity::lengths(
+            0.0,
+            0.0,
+            0.0,
+            LengthUnit::Millimeter,
+        )),
+        x_axis: VectorExpr::Literal(VectorQuantity::scalars(1.0, 0.0, 0.0)),
+        y_axis: VectorExpr::Literal(VectorQuantity::scalars(
+            0.0,
+            if revolve { 0.0 } else { 1.0 },
+            if revolve { 1.0 } else { 0.0 },
+        )),
+        points: vec![
+            SketchPoint {
+                id: "c".into(),
+                x: value(3.0),
+                y: value(0.0),
+                fixed: true,
+            },
+            SketchPoint {
+                id: "r".into(),
+                x: value(4.0),
+                y: value(0.0),
+                fixed: true,
+            },
+        ],
+        lines: Vec::new(),
+        circles: vec![SketchCircle {
+            id: "circle".into(),
+            center: "c".into(),
+            rim: "r".into(),
+        }],
+        arcs: Vec::new(),
+        profile: Vec::new(),
+        constraints: Vec::new(),
+    };
+    if revolve {
+        definition.parameters.push(ParameterDefinition {
+            id: "angle".into(),
+            parameter_type: ParameterType::Scalar(Dimension::Scalar),
+            default: ParameterValue::Scalar(Quantity::scalar(std::f64::consts::PI)),
+            minimum: None,
+            maximum: None,
+        });
+    }
+    definition.features.push(FeatureDefinition {
+        id: "profile".into(),
+        operation: FeatureOperation::SketchWire {
+            sketch: Box::new(sketch),
+        },
+    });
+    for index in 0..COUNT {
+        let operation = if revolve {
+            FeatureOperation::Revolve {
+                input: "profile".into(),
+                origin: VectorExpr::Literal(VectorQuantity::lengths(
+                    0.0,
+                    0.0,
+                    0.0,
+                    LengthUnit::Millimeter,
+                )),
+                axis: VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, 1.0)),
+                angle_radians: ScalarExpr::Parameter("angle".into()),
+            }
+        } else {
+            FeatureOperation::Extrude {
+                input: "profile".into(),
+                direction: VectorExpr::Components {
+                    x: value(0.0),
+                    y: value(0.0),
+                    z: ScalarExpr::Parameter("height".into()),
+                },
+            }
+        };
+        definition.features.push(FeatureDefinition {
+            id: format!("solid{index}"),
+            operation,
+        });
+    }
+    let name = if revolve { "revolve" } else { "extrude" };
+    timed(
+        format!("{COUNT} {name} features: build and edit"),
+        Duration::from_secs(5),
+        Expectation::Required,
+        || {
+            let session = Session::new()?;
+            let mut part = PartInstance {
+                id: "part".into(),
+                definition: &definition,
+                overrides: HashMap::new(),
+                provenance: "bench".into(),
+            };
+            let first = part.regenerate(&session)?;
+            let (parameter, value, expected_volume) = if revolve {
+                (
+                    "angle",
+                    Quantity::scalar(std::f64::consts::TAU),
+                    6.0 * std::f64::consts::PI.powi(2),
+                )
+            } else {
+                (
+                    "height",
+                    Quantity::length(60.0, LengthUnit::Millimeter),
+                    60.0 * std::f64::consts::PI,
+                )
+            };
+            part.overrides
+                .insert(parameter.into(), ParameterValue::Scalar(value));
+            let edited = part.regenerate_incremental(&session, &first)?;
+            if edited.regeneration.rebuilt.len() != COUNT
+                || edited.regeneration.reused != ["profile"]
+            {
+                return Err(failure("sweep edit did not reuse only its profile".into()));
+            }
+            for index in 0..COUNT {
+                let solid = edited
+                    .shape(&format!("solid{index}"))
+                    .ok_or_else(|| failure("sweep output is missing".into()))?;
+                if (session.volume(solid)? - expected_volume).abs() > 1e-7 {
+                    return Err(failure("sweep volume differs after edit".into()));
+                }
+            }
+            drop((first, edited));
+            if session.shape_count()? != 0 {
+                return Err(failure("sweep handles were retained".into()));
+            }
+            Ok(format!(
+                "{COUNT} exact solids rebuilt; profile reused; handles released"
+            ))
+        },
+    )
 }
 
 fn datum_sketch_wire_case() -> Outcome {

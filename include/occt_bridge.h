@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define OCCT_BRIDGE_ABI_VERSION 26u
+#define OCCT_BRIDGE_ABI_VERSION 27u
 #define OCCT_BRIDGE_INVALID_SHAPE_ID UINT64_C(0)
 
 #if defined(_WIN32) && defined(OCCT_BRIDGE_BUILD_SHARED)
@@ -325,6 +325,19 @@ OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_create_prism_from_face(
     occt_bridge_session_t* session,
     occt_bridge_shape_id_t face,
     occt_bridge_vec3_t direction,
+    occt_bridge_shape_id_t* out_shape
+);
+
+/* Revolves a face about origin/axis. Axis is finite and nonzero; angle is in
+ * radians, finite, nonzero, and within [-2*pi, 2*pi]. Negative angles reverse
+ * the sweep. Records generated/modified topology and applies session result
+ * validation options. */
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_create_revolve_from_face(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t face,
+    occt_bridge_vec3_t origin,
+    occt_bridge_vec3_t axis,
+    double angle_radians,
     occt_bridge_shape_id_t* out_shape
 );
 

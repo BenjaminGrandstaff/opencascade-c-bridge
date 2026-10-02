@@ -7,7 +7,7 @@ so they can generate and regenerate families of related parts.
 ## Implementation status
 
 The architecture in this document is both a description of implemented
-boundaries and a roadmap. As of ABI version 26, the repository contains three
+boundaries and a roadmap. As of ABI version 27, the repository contains three
 Rust layers:
 
 1. **`occt-bridge`** safely wraps session-owned OCCT handles. It includes
@@ -70,7 +70,7 @@ The following major capabilities remain planned:
   model;
 - broader requirement rules such as clearance, interference, minimum radius,
   wall thickness, connectivity, and manufacturing checks;
-- sketch profiles feeding extrude, revolve, hole,
+- sketch profiles feeding hole,
   draft, rib, variable-fillet, and later sheet-metal features;
 - joints, interference and clearance detection, and motion studies;
 - generated drawings with projected views and dimensions;
@@ -234,6 +234,33 @@ arc/tangent case takes 0.117 s and checks implicit radii and contact coordinates
 (both have a 2 s budget). A further benchmark creates 10,000 wire features on
 10,000 named datum planes, checks the final placement, and verifies all handles
 are released in 0.082 s (5 s budget).
+
+## Extrude and revolve features
+
+Schema 28 adds `Extrude { input, direction }` and
+`Revolve { input, origin, axis, angle_radians }`. `input` is a named planar
+face or closed planar wire output, including `SketchFace` and `SketchWire`.
+These references participate in feature dependency ordering, allowing a sweep
+to be declared before its profile. Extrusion's `direction` is the complete
+length-valued displacement vector, allowing oblique and negative sweeps.
+Revolution's origin is length-valued, its axis is dimensionless and nonzero,
+and its signed scalar angle is in radians, with `0 < abs(angle) <= 2*pi`.
+The axis/origin use family-local coordinates; existing instance placement
+and assembly frames position the resulting solids afterward.
+
+Wire inputs create temporary planar faces, released on success and failure.
+Profiles must define valid planar faces; sweep results must be valid solids
+with positive volume. Exact lines/arcs/circles retain their geometry. Kernel
+history maps profile edges to generated faces, including when the temporary
+face has been released. Parameter edits to displacement or angle rebuild
+the solid while reusing an unchanged profile; profile and datum edits rebuild
+dependent sweeps. Failed incremental attempts release new handles and preserve
+the prior accepted output. Tests check exact polygon/arc/circle prism volumes,
+full and signed partial torus volumes, dependency ordering, history, units,
+invalid inputs, serialization/migration, selective reuse, and cleanup.
+The scale suite builds and edits 1,000 sweeps in 0.562 s for extrude and
+0.700 s for revolve (5 s budgets), verifies every edited volume and profile
+reuse, and checks that all handles are released.
 
 ## Requirements preserve intent
 
@@ -665,8 +692,12 @@ application code should use the recipe crate.
 
 ## Compatibility rule
 
-The C interface currently requires an exact ABI version match. ABI version 26
-adds ordered mixed line/circular-arc wires (`occt_bridge_create_segment_wire`,
+The C interface currently requires an exact ABI version match. ABI version 27
+adds face revolution (`occt_bridge_create_revolve_from_face`, Rust
+`Session::create_revolve_from_face`), signed partial/full angles up to one turn,
+topology history, and session result validation. Schema 28 uses this API and
+the existing prism API for revolve and extrude features. ABI version 26
+added ordered mixed line/circular-arc wires (`occt_bridge_create_segment_wire`,
 Rust `Session::create_segment_wire`). Arcs pass through three supplied points,
 preserving exact circular geometry, including major arcs; requested closure
 and segment connectivity are checked. Schema 26 uses this API for mixed
@@ -704,7 +735,7 @@ information, so they are delivery artifacts and cannot replace the parametric
 source model.
 
 `ModelDocument` is the implemented local persistence boundary. Schema version
-25 serializes the primary and additional family definitions with their datums,
+28 serializes the primary and additional family definitions with their datums,
 assembly relationships, configurations, materials and material assignments, requirements, derived parameters,
 constraints, base and clone nodes, sparse overrides, placements, linear and
 circular pattern rules, linear and circular fit constraints, slot counts,
@@ -713,8 +744,10 @@ or bounds-driven fitted spans,
 nested assembly frames, semantic selectors, provenance, and regeneration audit records. Live
 OCCT handles and generated BREPs are never serialized. Loading reconstructs a
 validated `InstanceGraph`; regeneration creates fresh session-owned handles.
-Schema versions 1 through 26 migrate to version 27, supplying explicit defaults
-for fields absent from older documents. Version 27 adds sketch-wire feature
+Schema versions 1 through 27 migrate to version 28, supplying explicit defaults
+for fields absent from older documents. Version 28 adds extrude and revolve
+feature operations referencing face/wire outputs; older documents keep their
+existing features unchanged. Version 27 adds sketch-wire feature
 outputs and optional family plane-datum references; older sketches retain
 their inline planes. Version 26 adds circle/arc sketch
 entities, contact tangency, and explicit ordered profile IDs; old sketches
@@ -742,7 +775,7 @@ defaults, units, constraints, placements, clone cycles, missing links,
 inconsistent pattern membership, and invalid regeneration revisions before the
 model is accepted.
 
-The next cross-layer work should prioritize extrude and revolve features from sketch profiles,
+The next cross-layer work should prioritize standard hole features,
 measured by the scale
 benchmark suite (`tools/bench/run.sh`). Scale is a requirement for every change; see the
 [Roadmap](ROADMAP.md) for target sizes and the checks each change must pass.

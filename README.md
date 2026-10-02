@@ -3,7 +3,7 @@
 A small, stable C ABI over Open Cascade (OCCT), designed to be wrapped safely
 from Rust and other languages. Open Cascade C++ objects never cross the ABI.
 
-The current C ABI version is **26**.
+The current C ABI version is **27**.
 
 ## Current API
 
@@ -12,7 +12,7 @@ The current C ABI version is **26**.
 - History-preserving duplicate handles for transactional geometry reuse
 - Boxes, cylinders, cones, spheres, and arbitrary planar polygon prisms
 - Reusable polyline, mixed line/circular-arc, circular, and elliptical wires, planar faces, and face
-  extrusion
+  extrusion and signed partial/full revolution
 - Non-mutating translation, axis-angle rotation, and uniform scaling; rigid
   moves share geometry through locations, so placed copies stay small
 - Compatibility constructors for existing natural-stone and wall-torch callers
@@ -162,11 +162,12 @@ builds an optimized copy of the library in `build/bench`, runs every case at
 the target sizes (10,000-member patterns, deep clone chains, 1,000-part solver
 stacks and grids, repeated regeneration, validation chains, and many-hole
 faces), and fails when a required case misses its time budget or correctness
-check. The current suite has 29 passing cases, including single-leaf and
+check. The current suite has 31 passing cases, including single-leaf and
 memoized all-node resolution of a 20,000-link clone chain and a 50-part stack
 1 km from the origin solved at a 1e-8 mm model tolerance, plus 10,000 checked
 datum-clearance requirements, 10,000 small constrained-sketch solves,
-10,000 arc/tangent sketch solves, 10,000 datum-linked sketch-wire features, and
+10,000 arc/tangent sketch solves, 10,000 datum-linked sketch-wire features,
+build/edit cases for 1,000 extrude and 1,000 revolve features, and
 individual sparse sketches with 10,000 independent or 1,000 connected lines:
 
 ```bash
@@ -223,7 +224,15 @@ handles and retain the prior accepted generation.
 
 `ModelDocument` persists the family definition, requirements, instance and
 clone identities, sparse overrides, placements, assembly frames, pattern rules, provenance, and
-regeneration audit records. Schema 27 adds `SketchWire` feature outputs and
+regeneration audit records. Schema 28 adds `Extrude` and `Revolve` operations
+from named planar face or closed-wire outputs. Extrusion uses a length-valued
+displacement vector (including oblique and negative directions); revolution
+uses a length-valued origin, a dimensionless nonzero axis, and a signed scalar
+angle in radians with `0 < abs(angle) <= 2*pi`. Both require valid profiles and
+produce valid solids with positive volume. Wire inputs use a temporary face,
+released after sweeping. Parameter edits reuse unchanged profiles and rebuild
+the swept solids; generated topology history remains available to selectors.
+Schema 27 adds `SketchWire` feature outputs and
 optional sketch `datum_plane` references to family plane datums. A linked sketch
 uses the datum's origin and normal with its own perpendicular x-axis; the
 y-axis is normal cross x. Datum expressions and edits drive incremental

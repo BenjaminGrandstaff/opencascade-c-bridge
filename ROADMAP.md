@@ -8,18 +8,18 @@ tracks status and order.
 
 | Layer | Version | State |
 |---|---|---|
-| C ABI (`src/`, `include/`) | ABI 26 | Stable; exact version match required |
+| C ABI (`src/`, `include/`) | ABI 27 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 27 | Active development |
+| `occt-parametric` (engineering layer) | Schema 28 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 3/3, bridge 43, recipes 3, parametric 104 | `ctest`, `cargo test` (see README) |
+| Tests | C 3/3, bridge 45, recipes 3, parametric 109 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Last recorded: Gate OK, 0 issues, 93.3% line coverage; not rerun for current changes | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
-| Coverage | 93.69% lines overall; C++ 93.49% lines, 86.75% branches, 100% functions | `tools/coverage/run.sh` |
-| Scale benchmarks | 29 passing within budget | `tools/bench/run.sh` |
+| Coverage | 93.86% lines overall; C++ 93.53% lines, 86.90% branches, 100% functions | `tools/coverage/run.sh` |
+| Scale benchmarks | 31 passing within budget | `tools/bench/run.sh` |
 
 ## Done
 
@@ -28,6 +28,10 @@ tracks status and order.
 - Sessions, integer shape handles, history-preserving duplicates, exception
   containment at every entry point.
 - Primitives, wires, faces, prisms, polyline tubes, lofts, compounds.
+- Face revolution (ABI 27), with finite nonzero axes, signed partial/full
+  sweeps up to one turn, generated topology history, and session result
+  validation. Tests cover exact annular-solid volumes, negative sweeps,
+  invalid arguments, wrong-session/stale handles, and cleanup.
 - Exact mixed line/circular-arc wires (ABI 26), including major arcs, with
   ordered connectivity and optional closure checks. Safe Rust bindings expose
   `WireSegment` and `Session::create_segment_wire`; schema 26 uses them for
@@ -81,6 +85,16 @@ tracks status and order.
   features; required, preferred, and advisory verification.
 - Sewing and single- or multi-shell solid construction as serializable feature
   operations.
+- Extrude and revolve from sketch face or closed-wire outputs (schema 28).
+  Length-valued extrusion vectors allow oblique and negative directions;
+  revolution uses a typed origin/axis and signed scalar radians. Both reject
+  invalid profiles and non-solid/invalid/zero-volume results. Temporary faces
+  from wires are released; generated history tracks original profile edges.
+  Tests cover exact polygon/arc/circle extrusion volumes, full and partial
+  tori about offset axes, dependency ordering, selective incremental reuse,
+  failed-edit rollback, units, invalid inputs, and schema 27 migration.
+  Building and editing 1,000 sweeps takes 0.562 s for extrude and 0.700 s
+  for revolve (5 s budgets), checking every volume, profile reuse, and cleanup.
 - Constraint-solved 2D sketches: lines, exact arcs/circles, construction
   geometry, coincident, horizontal, vertical, parallel, perpendicular,
   equal-length, distance, and contact-tangent constraints. Radius dimensions
@@ -200,8 +214,7 @@ every item below is defined in documents and the API, and verified in tests.
 
 ### Capabilities
 
-1. **Feature breadth.** Extrude and revolve from sketch profiles (adds a
-    revolve operation to the C ABI), holes with standard sizes, counterbores,
+1. **Feature breadth.** Holes with standard sizes, counterbores,
     countersinks, and recorded thread specifications, draft, ribs, and
     variable-radius fillets; sheet metal (flanges, bends, flat patterns)
     after the rest.

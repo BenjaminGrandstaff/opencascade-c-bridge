@@ -524,6 +524,18 @@ pub enum FeatureOperation {
     SketchWire {
         sketch: Box<SketchDefinition>,
     },
+    /// Sweeps a planar face or closed planar wire by a length-valued vector.
+    Extrude {
+        input: String,
+        direction: VectorExpr,
+    },
+    /// Revolves a planar face or closed planar wire about a local axis.
+    Revolve {
+        input: String,
+        origin: VectorExpr,
+        axis: VectorExpr,
+        angle_radians: ScalarExpr,
+    },
     Translate {
         input: String,
         offset: VectorExpr,
@@ -574,7 +586,10 @@ pub enum FeatureOperation {
 impl FeatureOperation {
     fn dependencies(&self) -> Vec<&str> {
         match self {
-            Self::Translate { input, .. } | Self::Rotate { input, .. } => vec![input],
+            Self::Translate { input, .. }
+            | Self::Rotate { input, .. }
+            | Self::Extrude { input, .. }
+            | Self::Revolve { input, .. } => vec![input],
             Self::Fillet { input, edges, .. } | Self::Chamfer { input, edges, .. } => {
                 let mut dependencies = vec![input.as_str()];
                 for selector in edges {
@@ -1142,7 +1157,7 @@ pub struct GenerationRecord {
     pub last_error: Option<String>,
 }
 
-pub const CURRENT_SCHEMA_VERSION: u32 = 27;
+pub const CURRENT_SCHEMA_VERSION: u32 = 28;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ModelDocument {
@@ -3481,7 +3496,14 @@ fn collect_operation_parameters<'a>(operation: &'a FeatureOperation, names: &mut
             sketch.collect_parameters(names)
         }
         FeatureOperation::Translate { offset, .. } => collect_vector_parameters(offset, names),
+        FeatureOperation::Extrude { direction, .. } => collect_vector_parameters(direction, names),
         FeatureOperation::Rotate {
+            origin,
+            axis,
+            angle_radians,
+            ..
+        }
+        | FeatureOperation::Revolve {
             origin,
             axis,
             angle_radians,
@@ -4565,6 +4587,54 @@ fn evaluate_resolved_vector_expression(
     }
 }
 
+fn execute_profile_sweep<'session>(
+    session: &'session Session,
+    operation: &FeatureOperation,
+    parameters: &HashMap<String, ParameterValue>,
+    profile: &Shape<'_>,
+) -> Result<Shape<'session>, ModelError> {
+    let temporary_face = match session.shape_type(profile)? {
+        ShapeType::Wire => Some(session.create_face_from_wire(profile)?),
+        ShapeType::Face => None,
+        _ => {
+            return Err(ModelError::new(
+                "sweep input must be a planar face or closed planar wire",
+            ));
+        }
+    };
+    let face = temporary_face.as_ref().unwrap_or(profile);
+    if !session.face_is_planar(face)? || !session.is_valid(face)? {
+        return Err(ModelError::new(
+            "sweep profile must define a valid planar face",
+        ));
+    }
+    let solid = match operation {
+        FeatureOperation::Extrude { direction, .. } => session
+            .create_prism_from_face(face, vector(direction, parameters, Dimension::Length)?)?,
+        FeatureOperation::Revolve {
+            origin,
+            axis,
+            angle_radians,
+            ..
+        } => session.create_revolve_from_face(
+            face,
+            vector(origin, parameters, Dimension::Length)?,
+            vector(axis, parameters, Dimension::Scalar)?,
+            scalar(angle_radians, parameters, Dimension::Scalar)?,
+        )?,
+        _ => unreachable!("only profile sweep operations are dispatched here"),
+    };
+    if session.shape_type(&solid)? != ShapeType::Solid
+        || !session.is_valid(&solid)?
+        || session.volume(&solid)? <= 0.0
+    {
+        return Err(ModelError::new(
+            "profile sweep did not produce a valid solid with positive volume",
+        ));
+    }
+    Ok(solid)
+}
+
 fn execute_feature<'session>(
     session: &'session Session,
     datums: &HashMap<&str, &DatumDefinition>,
@@ -4602,6 +4672,15 @@ fn execute_feature<'session>(
             shape(shapes, input)?,
             vector(offset, parameters, Dimension::Length)?,
         ),
+        FeatureOperation::Extrude { input, .. } | FeatureOperation::Revolve { input, .. } => {
+            return execute_profile_sweep(
+                session,
+                &feature.operation,
+                parameters,
+                shape(shapes, input)?,
+            )
+            .map_err(|error| error.context(&format!("profile '{input}'")));
+        }
         FeatureOperation::Rotate {
             input,
             origin,

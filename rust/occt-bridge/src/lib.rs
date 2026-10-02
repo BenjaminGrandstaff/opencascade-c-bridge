@@ -10,7 +10,7 @@ use std::{
     ptr::{self, NonNull},
 };
 
-const ABI_VERSION: u32 = 26;
+const ABI_VERSION: u32 = 27;
 
 #[repr(C)]
 struct RawVec3 {
@@ -163,6 +163,14 @@ unsafe extern "C" {
         session: *mut c_void,
         face: RawShapeId,
         direction: RawVec3,
+        out: *mut RawShapeId,
+    ) -> RawStatus;
+    fn occt_bridge_create_revolve_from_face(
+        session: *mut c_void,
+        face: RawShapeId,
+        origin: RawVec3,
+        axis: RawVec3,
+        angle_radians: f64,
         out: *mut RawShapeId,
     ) -> RawStatus;
     fn occt_bridge_create_polygon_prism(
@@ -973,6 +981,26 @@ impl Session {
     ) -> Result<Shape<'a>, BridgeError> {
         self.derived_shape(face, |out| unsafe {
             occt_bridge_create_prism_from_face(self.raw.as_ptr(), face.id, direction.into(), out)
+        })
+    }
+
+    /// Revolves a face by a signed angle in radians, up to one full turn.
+    pub fn create_revolve_from_face<'a>(
+        &'a self,
+        face: &Shape<'_>,
+        origin: Vec3,
+        axis: Vec3,
+        angle_radians: f64,
+    ) -> Result<Shape<'a>, BridgeError> {
+        self.derived_shape(face, |out| unsafe {
+            occt_bridge_create_revolve_from_face(
+                self.raw.as_ptr(),
+                face.id,
+                origin.into(),
+                axis.into(),
+                angle_radians,
+                out,
+            )
         })
     }
 
@@ -3177,6 +3205,100 @@ mod tests {
         let open = session.create_segment_wire(&[arc], false).unwrap();
         assert!(session.is_valid(&open).unwrap());
         drop(open);
+        assert_eq!(session.shape_count().unwrap(), 0);
+    }
+
+    #[test]
+    fn revolves_faces_with_signed_partial_and_full_sweeps_and_history() {
+        let session = Session::new().unwrap();
+        let wire = session
+            .create_polyline_wire(
+                &[
+                    Vec3::new(1.0, 0.0, 0.0),
+                    Vec3::new(3.0, 0.0, 0.0),
+                    Vec3::new(3.0, 0.0, 2.0),
+                    Vec3::new(1.0, 0.0, 2.0),
+                ],
+                true,
+            )
+            .unwrap();
+        let face = session.create_face_from_wire(&wire).unwrap();
+        let edge = session.subshape(&face, ShapeType::Edge, 1).unwrap();
+        for angle in [
+            std::f64::consts::TAU,
+            std::f64::consts::PI,
+            -std::f64::consts::PI / 2.0,
+            -std::f64::consts::TAU,
+        ] {
+            let solid = session
+                .create_revolve_from_face(
+                    &face,
+                    Vec3::new(0.0, 0.0, 0.0),
+                    Vec3::new(0.0, 0.0, 7.0),
+                    angle,
+                )
+                .unwrap();
+            assert_eq!(session.shape_type(&solid).unwrap(), ShapeType::Solid);
+            assert!(session.is_valid(&solid).unwrap());
+            assert!((session.volume(&solid).unwrap() - 8.0 * angle.abs()).abs() < 1e-7);
+            assert!(
+                session
+                    .history_count(&solid, &edge, HistoryRelation::Generated)
+                    .unwrap()
+                    > 0
+            );
+            if angle < 0.0 && angle.abs() < std::f64::consts::PI {
+                let bounds = session.bounds(&solid).unwrap();
+                assert!((bounds.min.y + 3.0).abs() < 1e-6);
+                assert!(bounds.max.y.abs() < 1e-6);
+            }
+        }
+        drop((face, wire, edge));
+        assert_eq!(session.shape_count().unwrap(), 0);
+    }
+
+    #[test]
+    fn revolve_rejects_invalid_values_and_foreign_or_stale_faces() {
+        let session = Session::new().unwrap();
+        let other = Session::new().unwrap();
+        let wire = session
+            .create_circle_wire(Vec3::new(3.0, 0.0, 0.0), Vec3::new(0.0, 1.0, 0.0), 1.0)
+            .unwrap();
+        let face = session.create_face_from_wire(&wire).unwrap();
+        let zero = Vec3::new(0.0, 0.0, 0.0);
+        let up = Vec3::new(0.0, 0.0, 1.0);
+        for (origin, axis, angle) in [
+            (zero, zero, 1.0),
+            (Vec3::new(f64::NAN, 0.0, 0.0), up, 1.0),
+            (zero, Vec3::new(0.0, f64::INFINITY, 0.0), 1.0),
+            (zero, up, 0.0),
+            (zero, up, f64::NAN),
+            (zero, up, 7.0),
+        ] {
+            assert!(
+                session
+                    .create_revolve_from_face(&face, origin, axis, angle)
+                    .is_err()
+            );
+            assert_eq!(session.shape_count().unwrap(), 2);
+        }
+        assert!(
+            session
+                .create_revolve_from_face(&wire, zero, up, 1.0)
+                .is_err()
+        );
+        assert!(
+            other
+                .create_revolve_from_face(&face, zero, up, 1.0)
+                .is_err()
+        );
+        assert_eq!(other.shape_count().unwrap(), 0);
+        session.clear().unwrap();
+        assert!(
+            session
+                .create_revolve_from_face(&face, zero, up, 1.0)
+                .is_err()
+        );
         assert_eq!(session.shape_count().unwrap(), 0);
     }
 

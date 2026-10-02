@@ -262,6 +262,18 @@ static void wires_and_faces(occt_bridge_session_t* session) {
     EXPECT(occt_bridge_create_prism_from_face(session, unknown, up, &out), MISSING);
     EXPECT(occt_bridge_create_prism_from_face(session, box, up, &out), GEOMETRY);
 
+    EXPECT(occt_bridge_create_revolve_from_face(NULL, face, zero, up, 1, &out), ARG);
+    EXPECT(occt_bridge_create_revolve_from_face(session, face, zero, up, 1, NULL), ARG);
+    EXPECT(occt_bridge_create_revolve_from_face(session, face, nan_x, up, 1, &out), ARG);
+    EXPECT(occt_bridge_create_revolve_from_face(session, face, zero, nan_x, 1, &out), ARG);
+    EXPECT(occt_bridge_create_revolve_from_face(session, face, zero, zero, 1, &out), ARG);
+    EXPECT(occt_bridge_create_revolve_from_face(session, face, zero, up, NAN, &out), ARG);
+    EXPECT(occt_bridge_create_revolve_from_face(session, face, zero, up, 0, &out), ARG);
+    EXPECT(occt_bridge_create_revolve_from_face(session, face, zero, up, 7, &out), ARG);
+    EXPECT(occt_bridge_create_revolve_from_face(session, face, zero, up, -7, &out), ARG);
+    EXPECT(occt_bridge_create_revolve_from_face(session, unknown, zero, up, 1, &out), MISSING);
+    EXPECT(occt_bridge_create_revolve_from_face(session, box, zero, up, 1, &out), GEOMETRY);
+
     EXPECT(occt_bridge_create_polygon_prism(session, square, 4, up, NULL), ARG);
     EXPECT(occt_bridge_create_polygon_prism(session, NULL, 4, up, &out), ARG);
     EXPECT(occt_bridge_create_polygon_prism(session, square, 2, up, &out), ARG);

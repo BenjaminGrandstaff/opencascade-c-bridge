@@ -33,6 +33,7 @@
 #include <BRepPrimAPI_MakeCone.hxx>
 #include <BRepPrimAPI_MakeCylinder.hxx>
 #include <BRepPrimAPI_MakePrism.hxx>
+#include <BRepPrimAPI_MakeRevol.hxx>
 #include <BRepPrimAPI_MakeSphere.hxx>
 #include <BRepTools.hxx>
 #include <ShapeBuild_ReShape.hxx>
@@ -1891,6 +1892,46 @@ occt_bridge_status_t occt_bridge_create_prism_from_face(
             out_shape,
             builder,
             {value});
+    });
+}
+
+occt_bridge_status_t occt_bridge_create_revolve_from_face(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t face,
+    occt_bridge_vec3_t origin,
+    occt_bridge_vec3_t axis,
+    double angle_radians,
+    occt_bridge_shape_id_t* out_shape) {
+    return guarded(session, [&] {
+        if (out_shape == nullptr) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_shape is null");
+        }
+        *out_shape = OCCT_BRIDGE_INVALID_SHAPE_ID;
+        if (!finite(origin) || !finite(axis)) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "revolve origin and axis must be finite");
+        }
+        if (!std::isfinite(angle_radians) || angle_radians == 0.0
+            || std::abs(angle_radians) > 2.0 * std::acos(-1.0)) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "revolve angle must be nonzero and within one revolution");
+        }
+        const gp_Vec direction(axis.x, axis.y, axis.z);
+        if (direction.Magnitude() <= std::numeric_limits<double>::epsilon()) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "revolve axis must be nonzero");
+        }
+        const TopoDS_Shape* value = find_shape(session, face);
+        if (value == nullptr) {
+            return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "face was not found");
+        }
+        if (value->ShapeType() != TopAbs_FACE) {
+            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "shape is not a face");
+        }
+        BRepPrimAPI_MakeRevol builder(TopoDS::Face(*value),
+            gp_Ax1(to_point(origin), gp_Dir(direction)), angle_radians, Standard_True);
+        builder.Build();
+        if (!builder.IsDone()) {
+            return fail(session, OCCT_BRIDGE_KERNEL_ERROR, "revolve construction failed");
+        }
+        return store_checked_result(session, "revolve", builder.Shape(), out_shape, builder, {value});
     });
 }
 
