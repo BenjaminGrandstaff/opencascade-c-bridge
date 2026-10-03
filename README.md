@@ -172,8 +172,9 @@ written to `build/coverage/html/index.html` and `build/coverage/lcov.info`:
 tools/coverage/run.sh
 ```
 
-Rust unit tests live inside each crate's `lib.rs`, so Rust percentages include
-test code. Rust branch coverage needs a nightly toolchain and is not reported.
+Rust unit tests live in `tests` modules inside each crate's `src/` (for example
+`src/tests/` and `src/assembly/tests.rs`); like the C tests, they are excluded,
+so the percentages measure only code under test. Rust branch coverage needs a nightly toolchain and is not reported.
 
 The scale benchmark suite enforces the roadmap's scaling requirement. It
 builds an optimized copy of the library in `build/bench`, runs every case at

@@ -1,0 +1,214 @@
+//! BREP, STEP, and STL exchange.
+
+use super::*;
+
+fn step_test_path(name: &str) -> PathBuf {
+    std::env::temp_dir().join(format!(
+        "occt-bridge-{name}-{}-{}.step",
+        std::process::id(),
+        std::thread::current().name().unwrap_or("test")
+    ))
+}
+
+fn binary_stl_triangle_count(path: &Path) -> u32 {
+    let bytes = fs::read(path).unwrap();
+    assert!(bytes.len() >= 84);
+    let count = u32::from_le_bytes(bytes[80..84].try_into().unwrap());
+    assert_eq!(bytes.len(), 84 + 50 * count as usize);
+    count
+}
+
+#[test]
+fn step_round_trip_preserves_geometry_and_topology() {
+    let session = Session::new().unwrap();
+    let source = session
+        .create_box(Vec3::new(-2.0, 3.0, 5.0), Vec3::new(10.0, 20.0, 30.0))
+        .unwrap();
+    let path = step_test_path("round-trip");
+    session.save_step(&source, &path).unwrap();
+    let loaded = session.load_step(&path).unwrap();
+
+    assert!(session.is_valid(&loaded).unwrap());
+    assert_eq!(session.shape_type(&loaded).unwrap(), ShapeType::Solid);
+    assert_eq!(
+        session.subshape_count(&loaded, ShapeType::Face).unwrap(),
+        session.subshape_count(&source, ShapeType::Face).unwrap()
+    );
+    assert_eq!(
+        session.subshape_count(&loaded, ShapeType::Edge).unwrap(),
+        session.subshape_count(&source, ShapeType::Edge).unwrap()
+    );
+    let source_bounds = session.bounds(&source).unwrap();
+    let loaded_bounds = session.bounds(&loaded).unwrap();
+    for (actual, expected) in [
+        (loaded_bounds.min.x, source_bounds.min.x),
+        (loaded_bounds.min.y, source_bounds.min.y),
+        (loaded_bounds.min.z, source_bounds.min.z),
+        (loaded_bounds.max.x, source_bounds.max.x),
+        (loaded_bounds.max.y, source_bounds.max.y),
+        (loaded_bounds.max.z, source_bounds.max.z),
+    ] {
+        assert!((actual - expected).abs() < 1e-6);
+    }
+    assert!((session.volume(&loaded).unwrap() - session.volume(&source).unwrap()).abs() < 1e-6);
+    assert_eq!(session.shape_count().unwrap(), 2);
+
+    session.remove(loaded).unwrap();
+    session.remove(source).unwrap();
+    assert_eq!(session.shape_count().unwrap(), 0);
+    fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn step_exchange_reports_io_and_session_errors_without_leaking_handles() {
+    let session = Session::new().unwrap();
+    let missing = step_test_path("missing");
+    let _ = fs::remove_file(&missing);
+    let error = session.load_step(&missing).unwrap_err();
+    assert_eq!(error.status, 5);
+    assert_eq!(error.category, "I/O error");
+    assert_eq!(session.shape_count().unwrap(), 0);
+
+    let malformed = step_test_path("malformed");
+    fs::write(&malformed, b"not a STEP file\n").unwrap();
+    let error = session.load_step(&malformed).unwrap_err();
+    assert_eq!(error.status, 5);
+    assert_eq!(session.shape_count().unwrap(), 0);
+    fs::remove_file(malformed).unwrap();
+
+    let first = Session::new().unwrap();
+    let second = Session::new().unwrap();
+    let shape = unit_box(&first, 0.0);
+    let output = step_test_path("wrong-session");
+    assert_wrong_session(second.save_step(&shape, &output).unwrap_err());
+    assert!(!output.exists());
+}
+
+#[test]
+fn stl_export_writes_verified_ascii_and_tessellated_binary_meshes() {
+    let session = Session::new().unwrap();
+    let box_shape = session
+        .create_box(Vec3::new(0.0, 0.0, 0.0), Vec3::new(10.0, 20.0, 30.0))
+        .unwrap();
+    let ascii_path = step_test_path("ascii-stl").with_extension("stl");
+    session
+        .save_stl(
+            &box_shape,
+            &ascii_path,
+            StlOptions {
+                format: StlFormat::Ascii,
+                ..StlOptions::default()
+            },
+        )
+        .unwrap();
+    let ascii = fs::read_to_string(&ascii_path).unwrap();
+    assert!(ascii.starts_with("solid"));
+    assert_eq!(ascii.matches("facet normal").count(), 12);
+
+    let sphere = session
+        .create_sphere(Vec3::new(0.0, 0.0, 0.0), 10.0)
+        .unwrap();
+    let coarse_path = step_test_path("coarse-stl").with_extension("stl");
+    let fine_path = step_test_path("fine-stl").with_extension("stl");
+    session
+        .save_stl(
+            &sphere,
+            &coarse_path,
+            StlOptions {
+                linear_deflection: 2.0,
+                angular_deflection_radians: 1.0,
+                format: StlFormat::Binary,
+            },
+        )
+        .unwrap();
+    session
+        .save_stl(
+            &sphere,
+            &fine_path,
+            StlOptions {
+                linear_deflection: 0.1,
+                angular_deflection_radians: 0.2,
+                format: StlFormat::Binary,
+            },
+        )
+        .unwrap();
+    let coarse_triangles = binary_stl_triangle_count(&coarse_path);
+    let fine_triangles = binary_stl_triangle_count(&fine_path);
+    assert!(coarse_triangles > 0);
+    assert!(fine_triangles > coarse_triangles);
+    assert_eq!(session.shape_count().unwrap(), 2);
+
+    // Each export meshes independently: a coarse export after a fine one
+    // must not reuse the finer triangulation.
+    let recoarse_path = step_test_path("recoarse-stl").with_extension("stl");
+    session
+        .save_stl(
+            &sphere,
+            &recoarse_path,
+            StlOptions {
+                linear_deflection: 2.0,
+                angular_deflection_radians: 1.0,
+                format: StlFormat::Binary,
+            },
+        )
+        .unwrap();
+    assert_eq!(binary_stl_triangle_count(&recoarse_path), coarse_triangles);
+
+    // Exporting leaves no triangulation on the session's shape.
+    let brep_path = step_test_path("after-stl").with_extension("brep");
+    session.save_brep(&sphere, &brep_path).unwrap();
+    let brep = fs::read_to_string(&brep_path).unwrap();
+    assert!(
+        brep.lines()
+            .filter(|line| line.starts_with("Triangulations"))
+            .all(|line| line == "Triangulations 0")
+    );
+
+    fs::remove_file(ascii_path).unwrap();
+    fs::remove_file(coarse_path).unwrap();
+    fs::remove_file(fine_path).unwrap();
+    fs::remove_file(recoarse_path).unwrap();
+    fs::remove_file(brep_path).unwrap();
+}
+
+#[test]
+fn stl_export_rejects_invalid_options_paths_and_sessions() {
+    let first = Session::new().unwrap();
+    let second = Session::new().unwrap();
+    let shape = unit_box(&first, 0.0);
+    let output = step_test_path("invalid-stl").with_extension("stl");
+    assert_wrong_session(
+        second
+            .save_stl(&shape, &output, StlOptions::default())
+            .unwrap_err(),
+    );
+    assert!(!output.exists());
+
+    for options in [
+        StlOptions {
+            linear_deflection: 0.0,
+            ..StlOptions::default()
+        },
+        StlOptions {
+            linear_deflection: f64::NAN,
+            ..StlOptions::default()
+        },
+        StlOptions {
+            angular_deflection_radians: -1.0,
+            ..StlOptions::default()
+        },
+    ] {
+        let error = first.save_stl(&shape, &output, options).unwrap_err();
+        assert_eq!(error.status, 1);
+        assert!(!output.exists());
+    }
+    let error = first
+        .save_stl(
+            &shape,
+            "/nonexistent-directory/shape.stl",
+            StlOptions::default(),
+        )
+        .unwrap_err();
+    assert_eq!(error.status, 5);
+    assert_eq!(first.shape_count().unwrap(), 1);
+}

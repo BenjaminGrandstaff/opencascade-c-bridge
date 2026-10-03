@@ -41,7 +41,7 @@ podman run --rm -v "$root:$root:ro,Z" -v "$out:/out:Z" "$image" bash -c "
     done
 
     llvm-profdata merge -sparse /tmp/profiles/*.profraw -o /tmp/coverage.profdata
-    ignore='^/usr/|/[.]cargo/|/rustc/|/builddir/|/library/(core|std|alloc)/|/tests/'
+    ignore='^/usr/|/[.]cargo/|/rustc/|/builddir/|/library/(core|std|alloc)/|/tests/|/tests[.]rs$'
     report=(-instr-profile=/tmp/coverage.profdata /tmp/build/libocct_bridge.so
         -object /tmp/build/occt_bridge_c_test \"\${objects[@]}\"
         -ignore-filename-regex=\"\$ignore\")

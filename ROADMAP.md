@@ -18,7 +18,7 @@ tracks status and order.
 | Tests | C 3/3, bridge 45, recipes 3, parametric 109 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Last recorded: Gate OK, 0 issues, 93.3% line coverage; not rerun for current changes | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
-| Coverage | 93.86% lines overall; C++ 93.53% lines, 86.90% branches, 100% functions | `tools/coverage/run.sh` |
+| Coverage | 90.81% lines overall, test code excluded; C++ 93.53% lines, 86.90% branches, 100% functions; Rust 89.15% lines | `tools/coverage/run.sh` |
 | Scale benchmarks | 31 passing within budget | `tools/bench/run.sh` |
 
 ## Done
@@ -193,7 +193,7 @@ session. Before a change lands:
   relationship inside per-item loops, and justify anything above
   O(n log n) in graph size.
 - **It is measured.** Add or extend a case in the scale benchmark suite
-  (`rust/occt-parametric/benches/scale.rs`, run by `tools/bench/run.sh`) at
+  (`rust/occt-parametric/benches/scale/`, run by `tools/bench/run.sh`) at
   the target sizes and keep it inside its budget; a case tied to an open
   roadmap item is marked as a known gap until that item lands.
 - **Handles are bounded.** Session shape counts must return to their
