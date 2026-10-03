@@ -18,12 +18,13 @@ mod solve;
 mod sparse;
 
 pub use assembly::{
-    AssemblyJoint, AssemblyRelationship, AssemblyRequirement, AssemblySemantics,
-    AssemblyVerificationRule, CollisionOptions, Configuration, DatumDefinition, DatumKind,
-    DatumRef, InstanceOutputRef, JointDof, JointKind, JointPosition, JointScalar,
-    MAX_MOTION_SAMPLES, Material, MotionResult, MotionSample, MotionSampleResult, MotionStudy,
-    PairCheck, PairStatus, RELATIONSHIP_ANGULAR_TOLERANCE, RELATIONSHIP_LINEAR_TOLERANCE,
-    RelationKind, RelationshipCheck, RelationshipTolerances, ResolvedDatum,
+    AssemblyJoint, AssemblyMassProperties, AssemblyRelationship, AssemblyRequirement,
+    AssemblySemantics, AssemblyVerificationRule, CollisionOptions, ComponentMassProperties,
+    Configuration, DatumDefinition, DatumKind, DatumRef, InstanceOutputRef, JointDof, JointKind,
+    JointPosition, JointScalar, MAX_MOTION_SAMPLES, Material, MotionResult, MotionSample,
+    MotionSampleResult, MotionStudy, PairCheck, PairStatus, PhysicalMassProperties,
+    RELATIONSHIP_ANGULAR_TOLERANCE, RELATIONSHIP_LINEAR_TOLERANCE, RelationKind, RelationshipCheck,
+    RelationshipTolerances, ResolvedDatum,
 };
 pub use sketch::{
     SketchArc, SketchCircle, SketchConstraint, SketchDefinition, SketchLine, SketchPoint,

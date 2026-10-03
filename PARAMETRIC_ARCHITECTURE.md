@@ -74,7 +74,7 @@ The following major capabilities remain planned:
 - advanced ribs and later sheet-metal features;
 - closed-linkage solving and continuous collision detection beyond driven joints;
 - generated drawings with projected views and dimensions;
-- full mass properties, FEA mesh hand-off, manufacturability checks, and
+- FEA mesh hand-off, manufacturability checks, and
   glTF export;
 - revision history and change impact for model
   documents.

@@ -67,6 +67,18 @@ Increase sampling density for narrow obstacles and fast angular changes.
 
 ## Kernel measurements
 
+`InstanceGraph::mass_properties(session, outputs)` measures one solid output per
+distinct unsuppressed component at its current placement and joint pose. It
+applies the assigned or inherited material density and returns each component's
+mass in kg, volume in mm³, center in mm, and central inertia tensor in kg mm²,
+plus the assembly totals. Parameter variants share generation. Total inertia
+uses the parallel-axis theorem with incremental weighted centers, retaining
+accuracy far from the world origin. Components contribute their full masses
+even if they overlap; the sum describes parts, rather than a geometric union.
+The query preserves the graph and releases all generated handles on success
+or failure. Empty selections, duplicate instances, missing materials/outputs,
+and unrepresentable physical values are rejected.
+
 ABI 33 adds `Session::mass_properties`, `distance`, and `overlap_volume`.
 Mass properties contain volume, center, the row-major central inertia tensor
 in model XYZ axes at unit density, and an adaptive relative volume error

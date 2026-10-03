@@ -15,12 +15,12 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 3/3, bridge 68 (+1 doc test), recipes 3, parametric 186 | `ctest`, `cargo test` (see README) |
-| SonarQube (indexed Rust) | Gate OK, 0 issues, 91.1% line coverage (2026-10-03); Rust unit tests classified as tests | `tools/sonar/run.sh` |
+| Tests | C 3/3, bridge 68 (+1 doc test), recipes 3, parametric 188 | `ctest`, `cargo test` (see README) |
+| SonarQube (indexed Rust) | Gate OK, 0 issues, 91.2% line coverage (2026-10-03); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
-| Coverage | 91.98% lines overall, test code excluded; C++ 94.05% lines, 87.39% branches, 100% functions; Rust 90.74% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 48 passing within budget | `tools/bench/run.sh` |
+| Coverage | 92.08% lines overall, test code excluded; C++ 94.14% lines, 87.63% branches, 100% functions; Rust 90.85% lines | `tools/coverage/run.sh` |
+| Scale benchmarks | 49 passing within budget | `tools/bench/run.sh` |
 
 ## Done
 
@@ -127,6 +127,14 @@ tracks status and order.
 
 ### Parametric layer
 
+- Full per-component and assembly mass properties: inherited material density,
+  current instance/frame/joint poses, center of mass, and central inertia in
+  world axes. Weighted central aggregation and parallel-axis corrections retain
+  accuracy far from the origin. Explicit outputs prevent counting intermediate
+  features; overlapping components contribute their full masses. Two analytic
+  tests cover mixed densities, joint rotations/translations, distant geometry,
+  invalid selections/materials, underflow, source preservation, and cleanup.
+  The 1,000-component shared-generation case takes 0.576 s (5 s budget).
 - Driven assembly joints and sampled motion (schema 41): fixed, revolute,
   prismatic, cylindrical, and planar frame joints with unit-aware coordinates
   and checked optional limits. Atomic edits preserve accepted state. Exact
@@ -433,9 +441,8 @@ every item below is defined in documents and the API, and verified in tests.
     by hidden-line removal, exported as SVG and DXF; dimensions and notes
     placed from datums and parameters; title blocks from document metadata.
     Drawings regenerate with the model rather than being edited by hand.
-2. **Analysis and manufacturing hand-off.** Full mass properties (center of
-    mass, inertia tensor) per instance and assembly; tagged surface and
-    volume meshes for external FEA; manufacturability checks (minimum wall
+2. **Analysis and manufacturing hand-off.** Tagged surface and volume meshes
+    for external FEA; manufacturability checks (minimum wall
     thickness, draft angle, 3D-printing overhang); glTF export with material
     appearance for rendering.
 3. **Model data management.** Recorded revision history inside documents,

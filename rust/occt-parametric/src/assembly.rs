@@ -8,6 +8,7 @@ mod collisions;
 mod configurations;
 mod geometry;
 mod joints;
+mod mass_properties;
 mod materials;
 mod motion;
 mod requirements;
@@ -15,6 +16,9 @@ mod requirements;
 pub use collisions::{CollisionOptions, InstanceOutputRef, PairCheck, PairStatus};
 pub(crate) use geometry::*;
 pub use joints::{AssemblyJoint, JointDof, JointKind, JointScalar};
+pub use mass_properties::{
+    AssemblyMassProperties, ComponentMassProperties, PhysicalMassProperties,
+};
 use materials::*;
 pub use motion::{
     JointPosition, MAX_MOTION_SAMPLES, MotionResult, MotionSample, MotionSampleResult, MotionStudy,

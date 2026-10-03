@@ -150,5 +150,50 @@ pub(crate) fn assembly_cases(definition: &'static FamilyDefinition) -> Vec<Outco
             Ok("1000 samples, one variant, crossing detected, zero retained handles".into())
         },
     ));
+    outcomes.push(timed(
+        "assembly mass properties 1000: inherited material".into(),
+        ms(5000),
+        Expectation::Required,
+        || {
+            let session = Session::new().map_err(|error| failure(error.to_string()))?;
+            let mut graph = InstanceGraph::new(definition);
+            graph.add_base("source", HashMap::new(), "bench")?;
+            graph.add_material(occt_parametric::Material {
+                id: "material".into(),
+                name: "Test density".into(),
+                density_kg_per_cubic_meter: 1000.0,
+            })?;
+            graph.assign_material("source", Some("material"))?;
+            let members = graph.add_linear_pattern(
+                "row",
+                "part",
+                "source",
+                1000,
+                VectorQuantity::lengths(50.0, 0.0, 0.0, LengthUnit::Millimeter),
+                "bench",
+            )?;
+            let outputs = members
+                .iter()
+                .map(|instance| InstanceOutputRef {
+                    instance: instance.clone(),
+                    output: "body".into(),
+                })
+                .collect::<Vec<_>>();
+            let report = graph.mass_properties(&session, &outputs)?;
+            if report.generated_variants != 1
+                || (report.total.mass_kg - 6.0).abs() > 1e-8
+                || (report.total.center_mm.x - 24980.0).abs() > 1e-6
+                || session
+                    .shape_count()
+                    .map_err(|error| failure(error.to_string()))?
+                    != 0
+            {
+                return Err(failure(
+                    "mass, center, geometry reuse, or cleanup differs".into(),
+                ));
+            }
+            Ok("1000 components, 6 kg, shared geometry, no retained handles".into())
+        },
+    ));
     outcomes
 }

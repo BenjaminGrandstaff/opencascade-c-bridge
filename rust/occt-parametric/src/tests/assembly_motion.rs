@@ -30,6 +30,148 @@ fn definition() -> FamilyDefinition {
     definition.requirements.clear();
     definition
 }
+
+#[test]
+fn assembly_mass_properties_use_materials_current_joints_and_central_tensors() {
+    let definition = definition();
+    let mut graph = InstanceGraph::new(&definition);
+    graph
+        .add_material(Material {
+            id: "material".into(),
+            name: "Test density".into(),
+            density_kg_per_cubic_meter: 1000.0,
+        })
+        .unwrap();
+    graph.add_base("first", HashMap::new(), "test").unwrap();
+    graph.assign_material("first", Some("material")).unwrap();
+    graph
+        .add_clone("second", "first", HashMap::new(), "test")
+        .unwrap();
+    graph
+        .add_frame("slide", None, Placement::identity(), "test")
+        .unwrap();
+    graph
+        .add_joint(joint(
+            "slide",
+            JointKind::Prismatic {
+                distance: scalar(mm(20.0)),
+            },
+        ))
+        .unwrap();
+    graph.set_instance_frame("second", Some("slide")).unwrap();
+    let origin = 1_000_000.0;
+    for id in ["first", "second"] {
+        graph
+            .set_placement(
+                id,
+                Placement::translated(VectorQuantity::lengths(
+                    origin,
+                    origin,
+                    origin,
+                    LengthUnit::Millimeter,
+                )),
+            )
+            .unwrap();
+    }
+    let accepted = ModelDocument::from_graph(&graph);
+    let session = Session::new().unwrap();
+    let report = graph
+        .mass_properties(&session, &[output("first"), output("second")])
+        .unwrap();
+    assert_eq!(report.generated_variants, 1);
+    assert_eq!(report.components[1].material, "material");
+    assert!((report.total.mass_kg - 0.012).abs() < 1e-12);
+    assert!((report.total.volume_mm3 - 12000.0).abs() < 1e-6);
+    assert!((report.total.center_mm.x - origin - 15.0).abs() < 1e-7);
+    assert!((report.total.center_mm.y - origin - 10.0).abs() < 1e-7);
+    assert!((report.total.center_mm.z - origin - 15.0).abs() < 1e-7);
+    for (axis, expected) in [1.3, 2.2, 1.7].into_iter().enumerate() {
+        assert!(
+            (report.total.inertia_kg_mm2[axis][axis] - expected).abs() < 1e-8,
+            "{:?}",
+            report.total
+        );
+    }
+    for row in 0..3 {
+        for column in 0..3 {
+            if row != column {
+                assert!(report.total.inertia_kg_mm2[row][column].abs() < 1e-8);
+            }
+        }
+    }
+    assert_eq!(ModelDocument::from_graph(&graph), accepted);
+    assert_eq!(session.shape_count().unwrap(), 0);
+    graph
+        .add_material(Material {
+            id: "heavy".into(),
+            name: "Heavy".into(),
+            density_kg_per_cubic_meter: 2000.0,
+        })
+        .unwrap();
+    graph.assign_material("second", Some("heavy")).unwrap();
+    let report = graph
+        .mass_properties(&session, &[output("first"), output("second")])
+        .unwrap();
+    assert!((report.total.mass_kg - 0.018).abs() < 1e-12);
+    assert!((report.total.center_mm.x - origin - (5.0 + 40.0 / 3.0)).abs() < 1e-7);
+    assert!(graph.mass_properties(&session, &[]).is_err());
+    assert!(
+        graph
+            .mass_properties(&session, &[output("first"), output("first")])
+            .is_err()
+    );
+    let mut missing = output("first");
+    missing.output = "missing".into();
+    assert!(graph.mass_properties(&session, &[missing]).is_err());
+    graph.assign_material("first", None).unwrap();
+    assert!(graph.mass_properties(&session, &[output("first")]).is_err());
+    graph
+        .add_material(Material {
+            id: "underflow".into(),
+            name: "Unrepresentable density".into(),
+            density_kg_per_cubic_meter: 1e-320,
+        })
+        .unwrap();
+    graph.assign_material("first", Some("underflow")).unwrap();
+    assert!(graph.mass_properties(&session, &[output("first")]).is_err());
+    assert_eq!(session.shape_count().unwrap(), 0);
+}
+
+#[test]
+fn component_mass_tensor_rotates_with_its_joint() {
+    let definition = definition();
+    let mut graph = InstanceGraph::new(&definition);
+    graph.add_base("part", HashMap::new(), "test").unwrap();
+    graph
+        .add_material(Material {
+            id: "material".into(),
+            name: "Test density".into(),
+            density_kg_per_cubic_meter: 1000.0,
+        })
+        .unwrap();
+    graph.assign_material("part", Some("material")).unwrap();
+    graph
+        .add_frame("hinge", None, Placement::identity(), "test")
+        .unwrap();
+    graph.set_instance_frame("part", Some("hinge")).unwrap();
+    let mut hinge = joint(
+        "hinge",
+        JointKind::Revolute {
+            angle: scalar(Quantity::scalar(std::f64::consts::FRAC_PI_4)),
+        },
+    );
+    hinge.axis = VectorQuantity::scalars(0.0, 0.0, 1.0);
+    graph.add_joint(hinge).unwrap();
+    let session = Session::new().unwrap();
+    let report = graph.mass_properties(&session, &[output("part")]).unwrap();
+    let tensor = report.total.inertia_kg_mm2;
+    assert!((tensor[0][0] - 0.575).abs() < 1e-10);
+    assert!((tensor[1][1] - 0.575).abs() < 1e-10);
+    assert!((tensor[0][1] - 0.075).abs() < 1e-10);
+    assert_eq!(tensor[0][1], tensor[1][0]);
+    assert!((tensor[2][2] - 0.25).abs() < 1e-10);
+    assert_eq!(session.shape_count().unwrap(), 0);
+}
 fn bounds(graph: &InstanceGraph<'_>) -> occt_bridge::Bounds {
     let session = Session::new().unwrap();
     let result = graph
