@@ -16,7 +16,7 @@ tracks status and order.
 | Quality gate | Result | Command |
 |---|---|---|
 | Tests | C 3/3, bridge 54 (+1 doc test), recipes 3, parametric 141 | `ctest`, `cargo test` (see README) |
-| SonarQube (indexed Rust) | Last recorded: Gate OK, 0 issues, 93.3% line coverage; not rerun for current changes | `tools/sonar/run.sh` |
+| SonarQube (indexed Rust) | Gate OK, 0 issues, 90.1% line coverage (2026-10-03); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
 | Coverage | 91.20% lines overall, test code excluded; C++ 93.69% lines, 87.29% branches, 100% functions; Rust 89.68% lines | `tools/coverage/run.sh` |

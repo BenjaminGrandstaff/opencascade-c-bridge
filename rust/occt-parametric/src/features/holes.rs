@@ -36,19 +36,7 @@ pub(super) fn execute_hole<'session>(
         return Err(ModelError::new("hole diameter must be positive"));
     }
     if let Some(thread) = thread {
-        if thread.designation.trim().is_empty() {
-            return Err(ModelError::new("thread designation must not be blank"));
-        }
-        let nominal = scalar(&thread.nominal_diameter, parameters, Dimension::Length)?;
-        let pitch = scalar(&thread.pitch, parameters, Dimension::Length)?;
-        if nominal <= diameter {
-            return Err(ModelError::new(
-                "thread nominal diameter must exceed bore diameter",
-            ));
-        }
-        if pitch <= 0.0 {
-            return Err(ModelError::new("thread pitch must be positive"));
-        }
+        validate_thread(thread, diameter, parameters)?;
     }
     let radius = diameter / 2.0;
     let (start, depth) = match extent {
@@ -95,20 +83,7 @@ pub(super) fn execute_hole<'session>(
     };
     let volume_before = session.volume(input)?;
     let result = session.cut(input, &tool)?;
-    let volume_after = session.volume(&result)?;
-    if session.subshape_count(&result, ShapeType::Solid)? != 1
-        || !session.is_valid(&result)?
-        || volume_after <= 0.0
-    {
-        return Err(ModelError::new(
-            "hole must leave one valid solid with positive volume",
-        ));
-    }
-    if volume_after >= volume_before {
-        return Err(ModelError::new(
-            "hole does not remove material from its input",
-        ));
-    }
+    validate_hole_result(session, &result, volume_before)?;
     // The cut retains history; dropping the cylindrical tool releases only its
     // temporary handle. Preserve the kernel's result wrapper rather than
     // extracting a solid subshape, which would discard the recorded history.
@@ -166,4 +141,47 @@ fn through_span(
         add(position, scale(axis, minimum - padding)),
         maximum - minimum + 2.0 * padding,
     ))
+}
+
+fn validate_thread(
+    thread: &ThreadSpecification,
+    diameter: f64,
+    parameters: &HashMap<String, ParameterValue>,
+) -> Result<(), ModelError> {
+    if thread.designation.trim().is_empty() {
+        return Err(ModelError::new("thread designation must not be blank"));
+    }
+    let nominal = scalar(&thread.nominal_diameter, parameters, Dimension::Length)?;
+    let pitch = scalar(&thread.pitch, parameters, Dimension::Length)?;
+    if nominal <= diameter {
+        return Err(ModelError::new(
+            "thread nominal diameter must exceed bore diameter",
+        ));
+    }
+    if pitch <= 0.0 {
+        return Err(ModelError::new("thread pitch must be positive"));
+    }
+    Ok(())
+}
+
+fn validate_hole_result(
+    session: &Session,
+    result: &Shape<'_>,
+    volume_before: f64,
+) -> Result<(), ModelError> {
+    let volume_after = session.volume(result)?;
+    if session.subshape_count(result, ShapeType::Solid)? != 1
+        || !session.is_valid(result)?
+        || volume_after <= 0.0
+    {
+        return Err(ModelError::new(
+            "hole must leave one valid solid with positive volume",
+        ));
+    }
+    if volume_after >= volume_before {
+        return Err(ModelError::new(
+            "hole does not remove material from its input",
+        ));
+    }
+    Ok(())
 }

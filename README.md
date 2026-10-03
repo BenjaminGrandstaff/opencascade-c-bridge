@@ -210,6 +210,14 @@ Set `SONAR_HOST_URL` when the server is not at `http://127.0.0.1:9000`. A token
 may instead be read from `SONAR_TOKEN_FILE`; local automation can provide
 `SONAR_ADMIN_AUTH=user:password` to create and revoke a temporary analysis
 token. Pass `--no-coverage` to reuse an existing `build/coverage/lcov.info`.
+By default, the token file is
+`${XDG_CONFIG_HOME:-$HOME/.config}/opencascade-c-bridge/sonar-token`.
+The script checks server readiness and authentication before generating
+coverage. For the default local URL, it starts an existing `sonarqube-local`
+container if needed and waits for startup; set `SONAR_CONTAINER` to use another
+existing local container. Scanner scratch files stay inside the temporary
+scanner container.
+Rust unit-test modules are indexed as tests rather than production sources.
 SonarQube Community Build indexes the Rust sources but not C/C++; the generic
 report still contains both languages, so editions with the CFamily analyzer
 can import the C/C++ records as well.

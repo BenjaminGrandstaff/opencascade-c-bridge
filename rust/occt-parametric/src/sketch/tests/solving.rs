@@ -306,26 +306,6 @@ fn schema_twenty_six_round_trips_curves_and_migrates_line_sketches() {
         if sketch.arcs.is_empty() {
             let mut old = serde_json::to_value(&document).unwrap();
             old["schema_version"] = serde_json::json!(25);
-            fn remove_new_fields(value: &mut serde_json::Value) {
-                match value {
-                    serde_json::Value::Object(fields) => {
-                        if fields.contains_key("points") && fields.contains_key("lines") {
-                            for field in ["circles", "arcs", "profile"] {
-                                fields.remove(field);
-                            }
-                        }
-                        for value in fields.values_mut() {
-                            remove_new_fields(value);
-                        }
-                    }
-                    serde_json::Value::Array(values) => {
-                        for value in values {
-                            remove_new_fields(value);
-                        }
-                    }
-                    _ => {}
-                }
-            }
             remove_new_fields(&mut old);
             assert_eq!(
                 ModelDocument::from_json(&old.to_string()).unwrap(),
@@ -476,4 +456,25 @@ fn nonfinite_residuals_are_errors_instead_of_successful_solves() {
             .message
             .contains("not finite")
     );
+}
+
+fn remove_new_fields(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::Object(fields) => {
+            if fields.contains_key("points") && fields.contains_key("lines") {
+                for field in ["circles", "arcs", "profile"] {
+                    fields.remove(field);
+                }
+            }
+            for value in fields.values_mut() {
+                remove_new_fields(value);
+            }
+        }
+        serde_json::Value::Array(values) => {
+            for value in values {
+                remove_new_fields(value);
+            }
+        }
+        _ => {}
+    }
 }

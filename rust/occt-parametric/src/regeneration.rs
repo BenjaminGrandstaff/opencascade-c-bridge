@@ -449,28 +449,9 @@ pub(crate) fn collect_operation_parameters<'a>(
             collect_vector_parameters(position, names);
             collect_vector_parameters(axis, names);
             collect_scalar_parameters(diameter, names);
-            if let Some(thread) = thread {
-                collect_scalar_parameters(&thread.nominal_diameter, names);
-                collect_scalar_parameters(&thread.pitch, names);
-            }
-            if let HoleExtent::Blind { depth } = extent {
-                collect_scalar_parameters(depth, names);
-            }
-            match finish {
-                HoleFinish::Plain => {}
-                HoleFinish::Counterbore { diameter, depth } => {
-                    collect_scalar_parameters(diameter, names);
-                    collect_scalar_parameters(depth, names);
-                }
-                HoleFinish::Countersink {
-                    diameter,
-                    angle_radians,
-                } => {
-                    collect_scalar_parameters(diameter, names);
-                    collect_scalar_parameters(angle_radians, names);
-                }
-            }
+            collect_hole_parameters(extent, finish, thread.as_deref(), names);
         }
+
         FeatureOperation::Rotate {
             origin,
             axis,
@@ -1007,4 +988,33 @@ pub(crate) fn place_shape<'session>(
         let _ = session.remove(intermediate);
     }
     Ok(translated?)
+}
+
+fn collect_hole_parameters<'a>(
+    extent: &'a HoleExtent,
+    finish: &'a HoleFinish,
+    thread: Option<&'a ThreadSpecification>,
+    names: &mut HashSet<&'a str>,
+) {
+    if let Some(thread) = thread {
+        collect_scalar_parameters(&thread.nominal_diameter, names);
+        collect_scalar_parameters(&thread.pitch, names);
+    }
+    if let HoleExtent::Blind { depth } = extent {
+        collect_scalar_parameters(depth, names);
+    }
+    match finish {
+        HoleFinish::Plain => {}
+        HoleFinish::Counterbore { diameter, depth } => {
+            collect_scalar_parameters(diameter, names);
+            collect_scalar_parameters(depth, names);
+        }
+        HoleFinish::Countersink {
+            diameter,
+            angle_radians,
+        } => {
+            collect_scalar_parameters(diameter, names);
+            collect_scalar_parameters(angle_radians, names);
+        }
+    }
 }

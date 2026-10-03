@@ -380,55 +380,7 @@ impl SketchDefinition {
             let radius = line_length((center, solution.points[&circle.rim]));
             session.create_circle_wire(transform(center), cross(x_axis, y_axis), radius)?
         } else {
-            if profile.is_empty()
-                || profile
-                    .iter()
-                    .any(|entity| matches!(entity, Entity::Circle(_)))
-            {
-                return Err(ModelError::new(
-                    "profile must contain connected lines/arcs or one circle",
-                ));
-            }
-            let mut segments = Vec::with_capacity(profile.len());
-            for (index, entity) in profile.iter().enumerate() {
-                let (start, end) = entity.endpoints();
-                if end != profile[(index + 1) % profile.len()].endpoints().0 {
-                    return Err(ModelError::new(
-                        "sketch profile is not a continuous closed boundary",
-                    ));
-                }
-                let start_point = solution.points[start];
-                let end_point = solution.points[end];
-                let segment = match entity {
-                    Entity::Line(_) => WireSegment::Line {
-                        start: transform(start_point),
-                        end: transform(end_point),
-                    },
-                    Entity::Arc(arc) => {
-                        let center = solution.points[&arc.center];
-                        let angle = (start_point.y - center.y).atan2(start_point.x - center.x);
-                        let end_angle = (end_point.y - center.y).atan2(end_point.x - center.x);
-                        let sweep = if arc.clockwise {
-                            -((angle - end_angle).rem_euclid(std::f64::consts::TAU))
-                        } else {
-                            (end_angle - angle).rem_euclid(std::f64::consts::TAU)
-                        };
-                        let radius = line_length((center, start_point));
-                        let middle_angle = angle + sweep / 2.0;
-                        let middle = SketchPoint2 {
-                            x: center.x + radius * middle_angle.cos(),
-                            y: center.y + radius * middle_angle.sin(),
-                        };
-                        WireSegment::Arc {
-                            start: transform(start_point),
-                            middle: transform(middle),
-                            end: transform(end_point),
-                        }
-                    }
-                    Entity::Circle(_) => unreachable!("circles handled above"),
-                };
-                segments.push(segment);
-            }
+            let segments = profile_segments(&profile, &solution, &transform)?;
             session.create_segment_wire(&segments, true)?
         };
         if !session.is_valid(&wire)? {
@@ -452,6 +404,18 @@ impl SketchDefinition {
         if self.id.is_empty() {
             return Err(ModelError::new("sketch id must be nonempty"));
         }
+        let point_ids = self.validate_points()?;
+        let line_ids = self.validate_lines(&point_ids)?;
+        let entity_ids = self.validate_curves(&point_ids, &line_ids)?;
+        self.validate_profile(&entity_ids)?;
+        let entities = self.entities();
+        for constraint in &self.constraints {
+            constraint.validate_references(&point_ids, &line_ids)?;
+            validate_tangency(constraint, &entities)?;
+        }
+        Ok((point_ids, line_ids))
+    }
+    fn validate_points(&self) -> Result<HashSet<&str>, ModelError> {
         let mut point_ids = HashSet::new();
         for point in &self.points {
             if point.id.is_empty() || !point_ids.insert(point.id.as_str()) {
@@ -460,6 +424,12 @@ impl SketchDefinition {
                 ));
             }
         }
+        Ok(point_ids)
+    }
+    fn validate_lines<'a>(
+        &'a self,
+        point_ids: &HashSet<&str>,
+    ) -> Result<HashSet<&'a str>, ModelError> {
         let mut line_ids = HashSet::new();
         for line in &self.lines {
             if line.id.is_empty() || !line_ids.insert(line.id.as_str()) {
@@ -477,6 +447,13 @@ impl SketchDefinition {
                 )));
             }
         }
+        Ok(line_ids)
+    }
+    fn validate_curves<'a>(
+        &'a self,
+        point_ids: &HashSet<&str>,
+        line_ids: &HashSet<&'a str>,
+    ) -> Result<HashSet<&'a str>, ModelError> {
         let mut entity_ids = line_ids.clone();
         for (id, refs) in self
             .circles
@@ -501,6 +478,9 @@ impl SketchDefinition {
                 )));
             }
         }
+        Ok(entity_ids)
+    }
+    fn validate_profile(&self, entity_ids: &HashSet<&str>) -> Result<(), ModelError> {
         let mut profile_ids = HashSet::new();
         for id in &self.profile {
             if !entity_ids.contains(id.as_str()) || !profile_ids.insert(id.as_str()) {
@@ -509,32 +489,7 @@ impl SketchDefinition {
                 ));
             }
         }
-        let entities = self.entities();
-        for constraint in &self.constraints {
-            constraint.validate_references(&point_ids, &line_ids)?;
-            if let SketchConstraint::Tangent {
-                first,
-                second,
-                point,
-            } = constraint
-            {
-                if first == second {
-                    return Err(ModelError::new("tangency requires two distinct entities"));
-                }
-                for id in [first, second] {
-                    let entity = entities
-                        .get(id.as_str())
-                        .ok_or_else(|| ModelError::new(format!("unknown sketch entity '{id}'")))?;
-                    let (start, end) = entity.endpoints();
-                    if point != start && point != end {
-                        return Err(ModelError::new(
-                            "tangency point must be a shared endpoint or circle rim",
-                        ));
-                    }
-                }
-            }
-        }
-        Ok((point_ids, line_ids))
+        Ok(())
     }
 }
 
@@ -815,13 +770,7 @@ impl SketchProblem<'_> {
                 self.equation_residuals(equation, &shifted, &mut backward)?;
                 shifted[column] = values[column];
                 for (row, (a, b)) in term_rows.iter_mut().zip(forward.iter().zip(backward)) {
-                    let derivative = (a - b) / (2.0 * step);
-                    if !derivative.is_finite() {
-                        return Err(ModelError::new("sketch derivative is not finite"));
-                    }
-                    if derivative != 0.0 {
-                        row.push((column, derivative));
-                    }
+                    push_derivative(row, column, (a - b) / (2.0 * step))?;
                 }
             }
             rows.extend(term_rows);
@@ -885,6 +834,105 @@ fn max_abs(values: &[f64]) -> f64 {
 }
 fn squared_norm(values: &[f64]) -> f64 {
     values.iter().map(|value| value * value).sum()
+}
+
+fn profile_segments(
+    profile: &[Entity<'_>],
+    solution: &SketchSolution,
+    transform: &impl Fn(SketchPoint2) -> Vec3,
+) -> Result<Vec<WireSegment>, ModelError> {
+    if profile.is_empty()
+        || profile
+            .iter()
+            .any(|entity| matches!(entity, Entity::Circle(_)))
+    {
+        return Err(ModelError::new(
+            "profile must contain connected lines/arcs or one circle",
+        ));
+    }
+    let mut segments = Vec::with_capacity(profile.len());
+    for (index, entity) in profile.iter().enumerate() {
+        let (start, end) = entity.endpoints();
+        if end != profile[(index + 1) % profile.len()].endpoints().0 {
+            return Err(ModelError::new(
+                "sketch profile is not a continuous closed boundary",
+            ));
+        }
+        let start_point = solution.points[start];
+        let end_point = solution.points[end];
+        let segment = match entity {
+            Entity::Line(_) => WireSegment::Line {
+                start: transform(start_point),
+                end: transform(end_point),
+            },
+            Entity::Arc(arc) => {
+                let center = solution.points[&arc.center];
+                let angle = (start_point.y - center.y).atan2(start_point.x - center.x);
+                let end_angle = (end_point.y - center.y).atan2(end_point.x - center.x);
+                let sweep = if arc.clockwise {
+                    -((angle - end_angle).rem_euclid(std::f64::consts::TAU))
+                } else {
+                    (end_angle - angle).rem_euclid(std::f64::consts::TAU)
+                };
+                let radius = line_length((center, start_point));
+                let middle_angle = angle + sweep / 2.0;
+                let middle = SketchPoint2 {
+                    x: center.x + radius * middle_angle.cos(),
+                    y: center.y + radius * middle_angle.sin(),
+                };
+                WireSegment::Arc {
+                    start: transform(start_point),
+                    middle: transform(middle),
+                    end: transform(end_point),
+                }
+            }
+            Entity::Circle(_) => unreachable!("circles handled above"),
+        };
+        segments.push(segment);
+    }
+    Ok(segments)
+}
+
+fn validate_tangency(
+    constraint: &SketchConstraint,
+    entities: &HashMap<&str, Entity<'_>>,
+) -> Result<(), ModelError> {
+    if let SketchConstraint::Tangent {
+        first,
+        second,
+        point,
+    } = constraint
+    {
+        if first == second {
+            return Err(ModelError::new("tangency requires two distinct entities"));
+        }
+        for id in [first, second] {
+            let entity = entities
+                .get(id.as_str())
+                .ok_or_else(|| ModelError::new(format!("unknown sketch entity '{id}'")))?;
+            let (start, end) = entity.endpoints();
+            if point != start && point != end {
+                return Err(ModelError::new(
+                    "tangency point must be a shared endpoint or circle rim",
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn push_derivative(
+    row: &mut Vec<(usize, f64)>,
+    column: usize,
+    derivative: f64,
+) -> Result<(), ModelError> {
+    if !derivative.is_finite() {
+        return Err(ModelError::new("sketch derivative is not finite"));
+    }
+    if derivative != 0.0 {
+        row.push((column, derivative));
+    }
+    Ok(())
 }
 
 #[cfg(test)]
