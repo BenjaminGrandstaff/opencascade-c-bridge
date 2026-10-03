@@ -79,6 +79,7 @@ fn rib_family(wire: bool) -> FamilyDefinition {
                     profile: "profile".into(),
                     thickness: ScalarExpr::Parameter("thickness".into()),
                     direction: direction(3.0),
+                    profile_mode: RibProfileMode::Closed,
                     thickness_mode: RibThicknessMode::OneSided,
                 },
             },
@@ -730,6 +731,242 @@ fn profile_history_rejects_removed_faces_and_unknown_source_features_without_lea
             .contains("unknown output 'missing'")
     );
     assert_eq!(session.shape_count().unwrap(), handles);
+    drop(generated);
+    assert_eq!(session.shape_count().unwrap(), 0);
+}
+
+fn open_rib_family(mode: RibThicknessMode) -> FamilyDefinition {
+    let mut definition = rib_family(true);
+    let FeatureOperation::SketchWire { sketch } = &definition.features[2].operation else {
+        unreachable!()
+    };
+    let mut sketch = (**sketch).clone();
+    sketch.lines.truncate(1);
+    sketch.points.truncate(2);
+    definition.features[2].operation = FeatureOperation::SketchOpenWire {
+        sketch: Box::new(sketch),
+    };
+    if let FeatureOperation::Rib {
+        profile_mode,
+        thickness_mode,
+        ..
+    } = &mut definition.features[0].operation
+    {
+        *profile_mode = RibProfileMode::OpenStrip {
+            offset: VectorExpr::Components {
+                x: length(0.0),
+                y: length(0.0),
+                z: ScalarExpr::Parameter("height".into()),
+            },
+        };
+        *thickness_mode = mode;
+    }
+    definition
+}
+
+#[test]
+fn open_sketch_ribs_have_exact_volume_and_composed_profile_history() {
+    let session = Session::new().unwrap();
+    for mode in [RibThicknessMode::OneSided, RibThicknessMode::Centered] {
+        let definition = open_rib_family(mode);
+        let generated = part(&definition).regenerate(&session).unwrap();
+        let rib = generated.shape("rib").unwrap();
+        assert!((session.volume(rib).unwrap() - 172.0).abs() < 1e-8);
+        let faces = resolve_face_selector(
+            &session,
+            rib,
+            &profile_side_selector(),
+            &HashMap::new(),
+            &generated.shapes,
+        )
+        .unwrap();
+        assert_eq!(faces.len(), 1);
+        assert!((session.surface_area(&faces[0]).unwrap() - 12.0).abs() < 1e-8);
+        assert!((session.center_of_mass(&faces[0]).unwrap().z - 7.0).abs() < 1e-8);
+        drop((faces, generated));
+        assert_eq!(session.shape_count().unwrap(), 0);
+    }
+}
+
+#[test]
+fn open_rib_offset_edits_rebuild_dependents_and_failed_edits_preserve_geometry() {
+    let mut definition = open_rib_family(RibThicknessMode::Centered);
+    definition.parameters[1].minimum = None;
+    let session = Session::new().unwrap();
+    let mut instance = part(&definition);
+    let first = instance.regenerate(&session).unwrap();
+    instance.overrides.insert(
+        "height".into(),
+        ParameterValue::Scalar(Quantity::length(8.0, LengthUnit::Millimeter)),
+    );
+    let edited = instance.regenerate_incremental(&session, &first).unwrap();
+    assert!(edited.regeneration.rebuilt.contains(&"rib".into()));
+    assert_eq!(edited.regeneration.reused, ["body", "profile"]);
+    assert!((session.volume(edited.shape("rib").unwrap()).unwrap() - 196.0).abs() < 1e-8);
+    let handles = session.shape_count().unwrap();
+    instance.overrides.insert(
+        "height".into(),
+        ParameterValue::Scalar(Quantity::length(0.0, LengthUnit::Millimeter)),
+    );
+    assert!(instance.regenerate_incremental(&session, &edited).is_err());
+    assert_eq!(session.shape_count().unwrap(), handles);
+    assert!((session.volume(edited.shape("rib").unwrap()).unwrap() - 196.0).abs() < 1e-8);
+    drop((first, edited));
+    assert_eq!(session.shape_count().unwrap(), 0);
+}
+
+#[test]
+fn open_ribs_round_trip_and_previous_models_default_to_closed_profiles() {
+    let definition = open_rib_family(RibThicknessMode::Centered);
+    let mut graph = InstanceGraph::new(&definition);
+    graph.add_base("part", HashMap::new(), "test").unwrap();
+    let document = ModelDocument::from_graph(&graph);
+    let loaded = ModelDocument::from_json(&document.to_json_pretty().unwrap()).unwrap();
+    assert_eq!(loaded, document);
+    let session = Session::new().unwrap();
+    let generated = part(&loaded.family).regenerate(&session).unwrap();
+    drop(generated);
+    let legacy = rib_family(true);
+    let mut graph = InstanceGraph::new(&legacy);
+    graph.add_base("part", HashMap::new(), "test").unwrap();
+    let mut value = serde_json::to_value(ModelDocument::from_graph(&graph)).unwrap();
+    value["schema_version"] = serde_json::json!(37);
+    value["family"]["features"][0]["operation"]["rib"]
+        .as_object_mut()
+        .unwrap()
+        .remove("profile_mode");
+    let migrated = ModelDocument::from_json(&value.to_string()).unwrap();
+    assert_eq!(migrated.family, legacy);
+    assert_eq!(session.shape_count().unwrap(), 0);
+}
+
+fn invalid_open_profile(case: usize) -> FamilyDefinition {
+    let mut definition = open_rib_family(RibThicknessMode::Centered);
+    if let FeatureOperation::SketchOpenWire { sketch } = &mut definition.features[2].operation {
+        match case {
+            0 => sketch.lines.push(SketchLine {
+                id: "other".into(),
+                start: "a".into(),
+                end: "b".into(),
+            }),
+            1 => sketch.lines.push(SketchLine {
+                id: "return".into(),
+                start: "b".into(),
+                end: "a".into(),
+            }),
+            2 => {
+                sketch.lines.clear();
+                sketch.circles.push(SketchCircle {
+                    id: "circle".into(),
+                    center: "a".into(),
+                    rim: "b".into(),
+                });
+            }
+            _ => {}
+        }
+    }
+    if case >= 3
+        && let FeatureOperation::Rib { profile_mode, .. } = &mut definition.features[0].operation
+    {
+        *profile_mode = RibProfileMode::OpenStrip {
+            offset: if case == 3 {
+                VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, 6.0))
+            } else {
+                point(1.0, 0.0, 0.0)
+            },
+        };
+    }
+    definition
+}
+
+#[test]
+fn open_profiles_reject_bad_chains_closure_geometry_and_units_without_leaks() {
+    let session = Session::new().unwrap();
+    for case in 0..5 {
+        let definition = invalid_open_profile(case);
+        assert!(
+            part(&definition).regenerate(&session).is_err(),
+            "case {case}"
+        );
+        assert_eq!(session.shape_count().unwrap(), 0);
+    }
+}
+
+fn scaled_open_rib(offset: f64, scale: f64, sign: f64) -> FamilyDefinition {
+    let mut definition = open_rib_family(RibThicknessMode::Centered);
+    if let FeatureOperation::Rib {
+        direction: axis, ..
+    } = &mut definition.features[0].operation
+    {
+        *axis = direction(sign);
+    }
+    if let FeatureOperation::Box { origin, size } = &mut definition.features[1].operation {
+        *origin = point(0.0, offset, 0.0);
+        *size = point(10.0 * scale, 10.0 * scale, scale);
+    }
+    for parameter in &mut definition.parameters {
+        parameter.minimum = None;
+        if let ParameterValue::Scalar(value) = &mut parameter.default {
+            value.value *= scale;
+        }
+    }
+    if let FeatureOperation::SketchOpenWire { sketch } = &mut definition.features[2].operation {
+        sketch.origin = point(2.0 * scale, offset + 4.0 * scale, scale);
+        sketch.points[1].x = length(6.0 * scale);
+    }
+    definition
+}
+
+#[test]
+fn centered_open_ribs_handle_small_large_and_distant_models_with_reversed_directions() {
+    let session = Session::new().unwrap();
+    for (offset, scale, sign) in [
+        (0.0, 0.01, 3.0),
+        (0.0, 100_000.0, -3.0),
+        (1_000_000.0, 1.0, 3.0),
+        (1_000_000.0, 1.0, -3.0),
+    ] {
+        let definition = scaled_open_rib(offset, scale, sign);
+        let generated = part(&definition).regenerate(&session).unwrap();
+        let rib = generated.shape("rib").unwrap();
+        assert!(
+            (session.volume(rib).unwrap() - 172.0 * scale.powi(3)).abs() < 1e-7 * scale.powi(3)
+        );
+        assert!(
+            (session.center_of_mass(rib).unwrap().y - (offset + scale * 788.0 / 172.0)).abs()
+                < 1e-7 * scale.max(1.0)
+        );
+        drop(generated);
+        assert_eq!(session.shape_count().unwrap(), 0);
+    }
+}
+
+#[test]
+fn open_arc_sketch_profiles_generate_valid_reinforcing_solids() {
+    let mut definition = open_rib_family(RibThicknessMode::Centered);
+    if let FeatureOperation::SketchOpenWire { sketch } = &mut definition.features[2].operation {
+        sketch.points.push(SketchPoint {
+            id: "center".into(),
+            x: length(3.0),
+            y: length(0.0),
+            fixed: true,
+        });
+        sketch.lines.clear();
+        sketch.arcs.push(SketchArc {
+            id: "curve".into(),
+            center: "center".into(),
+            start: "a".into(),
+            end: "b".into(),
+            clockwise: false,
+        });
+        sketch.profile = vec!["curve".into()];
+    }
+    let session = Session::new().unwrap();
+    let generated = part(&definition).regenerate(&session).unwrap();
+    let rib = generated.shape("rib").unwrap();
+    assert!(session.is_valid(rib).unwrap());
+    assert_eq!(session.subshape_count(rib, ShapeType::Solid).unwrap(), 1);
+    assert!(session.volume(rib).unwrap() > 100.0);
     drop(generated);
     assert_eq!(session.shape_count().unwrap(), 0);
 }

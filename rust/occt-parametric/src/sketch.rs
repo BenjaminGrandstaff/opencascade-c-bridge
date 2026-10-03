@@ -334,6 +334,25 @@ impl SketchDefinition {
         parameters: &HashMap<String, ParameterValue>,
         datum: Option<ResolvedDatum>,
     ) -> Result<Shape<'session>, ModelError> {
+        self.profile_wire(session, parameters, datum, true)
+    }
+
+    pub(crate) fn open_wire<'session>(
+        &self,
+        session: &'session Session,
+        parameters: &HashMap<String, ParameterValue>,
+        datum: Option<ResolvedDatum>,
+    ) -> Result<Shape<'session>, ModelError> {
+        self.profile_wire(session, parameters, datum, false)
+    }
+
+    fn profile_wire<'session>(
+        &self,
+        session: &'session Session,
+        parameters: &HashMap<String, ParameterValue>,
+        datum: Option<ResolvedDatum>,
+        closed: bool,
+    ) -> Result<Shape<'session>, ModelError> {
         let solution = self.solve(parameters)?;
         if !solution.solved {
             return Err(ModelError::new(format!(
@@ -360,6 +379,25 @@ impl SketchDefinition {
         }
         let transform =
             |point: SketchPoint2| add(origin, add(scale(x_axis, point.x), scale(y_axis, point.y)));
+        let profile = self.profile_entities()?;
+        let wire = if let [Entity::Circle(circle)] = profile.as_slice() {
+            if !closed {
+                return Err(ModelError::new("open sketch profile cannot be a circle"));
+            }
+            let center = solution.points[&circle.center];
+            let radius = line_length((center, solution.points[&circle.rim]));
+            session.create_circle_wire(transform(center), cross(x_axis, y_axis), radius)?
+        } else {
+            let segments = profile_segments(&profile, &solution, &transform, closed)?;
+            session.create_segment_wire(&segments, closed)?
+        };
+        if !session.is_valid(&wire)? {
+            return Err(ModelError::new("sketch profile produced an invalid wire"));
+        }
+        Ok(wire)
+    }
+
+    fn profile_entities(&self) -> Result<Vec<Entity<'_>>, ModelError> {
         let entities = self.entities();
         let profile = if !self.profile.is_empty() {
             self.profile
@@ -375,18 +413,7 @@ impl SketchDefinition {
                 "mixed sketch geometry requires an explicit profile",
             ));
         };
-        let wire = if let [Entity::Circle(circle)] = profile.as_slice() {
-            let center = solution.points[&circle.center];
-            let radius = line_length((center, solution.points[&circle.rim]));
-            session.create_circle_wire(transform(center), cross(x_axis, y_axis), radius)?
-        } else {
-            let segments = profile_segments(&profile, &solution, &transform)?;
-            session.create_segment_wire(&segments, true)?
-        };
-        if !session.is_valid(&wire)? {
-            return Err(ModelError::new("sketch profile produced an invalid wire"));
-        }
-        Ok(wire)
+        Ok(profile)
     }
 
     pub(crate) fn validate(
@@ -840,6 +867,7 @@ fn profile_segments(
     profile: &[Entity<'_>],
     solution: &SketchSolution,
     transform: &impl Fn(SketchPoint2) -> Vec3,
+    closed: bool,
 ) -> Result<Vec<WireSegment>, ModelError> {
     if profile.is_empty()
         || profile
@@ -850,12 +878,17 @@ fn profile_segments(
             "profile must contain connected lines/arcs or one circle",
         ));
     }
+    if !closed {
+        validate_open_endpoints(profile, solution)?;
+    }
     let mut segments = Vec::with_capacity(profile.len());
     for (index, entity) in profile.iter().enumerate() {
         let (start, end) = entity.endpoints();
-        if end != profile[(index + 1) % profile.len()].endpoints().0 {
+        if (closed || index + 1 < profile.len())
+            && end != profile[(index + 1) % profile.len()].endpoints().0
+        {
             return Err(ModelError::new(
-                "sketch profile is not a continuous closed boundary",
+                "sketch profile is not a continuous boundary",
             ));
         }
         let start_point = solution.points[start];
@@ -937,3 +970,17 @@ fn push_derivative(
 
 #[cfg(test)]
 mod tests;
+
+fn validate_open_endpoints(
+    profile: &[Entity<'_>],
+    solution: &SketchSolution,
+) -> Result<(), ModelError> {
+    let start = solution.points[profile[0].endpoints().0];
+    let end = solution.points[profile[profile.len() - 1].endpoints().1];
+    if line_length((start, end)) <= 1e-7 {
+        return Err(ModelError::new(
+            "open sketch profile must have distinct endpoints",
+        ));
+    }
+    Ok(())
+}

@@ -672,6 +672,23 @@ static void history(occt_bridge_session_t* session) {
     EXPECT(occt_bridge_shape_history_is_deleted(session, result, outsider, &flag), ARG);
 }
 
+static void open_profile(occt_bridge_session_t* session) {
+    occt_bridge_shape_id_t out = OCCT_BRIDGE_INVALID_SHAPE_ID;
+    const occt_bridge_vec3_t points[] = { {0, 0, 0}, {4, 0, 0} };
+    const occt_bridge_shape_id_t wire = SHAPE(occt_bridge_create_polyline_wire(session, points, 2, 0, &out), out);
+    const occt_bridge_shape_id_t box = SHAPE(occt_bridge_create_box(session, vec(0,0,0), vec(1,1,1), &out), out);
+    EXPECT(occt_bridge_create_open_profile_face(NULL, wire, vec(0,3,0), &out), ARG);
+    EXPECT(occt_bridge_create_open_profile_face(session, wire, vec(0,3,0), NULL), ARG);
+    EXPECT(occt_bridge_create_open_profile_face(session, unknown, vec(0,3,0), &out), MISSING);
+    EXPECT(occt_bridge_create_open_profile_face(session, box, vec(0,3,0), &out), GEOMETRY);
+    EXPECT(occt_bridge_create_open_profile_face(session, wire, vec(0,0,0), &out), ARG);
+    EXPECT(occt_bridge_create_open_profile_face(session, wire, vec(NAN,3,0), &out), ARG);
+    EXPECT(occt_bridge_create_open_profile_face(session, wire, vec(0,INFINITY,0), &out), ARG);
+    EXPECT(occt_bridge_create_open_profile_face(session, wire, vec(0,3,NAN), &out), ARG);
+    EXPECT(occt_bridge_create_open_profile_face(session, wire, vec(1,0,0), &out), GEOMETRY);
+    EXPECT(occt_bridge_create_open_profile_face(session, wire, vec(0,3,0), &out), OK);
+}
+
 static void persistence(occt_bridge_session_t* session) {
     occt_bridge_shape_id_t out = OCCT_BRIDGE_INVALID_SHAPE_ID;
     const occt_bridge_shape_id_t box =
@@ -765,6 +782,7 @@ int main(void) {
     queries(session);
     topology_relations(session);
     history(session);
+    open_profile(session);
     persistence(session);
     occt_bridge_session_destroy(session);
 

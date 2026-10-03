@@ -10,6 +10,7 @@ pub(super) fn execute_rib<'session>(
     thickness: f64,
     direction: Vec3,
     thickness_mode: RibThicknessMode,
+    closure_offset: Option<Vec3>,
 ) -> Result<Shape<'session>, ModelError> {
     if thickness <= 0.0 || !thickness.is_finite() {
         return Err(ModelError::new("rib thickness must be finite and positive"));
@@ -18,15 +19,7 @@ pub(super) fn execute_rib<'session>(
     if session.subshape_count(input, ShapeType::Solid)? != 1 || !session.is_valid(input)? {
         return Err(ModelError::new("rib input must contain one valid solid"));
     }
-    let temporary = match session.shape_type(profile)? {
-        ShapeType::Wire => Some(session.create_face_from_wire(profile)?),
-        ShapeType::Face => None,
-        _ => {
-            return Err(ModelError::new(
-                "rib profile must be a planar face or closed planar wire",
-            ));
-        }
-    };
+    let temporary = temporary_profile_face(session, profile, closure_offset)?;
     let face = temporary.as_ref().unwrap_or(profile);
     if !session.face_is_planar(face)? || !session.is_valid(face)? {
         return Err(ModelError::new(
@@ -40,6 +33,11 @@ pub(super) fn execute_rib<'session>(
         ));
     }
     let wall = session.create_prism_from_face(face, scale(direction, thickness))?;
+    let wall = if closure_offset.is_some() {
+        session.compose_history(&wall, face)?
+    } else {
+        wall
+    };
     // Centering adds one temporary location-only handle, O(1) extra placement
     // data. Extrusion and fuse cost depend on body/profile topology; no graph
     // scans are added. Translating the wall leaves the source profile intact.
@@ -74,4 +72,25 @@ pub(super) fn execute_rib<'session>(
         ));
     }
     Ok(session.compose_history(&result, &wall)?)
+}
+
+fn temporary_profile_face<'a>(
+    session: &'a Session,
+    profile: &Shape<'_>,
+    closure_offset: Option<Vec3>,
+) -> Result<Option<Shape<'a>>, ModelError> {
+    let temporary = if let Some(offset) = closure_offset {
+        Some(session.create_open_profile_face(profile, offset)?)
+    } else {
+        match session.shape_type(profile)? {
+            ShapeType::Wire => Some(session.create_face_from_wire(profile)?),
+            ShapeType::Face => None,
+            _ => {
+                return Err(ModelError::new(
+                    "rib profile must be a planar face or closed planar wire",
+                ));
+            }
+        }
+    };
+    Ok(temporary)
 }

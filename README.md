@@ -3,7 +3,7 @@
 A small, stable C ABI over Open Cascade (OCCT), designed to be wrapped safely
 from Rust and other languages. Open Cascade C++ objects never cross the ABI.
 
-The current C ABI version is **30**.
+The current C ABI version is **31**.
 
 ## Current API
 
@@ -11,7 +11,8 @@ The current C ABI version is **30**.
 - Integer shape handles scoped to a session
 - History-preserving duplicate handles for transactional geometry reuse
 - Boxes, cylinders, cones, spheres, and arbitrary planar polygon prisms
-- Reusable polyline, mixed line/circular-arc, circular, and elliptical wires, planar faces, and face
+- Reusable polyline, mixed line/circular-arc, circular, and elliptical wires,
+  planar faces, explicit translated closure of open planar profiles, and face
   extrusion and signed partial/full revolution
 - Non-mutating translation, axis-angle rotation, and uniform scaling; rigid
   moves share geometry through locations, so placed copies stay small
@@ -84,7 +85,7 @@ per-model linear and angular tolerances, plus configurations and materials
 with mass. Full graph regeneration verifies mass ranges, datum clearances, and
 recorded relationship satisfaction with required, preferred, or advisory
 priority. Schema v1 through
-v36 documents migrate to v37 during load; unsupported
+v37 documents migrate to v38 during load; unsupported
 future versions are rejected.
 Managed regeneration incrementally reuses unchanged outputs and
 rebuilds dirty features plus their downstream dependents. Graph regeneration
@@ -258,7 +259,14 @@ handles and retain the prior accepted generation.
 
 `ModelDocument` persists the family definition, requirements, instance and
 clone identities, sparse overrides, placements, assembly frames, pattern rules, provenance, and
-regeneration audit records. Schema 36 adds `Rib.thickness_mode`, using
+regeneration audit records. Schema 38 adds `SketchOpenWire` and
+`Rib.profile_mode: RibProfileMode`, defaulting earlier ribs to `Closed`.
+`OpenStrip { offset }` closes an open line/arc chain with a translated reversed
+copy and straight endpoint bridges. The length-valued offset must define a
+simple planar region; the rib's thickness direction must be normal to that
+region. ABI 31 exposes `Session::create_open_profile_face` for this construction.
+Automatic support discovery and extend-to-next remain planned.
+Schema 36 adds `Rib.thickness_mode`, using
 `RibThicknessMode::{OneSided, Centered}`. Existing documents default to
 `OneSided`; centered ribs place half the total positive thickness on each
 side of the profile plane. Reversing the required nonzero normal direction
@@ -294,10 +302,10 @@ normalized and required to be normal to the profile plane. Its sign chooses
 the side of the profile. The result must add material and contain one valid
 solid; disconnected, edge-only, and fully contained walls fail. Body/profile
 references and parameter edits participate in incremental regeneration.
-Input-body fuse history is retained and temporary faces/walls are released;
-implicit sweep-to-fuse history from every original profile edge is not guaranteed.
-Open-sketch, extend-to-next, and automatic-support ribs are not yet
-implemented. Schema 34 does not change ABI 28; older features remain unchanged.
+Body and composed profile history are retained and temporary faces/walls are
+released. Schema 38 adds the bounded open-sketch mode described above;
+extend-to-next and automatic-support ribs remain planned. The original schema
+34 feature did not change ABI 28; older features remain unchanged.
 Schema 33 adds `Draft` operations with semantic
 face selectors, a length-valued neutral-plane origin, dimensionless nonzero
 neutral normal and pull direction, and signed scalar radians with

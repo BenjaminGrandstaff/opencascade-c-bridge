@@ -339,6 +339,17 @@ pub enum RibThicknessMode {
     Centered,
 }
 
+/// The bounded planar region used before applying rib thickness.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RibProfileMode {
+    #[default]
+    Closed,
+    /// Close an open chain with its translated reversed copy and straight end
+    /// bridges. The length-valued offset must produce a simple planar boundary.
+    OpenStrip { offset: VectorExpr },
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FeatureOperation {
@@ -358,13 +369,16 @@ pub enum FeatureOperation {
     SketchWire {
         sketch: Box<SketchDefinition>,
     },
+    SketchOpenWire {
+        sketch: Box<SketchDefinition>,
+    },
     /// Sweeps a planar face or closed planar wire by a length-valued vector.
     Extrude {
         input: String,
         direction: VectorExpr,
     },
-    /// Extrudes a closed profile normally by positive thickness and fuses it
-    /// into one input solid. Direction is dimensionless and may be reversed.
+    /// Extrudes a planar rib region normally by positive thickness into one solid.
+    /// OpenStrip explicitly closes an open profile; direction is dimensionless.
     Rib {
         input: String,
         profile: String,
@@ -372,6 +386,8 @@ pub enum FeatureOperation {
         direction: VectorExpr,
         #[serde(default)]
         thickness_mode: RibThicknessMode,
+        #[serde(default)]
+        profile_mode: RibProfileMode,
     },
     /// Revolves a planar face or closed planar wire about a local axis.
     Revolve {
@@ -488,7 +504,8 @@ impl FeatureOperation {
             Self::Box { .. }
             | Self::Cylinder { .. }
             | Self::SketchFace { .. }
-            | Self::SketchWire { .. } => Vec::new(),
+            | Self::SketchWire { .. }
+            | Self::SketchOpenWire { .. } => Vec::new(),
         }
     }
 }

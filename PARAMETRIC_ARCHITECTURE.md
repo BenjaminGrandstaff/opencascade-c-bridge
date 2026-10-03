@@ -419,7 +419,8 @@ for older ribs. In `OneSided` mode the profile is extruded by total thickness
 along the direction; reversing direction chooses the other side. In `Centered`
 mode half the total thickness lies on each side of the profile plane;
 reversing direction gives the same geometry. There is no oblique sweep,
-inferred support, open-sketch, or extend-to-next behavior.
+inferred support or extend-to-next behavior. Schema 38 adds explicit bounded
+open-sketch closure as described below.
 All coordinates are family-local.
 
 The temporary prism is fused into the input using the extrusion and fuse operations.
@@ -460,13 +461,44 @@ tests cover exact triangle/overlap volumes, sketch faces/wires, both directions,
 body history, input preservation, units, centered placement, mode edits,
 small and 1 km-offset models, connection failures, selective reuse,
 rollback, cleanup, schema migration, composed history, generated-face selection,
-and downstream draft edits. Open-sketch and extend-to-next rib modes remain planned.
+and downstream draft edits. Schema 38 adds the bounded open-sketch mode below;
+extend-to-next remains planned.
 The scale suite builds and edits 1,000 ribs in 6.017 s (15 s budget), checking
 every volume, result validity, unchanged body/profile reuse, and handle cleanup.
 An additional 1,000-centered-rib case takes 6.924 s with the same 15 s budget and checks center
 of mass for both thickness values as well as volume, reuse, validity, and cleanup.
 Both cases also verify the exact area of the face generated from a profile edge
 on all 1,000 outputs before and after thickness edits.
+
+### Bounded open-sketch ribs
+
+`SketchOpenWire` uses the same constraints, line/arc geometry, datum planes,
+and unit rules as closed sketch outputs, but requires one ordered open chain
+with distinct endpoints. Circles, closed chains, and disconnected paths fail.
+`Rib.profile_mode` defaults to `RibProfileMode::Closed` for earlier documents.
+`OpenStrip { offset }` closes the open profile with a translated reversed copy
+and straight endpoint bridges. The offset is length-valued, finite, nonzero,
+and must produce a simple planar boundary. The thickness direction must be
+normal to that boundary, as for closed-profile ribs. The offset defines the
+bounded region explicitly; there is no support-face discovery or extend-to-next
+behavior. It is a translated closure, rather than a constant-distance offset
+of curved segments.
+
+ABI 31 exposes `create_open_profile_face`. Original edges remain boundary
+edges, translated edges are generated from them, and composed extrusion/fuse
+history preserves their surviving generated faces. Construction and history
+indexing take O(edges) time and storage. OCCT's geometric self-intersection
+check is O(edges²) in the worst case; this topology check is necessary to reject
+crossing boundaries and does not scan graph instances or supporting faces.
+Temporary handles are released on all paths. Offset expressions participate
+in signatures; unchanged profiles and bodies are reused when only the closure
+offset changes, and failed edits retain the accepted generation.
+
+Six new tests cover line/arc profiles, exact volume and generated-face area,
+one-sided/centered thickness, reversed directions, small and kilometer-sized
+models, 1 km offsets, invalid closures/chains/units, rollback, and schema defaults.
+The 1,000-open-rib build/edit case takes 8.413 s against a 15 s budget, including
+volume, centroid, generated-face, reuse, validity, and cleanup checks.
 
 ## Requirements preserve intent
 
@@ -953,7 +985,9 @@ nested assembly frames, semantic selectors, provenance, and regeneration audit r
 OCCT handles and generated BREPs are never serialized. Loading reconstructs a
 validated `InstanceGraph`; regeneration creates fresh session-owned handles.
 Schema versions 1 through 35 migrate to version 36, supplying explicit defaults
-for fields absent from older documents. Version 37 adds generated-face selectors
+for fields absent from older documents. Version 38 adds open sketch wires and
+explicit translated rib-profile closure; earlier ribs default to closed profiles.
+Version 37 adds generated-face selectors
 from earlier feature edges; existing features and selectors remain unchanged.
 Version 36 adds centered rib thickness,
 defaulting earlier ribs to one-sided geometry. Version 35 adds linear variable-radius

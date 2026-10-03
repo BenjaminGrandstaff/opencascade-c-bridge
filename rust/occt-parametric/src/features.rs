@@ -72,6 +72,7 @@ pub(crate) fn execute_feature<'session>(
             thickness,
             direction,
             thickness_mode,
+            profile_mode,
         } => {
             return ribs::execute_rib(
                 session,
@@ -80,6 +81,12 @@ pub(crate) fn execute_feature<'session>(
                 scalar(thickness, parameters, Dimension::Length)?,
                 vector(direction, parameters, Dimension::Scalar)?,
                 *thickness_mode,
+                match profile_mode {
+                    RibProfileMode::Closed => None,
+                    RibProfileMode::OpenStrip { offset } => {
+                        Some(vector(offset, parameters, Dimension::Length)?)
+                    }
+                },
             );
         }
         FeatureOperation::Cylinder {
@@ -93,14 +100,18 @@ pub(crate) fn execute_feature<'session>(
             scalar(radius, parameters, Dimension::Length)?,
             scalar(height, parameters, Dimension::Length)?,
         ),
-        FeatureOperation::SketchFace { sketch } | FeatureOperation::SketchWire { sketch } => {
+        FeatureOperation::SketchFace { sketch }
+        | FeatureOperation::SketchWire { sketch }
+        | FeatureOperation::SketchOpenWire { sketch } => {
             let datum = sketch_datum(datums, &feature.operation)?
                 .map(|datum| datum.kind.evaluate(parameters))
                 .transpose()?;
-            return if matches!(feature.operation, FeatureOperation::SketchWire { .. }) {
-                sketch.wire(session, parameters, datum)
-            } else {
-                sketch.face_on_plane(session, parameters, datum)
+            return match feature.operation {
+                FeatureOperation::SketchWire { .. } => sketch.wire(session, parameters, datum),
+                FeatureOperation::SketchOpenWire { .. } => {
+                    sketch.open_wire(session, parameters, datum)
+                }
+                _ => sketch.face_on_plane(session, parameters, datum),
             };
         }
         FeatureOperation::Translate { input, offset } => session.translate(

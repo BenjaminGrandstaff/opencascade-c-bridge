@@ -169,6 +169,19 @@ impl Session {
         Ok(self.shape(shape))
     }
 
+    /// Close an open wire using a translated reversed copy and straight end
+    /// bridges. The resulting boundary must be planar and non-self-intersecting.
+    /// Original edges and their translated counterparts retain ancestry.
+    pub fn create_open_profile_face<'a>(
+        &'a self,
+        wire: &Shape<'_>,
+        offset: Vec3,
+    ) -> Result<Shape<'a>, BridgeError> {
+        self.derived_shape(wire, |out| unsafe {
+            occt_bridge_create_open_profile_face(self.raw.as_ptr(), wire.id, offset.into(), out)
+        })
+    }
+
     pub fn create_face_from_wire<'a>(&'a self, wire: &Shape<'_>) -> Result<Shape<'a>, BridgeError> {
         self.derived_shape(wire, |out| unsafe {
             occt_bridge_create_face_from_wire(self.raw.as_ptr(), wire.id, out)

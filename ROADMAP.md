@@ -8,24 +8,32 @@ tracks status and order.
 
 | Layer | Version | State |
 |---|---|---|
-| C ABI (`src/`, `include/`) | ABI 30 | Stable; exact version match required |
+| C ABI (`src/`, `include/`) | ABI 31 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 37 | Active development |
+| `occt-parametric` (engineering layer) | Schema 38 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 3/3, bridge 58 (+1 doc test), recipes 3, parametric 145 | `ctest`, `cargo test` (see README) |
-| SonarQube (indexed Rust) | Gate OK, 0 issues, 90.2% line coverage (2026-10-03); Rust unit tests classified as tests | `tools/sonar/run.sh` |
+| Tests | C 3/3, bridge 61 (+1 doc test), recipes 3, parametric 151 | `ctest`, `cargo test` (see README) |
+| SonarQube (indexed Rust) | Gate OK, 0 issues, 90.3% line coverage (2026-10-03); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
-| Coverage | 91.36% lines overall, test code excluded; C++ 93.83% lines, 87.79% branches, 100% functions; Rust 89.84% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 40 passing within budget | `tools/bench/run.sh` |
+| Coverage | 91.50% lines overall, test code excluded; C++ 93.99% lines, 87.59% branches, 100% functions; Rust 89.93% lines | `tools/coverage/run.sh` |
+| Scale benchmarks | 41 passing within budget | `tools/bench/run.sh` |
 
 ## Done
 
 ### Kernel (C ABI)
 
+- Open-profile translated closure (ABI 31): one valid open wire is joined to
+  its translated reversed copy by straight endpoint bridges. The resulting
+  face must be planar and non-self-intersecting, with original/translated
+  edge ancestry retained. Construction and history indexing are O(edges)
+  time/storage; OCCT's geometric self-intersection check is O(edges²) in the
+  worst case, without graph or support searches. Three bridge tests and C
+  conformance cover exact line/arc/multi-segment areas, downstream extrusion
+  history, invalid offsets and boundaries, foreign/stale handles, and cleanup.
 - Explicit operation-history composition (ABI 30): a new handle shares the
   result geometry and retains direct history while tracing an intermediate's
   original sources. Generated and modified ancestry follow OCCT's history
@@ -106,6 +114,16 @@ tracks status and order.
 
 ### Parametric layer
 
+- Bounded open-sketch strip ribs (schema 38): `SketchOpenWire` emits ordered
+  open line/arc chains. `RibProfileMode::OpenStrip { offset }` defines an
+  explicit translated closure before applying one-sided or centered thickness
+  and fusing into one body. Earlier ribs default to `Closed`. Offset parameters
+  drive selective rebuilds; failures preserve accepted generations. Six new
+  tests cover exact volume/history, arcs, small/large/distant models, reversed
+  directions, units, invalid chains/closures, rollback, migration, and cleanup.
+  The new 1,000-open-rib build/edit benchmark passes in 8.413 s (15 s budget),
+  checking every volume, centroid, generated face, reuse, and released handle.
+  Automatic support discovery and extend-to-next remain future work.
 - Rib profile-history composition and generated-face selectors (schema 37):
   original profile edges trace through extrusion, optional centered placement,
   and fusion while body history is preserved. `FaceSelector::GeneratedFromEdges`
@@ -146,7 +164,8 @@ tracks status and order.
   accepted generations. Four tests cover exact triangular and overlap volumes,
   both extrusion directions, body history, input preservation, units,
   connection failures, selective reuse, rollback, cleanup, and migration.
-  Open-sketch, extend-to-next, and automatic-support ribs remain future work;
+  Extend-to-next and automatic-support ribs remain future work; bounded
+  open-sketch profiles landed in schema 38, and
   profile-history composition landed
   in schema 37.
   Building and editing 1,000 ribs takes 6.017 s (15 s budget), checking every
@@ -344,8 +363,7 @@ every item below is defined in documents and the API, and verified in tests.
 
 ### Capabilities
 
-1. **Feature breadth.** Advanced ribs (open
-    sketches and extend-to-next);
+1. **Feature breadth.** Advanced ribs (extend-to-next and automatic supports);
     multi-station variable fillet laws and explicit spine-direction control;
     sheet metal (flanges, bends, flat patterns)
     after the rest. Expand hole catalogs to tap drills, inch sizes, and

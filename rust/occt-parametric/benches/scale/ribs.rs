@@ -1,6 +1,12 @@
 use super::*;
 
 pub(super) fn rib_features_case(centered: bool) -> Outcome {
+    rib_case(centered, false)
+}
+pub(super) fn open_rib_features_case() -> Outcome {
+    rib_case(true, true)
+}
+fn rib_case(centered: bool, open: bool) -> Outcome {
     const COUNT: usize = 1000;
     let mut definition = block();
     definition.datums.clear();
@@ -75,6 +81,14 @@ pub(super) fn rib_features_case(centered: bool) -> Outcome {
             }),
         },
     });
+    if open {
+        let FeatureOperation::SketchWire { sketch } = &definition.features[1].operation else {
+            unreachable!()
+        };
+        let mut sketch = sketch.clone();
+        sketch.lines.truncate(1);
+        definition.features[1].operation = FeatureOperation::SketchOpenWire { sketch };
+    }
     for index in 0..COUNT {
         definition.features.push(FeatureDefinition {
             id: format!("rib{index}"),
@@ -83,6 +97,13 @@ pub(super) fn rib_features_case(centered: bool) -> Outcome {
                 profile: "profile".into(),
                 thickness: ScalarExpr::Parameter("thickness".into()),
                 direction: VectorExpr::Literal(VectorQuantity::scalars(0.0, 1.0, 0.0)),
+                profile_mode: if open {
+                    occt_parametric::RibProfileMode::OpenStrip {
+                        offset: point(0.0, 0.0, 6.0),
+                    }
+                } else {
+                    occt_parametric::RibProfileMode::Closed
+                },
                 thickness_mode: if centered {
                     occt_parametric::RibThicknessMode::Centered
                 } else {
@@ -92,7 +113,9 @@ pub(super) fn rib_features_case(centered: bool) -> Outcome {
         });
     }
     timed(
-        if centered {
+        if open {
+            "1000 open-sketch rib features: build and edit".into()
+        } else if centered {
             "1000 centered rib features: build and edit".into()
         } else {
             "1000 rib features: build and edit".into()
@@ -114,7 +137,7 @@ pub(super) fn rib_features_case(centered: bool) -> Outcome {
             let mut profile_edge = None;
             for index in 0..session.subshape_count(profile, ShapeType::Edge)? {
                 let edge = session.subshape(profile, ShapeType::Edge, index)?;
-                if session.edge_length(&edge)? > 8.0 {
+                if session.edge_length(&edge)? > if open { 5.0 } else { 8.0 } {
                     profile_edge = Some(edge);
                     break;
                 }
@@ -130,9 +153,10 @@ pub(super) fn rib_features_case(centered: bool) -> Outcome {
             }
             for index in 0..COUNT {
                 let id = format!("rib{index}");
-                for (generation, thickness, expected) in
-                    [(&first, 2.0, 136.0), (&edited, 3.0, 154.0)]
-                {
+                for (generation, thickness, expected) in [
+                    (&first, 2.0, if open { 172.0 } else { 136.0 }),
+                    (&edited, 3.0, if open { 208.0 } else { 154.0 }),
+                ] {
                     let shape = generation
                         .shape(&id)
                         .ok_or_else(|| failure("rib output missing".into()))?;
@@ -142,7 +166,9 @@ pub(super) fn rib_features_case(centered: bool) -> Outcome {
                         return Err(failure("rib volume or validity differs".into()));
                     }
                     let rib_center = 4.0 + if centered { 0.0 } else { thickness * 0.5 };
-                    let expected_center = (500.0 + 18.0 * thickness * rib_center) / expected;
+                    let expected_center = (500.0
+                        + if open { 36.0 } else { 18.0 } * thickness * rib_center)
+                        / expected;
                     if (session.center_of_mass(shape)?.y - expected_center).abs() > 1e-6 {
                         return Err(failure("rib thickness placement differs".into()));
                     }
@@ -161,7 +187,10 @@ pub(super) fn rib_features_case(centered: bool) -> Outcome {
                         0,
                     )?;
                     if session.shape_type(&face)? != ShapeType::Face
-                        || (session.surface_area(&face)? - thickness * 72.0_f64.sqrt()).abs() > 1e-6
+                        || (session.surface_area(&face)?
+                            - thickness * if open { 6.0 } else { 72.0_f64.sqrt() })
+                        .abs()
+                            > 1e-6
                     {
                         return Err(failure("rib generated face differs".into()));
                     }

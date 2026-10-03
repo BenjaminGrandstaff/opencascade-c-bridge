@@ -351,7 +351,9 @@ pub(crate) fn sketch_datum<'a>(
     operation: &FeatureOperation,
 ) -> Result<Option<&'a DatumDefinition>, ModelError> {
     let sketch = match operation {
-        FeatureOperation::SketchFace { sketch } | FeatureOperation::SketchWire { sketch } => sketch,
+        FeatureOperation::SketchFace { sketch }
+        | FeatureOperation::SketchWire { sketch }
+        | FeatureOperation::SketchOpenWire { sketch } => sketch,
         _ => return Ok(None),
     };
     let Some(id) = &sketch.datum_plane else {
@@ -424,18 +426,22 @@ pub(crate) fn collect_operation_parameters<'a>(
             collect_scalar_parameters(radius, names);
             collect_scalar_parameters(height, names);
         }
-        FeatureOperation::SketchFace { sketch } | FeatureOperation::SketchWire { sketch } => {
-            sketch.collect_parameters(names)
-        }
+        FeatureOperation::SketchFace { sketch }
+        | FeatureOperation::SketchWire { sketch }
+        | FeatureOperation::SketchOpenWire { sketch } => sketch.collect_parameters(names),
         FeatureOperation::Translate { offset, .. } => collect_vector_parameters(offset, names),
         FeatureOperation::Extrude { direction, .. } => collect_vector_parameters(direction, names),
         FeatureOperation::Rib {
             thickness,
             direction,
+            profile_mode,
             ..
         } => {
             collect_scalar_parameters(thickness, names);
             collect_vector_parameters(direction, names);
+            if let RibProfileMode::OpenStrip { offset } = profile_mode {
+                collect_vector_parameters(offset, names);
+            }
         }
         FeatureOperation::Hole {
             position,
@@ -724,7 +730,9 @@ pub(crate) fn validate_definition(definition: &FamilyDefinition) -> Result<(), M
         .collect::<HashMap<_, _>>();
     for feature in &definition.features {
         match &feature.operation {
-            FeatureOperation::SketchFace { sketch } | FeatureOperation::SketchWire { sketch } => {
+            FeatureOperation::SketchFace { sketch }
+            | FeatureOperation::SketchWire { sketch }
+            | FeatureOperation::SketchOpenWire { sketch } => {
                 sketch
                     .validate_structure()
                     .map_err(|error| error.in_feature(&feature.id))?;
