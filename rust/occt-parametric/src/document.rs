@@ -23,7 +23,7 @@ pub struct GenerationRecord {
     pub last_error: Option<String>,
 }
 
-pub const CURRENT_SCHEMA_VERSION: u32 = 42;
+pub const CURRENT_SCHEMA_VERSION: u32 = 43;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ModelDocument {
@@ -43,6 +43,9 @@ pub struct ModelDocument {
     pub assembly: AssemblySemantics,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub drawings: Vec<DrawingDefinition>,
+    /// Ordered, append-only review history; independent from generation audits.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub revisions: Vec<DocumentRevision>,
 }
 
 impl ModelDocument {
@@ -66,6 +69,7 @@ impl ModelDocument {
             frames,
             generation_records: Vec::new(),
             drawings: Vec::new(),
+            revisions: Vec::new(),
             assembly: AssemblySemantics {
                 active_configuration: None,
                 ..graph.assembly.clone()
@@ -183,6 +187,7 @@ impl ModelDocument {
                 "model document must be migrated to schema version {CURRENT_SCHEMA_VERSION}"
             )));
         }
+        self.validate_revisions()?;
         validate_definition(&self.family)?;
         resolve_parameters(&self.family, &HashMap::new())?;
         let mut family_ids = HashSet::from([self.family.id.as_str()]);

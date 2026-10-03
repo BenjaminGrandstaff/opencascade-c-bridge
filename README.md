@@ -85,7 +85,7 @@ per-model linear and angular tolerances, plus configurations and materials
 with mass. Full graph regeneration verifies mass ranges, datum clearances, and
 recorded relationship satisfaction with required, preferred, or advisory
 priority. Schema v1 through
-v41 documents migrate to v42 during load; unsupported
+v42 documents migrate to v43 during load; unsupported
 future versions are rejected.
 Managed regeneration incrementally reuses unchanged outputs and
 rebuilds dirty features plus their downstream dependents. Graph regeneration
@@ -261,7 +261,10 @@ handles and retain the prior accepted generation.
 
 `ModelDocument` persists the family definition, requirements, instance and
 clone identities, sparse overrides, placements, assembly frames, pattern rules, provenance, and
-regeneration audit records. Schema 42 adds regenerated orthographic, section,
+regeneration audit records. Schema 43 adds explicit revision history and the
+API reports resolved instance/feature change impact. The `occt-document-merge`
+binary supplies a semantic Git merge driver. See [Model history](MODEL_HISTORY.md)
+and [Document comparisons](DOCUMENT_DIFF.md). Schema 42 adds regenerated orthographic, section,
 and detail drawings, datum dimensions, parameter notes, and metadata title blocks
 exported as SVG or DXF. See [Drawings](DRAWINGS.md) for the API and sampling limits.
 ABI 34 adds exact hidden-line projection, plane clipping, edge sampling, and

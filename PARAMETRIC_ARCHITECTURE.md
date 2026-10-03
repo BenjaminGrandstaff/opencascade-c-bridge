@@ -75,8 +75,6 @@ The following major capabilities remain planned:
 - closed-linkage solving and continuous collision detection beyond driven joints;
 - FEA mesh hand-off, manufacturability checks, and
   glTF export;
-- revision history and change impact for model
-  documents.
 
 Identity-based semantic document comparisons are available through
 `ModelDocument::semantic_diff`. They match declaration collections by stable IDs
@@ -1125,3 +1123,14 @@ once, and temporary handles are released before numeric drawing data is returned
 SVG and DXF include a page frame and metadata title block. Bounded uniform curve
 sampling is an approximation; section hatching is not yet generated. See
 [Drawings](DRAWINGS.md) for coordinates, budgets, examples, and export contracts.
+
+## Model revisions and change impact
+
+Schema 43 records an explicit linear revision ledger, separate from generation
+audits. Semantic change payloads exclude that ledger. Kernel-free impact reports
+resolve inherited/configured parameters and propagate feature signatures through
+the union of old/new dependencies, caching shared variants and clone ancestry.
+Placement and material changes have separate flags from local feature rebuilds.
+A Git merge driver validates merged intent before atomically replacing its
+current file. See [Model history](MODEL_HISTORY.md) and
+[Document comparisons](DOCUMENT_DIFF.md) for persistence and conflict contracts.

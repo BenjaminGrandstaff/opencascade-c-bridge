@@ -11,16 +11,16 @@ tracks status and order.
 | C ABI (`src/`, `include/`) | ABI 34 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 42 | Active development |
+| `occt-parametric` (engineering layer) | Schema 43 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 4/4, bridge 74 (+1 doc test), recipes 3, parametric 196 | `ctest`, `cargo test` (see README) |
-| SonarQube (indexed Rust) | Gate OK, 0 issues, 91.5% line coverage (2026-10-03); Rust unit tests classified as tests | `tools/sonar/run.sh` |
+| Tests | C 4/4, bridge 74 (+1 doc test), recipes 3, parametric 203 + merge driver 3 | `ctest`, `cargo test` (see README) |
+| SonarQube (indexed Rust) | Gate OK, 0 issues, 91.8% line coverage (2026-10-03); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
-| Coverage | 92.32% lines overall, test code excluded; C++ 94.27% lines, 87.67% branches, 100% functions; Rust 91.20% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 51 passing within budget | `tools/bench/run.sh` |
+| Coverage | 92.37% lines overall, test code excluded; C++ 94.27% lines, 87.67% branches, 100% functions; Rust 91.32% lines | `tools/coverage/run.sh` |
+| Scale benchmarks | 53 passing within budget | `tools/bench/run.sh` |
 
 ## Done
 
@@ -131,6 +131,17 @@ tracks status and order.
   error-bounded (Bezier, B-spline) extrema.
 
 ### Parametric layer
+
+- Model data management (schema 43): explicit linear revision records with
+  nonrecursive semantic changes, resolved instance/feature change-impact
+  reports, and a semantic Git merge driver with atomic successful writes.
+  Seven API tests and three driver tests cover rollback, inheritance,
+  downstream dependencies, current joints, materials, configuration suppression,
+  history conflicts, and file preservation. Actual Git merges verify successful
+  combination and conflict stages. Impact for 10,000 instances and 100 dependent
+  features takes 0.144 s; appending after 10,000 revisions takes 0.185 s
+  (10 s budgets). See [Model history](MODEL_HISTORY.md) and
+  [Document comparisons](DOCUMENT_DIFF.md).
 
 - Regenerated drawings (schema 42): orthographic, section, and cropped detail
   views with exact hidden-line removal, datum dimensions, parameter notes,
@@ -456,10 +467,7 @@ every item below is defined in documents and the API, and verified in tests.
     for external FEA; manufacturability checks (minimum wall
     thickness, draft angle, 3D-printing overhang); glTF export with material
     appearance for rendering.
-2. **Model data management.** Recorded revision history inside documents,
-    and change-impact reports listing the
-    instances and features a change affects, with a git merge driver.
-3. **Feature breadth.** Sheet metal (flanges, bends, flat patterns)
+2. **Feature breadth.** Sheet metal (flanges, bends, flat patterns)
     after the rest. Expand hole catalogs to tap drills, inch sizes, and
     standard recess dimensions when their source data is verified.
 

@@ -94,5 +94,45 @@ LD_LIBRARY_PATH="$PWD/build" \
   cargo bench --manifest-path rust/occt-parametric/Cargo.toml --bench document_merge
 ```
 
-Both scale cases run through `tools/bench/run.sh`. Recorded revision history,
-impact reports, and a git merge driver remain future work.
+Both scale cases run through `tools/bench/run.sh`.
+
+## Git merge driver
+
+The `occt-document-merge` binary takes `BASE CURRENT OTHER`, migrates and validates
+all three JSON documents, and uses the semantic three-way merge above. Success
+atomically replaces `CURRENT` with the validated merged document and preserves
+its file permissions. Conflicts, malformed documents, validation failures, and
+write errors exit nonzero; conflicts leave `CURRENT` byte-for-byte unchanged and
+print typed paths and payloads to stderr. Exclusive temporary creation and a
+same-directory rename prevent partial writes. Input files must be separate.
+
+Build it using the same library path as the other Rust tools:
+
+```bash
+OCCT_BRIDGE_LIB_DIR="$PWD/build" \
+  cargo build --release --manifest-path rust/occt-parametric/Cargo.toml \
+  --bin occt-document-merge
+```
+
+Install the driver in the repository whose model documents you want to merge:
+
+```bash
+git config --local merge.occt-document.name 'OCCT semantic model merge'
+git config --local merge.occt-document.driver \
+  'env LD_LIBRARY_PATH=/absolute/path/to/bridge/build /absolute/path/to/occt-document-merge "%O" "%A" "%B"'
+```
+
+Add an appropriately scoped rule to that repository's `.gitattributes`:
+
+```gitattributes
+models/*.json merge=occt-document
+```
+
+Git retains unmerged stages after a conflict. Resolve the model and its revision
+history deliberately, validate it, then stage it normally; the driver does not
+insert text conflict markers into JSON. Actual Git merges were checked for
+independent edits and incompatible edits, including preservation of current
+bytes and Git's unmerged stages. Installation is explicit: the bridge repository
+does not modify another repository's Git settings automatically.
+
+Revision records and change impact are described in [Model history](MODEL_HISTORY.md).

@@ -1,6 +1,7 @@
 //! Unit-aware part families, instances, feature graphs, and verification.
 
 mod assembly;
+mod change_impact;
 mod definition;
 mod document;
 mod document_diff;
@@ -13,6 +14,7 @@ mod hole_sizes;
 mod pattern;
 mod quantity;
 mod regeneration;
+mod revisions;
 mod selection;
 mod sketch;
 mod solve;
@@ -44,6 +46,7 @@ use std::{
     fmt,
 };
 
+pub use change_impact::*;
 pub use definition::*;
 pub use document::*;
 pub use document_diff::*;
@@ -57,6 +60,7 @@ pub use hole_sizes::{ClearanceSeries, iso273_clearance_v1};
 pub use pattern::*;
 pub use quantity::*;
 pub use regeneration::*;
+pub use revisions::*;
 use selection::*;
 
 #[cfg(test)]

@@ -25,3 +25,8 @@ harness = false
 name = "document_merge"
 path = "benches/scale/document_merge.rs"
 harness = false
+
+[[bench]]
+name = "document_management"
+path = "benches/scale/document_management.rs"
+harness = false
