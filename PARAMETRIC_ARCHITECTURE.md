@@ -413,14 +413,25 @@ rib is declared before its body or sketch.
 
 Thickness is a positive finite length. Direction is a nonzero dimensionless
 vector, normalized internally, and must be parallel or antiparallel to the
-profile's unit normal (`abs(dot) >= 1 - 1e-9`). The profile is extruded to one
-side by thickness; reversing direction chooses the other side. There is no
-centered thickness, oblique sweep, inferred support, or extend-to-next behavior.
+profile's unit normal (`abs(dot) >= 1 - 1e-9`). Schema 36 adds
+`Rib.thickness_mode: RibThicknessMode`, with `OneSided` as the migration default
+for older ribs. In `OneSided` mode the profile is extruded by total thickness
+along the direction; reversing direction chooses the other side. In `Centered`
+mode half the total thickness lies on each side of the profile plane;
+reversing direction gives the same geometry. There is no oblique sweep,
+inferred support, open-sketch, or extend-to-next behavior.
 All coordinates are family-local.
 
 The temporary prism is fused into the input using existing ABI 28 operations.
-The result must contain one valid solid and have strictly greater volume than
-the input. Face-connected and overlapping walls are accepted; disconnected,
+Centering shifts the extruded wall by negative half thickness along the
+normalized direction. This adds one temporary location-only handle and O(1)
+placement data, with no graph scans or new C ABI operations.
+The result must contain one valid solid and add material beyond a small
+floating-point volume margin (`64 * f64::EPSILON * max(abs(input volume), wall volume)`).
+This rejects fully contained translated walls whose fuse changes only the
+last few bits of the measured volume, without imposing a fixed minimum rib
+volume across differently sized models. Face-connected and overlapping walls
+are accepted; disconnected,
 edge/vertex-only, fully contained, and invalid walls are rejected. The input
 remains unchanged. Temporary faces and prisms drop on success and failure.
 The final fuse retains input-body topology history, but full composition from
@@ -428,15 +439,18 @@ the original sketch edges through the implicit prism to the fused result is
 not guaranteed; use explicit named extrude/fuse steps when that intermediate
 sweep history is needed.
 
-Thickness and direction expressions participate in feature signatures;
+Thickness, direction, and thickness mode participate in feature signatures;
 body/profile edits invalidate dependent ribs and downstream features. Failed
-edits release new handles and preserve the previous accepted generation. Four
+edits release new handles and preserve the previous accepted generation. Eight
 tests cover exact triangle/overlap volumes, sketch faces/wires, both directions,
-body history, input preservation, units, connection failures, selective reuse,
-rollback, cleanup, and schema migration. Advanced ribs and complete implicit
+body history, input preservation, units, centered placement, mode edits,
+small and 1 km-offset models, connection failures, selective reuse,
+rollback, cleanup, and schema migration. Further rib modes and complete implicit
 profile-history composition remain planned.
 The scale suite builds and edits 1,000 ribs in 5.737 s (15 s budget), checking
 every volume, result validity, unchanged body/profile reuse, and handle cleanup.
+An additional 1,000-centered-rib case has the same 15 s budget and checks center
+of mass for both thickness values as well as volume, reuse, validity, and cleanup.
 
 ## Requirements preserve intent
 
@@ -922,8 +936,9 @@ or bounds-driven fitted spans,
 nested assembly frames, semantic selectors, provenance, and regeneration audit records. Live
 OCCT handles and generated BREPs are never serialized. Loading reconstructs a
 validated `InstanceGraph`; regeneration creates fresh session-owned handles.
-Schema versions 1 through 34 migrate to version 35, supplying explicit defaults
-for fields absent from older documents. Version 35 adds linear variable-radius
+Schema versions 1 through 35 migrate to version 36, supplying explicit defaults
+for fields absent from older documents. Version 36 adds centered rib thickness,
+defaulting earlier ribs to one-sided geometry. Version 35 adds linear variable-radius
 fillets; earlier constant-radius operations remain unchanged. Version 34 adds
 bounded closed-profile
 ribs; existing features remain unchanged. Version 33 adds selected-face draft;

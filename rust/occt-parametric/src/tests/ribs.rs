@@ -79,6 +79,7 @@ fn rib_family(wire: bool) -> FamilyDefinition {
                     profile: "profile".into(),
                     thickness: ScalarExpr::Parameter("thickness".into()),
                     direction: direction(3.0),
+                    thickness_mode: RibThicknessMode::OneSided,
                 },
             },
             FeatureDefinition {
@@ -240,6 +241,7 @@ fn ribs_reject_disconnected_edge_only_contained_and_invalid_inputs() {
             profile,
             thickness,
             direction,
+            ..
         } = &mut definition.features[0].operation
         {
             match case {
@@ -285,4 +287,235 @@ fn rib_schema_thirty_four_round_trips_and_migrates_existing_features() {
         assert_eq!(migrated.schema_version, CURRENT_SCHEMA_VERSION);
         assert_eq!(migrated.family.features[0], definition.features[1]);
     }
+}
+
+fn set_thickness_mode(definition: &mut FamilyDefinition, mode: RibThicknessMode) {
+    let FeatureOperation::Rib { thickness_mode, .. } = &mut definition.features[0].operation else {
+        unreachable!()
+    };
+    *thickness_mode = mode;
+}
+
+#[test]
+fn centered_ribs_have_total_thickness_and_are_invariant_to_direction_reversal() {
+    let session = Session::new().unwrap();
+    for wire in [false, true] {
+        for (offset, scale) in [(0.0, 1.0), (1_000_000.0, 1.0), (0.0, 0.01)] {
+            for sign in [3.0, -3.0] {
+                let mut definition = rib_family(wire);
+                set_thickness_mode(&mut definition, RibThicknessMode::Centered);
+                let FeatureOperation::Rib {
+                    direction: axis, ..
+                } = &mut definition.features[0].operation
+                else {
+                    unreachable!()
+                };
+                *axis = direction(sign);
+                let FeatureOperation::Box { origin, size } = &mut definition.features[1].operation
+                else {
+                    unreachable!()
+                };
+                *origin = point(0.0, offset, 0.0);
+                *size = point(10.0 * scale, 10.0 * scale, scale);
+                for parameter in &mut definition.parameters {
+                    parameter.minimum = None;
+                    let ParameterValue::Scalar(value) = &mut parameter.default else {
+                        unreachable!()
+                    };
+                    value.value *= scale;
+                }
+                let sketch = match &mut definition.features[2].operation {
+                    FeatureOperation::SketchWire { sketch }
+                    | FeatureOperation::SketchFace { sketch } => sketch,
+                    _ => unreachable!(),
+                };
+                sketch.origin = point(2.0 * scale, offset + 4.0 * scale, scale);
+                sketch.points[1].x = length(6.0 * scale);
+                let generated = part(&definition).regenerate(&session).unwrap();
+                let rib = generated.shape("rib").unwrap();
+                let expected_y = offset + scale * (500.0 + 36.0 * 4.0) / 136.0;
+                assert!(
+                    (session.volume(rib).unwrap() - 136.0 * scale.powi(3)).abs()
+                        < 1e-7 * scale.powi(3)
+                );
+                assert!((session.center_of_mass(rib).unwrap().y - expected_y).abs() < 1e-7);
+                assert_eq!(session.subshape_count(rib, ShapeType::Solid).unwrap(), 1);
+                assert!(session.is_valid(rib).unwrap());
+                assert!(
+                    (session
+                        .center_of_mass(generated.shape("profile").unwrap())
+                        .unwrap()
+                        .y
+                        - (offset + 4.0 * scale))
+                        .abs()
+                        < 1e-7
+                );
+                assert!(
+                    (session.volume(generated.shape("body").unwrap()).unwrap()
+                        - 100.0 * scale.powi(3))
+                    .abs()
+                        < 1e-7 * scale.powi(3)
+                );
+                let body = generated.shape("body").unwrap();
+                let history = (0..6)
+                    .map(|index| {
+                        let face = session.subshape(body, ShapeType::Face, index).unwrap();
+                        session
+                            .history_count(rib, &face, occt_bridge::HistoryRelation::Modified)
+                            .unwrap()
+                    })
+                    .sum::<usize>();
+                assert!(history > 0);
+                assert_eq!(session.shape_count().unwrap(), 4);
+                drop(generated);
+                assert_eq!(session.shape_count().unwrap(), 0);
+            }
+        }
+    }
+}
+
+#[test]
+fn changing_rib_thickness_mode_reuses_inputs_and_rebuilds_dependents() {
+    let session = Session::new().unwrap();
+    let definition = rib_family(true);
+    let first = part(&definition).regenerate(&session).unwrap();
+    assert!(
+        (session
+            .center_of_mass(first.shape("rib").unwrap())
+            .unwrap()
+            .y
+            - 5.0)
+            .abs()
+            < 1e-7
+    );
+    let mut centered = definition.clone();
+    set_thickness_mode(&mut centered, RibThicknessMode::Centered);
+    let mut edited = part(&centered);
+    edited.overrides.insert(
+        "thickness".into(),
+        ParameterValue::Scalar(Quantity::length(3.0, LengthUnit::Millimeter)),
+    );
+    let next = edited.regenerate_incremental(&session, &first).unwrap();
+    assert_eq!(next.regeneration.reused, ["body", "profile"]);
+    assert_eq!(next.regeneration.rebuilt, ["rib", "placed"]);
+    assert!((session.volume(next.shape("rib").unwrap()).unwrap() - 154.0).abs() < 1e-7);
+    assert!(
+        (session
+            .center_of_mass(next.shape("rib").unwrap())
+            .unwrap()
+            .y
+            - (500.0 + 54.0 * 4.0) / 154.0)
+            .abs()
+            < 1e-7
+    );
+    // Changing only the mode must also invalidate the feature signature.
+    let mut one_sided = part(&definition);
+    one_sided.overrides.insert(
+        "thickness".into(),
+        ParameterValue::Scalar(Quantity::length(3.0, LengthUnit::Millimeter)),
+    );
+    let one_sided = one_sided.regenerate_incremental(&session, &next).unwrap();
+    assert_eq!(one_sided.regeneration.reused, ["body", "profile"]);
+    assert_eq!(one_sided.regeneration.rebuilt, ["rib", "placed"]);
+    assert!(
+        (session
+            .center_of_mass(one_sided.shape("rib").unwrap())
+            .unwrap()
+            .y
+            - (500.0 + 54.0 * 5.5) / 154.0)
+            .abs()
+            < 1e-7
+    );
+    drop((first, next, one_sided));
+    assert_eq!(session.shape_count().unwrap(), 0);
+}
+
+#[test]
+fn centered_ribs_can_bridge_the_profile_plane_and_preserve_results_on_failed_mode_edits() {
+    let session = Session::new().unwrap();
+    let mut definition = rib_family(true);
+    set_thickness_mode(&mut definition, RibThicknessMode::Centered);
+    let FeatureOperation::SketchWire { sketch } = &mut definition.features[2].operation else {
+        unreachable!()
+    };
+    sketch.origin = point(2.0, 10.0, 1.0);
+    let first = part(&definition).regenerate(&session).unwrap();
+    assert!((session.volume(first.shape("rib").unwrap()).unwrap() - 136.0).abs() < 1e-7);
+    let mut failed = definition.clone();
+    set_thickness_mode(&mut failed, RibThicknessMode::OneSided);
+    assert!(
+        part(&failed)
+            .regenerate_incremental(&session, &first)
+            .is_err()
+    );
+    assert_eq!(session.shape_count().unwrap(), 4);
+    assert!(session.is_valid(first.shape("rib").unwrap()).unwrap());
+    drop(first);
+    for (y, z, height) in [(4.0, 3.0, 6.0), (11.0, 1.0, 6.0), (4.0, 0.0, 0.5)] {
+        let mut invalid = definition.clone();
+        let FeatureOperation::SketchWire { sketch } = &mut invalid.features[2].operation else {
+            unreachable!()
+        };
+        sketch.origin = point(2.0, y, z);
+        sketch.points[2].y = length(height);
+        assert!(
+            part(&invalid).regenerate(&session).is_err(),
+            "y={y}, z={z}, height={height}"
+        );
+        assert_eq!(session.shape_count().unwrap(), 0);
+    }
+}
+
+#[test]
+fn centered_rib_mode_round_trips_and_legacy_ribs_default_to_one_sided() {
+    let session = Session::new().unwrap();
+    let mut definition = rib_family(true);
+    set_thickness_mode(&mut definition, RibThicknessMode::Centered);
+    let mut graph = InstanceGraph::new(&definition);
+    graph.add_base("part", HashMap::new(), "test").unwrap();
+    let document = ModelDocument::from_graph(&graph);
+    let loaded = ModelDocument::from_json(&document.to_json_pretty().unwrap()).unwrap();
+    assert_eq!(loaded, document);
+    assert_eq!(loaded.schema_version, CURRENT_SCHEMA_VERSION);
+    let result = part(&loaded.family).regenerate(&session).unwrap();
+    assert!(
+        (session
+            .center_of_mass(result.shape("rib").unwrap())
+            .unwrap()
+            .y
+            - (500.0 + 36.0 * 4.0) / 136.0)
+            .abs()
+            < 1e-7
+    );
+    drop(result);
+    let mut old = serde_json::to_value(&document).unwrap();
+    old["family"]["features"][0]["operation"]["rib"]
+        .as_object_mut()
+        .unwrap()
+        .remove("thickness_mode");
+    for version in [34, 35] {
+        old["schema_version"] = serde_json::json!(version);
+        let migrated = ModelDocument::from_json(&old.to_string()).unwrap();
+        let FeatureOperation::Rib { thickness_mode, .. } = migrated.family.features[0].operation
+        else {
+            unreachable!()
+        };
+        assert_eq!(thickness_mode, RibThicknessMode::OneSided);
+        let generated = part(&migrated.family).regenerate(&session).unwrap();
+        assert!(
+            (session
+                .center_of_mass(generated.shape("rib").unwrap())
+                .unwrap()
+                .y
+                - 5.0)
+                .abs()
+                < 1e-7
+        );
+        drop(generated);
+    }
+    let mut unsupported = serde_json::to_value(&document).unwrap();
+    unsupported["family"]["features"][0]["operation"]["rib"]["thickness_mode"] =
+        serde_json::json!("unknown");
+    assert!(ModelDocument::from_json(&unsupported.to_string()).is_err());
+    assert_eq!(session.shape_count().unwrap(), 0);
 }

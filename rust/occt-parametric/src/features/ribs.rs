@@ -9,6 +9,7 @@ pub(super) fn execute_rib<'session>(
     profile: &Shape<'_>,
     thickness: f64,
     direction: Vec3,
+    thickness_mode: RibThicknessMode,
 ) -> Result<Shape<'session>, ModelError> {
     if thickness <= 0.0 || !thickness.is_finite() {
         return Err(ModelError::new("rib thickness must be finite and positive"));
@@ -39,6 +40,15 @@ pub(super) fn execute_rib<'session>(
         ));
     }
     let wall = session.create_prism_from_face(face, scale(direction, thickness))?;
+    // Centering adds one temporary location-only handle, O(1) extra placement
+    // data. Extrusion and fuse cost depend on body/profile topology; no graph
+    // scans are added. Translating the wall leaves the source profile intact.
+    let wall = match thickness_mode {
+        RibThicknessMode::OneSided => wall,
+        RibThicknessMode::Centered => {
+            session.translate(&wall, scale(direction, -0.5 * thickness))?
+        }
+    };
     if session.subshape_count(&wall, ShapeType::Solid)? != 1
         || !session.is_valid(&wall)?
         || session.volume(&wall)? <= 0.0
@@ -48,10 +58,15 @@ pub(super) fn execute_rib<'session>(
         ));
     }
     let before = session.volume(input)?;
+    // A fully contained translated wall can leave a few ulps of volume
+    // roundoff after the fuse. Do not mistake that noise for added material.
+    // Scale the margin by the operands, so it has volume units and does not
+    // impose a fixed minimum rib volume on small models.
+    let volume_margin = 64.0 * f64::EPSILON * before.abs().max(session.volume(&wall)?);
     let result = session.fuse(input, &wall)?;
     if session.subshape_count(&result, ShapeType::Solid)? != 1
         || !session.is_valid(&result)?
-        || session.volume(&result)? <= before
+        || session.volume(&result)? - before <= volume_margin
     {
         return Err(ModelError::new(
             "rib must add material and join the input as one valid solid",

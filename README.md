@@ -82,7 +82,7 @@ per-model linear and angular tolerances, plus configurations and materials
 with mass. Full graph regeneration verifies mass ranges, datum clearances, and
 recorded relationship satisfaction with required, preferred, or advisory
 priority. Schema v1 through
-v34 documents migrate to v35 during load; unsupported
+v35 documents migrate to v36 during load; unsupported
 future versions are rejected.
 Managed regeneration incrementally reuses unchanged outputs and
 rebuilds dirty features plus their downstream dependents. Graph regeneration
@@ -183,15 +183,15 @@ builds an optimized copy of the library in `build/bench`, runs every case at
 the target sizes (10,000-member patterns, deep clone chains, 1,000-part solver
 stacks and grids, repeated regeneration, validation chains, and many-hole
 faces), and fails when a required case misses its time budget or correctness
-check. The current suite has 39 passing cases, including single-leaf and
+check. The current suite has 40 passing cases, including single-leaf and
 memoized all-node resolution of a 20,000-link clone chain and a 50-part stack
 1 km from the origin solved at a 1e-8 mm model tolerance, plus 10,000 checked
 datum-clearance requirements, 10,000 small constrained-sketch solves,
 10,000 arc/tangent sketch solves, 10,000 datum-linked sketch-wire features,
 build/edit cases for 1,000 extrude, 1,000 revolve, and 100 each of plain hole,
 counterbore, countersink, and thread-recorded hole features,
-100,000 checked metric clearance-catalog lookups, 1,000 draft, 1,000 rib,
-and 1,000 variable-radius fillet features, and
+100,000 checked metric clearance-catalog lookups, 1,000 draft, 1,000 one-sided
+rib, 1,000 centered rib, and 1,000 variable-radius fillet features, and
 individual sparse sketches with 10,000 independent or 1,000 connected lines:
 
 ```bash
@@ -248,7 +248,15 @@ handles and retain the prior accepted generation.
 
 `ModelDocument` persists the family definition, requirements, instance and
 clone identities, sparse overrides, placements, assembly frames, pattern rules, provenance, and
-regeneration audit records. Schema 35 adds
+regeneration audit records. Schema 36 adds `Rib.thickness_mode`, using
+`RibThicknessMode::{OneSided, Centered}`. Existing documents default to
+`OneSided`; centered ribs place half the total positive thickness on each
+side of the profile plane. Reversing the required nonzero normal direction
+leaves a centered rib's geometry unchanged. This uses the existing ABI 29;
+body history, validation, incremental reuse, and failed-edit rollback are
+retained. Fully contained walls are rejected using a small operand-relative
+volume margin so floating-point roundoff is not accepted as added material.
+Schema 35 adds
 `VariableFillet { input, edges, start_radius, end_radius }`, using ABI 29's
 `occt_bridge_variable_fillet` and safe `Session::variable_fillet`. Semantic
 selectors choose open tangent contours; positive length-valued radii vary
@@ -274,7 +282,7 @@ solid; disconnected, edge-only, and fully contained walls fail. Body/profile
 references and parameter edits participate in incremental regeneration.
 Input-body fuse history is retained and temporary faces/walls are released;
 implicit sweep-to-fuse history from every original profile edge is not guaranteed.
-Open-sketch, centered, extend-to-next, and automatic-support ribs are not yet
+Open-sketch, extend-to-next, and automatic-support ribs are not yet
 implemented. Schema 34 does not change ABI 28; older features remain unchanged.
 Schema 33 adds `Draft` operations with semantic
 face selectors, a length-valued neutral-plane origin, dimensionless nonzero

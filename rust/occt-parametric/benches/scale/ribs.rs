@@ -1,6 +1,6 @@
 use super::*;
 
-pub(super) fn rib_features_case() -> Outcome {
+pub(super) fn rib_features_case(centered: bool) -> Outcome {
     const COUNT: usize = 1000;
     let mut definition = block();
     definition.datums.clear();
@@ -83,11 +83,20 @@ pub(super) fn rib_features_case() -> Outcome {
                 profile: "profile".into(),
                 thickness: ScalarExpr::Parameter("thickness".into()),
                 direction: VectorExpr::Literal(VectorQuantity::scalars(0.0, 1.0, 0.0)),
+                thickness_mode: if centered {
+                    occt_parametric::RibThicknessMode::Centered
+                } else {
+                    occt_parametric::RibThicknessMode::OneSided
+                },
             },
         });
     }
     timed(
-        "1000 rib features: build and edit".into(),
+        if centered {
+            "1000 centered rib features: build and edit".into()
+        } else {
+            "1000 rib features: build and edit".into()
+        },
         ms(15_000),
         Expectation::Required,
         || {
@@ -108,7 +117,9 @@ pub(super) fn rib_features_case() -> Outcome {
             }
             for index in 0..COUNT {
                 let id = format!("rib{index}");
-                for (generation, expected) in [(&first, 136.0), (&edited, 154.0)] {
+                for (generation, thickness, expected) in
+                    [(&first, 2.0, 136.0), (&edited, 3.0, 154.0)]
+                {
                     let shape = generation
                         .shape(&id)
                         .ok_or_else(|| failure("rib output missing".into()))?;
@@ -116,6 +127,11 @@ pub(super) fn rib_features_case() -> Outcome {
                         || !session.is_valid(shape)?
                     {
                         return Err(failure("rib volume or validity differs".into()));
+                    }
+                    let rib_center = 4.0 + if centered { 0.0 } else { thickness * 0.5 };
+                    let expected_center = (500.0 + 18.0 * thickness * rib_center) / expected;
+                    if (session.center_of_mass(shape)?.y - expected_center).abs() > 1e-6 {
+                        return Err(failure("rib thickness placement differs".into()));
                     }
                 }
             }

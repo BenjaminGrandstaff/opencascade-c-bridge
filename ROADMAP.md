@@ -11,16 +11,16 @@ tracks status and order.
 | C ABI (`src/`, `include/`) | ABI 29 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 35 | Active development |
+| `occt-parametric` (engineering layer) | Schema 36 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 3/3, bridge 54 (+1 doc test), recipes 3, parametric 137 | `ctest`, `cargo test` (see README) |
+| Tests | C 3/3, bridge 54 (+1 doc test), recipes 3, parametric 141 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Last recorded: Gate OK, 0 issues, 93.3% line coverage; not rerun for current changes | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
-| Coverage | 91.18% lines overall, test code excluded; C++ 93.69% lines, 87.18% branches, 100% functions; Rust 89.66% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 39 passing within budget | `tools/bench/run.sh` |
+| Coverage | 91.20% lines overall, test code excluded; C++ 93.69% lines, 87.29% branches, 100% functions; Rust 89.68% lines | `tools/coverage/run.sh` |
+| Scale benchmarks | 40 passing within budget | `tools/bench/run.sh` |
 
 ## Done
 
@@ -94,6 +94,18 @@ tracks status and order.
 
 ### Parametric layer
 
+- Centered closed-profile ribs (schema 36; ABI 29 unchanged):
+  `RibThicknessMode::{OneSided, Centered}` places total thickness on one side
+  or equally on both sides of the profile plane. Earlier ribs default to
+  one-sided geometry. Centering adds one temporary location-only placement;
+  direction reversal preserves centered geometry, while mode edits rebuild
+  the rib and downstream features and reuse unchanged inputs. Four new tests
+  check exact volume/center of mass, faces and wires, normal signs, 1 km
+  model offsets, small models, body history, connection failures, contained
+  walls, rollback, cleanup, round trips, and legacy defaults. A small
+  operand-relative volume margin rejects contained-wall fuse roundoff.
+  The scale suite also builds and edits 1,000 centered ribs, checking volume,
+  center of mass, validity, reuse, and handle cleanup (15 s budget).
 - Linear variable-radius fillet features (schema 35): semantic selectors,
   length-valued start/end radii, one valid input/result solid, dependency
   ordering, selective reuse, and rollback. Tests cover geometry bounds,
@@ -112,7 +124,7 @@ tracks status and order.
   accepted generations. Four tests cover exact triangular and overlap volumes,
   both extrusion directions, body history, input preservation, units,
   connection failures, selective reuse, rollback, cleanup, and migration.
-  Open-sketch, centered, extend-to-next, and automatic-support ribs, plus full
+  Open-sketch, extend-to-next, and automatic-support ribs, plus full
   implicit profile-history composition through the fuse, remain future work.
   Building and editing 1,000 ribs takes 5.737 s (15 s budget), checking every
   volume, valid results, unchanged body/profile reuse, and cleanup.
@@ -310,7 +322,7 @@ every item below is defined in documents and the API, and verified in tests.
 ### Capabilities
 
 1. **Feature breadth.** Advanced ribs (open
-    sketches, centered thickness, extend-to-next, and profile-history composition);
+    sketches, extend-to-next, and profile-history composition);
     multi-station variable fillet laws and explicit spine-direction control;
     sheet metal (flanges, bends, flat patterns)
     after the rest. Expand hole catalogs to tap drills, inch sizes, and

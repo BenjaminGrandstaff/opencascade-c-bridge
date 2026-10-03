@@ -71,6 +71,7 @@ pub(crate) fn execute_feature<'session>(
             profile,
             thickness,
             direction,
+            thickness_mode,
         } => {
             return ribs::execute_rib(
                 session,
@@ -78,6 +79,7 @@ pub(crate) fn execute_feature<'session>(
                 shape(shapes, profile)?,
                 scalar(thickness, parameters, Dimension::Length)?,
                 vector(direction, parameters, Dimension::Scalar)?,
+                *thickness_mode,
             );
         }
         FeatureOperation::Cylinder {

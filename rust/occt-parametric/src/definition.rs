@@ -315,6 +315,17 @@ pub struct ThreadSpecification {
     pub handedness: ThreadHandedness,
 }
 
+/// How a rib's total thickness is placed relative to its profile plane.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RibThicknessMode {
+    /// Extrude from the profile plane along the supplied direction.
+    #[default]
+    OneSided,
+    /// Place half the total thickness on each side of the profile plane.
+    Centered,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FeatureOperation {
@@ -346,6 +357,8 @@ pub enum FeatureOperation {
         profile: String,
         thickness: ScalarExpr,
         direction: VectorExpr,
+        #[serde(default)]
+        thickness_mode: RibThicknessMode,
     },
     /// Revolves a planar face or closed planar wire about a local axis.
     Revolve {
