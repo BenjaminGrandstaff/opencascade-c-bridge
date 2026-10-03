@@ -28,6 +28,7 @@ add_library(
     src/inspection.cpp
     src/history.cpp
     src/open_profile.cpp
+    src/rib_support.cpp
     src/curvature.cpp
     src/exchange.cpp
     src/shape_validator.cpp

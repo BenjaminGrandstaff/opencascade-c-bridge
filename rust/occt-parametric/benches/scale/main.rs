@@ -116,6 +116,7 @@ fn main() -> ExitCode {
     outcomes.push(ribs::rib_features_case(false));
     outcomes.push(ribs::rib_features_case(true));
     outcomes.push(ribs::open_rib_features_case());
+    outcomes.push(ribs::next_rib_features_case());
     outcomes.push(variable_fillet::variable_fillet_features_case());
     outcomes.push(clearance_catalog_case());
     outcomes.push(threaded_hole_features_case());

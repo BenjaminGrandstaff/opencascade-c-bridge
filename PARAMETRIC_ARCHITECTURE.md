@@ -418,9 +418,10 @@ profile's unit normal (`abs(dot) >= 1 - 1e-9`). Schema 36 adds
 for older ribs. In `OneSided` mode the profile is extruded by total thickness
 along the direction; reversing direction chooses the other side. In `Centered`
 mode half the total thickness lies on each side of the profile plane;
-reversing direction gives the same geometry. There is no oblique sweep,
-inferred support or extend-to-next behavior. Schema 38 adds explicit bounded
-open-sketch closure as described below.
+reversing direction gives the same geometry. There is no oblique thickness
+sweep. Schema 38 adds explicit bounded
+open-sketch closure and schema 39 adds uniform first-contact closure, as
+described below.
 All coordinates are family-local.
 
 The temporary prism is fused into the input using the extrusion and fuse operations.
@@ -462,7 +463,7 @@ body history, input preservation, units, centered placement, mode edits,
 small and 1 km-offset models, connection failures, selective reuse,
 rollback, cleanup, schema migration, composed history, generated-face selection,
 and downstream draft edits. Schema 38 adds the bounded open-sketch mode below;
-extend-to-next remains planned.
+uniform extend-to-next is described below.
 The scale suite builds and edits 1,000 ribs in 6.017 s (15 s budget), checking
 every volume, result validity, unchanged body/profile reuse, and handle cleanup.
 An additional 1,000-centered-rib case takes 6.924 s with the same 15 s budget and checks center
@@ -499,6 +500,47 @@ one-sided/centered thickness, reversed directions, small and kilometer-sized
 models, 1 km offsets, invalid closures/chains/units, rollback, and schema defaults.
 The 1,000-open-rib build/edit case takes 8.413 s against a 15 s budget, including
 volume, centroid, generated-face, reuse, validity, and cleanup checks.
+
+### Uniform extend-to-next ribs
+
+Schema 39 adds `RibProfileMode::OpenToNext { direction, maximum_length }`;
+ABI 32 exposes `create_open_profile_face_to_next`. Direction is dimensionless
+and normalized independently of the normal thickness direction. Maximum length
+is a positive finite length bounding the search. The profile must be a valid
+straight open chain perpendicular to advance; collinear multi-edge chains are
+accepted. Earlier `Closed` and `OpenStrip` modes retain their geometry and
+serialization. Documents in schemas 1–38 migrate without changing their modes.
+
+The kernel builds a planar strip out to the maximum reach and intersects it
+with the body's volume and boundary. Exact geometry bounds in a frame at the
+source endpoint find the minimum positive advance distance. Boundary sections
+include tangencies and contacts exactly at the maximum reach, which a
+volume-only common operation can omit. No mesh or sampled rays are used.
+A cut of the translated wire against the body checks that the entire chain
+meets the first contact. Partial nearer obstacles fail rather than being
+skipped for a farther support. Profiles on or inside the body, no hit within
+reach, nonuniform profiles, and nonplanar or self-intersecting closures fail.
+Search happens in the profile plane; the existing thickness placement and
+single-solid/material-addition guards validate the final fused wall. General
+curve-dependent closure and automatic support-following remain future work.
+
+Support discovery uses a fixed number of kernel boolean/section operations,
+with cost determined by body and profile topology. Search operations use
+non-destructive mode so repeated searches retain stable input geometry and cost.
+There is no iterative
+length search or unbounded extrusion. Exact bounds and history indexing are
+linear in resulting topology; boolean/section costs remain kernel-dependent.
+Original and translated edge ancestry composes through extrusion, centered
+placement, and fuse just as for explicit strip closure. Reach/direction
+parameters participate in incremental signatures, and body changes invalidate
+support discovery. Failed edits release all temporary handles and preserve
+accepted generations. Tests cover exact geometry/history, nearer and partial
+supports, both thickness placements/signs, units, reach/body edits, rollback,
+migration, small/large/distant models, and handle cleanup.
+The 1,000-feature build/edit scale case takes 13.665 s with a 30 s budget,
+checking every exact volume, centroid, generated face, input reuse, and released
+handle. This is more expensive than explicit strip closure because it performs
+body intersection, boundary section, and full-chain coverage checks.
 
 ## Requirements preserve intent
 

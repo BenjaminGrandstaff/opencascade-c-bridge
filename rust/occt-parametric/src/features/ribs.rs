@@ -1,7 +1,16 @@
-//! Bounded, closed-profile reinforcing walls joined to one body.
+//! Bounded reinforcing walls with explicit closure or uniform first contact.
 
 use super::*;
 use crate::assembly::{dot, scale, unit};
+
+pub(super) enum ProfileClosure {
+    Closed,
+    Offset(Vec3),
+    ToNext {
+        direction: Vec3,
+        maximum_length: f64,
+    },
+}
 
 pub(super) fn execute_rib<'session>(
     session: &'session Session,
@@ -10,7 +19,7 @@ pub(super) fn execute_rib<'session>(
     thickness: f64,
     direction: Vec3,
     thickness_mode: RibThicknessMode,
-    closure_offset: Option<Vec3>,
+    closure: ProfileClosure,
 ) -> Result<Shape<'session>, ModelError> {
     if thickness <= 0.0 || !thickness.is_finite() {
         return Err(ModelError::new("rib thickness must be finite and positive"));
@@ -19,7 +28,7 @@ pub(super) fn execute_rib<'session>(
     if session.subshape_count(input, ShapeType::Solid)? != 1 || !session.is_valid(input)? {
         return Err(ModelError::new("rib input must contain one valid solid"));
     }
-    let temporary = temporary_profile_face(session, profile, closure_offset)?;
+    let temporary = temporary_profile_face(session, input, profile, &closure)?;
     let face = temporary.as_ref().unwrap_or(profile);
     if !session.face_is_planar(face)? || !session.is_valid(face)? {
         return Err(ModelError::new(
@@ -33,7 +42,7 @@ pub(super) fn execute_rib<'session>(
         ));
     }
     let wall = session.create_prism_from_face(face, scale(direction, thickness))?;
-    let wall = if closure_offset.is_some() {
+    let wall = if !matches!(closure, ProfileClosure::Closed) {
         session.compose_history(&wall, face)?
     } else {
         wall
@@ -76,13 +85,22 @@ pub(super) fn execute_rib<'session>(
 
 fn temporary_profile_face<'a>(
     session: &'a Session,
+    input: &Shape<'_>,
     profile: &Shape<'_>,
-    closure_offset: Option<Vec3>,
+    closure: &ProfileClosure,
 ) -> Result<Option<Shape<'a>>, ModelError> {
-    let temporary = if let Some(offset) = closure_offset {
-        Some(session.create_open_profile_face(profile, offset)?)
-    } else {
-        match session.shape_type(profile)? {
+    Ok(match closure {
+        ProfileClosure::Offset(offset) => Some(session.create_open_profile_face(profile, *offset)?),
+        ProfileClosure::ToNext {
+            direction,
+            maximum_length,
+        } => Some(session.create_open_profile_face_to_next(
+            profile,
+            input,
+            *direction,
+            *maximum_length,
+        )?),
+        ProfileClosure::Closed => match session.shape_type(profile)? {
             ShapeType::Wire => Some(session.create_face_from_wire(profile)?),
             ShapeType::Face => None,
             _ => {
@@ -90,7 +108,6 @@ fn temporary_profile_face<'a>(
                     "rib profile must be a planar face or closed planar wire",
                 ));
             }
-        }
-    };
-    Ok(temporary)
+        },
+    })
 }

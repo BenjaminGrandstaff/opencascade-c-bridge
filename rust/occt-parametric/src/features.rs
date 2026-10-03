@@ -82,10 +82,17 @@ pub(crate) fn execute_feature<'session>(
                 vector(direction, parameters, Dimension::Scalar)?,
                 *thickness_mode,
                 match profile_mode {
-                    RibProfileMode::Closed => None,
+                    RibProfileMode::Closed => ribs::ProfileClosure::Closed,
                     RibProfileMode::OpenStrip { offset } => {
-                        Some(vector(offset, parameters, Dimension::Length)?)
+                        ribs::ProfileClosure::Offset(vector(offset, parameters, Dimension::Length)?)
                     }
+                    RibProfileMode::OpenToNext {
+                        direction,
+                        maximum_length,
+                    } => ribs::ProfileClosure::ToNext {
+                        direction: vector(direction, parameters, Dimension::Scalar)?,
+                        maximum_length: scalar(maximum_length, parameters, Dimension::Length)?,
+                    },
                 },
             );
         }

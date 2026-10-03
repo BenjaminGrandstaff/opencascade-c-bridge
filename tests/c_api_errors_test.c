@@ -689,6 +689,31 @@ static void open_profile(occt_bridge_session_t* session) {
     EXPECT(occt_bridge_create_open_profile_face(session, wire, vec(0,3,0), &out), OK);
 }
 
+static void open_profile_to_next(occt_bridge_session_t* session) {
+    occt_bridge_shape_id_t out = OCCT_BRIDGE_INVALID_SHAPE_ID;
+    const occt_bridge_vec3_t points[] = { {0, 2, 3}, {4, 2, 3} };
+    const occt_bridge_shape_id_t wire = SHAPE(occt_bridge_create_polyline_wire(session, points, 2, 0, &out), out);
+    const occt_bridge_shape_id_t box = SHAPE(occt_bridge_create_box(session, vec(0,0,0), vec(4,4,1), &out), out);
+    EXPECT(occt_bridge_create_open_profile_face_to_next(NULL, wire, box, vec(0,0,-1), 3, &out), ARG);
+    EXPECT(occt_bridge_create_open_profile_face_to_next(session, wire, box, vec(0,0,-1), 3, NULL), ARG);
+    EXPECT(occt_bridge_create_open_profile_face_to_next(session, unknown, box, vec(0,0,-1), 3, &out), MISSING);
+    EXPECT(occt_bridge_create_open_profile_face_to_next(session, wire, unknown, vec(0,0,-1), 3, &out), MISSING);
+    EXPECT(occt_bridge_create_open_profile_face_to_next(session, box, box, vec(0,0,-1), 3, &out), GEOMETRY);
+    EXPECT(occt_bridge_create_open_profile_face_to_next(session, wire, wire, vec(0,0,-1), 3, &out), GEOMETRY);
+    EXPECT(occt_bridge_create_open_profile_face_to_next(session, wire, box, vec(0,0,0), 3, &out), ARG);
+    EXPECT(occt_bridge_create_open_profile_face_to_next(session, wire, box, vec(NAN,0,-1), 3, &out), ARG);
+    EXPECT(occt_bridge_create_open_profile_face_to_next(session, wire, box, vec(0,INFINITY,-1), 3, &out), ARG);
+    EXPECT(occt_bridge_create_open_profile_face_to_next(session, wire, box, vec(0,0,NAN), 3, &out), ARG);
+    EXPECT(occt_bridge_create_open_profile_face_to_next(session, wire, box, vec(0,0,-1), NAN, &out), ARG);
+    EXPECT(occt_bridge_create_open_profile_face_to_next(session, wire, box, vec(0,0,-1), 0, &out), ARG);
+    EXPECT(occt_bridge_create_open_profile_face_to_next(session, wire, box, vec(0,0,-1), INFINITY, &out), ARG);
+    EXPECT(occt_bridge_create_open_profile_face_to_next(session, wire, box, vec(0,0,-1), 1, &out), GEOMETRY);
+    if (out != OCCT_BRIDGE_INVALID_SHAPE_ID) {
+        ++failures;
+    }
+    EXPECT(occt_bridge_create_open_profile_face_to_next(session, wire, box, vec(0,0,-1), 2, &out), OK);
+}
+
 static void persistence(occt_bridge_session_t* session) {
     occt_bridge_shape_id_t out = OCCT_BRIDGE_INVALID_SHAPE_ID;
     const occt_bridge_shape_id_t box =
@@ -783,6 +808,7 @@ int main(void) {
     topology_relations(session);
     history(session);
     open_profile(session);
+    open_profile_to_next(session);
     persistence(session);
     occt_bridge_session_destroy(session);
 

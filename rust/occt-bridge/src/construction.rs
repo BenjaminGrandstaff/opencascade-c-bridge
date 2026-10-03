@@ -182,6 +182,29 @@ impl Session {
         })
     }
 
+    /// Close a straight open chain by advancing perpendicularly to its first
+    /// body contact, bounded by maximum_length. The whole translated chain
+    /// must meet that contact. Inputs remain unchanged; ancestry is retained.
+    pub fn create_open_profile_face_to_next<'a>(
+        &'a self,
+        wire: &Shape<'_>,
+        body: &Shape<'_>,
+        direction: Vec3,
+        maximum_length: f64,
+    ) -> Result<Shape<'a>, BridgeError> {
+        self.validate_shape(body)?;
+        self.derived_shape(wire, |out| unsafe {
+            occt_bridge_create_open_profile_face_to_next(
+                self.raw.as_ptr(),
+                wire.id,
+                body.id,
+                direction.into(),
+                maximum_length,
+                out,
+            )
+        })
+    }
+
     pub fn create_face_from_wire<'a>(&'a self, wire: &Shape<'_>) -> Result<Shape<'a>, BridgeError> {
         self.derived_shape(wire, |out| unsafe {
             occt_bridge_create_face_from_wire(self.raw.as_ptr(), wire.id, out)

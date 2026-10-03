@@ -1,12 +1,23 @@
 use super::*;
 
 pub(super) fn rib_features_case(centered: bool) -> Outcome {
-    rib_case(centered, false)
+    rib_case(centered, RibCase::Closed)
 }
 pub(super) fn open_rib_features_case() -> Outcome {
-    rib_case(true, true)
+    rib_case(true, RibCase::Open)
 }
-fn rib_case(centered: bool, open: bool) -> Outcome {
+pub(super) fn next_rib_features_case() -> Outcome {
+    rib_case(true, RibCase::ToNext)
+}
+#[derive(Clone, Copy)]
+enum RibCase {
+    Closed,
+    Open,
+    ToNext,
+}
+fn rib_case(centered: bool, mode: RibCase) -> Outcome {
+    let open = !matches!(mode, RibCase::Closed);
+    let next = matches!(mode, RibCase::ToNext);
     const COUNT: usize = 1000;
     let mut definition = block();
     definition.datums.clear();
@@ -34,7 +45,7 @@ fn rib_case(centered: bool, open: bool) -> Outcome {
             sketch: Box::new(SketchDefinition {
                 id: "brace".into(),
                 datum_plane: None,
-                origin: point(2.0, 4.0, 1.0),
+                origin: point(2.0, 4.0, if next { 7.0 } else { 1.0 }),
                 x_axis: VectorExpr::Literal(VectorQuantity::scalars(1.0, 0.0, 0.0)),
                 y_axis: VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, 1.0)),
                 points: vec![
@@ -97,7 +108,12 @@ fn rib_case(centered: bool, open: bool) -> Outcome {
                 profile: "profile".into(),
                 thickness: ScalarExpr::Parameter("thickness".into()),
                 direction: VectorExpr::Literal(VectorQuantity::scalars(0.0, 1.0, 0.0)),
-                profile_mode: if open {
+                profile_mode: if next {
+                    occt_parametric::RibProfileMode::OpenToNext {
+                        direction: VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, -1.0)),
+                        maximum_length: value(10.0),
+                    }
+                } else if open {
                     occt_parametric::RibProfileMode::OpenStrip {
                         offset: point(0.0, 0.0, 6.0),
                     }
@@ -113,14 +129,16 @@ fn rib_case(centered: bool, open: bool) -> Outcome {
         });
     }
     timed(
-        if open {
+        if next {
+            "1000 extend-to-next rib features: build and edit".into()
+        } else if open {
             "1000 open-sketch rib features: build and edit".into()
         } else if centered {
             "1000 centered rib features: build and edit".into()
         } else {
             "1000 rib features: build and edit".into()
         },
-        ms(15_000),
+        ms(if next { 30_000 } else { 15_000 }),
         Expectation::Required,
         || {
             let session = Session::new()?;

@@ -8,19 +8,19 @@ tracks status and order.
 
 | Layer | Version | State |
 |---|---|---|
-| C ABI (`src/`, `include/`) | ABI 31 | Stable; exact version match required |
+| C ABI (`src/`, `include/`) | ABI 32 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 38 | Active development |
+| `occt-parametric` (engineering layer) | Schema 39 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 3/3, bridge 61 (+1 doc test), recipes 3, parametric 151 | `ctest`, `cargo test` (see README) |
+| Tests | C 3/3, bridge 63 (+1 doc test), recipes 3, parametric 157 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 90.3% line coverage (2026-10-03); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
-| Coverage | 91.50% lines overall, test code excluded; C++ 93.99% lines, 87.59% branches, 100% functions; Rust 89.93% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 41 passing within budget | `tools/bench/run.sh` |
+| Coverage | 91.54% lines overall, test code excluded; C++ 93.98% lines, 87.68% branches, 100% functions; Rust 89.98% lines | `tools/coverage/run.sh` |
+| Scale benchmarks | 42 passing within budget | `tools/bench/run.sh` |
 
 ## Done
 
@@ -114,6 +114,21 @@ tracks status and order.
 
 ### Parametric layer
 
+- Uniform extend-to-next ribs (schema 39; ABI 32):
+  `RibProfileMode::OpenToNext { direction, maximum_length }` advances a straight
+  open chain perpendicularly to its first contact with the input body. Exact
+  common/section geometry includes tangencies and the exact reach boundary;
+  the entire translated chain must meet the first contact. Partial nearer
+  obstacles, nonuniform profiles, on/inside profiles, and missing support
+  fail. Thickness placement, composed profile/body history, selective rebuilds,
+  and accepted-generation rollback are preserved. Six parametric and two
+  bridge tests plus C error conformance cover geometry/history, bounded reach,
+  nearer/partial supports, units, body edits, migration, scales, and cleanup.
+  A 1,000-rib build/edit benchmark passes in 13.665 s (30 s budget), checking
+  exact volumes, centroids, generated-face history, input reuse, and cleanup.
+  Support searches use non-destructive kernel operations to avoid accumulating
+  geometry changes on reusable inputs. General curve-dependent closure and
+  support-following remain future work.
 - Bounded open-sketch strip ribs (schema 38): `SketchOpenWire` emits ordered
   open line/arc chains. `RibProfileMode::OpenStrip { offset }` defines an
   explicit translated closure before applying one-sided or centered thickness
@@ -123,7 +138,8 @@ tracks status and order.
   directions, units, invalid chains/closures, rollback, migration, and cleanup.
   The new 1,000-open-rib build/edit benchmark passes in 8.413 s (15 s budget),
   checking every volume, centroid, generated face, reuse, and released handle.
-  Automatic support discovery and extend-to-next remain future work.
+  Uniform extend-to-next landed in schema 39; general support-following
+  remains future work.
 - Rib profile-history composition and generated-face selectors (schema 37):
   original profile edges trace through extrusion, optional centered placement,
   and fusion while body history is preserved. `FaceSelector::GeneratedFromEdges`
@@ -164,7 +180,8 @@ tracks status and order.
   accepted generations. Four tests cover exact triangular and overlap volumes,
   both extrusion directions, body history, input preservation, units,
   connection failures, selective reuse, rollback, cleanup, and migration.
-  Extend-to-next and automatic-support ribs remain future work; bounded
+  Uniform extend-to-next landed in schema 39; general support-following ribs
+  remain future work. Bounded
   open-sketch profiles landed in schema 38, and
   profile-history composition landed
   in schema 37.
@@ -363,7 +380,7 @@ every item below is defined in documents and the API, and verified in tests.
 
 ### Capabilities
 
-1. **Feature breadth.** Advanced ribs (extend-to-next and automatic supports);
+1. **Feature breadth.** Advanced ribs (general support-following and nonuniform closure);
     multi-station variable fillet laws and explicit spine-direction control;
     sheet metal (flanges, bends, flat patterns)
     after the rest. Expand hole catalogs to tap drills, inch sizes, and

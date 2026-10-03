@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define OCCT_BRIDGE_ABI_VERSION 31u
+#define OCCT_BRIDGE_ABI_VERSION 32u
 #define OCCT_BRIDGE_INVALID_SHAPE_ID UINT64_C(0)
 
 #if defined(_WIN32) && defined(OCCT_BRIDGE_BUILD_SHARED)
@@ -330,6 +330,20 @@ OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_create_open_profile_face(
     occt_bridge_session_t* session,
     occt_bridge_shape_id_t wire,
     occt_bridge_vec3_t offset,
+    occt_bridge_shape_id_t* out_shape
+);
+
+/* Extends a straight open chain perpendicular to direction to its first body
+ * contact within maximum_length. Direction is normalized. The entire translated
+ * chain must meet the first contact; partial contacts and profiles already on
+ * or inside the body fail. The body must contain one valid solid. Returns a
+ * simple planar closure face with profile ancestry; leaves inputs unchanged. */
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_create_open_profile_face_to_next(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t wire,
+    occt_bridge_shape_id_t body,
+    occt_bridge_vec3_t direction,
+    double maximum_length,
     occt_bridge_shape_id_t* out_shape
 );
 

@@ -16,6 +16,8 @@
 #include <TopTools_ListOfShape.hxx>
 #include <TopoDS_Shape.hxx>
 #include <TopoDS_Shell.hxx>
+#include <TopoDS_Face.hxx>
+#include <gp_Vec.hxx>
 
 #include <cstdint>
 #include <exception>
@@ -69,6 +71,14 @@ struct occt_bridge_session {
 };
 
 namespace occt_bridge_internal {
+
+// Builds translated closure without storing a handle; callers hold the lock.
+occt_bridge_status_t build_open_profile_face(
+    occt_bridge_session_t* session,
+    const TopoDS_Shape& value,
+    const gp_Vec& translation,
+    TopoDS_Face& face,
+    std::vector<occt_bridge_history_entry>& entries);
 
 bool finite(double value);
 

@@ -970,3 +970,267 @@ fn open_arc_sketch_profiles_generate_valid_reinforcing_solids() {
     drop(generated);
     assert_eq!(session.shape_count().unwrap(), 0);
 }
+
+fn next_rib_family(mode: RibThicknessMode) -> FamilyDefinition {
+    let mut definition = open_rib_family(mode);
+    definition.parameters.push(length_parameter("reach", 10.0));
+    if let FeatureOperation::SketchOpenWire { sketch } = &mut definition.features[2].operation {
+        sketch.origin = point(2.0, 4.0, 7.0);
+    }
+    if let FeatureOperation::Rib { profile_mode, .. } = &mut definition.features[0].operation {
+        *profile_mode = RibProfileMode::OpenToNext {
+            direction: VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, -3.0)),
+            maximum_length: ScalarExpr::Parameter("reach".into()),
+        };
+    }
+    definition
+}
+
+#[test]
+fn extend_to_next_ribs_preserve_exact_geometry_history_and_thickness_placement() {
+    let session = Session::new().unwrap();
+    for mode in [RibThicknessMode::OneSided, RibThicknessMode::Centered] {
+        for sign in [-1.0, 1.0] {
+            let mut definition = next_rib_family(mode);
+            if let FeatureOperation::Rib {
+                direction: axis, ..
+            } = &mut definition.features[0].operation
+            {
+                *axis = direction(sign);
+            }
+            let generated = part(&definition).regenerate(&session).unwrap();
+            let rib = generated.shape("rib").unwrap();
+            assert!((session.volume(rib).unwrap() - 172.0).abs() < 1e-8);
+            let side = resolve_face_selector(
+                &session,
+                rib,
+                &profile_side_selector(),
+                &HashMap::new(),
+                &generated.shapes,
+            )
+            .unwrap();
+            assert_eq!(side.len(), 1);
+            assert!((session.surface_area(&side[0]).unwrap() - 12.0).abs() < 1e-8);
+            let center = session.center_of_mass(&side[0]).unwrap();
+            assert!((center.z - 7.0).abs() < 1e-8);
+            let y = 4.0
+                + if mode == RibThicknessMode::Centered {
+                    0.0
+                } else {
+                    sign
+                };
+            assert!((center.y - y).abs() < 1e-8);
+            assert!(
+                (session.volume(generated.shape("body").unwrap()).unwrap() - 100.0).abs() < 1e-8
+            );
+            drop((side, generated));
+            assert_eq!(session.shape_count().unwrap(), 0);
+        }
+    }
+}
+
+#[test]
+fn extend_to_next_reach_edits_rebuild_only_ribs_and_preserve_accepted_results() {
+    let definition = next_rib_family(RibThicknessMode::Centered);
+    let session = Session::new().unwrap();
+    let mut instance = part(&definition);
+    let first = instance.regenerate(&session).unwrap();
+    instance.overrides.insert(
+        "reach".into(),
+        ParameterValue::Scalar(Quantity::length(6.0, LengthUnit::Millimeter)),
+    );
+    let edited = instance.regenerate_incremental(&session, &first).unwrap();
+    assert_eq!(edited.regeneration.rebuilt, ["rib", "placed"]);
+    assert_eq!(edited.regeneration.reused, ["body", "profile"]);
+    assert!((session.volume(edited.shape("rib").unwrap()).unwrap() - 172.0).abs() < 1e-8);
+    let handles = session.shape_count().unwrap();
+    instance.overrides.insert(
+        "reach".into(),
+        ParameterValue::Scalar(Quantity::length(5.0, LengthUnit::Millimeter)),
+    );
+    let error = instance
+        .regenerate_incremental(&session, &edited)
+        .err()
+        .unwrap();
+    assert!(error.message.contains("no rib support"), "{error:?}");
+    assert_eq!(session.shape_count().unwrap(), handles);
+    assert!(session.is_valid(edited.shape("rib").unwrap()).unwrap());
+    drop((first, edited));
+    assert_eq!(session.shape_count().unwrap(), 0);
+}
+
+#[test]
+fn extend_to_next_body_edits_recompute_support_without_rebuilding_profile() {
+    let mut definition = next_rib_family(RibThicknessMode::Centered);
+    definition
+        .parameters
+        .push(length_parameter("base_height", 1.0));
+    if let FeatureOperation::Box { size, .. } = &mut definition.features[1].operation {
+        *size = VectorExpr::Components {
+            x: length(10.0),
+            y: length(10.0),
+            z: ScalarExpr::Parameter("base_height".into()),
+        };
+    }
+    let session = Session::new().unwrap();
+    let mut instance = part(&definition);
+    let first = instance.regenerate(&session).unwrap();
+    instance.overrides.insert(
+        "base_height".into(),
+        ParameterValue::Scalar(Quantity::length(3.0, LengthUnit::Millimeter)),
+    );
+    let edited = instance.regenerate_incremental(&session, &first).unwrap();
+    assert_eq!(edited.regeneration.rebuilt, ["body", "rib", "placed"]);
+    assert_eq!(edited.regeneration.reused, ["profile"]);
+    assert!((session.volume(edited.shape("rib").unwrap()).unwrap() - 348.0).abs() < 1e-8);
+    let handles = session.shape_count().unwrap();
+    instance.overrides.insert(
+        "base_height".into(),
+        ParameterValue::Scalar(Quantity::length(8.0, LengthUnit::Millimeter)),
+    );
+    assert!(instance.regenerate_incremental(&session, &edited).is_err());
+    assert_eq!(session.shape_count().unwrap(), handles);
+    drop((first, edited));
+    assert_eq!(session.shape_count().unwrap(), 0);
+}
+
+#[test]
+fn extend_to_next_modes_round_trip_and_validate_units_and_unsupported_geometry() {
+    let definition = next_rib_family(RibThicknessMode::Centered);
+    let document = ModelDocument::from_graph(&InstanceGraph::new(&definition));
+    let loaded = ModelDocument::from_json(&document.to_json_pretty().unwrap()).unwrap();
+    assert_eq!(loaded.family, definition);
+    assert_eq!(loaded.schema_version, CURRENT_SCHEMA_VERSION);
+    let session = Session::new().unwrap();
+    let accepted = part(&loaded.family).regenerate(&session).unwrap();
+    let handles = session.shape_count().unwrap();
+    for case in 0..5 {
+        let mut invalid = definition.clone();
+        if let FeatureOperation::Rib { profile_mode, .. } = &mut invalid.features[0].operation {
+            let (advance, reach) = match case {
+                0 => (point(0.0, 0.0, -1.0), length(10.0)),
+                1 => (
+                    VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, -1.0)),
+                    ScalarExpr::Literal(Quantity::scalar(10.0)),
+                ),
+                2 => (
+                    VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, 1.0)),
+                    length(10.0),
+                ),
+                3 => (
+                    VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, 0.0)),
+                    length(10.0),
+                ),
+                _ => (
+                    VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, -1.0)),
+                    length(-1.0),
+                ),
+            };
+            *profile_mode = RibProfileMode::OpenToNext {
+                direction: advance,
+                maximum_length: reach,
+            };
+        }
+        assert!(part(&invalid).regenerate(&session).is_err());
+        assert_eq!(session.shape_count().unwrap(), handles);
+    }
+    // A rising profile cannot be closed uniformly at its earliest contact.
+    let mut invalid = definition.clone();
+    if let FeatureOperation::SketchOpenWire { sketch } = &mut invalid.features[2].operation {
+        sketch.points[1].y = length(1.0);
+    }
+    assert!(part(&invalid).regenerate(&session).is_err());
+    assert_eq!(session.shape_count().unwrap(), handles);
+    // Earlier bounded profiles retain their serialized mode and geometry.
+    let bounded = open_rib_family(RibThicknessMode::Centered);
+    let older = ModelDocument::from_graph(&InstanceGraph::new(&bounded));
+    let mut json = serde_json::to_value(&older).unwrap();
+    json["schema_version"] = serde_json::json!(38);
+    let migrated = ModelDocument::from_json(&json.to_string()).unwrap();
+    assert_eq!(migrated.family, older.family);
+    let generated = part(&migrated.family).regenerate(&session).unwrap();
+    assert!((session.volume(generated.shape("rib").unwrap()).unwrap() - 172.0).abs() < 1e-8);
+    drop((generated, accepted));
+    assert_eq!(session.shape_count().unwrap(), 0);
+}
+
+#[test]
+fn extend_to_next_ribs_work_at_small_large_and_distant_scales() {
+    let session = Session::new().unwrap();
+    for (scale, origin) in [(0.01, 0.0), (100_000.0, 0.0), (1.0, 1_000_000.0)] {
+        let mut definition = next_rib_family(RibThicknessMode::Centered);
+        definition.parameters[0].minimum = None;
+        definition.parameters[0].maximum = None;
+        definition.parameters[2].minimum = None;
+        definition.parameters[2].maximum = None;
+        definition.parameters[0].default =
+            ParameterValue::Scalar(Quantity::length(2.0 * scale, LengthUnit::Millimeter));
+        definition.parameters[2].default =
+            ParameterValue::Scalar(Quantity::length(10.0 * scale, LengthUnit::Millimeter));
+        if let FeatureOperation::Box { origin: base, size } = &mut definition.features[1].operation
+        {
+            *base = point(origin, origin, origin);
+            *size = point(10.0 * scale, 10.0 * scale, scale);
+        }
+        if let FeatureOperation::SketchOpenWire { sketch } = &mut definition.features[2].operation {
+            sketch.origin = point(
+                origin + 2.0 * scale,
+                origin + 4.0 * scale,
+                origin + 7.0 * scale,
+            );
+            sketch.points[1].x = length(6.0 * scale);
+        }
+        let generated = part(&definition).regenerate(&session).unwrap();
+        let rib = generated.shape("rib").unwrap();
+        let expected = 172.0 * scale.powi(3);
+        assert!((session.volume(rib).unwrap() - expected).abs() < expected * 1e-8);
+        let center = session.center_of_mass(rib).unwrap();
+        assert!((center.z - (origin + (50.0 + 72.0 * 4.0) / 172.0 * scale)).abs() < scale * 1e-7);
+        drop(generated);
+        assert_eq!(session.shape_count().unwrap(), 0);
+    }
+}
+
+#[test]
+fn extend_to_next_advance_parameter_edits_participate_in_signatures() {
+    let mut definition = next_rib_family(RibThicknessMode::Centered);
+    definition.parameters.push(ParameterDefinition {
+        id: "advance".into(),
+        parameter_type: ParameterType::Scalar(Dimension::Scalar),
+        default: ParameterValue::Scalar(Quantity::scalar(-1.0)),
+        minimum: None,
+        maximum: None,
+    });
+    if let FeatureOperation::Rib { profile_mode, .. } = &mut definition.features[0].operation {
+        *profile_mode = RibProfileMode::OpenToNext {
+            direction: VectorExpr::Components {
+                x: ScalarExpr::Literal(Quantity::scalar(0.0)),
+                y: ScalarExpr::Literal(Quantity::scalar(0.0)),
+                z: ScalarExpr::Parameter("advance".into()),
+            },
+            maximum_length: ScalarExpr::Parameter("reach".into()),
+        };
+    }
+    let session = Session::new().unwrap();
+    let mut instance = part(&definition);
+    let first = instance.regenerate(&session).unwrap();
+    instance.overrides.insert(
+        "advance".into(),
+        ParameterValue::Scalar(Quantity::scalar(-2.0)),
+    );
+    let edited = instance.regenerate_incremental(&session, &first).unwrap();
+    assert_eq!(edited.regeneration.rebuilt, ["rib", "placed"]);
+    assert_eq!(edited.regeneration.reused, ["body", "profile"]);
+    assert!((session.volume(edited.shape("rib").unwrap()).unwrap() - 172.0).abs() < 1e-8);
+    let handles = session.shape_count().unwrap();
+    for advance in [0.0, 1.0] {
+        instance.overrides.insert(
+            "advance".into(),
+            ParameterValue::Scalar(Quantity::scalar(advance)),
+        );
+        assert!(instance.regenerate_incremental(&session, &edited).is_err());
+        assert_eq!(session.shape_count().unwrap(), handles);
+    }
+    drop((first, edited));
+    assert_eq!(session.shape_count().unwrap(), 0);
+}

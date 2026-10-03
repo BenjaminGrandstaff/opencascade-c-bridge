@@ -3,7 +3,7 @@
 A small, stable C ABI over Open Cascade (OCCT), designed to be wrapped safely
 from Rust and other languages. Open Cascade C++ objects never cross the ABI.
 
-The current C ABI version is **31**.
+The current C ABI version is **32**.
 
 ## Current API
 
@@ -110,6 +110,8 @@ is the kernel-facing execution layer for an initial subset of that model.
     diagnostics, options, and handle removal.
   - [`construction.cpp`](src/construction.cpp): primitives, wires, faces,
     prisms, revolutions, tubes, lofts, and compounds.
+  - [`open_profile.cpp`](src/open_profile.cpp): translated open-chain closure.
+  - [`rib_support.cpp`](src/rib_support.cpp): bounded uniform first-contact closure.
   - [`recipes.cpp`](src/recipes.cpp): the faceted stone and wall torch.
   - [`solids.cpp`](src/solids.cpp): sewing and solid construction.
   - [`operations.cpp`](src/operations.cpp): booleans, fillets, chamfers,
@@ -265,7 +267,15 @@ regeneration audit records. Schema 38 adds `SketchOpenWire` and
 copy and straight endpoint bridges. The length-valued offset must define a
 simple planar region; the rib's thickness direction must be normal to that
 region. ABI 31 exposes `Session::create_open_profile_face` for this construction.
-Automatic support discovery and extend-to-next remain planned.
+Schema 39 adds `OpenToNext { direction, maximum_length }` and ABI 32 adds
+`Session::create_open_profile_face_to_next`. A straight open chain advances
+perpendicularly along a dimensionless direction, stopping at its first body
+contact within a positive length-valued reach. The whole translated chain must
+meet that first contact; partial supports, profiles already touching/inside the
+body, and unsupported or nonuniform profiles fail. Contact is found from exact
+kernel intersections, including tangencies and the exact reach boundary.
+Support search uses the profile plane before applying normal thickness.
+More general support-following ribs remain planned.
 Schema 36 adds `Rib.thickness_mode`, using
 `RibThicknessMode::{OneSided, Centered}`. Existing documents default to
 `OneSided`; centered ribs place half the total positive thickness on each
@@ -304,7 +314,8 @@ solid; disconnected, edge-only, and fully contained walls fail. Body/profile
 references and parameter edits participate in incremental regeneration.
 Body and composed profile history are retained and temporary faces/walls are
 released. Schema 38 adds the bounded open-sketch mode described above;
-extend-to-next and automatic-support ribs remain planned. The original schema
+uniform extend-to-next landed in schema 39; general support-following ribs
+remain planned. The original schema
 34 feature did not change ABI 28; older features remain unchanged.
 Schema 33 adds `Draft` operations with semantic
 face selectors, a length-valued neutral-plane origin, dimensionless nonzero

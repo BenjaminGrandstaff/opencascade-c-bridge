@@ -439,8 +439,16 @@ pub(crate) fn collect_operation_parameters<'a>(
         } => {
             collect_scalar_parameters(thickness, names);
             collect_vector_parameters(direction, names);
-            if let RibProfileMode::OpenStrip { offset } = profile_mode {
-                collect_vector_parameters(offset, names);
+            match profile_mode {
+                RibProfileMode::Closed => {}
+                RibProfileMode::OpenStrip { offset } => collect_vector_parameters(offset, names),
+                RibProfileMode::OpenToNext {
+                    direction,
+                    maximum_length,
+                } => {
+                    collect_vector_parameters(direction, names);
+                    collect_scalar_parameters(maximum_length, names);
+                }
             }
         }
         FeatureOperation::Hole {

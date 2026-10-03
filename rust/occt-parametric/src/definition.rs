@@ -348,6 +348,13 @@ pub enum RibProfileMode {
     /// Close an open chain with its translated reversed copy and straight end
     /// bridges. The length-valued offset must produce a simple planar boundary.
     OpenStrip { offset: VectorExpr },
+    /// Advance a straight open chain perpendicularly to its first body contact.
+    /// Direction is dimensionless; maximum_length is a positive bounded reach.
+    /// The whole translated chain must meet the first contact.
+    OpenToNext {
+        direction: VectorExpr,
+        maximum_length: ScalarExpr,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
