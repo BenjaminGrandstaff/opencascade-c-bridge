@@ -2,7 +2,7 @@
 
 use super::*;
 
-pub(crate) const ABI_VERSION: u32 = 29;
+pub(crate) const ABI_VERSION: u32 = 30;
 
 #[repr(C)]
 pub(crate) struct RawVec3 {
@@ -438,6 +438,12 @@ unsafe extern "C" {
         first_face: RawShapeId,
         second_face: RawShapeId,
         out: *mut c_int,
+    ) -> RawStatus;
+    pub(crate) fn occt_bridge_shape_compose_history(
+        session: *mut c_void,
+        result: RawShapeId,
+        intermediate: RawShapeId,
+        out_shape: *mut RawShapeId,
     ) -> RawStatus;
     pub(crate) fn occt_bridge_shape_history_count(
         session: *mut c_void,

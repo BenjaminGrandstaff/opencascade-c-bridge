@@ -523,6 +523,34 @@ pub(crate) fn select_faces_tangent_to_faces<'session>(
     Ok(selected)
 }
 
+/// O(edges * history records + targets + faces²) time: set deduplication uses
+/// pairwise identity queries on selected topology, without scanning model graphs.
+/// Space/handles are O(edges + faces); intermediates drop on success and failure.
+pub(crate) fn generated_faces_from_edges<'session>(
+    session: &'session Session,
+    result: &Shape<'session>,
+    sources: Vec<Shape<'session>>,
+    source_feature: &str,
+) -> Result<Vec<Shape<'session>>, ModelError> {
+    let mut faces = Vec::new();
+    for source in sources {
+        let before = faces.len();
+        let count = session.history_count(result, &source, HistoryRelation::Generated)?;
+        for index in 0..count {
+            let target = session.history(result, &source, HistoryRelation::Generated, index)?;
+            if session.shape_type(&target)? == ShapeType::Face {
+                faces.push(target);
+            }
+        }
+        if faces.len() == before {
+            return Err(ModelError::new(format!(
+                "edge history selector from '{source_feature}' resolved to no faces"
+            )));
+        }
+    }
+    compose_shape_sets(session, vec![faces], ShapeSetOperation::Union)
+}
+
 pub(crate) fn resolve_history<'session>(
     session: &'session Session,
     result: &Shape<'session>,

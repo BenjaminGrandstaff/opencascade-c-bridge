@@ -633,6 +633,23 @@ static void history(occt_bridge_session_t* session) {
     const occt_bridge_shape_id_t result = SHAPE(occt_bridge_cut(session, box, tool, &out), out);
     const occt_bridge_history_relation_t modified = OCCT_BRIDGE_HISTORY_MODIFIED;
 
+    EXPECT(occt_bridge_shape_compose_history(NULL, result, box, &out), ARG);
+    EXPECT(occt_bridge_shape_compose_history(session, result, box, NULL), ARG);
+    EXPECT(occt_bridge_shape_compose_history(session, unknown, box, &out), MISSING);
+    EXPECT(occt_bridge_shape_compose_history(session, result, unknown, &out), MISSING);
+    EXPECT(occt_bridge_shape_compose_history(session, box, tool, &out), ARG);
+    EXPECT(occt_bridge_shape_compose_history(session, result, box, &out), ARG);
+    EXPECT(occt_bridge_shape_compose_history(session, result, result, &out), ARG);
+    {
+        const occt_bridge_shape_id_t moved =
+            SHAPE(occt_bridge_translate(session, outsider, vec(1, 0, 0), &out), out);
+        EXPECT(occt_bridge_shape_compose_history(session, result, moved, &out), ARG);
+        if (out != OCCT_BRIDGE_INVALID_SHAPE_ID) {
+            (void)fprintf(stderr, "history composition must clear failed output\n");
+            ++failures;
+        }
+    }
+
     EXPECT(occt_bridge_shape_history_count(session, result, box, modified, NULL), ARG);
     EXPECT(occt_bridge_shape_history_count(session, unknown, box, modified, &count), MISSING);
     EXPECT(occt_bridge_shape_history_count(session, result, unknown, modified, &count), MISSING);

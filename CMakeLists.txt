@@ -26,6 +26,7 @@ add_library(
     src/solids.cpp
     src/operations.cpp
     src/inspection.cpp
+    src/history.cpp
     src/curvature.cpp
     src/exchange.cpp
     src/shape_validator.cpp

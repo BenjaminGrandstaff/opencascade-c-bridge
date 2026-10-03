@@ -259,6 +259,14 @@ pub(crate) fn resolve_face_selector<'session>(
                 "faces",
             )
         }
+        FaceSelector::GeneratedFromEdges {
+            source_feature,
+            source,
+        } => {
+            let source_result = shape(shapes, source_feature)?;
+            let edges = resolve_edge_selector(session, source_result, source, parameters, shapes)?;
+            generated_faces_from_edges(session, result, edges, source_feature)
+        }
     }
 }
 

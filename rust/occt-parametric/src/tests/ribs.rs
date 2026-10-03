@@ -519,3 +519,217 @@ fn centered_rib_mode_round_trips_and_legacy_ribs_default_to_one_sided() {
     assert!(ModelDocument::from_json(&unsupported.to_string()).is_err());
     assert_eq!(session.shape_count().unwrap(), 0);
 }
+
+fn profile_side_selector() -> FaceSelector {
+    FaceSelector::GeneratedFromEdges {
+        source_feature: "profile".into(),
+        source: Box::new(EdgeSelector::Longest {
+            allow_ties: false,
+            relative_tolerance: ScalarExpr::Literal(Quantity::scalar(1e-9)),
+        }),
+    }
+}
+
+fn assert_profile_side_history(wire: bool, mode: RibThicknessMode, sign: f64) {
+    let session = Session::new().unwrap();
+    let mut definition = rib_family(wire);
+    if let FeatureOperation::Rib {
+        thickness_mode,
+        direction: axis,
+        ..
+    } = &mut definition.features[0].operation
+    {
+        *thickness_mode = mode;
+        *axis = direction(sign);
+    }
+    let generated = part(&definition).regenerate(&session).unwrap();
+    let faces = resolve_face_selector(
+        &session,
+        generated.shape("rib").unwrap(),
+        &profile_side_selector(),
+        &HashMap::new(),
+        &generated.shapes,
+    )
+    .unwrap();
+    assert_eq!(faces.len(), 1);
+    let face = &faces[0];
+    assert!((session.surface_area(face).unwrap() - 2.0 * 72.0_f64.sqrt()).abs() < 1e-8);
+    let expected_y = if mode == RibThicknessMode::Centered {
+        4.0
+    } else {
+        4.0 + sign.signum()
+    };
+    assert!((session.center_of_mass(face).unwrap().y - expected_y).abs() < 1e-8);
+    let rib = generated.shape("rib").unwrap();
+    assert!(
+        (0..session.subshape_count(rib, ShapeType::Face).unwrap()).any(|index| {
+            session
+                .is_same(
+                    face,
+                    &session.subshape(rib, ShapeType::Face, index).unwrap(),
+                )
+                .unwrap()
+        })
+    );
+    drop((faces, generated));
+    assert_eq!(session.shape_count().unwrap(), 0);
+}
+
+#[test]
+fn rib_profile_edges_generate_selectable_faces_in_each_thickness_mode_and_direction() {
+    use RibThicknessMode::{Centered, OneSided};
+    for (wire, mode, sign) in [
+        (false, OneSided, 3.0),
+        (true, OneSided, 3.0),
+        (false, OneSided, -3.0),
+        (true, OneSided, -3.0),
+        (false, Centered, 3.0),
+        (true, Centered, 3.0),
+        (false, Centered, -3.0),
+        (true, Centered, -3.0),
+    ] {
+        assert_profile_side_history(wire, mode, sign);
+    }
+}
+
+fn rib_with_history_draft() -> FamilyDefinition {
+    let mut definition = rib_family(true);
+    if let FeatureOperation::Rib { thickness_mode, .. } = &mut definition.features[0].operation {
+        *thickness_mode = RibThicknessMode::Centered;
+    }
+    definition.features.insert(
+        0,
+        FeatureDefinition {
+            id: "drafted".into(),
+            operation: FeatureOperation::Draft {
+                input: "rib".into(),
+                faces: vec![profile_side_selector()],
+                neutral_origin: point(0.0, 0.0, 1.0),
+                neutral_normal: VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, 1.0)),
+                pull_direction: VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, 1.0)),
+                angle_radians: ScalarExpr::Literal(Quantity::scalar(0.02)),
+            },
+        },
+    );
+    definition
+}
+
+#[test]
+fn profile_history_drives_downstream_draft_round_trips_and_incremental_edits() {
+    let definition = rib_with_history_draft();
+    let mut graph = InstanceGraph::new(&definition);
+    graph.add_base("part", HashMap::new(), "test").unwrap();
+    let document = ModelDocument::from_graph(&graph);
+    let loaded = ModelDocument::from_json(&document.to_json_pretty().unwrap()).unwrap();
+    assert_eq!(loaded, document);
+    assert_eq!(loaded.schema_version, CURRENT_SCHEMA_VERSION);
+    let session = Session::new().unwrap();
+    let mut instance = part(&loaded.family);
+    let first = instance.regenerate(&session).unwrap();
+    assert!(session.is_valid(first.shape("drafted").unwrap()).unwrap());
+    assert!((session.volume(first.shape("drafted").unwrap()).unwrap() - 136.0).abs() > 1e-4);
+    instance.overrides.insert(
+        "thickness".into(),
+        ParameterValue::Scalar(Quantity::length(3.0, LengthUnit::Millimeter)),
+    );
+    let edited = instance.regenerate_incremental(&session, &first).unwrap();
+    assert_eq!(edited.regeneration.reused, ["body", "profile"]);
+    assert!(edited.regeneration.rebuilt.contains(&"drafted".into()));
+    let faces = resolve_face_selector(
+        &session,
+        edited.shape("rib").unwrap(),
+        &profile_side_selector(),
+        &HashMap::new(),
+        &edited.shapes,
+    )
+    .unwrap();
+    assert!((session.surface_area(&faces[0]).unwrap() - 3.0 * 72.0_f64.sqrt()).abs() < 1e-8);
+    drop((faces, first, edited));
+    assert_eq!(session.shape_count().unwrap(), 0);
+}
+
+#[test]
+fn profile_history_selector_tracks_parameters_and_preserves_accepted_results_on_failure() {
+    let mut definition = rib_with_history_draft();
+    definition.parameters.push(ParameterDefinition {
+        id: "edge_tolerance".into(),
+        parameter_type: ParameterType::Scalar(Dimension::Scalar),
+        default: ParameterValue::Scalar(Quantity::scalar(1e-9)),
+        minimum: None,
+        maximum: None,
+    });
+    if let FeatureOperation::Draft { faces, .. } = &mut definition.features[0].operation {
+        faces[0] = FaceSelector::GeneratedFromEdges {
+            source_feature: "profile".into(),
+            source: Box::new(EdgeSelector::Longest {
+                allow_ties: false,
+                relative_tolerance: ScalarExpr::Parameter("edge_tolerance".into()),
+            }),
+        };
+    }
+    let session = Session::new().unwrap();
+    let mut instance = part(&definition);
+    let first = instance.regenerate(&session).unwrap();
+    let handles = session.shape_count().unwrap();
+    instance.overrides.insert(
+        "edge_tolerance".into(),
+        ParameterValue::Scalar(Quantity::scalar(1e-8)),
+    );
+    let edited = instance.regenerate_incremental(&session, &first).unwrap();
+    assert_eq!(edited.regeneration.rebuilt, ["drafted"]);
+    assert_eq!(edited.regeneration.reused.len(), 4);
+    drop(edited);
+    assert_eq!(session.shape_count().unwrap(), handles);
+    instance.overrides.insert(
+        "edge_tolerance".into(),
+        ParameterValue::Scalar(Quantity::scalar(1.0)),
+    );
+    assert!(instance.regenerate_incremental(&session, &first).is_err());
+    assert_eq!(session.shape_count().unwrap(), handles);
+    assert!(session.is_valid(first.shape("drafted").unwrap()).unwrap());
+    drop(first);
+    assert_eq!(session.shape_count().unwrap(), 0);
+}
+
+#[test]
+fn profile_history_rejects_removed_faces_and_unknown_source_features_without_leaks() {
+    let session = Session::new().unwrap();
+    let definition = rib_family(true);
+    let generated = part(&definition).regenerate(&session).unwrap();
+    let handles = session.shape_count().unwrap();
+    let bottom = FaceSelector::GeneratedFromEdges {
+        source_feature: "profile".into(),
+        source: Box::new(EdgeSelector::NearestCenter {
+            target: point(5.0, 4.0, 1.0),
+            maximum_distance: length(0.001),
+        }),
+    };
+    let error = resolve_face_selector(
+        &session,
+        generated.shape("rib").unwrap(),
+        &bottom,
+        &HashMap::new(),
+        &generated.shapes,
+    )
+    .err()
+    .unwrap();
+    assert!(error.message.contains("resolved to no faces"), "{error:?}");
+    assert_eq!(session.shape_count().unwrap(), handles);
+    let mut invalid = rib_with_history_draft();
+    if let FeatureOperation::Draft { faces, .. } = &mut invalid.features[0].operation
+        && let FaceSelector::GeneratedFromEdges { source_feature, .. } = &mut faces[0]
+    {
+        *source_feature = "missing".into();
+    }
+    assert!(
+        part(&invalid)
+            .regenerate(&session)
+            .err()
+            .unwrap()
+            .message
+            .contains("unknown output 'missing'")
+    );
+    assert_eq!(session.shape_count().unwrap(), handles);
+    drop(generated);
+    assert_eq!(session.shape_count().unwrap(), 0);
+}

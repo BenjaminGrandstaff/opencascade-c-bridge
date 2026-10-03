@@ -422,10 +422,19 @@ reversing direction gives the same geometry. There is no oblique sweep,
 inferred support, open-sketch, or extend-to-next behavior.
 All coordinates are family-local.
 
-The temporary prism is fused into the input using existing ABI 28 operations.
+The temporary prism is fused into the input using the extrusion and fuse operations.
 Centering shifts the extruded wall by negative half thickness along the
 normalized direction. This adds one temporary location-only handle and O(1)
-placement data, with no graph scans or new C ABI operations.
+placement data, with no graph scans. ABI 30 adds explicit history composition:
+`Session::compose_history` returns a separate handle sharing the final geometry
+while tracing an intermediate operation's inputs through its descendants.
+Direct history is retained and neither input's history changes. Generated
+ancestry remains generated after modification; modified ancestry followed by
+generation becomes generated. Removed targets are excluded and removed sources
+can still generate topology. Shape-identity indexes make composition expected
+O(topology + history records + expanded target relations) in time and memory.
+Located histories expand only on this explicit composition path; ordinary
+placed copies still retain O(1) history storage.
 The result must contain one valid solid and add material beyond a small
 floating-point volume margin (`64 * f64::EPSILON * max(abs(input volume), wall volume)`).
 This rejects fully contained translated walls whose fuse changes only the
@@ -434,23 +443,30 @@ volume across differently sized models. Face-connected and overlapping walls
 are accepted; disconnected,
 edge/vertex-only, fully contained, and invalid walls are rejected. The input
 remains unchanged. Temporary faces and prisms drop on success and failure.
-The final fuse retains input-body topology history, but full composition from
-the original sketch edges through the implicit prism to the fused result is
-not guaranteed; use explicit named extrude/fuse steps when that intermediate
-sweep history is needed.
+Ribs now compose the original profile-edge history through the implicit prism,
+optional centered placement, and final fuse. The final result retains body and
+profile history after temporary handles are released. Schema 37 adds
+`FaceSelector::GeneratedFromEdges { source_feature, source }`, where `source`
+is an edge selector on an earlier feature. It selects only generated faces;
+every selected source edge must yield a surviving face. This supports downstream
+draft and hollow features without naming the rib's temporary prism. Source
+feature dependencies and selector expressions participate in ordering and
+incremental signatures. Existing documents keep their geometry and defaults.
 
 Thickness, direction, and thickness mode participate in feature signatures;
 body/profile edits invalidate dependent ribs and downstream features. Failed
-edits release new handles and preserve the previous accepted generation. Eight
+edits release new handles and preserve the previous accepted generation. Twelve
 tests cover exact triangle/overlap volumes, sketch faces/wires, both directions,
 body history, input preservation, units, centered placement, mode edits,
 small and 1 km-offset models, connection failures, selective reuse,
-rollback, cleanup, and schema migration. Further rib modes and complete implicit
-profile-history composition remain planned.
-The scale suite builds and edits 1,000 ribs in 5.737 s (15 s budget), checking
+rollback, cleanup, schema migration, composed history, generated-face selection,
+and downstream draft edits. Open-sketch and extend-to-next rib modes remain planned.
+The scale suite builds and edits 1,000 ribs in 6.017 s (15 s budget), checking
 every volume, result validity, unchanged body/profile reuse, and handle cleanup.
-An additional 1,000-centered-rib case has the same 15 s budget and checks center
+An additional 1,000-centered-rib case takes 6.924 s with the same 15 s budget and checks center
 of mass for both thickness values as well as volume, reuse, validity, and cleanup.
+Both cases also verify the exact area of the face generated from a profile edge
+on all 1,000 outputs before and after thickness edits.
 
 ## Requirements preserve intent
 
@@ -937,7 +953,9 @@ nested assembly frames, semantic selectors, provenance, and regeneration audit r
 OCCT handles and generated BREPs are never serialized. Loading reconstructs a
 validated `InstanceGraph`; regeneration creates fresh session-owned handles.
 Schema versions 1 through 35 migrate to version 36, supplying explicit defaults
-for fields absent from older documents. Version 36 adds centered rib thickness,
+for fields absent from older documents. Version 37 adds generated-face selectors
+from earlier feature edges; existing features and selectors remain unchanged.
+Version 36 adds centered rib thickness,
 defaulting earlier ribs to one-sided geometry. Version 35 adds linear variable-radius
 fillets; earlier constant-radius operations remain unchanged. Version 34 adds
 bounded closed-profile

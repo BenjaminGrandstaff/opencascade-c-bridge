@@ -108,6 +108,19 @@ pub(super) fn rib_features_case(centered: bool) -> Outcome {
                 provenance: "bench".into(),
             };
             let first = part.regenerate(&session)?;
+            let profile = first
+                .shape("profile")
+                .ok_or_else(|| failure("profile missing".into()))?;
+            let mut profile_edge = None;
+            for index in 0..session.subshape_count(profile, ShapeType::Edge)? {
+                let edge = session.subshape(profile, ShapeType::Edge, index)?;
+                if session.edge_length(&edge)? > 8.0 {
+                    profile_edge = Some(edge);
+                    break;
+                }
+            }
+            let profile_edge =
+                profile_edge.ok_or_else(|| failure("profile diagonal missing".into()))?;
             part.overrides.insert("thickness".into(), length(3.0));
             let edited = part.regenerate_incremental(&session, &first)?;
             if edited.regeneration.reused != ["body", "profile"]
@@ -133,14 +146,33 @@ pub(super) fn rib_features_case(centered: bool) -> Outcome {
                     if (session.center_of_mass(shape)?.y - expected_center).abs() > 1e-6 {
                         return Err(failure("rib thickness placement differs".into()));
                     }
+                    if session.history_count(
+                        shape,
+                        &profile_edge,
+                        occt_bridge::HistoryRelation::Generated,
+                    )? != 1
+                    {
+                        return Err(failure("rib profile history differs".into()));
+                    }
+                    let face = session.history(
+                        shape,
+                        &profile_edge,
+                        occt_bridge::HistoryRelation::Generated,
+                        0,
+                    )?;
+                    if session.shape_type(&face)? != ShapeType::Face
+                        || (session.surface_area(&face)? - thickness * 72.0_f64.sqrt()).abs() > 1e-6
+                    {
+                        return Err(failure("rib generated face differs".into()));
+                    }
                 }
             }
-            drop((first, edited));
+            drop((profile_edge, first, edited));
             if session.shape_count()? != 0 {
                 return Err(failure("rib temporary handles retained".into()));
             }
             Ok(
-                "1000 exact reinforcing solids rebuilt; body/profile reused; handles released"
+                "1000 exact reinforcing solids rebuilt; profile history checked; body/profile reused; handles released"
                     .into(),
             )
         },

@@ -46,7 +46,8 @@ pub(super) fn execute_rib<'session>(
     let wall = match thickness_mode {
         RibThicknessMode::OneSided => wall,
         RibThicknessMode::Centered => {
-            session.translate(&wall, scale(direction, -0.5 * thickness))?
+            let placed = session.translate(&wall, scale(direction, -0.5 * thickness))?;
+            session.compose_history(&placed, &wall)?
         }
     };
     if session.subshape_count(&wall, ShapeType::Solid)? != 1
@@ -72,5 +73,5 @@ pub(super) fn execute_rib<'session>(
             "rib must add material and join the input as one valid solid",
         ));
     }
-    Ok(result)
+    Ok(session.compose_history(&result, &wall)?)
 }

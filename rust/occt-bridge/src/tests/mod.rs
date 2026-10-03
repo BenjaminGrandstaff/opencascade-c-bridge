@@ -4,6 +4,7 @@ use std::{fs, path::PathBuf};
 mod construction;
 mod draft;
 mod exchange;
+mod history;
 mod inspection;
 mod operations;
 mod results;

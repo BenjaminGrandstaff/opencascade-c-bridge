@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define OCCT_BRIDGE_ABI_VERSION 29u
+#define OCCT_BRIDGE_ABI_VERSION 30u
 #define OCCT_BRIDGE_INVALID_SHAPE_ID UINT64_C(0)
 
 #if defined(_WIN32) && defined(OCCT_BRIDGE_BUILD_SHARED)
@@ -743,6 +743,20 @@ OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_shape_faces_are_tangent(
  * original input handle or any still-live handle referring to one of its
  * subshapes. Returned history shapes are new handles owned by the session.
  */
+/*
+ * Returns a new handle sharing result's geometry, retaining direct history and
+ * tracing intermediate's sources through result's history. Both inputs remain
+ * unchanged. Intermediate must be a direct input to result; both need history.
+ * Generated ancestry stays generated through subsequent modifications;
+ * modified ancestry followed by generation becomes generated. Deleted sources
+ * may still generate topology. Temporary intermediate handles may then be freed.
+ */
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_shape_compose_history(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t result,
+    occt_bridge_shape_id_t intermediate,
+    occt_bridge_shape_id_t* out_shape
+);
 OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_shape_history_count(
     occt_bridge_session_t* session,
     occt_bridge_shape_id_t result,

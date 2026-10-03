@@ -3,7 +3,7 @@
 A small, stable C ABI over Open Cascade (OCCT), designed to be wrapped safely
 from Rust and other languages. Open Cascade C++ objects never cross the ABI.
 
-The current C ABI version is **29**.
+The current C ABI version is **30**.
 
 ## Current API
 
@@ -30,7 +30,8 @@ The current C ABI version is **29**.
   exact (line, conic) or error-bounded (Bezier, B-spline) curvature extrema,
   and direct topology-adjacency queries
 - Recorded G1-or-better tangency queries between adjacent faces
-- Generated, modified, and deleted operation-history queries
+- Generated, modified, and deleted operation-history queries, with explicit
+  composition through intermediate operations on a new shared-geometry handle
 - Tolerance-padded and exact bounds, surface area, volume, center-of-mass, and
   BREP validity inspection
 - BREP persistence, STEP import/export, and configurable ASCII/binary STL export
@@ -75,14 +76,15 @@ and single- or multi-shell solid construction. Selectors support orientation,
 adjacency, extrema, nearest-center, longest-edge, circular-radius,
 curvature-radius, sampled full-edge curvature-radius range, proven-bound
 curvature-radius range,
-largest-planar-face, tangent-neighbor, set composition, and operation-history
+largest-planar-face, tangent-neighbor, set composition, operation-history,
+and faces generated from earlier feature edges
 rules. Families declare named datums; graphs record checked datum
 relationships that can be solved to place free instances under finite positive
 per-model linear and angular tolerances, plus configurations and materials
 with mass. Full graph regeneration verifies mass ranges, datum clearances, and
 recorded relationship satisfaction with required, preferred, or advisory
 priority. Schema v1 through
-v35 documents migrate to v36 during load; unsupported
+v36 documents migrate to v37 during load; unsupported
 future versions are rejected.
 Managed regeneration incrementally reuses unchanged outputs and
 rebuilds dirty features plus their downstream dependents. Graph regeneration
@@ -260,7 +262,11 @@ regeneration audit records. Schema 36 adds `Rib.thickness_mode`, using
 `RibThicknessMode::{OneSided, Centered}`. Existing documents default to
 `OneSided`; centered ribs place half the total positive thickness on each
 side of the profile plane. Reversing the required nonzero normal direction
-leaves a centered rib's geometry unchanged. This uses the existing ABI 29;
+leaves a centered rib's geometry unchanged. ABI 30 composes the original
+profile-edge history through extrusion, centered placement, and fusion.
+Schema 37 adds `FaceSelector::GeneratedFromEdges { source_feature, source }`
+to select surviving faces generated from an earlier feature's edges for
+downstream operations. Both inputs and their original histories remain intact;
 body history, validation, incremental reuse, and failed-edit rollback are
 retained. Fully contained walls are rejected using a small operand-relative
 volume margin so floating-point roundoff is not accepted as added material.

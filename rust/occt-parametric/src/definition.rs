@@ -225,6 +225,12 @@ pub enum FaceSelector {
         edges: Box<EdgeSelector>,
         minimum_count: usize,
     },
+    /// Faces generated from selected edges of an earlier feature, including
+    /// rib profile edges traced through extrusion, placement, and fusion.
+    GeneratedFromEdges {
+        source_feature: String,
+        source: Box<EdgeSelector>,
+    },
     TangentTo {
         faces: Box<FaceSelector>,
         minimum_count: usize,
@@ -254,6 +260,13 @@ impl FaceSelector {
                 source.dependencies(dependencies);
             }
             Self::AdjacentToEdges { edges, .. } => edges.dependencies(dependencies),
+            Self::GeneratedFromEdges {
+                source_feature,
+                source,
+            } => {
+                dependencies.push(source_feature);
+                source.dependencies(dependencies);
+            }
             Self::TangentTo { faces, .. } => faces.dependencies(dependencies),
             Self::Union(selectors) | Self::Intersection(selectors) => {
                 for selector in selectors {

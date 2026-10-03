@@ -321,6 +321,30 @@ impl Session {
         Ok(tangent != 0)
     }
 
+    /// Share the result geometry while tracing an intermediate operation's
+    /// sources through its history. Both inputs and their histories stay intact.
+    /// The intermediate must be a direct input to the result. Rigid histories
+    /// are expanded only on this explicit composition path.
+    pub fn compose_history<'a>(
+        &'a self,
+        result: &Shape<'_>,
+        intermediate: &Shape<'_>,
+    ) -> Result<Shape<'a>, BridgeError> {
+        self.validate_shape(result)?;
+        self.validate_shape(intermediate)?;
+        let mut shape = 0;
+        // SAFETY: Valid session-owned handles and output pointer; C checks history lineage.
+        self.check(unsafe {
+            occt_bridge_shape_compose_history(
+                self.raw.as_ptr(),
+                result.id,
+                intermediate.id,
+                &mut shape,
+            )
+        })?;
+        Ok(self.shape(shape))
+    }
+
     pub fn history_count(
         &self,
         result: &Shape<'_>,

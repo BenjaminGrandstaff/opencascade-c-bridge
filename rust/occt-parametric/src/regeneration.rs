@@ -698,6 +698,9 @@ pub(crate) fn collect_face_selector_parameters<'a>(
             collect_face_selector_parameters(subtract, names);
         }
         FaceSelector::History { source, .. } => collect_face_selector_parameters(source, names),
+        FaceSelector::GeneratedFromEdges { source, .. } => {
+            collect_edge_selector_parameters(source, names)
+        }
     }
 }
 

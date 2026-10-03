@@ -8,24 +8,36 @@ tracks status and order.
 
 | Layer | Version | State |
 |---|---|---|
-| C ABI (`src/`, `include/`) | ABI 29 | Stable; exact version match required |
+| C ABI (`src/`, `include/`) | ABI 30 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 36 | Active development |
+| `occt-parametric` (engineering layer) | Schema 37 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 3/3, bridge 54 (+1 doc test), recipes 3, parametric 141 | `ctest`, `cargo test` (see README) |
-| SonarQube (indexed Rust) | Gate OK, 0 issues, 90.1% line coverage (2026-10-03); Rust unit tests classified as tests | `tools/sonar/run.sh` |
+| Tests | C 3/3, bridge 58 (+1 doc test), recipes 3, parametric 145 | `ctest`, `cargo test` (see README) |
+| SonarQube (indexed Rust) | Gate OK, 0 issues, 90.2% line coverage (2026-10-03); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
-| Coverage | 91.20% lines overall, test code excluded; C++ 93.69% lines, 87.29% branches, 100% functions; Rust 89.68% lines | `tools/coverage/run.sh` |
+| Coverage | 91.36% lines overall, test code excluded; C++ 93.83% lines, 87.79% branches, 100% functions; Rust 89.84% lines | `tools/coverage/run.sh` |
 | Scale benchmarks | 40 passing within budget | `tools/bench/run.sh` |
 
 ## Done
 
 ### Kernel (C ABI)
 
+- Explicit operation-history composition (ABI 30): a new handle shares the
+  result geometry and retains direct history while tracing an intermediate's
+  original sources. Generated and modified ancestry follow OCCT's history
+  rules; absent targets are removed and deleted sources may still generate
+  topology. Inputs remain unchanged. Shape-identity indexes bound composition
+  to expected O(topology + records + expanded relations) time and memory;
+  only explicitly composed rigid histories expand beyond O(1) storage.
+  Four bridge tests check rigid and extrusion chains, modified-to-generated
+  relations, deleted targets, shared geometry, released intermediates, wrong
+  sessions, stale handles, invalid chains, repeated-composition deduplication,
+  and bounded cleanup. C argument
+  conformance covers the new entry point.
 - Linear variable-radius fillets (ABI 29): finite positive endpoint radii
   along open tangent contours, using OCCT's spine direction. Tangent
   neighbors share one law; duplicate edges and closed contours are rejected.
@@ -94,6 +106,16 @@ tracks status and order.
 
 ### Parametric layer
 
+- Rib profile-history composition and generated-face selectors (schema 37):
+  original profile edges trace through extrusion, optional centered placement,
+  and fusion while body history is preserved. `FaceSelector::GeneratedFromEdges`
+  selects surviving faces from an earlier feature's semantic edge selection.
+  Four new tests cover faces/wires, both thickness modes and direction signs,
+  exact generated-face areas/centers, downstream draft, document round trips,
+  parameter signatures, failed edits, removed faces, missing references, and
+  cleanup. Both 1,000-rib benchmark cases verify composed history before and
+  after thickness edits in 6.017 s (one-sided) and 6.924 s (centered), within
+  their existing 15 s budgets.
 - Centered closed-profile ribs (schema 36; ABI 29 unchanged):
   `RibThicknessMode::{OneSided, Centered}` places total thickness on one side
   or equally on both sides of the profile plane. Earlier ribs default to
@@ -124,9 +146,10 @@ tracks status and order.
   accepted generations. Four tests cover exact triangular and overlap volumes,
   both extrusion directions, body history, input preservation, units,
   connection failures, selective reuse, rollback, cleanup, and migration.
-  Open-sketch, extend-to-next, and automatic-support ribs, plus full
-  implicit profile-history composition through the fuse, remain future work.
-  Building and editing 1,000 ribs takes 5.737 s (15 s budget), checking every
+  Open-sketch, extend-to-next, and automatic-support ribs remain future work;
+  profile-history composition landed
+  in schema 37.
+  Building and editing 1,000 ribs takes 6.017 s (15 s budget), checking every
   volume, valid results, unchanged body/profile reuse, and cleanup.
 - Draft features (schema 33): semantic face selectors, length-valued neutral
   origin, scalar normal/pull direction and signed angle. Input and result must
@@ -322,7 +345,7 @@ every item below is defined in documents and the API, and verified in tests.
 ### Capabilities
 
 1. **Feature breadth.** Advanced ribs (open
-    sketches, extend-to-next, and profile-history composition);
+    sketches and extend-to-next);
     multi-station variable fillet laws and explicit spine-direction control;
     sheet metal (flanges, bends, flat patterns)
     after the rest. Expand hole catalogs to tap drills, inch sizes, and
