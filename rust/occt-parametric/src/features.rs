@@ -217,15 +217,20 @@ pub(crate) fn execute_feature<'session>(
             edges,
             start_radius,
             end_radius,
+            stations,
+            spine_direction,
         } => {
             return variable_fillet::execute(
                 session,
                 shape(shapes, input)?,
                 edges,
-                (
-                    scalar(start_radius, parameters, Dimension::Length)?,
-                    scalar(end_radius, parameters, Dimension::Length)?,
-                ),
+                variable_fillet::evaluate_law(
+                    start_radius,
+                    end_radius,
+                    stations,
+                    spine_direction,
+                    parameters,
+                )?,
                 parameters,
                 shapes,
             );

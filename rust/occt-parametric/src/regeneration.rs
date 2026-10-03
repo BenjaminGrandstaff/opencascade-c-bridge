@@ -492,6 +492,8 @@ pub(crate) fn collect_operation_parameters<'a>(
             edges,
             start_radius,
             end_radius,
+            stations,
+            spine_direction,
             ..
         } => {
             for selector in edges {
@@ -499,6 +501,7 @@ pub(crate) fn collect_operation_parameters<'a>(
             }
             collect_scalar_parameters(start_radius, names);
             collect_scalar_parameters(end_radius, names);
+            collect_fillet_law_parameters(stations, spine_direction, names);
         }
         FeatureOperation::Chamfer {
             edges, distance, ..
@@ -543,6 +546,20 @@ pub(crate) fn collect_operation_parameters<'a>(
         FeatureOperation::Fuse { .. }
         | FeatureOperation::Cut { .. }
         | FeatureOperation::Common { .. } => {}
+    }
+}
+
+fn collect_fillet_law_parameters<'a>(
+    stations: &'a [FilletRadiusStation],
+    direction: &'a FilletSpineDirection,
+    names: &mut HashSet<&'a str>,
+) {
+    for station in stations {
+        collect_scalar_parameters(&station.position, names);
+        collect_scalar_parameters(&station.radius, names);
+    }
+    if let FilletSpineDirection::FromPoint { point } = direction {
+        collect_vector_parameters(point, names);
     }
 }
 

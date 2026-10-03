@@ -714,6 +714,53 @@ static void open_profile_to_next(occt_bridge_session_t* session) {
     EXPECT(occt_bridge_create_open_profile_face_to_next(session, wire, box, vec(0,0,-1), 2, &out), OK);
 }
 
+static void station_fillet(occt_bridge_session_t* session) {
+    occt_bridge_shape_id_t out = OCCT_BRIDGE_INVALID_SHAPE_ID;
+    const occt_bridge_shape_id_t body = SHAPE(occt_bridge_create_box(session, vec(0,0,0), vec(10,10,10), &out), out);
+    const occt_bridge_shape_id_t edge = subshape(session, body, OCCT_BRIDGE_SHAPE_EDGE, 0);
+    const occt_bridge_fillet_station_t good[] = { {0,1}, {0.5,2}, {1,1.5} };
+    EXPECT(occt_bridge_variable_fillet_stations(NULL,body,&edge,1,good,3,0,vec(0,0,0),&out),ARG);
+    EXPECT(occt_bridge_variable_fillet_stations(session,body,&edge,1,good,3,0,vec(0,0,0),NULL),ARG);
+    EXPECT(occt_bridge_variable_fillet_stations(session,body,NULL,1,good,3,0,vec(0,0,0),&out),ARG);
+    EXPECT(occt_bridge_variable_fillet_stations(session,body,&edge,0,good,3,0,vec(0,0,0),&out),ARG);
+    EXPECT(occt_bridge_variable_fillet_stations(session,body,&edge,1,NULL,3,0,vec(0,0,0),&out),ARG);
+    EXPECT(occt_bridge_variable_fillet_stations(session,body,&edge,1,good,1,0,vec(0,0,0),&out),ARG);
+    EXPECT(occt_bridge_variable_fillet_stations(session,body,&edge,1,good,SIZE_MAX,0,vec(0,0,0),&out),ARG);
+    EXPECT(occt_bridge_variable_fillet_stations(session,body,&edge,1,good,3,-1,vec(0,0,0),&out),ARG);
+    EXPECT(occt_bridge_variable_fillet_stations(session,body,&edge,1,good,3,3,vec(0,0,0),&out),ARG);
+    EXPECT(occt_bridge_variable_fillet_stations(session,body,&edge,1,good,3,2,vec(NAN,0,0),&out),ARG);
+    EXPECT(occt_bridge_variable_fillet_stations(session,unknown,&edge,1,good,3,0,vec(0,0,0),&out),MISSING);
+    EXPECT(occt_bridge_variable_fillet_stations(session,body,&unknown,1,good,3,0,vec(0,0,0),&out),MISSING);
+    EXPECT(occt_bridge_variable_fillet_stations(session,body,&body,1,good,3,0,vec(0,0,0),&out),GEOMETRY);
+    EXPECT(occt_bridge_variable_fillet_stations(session,body,&edge,1,good,3,0,vec(0,0,0),&out),OK);
+}
+
+static void measurements(occt_bridge_session_t* session) {
+    occt_bridge_shape_id_t out = OCCT_BRIDGE_INVALID_SHAPE_ID;
+    const occt_bridge_shape_id_t body = SHAPE(occt_bridge_create_box(session, vec(0,0,0), vec(2,3,4), &out), out);
+    const occt_bridge_shape_id_t edge = subshape(session,body,OCCT_BRIDGE_SHAPE_EDGE,0);
+    occt_bridge_mass_properties_t properties;
+    occt_bridge_distance_result_t distance;
+    double volume = 0;
+    EXPECT(occt_bridge_shape_mass_properties(NULL,body,&properties),ARG);
+    EXPECT(occt_bridge_shape_mass_properties(session,body,NULL),ARG);
+    EXPECT(occt_bridge_shape_mass_properties(session,unknown,&properties),MISSING);
+    EXPECT(occt_bridge_shape_mass_properties(session,edge,&properties),GEOMETRY);
+    EXPECT(occt_bridge_shape_mass_properties(session,body,&properties),OK);
+    EXPECT(occt_bridge_shape_distance(NULL,body,body,&distance),ARG);
+    EXPECT(occt_bridge_shape_distance(session,body,body,NULL),ARG);
+    EXPECT(occt_bridge_shape_distance(session,unknown,body,&distance),MISSING);
+    EXPECT(occt_bridge_shape_distance(session,body,unknown,&distance),MISSING);
+    EXPECT(occt_bridge_shape_distance(session,body,edge,&distance),OK);
+    EXPECT(occt_bridge_shape_overlap_volume(NULL,body,body,&volume),ARG);
+    EXPECT(occt_bridge_shape_overlap_volume(session,body,body,NULL),ARG);
+    EXPECT(occt_bridge_shape_overlap_volume(session,unknown,body,&volume),MISSING);
+    EXPECT(occt_bridge_shape_overlap_volume(session,body,unknown,&volume),MISSING);
+    EXPECT(occt_bridge_shape_overlap_volume(session,edge,body,&volume),GEOMETRY);
+    EXPECT(occt_bridge_shape_overlap_volume(session,body,edge,&volume),GEOMETRY);
+    EXPECT(occt_bridge_shape_overlap_volume(session,body,body,&volume),OK);
+}
+
 static void persistence(occt_bridge_session_t* session) {
     occt_bridge_shape_id_t out = OCCT_BRIDGE_INVALID_SHAPE_ID;
     const occt_bridge_shape_id_t box =
@@ -809,6 +856,8 @@ int main(void) {
     history(session);
     open_profile(session);
     open_profile_to_next(session);
+    station_fillet(session);
+    measurements(session);
     persistence(session);
     occt_bridge_session_destroy(session);
 

@@ -71,18 +71,44 @@ The following major capabilities remain planned:
 - broader requirement rules such as clearance, interference, minimum radius,
   wall thickness, connectivity, and manufacturing checks;
 - broader hole-size catalogs (tap drills, inch sizes, standard recess dimensions);
-- advanced ribs, variable-fillet, and later sheet-metal features;
-- joints, interference and clearance detection, and motion studies;
+- advanced ribs and later sheet-metal features;
+- closed-linkage solving and continuous collision detection beyond driven joints;
 - generated drawings with projected views and dimensions;
 - full mass properties, FEA mesh hand-off, manufacturability checks, and
   glTF export;
-- semantic diff, merge, revision history, and change impact for model
+- revision history and change impact for model
   documents.
+
+Identity-based semantic document comparisons are available through
+`ModelDocument::semantic_diff`. They match declaration collections by stable IDs
+and emit typed field/entity paths with exact serialized before/after values,
+while preserving ordered profile and expression arrays. Comparisons do not
+regenerate geometry or allocate kernel handles; the 10,000-instance repeated
+comparison benchmark runs within a five-second budget. See
+[Semantic document comparisons](DOCUMENT_DIFF.md) for the API, complexity,
+change-record format, and remaining data-management work.
+
+`base.three_way_merge(&left, &right)` combines independent edits using the same
+canonical document representation. It returns a validated document or typed
+conflicts containing base/left/right values; incompatible edits never return
+a partial document. Inputs and combined results undergo document validation so
+cross-branch reference and parameter failures are rejected before regeneration.
+The 10,000-instance repeated merge benchmark includes input/output validation
+and runs within an eight-second budget, without allocating kernel handles.
 
 ## Assembly semantics
 
 Assembly semantics live in the `assembly` module and serialize with the
 document.
+
+Schema 41 adds fixed, revolute, prismatic, cylindrical, and planar joints driven
+through named frames with checked unit-aware coordinates and optional limits.
+Exact BREP interference and clearance checks use an indexed broad phase.
+Sampled motion reuses each local parameter variant across independent poses,
+reporting collisions and datum relationships while preserving the source graph.
+The scale suite checks 10,000 joints, 10,000 sparse collision participants, and
+1,000 motion samples. See [Assembly motion](ASSEMBLY_MOTION.md) for frame
+conventions, resource bounds, and limits of sampled kinematics.
 
 - **Named datums.** A family declares points, axes, and planes from parameter
   expressions in its own coordinates, such as a hinge axis at a parameterized

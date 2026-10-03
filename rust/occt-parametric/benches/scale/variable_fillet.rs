@@ -1,6 +1,12 @@
 use super::*;
 
 pub(super) fn variable_fillet_features_case() -> Outcome {
+    fillet_case(false)
+}
+pub(super) fn station_fillet_features_case() -> Outcome {
+    fillet_case(true)
+}
+fn fillet_case(stations: bool) -> Outcome {
     const COUNT: usize = 1000;
     let mut definition = block();
     definition.datums.clear();
@@ -31,11 +37,31 @@ pub(super) fn variable_fillet_features_case() -> Outcome {
                 }],
                 start_radius: ScalarExpr::Literal(Quantity::length(1.0, LengthUnit::Millimeter)),
                 end_radius: ScalarExpr::Parameter("end_radius".into()),
+                stations: if stations {
+                    vec![occt_parametric::FilletRadiusStation {
+                        position: ScalarExpr::Literal(Quantity::scalar(0.5)),
+                        radius: ScalarExpr::Parameter("end_radius".into()),
+                    }]
+                } else {
+                    Vec::new()
+                },
+                spine_direction: if stations {
+                    occt_parametric::FilletSpineDirection::FromPoint {
+                        point: point(0.0, 0.0, 0.0),
+                    }
+                } else {
+                    occt_parametric::FilletSpineDirection::Kernel
+                },
             },
         });
     }
     timed(
-        "1000 variable fillet features: build and edit".into(),
+        if stations {
+            "1000 multi-station fillet features: build and edit"
+        } else {
+            "1000 variable fillet features: build and edit"
+        }
+        .into(),
         // Measured 18 s for 2,000 OCCT builds plus validation; keep roughly
         // 3x headroom, matching the suite's policy for new benchmark budgets.
         ms(60_000),
@@ -67,8 +93,10 @@ pub(super) fn variable_fillet_features_case() -> Outcome {
                     .ok_or_else(|| failure("edited fillet output missing".into()))?;
                 let previous_volume = session.volume(previous)?;
                 let changed_volume = session.volume(changed)?;
-                if !(constant_volume(2.0)..constant_volume(1.0)).contains(&previous_volume)
-                    || !(constant_volume(3.0)..previous_volume).contains(&changed_volume)
+                if !(constant_volume(if stations { 3.0 } else { 2.0 })..constant_volume(1.0))
+                    .contains(&previous_volume)
+                    || !(constant_volume(if stations { 4.0 } else { 3.0 })..previous_volume)
+                        .contains(&changed_volume)
                     || !session.is_valid(previous)?
                     || !session.is_valid(changed)?
                 {

@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define OCCT_BRIDGE_ABI_VERSION 32u
+#define OCCT_BRIDGE_ABI_VERSION 33u
 #define OCCT_BRIDGE_INVALID_SHAPE_ID UINT64_C(0)
 
 #if defined(_WIN32) && defined(OCCT_BRIDGE_BUILD_SHARED)
@@ -527,6 +527,30 @@ OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_variable_fillet(
     double end_radius,
     occt_bridge_shape_id_t* out_shape
 );
+typedef struct occt_bridge_fillet_station {
+    double position; /* Relative contour parameter in [0,1]. */
+    double radius;
+} occt_bridge_fillet_station_t;
+
+/* Interpolates at least two ordered finite radius stations over each selected
+ * open contour. Positions must start at 0, end at 1, and strictly increase;
+ * radii must be positive. Interpolation is OCCT's smooth law, not piecewise
+ * linear interpolation. Spine direction: 0 = kernel order, 1 = reversed order,
+ * 2 = start at endpoint nearest finite start_point (ties fail). One law per
+ * contour, including tangent neighbors. Duplicate edges/closed contours fail.
+ * Inputs, diagnostics/history, validation/healing follow variable_fillet. */
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_variable_fillet_stations(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t shape,
+    const occt_bridge_shape_id_t* edges,
+    size_t edge_count,
+    const occt_bridge_fillet_station_t* stations,
+    size_t station_count,
+    int32_t spine_direction,
+    occt_bridge_vec3_t start_point,
+    occt_bridge_shape_id_t* out_shape
+);
+
 OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_chamfer(
     occt_bridge_session_t* session,
     occt_bridge_shape_id_t shape,
@@ -658,6 +682,49 @@ OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_shape_surface_area(
 OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_shape_volume(
     occt_bridge_session_t* session,
     occt_bridge_shape_id_t shape,
+    double* out_volume
+);
+
+typedef struct occt_bridge_mass_properties {
+    double volume;
+    occt_bridge_vec3_t center;
+    double inertia[9]; /* Row-major central tensor in model XYZ; unit density. */
+    double relative_volume_error; /* OCCT adaptive quadrature error estimate. */
+} occt_bridge_mass_properties_t;
+
+typedef struct occt_bridge_distance_result {
+    double distance;
+    occt_bridge_vec3_t first;
+    occt_bridge_vec3_t second;
+} occt_bridge_distance_result_t;
+
+/* Valid solid geometry; unit-density volume/center/central inertia. Coordinate
+ * units u give volume u^3, center u, and inertia u^5. Uses adaptive BREP surface
+ * integration (requested relative volume error 1e-9), without triangulation. */
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_shape_mass_properties(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t shape,
+    occt_bridge_mass_properties_t* out_properties
+);
+
+/* Minimum separation in model units and one witness point on each shape.
+ * Intersecting/touching/contained shapes have zero separation. Does not
+ * distinguish interference from contact; use boolean common volume for that.
+ * Uses exact BREP geometry; creates no persistent handles. */
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_shape_distance(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t first,
+    occt_bridge_shape_id_t second,
+    occt_bridge_distance_result_t* out_distance
+);
+
+/* Volume shared by two valid solid shapes; zero for separation and contact.
+ * Uses a non-destructive BREP boolean and adaptive volume integration. No
+ * handles are created and both inputs retain their geometry and history. */
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_shape_overlap_volume(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t first,
+    occt_bridge_shape_id_t second,
     double* out_volume
 );
 

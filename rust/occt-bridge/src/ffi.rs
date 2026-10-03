@@ -2,7 +2,7 @@
 
 use super::*;
 
-pub(crate) const ABI_VERSION: u32 = 32;
+pub(crate) const ABI_VERSION: u32 = 33;
 
 #[repr(C)]
 pub(crate) struct RawVec3 {
@@ -12,11 +12,32 @@ pub(crate) struct RawVec3 {
 }
 
 #[repr(C)]
+pub(crate) struct RawFilletStation {
+    pub(crate) position: f64,
+    pub(crate) radius: f64,
+}
+
+#[repr(C)]
 pub(crate) struct RawWireSegment {
     pub(crate) kind: c_int,
     pub(crate) start: RawVec3,
     pub(crate) middle: RawVec3,
     pub(crate) end: RawVec3,
+}
+
+#[repr(C)]
+pub(crate) struct RawMassProperties {
+    pub(crate) volume: f64,
+    pub(crate) center: RawVec3,
+    pub(crate) inertia: [f64; 9],
+    pub(crate) relative_volume_error: f64,
+}
+
+#[repr(C)]
+pub(crate) struct RawDistanceResult {
+    pub(crate) distance: f64,
+    pub(crate) first: RawVec3,
+    pub(crate) second: RawVec3,
 }
 
 #[repr(C)]
@@ -271,6 +292,17 @@ unsafe extern "C" {
         end_radius: f64,
         out: *mut RawShapeId,
     ) -> RawStatus;
+    pub(crate) fn occt_bridge_variable_fillet_stations(
+        session: *mut c_void,
+        shape: RawShapeId,
+        edges: *const RawShapeId,
+        edge_count: usize,
+        stations: *const RawFilletStation,
+        station_count: usize,
+        spine_direction: c_int,
+        start_point: RawVec3,
+        out: *mut RawShapeId,
+    ) -> RawStatus;
     pub(crate) fn occt_bridge_chamfer(
         session: *mut c_void,
         shape: RawShapeId,
@@ -368,6 +400,23 @@ unsafe extern "C" {
     pub(crate) fn occt_bridge_shape_volume(
         session: *mut c_void,
         shape: RawShapeId,
+        out: *mut f64,
+    ) -> RawStatus;
+    pub(crate) fn occt_bridge_shape_mass_properties(
+        session: *mut c_void,
+        shape: RawShapeId,
+        out: *mut RawMassProperties,
+    ) -> RawStatus;
+    pub(crate) fn occt_bridge_shape_distance(
+        session: *mut c_void,
+        first: RawShapeId,
+        second: RawShapeId,
+        out: *mut RawDistanceResult,
+    ) -> RawStatus;
+    pub(crate) fn occt_bridge_shape_overlap_volume(
+        session: *mut c_void,
+        first: RawShapeId,
+        second: RawShapeId,
         out: *mut f64,
     ) -> RawStatus;
     pub(crate) fn occt_bridge_shape_center_of_mass(

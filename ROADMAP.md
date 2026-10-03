@@ -8,24 +8,37 @@ tracks status and order.
 
 | Layer | Version | State |
 |---|---|---|
-| C ABI (`src/`, `include/`) | ABI 32 | Stable; exact version match required |
+| C ABI (`src/`, `include/`) | ABI 33 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 39 | Active development |
+| `occt-parametric` (engineering layer) | Schema 41 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 3/3, bridge 63 (+1 doc test), recipes 3, parametric 157 | `ctest`, `cargo test` (see README) |
-| SonarQube (indexed Rust) | Gate OK, 0 issues, 90.3% line coverage (2026-10-03); Rust unit tests classified as tests | `tools/sonar/run.sh` |
+| Tests | C 3/3, bridge 68 (+1 doc test), recipes 3, parametric 186 | `ctest`, `cargo test` (see README) |
+| SonarQube (indexed Rust) | Gate OK, 0 issues, 91.1% line coverage (2026-10-03); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
-| Coverage | 91.54% lines overall, test code excluded; C++ 93.98% lines, 87.68% branches, 100% functions; Rust 89.98% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 42 passing within budget | `tools/bench/run.sh` |
+| Coverage | 91.98% lines overall, test code excluded; C++ 94.05% lines, 87.39% branches, 100% functions; Rust 90.74% lines | `tools/coverage/run.sh` |
+| Scale benchmarks | 48 passing within budget | `tools/bench/run.sh` |
 
 ## Done
 
 ### Kernel (C ABI)
 
+- Multi-station variable fillets (ABI 33): ordered normalized radius samples,
+  reversed spines or an explicit endpoint-nearest start point. Each tangent
+  contour receives one smooth interpolated law; duplicate edges, closed
+  contours, ambiguous start points, and invalid samples fail with cleanup.
+  Interpolation can overshoot supplied radii. Existing linear calls remain
+  supported. Schema 40 persists interior radius samples and spine control;
+  incremental edits rebuild dependents and preserve the last accepted result
+  on failure. The 1,000-feature build/edit scale case passes its 60-second budget.
+- Exact BREP separation/witness points, non-destructive overlap volume, and
+  adaptive solid mass properties (ABI 33). Central unit-density inertia is
+  evaluated near the shape to avoid far-origin cancellation. Analytic box,
+  rotated tensor, scale/translation, contact, containment, invalid-argument,
+  session, and cleanup tests cover the new entry points.
 - Open-profile translated closure (ABI 31): one valid open wire is joined to
   its translated reversed copy by straight endpoint bridges. The resulting
   face must be planar and non-self-intersecting, with original/translated
@@ -114,6 +127,42 @@ tracks status and order.
 
 ### Parametric layer
 
+- Driven assembly joints and sampled motion (schema 41): fixed, revolute,
+  prismatic, cylindrical, and planar frame joints with unit-aware coordinates
+  and checked optional limits. Atomic edits preserve accepted state. Exact
+  BREP interference/contact/clearance checks use a median BVH to find candidate
+  pairs. Motion generates local parameter variants once and places shared
+  copies for each independent sample; it reports collision and relationship
+  checks and releases temporary geometry on success and failure. Four tests
+  cover joint kinds, parent transforms, persistence, invalid edits, indexed
+  versus exhaustive collisions, sampled crossings, geometry reuse, and cleanup.
+  Scale cases cover 10,000 joints, 10,000 sparse bodies, and 1,000 motion samples.
+  Continuous collision proof and closed-linkage solving remain future work.
+  API and limits: [Assembly motion](ASSEMBLY_MOTION.md).
+- Three-way semantic document merge (no schema or ABI change):
+  `base.three_way_merge(&left, &right)` combines independent field/entity edits
+  and identical concurrent edits. Typed conflict records retain base/left/right
+  values for delete/edit, same-ID additions, incompatible variant replacements,
+  and ordered-array conflicts. Input and combined-document validation reject
+  broken references, dependencies, and parameter constraints; conflicting merges
+  return no partial document. Fifteen tests cover conflicts, nullable payloads,
+  omitted dictionaries, additional families, symmetry, input preservation,
+  round trips, and regenerated geometry with exact volume and bounded handles.
+  Ten validated merges of 10,000 reordered instances take 2.463 s (8 s budget),
+  with both independent overrides retained and no kernel handles allocated.
+  API and limits: [Semantic document comparisons and merges](DOCUMENT_DIFF.md).
+- Identity-based semantic document diffs (no schema or ABI change):
+  `ModelDocument::semantic_diff` reports deterministic typed field/entity paths
+  with before/after values. Declaration lists match by stable IDs; ordered
+  profiles, operands, pattern members, and audit records retain their order.
+  Duplicate IDs fail, and absent values remain distinct from JSON null across
+  serialized change-record round trips. Seven tests cover parameter, feature,
+  instance, additional-family, and relationship edits, additions/removals,
+  reordering, duplicate IDs, and punctuation in IDs. Ten comparisons of 10,000
+  reordered instances with one exact override edit take 1.265 s (5 s budget),
+  without creating kernel handles. Revision history, impact
+  reports, and a git merge driver remain planned. API and limits:
+  [Semantic document comparisons](DOCUMENT_DIFF.md).
 - Uniform extend-to-next ribs (schema 39; ABI 32):
   `RibProfileMode::OpenToNext { direction, maximum_length }` advances a straight
   open chain perpendicularly to its first contact with the input body. Exact
@@ -380,31 +429,26 @@ every item below is defined in documents and the API, and verified in tests.
 
 ### Capabilities
 
-1. **Feature breadth.** Advanced ribs (general support-following and nonuniform closure);
-    multi-station variable fillet laws and explicit spine-direction control;
-    sheet metal (flanges, bends, flat patterns)
-    after the rest. Expand hole catalogs to tap drills, inch sizes, and
-    standard recess dimensions when their source data is verified.
-2. **Assembly depth.** Joints (revolute, prismatic, cylindrical, planar,
-    fixed) with limits on top of relationships; interference and minimum
-    clearance between instances using exact boolean and distance queries; and
-    motion studies that sweep joint values and report collisions.
-3. **Generated drawings.** Projected views (orthographic, section, detail)
+1. **Generated drawings.** Projected views (orthographic, section, detail)
     by hidden-line removal, exported as SVG and DXF; dimensions and notes
     placed from datums and parameters; title blocks from document metadata.
     Drawings regenerate with the model rather than being edited by hand.
-4. **Analysis and manufacturing hand-off.** Full mass properties (center of
+2. **Analysis and manufacturing hand-off.** Full mass properties (center of
     mass, inertia tensor) per instance and assembly; tagged surface and
     volume meshes for external FEA; manufacturability checks (minimum wall
     thickness, draft angle, 3D-printing overhang); glTF export with material
     appearance for rendering.
-5. **Model data management.** Semantic diff and three-way merge of model
-    documents (parameters, features, instances, relationships), recorded
-    revision history inside documents, and change-impact reports listing the
+3. **Model data management.** Recorded revision history inside documents,
+    and change-impact reports listing the
     instances and features a change affects, with a git merge driver.
+4. **Feature breadth.** Sheet metal (flanges, bends, flat patterns)
+    after the rest. Expand hole catalogs to tap drills, inch sizes, and
+    standard recess dimensions when their source data is verified.
 
 ## Later
 
+- Advanced ribs with general support-following and nonuniform closure.
+- Closed-linkage constraint solving and continuous collision detection.
 - Richer requirement rules: interference, minimum radius, wall thickness,
   connectivity, manufacturing checks.
 - Assumptions and requirement-to-feature trace links in the document schema.

@@ -4,13 +4,21 @@
 use super::*;
 use std::collections::{BTreeMap, BTreeSet};
 
+mod collisions;
 mod configurations;
 mod geometry;
+mod joints;
 mod materials;
+mod motion;
 mod requirements;
 
+pub use collisions::{CollisionOptions, InstanceOutputRef, PairCheck, PairStatus};
 pub(crate) use geometry::*;
+pub use joints::{AssemblyJoint, JointDof, JointKind, JointScalar};
 use materials::*;
+pub use motion::{
+    JointPosition, MAX_MOTION_SAMPLES, MotionResult, MotionSample, MotionSampleResult, MotionStudy,
+};
 
 /// Linear tolerance, in millimeters, for relationship checks.
 pub const RELATIONSHIP_LINEAR_TOLERANCE: f64 = 1e-6;
@@ -278,6 +286,9 @@ pub struct AssemblySemantics {
     pub configurations: Vec<Configuration>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub materials: Vec<Material>,
+    /// Frame id to joint; an absent entry retains ordinary rest placement.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub joints: BTreeMap<String, AssemblyJoint>,
     /// Instance id to material id. Clones inherit their source's material.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub material_assignments: BTreeMap<String, String>,
@@ -475,6 +486,7 @@ impl<'definition> InstanceGraph<'definition> {
     /// Checks every assembly reference, configuration, and relationship.
     pub(crate) fn validate_assembly(&self) -> Result<(), ModelError> {
         self.assembly.tolerances.validate()?;
+        self.validate_joints()?;
         let mut ids = HashSet::new();
         for material in &self.assembly.materials {
             validate_material(material)?;

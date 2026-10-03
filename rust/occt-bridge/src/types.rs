@@ -289,3 +289,36 @@ impl fmt::Display for BridgeError {
 }
 
 impl Error for BridgeError {}
+
+/// Radius sample on OCCT's relative contour parameter, from 0 to 1.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FilletRadiusStation {
+    pub position: f64,
+    pub radius: f64,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub enum FilletSpineDirection {
+    #[default]
+    Kernel,
+    Reversed,
+    /// The endpoint nearest this point is the beginning; equidistant ties fail.
+    FromPoint(Vec3),
+}
+
+/// Unit-density inertial properties in model coordinates. Length units u give
+/// volume u^3, center u, and central inertia u^5 in model XYZ axes.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MassProperties {
+    pub volume: f64,
+    pub center: Vec3,
+    pub inertia: [[f64; 3]; 3],
+    pub relative_volume_error: f64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DistanceResult {
+    pub distance: f64,
+    pub first: Vec3,
+    pub second: Vec3,
+}

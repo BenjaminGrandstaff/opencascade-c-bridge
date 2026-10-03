@@ -725,6 +725,9 @@ impl<'definition> InstanceGraph<'definition> {
             frame.placement.normalized()?;
             visiting.push(id);
             placements.push(frame.placement);
+            if let Some(joint) = self.assembly.joints.get(id) {
+                placements.push(joint.motion()?);
+            }
             current = frame.parent.as_deref();
         }
         Ok(placements)

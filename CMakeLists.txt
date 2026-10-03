@@ -26,6 +26,7 @@ add_library(
     src/solids.cpp
     src/operations.cpp
     src/inspection.cpp
+    src/measurements.cpp
     src/history.cpp
     src/open_profile.cpp
     src/rib_support.cpp

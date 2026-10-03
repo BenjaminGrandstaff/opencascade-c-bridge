@@ -70,6 +70,43 @@ impl Session {
         })
     }
 
+    /// OCCT smooth interpolation through ordered stations covering [0,1].
+    /// Positive finite radii and a unique starting end are required. Setup is
+    /// O(stations * selected contours); kernel blend cost is geometry dependent.
+    pub fn variable_fillet_stations<'a>(
+        &'a self,
+        shape: &Shape<'_>,
+        edges: &[&Shape<'_>],
+        stations: &[FilletRadiusStation],
+        direction: FilletSpineDirection,
+    ) -> Result<Shape<'a>, BridgeError> {
+        let values = stations
+            .iter()
+            .map(|station| RawFilletStation {
+                position: station.position,
+                radius: station.radius,
+            })
+            .collect::<Vec<_>>();
+        let (direction, point) = match direction {
+            FilletSpineDirection::Kernel => (0, Vec3::new(0.0, 0.0, 0.0)),
+            FilletSpineDirection::Reversed => (1, Vec3::new(0.0, 0.0, 0.0)),
+            FilletSpineDirection::FromPoint(point) => (2, point),
+        };
+        self.selected_operation(shape, edges, |ids, out| unsafe {
+            occt_bridge_variable_fillet_stations(
+                self.raw.as_ptr(),
+                shape.id,
+                ids.as_ptr(),
+                ids.len(),
+                values.as_ptr(),
+                values.len(),
+                direction,
+                point.into(),
+                out,
+            )
+        })
+    }
+
     pub fn chamfer<'a>(
         &'a self,
         shape: &Shape<'_>,

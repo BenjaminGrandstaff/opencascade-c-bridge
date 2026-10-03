@@ -3,7 +3,7 @@
 A small, stable C ABI over Open Cascade (OCCT), designed to be wrapped safely
 from Rust and other languages. Open Cascade C++ objects never cross the ABI.
 
-The current C ABI version is **32**.
+The current C ABI version is **33**.
 
 ## Current API
 
@@ -22,7 +22,7 @@ The current C ABI version is **32**.
 - Face and shell sewing with operation history, single-shell solid
   construction, and multi-shell solids with internal voids
 - Fuse, cut, and common boolean operations
-- Selected-edge constant and linear variable-radius fillets and chamfers,
+- Selected-edge constant, linear, and multi-station variable-radius fillets and chamfers,
   joined offsets, and face-selected hollowing
 - Shape-kind and unique-subshape traversal
 - OCCT topological-identity comparison for independently owned handles
@@ -85,7 +85,7 @@ per-model linear and angular tolerances, plus configurations and materials
 with mass. Full graph regeneration verifies mass ranges, datum clearances, and
 recorded relationship satisfaction with required, preferred, or advisory
 priority. Schema v1 through
-v37 documents migrate to v38 during load; unsupported
+v40 documents migrate to v41 during load; unsupported
 future versions are rejected.
 Managed regeneration incrementally reuses unchanged outputs and
 rebuilds dirty features plus their downstream dependents. Graph regeneration
@@ -261,7 +261,15 @@ handles and retain the prior accepted generation.
 
 `ModelDocument` persists the family definition, requirements, instance and
 clone identities, sparse overrides, placements, assembly frames, pattern rules, provenance, and
-regeneration audit records. Schema 38 adds `SketchOpenWire` and
+regeneration audit records. Schema 41 adds driven frame joints with limits and
+the API supports exact interference/clearance checks and sampled motion with
+shared local geometry. See [Assembly motion](ASSEMBLY_MOTION.md) for coordinate
+conventions, complexity, and sampled-motion limits. ABI 33 exposes BREP
+distance/witness points, non-destructive overlap volume, and adaptive solid
+center/inertia measurements. Schema 40 adds interior variable-fillet radius
+stations and explicit spine control; laws use smooth interpolation and can
+overshoot their samples. Earlier documents default to the existing linear law.
+Schema 38 adds `SketchOpenWire` and
 `Rib.profile_mode: RibProfileMode`, defaulting earlier ribs to `Closed`.
 `OpenStrip { offset }` closes an open line/arc chain with a translated reversed
 copy and straight endpoint bridges. The length-valued offset must define a

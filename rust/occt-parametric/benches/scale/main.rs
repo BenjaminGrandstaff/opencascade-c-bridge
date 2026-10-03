@@ -30,6 +30,7 @@ mod draft;
 mod graphs;
 mod holes;
 mod memory;
+mod motion;
 mod ribs;
 mod sketches;
 mod solver;
@@ -118,6 +119,8 @@ fn main() -> ExitCode {
     outcomes.push(ribs::open_rib_features_case());
     outcomes.push(ribs::next_rib_features_case());
     outcomes.push(variable_fillet::variable_fillet_features_case());
+    outcomes.push(variable_fillet::station_fillet_features_case());
+    outcomes.extend(motion::assembly_cases(definition));
     outcomes.push(clearance_catalog_case());
     outcomes.push(threaded_hole_features_case());
     outcomes.push(entry_hole_features_case(false));

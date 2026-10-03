@@ -1,5 +1,6 @@
 use super::*;
 
+mod assembly_motion;
 mod documents;
 mod draft;
 mod expressions;

@@ -15,3 +15,13 @@ serde_json = "1.0.151"
 [[bench]]
 name = "scale"
 harness = false
+
+[[bench]]
+name = "document_diff"
+path = "benches/scale/document_diff.rs"
+harness = false
+
+[[bench]]
+name = "document_merge"
+path = "benches/scale/document_merge.rs"
+harness = false

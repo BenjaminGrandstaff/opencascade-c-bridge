@@ -3,6 +3,7 @@
 mod assembly;
 mod definition;
 mod document;
+mod document_diff;
 mod error;
 mod expressions;
 mod features;
@@ -17,10 +18,12 @@ mod solve;
 mod sparse;
 
 pub use assembly::{
-    AssemblyRelationship, AssemblyRequirement, AssemblySemantics, AssemblyVerificationRule,
-    Configuration, DatumDefinition, DatumKind, DatumRef, Material, RELATIONSHIP_ANGULAR_TOLERANCE,
-    RELATIONSHIP_LINEAR_TOLERANCE, RelationKind, RelationshipCheck, RelationshipTolerances,
-    ResolvedDatum,
+    AssemblyJoint, AssemblyRelationship, AssemblyRequirement, AssemblySemantics,
+    AssemblyVerificationRule, CollisionOptions, Configuration, DatumDefinition, DatumKind,
+    DatumRef, InstanceOutputRef, JointDof, JointKind, JointPosition, JointScalar,
+    MAX_MOTION_SAMPLES, Material, MotionResult, MotionSample, MotionSampleResult, MotionStudy,
+    PairCheck, PairStatus, RELATIONSHIP_ANGULAR_TOLERANCE, RELATIONSHIP_LINEAR_TOLERANCE,
+    RelationKind, RelationshipCheck, RelationshipTolerances, ResolvedDatum,
 };
 pub use sketch::{
     SketchArc, SketchCircle, SketchConstraint, SketchDefinition, SketchLine, SketchPoint,
@@ -41,6 +44,7 @@ use std::{
 
 pub use definition::*;
 pub use document::*;
+pub use document_diff::*;
 pub use error::*;
 use expressions::*;
 use features::*;

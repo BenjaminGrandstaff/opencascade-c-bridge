@@ -410,3 +410,112 @@ fn rejects_measurements_unsupported_by_shape_dimension() {
     assert!(center.z.abs() < 1e-9);
     assert_eq!(session.shape_count().unwrap(), 1);
 }
+
+#[test]
+fn central_inertia_matches_analytic_boxes_after_rotation_and_distant_placement() {
+    let session = Session::new().unwrap();
+    for (scale, offset) in [(0.01, 0.0), (100_000.0, 0.0), (1.0, 1_000_000.0)] {
+        let body = session
+            .create_box(
+                Vec3::new(offset, offset, offset),
+                Vec3::new(2.0 * scale, 3.0 * scale, 4.0 * scale),
+            )
+            .unwrap();
+        let properties = session.mass_properties(&body).unwrap();
+        assert!((properties.volume - 24.0 * scale.powi(3)).abs() < properties.volume * 1e-9);
+        for (value, expected) in [
+            (properties.center.x, offset + scale),
+            (properties.center.y, offset + 1.5 * scale),
+            (properties.center.z, offset + 2.0 * scale),
+        ] {
+            assert!((value - expected).abs() < scale * 1e-7);
+        }
+        for (row, factor) in [50.0, 40.0, 26.0].into_iter().enumerate() {
+            assert!(
+                (properties.inertia[row][row] - factor * scale.powi(5)).abs()
+                    < factor * scale.powi(5) * 1e-8,
+                "{:?}",
+                properties.inertia
+            );
+            for column in 0..3 {
+                if row != column {
+                    assert!(properties.inertia[row][column].abs() < scale.powi(5) * 1e-6);
+                }
+            }
+        }
+        let rotated = session
+            .rotate(
+                &body,
+                Vec3::new(offset, offset, offset),
+                Vec3::new(0.0, 0.0, 1.0),
+                std::f64::consts::FRAC_PI_4,
+            )
+            .unwrap();
+        let properties = session.mass_properties(&rotated).unwrap();
+        assert!(
+            (properties.inertia[0][0] - 45.0 * scale.powi(5)).abs() < scale.powi(5) * 1e-6,
+            "scale={scale} offset={offset} {:?}",
+            properties.inertia
+        );
+        assert!((properties.inertia[1][1] - 45.0 * scale.powi(5)).abs() < scale.powi(5) * 1e-6);
+        assert!((properties.inertia[0][1] - 5.0 * scale.powi(5)).abs() < scale.powi(5) * 1e-6);
+        drop((rotated, body));
+        assert_eq!(session.shape_count().unwrap(), 0);
+    }
+}
+
+#[test]
+fn exact_minimum_distance_distinguishes_separation_from_contact_and_containment() {
+    let session = Session::new().unwrap();
+    let first = session
+        .create_box(Vec3::new(0.0, 0.0, 0.0), Vec3::new(2.0, 2.0, 2.0))
+        .unwrap();
+    for (origin, size, expected) in [
+        (Vec3::new(5.0, 0.0, 0.0), Vec3::new(2.0, 2.0, 2.0), 3.0),
+        (
+            Vec3::new(3.0, 3.0, 3.0),
+            Vec3::new(2.0, 2.0, 2.0),
+            3.0_f64.sqrt(),
+        ),
+        (Vec3::new(2.0, 0.0, 0.0), Vec3::new(2.0, 2.0, 2.0), 0.0),
+        (Vec3::new(1.0, 0.0, 0.0), Vec3::new(2.0, 2.0, 2.0), 0.0),
+        (Vec3::new(0.5, 0.5, 0.5), Vec3::new(0.5, 0.5, 0.5), 0.0),
+    ] {
+        let second = session.create_box(origin, size).unwrap();
+        let handles = session.shape_count().unwrap();
+        let distance = session.distance(&first, &second).unwrap();
+        assert!((distance.distance - expected).abs() < 1e-8);
+        let witness = (distance.first.x - distance.second.x).hypot(
+            (distance.first.y - distance.second.y).hypot(distance.first.z - distance.second.z),
+        );
+        assert!((witness - expected).abs() < 1e-8);
+        let overlap = session.overlap_volume(&first, &second).unwrap();
+        let expected_overlap = if origin.x == 1.0 {
+            4.0
+        } else if origin.x == 0.5 {
+            0.125
+        } else {
+            0.0
+        };
+        assert!((overlap - expected_overlap).abs() < 1e-9);
+        assert_eq!(session.shape_count().unwrap(), handles);
+    }
+    let edge = session.subshape(&first, ShapeType::Edge, 0).unwrap();
+    assert!(session.mass_properties(&edge).is_err());
+    assert!(session.overlap_volume(&first, &edge).is_err());
+    let empty = session
+        .common(
+            &first,
+            &session
+                .translate(&first, Vec3::new(10.0, 0.0, 0.0))
+                .unwrap(),
+        )
+        .unwrap();
+    assert!(session.distance(&first, &empty).is_err());
+    let other = Session::new().unwrap();
+    let foreign = unit_box(&other, 0.0);
+    assert_wrong_session(session.distance(&first, &foreign).unwrap_err());
+    assert_wrong_session(session.mass_properties(&foreign).unwrap_err());
+    drop((first, edge, empty));
+    assert_eq!(session.shape_count().unwrap(), 0);
+}

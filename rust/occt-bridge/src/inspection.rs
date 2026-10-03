@@ -130,6 +130,71 @@ impl Session {
         Ok(volume)
     }
 
+    /// Central inertia and volume from adaptive integration of valid solid
+    /// BREP geometry. Creates no handles; see MassProperties for units.
+    pub fn mass_properties(&self, shape: &Shape<'_>) -> Result<MassProperties, BridgeError> {
+        self.validate_shape(shape)?;
+        let mut raw = RawMassProperties {
+            volume: 0.0,
+            center: Vec3::new(0.0, 0.0, 0.0).into(),
+            inertia: [0.0; 9],
+            relative_volume_error: 0.0,
+        };
+        self.check(unsafe {
+            occt_bridge_shape_mass_properties(self.raw.as_ptr(), shape.id, &mut raw)
+        })?;
+        Ok(MassProperties {
+            volume: raw.volume,
+            center: raw.center.into(),
+            inertia: [
+                [raw.inertia[0], raw.inertia[1], raw.inertia[2]],
+                [raw.inertia[3], raw.inertia[4], raw.inertia[5]],
+                [raw.inertia[6], raw.inertia[7], raw.inertia[8]],
+            ],
+            relative_volume_error: raw.relative_volume_error,
+        })
+    }
+
+    /// Minimum BREP separation and witness points. Zero includes touching,
+    /// overlapping, and contained shapes. No persistent handles are created.
+    pub fn distance(
+        &self,
+        first: &Shape<'_>,
+        second: &Shape<'_>,
+    ) -> Result<DistanceResult, BridgeError> {
+        self.validate_shape(first)?;
+        self.validate_shape(second)?;
+        let mut raw = RawDistanceResult {
+            distance: 0.0,
+            first: Vec3::new(0.0, 0.0, 0.0).into(),
+            second: Vec3::new(0.0, 0.0, 0.0).into(),
+        };
+        self.check(unsafe {
+            occt_bridge_shape_distance(self.raw.as_ptr(), first.id, second.id, &mut raw)
+        })?;
+        Ok(DistanceResult {
+            distance: raw.distance,
+            first: raw.first.into(),
+            second: raw.second.into(),
+        })
+    }
+
+    /// Shared solid volume, zero for separated or touching bodies. Uses a
+    /// non-destructive boolean and creates no persistent shape handles.
+    pub fn overlap_volume(
+        &self,
+        first: &Shape<'_>,
+        second: &Shape<'_>,
+    ) -> Result<f64, BridgeError> {
+        self.validate_shape(first)?;
+        self.validate_shape(second)?;
+        let mut volume = 0.0;
+        self.check(unsafe {
+            occt_bridge_shape_overlap_volume(self.raw.as_ptr(), first.id, second.id, &mut volume)
+        })?;
+        Ok(volume)
+    }
+
     pub fn center_of_mass(&self, shape: &Shape<'_>) -> Result<Vec3, BridgeError> {
         self.validate_shape(shape)?;
         let mut center = RawVec3 {

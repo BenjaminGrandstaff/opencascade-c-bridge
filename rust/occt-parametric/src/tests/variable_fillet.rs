@@ -46,6 +46,8 @@ fn definition() -> FamilyDefinition {
                 }],
                 start_radius: ScalarExpr::Parameter("start".into()),
                 end_radius: ScalarExpr::Parameter("end".into()),
+                stations: Vec::new(),
+                spine_direction: FilletSpineDirection::Kernel,
             },
         },
         FeatureDefinition {
@@ -208,6 +210,7 @@ fn variable_fillet_invalid_units_selections_and_references_release_handles() {
             edges,
             start_radius,
             end_radius,
+            ..
         } = &mut definition.features[1].operation
         else {
             unreachable!()
@@ -259,4 +262,190 @@ fn variable_fillet_schema_round_trip_and_older_fillets_keep_their_operations() {
         assert_eq!(migrated.schema_version, CURRENT_SCHEMA_VERSION);
         assert_eq!(migrated.family.features, old.family.features);
     }
+}
+
+fn station_definition() -> FamilyDefinition {
+    let mut definition = definition();
+    definition.parameters.push(length_parameter("middle", 2.5));
+    definition.parameters.push(ParameterDefinition {
+        id: "position".into(),
+        parameter_type: ParameterType::Scalar(Dimension::Scalar),
+        default: ParameterValue::Scalar(Quantity::scalar(0.25)),
+        minimum: None,
+        maximum: None,
+    });
+    definition.parameters.push(ParameterDefinition {
+        id: "spine_start".into(),
+        parameter_type: ParameterType::Vector(Dimension::Length),
+        default: ParameterValue::Vector(VectorQuantity::lengths(
+            0.0,
+            0.0,
+            0.0,
+            LengthUnit::Millimeter,
+        )),
+        minimum: None,
+        maximum: None,
+    });
+    if let FeatureOperation::VariableFillet {
+        stations,
+        spine_direction,
+        ..
+    } = &mut definition.features[1].operation
+    {
+        stations.push(FilletRadiusStation {
+            position: ScalarExpr::Parameter("position".into()),
+            radius: ScalarExpr::Parameter("middle".into()),
+        });
+        *spine_direction = FilletSpineDirection::FromPoint {
+            point: VectorExpr::Parameter("spine_start".into()),
+        };
+    }
+    definition
+}
+
+#[test]
+fn station_fillet_edits_track_samples_start_points_and_downstream_features() {
+    let definition = station_definition();
+    let session = Session::new().unwrap();
+    let first = part(&definition).regenerate(&session).unwrap();
+    let original = session.volume(first.shape("blend").unwrap()).unwrap();
+    for (id, value) in [
+        (
+            "middle",
+            ParameterValue::Scalar(Quantity::length(2.0, LengthUnit::Millimeter)),
+        ),
+        ("position", ParameterValue::Scalar(Quantity::scalar(0.5))),
+        (
+            "spine_start",
+            ParameterValue::Vector(VectorQuantity::lengths(
+                0.0,
+                0.0,
+                10.0,
+                LengthUnit::Millimeter,
+            )),
+        ),
+    ] {
+        let mut instance = part(&definition);
+        instance.overrides.insert(id.into(), value);
+        let edited = instance.regenerate_incremental(&session, &first).unwrap();
+        assert_eq!(edited.regeneration.rebuilt, ["blend", "placed"]);
+        assert_eq!(edited.regeneration.reused, ["body", "spare"]);
+        if id == "spine_start" {
+            let sum = session
+                .center_of_mass(first.shape("blend").unwrap())
+                .unwrap()
+                .z
+                + session
+                    .center_of_mass(edited.shape("blend").unwrap())
+                    .unwrap()
+                    .z;
+            assert!((sum - 10.0).abs() < 1e-5);
+        } else {
+            assert!(
+                (session.volume(edited.shape("blend").unwrap()).unwrap() - original).abs() > 0.1
+            );
+        }
+        drop(edited);
+        assert_eq!(session.shape_count().unwrap(), 4);
+    }
+    drop(first);
+    assert_eq!(session.shape_count().unwrap(), 0);
+}
+
+#[test]
+fn station_fillet_bad_samples_and_ambiguous_spine_preserve_accepted_results() {
+    let definition = station_definition();
+    let session = Session::new().unwrap();
+    let mut managed = ManagedPartInstance::new(&session, part(&definition));
+    managed.regenerate().unwrap();
+    for (id, value) in [
+        ("position", ParameterValue::Scalar(Quantity::scalar(0.0))),
+        ("position", ParameterValue::Scalar(Quantity::scalar(1.0))),
+        (
+            "middle",
+            ParameterValue::Scalar(Quantity::length(0.0, LengthUnit::Millimeter)),
+        ),
+        (
+            "middle",
+            ParameterValue::Scalar(Quantity::length(20.0, LengthUnit::Millimeter)),
+        ),
+        (
+            "spine_start",
+            ParameterValue::Vector(VectorQuantity::lengths(
+                0.0,
+                0.0,
+                5.0,
+                LengthUnit::Millimeter,
+            )),
+        ),
+    ] {
+        managed.instance_mut().overrides.clear();
+        managed.instance_mut().overrides.insert(id.into(), value);
+        assert!(managed.regenerate().is_err());
+        assert_eq!(managed.accepted_revision(), Some(1));
+        assert_eq!(session.shape_count().unwrap(), 4);
+        assert!(
+            session
+                .is_valid(managed.accepted().unwrap().shape("blend").unwrap())
+                .unwrap()
+        );
+    }
+    drop(managed);
+    for case in 0..3 {
+        let mut invalid = definition.clone();
+        if let FeatureOperation::VariableFillet {
+            stations,
+            spine_direction,
+            ..
+        } = &mut invalid.features[1].operation
+        {
+            match case {
+                0 => {
+                    stations[0].position =
+                        ScalarExpr::Literal(Quantity::length(0.5, LengthUnit::Millimeter))
+                }
+                1 => stations[0].radius = ScalarExpr::Literal(Quantity::scalar(2.0)),
+                _ => {
+                    *spine_direction = FilletSpineDirection::FromPoint {
+                        point: VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, 0.0)),
+                    }
+                }
+            }
+        }
+        assert!(part(&invalid).regenerate(&session).is_err());
+        assert_eq!(session.shape_count().unwrap(), 0);
+    }
+}
+
+#[test]
+fn station_fillet_documents_round_trip_and_schema_39_preserves_linear_defaults() {
+    let station_family = station_definition();
+    let mut graph = InstanceGraph::new(&station_family);
+    graph.add_base("part", HashMap::new(), "test").unwrap();
+    let document = ModelDocument::from_graph(&graph);
+    let loaded = ModelDocument::from_json(&document.to_json_pretty().unwrap()).unwrap();
+    assert_eq!(loaded, document);
+    let legacy = definition();
+    let mut graph = InstanceGraph::new(&legacy);
+    graph.add_base("part", HashMap::new(), "test").unwrap();
+    let mut json = serde_json::to_value(ModelDocument::from_graph(&graph)).unwrap();
+    json["schema_version"] = serde_json::json!(39);
+    let operation = json["family"]["features"][1]["operation"]["variable_fillet"]
+        .as_object_mut()
+        .unwrap();
+    operation.remove("stations");
+    operation.remove("spine_direction");
+    let migrated = ModelDocument::from_json(&json.to_string()).unwrap();
+    assert_eq!(migrated.family, legacy);
+    let session = Session::new().unwrap();
+    let first = part(&legacy).regenerate(&session).unwrap();
+    let second = part(&migrated.family).regenerate(&session).unwrap();
+    assert!(
+        (session.volume(first.shape("blend").unwrap()).unwrap()
+            - session.volume(second.shape("blend").unwrap()).unwrap())
+        .abs()
+            < 1e-7
+    );
+    drop((first, second));
+    assert_eq!(session.shape_count().unwrap(), 0);
 }

@@ -357,6 +357,26 @@ pub enum RibProfileMode {
     },
 }
 
+/// An interior sample of a smooth radius law. Position is dimensionless and
+/// strictly between 0 and 1; radius is a positive length.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct FilletRadiusStation {
+    pub position: ScalarExpr,
+    pub radius: ScalarExpr,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FilletSpineDirection {
+    #[default]
+    Kernel,
+    Reversed,
+    /// Start at the contour endpoint nearest this length-valued point.
+    FromPoint {
+        point: VectorExpr,
+    },
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FeatureOperation {
@@ -450,13 +470,18 @@ pub enum FeatureOperation {
         edges: Vec<EdgeSelector>,
         radius: ScalarExpr,
     },
-    /// Linear radius evolution along each selected open tangent contour, in
-    /// OCCT spine order. Endpoint radii are finite positive lengths.
+    /// Radius evolution over open tangent contours. With no interior stations,
+    /// the law is linear. Otherwise OCCT smoothly interpolates the samples.
+    /// Positive length-valued radii and dimensionless station positions.
     VariableFillet {
         input: String,
         edges: Vec<EdgeSelector>,
         start_radius: ScalarExpr,
         end_radius: ScalarExpr,
+        #[serde(default)]
+        stations: Vec<FilletRadiusStation>,
+        #[serde(default)]
+        spine_direction: FilletSpineDirection,
     },
     Chamfer {
         input: String,
