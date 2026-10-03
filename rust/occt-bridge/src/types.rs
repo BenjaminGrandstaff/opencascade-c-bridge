@@ -322,3 +322,17 @@ pub struct DistanceResult {
     pub first: Vec3,
     pub second: Vec3,
 }
+
+/// Image XY frame; direction points toward the viewer, x_axis toward image right.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ProjectionFrame {
+    pub origin: Vec3,
+    pub direction: Vec3,
+    pub x_axis: Vec3,
+}
+
+#[derive(Debug)]
+pub struct ProjectedEdges<'session> {
+    pub visible: Shape<'session>,
+    pub hidden: Shape<'session>,
+}

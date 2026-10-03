@@ -522,3 +522,108 @@ fn motion_samples_reuse_local_geometry_report_crossings_and_preserve_graph() {
         .is_err()
     );
 }
+
+#[test]
+fn joint_batches_limits_and_documents_reject_inconsistent_joints() {
+    let definition = definition();
+    let mut graph = InstanceGraph::new(&definition);
+    for frame in ["a", "b"] {
+        graph
+            .add_frame(frame, None, Placement::identity(), "test")
+            .unwrap();
+    }
+    let prismatic = |distance| JointKind::Prismatic { distance };
+
+    // A failure late in a batch keeps none of its earlier joints.
+    let error = graph
+        .add_joints([
+            joint("a", JointKind::Fixed),
+            joint("missing", JointKind::Fixed),
+        ])
+        .unwrap_err();
+    assert!(error.message.contains("unknown assembly frame 'missing'"));
+    assert_eq!(graph.joints().count(), 0);
+
+    // Joint ids are unique across frames, within and across batches.
+    let mut duplicate = joint("b", JointKind::Fixed);
+    duplicate.id = "a.joint".into();
+    assert!(
+        graph
+            .add_joints([joint("a", JointKind::Fixed), duplicate.clone()])
+            .unwrap_err()
+            .message
+            .contains("joint ids must be unique")
+    );
+    graph.add_joint(joint("a", JointKind::Fixed)).unwrap();
+    assert!(graph.add_joint(duplicate).is_err());
+
+    let reversed = JointScalar {
+        value: mm(5.0),
+        minimum: Some(mm(10.0)),
+        maximum: Some(mm(0.0)),
+    };
+    let error = graph
+        .add_joint(joint("b", prismatic(reversed)))
+        .unwrap_err();
+    assert!(error.message.contains("limits are reversed"));
+    let wrong_limit = JointScalar {
+        value: mm(5.0),
+        minimum: Some(Quantity::scalar(0.0)),
+        maximum: None,
+    };
+    let error = graph
+        .add_joint(joint("b", prismatic(wrong_limit)))
+        .unwrap_err();
+    assert!(error.message.contains("wrong dimension"));
+    let error = graph
+        .set_joint_coordinate("b", JointDof::Axial, mm(1.0))
+        .unwrap_err();
+    assert!(error.message.contains("frame 'b' has no joint"));
+    assert!(graph.remove_joint("b").is_err());
+
+    // Hand-edited documents fail the same checks on load and on save.
+    let bounded = JointScalar {
+        value: mm(5.0),
+        minimum: Some(mm(0.0)),
+        maximum: Some(mm(10.0)),
+    };
+    graph.add_joint(joint("b", prismatic(bounded))).unwrap();
+    let document = ModelDocument::from_graph(&graph);
+    let json = document.to_json_pretty().unwrap();
+    assert_eq!(ModelDocument::from_json(&json).unwrap(), document);
+    let rejects = |edit: &dyn Fn(&mut ModelDocument), message: &str| {
+        let mut edited = document.clone();
+        edit(&mut edited);
+        let error = edited.to_json_pretty().unwrap_err();
+        assert!(error.message.contains(message), "{}", error.message);
+        let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        value["assembly"]["joints"] = serde_json::to_value(&edited.assembly.joints).unwrap();
+        let error = ModelDocument::from_json(&value.to_string()).unwrap_err();
+        assert!(error.message.contains(message), "{}", error.message);
+    };
+    rejects(
+        &|edited| edited.assembly.joints.get_mut("b").unwrap().frame = "a".into(),
+        "invalid joint id or frame binding",
+    );
+    rejects(
+        &|edited| edited.assembly.joints.get_mut("b").unwrap().id = "a.joint".into(),
+        "invalid joint id or frame binding",
+    );
+    rejects(
+        &|edited| {
+            let joint = edited.assembly.joints.remove("b").unwrap();
+            edited.assembly.joints.insert("gone".into(), joint);
+        },
+        "invalid joint id or frame binding",
+    );
+    rejects(
+        &|edited| {
+            if let JointKind::Prismatic { distance } =
+                &mut edited.assembly.joints.get_mut("b").unwrap().kind
+            {
+                distance.value = mm(11.0);
+            }
+        },
+        "outside its limits",
+    );
+}

@@ -2,7 +2,7 @@
 
 use super::*;
 
-pub(crate) const ABI_VERSION: u32 = 33;
+pub(crate) const ABI_VERSION: u32 = 34;
 
 #[repr(C)]
 pub(crate) struct RawVec3 {
@@ -73,6 +73,37 @@ pub(crate) const OK: RawStatus = 0;
 
 #[link(name = "occt_bridge")]
 unsafe extern "C" {
+    pub(crate) fn occt_bridge_shape_subshapes(
+        session: *mut c_void,
+        shape: RawShapeId,
+        kind: c_int,
+        out: *mut RawShapeId,
+        capacity: usize,
+        count: *mut usize,
+    ) -> RawStatus;
+    pub(crate) fn occt_bridge_clip_by_plane(
+        session: *mut c_void,
+        shape: RawShapeId,
+        origin: RawVec3,
+        normal: RawVec3,
+        keep_positive: c_int,
+        out: *mut RawShapeId,
+    ) -> RawStatus;
+    pub(crate) fn occt_bridge_orthographic_projection(
+        session: *mut c_void,
+        shape: RawShapeId,
+        origin: RawVec3,
+        direction: RawVec3,
+        x_axis: RawVec3,
+        visible: *mut RawShapeId,
+        hidden: *mut RawShapeId,
+    ) -> RawStatus;
+    pub(crate) fn occt_bridge_edge_sample_points(
+        session: *mut c_void,
+        edge: RawShapeId,
+        count: usize,
+        points: *mut RawVec3,
+    ) -> RawStatus;
     pub(crate) fn occt_bridge_abi_version() -> u32;
     pub(crate) fn occt_bridge_status_string(status: RawStatus) -> *const c_char;
     pub(crate) fn occt_bridge_session_create(version: u32, out: *mut *mut c_void) -> RawStatus;

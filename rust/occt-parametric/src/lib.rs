@@ -4,6 +4,7 @@ mod assembly;
 mod definition;
 mod document;
 mod document_diff;
+mod drawing;
 mod error;
 mod expressions;
 mod features;
@@ -46,6 +47,7 @@ use std::{
 pub use definition::*;
 pub use document::*;
 pub use document_diff::*;
+pub use drawing::*;
 pub use error::*;
 use expressions::*;
 use features::*;

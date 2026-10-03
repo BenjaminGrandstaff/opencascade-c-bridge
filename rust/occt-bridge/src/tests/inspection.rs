@@ -2,6 +2,39 @@
 
 use super::*;
 
+#[test]
+fn bulk_subshapes_match_indexed_traversal_and_release_independent_handles() {
+    let session = Session::new().unwrap();
+    let body = unit_box(&session, 0.0);
+    let repeated = session.create_compound(&[&body, &body]).unwrap();
+    for kind in [ShapeType::Face, ShapeType::Edge, ShapeType::Vertex] {
+        let subshapes = session.subshapes(&repeated, kind).unwrap();
+        assert_eq!(
+            subshapes.len(),
+            session.subshape_count(&body, kind).unwrap()
+        );
+        for (index, shape) in subshapes.iter().enumerate() {
+            let indexed = session.subshape(&body, kind, index).unwrap();
+            assert!(session.is_same(shape, &indexed).unwrap());
+        }
+        drop(subshapes);
+        assert_eq!(session.shape_count().unwrap(), 2);
+    }
+    let face = session.subshape(&body, ShapeType::Face, 0).unwrap();
+    assert!(
+        session
+            .subshapes(&face, ShapeType::Solid)
+            .unwrap()
+            .is_empty()
+    );
+    let other = Session::new().unwrap();
+    assert_wrong_session(other.subshapes(&body, ShapeType::Edge).unwrap_err());
+    drop(face);
+    drop(repeated);
+    drop(body);
+    assert_eq!(session.shape_count().unwrap(), 0);
+}
+
 fn curvature_fixture_edge<'a>(session: &'a Session, index: usize) -> Shape<'a> {
     let compound = session
         .load_brep(concat!(

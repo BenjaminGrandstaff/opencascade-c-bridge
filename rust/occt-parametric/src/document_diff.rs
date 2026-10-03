@@ -81,7 +81,16 @@ fn family_path(path: &[DocumentPathSegment]) -> bool {
 
 fn collections(path: &[DocumentPathSegment]) -> &'static [&'static str] {
     if path.is_empty() {
-        &["additional_families", "instances", "frames", "patterns"]
+        &[
+            "additional_families",
+            "instances",
+            "frames",
+            "patterns",
+            "drawings",
+        ]
+    } else if matches!(path, [DocumentPathSegment::Field(name), DocumentPathSegment::Entity(_)] if name == "drawings")
+    {
+        &["views", "dimensions", "notes"]
     } else if family_path(path) {
         &[
             "parameters",

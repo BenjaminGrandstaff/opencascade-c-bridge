@@ -27,6 +27,7 @@ use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
 mod draft;
+mod drawing;
 mod graphs;
 mod holes;
 mod memory;
@@ -121,6 +122,8 @@ fn main() -> ExitCode {
     outcomes.push(variable_fillet::variable_fillet_features_case());
     outcomes.push(variable_fillet::station_fillet_features_case());
     outcomes.extend(motion::assembly_cases(definition));
+    outcomes.push(drawing::drawing_case(definition));
+    outcomes.push(drawing::assembly_drawing_case(definition));
     outcomes.push(clearance_catalog_case());
     outcomes.push(threaded_hole_features_case());
     outcomes.push(entry_hole_features_case(false));

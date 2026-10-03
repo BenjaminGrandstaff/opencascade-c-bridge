@@ -15,6 +15,7 @@ mod exchange;
 mod ffi;
 mod inspection;
 mod operations;
+mod projection;
 mod session;
 mod types;
 

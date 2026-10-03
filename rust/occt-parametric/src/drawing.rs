@@ -1,0 +1,673 @@
+//! Regenerating engineering drawings with explicit views and datum annotations.
+use super::*;
+use crate::assembly::{cross, dot, subtract};
+use std::collections::BTreeSet;
+
+mod detail;
+mod export;
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DrawingViewKind {
+    #[default]
+    Orthographic,
+    /// Retains one side of an infinite cutting plane, then removes hidden lines.
+    Section {
+        origin: VectorQuantity,
+        normal: VectorQuantity,
+        keep_positive: bool,
+    },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct DrawingDetail {
+    /// Crop window in view-local model mm. Its minimum maps to paper_origin_mm.
+    pub minimum_mm: [f64; 2],
+    pub maximum_mm: [f64; 2],
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct DrawingView {
+    pub id: String,
+    pub outputs: Vec<InstanceOutputRef>,
+    pub origin: VectorQuantity,
+    /// Toward the viewer; x_axis is toward image right.
+    pub direction: VectorQuantity,
+    pub x_axis: VectorQuantity,
+    pub paper_origin_mm: [f64; 2],
+    pub scale: f64,
+    pub show_hidden: bool,
+    #[serde(default)]
+    pub kind: DrawingViewKind,
+    #[serde(default)]
+    pub detail: Option<DrawingDetail>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DimensionDirection {
+    Aligned,
+    Horizontal,
+    Vertical,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct DrawingDimension {
+    pub id: String,
+    pub view: String,
+    pub first: DatumRef,
+    pub second: DatumRef,
+    pub direction: DimensionDirection,
+    /// Signed offset in paper mm, along the dimension's left-hand normal.
+    pub offset_mm: f64,
+    pub precision: u8,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DrawingText {
+    Literal(String),
+    Parameter {
+        instance: String,
+        parameter: String,
+        prefix: String,
+        suffix: String,
+        precision: u8,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct DrawingNote {
+    pub id: String,
+    pub position_mm: [f64; 2],
+    pub text: DrawingText,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct DrawingDefinition {
+    pub id: String,
+    pub title: String,
+    pub paper_size_mm: [f64; 2],
+    pub views: Vec<DrawingView>,
+    #[serde(default)]
+    pub dimensions: Vec<DrawingDimension>,
+    #[serde(default)]
+    pub notes: Vec<DrawingNote>,
+    /// Title-block fields, in deterministic key order.
+    #[serde(default)]
+    pub metadata: BTreeMap<String, String>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct DrawingRenderOptions {
+    pub curve_samples: usize,
+    pub maximum_vertices: usize,
+}
+impl Default for DrawingRenderOptions {
+    fn default() -> Self {
+        Self {
+            curve_samples: 64,
+            maximum_vertices: 1_000_000,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct DrawingPolyline {
+    pub points_mm: Vec<[f64; 2]>,
+    pub hidden: bool,
+}
+#[derive(Clone, Debug, PartialEq)]
+pub struct DrawingLabel {
+    pub position_mm: [f64; 2],
+    pub text: String,
+}
+#[derive(Clone, Debug, PartialEq)]
+pub struct GeneratedDrawing {
+    pub id: String,
+    pub title: String,
+    pub paper_size_mm: [f64; 2],
+    pub polylines: Vec<DrawingPolyline>,
+    pub labels: Vec<DrawingLabel>,
+    pub metadata: BTreeMap<String, String>,
+    pub generated_variants: usize,
+}
+
+fn finite_pair(value: [f64; 2]) -> bool {
+    value.iter().all(|value| value.is_finite())
+}
+
+fn validate_text(text: &str) -> Result<(), ModelError> {
+    if text.len() > 2049 {
+        return Err(ModelError::new(
+            "drawing text exceeds the 2049-byte DXF field limit",
+        ));
+    }
+    Ok(())
+}
+
+fn axis(value: VectorQuantity) -> Result<Vec3, ModelError> {
+    let value = value.normalized(Dimension::Scalar)?;
+    let maximum = value.x.abs().max(value.y.abs()).max(value.z.abs());
+    if maximum == 0.0 || !maximum.is_finite() {
+        return Err(ModelError::new("drawing axis must be finite and nonzero"));
+    }
+    let value = Vec3::new(value.x / maximum, value.y / maximum, value.z / maximum);
+    let norm = value.x.hypot(value.y.hypot(value.z));
+    Ok(Vec3::new(value.x / norm, value.y / norm, value.z / norm))
+}
+
+impl DrawingView {
+    fn frame(&self) -> Result<occt_bridge::ProjectionFrame, ModelError> {
+        let origin = self.origin.normalized(Dimension::Length)?;
+        let direction = axis(self.direction)?;
+        let x_axis = axis(self.x_axis)?;
+        if ![origin.x, origin.y, origin.z]
+            .iter()
+            .all(|value| value.is_finite())
+            || dot(direction, x_axis).abs() > 1e-9
+            || !self.scale.is_finite()
+            || self.scale <= 0.0
+            || !finite_pair(self.paper_origin_mm)
+        {
+            return Err(ModelError::new(
+                "drawing view requires finite origin/placement, positive scale, and perpendicular axes",
+            ));
+        }
+        let projection = dot(direction, x_axis);
+        let x_axis = axis(VectorQuantity::scalars(
+            x_axis.x - direction.x * projection,
+            x_axis.y - direction.y * projection,
+            x_axis.z - direction.z * projection,
+        ))?;
+        self.validate_section()?;
+        if let Some(detail) = self.detail {
+            detail.validate()?;
+        }
+        Ok(occt_bridge::ProjectionFrame {
+            origin,
+            direction,
+            x_axis,
+        })
+    }
+
+    fn project(&self, point: Vec3) -> Result<[f64; 2], ModelError> {
+        let frame = self.frame()?;
+        let delta = subtract(point, frame.origin);
+        let local = [
+            dot(delta, frame.x_axis),
+            dot(delta, cross(frame.direction, frame.x_axis)),
+        ];
+        if !finite_pair(local) {
+            return Err(ModelError::new(
+                "drawing projection exceeds finite coordinate limits",
+            ));
+        }
+        Ok(local)
+    }
+
+    fn paper(&self, local: [f64; 2]) -> Result<[f64; 2], ModelError> {
+        let minimum = self.detail.map_or([0.0, 0.0], |detail| detail.minimum_mm);
+        let point = [
+            self.paper_origin_mm[0] + self.scale * (local[0] - minimum[0]),
+            self.paper_origin_mm[1] + self.scale * (local[1] - minimum[1]),
+        ];
+        if !finite_pair(point) {
+            return Err(ModelError::new(
+                "drawing paper coordinates exceed finite limits",
+            ));
+        }
+        Ok(point)
+    }
+
+    fn validate_section(&self) -> Result<(), ModelError> {
+        if let DrawingViewKind::Section { origin, normal, .. } = &self.kind {
+            let origin = origin.normalized(Dimension::Length)?;
+            if ![origin.x, origin.y, origin.z]
+                .iter()
+                .all(|value| value.is_finite())
+            {
+                return Err(ModelError::new("section plane origin must be finite"));
+            }
+            axis(*normal)?;
+        }
+        Ok(())
+    }
+}
+
+impl DrawingText {
+    fn resolve(&self, graph: &InstanceGraph<'_>) -> Result<String, ModelError> {
+        match self {
+            Self::Literal(text) => {
+                validate_text(text)?;
+                Ok(text.clone())
+            }
+            Self::Parameter {
+                instance,
+                parameter,
+                prefix,
+                suffix,
+                precision,
+            } => {
+                if *precision > 12 {
+                    return Err(ModelError::new("drawing precision must be 0–12"));
+                }
+                let instance = graph.resolve(instance)?;
+                let values = resolve_parameters(instance.definition, &instance.overrides)?;
+                let value = values.get(parameter).ok_or_else(|| {
+                    ModelError::new(format!("unknown drawing parameter '{parameter}'"))
+                })?;
+                let value = match value {
+                    ParameterValue::Scalar(value) => {
+                        format!("{:.*}", usize::from(*precision), value.normalized()?)
+                    }
+                    ParameterValue::Integer(value) => value.to_string(),
+                    ParameterValue::Boolean(value) => value.to_string(),
+                    ParameterValue::Choice(value) => value.clone(),
+                    ParameterValue::Vector(_) => {
+                        return Err(ModelError::new(
+                            "drawing parameter notes need a scalar, integer, boolean, or choice",
+                        ));
+                    }
+                };
+                let text = format!("{prefix}{value}{suffix}");
+                validate_text(&text)?;
+                Ok(text)
+            }
+        }
+    }
+}
+
+fn datum_origin(graph: &InstanceGraph<'_>, reference: &DatumRef) -> Result<Vec3, ModelError> {
+    Ok(match graph.datum(&reference.instance, &reference.datum)? {
+        ResolvedDatum::Point { origin }
+        | ResolvedDatum::Axis { origin, .. }
+        | ResolvedDatum::Plane { origin, .. } => origin,
+    })
+}
+
+impl DrawingDefinition {
+    pub(crate) fn validate(&self, graph: &InstanceGraph<'_>) -> Result<(), ModelError> {
+        if self.id.is_empty()
+            || !finite_pair(self.paper_size_mm)
+            || self.paper_size_mm.iter().any(|value| *value <= 0.0)
+            || self.views.is_empty()
+        {
+            return Err(ModelError::new(
+                "drawing needs an ID, positive finite paper size, and views",
+            ));
+        }
+        validate_text(&self.title)?;
+        for (key, value) in &self.metadata {
+            if key.len().saturating_add(value.len()).saturating_add(2) > 2049 {
+                return Err(ModelError::new(
+                    "drawing title-block field exceeds the DXF text limit",
+                ));
+            }
+        }
+        let mut ids = HashSet::new();
+        let mut resolutions = HashMap::new();
+        let mut features = HashMap::new();
+        for view in &self.views {
+            if view.id.is_empty() || !ids.insert(&view.id) || view.outputs.is_empty() {
+                return Err(ModelError::new("drawing views need unique IDs and outputs"));
+            }
+            view.frame()?;
+            validate_outputs(view, graph, &mut resolutions, &mut features)?;
+        }
+        let views = self
+            .views
+            .iter()
+            .map(|view| (view.id.as_str(), view))
+            .collect::<HashMap<_, _>>();
+        validate_dimensions(&self.dimensions, &views, graph)?;
+        let mut ids = HashSet::new();
+        for note in &self.notes {
+            if note.id.is_empty() || !ids.insert(&note.id) || !finite_pair(note.position_mm) {
+                return Err(ModelError::new(
+                    "drawing notes need unique IDs and finite positions",
+                ));
+            }
+            note.text.resolve(graph)?;
+        }
+        Ok(())
+    }
+
+    /// Regenerates each participating parameter variant once, at current poses.
+    /// Exact HLR determines visibility; exported curves are bounded uniform-
+    /// parameter polyline approximations, not chordal-error certified geometry.
+    /// Time: generation + kernel edge/face HLR work + O(exported vertices).
+    /// Storage: generated outputs + projection topology + exported vertices.
+    pub fn generate(
+        &self,
+        graph: &InstanceGraph<'_>,
+        session: &Session,
+        options: DrawingRenderOptions,
+    ) -> Result<GeneratedDrawing, ModelError> {
+        self.validate(graph)?;
+        if !(2..=100_000).contains(&options.curve_samples) || options.maximum_vertices < 2 {
+            return Err(ModelError::new(
+                "drawing export needs 2–100000 samples and a positive vertex budget",
+            ));
+        }
+        let instances = self
+            .views
+            .iter()
+            .flat_map(|view| view.outputs.iter().map(|output| output.instance.as_str()))
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+        let generation = graph.regenerate_instances_current(session, &instances)?;
+        let mut drawing = GeneratedDrawing {
+            id: self.id.clone(),
+            title: self.title.clone(),
+            paper_size_mm: self.paper_size_mm,
+            polylines: Vec::new(),
+            labels: Vec::new(),
+            metadata: self.metadata.clone(),
+            generated_variants: generation.generated_variants(),
+        };
+        let mut vertices = self
+            .dimensions
+            .len()
+            .checked_mul(14)
+            .and_then(|count| count.checked_add(9))
+            .ok_or_else(|| ModelError::new("drawing annotation vertex count overflow"))?;
+        if vertices > options.maximum_vertices {
+            return Err(ModelError::new("drawing exceeds export vertex budget"));
+        }
+        for view in &self.views {
+            append_view(
+                session,
+                view,
+                &generation,
+                options,
+                &mut vertices,
+                &mut drawing,
+            )?;
+        }
+        let views = self
+            .views
+            .iter()
+            .map(|view| (view.id.as_str(), view))
+            .collect::<HashMap<_, _>>();
+        for dimension in &self.dimensions {
+            append_dimension(
+                dimension,
+                views[dimension.view.as_str()],
+                graph,
+                &mut drawing,
+            )?;
+        }
+        for note in &self.notes {
+            drawing.labels.push(DrawingLabel {
+                position_mm: note.position_mm,
+                text: note.text.resolve(graph)?,
+            });
+        }
+        Ok(drawing)
+    }
+}
+
+fn validate_outputs<'definition>(
+    view: &DrawingView,
+    graph: &InstanceGraph<'definition>,
+    resolutions: &mut ResolutionCache<'definition>,
+    features: &mut HashMap<&'definition str, HashSet<&'definition str>>,
+) -> Result<(), ModelError> {
+    let mut seen = HashSet::new();
+    for output in &view.outputs {
+        if !seen.insert(&output.instance) || graph.is_suppressed(&output.instance) {
+            return Err(ModelError::new(
+                "drawing views need distinct unsuppressed instances",
+            ));
+        }
+        let instance = graph.resolve_cached(&output.instance, resolutions)?;
+        let names = features
+            .entry(instance.definition.id.as_str())
+            .or_insert_with(|| {
+                instance
+                    .definition
+                    .features
+                    .iter()
+                    .map(|feature| feature.id.as_str())
+                    .collect()
+            });
+        if !names.contains(output.output.as_str()) {
+            return Err(ModelError::new(format!(
+                "unknown drawing output '{}:{}'",
+                output.instance, output.output
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn validate_dimensions(
+    dimensions: &[DrawingDimension],
+    views: &HashMap<&str, &DrawingView>,
+    graph: &InstanceGraph<'_>,
+) -> Result<(), ModelError> {
+    let mut ids = HashSet::new();
+    for dimension in dimensions {
+        if dimension.id.is_empty()
+            || !ids.insert(&dimension.id)
+            || !dimension.offset_mm.is_finite()
+            || dimension.precision > 12
+        {
+            return Err(ModelError::new(
+                "drawing dimensions need unique IDs, finite offsets, and precision 0–12",
+            ));
+        }
+        let view = views
+            .get(dimension.view.as_str())
+            .ok_or_else(|| ModelError::new("drawing dimension references an unknown view"))?;
+        dimension_geometry(dimension, view, graph)?;
+    }
+    Ok(())
+}
+
+fn append_view(
+    session: &Session,
+    view: &DrawingView,
+    generation: &GraphRegeneration<'_>,
+    options: DrawingRenderOptions,
+    vertices: &mut usize,
+    drawing: &mut GeneratedDrawing,
+) -> Result<(), ModelError> {
+    let shapes = view
+        .outputs
+        .iter()
+        .map(|output| {
+            generation
+                .result(&output.instance)
+                .and_then(|result| result.shape(&output.output))
+                .ok_or_else(|| ModelError::new("generated drawing output is missing"))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let combined = session.create_compound(&shapes)?;
+    let combined = match view.kind {
+        DrawingViewKind::Orthographic => combined,
+        DrawingViewKind::Section {
+            origin,
+            normal,
+            keep_positive,
+        } => session.clip_by_plane(
+            &combined,
+            origin.normalized(Dimension::Length)?,
+            axis(normal)?,
+            keep_positive,
+        )?,
+    };
+    if session.subshape_count(&combined, ShapeType::Edge)? == 0 {
+        return Ok(());
+    }
+    let projected = session.orthographic_projection(&combined, view.frame()?)?;
+    append_edges(
+        session,
+        view,
+        &projected.visible,
+        false,
+        options,
+        vertices,
+        drawing,
+    )?;
+    if view.show_hidden {
+        append_edges(
+            session,
+            view,
+            &projected.hidden,
+            true,
+            options,
+            vertices,
+            drawing,
+        )?;
+    }
+    Ok(())
+}
+
+fn append_edges(
+    session: &Session,
+    view: &DrawingView,
+    shape: &Shape<'_>,
+    hidden: bool,
+    options: DrawingRenderOptions,
+    vertices: &mut usize,
+    drawing: &mut GeneratedDrawing,
+) -> Result<(), ModelError> {
+    let count = session.subshape_count(shape, ShapeType::Edge)?;
+    let sample_budget = options
+        .curve_samples
+        .checked_mul(if view.detail.is_some() { 2 } else { 1 })
+        .ok_or_else(|| ModelError::new("drawing vertex count overflow"))?;
+    let added = count
+        .checked_mul(sample_budget)
+        .and_then(|count| vertices.checked_add(count))
+        .ok_or_else(|| ModelError::new("drawing vertex count overflow"))?;
+    if added > options.maximum_vertices {
+        return Err(ModelError::new("drawing exceeds export vertex budget"));
+    }
+    *vertices = added;
+    for edge in session.subshapes(shape, ShapeType::Edge)? {
+        let local = session
+            .edge_sample_points(&edge, options.curve_samples)?
+            .iter()
+            .map(|point| [point.x, point.y])
+            .collect::<Vec<_>>();
+        let paths = match view.detail {
+            Some(detail) => detail::clip_polyline(&local, detail)?,
+            None => vec![local],
+        };
+        for path in paths {
+            let points_mm = path
+                .into_iter()
+                .map(|point| view.paper(point))
+                .collect::<Result<Vec<_>, _>>()?;
+            drawing
+                .polylines
+                .push(DrawingPolyline { points_mm, hidden });
+        }
+    }
+    Ok(())
+}
+
+type DimensionGeometry = ([f64; 2], [f64; 2], [f64; 2], f64);
+
+fn dimension_geometry(
+    dimension: &DrawingDimension,
+    view: &DrawingView,
+    graph: &InstanceGraph<'_>,
+) -> Result<DimensionGeometry, ModelError> {
+    let first = view.project(datum_origin(graph, &dimension.first)?)?;
+    let second = view.project(datum_origin(graph, &dimension.second)?)?;
+    let delta = [second[0] - first[0], second[1] - first[1]];
+    let (direction, value) = match dimension.direction {
+        DimensionDirection::Aligned => {
+            let value = delta[0].hypot(delta[1]);
+            ([delta[0] / value, delta[1] / value], value)
+        }
+        DimensionDirection::Horizontal => ([1.0, 0.0], delta[0].abs()),
+        DimensionDirection::Vertical => ([0.0, 1.0], delta[1].abs()),
+    };
+    if !value.is_finite() || value <= 1e-12 {
+        return Err(ModelError::new(
+            "drawing dimension has no finite projected extent",
+        ));
+    }
+    Ok((view.paper(first)?, view.paper(second)?, direction, value))
+}
+
+fn append_dimension(
+    dimension: &DrawingDimension,
+    view: &DrawingView,
+    graph: &InstanceGraph<'_>,
+    drawing: &mut GeneratedDrawing,
+) -> Result<(), ModelError> {
+    let (first, second, direction, value) = dimension_geometry(dimension, view, graph)?;
+    let normal = [-direction[1], direction[0]];
+    let first_end = [
+        first[0] + normal[0] * dimension.offset_mm,
+        first[1] + normal[1] * dimension.offset_mm,
+    ];
+    let mut second_end = [
+        second[0] + normal[0] * dimension.offset_mm,
+        second[1] + normal[1] * dimension.offset_mm,
+    ];
+    match dimension.direction {
+        DimensionDirection::Horizontal => second_end[1] = first_end[1],
+        DimensionDirection::Vertical => second_end[0] = first_end[0],
+        DimensionDirection::Aligned => {}
+    }
+    for points in [
+        [first, first_end],
+        [second, second_end],
+        [first_end, second_end],
+    ] {
+        if !points.iter().all(|point| finite_pair(*point)) {
+            return Err(ModelError::new(
+                "drawing dimension exceeds finite coordinates",
+            ));
+        }
+        drawing.polylines.push(DrawingPolyline {
+            points_mm: points.to_vec(),
+            hidden: false,
+        });
+    }
+    append_arrows(first_end, second_end, drawing)?;
+    drawing.labels.push(DrawingLabel {
+        position_mm: [
+            0.5 * first_end[0] + 0.5 * second_end[0] + normal[0] * 2.0,
+            0.5 * first_end[1] + 0.5 * second_end[1] + normal[1] * 2.0,
+        ],
+        text: format!("{:.*} mm", usize::from(dimension.precision), value),
+    });
+    Ok(())
+}
+
+fn append_arrows(
+    first: [f64; 2],
+    second: [f64; 2],
+    drawing: &mut GeneratedDrawing,
+) -> Result<(), ModelError> {
+    let delta = [second[0] - first[0], second[1] - first[1]];
+    let length = delta[0].hypot(delta[1]);
+    if !length.is_finite() || length <= 0.0 {
+        return Err(ModelError::new(
+            "drawing dimension has no finite paper extent",
+        ));
+    }
+    let along = [delta[0] / length, delta[1] / length];
+    for (tip, sign) in [(first, 1.0), (second, -1.0)] {
+        for side in [-1.0, 1.0] {
+            let wing = [
+                tip[0] + sign * 2.0 * along[0] - side * 0.7 * along[1],
+                tip[1] + sign * 2.0 * along[1] + side * 0.7 * along[0],
+            ];
+            drawing.polylines.push(DrawingPolyline {
+                points_mm: vec![tip, wing],
+                hidden: false,
+            });
+        }
+    }
+    Ok(())
+}

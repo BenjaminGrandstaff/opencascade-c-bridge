@@ -8,6 +8,7 @@ mod history;
 mod inspection;
 mod open_profile;
 mod operations;
+mod projection;
 mod results;
 mod session;
 mod variable_fillet;

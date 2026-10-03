@@ -73,7 +73,6 @@ The following major capabilities remain planned:
 - broader hole-size catalogs (tap drills, inch sizes, standard recess dimensions);
 - advanced ribs and later sheet-metal features;
 - closed-linkage solving and continuous collision detection beyond driven joints;
-- generated drawings with projected views and dimensions;
 - FEA mesh hand-off, manufacturability checks, and
   glTF export;
 - revision history and change impact for model
@@ -1115,3 +1114,14 @@ Its design specifications cover
 [analysis integration](../engineering-intent-language/ANALYSIS_INTEGRATION.md),
 and the
 [feature operation registry](../engineering-intent-language/FEATURE_OPERATION_REGISTRY.md).
+
+## Generated drawings
+
+Schema 42 stores drawing definitions separately from model geometry. Views select
+explicit instance outputs and use exact OCCT hidden-line removal, optionally
+after solid section clipping or with a detail crop. Datum dimensions and
+parameter notes resolve from the current document. Shared variants regenerate
+once, and temporary handles are released before numeric drawing data is returned.
+SVG and DXF include a page frame and metadata title block. Bounded uniform curve
+sampling is an approximation; section hatching is not yet generated. See
+[Drawings](DRAWINGS.md) for coordinates, budgets, examples, and export contracts.

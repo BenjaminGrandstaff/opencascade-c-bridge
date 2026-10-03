@@ -23,7 +23,7 @@ pub struct GenerationRecord {
     pub last_error: Option<String>,
 }
 
-pub const CURRENT_SCHEMA_VERSION: u32 = 41;
+pub const CURRENT_SCHEMA_VERSION: u32 = 42;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ModelDocument {
@@ -41,6 +41,8 @@ pub struct ModelDocument {
     /// Relationships, configurations, and materials.
     #[serde(default)]
     pub assembly: AssemblySemantics,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub drawings: Vec<DrawingDefinition>,
 }
 
 impl ModelDocument {
@@ -63,6 +65,7 @@ impl ModelDocument {
             patterns: graph.patterns.clone(),
             frames,
             generation_records: Vec::new(),
+            drawings: Vec::new(),
             assembly: AssemblySemantics {
                 active_configuration: None,
                 ..graph.assembly.clone()
@@ -236,7 +239,19 @@ impl ModelDocument {
             }
             validate_generation_record(record, &node_ids)?;
         }
-        graph.validate_assembly()
+        graph.validate_assembly()?;
+        self.validate_drawings(&graph)
+    }
+
+    fn validate_drawings(&self, graph: &InstanceGraph<'_>) -> Result<(), ModelError> {
+        let mut drawings = HashSet::new();
+        for drawing in &self.drawings {
+            if !drawings.insert(&drawing.id) {
+                return Err(ModelError::new("document drawing IDs must be unique"));
+            }
+            drawing.validate(graph)?;
+        }
+        Ok(())
     }
 
     pub(crate) fn validate_instance_ids(&self) -> Result<HashSet<&str>, ModelError> {

@@ -839,6 +839,65 @@ static void draft(occt_bridge_session_t* session) {
     occt_bridge_shape_release(session, body);
 }
 
+static void projection(occt_bridge_session_t* session) {
+    const occt_bridge_vec3_t zero = {0, 0, 0};
+    const occt_bridge_vec3_t up = {0, 0, 1};
+    const occt_bridge_vec3_t right = {1, 0, 0};
+    const occt_bridge_vec3_t nan_x = {NAN, 0, 0};
+    occt_bridge_shape_id_t body = 0, edge = 0, visible = 0, hidden = 0;
+    occt_bridge_vec3_t points[3];
+    EXPECT(occt_bridge_create_box(session, zero, right, &body), ARG);
+    EXPECT(occt_bridge_create_box(session, zero, (occt_bridge_vec3_t){1, 1, 1}, &body), OK);
+    EXPECT(occt_bridge_orthographic_projection(NULL, body, zero, up, right, &visible, &hidden), ARG);
+    EXPECT(occt_bridge_orthographic_projection(session, body, zero, up, right, NULL, &hidden), ARG);
+    EXPECT(occt_bridge_orthographic_projection(session, body, zero, up, right, &visible, NULL), ARG);
+    EXPECT(occt_bridge_orthographic_projection(session, body, zero, up, right, &visible, &visible), ARG);
+    EXPECT(occt_bridge_orthographic_projection(session, body, nan_x, up, right, &visible, &hidden), ARG);
+    EXPECT(occt_bridge_orthographic_projection(session, body, zero, zero, right, &visible, &hidden), ARG);
+    EXPECT(occt_bridge_orthographic_projection(session, body, zero, up, zero, &visible, &hidden), ARG);
+    EXPECT(occt_bridge_orthographic_projection(session, body, zero, up, up, &visible, &hidden), ARG);
+    EXPECT(occt_bridge_orthographic_projection(session, UINT64_MAX, zero, up, right, &visible, &hidden), MISSING);
+    EXPECT(occt_bridge_orthographic_projection(session, body, zero, up, right, &visible, &hidden), OK);
+    EXPECT(occt_bridge_shape_subshape_at(session, visible, OCCT_BRIDGE_SHAPE_EDGE, 0, &edge), OK);
+    EXPECT(occt_bridge_edge_sample_points(NULL, edge, 3, points), ARG);
+    EXPECT(occt_bridge_edge_sample_points(session, edge, 3, NULL), ARG);
+    EXPECT(occt_bridge_edge_sample_points(session, edge, 1, points), ARG);
+    EXPECT(occt_bridge_edge_sample_points(session, edge, SIZE_MAX, points), ARG);
+    EXPECT(occt_bridge_edge_sample_points(session, UINT64_MAX, 3, points), MISSING);
+    EXPECT(occt_bridge_edge_sample_points(session, body, 3, points), ARG);
+    EXPECT(occt_bridge_edge_sample_points(session, edge, 3, points), OK);
+    occt_bridge_shape_id_t clipped = 0;
+    EXPECT(occt_bridge_clip_by_plane(NULL, body, zero, up, 1, &clipped), ARG);
+    EXPECT(occt_bridge_clip_by_plane(session, body, zero, up, 1, NULL), ARG);
+    EXPECT(occt_bridge_clip_by_plane(session, body, nan_x, up, 1, &clipped), ARG);
+    EXPECT(occt_bridge_clip_by_plane(session, body, zero, zero, 1, &clipped), ARG);
+    EXPECT(occt_bridge_clip_by_plane(session, body, zero, nan_x, 1, &clipped), ARG);
+    EXPECT(occt_bridge_clip_by_plane(session, body, zero, up, -1, &clipped), ARG);
+    EXPECT(occt_bridge_clip_by_plane(session, body, zero, up, 2, &clipped), ARG);
+    EXPECT(occt_bridge_clip_by_plane(session, UINT64_MAX, zero, up, 1, &clipped), MISSING);
+    EXPECT(occt_bridge_clip_by_plane(session, edge, zero, up, 1, &clipped), GEOMETRY);
+    EXPECT(occt_bridge_clip_by_plane(session, body, zero, up, 1, &clipped), OK);
+    occt_bridge_shape_release(session, clipped);
+    size_t count = 0;
+    occt_bridge_shape_id_t edges[12];
+    for (size_t index = 0; index < 12; ++index) { edges[index] = UINT64_MAX; }
+    EXPECT(occt_bridge_shape_subshapes(NULL, body, OCCT_BRIDGE_SHAPE_EDGE, NULL, 0, &count), ARG);
+    EXPECT(occt_bridge_shape_subshapes(session, body, OCCT_BRIDGE_SHAPE_EDGE, NULL, 0, NULL), ARG);
+    EXPECT(occt_bridge_shape_subshapes(session, body, 99, NULL, 0, &count), ARG);
+    EXPECT(occt_bridge_shape_subshapes(session, UINT64_MAX, OCCT_BRIDGE_SHAPE_EDGE, NULL, 0, &count), MISSING);
+    EXPECT(occt_bridge_shape_subshapes(session, body, OCCT_BRIDGE_SHAPE_EDGE, NULL, 1, &count), ARG);
+    EXPECT(occt_bridge_shape_subshapes(session, body, OCCT_BRIDGE_SHAPE_EDGE, NULL, 0, &count), OK);
+    if (count != 12) { ++failures; }
+    EXPECT(occt_bridge_shape_subshapes(session, body, OCCT_BRIDGE_SHAPE_EDGE, edges, 1, &count), ARG);
+    if (count != 12 || edges[0] != UINT64_MAX) { ++failures; }
+    EXPECT(occt_bridge_shape_subshapes(session, body, OCCT_BRIDGE_SHAPE_EDGE, edges, 12, &count), OK);
+    for (size_t index = 0; index < count; ++index) { occt_bridge_shape_release(session, edges[index]); }
+    occt_bridge_shape_release(session, edge);
+    occt_bridge_shape_release(session, visible);
+    occt_bridge_shape_release(session, hidden);
+    occt_bridge_shape_release(session, body);
+}
+
 int main(void) {
     occt_bridge_session_t* session = NULL;
     if (occt_bridge_session_create(OCCT_BRIDGE_ABI_VERSION, &session) != OK) {
@@ -858,6 +917,7 @@ int main(void) {
     open_profile_to_next(session);
     station_fillet(session);
     measurements(session);
+    projection(session);
     persistence(session);
     occt_bridge_session_destroy(session);
 

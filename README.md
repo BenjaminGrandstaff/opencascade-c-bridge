@@ -3,7 +3,7 @@
 A small, stable C ABI over Open Cascade (OCCT), designed to be wrapped safely
 from Rust and other languages. Open Cascade C++ objects never cross the ABI.
 
-The current C ABI version is **33**.
+The current C ABI version is **34**.
 
 ## Current API
 
@@ -85,7 +85,7 @@ per-model linear and angular tolerances, plus configurations and materials
 with mass. Full graph regeneration verifies mass ranges, datum clearances, and
 recorded relationship satisfaction with required, preferred, or advisory
 priority. Schema v1 through
-v40 documents migrate to v41 during load; unsupported
+v41 documents migrate to v42 during load; unsupported
 future versions are rejected.
 Managed regeneration incrementally reuses unchanged outputs and
 rebuilds dirty features plus their downstream dependents. Graph regeneration
@@ -261,7 +261,11 @@ handles and retain the prior accepted generation.
 
 `ModelDocument` persists the family definition, requirements, instance and
 clone identities, sparse overrides, placements, assembly frames, pattern rules, provenance, and
-regeneration audit records. Schema 41 adds driven frame joints with limits and
+regeneration audit records. Schema 42 adds regenerated orthographic, section,
+and detail drawings, datum dimensions, parameter notes, and metadata title blocks
+exported as SVG or DXF. See [Drawings](DRAWINGS.md) for the API and sampling limits.
+ABI 34 adds exact hidden-line projection, plane clipping, edge sampling, and
+bulk subshape traversal. Schema 41 adds driven frame joints with limits and
 the API supports exact interference/clearance checks and sampled motion with
 shared local geometry. See [Assembly motion](ASSEMBLY_MOTION.md) for coordinate
 conventions, complexity, and sampled-motion limits. ABI 33 exposes BREP

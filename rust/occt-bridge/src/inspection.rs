@@ -112,6 +112,34 @@ impl Session {
         Ok(self.shape(subshape))
     }
 
+    /// Unique independently owned subshapes, in the same order as `subshape`.
+    /// Indexes topology once per ABI pass, O(topology + returned handles).
+    pub fn subshapes<'a>(
+        &'a self,
+        shape: &Shape<'_>,
+        kind: ShapeType,
+    ) -> Result<Vec<Shape<'a>>, BridgeError> {
+        let count = self.subshape_count(shape, kind)?;
+        if count == 0 {
+            return Ok(Vec::new());
+        }
+        let mut ids = vec![0; count];
+        let mut written = 0;
+        // SAFETY: Validated input, count writable IDs, and writable count output.
+        self.check(unsafe {
+            occt_bridge_shape_subshapes(
+                self.raw.as_ptr(),
+                shape.id,
+                kind as c_int,
+                ids.as_mut_ptr(),
+                ids.len(),
+                &mut written,
+            )
+        })?;
+        ids.truncate(written);
+        Ok(ids.into_iter().map(|id| self.shape(id)).collect())
+    }
+
     pub fn surface_area(&self, shape: &Shape<'_>) -> Result<f64, BridgeError> {
         self.validate_shape(shape)?;
         let mut area = 0.0;

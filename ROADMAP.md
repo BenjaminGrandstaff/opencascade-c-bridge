@@ -8,23 +8,28 @@ tracks status and order.
 
 | Layer | Version | State |
 |---|---|---|
-| C ABI (`src/`, `include/`) | ABI 33 | Stable; exact version match required |
+| C ABI (`src/`, `include/`) | ABI 34 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 41 | Active development |
+| `occt-parametric` (engineering layer) | Schema 42 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 3/3, bridge 68 (+1 doc test), recipes 3, parametric 188 | `ctest`, `cargo test` (see README) |
-| SonarQube (indexed Rust) | Gate OK, 0 issues, 91.2% line coverage (2026-10-03); Rust unit tests classified as tests | `tools/sonar/run.sh` |
+| Tests | C 4/4, bridge 74 (+1 doc test), recipes 3, parametric 196 | `ctest`, `cargo test` (see README) |
+| SonarQube (indexed Rust) | Gate OK, 0 issues, 91.5% line coverage (2026-10-03); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
-| Coverage | 92.08% lines overall, test code excluded; C++ 94.14% lines, 87.63% branches, 100% functions; Rust 90.85% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 49 passing within budget | `tools/bench/run.sh` |
+| Coverage | 92.32% lines overall, test code excluded; C++ 94.27% lines, 87.67% branches, 100% functions; Rust 91.20% lines | `tools/coverage/run.sh` |
+| Scale benchmarks | 51 passing within budget | `tools/bench/run.sh` |
 
 ## Done
 
 ### Kernel (C ABI)
+
+- Exact orthographic hidden-line projection, closed solid plane clipping,
+  bounded edge sampling, and transactional bulk subshape traversal (ABI 34).
+  Projection and clipping preserve their input shapes; failed multi-handle
+  publication retracts every partial result.
 
 - Multi-station variable fillets (ABI 33): ordered normalized radius samples,
   reversed spines or an explicit endpoint-nearest start point. Each tangent
@@ -126,6 +131,16 @@ tracks status and order.
   error-bounded (Bezier, B-spline) extrema.
 
 ### Parametric layer
+
+- Regenerated drawings (schema 42): orthographic, section, and cropped detail
+  views with exact hidden-line removal, datum dimensions, parameter notes,
+  and framed metadata title blocks. SVG and millimeter DXF exports use bounded
+  sampled polylines. Seven tests cover regeneration, validation, persistence,
+  semantic diff, export escaping, and cleanup. Independent DXF parsing reports
+  zero errors or repairs. The 1,000-view case takes 1.235 s (10 s budget);
+  a view of a 1,000-part assembly takes 0.903 s (20 s budget). Section hatching
+  and certified curve approximation remain future extensions.
+  API and limits: [Drawings](DRAWINGS.md).
 
 - Full per-component and assembly mass properties: inherited material density,
   current instance/frame/joint poses, center of mass, and central inertia in
@@ -437,18 +452,14 @@ every item below is defined in documents and the API, and verified in tests.
 
 ### Capabilities
 
-1. **Generated drawings.** Projected views (orthographic, section, detail)
-    by hidden-line removal, exported as SVG and DXF; dimensions and notes
-    placed from datums and parameters; title blocks from document metadata.
-    Drawings regenerate with the model rather than being edited by hand.
-2. **Analysis and manufacturing hand-off.** Tagged surface and volume meshes
+1. **Analysis and manufacturing hand-off.** Tagged surface and volume meshes
     for external FEA; manufacturability checks (minimum wall
     thickness, draft angle, 3D-printing overhang); glTF export with material
     appearance for rendering.
-3. **Model data management.** Recorded revision history inside documents,
+2. **Model data management.** Recorded revision history inside documents,
     and change-impact reports listing the
     instances and features a change affects, with a git merge driver.
-4. **Feature breadth.** Sheet metal (flanges, bends, flat patterns)
+3. **Feature breadth.** Sheet metal (flanges, bends, flat patterns)
     after the rest. Expand hole catalogs to tap drills, inch sizes, and
     standard recess dimensions when their source data is verified.
 

@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define OCCT_BRIDGE_ABI_VERSION 33u
+#define OCCT_BRIDGE_ABI_VERSION 34u
 #define OCCT_BRIDGE_INVALID_SHAPE_ID UINT64_C(0)
 
 #if defined(_WIN32) && defined(OCCT_BRIDGE_BUILD_SHARED)
@@ -925,6 +925,59 @@ OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_stl_save(
     double linear_deflection,
     double angular_deflection_radians,
     int binary
+);
+
+/* Orthographic hidden-line removal. Direction points toward the viewer;
+ * x_axis is the image's rightward axis and must be perpendicular to direction.
+ * Output compounds contain visible/hidden sharp, smooth, and outline edges in
+ * local XY coordinates (z=0). Inputs are preserved; superimposed edges may remain.
+ * Both outputs are required, distinct, and zeroed on failure. */
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_orthographic_projection(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t shape,
+    occt_bridge_vec3_t origin,
+    occt_bridge_vec3_t direction,
+    occt_bridge_vec3_t x_axis,
+    occt_bridge_shape_id_t* out_visible,
+    occt_bridge_shape_id_t* out_hidden
+);
+
+/* Uniform normalized-parameter samples of a finite edge's exact curve.
+ * Output is an approximation for export, not a certified chordal tolerance.
+ * Caller provides point_count entries; 2 <= point_count <= 100000.
+ * Samples follow the edge's topological orientation. */
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_edge_sample_points(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t edge,
+    size_t point_count,
+    occt_bridge_vec3_t* out_points
+);
+
+/* Non-destructive clipping of valid solid geometry by an infinite plane.
+ * keep_positive is 1 to retain the normal's side, 0 for the opposite side.
+ * The closed result may be empty; original-source history is retained. */
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_clip_by_plane(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t shape,
+    occt_bridge_vec3_t plane_origin,
+    occt_bridge_vec3_t plane_normal,
+    int keep_positive,
+    occt_bridge_shape_id_t* out_shape
+);
+
+/* Unique subshapes in the same order as subshape_at, indexed once per call.
+ * Null buffer with capacity 0 queries the required count without handles.
+ * Otherwise capacity must fit every result. Insufficient capacity reports the
+ * required count and leaves the buffer unchanged; other failures report 0.
+ * Success transfers ownership of count independent handles to the caller.
+ * On failure no new handles survive. O(topology + count) time/storage. */
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_shape_subshapes(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t shape,
+    occt_bridge_shape_type_t type,
+    occt_bridge_shape_id_t* out_shapes,
+    size_t capacity,
+    size_t* out_count
 );
 
 #ifdef __cplusplus

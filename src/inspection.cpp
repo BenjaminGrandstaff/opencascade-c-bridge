@@ -162,6 +162,23 @@ bool faces_share_tangent_edge(const TopoDS_Face& first, const TopoDS_Face& secon
     return false;
 }
 
+occt_bridge_status_t store_subshape_handles(
+    occt_bridge_session_t* session, const TopTools_IndexedMapOfShape& shapes,
+    occt_bridge_shape_id_t* out_shapes, size_t* out_count) {
+    const auto count = static_cast<size_t>(shapes.Extent());
+    std::vector<occt_bridge_shape_id_t> ids(count, 0);
+    const auto release = [&] { for (const auto id : ids) { if (id != 0) { session->shapes.erase(id); } } };
+    try {
+        for (size_t index = 0; index < count; ++index) {
+            const auto status = store_shape(session, shapes.FindKey(static_cast<Standard_Integer>(index + 1)), &ids[index]);
+            if (status != OCCT_BRIDGE_OK) { release(); return status; }
+        }
+    } catch (...) { release(); throw; }
+    std::copy(ids.begin(), ids.end(), out_shapes);
+    *out_count = count;
+    return succeed(session);
+}
+
 }  // namespace
 
 extern "C" {
@@ -275,6 +292,30 @@ occt_bridge_status_t occt_bridge_shape_bounds(
     occt_bridge_shape_id_t shape,
     occt_bridge_bounds_t* out_bounds) {
     return guarded(session, [&] { return shape_bounds(session, shape, out_bounds, false); });
+}
+
+occt_bridge_status_t occt_bridge_shape_subshapes(
+    occt_bridge_session_t* session, occt_bridge_shape_id_t shape,
+    occt_bridge_shape_type_t type, occt_bridge_shape_id_t* out_shapes,
+    size_t capacity, size_t* out_count) {
+    if (out_count != nullptr) { *out_count = 0; }
+    return guarded(session, [&] {
+        if (out_count == nullptr) { return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_count is null"); }
+        TopAbs_ShapeEnum topology_type = TopAbs_SHAPE;
+        if (!bridge_shape_type(type, topology_type) || (out_shapes == nullptr && capacity != 0)) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "subshape type or output buffer is invalid");
+        }
+        const auto* value = find_shape(session, shape);
+        if (value == nullptr) { return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "shape was not found"); }
+        const auto shapes = descendant_shapes(*value, topology_type);
+        const auto count = static_cast<size_t>(shapes.Extent());
+        if (out_shapes == nullptr) { *out_count = count; return succeed(session); }
+        if (capacity < count) {
+            *out_count = count;
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "subshape output capacity is insufficient");
+        }
+        return store_subshape_handles(session, shapes, out_shapes, out_count);
+    });
 }
 
 occt_bridge_status_t occt_bridge_shape_exact_bounds(

@@ -27,6 +27,7 @@ add_library(
     src/operations.cpp
     src/inspection.cpp
     src/measurements.cpp
+    src/projection.cpp
     src/history.cpp
     src/open_profile.cpp
     src/rib_support.cpp
@@ -66,6 +67,7 @@ set(
     TKXSBase
     TKDESTEP
     TKMesh
+    TKHLR
     TKDESTL
     TKShHealing
 )
@@ -112,6 +114,14 @@ if(BUILD_TESTING)
     target_include_directories(occt_bridge_shape_validator_test PRIVATE ${OpenCASCADE_INCLUDE_DIR})
     target_link_libraries(occt_bridge_shape_validator_test PRIVATE ${OCCT_BRIDGE_OCCT_LIBRARIES})
     add_test(NAME occt_bridge_shape_validator COMMAND occt_bridge_shape_validator_test)
+
+    # Force handle-space exhaustion to verify transactional multi-output APIs.
+    add_executable(occt_bridge_handle_transaction_test tests/handle_transaction_test.cpp)
+    target_compile_features(occt_bridge_handle_transaction_test PRIVATE cxx_std_17)
+    target_compile_options(occt_bridge_handle_transaction_test PRIVATE $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic;-Werror>)
+    target_include_directories(occt_bridge_handle_transaction_test PRIVATE src ${OpenCASCADE_INCLUDE_DIR})
+    target_link_libraries(occt_bridge_handle_transaction_test PRIVATE OpenCascadeCBridge::occt_bridge ${OCCT_BRIDGE_OCCT_LIBRARIES})
+    add_test(NAME occt_bridge_handle_transactions COMMAND occt_bridge_handle_transaction_test)
 endif()
 
 install(
