@@ -492,8 +492,15 @@ every item below is defined in documents and the API, and verified in tests.
 
 ### Capabilities
 
-The near-term capability list is complete within the documented limits.
-The extensions below remain open.
+1. **Richer requirement rules.** Part rules beyond `ShapeValid` and
+    `VolumeRange`: minimum wall thickness, minimum concave and convex radius,
+    and connectivity (one solid, no loose shells). Assembly rules beyond mass,
+    datum clearance, and relationship satisfaction: no interference between
+    instances and minimum clearance, built on the exact indexed checks; and
+    manufacturing screens (draft angle, overhang) promoted from mesh hand-off
+    to stored, prioritized requirements. Each rule persists in documents,
+    reports a measured value against its limit, and keeps required, preferred,
+    and advisory semantics during regeneration.
 
 ## Later
 
@@ -503,8 +510,6 @@ The extensions below remain open.
 
 - Advanced ribs with general support-following and nonuniform closure.
 - Closed-linkage constraint solving and continuous collision detection.
-- Richer requirement rules: interference, minimum radius, wall thickness,
-  connectivity, manufacturing checks.
 - Assumptions and requirement-to-feature trace links in the document schema.
 - Semantic naming beyond feature outputs, and geometric tangency inference
   when continuity metadata is absent.
