@@ -6,12 +6,14 @@ mod draft;
 mod drawing;
 mod expressions;
 mod graph;
+mod hole_catalogs;
 mod holes;
 mod mesh;
 mod patterns;
 mod regeneration;
 mod ribs;
 mod selection;
+mod sheet_metal;
 mod variable_fillet;
 
 fn length_parameter(id: &str, default: f64) -> ParameterDefinition {

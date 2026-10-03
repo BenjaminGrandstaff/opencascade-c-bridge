@@ -70,8 +70,9 @@ The following major capabilities remain planned:
   model;
 - broader requirement rules such as clearance, interference, minimum radius,
   wall thickness, connectivity, and manufacturing checks;
-- broader hole-size catalogs (tap drills, inch sizes, standard recess dimensions);
-- advanced ribs and later sheet-metal features;
+- broader hole-size catalogs (countersink relief, tolerance classes) and
+  sheet metal beyond single constant-width strips;
+- advanced ribs;
 - closed-linkage solving and continuous collision detection beyond driven joints;
 
 Tagged surface meshes, external tetrahedral hand-off, material-aware glTF, and
@@ -364,8 +365,30 @@ value, unit conversion, invalid quantities, derived evaluation, geometry,
 incremental edits/rollback, round trips, and migration. See
 [Hole-size catalog](HOLE_SIZE_CATALOG.md) for source, API, and limitations.
 100,000 checked lookups take about 1 ms (200 ms budget).
-Tap drills, inch sizes, standard recess dimensions, and manufacturing tolerance
-selection remain planned. The catalog does not verify fit or standards compliance.
+Schema 45 adds `ScalarExpr::CarrLaneTapDrillV1 { nominal_diameter, pitch, system }`
+and `ScalarExpr::CarrLaneSocketHeadV1 { nominal_diameter, system, dimension }`,
+frozen metric and inch tables from Carr Lane's Rev. 9/2021 booklet: 64 tap-drill
+pairs and 38 socket-head sizes with counterbore diameter/depth and normal/close
+clearance. They share the ISO 273 contract (exact keys, no interpolation,
+derived and resolved evaluation, dependency collection through every operand).
+Four tests check published values in both unit systems, rejection of unknown
+pairs and wrong dimensions, and a hole whose tap drill, clearance, and
+counterbore are all catalog-driven, including incremental edits and rollback.
+Manufacturing tolerance selection remains planned. The catalogs do not verify
+fit or standards compliance.
+
+## Sheet metal
+
+Schema 45 adds `FeatureOperation::SheetMetal`, a constant-width strip of
+flanges joined by exact circular bends, and `FeatureOperation::SheetMetalFlat`,
+its blank for an explicit neutral factor K. The blank is computed from the
+folded feature's definition rather than by unfolding geometry, so it is exact
+and needs no topology matching; `flat_pattern` gives the same lengths, bend
+allowances, and bend lines without kernel work, and they export as a drawing.
+Evaluation is linear in flanges, and overflowing dimensions fail before kernel
+calls. Five tests cover analytic volumes for bends of each sign, incremental
+reuse when only K changes, distant and very small or large sheets,
+self-intersecting outlines, and drawing export. See [Sheet metal](SHEET_METAL.md).
 
 ## Draft features
 

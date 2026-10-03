@@ -11,16 +11,16 @@ tracks status and order.
 | C ABI (`src/`, `include/`) | ABI 35 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 44 | Active development |
+| `occt-parametric` (engineering layer) | Schema 45 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 4/4, bridge 76 (+1 doc test), recipes 3, parametric 208 + merge driver 3, mesh Python 4 | `ctest`, `cargo test` (see README) |
+| Tests | C 4/4, bridge 76 (+1 doc test), recipes 3, parametric 217 + merge driver 3, mesh Python 4 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 92.1% line coverage (2026-10-03); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
 | Coverage | 92.49% lines overall, test code excluded; C++ 94.22% lines, 87.54% branches, 100% functions; Rust 91.60% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 55 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Scale benchmarks | 57 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
 
@@ -137,6 +137,20 @@ tracks status and order.
   error-bounded (Bezier, B-spline) extrema.
 
 ### Parametric layer
+
+- Sheet metal and expanded hole catalogs (schema 45): `SheetMetal` builds a
+  constant-width strip of flanges joined by exact circular bends;
+  `SheetMetalFlat` builds its blank for an explicit neutral factor, and
+  kernel-free `flat_pattern` metrics export as SVG/DXF drawings with bend lines.
+  Frozen Carr Lane V1 catalogs add 64 metric and inch tap-drill pairs and 38
+  socket-head sizes (counterbore diameter/depth, normal/close clearance), each
+  value checked against the Rev. 9/2021 booklet. Nine tests cover analytic
+  volumes, incremental reuse, extreme scales, invalid outlines, drawings,
+  published values, and catalog-driven holes. 1,000 folded brackets with linked
+  blanks build and edit in 5.493 s (15 s budget); 100,000 worst-row catalog
+  lookups take 2 ms (200 ms budget). Edge flanges, reliefs, hems, bend
+  tables, and countersink relief are not supported. See
+  [Sheet metal](SHEET_METAL.md) and [Hole-size catalog](HOLE_SIZE_CATALOG.md).
 
 - Analysis and manufacturing hand-off (schema 44): semantic face tags, source
   BREP and surface meshes for an isolated Gmsh tetrahedral runner, material-aware
@@ -478,9 +492,7 @@ every item below is defined in documents and the API, and verified in tests.
 
 ### Capabilities
 
-1. **Feature breadth.** Sheet metal (flanges, bends, flat patterns)
-    after the rest. Expand hole catalogs to tap drills, inch sizes, and
-    standard recess dimensions when their source data is verified.
+All planned capabilities have landed. Promote the next priority from **Later**.
 
 ## Later
 

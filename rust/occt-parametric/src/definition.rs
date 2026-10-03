@@ -42,6 +42,18 @@ pub enum ScalarExpr {
         nominal_diameter: Box<ScalarExpr>,
         series: ClearanceSeries,
     },
+    /// Frozen manufacturer cut-tap recommendations; pitch is a length.
+    CarrLaneTapDrillV1 {
+        nominal_diameter: Box<ScalarExpr>,
+        pitch: Box<ScalarExpr>,
+        system: HoleCatalogSystem,
+    },
+    /// Frozen nominal socket-head clearance and counterbore dimensions.
+    CarrLaneSocketHeadV1 {
+        nominal_diameter: Box<ScalarExpr>,
+        system: HoleCatalogSystem,
+        dimension: SocketHeadDimension,
+    },
     Negate(Box<ScalarExpr>),
     Absolute(Box<ScalarExpr>),
     Add(Box<ScalarExpr>, Box<ScalarExpr>),
@@ -380,6 +392,15 @@ pub enum FilletSpineDirection {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FeatureOperation {
+    /// Constant-width sheet with tangent-length flanges and circular bends.
+    SheetMetal {
+        definition: Box<SheetMetalDefinition>,
+    },
+    /// Flat blank linked to a directly named SheetMetal feature.
+    SheetMetalFlat {
+        input: String,
+        neutral_factor: ScalarExpr,
+    },
     Box {
         origin: VectorExpr,
         size: VectorExpr,
@@ -507,7 +528,8 @@ pub enum FeatureOperation {
 impl FeatureOperation {
     pub(crate) fn dependencies(&self) -> Vec<&str> {
         match self {
-            Self::Translate { input, .. }
+            Self::SheetMetalFlat { input, .. }
+            | Self::Translate { input, .. }
             | Self::Rotate { input, .. }
             | Self::Extrude { input, .. }
             | Self::Revolve { input, .. }
@@ -533,7 +555,8 @@ impl FeatureOperation {
             Self::Cut { object, tool } => vec![object, tool],
             Self::Sew { inputs, .. } => inputs.iter().map(String::as_str).collect(),
             Self::MakeSolid { shells } => shells.iter().map(String::as_str).collect(),
-            Self::Box { .. }
+            Self::SheetMetal { .. }
+            | Self::Box { .. }
             | Self::Cylinder { .. }
             | Self::SketchFace { .. }
             | Self::SketchWire { .. }

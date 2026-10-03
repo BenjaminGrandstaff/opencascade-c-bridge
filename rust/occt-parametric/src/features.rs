@@ -57,11 +57,34 @@ pub(crate) fn execute_profile_sweep<'session>(
 pub(crate) fn execute_feature<'session>(
     session: &'session Session,
     datums: &HashMap<&str, &DatumDefinition>,
+    definitions: &HashMap<&str, &FeatureDefinition>,
     feature: &FeatureDefinition,
     parameters: &HashMap<String, ParameterValue>,
     shapes: &HashMap<String, Shape<'session>>,
 ) -> Result<Shape<'session>, ModelError> {
     let result = match &feature.operation {
+        FeatureOperation::SheetMetal { definition } => {
+            return definition.generate(session, parameters);
+        }
+        FeatureOperation::SheetMetalFlat {
+            input,
+            neutral_factor,
+        } => {
+            let Some(FeatureDefinition {
+                operation: FeatureOperation::SheetMetal { definition },
+                ..
+            }) = definitions.get(input.as_str()).copied()
+            else {
+                return Err(ModelError::new(
+                    "flat pattern input must directly name a sheet-metal feature",
+                ));
+            };
+            return definition.generate_flat(
+                session,
+                parameters,
+                scalar(neutral_factor, parameters, Dimension::Scalar)?,
+            );
+        }
         FeatureOperation::Box { origin, size } => session.create_box(
             vector(origin, parameters, Dimension::Length)?,
             vector(size, parameters, Dimension::Length)?,

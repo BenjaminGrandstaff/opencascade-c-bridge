@@ -234,6 +234,11 @@ impl<'session> FeatureBuild<'session> {
             .iter()
             .map(|datum| (datum.id.as_str(), datum))
             .collect::<HashMap<_, _>>();
+        let definitions = definition
+            .features
+            .iter()
+            .map(|feature| (feature.id.as_str(), feature))
+            .collect::<HashMap<_, _>>();
         let mut pending: Vec<&FeatureDefinition> = definition.features.iter().collect();
         while !pending.is_empty() {
             let before = pending.len();
@@ -241,7 +246,14 @@ impl<'session> FeatureBuild<'session> {
             while index < pending.len() {
                 if self.is_ready(pending[index]) {
                     let feature = pending.remove(index);
-                    self.add_feature(session, &datums, feature, parameters, previous)?;
+                    self.add_feature(
+                        session,
+                        &datums,
+                        &definitions,
+                        feature,
+                        parameters,
+                        previous,
+                    )?;
                 } else {
                     index += 1;
                 }
@@ -274,6 +286,7 @@ impl<'session> FeatureBuild<'session> {
         &mut self,
         session: &'session Session,
         datums: &HashMap<&str, &DatumDefinition>,
+        definitions: &HashMap<&str, &FeatureDefinition>,
         feature: &FeatureDefinition,
         parameters: &HashMap<String, ParameterValue>,
         previous: Option<&GeneratedResult<'session>>,
@@ -294,7 +307,14 @@ impl<'session> FeatureBuild<'session> {
             Some(shape) => session.duplicate(shape).map_err(Into::into),
             None => {
                 self.dirty_features.insert(feature.id.clone());
-                execute_feature(session, datums, feature, parameters, &self.shapes)
+                execute_feature(
+                    session,
+                    datums,
+                    definitions,
+                    feature,
+                    parameters,
+                    &self.shapes,
+                )
             }
         };
         let shape = generated.map_err(|error| error.in_feature(&feature.id))?;
@@ -411,6 +431,10 @@ pub(crate) fn collect_operation_parameters<'a>(
     names: &mut HashSet<&'a str>,
 ) {
     match operation {
+        FeatureOperation::SheetMetal { definition } => definition.collect_parameters(names),
+        FeatureOperation::SheetMetalFlat { neutral_factor, .. } => {
+            collect_scalar_parameters(neutral_factor, names)
+        }
         FeatureOperation::Box { origin, size } => {
             collect_vector_parameters(origin, names);
             collect_vector_parameters(size, names);
@@ -571,8 +595,20 @@ pub(crate) fn collect_scalar_parameters<'a>(
         ScalarExpr::Parameter(name) => {
             names.insert(name);
         }
+        ScalarExpr::CarrLaneTapDrillV1 {
+            nominal_diameter,
+            pitch,
+            ..
+        } => {
+            collect_scalar_parameters(nominal_diameter, names);
+            collect_scalar_parameters(pitch, names);
+        }
         ScalarExpr::Negate(value)
         | ScalarExpr::Absolute(value)
+        | ScalarExpr::CarrLaneSocketHeadV1 {
+            nominal_diameter: value,
+            ..
+        }
         | ScalarExpr::Iso273ClearanceV1 {
             nominal_diameter: value,
             ..

@@ -119,6 +119,25 @@ pub(crate) fn evaluate_derived_expression(
                 evaluate_derived_expression(nominal_diameter, definitions, resolved, visiting)?;
             clearance_scalar(nominal, *series)
         }
+        ScalarExpr::CarrLaneTapDrillV1 {
+            nominal_diameter,
+            pitch,
+            system,
+        } => {
+            let nominal =
+                evaluate_derived_expression(nominal_diameter, definitions, resolved, visiting)?;
+            let pitch = evaluate_derived_expression(pitch, definitions, resolved, visiting)?;
+            crate::hole_sizes::tap_scalar(*system, nominal, pitch)
+        }
+        ScalarExpr::CarrLaneSocketHeadV1 {
+            nominal_diameter,
+            system,
+            dimension,
+        } => {
+            let nominal =
+                evaluate_derived_expression(nominal_diameter, definitions, resolved, visiting)?;
+            crate::hole_sizes::socket_scalar(*system, nominal, *dimension)
+        }
         ScalarExpr::Parameter(name) => {
             resolve_derived_parameter(name, definitions, resolved, visiting)
         }
@@ -675,6 +694,24 @@ pub(crate) fn evaluate_resolved_expression(
         } => clearance_scalar(
             evaluate_resolved_expression(nominal_diameter, parameters)?,
             *series,
+        ),
+        ScalarExpr::CarrLaneTapDrillV1 {
+            nominal_diameter,
+            pitch,
+            system,
+        } => crate::hole_sizes::tap_scalar(
+            *system,
+            evaluate_resolved_expression(nominal_diameter, parameters)?,
+            evaluate_resolved_expression(pitch, parameters)?,
+        ),
+        ScalarExpr::CarrLaneSocketHeadV1 {
+            nominal_diameter,
+            system,
+            dimension,
+        } => crate::hole_sizes::socket_scalar(
+            *system,
+            evaluate_resolved_expression(nominal_diameter, parameters)?,
+            *dimension,
         ),
         ScalarExpr::Parameter(name) => parameters
             .get(name)

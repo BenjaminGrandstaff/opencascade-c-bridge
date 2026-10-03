@@ -85,7 +85,7 @@ per-model linear and angular tolerances, plus configurations and materials
 with mass. Full graph regeneration verifies mass ranges, datum clearances, and
 recorded relationship satisfaction with required, preferred, or advisory
 priority. Schema v1 through
-v42 documents migrate to v43 during load; unsupported
+v44 documents migrate to v45 during load; unsupported
 future versions are rejected.
 Managed regeneration incrementally reuses unchanged outputs and
 rebuilds dirty features plus their downstream dependents. Graph regeneration
@@ -188,14 +188,15 @@ builds an optimized copy of the library in `build/bench`, runs every case at
 the target sizes (10,000-member patterns, deep clone chains, 1,000-part solver
 stacks and grids, repeated regeneration, validation chains, and many-hole
 faces), and fails when a required case misses its time budget or correctness
-check. The current suite has 40 passing cases, including single-leaf and
+check. The current suite has 57 passing Rust cases, including single-leaf and
 memoized all-node resolution of a 20,000-link clone chain and a 50-part stack
 1 km from the origin solved at a 1e-8 mm model tolerance, plus 10,000 checked
 datum-clearance requirements, 10,000 small constrained-sketch solves,
 10,000 arc/tangent sketch solves, 10,000 datum-linked sketch-wire features,
 build/edit cases for 1,000 extrude, 1,000 revolve, and 100 each of plain hole,
 counterbore, countersink, and thread-recorded hole features,
-100,000 checked metric clearance-catalog lookups, 1,000 draft, 1,000 one-sided
+100,000 checked metric clearance-catalog lookups, 100,000 Carr Lane tap and
+socket-head lookups, 1,000 folded sheet-metal brackets with linked blanks, 1,000 draft, 1,000 one-sided
 rib, 1,000 centered rib, and 1,000 variable-radius fillet features, and
 individual sparse sketches with 10,000 independent or 1,000 connected lines:
 
@@ -270,7 +271,12 @@ exported as SVG or DXF. See [Drawings](DRAWINGS.md) for the API and sampling lim
 ABI 35 adds bounded surface tessellation and indexed topology matching. Schema 44
 adds tagged FEA hand-off, material-aware glTF scenes, and sampled wall, draft,
 and printing-overhang checks. See [Mesh hand-off](MESH_HANDOFF.md) for APIs,
-units, external tetrahedral meshing, and screening limits.
+units, external tetrahedral meshing, and screening limits. Schema 45 adds
+folded sheet-metal strips with exact circular bends and linked flat patterns
+using an explicit neutral factor, with flat-pattern drawings for SVG and DXF;
+see [Sheet metal](SHEET_METAL.md). It also adds frozen Carr Lane V1 tap-drill
+and socket-head counterbore catalogs in metric and inch sizes; see
+[Hole-size catalog](HOLE_SIZE_CATALOG.md).
 
 ABI 34 adds exact hidden-line projection, plane clipping, edge sampling, and
 bulk subshape traversal. Schema 41 adds driven frame joints with limits and
@@ -384,8 +390,8 @@ axis line, without a guessed cutting depth. Cuts must remove material and leave
 one valid solid with positive volume. Parameter edits rebuild dependent
 features, operation history is retained, and temporary tools are released.
 Older documents migrate without changing their existing features; that schema
-addition did not change the ABI. Tap-drill, inch, and standard recess-size catalogs remain
-planned.
+addition did not change the ABI. Schema 45 adds tap-drill, inch, and
+socket-head recess catalogs.
 Schema 28 adds `Extrude` and `Revolve` operations
 from named planar face or closed-wire outputs. Extrusion uses a length-valued
 displacement vector (including oblique and negative directions); revolution

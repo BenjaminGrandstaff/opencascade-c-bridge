@@ -1,8 +1,15 @@
 //! Frozen clearance-hole diameter snapshot. Source (verified 2026-10-02):
 //! https://www.ekinsun.com/custom-fasteners/clearance-hole-chart/
-//! Nominal diameters only: no hole tolerances, tap drills, or fit certification.
+//! Nominal diameters only: no hole tolerances or fit certification. Tap drills
+//! and socket-head recesses are in the `catalogs` submodule.
 
 use super::*;
+mod catalogs;
+pub use catalogs::{
+    HoleCatalogSystem, SocketHeadDimension, SocketHeadRecess, carr_lane_socket_dimension_v1,
+    carr_lane_socket_head_v1, carr_lane_tap_drill_v1,
+};
+pub(crate) use catalogs::{socket_scalar, tap_scalar};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

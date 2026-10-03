@@ -25,6 +25,36 @@ pub(super) fn clearance_catalog_case() -> Outcome {
     )
 }
 
+/// Worst-case rows: the last entries of the longest inch tables.
+pub(super) fn carr_lane_catalog_case() -> Outcome {
+    timed(
+        "100000 Carr Lane tap and socket-head lookups".into(),
+        ms(200),
+        Expectation::Required,
+        || {
+            let inch = |value| std::hint::black_box(Quantity::length(value, LengthUnit::Inch));
+            for index in 0..100_000 {
+                if index % 2 == 0 {
+                    let drill = carr_lane_tap_drill_v1(
+                        HoleCatalogSystem::Inch,
+                        inch(1.125),
+                        inch(1.0 / 12.0),
+                    )?;
+                    if (drill.value - 1.046875 * 25.4).abs() > 1e-12 {
+                        return Err(failure("tap drill differs".into()));
+                    }
+                } else {
+                    let recess = carr_lane_socket_head_v1(HoleCatalogSystem::Inch, inch(2.0))?;
+                    if (recess.counterbore_diameter.value - 3.125 * 25.4).abs() > 1e-12 {
+                        return Err(failure("socket-head recess differs".into()));
+                    }
+                }
+            }
+            Ok("last inch tap and recess rows; inch-to-mm conversion; exact values".into())
+        },
+    )
+}
+
 pub(super) fn hole_features_case() -> Outcome {
     hole_case(HoleFinish::Plain, "hole", 10_000, None)
 }

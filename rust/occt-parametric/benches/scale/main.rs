@@ -15,12 +15,13 @@ use occt_bridge::{Session, SessionOptions, ShapeType, Vec3};
 use occt_parametric::{
     AssemblyRelationship, AssemblyRequirement, AssemblyVerificationRule, AxisAngle,
     ClearanceSeries, CoordinateAxis, DatumDefinition, DatumKind, DatumRef, Dimension, Extremum,
-    FaceSelector, FamilyDefinition, FeatureDefinition, FeatureOperation, HoleExtent, HoleFinish,
-    InstanceGraph, LengthUnit, ModelDocument, ModelError, ParameterDefinition, ParameterType,
-    ParameterValue, PartInstance, PatternRule, Placement, Quantity, RelationKind,
-    RelationshipTolerances, RequirementKind, RequirementPriority, ScalarExpr, SketchArc,
-    SketchCircle, SketchConstraint, SketchDefinition, SketchLine, SketchPoint, ThreadHandedness,
-    ThreadSpecification, VectorExpr, VectorQuantity, iso273_clearance_v1,
+    FaceSelector, FamilyDefinition, FeatureDefinition, FeatureOperation, HoleCatalogSystem,
+    HoleExtent, HoleFinish, InstanceGraph, LengthUnit, ModelDocument, ModelError,
+    ParameterDefinition, ParameterType, ParameterValue, PartInstance, PatternRule, Placement,
+    Quantity, RelationKind, RelationshipTolerances, RequirementKind, RequirementPriority,
+    ScalarExpr, SketchArc, SketchCircle, SketchConstraint, SketchDefinition, SketchLine,
+    SketchPoint, ThreadHandedness, ThreadSpecification, VectorExpr, VectorQuantity,
+    carr_lane_socket_head_v1, carr_lane_tap_drill_v1, iso273_clearance_v1,
 };
 use std::collections::HashMap;
 use std::process::ExitCode;
@@ -34,6 +35,7 @@ mod memory;
 mod mesh;
 mod motion;
 mod ribs;
+mod sheet_metal;
 mod sketches;
 mod solver;
 mod validation;
@@ -127,7 +129,9 @@ fn main() -> ExitCode {
     outcomes.push(drawing::assembly_drawing_case(definition));
     outcomes.push(mesh::gltf_case(definition));
     outcomes.push(mesh::manufacturing_case());
+    outcomes.push(sheet_metal::sheet_case());
     outcomes.push(clearance_catalog_case());
+    outcomes.push(carr_lane_catalog_case());
     outcomes.push(threaded_hole_features_case());
     outcomes.push(entry_hole_features_case(false));
     outcomes.push(entry_hole_features_case(true));
