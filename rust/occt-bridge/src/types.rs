@@ -9,6 +9,28 @@ pub struct Vec3 {
     pub z: f64,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MeshOptions {
+    pub linear_deflection: f64,
+    pub angular_deflection_radians: f64,
+    pub maximum_triangles: usize,
+}
+impl Default for MeshOptions {
+    fn default() -> Self {
+        Self {
+            linear_deflection: 0.1,
+            angular_deflection_radians: 0.3,
+            maximum_triangles: 1_000_000,
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MeshTriangle {
+    /// Zero-based face index from `Session::subshapes(shape, ShapeType::Face)`.
+    pub face_index: usize,
+    pub points: [Vec3; 3],
+}
+
 /// An exact line or circular arc in an ordered wire.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum WireSegment {

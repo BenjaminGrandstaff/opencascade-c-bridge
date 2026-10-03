@@ -6,6 +6,7 @@ mod draft;
 mod exchange;
 mod history;
 mod inspection;
+mod mesh;
 mod open_profile;
 mod operations;
 mod projection;

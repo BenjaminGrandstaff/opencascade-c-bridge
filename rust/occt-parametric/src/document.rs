@@ -23,7 +23,7 @@ pub struct GenerationRecord {
     pub last_error: Option<String>,
 }
 
-pub const CURRENT_SCHEMA_VERSION: u32 = 43;
+pub const CURRENT_SCHEMA_VERSION: u32 = 44;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ModelDocument {
@@ -46,6 +46,8 @@ pub struct ModelDocument {
     /// Ordered, append-only review history; independent from generation audits.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub revisions: Vec<DocumentRevision>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub mesh_exports: Vec<MeshExportDefinition>,
 }
 
 impl ModelDocument {
@@ -70,6 +72,7 @@ impl ModelDocument {
             generation_records: Vec::new(),
             drawings: Vec::new(),
             revisions: Vec::new(),
+            mesh_exports: Vec::new(),
             assembly: AssemblySemantics {
                 active_configuration: None,
                 ..graph.assembly.clone()
@@ -245,7 +248,20 @@ impl ModelDocument {
             validate_generation_record(record, &node_ids)?;
         }
         graph.validate_assembly()?;
+        self.validate_mesh_exports(&graph)?;
         self.validate_drawings(&graph)
+    }
+
+    fn validate_mesh_exports(&self, graph: &InstanceGraph<'_>) -> Result<(), ModelError> {
+        let mut mesh_ids = HashSet::new();
+        let mut mesh_context = mesh::ExportContext::new(graph);
+        for definition in &self.mesh_exports {
+            if !mesh_ids.insert(&definition.id) {
+                return Err(ModelError::new("mesh export ids must be unique"));
+            }
+            definition.validate_cached(graph, &mut mesh_context)?;
+        }
+        Ok(())
     }
 
     fn validate_drawings(&self, graph: &InstanceGraph<'_>) -> Result<(), ModelError> {

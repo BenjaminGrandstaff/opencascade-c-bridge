@@ -898,6 +898,46 @@ static void projection(occt_bridge_session_t* session) {
     occt_bridge_shape_release(session, body);
 }
 
+static void surface_mesh(occt_bridge_session_t* session) {
+    occt_bridge_shape_id_t body = 0;
+    EXPECT(occt_bridge_create_box(session, vec(0,0,0), vec(10,20,30), &body), OK);
+    occt_bridge_mesh_options_t options = {0.1, 0.3, 1000000};
+    size_t count = 123;
+    occt_bridge_mesh_triangle_t triangles[12] = {{0}};
+    triangles[0].face_index = 123;
+    EXPECT(occt_bridge_surface_mesh(NULL, body, options, NULL, 0, &count), ARG);
+    if (!(count == 0)) { ++failures; }
+    EXPECT(occt_bridge_surface_mesh(session, body, options, NULL, 0, NULL), ARG);
+    EXPECT(occt_bridge_surface_mesh(session, body, options, NULL, 1, &count), ARG);
+    EXPECT(occt_bridge_surface_mesh(session, UINT64_MAX, options, NULL, 0, &count), MISSING);
+    EXPECT(occt_bridge_surface_mesh(session, body, options, NULL, 0, &count), OK);
+    if (!(count == 12)) { ++failures; }
+    EXPECT(occt_bridge_surface_mesh(session, body, options, triangles, 1, &count), ARG);
+    if (!(count == 12 && triangles[0].face_index == 123)) { ++failures; }
+    EXPECT(occt_bridge_surface_mesh(session, body, options, triangles, 12, &count), OK);
+    options.maximum_triangles = 1;
+    triangles[0].face_index = 123;
+    EXPECT(occt_bridge_surface_mesh(session, body, options, triangles, 12, &count), ARG);
+    if (!(count == 0 && triangles[0].face_index == 123)) { ++failures; }
+    occt_bridge_shape_id_t face = 0;
+    EXPECT(occt_bridge_shape_subshape_at(session, body, OCCT_BRIDGE_SHAPE_FACE, 2, &face), OK);
+    size_t index = 123;
+    EXPECT(occt_bridge_subshape_indices(session, body, OCCT_BRIDGE_SHAPE_FACE, &face, 1, &index), OK);
+    if (!(index == 2)) { ++failures; }
+    index = 123;
+    EXPECT(occt_bridge_subshape_indices(session, body, OCCT_BRIDGE_SHAPE_EDGE, &face, 1, &index), ARG);
+    if (!(index == 123)) { ++failures; }
+    EXPECT(occt_bridge_subshape_indices(session, body, 999, &face, 1, &index), ARG);
+    EXPECT(occt_bridge_subshape_indices(session, body, OCCT_BRIDGE_SHAPE_FACE, NULL, 1, &index), ARG);
+    EXPECT(occt_bridge_subshape_indices(session, body, OCCT_BRIDGE_SHAPE_FACE, &face, 1, NULL), ARG);
+    EXPECT(occt_bridge_subshape_indices(session, UINT64_MAX, OCCT_BRIDGE_SHAPE_FACE, NULL, 0, NULL), MISSING);
+    EXPECT(occt_bridge_subshape_indices(session, body, OCCT_BRIDGE_SHAPE_FACE, NULL, 0, NULL), OK);
+    occt_bridge_shape_id_t invalid = UINT64_MAX;
+    EXPECT(occt_bridge_subshape_indices(session, body, OCCT_BRIDGE_SHAPE_FACE, &invalid, 1, &index), MISSING);
+    occt_bridge_shape_release(session, face);
+    occt_bridge_shape_release(session, body);
+}
+
 int main(void) {
     occt_bridge_session_t* session = NULL;
     if (occt_bridge_session_create(OCCT_BRIDGE_ABI_VERSION, &session) != OK) {
@@ -918,6 +958,7 @@ int main(void) {
     station_fillet(session);
     measurements(session);
     projection(session);
+    surface_mesh(session);
     persistence(session);
     occt_bridge_session_destroy(session);
 

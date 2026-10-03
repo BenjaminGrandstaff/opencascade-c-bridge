@@ -7,6 +7,7 @@ mod drawing;
 mod expressions;
 mod graph;
 mod holes;
+mod mesh;
 mod patterns;
 mod regeneration;
 mod ribs;

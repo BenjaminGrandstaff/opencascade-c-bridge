@@ -87,10 +87,14 @@ fn collections(path: &[DocumentPathSegment]) -> &'static [&'static str] {
             "frames",
             "patterns",
             "drawings",
+            "mesh_exports",
         ]
     } else if matches!(path, [DocumentPathSegment::Field(name), DocumentPathSegment::Entity(_)] if name == "drawings")
     {
         &["views", "dimensions", "notes"]
+    } else if matches!(path, [DocumentPathSegment::Field(name), DocumentPathSegment::Entity(_)] if name == "mesh_exports")
+    {
+        &["face_tags"]
     } else if family_path(path) {
         &[
             "parameters",

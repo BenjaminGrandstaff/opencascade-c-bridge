@@ -31,6 +31,8 @@ pub struct InstanceImpact {
 pub struct ChangeImpact {
     pub instances: Vec<InstanceImpact>,
     pub drawings: Vec<String>,
+    #[serde(default)]
+    pub mesh_exports: Vec<String>,
     /// Conservative flags: regeneration may refresh driven patterns or solve
     /// relationships differently. This report does not predict those results.
     pub patterns_need_refresh: bool,
@@ -86,6 +88,7 @@ impl ModelDocument {
             .map(|impact| impact.instance.as_str())
             .collect();
         let drawings = drawing_impact(self, after, &affected);
+        let mesh_exports = mesh_impact(self, after, &affected);
         let relevant = instances.iter().any(|impact| {
             impact.kind != InstanceChangeKind::Updated
                 || !impact.parameters.is_empty()
@@ -96,6 +99,7 @@ impl ModelDocument {
         });
         Ok(ChangeImpact {
             drawings,
+            mesh_exports,
             instances,
             patterns_need_refresh: self.patterns != after.patterns
                 || (relevant && (!self.patterns.is_empty() || !after.patterns.is_empty())),
@@ -138,7 +142,15 @@ fn snapshots(graph: &InstanceGraph<'_>) -> Result<BTreeMap<String, Snapshot>, Mo
         .assembly
         .materials
         .iter()
-        .map(|material| Ok((material.id.as_str(), encode(material)?)))
+        .map(|material| {
+            Ok((
+                material.id.as_str(),
+                encode(&(
+                    material,
+                    graph.assembly.material_appearances.get(&material.id),
+                ))?,
+            ))
+        })
         .collect::<Result<_, ModelError>>()?;
     let mut suppressed: HashSet<_> = graph
         .patterns
@@ -198,7 +210,7 @@ fn snapshots(graph: &InstanceGraph<'_>) -> Result<BTreeMap<String, Snapshot>, Mo
     Ok(result)
 }
 
-fn inherited_material(
+pub(crate) fn inherited_material(
     id: &str,
     graph: &InstanceGraph<'_>,
     cache: &mut HashMap<String, Option<String>>,
@@ -395,3 +407,32 @@ fn drawing_impact(
 
 #[cfg(test)]
 mod tests;
+
+fn mesh_impact(
+    before: &ModelDocument,
+    after: &ModelDocument,
+    affected: &HashSet<&str>,
+) -> Vec<String> {
+    let old: BTreeMap<_, _> = before
+        .mesh_exports
+        .iter()
+        .map(|definition| (definition.id.as_str(), definition))
+        .collect();
+    let new: BTreeMap<_, _> = after
+        .mesh_exports
+        .iter()
+        .map(|definition| (definition.id.as_str(), definition))
+        .collect();
+    let ids: BTreeSet<_> = old.keys().chain(new.keys()).copied().collect();
+    ids.into_iter()
+        .filter(|id| {
+            old.get(id) != new.get(id)
+                || old
+                    .get(id)
+                    .into_iter()
+                    .chain(new.get(id))
+                    .any(|definition| affected.contains(definition.output.instance.as_str()))
+        })
+        .map(String::from)
+        .collect()
+}

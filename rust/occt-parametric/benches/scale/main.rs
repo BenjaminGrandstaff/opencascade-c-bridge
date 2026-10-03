@@ -31,6 +31,7 @@ mod drawing;
 mod graphs;
 mod holes;
 mod memory;
+mod mesh;
 mod motion;
 mod ribs;
 mod sketches;
@@ -124,6 +125,8 @@ fn main() -> ExitCode {
     outcomes.extend(motion::assembly_cases(definition));
     outcomes.push(drawing::drawing_case(definition));
     outcomes.push(drawing::assembly_drawing_case(definition));
+    outcomes.push(mesh::gltf_case(definition));
+    outcomes.push(mesh::manufacturing_case());
     outcomes.push(clearance_catalog_case());
     outcomes.push(threaded_hole_features_case());
     outcomes.push(entry_hole_features_case(false));

@@ -14,6 +14,7 @@ mod construction;
 mod exchange;
 mod ffi;
 mod inspection;
+mod mesh;
 mod operations;
 mod projection;
 mod session;

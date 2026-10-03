@@ -2,7 +2,20 @@
 
 use super::*;
 
-pub(crate) const ABI_VERSION: u32 = 34;
+pub(crate) const ABI_VERSION: u32 = 35;
+
+#[repr(C)]
+pub(crate) struct RawMeshOptions {
+    pub(crate) linear_deflection: f64,
+    pub(crate) angular_deflection: f64,
+    pub(crate) maximum_triangles: usize,
+}
+
+#[repr(C)]
+pub(crate) struct RawMeshTriangle {
+    pub(crate) face_index: usize,
+    pub(crate) points: [RawVec3; 3],
+}
 
 #[repr(C)]
 pub(crate) struct RawVec3 {
@@ -73,6 +86,22 @@ pub(crate) const OK: RawStatus = 0;
 
 #[link(name = "occt_bridge")]
 unsafe extern "C" {
+    pub(crate) fn occt_bridge_subshape_indices(
+        session: *mut c_void,
+        shape: u64,
+        kind: c_int,
+        candidates: *const u64,
+        count: usize,
+        indices: *mut usize,
+    ) -> c_int;
+    pub(crate) fn occt_bridge_surface_mesh(
+        session: *mut c_void,
+        shape: u64,
+        options: RawMeshOptions,
+        triangles: *mut RawMeshTriangle,
+        capacity: usize,
+        count: *mut usize,
+    ) -> c_int;
     pub(crate) fn occt_bridge_shape_subshapes(
         session: *mut c_void,
         shape: RawShapeId,

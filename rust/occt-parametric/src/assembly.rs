@@ -296,6 +296,9 @@ pub struct AssemblySemantics {
     /// Instance id to material id. Clones inherit their source's material.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub material_assignments: BTreeMap<String, String>,
+    /// Optional glTF appearance, keyed by a declared material id.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub material_appearances: BTreeMap<String, MaterialAppearance>,
     /// Evaluation state only; documents always describe the base graph.
     #[serde(skip)]
     pub(crate) active_configuration: Option<String>,
@@ -501,6 +504,10 @@ impl<'definition> InstanceGraph<'definition> {
         for (instance, material) in &self.assembly.material_assignments {
             self.require_instance(instance)?;
             self.material(material)?;
+        }
+        for (material, appearance) in &self.assembly.material_appearances {
+            self.material(material)?;
+            appearance.validate()?;
         }
         insert_unique_ids(
             &mut HashSet::new(),

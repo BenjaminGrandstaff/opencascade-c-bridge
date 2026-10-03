@@ -3,7 +3,7 @@
 A small, stable C ABI over Open Cascade (OCCT), designed to be wrapped safely
 from Rust and other languages. Open Cascade C++ objects never cross the ABI.
 
-The current C ABI version is **34**.
+The current C ABI version is **35**.
 
 ## Current API
 
@@ -267,6 +267,11 @@ binary supplies a semantic Git merge driver. See [Model history](MODEL_HISTORY.m
 and [Document comparisons](DOCUMENT_DIFF.md). Schema 42 adds regenerated orthographic, section,
 and detail drawings, datum dimensions, parameter notes, and metadata title blocks
 exported as SVG or DXF. See [Drawings](DRAWINGS.md) for the API and sampling limits.
+ABI 35 adds bounded surface tessellation and indexed topology matching. Schema 44
+adds tagged FEA hand-off, material-aware glTF scenes, and sampled wall, draft,
+and printing-overhang checks. See [Mesh hand-off](MESH_HANDOFF.md) for APIs,
+units, external tetrahedral meshing, and screening limits.
+
 ABI 34 adds exact hidden-line projection, plane clipping, edge sampling, and
 bulk subshape traversal. Schema 41 adds driven frame joints with limits and
 the API supports exact interference/clearance checks and sampled motion with

@@ -73,8 +73,12 @@ The following major capabilities remain planned:
 - broader hole-size catalogs (tap drills, inch sizes, standard recess dimensions);
 - advanced ribs and later sheet-metal features;
 - closed-linkage solving and continuous collision detection beyond driven joints;
-- FEA mesh hand-off, manufacturability checks, and
-  glTF export;
+
+Tagged surface meshes, external tetrahedral hand-off, material-aware glTF, and
+sampled manufacturing checks are available in schema 44 with ABI 35. Mesh
+exports resolve semantic selectors against current geometry and release kernel
+handles after producing numeric data. See [Mesh hand-off](MESH_HANDOFF.md) for
+units, topology matching, scale budgets, and sampling limits.
 
 Identity-based semantic document comparisons are available through
 `ModelDocument::semantic_diff`. They match declaration collections by stable IDs

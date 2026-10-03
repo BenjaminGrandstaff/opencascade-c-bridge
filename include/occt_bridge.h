@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define OCCT_BRIDGE_ABI_VERSION 34u
+#define OCCT_BRIDGE_ABI_VERSION 35u
 #define OCCT_BRIDGE_INVALID_SHAPE_ID UINT64_C(0)
 
 #if defined(_WIN32) && defined(OCCT_BRIDGE_BUILD_SHARED)
@@ -951,6 +951,41 @@ OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_edge_sample_points(
     occt_bridge_shape_id_t edge,
     size_t point_count,
     occt_bridge_vec3_t* out_points
+);
+
+typedef struct {
+    double linear_deflection;
+    double angular_deflection;
+    size_t maximum_triangles;
+} occt_bridge_mesh_options_t;
+
+typedef struct {
+    /* Zero-based index in shape_subshapes(FACE), not a persistent shape ID. */
+    size_t face_index;
+    occt_bridge_vec3_t points[3];
+} occt_bridge_mesh_triangle_t;
+
+/* Non-destructive tessellation on a private copy. Deflections are absolute
+ * model units and radians. Linear deflection must be >= max(1e-7, span*1e-5);
+ * angular deflection is [0.01, pi]. maximum_triangles is [1, 1000000].
+ * NULL/0 queries required count. Insufficient capacity reports that count;
+ * other failures report zero. Caller data changes only on complete success.
+ * The triangle limit bounds returned data, not OCCT's meshing workspace.
+ * Winding follows oriented faces; disconnected face vertices are not welded. */
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_surface_mesh(
+    occt_bridge_session_t* session, occt_bridge_shape_id_t shape,
+    occt_bridge_mesh_options_t options,
+    occt_bridge_mesh_triangle_t* out_triangles, size_t capacity,
+    size_t* out_count
+);
+
+/* Resolve candidate subshapes to zero-based unique topology indices in one
+ * map traversal. All candidates must belong to the requested topology map.
+ * Buffers change only on complete success; count zero accepts NULL buffers. */
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_subshape_indices(
+    occt_bridge_session_t* session, occt_bridge_shape_id_t shape,
+    occt_bridge_shape_type_t type, const occt_bridge_shape_id_t* candidates,
+    size_t count, size_t* out_indices
 );
 
 /* Non-destructive clipping of valid solid geometry by an infinite plane.

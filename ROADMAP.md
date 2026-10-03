@@ -8,23 +8,29 @@ tracks status and order.
 
 | Layer | Version | State |
 |---|---|---|
-| C ABI (`src/`, `include/`) | ABI 34 | Stable; exact version match required |
+| C ABI (`src/`, `include/`) | ABI 35 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 43 | Active development |
+| `occt-parametric` (engineering layer) | Schema 44 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 4/4, bridge 74 (+1 doc test), recipes 3, parametric 203 + merge driver 3 | `ctest`, `cargo test` (see README) |
-| SonarQube (indexed Rust) | Gate OK, 0 issues, 91.8% line coverage (2026-10-03); Rust unit tests classified as tests | `tools/sonar/run.sh` |
+| Tests | C 4/4, bridge 76 (+1 doc test), recipes 3, parametric 208 + merge driver 3, mesh Python 4 | `ctest`, `cargo test` (see README) |
+| SonarQube (indexed Rust) | Gate OK, 0 issues, 92.1% line coverage (2026-10-03); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
-| Coverage | 92.37% lines overall, test code excluded; C++ 94.27% lines, 87.67% branches, 100% functions; Rust 91.32% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 53 passing within budget | `tools/bench/run.sh` |
+| Coverage | 92.49% lines overall, test code excluded; C++ 94.22% lines, 87.54% branches, 100% functions; Rust 91.60% lines | `tools/coverage/run.sh` |
+| Scale benchmarks | 55 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
 
 ### Kernel (C ABI)
+
+- Bounded surface triangulation and batch topology indices (ABI 35): copied
+  geometry preserves source BREP, face indices follow original topology,
+  triangle winding follows outward orientation, and caller buffers publish
+  transactionally. Degenerate facets are removed; unsafe deflections and
+  output budgets fail explicitly.
 
 - Exact orthographic hidden-line projection, closed solid plane clipping,
   bounded edge sampling, and transactional bulk subshape traversal (ABI 34).
@@ -131,6 +137,15 @@ tracks status and order.
   error-bounded (Bezier, B-spline) extrema.
 
 ### Parametric layer
+
+- Analysis and manufacturing hand-off (schema 44): semantic face tags, source
+  BREP and surface meshes for an isolated Gmsh tetrahedral runner, material-aware
+  glTF with shared buffers, and sampled wall/draft/overhang checks. Five API
+  tests, independent positive-volume tetrahedron checks, and Khronos validation
+  cover the exports. A 1,000-part glTF scene takes 1.393 s; 10,000 indexed wall
+  rays on 100,518 triangles take 3.284 s (10 s budgets). Screening is sampled;
+  external volume meshing validates tag matching and element quality.
+  See [Mesh hand-off](MESH_HANDOFF.md).
 
 - Model data management (schema 43): explicit linear revision records with
   nonrecursive semantic changes, resolved instance/feature change-impact
@@ -463,11 +478,7 @@ every item below is defined in documents and the API, and verified in tests.
 
 ### Capabilities
 
-1. **Analysis and manufacturing hand-off.** Tagged surface and volume meshes
-    for external FEA; manufacturability checks (minimum wall
-    thickness, draft angle, 3D-printing overhang); glTF export with material
-    appearance for rendering.
-2. **Feature breadth.** Sheet metal (flanges, bends, flat patterns)
+1. **Feature breadth.** Sheet metal (flanges, bends, flat patterns)
     after the rest. Expand hole catalogs to tap drills, inch sizes, and
     standard recess dimensions when their source data is verified.
 

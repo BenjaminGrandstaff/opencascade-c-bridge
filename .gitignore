@@ -4,3 +4,4 @@
 /rust/occt-parametric/target/
 *.brep
 !/tests/fixtures/*.brep
+/tools/mesh/**/__pycache__/

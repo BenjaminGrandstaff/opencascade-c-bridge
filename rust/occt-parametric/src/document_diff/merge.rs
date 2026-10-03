@@ -88,7 +88,7 @@ impl ModelDocument {
 fn dictionary(path: &[DocumentPathSegment]) -> bool {
     keyed(path)
         || matches!(path, [DocumentPathSegment::Field(assembly), DocumentPathSegment::Field(name)]
-            if assembly == "assembly" && matches!(name.as_str(), "material_assignments" | "joints"))
+            if assembly == "assembly" && matches!(name.as_str(), "material_assignments" | "material_appearances" | "joints"))
         || matches!(path, [DocumentPathSegment::Field(instances), DocumentPathSegment::Entity(_), DocumentPathSegment::Field(variant), DocumentPathSegment::Field(overrides)]
             if instances == "instances" && matches!(variant.as_str(), "base" | "clone") && overrides == "overrides")
         || matches!(path, [DocumentPathSegment::Field(assembly), DocumentPathSegment::Field(configurations), DocumentPathSegment::Entity(_), DocumentPathSegment::Field(overrides)]

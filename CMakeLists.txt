@@ -28,6 +28,7 @@ add_library(
     src/inspection.cpp
     src/measurements.cpp
     src/projection.cpp
+    src/mesh.cpp
     src/history.cpp
     src/open_profile.cpp
     src/rib_support.cpp
