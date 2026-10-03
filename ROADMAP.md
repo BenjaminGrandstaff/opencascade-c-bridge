@@ -11,16 +11,16 @@ tracks status and order.
 | C ABI (`src/`, `include/`) | ABI 35 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 45 | Active development |
+| `occt-parametric` (engineering layer) | Schema 46 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 4/4, bridge 76 (+1 doc test), recipes 3, parametric 217 + merge driver 3, mesh Python 4 | `ctest`, `cargo test` (see README) |
+| Tests | C 4/4, bridge 76 (+1 doc test), recipes 3, parametric 223 + merge driver 3, mesh Python 4 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 92.3% line coverage (2026-10-03); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
 | Coverage | 92.63% lines overall, test code excluded; C++ 94.30% lines, 87.59% branches, 100% functions; Rust 91.81% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 57 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Scale benchmarks | 59 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
 
@@ -137,6 +137,20 @@ tracks status and order.
   error-bounded (Bezier, B-spline) extrema.
 
 ### Parametric layer
+
+- Exact connectivity and collision requirements (schema 46): part
+  `Connectivity` counts solids, voids, and faces, edges, or vertices outside any
+  solid; assembly `NoInterference` and `MinimumClearance` run the exact indexed
+  collision checks over explicit or all-instances output sets, with a cross-set
+  query that never inspects pairs within one set. Every result now reports a
+  normalized measured value, evidence quality, and collision witnesses. Six
+  tests cover disjoint, hollow, and sewn-shell topology, contact versus
+  overlap, within- and between-set clearance, set validation, suppression,
+  pattern-member protection, and persistence. 10,002 instances with
+  connectivity, no-interference, and clearance rules regenerate and verify in
+  0.574 s (3 s budget), checking the part rule once for the shared variant; a
+  5,000 x 5,000 cross-set clearance with 500 violations takes 1.305 s (5 s
+  budget). See [Requirement rules](REQUIREMENTS.md).
 
 - Sheet metal and expanded hole catalogs (schema 45): `SheetMetal` builds a
   constant-width strip of flanges joined by exact circular bends;
@@ -492,15 +506,13 @@ every item below is defined in documents and the API, and verified in tests.
 
 ### Capabilities
 
-1. **Richer requirement rules.** Part rules beyond `ShapeValid` and
-    `VolumeRange`: minimum wall thickness, minimum concave and convex radius,
-    and connectivity (one solid, no loose shells). Assembly rules beyond mass,
-    datum clearance, and relationship satisfaction: no interference between
-    instances and minimum clearance, built on the exact indexed checks; and
-    manufacturing screens (draft angle, overhang) promoted from mesh hand-off
-    to stored, prioritized requirements. Each rule persists in documents,
-    reports a measured value against its limit, and keeps required, preferred,
-    and advisory semantics during regeneration.
+1. **Richer requirement rules.** Connectivity, no-interference, and
+    minimum-clearance rules have landed (schema 46). Remaining:
+    - minimum concave and convex radius, from a new kernel query for signed face
+      curvature bounds (exact on analytic surfaces, sampled on freeform ones);
+    - sampled manufacturing rules: minimum wall thickness, draft angle, and
+      overhang, promoted from mesh hand-off to stored, prioritized requirements
+      with `Sampled` evidence.
 
 ## Later
 

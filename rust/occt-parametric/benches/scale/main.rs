@@ -34,6 +34,7 @@ mod holes;
 mod memory;
 mod mesh;
 mod motion;
+mod requirements;
 mod ribs;
 mod sheet_metal;
 mod sketches;
@@ -125,6 +126,7 @@ fn main() -> ExitCode {
     outcomes.push(variable_fillet::variable_fillet_features_case());
     outcomes.push(variable_fillet::station_fillet_features_case());
     outcomes.extend(motion::assembly_cases(definition));
+    outcomes.extend(requirements::requirement_cases(definition));
     outcomes.push(drawing::drawing_case(definition));
     outcomes.push(drawing::assembly_drawing_case(definition));
     outcomes.push(mesh::gltf_case(definition));

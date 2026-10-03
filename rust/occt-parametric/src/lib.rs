@@ -21,13 +21,14 @@ mod sheet_metal;
 mod sketch;
 mod solve;
 mod sparse;
+mod verification;
 
 pub use assembly::{
     AssemblyJoint, AssemblyMassProperties, AssemblyRelationship, AssemblyRequirement,
     AssemblySemantics, AssemblyVerificationRule, CollisionOptions, ComponentMassProperties,
     Configuration, DatumDefinition, DatumKind, DatumRef, InstanceOutputRef, JointDof, JointKind,
     JointPosition, JointScalar, MAX_MOTION_SAMPLES, Material, MotionResult, MotionSample,
-    MotionSampleResult, MotionStudy, PairCheck, PairStatus, PhysicalMassProperties,
+    MotionSampleResult, MotionStudy, OutputSet, PairCheck, PairStatus, PhysicalMassProperties,
     RELATIONSHIP_ANGULAR_TOLERANCE, RELATIONSHIP_LINEAR_TOLERANCE, RelationKind, RelationshipCheck,
     RelationshipTolerances, ResolvedDatum,
 };
@@ -70,6 +71,7 @@ pub use regeneration::*;
 pub use revisions::*;
 use selection::*;
 pub use sheet_metal::*;
+pub use verification::*;
 
 #[cfg(test)]
 mod tests;

@@ -618,6 +618,15 @@ pub enum VerificationRule {
         minimum: Volume,
         maximum: Volume,
     },
+    /// Exactly `solids` solids and no faces, edges, or vertices outside them.
+    /// A solid with more than one shell (an internal void) fails unless
+    /// `allow_voids` is set.
+    Connectivity {
+        output: String,
+        solids: u32,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        allow_voids: bool,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

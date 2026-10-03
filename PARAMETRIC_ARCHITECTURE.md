@@ -31,8 +31,9 @@ Rust layers:
    typed scalar, vector, integer, Boolean, and choice parameters; explicit
    length units; versioned families; persistent instance identity; sparse
    instance overrides; dependency-ordered feature execution; named results;
-   requirement priorities and provenance; validity, volume, mass, datum
-   clearance, and relationship-satisfaction verification;
+   requirement priorities and provenance; validity, volume, connectivity,
+   mass, datum clearance, relationship-satisfaction, no-interference, and
+   minimum-clearance verification with measured values and witnesses;
    clone inheritance with cycle detection and explicit detachment; accepted
    result revisions with stale-result retention and explicit freezing;
    independent translation/axis-angle placement; nested assembly frames;
@@ -68,8 +69,8 @@ The following major capabilities remain planned:
 - additional domain-specific expression functions;
 - additional schema migrations and integration with the broader EIL source
   model;
-- broader requirement rules such as clearance, interference, minimum radius,
-  wall thickness, connectivity, and manufacturing checks;
+- minimum-radius and sampled manufacturing requirement rules (wall thickness,
+  draft, overhang);
 - broader hole-size catalogs (countersink relief, tolerance classes) and
   sheet metal beyond single constant-width strips;
 - advanced ribs;
@@ -141,8 +142,12 @@ conventions, resource bounds, and limits of sampled kinematics.
 - **Materials.** Named materials carry a density. An instance uses its own
   assignment or inherits its clone source's; detaching keeps the inherited
   material. `mass` multiplies a generated output's volume by that density.
-- **Assembly requirements.** `MassRange`, `DatumClearance`, and
-  `RelationshipSatisfied` rules are evaluated after full graph regeneration.
+- **Assembly requirements.** `MassRange`, `DatumClearance`,
+  `RelationshipSatisfied`, `NoInterference`, and `MinimumClearance` rules are
+  evaluated after full graph regeneration. The collision rules (schema 46) take
+  explicit or all-instances output sets and reuse the exact indexed checks,
+  including a cross-set query that never inspects pairs within one set; see
+  [Requirement rules](REQUIREMENTS.md).
   Required failures release every result; preferred and advisory failures stay
   visible in `GraphRegeneration::verification`. Rules validate instance,
   output, datum, relationship, material, unit, and range references before

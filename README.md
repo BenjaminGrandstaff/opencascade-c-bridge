@@ -82,16 +82,19 @@ and faces generated from earlier feature edges
 rules. Families declare named datums; graphs record checked datum
 relationships that can be solved to place free instances under finite positive
 per-model linear and angular tolerances, plus configurations and materials
-with mass. Full graph regeneration verifies mass ranges, datum clearances, and
-recorded relationship satisfaction with required, preferred, or advisory
-priority. Schema v1 through
-v44 documents migrate to v45 during load; unsupported
+with mass. Full graph regeneration verifies mass ranges, datum clearances,
+recorded relationship satisfaction, exact no-interference, and minimum
+clearance between instance outputs, and part regeneration verifies validity,
+volume, and solid connectivity, all with required, preferred, or advisory
+priority. Results carry measured values, evidence quality, and collision
+witnesses; see [Requirement rules](REQUIREMENTS.md). Schema v1 through
+v45 documents migrate to v46 during load; unsupported
 future versions are rejected.
 Managed regeneration incrementally reuses unchanged outputs and
 rebuilds dirty features plus their downstream dependents. Graph regeneration
 runs the feature graph once per distinct resolved parameter set and places
-clones that differ only in placement or assembly frame independently. Richer
-verification remains planned work.
+clones that differ only in placement or assembly frame independently.
+Minimum-radius and sampled manufacturing requirements remain planned.
 See [Roadmap](ROADMAP.md) for current status and what comes next, and
 [Parametric architecture](PARAMETRIC_ARCHITECTURE.md) for the
 definition/instance/clone/result model and the boundary between that layer and
@@ -190,7 +193,7 @@ builds an optimized copy of the library in `build/bench`, runs every case at
 the target sizes (10,000-member patterns, deep clone chains, 1,000-part solver
 stacks and grids, repeated regeneration, validation chains, and many-hole
 faces), and fails when a required case misses its time budget or correctness
-check. The current suite has 57 passing Rust cases, including single-leaf and
+check. The current suite has 59 passing Rust cases, including single-leaf and
 memoized all-node resolution of a 20,000-link clone chain and a 50-part stack
 1 km from the origin solved at a 1e-8 mm model tolerance, plus 10,000 checked
 datum-clearance requirements, 10,000 small constrained-sketch solves,

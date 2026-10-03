@@ -175,10 +175,65 @@ impl<'session> GraphRegeneration<'session> {
         let mut report = Vec::new();
         for (index, body) in bodies.iter().enumerate() {
             let mut candidates = Vec::new();
-            tree.query(body.bounds, checked.0 + checked.1, index, &mut candidates);
+            tree.query(
+                body.bounds,
+                checked.0 + checked.1,
+                &|candidate| candidate > index,
+                &mut candidates,
+            );
             candidates.sort_unstable();
             for second in candidates {
                 let check = inspect_pair(session, body, &bodies[second], options, checked)?;
+                if check.status != PairStatus::Clear {
+                    report.push(check);
+                }
+            }
+        }
+        Ok(report)
+    }
+
+    /// Like [`Self::check_collisions`], but only for pairs with one output from
+    /// each set, so pairs within a set are never inspected. An instance in both
+    /// sets is never paired with itself, and each unordered instance pair is
+    /// inspected once. The index is built over `second`: expected
+    /// O((m + n) log n) broad phase for m first and n second outputs.
+    pub fn check_collisions_between(
+        &self,
+        session: &Session,
+        first: &[InstanceOutputRef],
+        second: &[InstanceOutputRef],
+        options: CollisionOptions,
+    ) -> Result<Vec<PairCheck>, ModelError> {
+        let checked = options.checked()?;
+        let first = self.bodies(session, first)?;
+        let second = self.bodies(session, second)?;
+        if first.is_empty() || second.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut indices = (0..second.len()).collect::<Vec<_>>();
+        let tree = Node::build(&second, &mut indices);
+        let mut seen = HashSet::new();
+        let mut report = Vec::new();
+        for body in &first {
+            let mut candidates = Vec::new();
+            tree.query(
+                body.bounds,
+                checked.0 + checked.1,
+                &|candidate| second[candidate].reference.instance != body.reference.instance,
+                &mut candidates,
+            );
+            candidates.sort_unstable();
+            for index in candidates {
+                let other = &second[index];
+                let key = if body.reference.instance < other.reference.instance {
+                    (&body.reference.instance, &other.reference.instance)
+                } else {
+                    (&other.reference.instance, &body.reference.instance)
+                };
+                if !seen.insert(key) {
+                    continue;
+                }
+                let check = inspect_pair(session, body, other, options, checked)?;
                 if check.status != PairStatus::Clear {
                     report.push(check);
                 }
@@ -305,7 +360,7 @@ impl Node {
         &self,
         bounds: occt_bridge::Bounds,
         margin: f64,
-        first: usize,
+        accept: &impl Fn(usize) -> bool,
         output: &mut Vec<usize>,
     ) {
         if !intersects(self.bounds, bounds, margin) {
@@ -313,13 +368,13 @@ impl Node {
         }
         match &self.kind {
             NodeKind::Leaf(index) => {
-                if *index > first {
+                if accept(*index) {
                     output.push(*index);
                 }
             }
             NodeKind::Branch(left, right) => {
-                left.query(bounds, margin, first, output);
-                right.query(bounds, margin, first, output);
+                left.query(bounds, margin, accept, output);
+                right.query(bounds, margin, accept, output);
             }
         }
     }

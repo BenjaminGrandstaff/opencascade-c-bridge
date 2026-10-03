@@ -499,7 +499,7 @@ impl<'definition> InstanceGraph<'definition> {
             .collect::<Vec<_>>();
         ids.sort_unstable();
         let mut generation = self.regenerate_instances_current(session, &ids)?;
-        match self.verify_assembly_requirements(session, &generation.results) {
+        match self.verify_assembly_requirements(session, &generation) {
             Ok(verification) => {
                 generation.verification = verification;
                 Ok(generation)

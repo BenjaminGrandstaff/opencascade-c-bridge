@@ -11,6 +11,7 @@ mod holes;
 mod mesh;
 mod patterns;
 mod regeneration;
+mod requirements;
 mod ribs;
 mod selection;
 mod sheet_metal;
