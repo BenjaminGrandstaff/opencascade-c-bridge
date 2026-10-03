@@ -48,7 +48,7 @@ documents migrate without changing their existing dimensions.
 Schema 45 adds two more frozen catalogs from the Carr Lane Manufacturing
 reference booklet, Rev. 9/2021
 ([PDF](https://www.carrlane.com/Portals/0/PDFs/CLM-Trig%20Booklet-ENG-v4-PM.pdf)),
-pages 3 and 9. Every value was checked against that PDF on 2026-10-03.
+printed pages 3–5 and 9. Every value was checked against that PDF on 2026-10-03.
 
 - **Tap drills** (`ScalarExpr::CarrLaneTapDrillV1`, `carr_lane_tap_drill_v1`):
   the manufacturer's closest drill for 75% theoretical cut thread. Metric

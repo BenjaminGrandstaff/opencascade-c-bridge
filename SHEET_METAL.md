@@ -42,7 +42,11 @@ contributes the allowance
 allowance = |angle| * (inside_radius + K * thickness)
 ```
 
-and the blank length is the sum of the flanges and allowances. The blank starts
+and the blank length is the sum of the flanges and allowances. K is a
+manufacturing assumption supplied by the caller. The ideal folded model uses
+a geometric midplane at K = 0.5, so folded and flat volumes agree at that value;
+other K values model a different blank allowance, without changing the folded
+geometry. The blank starts
 at `origin`, runs along `start_direction`, and has the sheet's width and
 thickness. Editing the folded sheet's parameters rebuilds both features; editing
 only K rebuilds just the blank.
@@ -59,6 +63,9 @@ lines, which exports through the usual SVG and DXF writers (see
 let metrics = sheet.flat_pattern(&parameters, 0.44)?;
 std::fs::write("bracket.dxf", metrics.drawing("bracket")?.to_dxf())?;
 ```
+
+Independent DXF parsing of a two-bend blank found no errors or repairs, and
+SVG rendering verified the outline, bend lines, and thickness/K metadata.
 
 ## Scale
 

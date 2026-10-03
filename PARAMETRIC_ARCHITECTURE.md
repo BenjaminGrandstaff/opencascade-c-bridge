@@ -7,7 +7,7 @@ so they can generate and regenerate families of related parts.
 ## Implementation status
 
 The architecture in this document is both a description of implemented
-boundaries and a roadmap. As of ABI version 28, the repository contains three
+boundaries and a roadmap. As of ABI version 35, the repository contains three
 Rust layers:
 
 1. **`occt-bridge`** safely wraps session-owned OCCT handles. It includes
@@ -1022,7 +1022,13 @@ application code should use the recipe crate.
 
 ## Compatibility rule
 
-The C interface currently requires an exact ABI version match. ABI version 28
+The C interface currently requires an exact ABI version match. ABI version 35
+adds bounded surface tessellation and batch topology indices. ABI 34 adds exact
+hidden-line projection, plane clipping, edge sampling, and bulk traversal.
+ABI 33 adds exact distance, overlap, central mass properties, and multi-station
+variable fillets. ABI 30 composes operation history; ABI 31 and 32 add open-profile
+closure and uniform first-contact closure, respectively. ABI 29 adds linear
+variable fillets. ABI version 28
 adds selected-face draft with structured draft diagnostics, validation, and
 corrected modified topology history. ABI version 27
 adds face revolution (`occt_bridge_create_revolve_from_face`, Rust

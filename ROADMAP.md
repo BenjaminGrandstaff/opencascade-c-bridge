@@ -16,10 +16,10 @@ tracks status and order.
 | Quality gate | Result | Command |
 |---|---|---|
 | Tests | C 4/4, bridge 76 (+1 doc test), recipes 3, parametric 217 + merge driver 3, mesh Python 4 | `ctest`, `cargo test` (see README) |
-| SonarQube (indexed Rust) | Gate OK, 0 issues, 92.1% line coverage (2026-10-03); Rust unit tests classified as tests | `tools/sonar/run.sh` |
+| SonarQube (indexed Rust) | Gate OK, 0 issues, 92.3% line coverage (2026-10-03); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
-| Coverage | 92.49% lines overall, test code excluded; C++ 94.22% lines, 87.54% branches, 100% functions; Rust 91.60% lines | `tools/coverage/run.sh` |
+| Coverage | 92.63% lines overall, test code excluded; C++ 94.30% lines, 87.59% branches, 100% functions; Rust 91.81% lines | `tools/coverage/run.sh` |
 | Scale benchmarks | 57 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
@@ -492,9 +492,14 @@ every item below is defined in documents and the API, and verified in tests.
 
 ### Capabilities
 
-All planned capabilities have landed. Promote the next priority from **Later**.
+The near-term capability list is complete within the documented limits.
+The extensions below remain open.
 
 ## Later
+
+- General sheet-metal edge flanges, bend reliefs, hems, cutouts, bend tables,
+  and unfolding edited solids beyond constant-width strips.
+- Hole-catalog tolerance classes and optional under-head countersink relief.
 
 - Advanced ribs with general support-following and nonuniform closure.
 - Closed-linkage constraint solving and continuous collision detection.

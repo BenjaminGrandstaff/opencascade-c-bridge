@@ -118,6 +118,8 @@ is the kernel-facing execution layer for an initial subset of that model.
     offsets, hollowing, draft, and transforms, with failure diagnostics.
   - [`inspection.cpp`](src/inspection.cpp): topology, measurements,
     adjacency, tangency, operation history, and validity.
+  - [`mesh.cpp`](src/mesh.cpp): source-preserving surface tessellation and
+    indexed topology matching for tagged mesh exports.
   - [`curvature.cpp`](src/curvature.cpp): curvature sampling and exact or
     error-bounded extrema.
   - [`exchange.cpp`](src/exchange.cpp): BREP, STEP, and STL.
