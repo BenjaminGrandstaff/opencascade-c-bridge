@@ -4,6 +4,7 @@ use super::*;
 
 mod holes;
 mod ribs;
+mod variable_fillet;
 
 pub(crate) fn execute_profile_sweep<'session>(
     session: &'session Session,
@@ -187,6 +188,24 @@ pub(crate) fn execute_feature<'session>(
                 shape(shapes, input)?,
                 edges,
                 scalar(radius, parameters, Dimension::Length)?,
+                parameters,
+                shapes,
+            );
+        }
+        FeatureOperation::VariableFillet {
+            input,
+            edges,
+            start_radius,
+            end_radius,
+        } => {
+            return variable_fillet::execute(
+                session,
+                shape(shapes, input)?,
+                edges,
+                (
+                    scalar(start_radius, parameters, Dimension::Length)?,
+                    scalar(end_radius, parameters, Dimension::Length)?,
+                ),
                 parameters,
                 shapes,
             );

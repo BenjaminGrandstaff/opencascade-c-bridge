@@ -268,7 +268,7 @@ fn rib_schema_thirty_four_round_trips_and_migrates_existing_features() {
         let mut graph = InstanceGraph::new(&definition);
         graph.add_base("part", HashMap::new(), "test").unwrap();
         let document = ModelDocument::from_graph(&graph);
-        assert_eq!(document.schema_version, 34);
+        assert_eq!(document.schema_version, CURRENT_SCHEMA_VERSION);
         let loaded = ModelDocument::from_json(&document.to_json_pretty().unwrap()).unwrap();
         assert_eq!(loaded, document);
         let session = Session::new().unwrap();
@@ -282,7 +282,7 @@ fn rib_schema_thirty_four_round_trips_and_migrates_existing_features() {
             .unwrap()
             .retain(|feature| feature["id"] == "body");
         let migrated = ModelDocument::from_json(&old.to_string()).unwrap();
-        assert_eq!(migrated.schema_version, 34);
+        assert_eq!(migrated.schema_version, CURRENT_SCHEMA_VERSION);
         assert_eq!(migrated.family.features[0], definition.features[1]);
     }
 }

@@ -9,6 +9,7 @@ mod patterns;
 mod regeneration;
 mod ribs;
 mod selection;
+mod variable_fillet;
 
 fn length_parameter(id: &str, default: f64) -> ParameterDefinition {
     ParameterDefinition {

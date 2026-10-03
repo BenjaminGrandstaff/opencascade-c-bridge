@@ -373,6 +373,35 @@ kernel diagnostics, incremental reuse/rollback, cleanup, and schema migration.
 The scale suite builds and edits 1,000 drafts in 2.922 s (10 s budget), checking
 each signed volume, valid results, unchanged input reuse, and handle cleanup.
 
+## Variable-radius fillet features
+
+Schema 35 adds `VariableFillet { input, edges, start_radius, end_radius }`.
+Its semantic edge selectors identify open tangent contours. Both radii are
+finite positive lengths and vary linearly between OCCT's first and last
+spine vertices, using ABI 29's `occt_bridge_variable_fillet` and safe
+`Session::variable_fillet`. This follows the
+[OCCT linear radius law API](https://www.occt3d.com/dev/doc/refman/html/class_b_rep_fillet_a_p_i___make_fillet.html).
+Contour direction belongs to OCCT and does not
+follow the caller's selected edge orientation. Tangent neighbors can extend
+the contour; selecting several of its edges applies one shared law. Duplicate
+edges and closed contours are rejected. Multi-station laws, explicit direction
+control, and distinct radius pairs for different contours remain future work.
+
+The input and result must contain one valid solid, and the result must have
+positive volume. Input geometry is preserved. Validation and optional healing,
+generated/modified/deleted history, bounded failure-isolation diagnostics, and
+selector attribution use the same path as constant fillets. Endpoint-radius
+and selector parameters participate in feature signatures; selector history
+references contribute graph dependencies. Failed edits release temporary
+handles and retain accepted generations. Edge membership is indexed once per
+kernel call in O(input topology + selected edges) time and memory; kernel
+construction cost depends on the contour geometry. Fillet and chamfer builder
+calls serialize across sessions because concurrent variable blends produced
+reproducible OCCT 7.9 walking failures. Tests cover independent simultaneous
+sessions as well as geometric invariants, edits, migration, and cleanup. The
+scale suite builds and edits 1,000 features and verifies volume bounds,
+validity, body reuse, and released handles.
+
 ## Rib features
 
 Schema 34 adds `Rib { input, profile, thickness, direction }`. This first
@@ -893,8 +922,10 @@ or bounds-driven fitted spans,
 nested assembly frames, semantic selectors, provenance, and regeneration audit records. Live
 OCCT handles and generated BREPs are never serialized. Loading reconstructs a
 validated `InstanceGraph`; regeneration creates fresh session-owned handles.
-Schema versions 1 through 33 migrate to version 34, supplying explicit defaults
-for fields absent from older documents. Version 34 adds bounded closed-profile
+Schema versions 1 through 34 migrate to version 35, supplying explicit defaults
+for fields absent from older documents. Version 35 adds linear variable-radius
+fillets; earlier constant-radius operations remain unchanged. Version 34 adds
+bounded closed-profile
 ribs; existing features remain unchanged. Version 33 adds selected-face draft;
 older documents retain their existing features. Version 32 adds the frozen metric
 clearance expression; existing expressions remain unchanged.
@@ -933,7 +964,7 @@ defaults, units, constraints, placements, clone cycles, missing links,
 inconsistent pattern membership, and invalid regeneration revisions before the
 model is accepted.
 
-The next cross-layer work should prioritize variable-radius fillets and advanced ribs,
+The next cross-layer work should prioritize advanced ribs and richer variable fillet laws,
 measured by the scale
 benchmark suite (`tools/bench/run.sh`). Scale is a requirement for every change; see the
 [Roadmap](ROADMAP.md) for target sizes and the checks each change must pass.

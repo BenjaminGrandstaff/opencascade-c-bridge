@@ -34,6 +34,7 @@ mod ribs;
 mod sketches;
 mod solver;
 mod validation;
+mod variable_fillet;
 
 use graphs::*;
 use holes::*;
@@ -113,6 +114,7 @@ fn main() -> ExitCode {
     outcomes.push(hole_features_case());
     outcomes.push(draft::draft_features_case());
     outcomes.push(ribs::rib_features_case());
+    outcomes.push(variable_fillet::variable_fillet_features_case());
     outcomes.push(clearance_catalog_case());
     outcomes.push(threaded_hole_features_case());
     outcomes.push(entry_hole_features_case(false));

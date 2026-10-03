@@ -401,6 +401,14 @@ pub enum FeatureOperation {
         edges: Vec<EdgeSelector>,
         radius: ScalarExpr,
     },
+    /// Linear radius evolution along each selected open tangent contour, in
+    /// OCCT spine order. Endpoint radii are finite positive lengths.
+    VariableFillet {
+        input: String,
+        edges: Vec<EdgeSelector>,
+        start_radius: ScalarExpr,
+        end_radius: ScalarExpr,
+    },
     Chamfer {
         input: String,
         edges: Vec<EdgeSelector>,
@@ -430,7 +438,9 @@ impl FeatureOperation {
             | Self::Extrude { input, .. }
             | Self::Revolve { input, .. }
             | Self::Hole { input, .. } => vec![input],
-            Self::Fillet { input, edges, .. } | Self::Chamfer { input, edges, .. } => {
+            Self::Fillet { input, edges, .. }
+            | Self::VariableFillet { input, edges, .. }
+            | Self::Chamfer { input, edges, .. } => {
                 let mut dependencies = vec![input.as_str()];
                 for selector in edges {
                     selector.dependencies(&mut dependencies);

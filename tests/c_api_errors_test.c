@@ -410,6 +410,26 @@ static void combinations_and_features(occt_bridge_session_t* session) {
     EXPECT(occt_bridge_fillet(session, box, wrong_edges, 1, 0.5, &out), GEOMETRY);
     EXPECT(occt_bridge_fillet(session, box, foreign_edges, 1, 0.5, &out), GEOMETRY);
 
+    EXPECT(occt_bridge_variable_fillet(NULL, box, edges, 1, 0.5, 1.0, &out), ARG);
+    EXPECT(occt_bridge_variable_fillet(session, box, edges, 1, 0.5, 1.0, NULL), ARG);
+    EXPECT(occt_bridge_variable_fillet(session, box, NULL, 1, 0.5, 1.0, &out), ARG);
+    EXPECT(occt_bridge_variable_fillet(session, box, edges, 0, 0.5, 1.0, &out), ARG);
+    EXPECT(occt_bridge_variable_fillet(session, box, edges, 1, NAN, 1.0, &out), ARG);
+    EXPECT(occt_bridge_variable_fillet(session, box, edges, 1, 0.5, NAN, &out), ARG);
+    EXPECT(occt_bridge_variable_fillet(session, box, edges, 1, 0, 1.0, &out), ARG);
+    EXPECT(occt_bridge_variable_fillet(session, box, edges, 1, 0.5, 0, &out), ARG);
+    EXPECT(occt_bridge_variable_fillet(session, unknown, edges, 1, 0.5, 1.0, &out), MISSING);
+    EXPECT(occt_bridge_variable_fillet(session, box, missing_list, 1, 0.5, 1.0, &out), MISSING);
+    EXPECT(occt_bridge_variable_fillet(session, box, wrong_edges, 1, 0.5, 1.0, &out), GEOMETRY);
+    EXPECT(occt_bridge_variable_fillet(session, box, foreign_edges, 1, 0.5, 1.0, &out), GEOMETRY);
+    {
+        const occt_bridge_shape_id_t duplicate_edges[] = {edges[0], edges[0]};
+        EXPECT(occt_bridge_variable_fillet(session, box, duplicate_edges, 2, 0.5, 1.0, &out), ARG);
+        if (out != OCCT_BRIDGE_INVALID_SHAPE_ID) {
+            ++failures;
+        }
+    }
+
     EXPECT(occt_bridge_chamfer(session, box, edges, 1, 0.5, NULL), ARG);
     EXPECT(occt_bridge_chamfer(session, box, NULL, 1, 0.5, &out), ARG);
     EXPECT(occt_bridge_chamfer(session, box, edges, 0, 0.5, &out), ARG);

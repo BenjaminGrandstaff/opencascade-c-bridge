@@ -493,6 +493,18 @@ pub(crate) fn collect_operation_parameters<'a>(
             }
             collect_scalar_parameters(radius, names);
         }
+        FeatureOperation::VariableFillet {
+            edges,
+            start_radius,
+            end_radius,
+            ..
+        } => {
+            for selector in edges {
+                collect_edge_selector_parameters(selector, names);
+            }
+            collect_scalar_parameters(start_radius, names);
+            collect_scalar_parameters(end_radius, names);
+        }
         FeatureOperation::Chamfer {
             edges, distance, ..
         } => {

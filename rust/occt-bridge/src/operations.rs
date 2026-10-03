@@ -46,6 +46,30 @@ impl Session {
         })
     }
 
+    /// Linearly varies radius from OCCT's first to last spine vertex of each
+    /// selected open tangent contour. Both radii are finite positive lengths.
+    /// Tangent neighbors may be included; duplicate edges and closed contours
+    /// fail. Contour direction is defined by OCCT, not by edge orientation.
+    pub fn variable_fillet<'a>(
+        &'a self,
+        shape: &Shape<'_>,
+        edges: &[&Shape<'_>],
+        start_radius: f64,
+        end_radius: f64,
+    ) -> Result<Shape<'a>, BridgeError> {
+        self.selected_operation(shape, edges, |ids, out| unsafe {
+            occt_bridge_variable_fillet(
+                self.raw.as_ptr(),
+                shape.id,
+                ids.as_ptr(),
+                ids.len(),
+                start_radius,
+                end_radius,
+                out,
+            )
+        })
+    }
+
     pub fn chamfer<'a>(
         &'a self,
         shape: &Shape<'_>,

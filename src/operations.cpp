@@ -19,6 +19,9 @@
 #include <Standard_NoSuchObject.hxx>
 #include <TopoDS.hxx>
 #include <TopoDS_AlertWithShape.hxx>
+#include <TopExp.hxx>
+#include <TopTools_IndexedMapOfShape.hxx>
+#include <TopTools_MapOfShape.hxx>
 #include <gp_Ax1.hxx>
 #include <gp_Dir.hxx>
 #include <gp_Pnt.hxx>
@@ -318,18 +321,70 @@ void record_faulty_fillet(
 /* Contours rebuilt alone to locate a failure; bounds the work on failure. */
 constexpr size_t MAX_ISOLATED_CONTOURS = 64;
 
+struct LinearFilletRadii {
+    double start;
+    double end;
+};
+
+// Concurrent variable-radius builds in independent OCCT 7.9 sessions can
+// fail spuriously with ChFiDS_WalkingFailure. Serialize the shared fillet /
+// chamfer builder path, including its failure-isolation rebuilds.
+std::mutex edge_treatment_mutex;
+
+bool valid_treatment_value(double value) {
+    return std::isfinite(value) && value > 0.0;
+}
+
+bool valid_treatment_value(const LinearFilletRadii& value) {
+    return valid_treatment_value(value.start) && valid_treatment_value(value.end);
+}
+
+template <typename Builder>
+void add_treatment(Builder& builder, const TopoDS_Edge& edge, double value) {
+    builder.Add(value, edge);
+}
+
+void add_treatment(BRepFilletAPI_MakeFillet& builder, const TopoDS_Edge& edge, const LinearFilletRadii& value) {
+    // One law per tangent contour, even when several selected edges share it.
+    if (builder.Contour(edge) == 0) {
+        builder.Add(value.start, value.end, edge);
+    }
+}
+
+template <typename Builder>
+bool valid_treatment_contours(const Builder&, double) {
+    return true;
+}
+
+bool valid_treatment_contours(const BRepFilletAPI_MakeFillet& builder, const LinearFilletRadii&) {
+    for (int contour = 1; contour <= builder.NbContours(); ++contour) {
+        if (builder.Closed(contour)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool rejects_duplicate_edges(double) {
+    return false;
+}
+
+bool rejects_duplicate_edges(const LinearFilletRadii&) {
+    return true;
+}
+
 /*
  * Rebuilds each contour of a failed fillet or chamfer on its own and records
  * the selected edges of contours that still fail. Costs one local build per
  * contour, at most MAX_ISOLATED_CONTOURS, and runs only after a failure.
  */
-template <typename Builder>
+template <typename Builder, typename Value>
 void record_isolated_contours(
     occt_bridge_session_t* session,
     const TopoDS_Shape& shape,
     const std::vector<TopoDS_Edge>& selection,
     const std::vector<std::vector<size_t>>& members,
-    double value) {
+    const Value& value) {
     const auto selected_contours = static_cast<size_t>(std::count_if(
         members.begin(), members.end(), [](const std::vector<size_t>& edges) { return !edges.empty(); }));
     if (selected_contours > MAX_ISOLATED_CONTOURS) {
@@ -346,7 +401,7 @@ void record_isolated_contours(
         ++rebuilt;
         Builder alone(shape);
         for (const size_t index : members[contour]) {
-            alone.Add(value, selection[index]);
+            add_treatment(alone, selection[index], value);
         }
         const std::string exception = build_reporting_exception(alone);
         if (exception.empty() && alone.IsDone() && !alone.Shape().IsNull()) {
@@ -363,44 +418,56 @@ void record_isolated_contours(
 /*
  * Fillets or chamfers selected edges. On failure, records the faulty
  * contours OCCT reports or, when it names none, the contours that fail on
- * their own, so the error says which selected edges are at fault.
+ * their own, so the error says which selected edges are at fault. Selection
+ * validation is O(input topology + selected edges) time and memory; OCCT
+ * construction cost depends on local contour geometry.
  */
-template <typename Builder>
+template <typename Builder, typename Value>
 occt_bridge_status_t edge_treatment(
     occt_bridge_session_t* session,
     occt_bridge_shape_id_t shape,
     const occt_bridge_shape_id_t* edges,
     size_t edge_count,
-    double value,
+    const Value& value,
     occt_bridge_shape_id_t* out_shape,
     const std::string& name) {
     if (out_shape == nullptr) {
         return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_shape is null");
     }
     *out_shape = OCCT_BRIDGE_INVALID_SHAPE_ID;
-    if (edges == nullptr || edge_count == 0 || !std::isfinite(value) || value <= 0.0) {
+    if (edges == nullptr || edge_count == 0 || !valid_treatment_value(value)) {
         return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "invalid " + name + " parameters");
     }
     const TopoDS_Shape* input = find_shape(session, shape);
     if (input == nullptr) {
         return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "shape was not found");
     }
+    const std::lock_guard<std::mutex> treatment_lock(edge_treatment_mutex);
     std::vector<TopoDS_Edge> selection;
     selection.reserve(edge_count);
+    TopTools_IndexedMapOfShape descendants;
+    TopExp::MapShapes(*input, TopAbs_EDGE, descendants);
+    TopTools_MapOfShape seen;
     Builder builder(*input);
     for (size_t index = 0; index < edge_count; ++index) {
         const TopoDS_Shape* edge = find_shape(session, edges[index]);
         if (edge == nullptr) {
             return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, name + " edge was not found");
         }
-        if (edge->ShapeType() != TopAbs_EDGE || !is_descendant(*input, *edge, TopAbs_EDGE)) {
+        if (edge->ShapeType() != TopAbs_EDGE || !descendants.Contains(*edge)) {
             return fail(
                 session,
                 OCCT_BRIDGE_INVALID_GEOMETRY,
                 name + " selection is not an edge of the input shape");
         }
+        if (rejects_duplicate_edges(value) && !seen.Add(*edge)) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, name + " selection contains duplicate edges");
+        }
         selection.push_back(TopoDS::Edge(*edge));
-        builder.Add(value, selection.back());
+        add_treatment(builder, selection.back(), value);
+    }
+    if (!valid_treatment_contours(builder, value)) {
+        return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, name + " requires open tangent contours");
     }
     std::vector<int> contours(selection.size());
     std::transform(selection.begin(), selection.end(), contours.begin(), [&builder](const TopoDS_Edge& edge) {
@@ -527,6 +594,20 @@ occt_bridge_status_t occt_bridge_fillet(
     return guarded(session, [&] {
         return edge_treatment<BRepFilletAPI_MakeFillet>(
             session, shape, edges, edge_count, radius, out_shape, "fillet");
+    });
+}
+
+occt_bridge_status_t occt_bridge_variable_fillet(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t shape,
+    const occt_bridge_shape_id_t* edges,
+    size_t edge_count,
+    double start_radius,
+    double end_radius,
+    occt_bridge_shape_id_t* out_shape) {
+    return guarded(session, [&] {
+        return edge_treatment<BRepFilletAPI_MakeFillet>(
+            session, shape, edges, edge_count, LinearFilletRadii{start_radius, end_radius}, out_shape, "variable fillet");
     });
 }
 

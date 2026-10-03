@@ -3,7 +3,7 @@
 A small, stable C ABI over Open Cascade (OCCT), designed to be wrapped safely
 from Rust and other languages. Open Cascade C++ objects never cross the ABI.
 
-The current C ABI version is **28**.
+The current C ABI version is **29**.
 
 ## Current API
 
@@ -21,7 +21,8 @@ The current C ABI version is **28**.
 - Face and shell sewing with operation history, single-shell solid
   construction, and multi-shell solids with internal voids
 - Fuse, cut, and common boolean operations
-- Selected-edge fillets and chamfers, joined offsets, and face-selected hollowing
+- Selected-edge constant and linear variable-radius fillets and chamfers,
+  joined offsets, and face-selected hollowing
 - Shape-kind and unique-subshape traversal
 - OCCT topological-identity comparison for independently owned handles
 - Oriented face-normal, face-planarity, edge-length, circular-edge-radius,
@@ -81,7 +82,7 @@ per-model linear and angular tolerances, plus configurations and materials
 with mass. Full graph regeneration verifies mass ranges, datum clearances, and
 recorded relationship satisfaction with required, preferred, or advisory
 priority. Schema v1 through
-v33 documents migrate to v34 during load; unsupported
+v34 documents migrate to v35 during load; unsupported
 future versions are rejected.
 Managed regeneration incrementally reuses unchanged outputs and
 rebuilds dirty features plus their downstream dependents. Graph regeneration
@@ -182,14 +183,15 @@ builds an optimized copy of the library in `build/bench`, runs every case at
 the target sizes (10,000-member patterns, deep clone chains, 1,000-part solver
 stacks and grids, repeated regeneration, validation chains, and many-hole
 faces), and fails when a required case misses its time budget or correctness
-check. The current suite has 38 passing cases, including single-leaf and
+check. The current suite has 39 passing cases, including single-leaf and
 memoized all-node resolution of a 20,000-link clone chain and a 50-part stack
 1 km from the origin solved at a 1e-8 mm model tolerance, plus 10,000 checked
 datum-clearance requirements, 10,000 small constrained-sketch solves,
 10,000 arc/tangent sketch solves, 10,000 datum-linked sketch-wire features,
 build/edit cases for 1,000 extrude, 1,000 revolve, and 100 each of plain hole,
 counterbore, countersink, and thread-recorded hole features,
-100,000 checked metric clearance-catalog lookups, 1,000 draft and 1,000 rib features, and
+100,000 checked metric clearance-catalog lookups, 1,000 draft, 1,000 rib,
+and 1,000 variable-radius fillet features, and
 individual sparse sketches with 10,000 independent or 1,000 connected lines:
 
 ```bash
@@ -246,7 +248,23 @@ handles and retain the prior accepted generation.
 
 `ModelDocument` persists the family definition, requirements, instance and
 clone identities, sparse overrides, placements, assembly frames, pattern rules, provenance, and
-regeneration audit records. Schema 34 adds
+regeneration audit records. Schema 35 adds
+`VariableFillet { input, edges, start_radius, end_radius }`, using ABI 29's
+`occt_bridge_variable_fillet` and safe `Session::variable_fillet`. Semantic
+selectors choose open tangent contours; positive length-valued radii vary
+linearly from OCCT's first spine vertex to its last. The spine direction is
+defined by OCCT rather than the selected edge's orientation. One law applies
+to the whole contour, including tangent neighbors, even if several of its
+edges are selected. Duplicate edges and closed contours are rejected.
+The parametric input and result must each contain one valid solid with
+positive result volume. Inputs remain unchanged; validation, healing,
+operation history, failure diagnostics, incremental reuse, and failed-edit
+rollback follow the existing fillet path. Fillet and chamfer builds are
+serialized across sessions to prevent observed concurrent OCCT 7.9 variable
+blend failures. Arbitrary multi-station laws, per-contour radius pairs in
+one feature, and explicit spine-direction control remain future work.
+Earlier documents retain their existing constant-radius fillets.
+Schema 34 adds
 `Rib { input, profile, thickness, direction }`: a bounded reinforcement made
 by extruding a closed planar face/wire normally and fusing it into one body.
 Thickness is a positive length; direction is a nonzero scalar vector,

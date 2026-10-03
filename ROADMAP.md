@@ -8,24 +8,33 @@ tracks status and order.
 
 | Layer | Version | State |
 |---|---|---|
-| C ABI (`src/`, `include/`) | ABI 28 | Stable; exact version match required |
+| C ABI (`src/`, `include/`) | ABI 29 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 34 | Active development |
+| `occt-parametric` (engineering layer) | Schema 35 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 3/3, bridge 49 (+1 doc test), recipes 3, parametric 133 | `ctest`, `cargo test` (see README) |
+| Tests | C 3/3, bridge 54 (+1 doc test), recipes 3, parametric 137 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Last recorded: Gate OK, 0 issues, 93.3% line coverage; not rerun for current changes | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
-| Coverage | 91.09% lines overall, test code excluded; C++ 93.57% lines, 87.22% branches, 100% functions; Rust 89.59% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 38 passing within budget | `tools/bench/run.sh` |
+| Coverage | 91.18% lines overall, test code excluded; C++ 93.69% lines, 87.18% branches, 100% functions; Rust 89.66% lines | `tools/coverage/run.sh` |
+| Scale benchmarks | 39 passing within budget | `tools/bench/run.sh` |
 
 ## Done
 
 ### Kernel (C ABI)
 
+- Linear variable-radius fillets (ABI 29): finite positive endpoint radii
+  along open tangent contours, using OCCT's spine direction. Tangent
+  neighbors share one law; duplicate edges and closed contours are rejected.
+  Result validation/healing, input preservation, history, and bounded failure
+  diagnostics follow the constant-radius path. Edge membership is indexed
+  once per call, costing O(input topology + selected edges) time and memory.
+  Fillet and chamfer builds serialize across sessions after reproducible
+  concurrent OCCT 7.9 blend failures; eight-thread mixed-treatment tests
+  exercise this path with independent sessions and bounded handle counts.
 - Selected-face draft (ABI 28): signed radians, neutral plane and pull
   direction, descendant face validation, duplicate rejection, and planar,
   cylindrical, or conical surfaces. OCCT draft status and problematic subshapes
@@ -85,6 +94,15 @@ tracks status and order.
 
 ### Parametric layer
 
+- Linear variable-radius fillet features (schema 35): semantic selectors,
+  length-valued start/end radii, one valid input/result solid, dependency
+  ordering, selective reuse, and rollback. Tests cover geometry bounds,
+  endpoint reversal, constant-radius equivalence, tangent propagation,
+  history, units, selector and radius edits, diagnostics, migration, and
+  cleanup. Arbitrary multi-station laws, per-contour radius pairs, and explicit
+  spine-direction control remain future work. The scale case builds and edits
+  1,000 features, verifies volume bounds and validity, reuses the body, and
+  releases every handle in 18.234 s (60 s budget, set from an initial 18 s measurement).
 - Bounded closed-profile ribs (schema 34; no ABI change): a planar sketch
   face/wire is extruded normally by positive length-valued thickness along a
   normalized scalar direction, then fused into one input solid. The result
@@ -291,8 +309,9 @@ every item below is defined in documents and the API, and verified in tests.
 
 ### Capabilities
 
-1. **Feature breadth.** Variable-radius fillets and advanced ribs (open
+1. **Feature breadth.** Advanced ribs (open
     sketches, centered thickness, extend-to-next, and profile-history composition);
+    multi-station variable fillet laws and explicit spine-direction control;
     sheet metal (flanges, bends, flat patterns)
     after the rest. Expand hole catalogs to tap drills, inch sizes, and
     standard recess dimensions when their source data is verified.

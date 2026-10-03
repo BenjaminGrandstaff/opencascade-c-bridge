@@ -8,6 +8,7 @@ mod inspection;
 mod operations;
 mod results;
 mod session;
+mod variable_fillet;
 
 fn unit_box(session: &Session, x: f64) -> Shape<'_> {
     session

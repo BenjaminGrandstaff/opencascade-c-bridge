@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define OCCT_BRIDGE_ABI_VERSION 28u
+#define OCCT_BRIDGE_ABI_VERSION 29u
 #define OCCT_BRIDGE_INVALID_SHAPE_ID UINT64_C(0)
 
 #if defined(_WIN32) && defined(OCCT_BRIDGE_BUILD_SHARED)
@@ -483,6 +483,23 @@ OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_fillet(
     const occt_bridge_shape_id_t* edges,
     size_t edge_count,
     double radius,
+    occt_bridge_shape_id_t* out_shape
+);
+/*
+ * Linear radius evolution along each selected open tangent contour, from
+ * OCCT's first spine vertex to its last (not necessarily the selected edge's
+ * orientation). Both radii must be finite and positive. Tangent neighbors
+ * may be included. Duplicate edges and closed contours are rejected.
+ * Inputs are unchanged; validation, healing, and fillet diagnostics/history
+ * are the same as for constant-radius fillets.
+ */
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_variable_fillet(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t shape,
+    const occt_bridge_shape_id_t* edges,
+    size_t edge_count,
+    double start_radius,
+    double end_radius,
     occt_bridge_shape_id_t* out_shape
 );
 OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_chamfer(
