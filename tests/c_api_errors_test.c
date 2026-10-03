@@ -681,6 +681,38 @@ static void persistence(occt_bridge_session_t* session) {
         session, box, "/nonexistent-directory/shape.stl", 0.1, 0.5, 1), IO);
 }
 
+static void draft(occt_bridge_session_t* session) {
+    const occt_bridge_vec3_t zero = {0, 0, 0};
+    const occt_bridge_vec3_t up = {0, 0, 1};
+    const occt_bridge_vec3_t nan_x = {NAN, 0, 1};
+    occt_bridge_shape_id_t body = 0, face = 0, edge = 0, out = 0;
+    EXPECT(occt_bridge_create_box(session, zero, vec(10, 10, 10), &body), OK);
+    EXPECT(occt_bridge_shape_subshape_at(session, body, OCCT_BRIDGE_SHAPE_FACE, 0, &face), OK);
+    EXPECT(occt_bridge_shape_subshape_at(session, body, OCCT_BRIDGE_SHAPE_EDGE, 0, &edge), OK);
+    const occt_bridge_shape_id_t duplicate[] = {face, face};
+    EXPECT(occt_bridge_draft(NULL, body, &face, 1, zero, up, up, 0.1, &out), ARG);
+    EXPECT(occt_bridge_draft(session, body, &face, 1, zero, up, up, 0.1, NULL), ARG);
+    EXPECT(occt_bridge_draft(session, body, NULL, 1, zero, up, up, 0.1, &out), ARG);
+    EXPECT(occt_bridge_draft(session, body, &face, 0, zero, up, up, 0.1, &out), ARG);
+    EXPECT(occt_bridge_draft(session, body, &face, 1, nan_x, up, up, 0.1, &out), ARG);
+    EXPECT(occt_bridge_draft(session, body, &face, 1, zero, zero, up, 0.1, &out), ARG);
+    EXPECT(occt_bridge_draft(session, body, &face, 1, zero, nan_x, up, 0.1, &out), ARG);
+    EXPECT(occt_bridge_draft(session, body, &face, 1, zero, up, zero, 0.1, &out), ARG);
+    EXPECT(occt_bridge_draft(session, body, &face, 1, zero, up, nan_x, 0.1, &out), ARG);
+    EXPECT(occt_bridge_draft(session, body, &face, 1, zero, up, up, 0, &out), ARG);
+    EXPECT(occt_bridge_draft(session, body, &face, 1, zero, up, up, NAN, &out), ARG);
+    EXPECT(occt_bridge_draft(session, body, &face, 1, zero, up, up, 2, &out), ARG);
+    EXPECT(occt_bridge_draft(session, unknown, &face, 1, zero, up, up, 0.1, &out), MISSING);
+    EXPECT(occt_bridge_draft(session, body, &unknown, 1, zero, up, up, 0.1, &out), MISSING);
+    EXPECT(occt_bridge_draft(session, body, &edge, 1, zero, up, up, 0.1, &out), GEOMETRY);
+    EXPECT(occt_bridge_draft(session, body, duplicate, 2, zero, up, up, 0.1, &out), ARG);
+    EXPECT(occt_bridge_draft(session, body, &face, 1, zero, up, up, 0.1, &out), OK);
+    occt_bridge_shape_release(session, out);
+    occt_bridge_shape_release(session, edge);
+    occt_bridge_shape_release(session, face);
+    occt_bridge_shape_release(session, body);
+}
+
 int main(void) {
     occt_bridge_session_t* session = NULL;
     if (occt_bridge_session_create(OCCT_BRIDGE_ABI_VERSION, &session) != OK) {
@@ -692,6 +724,7 @@ int main(void) {
     wires_and_faces(session);
     recipes_sweeps_and_lofts(session);
     combinations_and_features(session);
+    draft(session);
     queries(session);
     topology_relations(session);
     history(session);

@@ -95,6 +95,8 @@ pub enum DiagnosticKind {
     BooleanAlert,
     /// A subshape of a rejected result; code is `BRepCheck_Status`.
     InvalidSubshape,
+    /// Draft failure; code is `Draft_ErrorStatus`.
+    Draft,
     /// A kind added by a newer library.
     Other(i32),
 }
@@ -108,6 +110,7 @@ impl DiagnosticKind {
             4 => Self::Offset,
             5 => Self::BooleanAlert,
             6 => Self::InvalidSubshape,
+            7 => Self::Draft,
             other => Self::Other(other),
         }
     }
@@ -129,6 +132,15 @@ pub struct Diagnostic {
     pub has_shape: bool,
 }
 
+/// Neutral plane, pull direction, and signed angle for a draft operation.
+#[derive(Clone, Copy, Debug)]
+pub struct DraftOptions {
+    pub neutral_origin: Vec3,
+    pub neutral_normal: Vec3,
+    pub pull_direction: Vec3,
+    pub angle_radians: f64,
+}
+
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub(crate) struct RawSessionOptions {
@@ -141,7 +153,7 @@ pub(crate) struct RawSessionOptions {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SessionOptions {
     /// Check results of booleans, fillets, chamfers, offsets, hollowing,
-    /// sewing, and STEP and BREP import; invalid results become errors.
+    /// draft, sewing, and STEP and BREP import; invalid results become errors.
     pub validate_results: bool,
     /// Repair invalid results with shape fixing when possible, carrying
     /// operation history through the repair and recording a warning.

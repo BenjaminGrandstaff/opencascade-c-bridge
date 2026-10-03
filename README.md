@@ -3,7 +3,7 @@
 A small, stable C ABI over Open Cascade (OCCT), designed to be wrapped safely
 from Rust and other languages. Open Cascade C++ objects never cross the ABI.
 
-The current C ABI version is **27**.
+The current C ABI version is **28**.
 
 ## Current API
 
@@ -81,7 +81,7 @@ per-model linear and angular tolerances, plus configurations and materials
 with mass. Full graph regeneration verifies mass ranges, datum clearances, and
 recorded relationship satisfaction with required, preferred, or advisory
 priority. Schema v1 through
-v24 documents migrate to v25 during load; unsupported
+v33 documents migrate to v34 during load; unsupported
 future versions are rejected.
 Managed regeneration incrementally reuses unchanged outputs and
 rebuilds dirty features plus their downstream dependents. Graph regeneration
@@ -109,7 +109,7 @@ is the kernel-facing execution layer for an initial subset of that model.
   - [`recipes.cpp`](src/recipes.cpp): the faceted stone and wall torch.
   - [`solids.cpp`](src/solids.cpp): sewing and solid construction.
   - [`operations.cpp`](src/operations.cpp): booleans, fillets, chamfers,
-    offsets, hollowing, and transforms, with failure diagnostics.
+    offsets, hollowing, draft, and transforms, with failure diagnostics.
   - [`inspection.cpp`](src/inspection.cpp): topology, measurements,
     adjacency, tangency, operation history, and validity.
   - [`curvature.cpp`](src/curvature.cpp): curvature sampling and exact or
@@ -173,20 +173,23 @@ tools/coverage/run.sh
 ```
 
 Rust unit tests live in `tests` modules inside each crate's `src/` (for example
-`src/tests/` and `src/assembly/tests.rs`); like the C tests, they are excluded,
-so the percentages measure only code under test. Rust branch coverage needs a nightly toolchain and is not reported.
+`src/tests/`, `src/tests.rs`, and `src/assembly/tests.rs`); like the C tests,
+they are excluded, so the percentages measure only code under test. Rust
+branch coverage needs a nightly toolchain and is not reported.
 
 The scale benchmark suite enforces the roadmap's scaling requirement. It
 builds an optimized copy of the library in `build/bench`, runs every case at
 the target sizes (10,000-member patterns, deep clone chains, 1,000-part solver
 stacks and grids, repeated regeneration, validation chains, and many-hole
 faces), and fails when a required case misses its time budget or correctness
-check. The current suite has 31 passing cases, including single-leaf and
+check. The current suite has 38 passing cases, including single-leaf and
 memoized all-node resolution of a 20,000-link clone chain and a 50-part stack
 1 km from the origin solved at a 1e-8 mm model tolerance, plus 10,000 checked
 datum-clearance requirements, 10,000 small constrained-sketch solves,
 10,000 arc/tangent sketch solves, 10,000 datum-linked sketch-wire features,
-build/edit cases for 1,000 extrude and 1,000 revolve features, and
+build/edit cases for 1,000 extrude, 1,000 revolve, and 100 each of plain hole,
+counterbore, countersink, and thread-recorded hole features,
+100,000 checked metric clearance-catalog lookups, 1,000 draft and 1,000 rib features, and
 individual sparse sketches with 10,000 independent or 1,000 connected lines:
 
 ```bash
@@ -243,7 +246,68 @@ handles and retain the prior accepted generation.
 
 `ModelDocument` persists the family definition, requirements, instance and
 clone identities, sparse overrides, placements, assembly frames, pattern rules, provenance, and
-regeneration audit records. Schema 28 adds `Extrude` and `Revolve` operations
+regeneration audit records. Schema 34 adds
+`Rib { input, profile, thickness, direction }`: a bounded reinforcement made
+by extruding a closed planar face/wire normally and fusing it into one body.
+Thickness is a positive length; direction is a nonzero scalar vector,
+normalized and required to be normal to the profile plane. Its sign chooses
+the side of the profile. The result must add material and contain one valid
+solid; disconnected, edge-only, and fully contained walls fail. Body/profile
+references and parameter edits participate in incremental regeneration.
+Input-body fuse history is retained and temporary faces/walls are released;
+implicit sweep-to-fuse history from every original profile edge is not guaranteed.
+Open-sketch, centered, extend-to-next, and automatic-support ribs are not yet
+implemented. Schema 34 does not change ABI 28; older features remain unchanged.
+Schema 33 adds `Draft` operations with semantic
+face selectors, a length-valued neutral-plane origin, dimensionless nonzero
+neutral normal and pull direction, and signed scalar radians with
+`0 < abs(angle) < pi/2`. Faces must be planar, cylindrical, or conical;
+OCCT may propagate the taper to tangential neighbors. Positive angles remove
+material on the pull side of the neutral plane; negative angles add it.
+The input remains unchanged, modified topology history is retained, and failed
+edits preserve the previous generation. Draft failures expose OCCT status
+and problematic subshapes. This uses ABI 28's `occt_bridge_draft` and safe
+`Session::draft` with `DraftOptions`. Topology-changing drafts and unsupported
+surfaces are outside the supported scope. Older documents keep their features.
+Schema 32 adds `ScalarExpr::Iso273ClearanceV1`,
+a frozen metric clearance-hole diameter lookup with a length-valued nominal
+fastener diameter and `ClearanceSeries::{Fine, Medium, Coarse}`. It works
+directly in a hole's diameter or in derived parameters, preserves dependency
+tracking, and rejects unsupported sizes rather than rounding or interpolating.
+The public `iso273_clearance_v1` helper returns a millimeter `Quantity`.
+See [Hole-size catalog](HOLE_SIZE_CATALOG.md) for source data, supported sizes,
+an example, and limitations. Older documents retain their existing expressions.
+Schema 31 adds optional `Hole.thread` metadata
+(`Option<Box<ThreadSpecification>>` in Rust). A thread record stores a nonblank
+caller-supplied designation, length-valued nominal diameter and positive pitch,
+and right/left handedness. Nominal diameter must exceed the explicit bore
+diameter. This records internal-thread intent only: no helix is generated,
+no tap drill is inferred, and no standard, tolerance class, engagement length,
+or machinability is verified. Thread parameter and record edits invalidate the
+hole and downstream features, even though the cylindrical geometry is unchanged.
+Older documents default to no thread record; that schema addition did not change the ABI.
+Schema 30 adds the optional `Hole.finish`, defaulting
+to `HoleFinish::Plain` when absent in older documents.
+`HoleFinish::Counterbore { diameter, depth }` makes a cylindrical entry recess;
+`HoleFinish::Countersink { diameter, angle_radians }` makes a conical recess
+using its included angle (scalar radians, strictly between zero and pi).
+Both start at the supplied hole position along the axis, require a diameter
+larger than the bore, and must be shallower than a blind bore. Countersink depth
+is `(entry_radius - bore_radius) / tan(angle_radians / 2)`.
+The caller supplies the entry position; no surface is inferred.
+Schema 29 adds `Hole` operations referencing a
+named one-solid input. Position and diameter are length-valued; the nonzero
+axis is dimensionless and normalized. `HoleExtent::Blind { depth }` cuts a
+flat-bottom bore for a positive length-valued depth from the supplied position
+along the axis (it does not guarantee a remaining floor).
+`HoleExtent::ThroughAll` spans the input bounds in both directions along the
+axis line, without a guessed cutting depth. Cuts must remove material and leave
+one valid solid with positive volume. Parameter edits rebuild dependent
+features, operation history is retained, and temporary tools are released.
+Older documents migrate without changing their existing features; that schema
+addition did not change the ABI. Tap-drill, inch, and standard recess-size catalogs remain
+planned.
+Schema 28 adds `Extrude` and `Revolve` operations
 from named planar face or closed-wire outputs. Extrusion uses a length-valued
 displacement vector (including oblique and negative directions); revolution
 uses a length-valued origin, a dimensionless nonzero axis, and a signed scalar

@@ -111,6 +111,14 @@ pub(crate) fn evaluate_derived_expression(
 ) -> Result<EvaluatedScalar, ModelError> {
     match expression {
         ScalarExpr::Literal(value) => EvaluatedScalar::from_quantity(*value),
+        ScalarExpr::Iso273ClearanceV1 {
+            nominal_diameter,
+            series,
+        } => {
+            let nominal =
+                evaluate_derived_expression(nominal_diameter, definitions, resolved, visiting)?;
+            clearance_scalar(nominal, *series)
+        }
         ScalarExpr::Parameter(name) => {
             resolve_derived_parameter(name, definitions, resolved, visiting)
         }
@@ -661,6 +669,13 @@ pub(crate) fn evaluate_resolved_expression(
 ) -> Result<EvaluatedScalar, ModelError> {
     match expression {
         ScalarExpr::Literal(value) => EvaluatedScalar::from_quantity(*value),
+        ScalarExpr::Iso273ClearanceV1 {
+            nominal_diameter,
+            series,
+        } => clearance_scalar(
+            evaluate_resolved_expression(nominal_diameter, parameters)?,
+            *series,
+        ),
         ScalarExpr::Parameter(name) => parameters
             .get(name)
             .ok_or_else(|| ModelError::new(format!("unknown parameter '{name}'")))

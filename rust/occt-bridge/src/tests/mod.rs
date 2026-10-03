@@ -2,6 +2,7 @@ use super::*;
 use std::{fs, path::PathBuf};
 
 mod construction;
+mod draft;
 mod exchange;
 mod inspection;
 mod operations;

@@ -1,10 +1,13 @@
 use super::*;
 
 mod documents;
+mod draft;
 mod expressions;
 mod graph;
+mod holes;
 mod patterns;
 mod regeneration;
+mod ribs;
 mod selection;
 
 fn length_parameter(id: &str, default: f64) -> ParameterDefinition {

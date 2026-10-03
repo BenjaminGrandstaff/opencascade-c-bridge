@@ -8,23 +8,29 @@ tracks status and order.
 
 | Layer | Version | State |
 |---|---|---|
-| C ABI (`src/`, `include/`) | ABI 27 | Stable; exact version match required |
+| C ABI (`src/`, `include/`) | ABI 28 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 28 | Active development |
+| `occt-parametric` (engineering layer) | Schema 34 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 3/3, bridge 45, recipes 3, parametric 109 | `ctest`, `cargo test` (see README) |
+| Tests | C 3/3, bridge 49 (+1 doc test), recipes 3, parametric 133 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Last recorded: Gate OK, 0 issues, 93.3% line coverage; not rerun for current changes | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
-| Coverage | 90.81% lines overall, test code excluded; C++ 93.53% lines, 86.90% branches, 100% functions; Rust 89.15% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 31 passing within budget | `tools/bench/run.sh` |
+| Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
+| Coverage | 91.09% lines overall, test code excluded; C++ 93.57% lines, 87.22% branches, 100% functions; Rust 89.59% lines | `tools/coverage/run.sh` |
+| Scale benchmarks | 38 passing within budget | `tools/bench/run.sh` |
 
 ## Done
 
 ### Kernel (C ABI)
 
+- Selected-face draft (ABI 28): signed radians, neutral plane and pull
+  direction, descendant face validation, duplicate rejection, and planar,
+  cylindrical, or conical surfaces. OCCT draft status and problematic subshapes
+  are exposed through structured diagnostics. Result validation/healing and
+  corrected modified-shape history are retained; input handles remain unchanged.
 - Sessions, integer shape handles, history-preserving duplicates, exception
   containment at every entry point.
 - Primitives, wires, faces, prisms, polyline tubes, lofts, compounds.
@@ -52,7 +58,7 @@ tracks status and order.
   and bounding-box-pruned classification instead of repeated whole-face
   checks. The differential test matches `BRepCheck_Analyzer` verdicts and
   statuses across valid and deliberately invalid topology. Final benchmarks:
-  1.59x validation overhead on a 100-cut chain and 1.12x on a 400-hole
+  1.58x validation overhead on a 100-cut chain and 1.13x on a 400-hole
   single cut; direct validation of that plate takes 0.045 s instead of
   0.212 s with `BRepCheck_Analyzer`.
 - Structured failure diagnostics: a failed fillet, chamfer, offset, hollow,
@@ -79,6 +85,77 @@ tracks status and order.
 
 ### Parametric layer
 
+- Bounded closed-profile ribs (schema 34; no ABI change): a planar sketch
+  face/wire is extruded normally by positive length-valued thickness along a
+  normalized scalar direction, then fused into one input solid. The result
+  must add material and remain one valid solid. Disconnected, edge-only,
+  fully contained, and invalid ribs fail. Body/profile references and their
+  expressions drive ordering, reuse, and downstream rebuilds; failures preserve
+  accepted generations. Four tests cover exact triangular and overlap volumes,
+  both extrusion directions, body history, input preservation, units,
+  connection failures, selective reuse, rollback, cleanup, and migration.
+  Open-sketch, centered, extend-to-next, and automatic-support ribs, plus full
+  implicit profile-history composition through the fuse, remain future work.
+  Building and editing 1,000 ribs takes 5.737 s (15 s budget), checking every
+  volume, valid results, unchanged body/profile reuse, and cleanup.
+- Draft features (schema 33): semantic face selectors, length-valued neutral
+  origin, scalar normal/pull direction and signed angle. Input and result must
+  contain one valid solid with positive result volume. Selector references and
+  all expressions participate in ordering and incremental signatures; failed
+  edits preserve previous generations and release all new/selected handles.
+  Four bridge and four parametric tests cover exact wedge/frustum volumes,
+  positive/negative drafts, history, input preservation, invalid selections,
+  units/directions, OCCT diagnostics, parameter edits, cleanup, and migration.
+  Topology-changing drafts and surfaces outside OCCT's supported set remain
+  unsupported.
+  Building and editing 1,000 draft features takes 2.922 s (10 s budget),
+  checking every signed volume, valid results, input reuse, and cleanup.
+- Frozen metric clearance-hole catalog (schema 32; no ABI change).
+  `ScalarExpr::Iso273ClearanceV1` and `iso273_clearance_v1` resolve 19 nominal
+  fastener sizes in fine, medium, and coarse series to millimeter diameters.
+  Length-valued inputs support unit conversion; unsupported sizes and invalid
+  quantities fail without interpolation. Catalog expressions work in derived
+  parameters and hole dimensions, track dependencies, and rebuild only affected
+  branches. Four tests check all 57 values, units, unsupported sizes, exact
+  volumes, edits, rollback, round trips, and unchanged schema 31 migration.
+  The V1 snapshot is immutable; manufacturing tolerances, tap-drill catalogs,
+  inch catalogs, and standard recess dimensions remain out of scope.
+  Source, API, and supported sizes: [Hole-size catalog](HOLE_SIZE_CATALOG.md).
+  100,000 checked lookups take about 1 ms (200 ms budget).
+- Recorded internal-thread specifications (schema 31; no ABI change):
+  caller-supplied designation, positive length-valued pitch, length-valued
+  nominal diameter greater than the bore diameter, and right/left handedness.
+  Existing documents default to no thread record. Metadata and parameter edits
+  rebuild the affected hole branch without changing cylindrical geometry.
+  Three tests cover round trips, migration, unchanged volume, invalid metadata
+  and units, selective reuse, failed-edit rollback, and handle cleanup.
+  No helical geometry, standards lookup, tap-drill inference, tolerance-class
+  validation, engagement-length inference, or machinability claim is made.
+  Building and editing thread records on 100 holes takes 5.418 s (10 s budget),
+  checking unchanged volume, input reuse, branch rebuilds, and cleanup.
+- First-class cylindrical holes (schema 29; no ABI change): positive
+  length-valued diameter, family-local position and normalized scalar axis,
+  with flat-bottom blind depth or through-all extent. Through-all projects
+  the input bounds along both directions of the axis line; blind depth starts
+  at the supplied position. Cuts must remove material and leave one valid
+  solid with positive volume. History is preserved, temporary tools are
+  released, and parameter edits rebuild only the affected branch; failures
+  preserve the prior accepted generation. Five tests cover exact volumes,
+  distant/rotated axes, units, invalid cuts, history, cleanup, selective reuse,
+  and schema migration. Building and editing 100 holes takes 5.490 s
+  (10 s budget). Broader size catalogs remain planned.
+- Counterbore and countersink entry recesses (schema 30; no ABI change).
+  `HoleFinish` defaults to plain for older documents; counterbores use a
+  length-valued diameter/depth, countersinks a length-valued diameter and
+  scalar included angle in radians. Entry diameter must exceed bore diameter,
+  and recess depth must be positive and shallower than a blind bore. Recesses
+  start at the caller-supplied hole position along its normalized axis.
+  Fused cutters make one history-preserving cut from the original input;
+  all temporary handles are released. Four additional tests cover exact
+  volumes, history, parameter edits, invalid dimensions/units/angles,
+  failed-edit rollback, and schema 29 migration. Building and editing 100
+  counterbores takes 10.195 s and 100 countersinks 8.447 s (15 s budgets),
+  checking exact final volumes, input reuse, and cleanup.
 - Typed, unit-aware parameters; derived scalar and vector expressions;
   pre-generation constraints.
 - Dependency-ordered feature graphs with incremental reuse of unchanged
@@ -214,10 +291,11 @@ every item below is defined in documents and the API, and verified in tests.
 
 ### Capabilities
 
-1. **Feature breadth.** Holes with standard sizes, counterbores,
-    countersinks, and recorded thread specifications, draft, ribs, and
-    variable-radius fillets; sheet metal (flanges, bends, flat patterns)
-    after the rest.
+1. **Feature breadth.** Variable-radius fillets and advanced ribs (open
+    sketches, centered thickness, extend-to-next, and profile-history composition);
+    sheet metal (flanges, bends, flat patterns)
+    after the rest. Expand hole catalogs to tap drills, inch sizes, and
+    standard recess dimensions when their source data is verified.
 2. **Assembly depth.** Joints (revolute, prismatic, cylindrical, planar,
     fixed) with limits on top of relationships; interference and minimum
     clearance between instances using exact boolean and distance queries; and

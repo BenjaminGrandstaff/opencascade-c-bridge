@@ -364,7 +364,7 @@ fn schema_twenty_eight_round_trips_sweeps_and_migrates_sketch_documents() {
         graph.add_base("part", HashMap::new(), "test").unwrap();
         let document = ModelDocument::from_graph(&graph);
         let loaded = ModelDocument::from_json(&document.to_json_pretty().unwrap()).unwrap();
-        assert_eq!(loaded.schema_version, 28);
+        assert_eq!(loaded.schema_version, CURRENT_SCHEMA_VERSION);
         assert_eq!(loaded, document);
         let session = Session::new().unwrap();
         let generated = loaded
@@ -378,7 +378,7 @@ fn schema_twenty_eight_round_trips_sweeps_and_migrates_sketch_documents() {
         old["schema_version"] = serde_json::json!(27);
         old["family"]["features"].as_array_mut().unwrap().remove(0);
         let migrated = ModelDocument::from_json(&old.to_string()).unwrap();
-        assert_eq!(migrated.schema_version, 28);
+        assert_eq!(migrated.schema_version, CURRENT_SCHEMA_VERSION);
         assert_eq!(migrated.family.features.len(), 1);
     }
 }

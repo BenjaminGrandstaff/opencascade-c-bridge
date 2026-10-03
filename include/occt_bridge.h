@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define OCCT_BRIDGE_ABI_VERSION 27u
+#define OCCT_BRIDGE_ABI_VERSION 28u
 #define OCCT_BRIDGE_INVALID_SHAPE_ID UINT64_C(0)
 
 #if defined(_WIN32) && defined(OCCT_BRIDGE_BUILD_SHARED)
@@ -96,7 +96,7 @@ enum {
  * heal_invalid_results = 0, boolean_fuzzy_tolerance = 0.0.
  *
  * validate_results: check results of booleans, fillets, chamfers, offsets,
- *   hollowing, sewing, and STEP and BREP import with BRepCheck; an invalid
+ *   hollowing, draft, sewing, and STEP and BREP import with BRepCheck; an invalid
  *   result returns OCCT_BRIDGE_INVALID_GEOMETRY instead of being stored.
  * heal_invalid_results: repair an invalid result with shape fixing and store
  *   it when the repair is valid, recording a warning; requires validation.
@@ -105,7 +105,7 @@ enum {
  *   this distance as coincident; 0 performs exact booleans.
  */
 /*
- * Structured failure diagnostics. A fillet, chamfer, offset, hollow, or
+ * Structured failure diagnostics. A fillet, chamfer, offset, hollow, draft, or
  * boolean that fails in the kernel, and any operation or import whose result
  * fails validation, records what OCCT reported about the cause. Diagnostics
  * describe the most recent call and are cleared when the next call starts;
@@ -133,7 +133,9 @@ enum {
     /* A boolean error or warning alert; the name is its OCCT alert key, code is 0. */
     OCCT_BRIDGE_DIAGNOSTIC_BOOLEAN_ALERT = 5,
     /* A subshape of a rejected result that failed validation; code is a BRepCheck_Status. */
-    OCCT_BRIDGE_DIAGNOSTIC_INVALID_SUBSHAPE = 6
+    OCCT_BRIDGE_DIAGNOSTIC_INVALID_SUBSHAPE = 6,
+    /* Draft failure; code is Draft_ErrorStatus, shape is OCCT's problematic subshape. */
+    OCCT_BRIDGE_DIAGNOSTIC_DRAFT = 7
 };
 
 typedef struct occt_bridge_diagnostic {
@@ -141,7 +143,7 @@ typedef struct occt_bridge_diagnostic {
     /* OCCT's enumeration value for the kind; its name is available by index. */
     int32_t code;
     /*
-     * Index into the call's selection (fillet or chamfer edges, hollow
+     * Index into the call's selection (fillet or chamfer edges, hollow/draft
      * faces) or boolean operand (0 for left or object, 1 for right or
      * tool) that the diagnostic concerns; -1 when it concerns none.
      */
@@ -489,6 +491,26 @@ OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_chamfer(
     const occt_bridge_shape_id_t* edges,
     size_t edge_count,
     double distance,
+    occt_bridge_shape_id_t* out_shape
+);
+
+/*
+ * Tapers selected descendant planar/cylindrical/conical faces. Tangential
+ * neighbors may also be tapered. The neutral plane is given by origin/normal.
+ * Pull direction chooses the side where positive angles remove material;
+ * negative angles add material. All vectors must be finite and directions
+ * nonzero; 0 < abs(angle_radians) < pi/2. Duplicate selections are rejected.
+ * Input is unchanged; result validation and operation history are retained.
+ */
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_draft(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t shape,
+    const occt_bridge_shape_id_t* faces,
+    size_t face_count,
+    occt_bridge_vec3_t neutral_origin,
+    occt_bridge_vec3_t neutral_normal,
+    occt_bridge_vec3_t pull_direction,
+    double angle_radians,
     occt_bridge_shape_id_t* out_shape
 );
 

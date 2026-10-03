@@ -2,6 +2,9 @@
 
 use super::*;
 
+mod holes;
+mod ribs;
+
 pub(crate) fn execute_profile_sweep<'session>(
     session: &'session Session,
     operation: &FeatureOperation,
@@ -62,6 +65,20 @@ pub(crate) fn execute_feature<'session>(
             vector(origin, parameters, Dimension::Length)?,
             vector(size, parameters, Dimension::Length)?,
         ),
+        FeatureOperation::Rib {
+            input,
+            profile,
+            thickness,
+            direction,
+        } => {
+            return ribs::execute_rib(
+                session,
+                shape(shapes, input)?,
+                shape(shapes, profile)?,
+                scalar(thickness, parameters, Dimension::Length)?,
+                vector(direction, parameters, Dimension::Scalar)?,
+            );
+        }
         FeatureOperation::Cylinder {
             origin,
             axis,
@@ -117,6 +134,30 @@ pub(crate) fn execute_feature<'session>(
                 .cut(shape(shapes, object)?, shape(shapes, tool)?)
                 .map_err(|error| ModelError::from(error).locate_operands([object, tool]));
         }
+        FeatureOperation::Hole {
+            input,
+            position,
+            axis,
+            diameter,
+            extent,
+            finish,
+            thread,
+        } => {
+            return holes::execute_hole(
+                session,
+                shape(shapes, input)?,
+                parameters,
+                holes::HoleSpec {
+                    position,
+                    axis,
+                    diameter,
+                    extent,
+                    finish,
+                    thread: thread.as_deref(),
+                },
+            )
+            .map_err(|error| error.context(&format!("hole input '{input}'")));
+        }
         FeatureOperation::Common { left, right } => {
             return session
                 .common(shape(shapes, left)?, shape(shapes, right)?)
@@ -163,6 +204,48 @@ pub(crate) fn execute_feature<'session>(
                 parameters,
                 shapes,
             );
+        }
+        FeatureOperation::Draft {
+            input,
+            faces,
+            neutral_origin,
+            neutral_normal,
+            pull_direction,
+            angle_radians,
+        } => {
+            let input = shape(shapes, input)?;
+            let options = occt_bridge::DraftOptions {
+                neutral_origin: vector(neutral_origin, parameters, Dimension::Length)?,
+                neutral_normal: vector(neutral_normal, parameters, Dimension::Scalar)?,
+                pull_direction: vector(pull_direction, parameters, Dimension::Scalar)?,
+                angle_radians: scalar(angle_radians, parameters, Dimension::Scalar)?,
+            };
+            if session.subshape_count(input, ShapeType::Solid)? != 1 || !session.is_valid(input)? {
+                return Err(ModelError::new("draft input must contain one valid solid"));
+            }
+            if faces.is_empty() {
+                return Err(ModelError::new("draft requires at least one face selector"));
+            }
+            let mut selected = Vec::new();
+            let mut sizes = Vec::new();
+            for selector in faces {
+                let matches = resolve_face_selector(session, input, selector, parameters, shapes)?;
+                sizes.push(matches.len());
+                selected.extend(matches);
+            }
+            let references = selected.iter().collect::<Vec<_>>();
+            let result = session
+                .draft(input, &references, options)
+                .map_err(|error| ModelError::from(error).locate_selections(&sizes, "face"))?;
+            if session.subshape_count(&result, ShapeType::Solid)? != 1
+                || !session.is_valid(&result)?
+                || session.volume(&result)? <= 0.0
+            {
+                return Err(ModelError::new(
+                    "draft must leave one valid solid with positive volume",
+                ));
+            }
+            return Ok(result);
         }
         FeatureOperation::Hollow {
             input,

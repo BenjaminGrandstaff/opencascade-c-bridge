@@ -14,24 +14,29 @@
 use occt_bridge::{Session, SessionOptions, ShapeType, Vec3};
 use occt_parametric::{
     AssemblyRelationship, AssemblyRequirement, AssemblyVerificationRule, AxisAngle,
-    DatumDefinition, DatumKind, DatumRef, Dimension, FamilyDefinition, FeatureDefinition,
-    FeatureOperation, InstanceGraph, LengthUnit, ModelDocument, ModelError, ParameterDefinition,
-    ParameterType, ParameterValue, PartInstance, PatternRule, Placement, Quantity, RelationKind,
+    ClearanceSeries, CoordinateAxis, DatumDefinition, DatumKind, DatumRef, Dimension, Extremum,
+    FaceSelector, FamilyDefinition, FeatureDefinition, FeatureOperation, HoleExtent, HoleFinish,
+    InstanceGraph, LengthUnit, ModelDocument, ModelError, ParameterDefinition, ParameterType,
+    ParameterValue, PartInstance, PatternRule, Placement, Quantity, RelationKind,
     RelationshipTolerances, RequirementKind, RequirementPriority, ScalarExpr, SketchArc,
-    SketchCircle, SketchConstraint, SketchDefinition, SketchLine, SketchPoint, VectorExpr,
-    VectorQuantity,
+    SketchCircle, SketchConstraint, SketchDefinition, SketchLine, SketchPoint, ThreadHandedness,
+    ThreadSpecification, VectorExpr, VectorQuantity, iso273_clearance_v1,
 };
 use std::collections::HashMap;
 use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
+mod draft;
 mod graphs;
+mod holes;
 mod memory;
+mod ribs;
 mod sketches;
 mod solver;
 mod validation;
 
 use graphs::*;
+use holes::*;
 use memory::*;
 use sketches::*;
 use solver::*;
@@ -105,6 +110,13 @@ fn main() -> ExitCode {
     outcomes.push(datum_sketch_wire_case());
     outcomes.push(profile_sweep_case(false));
     outcomes.push(profile_sweep_case(true));
+    outcomes.push(hole_features_case());
+    outcomes.push(draft::draft_features_case());
+    outcomes.push(ribs::rib_features_case());
+    outcomes.push(clearance_catalog_case());
+    outcomes.push(threaded_hole_features_case());
+    outcomes.push(entry_hole_features_case(false));
+    outcomes.push(entry_hole_features_case(true));
     outcomes.push(large_sketch_case(false));
     outcomes.push(large_sketch_case(true));
     outcomes.push(solver_grid(definition));

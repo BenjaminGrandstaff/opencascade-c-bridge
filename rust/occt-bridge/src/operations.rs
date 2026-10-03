@@ -75,6 +75,28 @@ impl Session {
         })
     }
 
+    /// Taper selected faces; tangential neighbors may also be modified.
+    pub fn draft<'a>(
+        &'a self,
+        shape: &Shape<'_>,
+        faces: &[&Shape<'_>],
+        options: DraftOptions,
+    ) -> Result<Shape<'a>, BridgeError> {
+        self.selected_operation(shape, faces, |ids, out| unsafe {
+            occt_bridge_draft(
+                self.raw.as_ptr(),
+                shape.id,
+                ids.as_ptr(),
+                ids.len(),
+                options.neutral_origin.into(),
+                options.neutral_normal.into(),
+                options.pull_direction.into(),
+                options.angle_radians,
+                out,
+            )
+        })
+    }
+
     pub fn hollow<'a>(
         &'a self,
         shape: &Shape<'_>,

@@ -429,6 +429,48 @@ pub(crate) fn collect_operation_parameters<'a>(
         }
         FeatureOperation::Translate { offset, .. } => collect_vector_parameters(offset, names),
         FeatureOperation::Extrude { direction, .. } => collect_vector_parameters(direction, names),
+        FeatureOperation::Rib {
+            thickness,
+            direction,
+            ..
+        } => {
+            collect_scalar_parameters(thickness, names);
+            collect_vector_parameters(direction, names);
+        }
+        FeatureOperation::Hole {
+            position,
+            axis,
+            diameter,
+            extent,
+            finish,
+            thread,
+            ..
+        } => {
+            collect_vector_parameters(position, names);
+            collect_vector_parameters(axis, names);
+            collect_scalar_parameters(diameter, names);
+            if let Some(thread) = thread {
+                collect_scalar_parameters(&thread.nominal_diameter, names);
+                collect_scalar_parameters(&thread.pitch, names);
+            }
+            if let HoleExtent::Blind { depth } = extent {
+                collect_scalar_parameters(depth, names);
+            }
+            match finish {
+                HoleFinish::Plain => {}
+                HoleFinish::Counterbore { diameter, depth } => {
+                    collect_scalar_parameters(diameter, names);
+                    collect_scalar_parameters(depth, names);
+                }
+                HoleFinish::Countersink {
+                    diameter,
+                    angle_radians,
+                } => {
+                    collect_scalar_parameters(diameter, names);
+                    collect_scalar_parameters(angle_radians, names);
+                }
+            }
+        }
         FeatureOperation::Rotate {
             origin,
             axis,
@@ -474,6 +516,22 @@ pub(crate) fn collect_operation_parameters<'a>(
         FeatureOperation::Sew { tolerance, .. } => {
             collect_scalar_parameters(tolerance, names);
         }
+        FeatureOperation::Draft {
+            faces,
+            neutral_origin,
+            neutral_normal,
+            pull_direction,
+            angle_radians,
+            ..
+        } => {
+            for selector in faces {
+                collect_face_selector_parameters(selector, names);
+            }
+            collect_vector_parameters(neutral_origin, names);
+            collect_vector_parameters(neutral_normal, names);
+            collect_vector_parameters(pull_direction, names);
+            collect_scalar_parameters(angle_radians, names);
+        }
         FeatureOperation::MakeSolid { .. } => {}
         FeatureOperation::Fuse { .. }
         | FeatureOperation::Cut { .. }
@@ -489,7 +547,12 @@ pub(crate) fn collect_scalar_parameters<'a>(
         ScalarExpr::Parameter(name) => {
             names.insert(name);
         }
-        ScalarExpr::Negate(value) | ScalarExpr::Absolute(value) => {
+        ScalarExpr::Negate(value)
+        | ScalarExpr::Absolute(value)
+        | ScalarExpr::Iso273ClearanceV1 {
+            nominal_diameter: value,
+            ..
+        } => {
             collect_scalar_parameters(value, names);
         }
         ScalarExpr::Add(left, right)

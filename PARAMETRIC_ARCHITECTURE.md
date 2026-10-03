@@ -7,7 +7,7 @@ so they can generate and regenerate families of related parts.
 ## Implementation status
 
 The architecture in this document is both a description of implemented
-boundaries and a roadmap. As of ABI version 27, the repository contains three
+boundaries and a roadmap. As of ABI version 28, the repository contains three
 Rust layers:
 
 1. **`occt-bridge`** safely wraps session-owned OCCT handles. It includes
@@ -70,8 +70,8 @@ The following major capabilities remain planned:
   model;
 - broader requirement rules such as clearance, interference, minimum radius,
   wall thickness, connectivity, and manufacturing checks;
-- sketch profiles feeding hole,
-  draft, rib, variable-fillet, and later sheet-metal features;
+- broader hole-size catalogs (tap drills, inch sizes, standard recess dimensions);
+- advanced ribs, variable-fillet, and later sheet-metal features;
 - joints, interference and clearance detection, and motion studies;
 - generated drawings with projected views and dimensions;
 - full mass properties, FEA mesh hand-off, manufacturability checks, and
@@ -261,6 +261,153 @@ invalid inputs, serialization/migration, selective reuse, and cleanup.
 The scale suite builds and edits 1,000 sweeps in 0.562 s for extrude and
 0.700 s for revolve (5 s budgets), verifies every edited volume and profile
 reuse, and checks that all handles are released.
+
+## Hole features
+
+Schema 29 adds `Hole { input, position, axis, diameter, extent }`, using the
+existing cylinder and boolean APIs without an ABI change. `input` is a named
+output containing exactly one valid solid, including a kernel result wrapper.
+Position and diameter use lengths; the dimensionless nonzero axis is normalized.
+Coordinates are family-local, with instance placement applied afterward.
+
+`HoleExtent::Blind { depth }` uses a positive length-valued depth from the
+supplied position along the axis, producing a flat-bottom cylindrical cut.
+The caller supplies the starting position; the feature does not infer a surface
+or guarantee that a floor remains when depth exceeds the body.
+`HoleExtent::ThroughAll` projects the input's exact axis-aligned bounds onto
+the axis line and extends the cutter beyond both ends with scale-aware padding
+(at least 1e-6 mm). It therefore covers both axis directions even if the
+supplied position is far outside the body. It does not need a guessed depth.
+
+Cuts must remove material and leave exactly one valid solid with positive
+volume; misses, complete removal, and split-solid results fail with feature
+context. The input remains unchanged. The kernel result wrapper retains cut
+history, while temporary cylindrical tools are released on success and failure.
+Diameter, position, axis, and blind-depth expressions participate in incremental
+signatures: unchanged inputs are reused, affected downstream features rebuild,
+and failed edits preserve the previous accepted generation. Tests cover exact
+volumes, distant and rotated axes, history, units, invalid inputs, cleanup,
+selective reuse, and schema round trips/migration. Building and editing 100
+sequential holes takes 5.490 s (10 s budget), checking volume and handle cleanup.
+Schema 30 extends the hole with `finish`, defaulting to `HoleFinish::Plain`
+when older documents omit it. `Counterbore { diameter, depth }` adds a
+cylindrical entry recess; `Countersink { diameter, angle_radians }` adds a
+conical entry recess with included scalar angle strictly between zero and pi
+radians. All recess diameters and counterbore depths are length-valued.
+The entry diameter must exceed the bore diameter. Countersink depth is
+`(entry_radius - bore_radius) / tan(angle_radians / 2)`; either recess depth
+must be finite, positive, and less than the bore depth for blind holes.
+Recesses start at the supplied hole position along the normalized axis, not
+at an inferred body surface. Through-all still spans both axis directions for
+the cylindrical bore; the recess remains anchored at the entry position.
+The bore and recess cutters are fused before one cut, preserving history from
+the original input and avoiding overlapping-solid compounds. Temporary tools
+are released. Recess diameter, depth, and angle expressions participate in
+incremental regeneration. Tests verify exact counterbore/frustum volumes,
+history, parameter edits, invalid dimensions/units/angles, rollback, cleanup,
+and schema 29 migration. The scale suite builds and edits 100 counterbores in
+10.195 s and 100 countersinks in 8.447 s (15 s budgets), checking exact final
+volumes, unchanged input reuse, and cleanup.
+Schema 31 adds optional `thread` metadata, represented by
+`Option<Box<ThreadSpecification>>` in Rust. It stores a nonblank caller-supplied
+designation, length-valued nominal diameter and pitch, and right/left
+handedness. Nominal diameter must exceed the explicit cylindrical bore diameter;
+pitch must be positive. This is recorded internal-thread intent, not modeled
+helical geometry. No standard, designation/dimension agreement, tap drill,
+tolerance class, engagement length, or machinability is inferred or verified.
+All metadata participates in the feature signature, and nominal diameter/pitch
+expressions participate in parameter dependency tracking. Metadata edits rebuild
+the hole and downstream branch, retaining unchanged cylindrical geometry and
+preserving the previous accepted generation on failure. Older holes default to
+no thread record. Tests cover serialization/migration, both handedness values,
+unchanged volume, invalid metadata/units, selective reuse, rollback, and cleanup.
+The scale suite builds and edits thread records on 100 holes in 5.418 s
+(10 s budget), checking unchanged volume, input reuse, branch rebuilds, and
+handle cleanup.
+Schema 32 adds `ScalarExpr::Iso273ClearanceV1 { nominal_diameter, series }`
+and the public `iso273_clearance_v1` helper. The nominal diameter is a length;
+the frozen lookup returns millimeter clearance diameters in fine, medium, or
+coarse series for 19 supported metric sizes. Derived and resolved expression
+evaluation use the same lookup, and dependency collection traverses the nominal
+expression. Unsupported sizes fail; only 1e-9 mm unit-conversion roundoff is
+allowed, with no interpolation or nearest-size selection. Catalog V1 is frozen
+so future table corrections/expansions require another explicitly versioned
+catalog, preserving saved-model regeneration. Four tests check every catalog
+value, unit conversion, invalid quantities, derived evaluation, geometry,
+incremental edits/rollback, round trips, and migration. See
+[Hole-size catalog](HOLE_SIZE_CATALOG.md) for source, API, and limitations.
+100,000 checked lookups take about 1 ms (200 ms budget).
+Tap drills, inch sizes, standard recess dimensions, and manufacturing tolerance
+selection remain planned. The catalog does not verify fit or standards compliance.
+
+## Draft features
+
+Schema 33 adds `Draft { input, faces, neutral_origin, neutral_normal,
+pull_direction, angle_radians }`. Face selectors and their history references
+participate in dependency ordering. The neutral origin uses lengths; the normal
+and pull direction are finite, nonzero scalar vectors; the angle uses signed
+scalar radians, with `0 < abs(angle) < pi/2`. All coordinates are family-local.
+The neutral plane fixes its intersection with the tapered face. Positive angles
+remove material on the pull side; negative angles add it.
+
+ABI 28 exposes `occt_bridge_draft`; the safe Rust wrapper accepts `DraftOptions`.
+Selections must be descendant faces and must not contain duplicates, including
+overlaps between selector results. Planar, cylindrical, and conical faces are
+supported; OCCT may propagate to tangential neighbors. Topology-changing drafts
+are outside the supported scope. These restrictions follow the
+[OCCT draft API](https://occt3d.com/dev/doc/refman/html/class_b_rep_offset_a_p_i___draft_angle.html).
+The parametric operation additionally requires one valid input solid and one
+valid result solid with positive volume. Inputs are unchanged. Temporary
+selection handles drop on success and failure.
+
+Kernel failures record `Draft_ErrorStatus` and the problematic subshape, with
+the selected face index when the failure occurs while adding a face. Failure
+during final construction may not identify a selection index. Result validation
+and optional healing retain operation history. Where OCCT's list-based history
+omits a changed source, its corrected `ModifiedShape` counterpart is recorded.
+Angle, neutral-plane, pull-direction, and selector expressions all participate
+in incremental signatures; failed edits preserve the prior accepted generation.
+Tests check exact signed wedge and cylinder-to-frustum volumes, modified history,
+input preservation, units, duplicates, missing/unsupported faces, directions,
+kernel diagnostics, incremental reuse/rollback, cleanup, and schema migration.
+The scale suite builds and edits 1,000 drafts in 2.922 s (10 s budget), checking
+each signed volume, valid results, unchanged input reuse, and handle cleanup.
+
+## Rib features
+
+Schema 34 adds `Rib { input, profile, thickness, direction }`. This first
+implementation is a bounded, closed-profile reinforcement, not an open-sketch
+rib that extends automatically to support faces. `profile` is a named valid
+planar face or closed wire, including sketch outputs. `input` must contain one
+valid solid. Both references participate in dependency ordering, even when the
+rib is declared before its body or sketch.
+
+Thickness is a positive finite length. Direction is a nonzero dimensionless
+vector, normalized internally, and must be parallel or antiparallel to the
+profile's unit normal (`abs(dot) >= 1 - 1e-9`). The profile is extruded to one
+side by thickness; reversing direction chooses the other side. There is no
+centered thickness, oblique sweep, inferred support, or extend-to-next behavior.
+All coordinates are family-local.
+
+The temporary prism is fused into the input using existing ABI 28 operations.
+The result must contain one valid solid and have strictly greater volume than
+the input. Face-connected and overlapping walls are accepted; disconnected,
+edge/vertex-only, fully contained, and invalid walls are rejected. The input
+remains unchanged. Temporary faces and prisms drop on success and failure.
+The final fuse retains input-body topology history, but full composition from
+the original sketch edges through the implicit prism to the fused result is
+not guaranteed; use explicit named extrude/fuse steps when that intermediate
+sweep history is needed.
+
+Thickness and direction expressions participate in feature signatures;
+body/profile edits invalidate dependent ribs and downstream features. Failed
+edits release new handles and preserve the previous accepted generation. Four
+tests cover exact triangle/overlap volumes, sketch faces/wires, both directions,
+body history, input preservation, units, connection failures, selective reuse,
+rollback, cleanup, and schema migration. Advanced ribs and complete implicit
+profile-history composition remain planned.
+The scale suite builds and edits 1,000 ribs in 5.737 s (15 s budget), checking
+every volume, result validity, unchanged body/profile reuse, and handle cleanup.
 
 ## Requirements preserve intent
 
@@ -692,7 +839,9 @@ application code should use the recipe crate.
 
 ## Compatibility rule
 
-The C interface currently requires an exact ABI version match. ABI version 27
+The C interface currently requires an exact ABI version match. ABI version 28
+adds selected-face draft with structured draft diagnostics, validation, and
+corrected modified topology history. ABI version 27
 adds face revolution (`occt_bridge_create_revolve_from_face`, Rust
 `Session::create_revolve_from_face`), signed partial/full angles up to one turn,
 topology history, and session result validation. Schema 28 uses this API and
@@ -735,7 +884,7 @@ information, so they are delivery artifacts and cannot replace the parametric
 source model.
 
 `ModelDocument` is the implemented local persistence boundary. Schema version
-28 serializes the primary and additional family definitions with their datums,
+34 serializes the primary and additional family definitions with their datums,
 assembly relationships, configurations, materials and material assignments, requirements, derived parameters,
 constraints, base and clone nodes, sparse overrides, placements, linear and
 circular pattern rules, linear and circular fit constraints, slot counts,
@@ -744,8 +893,17 @@ or bounds-driven fitted spans,
 nested assembly frames, semantic selectors, provenance, and regeneration audit records. Live
 OCCT handles and generated BREPs are never serialized. Loading reconstructs a
 validated `InstanceGraph`; regeneration creates fresh session-owned handles.
-Schema versions 1 through 27 migrate to version 28, supplying explicit defaults
-for fields absent from older documents. Version 28 adds extrude and revolve
+Schema versions 1 through 33 migrate to version 34, supplying explicit defaults
+for fields absent from older documents. Version 34 adds bounded closed-profile
+ribs; existing features remain unchanged. Version 33 adds selected-face draft;
+older documents retain their existing features. Version 32 adds the frozen metric
+clearance expression; existing expressions remain unchanged.
+Version 31 adds optional internal-thread
+records; older holes default to none. Version 30 adds hole entry recesses;
+holes without a finish load as plain, preserving their geometry.
+Version 29 adds cylindrical hole
+operations with blind and through-all extents; existing features remain
+unchanged. Version 28 adds extrude and revolve
 feature operations referencing face/wire outputs; older documents keep their
 existing features unchanged. Version 27 adds sketch-wire feature
 outputs and optional family plane-datum references; older sketches retain
@@ -775,7 +933,7 @@ defaults, units, constraints, placements, clone cycles, missing links,
 inconsistent pattern membership, and invalid regeneration revisions before the
 model is accepted.
 
-The next cross-layer work should prioritize standard hole features,
+The next cross-layer work should prioritize variable-radius fillets and advanced ribs,
 measured by the scale
 benchmark suite (`tools/bench/run.sh`). Scale is a requirement for every change; see the
 [Roadmap](ROADMAP.md) for target sizes and the checks each change must pass.

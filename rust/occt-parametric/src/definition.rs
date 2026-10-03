@@ -37,6 +37,11 @@ pub struct ParameterDefinition {
 pub enum ScalarExpr {
     Literal(Quantity),
     Parameter(String),
+    /// Frozen metric clearance-hole catalog; returns a length.
+    Iso273ClearanceV1 {
+        nominal_diameter: Box<ScalarExpr>,
+        series: ClearanceSeries,
+    },
     Negate(Box<ScalarExpr>),
     Absolute(Box<ScalarExpr>),
     Add(Box<ScalarExpr>, Box<ScalarExpr>),
@@ -267,6 +272,49 @@ impl FaceSelector {
     }
 }
 
+/// A flat-bottom blind bore or a bore through the complete input along its
+/// axis line. Through-all covers both directions from the supplied position.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HoleExtent {
+    Blind { depth: ScalarExpr },
+    ThroughAll,
+}
+
+/// Entry recess, starting at the hole position along its axis.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HoleFinish {
+    #[default]
+    Plain,
+    Counterbore {
+        diameter: ScalarExpr,
+        depth: ScalarExpr,
+    },
+    /// Included cone angle in scalar radians, strictly between zero and pi.
+    Countersink {
+        diameter: ScalarExpr,
+        angle_radians: ScalarExpr,
+    },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ThreadHandedness {
+    Right,
+    Left,
+}
+
+/// Caller-supplied internal-thread intent, not a standards lookup or modeled
+/// helix. The hole diameter remains the explicit cylindrical bore diameter.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ThreadSpecification {
+    pub designation: String,
+    pub nominal_diameter: ScalarExpr,
+    pub pitch: ScalarExpr,
+    pub handedness: ThreadHandedness,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FeatureOperation {
@@ -289,6 +337,14 @@ pub enum FeatureOperation {
     /// Sweeps a planar face or closed planar wire by a length-valued vector.
     Extrude {
         input: String,
+        direction: VectorExpr,
+    },
+    /// Extrudes a closed profile normally by positive thickness and fuses it
+    /// into one input solid. Direction is dimensionless and may be reversed.
+    Rib {
+        input: String,
+        profile: String,
+        thickness: ScalarExpr,
         direction: VectorExpr,
     },
     /// Revolves a planar face or closed planar wire about a local axis.
@@ -315,6 +371,19 @@ pub enum FeatureOperation {
     Cut {
         object: String,
         tool: String,
+    },
+    /// Removes a cylindrical bore from one solid. Position is length-valued,
+    /// axis is dimensionless; diameter and blind depth are positive lengths.
+    Hole {
+        input: String,
+        position: VectorExpr,
+        axis: VectorExpr,
+        diameter: ScalarExpr,
+        extent: HoleExtent,
+        #[serde(default)]
+        finish: HoleFinish,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        thread: Option<Box<ThreadSpecification>>,
     },
     Common {
         left: String,
@@ -343,6 +412,14 @@ pub enum FeatureOperation {
         thickness: ScalarExpr,
         tolerance: ScalarExpr,
     },
+    Draft {
+        input: String,
+        faces: Vec<FaceSelector>,
+        neutral_origin: VectorExpr,
+        neutral_normal: VectorExpr,
+        pull_direction: VectorExpr,
+        angle_radians: ScalarExpr,
+    },
 }
 
 impl FeatureOperation {
@@ -351,7 +428,8 @@ impl FeatureOperation {
             Self::Translate { input, .. }
             | Self::Rotate { input, .. }
             | Self::Extrude { input, .. }
-            | Self::Revolve { input, .. } => vec![input],
+            | Self::Revolve { input, .. }
+            | Self::Hole { input, .. } => vec![input],
             Self::Fillet { input, edges, .. } | Self::Chamfer { input, edges, .. } => {
                 let mut dependencies = vec![input.as_str()];
                 for selector in edges {
@@ -359,7 +437,7 @@ impl FeatureOperation {
                 }
                 dependencies
             }
-            Self::Hollow { input, faces, .. } => {
+            Self::Hollow { input, faces, .. } | Self::Draft { input, faces, .. } => {
                 let mut dependencies = vec![input.as_str()];
                 for selector in faces {
                     selector.dependencies(&mut dependencies);
@@ -367,6 +445,7 @@ impl FeatureOperation {
                 dependencies
             }
             Self::Fuse { left, right } | Self::Common { left, right } => vec![left, right],
+            Self::Rib { input, profile, .. } => vec![input, profile],
             Self::Cut { object, tool } => vec![object, tool],
             Self::Sew { inputs, .. } => inputs.iter().map(String::as_str).collect(),
             Self::MakeSolid { shells } => shells.iter().map(String::as_str).collect(),
