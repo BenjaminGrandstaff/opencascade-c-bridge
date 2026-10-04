@@ -8,23 +8,31 @@ tracks status and order.
 
 | Layer | Version | State |
 |---|---|---|
-| C ABI (`src/`, `include/`) | ABI 36 | Stable; exact version match required |
+| C ABI (`src/`, `include/`) | ABI 37 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 48 | Active development |
+| `occt-parametric` (engineering layer) | Schema 49 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 4/4, bridge 79 (+1 doc test), recipes 3, parametric 227 + merge driver 3, mesh Python 4 | `ctest`, `cargo test` (see README) |
+| Tests | C 4/4, bridge 81 (+1 doc test), recipes 3, parametric 230 + merge driver 3, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 92.3% line coverage (2026-10-03); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
 | Coverage | 92.63% lines overall, test code excluded; C++ 94.30% lines, 87.59% branches, 100% functions; Rust 91.81% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 61 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Scale benchmarks | 62 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
 
 ### Kernel (C ABI)
+
+- Spline lofts and reliable volumes (ABI 37): `occt_bridge_create_spline_loft`
+  interpolates each section as one B-spline closed back to its first point,
+  smooth except for that corner (an airfoil trailing edge). Volume, center of
+  mass, and solid-boundary measurements now integrate adaptively when any face
+  is freeform; the fixed-order default had reported a lofted B-spline airfoil
+  about 20% too small. All-analytic shapes keep fixed-order integration, which
+  is exact to roundoff there, and no benchmark case changed by more than 25%.
 
 - Signed face radius bounds and edge concavity (ABI 36): per-face smallest
   convex and concave principal radii relative to the outward normal, with
@@ -146,6 +154,14 @@ tracks status and order.
   error-bounded (Bezier, B-spline) extrema.
 
 ### Parametric layer
+
+- Loft features (schema 49): `FeatureOperation::Loft` through planar
+  `LoftSection` outlines placed by parameter expressions (origin, axes, scale,
+  and rotation about a pivot), as smooth B-spline or polygon sections, ruled or
+  smoothed between them. Three tests cover parameter edits, rotation, smooth
+  versus polygon accuracy, validation, and persistence. A 200-station,
+  80-point smooth airfoil loft builds and rebuilds after a chord edit in
+  1.309 s (5 s budget), with the edit scaling volume by exactly 1.21.
 
 - Sampled manufacturing requirements (schema 48): `MinimumWall`, `DraftAngle`,
   and `Overhang` store their mesh settings in the family and screen the output's
@@ -501,6 +517,10 @@ tracks status and order.
   `BRepCheck_Analyzer`, including many-wire valid and invalid topology.
 - Scale benchmark suite with time budgets and correctness checks at the
   target sizes, reporting known gaps against open roadmap items.
+- Wing layout workshop (`tools/wing-layout`): a browser station editor and a
+  CAD CLI. Project files now become a parametric wing family with smooth
+  airfoil lofts, per-station parameters, stored validity and connectivity
+  requirements, and a saved model document beside the STEP and BREP files.
 
 ## Scaling requirement
 
@@ -535,8 +555,16 @@ every item below is defined in documents and the API, and verified in tests.
 
 ### Capabilities
 
-The near-term capability list is complete within the documented limits.
-Promote the next priority from **Later**.
+1. **Buildable wing structure.** On the parametric wing: spar channels,
+    ribs, and elevon cutouts; segmentation into printable pieces with
+    alignment pins; each piece checked for a single solid, wall thickness,
+    overhang, and a new fits-the-print-bed bounds rule.
+2. **Rib templates.** Section drawings through the wing at each rib station,
+    exported as DXF for cutting.
+3. **Moving elevons.** Elevons as separate instances on revolute joints, with
+    a motion study over their deflection range checking for interference.
+4. **Mass and balance report.** Per-material mass and the wing's center of
+    gravity relative to its mean aerodynamic chord, reported as data only.
 
 ## Later
 

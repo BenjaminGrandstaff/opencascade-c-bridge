@@ -6,5 +6,6 @@ publish = false
 
 [dependencies]
 occt-bridge = { path = "../../../rust/occt-bridge" }
+occt-parametric = { path = "../../../rust/occt-parametric" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

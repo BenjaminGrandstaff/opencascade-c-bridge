@@ -7,7 +7,7 @@ so they can generate and regenerate families of related parts.
 ## Implementation status
 
 The architecture in this document is both a description of implemented
-boundaries and a roadmap. As of ABI version 36, the repository contains three
+boundaries and a roadmap. As of ABI version 37, the repository contains three
 Rust layers:
 
 1. **`occt-bridge`** safely wraps session-owned OCCT handles. It includes
@@ -1026,7 +1026,9 @@ application code should use the recipe crate.
 
 ## Compatibility rule
 
-The C interface currently requires an exact ABI version match. ABI version 36
+The C interface currently requires an exact ABI version match. ABI version 37
+adds spline-section lofts and adaptive volume integration for freeform faces.
+ABI version 36
 adds signed per-face radius bounds (exact on analytic surfaces, sampled
 elsewhere) and per-edge concavity. ABI version 35
 adds bounded surface tessellation and batch topology indices. ABI 34 adds exact

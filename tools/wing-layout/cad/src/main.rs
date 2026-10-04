@@ -1,6 +1,9 @@
-use occt_bridge::{Session, Vec3};
+use occt_bridge::{Session, Shape, Vec3};
+use occt_parametric::{InstanceGraph, ModelDocument, PartInstance, VerificationStatus};
 use serde::Deserialize;
-use std::{error::Error, path::PathBuf};
+use std::{collections::HashMap, error::Error, path::Path, path::PathBuf};
+
+mod project;
 
 #[derive(Deserialize)]
 struct Sections {
@@ -13,21 +16,30 @@ fn run() -> Result<(), Box<dyn Error>> {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
     if args.len() != 2 {
         return Err(
-            "Usage: occb-wing-cad wing-sections.json output.step (also writes output.brep)".into(),
+            "Usage: occb-wing-cad (wing-project.json | wing-sections.json) output.step \
+             (also writes output.brep, and output.model.json for a project)"
+                .into(),
         );
     }
-    let input: Sections = serde_json::from_slice(&std::fs::read(&args[0])?)?;
-    if input.schema != "occb-wing-sections-v1" || input.units != "mm" || input.halves.len() != 2 {
-        return Err(
-            "Expected occb-wing-sections-v1, millimeters and exactly two wing halves.".into(),
-        );
-    }
+    let bytes = std::fs::read(&args[0])?;
     let output = PathBuf::from(&args[1]);
     if !output
         .extension()
         .is_some_and(|x| x.eq_ignore_ascii_case("step") || x.eq_ignore_ascii_case("stp"))
     {
         return Err("Output filename must end in .step or .stp.".into());
+    }
+    let schema: serde_json::Value = serde_json::from_slice(&bytes)?;
+    if schema["schema"] == "occb-wing-layout-v1" {
+        return parametric(serde_json::from_slice(&bytes)?, &output);
+    }
+    let input: Sections = serde_json::from_slice(&bytes)?;
+    if input.schema != "occb-wing-sections-v1" || input.units != "mm" || input.halves.len() != 2 {
+        return Err(
+            "Expected an occb-wing-layout-v1 project, or occb-wing-sections-v1 \
+             in millimeters with exactly two wing halves."
+                .into(),
+        );
     }
     let session = Session::new()?;
     let mut shapes = Vec::new();
@@ -81,13 +93,67 @@ fn run() -> Result<(), Box<dyn Error>> {
         println!("Half {}: valid solid, volume {:.3} mm³", side + 1, volume);
         shapes.push(shape);
     }
+    export(&session, &shapes.iter().collect::<Vec<_>>(), &output)
+}
+
+/// A project becomes a parametric family: smooth airfoil lofts whose station
+/// values are parameters, checked by stored requirements on every regeneration.
+fn parametric(project: project::Project, output: &Path) -> Result<(), Box<dyn Error>> {
+    if project.schema != "occb-wing-layout-v1" {
+        return Err("Unsupported project schema.".into());
+    }
+    let family = project::family(&project)?;
+    let session = Session::new()?;
+    let part = PartInstance {
+        id: "wing".into(),
+        definition: &family,
+        overrides: HashMap::new(),
+        provenance: format!("occb-wing-cad: {}", project.name),
+    };
+    let generated = part.regenerate(&session)?;
+    for result in &generated.verification {
+        let status = match result.status {
+            VerificationStatus::Passed => "passed",
+            VerificationStatus::Failed => "FAILED",
+        };
+        println!(
+            "Requirement {} {status}: {}",
+            result.requirement_id, result.message
+        );
+    }
+    let mut halves = Vec::new();
+    for (index, id) in ["right", "left"].into_iter().enumerate() {
+        let shape = generated
+            .shape(id)
+            .ok_or_else(|| format!("wing half '{id}' was not generated"))?;
+        println!(
+            "Half {}: valid solid, volume {:.3} mm³ (smooth sections)",
+            index + 1,
+            session.volume(shape)?
+        );
+        halves.push(shape);
+    }
+    export(&session, &halves, output)?;
+    let mut graph = InstanceGraph::new(&family);
+    graph.add_base("wing", HashMap::new(), "occb-wing-cad")?;
+    let document = output.with_extension("model.json");
+    std::fs::write(
+        &document,
+        ModelDocument::from_graph(&graph).to_json_pretty()?,
+    )?;
+    println!("Wrote parametric model {}", document.display());
+    Ok(())
+}
+
+/// Writes STEP and BREP and verifies both round trips by validity and volume.
+fn export(session: &Session, shapes: &[&Shape<'_>], output: &Path) -> Result<(), Box<dyn Error>> {
     // Keep the two halves as separate touching solids for downstream CAD work.
-    let compound = session.create_compound(&shapes.iter().collect::<Vec<_>>())?;
-    session.save_step(&compound, &output)?;
+    let compound = session.create_compound(shapes)?;
+    session.save_step(&compound, output)?;
     session.save_brep(&compound, output.with_extension("brep"))?;
     let expected_volume = session.volume(&compound)?;
     for (kind, path) in [
-        ("STEP", output.clone()),
+        ("STEP", output.to_path_buf()),
         ("BREP", output.with_extension("brep")),
     ] {
         let restored = if kind == "STEP" {

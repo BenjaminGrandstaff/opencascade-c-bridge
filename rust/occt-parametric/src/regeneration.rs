@@ -426,6 +426,7 @@ pub(crate) fn collect_operation_parameters<'a>(
             collect_vector_parameters(origin, names);
             collect_vector_parameters(size, names);
         }
+        FeatureOperation::Loft { sections, .. } => collect_loft_parameters(sections, names),
         FeatureOperation::Cylinder {
             origin,
             axis,

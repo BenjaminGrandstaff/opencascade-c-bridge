@@ -19,6 +19,7 @@ name = "occb-wing-cad"
 version = "0.1.0"
 dependencies = [
  "occt-bridge",
+ "occt-parametric",
  "serde",
  "serde_json",
 ]
@@ -26,6 +27,15 @@ dependencies = [
 [[package]]
 name = "occt-bridge"
 version = "0.1.0"
+
+[[package]]
+name = "occt-parametric"
+version = "0.1.0"
+dependencies = [
+ "occt-bridge",
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "proc-macro2"

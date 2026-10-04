@@ -405,6 +405,15 @@ pub enum FeatureOperation {
         origin: VectorExpr,
         size: VectorExpr,
     },
+    /// A solid through two or more sections with equal point counts. `smooth`
+    /// interpolates each section as one B-spline with a corner only at its
+    /// first point (an airfoil trailing edge); otherwise sections are
+    /// polygons. `ruled` keeps straight lines between sections.
+    Loft {
+        sections: Vec<LoftSection>,
+        smooth: bool,
+        ruled: bool,
+    },
     Cylinder {
         origin: VectorExpr,
         axis: VectorExpr,
@@ -556,6 +565,7 @@ impl FeatureOperation {
             Self::Sew { inputs, .. } => inputs.iter().map(String::as_str).collect(),
             Self::MakeSolid { shells } => shells.iter().map(String::as_str).collect(),
             Self::SheetMetal { .. }
+            | Self::Loft { .. }
             | Self::Box { .. }
             | Self::Cylinder { .. }
             | Self::SketchFace { .. }
@@ -684,6 +694,29 @@ fn default_wall_samples() -> usize {
 
 fn is_default_wall_samples(value: &usize) -> bool {
     *value == DEFAULT_WALL_SAMPLES
+}
+
+/// A closed planar outline for a loft, in dimensionless profile units (for an
+/// airfoil, fractions of chord). Each profile point (u, v) is rotated by
+/// `rotation_radians` about `pivot`, counterclockwise from `x_axis` toward
+/// `y_axis`, scaled by the length `scale`, and placed at
+/// `origin + scale * (u * x_axis + v * y_axis)`. The axes are dimensionless,
+/// nonzero, and perpendicular. The first point is not repeated at the end.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct LoftSection {
+    pub profile: Vec<[f64; 2]>,
+    pub origin: VectorExpr,
+    pub x_axis: VectorExpr,
+    pub y_axis: VectorExpr,
+    pub scale: ScalarExpr,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rotation_radians: Option<ScalarExpr>,
+    #[serde(default, skip_serializing_if = "is_origin")]
+    pub pivot: [f64; 2],
+}
+
+fn is_origin(point: &[f64; 2]) -> bool {
+    *point == [0.0, 0.0]
 }
 
 /// Which way a surface curves relative to the part's outward normal.

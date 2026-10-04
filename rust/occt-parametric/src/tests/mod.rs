@@ -8,6 +8,7 @@ mod expressions;
 mod graph;
 mod hole_catalogs;
 mod holes;
+mod loft;
 mod mesh;
 mod patterns;
 mod regeneration;

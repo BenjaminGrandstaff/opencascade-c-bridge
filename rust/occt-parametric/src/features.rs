@@ -3,6 +3,8 @@
 use super::*;
 
 mod holes;
+mod loft;
+pub(crate) use loft::collect_parameters as collect_loft_parameters;
 mod ribs;
 mod variable_fillet;
 
@@ -119,6 +121,11 @@ pub(crate) fn execute_feature<'session>(
                 },
             );
         }
+        FeatureOperation::Loft {
+            sections,
+            smooth,
+            ruled,
+        } => return loft::execute(session, sections, *smooth, *ruled, parameters),
         FeatureOperation::Cylinder {
             origin,
             axis,

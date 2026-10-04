@@ -32,9 +32,25 @@ cargo run --manifest-path tools/wing-layout/cad/Cargo.toml -- \
   /path/to/wing-sections.json /path/to/wing.step
 ```
 
+### Parametric model from the project file
+
+Pass the saved project (`occb-wing-layout-v1`, from **Save project**) instead of the sections file:
+
+```sh
+OCCT_BRIDGE_LIB_DIR="$PWD/build" \
+LD_LIBRARY_PATH="$PWD/build" \
+CARGO_TARGET_DIR=/tmp/occb-wing-layout-target \
+cargo run --manifest-path tools/wing-layout/cad/Cargo.toml -- \
+  /path/to/wing-project.json /path/to/wing.step
+```
+
+The CLI then builds a parametric family in `occt-parametric` and writes `wing.model.json` beside the STEP and BREP files. Its parameters are `span` and, for each station `i`, `chord_i`, `leading_edge_i`, `height_i`, and `twist_i` (radians), so a change to one value regenerates the wing from the document instead of re-exporting sections. Each half is a `Loft` feature through **smooth** sections: every airfoil is one B-spline interpolated through the same 80 resampled points, with a sharp corner only at the trailing edge. Spanwise panels stay ruled, as above. Stored requirements check that each half is a valid single solid, and the CLI prints their results. On the starter layout, smooth sections enclose about 0.1% more volume than the inscribed polygons, and the STEP file is about a sixth of the size.
+
+### Polygon sections
+
 The CLI creates a **ruled solid loft** for each half and a compound holding both touching solids. It writes STEP and BREP, verifies each half has a valid positive-volume solid, and reopens both exported files to check validity and volume. Sections use polygon edges, so the output approximates curved airfoils. Between stations the loft is ruled; intermediate sections need not reproduce a rotation with linearly interpolated twist. This version creates the outer wing solid, not ribs, spar channels, control surfaces, print segmentation, or the Ho 229 center-body/engine geometry.
 
-The separate Cargo manifest depends on the existing `occt-bridge` wrapper and does not change its API. Build artifacts are directed to `/tmp` in the commands above.
+The separate Cargo manifest depends on the existing `occt-bridge` and `occt-parametric` crates and does not change their APIs. Build artifacts are directed to `/tmp` in the commands above.
 
 ## Verification
 
