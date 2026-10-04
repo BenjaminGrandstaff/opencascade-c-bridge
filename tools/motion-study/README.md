@@ -23,7 +23,7 @@ The output directory must be new. The command writes:
 - `study.json`: the selected outputs and coordinated joint positions in the
   engine's `MotionStudy` format;
 - `motion.report.json`: sampled collisions and relationship checks, plus
-  continuous status, witness points, overlap volumes and unresolved intervals.
+  the explicit excluded pairs and continuous status, witness points, overlap volumes and unresolved intervals.
 
 Exit codes are **0** for clear travel with satisfied sampled relationships,
 **2** for a completed report containing contact, interference, inadequate
@@ -72,9 +72,23 @@ the supplied limits. Setup files reject unknown fields.
 
 Optional `collision_options` and `continuous_options` use the engine's serialized
 types; omit them for defaults. Contact is a nonclear result. All selected
-components are checked against each other, including fixed components. Choose
-separate studies for independent mechanisms when intentional fixed-to-fixed
-contact would obscure the result. No force, aerodynamic or constrained-linkage
+components are checked against each other, including fixed components. Optional
+`excluded_pairs` names unordered pairs of component IDs:
+
+```json
+"excluded_pairs": [["fixed", "bearing"]]
+```
+
+Use this for intentional contact between assembled components. Both IDs must
+appear in `components`; self-pairs, duplicates (including reversed duplicates)
+and unknown IDs reject. A pair exclusion skips all interactions between those
+components for the entire study, including interference and clearance failures.
+Other pairs and all relationship checks remain active. Up to one million pair
+exclusions are supported. `study.json` stores the corresponding exact output
+references, and `motion.report.json` always lists the exclusions, including an
+empty list when all pairs were checked. A passing report applies to this scope.
+
+No force, aerodynamic or constrained-linkage
 simulation is performed. Continuous checks use bounded floating-point BREP
 queries; inspect unresolved intervals as described in
 [Assembly motion](../../ASSEMBLY_MOTION.md).

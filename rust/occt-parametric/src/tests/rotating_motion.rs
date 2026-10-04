@@ -146,6 +146,7 @@ fn study_at_angle(angle: f64) -> MotionStudy {
             }],
         }],
         outputs: vec![output("moving"), output("obstacle")],
+        excluded_pairs: Vec::new(),
         collision_options: Default::default(),
     }
 }
@@ -299,6 +300,7 @@ fn nested_planar_and_cylindrical_paths_match_an_independent_pose_oracle() {
     let study = MotionStudy {
         samples: vec![sample(0.0), sample(1.0)],
         outputs: vec![output("moving"), output("obstacle")],
+        excluded_pairs: Vec::new(),
         collision_options: Default::default(),
     };
     assert!(
@@ -416,6 +418,7 @@ fn opposite_rotating_bodies_collide_between_clear_endpoints() {
     let study = MotionStudy {
         samples: vec![sample(0.0), sample(1.0)],
         outputs: vec![output("moving"), output("obstacle")],
+        excluded_pairs: Vec::new(),
         collision_options: Default::default(),
     };
     assert!(
@@ -501,6 +504,7 @@ fn thin_rotating_plate_stack_rejects_false_dense_candidates_and_preserves_graph(
             MotionSample { positions: last },
         ],
         outputs,
+        excluded_pairs: Vec::new(),
         collision_options: Default::default(),
     };
     let result = graph
@@ -684,4 +688,34 @@ fn shared_carrier_one_query_certifies_separation_but_keeps_guard_uncertainty() {
         assert_eq!(result.status, expected);
         assert_eq!(result.exact_queries, 1);
     }
+}
+
+#[test]
+fn rotating_excluded_pair_remains_excluded_between_clear_samples() {
+    let definition = definition();
+    let phi = 0.713_f64;
+    let graph = rotor(
+        &definition,
+        Vec3::new(5.5 * phi.cos(), 5.5 * phi.sin(), 0.5),
+    );
+    let session = Session::new().unwrap();
+    let mut study = study(0.0, std::f64::consts::TAU);
+    assert_eq!(
+        graph
+            .check_continuous_motion(&session, &study, Default::default())
+            .unwrap()
+            .status,
+        ContinuousStatus::Collision
+    );
+    study.excluded_pairs = vec![CollisionPairRef {
+        first: output("moving"),
+        second: output("obstacle"),
+    }];
+    let result = graph
+        .check_continuous_motion(&session, &study, Default::default())
+        .unwrap();
+    assert_eq!(result.status, ContinuousStatus::Clear);
+    assert_eq!(result.exact_queries, 0);
+    assert_eq!(result.candidate_pairs, 0);
+    assert_eq!(session.shape_count().unwrap(), 0);
 }

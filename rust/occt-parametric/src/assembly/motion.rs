@@ -28,6 +28,9 @@ pub struct MotionStudy {
     /// One final solid output per participating instance.
     pub outputs: Vec<InstanceOutputRef>,
     pub collision_options: CollisionOptions,
+    /// Explicit unordered pairs omitted from collision checks at every pose.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub excluded_pairs: Vec<CollisionPairRef>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -88,6 +91,7 @@ impl MotionStudy {
             samples,
             outputs,
             collision_options,
+            excluded_pairs: Vec::new(),
         })
     }
 }
@@ -115,7 +119,10 @@ fn sample_graph<'definition>(
     Ok(candidate)
 }
 
-fn validate_study(graph: &InstanceGraph<'_>, study: &MotionStudy) -> Result<(), ModelError> {
+fn validate_study(
+    graph: &InstanceGraph<'_>,
+    study: &MotionStudy,
+) -> Result<super::collisions::PairExclusions, ModelError> {
     if study.samples.is_empty()
         || study.samples.len() > MAX_MOTION_SAMPLES
         || study.outputs.is_empty()
@@ -124,13 +131,14 @@ fn validate_study(graph: &InstanceGraph<'_>, study: &MotionStudy) -> Result<(), 
             "motion needs 1–10000 samples and participating solid outputs",
         ));
     }
+    let exclusions = super::collisions::PairExclusions::new(&study.outputs, &study.excluded_pairs)?;
     graph.validate_joints()?;
     // Validate collision options even when a one-body study has no pairs.
     CollisionOptions::validate(study.collision_options)?;
     for (index, sample) in study.samples.iter().enumerate() {
         sample_graph(graph, sample, index)?;
     }
-    Ok(())
+    Ok(exclusions)
 }
 
 struct Binding {
@@ -152,14 +160,18 @@ impl InstanceGraph<'_> {
         session: &Session,
         study: &MotionStudy,
     ) -> Result<MotionResult, ModelError> {
-        validate_study(self, study)?;
+        let exclusions = validate_study(self, study)?;
         let (locals, bindings) = prepare_motion(session, self, &study.outputs)?;
         let mut samples = Vec::with_capacity(study.samples.len());
         for (index, sample) in study.samples.iter().enumerate() {
             let candidate = sample_graph(self, sample, index)?;
             let generation = motion_generation(session, &candidate, &bindings, &locals)?;
-            let collisions =
-                generation.check_collisions(session, &study.outputs, study.collision_options)?;
+            let collisions = generation.check_selected_collisions(
+                session,
+                &study.outputs,
+                study.collision_options,
+                &exclusions,
+            )?;
             let relationships = candidate.check_relationships()?;
             samples.push(MotionSampleResult {
                 index,

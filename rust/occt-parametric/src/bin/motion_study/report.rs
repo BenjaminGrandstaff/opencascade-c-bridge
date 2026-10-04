@@ -30,7 +30,11 @@ fn status(value: ContinuousStatus) -> &'static str {
     }
 }
 
-pub fn document(sampled: &MotionResult, continuous: &ContinuousMotionResult) -> Value {
+pub fn document(
+    study: &MotionStudy,
+    sampled: &MotionResult,
+    continuous: &ContinuousMotionResult,
+) -> Value {
     let samples: Vec<_> = sampled
         .samples
         .iter()
@@ -68,6 +72,7 @@ pub fn document(sampled: &MotionResult, continuous: &ContinuousMotionResult) -> 
     json!({
         "schema": "occb-motion-report-v1",
         "passed": clear(sampled, continuous),
+        "excluded_pairs": study.excluded_pairs,
         "sampled": { "generated_variants": sampled.generated_variants, "samples": samples },
         "continuous": {
             "status": status(continuous.status), "pairs": pairs,

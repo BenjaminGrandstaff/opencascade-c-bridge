@@ -74,6 +74,7 @@ fn setup(start: f64, end: f64, samples: usize) -> Setup {
         ],
         collision_options: CollisionOptions::default(),
         continuous_options: ContinuousCollisionOptions::default(),
+        excluded_pairs: Vec::new(),
     }
 }
 
@@ -128,7 +129,7 @@ fn separate_outputs_share_geometry_and_keep_source_document() {
     assert_eq!(continuous.generated_variants, 1);
     assert_eq!(sampled.samples.len(), 5);
     assert_eq!(
-        report::document(&sampled, &continuous)["continuous"]["status"],
+        report::document(&study, &sampled, &continuous)["continuous"]["status"],
         "clear"
     );
     assert_eq!(original, accepted);
@@ -152,7 +153,7 @@ fn full_turn_detects_interference_between_clear_endpoints_and_reports_witness() 
         .check_continuous_motion(&session, &study, setup.continuous_options)
         .unwrap();
     assert!(!report::clear(&sampled, &continuous));
-    let report = report::document(&sampled, &continuous);
+    let report = report::document(&study, &sampled, &continuous);
     assert_eq!(report["continuous"]["status"], "collision");
     let witness = &report["continuous"]["pairs"][0];
     assert_eq!(witness["segment"], 0);
@@ -178,7 +179,7 @@ fn full_turn_detects_interference_between_clear_endpoints_and_reports_witness() 
         .unwrap();
     assert!(!report::clear(&sampled, &bounded));
     assert_eq!(
-        report::document(&sampled, &bounded)["continuous"]["status"],
+        report::document(&study, &sampled, &bounded)["continuous"]["status"],
         "unresolved"
     );
     assert_eq!(session.shape_count().unwrap(), 0);
@@ -330,7 +331,7 @@ fn coordinated_hinges_follow_independent_signed_travel_and_clearance_policy() {
         .unwrap();
     assert!(!report::clear(&sampled, &continuous));
     assert_eq!(
-        report::document(&sampled, &continuous)["sampled"]["samples"][1]["collisions"][0]["status"],
+        report::document(&study, &sampled, &continuous)["sampled"]["samples"][1]["collisions"][0]["status"],
         "insufficient_clearance"
     );
     assert_eq!(session.shape_count().unwrap(), 0);
@@ -411,4 +412,53 @@ fn command_writes_reloadable_artifacts_and_rejects_overwrites_or_invalid_inputs(
     let args = inputs(&directory, 0.0, 400.0);
     assert!(run(&args).is_err());
     assert!(!Path::new(&args[2]).exists());
+}
+
+#[test]
+fn command_exclusions_are_explicit_in_reloadable_study_and_report() {
+    let directory = Directory::new();
+    let args = inputs(&directory, 0.0, 360.0);
+    let source = fs::read(&args[0]).unwrap();
+    let mut setup: serde_json::Value =
+        serde_json::from_slice(&fs::read(&args[1]).unwrap()).unwrap();
+    setup["excluded_pairs"] = json!([["moving", "fixed"]]);
+    fs::write(&args[1], setup.to_string()).unwrap();
+    assert!(run(&args).unwrap());
+    let output = Path::new(&args[2]);
+    let study: MotionStudy =
+        serde_json::from_str(&fs::read_to_string(output.join("study.json")).unwrap()).unwrap();
+    assert_eq!(study.excluded_pairs.len(), 1);
+    assert_eq!(study.excluded_pairs[0].first.instance, "moving");
+    assert_eq!(study.excluded_pairs[0].second.output, "wing");
+    let report: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(output.join("motion.report.json")).unwrap())
+            .unwrap();
+    assert_eq!(
+        report["excluded_pairs"],
+        serde_json::to_value(&study.excluded_pairs).unwrap()
+    );
+    assert_eq!(report["continuous"]["candidate_pairs"], 0);
+    assert_eq!(report["continuous"]["exact_queries"], 0);
+    assert_eq!(report["passed"], true);
+    assert_eq!(fs::read(&args[0]).unwrap(), source);
+}
+#[test]
+fn invalid_command_exclusions_reject_without_publishing_artifacts() {
+    for pairs in [
+        json!([["moving", "moving"]]),
+        json!([["moving", "unknown"]]),
+        json!([["moving", "fixed"], ["fixed", "moving"]]),
+        json!([["moving"]]),
+    ] {
+        let directory = Directory::new();
+        let args = inputs(&directory, 0.0, 360.0);
+        let source = fs::read(&args[0]).unwrap();
+        let mut setup: serde_json::Value =
+            serde_json::from_slice(&fs::read(&args[1]).unwrap()).unwrap();
+        setup["excluded_pairs"] = pairs;
+        fs::write(&args[1], setup.to_string()).unwrap();
+        assert!(run(&args).is_err());
+        assert!(!Path::new(&args[2]).exists());
+        assert_eq!(fs::read(&args[0]).unwrap(), source);
+    }
 }

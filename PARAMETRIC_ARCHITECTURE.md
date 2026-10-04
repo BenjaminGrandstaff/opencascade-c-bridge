@@ -1177,7 +1177,9 @@ across batches and writes reloadable definitions and SVG/DXF files. The balance-
 totals and CG along an explicit chord or station-derived MAC; see
 [Mass and balance](tools/balance-report/README.md). The motion-study command turns selected outputs
 into independently hinged instances and reports interference across their
-travel; see [the workflow](tools/motion-study/README.md). Changes are measured by
+travel. Explicit pair exclusions represent intentional assembled contacts and
+are recorded in the study and report; other pairs retain sampled and continuous
+checks; see [the workflow](tools/motion-study/README.md). Changes are measured by
 the scale benchmark suite (`tools/bench/run.sh`). Scale is a requirement for every change; see the
 [Roadmap](ROADMAP.md) for target sizes and the checks each change must pass.
 

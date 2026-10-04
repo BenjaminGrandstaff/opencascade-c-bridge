@@ -144,6 +144,26 @@ can be touching, interference, or insufficient clearance, using the existing
 A witness fraction lies in [0, 1] within its zero-based segment. It is an observed
 violating position, **not** the first time of contact.
 
+`MotionStudy::excluded_pairs` optionally omits explicit unordered
+`CollisionPairRef { first, second }` output pairs from every sampled and
+continuous collision check. This supports intentional contact between assembled
+components. The exclusion applies to all interactions throughout the study,
+including interference and clearance violations. Relationships still check,
+and all selected outputs must still be valid solids. Closed-linkage solving
+preserves exclusions in the returned study. Empty or absent exclusions check
+all pairs; old study JSON defaults to an empty list. Rust struct literals need
+an `excluded_pairs` field, usually `Vec::new()`.
+
+Exclusions must name two distinct exact selected outputs. Unknown outputs,
+self-pairs, repeated unordered pairs and lists exceeding one million entries
+reject before geometry generation. Storage and validation cost O(outputs +
+exclusions); sampled studies reuse the validated lookup across poses. Excluded
+pairs consume neither continuous candidate budgets nor exact-query budgets.
+For a placed generation, `check_collisions_excluding` accepts the same pair
+list; `check_collisions` and direct `check_pair` continue checking all requested
+pairs. These exclusions describe the scope of a check, not a geometric proof
+that the omitted pairs are safe.
+
 The default extra distance guard is 1e-6 mm. Frame/world-coordinate roundoff
 adds a scale-dependent margin. Bounds use native floating-point BREP queries,
 not a formally certified error enclosure for OCCT. Caller-supplied guards should

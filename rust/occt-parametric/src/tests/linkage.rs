@@ -577,6 +577,7 @@ fn linkage_solves_1000_independent_mounted_sliders_and_preserves_limits() {
             instance: "prototype".into(),
             output: "body".into(),
         }],
+        excluded_pairs: Vec::new(),
         collision_options: CollisionOptions::default(),
     };
     let closed = graph
@@ -653,6 +654,7 @@ fn linkage_large_closed_reports_reject_before_solving_or_mutating() {
             instance: "prototype".into(),
             output: "body".into(),
         }],
+        excluded_pairs: Vec::new(),
         collision_options: CollisionOptions::default(),
     };
     let error = graph

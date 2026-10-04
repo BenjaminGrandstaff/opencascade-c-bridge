@@ -83,13 +83,14 @@ impl Index {
         bodies: &[Body<'_, '_>],
         swept: &[Body<'_, '_>],
         margin: f64,
+        exclusions: &PairExclusions,
         output: &mut Vec<usize>,
     ) {
         let own = self.membership[first];
         self.groups[own].initial.query(
             bodies[first].bounds,
             margin,
-            &|second| second > first,
+            &|second| second > first && !exclusions.contains(first, second),
             output,
         );
         let mut groups = Vec::new();
@@ -103,7 +104,7 @@ impl Index {
             self.groups[group].swept.query(
                 swept[first].bounds,
                 margin,
-                &|second| second > first,
+                &|second| second > first && !exclusions.contains(first, second),
                 output,
             );
         }

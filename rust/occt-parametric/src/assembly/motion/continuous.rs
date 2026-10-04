@@ -1,6 +1,6 @@
 //! Adaptive continuous checks using BREP distance and conservative motion bounds.
 use super::*;
-use crate::assembly::collisions::{Body, Node, inspect_pair};
+use crate::assembly::collisions::{Body, Node, PairExclusions, inspect_pair};
 use occt_bridge::Bounds;
 mod coherent;
 mod rotations;
@@ -462,6 +462,7 @@ impl InstanceGraph<'_> {
                 "continuous motion needs 2–10000 samples and solid outputs",
             ));
         }
+        let exclusions = PairExclusions::new(&study.outputs, &study.excluded_pairs)?;
         self.validate_joints()?;
         // Validate all coordinate endpoints before generating local geometry.
         let mut start = sample_graph(self, &study.samples[0], 0)?;
@@ -498,6 +499,7 @@ impl InstanceGraph<'_> {
                 collision_options: study.collision_options,
                 options,
                 guard,
+                exclusions: &exclusions,
             }
             .inspect(session, segment - 1, &bodies, &movement, &mut result)?;
             start = end;
@@ -505,12 +507,13 @@ impl InstanceGraph<'_> {
         Ok(result)
     }
 }
-struct SegmentCheck {
+struct SegmentCheck<'a> {
     collision_options: CollisionOptions,
     options: ContinuousCollisionOptions,
     guard: f64,
+    exclusions: &'a PairExclusions,
 }
-impl SegmentCheck {
+impl SegmentCheck<'_> {
     fn inspect(
         &self,
         session: &Session,
@@ -523,6 +526,7 @@ impl SegmentCheck {
             collision_options,
             options,
             guard,
+            exclusions,
         } = *self;
         if bodies.len() < 2 {
             return Ok(());
@@ -559,7 +563,7 @@ impl SegmentCheck {
         let mut count = 0;
         for first in 0..bodies.len() {
             let mut candidates = Vec::new();
-            index.query(first, bodies, &swept, margin, &mut candidates);
+            index.query(first, bodies, &swept, margin, exclusions, &mut candidates);
             candidates.sort_unstable();
             count += candidates.len();
             if count > options.maximum_candidate_pairs {

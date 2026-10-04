@@ -107,6 +107,7 @@ fn sparse_rotors(definition: &FamilyDefinition) {
             MotionSample { positions: last },
         ],
         outputs,
+        excluded_pairs: Vec::new(),
         collision_options: Default::default(),
     };
     let start = Instant::now();
@@ -166,6 +167,7 @@ fn dense_plates(definition: &FamilyDefinition) {
             MotionSample { positions: last },
         ],
         outputs,
+        excluded_pairs: Vec::new(),
         collision_options: Default::default(),
     };
     let session = Session::new().unwrap();
@@ -272,6 +274,7 @@ fn main() {
     dense_plates(&definition);
     crossings(&definition);
     shared_carrier(&definition);
+    excluded_contacts(&definition);
 }
 
 fn shared_carrier(definition: &FamilyDefinition) {
@@ -334,6 +337,86 @@ fn shared_carrier(definition: &FamilyDefinition) {
     assert!(elapsed < Duration::from_secs(10));
     println!(
         "shared carrier 10000 fixed mounts: {:.3}s (budget 10s), no candidates or exact queries",
+        elapsed.as_secs_f64()
+    );
+}
+
+fn excluded_contacts(definition: &FamilyDefinition) {
+    let mut graph = InstanceGraph::new(definition);
+    graph.add_base("source", HashMap::new(), "bench").unwrap();
+    graph
+        .add_frame("carrier", None, Placement::identity(), "bench")
+        .unwrap();
+    graph.add_joint(joint("carrier", 0.0)).unwrap();
+    let mut outputs = Vec::new();
+    let mut excluded_pairs = Vec::new();
+    for index in 0..10_000 {
+        let instance = format!("contact-{index}");
+        graph
+            .add_clone(&instance, "source", HashMap::new(), "bench")
+            .unwrap();
+        let site = index / 2;
+        graph
+            .set_placement(
+                &instance,
+                Placement::translated(vector(
+                    (site % 100) as f64 * 3.0,
+                    (site / 100) as f64 * 3.0,
+                    0.0,
+                )),
+            )
+            .unwrap();
+        graph
+            .set_instance_frame(&instance, Some("carrier"))
+            .unwrap();
+        outputs.push(output(&instance));
+        if index % 2 == 1 {
+            excluded_pairs.push(CollisionPairRef {
+                first: outputs[index - 1].clone(),
+                second: outputs[index].clone(),
+            });
+        }
+    }
+    let mut study = MotionStudy::linear(
+        "carrier",
+        JointDof::Angle,
+        Quantity::scalar(0.0),
+        Quantity::scalar(std::f64::consts::TAU),
+        2,
+        outputs,
+        Default::default(),
+    )
+    .unwrap();
+    study.excluded_pairs = excluded_pairs;
+    let session = Session::new().unwrap();
+    let start = Instant::now();
+    let sampled = graph.run_motion_study(&session, &study).unwrap();
+    assert!(
+        sampled
+            .samples
+            .iter()
+            .all(|sample| sample.collisions.is_empty())
+    );
+    let result = graph
+        .check_continuous_motion(
+            &session,
+            &study,
+            ContinuousCollisionOptions {
+                maximum_candidate_pairs: 1,
+                maximum_queries: 1,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let elapsed = start.elapsed();
+    assert_eq!(result.status, ContinuousStatus::Clear);
+    assert_eq!(result.candidate_pairs, 0);
+    assert_eq!(result.exact_queries, 0);
+    assert_eq!(result.generated_variants, 1);
+    assert_eq!(session.shape_count().unwrap(), 0);
+    assert!(elapsed < Duration::from_secs(10));
+    println!(
+        "10000 components with 5000 excluded contacts, sampled and continuous: {:.3}s (budget 10s), zero exact queries",
         elapsed.as_secs_f64()
     );
 }

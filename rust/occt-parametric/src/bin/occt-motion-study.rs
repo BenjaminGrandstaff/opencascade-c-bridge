@@ -36,7 +36,8 @@ fn run(args: &[OsString]) -> Result<bool, Box<dyn Error>> {
     let sampled = graph.run_motion_study(&session, &study)?;
     let continuous = graph.check_continuous_motion(&session, &study, setup.continuous_options)?;
     let clear = report::clear(&sampled, &continuous);
-    let report = serde_json::to_string_pretty(&report::document(&sampled, &continuous))?;
+    let report = serde_json::to_string_pretty(&report::document(&study, &sampled, &continuous))?;
+    let study_exclusions = study.excluded_pairs.len();
     let study = serde_json::to_string_pretty(&study)?;
     // Exclusive directory creation protects inputs and existing output artifacts.
     fs::create_dir(destination)?;
@@ -44,9 +45,10 @@ fn run(args: &[OsString]) -> Result<bool, Box<dyn Error>> {
     fs::write(destination.join("study.json"), study)?;
     fs::write(destination.join("motion.report.json"), report)?;
     println!(
-        "Wrote {} samples and continuous result {:?} ({} unresolved pairs) to {}",
+        "Wrote {} samples and continuous result {:?} ({} excluded pairs, {} unresolved pairs) to {}",
         sampled.samples.len(),
         continuous.status,
+        study_exclusions,
         continuous.unresolved_pairs,
         destination.display()
     );

@@ -17,7 +17,9 @@ mod materials;
 mod motion;
 mod requirements;
 
-pub use collisions::{CollisionOptions, InstanceOutputRef, PairCheck, PairStatus};
+pub use collisions::{
+    CollisionOptions, CollisionPairRef, InstanceOutputRef, PairCheck, PairStatus,
+};
 pub(crate) use geometry::*;
 mod linkage;
 pub use linkage::{

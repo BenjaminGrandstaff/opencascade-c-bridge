@@ -119,6 +119,7 @@ impl InstanceGraph<'_> {
         let mut closed = MotionStudy {
             samples: Vec::with_capacity(study.samples.len()),
             outputs: study.outputs.clone(),
+            excluded_pairs: study.excluded_pairs.clone(),
             collision_options: study.collision_options,
         };
         let mut seed = Vec::new();

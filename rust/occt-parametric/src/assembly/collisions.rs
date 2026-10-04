@@ -1,6 +1,9 @@
 //! Geometry-based pair checks and indexed broad-phase assembly checks.
 
 use super::*;
+mod exclusions;
+pub use exclusions::CollisionPairRef;
+pub(super) use exclusions::PairExclusions;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct InstanceOutputRef {
@@ -165,6 +168,29 @@ impl<'session> GraphRegeneration<'session> {
         outputs: &[InstanceOutputRef],
         options: CollisionOptions,
     ) -> Result<Vec<PairCheck>, ModelError> {
+        self.check_collisions_excluding(session, outputs, options, &[])
+    }
+
+    /// Checks selected outputs except explicit unordered pairs. Exclusions must
+    /// name distinct selected outputs and cannot repeat; all solids still validate.
+    pub fn check_collisions_excluding(
+        &self,
+        session: &Session,
+        outputs: &[InstanceOutputRef],
+        options: CollisionOptions,
+        excluded_pairs: &[CollisionPairRef],
+    ) -> Result<Vec<PairCheck>, ModelError> {
+        let exclusions = PairExclusions::new(outputs, excluded_pairs)?;
+        self.check_selected_collisions(session, outputs, options, &exclusions)
+    }
+
+    pub(super) fn check_selected_collisions(
+        &self,
+        session: &Session,
+        outputs: &[InstanceOutputRef],
+        options: CollisionOptions,
+        exclusions: &PairExclusions,
+    ) -> Result<Vec<PairCheck>, ModelError> {
         let checked = options.checked()?;
         let bodies = self.bodies(session, outputs)?;
         if bodies.len() < 2 {
@@ -178,7 +204,7 @@ impl<'session> GraphRegeneration<'session> {
             tree.query(
                 body.bounds,
                 checked.0 + checked.1,
-                &|candidate| candidate > index,
+                &|candidate| candidate > index && !exclusions.contains(index, candidate),
                 &mut candidates,
             );
             candidates.sort_unstable();

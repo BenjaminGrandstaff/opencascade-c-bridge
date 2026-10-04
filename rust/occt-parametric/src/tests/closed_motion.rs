@@ -345,3 +345,46 @@ fn closed_motion_continues_the_initial_assembly_branch() {
     }
     assert_eq!(session.shape_count().unwrap(), 0);
 }
+
+#[test]
+fn closed_linkage_studies_preserve_explicit_collision_exclusions() {
+    let definition = motion_definition();
+    let mut graph = mechanism(&definition, 10.0, 0.0);
+    graph
+        .add_clone("obstacle", "slider", HashMap::new(), "test")
+        .unwrap();
+    graph
+        .set_instance_frame("obstacle", Some("slider"))
+        .unwrap();
+    let mut study = study(0.4, 1.2);
+    study.outputs.push(output("obstacle"));
+    study.excluded_pairs.push(CollisionPairRef {
+        first: output("slider"),
+        second: output("obstacle"),
+    });
+    let solved = graph
+        .solve_motion_study(&study, &variables(), options())
+        .unwrap();
+    assert_eq!(solved.status, JointMotionStatus::Complete);
+    let closed = solved.closed_study.unwrap();
+    assert_eq!(closed.excluded_pairs, study.excluded_pairs);
+    let session = Session::new().unwrap();
+    let result = graph.run_motion_study(&session, &closed).unwrap();
+    assert!(
+        result
+            .samples
+            .iter()
+            .all(|sample| sample.collisions.is_empty())
+    );
+    let mut unfiltered = closed;
+    unfiltered.excluded_pairs.clear();
+    assert!(
+        graph
+            .run_motion_study(&session, &unfiltered)
+            .unwrap()
+            .samples
+            .iter()
+            .all(|sample| !sample.collisions.is_empty())
+    );
+    assert_eq!(session.shape_count().unwrap(), 0);
+}

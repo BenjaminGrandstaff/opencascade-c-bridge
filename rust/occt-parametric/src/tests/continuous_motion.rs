@@ -434,3 +434,189 @@ fn invalid_studies_rotation_limits_and_broadphase_budgets_release_handles() {
     );
     assert_eq!(session.shape_count().unwrap(), 0);
 }
+
+#[test]
+fn exclusions_skip_only_named_pairs_in_static_sampled_and_continuous_checks() {
+    let definition = definition();
+    let mut graph = graph(&definition, Vec3::new(0.0, 0.0, 0.0));
+    graph.set_instance_frame("obstacle", Some("slide")).unwrap();
+    graph
+        .add_clone("third", "obstacle", HashMap::new(), "test")
+        .unwrap();
+    graph.set_instance_frame("third", None).unwrap();
+    graph
+        .set_placement(
+            "third",
+            Placement::translated(VectorQuantity::lengths(
+                17.37,
+                0.0,
+                0.0,
+                LengthUnit::Millimeter,
+            )),
+        )
+        .unwrap();
+    let mut study = study(0.0, 40.0);
+    study.outputs.push(output("third"));
+    study.excluded_pairs.push(CollisionPairRef {
+        first: output("obstacle"),
+        second: output("moving"),
+    });
+    let session = Session::new().unwrap();
+    let generation = graph
+        .regenerate_instances_current(&session, &["moving", "obstacle", "third"])
+        .unwrap();
+    let count = session.shape_count().unwrap();
+    assert_eq!(
+        generation
+            .check_collisions(&session, &study.outputs, study.collision_options)
+            .unwrap()
+            .len(),
+        1
+    );
+    assert!(
+        generation
+            .check_collisions_excluding(
+                &session,
+                &study.outputs,
+                study.collision_options,
+                &study.excluded_pairs
+            )
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        generation
+            .check_pair(
+                &session,
+                &output("moving"),
+                &output("obstacle"),
+                study.collision_options
+            )
+            .unwrap()
+            .status,
+        PairStatus::Interference
+    );
+    let sampled = graph.run_motion_study(&session, &study).unwrap();
+    assert!(
+        sampled
+            .samples
+            .iter()
+            .all(|sample| sample.collisions.is_empty())
+    );
+    let continuous = graph
+        .check_continuous_motion(&session, &study, Default::default())
+        .unwrap();
+    assert_eq!(continuous.status, ContinuousStatus::Collision);
+    assert_eq!(continuous.pairs.len(), 2);
+    assert!(
+        continuous
+            .pairs
+            .iter()
+            .all(|pair| pair.first.instance == "third" || pair.second.instance == "third")
+    );
+    assert_eq!(session.shape_count().unwrap(), count);
+    assert_eq!(
+        graph.node("moving").unwrap().placement(),
+        Placement::identity()
+    );
+}
+
+#[test]
+fn excluded_pairs_do_not_spend_continuous_budgets_and_persist_in_studies() {
+    let definition = definition();
+    let graph = graph(&definition, Vec3::new(17.37, 0.0, 0.0));
+    let mut study = study(0.0, 40.0);
+    let old_json = serde_json::to_value(&study).unwrap();
+    assert!(old_json.get("excluded_pairs").is_none());
+    let old_study: MotionStudy = serde_json::from_value(old_json).unwrap();
+    assert!(old_study.excluded_pairs.is_empty());
+    study.excluded_pairs.push(CollisionPairRef {
+        first: output("moving"),
+        second: output("obstacle"),
+    });
+    let study: MotionStudy = serde_json::from_str(&serde_json::to_string(&study).unwrap()).unwrap();
+    let session = Session::new().unwrap();
+    for translation_only in [true, false] {
+        let options = ContinuousCollisionOptions {
+            maximum_queries: 1,
+            maximum_candidate_pairs: 1,
+            ..Default::default()
+        };
+        let result = if translation_only {
+            graph.check_translation_motion(&session, &study, options)
+        } else {
+            graph.check_continuous_motion(&session, &study, options)
+        }
+        .unwrap();
+        assert_eq!(result.status, ContinuousStatus::Clear);
+        assert_eq!(result.candidate_pairs, 0);
+        assert_eq!(result.exact_queries, 0);
+    }
+    assert_eq!(session.shape_count().unwrap(), 0);
+}
+
+#[test]
+fn malformed_exclusions_reject_before_geometry_even_when_every_pair_is_excluded() {
+    let definition = definition();
+    let graph = graph(&definition, Vec3::new(0.0, 0.0, 0.0));
+    let valid = CollisionPairRef {
+        first: output("moving"),
+        second: output("obstacle"),
+    };
+    let reverse = CollisionPairRef {
+        first: valid.second.clone(),
+        second: valid.first.clone(),
+    };
+    let mut wrong_output = output("obstacle");
+    wrong_output.output = "not-a-solid".into();
+    let cases = vec![
+        vec![CollisionPairRef {
+            first: output("moving"),
+            second: output("moving"),
+        }],
+        vec![valid.clone(), reverse],
+        vec![CollisionPairRef {
+            first: output("missing"),
+            second: output("obstacle"),
+        }],
+        vec![CollisionPairRef {
+            first: output("moving"),
+            second: wrong_output,
+        }],
+    ];
+    let session = Session::new().unwrap();
+    for excluded in cases {
+        let mut study = self::study(0.0, 1.0);
+        study.excluded_pairs = excluded;
+        assert!(graph.run_motion_study(&session, &study).is_err());
+        assert!(
+            graph
+                .check_continuous_motion(&session, &study, Default::default())
+                .is_err()
+        );
+        assert_eq!(session.shape_count().unwrap(), 0);
+    }
+    let mut study = self::study(0.0, 1.0);
+    study.excluded_pairs = vec![valid];
+    study.samples[1].positions[0].frame = "unknown".into();
+    assert!(graph.run_motion_study(&session, &study).is_err());
+    assert!(
+        graph
+            .check_continuous_motion(&session, &study, Default::default())
+            .is_err()
+    );
+    assert_eq!(session.shape_count().unwrap(), 0);
+    let mut study = self::study(0.0, 1.0);
+    study.outputs[1].output = "missing-solid".into();
+    study.excluded_pairs = vec![CollisionPairRef {
+        first: study.outputs[0].clone(),
+        second: study.outputs[1].clone(),
+    }];
+    assert!(graph.run_motion_study(&session, &study).is_err());
+    assert!(
+        graph
+            .check_continuous_motion(&session, &study, Default::default())
+            .is_err()
+    );
+    assert_eq!(session.shape_count().unwrap(), 0);
+}

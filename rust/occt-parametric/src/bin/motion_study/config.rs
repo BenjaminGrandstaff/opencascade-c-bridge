@@ -1,6 +1,6 @@
 use occt_parametric::*;
 use serde::Deserialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -12,6 +12,8 @@ pub struct Setup {
     pub collision_options: CollisionOptions,
     #[serde(default)]
     pub continuous_options: ContinuousCollisionOptions,
+    #[serde(default)]
+    pub excluded_pairs: Vec<[String; 2]>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -68,6 +70,7 @@ pub fn prepare<'a>(
     if setup.samples * joints.len() > 1_000_000 {
         return Err("motion setup exceeds one million sampled joint positions".into());
     }
+    let excluded_pairs = excluded_pairs(setup, &outputs)?;
     graph.add_joints(joints)?;
     let mut samples = vec![MotionSample { positions: vec![] }; setup.samples];
     for component in &setup.components {
@@ -79,6 +82,7 @@ pub fn prepare<'a>(
             samples,
             outputs,
             collision_options: setup.collision_options,
+            excluded_pairs,
         },
     ))
 }
@@ -179,4 +183,40 @@ pub fn assembly_document(original: &ModelDocument, graph: &InstanceGraph<'_>) ->
     document.frames = parts.frames;
     document.assembly = parts.assembly;
     document
+}
+
+fn excluded_pairs(
+    setup: &Setup,
+    outputs: &[InstanceOutputRef],
+) -> Result<Vec<CollisionPairRef>, Box<dyn std::error::Error>> {
+    if setup.excluded_pairs.len() > 1_000_000 {
+        return Err("at most one million collision exclusions are supported".into());
+    }
+    let selected = outputs
+        .iter()
+        .map(|output| (output.instance.as_str(), output))
+        .collect::<HashMap<_, _>>();
+    let mut seen = HashSet::new();
+    setup
+        .excluded_pairs
+        .iter()
+        .map(|[first, second]| {
+            if first == second || !seen.insert((first.min(second), first.max(second))) {
+                return Err(
+                    "collision exclusions must be distinct unordered pairs without self-pairs"
+                        .into(),
+                );
+            }
+            let resolve = |id: &str| {
+                selected
+                    .get(id)
+                    .map(|output| (*output).clone())
+                    .ok_or_else(|| format!("excluded component '{id}' is not selected"))
+            };
+            Ok(CollisionPairRef {
+                first: resolve(first)?,
+                second: resolve(second)?,
+            })
+        })
+        .collect()
 }
