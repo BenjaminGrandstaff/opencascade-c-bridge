@@ -271,4 +271,69 @@ fn main() {
     sparse_rotors(&definition);
     dense_plates(&definition);
     crossings(&definition);
+    shared_carrier(&definition);
+}
+
+fn shared_carrier(definition: &FamilyDefinition) {
+    let mut graph = InstanceGraph::new(definition);
+    graph.add_base("source", HashMap::new(), "bench").unwrap();
+    graph
+        .add_frame("carrier", None, Placement::identity(), "bench")
+        .unwrap();
+    graph.add_joint(joint("carrier", 0.0)).unwrap();
+    let mut outputs = Vec::new();
+    for index in 0..10_000 {
+        let instance = format!("shared-{index}");
+        graph
+            .add_clone(&instance, "source", HashMap::new(), "bench")
+            .unwrap();
+        let mount = format!("mount-{index}");
+        graph
+            .add_frame(
+                &mount,
+                Some("carrier"),
+                Placement::translated(vector(
+                    (index % 100) as f64 * 3.0,
+                    (index / 100) as f64 * 3.0,
+                    0.0,
+                )),
+                "bench",
+            )
+            .unwrap();
+        graph.set_instance_frame(&instance, Some(&mount)).unwrap();
+        outputs.push(output(&instance));
+    }
+    let study = MotionStudy::linear(
+        "carrier",
+        JointDof::Angle,
+        Quantity::scalar(0.0),
+        Quantity::scalar(std::f64::consts::TAU),
+        2,
+        outputs,
+        Default::default(),
+    )
+    .unwrap();
+    let session = Session::new().unwrap();
+    let start = Instant::now();
+    let result = graph
+        .check_continuous_motion(
+            &session,
+            &study,
+            ContinuousCollisionOptions {
+                maximum_candidate_pairs: 1,
+                maximum_queries: 1,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let elapsed = start.elapsed();
+    assert_eq!(result.status, ContinuousStatus::Clear);
+    assert_eq!(result.candidate_pairs, 0);
+    assert_eq!(result.exact_queries, 0);
+    assert_eq!(result.generated_variants, 1);
+    assert!(elapsed < Duration::from_secs(10));
+    println!(
+        "shared carrier 10000 fixed mounts: {:.3}s (budget 10s), no candidates or exact queries",
+        elapsed.as_secs_f64()
+    );
 }

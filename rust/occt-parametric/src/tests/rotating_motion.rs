@@ -582,3 +582,106 @@ fn interval_boxes_prune_clear_ring_interiors_and_detect_axial_crossings() {
     assert_eq!(result.status, ContinuousStatus::Collision, "{result:?}");
     assert_eq!(session.shape_count().unwrap(), 0);
 }
+
+fn shared_carrier<'a>(definition: &'a FamilyDefinition, spacing: f64) -> InstanceGraph<'a> {
+    let mut graph = rotor(definition, Vec3::new(0.0, 0.0, 0.0));
+    graph
+        .set_placement("moving", Placement::identity())
+        .unwrap();
+    graph
+        .set_placement("obstacle", Placement::identity())
+        .unwrap();
+    for id in ["width", "depth", "height"] {
+        graph
+            .set_override("obstacle", id, ParameterValue::Scalar(mm(1.0)))
+            .unwrap();
+    }
+    graph
+        .add_frame(
+            "mount",
+            Some("rotor"),
+            Placement::translated(vector(spacing, 0.0, 0.0)),
+            "test",
+        )
+        .unwrap();
+    graph.set_instance_frame("obstacle", Some("mount")).unwrap();
+    graph
+}
+#[test]
+fn shared_rotating_carrier_uses_initial_bounds_through_fixed_child_mounts() {
+    let definition = definition();
+    let graph = shared_carrier(&definition, 3.0);
+    let session = Session::new().unwrap();
+    let before = session.shape_count().unwrap();
+    let result = graph
+        .check_continuous_motion(
+            &session,
+            &study(0.0, 4.0 * std::f64::consts::TAU),
+            ContinuousCollisionOptions {
+                maximum_queries: 1,
+                maximum_candidate_pairs: 1,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(result.status, ContinuousStatus::Clear);
+    assert_eq!(result.candidate_pairs, 0);
+    assert_eq!(result.exact_queries, 0);
+    assert_eq!(result.generated_variants, 1);
+    assert_eq!(session.shape_count().unwrap(), before);
+}
+#[test]
+fn shared_carrier_preserves_interference_contact_and_clearance_failures() {
+    let definition = definition();
+    let session = Session::new().unwrap();
+    for (spacing, clearance, expected) in [
+        (0.5, 0.0, PairStatus::Interference),
+        (1.0, 0.0, PairStatus::Touching),
+        (1.5, 1.0, PairStatus::InsufficientClearance),
+    ] {
+        let graph = shared_carrier(&definition, spacing);
+        let mut study = study(0.0, std::f64::consts::TAU);
+        study.collision_options.minimum_clearance = mm(clearance);
+        let result = graph
+            .check_continuous_motion(
+                &session,
+                &study,
+                ContinuousCollisionOptions {
+                    maximum_queries: 1,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        assert_eq!(result.status, ContinuousStatus::Collision);
+        assert_eq!(result.exact_queries, 1);
+        assert_eq!(result.pairs[0].fraction, Some(0.0));
+        assert_eq!(result.pairs[0].check.as_ref().unwrap().status, expected);
+    }
+}
+#[test]
+fn shared_carrier_one_query_certifies_separation_but_keeps_guard_uncertainty() {
+    let definition = definition();
+    let session = Session::new().unwrap();
+    let graph = shared_carrier(&definition, 1.5);
+    for (guard, expected) in [
+        (0.6, ContinuousStatus::Unresolved),
+        (0.4, ContinuousStatus::Clear),
+    ] {
+        let result = graph
+            .check_continuous_motion(
+                &session,
+                &study(
+                    std::f64::consts::FRAC_PI_4,
+                    std::f64::consts::FRAC_PI_4 + std::f64::consts::TAU,
+                ),
+                ContinuousCollisionOptions {
+                    distance_guard: mm(guard),
+                    maximum_queries: 1,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        assert_eq!(result.status, expected);
+        assert_eq!(result.exact_queries, 1);
+    }
+}

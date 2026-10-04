@@ -279,3 +279,38 @@ fn interval_boxes_cover_nonunit_oblique_rotation_axes() {
         }
     }
 }
+
+#[test]
+fn shared_motion_keys_cancel_only_static_inner_frames_and_keep_unwrapped_travel() {
+    let zero = Vec3::new(0.0, 0.0, 0.0);
+    let axis = Vec3::new(0.0, 0.0, 2.0);
+    let bounds = Bounds {
+        min: zero,
+        max: Vec3::new(1.0, 1.0, 1.0),
+    };
+    let start = placement(0.3, zero, zero, axis);
+    let end = placement(
+        0.3 + std::f64::consts::TAU,
+        Vec3::new(2.0, 3.0, 0.0),
+        zero,
+        axis,
+    );
+    let base = RigidPath::new(&[start], &[end], bounds).unwrap();
+    let mount = placement(0.7, Vec3::new(4.0, 2.0, 1.0), zero, axis);
+    let mounted = RigidPath::new(&[mount, start], &[mount, end], bounds).unwrap();
+    assert_eq!(base.motion_key(), mounted.motion_key());
+    let moving_mount = placement(0.8, mount.normalized().unwrap().translation, zero, axis);
+    let independent = RigidPath::new(&[mount, start], &[moving_mount, end], bounds).unwrap();
+    assert_ne!(base.motion_key(), independent.motion_key());
+    let twice = placement(
+        0.3 + 2.0 * std::f64::consts::TAU,
+        Vec3::new(2.0, 3.0, 0.0),
+        zero,
+        axis,
+    );
+    let twice = RigidPath::new(&[start], &[twice], bounds).unwrap();
+    assert_ne!(base.motion_key(), twice.motion_key());
+    let outer = placement(0.1, Vec3::new(1.0, 0.0, 0.0), zero, axis);
+    let framed = RigidPath::new(&[start, outer], &[end, outer], bounds).unwrap();
+    assert_ne!(base.motion_key(), framed.motion_key());
+}

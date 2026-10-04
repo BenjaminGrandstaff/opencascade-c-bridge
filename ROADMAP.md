@@ -15,14 +15,24 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 4/4, bridge 81 + first-use integration 1 (+1 doc test), recipes 3, parametric 281 + merge driver 3 + motion command 7 + balance command 4 + drawing command 2 + branch command 2, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
-| SonarQube (indexed Rust) | Gate OK, 0 issues, 93.4% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
+| Tests | C 4/4, bridge 81 + first-use integration 1 (+1 doc test), recipes 3, parametric 285 + merge driver 3 + motion command 7 + balance command 4 + drawing command 2 + branch command 2, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| SonarQube (indexed Rust) | Gate OK, 0 issues, 93.5% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
-| Coverage | 93.38% lines overall, test code excluded; C++ 94.24% lines, 87.60% branches, 100% functions; Rust 93.03% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 76 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Coverage | 93.42% lines overall, test code excluded; C++ 94.24% lines, 87.64% branches, 100% functions; Rust 93.08% lines | `tools/coverage/run.sh` |
+| Scale benchmarks | 77 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
+
+- Shared rigid carrier collision checks: group identical rigid motion paths,
+  ignoring only constant inner mount placements, and use initial-position BVHs
+  within each group. Inter-group pairs retain swept bounds. Candidate pairs in
+  a shared group need at most one initial exact query, with numeric uncertainty
+  still reported as unresolved. Regression tests cover fixed mounts, translation,
+  unwrapped turns, distinct moving children, contact, interference and clearance.
+  A 10,000-component carrier benchmark takes 0.156 s with one local variant and
+  zero candidate pairs or exact queries (10 s budget). No ABI or model schema change.
+
 
 - Tighter continuous rotating bounds: propagate conservative corner/arc boxes
   through rigid frame chains, retaining angular extrema and axial thickness,

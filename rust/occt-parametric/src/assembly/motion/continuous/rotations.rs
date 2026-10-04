@@ -101,6 +101,38 @@ fn inverse_chain(steps: &[Step]) -> Vec<NormalizedPlacement> {
     inverse
 }
 impl RigidPath {
+    // Constant inner placements cancel in P(t) * inverse(P(0)). Preserve the
+    // complete outer suffix, including unwrapped angles and fixed outer frames.
+    pub(super) fn motion_key(&self) -> Vec<u64> {
+        let first = self
+            .steps
+            .iter()
+            .position(|step| {
+                step.angular_delta != 0.0 || step.translation_delta != Vec3::new(0.0, 0.0, 0.0)
+            })
+            .unwrap_or(self.steps.len());
+        let mut key = vec![u64::MAX];
+        for step in &self.steps[first..] {
+            let angle = step.start.rotation.map_or(0.0, |(_, _, angle)| angle);
+            key.extend(super::coherent::numbers([
+                step.start.translation.x,
+                step.start.translation.y,
+                step.start.translation.z,
+                step.translation_delta.x,
+                step.translation_delta.y,
+                step.translation_delta.z,
+                step.pivot.x,
+                step.pivot.y,
+                step.pivot.z,
+                step.axis.x,
+                step.axis.y,
+                step.axis.z,
+                angle,
+                step.angular_delta,
+            ]));
+        }
+        key
+    }
     fn new(start: &[Placement], end: &[Placement], bounds: Bounds) -> Result<Self, ModelError> {
         let steps = start
             .iter()

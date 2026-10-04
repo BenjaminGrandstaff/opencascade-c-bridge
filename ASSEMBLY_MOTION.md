@@ -310,6 +310,17 @@ with the existing enclosing sphere keeps the result at least as tight as the
 previous bounds. Rotation about a coordinate axis retains axial thickness,
 avoiding false dense candidates between separated thin plates.
 
+Bodies with exactly matching rigid motion paths share a motion group. Constant
+inner mount frames cancel from this comparison; outer placements and unwrapped
+angular travel remain part of it. Within a group, initial-position boxes reject
+pairs because actual relative separation is invariant. Separate BVH trees for
+groups and their members avoid enumerating overlapping swept boxes inside a
+large rigid carrier. Between groups, the swept-box checks remain active.
+A remaining pair within a group needs one initial exact query; its distance must
+still exceed the numeric guard to certify clearance. Contact, interference,
+insufficient clearance, and near-guard uncertainty retain their usual results.
+Equivalent paths expressed differently may conservatively remain separate.
+
 Adaptive subdivision also bounds each subinterval before its midpoint query.
 If an axis gap exceeds the separation threshold and numeric guards, it can skip
 the exact BREP query. `bounds_rejected_intervals` counts these narrow-phase

@@ -2,6 +2,7 @@
 use super::*;
 use crate::assembly::collisions::{Body, Node, inspect_pair};
 use occt_bridge::Bounds;
+mod coherent;
 mod rotations;
 use rotations::RigidPath;
 
@@ -109,6 +110,13 @@ struct Movement {
     rotation: Option<RigidPath>,
 }
 impl Movement {
+    fn key(&self) -> Vec<u64> {
+        self.rotation.as_ref().map_or_else(
+            || coherent::numbers([self.delta.x, self.delta.y, self.delta.z]),
+            RigidPath::motion_key,
+        )
+    }
+
     fn speed(&self) -> f64 {
         self.rotation
             .as_ref()
@@ -253,6 +261,15 @@ enum PairOutcome {
     Unresolved([f64; 2]),
 }
 impl PairPath<'_, '_> {
+    fn relative_speed(&self) -> f64 {
+        if self.first_motion.key() == self.second_motion.key() {
+            0.0
+        } else if self.first_motion.rotation.is_none() && self.second_motion.rotation.is_none() {
+            length(subtract(self.first_motion.delta, self.second_motion.delta))
+        } else {
+            self.first_motion.speed() + self.second_motion.speed()
+        }
+    }
     fn threshold(&self) -> f64 {
         self.checked.0.max(self.checked.1)
             + self.guard
@@ -324,12 +341,7 @@ impl PairPath<'_, '_> {
         queries: &mut usize,
         rejected: &mut usize,
     ) -> Result<PairOutcome, ModelError> {
-        let speed = if self.first_motion.rotation.is_none() && self.second_motion.rotation.is_none()
-        {
-            length(subtract(self.first_motion.delta, self.second_motion.delta))
-        } else {
-            self.first_motion.speed() + self.second_motion.speed()
-        };
+        let speed = self.relative_speed();
         if !speed.is_finite() {
             return Err(ModelError::new("continuous relative speed overflows"));
         }
@@ -528,8 +540,7 @@ impl SegmentCheck {
                 })
             })
             .collect::<Result<Vec<_>, ModelError>>()?;
-        let mut indices = (0..bodies.len()).collect::<Vec<_>>();
-        let tree = Node::build(&swept, &mut indices);
+        let index = coherent::Index::new(bodies, &swept, movements);
         let bound_magnitude = swept
             .iter()
             .map(|body| magnitude(body.bounds.min).max(magnitude(body.bounds.max)))
@@ -546,14 +557,9 @@ impl SegmentCheck {
             return Err(ModelError::new("continuous bounding margin overflows"));
         }
         let mut count = 0;
-        for (index, body) in swept.iter().enumerate() {
+        for first in 0..bodies.len() {
             let mut candidates = Vec::new();
-            tree.query(
-                body.bounds,
-                margin,
-                &|candidate| candidate > index,
-                &mut candidates,
-            );
+            index.query(first, bodies, &swept, margin, &mut candidates);
             candidates.sort_unstable();
             count += candidates.len();
             if count > options.maximum_candidate_pairs {
@@ -563,14 +569,14 @@ impl SegmentCheck {
             }
             result.candidate_pairs += candidates.len();
             for second in candidates {
-                let bound_magnitude = magnitude(bodies[index].bounds.min)
-                    .max(magnitude(bodies[index].bounds.max))
+                let bound_magnitude = magnitude(bodies[first].bounds.min)
+                    .max(magnitude(bodies[first].bounds.max))
                     .max(magnitude(bodies[second].bounds.min))
                     .max(magnitude(bodies[second].bounds.max));
                 let path = PairPath {
-                    first: &bodies[index],
+                    first: &bodies[first],
                     second: &bodies[second],
-                    first_motion: &movements[index],
+                    first_motion: &movements[first],
                     second_motion: &movements[second],
                     collision_options,
                     checked,
@@ -584,7 +590,7 @@ impl SegmentCheck {
                 )?;
                 result.record(
                     segment,
-                    bodies[index].reference,
+                    bodies[first].reference,
                     bodies[second].reference,
                     outcome,
                 );

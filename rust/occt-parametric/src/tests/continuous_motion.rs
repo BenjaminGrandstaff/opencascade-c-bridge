@@ -279,7 +279,8 @@ fn comoving_static_and_piecewise_motion_preserve_relative_geometry() {
         )
         .unwrap();
     assert_eq!(report.status, ContinuousStatus::Clear);
-    assert_eq!(report.exact_queries, 1);
+    assert_eq!(report.exact_queries, 0);
+    assert_eq!(report.candidate_pairs, 0);
     assert_eq!(report.generated_variants, 1);
     graph.set_instance_frame("obstacle", None).unwrap();
     graph
