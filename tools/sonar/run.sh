@@ -77,10 +77,20 @@ python3 "$root/tools/sonar/lcov_to_generic.py" \
 chmod -R a+rX "$root/build/coverage"
 cmake -S "$root" -B "$root/build" -DCMAKE_EXPORT_COMPILE_COMMANDS=ON >/dev/null
 
+# Git worktrees point .git at shared metadata outside the source tree. JGit
+# needs that directory at its original absolute path inside the scanner.
+scm_mount=()
+if [ -f "$root/.git" ]; then
+    git_common="$(git -C "$root" rev-parse --path-format=absolute --git-common-dir)"
+    scm_mount=(-v "$git_common:$git_common:ro,Z")
+fi
+
 podman run --rm --network host \
+    "${scm_mount[@]}" \
     -e SONAR_HOST_URL="$host" \
     -e SONAR_TOKEN="$SONAR_TOKEN" \
-    -v "$root:/usr/src:Z" \
+    -v "$root:$root:Z" \
+    -w "$root" \
     docker.io/sonarsource/sonar-scanner-cli:latest \
     -Dsonar.working.directory=/tmp/occb-scannerwork \
     -Dsonar.qualitygate.wait=true
@@ -108,6 +118,9 @@ measures = get(
     component=project,
     metricKeys="coverage,line_coverage,branch_coverage,lines_to_cover,uncovered_lines",
 )["component"].get("measures", [])
+if not any(item["metric"] == "lines_to_cover" and int(item.get("value", "0")) > 0
+           for item in measures):
+    raise SystemExit("SonarQube indexed no executable lines; a zero-file analysis is not a passing scan")
 issues = get("/api/issues/search", components=project, resolved="false", ps=1)["total"]
 print(f"Quality gate: {gate['status']}")
 print("Coverage: " + ", ".join(f"{item['metric']}={item.get('value', 'n/a')}" for item in measures))

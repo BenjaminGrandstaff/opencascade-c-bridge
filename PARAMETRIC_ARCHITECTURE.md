@@ -73,7 +73,14 @@ The following major capabilities remain planned:
 - broader hole-size catalogs (countersink relief, tolerance classes) and
   sheet metal beyond single constant-width strips;
 - advanced ribs;
-- closed-linkage solving and continuous collision detection beyond driven joints;
+- closed-linkage solving and rotating continuous collision detection beyond
+  the available translation-only interval checker;
+
+Continuous translation paths can be checked between motion samples using exact
+BREP distances and conservative relative-displacement bounds. Query limits and
+uncertain intervals report unresolved results rather than a clear path. Joint
+angles must remain constant. See [Assembly motion](ASSEMBLY_MOTION.md) for
+interpolation semantics, numeric guards, budgets, and limits.
 
 Tagged surface meshes, external tetrahedral hand-off, material-aware glTF, and
 sampled manufacturing checks are available in schema 44 with ABI 35. Mesh

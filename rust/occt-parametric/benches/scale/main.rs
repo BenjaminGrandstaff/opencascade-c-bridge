@@ -27,6 +27,7 @@ use std::collections::HashMap;
 use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
+mod continuous_motion;
 mod draft;
 mod drawing;
 mod graphs;
@@ -125,6 +126,7 @@ fn main() -> ExitCode {
     outcomes.push(variable_fillet::variable_fillet_features_case());
     outcomes.push(variable_fillet::station_fillet_features_case());
     outcomes.extend(motion::assembly_cases(definition));
+    outcomes.extend(continuous_motion::continuous_cases(definition));
     outcomes.push(drawing::drawing_case(definition));
     outcomes.push(drawing::assembly_drawing_case(definition));
     outcomes.push(mesh::gltf_case(definition));

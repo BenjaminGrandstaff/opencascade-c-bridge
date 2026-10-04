@@ -15,12 +15,12 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 4/4, bridge 76 (+1 doc test), recipes 3, parametric 217 + merge driver 3, mesh Python 4 | `ctest`, `cargo test` (see README) |
-| SonarQube (indexed Rust) | Gate OK, 0 issues, 92.3% line coverage (2026-10-03); Rust unit tests classified as tests | `tools/sonar/run.sh` |
+| Tests | C 4/4, bridge 76 (+1 doc test), recipes 3, parametric 223 + merge driver 3, mesh Python 4 | `ctest`, `cargo test` (see README) |
+| SonarQube (indexed Rust) | Gate OK, 0 issues, 92.5% line coverage (2026-10-03); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
-| Coverage | 92.63% lines overall, test code excluded; C++ 94.30% lines, 87.59% branches, 100% functions; Rust 91.81% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 57 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Coverage | 92.74% lines overall, test code excluded; C++ 94.30% lines, 87.67% branches, 100% functions; Rust 91.98% lines | `tools/coverage/run.sh` |
+| Scale benchmarks | 59 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
 
@@ -137,6 +137,18 @@ tracks status and order.
   error-bounded (Bezier, B-spline) extrema.
 
 ### Parametric layer
+
+- Continuous translation paths (no schema or ABI change): exact BREP distance
+  and a relative-motion bound check intervals between motion samples. Swept
+  bounds index candidate pairs; local variants generate once. Witnesses report
+  contact, interference, or insufficient clearance. Query/depth limits and
+  uncertain grazing intervals report Unresolved. Six tests cover thin obstacles
+  missed by sampled endpoints, independent analytic slab checks, nested rotated
+  frames, co-moving parts, limits, numeric guards, and bounded cleanup. Rotating
+  paths and first-time-of-contact computation remain open. The 10,000-body
+  moving assembly passes in 0.285 s (10 s budget); 1,000 independent crossing
+  checks pass in 11.808 s (30 s budget). See
+  [Assembly motion](ASSEMBLY_MOTION.md).
 
 - Sheet metal and expanded hole catalogs (schema 45): `SheetMetal` builds a
   constant-width strip of flanges joined by exact circular bends;
@@ -450,7 +462,8 @@ tracks status and order.
 ### Tooling
 
 - Containerized C/C++ lint and merged LLVM coverage for both languages.
-- Sonar generic-coverage conversion, containerized scanning, quality-gate
+- Sonar generic-coverage conversion, worktree-aware containerized scanning,
+  rejection of empty analyses, quality-gate
   enforcement, and issue-count enforcement. Community Build reports the Rust
   portion; C/C++ records remain in the report for servers with CFamily.
 - Argument-validation conformance test for every C entry point.
@@ -509,7 +522,8 @@ every item below is defined in documents and the API, and verified in tests.
 - Hole-catalog tolerance classes and optional under-head countersink relief.
 
 - Advanced ribs with general support-following and nonuniform closure.
-- Closed-linkage constraint solving and continuous collision detection.
+- Closed-linkage constraint solving and rotating continuous collision detection
+  beyond the translation-only path checker.
 - Assumptions and requirement-to-feature trace links in the document schema.
 - Semantic naming beyond feature outputs, and geometric tangency inference
   when continuity metadata is absent.

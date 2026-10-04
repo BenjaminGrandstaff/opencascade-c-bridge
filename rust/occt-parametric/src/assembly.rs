@@ -21,6 +21,7 @@ pub use mass_properties::{
 };
 use materials::*;
 pub use motion::{
+    ContinuousCollisionOptions, ContinuousMotionResult, ContinuousPairResult, ContinuousStatus,
     JointPosition, MAX_MOTION_SAMPLES, MotionResult, MotionSample, MotionSampleResult, MotionStudy,
 };
 

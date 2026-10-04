@@ -2,6 +2,9 @@
 
 use super::*;
 
+mod continuous;
+pub use continuous::*;
+
 pub const MAX_MOTION_SAMPLES: usize = 10_000;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -142,30 +145,7 @@ impl InstanceGraph<'_> {
         for (index, sample) in study.samples.iter().enumerate() {
             sample_graph(self, sample, index)?;
         }
-        let ids = study
-            .outputs
-            .iter()
-            .map(|output| output.instance.as_str())
-            .collect::<Vec<_>>();
-        let groups = self.group_by_parameters(&ids)?;
-        let mut locals = Vec::with_capacity(groups.len());
-        let mut bindings = Vec::with_capacity(ids.len());
-        for (group, members) in groups.iter().enumerate() {
-            let local = members[0].1.instance.regenerate(session)?;
-            for (id, resolved) in members {
-                bindings.push(Binding {
-                    instance: (*id).to_owned(),
-                    group,
-                    placement: resolved.placement,
-                    frame: self
-                        .nodes
-                        .get(*id)
-                        .and_then(|node| node.frame())
-                        .map(str::to_owned),
-                });
-            }
-            locals.push(local);
-        }
+        let (locals, bindings) = prepare_motion(session, self, &study.outputs)?;
         let mut samples = Vec::with_capacity(study.samples.len());
         for (index, sample) in study.samples.iter().enumerate() {
             let candidate = sample_graph(self, sample, index)?;
@@ -215,4 +195,35 @@ fn motion_generation<'session>(
         generation.results.insert(binding.instance.clone(), result);
     }
     Ok(generation)
+}
+
+fn prepare_motion<'session>(
+    session: &'session Session,
+    graph: &InstanceGraph<'_>,
+    outputs: &[InstanceOutputRef],
+) -> Result<(Vec<GeneratedResult<'session>>, Vec<Binding>), ModelError> {
+    let ids = outputs
+        .iter()
+        .map(|output| output.instance.as_str())
+        .collect::<Vec<_>>();
+    let groups = graph.group_by_parameters(&ids)?;
+    let mut locals = Vec::with_capacity(groups.len());
+    let mut bindings = Vec::with_capacity(ids.len());
+    for (group, members) in groups.iter().enumerate() {
+        let local = members[0].1.instance.regenerate(session)?;
+        for (id, resolved) in members {
+            bindings.push(Binding {
+                instance: (*id).to_owned(),
+                group,
+                placement: resolved.placement,
+                frame: graph
+                    .nodes
+                    .get(*id)
+                    .and_then(|node| node.frame())
+                    .map(str::to_owned),
+            });
+        }
+        locals.push(local);
+    }
+    Ok((locals, bindings))
 }

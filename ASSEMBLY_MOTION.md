@@ -91,3 +91,65 @@ geometry; mass properties and overlap require valid solid geometry.
 The scale suite checks 10,000 joint insertions and edits, 10,000 separated solid
 collision participants sharing one generation, and 1,000 slider samples crossing
 an obstacle with one generated variant and no leaked handles.
+
+## Continuous translation paths
+
+`InstanceGraph::check_translation_motion(session, study, options)` checks the
+paths between the samples of a `MotionStudy`. Joint translations interpolate
+linearly in normalized millimeters; every sample still applies to the original
+graph. Angular coordinates must stay constant across the entire study, even
+when a full turn would have identical endpoint poses. Prismatic motion,
+cylindrical axial motion at a fixed angle, planar translation at a fixed angle,
+and nested frames with fixed rotations are supported. Changing geometry,
+rotating paths, and solved closed linkages are outside this API.
+
+```rust
+let report = graph.check_translation_motion(
+    &session,
+    &study,
+    ContinuousCollisionOptions::default(),
+)?;
+assert_eq!(report.status, ContinuousStatus::Clear);
+assert_eq!(report.unresolved_pairs, 0);
+```
+
+A swept bounding-box BVH first rejects pairs whose paths stay separated. For a
+candidate pair, exact BREP distance at an interval midpoint supplies a lower
+separation bound throughout that interval:
+
+```text
+interval separation >= midpoint distance - relative translation * half interval
+```
+
+Intervals whose bound exceeds the required clearance/contact threshold and
+numeric guard are clear. Other intervals subdivide adaptively. The report
+contains only witnessed violations and unresolved pairs; a witnessed violation
+can be touching, interference, or insufficient clearance, using the existing
+`PairCheck` convention. `Collision` takes precedence in the aggregate status;
+`unresolved_pairs` must also be checked when completeness for other pairs matters.
+A witness fraction lies in [0, 1] within its zero-based segment. It is an observed
+violating position, **not** the first time of contact.
+
+The default extra distance guard is 1e-6 mm. Frame/world-coordinate roundoff
+adds a scale-dependent margin. Bounds use native floating-point BREP queries,
+not a formally certified error enclosure for OCCT. Caller-supplied guards should
+reflect the precision of the input geometry. Near-contact or grazing paths can
+remain unresolved without producing an observed violation.
+
+`ContinuousCollisionOptions` bounds exact queries globally (default 100,000),
+subdivision depth (32), and the smallest interval fraction (1e-8). Reaching these
+limits returns `Unresolved`, never a clear path. The separate candidate-pair
+budget (100,000 per segment) fails the query if exceeded. Invalid units,
+coordinates, limits, angular motion, outputs, and budgets reject the operation;
+no failure changes the graph or leaves temporary handles behind.
+
+Local parameter variants generate once for the entire study. Each interval
+query places two shared copies and releases them immediately. Swept BVH storage
+is O(selected bodies); subdivision storage is O(depth); reports store at most
+one nonclear record per candidate pair per segment. Sparse assemblies avoid
+O(n²) pair queries, while dense swept bounds can require that many candidates.
+The scale suite covers 10,000 translating bodies and 1,000 independently checked
+obstacle crossings. This distance-and-motion-bound approach is related to
+[controlled conservative advancement](https://gamma-web.iacs.umd.edu/papers/documents/articles/2009/tang09.pdf);
+this implementation uses adaptive interval subdivision for translation-only
+BREP motion.

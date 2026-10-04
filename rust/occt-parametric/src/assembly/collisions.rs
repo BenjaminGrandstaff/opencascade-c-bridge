@@ -31,7 +31,7 @@ impl CollisionOptions {
         self.checked().map(|_| ())
     }
 
-    fn checked(self) -> Result<(f64, f64), ModelError> {
+    pub(super) fn checked(self) -> Result<(f64, f64), ModelError> {
         let length = |quantity: Quantity| {
             if quantity.dimension != Dimension::Length {
                 return Err(ModelError::new(
@@ -78,15 +78,15 @@ pub struct PairCheck {
     pub status: PairStatus,
 }
 
-struct Body<'a, 'session> {
-    reference: &'a InstanceOutputRef,
-    shape: &'a Shape<'session>,
-    bounds: occt_bridge::Bounds,
-    volume: f64,
+pub(super) struct Body<'a, 'session> {
+    pub(super) reference: &'a InstanceOutputRef,
+    pub(super) shape: &'a Shape<'session>,
+    pub(super) bounds: occt_bridge::Bounds,
+    pub(super) volume: f64,
 }
 
 impl<'session> GraphRegeneration<'session> {
-    fn bodies<'a>(
+    pub(super) fn bodies<'a>(
         &'a self,
         session: &Session,
         outputs: &'a [InstanceOutputRef],
@@ -188,7 +188,7 @@ impl<'session> GraphRegeneration<'session> {
     }
 }
 
-fn inspect_pair(
+pub(super) fn inspect_pair(
     session: &Session,
     first: &Body<'_, '_>,
     second: &Body<'_, '_>,
@@ -224,7 +224,7 @@ fn inspect_pair(
     })
 }
 
-struct Node {
+pub(super) struct Node {
     bounds: occt_bridge::Bounds,
     kind: NodeKind,
 }
@@ -264,7 +264,7 @@ fn intersects(first: occt_bridge::Bounds, second: occt_bridge::Bounds, margin: f
 }
 
 impl Node {
-    fn build(bodies: &[Body<'_, '_>], indices: &mut [usize]) -> Self {
+    pub(super) fn build(bodies: &[Body<'_, '_>], indices: &mut [usize]) -> Self {
         let bounds = indices
             .iter()
             .map(|index| bodies[*index].bounds)
@@ -301,7 +301,7 @@ impl Node {
         }
     }
 
-    fn query(
+    pub(super) fn query(
         &self,
         bounds: occt_bridge::Bounds,
         margin: f64,

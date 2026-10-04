@@ -1,6 +1,7 @@
 use super::*;
 
 mod assembly_motion;
+mod continuous_motion;
 mod documents;
 mod draft;
 mod drawing;
