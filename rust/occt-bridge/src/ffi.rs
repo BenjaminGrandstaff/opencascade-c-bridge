@@ -2,7 +2,7 @@
 
 use super::*;
 
-pub(crate) const ABI_VERSION: u32 = 42;
+pub(crate) const ABI_VERSION: u32 = 43;
 
 #[repr(C)]
 pub(crate) struct RawMeshOptions {
@@ -85,6 +85,16 @@ pub(crate) struct RawFaceRadiusBounds {
 }
 
 #[repr(C)]
+#[derive(Clone, Copy)]
+pub(crate) struct RawFacePullRange {
+    pub(crate) minimum: f64,
+    pub(crate) maximum: f64,
+    pub(crate) minimum_point: RawVec3,
+    pub(crate) maximum_point: RawVec3,
+    pub(crate) exact: i32,
+}
+
+#[repr(C)]
 pub(crate) struct RawBounds {
     pub(crate) min: RawVec3,
     pub(crate) max: RawVec3,
@@ -146,6 +156,14 @@ unsafe extern "C" {
         shape: RawShapeId,
         samples_per_direction: u32,
         out: *mut RawFaceRadiusBounds,
+        capacity: usize,
+        count: *mut usize,
+    ) -> RawStatus;
+    pub(crate) fn occt_bridge_shape_face_pull_ranges(
+        session: *mut c_void,
+        shape: RawShapeId,
+        pull_direction: RawVec3,
+        out: *mut RawFacePullRange,
         capacity: usize,
         count: *mut usize,
     ) -> RawStatus;

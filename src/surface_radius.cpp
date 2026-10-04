@@ -31,15 +31,6 @@ namespace {
 constexpr double kInfinity = std::numeric_limits<double>::infinity();
 constexpr uint32_t kMaximumSamplesPerDirection = 1024;
 
-// Same traversal as occt_bridge_shape_subshapes, so indices correspond.
-TopTools_IndexedMapOfShape ordered(const TopoDS_Shape& shape, TopAbs_ShapeEnum type) {
-    TopTools_IndexedMapOfShape result;
-    for (TopExp_Explorer explorer(shape, type); explorer.More(); explorer.Next()) {
-        result.Add(explorer.Current());
-    }
-    return result;
-}
-
 occt_bridge_vec3_t vec3(const gp_Pnt& point) {
     return occt_bridge_vec3_t{point.X(), point.Y(), point.Z()};
 }
@@ -207,29 +198,6 @@ occt_bridge_edge_concavity_t concavity(const BRepOffset_Analyse& analysis, const
         return OCCT_BRIDGE_EDGE_CONCAVE;
     }
     return smooth ? OCCT_BRIDGE_EDGE_SMOOTH : OCCT_BRIDGE_EDGE_OTHER;
-}
-
-// Shared buffer protocol of the batch queries: a null buffer with capacity 0
-// reports the count; otherwise the buffer must fit every result and is
-// written only on success.
-template <typename Value>
-occt_bridge_status_t check_buffer(
-    occt_bridge_session_t* session,
-    const Value* buffer,
-    size_t capacity,
-    size_t count,
-    size_t* out_count,
-    bool& query_only) {
-    query_only = buffer == nullptr;
-    if (query_only) {
-        *out_count = count;
-        return succeed(session);
-    }
-    if (capacity < count) {
-        *out_count = count;
-        return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "output capacity is insufficient");
-    }
-    return OCCT_BRIDGE_OK;
 }
 
 }  // namespace

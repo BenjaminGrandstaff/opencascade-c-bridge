@@ -405,6 +405,14 @@ pub struct FaceRadiusBounds {
     pub samples: u32,
 }
 
+/// Exact range of a face's outward unit normal along a pull direction, with
+/// a point where each end is attained.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FacePullRange {
+    pub minimum: (f64, Vec3),
+    pub maximum: (f64, Vec3),
+}
+
 /// How the faces on either side of an edge meet.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EdgeConcavity {

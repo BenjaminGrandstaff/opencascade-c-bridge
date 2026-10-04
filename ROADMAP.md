@@ -8,19 +8,19 @@ tracks status and order.
 
 | Layer | Version | State |
 |---|---|---|
-| C ABI (`src/`, `include/`) | ABI 42 | Stable; exact version match required |
+| C ABI (`src/`, `include/`) | ABI 43 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
 | `occt-parametric` (engineering layer) | Schema 58 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 89 + first-use integration 1 (+1 doc test), recipes 3, parametric 317 + merge driver 3 + motion command 16 + balance command 4 + drawing command 2 + branch command 2, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 91 + first-use integration 1 (+1 doc test), recipes 3, parametric 318 + merge driver 3 + motion command 16 + balance command 4 + drawing command 2 + branch command 2, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.5% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
 | Coverage | 93.39% lines overall, test code excluded; C++ 94.17% lines, 87.51% branches, 100% functions; Rust 93.08% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 89 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Scale benchmarks | 90 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
 
@@ -151,6 +151,14 @@ tracks status and order.
   No ABI or model schema change. See [Motion-study command](tools/motion-study/README.md).
 
 ### Kernel (C ABI)
+
+- Exact pull ranges (ABI 43): `occt_bridge_shape_face_pull_ranges` reports
+  each face's range of outward normal along a pull direction, with the points
+  attaining it; exact on planes, cylinders, cones, and spheres or tori whose
+  extremes lie on the face, otherwise left unmeasured. C tests check a box and
+  argument errors; bridge tests check analytic values and witness points and
+  that every exact range brackets and is reached by a fine tessellation's
+  facets on fillets (tori), fused, drilled, and trimmed parts.
 
 - Same-domain merging (ABI 42): `occt_bridge_unify_same_domain` merges
   adjacent faces on the same surface and edges on the same curve within
@@ -322,6 +330,13 @@ tracks status and order.
   error-bounded (Bezier, B-spline) extrema.
 
 ### Parametric layer
+
+- Exact draft requirements: `DraftAngle` measures analytic faces exactly
+  from the BREP and screens only the remaining faces on the tessellation, with
+  `Exact` evidence when no face needed sampling. A post drafted 3 degrees
+  measures 3 degrees to 1e-9 with a witness on the cone; a smooth loft falls
+  back to sampling. Bounding all 410 faces of a 400-hole plate takes 0.011 s
+  (2 s budget, 0.638 s with the booleans building it).
 
 - `Unify` feature (schema 56): merges the faces a boolean left split, so fused
   shapes can be shelled and drafted. Two tests shell a fused stadium through
@@ -901,8 +916,8 @@ scopes and inspected repo capabilities, not a full conformity audit.
 - STEP sub-assemblies mirroring nested assembly frames, and per-face colors.
 - Complete linkage branch enumeration, broader connected assembly solving, and
   bounds that preserve motion correlations in dense or deeply nested mechanisms.
-- Undercut detection against a parting line, and exact (not sampled) minimum
-  wall thickness and draft on curved BREP faces.
+- Undercut detection against a parting line, exact (not sampled) minimum wall
+  thickness, and exact draft on freeform BREP faces.
 - Assumptions and requirement-to-feature trace links in the document schema.
 - Additional domain-specific expression functions.
 - Integration with the broader EIL source model in the sibling

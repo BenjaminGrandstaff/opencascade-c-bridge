@@ -105,3 +105,39 @@ pub(crate) fn unify_case() -> Outcome {
         },
     )
 }
+
+/// Exact pull ranges for every face of the 400-hole stadium plate: planes,
+/// the round end, and 400 bores, all analytic.
+pub(crate) fn pull_ranges_case() -> Outcome {
+    timed(
+        format!("exact pull ranges: {MANY_HOLES}-hole stadium plate"),
+        ms(2_000),
+        Expectation::Required,
+        || {
+            let session = Session::new()?;
+            let plate = stadium_plate(&session)?;
+            let start = Instant::now();
+            let ranges = session.face_pull_ranges(&plate, Vec3::new(0.0, 0.0, 1.0))?;
+            let elapsed = start.elapsed();
+            let exact = ranges.iter().flatten().count();
+            // Bores and flat sides run along the pull; the round end too.
+            let vertical = ranges
+                .iter()
+                .flatten()
+                .filter(|range| range.minimum.0.abs() < 1e-12 && range.maximum.0.abs() < 1e-12)
+                .count();
+            if exact != ranges.len() || vertical != MANY_HOLES + 4 {
+                return Err(failure(format!(
+                    "{exact} of {} faces exact, {vertical} vertical; expected all and {}",
+                    ranges.len(),
+                    MANY_HOLES + 4
+                )));
+            }
+            Ok(format!(
+                "{} faces bounded exactly in {:.3} s",
+                ranges.len(),
+                elapsed.as_secs_f64()
+            ))
+        },
+    )
+}

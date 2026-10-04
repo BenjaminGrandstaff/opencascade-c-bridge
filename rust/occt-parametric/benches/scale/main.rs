@@ -130,6 +130,7 @@ fn main() -> ExitCode {
     outcomes.push(persistent::named_reference_case());
     outcomes.push(tangency::measured_tangency_case());
     outcomes.push(tangency::unify_case());
+    outcomes.push(tangency::pull_ranges_case());
     outcomes.push(profile_sweep_case(false));
     outcomes.push(profile_sweep_case(true));
     outcomes.push(hole_features_case());

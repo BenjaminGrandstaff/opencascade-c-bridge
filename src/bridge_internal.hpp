@@ -12,6 +12,8 @@
 #include <BRepTools_History.hxx>
 #include <Standard_Failure.hxx>
 #include <TopAbs_ShapeEnum.hxx>
+#include <TopExp_Explorer.hxx>
+#include <TopTools_IndexedMapOfShape.hxx>
 #include <TopTools_ListIteratorOfListOfShape.hxx>
 #include <TopTools_ListOfShape.hxx>
 #include <TopoDS_Shape.hxx>
@@ -292,6 +294,39 @@ occt_bridge_status_t store_checked_result(
         return status;
     }
     return store_shape_with_entries(session, shape, out_shape, std::move(history));
+}
+
+/* Unique subshapes of `type` in occt_bridge_shape_subshapes order, so batch
+ * query indices correspond. */
+inline TopTools_IndexedMapOfShape ordered(const TopoDS_Shape& shape, TopAbs_ShapeEnum type) {
+    TopTools_IndexedMapOfShape result;
+    for (TopExp_Explorer explorer(shape, type); explorer.More(); explorer.Next()) {
+        result.Add(explorer.Current());
+    }
+    return result;
+}
+
+// Shared buffer protocol of the batch queries: a null buffer with capacity 0
+// reports the count; otherwise the buffer must fit every result and is
+// written only on success.
+template <typename Value>
+inline occt_bridge_status_t check_buffer(
+    occt_bridge_session_t* session,
+    const Value* buffer,
+    size_t capacity,
+    size_t count,
+    size_t* out_count,
+    bool& query_only) {
+    query_only = buffer == nullptr;
+    if (query_only) {
+        *out_count = count;
+        return succeed(session);
+    }
+    if (capacity < count) {
+        *out_count = count;
+        return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "output capacity is insufficient");
+    }
+    return OCCT_BRIDGE_OK;
 }
 
 } // namespace occt_bridge_internal

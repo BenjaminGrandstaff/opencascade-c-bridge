@@ -32,7 +32,7 @@ Rust layers:
    length units; versioned families; persistent instance identity; sparse
    instance overrides; dependency-ordered feature execution; named results;
    requirement priorities and provenance; validity, volume, connectivity,
-   minimum radius, sampled wall thickness, draft, and overhang, mass, datum
+   minimum radius, sampled wall thickness and overhang, exact-where-analytic draft, mass, datum
    clearance, relationship-satisfaction, no-interference, and minimum-clearance
    verification with measured values, evidence quality, and witnesses;
    clone inheritance with cycle detection and explicit detachment; accepted
@@ -1097,6 +1097,20 @@ costs O(edges of both faces) plus one sampled check per unrecorded shared
 edge; all 410 faces of a 400-hole stadium plate are checked against its top
 in 0.016 s. OCCT's offset and draft fail on such fused shapes until their
 split faces are merged; see `Unify` below.
+
+ABI 43 adds `occt_bridge_shape_face_pull_ranges`: per face, the range of the
+outward unit normal's component along a pull direction (the sine of signed
+draft) and where each end is attained. Planes are constant. Cylinder and cone
+normals turn with u alone, as a cos u + b sin u + c, and a connected face
+covers its whole u range, so extremes over the face's UV bounds are exact.
+Sphere and torus normals are cos v (radial in u) + sin v (axis); extremes over
+the UV bounds have a closed form and are reported only when both lie on the
+face. The trigonometric coefficients are fitted from evaluated normals, which
+absorbs orientation and frame-handedness conventions, and checked at further
+points; a mismatch leaves the face unmeasured. `DraftAngle` uses these exact
+values and tessellates only when some face is unmeasured, screening those
+faces' facets. The 410 faces of a 400-hole stadium plate are bounded in
+0.011 s.
 
 Schema 56 adds `FeatureOperation::Unify { input, linear_tolerance,
 angular_tolerance }`, backed by ABI 42's `occt_bridge_unify_same_domain`

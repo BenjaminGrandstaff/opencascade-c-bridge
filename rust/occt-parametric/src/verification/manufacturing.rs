@@ -1,10 +1,11 @@
-//! Sampled manufacturing requirements on the output's tessellation: wall
-//! thickness, draft, and overhang. Facet normals and centroid rays stand in
-//! for exact BREP geometry, so every result carries `Sampled` evidence.
+//! Manufacturing requirements: wall thickness, draft, and overhang. Draft is
+//! exact on faces the kernel bounds in closed form (planes, cylinders,
+//! cones, and most spheres and tori); other faces, walls, and overhang are
+//! screened on the output's tessellation and carry `Sampled` evidence.
 
 use super::*;
 use crate::assembly::{add, cross, dot, length, scale, subtract};
-use occt_bridge::MeshTriangle;
+use occt_bridge::{FacePullRange, MeshTriangle};
 use std::collections::BTreeMap;
 
 pub(crate) enum Screen {
@@ -54,16 +55,16 @@ pub(crate) fn screen(
     mesh: MeshSettings,
     rule: Screen,
 ) -> Result<VerificationResult, ModelError> {
-    let triangles = session.surface_mesh(shape, mesh.options()?)?;
-    if triangles.is_empty() {
-        return Err(ModelError::new("output has no surface to screen"));
-    }
     if let Screen::Draft {
         pull_direction,
         minimum_radians,
     } = rule
     {
-        return draft(id, &triangles, pull_direction, minimum_radians);
+        return draft(session, id, shape, mesh, pull_direction, minimum_radians);
+    }
+    let triangles = session.surface_mesh(shape, mesh.options()?)?;
+    if triangles.is_empty() {
+        return Err(ModelError::new("output has no surface to screen"));
     }
     let surface = TaggedSurfaceMesh {
         id: String::new(),
@@ -175,9 +176,82 @@ pub(crate) fn screen(
 /// either way release from one mold half or the other, so the sign does not
 /// matter, and facets normal to the pull (caps) are skipped. This does not
 /// detect undercuts, which depend on the parting line.
-fn draft(
-    id: &str,
+/// Least draft of one face and where it occurs.
+struct FaceDraft {
+    angle: f64,
+    points: Vec<Vec3>,
+}
+
+/// Projections at least this close to +-1 are pull-facing caps, not walls.
+const CAP: f64 = 1.0 - 1e-8;
+
+/// Exact least draft of a face from its pull range, or `None` for a cap.
+/// A range crossing zero has a vertical line somewhere between its ends.
+fn exact_draft(range: &FacePullRange) -> Option<FaceDraft> {
+    let ((low, low_at), (high, high_at)) = (range.minimum, range.maximum);
+    if low >= CAP || high <= -CAP {
+        return None;
+    }
+    Some(if low <= 0.0 && high >= 0.0 {
+        FaceDraft {
+            angle: 0.0,
+            points: if low == high {
+                vec![low_at]
+            } else {
+                vec![low_at, high_at]
+            },
+        }
+    } else if low > 0.0 {
+        FaceDraft {
+            angle: low.asin(),
+            points: vec![low_at],
+        }
+    } else {
+        FaceDraft {
+            angle: (-high).asin(),
+            points: vec![high_at],
+        }
+    })
+}
+
+/// Least facet draft of each listed face; facets nearly normal to the pull
+/// are caps and skipped.
+fn sampled_drafts(
     triangles: &[MeshTriangle],
+    pull: Vec3,
+    faces: &BTreeMap<usize, ()>,
+) -> BTreeMap<usize, FaceDraft> {
+    let mut drafts: BTreeMap<usize, FaceDraft> = BTreeMap::new();
+    for triangle in triangles {
+        if !faces.contains_key(&triangle.face_index) {
+            continue;
+        }
+        let projection = dot(unit_normal(triangle), pull).clamp(-1.0, 1.0);
+        if !projection.is_finite() || projection.abs() >= CAP {
+            continue;
+        }
+        let angle = projection.asin().abs();
+        let least = drafts.entry(triangle.face_index).or_insert(FaceDraft {
+            angle: f64::INFINITY,
+            points: Vec::new(),
+        });
+        if angle < least.angle {
+            *least = FaceDraft {
+                angle,
+                points: vec![centroid(triangle)],
+            };
+        }
+    }
+    drafts
+}
+
+/// Exact pull ranges per face, plus one tessellation within `mesh` only when
+/// some face has no exact range. O(faces + fallback triangles).
+fn draft(
+    session: &Session,
+    id: &str,
+    shape: &Shape<'_>,
+    mesh: MeshSettings,
     pull_direction: VectorQuantity,
     minimum_radians: f64,
 ) -> Result<VerificationResult, ModelError> {
@@ -194,41 +268,62 @@ fn draft(
         return Err(ModelError::new("pull direction must be finite and nonzero"));
     }
     let pull = scale(pull, 1.0 / magnitude);
-    // Smallest draft magnitude per face, and the facet where it occurs.
-    let mut faces: BTreeMap<usize, (f64, usize)> = BTreeMap::new();
-    for (index, triangle) in triangles.iter().enumerate() {
-        let projection = dot(unit_normal(triangle), pull).clamp(-1.0, 1.0);
-        if !projection.is_finite() || projection.abs() >= 1.0 - 1e-8 {
-            continue;
+    let ranges = session.face_pull_ranges(shape, pull)?;
+    if ranges.is_empty() {
+        return Err(ModelError::new("output has no surface to screen"));
+    }
+    let mut faces = BTreeMap::new();
+    let mut unmeasured = BTreeMap::new();
+    for (face, range) in ranges.iter().enumerate() {
+        match range {
+            Some(range) => {
+                if let Some(draft) = exact_draft(range) {
+                    faces.insert(face, draft);
+                }
+            }
+            None => {
+                unmeasured.insert(face, ());
+            }
         }
-        let angle = projection.asin().abs();
-        let entry = faces.entry(triangle.face_index).or_insert((angle, index));
-        if angle < entry.0 {
-            *entry = (angle, index);
-        }
+    }
+    let mut evidence = Evidence::Exact;
+    if !unmeasured.is_empty() {
+        let triangles = session.surface_mesh(shape, mesh.options()?)?;
+        let samples = triangles
+            .iter()
+            .filter(|triangle| unmeasured.contains_key(&triangle.face_index))
+            .count();
+        faces.extend(sampled_drafts(&triangles, pull, &unmeasured));
+        evidence = Evidence::Sampled {
+            samples,
+            unresolved: 0,
+        };
     }
     let shallow = faces
         .values()
-        .filter(|(angle, _)| *angle < minimum_radians)
+        .filter(|draft| draft.angle < minimum_radians)
         .count();
-    let least = faces
-        .iter()
-        .min_by(|a, b| a.1.0.total_cmp(&b.1.0))
-        .map(|(face, (angle, index))| (*face, *angle, *index));
+    let least = faces.iter().min_by(|a, b| a.1.angle.total_cmp(&b.1.angle));
+    let sampled_note = if unmeasured.is_empty() {
+        String::new()
+    } else {
+        format!("; {} face(s) sampled on the tessellation", unmeasured.len())
+    };
     let mut result = match least {
         None => VerificationResult::exact(id, true, "no face runs along the pull direction".into()),
-        Some((face, angle, index)) => {
+        Some((face, least)) => {
             let result = VerificationResult::exact(
                 id,
                 shallow == 0,
                 format!(
-                    "{shallow} of {} face(s) below {minimum_radians} rad; least draft {angle} \
-                     rad on face {face}",
-                    faces.len()
+                    "{shallow} of {} face(s) below {minimum_radians} rad; least draft {} \
+                     rad on face {face}{sampled_note}",
+                    faces.len(),
+                    least.angle
                 ),
             )
             .measured(Measurement {
-                value: angle,
+                value: least.angle,
                 unit: MeasurementUnit::Radian,
                 minimum: Some(minimum_radians),
                 maximum: None,
@@ -236,14 +331,13 @@ fn draft(
             if shallow == 0 {
                 result
             } else {
-                let triangle = &triangles[index];
-                result.witnessed(face_witness(triangle, vec![centroid(triangle)]))
+                result.witnessed(Witness {
+                    subjects: vec![format!("face {face}")],
+                    points_mm: least.points.clone(),
+                })
             }
         }
     };
-    result.evidence = Evidence::Sampled {
-        samples: triangles.len(),
-        unresolved: 0,
-    };
+    result.evidence = evidence;
     Ok(result)
 }

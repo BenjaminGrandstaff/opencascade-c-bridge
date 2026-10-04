@@ -238,6 +238,61 @@ impl Session {
             .collect())
     }
 
+    /// Range of each unique face's outward unit normal along
+    /// `pull_direction` (the sine of its signed draft), in
+    /// [`Self::subshapes`] order. `None` for faces it cannot bound exactly:
+    /// freeform surfaces, and spheres or tori trimmed away from their
+    /// extremes. No handles are created.
+    pub fn face_pull_ranges(
+        &self,
+        shape: &Shape<'_>,
+        pull_direction: Vec3,
+    ) -> Result<Vec<Option<FacePullRange>>, BridgeError> {
+        self.validate_shape(shape)?;
+        let mut count = 0;
+        // SAFETY: A null buffer with zero capacity queries the count.
+        self.check(unsafe {
+            occt_bridge_shape_face_pull_ranges(
+                self.raw.as_ptr(),
+                shape.id,
+                pull_direction.into(),
+                std::ptr::null_mut(),
+                0,
+                &mut count,
+            )
+        })?;
+        let origin: RawVec3 = Vec3::new(0.0, 0.0, 0.0).into();
+        let empty = RawFacePullRange {
+            minimum: 0.0,
+            maximum: 0.0,
+            minimum_point: origin,
+            maximum_point: origin,
+            exact: 0,
+        };
+        let mut raw = vec![empty; count];
+        // SAFETY: The buffer holds `count` writable entries.
+        self.check(unsafe {
+            occt_bridge_shape_face_pull_ranges(
+                self.raw.as_ptr(),
+                shape.id,
+                pull_direction.into(),
+                raw.as_mut_ptr(),
+                raw.len(),
+                &mut count,
+            )
+        })?;
+        raw.truncate(count);
+        Ok(raw
+            .into_iter()
+            .map(|range| {
+                (range.exact != 0).then(|| FacePullRange {
+                    minimum: (range.minimum, range.minimum_point.into()),
+                    maximum: (range.maximum, range.maximum_point.into()),
+                })
+            })
+            .collect())
+    }
+
     /// Concavity of every unique edge, in [`Self::subshapes`] order, by OCCT's
     /// offset analysis. Faces meeting within `tangency_radians`, in (0, pi/2),
     /// are smooth.

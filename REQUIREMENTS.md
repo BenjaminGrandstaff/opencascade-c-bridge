@@ -22,7 +22,7 @@ samples do not evaluate them.
 | `MinimumRadius { output, minimum, side, sharp_edges, samples_per_direction }` (schema 47) | Every face radius on `side` is at least `minimum`. | Exact on planes, cylinders, cones, spheres, and tori; sampled on other surfaces |
 | `FitsWithin { output, envelope }` (schema 50) | The output's bounding box fits the length-valued envelope, such as a print bed, in some axis-aligned orientation. | Exact |
 | `MinimumWall { output, minimum, mesh, maximum_samples }` (schema 48) | No inward ray from a sampled facet crosses less than `minimum` of material. | Sampled |
-| `DraftAngle { output, pull_direction, minimum_radians, mesh }` (schema 48) | No face runs closer than `minimum_radians` to parallel with the pull. | Sampled |
+| `DraftAngle { output, pull_direction, minimum_radians, mesh }` (schema 48) | No face runs closer than `minimum_radians` to parallel with the pull. | Exact on analytic faces; freeform faces sampled |
 | `Overhang { output, build_direction, maximum_radians, mesh }` (schema 48) | No downward facet above the build plate leans more than `maximum_radians` from vertical. | Sampled |
 
 Connectivity catches booleans that leave disjoint pieces, sewing that never
@@ -88,8 +88,14 @@ facet normals approximate curved surfaces to within the mesh deflection.
   regions between samples can be missed. The witness gives the ray's entry and
   exit points. Samples whose ray finds no exit are counted as `unresolved`, and
   a screen where no ray finds an exit is an error rather than a pass.
-- **`DraftAngle`** measures each face's smallest facet draft magnitude: the
-  angle between the facet and the pull direction, whichever way it leans. Faces
+- **`DraftAngle`** measures each face's smallest draft magnitude: the angle
+  between the surface and the pull direction, whichever way it leans. Planes,
+  cylinders, cones, and spheres or tori whose extremes lie on the face are
+  measured exactly from the BREP (ABI 43's per-face pull ranges); the result is
+  `Exact` when every face is. Other faces (B-splines, lofts, and spheres or tori
+  trimmed away from their extremes) use their smallest facet draft on the
+  tessellation within `mesh`, and the result is `Sampled`, counting those
+  faces' facets. Faces
   closer to parallel with the pull than `minimum_radians`, in [0, pi/2), "require
   draft". Facets normal to the pull (caps) are skipped, and faces leaning either
   way pass because they release from one mold half or the other. This is the

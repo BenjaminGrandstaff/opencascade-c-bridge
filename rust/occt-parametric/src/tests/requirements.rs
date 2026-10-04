@@ -807,7 +807,7 @@ fn overhang(output: &str, maximum_radians: f64) -> VerificationRule {
 }
 
 #[test]
-fn manufacturing_rules_screen_walls_draft_and_overhang_with_sampled_evidence() {
+fn manufacturing_rules_screen_walls_draft_and_overhang() {
     let family = manufacturing_family();
     let degree = 1f64.to_radians();
     let results = verify(
@@ -836,11 +836,16 @@ fn manufacturing_rules_screen_walls_draft_and_overhang_with_sampled_evidence() {
             get(id).message
         );
     }
+    // Draft on these planar parts is exact; walls and overhang are sampled.
     for result in &results {
-        assert!(
-            matches!(result.evidence, Evidence::Sampled { .. }),
-            "{result:?}"
-        );
+        if result.requirement_id.contains("overhang") || result.requirement_id.starts_with("cup") {
+            assert!(
+                matches!(result.evidence, Evidence::Sampled { .. }),
+                "{result:?}"
+            );
+        } else {
+            assert_eq!(result.evidence, Evidence::Exact, "{result:?}");
+        }
     }
 
     // Rays from the outer walls cross 2 mm of material.
@@ -1015,4 +1020,124 @@ fn fits_within_compares_exact_extents_in_any_axis_aligned_orientation() {
         "{}",
         error.message
     );
+}
+
+/// `tapered`: a radius-5, 10 mm post drafted 3 degrees about its base, so its
+/// side is a cone. `horn`: a smooth loft from radius 5 to 3 over 30 mm along
+/// y, a freeform surface.
+fn curved_draft_family() -> FamilyDefinition {
+    let mut family = topology_family();
+    let section = |y: f64, radius: f64| LoftSection {
+        profile: (0..24)
+            .map(|index| {
+                let angle = std::f64::consts::TAU * index as f64 / 24.0;
+                [angle.cos(), angle.sin()]
+            })
+            .collect(),
+        origin: point(0.0, y, 0.0),
+        x_axis: VectorExpr::Literal(VectorQuantity::scalars(1.0, 0.0, 0.0)),
+        y_axis: VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, 1.0)),
+        scale: ScalarExpr::Literal(Quantity::length(radius, LengthUnit::Millimeter)),
+        rotation_radians: None,
+        pivot: [0.0, 0.0],
+    };
+    family.features = vec![
+        FeatureDefinition {
+            id: "post".into(),
+            operation: FeatureOperation::Cylinder {
+                origin: point(0.0, 0.0, 0.0),
+                axis: VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, 1.0)),
+                radius: ScalarExpr::Literal(mm(5.0)),
+                height: ScalarExpr::Literal(mm(10.0)),
+            },
+        },
+        FeatureDefinition {
+            id: "tapered".into(),
+            operation: FeatureOperation::Draft {
+                input: "post".into(),
+                faces: vec![FaceSelector::LargestArea {
+                    planar_only: false,
+                    allow_ties: false,
+                    relative_tolerance: ScalarExpr::Literal(Quantity::scalar(1e-6)),
+                }],
+                neutral_origin: point(0.0, 0.0, 0.0),
+                neutral_normal: VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, 1.0)),
+                pull_direction: VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, 1.0)),
+                angle_radians: ScalarExpr::Literal(Quantity::scalar(3f64.to_radians())),
+            },
+        },
+        FeatureDefinition {
+            id: "horn".into(),
+            operation: FeatureOperation::Loft {
+                sections: vec![section(0.0, 5.0), section(30.0, 3.0)],
+                smooth: true,
+                ruled: true,
+            },
+        },
+    ];
+    family
+}
+
+#[test]
+fn draft_is_exact_on_analytic_faces_and_sampled_on_freeform_ones() {
+    let family = curved_draft_family();
+    let degrees = |value: f64| value.to_radians();
+    let along_y = |minimum_radians| VerificationRule::DraftAngle {
+        output: "horn".into(),
+        pull_direction: VectorQuantity::scalars(0.0, 1.0, 0.0),
+        minimum_radians,
+        mesh: MeshSettings::default(),
+    };
+    let results = verify(
+        &family,
+        vec![
+            ("cone.under", draft("tapered", degrees(2.999))),
+            ("cone.over", draft("tapered", degrees(3.001))),
+            ("horn.under", along_y(degrees(3.0))),
+            ("horn.over", along_y(degrees(4.5))),
+        ],
+    )
+    .unwrap();
+    let get = |id: &str| find(&results, id);
+
+    // The drafted side is a cone measured exactly: 3 degrees, not a facet
+    // approximation of it.
+    let under = get("cone.under");
+    assert_eq!(
+        under.status,
+        VerificationStatus::Passed,
+        "{}",
+        under.message
+    );
+    assert_eq!(under.evidence, Evidence::Exact);
+    let measured = under.measured.unwrap().value;
+    assert!((measured - degrees(3.0)).abs() < 1e-9, "{measured}");
+    let over = get("cone.over");
+    assert_eq!(over.status, VerificationStatus::Failed);
+    assert_eq!(over.evidence, Evidence::Exact);
+    let witness = over.witness.as_ref().unwrap();
+    // The witness lies on the cone: radius 5 at the base, shrinking with z.
+    let point = witness.points_mm[0];
+    let radius = point.x.hypot(point.y);
+    let expected = 5.0 - point.z * degrees(3.0).tan();
+    assert!((radius - expected).abs() < 1e-6, "{point:?}");
+
+    // The loft's freeform side tapers by atan(2 / 30), about 3.8 degrees,
+    // screened on the tessellation.
+    for id in ["horn.under", "horn.over"] {
+        let result = get(id);
+        assert!(
+            matches!(result.evidence, Evidence::Sampled { samples, .. } if samples > 0),
+            "{result:?}"
+        );
+        assert!(
+            result.message.contains("sampled on the tessellation"),
+            "{}",
+            result.message
+        );
+    }
+    assert_eq!(get("horn.under").status, VerificationStatus::Passed);
+    assert_eq!(get("horn.over").status, VerificationStatus::Failed);
+    let taper = get("horn.under").measured.unwrap().value;
+    assert!((taper - (2.0f64 / 30.0).atan()).abs() < 0.01, "{taper}");
 }

@@ -859,6 +859,31 @@ static void measurements(occt_bridge_session_t* session) {
     EXPECT(occt_bridge_shape_face_radius_bounds(session,body,8,bounds,6,&count),OK);
     EXPECT_TRUE(isinf(bounds[0].convex_radius) && isinf(bounds[0].concave_radius)
         && bounds[0].exact == 1 && bounds[0].samples == 0, "planar faces are exact and flat");
+    occt_bridge_face_pull_range_t pulls[6];
+    const occt_bridge_vec3_t up = {0, 0, 2};
+    EXPECT(occt_bridge_shape_face_pull_ranges(NULL,body,up,pulls,6,&count),ARG);
+    EXPECT(occt_bridge_shape_face_pull_ranges(session,body,up,pulls,6,NULL),ARG);
+    EXPECT(occt_bridge_shape_face_pull_ranges(session,body,up,NULL,6,&count),ARG);
+    EXPECT(occt_bridge_shape_face_pull_ranges(session,body,(occt_bridge_vec3_t){0,0,0},pulls,6,&count),ARG);
+    EXPECT(occt_bridge_shape_face_pull_ranges(session,body,(occt_bridge_vec3_t){NAN,0,1},pulls,6,&count),ARG);
+    EXPECT(occt_bridge_shape_face_pull_ranges(session,unknown,up,pulls,6,&count),MISSING);
+    EXPECT(occt_bridge_shape_face_pull_ranges(session,body,up,pulls,5,&count),ARG);
+    EXPECT_TRUE(count == 6, "insufficient capacity reports the face count");
+    count = 0;
+    EXPECT(occt_bridge_shape_face_pull_ranges(session,body,up,NULL,0,&count),OK);
+    EXPECT_TRUE(count == 6, "a null buffer queries the face count");
+    EXPECT(occt_bridge_shape_face_pull_ranges(session,body,up,pulls,6,&count),OK);
+    {
+        int sides = 0;
+        int caps = 0;
+        for (size_t index = 0; index < 6; ++index) {
+            EXPECT_TRUE(pulls[index].exact == 1 && pulls[index].minimum == pulls[index].maximum,
+                "box faces have exact constant pull projections");
+            sides += fabs(pulls[index].minimum) < 1e-12 ? 1 : 0;
+            caps += fabs(fabs(pulls[index].minimum) - 1.0) < 1e-12 ? 1 : 0;
+        }
+        EXPECT_TRUE(sides == 4 && caps == 2, "a box has four sides along the pull and two caps");
+    }
     EXPECT(occt_bridge_shape_edge_concavities(NULL,body,1e-6,concavities,12,&count),ARG);
     EXPECT(occt_bridge_shape_edge_concavities(session,body,1e-6,concavities,12,NULL),ARG);
     EXPECT(occt_bridge_shape_edge_concavities(session,body,1e-6,NULL,12,&count),ARG);

@@ -3,7 +3,7 @@
 A small, stable C ABI over Open Cascade (OCCT), designed to be wrapped safely
 from Rust and other languages. Open Cascade C++ objects never cross the ABI.
 
-The current C ABI version is **42**.
+The current C ABI version is **43**.
 
 ## Current API
 
@@ -292,7 +292,8 @@ geometry and checking sampled collisions.
 
 `InstanceGraph::export_draw_view` writes a model's exact B-rep parts and a script that
 opens them, named and colored, in OCCT's DRAW viewer (`DRAWEXE -i -f view.tcl`).
-ABI 42 merges the same-domain faces and edges booleans leave split, with
+ABI 43 adds exact per-face pull ranges, so `DraftAngle` requirements are exact
+on analytic faces. ABI 42 merges the same-domain faces and edges booleans leave split, with
 history, and schema 56 adds the `Unify` feature. ABI 41 measures face tangency where booleans record no continuity, and schema 55
 lets `TangentTo` face selectors use it. ABI 40 adds structured STEP assembly export (named components, shared parts,
 and colors) used by `InstanceGraph::export_step`. ABI 39 adds profile sweeps along paths, and schema 52 the `Sweep` feature.
@@ -301,7 +302,7 @@ tangents, and schema 51 adds spline sketch entities. ABI 37 adds spline-section 
 faces, and schema 49 adds parameter-placed `Loft` features. ABI 36 adds signed per-face radius bounds and per-edge concavity for
 minimum-radius requirements. ABI 35 adds bounded surface tessellation and
 indexed topology matching. Schema 44
-adds tagged FEA hand-off, material-aware glTF scenes, and sampled wall, draft,
+adds tagged FEA hand-off, material-aware glTF scenes, and wall, draft,
 and printing-overhang checks. See [Mesh hand-off](MESH_HANDOFF.md) for APIs,
 units, external tetrahedral meshing, and screening limits. Schema 45 adds
 folded sheet-metal strips with exact circular bends and linked flat patterns

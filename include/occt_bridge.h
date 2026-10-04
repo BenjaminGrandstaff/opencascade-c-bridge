@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define OCCT_BRIDGE_ABI_VERSION 42u
+#define OCCT_BRIDGE_ABI_VERSION 43u
 #define OCCT_BRIDGE_INVALID_SHAPE_ID UINT64_C(0)
 
 #if defined(_WIN32) && defined(OCCT_BRIDGE_BUILD_SHARED)
@@ -1171,6 +1171,32 @@ OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_shape_face_radius_bounds(
     occt_bridge_shape_id_t shape,
     uint32_t samples_per_direction,
     occt_bridge_face_radius_bounds_t* out_bounds,
+    size_t capacity,
+    size_t* out_count
+);
+
+/* Range of one face's outward unit normal component along a pull direction
+ * (the sine of its signed draft angle), and where each end is attained. */
+typedef struct occt_bridge_face_pull_range {
+    double minimum;
+    double maximum;
+    occt_bridge_vec3_t minimum_point;
+    occt_bridge_vec3_t maximum_point;
+    int32_t exact; /* 1 when the range is exact; 0 leaves the face unmeasured. */
+} occt_bridge_face_pull_range_t;
+
+/* One entry per unique face, in occt_bridge_shape_subshapes order. Exact on
+ * planes, cylinders, and cones (over the face's UV bounds, which a connected
+ * face's normal fully sweeps), and on spheres and tori when both extremes
+ * over the UV bounds lie on the face. Other faces, and spheres or tori
+ * trimmed away from their extremes, report exact = 0 and should be measured
+ * otherwise (for example on a tessellation). pull_direction need not be unit.
+ * Buffer protocol as occt_bridge_shape_subshapes; no handles are created. */
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_shape_face_pull_ranges(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t shape,
+    occt_bridge_vec3_t pull_direction,
+    occt_bridge_face_pull_range_t* out_ranges,
     size_t capacity,
     size_t* out_count
 );

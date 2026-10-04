@@ -28,6 +28,7 @@ add_library(
     src/inspection.cpp
     src/measurements.cpp
     src/surface_radius.cpp
+    src/face_pull.cpp
     src/sweep.cpp
     src/step_assembly.cpp
     src/projection.cpp
