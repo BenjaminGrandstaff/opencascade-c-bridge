@@ -4,7 +4,7 @@ fn point(x: f64, y: f64, z: f64) -> VectorExpr {
     VectorExpr::Literal(VectorQuantity::lengths(x, y, z, LengthUnit::Millimeter))
 }
 
-fn definition() -> FamilyDefinition {
+pub(super) fn definition() -> FamilyDefinition {
     let mut definition = family(RequirementPriority::Advisory, 100_000.0);
     definition.requirements.clear();
     for (id, value) in [("start", 1.0), ("end", 2.0)] {

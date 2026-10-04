@@ -25,6 +25,15 @@ static void expect_status(
 
 #define EXPECT(call, expected) expect_status((call), (expected), #call, __LINE__)
 
+static void expect_true(int condition, const char* message, int line) {
+    if (!condition) {
+        (void)fprintf(stderr, "line %d: %s\n", line, message);
+        ++failures;
+    }
+}
+
+#define EXPECT_TRUE(condition, message) expect_true((condition), (message), __LINE__)
+
 enum {
     OK = OCCT_BRIDGE_OK,
     ARG = OCCT_BRIDGE_INVALID_ARGUMENT,
@@ -759,6 +768,37 @@ static void measurements(occt_bridge_session_t* session) {
     EXPECT(occt_bridge_shape_overlap_volume(session,edge,body,&volume),GEOMETRY);
     EXPECT(occt_bridge_shape_overlap_volume(session,body,edge,&volume),GEOMETRY);
     EXPECT(occt_bridge_shape_overlap_volume(session,body,body,&volume),OK);
+
+    occt_bridge_face_radius_bounds_t bounds[6];
+    occt_bridge_edge_concavity_t concavities[12];
+    size_t count = 99;
+    EXPECT(occt_bridge_shape_face_radius_bounds(NULL,body,8,bounds,6,&count),ARG);
+    EXPECT(occt_bridge_shape_face_radius_bounds(session,body,8,bounds,6,NULL),ARG);
+    EXPECT(occt_bridge_shape_face_radius_bounds(session,body,8,NULL,6,&count),ARG);
+    EXPECT(occt_bridge_shape_face_radius_bounds(session,body,1,bounds,6,&count),ARG);
+    EXPECT(occt_bridge_shape_face_radius_bounds(session,body,1025,bounds,6,&count),ARG);
+    EXPECT(occt_bridge_shape_face_radius_bounds(session,unknown,8,bounds,6,&count),MISSING);
+    EXPECT(occt_bridge_shape_face_radius_bounds(session,body,8,bounds,5,&count),ARG);
+    EXPECT_TRUE(count == 6, "insufficient capacity reports the face count");
+    count = 0;
+    EXPECT(occt_bridge_shape_face_radius_bounds(session,body,8,NULL,0,&count),OK);
+    EXPECT_TRUE(count == 6, "a null buffer queries the face count");
+    EXPECT(occt_bridge_shape_face_radius_bounds(session,body,8,bounds,6,&count),OK);
+    EXPECT_TRUE(isinf(bounds[0].convex_radius) && isinf(bounds[0].concave_radius)
+        && bounds[0].exact == 1 && bounds[0].samples == 0, "planar faces are exact and flat");
+    EXPECT(occt_bridge_shape_edge_concavities(NULL,body,1e-6,concavities,12,&count),ARG);
+    EXPECT(occt_bridge_shape_edge_concavities(session,body,1e-6,concavities,12,NULL),ARG);
+    EXPECT(occt_bridge_shape_edge_concavities(session,body,1e-6,NULL,12,&count),ARG);
+    EXPECT(occt_bridge_shape_edge_concavities(session,body,0.0,concavities,12,&count),ARG);
+    EXPECT(occt_bridge_shape_edge_concavities(session,body,NAN,concavities,12,&count),ARG);
+    EXPECT(occt_bridge_shape_edge_concavities(session,body,2.0,concavities,12,&count),ARG);
+    EXPECT(occt_bridge_shape_edge_concavities(session,unknown,1e-6,concavities,12,&count),MISSING);
+    EXPECT(occt_bridge_shape_edge_concavities(session,body,1e-6,concavities,11,&count),ARG);
+    EXPECT_TRUE(count == 12, "insufficient capacity reports the edge count");
+    EXPECT(occt_bridge_shape_edge_concavities(session,body,1e-6,concavities,12,&count),OK);
+    for (size_t index = 0; index < 12; ++index) {
+        EXPECT_TRUE(concavities[index] == OCCT_BRIDGE_EDGE_CONVEX, "box edges are convex");
+    }
 }
 
 static void persistence(occt_bridge_session_t* session) {

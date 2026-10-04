@@ -491,3 +491,234 @@ fn explicitly_named_pattern_members_cannot_be_removed() {
             .contains("named by assembly requirement 'gap'")
     );
 }
+
+fn radius_rule(
+    output: &str,
+    minimum: f64,
+    side: RadiusSide,
+    sharp_edges: SharpEdges,
+) -> VerificationRule {
+    VerificationRule::MinimumRadius {
+        output: output.into(),
+        minimum: mm(minimum),
+        side,
+        sharp_edges,
+        samples_per_direction: DEFAULT_RADIUS_SAMPLES,
+    }
+}
+
+/// A 40 x 40 x 10 plate with a 6 mm blind hole 5 mm deep (concave radius 3,
+/// sharp concave bottom edge) and a separate 4 mm-radius cylinder.
+fn radius_family() -> FamilyDefinition {
+    let mut family = topology_family();
+    family.features = vec![
+        FeatureDefinition {
+            id: "plate".into(),
+            operation: FeatureOperation::Box {
+                origin: point(0.0, 0.0, 0.0),
+                size: point(40.0, 40.0, 10.0),
+            },
+        },
+        FeatureDefinition {
+            id: "drilled".into(),
+            operation: FeatureOperation::Hole {
+                input: "plate".into(),
+                position: point(20.0, 20.0, 10.0),
+                axis: VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, -1.0)),
+                diameter: ScalarExpr::Literal(mm(6.0)),
+                extent: HoleExtent::Blind {
+                    depth: ScalarExpr::Literal(mm(5.0)),
+                },
+                finish: HoleFinish::Plain,
+                thread: None,
+            },
+        },
+        FeatureDefinition {
+            id: "pin".into(),
+            operation: FeatureOperation::Cylinder {
+                origin: point(100.0, 0.0, 0.0),
+                axis: VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, 1.0)),
+                radius: ScalarExpr::Literal(mm(4.0)),
+                height: ScalarExpr::Literal(mm(10.0)),
+            },
+        },
+    ];
+    family
+}
+
+#[test]
+fn minimum_radius_measures_signed_faces_and_optional_sharp_edges() {
+    let family = radius_family();
+    let sharp = SharpEdges::ZeroRadius {
+        tangency_radians: 1e-6,
+    };
+    let results = verify(
+        &family,
+        vec![
+            (
+                "bore.ok",
+                radius_rule("drilled", 2.5, RadiusSide::Concave, SharpEdges::Ignore),
+            ),
+            (
+                "bore.small",
+                radius_rule("drilled", 3.5, RadiusSide::Concave, SharpEdges::Ignore),
+            ),
+            (
+                "bore.corner",
+                radius_rule("drilled", 1.0, RadiusSide::Concave, sharp),
+            ),
+            (
+                "plate.convex",
+                radius_rule("drilled", 1.0, RadiusSide::Convex, SharpEdges::Ignore),
+            ),
+            (
+                "plate.edges",
+                radius_rule("drilled", 1.0, RadiusSide::Convex, sharp),
+            ),
+            (
+                "pin.exact",
+                radius_rule("pin", 4.0, RadiusSide::Both, SharpEdges::Ignore),
+            ),
+            (
+                "pin.small",
+                radius_rule("pin", 4.5, RadiusSide::Convex, SharpEdges::Ignore),
+            ),
+        ],
+    )
+    .unwrap();
+    let get = |id: &str| find(&results, id);
+    for id in ["bore.ok", "plate.convex", "pin.exact"] {
+        assert_eq!(
+            get(id).status,
+            VerificationStatus::Passed,
+            "{}",
+            get(id).message
+        );
+        assert_eq!(get(id).evidence, Evidence::Exact);
+    }
+    assert!(get("plate.convex").message.contains("no convex curvature"));
+    assert!(get("plate.convex").measured.is_none());
+
+    let small = get("bore.small");
+    assert_eq!(small.status, VerificationStatus::Failed);
+    let measured = small.measured.unwrap();
+    assert!((measured.value - 3.0).abs() < 1e-9);
+    assert_eq!(measured.minimum, Some(3.5));
+    let witness = small.witness.as_ref().unwrap();
+    assert!(witness.subjects[0].starts_with("face "));
+    let point = witness.points_mm[0];
+    assert!(
+        ((point.x - 20.0).hypot(point.y - 20.0) - 3.0).abs() < 1e-9,
+        "on the bore"
+    );
+
+    // The blind hole's floor meets its wall in a sharp inside corner.
+    let corner = get("bore.corner");
+    assert_eq!(corner.status, VerificationStatus::Failed);
+    assert_eq!(corner.measured.unwrap().value, 0.0);
+    assert!(
+        corner.message.contains("1 sharp concave edge(s)"),
+        "{}",
+        corner.message
+    );
+    let witness = corner.witness.as_ref().unwrap();
+    assert!(witness.subjects[0].starts_with("edge "));
+    assert!(
+        (witness.points_mm[0].z - 5.0).abs() < 1e-9,
+        "on the hole floor"
+    );
+
+    // The plate's 12 outside edges and the hole rim are sharp convex corners.
+    let edges = get("plate.edges");
+    assert_eq!(edges.status, VerificationStatus::Failed);
+    assert!(
+        edges.message.contains("13 sharp convex edge(s)"),
+        "{}",
+        edges.message
+    );
+
+    assert_eq!(get("pin.small").status, VerificationStatus::Failed);
+}
+
+#[test]
+fn freeform_radii_are_sampled_and_rules_validate_and_persist() {
+    let mut family = super::variable_fillet::definition();
+    let rule = |samples| VerificationRule::MinimumRadius {
+        output: "blend".into(),
+        minimum: mm(0.9),
+        side: RadiusSide::Convex,
+        sharp_edges: SharpEdges::Ignore,
+        samples_per_direction: samples,
+    };
+    let results = verify(&family, vec![("blend", rule(DEFAULT_RADIUS_SAMPLES))]).unwrap();
+    let blend = find(&results, "blend");
+    assert_eq!(
+        blend.status,
+        VerificationStatus::Passed,
+        "{}",
+        blend.message
+    );
+    assert!((blend.measured.unwrap().value - 1.0).abs() < 1e-2);
+    let Evidence::Sampled {
+        samples,
+        unresolved,
+    } = blend.evidence
+    else {
+        panic!("a variable blend is freeform");
+    };
+    assert!(samples > 0 && samples <= 17 * 17);
+    assert_eq!(unresolved, 0);
+
+    for (rule, message) in [
+        (rule(1), "samples_per_direction"),
+        (
+            VerificationRule::MinimumRadius {
+                output: "blend".into(),
+                minimum: Quantity::scalar(1.0),
+                side: RadiusSide::Both,
+                sharp_edges: SharpEdges::Ignore,
+                samples_per_direction: DEFAULT_RADIUS_SAMPLES,
+            },
+            "must be a length",
+        ),
+        (
+            VerificationRule::MinimumRadius {
+                output: "blend".into(),
+                minimum: mm(0.0),
+                side: RadiusSide::Both,
+                sharp_edges: SharpEdges::Ignore,
+                samples_per_direction: DEFAULT_RADIUS_SAMPLES,
+            },
+            "finite and positive",
+        ),
+        (
+            VerificationRule::MinimumRadius {
+                output: "blend".into(),
+                minimum: mm(1.0),
+                side: RadiusSide::Both,
+                sharp_edges: SharpEdges::ZeroRadius {
+                    tangency_radians: 2.0,
+                },
+                samples_per_direction: DEFAULT_RADIUS_SAMPLES,
+            },
+            "tangency_radians",
+        ),
+    ] {
+        let error = verify(&family, vec![("bad", rule)]).unwrap_err();
+        assert!(error.message.contains(message), "{}", error.message);
+    }
+
+    // The default sample count stays implicit in documents.
+    family.requirements = vec![requirement(
+        "blend",
+        RequirementPriority::Advisory,
+        rule(DEFAULT_RADIUS_SAMPLES),
+    )];
+    let mut graph = InstanceGraph::new(&family);
+    graph.add_base("part", HashMap::new(), "test").unwrap();
+    let document = ModelDocument::from_graph(&graph);
+    let json = document.to_json_pretty().unwrap();
+    assert!(json.contains("\"side\": \"convex\""));
+    assert!(!json.contains("samples_per_direction"));
+    assert_eq!(ModelDocument::from_json(&json).unwrap(), document);
+}

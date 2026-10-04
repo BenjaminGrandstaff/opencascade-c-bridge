@@ -966,6 +966,21 @@ pub(crate) fn verify_requirement(
                 maximum: Some(f64::from(*solids)),
             })
         }
+        VerificationRule::MinimumRadius {
+            output,
+            minimum,
+            side,
+            sharp_edges,
+            samples_per_direction,
+        } => minimum_radius(
+            session,
+            id,
+            shape(shapes, output)?,
+            *minimum,
+            *side,
+            *sharp_edges,
+            *samples_per_direction,
+        )?,
     })
 }
 

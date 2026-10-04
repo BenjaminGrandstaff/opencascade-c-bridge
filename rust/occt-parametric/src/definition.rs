@@ -627,6 +627,53 @@ pub enum VerificationRule {
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         allow_voids: bool,
     },
+    /// Every face radius on `side` is at least `minimum` (a positive length).
+    /// Exact on planes, cylinders, cones, spheres, and tori; other faces are
+    /// sampled on a `samples_per_direction` squared grid, in [2, 1024].
+    MinimumRadius {
+        output: String,
+        minimum: Quantity,
+        side: RadiusSide,
+        sharp_edges: SharpEdges,
+        #[serde(
+            default = "default_radius_samples",
+            skip_serializing_if = "is_default_radius_samples"
+        )]
+        samples_per_direction: u32,
+    },
+}
+
+/// Which way a surface curves relative to the part's outward normal.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RadiusSide {
+    /// Outside surfaces: cylinders, spheres, fillets on outside corners.
+    Convex,
+    /// Inside surfaces: bores and fillets in inside corners.
+    Concave,
+    Both,
+}
+
+/// Whether sharp (non-tangent) edges on the measured side count as radius zero.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SharpEdges {
+    /// Measure curved faces only, such as checking fillet sizes.
+    Ignore,
+    /// A sharp edge on the measured side has radius zero, such as an inside
+    /// corner a round cutter cannot reach. Faces meeting within
+    /// `tangency_radians`, in (0, pi/2), are smooth.
+    ZeroRadius { tangency_radians: f64 },
+}
+
+pub const DEFAULT_RADIUS_SAMPLES: u32 = 17;
+
+fn default_radius_samples() -> u32 {
+    DEFAULT_RADIUS_SAMPLES
+}
+
+fn is_default_radius_samples(value: &u32) -> bool {
+    *value == DEFAULT_RADIUS_SAMPLES
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

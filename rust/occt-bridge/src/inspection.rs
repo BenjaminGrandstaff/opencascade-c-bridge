@@ -183,6 +183,107 @@ impl Session {
         })
     }
 
+    /// Radius bounds for every unique face, in [`Self::subshapes`] order.
+    /// Exact on analytic faces; other faces are sampled on a
+    /// `samples_per_direction` squared grid, in [2, 1024], restricted to the
+    /// face. No handles are created.
+    pub fn face_radius_bounds(
+        &self,
+        shape: &Shape<'_>,
+        samples_per_direction: u32,
+    ) -> Result<Vec<FaceRadiusBounds>, BridgeError> {
+        self.validate_shape(shape)?;
+        let mut count = 0;
+        // SAFETY: A null buffer with zero capacity queries the count.
+        self.check(unsafe {
+            occt_bridge_shape_face_radius_bounds(
+                self.raw.as_ptr(),
+                shape.id,
+                samples_per_direction,
+                std::ptr::null_mut(),
+                0,
+                &mut count,
+            )
+        })?;
+        let empty = RawFaceRadiusBounds {
+            convex_radius: 0.0,
+            concave_radius: 0.0,
+            convex_point: Vec3::new(0.0, 0.0, 0.0).into(),
+            concave_point: Vec3::new(0.0, 0.0, 0.0).into(),
+            exact: 0,
+            samples: 0,
+        };
+        let mut raw = vec![empty; count];
+        // SAFETY: The buffer holds `count` writable entries.
+        self.check(unsafe {
+            occt_bridge_shape_face_radius_bounds(
+                self.raw.as_ptr(),
+                shape.id,
+                samples_per_direction,
+                raw.as_mut_ptr(),
+                raw.len(),
+                &mut count,
+            )
+        })?;
+        raw.truncate(count);
+        let side = |radius: f64, point: RawVec3| radius.is_finite().then(|| (radius, point.into()));
+        Ok(raw
+            .into_iter()
+            .map(|bounds| FaceRadiusBounds {
+                convex: side(bounds.convex_radius, bounds.convex_point),
+                concave: side(bounds.concave_radius, bounds.concave_point),
+                exact: bounds.exact != 0,
+                samples: bounds.samples,
+            })
+            .collect())
+    }
+
+    /// Concavity of every unique edge, in [`Self::subshapes`] order, by OCCT's
+    /// offset analysis. Faces meeting within `tangency_radians`, in (0, pi/2),
+    /// are smooth.
+    pub fn edge_concavities(
+        &self,
+        shape: &Shape<'_>,
+        tangency_radians: f64,
+    ) -> Result<Vec<EdgeConcavity>, BridgeError> {
+        self.validate_shape(shape)?;
+        let mut count = 0;
+        // SAFETY: A null buffer with zero capacity queries the count.
+        self.check(unsafe {
+            occt_bridge_shape_edge_concavities(
+                self.raw.as_ptr(),
+                shape.id,
+                tangency_radians,
+                std::ptr::null_mut(),
+                0,
+                &mut count,
+            )
+        })?;
+        let mut raw = vec![0_i32; count];
+        // SAFETY: The buffer holds `count` writable entries.
+        self.check(unsafe {
+            occt_bridge_shape_edge_concavities(
+                self.raw.as_ptr(),
+                shape.id,
+                tangency_radians,
+                raw.as_mut_ptr(),
+                raw.len(),
+                &mut count,
+            )
+        })?;
+        raw.truncate(count);
+        Ok(raw
+            .into_iter()
+            .map(|value| match value {
+                0 => EdgeConcavity::Smooth,
+                1 => EdgeConcavity::Convex,
+                2 => EdgeConcavity::Concave,
+                3 => EdgeConcavity::Mixed,
+                _ => EdgeConcavity::Other,
+            })
+            .collect())
+    }
+
     /// Minimum BREP separation and witness points. Zero includes touching,
     /// overlapping, and contained shapes. No persistent handles are created.
     pub fn distance(

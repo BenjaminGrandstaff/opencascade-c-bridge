@@ -19,12 +19,43 @@ samples do not evaluate them.
 | `ShapeValid { output }` | The output is a valid BREP. | Exact |
 | `VolumeRange { output, minimum, maximum }` | Volume lies in the inclusive range. | Exact |
 | `Connectivity { output, solids, allow_voids }` (schema 46) | The output has exactly `solids` solids, no face, edge, or vertex outside them, and, unless `allow_voids`, one shell per solid. | Exact |
+| `MinimumRadius { output, minimum, side, sharp_edges, samples_per_direction }` (schema 47) | Every face radius on `side` is at least `minimum`. | Exact on planes, cylinders, cones, spheres, and tori; sampled on other surfaces |
 
 Connectivity catches booleans that leave disjoint pieces, sewing that never
 closes into a solid, and hollow results with sealed internal voids. It maps each
 solid's faces, edges, and vertices onto the output's topology once: O(topology)
 time, with transient handles released before returning. `allow_voids` is
 omitted from documents when false.
+
+### Minimum radius
+
+Each face's principal curvatures are signed by the part's outward normal.
+**Convex** radii curve away from it: the outside of a cylinder, a sphere, or a
+fillet on an outside corner. **Concave** radii curve toward it: a bore or a
+fillet in an inside corner. `side` selects `Convex`, `Concave`, or `Both`.
+
+- Planes have no curvature. Cylinders and spheres have one radius. Cones use the
+  smallest circumferential radius over the face, which is zero when the face
+  includes the apex. Tori check their minor radius and the stationary latitudes
+  of the other principal radius. These are exact.
+- Other surfaces (B-splines, blends, swept and offset surfaces) are evaluated on
+  a `samples_per_direction`² grid over the face's parameter range, keeping only
+  points inside the face. A smaller radius between samples can be missed, so the
+  result reports `Sampled` evidence. The default is 17 per direction (omitted
+  from documents); the allowed range is 2 to 1024.
+- `sharp_edges: Ignore` measures curved faces only, such as checking fillet
+  sizes. `sharp_edges: ZeroRadius { tangency_radians }` also treats every
+  sharp edge on the measured side as radius zero, such as an inside corner a
+  round cutter cannot reach. Edges are classified by OCCT's offset analysis;
+  faces meeting within `tangency_radians` are smooth.
+
+Radii within 1e-12 relative of the minimum pass, because radii are computed
+from curvature. The measured value is the smallest radius found, and a failing
+result's witness names the face or edge (`face 3`, `edge 7`, indexed in
+`Session::subshapes` order) and a point on it. A part with no curvature on the
+measured side passes and reports no measured value. Cost is O(faces) for
+analytic faces plus O(samples²) face classifications per sampled face, and one
+edge analysis pass when sharp edges count.
 
 ## Assembly rules (`AssemblyVerificationRule`)
 
@@ -80,6 +111,5 @@ and volume are measured once per shared variant, not per instance. See
 
 ## Planned
 
-Minimum concave and convex radius (exact on analytic surfaces) and sampled
-manufacturing rules (wall thickness, draft, overhang) follow; see the
+Sampled manufacturing rules (wall thickness, draft, overhang) follow; see the
 [Roadmap](ROADMAP.md).

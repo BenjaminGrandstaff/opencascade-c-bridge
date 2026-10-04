@@ -2,7 +2,7 @@
 
 use super::*;
 
-pub(crate) const ABI_VERSION: u32 = 35;
+pub(crate) const ABI_VERSION: u32 = 36;
 
 #[repr(C)]
 pub(crate) struct RawMeshOptions {
@@ -18,6 +18,7 @@ pub(crate) struct RawMeshTriangle {
 }
 
 #[repr(C)]
+#[derive(Clone, Copy)]
 pub(crate) struct RawVec3 {
     pub(crate) x: f64,
     pub(crate) y: f64,
@@ -51,6 +52,17 @@ pub(crate) struct RawDistanceResult {
     pub(crate) distance: f64,
     pub(crate) first: RawVec3,
     pub(crate) second: RawVec3,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub(crate) struct RawFaceRadiusBounds {
+    pub(crate) convex_radius: f64,
+    pub(crate) concave_radius: f64,
+    pub(crate) convex_point: RawVec3,
+    pub(crate) concave_point: RawVec3,
+    pub(crate) exact: i32,
+    pub(crate) samples: u32,
 }
 
 #[repr(C)]
@@ -107,6 +119,22 @@ unsafe extern "C" {
         shape: RawShapeId,
         kind: c_int,
         out: *mut RawShapeId,
+        capacity: usize,
+        count: *mut usize,
+    ) -> RawStatus;
+    pub(crate) fn occt_bridge_shape_face_radius_bounds(
+        session: *mut c_void,
+        shape: RawShapeId,
+        samples_per_direction: u32,
+        out: *mut RawFaceRadiusBounds,
+        capacity: usize,
+        count: *mut usize,
+    ) -> RawStatus;
+    pub(crate) fn occt_bridge_shape_edge_concavities(
+        session: *mut c_void,
+        shape: RawShapeId,
+        tangency_radians: f64,
+        out: *mut i32,
         capacity: usize,
         count: *mut usize,
     ) -> RawStatus;

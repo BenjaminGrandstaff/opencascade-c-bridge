@@ -7,7 +7,7 @@ so they can generate and regenerate families of related parts.
 ## Implementation status
 
 The architecture in this document is both a description of implemented
-boundaries and a roadmap. As of ABI version 35, the repository contains three
+boundaries and a roadmap. As of ABI version 36, the repository contains three
 Rust layers:
 
 1. **`occt-bridge`** safely wraps session-owned OCCT handles. It includes
@@ -32,8 +32,9 @@ Rust layers:
    length units; versioned families; persistent instance identity; sparse
    instance overrides; dependency-ordered feature execution; named results;
    requirement priorities and provenance; validity, volume, connectivity,
-   mass, datum clearance, relationship-satisfaction, no-interference, and
-   minimum-clearance verification with measured values and witnesses;
+   minimum radius, mass, datum clearance, relationship-satisfaction,
+   no-interference, and minimum-clearance verification with measured values,
+   evidence quality, and witnesses;
    clone inheritance with cycle detection and explicit detachment; accepted
    result revisions with stale-result retention and explicit freezing;
    independent translation/axis-angle placement; nested assembly frames;
@@ -69,8 +70,7 @@ The following major capabilities remain planned:
 - additional domain-specific expression functions;
 - additional schema migrations and integration with the broader EIL source
   model;
-- minimum-radius and sampled manufacturing requirement rules (wall thickness,
-  draft, overhang);
+- sampled manufacturing requirement rules (wall thickness, draft, overhang);
 - broader hole-size catalogs (countersink relief, tolerance classes) and
   sheet metal beyond single constant-width strips;
 - advanced ribs;
@@ -1027,7 +1027,9 @@ application code should use the recipe crate.
 
 ## Compatibility rule
 
-The C interface currently requires an exact ABI version match. ABI version 35
+The C interface currently requires an exact ABI version match. ABI version 36
+adds signed per-face radius bounds (exact on analytic surfaces, sampled
+elsewhere) and per-edge concavity. ABI version 35
 adds bounded surface tessellation and batch topology indices. ABI 34 adds exact
 hidden-line projection, plane clipping, edge sampling, and bulk traversal.
 ABI 33 adds exact distance, overlap, central mass properties, and multi-station

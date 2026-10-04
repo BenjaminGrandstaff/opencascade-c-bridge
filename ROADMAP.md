@@ -8,23 +8,32 @@ tracks status and order.
 
 | Layer | Version | State |
 |---|---|---|
-| C ABI (`src/`, `include/`) | ABI 35 | Stable; exact version match required |
+| C ABI (`src/`, `include/`) | ABI 36 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 46 | Active development |
+| `occt-parametric` (engineering layer) | Schema 47 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 4/4, bridge 76 (+1 doc test), recipes 3, parametric 223 + merge driver 3, mesh Python 4 | `ctest`, `cargo test` (see README) |
+| Tests | C 4/4, bridge 79 (+1 doc test), recipes 3, parametric 225 + merge driver 3, mesh Python 4 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 92.3% line coverage (2026-10-03); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
 | Coverage | 92.63% lines overall, test code excluded; C++ 94.30% lines, 87.59% branches, 100% functions; Rust 91.81% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 59 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Scale benchmarks | 60 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
 
 ### Kernel (C ABI)
+
+- Signed face radius bounds and edge concavity (ABI 36): per-face smallest
+  convex and concave principal radii relative to the outward normal, with
+  witness points; exact on planes, cylinders, cones (including apices), spheres,
+  and tori, and sampled on an in-face grid elsewhere with the sample count
+  reported. Per-edge smooth/convex/concave/mixed classification uses OCCT's
+  offset analysis. Both are batch queries in `subshapes` order that create no
+  handles. On a 1,000-hole plate, 1,006 exact faces take 0.008 s and 3,012
+  edges 0.867 s; 65,536 freeform samples take 1.306 s.
 
 - Bounded surface triangulation and batch topology indices (ABI 35): copied
   geometry preserves source BREP, face indices follow original topology,
@@ -137,6 +146,15 @@ tracks status and order.
   error-bounded (Bezier, B-spline) extrema.
 
 ### Parametric layer
+
+- Minimum-radius requirements (schema 47; ABI 36): `MinimumRadius` checks
+  convex, concave, or both radii against a positive length, optionally treating
+  sharp edges on that side as radius zero (inside corners a round cutter cannot
+  reach). Results report the smallest radius, `Exact` or `Sampled` evidence,
+  and the face or edge with a witness point. Two parametric tests and three
+  bridge tests cover bores, blind-hole floors, cylinders, cones, spheres, tori,
+  inside-corner fillets, outside edges, sampled variable blends, validation,
+  and persistence. See [Requirement rules](REQUIREMENTS.md).
 
 - Exact connectivity and collision requirements (schema 46): part
   `Connectivity` counts solids, voids, and faces, edges, or vertices outside any
@@ -506,13 +524,11 @@ every item below is defined in documents and the API, and verified in tests.
 
 ### Capabilities
 
-1. **Richer requirement rules.** Connectivity, no-interference, and
-    minimum-clearance rules have landed (schema 46). Remaining:
-    - minimum concave and convex radius, from a new kernel query for signed face
-      curvature bounds (exact on analytic surfaces, sampled on freeform ones);
-    - sampled manufacturing rules: minimum wall thickness, draft angle, and
-      overhang, promoted from mesh hand-off to stored, prioritized requirements
-      with `Sampled` evidence.
+1. **Richer requirement rules.** Connectivity, no-interference,
+    minimum-clearance (schema 46), and minimum-radius (schema 47) rules have
+    landed. Remaining: sampled manufacturing rules for minimum wall thickness,
+    draft angle, and overhang, promoted from mesh hand-off to stored,
+    prioritized requirements with `Sampled` evidence.
 
 ## Later
 
