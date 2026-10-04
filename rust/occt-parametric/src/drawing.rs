@@ -7,6 +7,8 @@ mod detail;
 mod dimensions;
 pub use dimensions::{DimensionPresentation, DimensionTolerance};
 mod export;
+mod guides;
+pub use guides::{DrawingGuide, DrawingGuideKind, DrawingGuideLine, DrawingGuideLineKind};
 mod slice;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -105,6 +107,8 @@ pub struct DrawingDefinition {
     pub views: Vec<DrawingView>,
     #[serde(default)]
     pub dimensions: Vec<DrawingDimension>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub guides: Vec<DrawingGuide>,
     #[serde(default)]
     pub notes: Vec<DrawingNote>,
     /// Title-block fields, in deterministic key order.
@@ -152,6 +156,7 @@ pub struct GeneratedDrawing {
     pub title: String,
     pub paper_size_mm: [f64; 2],
     pub polylines: Vec<DrawingPolyline>,
+    pub guides: Vec<DrawingGuideLine>,
     pub labels: Vec<DrawingLabel>,
     pub metadata: BTreeMap<String, String>,
     pub generated_variants: usize,
@@ -352,6 +357,7 @@ impl DrawingDefinition {
             .map(|view| (view.id.as_str(), view))
             .collect::<HashMap<_, _>>();
         validate_dimensions(&self.dimensions, &views, graph)?;
+        guides::validate(&self.guides, &views, graph)?;
         let mut ids = HashSet::new();
         for note in &self.notes {
             if note.id.is_empty() || !ids.insert(&note.id) || !finite_pair(note.position_mm) {
@@ -435,6 +441,7 @@ impl DrawingDefinition {
             title: self.title.clone(),
             paper_size_mm: self.paper_size_mm,
             polylines: Vec::new(),
+            guides: Vec::new(),
             labels: Vec::new(),
             metadata: self.metadata.clone(),
             generated_variants: generation.generated_variants(),
@@ -442,7 +449,7 @@ impl DrawingDefinition {
         let added = self
             .dimensions
             .iter()
-            .try_fold(9usize, |sum, d| {
+            .try_fold(guides::vertex_count(&self.guides)?, |sum, d| {
                 let count = match d.direction {
                     DimensionDirection::Angular { .. } => 77,
                     DimensionDirection::Radius => 8,
@@ -470,6 +477,7 @@ impl DrawingDefinition {
             .iter()
             .map(|view| (view.id.as_str(), view))
             .collect::<HashMap<_, _>>();
+        guides::append(&self.guides, &views, graph, &mut drawing)?;
         let context = dimensions::DimensionContext::new(&self.dimensions, graph)?;
         for dimension in &self.dimensions {
             append_dimension(

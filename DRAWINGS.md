@@ -214,3 +214,71 @@ plus the indexed features/parameters and datum-frame resolution work. Benchmarks
 exercise 10,000 mixed dimensions and 10,000 live hole callouts while checking
 shared geometry and handle cleanup. These capabilities are not an ASME conformity
 claim; GD&T and standards-verified drawing conventions remain on the roadmap.
+
+## Center guides and cutting-plane indicators (schema 59)
+
+`DrawingDefinition::guides` is an optional list of `DrawingGuide { id, view,
+kind }` declarations. Older documents default to an empty list. Rust drawing
+struct literals supply `guides: Vec::new()`; generated drawings now expose
+`guides: Vec<DrawingGuideLine>` alongside geometry polylines. Guides have stable
+IDs for comparisons and three-way merges, including independent guide edits.
+
+| Kind | Inputs and behavior |
+|---|---|
+| `CenterMark` | A center datum and positive `half_length_mm`; draws two solid thin strokes along the view's paper X/Y axes |
+| `Centerline` | Two datum origins and nonnegative `extension_mm`; projects the endpoints and extends the line at both ends |
+| `CuttingPlane` | Two datum origins, a `section_view` ID and plain-text `label`; draws the cut trace, viewing arrows, endpoint labels and `SECTION label-label` beneath the linked view's paper origin |
+
+Mark half-lengths and centerline extensions are **paper millimeters** and do not
+change with drawing scale. Datum positions follow current instance parameters,
+placements and parent frames. Detail-window offsets affect their paper position;
+guides are intentional annotations and are not automatically clipped to a detail
+window or selected geometry. Declare the datum locations and annotation sizes
+appropriate to the view; the exporter does not infer hole centers or optimize
+annotation placement.
+
+```rust
+page.guides.push(DrawingGuide {
+    id: "bore-center".into(),
+    view: "top".into(),
+    kind: DrawingGuideKind::CenterMark {
+        center: DatumRef::new("part", "bore-center"),
+        half_length_mm: 3.0,
+    },
+});
+page.guides.push(DrawingGuide {
+    id: "cut-A".into(),
+    view: "top".into(),
+    kind: DrawingGuideKind::CuttingPlane {
+        first: DatumRef::new("part", "cut-start"),
+        second: DatumRef::new("part", "cut-end"),
+        section_view: "section-A".into(),
+        label: "A".into(),
+    },
+});
+```
+
+Cutting-plane indicators currently represent straight cuts. Both world datum
+origins must lie on the linked `Section` view's plane within numerical tolerance;
+that view must look normal to the plane, and the plane must be edge-on in the
+source view. The projected endpoints must differ. The source and target must be
+different views. Arrows show sight direction, opposite the target view's
+`toward viewer` direction; reversing that direction reverses the arrows.
+`keep_positive` continues controlling retained material independently. The guide
+does not alter section geometry or supply automatic hatching. Its caption starts
+8 paper mm below the section's `paper_origin_mm`; endpoint labels and arrows have
+fixed paper offsets. Labels cannot be empty or contain control characters.
+
+SVG centerlines/cut traces use a `6 1 1 1` long-short pattern. Center marks remain
+solid so the datum intersection stays visible. Thin center guides use 0.18 mm
+strokes; cutting traces and arrows use 0.50 mm. DXF adds CENTER and CUTTING_PLANE
+layers, a CENTER linetype with the same pattern, per-entity solid overrides for
+marks/arrows, and corresponding lineweights. These are explicit drawing styles,
+not a standards-conformity claim. Standards-verified layout, projection symbols,
+automatic hatching and exact curve export remain on the roadmap.
+
+Each center mark reserves 4 vertices, centerline 2, and cutting-plane indicator
+14 against the shared export budget. Guide validation/generation is linear in
+annotation count plus datum-frame resolution, with indexed view lookup and
+proportional output storage. The 10,000-guide benchmark covers all three types,
+SVG/DXF export, shared native generation and handle cleanup.

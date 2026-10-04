@@ -161,6 +161,7 @@ fn placement_material_suppression_and_drawings_do_not_rebuild_local_geometry() {
             kind: DrawingViewKind::Orthographic,
             detail: None,
         }],
+        guides: Vec::new(),
         dimensions: vec![],
         notes: vec![],
         metadata: BTreeMap::new(),

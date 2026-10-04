@@ -11,18 +11,31 @@ tracks status and order.
 | C ABI (`src/`, `include/`) | ABI 42 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 58 | Active development |
+| `occt-parametric` (engineering layer) | Schema 59 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 89 + first-use integration 1 (+1 doc test), recipes 3, parametric 317 + merge driver 3 + motion command 16 + balance command 4 + drawing command 2 + branch command 2, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 89 + first-use integration 1 (+1 doc test), recipes 3, parametric 321 + merge driver 3 + motion command 16 + balance command 4 + drawing command 2 + branch command 2, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.5% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
-| Coverage | 93.39% lines overall, test code excluded; C++ 94.17% lines, 87.51% branches, 100% functions; Rust 93.08% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 89 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Coverage | 93.42% lines overall, test code excluded; C++ 94.17% lines, 87.40% branches, 100% functions; Rust 93.12% lines | `tools/coverage/run.sh` |
+| Scale benchmarks | 90 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
+
+- Datum-linked drawing guides (schema 59): center marks with fixed paper sizes,
+  projected centerlines with paper extensions, and straight cutting-plane
+  indicators linked to section views. Source endpoints must lie on the cut
+  plane; the section looks normal to it and the cut is edge-on in the source
+  view. Arrows follow viewing direction and captions identify the linked section.
+  SVG and DXF distinguish thin center guides, thick cutting-plane lines and
+  solid arrowheads; DXF adds CENTER/CUTTING_PLANE layers and a center linetype.
+  Guides regenerate at current placements, persist, and merge by stable ID.
+  Four tests cover edits, viewing direction, migration, merges, invalid guides,
+  budgets, far rotated origins, scale and crop behavior; 10,000 mixed guides
+  generate and export within a 10 s budget with one shared variant. This does
+  not certify ASME line weights or layouts. See [Drawings](DRAWINGS.md).
 
 - Manufacturing dimensions and tolerances (schema 58): radial, diametric and
   minor-angle dimensions join aligned/horizontal/vertical dimensions. Display
@@ -861,8 +874,8 @@ remain lower priority. The ASME comparison below is based on public standard
 scopes and inspected repo capabilities, not a full conformity audit.
 
 1. **Drawing conventions and manufacturing sheets** — [Y14 family](https://www.asme.org/codes-standards/y14-standards):
-   automatic section hatching, cutting-plane indicators, centerlines/center marks,
-   projection symbols, standard sheet layouts, and standards-verified dimension
+   automatic section hatching, projection symbols, standard sheet layouts,
+   and standards-verified dimension
    placement and typography, plus exact curve export. Current curves are sampled
    polylines; direct deviations and limits now render stacked values.
 2. **Structured GD&T** — [Y14.5](https://www.asme.org/codes-standards/find-codes-standards/y14-5-dimensioning-tolerancing):

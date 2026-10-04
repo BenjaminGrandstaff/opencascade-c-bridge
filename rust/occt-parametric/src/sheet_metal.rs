@@ -371,6 +371,7 @@ impl FlatPatternMetrics {
             title: format!("{id} flat pattern"),
             paper_size_mm,
             polylines,
+            guides: Vec::new(),
             labels: vec![],
             metadata: BTreeMap::from([
                 ("Thickness mm".into(), self.thickness_mm.to_string()),

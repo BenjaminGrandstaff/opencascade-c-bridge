@@ -276,6 +276,7 @@ fn integrated_schema_preserves_references_slice_drawings_and_joint_motion() {
             kind: DrawingViewKind::Slice,
             detail: None,
         }],
+        guides: Vec::new(),
         dimensions: Vec::new(),
         notes: Vec::new(),
         metadata: BTreeMap::new(),

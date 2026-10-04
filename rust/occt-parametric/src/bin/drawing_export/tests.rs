@@ -56,6 +56,7 @@ fn fixture() -> (ModelDocument, DrawingDefinition) {
             kind: DrawingViewKind::Slice,
             detail: None,
         }],
+        guides: Vec::new(),
         dimensions: vec![],
         notes: vec![],
         metadata: BTreeMap::new(),

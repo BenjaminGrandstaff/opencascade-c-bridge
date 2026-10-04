@@ -68,6 +68,7 @@ fn fixture() -> (ModelDocument, DrawingDefinition) {
             kind: DrawingViewKind::Slice,
             detail: None,
         }],
+        guides: Vec::new(),
         dimensions: vec![],
         notes: vec![],
         metadata: BTreeMap::new(),
@@ -246,6 +247,68 @@ fn main() {
     assert!(started.elapsed().as_secs_f64() < 10.0);
     println!(
         "10000 feature-linked hole callouts: {:?} (10s budget), one shared variant",
+        started.elapsed()
+    );
+    let mut guide_page = template.clone();
+    let mut section = template.views[0].clone();
+    section.id = "section".into();
+    section.direction = VectorQuantity::scalars(1.0, 0.0, 0.0);
+    section.x_axis = VectorQuantity::scalars(0.0, 1.0, 0.0);
+    section.kind = DrawingViewKind::Section {
+        origin: VectorQuantity::lengths(0.0, 0.0, 15.0, LengthUnit::Millimeter),
+        normal: VectorQuantity::scalars(1.0, 0.0, 0.0),
+        keep_positive: true,
+    };
+    guide_page.views.push(section);
+    guide_page.guides = (0..10_000)
+        .map(|i| DrawingGuide {
+            id: format!("guide-{i}"),
+            view: "profile".into(),
+            kind: match i % 3 {
+                0 => DrawingGuideKind::CenterMark {
+                    center: DatumRef::new("part", "center"),
+                    half_length_mm: 3.0,
+                },
+                1 => DrawingGuideKind::Centerline {
+                    first: DatumRef::new("part", "center"),
+                    second: DatumRef::new("part", "x"),
+                    extension_mm: 2.0,
+                },
+                _ => DrawingGuideKind::CuttingPlane {
+                    first: DatumRef::new("part", "center"),
+                    second: DatumRef::new("part", "y"),
+                    section_view: "section".into(),
+                    label: "A".into(),
+                },
+            },
+        })
+        .collect();
+    let started = Instant::now();
+    let generated = guide_page
+        .generate(
+            &graph,
+            &session,
+            DrawingRenderOptions {
+                curve_samples: 8,
+                maximum_vertices: 1_000_000,
+            },
+        )
+        .unwrap();
+    assert_eq!(generated.generated_variants, 1);
+    assert_eq!(generated.guides.len(), 33_332);
+    assert_eq!(generated.labels.len(), 9_999);
+    assert!(
+        generated
+            .guides
+            .iter()
+            .any(|g| g.kind == DrawingGuideLineKind::CuttingPlane)
+    );
+    assert!(generated.to_svg().contains("SECTION A-A"));
+    assert!(generated.to_dxf().contains("8\nCENTER\n"));
+    assert_eq!(session.shape_count().unwrap(), 0);
+    assert!(started.elapsed().as_secs_f64() < 10.0);
+    println!(
+        "10000 datum-linked drawing guides: {:?} (10s budget), one shared variant",
         started.elapsed()
     );
 }
