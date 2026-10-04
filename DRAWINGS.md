@@ -24,7 +24,7 @@ std::fs::write("part.dxf", drawing.to_dxf())?;
 
 A `DrawingView` selects one named feature output per distinct unsuppressed
 instance. Different views can select the same instance. Local parameter variants
-regenerate once across the whole drawing. Instance placements, enclosing frames,
+regenerate once across an entire drawing batch. Instance placements, enclosing frames,
 and joint values determine the geometry and datums shown.
 
 The view origin is a length-valued world point. Its direction and x axis are
@@ -40,6 +40,13 @@ solids with one side of an infinite cutting plane, retaining closed cut geometry
 then projects the retained solid. It supports arbitrary cutting-plane directions.
 A cut that removes all geometry yields an empty view. Section views currently
 show cut outlines without automatic section hatching.
+
+Schema 51 adds `Slice`: the view origin and direction define a plane, and only
+the boundary of the solid material on that plane is exported, including holes.
+Unlike `Section`, it does not project geometry behind the cut. This is useful
+for 1:1 cutting templates, gauges and cross-section inspection of any solid.
+Root/tip boundary planes are supported; planes outside the solid are empty.
+Loose topology and shell-only inputs are rejected.
 
 An optional `DrawingDetail` crops projected polylines to a rectangular window
 in view-local model mm. Its minimum maps to `paper_origin_mm`; the view's scale
@@ -81,6 +88,11 @@ and [value-type reference](https://help.autodesk.com/cloudhelp/2019/ENU/AutoCAD-
 
 ## Resource bounds and verification
 
+`DrawingDefinition::generate_many` accepts 1–10,000 drawings with distinct IDs,
+validates them before kernel work, and regenerates their participating instances
+once. It returns drawings in input order. `maximum_vertices` is shared across
+the entire batch, including every page and annotation.
+
 `maximum_vertices` defaults to 1,000,000. The budget includes dimension arrows,
 page/title-block lines, and sampled edges. Detail views conservatively reserve
 twice the samples per edge because clipping may split every segment. Exceeding
@@ -103,3 +115,11 @@ edits, document migration and comparisons, argument errors, vertex limits, and
 cleanup. Internal C++ conformance forces handle-space exhaustion between outputs
 to verify that projection and bulk traversal retract partial results. Scale cases
 cover 1,000 mixed views and a single view of 1,000 shared-geometry components.
+
+The [drawing-export command](tools/drawing-export/README.md) writes safe numbered
+SVG/DXF files, a manifest and a reloadable model with drawing definitions. Tests
+cover true swept cross-sections, holes, boundary planes, oblique mounted parts,
+batch budgets and publication errors. A 1,000-template benchmark verifies one
+shared generated variant and handle cleanup. Native session creation initializes
+OCCT’s shared plane once before concurrent geometry operations; a regression
+test exercises first-use projection in 20 fresh processes with 16 threads each.

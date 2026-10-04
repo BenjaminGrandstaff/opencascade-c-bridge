@@ -5,13 +5,18 @@
 
 #include "bridge_internal.hpp"
 
+#include <BRepLib.hxx>
+
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <mutex>
 
 using namespace occt_bridge_internal;
 
 namespace {
+
+std::once_flag kernel_plane_initialization;
 
 size_t copy_text(const std::string& text, char* buffer, size_t buffer_capacity) {
     if (buffer != nullptr && buffer_capacity != 0) {
@@ -56,6 +61,9 @@ occt_bridge_status_t occt_bridge_session_create(
         return OCCT_BRIDGE_UNSUPPORTED_ABI;
     }
     try {
+        // OCCT 7.9 lazily initializes a shared plane without synchronization.
+        // Initialize it before any session can reach concurrent edge projection.
+        std::call_once(kernel_plane_initialization, [] { BRepLib::Plane(); });
         *out_session = new (std::nothrow) occt_bridge_session_t();
         return *out_session == nullptr ? OCCT_BRIDGE_ALLOCATION_FAILED : OCCT_BRIDGE_OK;
     } catch (...) {

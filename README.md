@@ -89,7 +89,7 @@ volume, solid connectivity, minimum convex or concave radius, and sampled wall
 thickness, draft, and overhang, all with required, preferred, or advisory
 priority. Results carry measured values, evidence quality, and collision
 witnesses; see [Requirement rules](REQUIREMENTS.md). Schema v1 through
-v49 documents migrate to v50 during load; unsupported
+v50 documents migrate to v51 during load; unsupported
 future versions are rejected.
 Managed regeneration incrementally reuses unchanged outputs and
 rebuilds dirty features plus their downstream dependents. Graph regeneration
@@ -549,3 +549,6 @@ and renderer-specific exports without exposing OCCT C++ types across the ABI.
 Experimental examples of those possibilities live in the sibling
 [`occt-scene-recipes`](../occt-scene-recipes) project. They are intentionally
 not part of this wrapper's API or compatibility contract.
+
+General SVG/DXF drawing batches and 1:1 planar cutting templates are available
+through [the drawing-export command](tools/drawing-export/README.md).

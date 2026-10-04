@@ -34,3 +34,6 @@ OCCT_BRIDGE_LIB_DIR="$build" LD_LIBRARY_PATH="$build" \
 
 OCCT_BRIDGE_LIB_DIR="$build" LD_LIBRARY_PATH="$build" \
     cargo bench --quiet --manifest-path "$root/rust/occt-parametric/Cargo.toml" --bench balance
+
+OCCT_BRIDGE_LIB_DIR="$build" LD_LIBRARY_PATH="$build" \
+    cargo bench --quiet --manifest-path "$root/rust/occt-parametric/Cargo.toml" --bench templates

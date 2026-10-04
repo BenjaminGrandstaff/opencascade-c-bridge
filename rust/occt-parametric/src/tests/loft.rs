@@ -257,8 +257,12 @@ fn schema_50_lofts_with_stored_rules_support_continuous_joint_motion() {
         .unwrap();
     graph.set_instance_frame("moving", Some("rotor")).unwrap();
     let document = ModelDocument::from_graph(&graph);
-    assert_eq!(document.schema_version, 50);
-    let restored = ModelDocument::from_json(&document.to_json_pretty().unwrap()).unwrap();
+    assert_eq!(document.schema_version, CURRENT_SCHEMA_VERSION);
+    let mut legacy: serde_json::Value =
+        serde_json::from_str(&document.to_json_pretty().unwrap()).unwrap();
+    legacy["schema_version"] = serde_json::json!(50);
+    let restored = ModelDocument::from_json(&legacy.to_string()).unwrap();
+    assert_eq!(restored.schema_version, CURRENT_SCHEMA_VERSION);
     let graph = restored.instance_graph().unwrap();
     let accepted = graph
         .regenerate_instances_current(&session, &["moving", "obstacle"])

@@ -5,12 +5,15 @@ use std::collections::BTreeSet;
 
 mod detail;
 mod export;
+mod slice;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DrawingViewKind {
     #[default]
     Orthographic,
+    /// Intersects solids with the view plane and draws only the cut boundaries.
+    Slice,
     /// Retains one side of an infinite cutting plane, then removes hidden lines.
     Section {
         origin: VectorQuantity,
@@ -98,7 +101,8 @@ pub struct DrawingDefinition {
     pub metadata: BTreeMap<String, String>,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
 pub struct DrawingRenderOptions {
     pub curve_samples: usize,
     pub maximum_vertices: usize,
@@ -288,6 +292,15 @@ fn datum_origin(graph: &InstanceGraph<'_>, reference: &DatumRef) -> Result<Vec3,
 
 impl DrawingDefinition {
     pub(crate) fn validate(&self, graph: &InstanceGraph<'_>) -> Result<(), ModelError> {
+        self.validate_cached(graph, &mut HashMap::new(), &mut HashMap::new())
+    }
+
+    fn validate_cached<'definition>(
+        &self,
+        graph: &InstanceGraph<'definition>,
+        resolutions: &mut ResolutionCache<'definition>,
+        features: &mut HashMap<&'definition str, HashSet<&'definition str>>,
+    ) -> Result<(), ModelError> {
         if self.id.is_empty()
             || !finite_pair(self.paper_size_mm)
             || self.paper_size_mm.iter().any(|value| *value <= 0.0)
@@ -306,14 +319,12 @@ impl DrawingDefinition {
             }
         }
         let mut ids = HashSet::new();
-        let mut resolutions = HashMap::new();
-        let mut features = HashMap::new();
         for view in &self.views {
             if view.id.is_empty() || !ids.insert(&view.id) || view.outputs.is_empty() {
                 return Err(ModelError::new("drawing views need unique IDs and outputs"));
             }
             view.frame()?;
-            validate_outputs(view, graph, &mut resolutions, &mut features)?;
+            validate_outputs(view, graph, resolutions, features)?;
         }
         let views = self
             .views
@@ -344,20 +355,61 @@ impl DrawingDefinition {
         session: &Session,
         options: DrawingRenderOptions,
     ) -> Result<GeneratedDrawing, ModelError> {
-        self.validate(graph)?;
+        let mut drawings =
+            Self::generate_many(std::slice::from_ref(self), graph, session, options)?;
+        Ok(drawings.pop().expect("one drawing requested"))
+    }
+
+    /// Batch generation shares variants across every drawing and bounds total
+    /// exported vertices across the batch, including each page's annotations.
+    pub fn generate_many(
+        definitions: &[Self],
+        graph: &InstanceGraph<'_>,
+        session: &Session,
+        options: DrawingRenderOptions,
+    ) -> Result<Vec<GeneratedDrawing>, ModelError> {
+        if !(1..=10_000).contains(&definitions.len()) {
+            return Err(ModelError::new("drawing batch needs 1–10000 definitions"));
+        }
+        let mut ids = HashSet::new();
+        let mut resolutions = HashMap::new();
+        let mut features = HashMap::new();
+        for definition in definitions {
+            if !ids.insert(&definition.id) {
+                return Err(ModelError::new("drawing batch IDs must be unique"));
+            }
+            definition.validate_cached(graph, &mut resolutions, &mut features)?;
+        }
         if !(2..=100_000).contains(&options.curve_samples) || options.maximum_vertices < 2 {
             return Err(ModelError::new(
                 "drawing export needs 2–100000 samples and a positive vertex budget",
             ));
         }
-        let instances = self
-            .views
+        let instances = definitions
             .iter()
+            .flat_map(|definition| &definition.views)
             .flat_map(|view| view.outputs.iter().map(|output| output.instance.as_str()))
             .collect::<BTreeSet<_>>()
             .into_iter()
             .collect::<Vec<_>>();
         let generation = graph.regenerate_instances_current(session, &instances)?;
+        let mut vertices = 0;
+        definitions
+            .iter()
+            .map(|definition| {
+                definition.generate_from(graph, session, &generation, options, &mut vertices)
+            })
+            .collect()
+    }
+
+    fn generate_from(
+        &self,
+        graph: &InstanceGraph<'_>,
+        session: &Session,
+        generation: &GraphRegeneration<'_>,
+        options: DrawingRenderOptions,
+        vertices: &mut usize,
+    ) -> Result<GeneratedDrawing, ModelError> {
         let mut drawing = GeneratedDrawing {
             id: self.id.clone(),
             title: self.title.clone(),
@@ -367,24 +419,20 @@ impl DrawingDefinition {
             metadata: self.metadata.clone(),
             generated_variants: generation.generated_variants(),
         };
-        let mut vertices = self
+        let added = self
             .dimensions
             .len()
             .checked_mul(14)
             .and_then(|count| count.checked_add(9))
             .ok_or_else(|| ModelError::new("drawing annotation vertex count overflow"))?;
-        if vertices > options.maximum_vertices {
+        *vertices = vertices
+            .checked_add(added)
+            .ok_or_else(|| ModelError::new("drawing vertex count overflow"))?;
+        if *vertices > options.maximum_vertices {
             return Err(ModelError::new("drawing exceeds export vertex budget"));
         }
         for view in &self.views {
-            append_view(
-                session,
-                view,
-                &generation,
-                options,
-                &mut vertices,
-                &mut drawing,
-            )?;
+            append_view(session, view, generation, options, vertices, &mut drawing)?;
         }
         let views = self
             .views
@@ -487,6 +535,9 @@ fn append_view(
         .collect::<Result<Vec<_>, _>>()?;
     let combined = session.create_compound(&shapes)?;
     let combined = match view.kind {
+        DrawingViewKind::Slice => {
+            return slice::append(session, view, &combined, options, vertices, drawing);
+        }
         DrawingViewKind::Orthographic => combined,
         DrawingViewKind::Section {
             origin,
@@ -549,11 +600,7 @@ fn append_edges(
     }
     *vertices = added;
     for edge in session.subshapes(shape, ShapeType::Edge)? {
-        let local = session
-            .edge_sample_points(&edge, options.curve_samples)?
-            .iter()
-            .map(|point| [point.x, point.y])
-            .collect::<Vec<_>>();
+        let local = sampled_points(session, view, &edge, options.curve_samples)?;
         let paths = match view.detail {
             Some(detail) => detail::clip_polyline(&local, detail)?,
             None => vec![local],
@@ -569,6 +616,25 @@ fn append_edges(
         }
     }
     Ok(())
+}
+
+fn sampled_points(
+    session: &Session,
+    view: &DrawingView,
+    edge: &Shape<'_>,
+    samples: usize,
+) -> Result<Vec<[f64; 2]>, ModelError> {
+    session
+        .edge_sample_points(edge, samples)?
+        .iter()
+        .map(|point| {
+            if matches!(view.kind, DrawingViewKind::Slice) {
+                view.project(*point)
+            } else {
+                Ok([point.x, point.y])
+            }
+        })
+        .collect()
 }
 
 type DimensionGeometry = ([f64; 2], [f64; 2], [f64; 2], f64);

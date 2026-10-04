@@ -1112,8 +1112,9 @@ or bounds-driven fitted spans,
 nested assembly frames, semantic selectors, provenance, and regeneration audit records. Live
 OCCT handles and generated BREPs are never serialized. Loading reconstructs a
 validated `InstanceGraph`; regeneration creates fresh session-owned handles.
-Schema versions 1 through 35 migrate to version 36, supplying explicit defaults
-for fields absent from older documents. Version 38 adds open sketch wires and
+Schema versions 1 through 50 migrate to version 51, supplying explicit defaults
+for fields absent from older documents. Version 51 adds planar slice views for
+cutting templates; existing drawing kinds and geometry retain their behavior. Version 38 adds open sketch wires and
 explicit translated rib-profile closure; earlier ribs default to closed profiles.
 Version 37 adds generated-face selectors
 from earlier feature edges; existing features and selectors remain unchanged.
@@ -1160,7 +1161,9 @@ inconsistent pattern membership, and invalid regeneration revisions before the
 model is accepted.
 
 The next cross-layer work should prioritize general assembly usability and
-the remaining drawing exports. The balance-report command reports material
+large mechanism solving. Schema 51 adds true planar slice drawings; the
+[drawing-export command](tools/drawing-export/README.md) shares regeneration
+across batches and writes reloadable definitions and SVG/DXF files. The balance-report command reports material
 totals and CG along an explicit chord or station-derived MAC; see
 [Mass and balance](tools/balance-report/README.md). The motion-study command turns selected outputs
 into independently hinged instances and reports interference across their

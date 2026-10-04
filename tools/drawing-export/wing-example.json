@@ -1,0 +1,689 @@
+{
+  "schema": "occb-drawing-export-v1",
+  "options": {
+    "curve_samples": 128,
+    "maximum_vertices": 1000000
+  },
+  "drawings": [
+    {
+      "id": "right-station-0",
+      "title": "Right station 0 \u2014 1:1 cutting profile",
+      "paper_size_mm": [
+        1000,
+        300
+      ],
+      "views": [
+        {
+          "id": "profile",
+          "outputs": [
+            {
+              "instance": "wing",
+              "output": "right_body"
+            }
+          ],
+          "origin": {
+            "x": {
+              "value": 0,
+              "dimension": "length",
+              "unit": "millimeter"
+            },
+            "y": {
+              "value": 0.0,
+              "dimension": "length",
+              "unit": "millimeter"
+            },
+            "z": {
+              "value": 0,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "direction": {
+            "x": {
+              "value": 0,
+              "dimension": "scalar",
+              "unit": null
+            },
+            "y": {
+              "value": -1,
+              "dimension": "scalar",
+              "unit": null
+            },
+            "z": {
+              "value": 0,
+              "dimension": "scalar",
+              "unit": null
+            }
+          },
+          "x_axis": {
+            "x": {
+              "value": 1,
+              "dimension": "scalar",
+              "unit": null
+            },
+            "y": {
+              "value": 0,
+              "dimension": "scalar",
+              "unit": null
+            },
+            "z": {
+              "value": 0,
+              "dimension": "scalar",
+              "unit": null
+            }
+          },
+          "paper_origin_mm": [
+            20,
+            150
+          ],
+          "scale": 1,
+          "show_hidden": false,
+          "kind": "slice",
+          "detail": null
+        }
+      ],
+      "dimensions": [],
+      "notes": [],
+      "metadata": {
+        "Scale": "1:1 in millimeters",
+        "Station": "0",
+        "Source": "Illustrative starter wing; regenerate setup if stations change"
+      }
+    },
+    {
+      "id": "right-station-1",
+      "title": "Right station 1 \u2014 1:1 cutting profile",
+      "paper_size_mm": [
+        1000,
+        300
+      ],
+      "views": [
+        {
+          "id": "profile",
+          "outputs": [
+            {
+              "instance": "wing",
+              "output": "right_body"
+            }
+          ],
+          "origin": {
+            "x": {
+              "value": 230,
+              "dimension": "length",
+              "unit": "millimeter"
+            },
+            "y": {
+              "value": 350.0,
+              "dimension": "length",
+              "unit": "millimeter"
+            },
+            "z": {
+              "value": 0,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "direction": {
+            "x": {
+              "value": 0,
+              "dimension": "scalar",
+              "unit": null
+            },
+            "y": {
+              "value": -1,
+              "dimension": "scalar",
+              "unit": null
+            },
+            "z": {
+              "value": 0,
+              "dimension": "scalar",
+              "unit": null
+            }
+          },
+          "x_axis": {
+            "x": {
+              "value": 1,
+              "dimension": "scalar",
+              "unit": null
+            },
+            "y": {
+              "value": 0,
+              "dimension": "scalar",
+              "unit": null
+            },
+            "z": {
+              "value": 0,
+              "dimension": "scalar",
+              "unit": null
+            }
+          },
+          "paper_origin_mm": [
+            20,
+            150
+          ],
+          "scale": 1,
+          "show_hidden": false,
+          "kind": "slice",
+          "detail": null
+        }
+      ],
+      "dimensions": [],
+      "notes": [],
+      "metadata": {
+        "Scale": "1:1 in millimeters",
+        "Station": "0.35",
+        "Source": "Illustrative starter wing; regenerate setup if stations change"
+      }
+    },
+    {
+      "id": "right-station-2",
+      "title": "Right station 2 \u2014 1:1 cutting profile",
+      "paper_size_mm": [
+        1000,
+        300
+      ],
+      "views": [
+        {
+          "id": "profile",
+          "outputs": [
+            {
+              "instance": "wing",
+              "output": "right_body"
+            }
+          ],
+          "origin": {
+            "x": {
+              "value": 470,
+              "dimension": "length",
+              "unit": "millimeter"
+            },
+            "y": {
+              "value": 700.0,
+              "dimension": "length",
+              "unit": "millimeter"
+            },
+            "z": {
+              "value": 0,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "direction": {
+            "x": {
+              "value": 0,
+              "dimension": "scalar",
+              "unit": null
+            },
+            "y": {
+              "value": -1,
+              "dimension": "scalar",
+              "unit": null
+            },
+            "z": {
+              "value": 0,
+              "dimension": "scalar",
+              "unit": null
+            }
+          },
+          "x_axis": {
+            "x": {
+              "value": 1,
+              "dimension": "scalar",
+              "unit": null
+            },
+            "y": {
+              "value": 0,
+              "dimension": "scalar",
+              "unit": null
+            },
+            "z": {
+              "value": 0,
+              "dimension": "scalar",
+              "unit": null
+            }
+          },
+          "paper_origin_mm": [
+            20,
+            150
+          ],
+          "scale": 1,
+          "show_hidden": false,
+          "kind": "slice",
+          "detail": null
+        }
+      ],
+      "dimensions": [],
+      "notes": [],
+      "metadata": {
+        "Scale": "1:1 in millimeters",
+        "Station": "0.7",
+        "Source": "Illustrative starter wing; regenerate setup if stations change"
+      }
+    },
+    {
+      "id": "right-station-3",
+      "title": "Right station 3 \u2014 1:1 cutting profile",
+      "paper_size_mm": [
+        1000,
+        300
+      ],
+      "views": [
+        {
+          "id": "profile",
+          "outputs": [
+            {
+              "instance": "wing",
+              "output": "right_body"
+            }
+          ],
+          "origin": {
+            "x": {
+              "value": 650,
+              "dimension": "length",
+              "unit": "millimeter"
+            },
+            "y": {
+              "value": 1000.0,
+              "dimension": "length",
+              "unit": "millimeter"
+            },
+            "z": {
+              "value": 0,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "direction": {
+            "x": {
+              "value": 0,
+              "dimension": "scalar",
+              "unit": null
+            },
+            "y": {
+              "value": -1,
+              "dimension": "scalar",
+              "unit": null
+            },
+            "z": {
+              "value": 0,
+              "dimension": "scalar",
+              "unit": null
+            }
+          },
+          "x_axis": {
+            "x": {
+              "value": 1,
+              "dimension": "scalar",
+              "unit": null
+            },
+            "y": {
+              "value": 0,
+              "dimension": "scalar",
+              "unit": null
+            },
+            "z": {
+              "value": 0,
+              "dimension": "scalar",
+              "unit": null
+            }
+          },
+          "paper_origin_mm": [
+            20,
+            150
+          ],
+          "scale": 1,
+          "show_hidden": false,
+          "kind": "slice",
+          "detail": null
+        }
+      ],
+      "dimensions": [],
+      "notes": [],
+      "metadata": {
+        "Scale": "1:1 in millimeters",
+        "Station": "1",
+        "Source": "Illustrative starter wing; regenerate setup if stations change"
+      }
+    },
+    {
+      "id": "left-station-0",
+      "title": "Left station 0 \u2014 1:1 cutting profile",
+      "paper_size_mm": [
+        1000,
+        300
+      ],
+      "views": [
+        {
+          "id": "profile",
+          "outputs": [
+            {
+              "instance": "wing",
+              "output": "left_body"
+            }
+          ],
+          "origin": {
+            "x": {
+              "value": 0,
+              "dimension": "length",
+              "unit": "millimeter"
+            },
+            "y": {
+              "value": -0.0,
+              "dimension": "length",
+              "unit": "millimeter"
+            },
+            "z": {
+              "value": 0,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "direction": {
+            "x": {
+              "value": 0,
+              "dimension": "scalar",
+              "unit": null
+            },
+            "y": {
+              "value": -1,
+              "dimension": "scalar",
+              "unit": null
+            },
+            "z": {
+              "value": 0,
+              "dimension": "scalar",
+              "unit": null
+            }
+          },
+          "x_axis": {
+            "x": {
+              "value": 1,
+              "dimension": "scalar",
+              "unit": null
+            },
+            "y": {
+              "value": 0,
+              "dimension": "scalar",
+              "unit": null
+            },
+            "z": {
+              "value": 0,
+              "dimension": "scalar",
+              "unit": null
+            }
+          },
+          "paper_origin_mm": [
+            20,
+            150
+          ],
+          "scale": 1,
+          "show_hidden": false,
+          "kind": "slice",
+          "detail": null
+        }
+      ],
+      "dimensions": [],
+      "notes": [],
+      "metadata": {
+        "Scale": "1:1 in millimeters",
+        "Station": "0",
+        "Source": "Illustrative starter wing; regenerate setup if stations change"
+      }
+    },
+    {
+      "id": "left-station-1",
+      "title": "Left station 1 \u2014 1:1 cutting profile",
+      "paper_size_mm": [
+        1000,
+        300
+      ],
+      "views": [
+        {
+          "id": "profile",
+          "outputs": [
+            {
+              "instance": "wing",
+              "output": "left_body"
+            }
+          ],
+          "origin": {
+            "x": {
+              "value": 230,
+              "dimension": "length",
+              "unit": "millimeter"
+            },
+            "y": {
+              "value": -350.0,
+              "dimension": "length",
+              "unit": "millimeter"
+            },
+            "z": {
+              "value": 0,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "direction": {
+            "x": {
+              "value": 0,
+              "dimension": "scalar",
+              "unit": null
+            },
+            "y": {
+              "value": -1,
+              "dimension": "scalar",
+              "unit": null
+            },
+            "z": {
+              "value": 0,
+              "dimension": "scalar",
+              "unit": null
+            }
+          },
+          "x_axis": {
+            "x": {
+              "value": 1,
+              "dimension": "scalar",
+              "unit": null
+            },
+            "y": {
+              "value": 0,
+              "dimension": "scalar",
+              "unit": null
+            },
+            "z": {
+              "value": 0,
+              "dimension": "scalar",
+              "unit": null
+            }
+          },
+          "paper_origin_mm": [
+            20,
+            150
+          ],
+          "scale": 1,
+          "show_hidden": false,
+          "kind": "slice",
+          "detail": null
+        }
+      ],
+      "dimensions": [],
+      "notes": [],
+      "metadata": {
+        "Scale": "1:1 in millimeters",
+        "Station": "0.35",
+        "Source": "Illustrative starter wing; regenerate setup if stations change"
+      }
+    },
+    {
+      "id": "left-station-2",
+      "title": "Left station 2 \u2014 1:1 cutting profile",
+      "paper_size_mm": [
+        1000,
+        300
+      ],
+      "views": [
+        {
+          "id": "profile",
+          "outputs": [
+            {
+              "instance": "wing",
+              "output": "left_body"
+            }
+          ],
+          "origin": {
+            "x": {
+              "value": 470,
+              "dimension": "length",
+              "unit": "millimeter"
+            },
+            "y": {
+              "value": -700.0,
+              "dimension": "length",
+              "unit": "millimeter"
+            },
+            "z": {
+              "value": 0,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "direction": {
+            "x": {
+              "value": 0,
+              "dimension": "scalar",
+              "unit": null
+            },
+            "y": {
+              "value": -1,
+              "dimension": "scalar",
+              "unit": null
+            },
+            "z": {
+              "value": 0,
+              "dimension": "scalar",
+              "unit": null
+            }
+          },
+          "x_axis": {
+            "x": {
+              "value": 1,
+              "dimension": "scalar",
+              "unit": null
+            },
+            "y": {
+              "value": 0,
+              "dimension": "scalar",
+              "unit": null
+            },
+            "z": {
+              "value": 0,
+              "dimension": "scalar",
+              "unit": null
+            }
+          },
+          "paper_origin_mm": [
+            20,
+            150
+          ],
+          "scale": 1,
+          "show_hidden": false,
+          "kind": "slice",
+          "detail": null
+        }
+      ],
+      "dimensions": [],
+      "notes": [],
+      "metadata": {
+        "Scale": "1:1 in millimeters",
+        "Station": "0.7",
+        "Source": "Illustrative starter wing; regenerate setup if stations change"
+      }
+    },
+    {
+      "id": "left-station-3",
+      "title": "Left station 3 \u2014 1:1 cutting profile",
+      "paper_size_mm": [
+        1000,
+        300
+      ],
+      "views": [
+        {
+          "id": "profile",
+          "outputs": [
+            {
+              "instance": "wing",
+              "output": "left_body"
+            }
+          ],
+          "origin": {
+            "x": {
+              "value": 650,
+              "dimension": "length",
+              "unit": "millimeter"
+            },
+            "y": {
+              "value": -1000.0,
+              "dimension": "length",
+              "unit": "millimeter"
+            },
+            "z": {
+              "value": 0,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "direction": {
+            "x": {
+              "value": 0,
+              "dimension": "scalar",
+              "unit": null
+            },
+            "y": {
+              "value": -1,
+              "dimension": "scalar",
+              "unit": null
+            },
+            "z": {
+              "value": 0,
+              "dimension": "scalar",
+              "unit": null
+            }
+          },
+          "x_axis": {
+            "x": {
+              "value": 1,
+              "dimension": "scalar",
+              "unit": null
+            },
+            "y": {
+              "value": 0,
+              "dimension": "scalar",
+              "unit": null
+            },
+            "z": {
+              "value": 0,
+              "dimension": "scalar",
+              "unit": null
+            }
+          },
+          "paper_origin_mm": [
+            20,
+            150
+          ],
+          "scale": 1,
+          "show_hidden": false,
+          "kind": "slice",
+          "detail": null
+        }
+      ],
+      "dimensions": [],
+      "notes": [],
+      "metadata": {
+        "Scale": "1:1 in millimeters",
+        "Station": "1",
+        "Source": "Illustrative starter wing; regenerate setup if stations change"
+      }
+    }
+  ]
+}

@@ -11,18 +11,28 @@ tracks status and order.
 | C ABI (`src/`, `include/`) | ABI 37 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 50 | Active development |
+| `occt-parametric` (engineering layer) | Schema 51 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 4/4, bridge 81 (+1 doc test), recipes 3, parametric 261 + merge driver 3 + motion command 7 + balance command 4, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 4/4, bridge 81 + first-use integration 1 (+1 doc test), recipes 3, parametric 265 + merge driver 3 + motion command 7 + balance command 4 + drawing command 2, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.3% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
-| Coverage | 93.27% lines overall, test code excluded; C++ 94.24% lines, 87.56% branches, 100% functions; Rust 92.85% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 71 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Coverage | 93.29% lines overall, test code excluded; C++ 94.24% lines, 87.68% branches, 100% functions; Rust 92.89% lines | `tools/coverage/run.sh` |
+| Scale benchmarks | 72 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
+
+- General drawing batches and cutting templates (schema 51): true planar slices
+  export only the cross-section boundaries, including holes, without projecting
+  geometry behind the plane. The command writes numbered SVG and millimeter DXF,
+  a manifest and persisted drawing definitions. Eight mirrored starter-wing
+  station profiles exercise the same generic workflow. A 1,000-template scale
+  case shares one variant and enforces a global vertex budget. Concurrent native
+  projection now initializes OCCT's shared plane once; fresh-process regression
+  tests cover simultaneous first sessions. See [Drawing export](tools/drawing-export/README.md).
+
 
 - Mass and balance reports: selected outputs retain their current frame/joint
   poses and inherited or explicitly supplied densities. Reports include
@@ -637,8 +647,9 @@ every item below is defined in documents and the API, and verified in tests.
 
 ### Capabilities
 
-1. **Rib templates.** Section drawings through the wing at each rib station,
-    exported as DXF for cutting.
+The previously listed capability milestones are complete. Further work remains
+in the areas below, with general assembly usability and mechanism solving taking
+priority over additional rib variants.
 
 ## Later
 
