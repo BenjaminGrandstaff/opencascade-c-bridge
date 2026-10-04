@@ -357,6 +357,13 @@ static void recipes_sweeps_and_lofts(occt_bridge_session_t* session) {
     EXPECT(occt_bridge_create_loft(session, sections, overflowing_counts, 2, 1, 0, &out), ARG);
     EXPECT(occt_bridge_create_loft(session, bad_sections, counts, 2, 1, 0, &out), ARG);
     EXPECT(occt_bridge_create_loft(session, sections, counts, 2, 0, 1, &out), OK);
+    EXPECT(occt_bridge_create_spline_loft(session, sections, counts, 2, 1, 0, NULL), ARG);
+    EXPECT(occt_bridge_create_spline_loft(session, NULL, counts, 2, 1, 0, &out), ARG);
+    EXPECT(occt_bridge_create_spline_loft(session, sections, counts, 1, 1, 0, &out), ARG);
+    EXPECT(occt_bridge_create_spline_loft(session, sections, counts, 2, 1, 2, &out), ARG);
+    EXPECT(occt_bridge_create_spline_loft(session, sections, overflowing_counts, 2, 1, 0, &out), ARG);
+    EXPECT(occt_bridge_create_spline_loft(session, bad_sections, counts, 2, 1, 0, &out), ARG);
+    EXPECT(occt_bridge_create_spline_loft(session, sections, counts, 2, 1, 1, &out), OK);
 }
 
 static void combinations_and_features(occt_bridge_session_t* session) {

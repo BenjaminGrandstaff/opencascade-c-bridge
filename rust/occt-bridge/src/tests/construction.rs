@@ -547,3 +547,94 @@ fn lofts_sections_and_builds_a_compound() {
     assert!(session.is_valid(&loft).unwrap());
     assert!(session.is_valid(&marker).unwrap());
 }
+
+#[test]
+fn spline_lofts_interpolate_smooth_sections_with_one_corner() {
+    let session = Session::new().unwrap();
+    let circle = |y: f64| {
+        (0..16)
+            .map(|index| {
+                let angle = std::f64::consts::TAU * index as f64 / 16.0;
+                Vec3::new(10.0 * angle.cos(), y, 10.0 * angle.sin())
+            })
+            .collect::<Vec<_>>()
+    };
+    let (root, tip) = (circle(0.0), circle(20.0));
+    let exact = std::f64::consts::PI * 100.0 * 20.0;
+    let polygon = session.create_loft(&[&root, &tip], true, true).unwrap();
+    let smooth = session
+        .create_spline_loft(&[&root, &tip], true, true)
+        .unwrap();
+    assert!(session.is_valid(&smooth).unwrap());
+    // A 16-gon falls 2.5% short of the circle; the interpolated section does
+    // not, apart from the small corner kept at the first point.
+    let polygon_error = (session.volume(&polygon).unwrap() - exact).abs() / exact;
+    let smooth_error = (session.volume(&smooth).unwrap() - exact).abs() / exact;
+    assert!(polygon_error > 0.02, "{polygon_error}");
+    assert!(smooth_error < 2e-3, "{smooth_error}");
+    // One smooth side face per span plus two caps, instead of one per segment.
+    assert_eq!(session.subshape_count(&smooth, ShapeType::Face).unwrap(), 3);
+    assert_eq!(
+        session.subshape_count(&polygon, ShapeType::Face).unwrap(),
+        18
+    );
+
+    // Smoothing across three sections still yields a valid solid.
+    let middle = circle(10.0)
+        .into_iter()
+        .map(|point| Vec3::new(point.x * 0.5, point.y, point.z * 0.5))
+        .collect::<Vec<_>>();
+    let waisted = session
+        .create_spline_loft(&[&root, &middle, &tip], true, false)
+        .unwrap();
+    assert!(session.is_valid(&waisted).unwrap());
+    assert!(session.volume(&waisted).unwrap() < exact);
+
+    let mut repeated = root.clone();
+    repeated[3] = repeated[2];
+    assert!(
+        session
+            .create_spline_loft(&[&repeated, &tip], true, true)
+            .is_err()
+    );
+    assert!(session.create_spline_loft(&[&root], true, true).is_err());
+}
+
+/// NACA 0012 at cosine spacing: trailing edge, upper surface, leading edge,
+/// lower surface, without repeating the trailing edge.
+fn naca_0012(chord: f64, y: f64) -> Vec<Vec3> {
+    let thickness = |x: f64| {
+        0.6 * (0.2969 * x.sqrt() - 0.126 * x - 0.3516 * x * x + 0.2843 * x.powi(3)
+            - 0.1036 * x.powi(4))
+    };
+    let x = |i: usize| (1.0 + (std::f64::consts::PI * i as f64 / 40.0).cos()) / 2.0;
+    let upper = (0..=40).map(|i| (x(i), thickness(x(i))));
+    let lower = (1..40).rev().map(|i| (x(i), -thickness(x(i))));
+    upper
+        .chain(lower)
+        .map(|(x, z)| Vec3::new(chord * x, y, chord * z))
+        .collect()
+}
+
+#[test]
+fn volumes_of_freeform_lofts_use_adaptive_integration() {
+    let session = Session::new().unwrap();
+    let (root, tip) = (naca_0012(100.0, 0.0), naca_0012(100.0, 1000.0));
+    let polygon = session.create_loft(&[&root, &tip], true, true).unwrap();
+    let smooth = session
+        .create_spline_loft(&[&root, &tip], true, true)
+        .unwrap();
+    // The smooth section circumscribes the inscribed polygon. Fixed-order
+    // integration once reported the smooth wing about 20% too small.
+    let polygon_volume = session.volume(&polygon).unwrap();
+    let smooth_volume = session.volume(&smooth).unwrap();
+    assert!(
+        smooth_volume > polygon_volume,
+        "{smooth_volume} <= {polygon_volume}"
+    );
+    assert!((smooth_volume - polygon_volume) / polygon_volume < 5e-3);
+    let adaptive = session.mass_properties(&smooth).unwrap().volume;
+    assert!((smooth_volume - adaptive).abs() / adaptive < 1e-8);
+    let center = session.center_of_mass(&smooth).unwrap();
+    assert!((center.y - 500.0).abs() < 1e-6, "{center:?}");
+}

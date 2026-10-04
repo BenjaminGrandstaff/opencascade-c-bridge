@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define OCCT_BRIDGE_ABI_VERSION 36u
+#define OCCT_BRIDGE_ABI_VERSION 37u
 #define OCCT_BRIDGE_INVALID_SHAPE_ID UINT64_C(0)
 
 #if defined(_WIN32) && defined(OCCT_BRIDGE_BUILD_SHARED)
@@ -424,6 +424,23 @@ OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_create_polyline_tube(
  * section-by-section; section_point_counts describes each contiguous section.
  */
 OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_create_loft(
+    occt_bridge_session_t* session,
+    const occt_bridge_vec3_t* points,
+    const size_t* section_point_counts,
+    size_t section_count,
+    int make_solid,
+    int ruled,
+    occt_bridge_shape_id_t* out_shape
+);
+
+/*
+ * Like occt_bridge_create_loft, but each section is one non-periodic B-spline
+ * interpolated through its points and closed back to its first point: smooth
+ * everywhere except a corner at the first point (such as an airfoil trailing
+ * edge). Consecutive points, including last-to-first, must not coincide.
+ * ruled = 1 keeps straight lines between sections; 0 also smooths across them.
+ */
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_create_spline_loft(
     occt_bridge_session_t* session,
     const occt_bridge_vec3_t* points,
     const size_t* section_point_counts,

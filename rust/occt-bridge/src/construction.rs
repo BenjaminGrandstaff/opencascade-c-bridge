@@ -383,6 +383,37 @@ impl Session {
         make_solid: bool,
         ruled: bool,
     ) -> Result<Shape<'_>, BridgeError> {
+        self.loft_with(sections, make_solid, ruled, occt_bridge_create_loft)
+    }
+
+    /// Lofts through sections that are each one B-spline interpolated through
+    /// their points and closed back to the first point: smooth except for a
+    /// corner at the first point, such as an airfoil trailing edge. `ruled`
+    /// keeps straight lines between sections.
+    pub fn create_spline_loft(
+        &self,
+        sections: &[&[Vec3]],
+        make_solid: bool,
+        ruled: bool,
+    ) -> Result<Shape<'_>, BridgeError> {
+        self.loft_with(sections, make_solid, ruled, occt_bridge_create_spline_loft)
+    }
+
+    fn loft_with(
+        &self,
+        sections: &[&[Vec3]],
+        make_solid: bool,
+        ruled: bool,
+        loft: unsafe extern "C" fn(
+            *mut c_void,
+            *const RawVec3,
+            *const usize,
+            usize,
+            c_int,
+            c_int,
+            *mut RawShapeId,
+        ) -> RawStatus,
+    ) -> Result<Shape<'_>, BridgeError> {
         let counts: Vec<usize> = sections.iter().map(|section| section.len()).collect();
         let points: Vec<RawVec3> = sections
             .iter()
@@ -392,7 +423,7 @@ impl Session {
         let mut shape = 0;
         // SAFETY: Flattened points, counts, and output remain valid for the call.
         self.check(unsafe {
-            occt_bridge_create_loft(
+            loft(
                 self.raw.as_ptr(),
                 points.as_ptr(),
                 counts.as_ptr(),

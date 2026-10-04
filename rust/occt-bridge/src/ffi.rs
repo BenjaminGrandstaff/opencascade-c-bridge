@@ -2,7 +2,7 @@
 
 use super::*;
 
-pub(crate) const ABI_VERSION: u32 = 36;
+pub(crate) const ABI_VERSION: u32 = 37;
 
 #[repr(C)]
 pub(crate) struct RawMeshOptions {
@@ -313,6 +313,15 @@ unsafe extern "C" {
         out: *mut RawShapeId,
     ) -> RawStatus;
     pub(crate) fn occt_bridge_create_loft(
+        session: *mut c_void,
+        points: *const RawVec3,
+        section_point_counts: *const usize,
+        section_count: usize,
+        make_solid: c_int,
+        ruled: c_int,
+        out: *mut RawShapeId,
+    ) -> RawStatus;
+    pub(crate) fn occt_bridge_create_spline_loft(
         session: *mut c_void,
         points: *const RawVec3,
         section_point_counts: *const usize,

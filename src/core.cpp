@@ -6,6 +6,9 @@
 
 #include "bridge_internal.hpp"
 
+#include <BRepGProp.hxx>
+#include <BRepAdaptor_Surface.hxx>
+
 #include <BRepCheck_ListOfStatus.hxx>
 #include <BRepCheck_Result.hxx>
 #include <ShapeBuild_ReShape.hxx>
@@ -346,6 +349,37 @@ occt_bridge_status_t check_result(
 
 bool contains_topology(const TopoDS_Shape& shape, TopAbs_ShapeEnum type) {
     return shape.ShapeType() == type || TopExp_Explorer(shape, type).More();
+}
+
+void adaptive_volume_properties(const TopoDS_Shape& shape, GProp_GProps& properties) {
+    // Fixed-order Gauss integration is exact to roundoff on analytic faces but
+    // can be badly wrong on multi-span freeform faces, where adaptive
+    // integration is reliable but looser on analytic ones. Choose per shape.
+    bool freeform = false;
+    for (TopExp_Explorer explorer(shape, TopAbs_FACE); explorer.More() && !freeform; explorer.Next()) {
+        const BRepAdaptor_Surface surface(TopoDS::Face(explorer.Current()), Standard_False);
+        switch (surface.GetType()) {
+            case GeomAbs_Plane:
+            case GeomAbs_Cylinder:
+            case GeomAbs_Cone:
+            case GeomAbs_Sphere:
+            case GeomAbs_Torus: break;
+            // A swept conic is a single span; a swept spline is not.
+            case GeomAbs_SurfaceOfExtrusion:
+            case GeomAbs_SurfaceOfRevolution:
+                freeform = surface.BasisCurve()->GetType() == GeomAbs_BSplineCurve
+                    || surface.BasisCurve()->GetType() == GeomAbs_BezierCurve
+                    || surface.BasisCurve()->GetType() == GeomAbs_OffsetCurve
+                    || surface.BasisCurve()->GetType() == GeomAbs_OtherCurve;
+                break;
+            default: freeform = true; break;
+        }
+    }
+    if (freeform) {
+        BRepGProp::VolumeProperties(shape, properties, 1e-9, Standard_False);
+    } else {
+        BRepGProp::VolumeProperties(shape, properties);
+    }
 }
 
 bool is_descendant(

@@ -19,6 +19,8 @@
 #include <BRepPrimAPI_MakeSphere.hxx>
 #include <BRep_Builder.hxx>
 #include <GC_MakeArcOfCircle.hxx>
+#include <GeomAPI_Interpolate.hxx>
+#include <TColgp_HArray1OfPnt.hxx>
 #include <Precision.hxx>
 #include <TopoDS.hxx>
 #include <TopoDS_Compound.hxx>
@@ -49,6 +51,33 @@ TopoDS_Wire polygon_wire(const occt_bridge_vec3_t* points, size_t point_count) {
         wire.Add(gp_Pnt(points[index].x, points[index].y, points[index].z));
     }
     wire.Close();
+    return wire.IsDone() ? wire.Wire() : TopoDS_Wire{};
+}
+
+// One non-periodic B-spline through every point and back to the first, so
+// the curve is smooth everywhere except at the first point (a sharp corner
+// such as an airfoil trailing edge). Null when consecutive points coincide.
+TopoDS_Wire spline_wire(const occt_bridge_vec3_t* points, size_t point_count) {
+    Handle(TColgp_HArray1OfPnt) poles = new TColgp_HArray1OfPnt(1, static_cast<int>(point_count) + 1);
+    for (size_t index = 0; index <= point_count; ++index) {
+        const auto& point = points[index % point_count];
+        poles->SetValue(static_cast<int>(index) + 1, gp_Pnt(point.x, point.y, point.z));
+    }
+    for (int index = 1; index <= poles->Length() - 1; ++index) {
+        if (poles->Value(index).Distance(poles->Value(index + 1)) <= Precision::Confusion()) {
+            return TopoDS_Wire{};
+        }
+    }
+    GeomAPI_Interpolate interpolate(poles, Standard_False, Precision::Confusion());
+    interpolate.Perform();
+    if (!interpolate.IsDone()) {
+        return TopoDS_Wire{};
+    }
+    BRepBuilderAPI_MakeEdge edge(interpolate.Curve());
+    if (!edge.IsDone()) {
+        return TopoDS_Wire{};
+    }
+    BRepBuilderAPI_MakeWire wire(edge.Edge());
     return wire.IsDone() ? wire.Wire() : TopoDS_Wire{};
 }
 
@@ -151,6 +180,58 @@ occt_bridge_status_t validate_loft_points(
         return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "loft point is not finite");
     }
     return OCCT_BRIDGE_OK;
+}
+
+// Shared by polygon and spline lofts; `section_wire` builds one closed section.
+occt_bridge_status_t build_loft(
+    occt_bridge_session_t* session,
+    const occt_bridge_vec3_t* points,
+    const size_t* section_point_counts,
+    size_t section_count,
+    int make_solid,
+    int ruled,
+    TopoDS_Wire (*section_wire)(const occt_bridge_vec3_t*, size_t),
+    occt_bridge_shape_id_t* out_shape) {
+    if (out_shape == nullptr) {
+        return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_shape is null");
+    }
+    *out_shape = OCCT_BRIDGE_INVALID_SHAPE_ID;
+    if (points == nullptr || section_point_counts == nullptr || section_count < 2
+        || (make_solid != 0 && make_solid != 1) || (ruled != 0 && ruled != 1)) {
+        return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "invalid loft parameters");
+    }
+    const occt_bridge_status_t points_status =
+        validate_loft_points(session, points, section_point_counts, section_count);
+    if (points_status != OCCT_BRIDGE_OK) {
+        return points_status;
+    }
+    BRepOffsetAPI_ThruSections loft(
+        make_solid ? Standard_True : Standard_False,
+        ruled ? Standard_True : Standard_False);
+    size_t offset = 0;
+    for (size_t section = 0; section < section_count; ++section) {
+        const size_t count = section_point_counts[section];
+        const TopoDS_Wire wire = section_wire(points + offset, count);
+        if (wire.IsNull()) {
+            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "loft section could not be closed");
+        }
+        loft.AddWire(wire);
+        offset += count;
+    }
+    loft.CheckCompatibility(Standard_True);
+    loft.Build();
+    if (!loft.IsDone()) {
+        return fail(session, OCCT_BRIDGE_KERNEL_ERROR, "loft construction failed");
+    }
+    const TopoDS_Shape shape = loft.Shape();
+    if (shape.IsNull()) {
+        return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "loft produced a null shape");
+    }
+    const ShapeValidator analyzer(shape);
+    if (!analyzer.IsValid()) {
+        return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "loft produced an invalid BREP");
+    }
+    return store_shape(session, shape, out_shape);
 }
 
 }  // namespace
@@ -614,47 +695,22 @@ occt_bridge_status_t occt_bridge_create_loft(
     int ruled,
     occt_bridge_shape_id_t* out_shape) {
     return guarded(session, [&] {
-        if (out_shape == nullptr) {
-            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_shape is null");
-        }
-        *out_shape = OCCT_BRIDGE_INVALID_SHAPE_ID;
-        if (points == nullptr || section_point_counts == nullptr || section_count < 2
-            || (make_solid != 0 && make_solid != 1) || (ruled != 0 && ruled != 1)) {
-            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "invalid loft parameters");
-        }
-        const occt_bridge_status_t points_status =
-            validate_loft_points(session, points, section_point_counts, section_count);
-        if (points_status != OCCT_BRIDGE_OK) {
-            return points_status;
-        }
+        return build_loft(session, points, section_point_counts, section_count, make_solid,
+            ruled, polygon_wire, out_shape);
+    });
+}
 
-        BRepOffsetAPI_ThruSections loft(
-            make_solid ? Standard_True : Standard_False,
-            ruled ? Standard_True : Standard_False);
-        size_t offset = 0;
-        for (size_t section = 0; section < section_count; ++section) {
-            const size_t count = section_point_counts[section];
-            const TopoDS_Wire wire = polygon_wire(points + offset, count);
-            if (wire.IsNull()) {
-                return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "loft section could not be closed");
-            }
-            loft.AddWire(wire);
-            offset += count;
-        }
-        loft.CheckCompatibility(Standard_True);
-        loft.Build();
-        if (!loft.IsDone()) {
-            return fail(session, OCCT_BRIDGE_KERNEL_ERROR, "loft construction failed");
-        }
-        const TopoDS_Shape shape = loft.Shape();
-        if (shape.IsNull()) {
-            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "loft produced a null shape");
-        }
-        const ShapeValidator analyzer(shape);
-        if (!analyzer.IsValid()) {
-            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "loft produced an invalid BREP");
-        }
-        return store_shape(session, shape, out_shape);
+occt_bridge_status_t occt_bridge_create_spline_loft(
+    occt_bridge_session_t* session,
+    const occt_bridge_vec3_t* points,
+    const size_t* section_point_counts,
+    size_t section_count,
+    int make_solid,
+    int ruled,
+    occt_bridge_shape_id_t* out_shape) {
+    return guarded(session, [&] {
+        return build_loft(session, points, section_point_counts, section_count, make_solid,
+            ruled, spline_wire, out_shape);
     });
 }
 

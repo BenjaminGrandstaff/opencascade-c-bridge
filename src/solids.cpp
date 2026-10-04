@@ -82,7 +82,7 @@ struct SolidBoundary {
 
 double solid_volume(const TopoDS_Shape& shape) {
     GProp_GProps properties;
-    BRepGProp::VolumeProperties(shape, properties);
+    adaptive_volume_properties(shape, properties);
     return std::abs(properties.Mass());
 }
 
