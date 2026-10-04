@@ -43,14 +43,11 @@ impl GeneratedDrawing {
             out.push_str("\"/>\n");
         }
         for label in &self.labels {
-            writeln!(
-                out,
-                "<text x=\"{}\" y=\"{}\" font-family=\"sans-serif\" font-size=\"3\">{}</text>",
-                label.position_mm[0],
-                height - label.position_mm[1],
-                xml(&label.text)
-            )
-            .unwrap();
+            writeln!(out, "<g aria-label=\"{}\">", xml(&label.text)).unwrap();
+            for (point, text, size) in label_parts(label) {
+                writeln!(out,"<text x=\"{}\" y=\"{}\" font-family=\"sans-serif\" font-size=\"{size}\">{}</text>",point[0],height-point[1],xml(&text)).unwrap();
+            }
+            out.push_str("</g>\n");
         }
         writeln!(
             out,
@@ -102,6 +99,7 @@ impl GeneratedDrawing {
             &DrawingLabel {
                 position_mm: [10.0, 10.0],
                 text: self.title.clone(),
+                stack: None,
             },
         );
         for (index, (key, value)) in self.metadata.iter().enumerate() {
@@ -110,6 +108,7 @@ impl GeneratedDrawing {
                 &DrawingLabel {
                     position_mm: [10.0, 16.0 + 5.0 * index as f64],
                     text: format!("{key}: {value}"),
+                    stack: None,
                 },
             );
         }
@@ -163,6 +162,29 @@ fn append_dxf_tables(out: &mut String) {
     out.push_str("0\nENDTAB\n0\nENDSEC\n");
 }
 
+fn label_parts(label: &DrawingLabel) -> Vec<([f64; 2], String, f64)> {
+    let [x, y] = label.position_mm;
+    let Some(stack) = &label.stack else {
+        return vec![(label.position_mm, label.text.clone(), 3.0)];
+    };
+    let column = x + stack.prefix.chars().count() as f64 * 1.8 + 1.0;
+    let suffix_x =
+        column + stack.upper.chars().count().max(stack.lower.chars().count()) as f64 * 1.4 + 1.0;
+    vec![
+        ([x, y], stack.prefix.clone(), 3.0),
+        ([column, y + 1.8], stack.upper.clone(), 2.2),
+        ([column, y - 1.8], stack.lower.clone(), 2.2),
+        ([suffix_x, y], stack.suffix.clone(), 3.0),
+    ]
+}
 fn append_dxf_label(out: &mut String, label: &DrawingLabel) {
-    write!(out,"0\nTEXT\n100\nAcDbEntity\n8\nANNOTATIONS\n100\nAcDbText\n10\n{}\n20\n{}\n30\n0\n40\n3\n1\n{}\n100\nAcDbText\n",label.position_mm[0],label.position_mm[1],dxf_text(&label.text)).unwrap();
+    if label.stack.is_some() {
+        writeln!(out, "999\n{}", dxf_text(&label.text)).unwrap();
+    }
+    for (point, text, size) in label_parts(label) {
+        if text.is_empty() {
+            continue;
+        }
+        write!(out,"0\nTEXT\n100\nAcDbEntity\n8\nANNOTATIONS\n100\nAcDbText\n10\n{}\n20\n{}\n30\n0\n40\n{size}\n1\n{}\n100\nAcDbText\n",point[0],point[1],dxf_text(&text)).unwrap();
+    }
 }

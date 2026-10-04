@@ -11,18 +11,33 @@ tracks status and order.
 | C ABI (`src/`, `include/`) | ABI 42 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 57 | Active development |
+| `occt-parametric` (engineering layer) | Schema 58 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 89 + first-use integration 1 (+1 doc test), recipes 3, parametric 311 + merge driver 3 + motion command 16 + balance command 4 + drawing command 2 + branch command 2, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
-| SonarQube (indexed Rust) | Gate OK, 0 issues, 93.4% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
+| Tests | C 5/5, bridge 89 + first-use integration 1 (+1 doc test), recipes 3, parametric 317 + merge driver 3 + motion command 16 + balance command 4 + drawing command 2 + branch command 2, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| SonarQube (indexed Rust) | Gate OK, 0 issues, 93.5% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
-| Coverage | 93.36% lines overall, test code excluded; C++ 94.17% lines, 87.55% branches, 100% functions; Rust 93.03% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 87 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Coverage | 93.39% lines overall, test code excluded; C++ 94.17% lines, 87.51% branches, 100% functions; Rust 93.08% lines | `tools/coverage/run.sh` |
+| Scale benchmarks | 89 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
+
+- Manufacturing dimensions and tolerances (schema 58): radial, diametric and
+  minor-angle dimensions join aligned/horizontal/vertical dimensions. Display
+  units support mm, cm, m and inches; tolerance values carry units, with scalar
+  radians for angles. Symmetric ±, signed deviations, explicit limits, boxed
+  basic and parenthesized reference dimensions are persisted and exported as
+  SVG/DXF annotations, including stacked deviations and limit values. Live Hole
+  callouts resolve bore diameter, through/blind
+  extent, counterbore/countersink and recorded thread intent from current
+  parameter values. Invalid units, ranges, datums and references fail cleanly;
+  radial/angular datums must lie in the view plane. Legacy drawings default to
+  their existing untoleranced millimeter presentation. Six new tests cover
+  exports, edits, migration, budgets and cleanup; benchmarks cover 10,000 mixed
+  annotations and 10,000 live callouts. This implements dimension capabilities,
+  not a clause-by-clause ASME conformity claim. See [Drawings](DRAWINGS.md).
 
 - Sliding components in the motion-study command: bounded prismatic joints,
   normalized local axes, millimeter start/end offsets, reverse travel, and
@@ -840,9 +855,35 @@ every item below is defined in documents and the API, and verified in tests.
 
 ### Capabilities
 
-The previously listed capability milestones are complete. Further work remains
-in the areas below, with general assembly usability and mechanism solving taking
-priority over additional rib variants.
+The earlier geometry and assembly milestones are complete. Manufacturing
+product definition is the next general CAD priority; additional rib variants
+remain lower priority. The ASME comparison below is based on public standard
+scopes and inspected repo capabilities, not a full conformity audit.
+
+1. **Drawing conventions and manufacturing sheets** — [Y14 family](https://www.asme.org/codes-standards/y14-standards):
+   automatic section hatching, cutting-plane indicators, centerlines/center marks,
+   projection symbols, standard sheet layouts, and standards-verified dimension
+   placement and typography, plus exact curve export. Current curves are sampled
+   polylines; direct deviations and limits now render stacked values.
+2. **Structured GD&T** — [Y14.5](https://www.asme.org/codes-standards/find-codes-standards/y14-5-dimensioning-tolerancing):
+   datum-feature symbols and datum reference frames, feature-control frames,
+   position/profile/form/orientation/runout controls, material-condition modifiers,
+   tolerance-zone semantics and validation. Existing geometric datums and solver
+   tolerances do not supply manufacturing GD&T.
+3. **3D manufacturing annotations and exchange** — [Y14.41](https://www.asme.org/codes-standards/find-codes-standards/y14-41-digital-product-definition-data-practices):
+   structured PMI attached to persistent geometry, annotation views, dataset
+   authority and revision rules, and verified semantic PMI exchange. Geometry
+   and assembly STEP export alone does not preserve this product definition.
+4. **Standards-backed thread specifications** — [B1.1](https://www.asme.org/codes-standards/find-codes-standards/b1-1-unified-inch-screw-threads-un-unr-thread-form):
+   thread limits/classes, fit validation and standard representations. Live drawing
+   callouts now show recorded intent; nominal drill catalogs and thread strings
+   still do not verify compliance or engagement/strength.
+5. **Manufacturing surface texture** — [B46.1](https://www.asme.org/codes-standards/about-standards/technology-highlights/advanced-manufacturing):
+   roughness, waviness and lay requirements attached to surfaces and shown on
+   drawings. Rendering-material roughness is independent of these requirements.
+6. **Controlled drawing release and assembly lists** — [Y14.100](https://www.asme.org/codes-standards/find-codes-standards/engineering-drawing-practices):
+   structured approval/release records, drawing revision tables, parts lists,
+   assembly balloons, and links between released drawing/model revisions.
 
 ## Later
 

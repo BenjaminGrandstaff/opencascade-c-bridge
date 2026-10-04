@@ -4,6 +4,8 @@ use crate::assembly::{cross, dot, subtract};
 use std::collections::BTreeSet;
 
 mod detail;
+mod dimensions;
+pub use dimensions::{DimensionPresentation, DimensionTolerance};
 mod export;
 mod slice;
 
@@ -46,12 +48,19 @@ pub struct DrawingView {
     pub detail: Option<DrawingDetail>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DimensionDirection {
     Aligned,
     Horizontal,
     Vertical,
+    /// First datum is center, second is a point on the circle, in the view plane.
+    Radius,
+    Diameter,
+    /// First and second datums define rays from this vertex; minor angle 0–180°.
+    Angular {
+        vertex: DatumRef,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -64,6 +73,8 @@ pub struct DrawingDimension {
     /// Signed offset in paper mm, along the dimension's left-hand normal.
     pub offset_mm: f64,
     pub precision: u8,
+    #[serde(default, skip_serializing_if = "DimensionPresentation::is_default")]
+    pub presentation: DimensionPresentation,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -122,9 +133,18 @@ pub struct DrawingPolyline {
     pub hidden: bool,
 }
 #[derive(Clone, Debug, PartialEq)]
+pub struct DrawingDimensionStack {
+    pub prefix: String,
+    pub upper: String,
+    pub lower: String,
+    pub suffix: String,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct DrawingLabel {
     pub position_mm: [f64; 2],
     pub text: String,
+    pub stack: Option<DrawingDimensionStack>,
 }
 #[derive(Clone, Debug, PartialEq)]
 pub struct GeneratedDrawing {
@@ -421,9 +441,20 @@ impl DrawingDefinition {
         };
         let added = self
             .dimensions
-            .len()
-            .checked_mul(14)
-            .and_then(|count| count.checked_add(9))
+            .iter()
+            .try_fold(9usize, |sum, d| {
+                let count = match d.direction {
+                    DimensionDirection::Angular { .. } => 77,
+                    DimensionDirection::Radius => 8,
+                    DimensionDirection::Diameter => 12,
+                    _ => 14,
+                } + if matches!(d.presentation.tolerance, DimensionTolerance::Basic) {
+                    5
+                } else {
+                    0
+                };
+                sum.checked_add(count)
+            })
             .ok_or_else(|| ModelError::new("drawing annotation vertex count overflow"))?;
         *vertices = vertices
             .checked_add(added)
@@ -439,18 +470,21 @@ impl DrawingDefinition {
             .iter()
             .map(|view| (view.id.as_str(), view))
             .collect::<HashMap<_, _>>();
+        let context = dimensions::DimensionContext::new(&self.dimensions, graph)?;
         for dimension in &self.dimensions {
             append_dimension(
                 dimension,
                 views[dimension.view.as_str()],
                 graph,
                 &mut drawing,
+                &context,
             )?;
         }
         for note in &self.notes {
             drawing.labels.push(DrawingLabel {
                 position_mm: note.position_mm,
                 text: note.text.resolve(graph)?,
+                stack: None,
             });
         }
         Ok(drawing)
@@ -497,6 +531,7 @@ fn validate_dimensions(
     graph: &InstanceGraph<'_>,
 ) -> Result<(), ModelError> {
     let mut ids = HashSet::new();
+    let context = dimensions::DimensionContext::new(dimensions, graph)?;
     for dimension in dimensions {
         if dimension.id.is_empty()
             || !ids.insert(&dimension.id)
@@ -510,7 +545,7 @@ fn validate_dimensions(
         let view = views
             .get(dimension.view.as_str())
             .ok_or_else(|| ModelError::new("drawing dimension references an unknown view"))?;
-        dimension_geometry(dimension, view, graph)?;
+        dimensions::validate(dimension, view, graph, &context)?;
     }
     Ok(())
 }
@@ -647,13 +682,26 @@ fn dimension_geometry(
     let first = view.project(datum_origin(graph, &dimension.first)?)?;
     let second = view.project(datum_origin(graph, &dimension.second)?)?;
     let delta = [second[0] - first[0], second[1] - first[1]];
-    let (direction, value) = match dimension.direction {
+    let (direction, value) = match &dimension.direction {
         DimensionDirection::Aligned => {
             let value = delta[0].hypot(delta[1]);
             ([delta[0] / value, delta[1] / value], value)
         }
         DimensionDirection::Horizontal => ([1.0, 0.0], delta[0].abs()),
         DimensionDirection::Vertical => ([0.0, 1.0], delta[1].abs()),
+        DimensionDirection::Radius | DimensionDirection::Diameter => {
+            dimensions::require_coplanar(view, graph, &[&dimension.first, &dimension.second])?;
+            let radius = delta[0].hypot(delta[1]);
+            let value = if matches!(dimension.direction, DimensionDirection::Diameter) {
+                2.0 * radius
+            } else {
+                radius
+            };
+            ([delta[0] / radius, delta[1] / radius], value)
+        }
+        DimensionDirection::Angular { .. } => {
+            return dimensions::angular_geometry(dimension, view, graph);
+        }
     };
     if !value.is_finite() || value <= 1e-12 {
         return Err(ModelError::new(
@@ -668,7 +716,16 @@ fn append_dimension(
     view: &DrawingView,
     graph: &InstanceGraph<'_>,
     drawing: &mut GeneratedDrawing,
+    context: &dimensions::DimensionContext<'_>,
 ) -> Result<(), ModelError> {
+    if matches!(
+        dimension.direction,
+        DimensionDirection::Angular { .. }
+            | DimensionDirection::Radius
+            | DimensionDirection::Diameter
+    ) {
+        return dimensions::append_special(dimension, view, graph, drawing, context);
+    }
     let (first, second, direction, value) = dimension_geometry(dimension, view, graph)?;
     let normal = [-direction[1], direction[0]];
     let first_end = [
@@ -679,10 +736,10 @@ fn append_dimension(
         second[0] + normal[0] * dimension.offset_mm,
         second[1] + normal[1] * dimension.offset_mm,
     ];
-    match dimension.direction {
+    match &dimension.direction {
         DimensionDirection::Horizontal => second_end[1] = first_end[1],
         DimensionDirection::Vertical => second_end[0] = first_end[0],
-        DimensionDirection::Aligned => {}
+        _ => {}
     }
     for points in [
         [first, first_end],
@@ -705,8 +762,11 @@ fn append_dimension(
             0.5 * first_end[0] + 0.5 * second_end[0] + normal[0] * 2.0,
             0.5 * first_end[1] + 0.5 * second_end[1] + normal[1] * 2.0,
         ],
-        text: format!("{:.*} mm", usize::from(dimension.precision), value),
+        text: dimensions::label(dimension, value, context)?,
+        stack: None,
     });
+    dimensions::stack_label(dimension, drawing);
+    dimensions::decorate_basic(dimension, drawing)?;
     Ok(())
 }
 
@@ -729,6 +789,9 @@ fn append_arrows(
                 tip[0] + sign * 2.0 * along[0] - side * 0.7 * along[1],
                 tip[1] + sign * 2.0 * along[1] + side * 0.7 * along[0],
             ];
+            if !finite_pair(wing) {
+                return Err(ModelError::new("drawing arrow exceeds finite coordinates"));
+            }
             drawing.polylines.push(DrawingPolyline {
                 points_mm: vec![tip, wing],
                 hidden: false,

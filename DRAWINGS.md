@@ -66,7 +66,7 @@ it does not certify a chordal tolerance. The default is 64. See
 
 `DrawingDimension` uses two named datum origins projected into a chosen view.
 Aligned, horizontal, and vertical dimensions display the projected model distance
-in mm, independent of view scale. A signed paper-mm offset places the dimension
+in mm by default, independent of view scale. A signed paper-mm offset places the dimension
 line and extension lines; arrowheads and a precision-controlled label regenerate
 with the datum values. Zero projected extents and invalid datum references fail.
 
@@ -123,3 +123,94 @@ batch budgets and publication errors. A 1,000-template benchmark verifies one
 shared generated variant and handle cleanup. Native session creation initializes
 OCCT’s shared plane once before concurrent geometry operations; a regression
 test exercises first-use projection in 20 fresh processes with 16 threads each.
+
+## Manufacturing dimensions and tolerances (schema 58)
+
+Generated `DrawingLabel` values now carry an optional structured `stack` for
+tolerance/limit layout; plain notes and titles use `None`.
+
+`DrawingDimension::presentation` defaults to untoleranced millimeters, preserving
+older JSON documents. Rust struct literals now supply
+`presentation: DimensionPresentation::default()`. `DimensionDirection` is Clone
+rather than Copy because angular dimensions hold a third datum reference.
+
+- `Radius` and `Diameter`: `first` identifies the center and `second` a rim point.
+  Nominal values are the center/rim distance and twice that distance, respectively.
+  Diameter lines cross the center; radius leaders point to the rim.
+- `Angular { vertex }`: `first` and `second` identify ray points from a third
+  vertex datum. The minor angle is measured in the view plane, between 0 and
+  180 degrees; coincident rays and zero-length rays fail. `offset_mm` is a
+  strictly positive arc radius on paper. Arc geometry uses 64 segments and
+  tangent arrowheads. Reflex angles are not represented.
+- Radial/angular datum origins must lie in the view plane within numerical
+  tolerance, preventing silent foreshortening. Existing linear dimensions
+  continue measuring their projected distance. All values are independent of
+  paper scale and detail-window translation.
+
+`DimensionPresentation::length_unit` selects mm, cm, m or inches for labels;
+geometry and paper coordinates remain millimeters. Angular labels use degrees.
+`DimensionTolerance` selects:
+
+| Variant | Meaning |
+|---|---|
+| `None` | Nominal dimension |
+| `Symmetric { deviation }` | Nonnegative ± deviation |
+| `Deviations { lower, upper }` | Signed lower ≤ 0 and upper ≥ 0 deviations |
+| `Limits { lower, upper }` | Nonnegative absolute limits containing nominal |
+| `Basic` | Nominal label enclosed in a rectangular box |
+| `Reference` | Entire label enclosed in parentheses |
+
+Length tolerances use `Quantity::length` in any supported length unit. Angular
+values use `Quantity::scalar` in radians and are converted to degrees for display.
+Incompatible units, nonfinite values and negative lower permissible dimensions
+fail. Presentation precision is 0–12 digits after the decimal point; choose
+sufficient precision to avoid rounding away a specified tolerance. Deviations
+are displayed `nominal +upper/-lower`; limits are displayed `upper/lower`.
+The generated label text keeps that compact notation for API consumers; SVG
+and DXF render deviations and limits as separate stacked values alongside the
+nominal/prefix and unit suffix. SVG includes the complete accessible label and
+DXF preserves it as a comment alongside the separate TEXT entities. Basic/reference dimensions cannot
+simultaneously carry direct tolerances in this enum.
+
+```rust
+let dimension = DrawingDimension {
+    id: "bore-size".into(),
+    view: "top".into(),
+    first: DatumRef::new("part", "bore-center"),
+    second: DatumRef::new("part", "bore-rim"),
+    direction: DimensionDirection::Diameter,
+    offset_mm: 8.0,
+    precision: 3,
+    presentation: DimensionPresentation {
+        length_unit: LengthUnit::Millimeter,
+        tolerance: DimensionTolerance::Deviations {
+            lower: Quantity::length(0.0, LengthUnit::Millimeter),
+            upper: Quantity::length(0.025, LengthUnit::Millimeter),
+        },
+        hole: Some(InstanceOutputRef {
+            instance: "part".into(), output: "bore".into(),
+        }),
+    },
+};
+```
+
+An optional `presentation.hole` references an unsuppressed instance and a `Hole`
+feature, and is valid only for diameter dimensions. Its current feature parameters
+supply the nominal bore diameter, blind depth or THRU indication, counterbore
+size/depth, countersink size/included angle, and recorded thread designation,
+nominal diameter, pitch and handedness. The datum pair locates the callout leader;
+when a Hole is referenced its feature diameter supplies the label instead of the
+leader's datum distance. Tolerance applies to the bore diameter; recess and thread
+values remain untoleranced. Thread intent is identified separately from the bore
+(e.g. `Ø4.000 mm THRU; THREAD M5x0.8 (...)`). Custom literal notes remain available.
+Callouts regenerate on instance overrides and survive document reloads. They do
+not infer thread classes, verify fits, or certify the caller's designation.
+
+Annotation vertices, including angle arcs and basic boxes, count against the shared
+export budget. Callout generation indexes features and resolves parameters once
+per referenced instance, avoiding a feature scan for each annotation. With fixed
+expression complexity, annotation work and storage are linear in dimension count
+plus the indexed features/parameters and datum-frame resolution work. Benchmarks
+exercise 10,000 mixed dimensions and 10,000 live hole callouts while checking
+shared geometry and handle cleanup. These capabilities are not an ASME conformity
+claim; GD&T and standards-verified drawing conventions remain on the roadmap.
