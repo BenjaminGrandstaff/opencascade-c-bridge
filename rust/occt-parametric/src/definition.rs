@@ -675,6 +675,13 @@ pub enum VerificationRule {
         #[serde(default, skip_serializing_if = "MeshSettings::is_default")]
         mesh: MeshSettings,
     },
+    /// Exact: the output's bounding box, in family axes, fits inside the
+    /// length-valued `envelope` (such as a print bed) in some axis-aligned
+    /// orientation. Rotations that are not quarter turns are not searched.
+    FitsWithin {
+        output: String,
+        envelope: VectorQuantity,
+    },
     /// Sampled: no downward-facing facet above the lowest build plane leans
     /// more than `maximum_radians`, in [0, pi/2], from vertical.
     Overhang {
@@ -687,6 +694,12 @@ pub enum VerificationRule {
 }
 
 pub const DEFAULT_WALL_SAMPLES: usize = 1_000;
+
+pub(crate) fn sorted_extents(value: Vec3) -> [f64; 3] {
+    let mut extents = [value.x, value.y, value.z];
+    extents.sort_by(f64::total_cmp);
+    extents
+}
 
 fn default_wall_samples() -> usize {
     DEFAULT_WALL_SAMPLES

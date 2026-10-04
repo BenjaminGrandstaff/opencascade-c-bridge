@@ -956,3 +956,62 @@ fn manufacturing_rules_validate_settings_and_persist_defaults_implicitly() {
     assert!(!json.contains("maximum_samples") && !json.contains("\"mesh\""));
     assert_eq!(ModelDocument::from_json(&json).unwrap(), document);
 }
+
+fn fits(output: &str, x: f64, y: f64, z: f64) -> VerificationRule {
+    VerificationRule::FitsWithin {
+        output: output.into(),
+        envelope: VectorQuantity::lengths(x, y, z, LengthUnit::Millimeter),
+    }
+}
+
+#[test]
+fn fits_within_compares_exact_extents_in_any_axis_aligned_orientation() {
+    let family = manufacturing_family();
+    // The cup is 20 x 20 x 10; a 21 x 11 x 21 bed holds it on its side.
+    let results = verify(
+        &family,
+        vec![
+            ("cup.on-side", fits("cup", 21.0, 11.0, 21.0)),
+            ("cup.too-narrow", fits("cup", 25.0, 15.0, 12.0)),
+            ("cup.exact", fits("cup", 10.0, 20.0, 20.0)),
+        ],
+    )
+    .unwrap();
+    let on_side = find(&results, "cup.on-side");
+    assert_eq!(
+        on_side.status,
+        VerificationStatus::Passed,
+        "{}",
+        on_side.message
+    );
+    assert_eq!(on_side.evidence, Evidence::Exact);
+    let measured = on_side.measured.unwrap();
+    assert!((measured.value - 20.0).abs() < 1e-9);
+    assert_eq!(measured.maximum, Some(21.0));
+    assert_eq!(
+        find(&results, "cup.exact").status,
+        VerificationStatus::Passed
+    );
+    let narrow = find(&results, "cup.too-narrow");
+    assert_eq!(narrow.status, VerificationStatus::Failed);
+    assert_eq!(narrow.witness.as_ref().unwrap().points_mm.len(), 2);
+
+    let error = verify(
+        &family,
+        vec![(
+            "bad",
+            VerificationRule::FitsWithin {
+                output: "cup".into(),
+                envelope: VectorQuantity::scalars(1.0, 1.0, 1.0),
+            },
+        )],
+    )
+    .unwrap_err();
+    assert!(error.message.contains("dimension"), "{}", error.message);
+    let error = verify(&family, vec![("zero", fits("cup", 0.0, 10.0, 10.0))]).unwrap_err();
+    assert!(
+        error.message.contains("finite and positive"),
+        "{}",
+        error.message
+    );
+}

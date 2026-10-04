@@ -20,6 +20,7 @@ samples do not evaluate them.
 | `VolumeRange { output, minimum, maximum }` | Volume lies in the inclusive range. | Exact |
 | `Connectivity { output, solids, allow_voids }` (schema 46) | The output has exactly `solids` solids, no face, edge, or vertex outside them, and, unless `allow_voids`, one shell per solid. | Exact |
 | `MinimumRadius { output, minimum, side, sharp_edges, samples_per_direction }` (schema 47) | Every face radius on `side` is at least `minimum`. | Exact on planes, cylinders, cones, spheres, and tori; sampled on other surfaces |
+| `FitsWithin { output, envelope }` (schema 50) | The output's bounding box fits the length-valued envelope, such as a print bed, in some axis-aligned orientation. | Exact |
 | `MinimumWall { output, minimum, mesh, maximum_samples }` (schema 48) | No inward ray from a sampled facet crosses less than `minimum` of material. | Sampled |
 | `DraftAngle { output, pull_direction, minimum_radians, mesh }` (schema 48) | No face runs closer than `minimum_radians` to parallel with the pull. | Sampled |
 | `Overhang { output, build_direction, maximum_radians, mesh }` (schema 48) | No downward facet above the build plate leans more than `maximum_radians` from vertical. | Sampled |
@@ -59,6 +60,15 @@ result's witness names the face or edge (`face 3`, `edge 7`, indexed in
 measured side passes and reports no measured value. Cost is O(faces) for
 analytic faces plus O(samples²) face classifications per sampled face, and one
 edge analysis pass when sharp edges count.
+
+### Fits within
+
+`FitsWithin` sorts the output's exact bounding-box extents and the envelope's
+dimensions and compares them smallest to smallest, so a part that fits on its
+side passes. Extents are measured in family axes, and only quarter-turn
+orientations are considered: a part that would fit only when rotated by
+another angle fails. The measured value is the largest extent, and a failure's
+witness gives the bounding box corners.
 
 ### Manufacturing screens
 

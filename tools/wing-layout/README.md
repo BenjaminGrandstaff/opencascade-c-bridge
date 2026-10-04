@@ -46,6 +46,26 @@ cargo run --manifest-path tools/wing-layout/cad/Cargo.toml -- \
 
 The CLI then builds a parametric family in `occt-parametric` and writes `wing.model.json` beside the STEP and BREP files. Its parameters are `span` and, for each station `i`, `chord_i`, `leading_edge_i`, `height_i`, and `twist_i` (radians), so a change to one value regenerates the wing from the document instead of re-exporting sections. Each half is a `Loft` feature through **smooth** sections: every airfoil is one B-spline interpolated through the same 80 resampled points, with a sharp corner only at the trailing edge. Spanwise panels stay ruled, as above. Stored requirements check that each half is a valid single solid, and the CLI prints their results. On the starter layout, smooth sections enclose about 0.1% more volume than the inscribed polygons, and the STEP file is about a sixth of the size.
 
+### Printable structure
+
+Add `--build build.json` after the project file to cut the parametric wing into printable parts:
+
+```json
+{"schema":"occb-wing-build-v1",
+ "spar":{"chordFraction":0.25,"diameterMm":8,"toStation":2},
+ "elevon":{"fromFraction":0.5,"toFraction":0.95,"hingeFraction":0.75,"gapMm":1},
+ "segments":4,
+ "printer":{"bedMm":[256,256,256],"maxOverhangDeg":45}}
+```
+
+- **Spar channel**: a round channel along the chord line from the root to `toStation`, at `chordFraction` of each chord, so it follows sweep and dihedral. It is placed on the untwisted chord line, which is exact where the spar fraction equals the station's twist pivot.
+- **Elevons** (optional): the part of each half behind the hinge line between two span fractions, separated from the wing by `gapMm`. The hinge line is interpolated along the ruled panels; twist moves it by a fraction of a percent of chord, which is not modeled.
+- **Segments**: each half is split into equal spanwise pieces, printed standing on their inboard face. The spar passes through every segment up to `toStation` and aligns them.
+
+All of these follow the model's parameters (`spar_fraction`, `spar_diameter`, `elevon_hinge`, `elevon_gap`, and the station values), so editing the model document regenerates the parts. Stored requirements check each part: it must be one solid (required), and should fit the print bed in some axis-aligned orientation and print without facets overhanging more than `maxOverhangDeg` (preferred: reported but not blocking). The CLI prints every result and, for failures, where it was found. Parts are written as STL files to `wing.parts/` and together to the STEP and BREP files.
+
+On the starter layout with the example above, the 700 mm root chord cannot fit a 256 mm bed, and the outer segments report overhangs at the end of the spar channel and of the elevon cutout, which print as unsupported ceilings. A release build exports all ten parts in about six seconds.
+
 ### Polygon sections
 
 The CLI creates a **ruled solid loft** for each half and a compound holding both touching solids. It writes STEP and BREP, verifies each half has a valid positive-volume solid, and reopens both exported files to check validity and volume. Sections use polygon edges, so the output approximates curved airfoils. Between stations the loft is ruled; intermediate sections need not reproduce a rotation with linearly interpolated twist. This version creates the outer wing solid, not ribs, spar channels, control surfaces, print segmentation, or the Ho 229 center-body/engine geometry.

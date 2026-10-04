@@ -4,6 +4,7 @@ use serde::Deserialize;
 use std::{collections::HashMap, error::Error, path::Path, path::PathBuf};
 
 mod project;
+mod structure;
 
 #[derive(Deserialize)]
 struct Sections {
@@ -13,11 +14,23 @@ struct Sections {
 }
 
 fn run() -> Result<(), Box<dyn Error>> {
-    let args: Vec<_> = std::env::args_os().skip(1).collect();
+    let mut args: Vec<_> = std::env::args_os().skip(1).collect();
+    let build = match args.iter().position(|arg| arg == "--build") {
+        Some(index) if index + 1 < args.len() => {
+            let path = args.remove(index + 1);
+            args.remove(index);
+            Some(serde_json::from_slice::<structure::Build>(&std::fs::read(
+                path,
+            )?)?)
+        }
+        Some(_) => return Err("--build needs a build file.".into()),
+        None => None,
+    };
     if args.len() != 2 {
         return Err(
-            "Usage: occb-wing-cad (wing-project.json | wing-sections.json) output.step \
-             (also writes output.brep, and output.model.json for a project)"
+            "Usage: occb-wing-cad (wing-project.json [--build build.json] | wing-sections.json) \
+             output.step (also writes output.brep; a project also writes output.model.json, and \
+             a build output.parts/*.stl)"
                 .into(),
         );
     }
@@ -31,7 +44,10 @@ fn run() -> Result<(), Box<dyn Error>> {
     }
     let schema: serde_json::Value = serde_json::from_slice(&bytes)?;
     if schema["schema"] == "occb-wing-layout-v1" {
-        return parametric(serde_json::from_slice(&bytes)?, &output);
+        return parametric(serde_json::from_slice(&bytes)?, build.as_ref(), &output);
+    }
+    if build.is_some() {
+        return Err("--build applies to project files, not sections.".into());
     }
     let input: Sections = serde_json::from_slice(&bytes)?;
     if input.schema != "occb-wing-sections-v1" || input.units != "mm" || input.halves.len() != 2 {
@@ -98,11 +114,19 @@ fn run() -> Result<(), Box<dyn Error>> {
 
 /// A project becomes a parametric family: smooth airfoil lofts whose station
 /// values are parameters, checked by stored requirements on every regeneration.
-fn parametric(project: project::Project, output: &Path) -> Result<(), Box<dyn Error>> {
+fn parametric(
+    project: project::Project,
+    build: Option<&structure::Build>,
+    output: &Path,
+) -> Result<(), Box<dyn Error>> {
     if project.schema != "occb-wing-layout-v1" {
         return Err("Unsupported project schema.".into());
     }
-    let family = project::family(&project)?;
+    let mut family = project::family(&project)?;
+    let parts = match build {
+        Some(build) => structure::add_structure(&mut family, &project, build)?,
+        None => Vec::new(),
+    };
     let session = Session::new()?;
     let part = PartInstance {
         id: "wing".into(),
@@ -120,6 +144,19 @@ fn parametric(project: project::Project, output: &Path) -> Result<(), Box<dyn Er
             "Requirement {} {status}: {}",
             result.requirement_id, result.message
         );
+        if let Some(witness) = result
+            .witness
+            .as_ref()
+            .filter(|_| result.status == VerificationStatus::Failed)
+        {
+            let points = witness
+                .points_mm
+                .iter()
+                .map(|p| format!("({:.1}, {:.1}, {:.1})", p.x, p.y, p.z))
+                .collect::<Vec<_>>()
+                .join(" to ");
+            println!("    at {} {points} mm", witness.subjects.join(", "));
+        }
     }
     let mut halves = Vec::new();
     for (index, id) in ["right", "left"].into_iter().enumerate() {
@@ -133,7 +170,31 @@ fn parametric(project: project::Project, output: &Path) -> Result<(), Box<dyn Er
         );
         halves.push(shape);
     }
-    export(&session, &halves, output)?;
+    if parts.is_empty() {
+        export(&session, &halves, output)?;
+    } else {
+        let directory = output.with_extension("parts");
+        std::fs::create_dir_all(&directory)?;
+        let mut shapes = Vec::new();
+        for part in &parts {
+            let shape = generated
+                .shape(part)
+                .ok_or_else(|| format!("part '{part}' was not generated"))?;
+            session.save_stl(
+                shape,
+                directory.join(format!("{part}.stl")),
+                Default::default(),
+            )?;
+            println!("Part {part}: volume {:.3} mm³", session.volume(shape)?);
+            shapes.push(shape);
+        }
+        export(&session, &shapes, output)?;
+        println!(
+            "Wrote {} printable parts to {}",
+            parts.len(),
+            directory.display()
+        );
+    }
     let mut graph = InstanceGraph::new(&family);
     graph.add_base("wing", HashMap::new(), "occb-wing-cad")?;
     let document = output.with_extension("model.json");

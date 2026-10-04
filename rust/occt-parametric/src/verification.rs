@@ -286,3 +286,53 @@ pub(crate) fn minimum_radius(
     }
     Ok(result)
 }
+
+/// Exact bounding-box extents against an envelope, smallest to smallest, so
+/// any axis-aligned orientation that fits passes. O(topology).
+pub(crate) fn fits_within(
+    session: &Session,
+    id: &str,
+    shape: &Shape<'_>,
+    envelope: VectorQuantity,
+) -> Result<VerificationResult, ModelError> {
+    let envelope = envelope.normalized(Dimension::Length)?;
+    let limits = sorted_extents(envelope);
+    if limits
+        .iter()
+        .any(|value| !(value.is_finite() && *value > 0.0))
+    {
+        return Err(ModelError::new("envelope must be finite and positive"));
+    }
+    let bounds = session.exact_bounds(shape)?;
+    let extents = sorted_extents(Vec3::new(
+        bounds.max.x - bounds.min.x,
+        bounds.max.y - bounds.min.y,
+        bounds.max.z - bounds.min.z,
+    ));
+    let passed = extents
+        .iter()
+        .zip(limits)
+        .all(|(extent, limit)| *extent <= limit);
+    let largest = extents[2];
+    let mut result = VerificationResult::exact(
+        id,
+        passed,
+        format!(
+            "extents {:.3} x {:.3} x {:.3} mm; envelope {:.3} x {:.3} x {:.3} mm",
+            extents[0], extents[1], extents[2], limits[0], limits[1], limits[2]
+        ),
+    )
+    .measured(Measurement {
+        value: largest,
+        unit: MeasurementUnit::Millimeter,
+        minimum: None,
+        maximum: Some(limits[2]),
+    });
+    if !passed {
+        result = result.witnessed(Witness {
+            subjects: vec!["bounding box".into()],
+            points_mm: vec![bounds.min, bounds.max],
+        });
+    }
+    Ok(result)
+}

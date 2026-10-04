@@ -11,11 +11,11 @@ tracks status and order.
 | C ABI (`src/`, `include/`) | ABI 37 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 49 | Active development |
+| `occt-parametric` (engineering layer) | Schema 50 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 4/4, bridge 81 (+1 doc test), recipes 3, parametric 230 + merge driver 3, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 4/4, bridge 81 (+1 doc test), recipes 3, parametric 231 + merge driver 3, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 92.3% line coverage (2026-10-03); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -154,6 +154,10 @@ tracks status and order.
   error-bounded (Bezier, B-spline) extrema.
 
 ### Parametric layer
+
+- Print-bed fit requirements (schema 50): `FitsWithin` checks exact bounding-box
+  extents against a length envelope in any axis-aligned orientation, reporting
+  the largest extent. One test covers rotated fits, failures, and validation.
 
 - Loft features (schema 49): `FeatureOperation::Loft` through planar
   `LoftSection` outlines placed by parameter expressions (origin, axes, scale,
@@ -521,6 +525,11 @@ tracks status and order.
   CAD CLI. Project files now become a parametric wing family with smooth
   airfoil lofts, per-station parameters, stored validity and connectivity
   requirements, and a saved model document beside the STEP and BREP files.
+  A build file adds printable structure on the parametric wing: a swept spar
+  channel, optional elevons behind a gapped hinge line, and spanwise print
+  segments, exported as STL parts. Each part is checked for a single solid
+  (required), print-bed fit, and overhang (preferred), and failures print
+  their location. On the starter wing, ten parts export in about six seconds.
 
 ## Scaling requirement
 
@@ -555,15 +564,11 @@ every item below is defined in documents and the API, and verified in tests.
 
 ### Capabilities
 
-1. **Buildable wing structure.** On the parametric wing: spar channels,
-    ribs, and elevon cutouts; segmentation into printable pieces with
-    alignment pins; each piece checked for a single solid, wall thickness,
-    overhang, and a new fits-the-print-bed bounds rule.
-2. **Rib templates.** Section drawings through the wing at each rib station,
+1. **Rib templates.** Section drawings through the wing at each rib station,
     exported as DXF for cutting.
-3. **Moving elevons.** Elevons as separate instances on revolute joints, with
+2. **Moving elevons.** Elevons as separate instances on revolute joints, with
     a motion study over their deflection range checking for interference.
-4. **Mass and balance report.** Per-material mass and the wing's center of
+3. **Mass and balance report.** Per-material mass and the wing's center of
     gravity relative to its mean aerodynamic chord, reported as data only.
 
 ## Later
@@ -571,6 +576,9 @@ every item below is defined in documents and the API, and verified in tests.
 - General sheet-metal edge flanges, bend reliefs, hems, cutouts, bend tables,
   and unfolding edited solids beyond constant-width strips.
 - Hole-catalog tolerance classes and optional under-head countersink relief.
+- Wing structure beyond solid printed segments: hollow shells with internal
+  ribs, alignment pins independent of the spar, twist-exact hinge lines, and
+  print-bed fit in arbitrary (not only quarter-turn) orientations.
 
 - Advanced ribs with general support-following and nonuniform closure.
 - Closed-linkage constraint solving and continuous collision detection.

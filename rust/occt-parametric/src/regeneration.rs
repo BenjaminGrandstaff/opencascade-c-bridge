@@ -982,6 +982,9 @@ pub(crate) fn verify_requirement(
             *sharp_edges,
             *samples_per_direction,
         )?,
+        VerificationRule::FitsWithin { output, envelope } => {
+            fits_within(session, id, shape(shapes, output)?, *envelope)?
+        }
         VerificationRule::MinimumWall {
             output,
             minimum,
