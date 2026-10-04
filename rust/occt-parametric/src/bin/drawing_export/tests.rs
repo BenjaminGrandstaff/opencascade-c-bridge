@@ -38,6 +38,7 @@ fn fixture() -> (ModelDocument, DrawingDefinition) {
     let mut graph = InstanceGraph::new(&family);
     graph.add_base("part", HashMap::new(), "test").unwrap();
     let drawing = DrawingDefinition {
+        sheet: None,
         id: "../../unsafe-filename".into(),
         title: "Section template".into(),
         paper_size_mm: [100.0, 100.0],

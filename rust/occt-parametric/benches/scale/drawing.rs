@@ -22,6 +22,7 @@ pub(crate) fn assembly_drawing_case(definition: &'static FamilyDefinition) -> Ou
                 "bench",
             )?;
             let drawing = DrawingDefinition {
+                sheet: None,
                 id: "assembly-drawing".into(),
                 title: "Assembly drawing".into(),
                 paper_size_mm: [1000.0, 1000.0],
@@ -86,6 +87,7 @@ pub(crate) fn drawing_case(definition: &'static FamilyDefinition) -> Outcome {
             let mut graph = InstanceGraph::new(definition);
             graph.add_base("part", HashMap::new(), "bench")?;
             let drawing = DrawingDefinition {
+                sheet: None,
                 id: "scale-drawing".into(),
                 title: "Scale drawing".into(),
                 paper_size_mm: [1000.0, 1000.0],

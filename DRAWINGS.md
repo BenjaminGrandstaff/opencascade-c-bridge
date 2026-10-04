@@ -274,7 +274,7 @@ solid so the datum intersection stays visible. Thin center guides use 0.18 mm
 strokes; cutting traces and arrows use 0.50 mm. DXF adds CENTER and CUTTING_PLANE
 layers, a CENTER linetype with the same pattern, per-entity solid overrides for
 marks/arrows, and corresponding lineweights. These are explicit drawing styles,
-not a standards-conformity claim. Standards-verified layout, projection symbols,
+not a standards-conformity claim. Standards-verified layout,
 material-specific hatch conventions and exact curve export remain on the roadmap.
 
 Each center mark reserves 4 vertices, centerline 2, and cutting-plane indicator
@@ -315,3 +315,58 @@ rejects excessively dense patterns before emitting unbounded output. Line indice
 must stay below 2^52 in magnitude. Hatch endpoints share `maximum_vertices` with
 all other drawing geometry. The assembly benchmark checks 10,000 hatch segments
 across 1,000 placed parts, exports and native handle cleanup within 30 seconds.
+
+
+## Standard paper presets and projection symbols
+
+Schema 61 adds `DrawingDefinition.sheet: Option<DrawingSheet>`. With `None`,
+custom `paper_size_mm` and the original full-width footer still apply. A saved
+sheet preset controls the actual output dimensions; use
+`effective_paper_size_mm()` to obtain them before positioning views.
+
+```json
+"sheet": {
+  "size": "ansi_b",
+  "orientation": "landscape",
+  "drawing_number": "BRACKET-001",
+  "revision": "A",
+  "sheet_number": 1,
+  "sheet_count": 2,
+  "projection": "third_angle"
+}
+```
+
+Sizes are ANSI A–E (exact decimal-inch dimensions converted to mm) and ISO A0–A4.
+Orientation defaults to landscape; portrait exchanges width and height. The
+preset creates a 12.7 mm inset frame and a 180 mm wide title block at the lower
+right. Its base height is 60 mm, plus 10 mm per metadata row. Title, drawing
+number, revision, common view scale, size and `SHEET n OF m` use separate cells.
+Differing view scales produce `SCALE: AS SHOWN`. Sheet numbering must be positive
+and within the declared count; this does not require other sheets to be present
+in the same document.
+
+`projection` may be `first_angle`, `third_angle`, or omitted. The symbol consists
+of a truncated cone and two concentric end-view circles: first-angle places the
+circles beside the large end, third-angle beside the narrow end. Symbols retain
+paper sizes when view scales change. Circles use 64 segments, matching the
+existing polyline export approach. Selecting a convention labels the drawing;
+it does not reposition views or verify a multiview arrangement.
+
+Structured fields reject control characters and bounded cell capacities: drawing
+number 36 characters, revision 7, title 116 (two 58-character lines), up to eight
+metadata rows of 58 characters including `key: value`. These conservative limits
+reserve space for common fonts; they do not certify font metrics for every glyph.
+Generated furniture lives in `sheet_lines` and `sheet_labels`, separately from
+model geometry. Sheet line vertices count against the shared export budget.
+Generation and export require O(sheets + views + text) additional time and
+proportional storage; furniture per sheet is bounded. A 1,000-sheet benchmark
+checks both symbols, numbering, exports, shared regeneration and handle cleanup.
+
+These presets cover standard paper sizes and practical frame/title-block layout.
+They do not claim complete conformity with prescribed zones, revision/approval
+blocks, lettering or sheet-format requirements. References:
+[ASME Y14.1 scope](https://www.asme.org/codes-standards/find-codes-standards/drawing-sheet-size-and-format/2020),
+[ISO 5457 sheet sizes and layout](https://www.iso.org/standard/29017.html),
+[ISO 5456-2 projection methods](https://www.iso.org/obp/ui?_escaped_fragment_=iso%3Astd%3Aiso%3A5456%3A-2%3Aed-1%3Av1%3Aen),
+and the projection-symbol examples in the
+[government engineering-drawing training manual](https://bharatskills.gov.in/pdf/E_Books/CTS/35/English/ED/Engineering%20Drawing%20-%20Group%207%20%282022%29.pdf).

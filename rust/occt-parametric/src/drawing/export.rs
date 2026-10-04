@@ -48,22 +48,23 @@ impl GeneratedDrawing {
         for line in &self.guides {
             append_svg_guide(&mut out, line, height);
         }
-        for label in &self.labels {
+        for label in self.labels.iter().chain(&self.sheet_labels) {
             writeln!(out, "<g aria-label=\"{}\">", xml(&label.text)).unwrap();
             for (point, text, size) in label_parts(label) {
                 writeln!(out,"<text x=\"{}\" y=\"{}\" font-family=\"sans-serif\" font-size=\"{size}\">{}</text>",point[0],height-point[1],xml(&text)).unwrap();
             }
             out.push_str("</g>\n");
         }
-        writeln!(
-            out,
-            "<text x=\"10\" y=\"{}\" font-family=\"sans-serif\" font-size=\"4\">{}</text>",
-            height - 10.0,
-            xml(&self.title)
-        )
-        .unwrap();
-        for (index, (key, value)) in self.metadata.iter().enumerate() {
+        if self.sheet_lines.is_empty() {
             writeln!(
+                out,
+                "<text x=\"10\" y=\"{}\" font-family=\"sans-serif\" font-size=\"4\">{}</text>",
+                height - 10.0,
+                xml(&self.title)
+            )
+            .unwrap();
+            for (index, (key, value)) in self.metadata.iter().enumerate() {
+                writeln!(
                 out,
                 "<text x=\"10\" y=\"{}\" font-family=\"sans-serif\" font-size=\"3\">{}: {}</text>",
                 height - 16.0 - 5.0 * index as f64,
@@ -71,6 +72,7 @@ impl GeneratedDrawing {
                 xml(value)
             )
             .unwrap();
+            }
         }
         out.push_str("</svg>\n");
         out
@@ -103,26 +105,28 @@ impl GeneratedDrawing {
         for line in &self.guides {
             append_dxf_guide(&mut out, line);
         }
-        for label in &self.labels {
+        for label in self.labels.iter().chain(&self.sheet_labels) {
             append_dxf_label(&mut out, label);
         }
-        append_dxf_label(
-            &mut out,
-            &DrawingLabel {
-                position_mm: [10.0, 10.0],
-                text: self.title.clone(),
-                stack: None,
-            },
-        );
-        for (index, (key, value)) in self.metadata.iter().enumerate() {
+        if self.sheet_lines.is_empty() {
             append_dxf_label(
                 &mut out,
                 &DrawingLabel {
-                    position_mm: [10.0, 16.0 + 5.0 * index as f64],
-                    text: format!("{key}: {value}"),
+                    position_mm: [10.0, 10.0],
+                    text: self.title.clone(),
                     stack: None,
                 },
             );
+            for (index, (key, value)) in self.metadata.iter().enumerate() {
+                append_dxf_label(
+                    &mut out,
+                    &DrawingLabel {
+                        position_mm: [10.0, 16.0 + 5.0 * index as f64],
+                        text: format!("{key}: {value}"),
+                        stack: None,
+                    },
+                );
+            }
         }
         out.push_str("0\nENDSEC\n0\nEOF\n");
         out
@@ -136,6 +140,9 @@ impl GeneratedDrawing {
     }
 
     fn frame_lines(&self) -> Vec<DrawingPolyline> {
+        if !self.sheet_lines.is_empty() {
+            return self.sheet_lines.clone();
+        }
         let [width, height] = self.paper_size_mm;
         let margin = 5.0_f64.min(width * 0.05).min(height * 0.05);
         let footer = (23.0 + 5.0 * self.metadata.len() as f64).min(height - margin);

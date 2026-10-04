@@ -367,6 +367,8 @@ impl FlatPatternMetrics {
             hidden: true,
         }));
         Ok(GeneratedDrawing {
+            sheet_lines: Vec::new(),
+            sheet_labels: Vec::new(),
             id: id.into(),
             title: format!("{id} flat pattern"),
             paper_size_mm,

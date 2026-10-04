@@ -11,7 +11,9 @@ mod guides;
 mod hatching;
 pub use guides::{DrawingGuide, DrawingGuideKind, DrawingGuideLine, DrawingGuideLineKind};
 pub use hatching::SectionHatching;
+mod sheets;
 mod slice;
+pub use sheets::{DrawingSheet, DrawingSheetOrientation, DrawingSheetSize, ProjectionConvention};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -105,6 +107,8 @@ pub struct DrawingNote {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct DrawingDefinition {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sheet: Option<DrawingSheet>,
     pub id: String,
     pub title: String,
     pub paper_size_mm: [f64; 2],
@@ -156,6 +160,8 @@ pub struct DrawingLabel {
 }
 #[derive(Clone, Debug, PartialEq)]
 pub struct GeneratedDrawing {
+    pub sheet_lines: Vec<DrawingPolyline>,
+    pub sheet_labels: Vec<DrawingLabel>,
     pub id: String,
     pub title: String,
     pub paper_size_mm: [f64; 2],
@@ -322,6 +328,13 @@ fn datum_origin(graph: &InstanceGraph<'_>, reference: &DatumRef) -> Result<Vec3,
 }
 
 impl DrawingDefinition {
+    /// A saved preset controls paper dimensions; otherwise use custom paper_size_mm.
+    pub fn effective_paper_size_mm(&self) -> [f64; 2] {
+        self.sheet
+            .as_ref()
+            .map_or(self.paper_size_mm, DrawingSheet::paper_size_mm)
+    }
+
     pub(crate) fn validate(&self, graph: &InstanceGraph<'_>) -> Result<(), ModelError> {
         self.validate_cached(graph, &mut HashMap::new(), &mut HashMap::new())
     }
@@ -332,9 +345,10 @@ impl DrawingDefinition {
         resolutions: &mut ResolutionCache<'definition>,
         features: &mut HashMap<&'definition str, HashSet<&'definition str>>,
     ) -> Result<(), ModelError> {
+        let paper_size = self.effective_paper_size_mm();
         if self.id.is_empty()
-            || !finite_pair(self.paper_size_mm)
-            || self.paper_size_mm.iter().any(|value| *value <= 0.0)
+            || !finite_pair(paper_size)
+            || paper_size.iter().any(|value| *value <= 0.0)
             || self.views.is_empty()
         {
             return Err(ModelError::new(
@@ -342,6 +356,9 @@ impl DrawingDefinition {
             ));
         }
         validate_text(&self.title)?;
+        if let Some(sheet) = &self.sheet {
+            sheet.validate(self)?;
+        }
         for (key, value) in &self.metadata {
             if key.len().saturating_add(value.len()).saturating_add(2) > 2049 {
                 return Err(ModelError::new(
@@ -443,9 +460,11 @@ impl DrawingDefinition {
         vertices: &mut usize,
     ) -> Result<GeneratedDrawing, ModelError> {
         let mut drawing = GeneratedDrawing {
+            sheet_lines: Vec::new(),
+            sheet_labels: Vec::new(),
             id: self.id.clone(),
             title: self.title.clone(),
-            paper_size_mm: self.paper_size_mm,
+            paper_size_mm: self.effective_paper_size_mm(),
             polylines: Vec::new(),
             guides: Vec::new(),
             hatches: Vec::new(),
@@ -453,6 +472,21 @@ impl DrawingDefinition {
             metadata: self.metadata.clone(),
             generated_variants: generation.generated_variants(),
         };
+        if let Some(sheet) = &self.sheet {
+            sheets::decorate(
+                &mut drawing,
+                sheet,
+                &self.views.iter().map(|v| v.scale).collect::<Vec<_>>(),
+            );
+            let count: usize = drawing
+                .sheet_lines
+                .iter()
+                .map(|line| line.points_mm.len())
+                .sum();
+            *vertices = vertices
+                .checked_add(count)
+                .ok_or_else(|| ModelError::new("sheet vertex count overflow"))?;
+        }
         let added = self
             .dimensions
             .iter()

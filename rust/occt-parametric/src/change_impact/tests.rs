@@ -143,6 +143,7 @@ fn placement_material_suppression_and_drawings_do_not_rebuild_local_geometry() {
         }
     }
     before.drawings.push(DrawingDefinition {
+        sheet: None,
         id: "view".into(),
         title: "Assembly".into(),
         paper_size_mm: [297.0, 210.0],

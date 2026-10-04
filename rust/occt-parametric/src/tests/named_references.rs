@@ -258,6 +258,7 @@ fn integrated_schema_preserves_references_slice_drawings_and_joint_motion() {
         .unwrap();
     graph.set_instance_frame("part", Some("hinge")).unwrap();
     let drawing = DrawingDefinition {
+        sheet: None,
         id: "slice".into(),
         title: "Referenced shell template".into(),
         paper_size_mm: [100.0, 100.0],

@@ -50,6 +50,7 @@ fn fixture() -> (ModelDocument, DrawingDefinition) {
     let mut graph = InstanceGraph::new(&family);
     graph.add_base("part", HashMap::new(), "test").unwrap();
     let drawing = DrawingDefinition {
+        sheet: None,
         id: "template".into(),
         title: "Section template".into(),
         paper_size_mm: [100.0, 100.0],
@@ -375,6 +376,55 @@ fn main() {
     assert!(started.elapsed().as_secs_f64() < 30.0);
     println!(
         "10000 section hatch segments across 1000 placed parts: {:?} (30s budget), one shared variant",
+        started.elapsed()
+    );
+    let sheets: Vec<_> = definitions
+        .into_iter()
+        .enumerate()
+        .map(|(i, mut page)| {
+            page.sheet = Some(DrawingSheet {
+                size: DrawingSheetSize::AnsiB,
+                orientation: DrawingSheetOrientation::Landscape,
+                drawing_number: "ASSEMBLY-SECTION".into(),
+                revision: "B".into(),
+                sheet_number: i as u32 + 1,
+                sheet_count: 1000,
+                projection: Some(if i % 2 == 0 {
+                    ProjectionConvention::FirstAngle
+                } else {
+                    ProjectionConvention::ThirdAngle
+                }),
+            });
+            page
+        })
+        .collect();
+    let started = Instant::now();
+    let generated = DrawingDefinition::generate_many(
+        &sheets,
+        &graph,
+        &session,
+        DrawingRenderOptions {
+            curve_samples: 8,
+            maximum_vertices: 1_000_000,
+        },
+    )
+    .unwrap();
+    assert_eq!(generated.len(), 1000);
+    for (i, page) in generated.iter().enumerate() {
+        assert_eq!(page.generated_variants, 1);
+        assert_eq!(page.paper_size_mm, [431.8, 279.4]);
+        assert!(
+            page.sheet_labels
+                .iter()
+                .any(|l| l.text == format!("SHEET {} OF 1000", i + 1))
+        );
+        assert!(page.to_svg().contains("ASSEMBLY-SECTION"));
+        assert!(page.to_dxf().contains("SCALE: 1:1"));
+    }
+    assert_eq!(session.shape_count().unwrap(), 0);
+    assert!(started.elapsed().as_secs_f64() < 10.0);
+    println!(
+        "1000 standard sheets with projection symbols and SVG/DXF exports: {:?} (10s budget), one shared variant",
         started.elapsed()
     );
 }

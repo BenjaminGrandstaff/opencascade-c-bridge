@@ -11,18 +11,29 @@ tracks status and order.
 | C ABI (`src/`, `include/`) | ABI 42 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 60 | Active development |
+| `occt-parametric` (engineering layer) | Schema 61 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 89 + first-use integration 1 (+1 doc test), recipes 3, parametric 327 + merge driver 3 + motion command 16 + balance command 4 + drawing command 2 + branch command 2, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
-| SonarQube (indexed Rust) | Gate OK, 0 issues, 93.6% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
+| Tests | C 5/5, bridge 89 + first-use integration 1 (+1 doc test), recipes 3, parametric 330 + merge driver 3 + motion command 16 + balance command 4 + drawing command 2 + branch command 2, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| SonarQube (indexed Rust) | Gate OK, 0 issues, 93.7% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
-| Coverage | 93.45% lines overall, test code excluded; C++ 94.17% lines, 87.36% branches, 100% functions; Rust 93.17% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 91 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Coverage | 93.50% lines overall, test code excluded; C++ 94.17% lines, 87.47% branches, 100% functions; Rust 93.24% lines | `tools/coverage/run.sh` |
+| Scale benchmarks | 92 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
+
+- Standard paper presets and projection symbols (schema 61): ANSI A–E and ISO
+  A0–A4 in portrait/landscape, a bounded lower-right title block with drawing
+  number, revision, scale, sheet numbering and metadata, and explicit first- or
+  third-angle symbols. Presets override custom paper dimensions; legacy drawings
+  retain their earlier frame. Three tests cover all 20 size/orientation pairs,
+  symbol direction, paper-space sizing, exports, persistence, migration and budgets.
+  A 1,000-sheet benchmark verifies shared regeneration and SVG/DXF exports in
+  1.717 s (10 s budget). Views remain explicitly positioned; prescribed zones, approval and
+  revision tables, lettering and a full standards-conformity audit remain future
+  work. API and references: [Drawings](DRAWINGS.md).
 
 - Automatic section hatching (schema 60): saved paper-space angle, spacing and
   phase for Slice/Section views; holes retain clear interiors, overlapping
@@ -883,7 +894,7 @@ remain lower priority. The ASME comparison below is based on public standard
 scopes and inspected repo capabilities, not a full conformity audit.
 
 1. **Drawing conventions and manufacturing sheets** — [Y14 family](https://www.asme.org/codes-standards/y14-standards):
-   projection symbols, standard sheet layouts, material-specific hatch conventions,
+   material-specific hatch conventions, standards-verified sheet formats,
    and standards-verified dimension
    placement and typography, plus exact curve export. Current curves are sampled
    polylines; direct deviations and limits now render stacked values.
