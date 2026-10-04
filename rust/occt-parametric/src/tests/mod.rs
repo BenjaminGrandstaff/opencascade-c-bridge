@@ -14,6 +14,7 @@ mod mesh;
 mod patterns;
 mod regeneration;
 mod ribs;
+mod rotating_motion;
 mod selection;
 mod sheet_metal;
 mod variable_fillet;

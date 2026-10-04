@@ -270,8 +270,9 @@ binary supplies a semantic Git merge driver. See [Model history](MODEL_HISTORY.m
 and [Document comparisons](DOCUMENT_DIFF.md). Schema 42 adds regenerated orthographic, section,
 and detail drawings, datum dimensions, parameter notes, and metadata title blocks
 exported as SVG or DXF. See [Drawings](DRAWINGS.md) for the API and sampling limits.
-Continuous translation path checks catch collisions between motion samples and
-report unresolved intervals explicitly. See [Assembly motion](ASSEMBLY_MOTION.md)
+Continuous joint path checks handle translations, unwrapped rotations, and
+nested frames, catching collisions between samples and reporting unresolved
+intervals explicitly. See [Assembly motion](ASSEMBLY_MOTION.md)
 for the supported joint paths and numeric limits. Closed-linkage solving adjusts
 selected joint coordinates while keeping driven coordinates fixed and enforcing
 travel limits; unsuccessful solves preserve the accepted pose.

@@ -91,6 +91,12 @@ fn continuous_check_catches_thin_obstacle_missed_by_endpoints() {
     let report = graph
         .check_translation_motion(&session, &study, ContinuousCollisionOptions::default())
         .unwrap();
+    assert_eq!(
+        graph
+            .check_continuous_motion(&session, &study, ContinuousCollisionOptions::default())
+            .unwrap(),
+        report
+    );
     assert_eq!(report.status, ContinuousStatus::Collision);
     assert_eq!(report.generated_variants, 2);
     assert_eq!(report.unresolved_pairs, 0);

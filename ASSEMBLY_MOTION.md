@@ -203,9 +203,52 @@ The initial pose selects a local assembly branch. Singular seeds, incompatible
 relationships, exhausted budgets, or travel limits can prevent closure. There
 is no global branch search, force simulation, or automatic closure of sampled
 motion studies: drive a coordinate, solve closure, and then regenerate or query
-collisions for each desired pose. Continuous rotation path checking remains a
-separate open item. Tests compare crank-slider and four-bar closure against
+collisions for each desired pose. Continuous rotation path checking is described below. Tests compare crank-slider and four-bar closure against
 independent geometry and cover scales, distant origins, planar alignment,
 limits, conflicts, unit preservation, persistence, and atomic failures. The
 scale suite also checks 1,000 driven crank-slider poses against an analytic
 position oracle.
+
+## Continuous rotating joint paths
+
+`check_continuous_motion(session, study, options)` also accepts changing revolute,
+cylindrical, and planar angles. Every coordinate interpolates linearly between
+adjacent samples in its joint's parent coordinates. Angles stay unwrapped:
+0 to 2π is a full turn, and negative or multiple turns retain their direction
+and travel. Omitted sample coordinates use the original graph's value, matching
+sampled motion semantics. Interpolation does not re-solve linkage closure.
+
+The checker propagates an enclosing sphere and point-speed bound through each
+body's frame chain. For a rotating frame, the speed bound adds angular travel
+in radians times the greatest possible distance to its pivot, plus linear
+travel. Child-frame speed is preserved by the parent's rigid transform. The
+sum of both bodies' speed bounds limits how much their separation can change
+within an interval. Exact midpoint BREP separation greater than this bound and
+the configured margins rejects the whole interval; otherwise it subdivides.
+Swept enclosing spheres feed the BVH. Their bounds can be loose for long or
+nested mechanisms, increasing candidate pairs and exact queries.
+
+Each exact query applies interpolated frame transforms to shared geometry,
+releasing intermediate handles immediately. Unchanged angular paths retain the
+translation checker's relative-translation bound and swept boxes. The graph,
+accepted geometry, query budgets, and `Clear`/`Collision`/`Unresolved` semantics
+are the same as for translation checks. `check_translation_motion` remains an
+explicit translation-only API and rejects changing angles.
+
+Coordinate, angular interpolation, and transform roundoff contribute to the
+separation guard. Large angle magnitudes can make that guard large and produce
+unresolved results; nonrepresentable bounds reject the operation. These are
+floating-point kernel queries with numeric margins, not a certified error
+enclosure. Near contact, grazing, fast multi-turn motion, or dense swept bounds
+can exhaust the query/subdivision budgets. A witnessed collision identifies an
+observed violating pose, not the first time of contact. The checker does not
+simulate forces, changing geometry, or time-varying joint axes and pivots.
+
+Six tests cover full and reverse multiple turns missed by endpoint samples,
+counter-rotating bodies, nested planar/cylindrical paths against an independent
+pose oracle, conservative
+bounds over sampled corner trajectories, clear and budget-limited paths, large
+angles, invalid inputs, overflow, accepted-state preservation, and cleanup.
+Scale cases exercise 10,000 sparse independently rotating bodies and 1,000
+obstacle crossings checked against independent planar box geometry. These take
+0.180 s and 10.640 s respectively (10 s and 30 s budgets).

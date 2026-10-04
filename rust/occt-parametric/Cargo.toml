@@ -34,3 +34,7 @@ harness = false
 [[bench]]
 name = "linkage"
 harness = false
+
+[[bench]]
+name = "rotating_motion"
+harness = false

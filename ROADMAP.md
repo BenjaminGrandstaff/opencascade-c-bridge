@@ -15,12 +15,12 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 4/4, bridge 76 (+1 doc test), recipes 3, parametric 223 + merge driver 3, mesh Python 4 | `ctest`, `cargo test` (see README) |
-| SonarQube (indexed Rust) | Gate OK, 0 issues, 92.5% line coverage (2026-10-03); Rust unit tests classified as tests | `tools/sonar/run.sh` |
+| Tests | C 4/4, bridge 76 (+1 doc test), recipes 3, parametric 235 + merge driver 3, mesh Python 4 | `ctest`, `cargo test` (see README) |
+| SonarQube (indexed Rust) | Gate OK, 0 issues, 92.7% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
-| Coverage | 92.74% lines overall, test code excluded; C++ 94.30% lines, 87.67% branches, 100% functions; Rust 91.98% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 59 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Coverage | 92.91% lines overall, test code excluded; C++ 94.30% lines, 87.67% branches, 100% functions; Rust 92.27% lines | `tools/coverage/run.sh` |
+| Scale benchmarks | 62 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
 
@@ -194,6 +194,18 @@ tracks status and order.
   and certified curve approximation remain future extensions.
   API and limits: [Drawings](DRAWINGS.md).
 
+- Continuous rotating joint paths (no schema or ABI change): unwrapped angle
+  interpolation preserves full, reverse, and multiple turns. Enclosing swept
+  spheres and point-speed bounds through nested frames support revolute,
+  cylindrical, and planar motion together with translations. Exact BREP queries
+  and adaptive subdivision return witnessed collisions or unresolved intervals
+  when the numeric margins or budgets prevent clearance. Six tests cover
+  independent pose/bound oracles, unsampled collisions, invalid/overflowing
+  paths, large-angle uncertainty, state preservation, and handle cleanup.
+  10,000 sparse rotors take 0.180 s; 1,000 obstacle crossings checked against
+  planar separating-axis geometry take 10.640 s (10 s and 30 s budgets).
+  See [Assembly motion](ASSEMBLY_MOTION.md).
+
 - Bounded closed-linkage solving (no schema or ABI change): explicitly selected
   joint coordinates adjust while driven coordinates and rest placements stay
   fixed. Coordinate limits constrain trial steps; only a candidate satisfying
@@ -225,7 +237,7 @@ tracks status and order.
   versus exhaustive collisions, sampled crossings, geometry reuse, and cleanup.
   Scale cases cover 10,000 joints, 10,000 sparse bodies, and 1,000 motion samples.
   Translation path checks and bounded closed-linkage solving are available;
-  continuous rotation checking remains future work.
+  continuous rotation checking supports nested frame paths.
   API and limits: [Assembly motion](ASSEMBLY_MOTION.md).
 - Three-way semantic document merge (no schema or ABI change):
   `base.three_way_merge(&left, &right)` combines independent field/entity edits
@@ -535,8 +547,8 @@ every item below is defined in documents and the API, and verified in tests.
 - Hole-catalog tolerance classes and optional under-head countersink relief.
 
 - Advanced ribs with general support-following and nonuniform closure.
-- Global linkage branch search, large assembly coordinate solving, and rotating
-  continuous collision detection beyond the translation-only path checker.
+- Global linkage branch search, large assembly coordinate solving, and tighter
+  swept bounds for dense or deeply nested rotating mechanisms.
 - Assumptions and requirement-to-feature trace links in the document schema.
 - Semantic naming beyond feature outputs, and geometric tangency inference
   when continuity metadata is absent.

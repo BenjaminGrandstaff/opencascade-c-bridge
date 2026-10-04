@@ -1,8 +1,9 @@
-//! Adaptive continuous checks for piecewise-linear translations, using BREP
-//! distance and a bound on relative displacement. No rotating path is accepted.
+//! Adaptive continuous checks using BREP distance and conservative motion bounds.
 use super::*;
 use crate::assembly::collisions::{Body, Node, inspect_pair};
 use occt_bridge::Bounds;
+mod rotations;
+use rotations::RigidPath;
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ContinuousCollisionOptions {
@@ -99,10 +100,29 @@ fn validate_translation(
     }
     Ok(())
 }
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct Movement {
     delta: Vec3,
     rounding_guard: f64,
+    rotation: Option<RigidPath>,
+}
+impl Movement {
+    fn speed(&self) -> f64 {
+        self.rotation
+            .as_ref()
+            .map_or_else(|| length(self.delta), |path| path.speed)
+    }
+    fn place<'session>(
+        &self,
+        session: &'session Session,
+        shape: &Shape<'_>,
+        fraction: f64,
+    ) -> Result<Shape<'session>, ModelError> {
+        match &self.rotation {
+            Some(path) => path.place(session, shape, fraction),
+            None => Ok(session.translate(shape, scale(self.delta, fraction))?),
+        }
+    }
 }
 fn magnitude(point: Vec3) -> f64 {
     point.x.abs().max(point.y.abs()).max(point.z.abs())
@@ -138,7 +158,7 @@ fn movements(
     end: &InstanceGraph<'_>,
     outputs: &[InstanceOutputRef],
 ) -> Result<Vec<Movement>, ModelError> {
-    let mut cache = HashMap::new();
+    let mut cache: HashMap<Option<&str>, Movement> = HashMap::new();
     outputs
         .iter()
         .map(|output| {
@@ -147,7 +167,7 @@ fn movements(
                 .get(&output.instance)
                 .and_then(|node| node.frame());
             if let Some(movement) = cache.get(&frame) {
-                return Ok(*movement);
+                return Ok(movement.clone());
             }
             let (first, first_guard) = frame_origin(start, frame)?;
             let (second, second_guard) = frame_origin(end, frame)?;
@@ -159,13 +179,17 @@ fn movements(
             let movement = Movement {
                 delta,
                 rounding_guard,
+                rotation: None,
             };
-            cache.insert(frame, movement);
+            cache.insert(frame, movement.clone());
             Ok(movement)
         })
         .collect()
 }
-fn swept_bounds(bounds: Bounds, movement: Movement) -> Result<Bounds, ModelError> {
+fn swept_bounds(bounds: Bounds, movement: &Movement) -> Result<Bounds, ModelError> {
+    if let Some(path) = &movement.rotation {
+        return Ok(path.swept);
+    }
     let last_min = add(bounds.min, movement.delta);
     let last_max = add(bounds.max, movement.delta);
     if !finite(last_min) || !finite(last_max) {
@@ -187,8 +211,8 @@ fn swept_bounds(bounds: Bounds, movement: Movement) -> Result<Bounds, ModelError
 struct PairPath<'a, 'session> {
     first: &'a Body<'a, 'session>,
     second: &'a Body<'a, 'session>,
-    first_motion: Movement,
-    second_motion: Movement,
+    first_motion: &'a Movement,
+    second_motion: &'a Movement,
     collision_options: CollisionOptions,
     checked: (f64, f64),
     options: ContinuousCollisionOptions,
@@ -215,10 +239,12 @@ impl PairPath<'_, '_> {
         if *queries >= self.options.maximum_queries {
             return Ok(None);
         }
-        let first_shape =
-            session.translate(self.first.shape, scale(self.first_motion.delta, fraction))?;
-        let second_shape =
-            session.translate(self.second.shape, scale(self.second_motion.delta, fraction))?;
+        let first_shape = self
+            .first_motion
+            .place(session, self.first.shape, fraction)?;
+        let second_shape = self
+            .second_motion
+            .place(session, self.second.shape, fraction)?;
         let first = Body {
             reference: self.first.reference,
             shape: &first_shape,
@@ -264,7 +290,12 @@ impl PairPath<'_, '_> {
         Ok(None)
     }
     fn check(&self, session: &Session, queries: &mut usize) -> Result<PairOutcome, ModelError> {
-        let speed = length(subtract(self.first_motion.delta, self.second_motion.delta));
+        let speed = if self.first_motion.rotation.is_none() && self.second_motion.rotation.is_none()
+        {
+            length(subtract(self.first_motion.delta, self.second_motion.delta))
+        } else {
+            self.first_motion.speed() + self.second_motion.speed()
+        };
         if !speed.is_finite() {
             return Err(ModelError::new("continuous relative speed overflows"));
         }
@@ -348,6 +379,26 @@ impl InstanceGraph<'_> {
         study: &MotionStudy,
         options: ContinuousCollisionOptions,
     ) -> Result<ContinuousMotionResult, ModelError> {
+        self.check_motion(session, study, options, true)
+    }
+    /// Checks linearly interpolated joint coordinates, including unwrapped
+    /// rotations and nested rotating/translating frames. Uses conservative speed
+    /// bounds; ambiguous intervals or exhausted budgets remain Unresolved.
+    pub fn check_continuous_motion(
+        &self,
+        session: &Session,
+        study: &MotionStudy,
+        options: ContinuousCollisionOptions,
+    ) -> Result<ContinuousMotionResult, ModelError> {
+        self.check_motion(session, study, options, false)
+    }
+    fn check_motion(
+        &self,
+        session: &Session,
+        study: &MotionStudy,
+        options: ContinuousCollisionOptions,
+        translations_only: bool,
+    ) -> Result<ContinuousMotionResult, ModelError> {
         let guard = options.checked()?;
         study.collision_options.validate()?;
         if !(2..=MAX_MOTION_SAMPLES).contains(&study.samples.len()) || study.outputs.is_empty() {
@@ -356,11 +407,14 @@ impl InstanceGraph<'_> {
             ));
         }
         self.validate_joints()?;
-        // All limits, coordinates, and unsupported rotations fail before generation.
+        // Validate all coordinate endpoints before generating local geometry.
         let mut start = sample_graph(self, &study.samples[0], 0)?;
         for (index, sample) in study.samples.iter().enumerate().skip(1) {
             let end = sample_graph(self, sample, index)?;
-            validate_translation(&start, &end)?;
+            if translations_only {
+                validate_translation(&start, &end)?;
+            }
+            rotations::validate_angles(&start, &end)?;
             start = end;
         }
         let (locals, bindings) = prepare_motion(session, self, &study.outputs)?;
@@ -378,7 +432,11 @@ impl InstanceGraph<'_> {
             let end = sample_graph(self, sample, segment)?;
             let generation = motion_generation(session, &start, &bindings, &locals)?;
             let bodies = generation.bodies(session, &study.outputs)?;
-            let movement = movements(&start, &end, &study.outputs)?;
+            let movement = if rotations::has_rotation(&start, &end)? {
+                rotations::movements(&start, &end, &study.outputs, &bodies)?
+            } else {
+                movements(&start, &end, &study.outputs)?
+            };
             SegmentCheck {
                 collision_options: study.collision_options,
                 options,
@@ -420,7 +478,7 @@ impl SegmentCheck {
                 Ok(Body {
                     reference: body.reference,
                     shape: body.shape,
-                    bounds: swept_bounds(body.bounds, *movement)?,
+                    bounds: swept_bounds(body.bounds, movement)?,
                     volume: body.volume,
                 })
             })
@@ -462,8 +520,8 @@ impl SegmentCheck {
                 let path = PairPath {
                     first: &bodies[index],
                     second: &bodies[second],
-                    first_motion: movements[index],
-                    second_motion: movements[second],
+                    first_motion: &movements[index],
+                    second_motion: &movements[second],
                     collision_options,
                     checked,
                     options,

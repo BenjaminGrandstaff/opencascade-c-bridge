@@ -182,6 +182,7 @@ impl Default for Placement {
     }
 }
 
+#[derive(Clone, Copy)]
 pub(crate) struct NormalizedPlacement {
     pub(crate) translation: Vec3,
     pub(crate) rotation: Option<(Vec3, Vec3, f64)>,
