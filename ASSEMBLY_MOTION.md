@@ -205,13 +205,23 @@ normalized residual. Failure leaves the original graph unchanged. Nullity is a
 local numerical rank estimate before active bounds restrict motion. No BREP
 geometry is generated or native handles allocated by this operation.
 
-Limits are 32 selected coordinates, 256 relationships, and 1–1,000 iterations
-(default 200). Each Jacobian evaluates the relationships twice per selected
-coordinate, using temporary graph copies. This is intended for bounded
-mechanisms; it does not claim large assembly solver scalability. All recorded
-relationships participate, including fixed endpoint checks. Empty selections,
-duplicate coordinates, unsupported freedoms, fixed-range bounds, and invalid
-options reject the operation.
+Limits are 10,000 selected coordinates, 10,000 relationships, and 1–1,000
+iterations (default 200). A conservative frame-ancestry index maps every
+coordinate to the relationships it can affect, including nested descendant
+frames. Each Jacobian uses one private graph and evaluates only those
+relationships twice per coordinate. Other coordinates retain their current
+values. All recorded relationships still participate in full residuals and
+authoritative acceptance checks, including fixed endpoint checks.
+
+The index caps frame traversal at 1,000,000 steps and projected normal-matrix
+accumulation work at 1,000,000 products (sum over relationships of residual row
+count times squared influencing-coordinate count). Dense or deeply nested
+problems exceeding these bounds reject before optimization and leave the graph
+unchanged. Sparse elimination can produce fill-in, so these bounds do not
+promise uniform runtime for arbitrary connected mechanisms. Benchmarks cover
+10,000 independent coordinates and a coupled chain of 64 nested coordinates.
+Empty selections, duplicates, unsupported freedoms, fixed-range bounds and
+invalid options reject the operation.
 
 The initial pose selects a local assembly branch. Singular seeds, incompatible
 relationships, exhausted budgets, or travel limits can prevent closure. There
@@ -310,8 +320,12 @@ closures and the last attempted best fit remain available for inspection.
 and 100,000 total reported iterations. The total budget must be between 1 and
 1,000,000; each pose's iteration allowance is capped by the remaining budget.
 When it is exhausted, later samples are not attempted. The existing limits of
-10,000 samples, 32 free coordinates, and 256 relationships also apply. Report
-storage grows with sample count and its coordinates/checks; temporary native
+10,000 samples, 10,000 free coordinates, and 10,000 relationships also apply,
+subject to the solver sparse-work limits. Before validating sample poses, a
+4,000,000-entry report budget limits sample count times the sum of free
+coordinates and relationships, plus explicit driver edits. This prevents a
+large coordinate selection from multiplying into unbounded report storage.
+Report storage grows with sample count and its coordinates/checks; temporary native
 geometry stays bounded by the local variants and one sample's placed outputs.
 The graph and accepted geometry remain unchanged on success, closure failure,
 invalid input, and kernel errors.

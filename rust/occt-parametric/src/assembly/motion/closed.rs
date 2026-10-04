@@ -41,11 +41,26 @@ pub struct ClosedMotionResult {
     pub motion: Option<MotionResult>,
 }
 fn validate_roles(
+    graph: &InstanceGraph<'_>,
     study: &MotionStudy,
     free: &[JointVariable],
     options: ClosedMotionOptions,
 ) -> Result<(), ModelError> {
     options.joint_solver.checked()?;
+    let entries = free
+        .len()
+        .checked_add(graph.assembly.relationships.len())
+        .and_then(|per_sample| per_sample.checked_mul(study.samples.len()))
+        .and_then(|count| {
+            study.samples.iter().try_fold(count, |total, sample| {
+                total.checked_add(sample.positions.len())
+            })
+        });
+    if entries.is_none_or(|count| count > 4_000_000) {
+        return Err(ModelError::new(
+            "closed motion report entry budget exceeded",
+        ));
+    }
     if !(1..=1_000_000).contains(&options.maximum_total_iterations) {
         return Err(ModelError::new(
             "invalid closed motion total iteration budget",
@@ -92,8 +107,8 @@ impl InstanceGraph<'_> {
         free: &[JointVariable],
         options: ClosedMotionOptions,
     ) -> Result<JointMotionSolution, ModelError> {
+        validate_roles(self, study, free, options)?;
         validate_study(self, study)?;
-        validate_roles(study, free, options)?;
         let mut result = JointMotionSolution {
             status: JointMotionStatus::Complete,
             failed_sample: None,

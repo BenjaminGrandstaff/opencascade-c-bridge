@@ -15,14 +15,26 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 4/4, bridge 81 + first-use integration 1 (+1 doc test), recipes 3, parametric 265 + merge driver 3 + motion command 7 + balance command 4 + drawing command 2, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 4/4, bridge 81 + first-use integration 1 (+1 doc test), recipes 3, parametric 269 + merge driver 3 + motion command 7 + balance command 4 + drawing command 2, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.3% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
-| Coverage | 93.29% lines overall, test code excluded; C++ 94.24% lines, 87.68% branches, 100% functions; Rust 92.89% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 72 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Coverage | 93.30% lines overall, test code excluded; C++ 94.24% lines, 87.48% branches, 100% functions; Rust 92.90% lines | `tools/coverage/run.sh` |
+| Scale benchmarks | 74 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
+
+- Larger sparse joint-coordinate solving: frame ancestry indexes affected
+  relationships once, and finite-difference Jacobians reuse one private graph
+  instead of cloning and evaluating the entire assembly per coordinate.
+  Limits increase to 10,000 coordinates and 10,000 relationships, with explicit
+  traversal/normal-matrix work bounds and a closed-motion report-size bound.
+  Tests cover 1,000 mounted sliders, a coupled 64-frame chain, dense influence
+  rejection, and oversized report rejection. The 10,000-coordinate benchmark
+  takes 0.42 s and the coupled 64-frame chain takes about 0.93 s, each within a
+  10 s budget. No ABI/schema change; local seeds
+  still select assembly branches. See [Assembly motion](ASSEMBLY_MOTION.md).
+
 
 - General drawing batches and cutting templates (schema 51): true planar slices
   export only the cross-section boundaries, including holes, without projecting
@@ -320,9 +332,10 @@ tracks status and order.
   all assembly relationships is applied. Failed solves report their best fit
   without changing the graph. Six tests cover analytic crank-slider/four-bar
   closure, scales, distant origins, planar alignment, conflicts, units, limits,
-  persistence, nullity, and atomic failures. Limits: 32 coordinates, 256
-  relationships, and up to 1,000 local iterations. Global branch search and
-  large assembly solver scaling remain open. The 1,000-pose analytic
+  persistence, nullity, and atomic failures. Sparse scaling now supports 10,000
+  coordinates and relationships with explicit work bounds (see above), and
+  up to 1,000 local iterations. Global branch search and broader connected
+  assembly scaling remain open. The 1,000-pose analytic
   crank-slider benchmark takes 0.040 s (10 s budget). SonarQube passes with
   zero issues. API: [Assembly motion](ASSEMBLY_MOTION.md).
 
@@ -661,7 +674,7 @@ priority over additional rib variants.
   print-bed fit in arbitrary (not only quarter-turn) orientations.
 
 - Advanced ribs with general support-following and nonuniform closure.
-- Global linkage branch search, large assembly coordinate solving, and tighter
+- Global linkage branch search, broader connected assembly solving, and tighter
   swept bounds for dense or deeply nested rotating mechanisms.
 - Undercut detection against a parting line, and exact (not sampled) minimum
   wall thickness and draft on curved BREP faces.

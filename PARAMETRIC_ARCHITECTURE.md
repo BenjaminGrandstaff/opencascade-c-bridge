@@ -121,6 +121,9 @@ conventions, resource bounds, and limits of sampled kinematics.
 
 Bounded joint-coordinate solving adjusts selected freedoms to satisfy all
 recorded relationships, keeping driver coordinates and rest placements fixed.
+Frame-ancestry dependencies restrict finite-difference evaluations to affected
+relationships. Sparse solves support up to 10,000 coordinates and relationships,
+with conservative traversal and normal-matrix work limits; dense cases reject.
 Closed motion studies continue from the last successful pose and close every
 sample before generating shared geometry and checking sampled collisions.
 A failed pose or exhausted iteration budget returns closure reports with no

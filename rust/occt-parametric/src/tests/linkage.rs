@@ -232,7 +232,7 @@ fn linkage_invalid_inputs_and_iteration_exhaustion_are_atomic() {
         vec![free("missing", JointDof::Angle)],
         vec![free("rod", JointDof::Axial)],
         vec![free("rod", JointDof::Angle); 2],
-        vec![free("rod", JointDof::Angle); 33],
+        vec![free("rod", JointDof::Angle); 10_001],
     ] {
         assert!(
             graph
@@ -456,4 +456,208 @@ fn linkage_planar_coordinates_direction_and_mixed_unit_bounds() {
             .solve_joint_coordinates(&[free("plane", JointDof::Angle)], Default::default())
             .is_err()
     );
+}
+
+fn slider_array(
+    definition: &FamilyDefinition,
+    count: usize,
+    chain: bool,
+) -> (InstanceGraph<'_>, Vec<JointVariable>) {
+    let mut graph = InstanceGraph::new(definition);
+    graph.add_base("prototype", HashMap::new(), "test").unwrap();
+    graph
+        .add_frame(
+            "mounted",
+            None,
+            Placement {
+                translation: vector(1e6, -1e6),
+                rotation: Some(AxisAngle {
+                    origin: vector(0.0, 0.0),
+                    axis: VectorQuantity::scalars(0.0, 0.0, 1.0),
+                    angle_radians: 0.4,
+                }),
+            },
+            "test",
+        )
+        .unwrap();
+    let mut joints = Vec::new();
+    let mut variables = Vec::new();
+    for index in 0..count {
+        let frame = format!("slide-{index}");
+        let parent = if chain && index > 0 {
+            format!("slide-{}", index - 1)
+        } else {
+            "mounted".into()
+        };
+        graph
+            .add_frame(&frame, Some(&parent), Placement::identity(), "test")
+            .unwrap();
+        joints.push(AssemblyJoint {
+            id: frame.clone(),
+            frame: frame.clone(),
+            origin: vector(0.0, 0.0),
+            axis: VectorQuantity::scalars(1.0, 0.0, 0.0),
+            kind: JointKind::Prismatic {
+                distance: JointScalar {
+                    value: Quantity::length(0.02, LengthUnit::Centimeter),
+                    minimum: Some(mm(0.0)),
+                    maximum: Some(mm(1.0)),
+                },
+            },
+        });
+        variables.push(free(&frame, JointDof::Axial));
+        let fixed = format!("fixed-{index}");
+        for id in [&frame, &fixed] {
+            graph
+                .add_clone(id, "prototype", HashMap::new(), "test")
+                .unwrap();
+        }
+        graph.set_instance_frame(&frame, Some(&frame)).unwrap();
+        graph.set_instance_frame(&fixed, Some("mounted")).unwrap();
+        graph
+            .set_placement(
+                &fixed,
+                Placement::translated(vector(if chain { index as f64 + 1.0 } else { 1.0 }, 0.0)),
+            )
+            .unwrap();
+    }
+    graph.add_joints(joints).unwrap();
+    for index in 0..count {
+        graph
+            .add_relationship(AssemblyRelationship {
+                id: format!("closure-{index}"),
+                kind: RelationKind::Coincident,
+                first: DatumRef::new(format!("slide-{index}"), "origin"),
+                second: DatumRef::new(format!("fixed-{index}"), "origin"),
+            })
+            .unwrap();
+    }
+    (graph, variables)
+}
+
+#[test]
+fn linkage_solves_1000_independent_mounted_sliders_and_preserves_limits() {
+    let definition = definition(1.0);
+    let (mut graph, variables) = slider_array(&definition, 1000, false);
+    let result = graph
+        .solve_joint_coordinates(&variables, Default::default())
+        .unwrap();
+    assert!(result.solved, "{result:?}");
+    assert_eq!(result.free_degrees, 0);
+    assert_eq!(result.redundant_equations, 2000);
+    assert_eq!(result.positions.len(), 1000);
+    assert!(
+        result
+            .positions
+            .iter()
+            .all(|position| position.value.normalized().unwrap() <= 1.0)
+    );
+    assert!(
+        result
+            .positions
+            .iter()
+            .all(|position| (position.value.normalized().unwrap() - 1.0).abs() < 1e-6)
+    );
+    assert_eq!(
+        ModelDocument::from_json(&ModelDocument::from_graph(&graph).to_json_pretty().unwrap())
+            .unwrap()
+            .schema_version,
+        CURRENT_SCHEMA_VERSION
+    );
+    assert!(
+        graph
+            .check_relationships()
+            .unwrap()
+            .iter()
+            .all(|check| check.satisfied)
+    );
+    let study = MotionStudy {
+        samples: vec![MotionSample { positions: vec![] }; 2],
+        outputs: vec![InstanceOutputRef {
+            instance: "prototype".into(),
+            output: "body".into(),
+        }],
+        collision_options: CollisionOptions::default(),
+    };
+    let closed = graph
+        .solve_motion_study(&study, &variables, Default::default())
+        .unwrap();
+    assert_eq!(closed.status, JointMotionStatus::Complete);
+    assert!(
+        closed
+            .solutions
+            .iter()
+            .all(|solution| solution.positions.len() == 1000 && solution.solved)
+    );
+    assert_eq!(
+        closed.closed_study.unwrap().samples[0].positions.len(),
+        1000
+    );
+    graph
+        .set_placement("fixed-0", Placement::translated(vector(2.0, 0.0)))
+        .unwrap();
+    let before = ModelDocument::from_graph(&graph);
+    let failed = graph
+        .solve_joint_coordinates(&variables, Default::default())
+        .unwrap();
+    assert!(!failed.solved);
+    assert!(failed.active_limits.contains(&variables[0]));
+    assert_eq!(ModelDocument::from_graph(&graph), before);
+}
+
+#[test]
+fn linkage_solves_coupled_64_frame_chain_through_ancestor_coordinates() {
+    let definition = definition(1.0);
+    let (mut graph, variables) = slider_array(&definition, 64, true);
+    let result = graph
+        .solve_joint_coordinates(&variables, Default::default())
+        .unwrap();
+    assert!(result.solved, "{result:?}");
+    assert_eq!(result.free_degrees, 0);
+    assert_eq!(result.redundant_equations, 128);
+    assert!(
+        result
+            .positions
+            .iter()
+            .all(|position| (position.value.normalized().unwrap() - 1.0).abs() < 1e-6)
+    );
+    assert!(
+        graph
+            .check_relationships()
+            .unwrap()
+            .iter()
+            .all(|check| check.satisfied)
+    );
+}
+
+#[test]
+fn linkage_dense_influence_budget_rejects_before_changing_graph() {
+    let definition = definition(1.0);
+    let (mut graph, variables) = slider_array(&definition, 100, true);
+    let before = ModelDocument::from_graph(&graph);
+    let error = graph
+        .solve_joint_coordinates(&variables, Default::default())
+        .unwrap_err();
+    assert!(error.to_string().contains("sparse work budget"), "{error}");
+    assert_eq!(ModelDocument::from_graph(&graph), before);
+}
+
+#[test]
+fn linkage_large_closed_reports_reject_before_solving_or_mutating() {
+    let definition = definition(1.0);
+    let (graph, variables) = slider_array(&definition, 1000, false);
+    let before = ModelDocument::from_graph(&graph);
+    let study = MotionStudy {
+        samples: vec![MotionSample { positions: vec![] }; 2001],
+        outputs: vec![InstanceOutputRef {
+            instance: "prototype".into(),
+            output: "body".into(),
+        }],
+        collision_options: CollisionOptions::default(),
+    };
+    let error = graph
+        .solve_motion_study(&study, &variables, Default::default())
+        .unwrap_err();
+    assert!(error.to_string().contains("report entry budget"), "{error}");
+    assert_eq!(ModelDocument::from_graph(&graph), before);
 }

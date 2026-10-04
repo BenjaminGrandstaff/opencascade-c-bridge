@@ -3,6 +3,9 @@ use super::*;
 use crate::solve::{damped_step, term_residuals};
 use crate::sparse::SparseJacobian;
 
+mod influence;
+use influence::Influence;
+
 /// Coordinate the solver may change. Every other coordinate remains driven.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct JointVariable {
@@ -143,6 +146,7 @@ struct Problem<'graph, 'definition> {
     graph: &'graph InstanceGraph<'definition>,
     variables: Vec<Variable>,
     length: f64,
+    influence: Influence,
 }
 impl<'definition> Problem<'_, 'definition> {
     fn candidate(&self, offsets: &[f64]) -> Result<InstanceGraph<'definition>, ModelError> {
@@ -178,27 +182,60 @@ impl<'definition> Problem<'_, 'definition> {
             rows: vec![Vec::new(); rows],
             columns: offsets.len(),
         };
-        let mut perturbed = offsets.to_vec();
+        // One private graph per Jacobian; perturb only the coordinate and the
+        // relationships that depend on its frame or descendants.
+        let mut graph = self.candidate(offsets)?;
         for (column, variable) in self.variables.iter().enumerate() {
+            if self.influence.relationships[column].is_empty() {
+                continue;
+            }
             let step = 1e-6 * offsets[column].abs().max(1.0);
             let ahead = (offsets[column] + step).min(variable.upper);
             let behind = (offsets[column] - step).max(variable.lower);
-            perturbed[column] = ahead;
-            let forward = self.residuals(&perturbed)?;
-            perturbed[column] = behind;
-            let backward = self.residuals(&perturbed)?;
-            perturbed[column] = offsets[column];
-            for (row, (a, b)) in jacobian.rows.iter_mut().zip(forward.iter().zip(backward)) {
+            let set = |graph: &mut InstanceGraph<'_>, offset| {
+                let position = variable.position(offset);
+                graph.set_joint_coordinate(&position.frame, position.coordinate, position.value)
+            };
+            set(&mut graph, ahead)?;
+            let forward = self.influenced_residuals(&graph, column)?;
+            set(&mut graph, behind)?;
+            let backward = self.influenced_residuals(&graph, column)?;
+            set(&mut graph, offsets[column])?;
+            for ((row, a), (_, b)) in forward.into_iter().zip(backward) {
                 let derivative = (a - b) / (ahead - behind);
                 if !derivative.is_finite() {
                     return Err(ModelError::new("joint solver derivative is not finite"));
                 }
                 if derivative != 0.0 {
-                    row.push((column, derivative));
+                    jacobian.rows[row].push((column, derivative));
                 }
             }
         }
         Ok(jacobian)
+    }
+    fn influenced_residuals(
+        &self,
+        graph: &InstanceGraph<'_>,
+        column: usize,
+    ) -> Result<Vec<(usize, f64)>, ModelError> {
+        let mut result = Vec::new();
+        for &index in &self.influence.relationships[column] {
+            let relation = &graph.assembly.relationships[index];
+            let mut values = Vec::new();
+            term_residuals(
+                relation.kind,
+                graph.datum(&relation.first.instance, &relation.first.datum)?,
+                graph.datum(&relation.second.instance, &relation.second.datum)?,
+                self.length,
+                &mut values,
+            );
+            result.extend(
+                values.into_iter().enumerate().map(|(row, value)| {
+                    (self.influence.first_rows[index] + row, value / self.length)
+                }),
+            );
+        }
+        Ok(result)
     }
     fn optimize(
         &self,
@@ -249,7 +286,9 @@ impl InstanceGraph<'_> {
     /// Uses the current pose as a local seed; singular poses and disconnected
     /// assembly branches may require another seed. Bounds are enforced throughout.
     /// A failed solve reports its best fit and leaves this graph untouched.
-    /// Limited to 32 coordinates and 256 relationships; geometry is never generated.
+    /// Limited to 10,000 coordinates/relationships and bounded sparse work.
+    /// Dense influence and deeply nested frame traversals may exceed the work
+    /// budget and are rejected before optimization; geometry is never generated.
     pub fn solve_joint_coordinates(
         &mut self,
         free: &[JointVariable],
@@ -257,12 +296,12 @@ impl InstanceGraph<'_> {
     ) -> Result<JointSolution, ModelError> {
         let length = options.checked()?;
         if free.is_empty()
-            || free.len() > 32
+            || free.len() > 10_000
             || self.assembly.relationships.is_empty()
-            || self.assembly.relationships.len() > 256
+            || self.assembly.relationships.len() > 10_000
         {
             return Err(ModelError::new(
-                "joint solving requires 1..32 coordinates and 1..256 relationships",
+                "joint solving requires 1..10000 coordinates and 1..10000 relationships",
             ));
         }
         self.validate_joints()?;
@@ -272,6 +311,7 @@ impl InstanceGraph<'_> {
         if free.iter().any(|variable| !seen.insert(variable)) {
             return Err(ModelError::new("duplicate free joint coordinate"));
         }
+        let influence = Influence::new(self, free, length)?;
         let problem = Problem {
             graph: self,
             variables: free
@@ -279,6 +319,7 @@ impl InstanceGraph<'_> {
                 .map(|variable| Variable::new(self, variable, length))
                 .collect::<Result<_, _>>()?,
             length,
+            influence,
         };
         let (offsets, values, iterations) = problem.optimize(options.maximum_iterations)?;
         let jacobian = problem.jacobian(&offsets, values.len())?;
