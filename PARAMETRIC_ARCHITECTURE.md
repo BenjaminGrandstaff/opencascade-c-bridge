@@ -7,7 +7,7 @@ so they can generate and regenerate families of related parts.
 ## Implementation status
 
 The architecture in this document is both a description of implemented
-boundaries and a roadmap. As of ABI version 39, the repository contains three
+boundaries and a roadmap. As of ABI version 40, the repository contains three
 Rust layers:
 
 1. **`occt-bridge`** safely wraps session-owned OCCT handles. It includes
@@ -97,6 +97,23 @@ a partial document. Inputs and combined results undergo document validation so
 cross-branch reference and parameter failures are rejected before regeneration.
 The 10,000-instance repeated merge benchmark includes input/output validation
 and runs within an eight-second budget, without allocating kernel handles.
+
+## Structured STEP export
+
+`InstanceGraph::export_step` writes the generated outputs named by an
+`OutputSet` as one named STEP assembly through ABI 40's
+`occt_bridge_step_save_assembly` and OCCT's XCAF document model. Each instance
+becomes a component named by its id and placed where it was generated.
+Components whose placed shapes share local geometry, which graph regeneration
+already arranges for clones that differ only in placement or frame, become one
+STEP part placed several times, so ten thousand pattern members write one part
+and ten thousand placement records. Parts are named `family/output
+[representative instance]` and colored from the instance material's
+appearance, converted from linear RGB to sRGB. Assembly frames are applied to
+each component's placement rather than written as nested sub-assemblies, and
+no file is written when arguments are invalid. A C++ test reads the file back
+through XCAF and checks the assembly, component and part names, shared parts,
+and colors.
 
 ## Assembly semantics
 
@@ -1052,7 +1069,9 @@ application code should use the recipe crate.
 
 ## Compatibility rule
 
-The C interface currently requires an exact ABI version match. ABI version 39
+The C interface currently requires an exact ABI version match. ABI version 40
+adds structured STEP assembly export through OCCT's XCAF document model.
+ABI version 39
 adds profile sweeps along paths with orientation modes. ABI version 38
 adds curve wires with interpolated splines and one shared integration policy
 for volume, area, center, and inertia. ABI version 37

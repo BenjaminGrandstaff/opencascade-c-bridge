@@ -11,7 +11,62 @@ pub(crate) fn path_to_c_string(path: &Path) -> Result<CString, BridgeError> {
     })
 }
 
+fn text_to_c_string(text: &str, what: &str) -> Result<CString, BridgeError> {
+    CString::new(text).map_err(|_| BridgeError {
+        status: 1,
+        category: "invalid argument".into(),
+        message: format!("{what} contains an interior NUL byte"),
+        diagnostics: Vec::new(),
+    })
+}
+
 impl Session {
+    /// Writes one named STEP assembly: a named component per entry, placed
+    /// at its shape's location, referring to shared named and colored parts.
+    /// Returns the number of distinct parts written.
+    pub fn save_step_assembly(
+        &self,
+        path: impl AsRef<Path>,
+        assembly_name: &str,
+        components: &[StepComponent<'_, '_>],
+    ) -> Result<usize, BridgeError> {
+        let path = path_to_c_string(path.as_ref())?;
+        let name = text_to_c_string(assembly_name, "assembly name")?;
+        let mut names = Vec::with_capacity(components.len());
+        for component in components {
+            self.validate_shape(component.shape)?;
+            names.push((
+                text_to_c_string(component.name, "component name")?,
+                text_to_c_string(component.part_name, "part name")?,
+            ));
+        }
+        let raw = components
+            .iter()
+            .zip(&names)
+            .map(|(component, (name, part))| RawStepComponent {
+                shape: component.shape.id,
+                name: name.as_ptr(),
+                part_name: part.as_ptr(),
+                has_color: i32::from(component.color.is_some()),
+                color: component.color.unwrap_or([0.0; 3]),
+            })
+            .collect::<Vec<_>>();
+        let mut parts = 0;
+        // SAFETY: The strings and component buffer outlive the call, and the
+        // output count is writable.
+        self.check(unsafe {
+            occt_bridge_step_save_assembly(
+                self.raw.as_ptr(),
+                path.as_ptr(),
+                name.as_ptr(),
+                raw.as_ptr(),
+                raw.len(),
+                &mut parts,
+            )
+        })?;
+        Ok(parts)
+    }
+
     pub fn save_brep(&self, shape: &Shape<'_>, path: impl AsRef<Path>) -> Result<(), BridgeError> {
         self.validate_shape(shape)?;
         let path = path_to_c_string(path.as_ref())?;

@@ -16,6 +16,7 @@ mod requirements;
 mod ribs;
 mod selection;
 mod sheet_metal;
+mod step_export;
 mod sweep;
 mod variable_fillet;
 

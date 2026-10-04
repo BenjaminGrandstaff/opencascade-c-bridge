@@ -2,7 +2,7 @@
 
 use super::*;
 
-pub(crate) const ABI_VERSION: u32 = 39;
+pub(crate) const ABI_VERSION: u32 = 40;
 
 #[repr(C)]
 pub(crate) struct RawMeshOptions {
@@ -47,6 +47,15 @@ pub(crate) struct RawCurveSegment {
     pub(crate) point_count: usize,
     pub(crate) start_tangent: RawVec3,
     pub(crate) end_tangent: RawVec3,
+}
+
+#[repr(C)]
+pub(crate) struct RawStepComponent {
+    pub(crate) shape: RawShapeId,
+    pub(crate) name: *const std::os::raw::c_char,
+    pub(crate) part_name: *const std::os::raw::c_char,
+    pub(crate) has_color: i32,
+    pub(crate) color: [f64; 3],
 }
 
 #[repr(C)]
@@ -265,6 +274,14 @@ unsafe extern "C" {
         segment_count: usize,
         closed: c_int,
         out: *mut RawShapeId,
+    ) -> RawStatus;
+    pub(crate) fn occt_bridge_step_save_assembly(
+        session: *mut c_void,
+        path: *const std::os::raw::c_char,
+        assembly_name: *const std::os::raw::c_char,
+        components: *const RawStepComponent,
+        component_count: usize,
+        out_part_count: *mut usize,
     ) -> RawStatus;
     pub(crate) fn occt_bridge_sweep(
         session: *mut c_void,

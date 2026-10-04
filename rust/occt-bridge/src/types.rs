@@ -338,6 +338,19 @@ pub struct MassProperties {
     pub relative_volume_error: f64,
 }
 
+/// One placed component of [`Session::save_step_assembly`].
+#[derive(Clone, Copy, Debug)]
+pub struct StepComponent<'a, 'session> {
+    /// The placed shape. Components whose shapes share geometry at different
+    /// locations, such as rigidly placed copies, become one STEP part.
+    pub shape: &'a Shape<'session>,
+    pub name: &'a str,
+    /// Names the part; for a shared part, the first component's name wins.
+    pub part_name: &'a str,
+    /// sRGB channels in [0, 1]; for a shared part, the first component's wins.
+    pub color: Option<[f64; 3]>,
+}
+
 /// How a swept profile turns as it follows its path.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum SweepOrientation {

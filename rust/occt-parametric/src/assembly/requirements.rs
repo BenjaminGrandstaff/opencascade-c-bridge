@@ -180,7 +180,7 @@ impl<'definition> InstanceGraph<'definition> {
     /// Generated members of a set, in deterministic order. Suppressed
     /// instances are skipped; a set with no generated members fails, so a
     /// misspelled output cannot pass vacuously.
-    fn generated_outputs(
+    pub(crate) fn generated_outputs(
         &self,
         generation: &GraphRegeneration<'_>,
         set: &OutputSet,

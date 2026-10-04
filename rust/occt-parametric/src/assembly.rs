@@ -12,6 +12,9 @@ mod mass_properties;
 mod materials;
 mod motion;
 mod requirements;
+mod step_export;
+#[cfg(test)]
+pub(crate) use step_export::srgb_for_tests;
 
 pub use collisions::{CollisionOptions, InstanceOutputRef, PairCheck, PairStatus};
 pub(crate) use geometry::*;

@@ -212,3 +212,59 @@ fn stl_export_rejects_invalid_options_paths_and_sessions() {
     assert_eq!(error.status, 5);
     assert_eq!(first.shape_count().unwrap(), 1);
 }
+
+#[test]
+fn step_assemblies_share_placed_copies_as_one_part() {
+    let session = Session::new().unwrap();
+    let block = session
+        .create_box(Vec3::new(0.0, 0.0, 0.0), Vec3::new(10.0, 20.0, 30.0))
+        .unwrap();
+    let copies =
+        [-50.0, 0.0, 50.0].map(|x| session.translate(&block, Vec3::new(x, 0.0, 0.0)).unwrap());
+    let pin = session
+        .create_cylinder(
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(0.0, 0.0, 1.0),
+            2.0,
+            40.0,
+        )
+        .unwrap();
+    let names = ["a", "b", "c"];
+    let mut components = copies
+        .iter()
+        .zip(names)
+        .map(|(shape, name)| StepComponent {
+            shape,
+            name,
+            part_name: "block",
+            color: Some([0.8, 0.2, 0.1]),
+        })
+        .collect::<Vec<_>>();
+    components.push(StepComponent {
+        shape: &pin,
+        name: "pin",
+        part_name: "pin",
+        color: None,
+    });
+    let path = step_test_path("assembly");
+    assert_eq!(
+        session
+            .save_step_assembly(&path, "rack", &components)
+            .unwrap(),
+        2
+    );
+    // The flat reader sees every placed component.
+    let loaded = session.load_step(&path).unwrap();
+    let expected = 3.0 * 6000.0 + std::f64::consts::PI * 4.0 * 40.0;
+    assert!((session.volume(&loaded).unwrap() - expected).abs() < 1e-6 * expected);
+    std::fs::remove_file(&path).unwrap();
+
+    components[0].name = "bad\0name";
+    assert!(
+        session
+            .save_step_assembly(&path, "rack", &components)
+            .is_err()
+    );
+    assert!(session.save_step_assembly(&path, "rack", &[]).is_err());
+    assert!(!path.exists(), "argument errors write nothing");
+}

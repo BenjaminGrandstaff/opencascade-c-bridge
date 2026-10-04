@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define OCCT_BRIDGE_ABI_VERSION 39u
+#define OCCT_BRIDGE_ABI_VERSION 40u
 #define OCCT_BRIDGE_INVALID_SHAPE_ID UINT64_C(0)
 
 #if defined(_WIN32) && defined(OCCT_BRIDGE_BUILD_SHARED)
@@ -985,6 +985,32 @@ OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_step_save(
     occt_bridge_shape_id_t shape,
     const char* path
 );
+/* One placed component of occt_bridge_step_save_assembly. Components whose
+ * shapes share underlying geometry and orientation at different locations
+ * (such as rigidly placed copies) become one STEP part placed several times;
+ * the first component's part_name and color name and color that part.
+ * Names are UTF-8. color is sRGB in [0, 1], used when has_color is 1. */
+typedef struct occt_bridge_step_component {
+    occt_bridge_shape_id_t shape;
+    const char* name;
+    const char* part_name;
+    int32_t has_color;
+    double color[3];
+} occt_bridge_step_component_t;
+
+/* Writes one named STEP assembly (AP214, via OCCT XCAF) with a named
+ * component per entry, placed at its shape's location, referring to shared
+ * named and colored parts. out_part_count, if not null, receives the number of
+ * distinct parts. Nothing is written on argument errors. */
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_step_save_assembly(
+    occt_bridge_session_t* session,
+    const char* path,
+    const char* assembly_name,
+    const occt_bridge_step_component_t* components,
+    size_t component_count,
+    size_t* out_part_count
+);
+
 OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_step_load(
     occt_bridge_session_t* session,
     const char* path,

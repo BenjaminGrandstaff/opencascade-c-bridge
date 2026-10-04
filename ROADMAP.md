@@ -8,23 +8,29 @@ tracks status and order.
 
 | Layer | Version | State |
 |---|---|---|
-| C ABI (`src/`, `include/`) | ABI 39 | Stable; exact version match required |
+| C ABI (`src/`, `include/`) | ABI 40 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
 | `occt-parametric` (engineering layer) | Schema 52 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 4/4, bridge 86 (+1 doc test), recipes 3, parametric 236 + merge driver 3, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 87 (+1 doc test), recipes 3, parametric 238 + merge driver 3, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 92.3% line coverage (2026-10-03); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
 | Coverage | 92.63% lines overall, test code excluded; C++ 94.30% lines, 87.59% branches, 100% functions; Rust 91.81% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 65 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Scale benchmarks | 66 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
 
 ### Kernel (C ABI)
+
+- Structured STEP export (ABI 40): `occt_bridge_step_save_assembly` writes one
+  named assembly through OCCT XCAF, with a named component per placed shape and
+  shared, named, sRGB-colored parts for shapes that share geometry. A C++ test
+  reads it back through XCAF and checks structure, names, shared parts, and
+  colors; argument errors write nothing.
 
 - Sweeps along paths (ABI 39): `occt_bridge_sweep` carries a wire or
   single-boundary face along an edge or wire with corrected-Frenet, Frenet,
@@ -174,6 +180,14 @@ tracks status and order.
   error-bounded (Bezier, B-spline) extrema.
 
 ### Parametric layer
+
+- Graph STEP export: `InstanceGraph::export_step` writes generated outputs as an
+  assembly of instance-named components sharing one part per geometry variant,
+  colored from material appearances (linear RGB converted to sRGB). Frames are
+  flattened into component placements. Two tests cover shared variants, volume
+  after reloading, misspelled outputs, and color conversion. 10,001 pattern
+  instances export as one shared part in 0.828 s (4 s budget), at 617
+  bytes per component.
 
 - Sweep features (schema 52): `Sweep { profile, path, orientation }` sweeps a
   sketch face or wire along an open sketch path, with a parameter-driven
@@ -601,11 +615,9 @@ every item below is defined in documents and the API, and verified in tests.
 
 ### Capabilities
 
-1. **Structured STEP export.** Named parts, colors from materials, and an
-    assembly tree with shared instances, through OCCT's XCAF document model.
-2. **Stable references across edits.** Semantic naming for faces and edges
+1. **Stable references across edits.** Semantic naming for faces and edges
     that survives topology changes, beyond feature outputs and selectors.
-3. **Native viewer scripts.** A generated DRAW script per model that opens
+2. **Native viewer scripts.** A generated DRAW script per model that opens
     the exact B-rep parts with names and colors, like the wing's `view.tcl`.
 
 ## Later
@@ -622,6 +634,7 @@ every item below is defined in documents and the API, and verified in tests.
   theory spar bending check; stress analysis still needs an external solver.
 
 - Advanced ribs with general support-following and nonuniform closure.
+- STEP sub-assemblies mirroring nested assembly frames, and per-face colors.
 - Closed-linkage constraint solving and continuous collision detection.
 - Undercut detection against a parting line, and exact (not sampled) minimum
   wall thickness and draft on curved BREP faces.
