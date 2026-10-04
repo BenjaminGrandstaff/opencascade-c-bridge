@@ -552,3 +552,6 @@ not part of this wrapper's API or compatibility contract.
 
 General SVG/DXF drawing batches and 1:1 planar cutting templates are available
 through [the drawing-export command](tools/drawing-export/README.md).
+
+Alternative closed-linkage poses can be discovered and exported as reloadable
+models with [the joint-branches command](tools/joint-branches/README.md).

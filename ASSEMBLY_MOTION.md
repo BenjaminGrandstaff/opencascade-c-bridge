@@ -225,7 +225,8 @@ invalid options reject the operation.
 
 The initial pose selects a local assembly branch. Singular seeds, incompatible
 relationships, exhausted budgets, or travel limits can prevent closure. There
-is no global branch search or force simulation. For an individual pose, drive a
+is no force simulation. The bounded multi-start search below can discover
+alternative poses. For an individual pose, drive a
 coordinate, solve closure, and then regenerate or query collisions. Closed
 motion studies below automate this sequence for sampled poses. Tests compare
 crank-slider and four-bar closure against
@@ -233,6 +234,57 @@ independent geometry and cover scales, distant origins, planar alignment,
 limits, conflicts, unit preservation, persistence, and atomic failures. The
 scale suite also checks 1,000 driven crank-slider poses against an analytic
 position oracle.
+
+## Alternative linkage poses
+
+`InstanceGraph::search_joint_branches` runs the local solver from an explicit
+Cartesian seed grid, optionally trying the current pose first. It preserves the
+source graph and returns solutions in first-discovery order. The first axis
+changes fastest. A seed axis selects a free coordinate and explicit quantities;
+`JointSeedAxis::linear` builds an inclusive grid with compatible mixed units.
+
+```rust
+let axes = vec![JointSeedAxis::linear(
+    JointVariable { frame: "rod".into(), coordinate: JointDof::Angle },
+    Quantity::scalar(-std::f64::consts::PI),
+    Quantity::scalar(std::f64::consts::PI),
+    7,
+)?];
+let discovered = graph.search_joint_branches(&axes, JointBranchSearchOptions::default())?;
+// Review status, checks and positions before choosing a returned pose.
+```
+
+Seed intervals constrain starting coordinates only. Each seed must respect the
+joint's physical limits; the local solve keeps those limits and may converge
+outside the seed interval. Every returned solution passes all authoritative
+relationship checks. `free_degrees` still identifies underconstrained solutions:
+these may represent sampled points on a continuous family, rather than isolated
+assembly branches. Geometry, contact forces and collisions are not evaluated.
+Apply a chosen solution to a graph clone with `set_joint_coordinate`, then run
+its geometry and interference checks or use it to seed a closed motion study.
+
+Default equivalence groups angles modulo a full revolution and compares
+translations after dividing by `characteristic_length`. Every coordinate must
+be within `distinct_normalized_distance` (default 1e-5) to count as the same
+pose. `JointBranchEquivalence::Coordinates` preserves distinct unwrapped angles
+for workflows where whole revolutions matter. The first representative is
+retained; deduplication does not alter its coordinates or physical limits.
+
+Limits are 10,000 grid starts plus an optional current start, 1,000,000 total
+starting-coordinate entries, 128 retained branches, and 1,000,000 total reported
+iterations. Defaults retain up to 32 branches within 100,000 iterations, with
+ordinary 200-iteration local solves. Local sparse-work limits still apply.
+`SeedsExhausted` means all requested starts were attempted, not that every branch
+exists in the report. `BranchLimitReached` and `IterationBudgetExceeded` identify
+partial searches. Counters include failed and repeated starts; `best_unsolved`
+retains the failed candidate with the smallest maximum normalized residual.
+Errors reject the search without changing the source graph.
+
+This is deterministic bounded discovery, not a proof of exhaustive global branch
+enumeration or continuous branch connectivity. Tests compare both crank-slider
+solutions and both circle-intersection four-bar poses, including recovery from
+an initially singular collinear mechanism. See the
+[joint-branches command](tools/joint-branches/README.md) for reloadable model exports.
 
 ## Continuous rotating joint paths
 

@@ -458,7 +458,7 @@ fn linkage_planar_coordinates_direction_and_mixed_unit_bounds() {
     );
 }
 
-fn slider_array(
+pub(super) fn slider_array(
     definition: &FamilyDefinition,
     count: usize,
     chain: bool,

@@ -2,6 +2,7 @@ use super::*;
 
 mod assembly_motion;
 mod balance;
+mod branch_search;
 mod closed_motion;
 mod continuous_motion;
 mod documents;

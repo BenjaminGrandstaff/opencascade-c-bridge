@@ -4,7 +4,12 @@ use crate::solve::{damped_step, term_residuals};
 use crate::sparse::SparseJacobian;
 
 mod influence;
+mod search;
 use influence::Influence;
+pub use search::{
+    JointBranchEquivalence, JointBranchSearchOptions, JointBranchSearchResult,
+    JointBranchSearchStatus, JointSeedAxis,
+};
 
 /// Coordinate the solver may change. Every other coordinate remains driven.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -13,7 +18,8 @@ pub struct JointVariable {
     pub coordinate: JointDof,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
 pub struct JointSolveOptions {
     /// Between 1 and 1000; each iteration evaluates a finite-difference Jacobian.
     pub maximum_iterations: usize,
@@ -43,7 +49,7 @@ impl JointSolveOptions {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct JointSolution {
     /// All assembly relationships passed their authoritative geometric checks.
     pub solved: bool,

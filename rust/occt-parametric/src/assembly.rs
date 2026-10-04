@@ -20,7 +20,10 @@ mod requirements;
 pub use collisions::{CollisionOptions, InstanceOutputRef, PairCheck, PairStatus};
 pub(crate) use geometry::*;
 mod linkage;
-pub use linkage::{JointSolution, JointSolveOptions, JointVariable};
+pub use linkage::{
+    JointBranchEquivalence, JointBranchSearchOptions, JointBranchSearchResult,
+    JointBranchSearchStatus, JointSeedAxis, JointSolution, JointSolveOptions, JointVariable,
+};
 
 pub use joints::{AssemblyJoint, JointDof, JointKind, JointScalar};
 pub use mass_properties::{
@@ -219,7 +222,7 @@ pub struct AssemblyRelationship {
     pub second: DatumRef,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct RelationshipCheck {
     pub id: String,
     pub satisfied: bool,

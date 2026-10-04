@@ -35,8 +35,9 @@ pub use assembly::{
     RelationshipCheck, RelationshipTolerances, ResolvedDatum, SymmetricWingPlanform,
 };
 pub use assembly::{
-    ClosedMotionOptions, ClosedMotionResult, JointMotionSolution, JointMotionStatus, JointSolution,
-    JointSolveOptions, JointVariable,
+    ClosedMotionOptions, ClosedMotionResult, JointBranchEquivalence, JointBranchSearchOptions,
+    JointBranchSearchResult, JointBranchSearchStatus, JointMotionSolution, JointMotionStatus,
+    JointSeedAxis, JointSolution, JointSolveOptions, JointVariable,
 };
 pub use sketch::{
     SketchArc, SketchCircle, SketchConstraint, SketchDefinition, SketchLine, SketchPoint,

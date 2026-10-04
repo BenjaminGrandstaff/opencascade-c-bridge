@@ -135,7 +135,11 @@ through nested frame paths reject clear intervals using exact BREP separation;
 uncertain intervals or exhausted budgets remain unresolved. These interpolated
 coordinate paths do not automatically maintain linkage closure between solved
 sample poses. Local branch selection and continuously constrained path
-certification remain separate limitations.
+certification remain separate limitations. A bounded deterministic seed-grid
+search discovers alternative closed poses, deduplicates periodic angles, and
+reports partial results when limits stop it. It preserves the source graph;
+[the command](tools/joint-branches/README.md) exports one reloadable model per
+discovered pose. Complete global enumeration remains unsupported.
 
 - **Named datums.** A family declares points, axes, and planes from parameter
   expressions in its own coordinates, such as a hinge axis at a parameterized

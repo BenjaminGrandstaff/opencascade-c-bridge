@@ -1,0 +1,376 @@
+{
+  "schema_version": 51,
+  "family": {
+    "id": "link",
+    "version": 1,
+    "parameters": [],
+    "derived_parameters": [],
+    "derived_vector_parameters": [],
+    "constraints": [],
+    "requirements": [],
+    "datums": [
+      {
+        "id": "origin",
+        "kind": {
+          "point": {
+            "origin": {
+              "literal": {
+                "x": {
+                  "value": 0,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                },
+                "y": {
+                  "value": 0,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                },
+                "z": {
+                  "value": 0,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                }
+              }
+            }
+          }
+        }
+      },
+      {
+        "id": "end",
+        "kind": {
+          "point": {
+            "origin": {
+              "literal": {
+                "x": {
+                  "value": 3,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                },
+                "y": {
+                  "value": 0,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                },
+                "z": {
+                  "value": 0,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                }
+              }
+            }
+          }
+        }
+      }
+    ],
+    "features": [
+      {
+        "id": "body",
+        "operation": {
+          "box": {
+            "origin": {
+              "literal": {
+                "x": {
+                  "value": 0,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                },
+                "y": {
+                  "value": 0,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                },
+                "z": {
+                  "value": 0,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                }
+              }
+            },
+            "size": {
+              "literal": {
+                "x": {
+                  "value": 1,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                },
+                "y": {
+                  "value": 1,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                },
+                "z": {
+                  "value": 1,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                }
+              }
+            }
+          }
+        }
+      }
+    ]
+  },
+  "instances": [
+    {
+      "base": {
+        "id": "rod",
+        "overrides": {},
+        "frame": "rod",
+        "provenance": "Illustrative crank-slider"
+      }
+    },
+    {
+      "base": {
+        "id": "slider",
+        "overrides": {},
+        "frame": "slider",
+        "provenance": "Illustrative crank-slider"
+      }
+    }
+  ],
+  "frames": [
+    {
+      "id": "crank",
+      "parent": null,
+      "placement": {
+        "translation": {
+          "x": {
+            "value": 0,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "y": {
+            "value": 0,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "z": {
+            "value": 0,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        }
+      },
+      "provenance": "Illustrative crank-slider"
+    },
+    {
+      "id": "rod",
+      "parent": "crank",
+      "placement": {
+        "translation": {
+          "x": {
+            "value": 2,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "y": {
+            "value": 0,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "z": {
+            "value": 0,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        }
+      },
+      "provenance": "Illustrative crank-slider"
+    },
+    {
+      "id": "slider",
+      "parent": null,
+      "placement": {
+        "translation": {
+          "x": {
+            "value": 0,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "y": {
+            "value": 0,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "z": {
+            "value": 0,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        }
+      },
+      "provenance": "Illustrative crank-slider"
+    }
+  ],
+  "assembly": {
+    "joints": {
+      "crank": {
+        "id": "crank",
+        "frame": "crank",
+        "origin": {
+          "x": {
+            "value": 0,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "y": {
+            "value": 0,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "z": {
+            "value": 0,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        "axis": {
+          "x": {
+            "value": 0,
+            "dimension": "scalar",
+            "unit": null
+          },
+          "y": {
+            "value": 0,
+            "dimension": "scalar",
+            "unit": null
+          },
+          "z": {
+            "value": 1,
+            "dimension": "scalar",
+            "unit": null
+          }
+        },
+        "kind": {
+          "revolute": {
+            "angle": {
+              "value": {
+                "value": 1.0471975511965976,
+                "dimension": "scalar",
+                "unit": null
+              },
+              "minimum": null,
+              "maximum": null
+            }
+          }
+        }
+      },
+      "rod": {
+        "id": "rod",
+        "frame": "rod",
+        "origin": {
+          "x": {
+            "value": 2,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "y": {
+            "value": 0,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "z": {
+            "value": 0,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        "axis": {
+          "x": {
+            "value": 0,
+            "dimension": "scalar",
+            "unit": null
+          },
+          "y": {
+            "value": 0,
+            "dimension": "scalar",
+            "unit": null
+          },
+          "z": {
+            "value": 1,
+            "dimension": "scalar",
+            "unit": null
+          }
+        },
+        "kind": {
+          "revolute": {
+            "angle": {
+              "value": {
+                "value": -1.5,
+                "dimension": "scalar",
+                "unit": null
+              },
+              "minimum": null,
+              "maximum": null
+            }
+          }
+        }
+      },
+      "slider": {
+        "id": "slider",
+        "frame": "slider",
+        "origin": {
+          "x": {
+            "value": 0,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "y": {
+            "value": 0,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "z": {
+            "value": 0,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        "axis": {
+          "x": {
+            "value": 1,
+            "dimension": "scalar",
+            "unit": null
+          },
+          "y": {
+            "value": 0,
+            "dimension": "scalar",
+            "unit": null
+          },
+          "z": {
+            "value": 0,
+            "dimension": "scalar",
+            "unit": null
+          }
+        },
+        "kind": {
+          "prismatic": {
+            "distance": {
+              "value": {
+                "value": 3,
+                "dimension": "length",
+                "unit": "millimeter"
+              },
+              "minimum": null,
+              "maximum": null
+            }
+          }
+        }
+      }
+    },
+    "relationships": [
+      {
+        "id": "closure",
+        "kind": "coincident",
+        "first": {
+          "instance": "rod",
+          "datum": "end"
+        },
+        "second": {
+          "instance": "slider",
+          "datum": "origin"
+        }
+      }
+    ]
+  }
+}

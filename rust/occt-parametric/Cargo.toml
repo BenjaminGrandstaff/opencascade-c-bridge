@@ -50,3 +50,7 @@ harness = false
 [[bench]]
 name = "large_linkage"
 harness = false
+
+[[bench]]
+name = "branch_search"
+harness = false

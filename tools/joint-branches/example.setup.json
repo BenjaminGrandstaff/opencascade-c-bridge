@@ -1,0 +1,65 @@
+{
+  "schema": "occb-joint-branches-v1",
+  "axes": [
+    {
+      "variable": {
+        "frame": "rod",
+        "coordinate": "angle"
+      },
+      "seeds": [
+        {
+          "value": -3.141592653589793,
+          "dimension": "scalar",
+          "unit": null
+        },
+        {
+          "value": -1.5707963267948966,
+          "dimension": "scalar",
+          "unit": null
+        },
+        {
+          "value": 0,
+          "dimension": "scalar",
+          "unit": null
+        },
+        {
+          "value": 1.5707963267948966,
+          "dimension": "scalar",
+          "unit": null
+        },
+        {
+          "value": 3.141592653589793,
+          "dimension": "scalar",
+          "unit": null
+        }
+      ]
+    },
+    {
+      "variable": {
+        "frame": "slider",
+        "coordinate": "axial"
+      },
+      "seeds": [
+        {
+          "value": -5,
+          "dimension": "length",
+          "unit": "millimeter"
+        },
+        {
+          "value": 0,
+          "dimension": "length",
+          "unit": "millimeter"
+        },
+        {
+          "value": 5,
+          "dimension": "length",
+          "unit": "millimeter"
+        }
+      ]
+    }
+  ],
+  "options": {
+    "maximum_total_iterations": 10000,
+    "maximum_branches": 8
+  }
+}
