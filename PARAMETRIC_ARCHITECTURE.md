@@ -1159,9 +1159,11 @@ defaults, units, constraints, placements, clone cycles, missing links,
 inconsistent pattern membership, and invalid regeneration revisions before the
 model is accepted.
 
-The next cross-layer work should prioritize advanced ribs and richer variable fillet laws,
-measured by the scale
-benchmark suite (`tools/bench/run.sh`). Scale is a requirement for every change; see the
+The next cross-layer work should prioritize mass and balance reporting and
+general assembly usability. The motion-study command turns selected outputs
+into independently hinged instances and reports interference across their
+travel; see [the workflow](tools/motion-study/README.md). Changes are measured by
+the scale benchmark suite (`tools/bench/run.sh`). Scale is a requirement for every change; see the
 [Roadmap](ROADMAP.md) for target sizes and the checks each change must pass.
 
 The broader serialized source model lives in the sibling

@@ -65,6 +65,12 @@ The study reports sampled positions. It does not prove that the path between
 samples is collision-free, integrate forces, or solve linkage constraints.
 Increase sampling density for narrow obstacles and fast angular changes.
 
+For a runnable workflow, `occt-motion-study` reads a model document and a setup
+file selecting separate component outputs and bounded hinges. It writes a
+reloadable assembly, a coordinated study, and sampled plus continuous reports.
+It preserves the source model and supports general hinges as well as wing
+elevons. See the [command and wing examples](tools/motion-study/README.md).
+
 ## Kernel measurements
 
 `InstanceGraph::mass_properties(session, outputs)` measures one solid output per

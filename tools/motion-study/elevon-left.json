@@ -1,0 +1,32 @@
+{
+  "schema": "occb-motion-study-v1",
+  "samples": 11,
+  "components": [
+    {
+      "id": "left_fixed",
+      "source": "wing",
+      "output": "left_body"
+    },
+    {
+      "id": "left_control",
+      "source": "wing",
+      "output": "left_elevon",
+      "hinge": {
+        "origin_mm": [
+          672.5,
+          -500,
+          0
+        ],
+        "axis": [
+          103.75,
+          -450,
+          0
+        ],
+        "minimum_deg": -25,
+        "maximum_deg": 25,
+        "start_deg": 25,
+        "end_deg": -25
+      }
+    }
+  ]
+}

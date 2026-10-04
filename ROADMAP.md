@@ -15,14 +15,24 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 4/4, bridge 81 (+1 doc test), recipes 3, parametric 256 + merge driver 3, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 4/4, bridge 81 (+1 doc test), recipes 3, parametric 256 + merge driver 3 + motion command 7, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.2% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
-| Coverage | 93.23% lines overall, test code excluded; C++ 94.24% lines, 87.32% branches, 100% functions; Rust 92.78% lines | `tools/coverage/run.sh` |
+| Coverage | 93.23% lines overall, test code excluded; C++ 94.24% lines, 87.32% branches, 100% functions; Rust 92.79% lines | `tools/coverage/run.sh` |
 | Scale benchmarks | 69 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
+
+- Runnable hinge assembly studies: `occt-motion-study` clones selected outputs
+  into separate fixed or revolute components, retains source placements and
+  enclosing frames, validates travel limits, and writes a reloadable assembly,
+  coordinated study, and sampled plus continuous interference report. Wing
+  examples exercise mirrored elevons through ±25 degrees with explicit assumed
+  straight hinge lines. Seven command tests cover inter-sample interference,
+  nested placement, coordinated travel, clearance, validation and persistence;
+  10,000 hinges prepare in about 0.15 s within a 10 s budget using batch insertion.
+  No ABI or model schema change. See [Motion-study command](tools/motion-study/README.md).
 
 ### Kernel (C ABI)
 
@@ -614,11 +624,9 @@ every item below is defined in documents and the API, and verified in tests.
 
 ### Capabilities
 
-1. **Moving elevons.** Elevons as separate instances on revolute joints, with
-    a motion study over their deflection range checking for interference.
-2. **Mass and balance report.** Per-material mass and the wing's center of
+1. **Mass and balance report.** Per-material mass and the wing's center of
     gravity relative to its mean aerodynamic chord, reported as data only.
-3. **Rib templates.** Section drawings through the wing at each rib station,
+2. **Rib templates.** Section drawings through the wing at each rib station,
     exported as DXF for cutting.
 
 ## Later
