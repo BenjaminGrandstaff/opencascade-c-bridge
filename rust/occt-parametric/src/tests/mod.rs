@@ -1,6 +1,7 @@
 use super::*;
 
 mod assembly_motion;
+mod balance;
 mod closed_motion;
 mod continuous_motion;
 mod documents;

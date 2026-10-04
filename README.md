@@ -304,6 +304,12 @@ distance/witness points, non-destructive overlap volume, and adaptive solid
 center/inertia measurements. Schema 40 adds interior variable-fillet radius
 stations and explicit spine control; laws use smooth interpolation and can
 overshoot their samples. Earlier documents default to the existing linear law.
+
+The [mass and balance command](tools/balance-report/README.md) reports selected
+component and per-material mass, central inertia, and CG relative to an explicit
+chord or a station-derived wing MAC. It retains current assembly poses and
+uses supplied material densities, with no ABI or model schema change.
+
 Schema 38 adds `SketchOpenWire` and
 `Rib.profile_mode: RibProfileMode`, defaulting earlier ribs to `Closed`.
 `OpenStrip { offset }` closes an open line/arc chain with a translated reversed

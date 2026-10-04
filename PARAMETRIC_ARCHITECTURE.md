@@ -1159,8 +1159,10 @@ defaults, units, constraints, placements, clone cycles, missing links,
 inconsistent pattern membership, and invalid regeneration revisions before the
 model is accepted.
 
-The next cross-layer work should prioritize mass and balance reporting and
-general assembly usability. The motion-study command turns selected outputs
+The next cross-layer work should prioritize general assembly usability and
+the remaining drawing exports. The balance-report command reports material
+totals and CG along an explicit chord or station-derived MAC; see
+[Mass and balance](tools/balance-report/README.md). The motion-study command turns selected outputs
 into independently hinged instances and reports interference across their
 travel; see [the workflow](tools/motion-study/README.md). Changes are measured by
 the scale benchmark suite (`tools/bench/run.sh`). Scale is a requirement for every change; see the

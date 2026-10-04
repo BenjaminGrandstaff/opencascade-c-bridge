@@ -1,0 +1,93 @@
+{
+  "schema": "occb-balance-report-v1",
+  "materials": [
+    {
+      "id": "printed-assumption",
+      "name": "Assumed homogeneous printed material; replace with measured effective density",
+      "density_kg_per_cubic_meter": 1000
+    },
+    {
+      "id": "spar-assumption",
+      "name": "Assumed homogeneous spar material; replace with measured density",
+      "density_kg_per_cubic_meter": 1500
+    }
+  ],
+  "components": [
+    {
+      "id": "selected-right_elevon",
+      "source": "wing",
+      "output": "right_elevon",
+      "material": "printed-assumption"
+    },
+    {
+      "id": "selected-right_segment_0",
+      "source": "wing",
+      "output": "right_segment_0",
+      "material": "printed-assumption"
+    },
+    {
+      "id": "selected-right_segment_1",
+      "source": "wing",
+      "output": "right_segment_1",
+      "material": "printed-assumption"
+    },
+    {
+      "id": "selected-right_segment_2",
+      "source": "wing",
+      "output": "right_segment_2",
+      "material": "printed-assumption"
+    },
+    {
+      "id": "selected-right_segment_3",
+      "source": "wing",
+      "output": "right_segment_3",
+      "material": "printed-assumption"
+    },
+    {
+      "id": "selected-right-spar",
+      "source": "wing",
+      "output": "right_spar",
+      "material": "spar-assumption"
+    },
+    {
+      "id": "selected-left_elevon",
+      "source": "wing",
+      "output": "left_elevon",
+      "material": "printed-assumption"
+    },
+    {
+      "id": "selected-left_segment_0",
+      "source": "wing",
+      "output": "left_segment_0",
+      "material": "printed-assumption"
+    },
+    {
+      "id": "selected-left_segment_1",
+      "source": "wing",
+      "output": "left_segment_1",
+      "material": "printed-assumption"
+    },
+    {
+      "id": "selected-left_segment_2",
+      "source": "wing",
+      "output": "left_segment_2",
+      "material": "printed-assumption"
+    },
+    {
+      "id": "selected-left_segment_3",
+      "source": "wing",
+      "output": "left_segment_3",
+      "material": "printed-assumption"
+    },
+    {
+      "id": "selected-left-spar",
+      "source": "wing",
+      "output": "left_spar",
+      "material": "spar-assumption"
+    }
+  ],
+  "reference": {
+    "kind": "wing_project",
+    "project": "../wing-layout/example.json"
+  }
+}

@@ -85,7 +85,15 @@ The query preserves the graph and releases all generated handles on success
 or failure. Empty selections, duplicate instances, missing materials/outputs,
 and unrepresentable physical values are rejected.
 
+An existing mass report can group measurements with `material_totals()` and
+project its CG with `balance(ChordReference)`, without another kernel query.
+`SymmetricWingPlanform` supplies a MAC reference from exact linear-panel
+integrals. The [`occt-balance-report` command](tools/balance-report/README.md)
+writes component, material, inertia and geometric CG data from selected outputs.
+It supports an explicit world-space chord or a matching wing station layout.
+
 ABI 33 adds `Session::mass_properties`, `distance`, and `overlap_volume`.
+
 Mass properties contain volume, center, the row-major central inertia tensor
 in model XYZ axes at unit density, and an adaptive relative volume error
 estimate. For model length unit u, inertia has units u⁵; multiply by a compatible

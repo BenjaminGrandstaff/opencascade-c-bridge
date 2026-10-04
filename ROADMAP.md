@@ -15,14 +15,27 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 4/4, bridge 81 (+1 doc test), recipes 3, parametric 256 + merge driver 3 + motion command 7, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
-| SonarQube (indexed Rust) | Gate OK, 0 issues, 93.2% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
+| Tests | C 4/4, bridge 81 (+1 doc test), recipes 3, parametric 261 + merge driver 3 + motion command 7 + balance command 4, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| SonarQube (indexed Rust) | Gate OK, 0 issues, 93.3% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
-| Coverage | 93.23% lines overall, test code excluded; C++ 94.24% lines, 87.32% branches, 100% functions; Rust 92.79% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 69 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Coverage | 93.27% lines overall, test code excluded; C++ 94.24% lines, 87.56% branches, 100% functions; Rust 92.85% lines | `tools/coverage/run.sh` |
+| Scale benchmarks | 71 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
+
+- Mass and balance reports: selected outputs retain their current frame/joint
+  poses and inherited or explicitly supplied densities. Reports include
+  component and per-material mass/central inertia, assembly CG, and signed
+  distance and percentage along a world-space chord. A symmetric wing reference
+  integrates piecewise-linear stations exactly for MAC and its area-weighted
+  leading edge. Data only, without a target CG recommendation. Library grouping
+  reuses existing measurements; the command preserves inputs and rejects report
+  overwrites. Five library tests and four command tests cover analytic planforms,
+  units, far origins, materials, invalid selections and output behavior. Scale
+  cases cover 100 MAC calculations over 10,000 stations and a 10,000-component
+  report with one generated variant. No ABI/schema change. See
+  [Mass and balance command](tools/balance-report/README.md).
 
 - Runnable hinge assembly studies: `occt-motion-study` clones selected outputs
   into separate fixed or revolute components, retains source placements and
@@ -624,9 +637,7 @@ every item below is defined in documents and the API, and verified in tests.
 
 ### Capabilities
 
-1. **Mass and balance report.** Per-material mass and the wing's center of
-    gravity relative to its mean aerodynamic chord, reported as data only.
-2. **Rib templates.** Section drawings through the wing at each rib station,
+1. **Rib templates.** Section drawings through the wing at each rib station,
     exported as DXF for cutting.
 
 ## Later

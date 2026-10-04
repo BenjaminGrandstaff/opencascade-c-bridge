@@ -4,7 +4,11 @@
 use super::*;
 use std::collections::{BTreeMap, BTreeSet};
 
+mod balance;
 mod collisions;
+pub use balance::{BalancePosition, ChordReference, MaterialMassProperties};
+mod planform;
+pub use planform::{MeanAerodynamicChord, PlanformStation, SymmetricWingPlanform};
 mod configurations;
 mod geometry;
 mod joints;

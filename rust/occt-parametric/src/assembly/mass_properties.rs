@@ -39,7 +39,7 @@ impl PhysicalMassProperties {
         Ok(properties)
     }
 
-    fn validate(&self) -> Result<(), ModelError> {
+    pub(super) fn validate(&self) -> Result<(), ModelError> {
         if self.mass_kg <= 0.0
             || self.volume_mm3 <= 0.0
             || self.relative_volume_error < 0.0
@@ -63,7 +63,7 @@ impl PhysicalMassProperties {
     }
 
     /// Weighted central combination avoids subtracting world-origin inertia.
-    fn combine(&mut self, other: &Self) -> Result<(), ModelError> {
+    pub(super) fn combine(&mut self, other: &Self) -> Result<(), ModelError> {
         let mass = self.mass_kg + other.mass_kg;
         let fraction = other.mass_kg / mass;
         let delta = subtract(other.center_mm, self.center_mm);

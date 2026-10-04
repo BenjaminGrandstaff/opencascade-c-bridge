@@ -25,13 +25,14 @@ mod verification;
 
 pub use assembly::{
     AssemblyJoint, AssemblyMassProperties, AssemblyRelationship, AssemblyRequirement,
-    AssemblySemantics, AssemblyVerificationRule, CollisionOptions, ComponentMassProperties,
-    Configuration, ContinuousCollisionOptions, ContinuousMotionResult, ContinuousPairResult,
-    ContinuousStatus, DatumDefinition, DatumKind, DatumRef, InstanceOutputRef, JointDof, JointKind,
-    JointPosition, JointScalar, MAX_MOTION_SAMPLES, Material, MotionResult, MotionSample,
+    AssemblySemantics, AssemblyVerificationRule, BalancePosition, ChordReference, CollisionOptions,
+    ComponentMassProperties, Configuration, ContinuousCollisionOptions, ContinuousMotionResult,
+    ContinuousPairResult, ContinuousStatus, DatumDefinition, DatumKind, DatumRef,
+    InstanceOutputRef, JointDof, JointKind, JointPosition, JointScalar, MAX_MOTION_SAMPLES,
+    Material, MaterialMassProperties, MeanAerodynamicChord, MotionResult, MotionSample,
     MotionSampleResult, MotionStudy, OutputSet, PairCheck, PairStatus, PhysicalMassProperties,
-    RELATIONSHIP_ANGULAR_TOLERANCE, RELATIONSHIP_LINEAR_TOLERANCE, RelationKind, RelationshipCheck,
-    RelationshipTolerances, ResolvedDatum,
+    PlanformStation, RELATIONSHIP_ANGULAR_TOLERANCE, RELATIONSHIP_LINEAR_TOLERANCE, RelationKind,
+    RelationshipCheck, RelationshipTolerances, ResolvedDatum, SymmetricWingPlanform,
 };
 pub use assembly::{
     ClosedMotionOptions, ClosedMotionResult, JointMotionSolution, JointMotionStatus, JointSolution,
