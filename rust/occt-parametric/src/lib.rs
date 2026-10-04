@@ -32,6 +32,7 @@ pub use assembly::{
     RELATIONSHIP_ANGULAR_TOLERANCE, RELATIONSHIP_LINEAR_TOLERANCE, RelationKind, RelationshipCheck,
     RelationshipTolerances, ResolvedDatum,
 };
+pub use assembly::{JointSolution, JointSolveOptions, JointVariable};
 pub use sketch::{
     SketchArc, SketchCircle, SketchConstraint, SketchDefinition, SketchLine, SketchPoint,
     SketchPoint2, SketchSolution,

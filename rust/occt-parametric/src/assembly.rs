@@ -15,6 +15,9 @@ mod requirements;
 
 pub use collisions::{CollisionOptions, InstanceOutputRef, PairCheck, PairStatus};
 pub(crate) use geometry::*;
+mod linkage;
+pub use linkage::{JointSolution, JointSolveOptions, JointVariable};
+
 pub use joints::{AssemblyJoint, JointDof, JointKind, JointScalar};
 pub use mass_properties::{
     AssemblyMassProperties, ComponentMassProperties, PhysicalMassProperties,

@@ -30,3 +30,7 @@ harness = false
 name = "document_management"
 path = "benches/scale/document_management.rs"
 harness = false
+
+[[bench]]
+name = "linkage"
+harness = false

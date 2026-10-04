@@ -9,6 +9,7 @@ mod expressions;
 mod graph;
 mod hole_catalogs;
 mod holes;
+mod linkage;
 mod mesh;
 mod patterns;
 mod regeneration;

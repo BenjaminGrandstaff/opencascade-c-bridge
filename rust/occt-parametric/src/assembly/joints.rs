@@ -81,7 +81,10 @@ impl JointScalar {
 }
 
 impl JointKind {
-    fn coordinate_mut(&mut self, coordinate: JointDof) -> Result<&mut JointScalar, ModelError> {
+    pub(super) fn coordinate_mut(
+        &mut self,
+        coordinate: JointDof,
+    ) -> Result<&mut JointScalar, ModelError> {
         match (self, coordinate) {
             (Self::Revolute { angle }, JointDof::Angle)
             | (Self::Cylindrical { angle, .. }, JointDof::Angle)

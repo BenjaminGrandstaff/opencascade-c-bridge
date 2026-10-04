@@ -370,7 +370,7 @@ fn push(values: &mut Vec<f64>, vector: Vec3) {
 /// holds. Angular components are multiplied by `angular` (a length) so they
 /// weigh like millimeters. Datum pairs were validated when the relationship
 /// was added.
-fn term_residuals(
+pub(crate) fn term_residuals(
     kind: RelationKind,
     first: ResolvedDatum,
     second: ResolvedDatum,
@@ -668,7 +668,7 @@ type Accepted = (Vec<f64>, Vec<f64>);
 /// equations with unconstrained directions held fixed, so free unknowns never
 /// move on rounding noise and constrained ones carry no regularization bias,
 /// which matters for chains whose solution moves far from the start.
-fn damped_step(
+pub(crate) fn damped_step(
     jacobian: &SparseJacobian,
     values: &[f64],
     damping: &mut f64,

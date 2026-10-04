@@ -194,6 +194,18 @@ tracks status and order.
   and certified curve approximation remain future extensions.
   API and limits: [Drawings](DRAWINGS.md).
 
+- Bounded closed-linkage solving (no schema or ABI change): explicitly selected
+  joint coordinates adjust while driven coordinates and rest placements stay
+  fixed. Coordinate limits constrain trial steps; only a candidate satisfying
+  all assembly relationships is applied. Failed solves report their best fit
+  without changing the graph. Six tests cover analytic crank-slider/four-bar
+  closure, scales, distant origins, planar alignment, conflicts, units, limits,
+  persistence, nullity, and atomic failures. Limits: 32 coordinates, 256
+  relationships, and up to 1,000 local iterations. Global branch search and
+  large assembly solver scaling remain open. The 1,000-pose analytic
+  crank-slider benchmark takes 0.040 s (10 s budget). SonarQube passes with
+  zero issues. API: [Assembly motion](ASSEMBLY_MOTION.md).
+
 - Full per-component and assembly mass properties: inherited material density,
   current instance/frame/joint poses, center of mass, and central inertia in
   world axes. Weighted central aggregation and parallel-axis corrections retain
@@ -212,7 +224,8 @@ tracks status and order.
   cover joint kinds, parent transforms, persistence, invalid edits, indexed
   versus exhaustive collisions, sampled crossings, geometry reuse, and cleanup.
   Scale cases cover 10,000 joints, 10,000 sparse bodies, and 1,000 motion samples.
-  Continuous collision proof and closed-linkage solving remain future work.
+  Translation path checks and bounded closed-linkage solving are available;
+  continuous rotation checking remains future work.
   API and limits: [Assembly motion](ASSEMBLY_MOTION.md).
 - Three-way semantic document merge (no schema or ABI change):
   `base.three_way_merge(&left, &right)` combines independent field/entity edits
@@ -522,8 +535,8 @@ every item below is defined in documents and the API, and verified in tests.
 - Hole-catalog tolerance classes and optional under-head countersink relief.
 
 - Advanced ribs with general support-following and nonuniform closure.
-- Closed-linkage constraint solving and rotating continuous collision detection
-  beyond the translation-only path checker.
+- Global linkage branch search, large assembly coordinate solving, and rotating
+  continuous collision detection beyond the translation-only path checker.
 - Assumptions and requirement-to-feature trace links in the document schema.
 - Semantic naming beyond feature outputs, and geometric tangency inference
   when continuity metadata is absent.

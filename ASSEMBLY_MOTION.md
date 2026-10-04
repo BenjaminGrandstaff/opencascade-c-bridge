@@ -153,3 +153,59 @@ obstacle crossings. This distance-and-motion-bound approach is related to
 [controlled conservative advancement](https://gamma-web.iacs.umd.edu/papers/documents/articles/2009/tang09.pdf);
 this implementation uses adaptive interval subdivision for translation-only
 BREP motion.
+
+## Closed-linkage solving
+
+`InstanceGraph::solve_joint_coordinates(&free, options)` adjusts explicitly
+selected `JointVariable { frame, coordinate }` entries until all recorded
+assembly relationships hold. Coordinates omitted from `free` stay driven;
+instance placements and frame rest placements stay fixed. A crank-slider can
+select its connecting-rod angle and slider distance while leaving the input
+crank angle driven. A four-bar can select its coupler and rocker angles.
+
+```rust,ignore
+let free = [
+    JointVariable { frame: "rod".into(), coordinate: JointDof::Angle },
+    JointVariable { frame: "slider".into(), coordinate: JointDof::Axial },
+];
+graph.set_joint_coordinate("crank", JointDof::Angle, Quantity::scalar(0.8))?;
+let result = graph.solve_joint_coordinates(&free, JointSolveOptions::default())?;
+if result.solved {
+    // Regenerate or check collisions at the accepted closed pose.
+}
+```
+
+The local solver reuses the placement solver's relationship residuals and
+Marquardt-damped sparse normal equations. Finite differences respect bounds;
+trial steps project onto the declared coordinate limits. Set
+`characteristic_length` to a representative link length when angular and
+linear coordinates differ greatly in scale (default 1 mm). Iteration offsets
+use millimeters or radians internally. Reported values retain original units;
+an exact active bound retains its declared limit unit to avoid rounding beyond
+that bound.
+
+Only a candidate passing every authoritative relationship check replaces the
+graph. An unsuccessful result includes best-fit positions, relationship checks,
+active limits, Jacobian nullity, redundant equation count, and the largest
+normalized residual. Failure leaves the original graph unchanged. Nullity is a
+local numerical rank estimate before active bounds restrict motion. No BREP
+geometry is generated or native handles allocated by this operation.
+
+Limits are 32 selected coordinates, 256 relationships, and 1–1,000 iterations
+(default 200). Each Jacobian evaluates the relationships twice per selected
+coordinate, using temporary graph copies. This is intended for bounded
+mechanisms; it does not claim large assembly solver scalability. All recorded
+relationships participate, including fixed endpoint checks. Empty selections,
+duplicate coordinates, unsupported freedoms, fixed-range bounds, and invalid
+options reject the operation.
+
+The initial pose selects a local assembly branch. Singular seeds, incompatible
+relationships, exhausted budgets, or travel limits can prevent closure. There
+is no global branch search, force simulation, or automatic closure of sampled
+motion studies: drive a coordinate, solve closure, and then regenerate or query
+collisions for each desired pose. Continuous rotation path checking remains a
+separate open item. Tests compare crank-slider and four-bar closure against
+independent geometry and cover scales, distant origins, planar alignment,
+limits, conflicts, unit preservation, persistence, and atomic failures. The
+scale suite also checks 1,000 driven crank-slider poses against an analytic
+position oracle.
