@@ -405,6 +405,15 @@ pub enum FeatureOperation {
         origin: VectorExpr,
         size: VectorExpr,
     },
+    /// Sweeps the `profile` output (a wire, or a face with one boundary) along
+    /// the `path` output (an edge or wire). Place the profile at the path's
+    /// start, usually across it. A face or closed wire makes a solid.
+    Sweep {
+        profile: String,
+        path: String,
+        #[serde(default)]
+        orientation: SweepOrientation,
+    },
     /// A solid through two or more sections with equal point counts. `smooth`
     /// interpolates each section as one B-spline with a corner only at its
     /// first point (an airfoil trailing edge); otherwise sections are
@@ -537,6 +546,7 @@ pub enum FeatureOperation {
 impl FeatureOperation {
     pub(crate) fn dependencies(&self) -> Vec<&str> {
         match self {
+            Self::Sweep { profile, path, .. } => vec![profile, path],
             Self::SheetMetalFlat { input, .. }
             | Self::Translate { input, .. }
             | Self::Rotate { input, .. }
@@ -707,6 +717,21 @@ fn default_wall_samples() -> usize {
 
 fn is_default_wall_samples(value: &usize) -> bool {
     *value == DEFAULT_WALL_SAMPLES
+}
+
+/// How a swept profile turns as it follows its path.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SweepOrientation {
+    /// Least twist; the usual choice.
+    #[default]
+    CorrectedFrenet,
+    /// Follows the path's curvature frame.
+    Frenet,
+    /// Keeps the profile's normal-side axis along a dimensionless direction.
+    Binormal { direction: VectorExpr },
+    /// Never rotates: every section stays parallel to the first.
+    Fixed,
 }
 
 /// A closed planar outline for a loft, in dimensionless profile units (for an

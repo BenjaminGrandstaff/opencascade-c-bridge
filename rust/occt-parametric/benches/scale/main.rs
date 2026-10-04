@@ -40,6 +40,7 @@ mod ribs;
 mod sheet_metal;
 mod sketches;
 mod solver;
+mod sweep;
 mod validation;
 mod variable_fillet;
 
@@ -118,6 +119,7 @@ fn main() -> ExitCode {
     outcomes.push(datum_sketch_wire_case());
     outcomes.push(spline_sketch_case());
     outcomes.push(large_spline_case());
+    outcomes.push(sweep::sweep_case());
     outcomes.push(profile_sweep_case(false));
     outcomes.push(profile_sweep_case(true));
     outcomes.push(hole_features_case());

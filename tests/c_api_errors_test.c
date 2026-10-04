@@ -264,6 +264,21 @@ static void wires_and_faces(occt_bridge_session_t* session) {
     curves[0].kind = 2;
     curves[0].point_count = 1;
     EXPECT(occt_bridge_create_curve_wire(session, curve_points, 5, curves, 1, 0, &out), ARG);
+
+    occt_bridge_shape_id_t rim = OCCT_BRIDGE_INVALID_SHAPE_ID;
+    occt_bridge_shape_id_t path = OCCT_BRIDGE_INVALID_SHAPE_ID;
+    const occt_bridge_vec3_t straight[] = {{0, 0, 0}, {10, 0, 0}};
+    SHAPE(occt_bridge_create_circle_wire(session, zero, vec(1, 0, 0), 1, &rim), rim);
+    SHAPE(occt_bridge_create_polyline_wire(session, straight, 2, 0, &path), path);
+    EXPECT(occt_bridge_sweep(NULL, rim, path, OCCT_BRIDGE_SWEEP_CORRECTED_FRENET, zero, &out), ARG);
+    EXPECT(occt_bridge_sweep(session, rim, path, OCCT_BRIDGE_SWEEP_CORRECTED_FRENET, zero, NULL), ARG);
+    EXPECT(occt_bridge_sweep(session, rim, path, -1, zero, &out), ARG);
+    EXPECT(occt_bridge_sweep(session, rim, path, 4, zero, &out), ARG);
+    EXPECT(occt_bridge_sweep(session, rim, path, OCCT_BRIDGE_SWEEP_BINORMAL, zero, &out), ARG);
+    EXPECT(occt_bridge_sweep(session, rim, path, OCCT_BRIDGE_SWEEP_BINORMAL, nan_x, &out), ARG);
+    EXPECT(occt_bridge_sweep(session, unknown, path, OCCT_BRIDGE_SWEEP_FIXED, zero, &out), MISSING);
+    EXPECT(occt_bridge_sweep(session, rim, unknown, OCCT_BRIDGE_SWEEP_FIXED, zero, &out), MISSING);
+    EXPECT(occt_bridge_sweep(session, rim, path, OCCT_BRIDGE_SWEEP_BINORMAL, vec(0, 0, 1), &out), OK);
     segments[1].start = segments[1].end;
     EXPECT(occt_bridge_create_segment_wire(session, segments, 2, 1, &out), ARG);
     segments[0].start = nan_x;

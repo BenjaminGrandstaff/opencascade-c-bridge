@@ -427,6 +427,11 @@ pub(crate) fn collect_operation_parameters<'a>(
             collect_vector_parameters(size, names);
         }
         FeatureOperation::Loft { sections, .. } => collect_loft_parameters(sections, names),
+        FeatureOperation::Sweep { orientation, .. } => {
+            if let SweepOrientation::Binormal { direction } = orientation {
+                collect_vector_parameters(direction, names);
+            }
+        }
         FeatureOperation::Cylinder {
             origin,
             axis,

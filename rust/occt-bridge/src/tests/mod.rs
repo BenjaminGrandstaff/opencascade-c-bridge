@@ -13,6 +13,7 @@ mod projection;
 mod results;
 mod session;
 mod surface_radius;
+mod sweep;
 mod variable_fillet;
 
 fn unit_box(session: &Session, x: f64) -> Shape<'_> {

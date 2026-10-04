@@ -126,6 +126,26 @@ pub(crate) fn execute_feature<'session>(
             smooth,
             ruled,
         } => return loft::execute(session, sections, *smooth, *ruled, parameters),
+        FeatureOperation::Sweep {
+            profile,
+            path,
+            orientation,
+        } => session.sweep(
+            shape(shapes, profile)?,
+            shape(shapes, path)?,
+            match orientation {
+                SweepOrientation::CorrectedFrenet => occt_bridge::SweepOrientation::CorrectedFrenet,
+                SweepOrientation::Frenet => occt_bridge::SweepOrientation::Frenet,
+                SweepOrientation::Binormal { direction } => {
+                    occt_bridge::SweepOrientation::Binormal(vector(
+                        direction,
+                        parameters,
+                        Dimension::Scalar,
+                    )?)
+                }
+                SweepOrientation::Fixed => occt_bridge::SweepOrientation::Fixed,
+            },
+        ),
         FeatureOperation::Cylinder {
             origin,
             axis,

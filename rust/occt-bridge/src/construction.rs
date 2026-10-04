@@ -91,6 +91,39 @@ impl Session {
     /// Creates an ordered, connected wire of exact lines and circular arcs.
     /// `closed` requires closure when true; false permits either open or closed
     /// wires. Planarity and absence of self-intersections are not required.
+    /// Sweeps a wire or single-boundary face along an edge or wire path, from
+    /// where the profile is placed relative to the path's start. A face or
+    /// closed wire makes a solid; an open wire a swept surface. Records the
+    /// faces each profile edge generates.
+    pub fn sweep(
+        &self,
+        profile: &Shape<'_>,
+        path: &Shape<'_>,
+        orientation: SweepOrientation,
+    ) -> Result<Shape<'_>, BridgeError> {
+        self.validate_shape(profile)?;
+        self.validate_shape(path)?;
+        let (mode, binormal) = match orientation {
+            SweepOrientation::CorrectedFrenet => (0, Vec3::new(0.0, 0.0, 0.0)),
+            SweepOrientation::Frenet => (1, Vec3::new(0.0, 0.0, 0.0)),
+            SweepOrientation::Binormal(direction) => (2, direction),
+            SweepOrientation::Fixed => (3, Vec3::new(0.0, 0.0, 0.0)),
+        };
+        let mut shape = 0;
+        // SAFETY: Validated shapes, a by-value vector, and a writable output.
+        self.check(unsafe {
+            occt_bridge_sweep(
+                self.raw.as_ptr(),
+                profile.id,
+                path.id,
+                mode,
+                binormal.into(),
+                &mut shape,
+            )
+        })?;
+        Ok(self.shape(shape))
+    }
+
     /// Builds a wire from lines, arcs, and interpolated splines. Consecutive
     /// segments must meet; `closed` requires the wire to end where it starts.
     pub fn create_curve_wire(

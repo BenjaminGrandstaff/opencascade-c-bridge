@@ -28,6 +28,7 @@ add_library(
     src/inspection.cpp
     src/measurements.cpp
     src/surface_radius.cpp
+    src/sweep.cpp
     src/projection.cpp
     src/mesh.cpp
     src/history.cpp

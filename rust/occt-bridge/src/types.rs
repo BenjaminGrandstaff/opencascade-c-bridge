@@ -338,6 +338,19 @@ pub struct MassProperties {
     pub relative_volume_error: f64,
 }
 
+/// How a swept profile turns as it follows its path.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum SweepOrientation {
+    /// Least twist; the usual choice.
+    CorrectedFrenet,
+    /// Follows the path's curvature frame.
+    Frenet,
+    /// Keeps the profile's normal-side axis along this direction.
+    Binormal(Vec3),
+    /// Never rotates: every section is parallel to the first.
+    Fixed,
+}
+
 /// One piece of [`Session::create_curve_wire`]: like [`WireSegment`], plus
 /// B-splines interpolated through any number of points.
 #[derive(Clone, Debug, PartialEq)]

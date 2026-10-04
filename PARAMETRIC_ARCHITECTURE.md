@@ -7,7 +7,7 @@ so they can generate and regenerate families of related parts.
 ## Implementation status
 
 The architecture in this document is both a description of implemented
-boundaries and a roadmap. As of ABI version 38, the repository contains three
+boundaries and a roadmap. As of ABI version 39, the repository contains three
 Rust layers:
 
 1. **`occt-bridge`** safely wraps session-owned OCCT handles. It includes
@@ -261,6 +261,20 @@ end direction so the spline continues that entity's direction through the
 shared point, which keeps the joint smooth whatever the solved positions.
 Spline-to-spline and closed-spline tangency are rejected. Documents without
 splines omit the field and load unchanged.
+
+Schema 52 adds `FeatureOperation::Sweep { profile, path, orientation }`, which
+sweeps a profile output (a wire, or a face with one boundary) along a path
+output (an edge or wire, typically a `SketchOpenWire`) through ABI 39's
+`occt_bridge_sweep`. The profile stays where it is placed relative to the
+path's start, so it is drawn at the path's first point, usually across it. A
+face or closed wire makes a solid; an open wire a swept surface. Orientation is
+corrected Frenet (least twist, the default), Frenet, a fixed binormal
+direction, or fixed (sections stay parallel). Sharp path corners are mitered.
+A profile reaching as far from the path start as the path's smallest bend
+radius is rejected, because the result would fold through itself and the
+kernel's validity check does not see that; the check is exact on lines and
+arcs, sampled elsewhere, and conservative for flat profiles turned edgewise to
+a bend. Operation history maps profile edges to the faces they generate.
 
 Sketch solving reuses the assembly solver's sparse normal-matrix algebra.
 Each constraint differentiates only its referenced points (at most eight
@@ -1038,7 +1052,8 @@ application code should use the recipe crate.
 
 ## Compatibility rule
 
-The C interface currently requires an exact ABI version match. ABI version 38
+The C interface currently requires an exact ABI version match. ABI version 39
+adds profile sweeps along paths with orientation modes. ABI version 38
 adds curve wires with interpolated splines and one shared integration policy
 for volume, area, center, and inertia. ABI version 37
 adds spline-section lofts and adaptive volume integration for freeform faces.

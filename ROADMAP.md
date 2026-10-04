@@ -8,23 +8,31 @@ tracks status and order.
 
 | Layer | Version | State |
 |---|---|---|
-| C ABI (`src/`, `include/`) | ABI 38 | Stable; exact version match required |
+| C ABI (`src/`, `include/`) | ABI 39 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 51 | Active development |
+| `occt-parametric` (engineering layer) | Schema 52 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 4/4, bridge 83 (+1 doc test), recipes 3, parametric 234 + merge driver 3, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 4/4, bridge 86 (+1 doc test), recipes 3, parametric 236 + merge driver 3, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 92.3% line coverage (2026-10-03); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
 | Coverage | 92.63% lines overall, test code excluded; C++ 94.30% lines, 87.59% branches, 100% functions; Rust 91.81% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 64 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Scale benchmarks | 65 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
 
 ### Kernel (C ABI)
+
+- Sweeps along paths (ABI 39): `occt_bridge_sweep` carries a wire or
+  single-boundary face along an edge or wire with corrected-Frenet, Frenet,
+  binormal, or fixed orientation, mitering sharp corners, closing faces and
+  closed wires into solids, and recording generated-face history. A guard
+  rejects profiles reaching as far as the path's smallest bend radius, which
+  the kernel's validity check misses. Three bridge tests check exact volumes on
+  straight, curved (Pappus), fixed-orientation (sheared), and mitered paths.
 
 - Curve wires and accurate freeform measurements (ABI 38):
   `occt_bridge_create_curve_wire` joins lines, arcs, and B-splines interpolated
@@ -166,6 +174,13 @@ tracks status and order.
   error-bounded (Bezier, B-spline) extrema.
 
 ### Parametric layer
+
+- Sweep features (schema 52): `Sweep { profile, path, orientation }` sweeps a
+  sketch face or wire along an open sketch path, with a parameter-driven
+  binormal. Two tests cover exact volumes, parameter edits that rebuild only
+  the profile and sweep, rejected self-intersecting edits that keep the
+  accepted result, validation, and persistence. 1,000 sweeps rebuilt after a
+  radius edit take 0.974 s (4 s budget).
 
 - Spline sketch entities (schema 51): `SketchSpline` interpolates through named
   sketch points, joins lines and arcs in profiles, closes into a smooth loop
@@ -586,14 +601,11 @@ every item below is defined in documents and the API, and verified in tests.
 
 ### Capabilities
 
-1. **Sweep along a path.** Any closed or open sketch profile swept along a
-    line, arc, or spline path with a defined orientation rule, for channels,
-    handles, and ducts that follow curves.
-2. **Structured STEP export.** Named parts, colors from materials, and an
+1. **Structured STEP export.** Named parts, colors from materials, and an
     assembly tree with shared instances, through OCCT's XCAF document model.
-3. **Stable references across edits.** Semantic naming for faces and edges
+2. **Stable references across edits.** Semantic naming for faces and edges
     that survives topology changes, beyond feature outputs and selectors.
-4. **Native viewer scripts.** A generated DRAW script per model that opens
+3. **Native viewer scripts.** A generated DRAW script per model that opens
     the exact B-rep parts with names and colors, like the wing's `view.tcl`.
 
 ## Later

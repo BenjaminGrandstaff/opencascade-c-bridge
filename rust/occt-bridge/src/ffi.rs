@@ -2,7 +2,7 @@
 
 use super::*;
 
-pub(crate) const ABI_VERSION: u32 = 38;
+pub(crate) const ABI_VERSION: u32 = 39;
 
 #[repr(C)]
 pub(crate) struct RawMeshOptions {
@@ -264,6 +264,14 @@ unsafe extern "C" {
         segments: *const RawCurveSegment,
         segment_count: usize,
         closed: c_int,
+        out: *mut RawShapeId,
+    ) -> RawStatus;
+    pub(crate) fn occt_bridge_sweep(
+        session: *mut c_void,
+        profile: RawShapeId,
+        path: RawShapeId,
+        orientation: i32,
+        binormal: RawVec3,
         out: *mut RawShapeId,
     ) -> RawStatus;
     pub(crate) fn occt_bridge_create_circle_wire(
