@@ -15,14 +15,26 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 4/4, bridge 81 + first-use integration 1 (+1 doc test), recipes 3, parametric 276 + merge driver 3 + motion command 7 + balance command 4 + drawing command 2 + branch command 2, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 4/4, bridge 81 + first-use integration 1 (+1 doc test), recipes 3, parametric 281 + merge driver 3 + motion command 7 + balance command 4 + drawing command 2 + branch command 2, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.4% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
-| Coverage | 93.32% lines overall, test code excluded; C++ 94.24% lines, 87.48% branches, 100% functions; Rust 92.95% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 75 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Coverage | 93.38% lines overall, test code excluded; C++ 94.24% lines, 87.60% branches, 100% functions; Rust 93.03% lines | `tools/coverage/run.sh` |
+| Scale benchmarks | 76 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
+
+- Tighter continuous rotating bounds: propagate conservative corner/arc boxes
+  through rigid frame chains, retaining angular extrema and axial thickness,
+  and intersect with the existing sphere enclosure. Separated subinterval boxes
+  skip exact midpoint queries; reports expose `bounds_rejected_intervals`.
+  Tests cover interior extrema, reverse/multiple turns, nested paths, thin plate
+  stacks, axial crossings, overflow rejection, guards and handle cleanup. The
+  10,000-plate stack clears in about 0.19 s with one variant and zero pair queries
+  (10 s budget). The 1,000 obstacle-crossing oracle uses 6,720 queries versus the
+  preceding 7,490. Correlated dense/nested mechanisms can still be unresolved.
+  No ABI/model schema change. See [Assembly motion](ASSEMBLY_MOTION.md).
+
 
 - Bounded linkage branch discovery: deterministic Cartesian starting poses,
   optional current seed, authoritative closure checks, periodic or unwrapped
@@ -686,8 +698,8 @@ priority over additional rib variants.
   print-bed fit in arbitrary (not only quarter-turn) orientations.
 
 - Advanced ribs with general support-following and nonuniform closure.
-- Complete linkage branch enumeration, broader connected assembly solving, and tighter
-  swept bounds for dense or deeply nested rotating mechanisms.
+- Complete linkage branch enumeration, broader connected assembly solving, and
+  bounds that preserve motion correlations in dense or deeply nested mechanisms.
 - Undercut detection against a parting line, and exact (not sampled) minimum
   wall thickness and draft on curved BREP faces.
 - Assumptions and requirement-to-feature trace links in the document schema.

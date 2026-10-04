@@ -73,6 +73,7 @@ pub fn document(sampled: &MotionResult, continuous: &ContinuousMotionResult) -> 
             "status": status(continuous.status), "pairs": pairs,
             "segments": continuous.segments, "candidate_pairs": continuous.candidate_pairs,
             "exact_queries": continuous.exact_queries,
+            "bounds_rejected_intervals": continuous.bounds_rejected_intervals,
             "generated_variants": continuous.generated_variants,
             "unresolved_pairs": continuous.unresolved_pairs,
         },

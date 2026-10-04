@@ -295,15 +295,28 @@ adjacent samples in its joint's parent coordinates. Angles stay unwrapped:
 and travel. Omitted sample coordinates use the original graph's value, matching
 sampled motion semantics. Interpolation does not re-solve linkage closure.
 
-The checker propagates an enclosing sphere and point-speed bound through each
+The checker propagates a conservative box and point-speed bound through each
 body's frame chain. For a rotating frame, the speed bound adds angular travel
 in radians times the greatest possible distance to its pivot, plus linear
 travel. Child-frame speed is preserved by the parent's rigid transform. The
 sum of both bodies' speed bounds limits how much their separation can change
 within an interval. Exact midpoint BREP separation greater than this bound and
 the configured margins rejects the whole interval; otherwise it subdivides.
-Swept enclosing spheres feed the BVH. Their bounds can be loose for long or
-nested mechanisms, increasing candidate pairs and exact queries.
+Swept boxes feed the BVH. Each box corner's rotated coordinates are bounded
+using sinusoidal endpoint values and interior extrema over the unwrapped
+angular interval. Translation ranges are added conservatively. Fixed transforms
+and nested joints propagate boxes outward through the frame chain. Intersecting
+with the existing enclosing sphere keeps the result at least as tight as the
+previous bounds. Rotation about a coordinate axis retains axial thickness,
+avoiding false dense candidates between separated thin plates.
+
+Adaptive subdivision also bounds each subinterval before its midpoint query.
+If an axis gap exceeds the separation threshold and numeric guards, it can skip
+the exact BREP query. `bounds_rejected_intervals` counts these narrow-phase
+rejections; `candidate_pairs` still counts BVH pairs and `exact_queries` counts
+native pair measurements. The motion-study report includes the new counter.
+Correlations between successive nested rotations or rotation and translation
+can still make the boxes loose. Budgets and unresolved reporting still apply.
 
 Each exact query applies interpolated frame transforms to shared geometry,
 releasing intermediate handles immediately. Unchanged angular paths retain the
@@ -396,3 +409,9 @@ late travel-limit failures, omission semantics, budgets, invalid driver/free
 roles, generation failures, accepted-state preservation, and cleanup. The
 10,000-pose closure case takes 0.445 s; 1,000 closed poses with shared geometry
 and collision checks take 0.534 s (5 s budgets).
+
+Interval-bound tests cover interior arc extrema, preserved axial thickness,
+sampled reverse/multiple turns, non-unit oblique axes and nested paths, axial crossings, numeric
+overflow rejection and handle cleanup. A 10,000-plate stack rotating through
+opposite multi-turn paths clears with one generated variant and zero pair
+queries within a 10 s benchmark budget.

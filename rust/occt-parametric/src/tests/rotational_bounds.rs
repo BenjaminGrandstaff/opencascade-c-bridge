@@ -136,3 +136,146 @@ fn check_corner_path(path: &RigidPath, point: Vec3) {
         previous = Some(position);
     }
 }
+
+#[test]
+fn interval_boxes_capture_interior_arc_extrema_and_preserve_axial_thickness() {
+    let zero = Vec3::new(0.0, 0.0, 0.0);
+    let axis = Vec3::new(0.0, 0.0, 1.0);
+    let start = vec![placement(-std::f64::consts::FRAC_PI_2, zero, zero, axis)];
+    let end = vec![placement(std::f64::consts::FRAC_PI_2, zero, zero, axis)];
+    let point = Vec3::new(1.0, -1.0, 2.0);
+    let path = RigidPath::new(
+        &start,
+        &end,
+        Bounds {
+            min: point,
+            max: point,
+        },
+    )
+    .unwrap();
+    assert!((path.swept.max.x - 2.0_f64.sqrt()).abs() < 1e-10);
+    assert!((path.swept.min.x + 1.0).abs() < 1e-10);
+    assert!((path.swept.min.z - 2.0).abs() < 1e-10 && (path.swept.max.z - 2.0).abs() < 1e-10);
+    for turns in [-3.0, -0.2, 0.2, 3.0] {
+        let first = vec![placement(0.3, zero, zero, axis)];
+        let last = vec![placement(
+            0.3 + turns * std::f64::consts::TAU,
+            zero,
+            zero,
+            axis,
+        )];
+        let bounds = Bounds {
+            min: Vec3::new(-100.0, -100.0, 4.0),
+            max: Vec3::new(100.0, 100.0, 5.0),
+        };
+        let path = RigidPath::new(&first, &last, bounds).unwrap();
+        assert!(path.swept.max.z - path.swept.min.z < 1.0000001);
+        for (lower, upper) in [(0.0, 0.1), (0.17, 0.39), (0.5, 0.5), (0.8, 1.0)] {
+            let interval = path.interval_bounds(lower, upper).unwrap();
+            for world in box_corners(bounds) {
+                let local = path.inverse.iter().fold(world, transform_point);
+                for sample in 0..=64 {
+                    let fraction = lower + (upper - lower) * sample as f64 / 64.0;
+                    let position = path.steps.iter().fold(local, |point, step| {
+                        transform_point(point, &step.at(fraction))
+                    });
+                    assert!(
+                        position.x >= interval.min.x && position.x <= interval.max.x,
+                        "{position:?} vs {interval:?}"
+                    );
+                    assert!(position.y >= interval.min.y && position.y <= interval.max.y);
+                    assert!(position.z >= interval.min.z && position.z <= interval.max.z);
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn interval_boxes_reject_unrepresentable_coordinate_transforms() {
+    let zero = Vec3::new(0.0, 0.0, 0.0);
+    let axis = Vec3::new(0.0, 0.0, 1.0);
+    let point = Vec3::new(f64::MAX, 0.0, 0.0);
+    let bounds = Bounds {
+        min: point,
+        max: point,
+    };
+    let inverse_overflow = vec![placement(0.0, Vec3::new(-f64::MAX, 0.0, 0.0), zero, axis)];
+    assert!(
+        RigidPath::new(&inverse_overflow, &inverse_overflow, bounds)
+            .err()
+            .unwrap()
+            .to_string()
+            .contains("box overflows")
+    );
+    let start = vec![placement(0.0, zero, zero, axis)];
+    let end = vec![placement(0.0, Vec3::new(f64::MAX, 0.0, 0.0), zero, axis)];
+    assert!(
+        RigidPath::new(&start, &end, bounds)
+            .err()
+            .unwrap()
+            .to_string()
+            .contains("box overflows")
+    );
+}
+
+#[test]
+fn interval_boxes_cover_nonunit_oblique_rotation_axes() {
+    let zero = Vec3::new(0.0, 0.0, 0.0);
+    let unrepresentable = Vec3::new(f64::MAX, f64::MAX, 0.0);
+    let first = vec![placement(0.0, zero, zero, unrepresentable)];
+    let last = vec![placement(1.0, zero, zero, unrepresentable)];
+    assert!(
+        RigidPath::new(
+            &first,
+            &last,
+            Bounds {
+                min: zero,
+                max: zero
+            }
+        )
+        .err()
+        .unwrap()
+        .to_string()
+        .contains("rotation axis")
+    );
+    for axis in [
+        Vec3::new(1.0, 1.0, 0.0),
+        Vec3::new(3.0, -4.0, 12.0),
+        Vec3::new(0.0, 0.0, 7.0),
+    ] {
+        let start = vec![placement(-0.4, zero, Vec3::new(5.0, 2.0, -1.0), axis)];
+        let end = vec![placement(
+            2.7,
+            Vec3::new(1.0, -3.0, 2.0),
+            Vec3::new(5.0, 2.0, -1.0),
+            axis,
+        )];
+        let local = Vec3::new(2.0, -3.0, 4.0);
+        let world = transform_point(local, &start[0].normalized().unwrap());
+        let path = RigidPath::new(
+            &start,
+            &end,
+            Bounds {
+                min: world,
+                max: world,
+            },
+        )
+        .unwrap();
+        for (lower, upper) in [(0.0, 1.0), (0.1, 0.3), (0.7, 1.0)] {
+            let bounds = path.interval_bounds(lower, upper).unwrap();
+            for sample in 0..=128 {
+                let fraction = lower + (upper - lower) * sample as f64 / 128.0;
+                let position = path.steps.iter().fold(local, |point, step| {
+                    transform_point(point, &step.at(fraction))
+                });
+                assert!(
+                    position.x >= bounds.min.x && position.x <= bounds.max.x,
+                    "axis {axis:?}: {position:?} vs {bounds:?}"
+                );
+                assert!(position.y >= bounds.min.y && position.y <= bounds.max.y);
+                assert!(position.z >= bounds.min.z && position.z <= bounds.max.z);
+            }
+        }
+    }
+}

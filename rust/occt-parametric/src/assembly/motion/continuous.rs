@@ -53,6 +53,8 @@ pub struct ContinuousMotionResult {
     pub segments: usize,
     pub candidate_pairs: usize,
     pub exact_queries: usize,
+    /// Narrow-phase subintervals certified clear by propagated box bounds.
+    pub bounds_rejected_intervals: usize,
     pub generated_variants: usize,
     pub unresolved_pairs: usize,
 }
@@ -111,6 +113,25 @@ impl Movement {
         self.rotation
             .as_ref()
             .map_or_else(|| length(self.delta), |path| path.speed)
+    }
+    fn interval_bounds(&self, bounds: Bounds, start: f64, end: f64) -> Result<Bounds, ModelError> {
+        match &self.rotation {
+            Some(path) => path.interval_bounds(start, end),
+            None => {
+                let shifted = Bounds {
+                    min: add(bounds.min, scale(self.delta, start)),
+                    max: add(bounds.max, scale(self.delta, start)),
+                };
+                swept_bounds(
+                    shifted,
+                    &Movement {
+                        delta: scale(self.delta, end - start),
+                        rounding_guard: self.rounding_guard,
+                        rotation: None,
+                    },
+                )
+            }
+        }
     }
     fn place<'session>(
         &self,
@@ -208,6 +229,14 @@ fn swept_bounds(bounds: Bounds, movement: &Movement) -> Result<Bounds, ModelErro
         ),
     })
 }
+fn boxes_separated(first: Bounds, second: Bounds, margin: f64) -> bool {
+    first.min.x - second.max.x > margin
+        || second.min.x - first.max.x > margin
+        || first.min.y - second.max.y > margin
+        || second.min.y - first.max.y > margin
+        || first.min.z - second.max.z > margin
+        || second.min.z - first.max.z > margin
+}
 struct PairPath<'a, 'session> {
     first: &'a Body<'a, 'session>,
     second: &'a Body<'a, 'session>,
@@ -289,7 +318,12 @@ impl PairPath<'_, '_> {
         }
         Ok(None)
     }
-    fn check(&self, session: &Session, queries: &mut usize) -> Result<PairOutcome, ModelError> {
+    fn check(
+        &self,
+        session: &Session,
+        queries: &mut usize,
+        rejected: &mut usize,
+    ) -> Result<PairOutcome, ModelError> {
         let speed = if self.first_motion.rotation.is_none() && self.second_motion.rotation.is_none()
         {
             length(subtract(self.first_motion.delta, self.second_motion.delta))
@@ -305,6 +339,16 @@ impl PairPath<'_, '_> {
         let mut unresolved = None;
         let mut pending = vec![(0.0, 1.0, 0)];
         while let Some((start, end, depth)) = pending.pop() {
+            let first = self
+                .first_motion
+                .interval_bounds(self.first.bounds, start, end)?;
+            let second = self
+                .second_motion
+                .interval_bounds(self.second.bounds, start, end)?;
+            if boxes_separated(first, second, self.threshold()) {
+                *rejected += 1;
+                continue;
+            }
             let middle = start + (end - start) * 0.5;
             let Some(check) = self.inspect(session, middle, queries)? else {
                 return Ok(PairOutcome::Unresolved([start, end]));
@@ -424,6 +468,7 @@ impl InstanceGraph<'_> {
             segments: study.samples.len() - 1,
             candidate_pairs: 0,
             exact_queries: 0,
+            bounds_rejected_intervals: 0,
             generated_variants: locals.len(),
             unresolved_pairs: 0,
         };
@@ -532,7 +577,11 @@ impl SegmentCheck {
                     options,
                     guard: guard + bound_magnitude * (128.0 * f64::EPSILON),
                 };
-                let outcome = path.check(session, &mut result.exact_queries)?;
+                let outcome = path.check(
+                    session,
+                    &mut result.exact_queries,
+                    &mut result.bounds_rejected_intervals,
+                )?;
                 result.record(
                     segment,
                     bodies[index].reference,

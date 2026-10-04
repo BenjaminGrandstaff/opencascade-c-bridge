@@ -1,6 +1,7 @@
 //! Swept spheres and point-speed bounds through nested rigid frame paths.
 use super::*;
 use crate::regeneration::place_shape;
+mod boxes;
 
 pub(super) fn validate_angles(
     start: &InstanceGraph<'_>,
@@ -64,9 +65,24 @@ impl Step {
 pub(super) struct RigidPath {
     inverse: Vec<NormalizedPlacement>,
     steps: Vec<Step>,
+    local_bounds: Bounds,
     pub(super) swept: Bounds,
     pub(super) speed: f64,
     rounding_guard: f64,
+}
+fn intersect_bounds(first: Bounds, second: Bounds) -> Bounds {
+    Bounds {
+        min: Vec3::new(
+            first.min.x.max(second.min.x),
+            first.min.y.max(second.min.y),
+            first.min.z.max(second.min.z),
+        ),
+        max: Vec3::new(
+            first.max.x.min(second.max.x),
+            first.max.y.min(second.max.y),
+            first.max.z.min(second.max.z),
+        ),
+    }
 }
 fn inverse_chain(steps: &[Step]) -> Vec<NormalizedPlacement> {
     let mut inverse = Vec::new();
@@ -92,6 +108,7 @@ impl RigidPath {
             .map(|(first, second)| Ok(Step::new(first.normalized()?, second.normalized()?)))
             .collect::<Result<Vec<_>, ModelError>>()?;
         let inverse = inverse_chain(&steps);
+        let local_bounds = boxes::local_bounds(bounds, &inverse)?;
         let mut center = add(scale(bounds.min, 0.5), scale(bounds.max, 0.5));
         let mut radius = length(subtract(bounds.max, bounds.min)) * 0.5;
         for placement in &inverse {
@@ -116,10 +133,14 @@ impl RigidPath {
             center = transform_point(center, &step.start);
         }
         let extent = Vec3::new(radius, radius, radius);
-        let swept = Bounds {
+        let sphere = Bounds {
             min: subtract(center, extent),
             max: add(center, extent),
         };
+        let swept = intersect_bounds(
+            sphere,
+            boxes::interval_bounds(local_bounds, &steps, 0.0, 1.0)?,
+        );
         if !finite(swept.min)
             || !finite(swept.max)
             || !speed.is_finite()
@@ -132,10 +153,17 @@ impl RigidPath {
         Ok(Self {
             inverse,
             steps,
+            local_bounds,
             swept,
             speed,
             rounding_guard,
         })
+    }
+    pub(super) fn interval_bounds(&self, start: f64, end: f64) -> Result<Bounds, ModelError> {
+        Ok(intersect_bounds(
+            self.swept,
+            boxes::interval_bounds(self.local_bounds, &self.steps, start, end)?,
+        ))
     }
     pub(super) fn place<'session>(
         &self,

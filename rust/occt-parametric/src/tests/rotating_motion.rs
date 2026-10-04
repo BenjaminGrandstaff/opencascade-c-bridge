@@ -154,7 +154,7 @@ fn study_at_angle(angle: f64) -> MotionStudy {
 fn rotating_clear_paths_and_exhausted_budgets_preserve_state() {
     let definition = definition();
     let session = Session::new().unwrap();
-    let graph = rotor(&definition, Vec3::new(10.0, 10.0, 0.5));
+    let graph = rotor(&definition, Vec3::new(0.0, 0.0, 0.5));
     let study = study(0.0, std::f64::consts::TAU);
     let accepted = ModelDocument::from_graph(&graph);
     let result = graph
@@ -439,5 +439,146 @@ fn opposite_rotating_bodies_collide_between_clear_endpoints() {
             .collisions
             .is_empty()
     );
+    assert_eq!(session.shape_count().unwrap(), 0);
+}
+
+#[test]
+fn thin_rotating_plate_stack_rejects_false_dense_candidates_and_preserves_graph() {
+    let mut definition = definition();
+    definition.features[0].operation = FeatureOperation::Box {
+        origin: VectorExpr::Literal(vector(0.0, 0.0, 0.0)),
+        size: VectorExpr::Literal(vector(100.0, 100.0, 1.0)),
+    };
+    let mut graph = InstanceGraph::new(&definition);
+    graph.add_base("source", HashMap::new(), "test").unwrap();
+    let mut joints = vec![];
+    let mut outputs = vec![];
+    let mut first = vec![];
+    let mut last = vec![];
+    for index in 0..1000 {
+        let id = format!("plate-{index}");
+        graph
+            .add_clone(&id, "source", HashMap::new(), "test")
+            .unwrap();
+        graph
+            .add_frame(
+                &id,
+                None,
+                Placement::translated(vector(0.0, 0.0, index as f64 * 3.0)),
+                "test",
+            )
+            .unwrap();
+        graph.set_instance_frame(&id, Some(&id)).unwrap();
+        joints.push(AssemblyJoint {
+            id: id.clone(),
+            frame: id.clone(),
+            origin: vector(0.0, 0.0, 0.0),
+            axis: VectorQuantity::scalars(0.0, 0.0, 1.0),
+            kind: JointKind::Revolute {
+                angle: scalar(Quantity::scalar(0.0)),
+            },
+        });
+        outputs.push(output(&id));
+        first.push(JointPosition {
+            frame: id.clone(),
+            coordinate: JointDof::Angle,
+            value: Quantity::scalar(0.0),
+        });
+        last.push(JointPosition {
+            frame: id,
+            coordinate: JointDof::Angle,
+            value: Quantity::scalar(
+                if index % 2 == 0 { 3.0 } else { -3.0 } * std::f64::consts::TAU,
+            ),
+        });
+    }
+    graph.add_joints(joints).unwrap();
+    let before = ModelDocument::from_graph(&graph);
+    let session = Session::new().unwrap();
+    let study = MotionStudy {
+        samples: vec![
+            MotionSample { positions: first },
+            MotionSample { positions: last },
+        ],
+        outputs,
+        collision_options: Default::default(),
+    };
+    let result = graph
+        .check_continuous_motion(
+            &session,
+            &study,
+            ContinuousCollisionOptions {
+                maximum_candidate_pairs: 1,
+                maximum_queries: 1,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(result.status, ContinuousStatus::Clear);
+    assert_eq!(result.candidate_pairs, 0);
+    assert_eq!(result.exact_queries, 0);
+    assert_eq!(result.generated_variants, 1);
+    assert_eq!(session.shape_count().unwrap(), 0);
+    assert_eq!(ModelDocument::from_graph(&graph), before);
+}
+
+#[test]
+fn interval_boxes_prune_clear_ring_interiors_and_detect_axial_crossings() {
+    let definition = definition();
+    let session = Session::new().unwrap();
+    let graph = rotor(&definition, Vec3::new(0.0, 0.0, 0.5));
+    let result = graph
+        .check_continuous_motion(
+            &session,
+            &study(0.0, std::f64::consts::TAU),
+            Default::default(),
+        )
+        .unwrap();
+    assert_eq!(result.status, ContinuousStatus::Clear);
+    assert_eq!(result.candidate_pairs, 1);
+    assert!(result.bounds_rejected_intervals > 0, "{result:?}");
+    let outside = rotor(&definition, Vec3::new(10.0, 10.0, 0.5));
+    let bounded = outside
+        .check_continuous_motion(
+            &session,
+            &study(0.0, std::f64::consts::TAU),
+            ContinuousCollisionOptions {
+                maximum_queries: 1,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(bounded.status, ContinuousStatus::Clear);
+    assert_eq!(bounded.candidate_pairs, 0);
+    assert_eq!(bounded.exact_queries, 0);
+    assert!(result.exact_queries < 20, "{result:?}");
+    // A cylinder's changing axial coordinate must remain in the swept box.
+    let mut graph = rotor(&definition, Vec3::new(5.5, 0.0, 2.0));
+    graph.assembly.joints.get_mut("rotor").unwrap().kind = JointKind::Cylindrical {
+        angle: scalar(Quantity::scalar(0.0)),
+        distance: scalar(mm(0.0)),
+    };
+    let mut travel = study(0.0, std::f64::consts::TAU);
+    travel.samples[0].positions.push(JointPosition {
+        frame: "rotor".into(),
+        coordinate: JointDof::Axial,
+        value: mm(0.0),
+    });
+    travel.samples[1].positions.push(JointPosition {
+        frame: "rotor".into(),
+        coordinate: JointDof::Axial,
+        value: mm(3.0),
+    });
+    // At the half turn the body is on the opposite side of the rotation axis.
+    graph
+        .set_placement(
+            "obstacle",
+            Placement::translated(vector(-5.5 - 0.025, -0.025, 2.0 - 0.025)),
+        )
+        .unwrap();
+    let result = graph
+        .check_continuous_motion(&session, &travel, Default::default())
+        .unwrap();
+    assert_eq!(result.status, ContinuousStatus::Collision, "{result:?}");
     assert_eq!(session.shape_count().unwrap(), 0);
 }

@@ -125,6 +125,73 @@ fn sparse_rotors(definition: &FamilyDefinition) {
     );
     assert!(elapsed < Duration::from_secs(10));
 }
+fn dense_plates(definition: &FamilyDefinition) {
+    let mut definition = definition.clone();
+    definition.features[0].operation = FeatureOperation::Box {
+        origin: VectorExpr::Literal(vector(0.0, 0.0, 0.0)),
+        size: VectorExpr::Literal(vector(100.0, 100.0, 1.0)),
+    };
+    let mut graph = InstanceGraph::new(&definition);
+    graph.add_base("source", HashMap::new(), "bench").unwrap();
+    let mut joints = Vec::new();
+    let mut outputs = Vec::new();
+    let mut first = Vec::new();
+    let mut last = Vec::new();
+    for index in 0..10000 {
+        let id = format!("plate-{index}");
+        graph
+            .add_clone(&id, "source", HashMap::new(), "bench")
+            .unwrap();
+        graph
+            .add_frame(
+                &id,
+                None,
+                Placement::translated(vector(0.0, 0.0, index as f64 * 3.0)),
+                "bench",
+            )
+            .unwrap();
+        graph.set_instance_frame(&id, Some(&id)).unwrap();
+        joints.push(joint(&id, 0.0));
+        outputs.push(output(&id));
+        first.push(position(&id, 0.0));
+        last.push(position(
+            &id,
+            if index % 2 == 0 { 3.0 } else { -3.0 } * std::f64::consts::TAU,
+        ));
+    }
+    graph.add_joints(joints).unwrap();
+    let study = MotionStudy {
+        samples: vec![
+            MotionSample { positions: first },
+            MotionSample { positions: last },
+        ],
+        outputs,
+        collision_options: Default::default(),
+    };
+    let session = Session::new().unwrap();
+    let started = Instant::now();
+    let result = graph
+        .check_continuous_motion(
+            &session,
+            &study,
+            ContinuousCollisionOptions {
+                maximum_candidate_pairs: 1,
+                maximum_queries: 1,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(result.status, ContinuousStatus::Clear);
+    assert_eq!(result.candidate_pairs, 0);
+    assert_eq!(result.exact_queries, 0);
+    assert_eq!(result.generated_variants, 1);
+    assert_eq!(session.shape_count().unwrap(), 0);
+    println!(
+        "continuous rotation 10000 thin stacked plates: {:?} (10s budget), one variant, zero pair queries",
+        started.elapsed()
+    );
+    assert!(started.elapsed() < Duration::from_secs(10));
+}
 fn crossings(definition: &FamilyDefinition) {
     let session = Session::new().unwrap();
     let start = Instant::now();
@@ -202,5 +269,6 @@ fn crossings(definition: &FamilyDefinition) {
 fn main() {
     let definition = definition();
     sparse_rotors(&definition);
+    dense_plates(&definition);
     crossings(&definition);
 }

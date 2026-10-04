@@ -131,7 +131,10 @@ partial motion study; the source graph and accepted geometry remain unchanged.
 
 Continuous joint checks retain unwrapped angular travel, including full and
 reverse multiple turns. Swept bounds and conservative point-speed bounds
-through nested frame paths reject clear intervals using exact BREP separation;
+through nested frame paths reject clear intervals using exact BREP separation
+or separated interval boxes. Angular boxes include interior sinusoidal extrema
+and preserve axial thickness; numeric guards still apply. False broad-phase
+pairs and unnecessary subdivision queries decrease for thin rotating parts;
 uncertain intervals or exhausted budgets remain unresolved. These interpolated
 coordinate paths do not automatically maintain linkage closure between solved
 sample poses. Local branch selection and continuously constrained path
