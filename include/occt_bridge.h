@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define OCCT_BRIDGE_ABI_VERSION 35u
+#define OCCT_BRIDGE_ABI_VERSION 37u
 #define OCCT_BRIDGE_INVALID_SHAPE_ID UINT64_C(0)
 
 #if defined(_WIN32) && defined(OCCT_BRIDGE_BUILD_SHARED)
@@ -424,6 +424,23 @@ OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_create_polyline_tube(
  * section-by-section; section_point_counts describes each contiguous section.
  */
 OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_create_loft(
+    occt_bridge_session_t* session,
+    const occt_bridge_vec3_t* points,
+    const size_t* section_point_counts,
+    size_t section_count,
+    int make_solid,
+    int ruled,
+    occt_bridge_shape_id_t* out_shape
+);
+
+/*
+ * Like occt_bridge_create_loft, but each section is one non-periodic B-spline
+ * interpolated through its points and closed back to its first point: smooth
+ * everywhere except a corner at the first point (such as an airfoil trailing
+ * edge). Consecutive points, including last-to-first, must not coincide.
+ * ruled = 1 keeps straight lines between sections; 0 also smooths across them.
+ */
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_create_spline_loft(
     occt_bridge_session_t* session,
     const occt_bridge_vec3_t* points,
     const size_t* section_point_counts,
@@ -1011,6 +1028,55 @@ OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_shape_subshapes(
     occt_bridge_shape_id_t shape,
     occt_bridge_shape_type_t type,
     occt_bridge_shape_id_t* out_shapes,
+    size_t capacity,
+    size_t* out_count
+);
+
+/* Smallest principal radii of one face, signed by its outward normal (the
+ * surface normal, reversed for a reversed face). Convex: the face curves away
+ * from the outward normal (outside of a cylinder or fillet). Concave: toward it
+ * (a bore or inside fillet). INFINITY when the face never curves that way. */
+typedef struct occt_bridge_face_radius_bounds {
+    double convex_radius;
+    double concave_radius;
+    occt_bridge_vec3_t convex_point; /* Where convex_radius is attained. */
+    occt_bridge_vec3_t concave_point;
+    int32_t exact;    /* 1 on planes, cylinders, cones, spheres, tori; 0 sampled. */
+    uint32_t samples; /* Evaluated in-face samples; 0 when exact. */
+} occt_bridge_face_radius_bounds_t;
+
+/* One entry per unique face, in occt_bridge_shape_subshapes order. Analytic
+ * faces are exact: cone radii use the face's v range (0 at an included apex)
+ * and tori their stationary latitudes. Other surfaces are sampled on a
+ * samples_per_direction^2 UV grid restricted to the face, so a smaller radius
+ * between samples can be missed. samples_per_direction is in [2, 1024].
+ * Buffer protocol as occt_bridge_shape_subshapes; no handles are created. */
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_shape_face_radius_bounds(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t shape,
+    uint32_t samples_per_direction,
+    occt_bridge_face_radius_bounds_t* out_bounds,
+    size_t capacity,
+    size_t* out_count
+);
+
+typedef int32_t occt_bridge_edge_concavity_t;
+enum {
+    OCCT_BRIDGE_EDGE_SMOOTH = 0,  /* Adjacent faces meet tangentially. */
+    OCCT_BRIDGE_EDGE_CONVEX = 1,  /* Sharp outside corner. */
+    OCCT_BRIDGE_EDGE_CONCAVE = 2, /* Sharp inside corner. */
+    OCCT_BRIDGE_EDGE_MIXED = 3,   /* Convex along part, concave along part. */
+    OCCT_BRIDGE_EDGE_OTHER = 4    /* Free boundary, degenerate, or non-manifold. */
+};
+
+/* Classifies each unique edge, in occt_bridge_shape_subshapes order, with
+ * OCCT's BRepOffset_Analyse: faces meeting within tangency_radians, in
+ * (0, pi/2), are smooth. Buffer protocol as occt_bridge_shape_subshapes. */
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_shape_edge_concavities(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t shape,
+    double tangency_radians,
+    occt_bridge_edge_concavity_t* out_concavities,
     size_t capacity,
     size_t* out_count
 );

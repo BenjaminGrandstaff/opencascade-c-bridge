@@ -405,6 +405,15 @@ pub enum FeatureOperation {
         origin: VectorExpr,
         size: VectorExpr,
     },
+    /// A solid through two or more sections with equal point counts. `smooth`
+    /// interpolates each section as one B-spline with a corner only at its
+    /// first point (an airfoil trailing edge); otherwise sections are
+    /// polygons. `ruled` keeps straight lines between sections.
+    Loft {
+        sections: Vec<LoftSection>,
+        smooth: bool,
+        ruled: bool,
+    },
     Cylinder {
         origin: VectorExpr,
         axis: VectorExpr,
@@ -556,6 +565,7 @@ impl FeatureOperation {
             Self::Sew { inputs, .. } => inputs.iter().map(String::as_str).collect(),
             Self::MakeSolid { shells } => shells.iter().map(String::as_str).collect(),
             Self::SheetMetal { .. }
+            | Self::Loft { .. }
             | Self::Box { .. }
             | Self::Cylinder { .. }
             | Self::SketchFace { .. }
@@ -618,6 +628,141 @@ pub enum VerificationRule {
         minimum: Volume,
         maximum: Volume,
     },
+    /// Exactly `solids` solids and no faces, edges, or vertices outside them.
+    /// A solid with more than one shell (an internal void) fails unless
+    /// `allow_voids` is set.
+    Connectivity {
+        output: String,
+        solids: u32,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        allow_voids: bool,
+    },
+    /// Every face radius on `side` is at least `minimum` (a positive length).
+    /// Exact on planes, cylinders, cones, spheres, and tori; other faces are
+    /// sampled on a `samples_per_direction` squared grid, in [2, 1024].
+    MinimumRadius {
+        output: String,
+        minimum: Quantity,
+        side: RadiusSide,
+        sharp_edges: SharpEdges,
+        #[serde(
+            default = "default_radius_samples",
+            skip_serializing_if = "is_default_radius_samples"
+        )]
+        samples_per_direction: u32,
+    },
+    /// Sampled: inward normal rays from up to `maximum_samples` triangle
+    /// centroids of the output's tessellation must travel at least `minimum`
+    /// (a positive length) before leaving the material.
+    MinimumWall {
+        output: String,
+        minimum: Quantity,
+        #[serde(default, skip_serializing_if = "MeshSettings::is_default")]
+        mesh: MeshSettings,
+        #[serde(
+            default = "default_wall_samples",
+            skip_serializing_if = "is_default_wall_samples"
+        )]
+        maximum_samples: usize,
+    },
+    /// Sampled: every face not perpendicular to the dimensionless
+    /// `pull_direction` has facet draft of at least `minimum_radians`, in
+    /// [0, pi/2). Negative draft is an undercut.
+    DraftAngle {
+        output: String,
+        pull_direction: VectorQuantity,
+        minimum_radians: f64,
+        #[serde(default, skip_serializing_if = "MeshSettings::is_default")]
+        mesh: MeshSettings,
+    },
+    /// Exact: the output's bounding box, in family axes, fits inside the
+    /// length-valued `envelope` (such as a print bed) in some axis-aligned
+    /// orientation. Rotations that are not quarter turns are not searched.
+    FitsWithin {
+        output: String,
+        envelope: VectorQuantity,
+    },
+    /// Sampled: no downward-facing facet above the lowest build plane leans
+    /// more than `maximum_radians`, in [0, pi/2], from vertical.
+    Overhang {
+        output: String,
+        build_direction: VectorQuantity,
+        maximum_radians: f64,
+        #[serde(default, skip_serializing_if = "MeshSettings::is_default")]
+        mesh: MeshSettings,
+    },
+}
+
+pub const DEFAULT_WALL_SAMPLES: usize = 1_000;
+
+pub(crate) fn sorted_extents(value: Vec3) -> [f64; 3] {
+    let mut extents = [value.x, value.y, value.z];
+    extents.sort_by(f64::total_cmp);
+    extents
+}
+
+fn default_wall_samples() -> usize {
+    DEFAULT_WALL_SAMPLES
+}
+
+fn is_default_wall_samples(value: &usize) -> bool {
+    *value == DEFAULT_WALL_SAMPLES
+}
+
+/// A closed planar outline for a loft, in dimensionless profile units (for an
+/// airfoil, fractions of chord). Each profile point (u, v) is rotated by
+/// `rotation_radians` about `pivot`, counterclockwise from `x_axis` toward
+/// `y_axis`, scaled by the length `scale`, and placed at
+/// `origin + scale * (u * x_axis + v * y_axis)`. The axes are dimensionless,
+/// nonzero, and perpendicular. The first point is not repeated at the end.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct LoftSection {
+    pub profile: Vec<[f64; 2]>,
+    pub origin: VectorExpr,
+    pub x_axis: VectorExpr,
+    pub y_axis: VectorExpr,
+    pub scale: ScalarExpr,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rotation_radians: Option<ScalarExpr>,
+    #[serde(default, skip_serializing_if = "is_origin")]
+    pub pivot: [f64; 2],
+}
+
+fn is_origin(point: &[f64; 2]) -> bool {
+    *point == [0.0, 0.0]
+}
+
+/// Which way a surface curves relative to the part's outward normal.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RadiusSide {
+    /// Outside surfaces: cylinders, spheres, fillets on outside corners.
+    Convex,
+    /// Inside surfaces: bores and fillets in inside corners.
+    Concave,
+    Both,
+}
+
+/// Whether sharp (non-tangent) edges on the measured side count as radius zero.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SharpEdges {
+    /// Measure curved faces only, such as checking fillet sizes.
+    Ignore,
+    /// A sharp edge on the measured side has radius zero, such as an inside
+    /// corner a round cutter cannot reach. Faces meeting within
+    /// `tangency_radians`, in (0, pi/2), are smooth.
+    ZeroRadius { tangency_radians: f64 },
+}
+
+pub const DEFAULT_RADIUS_SAMPLES: u32 = 17;
+
+fn default_radius_samples() -> u32 {
+    DEFAULT_RADIUS_SAMPLES
+}
+
+fn is_default_radius_samples(value: &u32) -> bool {
+    *value == DEFAULT_RADIUS_SAMPLES
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

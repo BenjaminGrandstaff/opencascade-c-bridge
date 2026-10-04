@@ -266,6 +266,40 @@ pub enum AssemblyVerificationRule {
     RelationshipSatisfied {
         relationship: String,
     },
+    /// No two of these outputs overlap by more than roundoff. Touching within
+    /// the model's linear tolerance is allowed. Exact BREP checks.
+    NoInterference {
+        outputs: OutputSet,
+    },
+    /// Every pair is at least `minimum` apart (a length); interference and
+    /// contact also fail. Pairs are taken within `first`, or only between
+    /// `first` and `second` when `second` is given. Exact BREP checks.
+    MinimumClearance {
+        first: OutputSet,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        second: Option<OutputSet>,
+        minimum: Quantity,
+    },
+}
+
+/// The placed instance outputs an assembly rule applies to.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OutputSet {
+    /// These outputs, at most one per instance.
+    Explicit(Vec<InstanceOutputRef>),
+    /// The named output of every generated, unsuppressed instance that has it.
+    /// Stores one name regardless of instance count; matching nothing fails.
+    AllWithOutput(String),
+}
+
+impl OutputSet {
+    pub(crate) fn names(&self, instance: &str) -> bool {
+        match self {
+            Self::Explicit(outputs) => outputs.iter().any(|output| output.instance == instance),
+            Self::AllWithOutput(_) => false,
+        }
+    }
 }
 
 /// Stable assembly intent with the same priority semantics as family
@@ -348,6 +382,11 @@ impl AssemblySemantics {
                         first.instance == instance || second.instance == instance
                     }
                     AssemblyVerificationRule::RelationshipSatisfied { .. } => false,
+                    AssemblyVerificationRule::NoInterference { outputs } => outputs.names(instance),
+                    AssemblyVerificationRule::MinimumClearance { first, second, .. } => {
+                        first.names(instance)
+                            || second.as_ref().is_some_and(|second| second.names(instance))
+                    }
                 })
         {
             return Some(format!("assembly requirement '{}'", requirement.id));

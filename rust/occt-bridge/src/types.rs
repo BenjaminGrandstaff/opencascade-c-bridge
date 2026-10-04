@@ -338,6 +338,36 @@ pub struct MassProperties {
     pub relative_volume_error: f64,
 }
 
+/// Smallest principal radii of one face, signed by its outward normal. A
+/// convex face curves away from the outward normal (outside of a cylinder or
+/// fillet); a concave face curves toward it (a bore or inside fillet). `None`
+/// when the face never curves that way. Each radius has the point where it is
+/// attained.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FaceRadiusBounds {
+    pub convex: Option<(f64, Vec3)>,
+    pub concave: Option<(f64, Vec3)>,
+    /// True on planes, cylinders, cones, spheres, and tori.
+    pub exact: bool,
+    /// In-face samples evaluated on other surfaces; zero when exact.
+    pub samples: u32,
+}
+
+/// How the faces on either side of an edge meet.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EdgeConcavity {
+    /// Tangent within the requested angle.
+    Smooth,
+    /// A sharp outside corner.
+    Convex,
+    /// A sharp inside corner.
+    Concave,
+    /// Convex along part of the edge and concave along another part.
+    Mixed,
+    /// A free boundary, degenerate, or non-manifold edge.
+    Other,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct DistanceResult {
     pub distance: f64,

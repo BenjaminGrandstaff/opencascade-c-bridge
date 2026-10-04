@@ -58,7 +58,11 @@ impl Default for MeshSettings {
     }
 }
 impl MeshSettings {
-    fn options(self) -> Result<MeshOptions, ModelError> {
+    pub(crate) fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+
+    pub(crate) fn options(self) -> Result<MeshOptions, ModelError> {
         if self.linear_deflection.dimension != Dimension::Length {
             return Err(ModelError::new("mesh deflection must be a length"));
         }

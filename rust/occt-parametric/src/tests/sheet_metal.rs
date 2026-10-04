@@ -138,7 +138,9 @@ fn flat_edit_reuse_source_edits_and_document_round_trip() {
     let document = ModelDocument::from_graph(&graph);
     let json = document.to_json_pretty().unwrap();
     assert_eq!(ModelDocument::from_json(&json).unwrap(), document);
-    let old = json.replace("\"schema_version\": 45", "\"schema_version\": 44");
+    let current = format!("\"schema_version\": {CURRENT_SCHEMA_VERSION}");
+    assert!(json.contains(&current));
+    let old = json.replace(&current, "\"schema_version\": 44");
     assert_eq!(ModelDocument::from_json(&old).unwrap(), document);
     drop((first, second, third));
     assert_eq!(session.shape_count().unwrap(), 0);

@@ -8,23 +8,40 @@ tracks status and order.
 
 | Layer | Version | State |
 |---|---|---|
-| C ABI (`src/`, `include/`) | ABI 35 | Stable; exact version match required |
+| C ABI (`src/`, `include/`) | ABI 37 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 45 | Active development |
+| `occt-parametric` (engineering layer) | Schema 50 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 4/4, bridge 76 (+1 doc test), recipes 3, parametric 241 + merge driver 3, mesh Python 4 | `ctest`, `cargo test` (see README) |
-| SonarQube (indexed Rust) | Gate OK, 0 issues, 92.8% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
+| Tests | C 4/4, bridge 81 (+1 doc test), recipes 3, parametric 256 + merge driver 3, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| SonarQube (indexed Rust) | Gate OK, 0 issues, 93.2% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
-| Coverage | 92.96% lines overall, test code excluded; C++ 94.30% lines, 87.67% branches, 100% functions; Rust 92.34% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 64 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Coverage | 93.23% lines overall, test code excluded; C++ 94.24% lines, 87.32% branches, 100% functions; Rust 92.78% lines | `tools/coverage/run.sh` |
+| Scale benchmarks | 69 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
 
 ### Kernel (C ABI)
+
+- Spline lofts and reliable volumes (ABI 37): `occt_bridge_create_spline_loft`
+  interpolates each section as one B-spline closed back to its first point,
+  smooth except for that corner (an airfoil trailing edge). Volume, center of
+  mass, and solid-boundary measurements now integrate adaptively when any face
+  is freeform; the fixed-order default had reported a lofted B-spline airfoil
+  about 20% too small. All-analytic shapes keep fixed-order integration, which
+  is exact to roundoff there, and no benchmark case changed by more than 25%.
+
+- Signed face radius bounds and edge concavity (ABI 36): per-face smallest
+  convex and concave principal radii relative to the outward normal, with
+  witness points; exact on planes, cylinders, cones (including apices), spheres,
+  and tori, and sampled on an in-face grid elsewhere with the sample count
+  reported. Per-edge smooth/convex/concave/mixed classification uses OCCT's
+  offset analysis. Both are batch queries in `subshapes` order that create no
+  handles. On a 1,000-hole plate, 1,006 exact faces take 0.008 s and 3,012
+  edges 0.867 s; 65,536 freeform samples take 1.306 s.
 
 - Bounded surface triangulation and batch topology indices (ABI 35): copied
   geometry preserves source BREP, face indices follow original topology,
@@ -138,6 +155,52 @@ tracks status and order.
 
 ### Parametric layer
 
+- Print-bed fit requirements (schema 50): `FitsWithin` checks exact bounding-box
+  extents against a length envelope in any axis-aligned orientation, reporting
+  the largest extent. One test covers rotated fits, failures, and validation.
+
+- Loft features (schema 49): `FeatureOperation::Loft` through planar
+  `LoftSection` outlines placed by parameter expressions (origin, axes, scale,
+  and rotation about a pivot), as smooth B-spline or polygon sections, ruled or
+  smoothed between them. Three tests cover parameter edits, rotation, smooth
+  versus polygon accuracy, validation, and persistence. A 200-station,
+  80-point smooth airfoil loft builds and rebuilds after a chord edit in
+  1.309 s (5 s budget), with the edit scaling volume by exactly 1.21.
+
+- Sampled manufacturing requirements (schema 48): `MinimumWall`, `DraftAngle`,
+  and `Overhang` store their mesh settings in the family and screen the output's
+  tessellation on every regeneration with `Sampled` evidence. Wall failures
+  report the ray's entry and exit; draft checks each face's smallest draft
+  magnitude, the usual "requires draft" analysis, without undercut detection.
+  Two tests cover a 2 mm-walled cup, vertical and tilted faces, a T-shaped
+  overhang, validation, and persistence. 10,002 instances with all three rules
+  regenerate in 0.477 s (3 s budget), screening the shared variant once. This
+  completes the richer requirement rules. See
+  [Requirement rules](REQUIREMENTS.md).
+
+- Minimum-radius requirements (schema 47; ABI 36): `MinimumRadius` checks
+  convex, concave, or both radii against a positive length, optionally treating
+  sharp edges on that side as radius zero (inside corners a round cutter cannot
+  reach). Results report the smallest radius, `Exact` or `Sampled` evidence,
+  and the face or edge with a witness point. Two parametric tests and three
+  bridge tests cover bores, blind-hole floors, cylinders, cones, spheres, tori,
+  inside-corner fillets, outside edges, sampled variable blends, validation,
+  and persistence. See [Requirement rules](REQUIREMENTS.md).
+
+- Exact connectivity and collision requirements (schema 46): part
+  `Connectivity` counts solids, voids, and faces, edges, or vertices outside any
+  solid; assembly `NoInterference` and `MinimumClearance` run the exact indexed
+  collision checks over explicit or all-instances output sets, with a cross-set
+  query that never inspects pairs within one set. Every result now reports a
+  normalized measured value, evidence quality, and collision witnesses. Six
+  tests cover disjoint, hollow, and sewn-shell topology, contact versus
+  overlap, within- and between-set clearance, set validation, suppression,
+  pattern-member protection, and persistence. 10,002 instances with
+  connectivity, no-interference, and clearance rules regenerate and verify in
+  0.574 s (3 s budget), checking the part rule once for the shared variant; a
+  5,000 x 5,000 cross-set clearance with 500 violations takes 1.305 s (5 s
+  budget). See [Requirement rules](REQUIREMENTS.md).
+
 - Continuous translation paths (no schema or ABI change): exact BREP distance
   and a relative-motion bound check intervals between motion samples. Swept
   bounds index candidate pairs; local variants generate once. Witnesses report
@@ -145,8 +208,8 @@ tracks status and order.
   uncertain grazing intervals report Unresolved. Six tests cover thin obstacles
   missed by sampled endpoints, independent analytic slab checks, nested rotated
   frames, co-moving parts, limits, numeric guards, and bounded cleanup. Rotating
-  paths and first-time-of-contact computation remain open. The 10,000-body
-  moving assembly passes in 0.285 s (10 s budget); 1,000 independent crossing
+  paths are covered below; first-time-of-contact computation remains open.
+  The 10,000-body moving assembly passes in 0.285 s (10 s budget); 1,000 independent crossing
   checks pass in 11.808 s (30 s budget). See
   [Assembly motion](ASSEMBLY_MOTION.md).
 
@@ -508,6 +571,15 @@ tracks status and order.
   `BRepCheck_Analyzer`, including many-wire valid and invalid topology.
 - Scale benchmark suite with time budgets and correctness checks at the
   target sizes, reporting known gaps against open roadmap items.
+- Wing layout workshop (`tools/wing-layout`): a browser station editor and a
+  CAD CLI. Project files now become a parametric wing family with smooth
+  airfoil lofts, per-station parameters, stored validity and connectivity
+  requirements, and a saved model document beside the STEP and BREP files.
+  A build file adds printable structure on the parametric wing: a swept spar
+  channel, optional elevons behind a gapped hinge line, and spanwise print
+  segments, exported as STL parts. Each part is checked for a single solid
+  (required), print-bed fit, and overhang (preferred), and failures print
+  their location. On the starter wing, ten parts export in about six seconds.
 
 ## Scaling requirement
 
@@ -542,25 +614,27 @@ every item below is defined in documents and the API, and verified in tests.
 
 ### Capabilities
 
-1. **Richer requirement rules.** Part rules beyond `ShapeValid` and
-    `VolumeRange`: minimum wall thickness, minimum concave and convex radius,
-    and connectivity (one solid, no loose shells). Assembly rules beyond mass,
-    datum clearance, and relationship satisfaction: no interference between
-    instances and minimum clearance, built on the exact indexed checks; and
-    manufacturing screens (draft angle, overhang) promoted from mesh hand-off
-    to stored, prioritized requirements. Each rule persists in documents,
-    reports a measured value against its limit, and keeps required, preferred,
-    and advisory semantics during regeneration.
+1. **Moving elevons.** Elevons as separate instances on revolute joints, with
+    a motion study over their deflection range checking for interference.
+2. **Mass and balance report.** Per-material mass and the wing's center of
+    gravity relative to its mean aerodynamic chord, reported as data only.
+3. **Rib templates.** Section drawings through the wing at each rib station,
+    exported as DXF for cutting.
 
 ## Later
 
 - General sheet-metal edge flanges, bend reliefs, hems, cutouts, bend tables,
   and unfolding edited solids beyond constant-width strips.
 - Hole-catalog tolerance classes and optional under-head countersink relief.
+- Wing structure beyond solid printed segments: hollow shells with internal
+  ribs, alignment pins independent of the spar, twist-exact hinge lines, and
+  print-bed fit in arbitrary (not only quarter-turn) orientations.
 
 - Advanced ribs with general support-following and nonuniform closure.
 - Global linkage branch search, large assembly coordinate solving, and tighter
   swept bounds for dense or deeply nested rotating mechanisms.
+- Undercut detection against a parting line, and exact (not sampled) minimum
+  wall thickness and draft on curved BREP faces.
 - Assumptions and requirement-to-feature trace links in the document schema.
 - Semantic naming beyond feature outputs, and geometric tangency inference
   when continuity metadata is absent.

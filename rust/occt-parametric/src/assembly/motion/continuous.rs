@@ -503,7 +503,12 @@ impl SegmentCheck {
         let mut count = 0;
         for (index, body) in swept.iter().enumerate() {
             let mut candidates = Vec::new();
-            tree.query(body.bounds, margin, index, &mut candidates);
+            tree.query(
+                body.bounds,
+                margin,
+                &|candidate| candidate > index,
+                &mut candidates,
+            );
             candidates.sort_unstable();
             count += candidates.len();
             if count > options.maximum_candidate_pairs {

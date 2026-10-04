@@ -17,6 +17,7 @@
 #include <TopoDS_Shape.hxx>
 #include <TopoDS_Shell.hxx>
 #include <TopoDS_Face.hxx>
+#include <GProp_GProps.hxx>
 #include <gp_Vec.hxx>
 
 #include <cstdint>
@@ -165,6 +166,14 @@ occt_bridge_status_t check_result(
     std::vector<occt_bridge_history_entry>* history);
 
 bool contains_topology(const TopoDS_Shape& shape, TopAbs_ShapeEnum type);
+
+/*
+ * Volume properties for every volume measurement: fixed-order integration when
+ * all faces are analytic (exact to roundoff), adaptive to a 1e-9 relative error
+ * estimate when any face is freeform. Fixed order alone was 20% low on a
+ * lofted B-spline airfoil.
+ */
+void adaptive_volume_properties(const TopoDS_Shape& shape, GProp_GProps& properties);
 
 bool is_descendant(
     const TopoDS_Shape& parent,
