@@ -1,0 +1,20 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Wing editor browser checks</title></head><body><pre id="result">RUNNING</pre><iframe src="index.html" style="width:1200px;height:900px"></iframe><script type="module">
+const frame=document.querySelector('iframe'),result=document.getElementById('result');
+const check=(condition,message)=>{if(!condition)throw Error(message);};
+frame.addEventListener('load',()=>{
+ try {
+  const w=frame.contentWindow,d=w.document,project=()=>w.wingLayout.getProject();
+  check(w.wingLayout&&d.getElementById('error').textContent==='', 'Initial render failed');
+  check(d.querySelectorAll('#stations tr').length===4,'Expected four initial stations');
+  const before=d.getElementById('planform').innerHTML,span=d.getElementById('span');span.value='3000';span.dispatchEvent(new w.Event('input'));
+  check(project().spanMm===3000&&d.getElementById('planform').innerHTML!==before,'Span edit did not update geometry');
+  const twist=d.querySelector('[aria-label="Station 4 twistDeg"]'),old=d.getElementById('twist').innerHTML;twist.value='-5';twist.dispatchEvent(new w.Event('input'));
+  check(project().stations[3].twistDeg===-5&&d.getElementById('twist').innerHTML!==old,'Twist edit did not update chart');
+  d.getElementById('add').click();check(project().stations.length===5&&d.querySelectorAll('#stations tr').length===5,'Add station failed');
+  d.getElementById('reset').click();check(project().spanMm===2000&&project().stations.length===4,'Reset failed');
+  span.value='0';span.dispatchEvent(new w.Event('input'));check(d.getElementById('error').textContent.includes('span'),'Invalid span was not reported');
+  d.getElementById('reset').click();check(d.getElementById('error').textContent==='','Error did not clear');
+  result.textContent='PASS: initial rendering, span edit, twist edit, station insertion, reset, invalid input and recovery';
+ }catch(e){result.textContent='FAIL: '+e.stack;}
+});
+</script></body></html>
