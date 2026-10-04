@@ -8,23 +8,35 @@ tracks status and order.
 
 | Layer | Version | State |
 |---|---|---|
-| C ABI (`src/`, `include/`) | ABI 37 | Stable; exact version match required |
+| C ABI (`src/`, `include/`) | ABI 38 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 50 | Active development |
+| `occt-parametric` (engineering layer) | Schema 51 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 4/4, bridge 81 (+1 doc test), recipes 3, parametric 231 + merge driver 3, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 4/4, bridge 83 (+1 doc test), recipes 3, parametric 234 + merge driver 3, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 92.3% line coverage (2026-10-03); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
 | Coverage | 92.63% lines overall, test code excluded; C++ 94.30% lines, 87.59% branches, 100% functions; Rust 91.81% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 62 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Scale benchmarks | 64 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
 
 ### Kernel (C ABI)
+
+- Curve wires and accurate freeform measurements (ABI 38):
+  `occt_bridge_create_curve_wire` joins lines, arcs, and B-splines interpolated
+  through any number of points, with optional end tangents and periodic
+  (corner-free closed) splines. All measurements now share one integration
+  policy: fixed order on all-analytic shapes (exact to roundoff), span-aware
+  Gauss-Kronrod volume (1e-7 relative target) and adaptive area when any face
+  or edge is freeform; blend volumes are faster than before.
+  This fixes 0.03% volume and 0.003% area errors on prisms of spline-bounded
+  sketches, now exact. Centers and inertia of freeform shapes use adaptive Gauss
+  integration (about 1e-4 relative), because span-aware moments cost seconds
+  per blend surface.
 
 - Spline lofts and reliable volumes (ABI 37): `occt_bridge_create_spline_loft`
   interpolates each section as one B-spline closed back to its first point,
@@ -154,6 +166,16 @@ tracks status and order.
   error-bounded (Bezier, B-spline) extrema.
 
 ### Parametric layer
+
+- Spline sketch entities (schema 51): `SketchSpline` interpolates through named
+  sketch points, joins lines and arcs in profiles, closes into a smooth loop
+  when it repeats its first point, and takes end directions from `Tangent`
+  constraints with lines or arcs. Three sketch tests cover tangent arches,
+  solving, periodic loops, extrusion, validation, and persistence; two bridge
+  tests cover curve wires. 1,000 spline-arch sketches extruded and rebuilt
+  after a crown edit take 1.671 s (6 s budget); one spline through 1,000
+  points solves into a face within 1e-6 of the circle's area in 0.015 s
+  (250 ms budget).
 
 - Print-bed fit requirements (schema 50): `FitsWithin` checks exact bounding-box
   extents against a length envelope in any axis-aligned orientation, reporting
@@ -436,7 +458,7 @@ tracks status and order.
   failed-edit rollback, units, invalid inputs, and schema 27 migration.
   Building and editing 1,000 sweeps takes 0.562 s for extrude and 0.700 s
   for revolve (5 s budgets), checking every volume, profile reuse, and cleanup.
-- Constraint-solved 2D sketches: lines, exact arcs/circles, construction
+- Constraint-solved 2D sketches: lines, exact arcs/circles, splines (schema 51), construction
   geometry, coincident, horizontal, vertical, parallel, perpendicular,
   equal-length, distance, and contact-tangent constraints. Radius dimensions
   use center-to-boundary distance expressions; arcs enforce equal radii.
@@ -564,21 +586,28 @@ every item below is defined in documents and the API, and verified in tests.
 
 ### Capabilities
 
-1. **Rib templates.** Section drawings through the wing at each rib station,
-    exported as DXF for cutting.
-2. **Moving elevons.** Elevons as separate instances on revolute joints, with
-    a motion study over their deflection range checking for interference.
-3. **Mass and balance report.** Per-material mass and the wing's center of
-    gravity relative to its mean aerodynamic chord, reported as data only.
+1. **Sweep along a path.** Any closed or open sketch profile swept along a
+    line, arc, or spline path with a defined orientation rule, for channels,
+    handles, and ducts that follow curves.
+2. **Structured STEP export.** Named parts, colors from materials, and an
+    assembly tree with shared instances, through OCCT's XCAF document model.
+3. **Stable references across edits.** Semantic naming for faces and edges
+    that survives topology changes, beyond feature outputs and selectors.
+4. **Native viewer scripts.** A generated DRAW script per model that opens
+    the exact B-rep parts with names and colors, like the wing's `view.tcl`.
 
 ## Later
 
 - General sheet-metal edge flanges, bend reliefs, hems, cutouts, bend tables,
   and unfolding edited solids beyond constant-width strips.
 - Hole-catalog tolerance classes and optional under-head countersink relief.
-- Wing structure beyond solid printed segments: hollow shells with internal
-  ribs, alignment pins independent of the spar, twist-exact hinge lines, and
-  print-bed fit in arbitrary (not only quarter-turn) orientations.
+- Wing workshop: rib-template DXF drawings, elevons on revolute joints with a
+  deflection-range interference study, a mass and balance report, hollow
+  shells with internal ribs, alignment pins independent of the spar,
+  twist-exact hinge lines, and print-bed fit in arbitrary orientations.
+- Material property sheets with sources (stiffness, softening temperature),
+  service-temperature and manufacturing-step temperature checks, and a beam
+  theory spar bending check; stress analysis still needs an external solver.
 
 - Advanced ribs with general support-following and nonuniform closure.
 - Closed-linkage constraint solving and continuous collision detection.

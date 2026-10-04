@@ -69,7 +69,7 @@ multi-family instance graphs, explicit generation freezing, unit-aware derived s
 with negate, absolute, minimum, maximum, and clamp functions, derived vector
 composition with add, subtract, scale, and normalize operations, dimension-safe
 comparison-driven conditional scalar expressions,
-pre-generation parameter constraints, constraint-solved line/arc/circle sketches that
+pre-generation parameter constraints, constraint-solved line/arc/circle/spline sketches that
 emit exact closed wires and planar faces on inline or named datum planes,
 semantic face and edge selectors, and
 versioned JSON model documents are implemented. Feature graphs include sewing
@@ -89,7 +89,7 @@ volume, solid connectivity, minimum convex or concave radius, and sampled wall
 thickness, draft, and overhang, all with required, preferred, or advisory
 priority. Results carry measured values, evidence quality, and collision
 witnesses; see [Requirement rules](REQUIREMENTS.md). Schema v1 through
-v49 documents migrate to v50 during load; unsupported
+v50 documents migrate to v51 during load; unsupported
 future versions are rejected.
 Managed regeneration incrementally reuses unchanged outputs and
 rebuilds dirty features plus their downstream dependents. Graph regeneration
@@ -193,7 +193,7 @@ builds an optimized copy of the library in `build/bench`, runs every case at
 the target sizes (10,000-member patterns, deep clone chains, 1,000-part solver
 stacks and grids, repeated regeneration, validation chains, and many-hole
 faces), and fails when a required case misses its time budget or correctness
-check. The current suite has 62 passing Rust cases, including single-leaf and
+check. The current suite has 64 passing Rust cases, including single-leaf and
 memoized all-node resolution of a 20,000-link clone chain and a 50-part stack
 1 km from the origin solved at a 1e-8 mm model tolerance, plus 10,000 checked
 datum-clearance requirements, 10,000 small constrained-sketch solves,
@@ -273,7 +273,8 @@ binary supplies a semantic Git merge driver. See [Model history](MODEL_HISTORY.m
 and [Document comparisons](DOCUMENT_DIFF.md). Schema 42 adds regenerated orthographic, section,
 and detail drawings, datum dimensions, parameter notes, and metadata title blocks
 exported as SVG or DXF. See [Drawings](DRAWINGS.md) for the API and sampling limits.
-ABI 37 adds spline-section lofts and adaptive volume integration for freeform
+ABI 38 adds wires mixing lines, arcs, and interpolated splines with end
+tangents, and schema 51 adds spline sketch entities. ABI 37 adds spline-section lofts and adaptive volume integration for freeform
 faces, and schema 49 adds parameter-placed `Loft` features. ABI 36 adds signed per-face radius bounds and per-edge concavity for
 minimum-radius requirements. ABI 35 adds bounded surface tessellation and
 indexed topology matching. Schema 44

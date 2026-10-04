@@ -87,6 +87,7 @@ fn rib_case(centered: bool, mode: RibCase) -> Outcome {
                 ],
                 circles: Vec::new(),
                 arcs: Vec::new(),
+                splines: Vec::new(),
                 profile: Vec::new(),
                 constraints: Vec::new(),
             }),

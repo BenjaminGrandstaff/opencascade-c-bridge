@@ -3,7 +3,7 @@
 use super::*;
 use crate::assembly::{add, cross, dot, scale, unit};
 use crate::sparse::SparseJacobian;
-use occt_bridge::WireSegment;
+use occt_bridge::CurveSegment;
 use std::collections::{HashMap, HashSet};
 
 const MAX_ITERATIONS: usize = 100;
@@ -44,6 +44,24 @@ pub struct SketchArc {
     pub end: String,
     #[serde(default)]
     pub clockwise: bool,
+}
+
+/// A smooth curve interpolated through `points` in order. Its ends are the
+/// first and last points. Repeating the first point at the end makes a smooth
+/// closed loop with no corner, usable alone as a profile. A `Tangent`
+/// constraint at an end with a line or arc sets the spline's end direction so
+/// it continues smoothly from that entity; spline-to-spline tangency is not
+/// supported. Interior points move with the solver like any other point.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SketchSpline {
+    pub id: String,
+    pub points: Vec<String>,
+}
+
+impl SketchSpline {
+    fn closed(&self) -> bool {
+        self.points.len() > 1 && self.points.first() == self.points.last()
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -103,6 +121,8 @@ pub struct SketchDefinition {
     pub circles: Vec<SketchCircle>,
     #[serde(default)]
     pub arcs: Vec<SketchArc>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub splines: Vec<SketchSpline>,
     #[serde(default)]
     pub profile: Vec<String>,
     #[serde(default)]
@@ -130,6 +150,7 @@ enum Entity<'a> {
     Line(&'a SketchLine),
     Circle(&'a SketchCircle),
     Arc(&'a SketchArc),
+    Spline(&'a SketchSpline),
 }
 
 impl<'a> Entity<'a> {
@@ -138,6 +159,7 @@ impl<'a> Entity<'a> {
             Self::Line(line) => (&line.start, &line.end),
             Self::Circle(circle) => (&circle.rim, &circle.rim),
             Self::Arc(arc) => (&arc.start, &arc.end),
+            Self::Spline(spline) => (&spline.points[0], &spline.points[spline.points.len() - 1]),
         }
     }
 
@@ -146,6 +168,8 @@ impl<'a> Entity<'a> {
             Self::Line(line) => (&line.start, &line.end),
             Self::Circle(circle) => (&circle.center, contact),
             Self::Arc(arc) => (&arc.center, contact),
+            // Spline tangency shapes the spline; it is never a solver equation.
+            Self::Spline(_) => unreachable!("spline tangency is applied geometrically"),
         }
     }
 }
@@ -165,7 +189,19 @@ impl SketchDefinition {
                     .iter()
                     .map(|arc| (arc.id.as_str(), Entity::Arc(arc))),
             )
+            .chain(
+                self.splines
+                    .iter()
+                    .map(|spline| (spline.id.as_str(), Entity::Spline(spline))),
+            )
             .collect()
+    }
+
+    /// True when a tangency involves a spline and so shapes it instead of
+    /// adding a solver equation.
+    fn spline_tangency(&self, constraint: &SketchConstraint) -> bool {
+        matches!(constraint, SketchConstraint::Tangent { first, second, .. }
+            if self.splines.iter().any(|spline| spline.id == *first || spline.id == *second))
     }
 
     fn validate_curve_geometry(
@@ -189,6 +225,17 @@ impl SketchDefinition {
                 return Err(ModelError::new(
                     "sketch curve has coincident or non-finite defining points",
                 ));
+            }
+        }
+        for spline in &self.splines {
+            for pair in spline.points.windows(2) {
+                let distance = line_length((points[&pair[0]], points[&pair[1]]));
+                if !distance.is_finite() || distance <= RESIDUAL_TOLERANCE {
+                    return Err(ModelError::new(format!(
+                        "sketch spline '{}' has coincident consecutive points",
+                        spline.id
+                    )));
+                }
             }
         }
         Ok(())
@@ -388,8 +435,10 @@ impl SketchDefinition {
             let radius = line_length((center, solution.points[&circle.rim]));
             session.create_circle_wire(transform(center), cross(x_axis, y_axis), radius)?
         } else {
-            let segments = profile_segments(&profile, &solution, &transform, closed)?;
-            session.create_segment_wire(&segments, closed)?
+            let direction = |d: SketchPoint2| add(scale(x_axis, d.x), scale(y_axis, d.y));
+            let segments =
+                self.profile_segments(&profile, &solution, &transform, &direction, closed)?;
+            session.create_curve_wire(&segments, closed)?
         };
         if !session.is_valid(&wire)? {
             return Err(ModelError::new("sketch profile produced an invalid wire"));
@@ -397,16 +446,173 @@ impl SketchDefinition {
         Ok(wire)
     }
 
+    /// Wire segments for the profile in order. Spline ends tangent to a line
+    /// or arc continue that entity's direction away from the shared point.
+    fn profile_segments(
+        &self,
+        profile: &[Entity<'_>],
+        solution: &SketchSolution,
+        transform: &impl Fn(SketchPoint2) -> Vec3,
+        direction: &impl Fn(SketchPoint2) -> Vec3,
+        closed: bool,
+    ) -> Result<Vec<CurveSegment>, ModelError> {
+        if profile.is_empty()
+            || profile
+                .iter()
+                .any(|entity| matches!(entity, Entity::Circle(_)))
+        {
+            return Err(ModelError::new(
+                "profile must contain connected lines, arcs, and splines, or one circle",
+            ));
+        }
+        if profile.len() > 1
+            && profile
+                .iter()
+                .any(|entity| matches!(entity, Entity::Spline(s) if s.closed()))
+        {
+            return Err(ModelError::new(
+                "a closed spline must be the only entity in its profile",
+            ));
+        }
+        if !closed {
+            validate_open_endpoints(profile, solution)?;
+        }
+        let mut segments = Vec::with_capacity(profile.len());
+        for (index, entity) in profile.iter().enumerate() {
+            let (start, end) = entity.endpoints();
+            if (closed || index + 1 < profile.len())
+                && end != profile[(index + 1) % profile.len()].endpoints().0
+            {
+                return Err(ModelError::new(
+                    "sketch profile is not a continuous boundary",
+                ));
+            }
+            let start_point = solution.points[start];
+            let end_point = solution.points[end];
+            let segment = match entity {
+                Entity::Line(_) => CurveSegment::Line {
+                    start: transform(start_point),
+                    end: transform(end_point),
+                },
+                Entity::Arc(arc) => {
+                    let middle = arc_middle(arc, solution);
+                    CurveSegment::Arc {
+                        start: transform(start_point),
+                        middle: transform(middle),
+                        end: transform(end_point),
+                    }
+                }
+                Entity::Spline(spline) => {
+                    let periodic = spline.closed();
+                    let through = if periodic {
+                        &spline.points[..spline.points.len() - 1]
+                    } else {
+                        &spline.points[..]
+                    };
+                    let away = |point: &str| self.tangent_away(&spline.id, point, solution);
+                    CurveSegment::Spline {
+                        points: through
+                            .iter()
+                            .map(|id| transform(solution.points[id]))
+                            .collect(),
+                        // Leave the start opposite to where the neighbor
+                        // extends; arrive at the end heading into it.
+                        start_tangent: away(start)?
+                            .map(|d| direction(SketchPoint2 { x: -d.x, y: -d.y })),
+                        end_tangent: away(end)?.map(direction),
+                        periodic,
+                    }
+                }
+                Entity::Circle(_) => unreachable!("circles handled above"),
+            };
+            segments.push(segment);
+        }
+        Ok(segments)
+    }
+
+    /// The direction in which the line or arc tangent to `spline` at `point`
+    /// extends away from that point, if such a tangency exists.
+    fn tangent_away(
+        &self,
+        spline: &str,
+        point: &str,
+        solution: &SketchSolution,
+    ) -> Result<Option<SketchPoint2>, ModelError> {
+        let entities = self.entities();
+        let neighbors = self
+            .constraints
+            .iter()
+            .filter_map(|constraint| match constraint {
+                SketchConstraint::Tangent {
+                    first,
+                    second,
+                    point: at,
+                } if at == point && (first == spline || second == spline) => {
+                    Some(if first == spline { second } else { first })
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        let Some(neighbor) = neighbors.first() else {
+            return Ok(None);
+        };
+        if neighbors.len() > 1 {
+            return Err(ModelError::new(format!(
+                "spline '{spline}' has more than one tangency at '{point}'"
+            )));
+        }
+        let at = solution.points[point];
+        let away = match entities[neighbor.as_str()] {
+            Entity::Line(line) => {
+                let other = if line.start == point {
+                    &line.end
+                } else {
+                    &line.start
+                };
+                let other = solution.points[other];
+                SketchPoint2 {
+                    x: other.x - at.x,
+                    y: other.y - at.y,
+                }
+            }
+            Entity::Arc(arc) => {
+                let center = solution.points[&arc.center];
+                let (rx, ry) = (at.x - center.x, at.y - center.y);
+                // Travel direction at `point`; the arc extends forward from
+                // its start and backward from its end.
+                let sense = if arc.clockwise { -1.0 } else { 1.0 };
+                let forward = if arc.start == point { 1.0 } else { -1.0 };
+                SketchPoint2 {
+                    x: -ry * sense * forward,
+                    y: rx * sense * forward,
+                }
+            }
+            _ => {
+                return Err(ModelError::new(
+                    "a spline can be tangent only to a line or an arc",
+                ));
+            }
+        };
+        Ok(Some(away))
+    }
+
     fn profile_entities(&self) -> Result<Vec<Entity<'_>>, ModelError> {
         let entities = self.entities();
+        let only_lines = self.arcs.is_empty() && self.splines.is_empty();
         let profile = if !self.profile.is_empty() {
             self.profile
                 .iter()
                 .map(|id| entities[id.as_str()])
                 .collect::<Vec<_>>()
-        } else if self.circles.len() == 1 && self.lines.is_empty() && self.arcs.is_empty() {
+        } else if self.circles.len() == 1 && self.lines.is_empty() && only_lines {
             vec![Entity::Circle(&self.circles[0])]
-        } else if self.arcs.is_empty() && self.circles.is_empty() {
+        } else if self.splines.len() == 1
+            && self.lines.is_empty()
+            && self.arcs.is_empty()
+            && self.circles.is_empty()
+        {
+            vec![Entity::Spline(&self.splines[0])]
+        } else if only_lines && self.circles.is_empty() {
             self.lines.iter().map(Entity::Line).collect()
         } else {
             return Err(ModelError::new(
@@ -505,6 +711,30 @@ impl SketchDefinition {
                 )));
             }
         }
+        for spline in &self.splines {
+            if spline.id.is_empty() || !entity_ids.insert(spline.id.as_str()) {
+                return Err(ModelError::new(
+                    "sketch entity ids must be nonempty and unique",
+                ));
+            }
+            // A closed spline repeats only its first point, at the end.
+            let open = if spline.closed() {
+                &spline.points[..spline.points.len() - 1]
+            } else {
+                &spline.points[..]
+            };
+            let unique = open.iter().map(String::as_str).collect::<HashSet<_>>();
+            let minimum = if spline.closed() { 3 } else { 2 };
+            if open.len() < minimum
+                || unique.len() != open.len()
+                || open.iter().any(|id| !point_ids.contains(id.as_str()))
+            {
+                return Err(ModelError::new(format!(
+                    "sketch spline '{}' needs {minimum} or more distinct known points",
+                    spline.id
+                )));
+            }
+        }
         Ok(entity_ids)
     }
     fn validate_profile(&self, entity_ids: &HashSet<&str>) -> Result<(), ModelError> {
@@ -595,6 +825,7 @@ impl SketchProblem<'_> {
         self.sketch
             .constraints
             .iter()
+            .filter(|constraint| !self.sketch.spline_tangency(constraint))
             .map(Equation::Constraint)
             .chain(self.sketch.arcs.iter().map(Equation::Arc))
     }
@@ -863,67 +1094,22 @@ fn squared_norm(values: &[f64]) -> f64 {
     values.iter().map(|value| value * value).sum()
 }
 
-fn profile_segments(
-    profile: &[Entity<'_>],
-    solution: &SketchSolution,
-    transform: &impl Fn(SketchPoint2) -> Vec3,
-    closed: bool,
-) -> Result<Vec<WireSegment>, ModelError> {
-    if profile.is_empty()
-        || profile
-            .iter()
-            .any(|entity| matches!(entity, Entity::Circle(_)))
-    {
-        return Err(ModelError::new(
-            "profile must contain connected lines/arcs or one circle",
-        ));
+fn arc_middle(arc: &SketchArc, solution: &SketchSolution) -> SketchPoint2 {
+    let center = solution.points[&arc.center];
+    let (start, end) = (solution.points[&arc.start], solution.points[&arc.end]);
+    let angle = (start.y - center.y).atan2(start.x - center.x);
+    let end_angle = (end.y - center.y).atan2(end.x - center.x);
+    let sweep = if arc.clockwise {
+        -((angle - end_angle).rem_euclid(std::f64::consts::TAU))
+    } else {
+        (end_angle - angle).rem_euclid(std::f64::consts::TAU)
+    };
+    let radius = line_length((center, start));
+    let middle_angle = angle + sweep / 2.0;
+    SketchPoint2 {
+        x: center.x + radius * middle_angle.cos(),
+        y: center.y + radius * middle_angle.sin(),
     }
-    if !closed {
-        validate_open_endpoints(profile, solution)?;
-    }
-    let mut segments = Vec::with_capacity(profile.len());
-    for (index, entity) in profile.iter().enumerate() {
-        let (start, end) = entity.endpoints();
-        if (closed || index + 1 < profile.len())
-            && end != profile[(index + 1) % profile.len()].endpoints().0
-        {
-            return Err(ModelError::new(
-                "sketch profile is not a continuous boundary",
-            ));
-        }
-        let start_point = solution.points[start];
-        let end_point = solution.points[end];
-        let segment = match entity {
-            Entity::Line(_) => WireSegment::Line {
-                start: transform(start_point),
-                end: transform(end_point),
-            },
-            Entity::Arc(arc) => {
-                let center = solution.points[&arc.center];
-                let angle = (start_point.y - center.y).atan2(start_point.x - center.x);
-                let end_angle = (end_point.y - center.y).atan2(end_point.x - center.x);
-                let sweep = if arc.clockwise {
-                    -((angle - end_angle).rem_euclid(std::f64::consts::TAU))
-                } else {
-                    (end_angle - angle).rem_euclid(std::f64::consts::TAU)
-                };
-                let radius = line_length((center, start_point));
-                let middle_angle = angle + sweep / 2.0;
-                let middle = SketchPoint2 {
-                    x: center.x + radius * middle_angle.cos(),
-                    y: center.y + radius * middle_angle.sin(),
-                };
-                WireSegment::Arc {
-                    start: transform(start_point),
-                    middle: transform(middle),
-                    end: transform(end_point),
-                }
-            }
-            Entity::Circle(_) => unreachable!("circles handled above"),
-        };
-        segments.push(segment);
-    }
-    Ok(segments)
 }
 
 fn validate_tangency(
@@ -938,6 +1124,24 @@ fn validate_tangency(
     {
         if first == second {
             return Err(ModelError::new("tangency requires two distinct entities"));
+        }
+        let kinds = [first, second].map(|id| entities.get(id.as_str()).copied());
+        let spline = |entity: Option<Entity<'_>>| matches!(entity, Some(Entity::Spline(_)));
+        if kinds.iter().any(|entity| spline(*entity)) {
+            let other = if spline(kinds[0]) { kinds[1] } else { kinds[0] };
+            if !matches!(other, Some(Entity::Line(_) | Entity::Arc(_))) {
+                return Err(ModelError::new(
+                    "a spline can be tangent only to a line or an arc",
+                ));
+            }
+            if kinds
+                .iter()
+                .any(|entity| matches!(entity, Some(Entity::Spline(s)) if s.closed()))
+            {
+                return Err(ModelError::new(
+                    "a closed spline has no free ends for tangency",
+                ));
+            }
         }
         for id in [first, second] {
             let entity = entities
