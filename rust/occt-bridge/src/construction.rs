@@ -91,6 +91,71 @@ impl Session {
     /// Creates an ordered, connected wire of exact lines and circular arcs.
     /// `closed` requires closure when true; false permits either open or closed
     /// wires. Planarity and absence of self-intersections are not required.
+    /// Builds a wire from lines, arcs, and interpolated splines. Consecutive
+    /// segments must meet; `closed` requires the wire to end where it starts.
+    pub fn create_curve_wire(
+        &self,
+        segments: &[CurveSegment],
+        closed: bool,
+    ) -> Result<Shape<'_>, BridgeError> {
+        let zero = Vec3::new(0.0, 0.0, 0.0);
+        let mut points: Vec<RawVec3> = Vec::new();
+        let mut raw = Vec::with_capacity(segments.len());
+        for segment in segments {
+            let first_point = points.len();
+            let (kind, flags, start_tangent, end_tangent) = match segment {
+                CurveSegment::Line { start, end } => {
+                    points.extend([RawVec3::from(*start), RawVec3::from(*end)]);
+                    (0, 0, zero, zero)
+                }
+                CurveSegment::Arc { start, middle, end } => {
+                    points.extend([*start, *middle, *end].map(RawVec3::from));
+                    (1, 0, zero, zero)
+                }
+                CurveSegment::Spline {
+                    points: through,
+                    start_tangent,
+                    end_tangent,
+                    periodic,
+                } => {
+                    points.extend(through.iter().map(|point| RawVec3::from(*point)));
+                    let flags = i32::from(start_tangent.is_some())
+                        | (i32::from(end_tangent.is_some()) << 1)
+                        | (i32::from(*periodic) << 2);
+                    (
+                        2,
+                        flags,
+                        start_tangent.unwrap_or(zero),
+                        end_tangent.unwrap_or(zero),
+                    )
+                }
+            };
+            raw.push(RawCurveSegment {
+                kind,
+                flags,
+                first_point,
+                point_count: points.len() - first_point,
+                start_tangent: start_tangent.into(),
+                end_tangent: end_tangent.into(),
+            });
+        }
+        let mut shape = 0;
+        // SAFETY: The point and segment buffers, session, and output remain
+        // valid during the call; segment ranges index into `points`.
+        self.check(unsafe {
+            occt_bridge_create_curve_wire(
+                self.raw.as_ptr(),
+                points.as_ptr(),
+                points.len(),
+                raw.as_ptr(),
+                raw.len(),
+                i32::from(closed),
+                &mut shape,
+            )
+        })?;
+        Ok(self.shape(shape))
+    }
+
     pub fn create_segment_wire(
         &self,
         segments: &[WireSegment],

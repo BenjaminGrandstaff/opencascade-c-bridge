@@ -342,7 +342,7 @@ occt_bridge_status_t occt_bridge_shape_surface_area(
             return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "shape contains no faces");
         }
         GProp_GProps properties;
-        BRepGProp::SurfaceProperties(*value, properties);
+        measure_surface_properties(*value, properties);
         *out_area = std::abs(properties.Mass());
         return succeed(session);
     });
@@ -364,9 +364,7 @@ occt_bridge_status_t occt_bridge_shape_volume(
         if (!contains_topology(*value, TopAbs_SOLID)) {
             return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "shape contains no solids");
         }
-        GProp_GProps properties;
-        adaptive_volume_properties(*value, properties);
-        *out_volume = std::abs(properties.Mass());
+        *out_volume = std::abs(measure_volume(*value));
         return succeed(session);
     });
 }
@@ -386,9 +384,9 @@ occt_bridge_status_t occt_bridge_shape_center_of_mass(
         }
         GProp_GProps properties;
         if (contains_topology(*value, TopAbs_SOLID)) {
-            adaptive_volume_properties(*value, properties);
+            measure_volume_moments(*value, properties);
         } else if (contains_topology(*value, TopAbs_FACE)) {
-            BRepGProp::SurfaceProperties(*value, properties);
+            measure_surface_properties(*value, properties);
         } else if (contains_topology(*value, TopAbs_EDGE)) {
             BRepGProp::LinearProperties(*value, properties);
         } else {

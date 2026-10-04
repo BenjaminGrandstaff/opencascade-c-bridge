@@ -338,6 +338,32 @@ pub struct MassProperties {
     pub relative_volume_error: f64,
 }
 
+/// One piece of [`Session::create_curve_wire`]: like [`WireSegment`], plus
+/// B-splines interpolated through any number of points.
+#[derive(Clone, Debug, PartialEq)]
+pub enum CurveSegment {
+    Line {
+        start: Vec3,
+        end: Vec3,
+    },
+    /// The arc runs from `start` through `middle` to `end`.
+    Arc {
+        start: Vec3,
+        middle: Vec3,
+        end: Vec3,
+    },
+    /// Passes through `points` in order (at least two). Optional end
+    /// tangents fix the curve's direction at its ends; their length is
+    /// ignored. A periodic spline is a smooth closed loop through at least
+    /// three points, ending where it starts.
+    Spline {
+        points: Vec<Vec3>,
+        start_tangent: Option<Vec3>,
+        end_tangent: Option<Vec3>,
+        periodic: bool,
+    },
+}
+
 /// Smallest principal radii of one face, signed by its outward normal. A
 /// convex face curves away from the outward normal (outside of a cylinder or
 /// fillet); a concave face curves toward it (a bore or inside fillet). `None`

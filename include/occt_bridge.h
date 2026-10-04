@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define OCCT_BRIDGE_ABI_VERSION 37u
+#define OCCT_BRIDGE_ABI_VERSION 38u
 #define OCCT_BRIDGE_INVALID_SHAPE_ID UINT64_C(0)
 
 #if defined(_WIN32) && defined(OCCT_BRIDGE_BUILD_SHARED)
@@ -297,6 +297,36 @@ OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_create_segment_wire(
 );
 
 /* Creates a closed circular wire in the plane described by its normal. */
+/* One segment of occt_bridge_create_curve_wire, reading point_count points
+ * from `points` starting at first_point: a line (kind 0, 2 points), a circular
+ * arc through its middle point (kind 1, 3 points), or a B-spline interpolated
+ * through its points in order (kind 2, 2 or more). Spline flags: bit 0 uses
+ * start_tangent and bit 1 end_tangent as the curve's end directions (any
+ * nonzero length); bit 2 makes it periodic, a smooth closed loop through its
+ * points that ends where it starts, with no corner. Other kinds ignore flags. */
+typedef struct occt_bridge_curve_segment {
+    int32_t kind;
+    int32_t flags;
+    size_t first_point;
+    size_t point_count;
+    occt_bridge_vec3_t start_tangent;
+    occt_bridge_vec3_t end_tangent;
+} occt_bridge_curve_segment_t;
+
+/* Like occt_bridge_create_segment_wire, with spline segments. Consecutive
+ * segments must meet within kernel tolerance, and consecutive points within a
+ * segment must be distinct. closed is 0 or 1; 1 requires the last segment to
+ * end where the first starts. */
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_create_curve_wire(
+    occt_bridge_session_t* session,
+    const occt_bridge_vec3_t* points,
+    size_t point_count,
+    const occt_bridge_curve_segment_t* segments,
+    size_t segment_count,
+    int closed,
+    occt_bridge_shape_id_t* out_shape
+);
+
 OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_create_circle_wire(
     occt_bridge_session_t* session,
     occt_bridge_vec3_t center,

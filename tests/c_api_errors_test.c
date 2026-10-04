@@ -230,6 +230,40 @@ static void wires_and_faces(occt_bridge_session_t* session) {
     segments[0].middle = vec(0, 1, 0);
     segments[1].start = zero;
     EXPECT(occt_bridge_create_segment_wire(session, segments, 2, 1, &out), ARG);
+
+    /* A spline arch from (1,0,0) over (0,1,0) to (-1,0,0), closed by a line. */
+    const occt_bridge_vec3_t curve_points[] = {{1, 0, 0}, {0, 1, 0}, {-1, 0, 0}, {-1, 0, 0}, {1, 0, 0}};
+    occt_bridge_curve_segment_t curves[] = {
+        {2, 0, 0, 3, {0, 0, 0}, {0, 0, 0}},
+        {0, 0, 3, 2, {0, 0, 0}, {0, 0, 0}}
+    };
+    EXPECT(occt_bridge_create_curve_wire(NULL, curve_points, 5, curves, 2, 1, &out), ARG);
+    EXPECT(occt_bridge_create_curve_wire(session, curve_points, 5, curves, 2, 1, NULL), ARG);
+    EXPECT(occt_bridge_create_curve_wire(session, NULL, 5, curves, 2, 1, &out), ARG);
+    EXPECT(occt_bridge_create_curve_wire(session, curve_points, 5, NULL, 2, 1, &out), ARG);
+    EXPECT(occt_bridge_create_curve_wire(session, curve_points, 5, curves, 0, 1, &out), ARG);
+    EXPECT(occt_bridge_create_curve_wire(session, curve_points, 5, curves, 2, 2, &out), ARG);
+    EXPECT(occt_bridge_create_curve_wire(session, curve_points, 4, curves, 2, 1, &out), ARG);
+    EXPECT(occt_bridge_create_curve_wire(session, curve_points, 5, curves, 1, 1, &out), ARG);
+    EXPECT(occt_bridge_create_curve_wire(session, curve_points, 5, curves, 2, 1, &out), OK);
+    curves[0].flags = 8;
+    EXPECT(occt_bridge_create_curve_wire(session, curve_points, 5, curves, 2, 1, &out), ARG);
+    curves[0].flags = 1;
+    EXPECT(occt_bridge_create_curve_wire(session, curve_points, 5, curves, 2, 1, &out), ARG);
+    curves[0].start_tangent = vec(0, 1, 0);
+    EXPECT(occt_bridge_create_curve_wire(session, curve_points, 5, curves, 2, 1, &out), OK);
+    curves[0].flags = 0;
+    curves[1].point_count = 3;
+    EXPECT(occt_bridge_create_curve_wire(session, curve_points, 5, curves, 2, 1, &out), ARG);
+    curves[1].point_count = 2;
+    curves[1].first_point = SIZE_MAX;
+    EXPECT(occt_bridge_create_curve_wire(session, curve_points, 5, curves, 2, 1, &out), ARG);
+    curves[1].first_point = 3;
+    curves[0].kind = 3;
+    EXPECT(occt_bridge_create_curve_wire(session, curve_points, 5, curves, 2, 1, &out), ARG);
+    curves[0].kind = 2;
+    curves[0].point_count = 1;
+    EXPECT(occt_bridge_create_curve_wire(session, curve_points, 5, curves, 1, 0, &out), ARG);
     segments[1].start = segments[1].end;
     EXPECT(occt_bridge_create_segment_wire(session, segments, 2, 1, &out), ARG);
     segments[0].start = nan_x;
