@@ -18,6 +18,7 @@
 #include <TColgp_Array1OfPnt2d.hxx>
 #include <BRepOffsetAPI_MakeThickSolid.hxx>
 #include <Precision.hxx>
+#include <ShapeUpgrade_UnifySameDomain.hxx>
 #include <Standard_NoSuchObject.hxx>
 #include <TopoDS.hxx>
 #include <TopoDS_AlertWithShape.hxx>
@@ -637,6 +638,25 @@ std::vector<occt_bridge_history_entry> draft_history(
     return history;
 }
 
+/*
+ * Presents a BRepTools_History through the Generated/Modified/IsDeleted
+ * interface collect_history expects; unsupported types have no records.
+ */
+struct ToolsHistory {
+    opencascade::handle<BRepTools_History> history;
+    TopTools_ListOfShape none;
+
+    const TopTools_ListOfShape& Generated(const TopoDS_Shape& source) {
+        return BRepTools_History::IsSupportedType(source) ? history->Generated(source) : none;
+    }
+    const TopTools_ListOfShape& Modified(const TopoDS_Shape& source) {
+        return BRepTools_History::IsSupportedType(source) ? history->Modified(source) : none;
+    }
+    bool IsDeleted(const TopoDS_Shape& source) const {
+        return BRepTools_History::IsSupportedType(source) && history->IsRemoved(source);
+    }
+};
+
 }  // namespace
 
 extern "C" {
@@ -818,6 +838,40 @@ occt_bridge_status_t occt_bridge_offset(
             out_shape,
             builder,
             {value});
+    });
+}
+
+occt_bridge_status_t occt_bridge_unify_same_domain(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t shape,
+    double linear_tolerance,
+    double angular_tolerance,
+    occt_bridge_shape_id_t* out_shape) {
+    return guarded(session, [&] {
+        if (out_shape == nullptr) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_shape is null");
+        }
+        *out_shape = OCCT_BRIDGE_INVALID_SHAPE_ID;
+        if (!std::isfinite(linear_tolerance) || linear_tolerance <= 0.0 || !std::isfinite(angular_tolerance)
+            || angular_tolerance <= 0.0 || angular_tolerance >= M_PI_2) {
+            return fail(
+                session,
+                OCCT_BRIDGE_INVALID_ARGUMENT,
+                "unify needs a positive linear tolerance and an angular tolerance in (0, pi/2) radians");
+        }
+        const TopoDS_Shape* value = find_shape(session, shape);
+        if (value == nullptr) {
+            return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "shape was not found");
+        }
+        ShapeUpgrade_UnifySameDomain unify(*value, Standard_True, Standard_True, Standard_False);
+        unify.SetLinearTolerance(linear_tolerance);
+        unify.SetAngularTolerance(angular_tolerance);
+        const std::string exception = perform_reporting_exception([&] { unify.Build(); });
+        if (!exception.empty() || unify.Shape().IsNull()) {
+            return fail(session, OCCT_BRIDGE_KERNEL_ERROR, exception.empty() ? "unify same domain failed" : "unify same domain failed: " + exception);
+        }
+        ToolsHistory history{unify.History(), {}};
+        return store_checked_result(session, "unify same domain", unify.Shape(), out_shape, history, {value});
     });
 }
 

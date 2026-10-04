@@ -32,7 +32,7 @@ fn block_top() -> FaceSelector {
 /// no continuity for. The tray feature would shell it open through the
 /// block's top and the faces tangent to it, measured to within the
 /// `tolerance` parameter or recorded only; OCCT's offset cannot shell this
-/// stadium, so tests select on it directly.
+/// stadium without a `Unify` feature, so tests select on it directly.
 fn stadium_family(measured: bool) -> FamilyDefinition {
     let mut family = family(RequirementPriority::Advisory, 1e12);
     family.requirements.clear();
@@ -134,7 +134,7 @@ fn tangent(family: &FamilyDefinition) -> FaceSelector {
 fn measured_tangency_finds_junctions_that_booleans_leave_unrecorded() {
     let session = Session::new().unwrap();
     let mut family = stadium_family(true);
-    // OCCT's offset cannot shell this fused stadium; select on it directly.
+    // OCCT's offset cannot shell this un-unified stadium; select directly.
     family.features.truncate(3);
     let generated = part(&family).regenerate(&session).unwrap();
     let none = HashMap::new();

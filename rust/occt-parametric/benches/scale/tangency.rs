@@ -1,6 +1,8 @@
-//! Face tangency measured where booleans record no continuity.
+//! Face tangency measured where booleans record no continuity, and merging
+//! the faces they leave split.
 
 use super::*;
+use occt_bridge::Shape;
 
 /// Every face of a 400-hole stadium plate checked for tangency to its top,
 /// as `FaceSelector::TangentTo` does. Each hole wall shares an unrecorded
@@ -12,24 +14,7 @@ pub(crate) fn measured_tangency_case() -> Outcome {
         Expectation::Required,
         || {
             let session = Session::new()?;
-            let up = Vec3::new(0.0, 0.0, 1.0);
-            let round = session.create_cylinder(Vec3::new(0.0, 0.0, 0.0), up, 210.0, 10.0)?;
-            let block =
-                session.create_box(Vec3::new(0.0, -210.0, 0.0), Vec3::new(420.0, 420.0, 10.0))?;
-            let stadium = session.fuse(&round, &block)?;
-            let holes = (0..MANY_HOLES)
-                .map(|index| {
-                    let (row, column) = ((index / 20) as f64, (index % 20) as f64);
-                    session.create_cylinder(
-                        Vec3::new(10.0 + column * 20.0, -200.0 + row * 20.0, -1.0),
-                        up,
-                        4.0,
-                        12.0,
-                    )
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-            let tools = session.create_compound(&holes.iter().collect::<Vec<_>>())?;
-            let plate = session.cut(&stadium, &tools)?;
+            let plate = stadium_plate(&session)?;
             let faces = (0..session.subshape_count(&plate, ShapeType::Face)?)
                 .map(|index| session.subshape(&plate, ShapeType::Face, index))
                 .collect::<Result<Vec<_>, _>>()?;
@@ -62,6 +47,60 @@ pub(crate) fn measured_tangency_case() -> Outcome {
                 "{} faces checked in {:.3} s; 1 measured tangent, {MANY_HOLES} sharp rims measured",
                 faces.len(),
                 scan.as_secs_f64()
+            ))
+        },
+    )
+}
+
+/// A radius-210 cylinder fused flush with a 420 x 420 x 10 block, drilled
+/// with `MANY_HOLES` holes in one cut.
+fn stadium_plate(session: &Session) -> Result<Shape<'_>, ModelError> {
+    let up = Vec3::new(0.0, 0.0, 1.0);
+    let round = session.create_cylinder(Vec3::new(0.0, 0.0, 0.0), up, 210.0, 10.0)?;
+    let block = session.create_box(Vec3::new(0.0, -210.0, 0.0), Vec3::new(420.0, 420.0, 10.0))?;
+    let stadium = session.fuse(&round, &block)?;
+    let holes = (0..MANY_HOLES)
+        .map(|index| {
+            let (row, column) = ((index / 20) as f64, (index % 20) as f64);
+            session.create_cylinder(
+                Vec3::new(10.0 + column * 20.0, -200.0 + row * 20.0, -1.0),
+                up,
+                4.0,
+                12.0,
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let tools = session.create_compound(&holes.iter().collect::<Vec<_>>())?;
+    Ok(session.cut(&stadium, &tools)?)
+}
+
+/// Merges the split top and bottom of the 400-hole stadium plate.
+pub(crate) fn unify_case() -> Outcome {
+    timed(
+        format!("unify a {MANY_HOLES}-hole stadium plate"),
+        ms(2_000),
+        Expectation::Required,
+        || {
+            let session = Session::new()?;
+            let plate = stadium_plate(&session)?;
+            let before = session.subshape_count(&plate, ShapeType::Face)?;
+            let start = Instant::now();
+            let unified = session.unify_same_domain(&plate, 1e-7, 1e-9)?;
+            let elapsed = start.elapsed();
+            let after = session.subshape_count(&unified, ShapeType::Face)?;
+            if after != MANY_HOLES + 6 {
+                return Err(failure(format!(
+                    "{before} faces unified to {after}; expected {}",
+                    MANY_HOLES + 6
+                )));
+            }
+            let (solid, merged) = (session.volume(&plate)?, session.volume(&unified)?);
+            if (solid - merged).abs() > 1e-9 * solid {
+                return Err(failure(format!("volume {solid} became {merged}")));
+            }
+            Ok(format!(
+                "{before} faces merged to {after} in {:.3} s",
+                elapsed.as_secs_f64()
             ))
         },
     )

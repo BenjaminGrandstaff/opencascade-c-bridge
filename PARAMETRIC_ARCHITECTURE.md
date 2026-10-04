@@ -1063,8 +1063,19 @@ sides meet the round end and its top is split into coplanar faces. The
 tolerance's parameters join the consuming feature's signature. Each face pair
 costs O(edges of both faces) plus one sampled check per unrecorded shared
 edge; all 410 faces of a 400-hole stadium plate are checked against its top
-in 0.016 s. OCCT's offset and draft may still fail on such fused shapes, which
-is a kernel limitation separate from selection.
+in 0.016 s. OCCT's offset and draft fail on such fused shapes until their
+split faces are merged; see `Unify` below.
+
+Schema 56 adds `FeatureOperation::Unify { input, linear_tolerance,
+angular_tolerance }`, backed by ABI 42's `occt_bridge_unify_same_domain`
+(OCCT's `ShapeUpgrade_UnifySameDomain`). It merges adjacent faces on the same
+surface, and edges on the same curve, that booleans leave split: a block
+fused flush with a cylinder has its top in three faces, which the offset
+cannot shell, and one after unifying. Merged faces are recorded as modified
+and untouched faces keep their identity, so a persistent reference to the
+bare block's top follows it through the fuse's split and the merge to the
+single top face. Unifying a 400-hole stadium plate (410 faces to 406) takes
+0.125 s.
 
 Schema 53 adds persistent references. `FaceSelector::Persistent { feature,
 select }` and `EdgeSelector::Persistent` evaluate `select` on `feature`'s own

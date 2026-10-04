@@ -257,3 +257,61 @@ fn rejects_invalid_or_unrelated_operation_selections() {
     assert_eq!(session.offset(&first, 0.0, 1e-6).unwrap_err().status, 1);
     assert_eq!(session.shape_count().unwrap(), 4);
 }
+
+#[test]
+fn unifying_a_fused_stadium_lets_it_be_shelled() {
+    let session = Session::new().unwrap();
+    let up = Vec3::new(0.0, 0.0, 1.0);
+    let round = session
+        .create_cylinder(Vec3::new(0.0, 0.0, 0.0), up, 5.0, 5.0)
+        .unwrap();
+    let block = session
+        .create_box(Vec3::new(0.0, -5.0, 0.0), Vec3::new(20.0, 10.0, 5.0))
+        .unwrap();
+    let stadium = session.fuse(&round, &block).unwrap();
+    let top_of = |shape: &Shape<'_>| {
+        (0..session.subshape_count(shape, ShapeType::Face).unwrap())
+            .map(|index| session.subshape(shape, ShapeType::Face, index).unwrap())
+            .filter(|face| {
+                session.face_is_planar(face).unwrap()
+                    && session.face_normal(face).unwrap().z > 0.999
+            })
+            .collect::<Vec<_>>()
+    };
+    // The fuse splits the top into the notched block face and two half-discs;
+    // the offset cannot shell through them.
+    let split_top = top_of(&stadium);
+    assert_eq!(split_top.len(), 3);
+    let refs = split_top.iter().collect::<Vec<_>>();
+    assert!(session.hollow(&stadium, &refs, -1.0, 1e-4).is_err());
+
+    let unified = session.unify_same_domain(&stadium, 1e-7, 1e-9).unwrap();
+    assert_eq!(
+        session.subshape_count(&unified, ShapeType::Face).unwrap(),
+        6
+    );
+    let top = top_of(&unified);
+    assert_eq!(top.len(), 1);
+    // Each split piece's history leads to the merged top.
+    for piece in &split_top {
+        let merged = session
+            .history(&unified, piece, HistoryRelation::Modified, 0)
+            .unwrap();
+        assert!(session.is_same(&merged, &top[0]).unwrap());
+    }
+    let tray = session.hollow(&unified, &[&top[0]], -1.0, 1e-4).unwrap();
+    assert!(session.is_valid(&tray).unwrap());
+    // The stadium less a 1 mm-inset stadium 4 mm deep.
+    let pi = std::f64::consts::PI;
+    let expected = 5.0 * (200.0 + pi * 12.5) - 4.0 * (152.0 + pi * 8.0);
+    let volume = session.volume(&tray).unwrap();
+    assert!((volume - expected).abs() < 1e-6 * expected, "{volume}");
+
+    for (linear, angular) in [(0.0, 1e-9), (1e-7, 0.0), (f64::NAN, 1e-9), (1e-7, 2.0)] {
+        assert!(
+            session
+                .unify_same_domain(&stadium, linear, angular)
+                .is_err()
+        );
+    }
+}

@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define OCCT_BRIDGE_ABI_VERSION 41u
+#define OCCT_BRIDGE_ABI_VERSION 42u
 #define OCCT_BRIDGE_INVALID_SHAPE_ID UINT64_C(0)
 
 #if defined(_WIN32) && defined(OCCT_BRIDGE_BUILD_SHARED)
@@ -661,6 +661,21 @@ OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_offset(
     occt_bridge_shape_id_t shape,
     double offset,
     double tolerance,
+    occt_bridge_shape_id_t* out_shape
+);
+
+/*
+ * Merges adjacent faces lying on the same surface, and edges on the same
+ * curve, into single faces and edges: booleans leave a fused shape's coplanar
+ * or co-cylindrical regions split along their seams. Surfaces and curves
+ * match within linear_tolerance (> 0) and angular_tolerance radians, in
+ * (0, pi/2). Records operation history; untouched faces keep their identity.
+ */
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_unify_same_domain(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t shape,
+    double linear_tolerance,
+    double angular_tolerance,
     occt_bridge_shape_id_t* out_shape
 );
 

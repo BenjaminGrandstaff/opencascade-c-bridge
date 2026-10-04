@@ -234,6 +234,15 @@ pub(crate) fn execute_feature<'session>(
                 .common(shape(shapes, left)?, shape(shapes, right)?)
                 .map_err(|error| ModelError::from(error).locate_operands([left, right]));
         }
+        FeatureOperation::Unify {
+            input,
+            linear_tolerance,
+            angular_tolerance,
+        } => session.unify_same_domain(
+            shape(shapes, input)?,
+            scalar(linear_tolerance, parameters, Dimension::Length)?,
+            scalar(angular_tolerance, parameters, Dimension::Scalar)?,
+        ),
         FeatureOperation::Sew { inputs, tolerance } => {
             let inputs = inputs
                 .iter()
