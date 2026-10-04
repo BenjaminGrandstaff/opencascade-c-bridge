@@ -1095,8 +1095,19 @@ sides meet the round end and its top is split into coplanar faces. The
 tolerance's parameters join the consuming feature's signature. Each face pair
 costs O(edges of both faces) plus one sampled check per unrecorded shared
 edge; all 410 faces of a 400-hole stadium plate are checked against its top
-in 0.016 s. OCCT's offset and draft may still fail on such fused shapes, which
-is a kernel limitation separate from selection.
+in 0.016 s. OCCT's offset and draft fail on such fused shapes until their
+split faces are merged; see `Unify` below.
+
+Schema 56 adds `FeatureOperation::Unify { input, linear_tolerance,
+angular_tolerance }`, backed by ABI 42's `occt_bridge_unify_same_domain`
+(OCCT's `ShapeUpgrade_UnifySameDomain`). It merges adjacent faces on the same
+surface, and edges on the same curve, that booleans leave split: a block
+fused flush with a cylinder has its top in three faces, which the offset
+cannot shell, and one after unifying. Merged faces are recorded as modified
+and untouched faces keep their identity, so a persistent reference to the
+bare block's top follows it through the fuse's split and the merge to the
+single top face. Unifying a 400-hole stadium plate (410 faces to 406) takes
+0.125 s.
 
 Schema 53 adds persistent references. `FaceSelector::Persistent { feature,
 select }` and `EdgeSelector::Persistent` evaluate `select` on `feature`'s own
@@ -1224,10 +1235,11 @@ or bounds-driven fitted spans,
 nested assembly frames, semantic selectors, provenance, and regeneration audit records. Live
 OCCT handles and generated BREPs are never serialized. Loading reconstructs a
 validated `InstanceGraph`; regeneration creates fresh session-owned handles.
-Schema versions 1 through 55 migrate to version 56, supplying explicit defaults
-for fields absent from older documents. Version 56 integrates planar slice views
+Schema versions 1 through 56 migrate to version 57, supplying explicit defaults
+for fields absent from older documents. Version 57 integrates planar slice views
 for cutting templates with spline sketches (51), sweeps (52), persistent references
-(53), named references (54), and measured tangency selectors (55). Existing
+(53), named references (54), measured tangency selectors (55), and same-domain
+Boolean cleanup (56). Existing
 drawing kinds and geometry retain their behavior. Version 38 adds open sketch wires and
 explicit translated rib-profile closure; earlier ribs default to closed profiles.
 Version 37 adds generated-face selectors
@@ -1275,13 +1287,13 @@ inconsistent pattern membership, and invalid regeneration revisions before the
 model is accepted.
 
 The next cross-layer work should prioritize general assembly usability and
-large mechanism solving. Schema 56 integrates true planar slice drawings with
-the geometry branch's schema 55 features; the
+large mechanism solving. Schema 57 integrates true planar slice drawings with
+the geometry branch's schema 56 features; the
 [drawing-export command](tools/drawing-export/README.md) shares regeneration
 across batches and writes reloadable definitions and SVG/DXF files. The balance-report command reports material
 totals and CG along an explicit chord or station-derived MAC; see
 [Mass and balance](tools/balance-report/README.md). The motion-study command turns selected outputs
-into independently hinged instances and reports interference across their
+into independently hinged or sliding instances and reports interference across their
 travel. Explicit pair exclusions represent intentional assembled contacts and
 are recorded in the study and report; other pairs retain sampled and continuous
 checks; see [the workflow](tools/motion-study/README.md). Changes are measured by

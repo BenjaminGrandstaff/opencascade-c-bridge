@@ -8,27 +8,38 @@ tracks status and order.
 
 | Layer | Version | State |
 |---|---|---|
-| C ABI (`src/`, `include/`) | ABI 41 | Stable; exact version match required |
+| C ABI (`src/`, `include/`) | ABI 42 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 56 | Active development |
+| `occt-parametric` (engineering layer) | Schema 57 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 88 + first-use integration 1 (+1 doc test), recipes 3, parametric 309 + merge driver 3 + motion command 9 + balance command 4 + drawing command 2 + branch command 2, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 89 + first-use integration 1 (+1 doc test), recipes 3, parametric 311 + merge driver 3 + motion command 16 + balance command 4 + drawing command 2 + branch command 2, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.4% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
-| Coverage | 93.30% lines overall, test code excluded; C++ 94.09% lines, 87.31% branches, 100% functions; Rust 92.97% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 86 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Coverage | 93.36% lines overall, test code excluded; C++ 94.17% lines, 87.55% branches, 100% functions; Rust 93.03% lines | `tools/coverage/run.sh` |
+| Scale benchmarks | 87 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
 
-- Integrated assembly/motion and geometry features (ABI 41, schema 56): spline
+- Sliding components in the motion-study command: bounded prismatic joints,
+  normalized local axes, millimeter start/end offsets, reverse travel, and
+  coordinated hinge/slider studies. Parent frames, source placements, material
+  inheritance, collision exclusions and saved models are preserved. Seven new
+  command tests cover exact placed bounds, reloads, continuous crossings between
+  clear samples, invalid setup publication, and 10,000 mixed joints in 0.140 s (10 s budget).
+  Existing hinge setups retain their frame IDs. The native Boolean cleanup
+  feature is integrated at ABI 42; schema 57 unifies both branches' schema 56
+  additions. See [Motion studies](tools/motion-study/README.md).
+
+
+- Integrated assembly/motion and geometry features (ABI 42, schema 57): spline
   sketches, path sweeps, structured STEP assemblies, persistent/named references,
   measured tangency, slicing drawings, balance reports, joint solving and
-  continuous collision checks are available in one branch. Schema 56 unifies the
-  drawing additions with the geometry branch's schema 55; older documents migrate
+  continuous collision checks are available in one branch. Schema 57 unifies the
+  drawing additions with the geometry branch's schema 56; older documents migrate
   with additive defaults. The combined suite verifies both feature sets.
 
 
@@ -125,6 +136,14 @@ tracks status and order.
   No ABI or model schema change. See [Motion-study command](tools/motion-study/README.md).
 
 ### Kernel (C ABI)
+
+- Same-domain merging (ABI 42): `occt_bridge_unify_same_domain` merges
+  adjacent faces on the same surface and edges on the same curve within
+  linear and angular tolerances, recording OCCT's history so merged faces are
+  modified and untouched ones keep their identity. C and bridge tests check a
+  fused stadium (10 faces to 6, same volume, split top pieces leading to the
+  merged top) that the offset can shell only after merging, plus argument
+  errors.
 
 - Measured face tangency (ABI 41):
   `occt_bridge_shape_faces_are_tangent_within` uses continuity recorded on a
@@ -288,6 +307,14 @@ tracks status and order.
   error-bounded (Bezier, B-spline) extrema.
 
 ### Parametric layer
+
+- `Unify` feature (schema 56): merges the faces a boolean left split, so fused
+  shapes can be shelled and drafted. Two tests shell a fused stadium through
+  a persistent reference to the bare block's top, followed through the split
+  and the merge (exact tray volume; without `Unify` the shell fails), check
+  that the tolerance parameter rebuilds only the unify and its users, and
+  persist the feature. Unifying a 400-hole stadium plate takes 0.125 s
+  (0.819 s with the booleans building it; 2 s budget).
 
 - Measured tangency in selectors (schema 55): `FaceSelector::TangentTo` takes
   an optional `angular_tolerance`; when set, unrecorded junctions are measured,
@@ -836,9 +863,6 @@ priority over additional rib variants.
 - Undercut detection against a parting line, and exact (not sampled) minimum
   wall thickness and draft on curved BREP faces.
 - Assumptions and requirement-to-feature trace links in the document schema.
-- Merging same-domain faces after booleans (OCCT's
-  `ShapeUpgrade_UnifySameDomain`), so fused shapes with split coplanar or
-  tangent faces can be shelled and drafted.
 - Additional domain-specific expression functions.
 - Integration with the broader EIL source model in the sibling
   [`engineering-intent-language`](../engineering-intent-language) project.

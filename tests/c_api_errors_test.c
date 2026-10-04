@@ -505,6 +505,11 @@ static void combinations_and_features(occt_bridge_session_t* session) {
     EXPECT(occt_bridge_chamfer(session, box, wrong_edges, 1, 0.5, &out), GEOMETRY);
     EXPECT(occt_bridge_chamfer(session, box, foreign_edges, 1, 0.5, &out), GEOMETRY);
 
+    EXPECT(occt_bridge_unify_same_domain(session, box, 1e-7, 1e-9, NULL), ARG);
+    EXPECT(occt_bridge_unify_same_domain(session, box, NAN, 1e-9, &out), ARG);
+    EXPECT(occt_bridge_unify_same_domain(session, box, 1e-7, 0.0, &out), ARG);
+    EXPECT(occt_bridge_unify_same_domain(session, box, 1e-7, INFINITY, &out), ARG);
+    EXPECT(occt_bridge_unify_same_domain(session, unknown, 1e-7, 1e-9, &out), MISSING);
     EXPECT(occt_bridge_offset(session, box, 0.5, 1e-6, NULL), ARG);
     EXPECT(occt_bridge_offset(session, box, NAN, 1e-6, &out), ARG);
     EXPECT(occt_bridge_offset(session, box, 0, 1e-6, &out), ARG);

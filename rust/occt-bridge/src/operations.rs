@@ -136,6 +136,28 @@ impl Session {
         })
     }
 
+    /// Merges adjacent faces on the same surface, and edges on the same
+    /// curve, that booleans left split. Surfaces match within
+    /// `linear_tolerance` (> 0) and `angular_tolerance` radians, in
+    /// (0, pi/2). Untouched faces keep their identity; merged ones are
+    /// recorded as modified.
+    pub fn unify_same_domain<'a>(
+        &'a self,
+        shape: &Shape<'_>,
+        linear_tolerance: f64,
+        angular_tolerance: f64,
+    ) -> Result<Shape<'a>, BridgeError> {
+        self.derived_shape(shape, |out| unsafe {
+            occt_bridge_unify_same_domain(
+                self.raw.as_ptr(),
+                shape.id,
+                linear_tolerance,
+                angular_tolerance,
+                out,
+            )
+        })
+    }
+
     /// Taper selected faces; tangential neighbors may also be modified.
     pub fn draft<'a>(
         &'a self,

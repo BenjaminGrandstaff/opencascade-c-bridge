@@ -283,7 +283,7 @@ fn integrated_schema_preserves_references_slice_drawings_and_joint_motion() {
     let mut document = ModelDocument::from_graph(&graph);
     document.drawings.push(drawing);
     let mut serialized = serde_json::to_value(&document).unwrap();
-    for legacy in [51, 55, CURRENT_SCHEMA_VERSION] {
+    for legacy in [51, 55, 56, CURRENT_SCHEMA_VERSION] {
         serialized["schema_version"] = serde_json::json!(legacy);
         let loaded = ModelDocument::from_json(&serialized.to_string()).unwrap();
         assert_eq!(loaded.schema_version, CURRENT_SCHEMA_VERSION);

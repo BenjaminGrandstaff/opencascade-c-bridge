@@ -2,7 +2,7 @@
 
 use super::*;
 
-pub(crate) const ABI_VERSION: u32 = 41;
+pub(crate) const ABI_VERSION: u32 = 42;
 
 #[repr(C)]
 pub(crate) struct RawMeshOptions {
@@ -450,6 +450,13 @@ unsafe extern "C" {
         edges: *const RawShapeId,
         edge_count: usize,
         distance: f64,
+        out: *mut RawShapeId,
+    ) -> RawStatus;
+    pub(crate) fn occt_bridge_unify_same_domain(
+        session: *mut c_void,
+        shape: RawShapeId,
+        linear_tolerance: f64,
+        angular_tolerance: f64,
         out: *mut RawShapeId,
     ) -> RawStatus;
     pub(crate) fn occt_bridge_offset(

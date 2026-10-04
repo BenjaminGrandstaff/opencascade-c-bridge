@@ -23,6 +23,7 @@ pub struct Component {
     pub source: String,
     pub output: String,
     pub hinge: Option<Hinge>,
+    pub slider: Option<Slider>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -35,6 +36,91 @@ pub struct Hinge {
     pub maximum_deg: f64,
     pub start_deg: f64,
     pub end_deg: f64,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Slider {
+    /// Direction in the source instance's enclosing frame; normalized by the engine.
+    pub axis: [f64; 3],
+    pub minimum_mm: f64,
+    pub maximum_mm: f64,
+    pub start_mm: f64,
+    pub end_mm: f64,
+}
+
+pub fn slider_frame_id(component: &str) -> String {
+    format!("motion-study.{component}.slider")
+}
+
+struct Drive {
+    joint: AssemblyJoint,
+    coordinate: JointDof,
+    start: Quantity,
+    end: Quantity,
+}
+
+fn drive(component: &Component) -> Result<Option<Drive>, Box<dyn std::error::Error>> {
+    match (&component.hinge, &component.slider) {
+        (None, None) => Ok(None),
+        (Some(hinge), None) => hinge_drive(&component.id, hinge).map(Some),
+        (None, Some(slider)) => slider_drive(&component.id, slider).map(Some),
+        (Some(_), Some(_)) => Err("a component cannot have both a hinge and a slider".into()),
+    }
+}
+
+fn hinge_drive(id: &str, hinge: &Hinge) -> Result<Drive, Box<dyn std::error::Error>> {
+    let start = radians(hinge.start_deg)?;
+    let [x, y, z] = hinge.origin_mm;
+    let [ax, ay, az] = hinge.axis;
+    Ok(Drive {
+        joint: AssemblyJoint {
+            id: frame_id(id),
+            frame: frame_id(id),
+            origin: VectorQuantity::lengths(x, y, z, LengthUnit::Millimeter),
+            axis: VectorQuantity::scalars(ax, ay, az),
+            kind: JointKind::Revolute {
+                angle: JointScalar {
+                    value: start,
+                    minimum: Some(radians(hinge.minimum_deg)?),
+                    maximum: Some(radians(hinge.maximum_deg)?),
+                },
+            },
+        },
+        coordinate: JointDof::Angle,
+        start,
+        end: radians(hinge.end_deg)?,
+    })
+}
+
+fn slider_drive(id: &str, slider: &Slider) -> Result<Drive, Box<dyn std::error::Error>> {
+    let start = millimeters(slider.start_mm)?;
+    let [ax, ay, az] = slider.axis;
+    Ok(Drive {
+        joint: AssemblyJoint {
+            id: slider_frame_id(id),
+            frame: slider_frame_id(id),
+            origin: VectorQuantity::lengths(0.0, 0.0, 0.0, LengthUnit::Millimeter),
+            axis: VectorQuantity::scalars(ax, ay, az),
+            kind: JointKind::Prismatic {
+                distance: JointScalar {
+                    value: start,
+                    minimum: Some(millimeters(slider.minimum_mm)?),
+                    maximum: Some(millimeters(slider.maximum_mm)?),
+                },
+            },
+        },
+        coordinate: JointDof::Axial,
+        start,
+        end: millimeters(slider.end_mm)?,
+    })
+}
+
+fn millimeters(value: f64) -> Result<Quantity, Box<dyn std::error::Error>> {
+    if !value.is_finite() {
+        return Err("slider travel must be finite millimeters".into());
+    }
+    Ok(Quantity::length(value, LengthUnit::Millimeter))
 }
 
 pub fn frame_id(component: &str) -> String {
@@ -65,7 +151,7 @@ pub fn prepare<'a>(
         });
     }
     if joints.is_empty() {
-        return Err("a motion setup needs at least one hinge".into());
+        return Err("a motion setup needs at least one hinge or slider".into());
     }
     if setup.samples * joints.len() > 1_000_000 {
         return Err("motion setup exceeds one million sampled joint positions".into());
@@ -114,33 +200,18 @@ fn add_component(
         "occt-motion-study",
     )?;
     graph.set_placement(&component.id, source.placement())?;
-    let Some(hinge) = &component.hinge else {
+    let Some(drive) = drive(component)? else {
         graph.set_instance_frame(&component.id, source.frame())?;
         return Ok(None);
     };
-    let frame = frame_id(&component.id);
     graph.add_frame(
-        &frame,
+        &drive.joint.frame,
         source.frame(),
         Placement::identity(),
         "occt-motion-study",
     )?;
-    let [x, y, z] = hinge.origin_mm;
-    let [ax, ay, az] = hinge.axis;
-    graph.set_instance_frame(&component.id, Some(&frame))?;
-    Ok(Some(AssemblyJoint {
-        id: frame.clone(),
-        frame: frame.clone(),
-        origin: VectorQuantity::lengths(x, y, z, LengthUnit::Millimeter),
-        axis: VectorQuantity::scalars(ax, ay, az),
-        kind: JointKind::Revolute {
-            angle: JointScalar {
-                value: radians(hinge.start_deg)?,
-                minimum: Some(radians(hinge.minimum_deg)?),
-                maximum: Some(radians(hinge.maximum_deg)?),
-            },
-        },
-    }))
+    graph.set_instance_frame(&component.id, Some(&drive.joint.frame))?;
+    Ok(Some(drive.joint))
 }
 
 fn radians(degrees: f64) -> Result<Quantity, Box<dyn std::error::Error>> {
@@ -155,21 +226,21 @@ fn add_positions(
     component: &Component,
     samples: &mut [MotionSample],
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let Some(hinge) = &component.hinge else {
+    let Some(drive) = drive(component)? else {
         return Ok(());
     };
-    let start = radians(hinge.start_deg)?;
-    let end = radians(hinge.end_deg)?;
-    let frame = frame_id(&component.id);
-    graph.set_joint_coordinate(&frame, JointDof::Angle, end)?;
-    graph.set_joint_coordinate(&frame, JointDof::Angle, start)?;
+    let frame = drive.joint.frame;
+    graph.set_joint_coordinate(&frame, drive.coordinate, drive.end)?;
+    graph.set_joint_coordinate(&frame, drive.coordinate, drive.start)?;
     let last = samples.len() - 1;
     for (index, sample) in samples.iter_mut().enumerate() {
         let fraction = index as f64 / last as f64;
+        let mut value = drive.start;
+        value.value = (1.0 - fraction) * drive.start.value + fraction * drive.end.value;
         sample.positions.push(JointPosition {
-            frame: frame_id(&component.id),
-            coordinate: JointDof::Angle,
-            value: Quantity::scalar((1.0 - fraction) * start.value + fraction * end.value),
+            frame: frame.clone(),
+            coordinate: drive.coordinate,
+            value,
         });
     }
     Ok(())

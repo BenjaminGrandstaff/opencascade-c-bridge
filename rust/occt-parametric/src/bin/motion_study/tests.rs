@@ -1,5 +1,5 @@
 use super::*;
-use config::{Component, Hinge, Setup};
+use config::{Component, Hinge, Setup, Slider};
 use occt_parametric::*;
 use serde_json::json;
 use std::{
@@ -58,11 +58,13 @@ fn setup(start: f64, end: f64, samples: usize) -> Setup {
                 source: "source".into(),
                 output: "wing".into(),
                 hinge: None,
+                slider: None,
             },
             Component {
                 id: "moving".into(),
                 source: "source".into(),
                 output: "elevon".into(),
+                slider: None,
                 hinge: Some(Hinge {
                     origin_mm: [0.0; 3],
                     axis: [0.0, 1.0, 0.0],
@@ -462,4 +464,342 @@ fn invalid_command_exclusions_reject_without_publishing_artifacts() {
         assert!(!Path::new(&args[2]).exists());
         assert_eq!(fs::read(&args[0]).unwrap(), source);
     }
+}
+
+fn slider_setup(start: f64, end: f64) -> Setup {
+    let mut setup = setup(0.0, 0.0, 3);
+    setup.components[1].hinge = None;
+    setup.components[1].slider = Some(Slider {
+        axis: [2.0, 0.0, 0.0],
+        minimum_mm: -50.0,
+        maximum_mm: 50.0,
+        start_mm: start,
+        end_mm: end,
+    });
+    setup
+}
+
+#[test]
+fn sliders_use_normalized_axes_and_millimeter_coordinates_and_reload() {
+    let original = fixture();
+    let accepted = original.clone();
+    let setup = slider_setup(4.0, 40.0);
+    let (graph, study) = config::prepare(&original, &setup).unwrap();
+    let frame = config::slider_frame_id("moving");
+    assert_eq!(study.samples[0].positions[0].coordinate, JointDof::Axial);
+    assert_eq!(study.samples[1].positions[0].value.value, 22.0);
+    assert_eq!(study.samples[2].positions[0].value.value, 40.0);
+    assert_eq!(
+        study.samples[1].positions[0].value.dimension,
+        Dimension::Length
+    );
+    let assembled = config::assembly_document(&original, &graph);
+    let loaded = ModelDocument::from_json(&assembled.to_json_pretty().unwrap()).unwrap();
+    let mut restored = loaded.instance_graph().unwrap();
+    assert!(matches!(
+        restored
+            .joints()
+            .find(|joint| joint.frame == frame)
+            .unwrap()
+            .kind,
+        JointKind::Prismatic { .. }
+    ));
+    restored
+        .set_joint_coordinate(&frame, JointDof::Axial, study.samples[2].positions[0].value)
+        .unwrap();
+    let session = Session::new().unwrap();
+    let generated = restored
+        .resolve_with_placement("moving")
+        .unwrap()
+        .regenerate(&session)
+        .unwrap();
+    let bounds = session
+        .exact_bounds(generated.shape("elevon").unwrap())
+        .unwrap();
+    assert!((bounds.min.x - 42.0).abs() < 1e-7);
+    assert!((bounds.max.x - 48.0).abs() < 1e-7);
+    drop(generated);
+    let sampled = graph.run_motion_study(&session, &study).unwrap();
+    let continuous = graph
+        .check_continuous_motion(&session, &study, Default::default())
+        .unwrap();
+    assert!(report::clear(&sampled, &continuous));
+    assert_eq!(continuous.generated_variants, 1);
+    assert_eq!(session.shape_count().unwrap(), 0);
+    assert_eq!(original, accepted);
+}
+
+#[test]
+fn sliders_follow_source_placements_and_rotated_parent_frames_in_reverse_travel() {
+    let mut original = fixture();
+    let mut graph = original.instance_graph().unwrap();
+    graph
+        .add_frame(
+            "mount",
+            None,
+            Placement {
+                translation: VectorQuantity::lengths(100.0, 200.0, 300.0, LengthUnit::Millimeter),
+                rotation: Some(AxisAngle {
+                    origin: VectorQuantity::lengths(0.0, 0.0, 0.0, LengthUnit::Millimeter),
+                    axis: VectorQuantity::scalars(0.0, 0.0, 1.0),
+                    angle_radians: std::f64::consts::FRAC_PI_2,
+                }),
+            },
+            "test",
+        )
+        .unwrap();
+    graph.set_instance_frame("source", Some("mount")).unwrap();
+    graph
+        .set_placement(
+            "source",
+            Placement::translated(VectorQuantity::lengths(
+                10.0,
+                0.0,
+                0.0,
+                LengthUnit::Millimeter,
+            )),
+        )
+        .unwrap();
+    original = config::assembly_document(&original, &graph);
+    let (mut graph, study) = config::prepare(&original, &slider_setup(4.0, -6.0)).unwrap();
+    assert_eq!(study.samples[1].positions[0].value.value, -1.0);
+    let session = Session::new().unwrap();
+    for (distance, y) in [(4.0, 216.0), (-6.0, 206.0)] {
+        graph
+            .set_joint_coordinate(
+                &config::slider_frame_id("moving"),
+                JointDof::Axial,
+                Quantity::length(distance, LengthUnit::Millimeter),
+            )
+            .unwrap();
+        let generated = graph
+            .resolve_with_placement("moving")
+            .unwrap()
+            .regenerate(&session)
+            .unwrap();
+        let bounds = session
+            .exact_bounds(generated.shape("elevon").unwrap())
+            .unwrap();
+        assert!((bounds.min.x - 80.0).abs() < 1e-7);
+        assert!((bounds.min.y - y).abs() < 1e-7);
+        assert!((bounds.min.z - 299.5).abs() < 1e-7);
+    }
+    assert_eq!(session.shape_count().unwrap(), 0);
+}
+
+#[test]
+fn mixed_hinges_and_sliders_advance_together_and_reject_invalid_drives() {
+    let original = fixture();
+    let mut setup = slider_setup(0.0, 40.0);
+    let mut hinged = self::setup(-30.0, 30.0, 3).components[1].clone();
+    hinged.id = "rotating".into();
+    setup.components.push(hinged);
+    let (_, study) = config::prepare(&original, &setup).unwrap();
+    assert_eq!(study.samples[1].positions.len(), 2);
+    assert_eq!(study.samples[1].positions[0].coordinate, JointDof::Axial);
+    assert_eq!(study.samples[1].positions[0].value.value, 20.0);
+    assert_eq!(study.samples[1].positions[1].coordinate, JointDof::Angle);
+    assert_eq!(study.samples[1].positions[1].value.value, 0.0);
+    let mut sources = original.instance_graph().unwrap();
+    sources
+        .add_clone("turn-source", "source", HashMap::new(), "test")
+        .unwrap();
+    sources
+        .set_placement(
+            "turn-source",
+            Placement::translated(VectorQuantity::lengths(
+                100.0,
+                0.0,
+                0.0,
+                LengthUnit::Millimeter,
+            )),
+        )
+        .unwrap();
+    let placed = config::assembly_document(&original, &sources);
+    setup.components[2].source = "turn-source".into();
+    setup.components[2].hinge.as_mut().unwrap().origin_mm = [100.0, 0.0, 0.0];
+    let (graph, study) = config::prepare(&placed, &setup).unwrap();
+    let session = Session::new().unwrap();
+    let sampled = graph.run_motion_study(&session, &study).unwrap();
+    let continuous = graph
+        .check_continuous_motion(&session, &study, Default::default())
+        .unwrap();
+    assert!(report::clear(&sampled, &continuous));
+    assert_eq!(continuous.generated_variants, 1);
+    assert_eq!(session.shape_count().unwrap(), 0);
+    let valid = slider_setup(0.0, 40.0);
+    let mut cases = Vec::new();
+    for edit in [
+        |s: &mut Slider| s.axis = [0.0; 3],
+        |s: &mut Slider| s.axis[0] = f64::NAN,
+        |s: &mut Slider| s.minimum_mm = 45.0,
+        |s: &mut Slider| s.maximum_mm = -1.0,
+        |s: &mut Slider| s.start_mm = 51.0,
+        |s: &mut Slider| s.end_mm = -51.0,
+        |s: &mut Slider| s.end_mm = f64::INFINITY,
+    ] {
+        let mut setup = valid.clone();
+        edit(setup.components[1].slider.as_mut().unwrap());
+        cases.push(setup);
+    }
+    let mut both = valid.clone();
+    both.components[1].hinge = self::setup(0.0, 30.0, 3).components[1].hinge.clone();
+    cases.push(both);
+    for setup in cases {
+        assert!(config::prepare(&original, &setup).is_err());
+    }
+}
+
+#[test]
+fn ten_thousand_mixed_drives_prepare_within_budget() {
+    let original = fixture();
+    let mut setup = slider_setup(0.0, 40.0);
+    setup.samples = 2;
+    let slider = setup.components[1].clone();
+    let hinge = self::setup(-30.0, 30.0, 2).components[1].clone();
+    setup.components = (0..10_000)
+        .map(|index| Component {
+            id: format!("drive-{index}"),
+            ..if index % 2 == 0 {
+                slider.clone()
+            } else {
+                hinge.clone()
+            }
+        })
+        .collect();
+    let start = std::time::Instant::now();
+    let (graph, study) = config::prepare(&original, &setup).unwrap();
+    assert_eq!(graph.joints().count(), 10_000);
+    assert_eq!(study.samples[1].positions.len(), 10_000);
+    assert_eq!(
+        study.samples[1]
+            .positions
+            .iter()
+            .filter(|position| position.coordinate == JointDof::Axial)
+            .count(),
+        5000
+    );
+    assert!(start.elapsed().as_secs_f64() < 10.0);
+    eprintln!(
+        "10000 mixed hinge/slider preparation: {:?} (10s budget)",
+        start.elapsed()
+    );
+    setup.samples = 101;
+    assert!(config::prepare(&original, &setup).is_err());
+}
+
+#[test]
+fn slider_command_reports_clear_paths_and_crossings_missed_by_samples() {
+    for (start, end, clear) in [(0.0, 40.0, true), (20.0, -20.0, false)] {
+        let directory = Directory::new();
+        let args = inputs(&directory, 0.0, 0.0);
+        let source = fs::read(&args[0]).unwrap();
+        let mut setup: serde_json::Value =
+            serde_json::from_slice(&fs::read(&args[1]).unwrap()).unwrap();
+        setup["components"][1]
+            .as_object_mut()
+            .unwrap()
+            .remove("hinge");
+        setup["components"][1]["slider"] = json!({"axis":[2,0,0], "minimum_mm":-50, "maximum_mm":50, "start_mm":start, "end_mm":end});
+        fs::write(&args[1], setup.to_string()).unwrap();
+        assert_eq!(run(&args).unwrap(), clear);
+        let output = Path::new(&args[2]);
+        let document = ModelDocument::from_json(
+            &fs::read_to_string(output.join("assembly.model.json")).unwrap(),
+        )
+        .unwrap();
+        assert!(matches!(
+            document
+                .instance_graph()
+                .unwrap()
+                .joints()
+                .find(|joint| joint.frame == config::slider_frame_id("moving"))
+                .unwrap()
+                .kind,
+            JointKind::Prismatic { .. }
+        ));
+        let study: MotionStudy =
+            serde_json::from_str(&fs::read_to_string(output.join("study.json")).unwrap()).unwrap();
+        assert_eq!(study.samples[1].positions[0].coordinate, JointDof::Axial);
+        assert_eq!(study.samples[1].positions[0].value.value, end);
+        let report: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(output.join("motion.report.json")).unwrap())
+                .unwrap();
+        assert_eq!(report["passed"], clear);
+        assert!(
+            report["sampled"]["samples"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|sample| sample["collisions"].as_array().unwrap().is_empty())
+        );
+        if clear {
+            assert_eq!(report["continuous"]["status"], "clear");
+        } else {
+            assert_eq!(report["continuous"]["status"], "collision");
+            let fraction = report["continuous"]["pairs"][0]["fraction"]
+                .as_f64()
+                .unwrap();
+            assert!(fraction > 0.0 && fraction < 1.0);
+        }
+        assert_eq!(fs::read(&args[0]).unwrap(), source);
+    }
+}
+
+#[test]
+fn invalid_slider_commands_reject_without_publishing() {
+    for slider in [
+        json!({"axis":[0,0,0],"minimum_mm":-50,"maximum_mm":50,"start_mm":0,"end_mm":40}),
+        json!({"axis":[1,0,0],"minimum_mm":-50,"maximum_mm":50,"start_mm":0,"end_mm":60}),
+        json!({"axis":[1,0,0],"minimum_mm":-50,"maximum_mm":50,"start_mm":0,"end_mm":40,"typo":1}),
+    ] {
+        let directory = Directory::new();
+        let args = inputs(&directory, 0.0, 0.0);
+        let mut setup: serde_json::Value =
+            serde_json::from_slice(&fs::read(&args[1]).unwrap()).unwrap();
+        setup["components"][1]
+            .as_object_mut()
+            .unwrap()
+            .remove("hinge");
+        setup["components"][1]["slider"] = slider;
+        fs::write(&args[1], setup.to_string()).unwrap();
+        assert!(run(&args).is_err());
+        assert!(!Path::new(&args[2]).exists());
+    }
+}
+
+#[test]
+fn shipped_slider_example_detects_crossing_between_clear_box_poses() {
+    let mut family = fixture().family;
+    family.features = vec![FeatureDefinition {
+        id: "body".into(),
+        operation: FeatureOperation::Box {
+            origin: vector(0.0, 0.0, 0.0),
+            size: vector(10.0, 2.0, 2.0),
+        },
+    }];
+    let mut source = InstanceGraph::new(&family);
+    source
+        .add_base("prototype", HashMap::new(), "test")
+        .unwrap();
+    let document = ModelDocument::from_graph(&source);
+    let setup: Setup = serde_json::from_str(include_str!(
+        "../../../../../tools/motion-study/slider-example.json"
+    ))
+    .unwrap();
+    let (graph, study) = config::prepare(&document, &setup).unwrap();
+    let session = Session::new().unwrap();
+    let sampled = graph.run_motion_study(&session, &study).unwrap();
+    assert!(
+        sampled
+            .samples
+            .iter()
+            .all(|sample| sample.collisions.is_empty())
+    );
+    let continuous = graph
+        .check_continuous_motion(&session, &study, Default::default())
+        .unwrap();
+    assert_eq!(continuous.status, ContinuousStatus::Collision);
+    assert_eq!(continuous.generated_variants, 1);
+    assert_eq!(session.shape_count().unwrap(), 0);
 }

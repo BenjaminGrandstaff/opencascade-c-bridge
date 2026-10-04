@@ -556,6 +556,14 @@ pub(crate) fn collect_operation_parameters<'a>(
             collect_scalar_parameters(thickness, names);
             collect_scalar_parameters(tolerance, names);
         }
+        FeatureOperation::Unify {
+            linear_tolerance,
+            angular_tolerance,
+            ..
+        } => {
+            collect_scalar_parameters(linear_tolerance, names);
+            collect_scalar_parameters(angular_tolerance, names);
+        }
         FeatureOperation::Sew { tolerance, .. } => {
             collect_scalar_parameters(tolerance, names);
         }

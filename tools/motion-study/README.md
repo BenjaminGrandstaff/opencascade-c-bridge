@@ -1,7 +1,7 @@
-# Hinge assemblies and interference studies
+# Hinge and slider assembly studies
 
 `occt-motion-study` turns selected outputs in an existing parametric model into
-separate fixed or revolute components. It accepts any model family, including
+separate fixed, revolute or prismatic components. It accepts any model family, including
 the printable wing export, and writes sampled collision reports plus continuous
 checks between samples. The source model is preserved.
 
@@ -19,7 +19,7 @@ LD_LIBRARY_PATH="$PWD/build/bench" \
 The output directory must be new. The command writes:
 
 - `assembly.model.json`: a reloadable model with cloned components, enclosing
-  frames and bounded revolute joints, initially at each hinge's start angle;
+  frames and bounded revolute/prismatic joints at their start coordinates;
 - `study.json`: the selected outputs and coordinated joint positions in the
   engine's `MotionStudy` format;
 - `motion.report.json`: sampled collisions and relationship checks, plus
@@ -57,7 +57,8 @@ are never overwritten; disk errors during publication may leave partial output.
 
 `source` names an instance in the input document. `output` names one of its
 final solid feature outputs. Each component gets a new unique instance ID;
-fixed components omit `hinge`. Clones retain inherited parameters and materials,
+fixed components omit both `hinge` and `slider`; a moving component supplies
+exactly one of them. Clones retain inherited parameters and materials,
 the source's local placement, and its enclosing frame hierarchy. Original
 instances remain as prototypes in the resulting document. The study selects
 only the new components; use those same selections for mass reports and exports
@@ -65,10 +66,38 @@ to avoid counting prototypes or intermediate outputs as extra parts.
 
 Hinge origins and axes are expressed in the source instance's enclosing frame,
 after its local placement. Origins use millimeters, axes are dimensionless
-nonzero vectors, and setup angles use degrees. All hinge coordinates advance
+nonzero vectors, and setup angles use degrees. All hinge and slider coordinates advance
 together at evenly spaced fractions from their independent start to end angles.
 Travel is unwrapped: 0 to 360 degrees is a full turn. Both endpoints must satisfy
 the supplied limits. Setup files reject unknown fields.
+
+A slider uses the same component fields and a `slider` block:
+
+```json
+{
+  "id": "carriage", "source": "prototype", "output": "body",
+  "slider": {
+    "axis": [1, 0, 0],
+    "minimum_mm": -50,
+    "maximum_mm": 50,
+    "start_mm": 20,
+    "end_mm": -20
+  }
+}
+```
+
+The axis is a dimensionless nonzero direction in the source's enclosing frame;
+the engine normalizes it. Travel is an offset in millimeters from the cloned
+source placement. Reverse travel is supported. Parent frame rotations rotate
+the sliding direction as well as the part. Both endpoints must satisfy finite
+limits. Hinge and slider coordinates advance at the same sample fractions, with
+radian and millimeter values stored in `study.json`. Components specifying both
+kinds reject. Existing hinge setups retain their frame IDs and behavior.
+
+[`slider-example.json`](slider-example.json) compares a sliding clone with a
+fixed clone of `prototype:body` over +20 to -20 mm using two samples. For a
+10 mm wide box, both endpoints are clear and the continuous check detects the
+crossing between them. Change source IDs, outputs, axes and travel for your model.
 
 Optional `collision_options` and `continuous_options` use the engine's serialized
 types; omit them for defaults. Contact is a nonclear result. All selected
@@ -93,9 +122,9 @@ simulation is performed. Continuous checks use bounded floating-point BREP
 queries; inspect unresolved intervals as described in
 [Assembly motion](../../ASSEMBLY_MOTION.md).
 
-Limits are 2–10,000 samples, 1–10,000 components and one million sampled hinge
-coordinates. Joint insertion is batched; preparing 10,000 hinges takes about
-0.15 s in the test build (10 s budget). Sample report storage grows with sampled
+Limits are 2–10,000 samples, 1–10,000 components and one million sampled joint
+coordinates. Joint insertion is batched; preparing 10,000 hinges or a mixed set of hinges and sliders is
+checked against a 10 s budget. Sample report storage grows with sampled
 positions and collisions. Geometry is shared per parameter variant within each
 of the sampled and continuous passes; these two passes generate independently.
 

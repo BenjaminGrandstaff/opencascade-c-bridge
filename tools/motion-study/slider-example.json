@@ -1,0 +1,19 @@
+{
+  "schema": "occb-motion-study-v1",
+  "samples": 2,
+  "components": [
+    { "id": "fixed", "source": "prototype", "output": "body" },
+    {
+      "id": "moving",
+      "source": "prototype",
+      "output": "body",
+      "slider": {
+        "axis": [1, 0, 0],
+        "minimum_mm": -50,
+        "maximum_mm": 50,
+        "start_mm": 20,
+        "end_mm": -20
+      }
+    }
+  ]
+}

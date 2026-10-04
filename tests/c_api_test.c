@@ -482,6 +482,38 @@ static void test_inferred_tangency(occt_bridge_session_t* session) {
     /* Both flat sides meet the round end; on the top and on the bottom the
      * split disc's halves meet each other and the block's notched face. */
     require_true(measured == 6, "measuring finds the side and cap junctions");
+
+    /* Merging same-domain faces leaves one top, one bottom, two flat sides,
+     * the flat end, and one round end, at the same volume. */
+    occt_bridge_shape_id_t unified = OCCT_BRIDGE_INVALID_SHAPE_ID;
+    require_ok(session, occt_bridge_unify_same_domain(session, stadium, 1e-7, 1e-9, &unified));
+    size_t unified_faces = 0;
+    require_ok(session, occt_bridge_shape_subshape_count(session, unified, OCCT_BRIDGE_SHAPE_FACE, &unified_faces));
+    require_true(face_count == 10 && unified_faces == 6, "unify merges the split faces");
+    double before = 0.0;
+    double after = 0.0;
+    require_ok(session, occt_bridge_shape_volume(session, stadium, &before));
+    require_ok(session, occt_bridge_shape_volume(session, unified, &after));
+    require_true(close_enough(before, after), "unify keeps the volume");
+    /* No face is deleted; at least the three top and three bottom pieces are
+     * modified into their merged faces. */
+    size_t modified = 0;
+    for (size_t index = 0; index < face_count; ++index) {
+        size_t records = 0;
+        int deleted = 1;
+        require_ok(session, occt_bridge_shape_history_count(
+            session, unified, faces[index], OCCT_BRIDGE_HISTORY_MODIFIED, &records));
+        require_ok(session, occt_bridge_shape_history_is_deleted(session, unified, faces[index], &deleted));
+        require_true(deleted == 0, "unify deletes no face");
+        modified += records > 0 ? 1 : 0;
+    }
+    require_true(modified >= 6, "unify records the merged pieces as modified");
+    occt_bridge_shape_id_t ignored = OCCT_BRIDGE_INVALID_SHAPE_ID;
+    require_true(occt_bridge_unify_same_domain(session, stadium, 0.0, 1e-9, &ignored)
+        == OCCT_BRIDGE_INVALID_ARGUMENT && ignored == OCCT_BRIDGE_INVALID_SHAPE_ID, "unify rejects a zero tolerance");
+    require_true(occt_bridge_unify_same_domain(session, stadium, 1e-7, 2.0, &ignored)
+        == OCCT_BRIDGE_INVALID_ARGUMENT, "unify rejects a wide angle");
+    require_ok(session, occt_bridge_shape_remove(session, unified));
     for (size_t index = 0; index < face_count; ++index) {
         require_ok(session, occt_bridge_shape_remove(session, faces[index]));
     }

@@ -3,7 +3,7 @@
 A small, stable C ABI over Open Cascade (OCCT), designed to be wrapped safely
 from Rust and other languages. Open Cascade C++ objects never cross the ABI.
 
-The current C ABI version is **41**.
+The current C ABI version is **42**.
 
 ## Current API
 
@@ -30,6 +30,7 @@ The current C ABI version is **41**.
   midpoint edge-curvature, deterministic sampled full-edge curvature ranges,
   exact (line, conic) or error-bounded (Bezier, B-spline) curvature extrema,
   and direct topology-adjacency queries
+- Same-domain face and edge merging after booleans, with operation history
 - G1-or-better tangency queries between adjacent faces, from recorded
   continuity or measured within an angular tolerance where none is recorded
 - Generated, modified, and deleted operation-history queries, with explicit
@@ -92,7 +93,7 @@ volume, solid connectivity, minimum convex or concave radius, and sampled wall
 thickness, draft, and overhang, all with required, preferred, or advisory
 priority. Results carry measured values, evidence quality, and collision
 witnesses; see [Requirement rules](REQUIREMENTS.md). Schema v1 through
-v55 documents migrate to v56 during load; unsupported
+v56 documents migrate to v57 during load; unsupported
 future versions are rejected.
 Managed regeneration incrementally reuses unchanged outputs and
 rebuilds dirty features plus their downstream dependents. Graph regeneration
@@ -276,7 +277,7 @@ binary supplies a semantic Git merge driver. See [Model history](MODEL_HISTORY.m
 and [Document comparisons](DOCUMENT_DIFF.md). Schema 42 adds regenerated orthographic, section,
 and detail drawings, datum dimensions, parameter notes, and metadata title blocks
 exported as SVG or DXF. See [Drawings](DRAWINGS.md) for the API and sampling limits.
-Schema 56 combines the newer geometry and reference features with planar slice
+Schema 57 combines the newer geometry and reference features with planar slice
 drawings and assembly motion workflows.
 
 Continuous joint path checks handle translations, unwrapped rotations, and
@@ -290,7 +291,8 @@ geometry and checking sampled collisions.
 
 `InstanceGraph::export_draw_view` writes a model's exact B-rep parts and a script that
 opens them, named and colored, in OCCT's DRAW viewer (`DRAWEXE -i -f view.tcl`).
-ABI 41 measures face tangency where booleans record no continuity, and schema 55
+ABI 42 merges the same-domain faces and edges booleans leave split, with
+history, and schema 56 adds the `Unify` feature. ABI 41 measures face tangency where booleans record no continuity, and schema 55
 lets `TangentTo` face selectors use it. ABI 40 adds structured STEP assembly export (named components, shared parts,
 and colors) used by `InstanceGraph::export_step`. ABI 39 adds profile sweeps along paths, and schema 52 the `Sweep` feature.
 ABI 38 adds wires mixing lines, arcs, and interpolated splines with end

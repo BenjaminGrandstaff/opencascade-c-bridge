@@ -607,6 +607,17 @@ pub enum FeatureOperation {
         edges: Vec<EdgeSelector>,
         distance: ScalarExpr,
     },
+    /// Merges adjacent faces on the same surface, and edges on the same
+    /// curve, that booleans left split, so later shells, drafts, and
+    /// selectors see one face per surface. Surfaces match within
+    /// `linear_tolerance` (a length) and `angular_tolerance` (radians, in
+    /// (0, pi/2)). Merged faces are recorded as modified, so persistent
+    /// references follow them.
+    Unify {
+        input: String,
+        linear_tolerance: ScalarExpr,
+        angular_tolerance: ScalarExpr,
+    },
     Hollow {
         input: String,
         faces: Vec<FaceSelector>,
@@ -653,7 +664,8 @@ impl FeatureOperation {
             | Self::Rotate { input, .. }
             | Self::Extrude { input, .. }
             | Self::Revolve { input, .. }
-            | Self::Hole { input, .. } => vec![input],
+            | Self::Hole { input, .. }
+            | Self::Unify { input, .. } => vec![input],
             Self::Fillet { input, edges, .. }
             | Self::VariableFillet { input, edges, .. }
             | Self::Chamfer { input, edges, .. } => {
