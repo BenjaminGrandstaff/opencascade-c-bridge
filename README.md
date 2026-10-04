@@ -71,7 +71,8 @@ composition with add, subtract, scale, and normalize operations, dimension-safe
 comparison-driven conditional scalar expressions,
 pre-generation parameter constraints, constraint-solved line/arc/circle/spline sketches that
 emit exact closed wires and planar faces on inline or named datum planes,
-semantic face and edge selectors, and
+semantic face and edge selectors with persistent references that follow
+topology through later features, and
 versioned JSON model documents are implemented. Feature graphs include sewing
 and single- or multi-shell solid construction. Selectors support orientation,
 adjacency, extrema, nearest-center, longest-edge, circular-radius,
@@ -89,7 +90,7 @@ volume, solid connectivity, minimum convex or concave radius, and sampled wall
 thickness, draft, and overhang, all with required, preferred, or advisory
 priority. Results carry measured values, evidence quality, and collision
 witnesses; see [Requirement rules](REQUIREMENTS.md). Schema v1 through
-v51 documents migrate to v52 during load; unsupported
+v52 documents migrate to v53 during load; unsupported
 future versions are rejected.
 Managed regeneration incrementally reuses unchanged outputs and
 rebuilds dirty features plus their downstream dependents. Graph regeneration
@@ -193,7 +194,7 @@ builds an optimized copy of the library in `build/bench`, runs every case at
 the target sizes (10,000-member patterns, deep clone chains, 1,000-part solver
 stacks and grids, repeated regeneration, validation chains, and many-hole
 faces), and fails when a required case misses its time budget or correctness
-check. The current suite has 66 passing Rust cases, including single-leaf and
+check. The current suite has 67 passing Rust cases, including single-leaf and
 memoized all-node resolution of a 20,000-link clone chain and a 50-part stack
 1 km from the origin solved at a 1e-8 mm model tolerance, plus 10,000 checked
 datum-clearance requirements, 10,000 small constrained-sketch solves,

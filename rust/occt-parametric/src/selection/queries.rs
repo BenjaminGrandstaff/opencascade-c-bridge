@@ -706,3 +706,95 @@ pub(crate) fn select_at_extreme<'session>(
     }
     Ok(selected)
 }
+
+/// The features from `origin` to `target`, inclusive, following feature
+/// dependencies backward from `target`. Depth-first, O(features + edges).
+fn feature_path<'a>(
+    origin: &'a str,
+    target: &'a str,
+    definitions: &Features<'a>,
+) -> Option<Vec<&'a str>> {
+    let mut stack = vec![(target, vec![target])];
+    let mut seen = HashSet::new();
+    while let Some((current, path)) = stack.pop() {
+        if current == origin {
+            let mut path = path;
+            path.reverse();
+            return Some(path);
+        }
+        if !seen.insert(current) {
+            continue;
+        }
+        if let Some(feature) = definitions.get(current) {
+            for dependency in feature.operation.dependencies() {
+                let mut next = path.clone();
+                next.push(dependency);
+                stack.push((dependency, next));
+            }
+        }
+    }
+    None
+}
+
+/// Follows subshapes selected on `origin`'s output forward through each later
+/// feature to `result`: kept while a result still contains them, replaced by
+/// their modified descendants otherwise. Consumes `chosen` on every path.
+pub(crate) fn follow_forward<'session>(
+    session: &'session Session,
+    result: &Shape<'session>,
+    chosen: Vec<Shape<'session>>,
+    origin: &str,
+    shapes: &HashMap<String, Shape<'session>>,
+    definitions: &Features<'_>,
+    kind: ShapeType,
+) -> Result<Vec<Shape<'session>>, ModelError> {
+    let noun = if kind == ShapeType::Face {
+        "faces"
+    } else {
+        "edges"
+    };
+    let target = shapes
+        .iter()
+        .filter(|(_, shape)| session.is_same(shape, result).unwrap_or(false))
+        .find_map(|(id, _)| feature_path(origin, id, definitions));
+    let Some(path) = target else {
+        cleanup_shapes(session, chosen);
+        return Err(ModelError::new(format!(
+            "persistent {noun} from '{origin}' do not lead to this feature's input"
+        )));
+    };
+    let mut current = chosen;
+    for step in &path[1..] {
+        let output = &shapes[*step];
+        let mut next = Vec::new();
+        let mut pending = std::mem::take(&mut current).into_iter();
+        while let Some(subshape) = pending.next() {
+            if session.subshape_indices(output, kind, &[&subshape]).is_ok() {
+                next.push(subshape);
+                continue;
+            }
+            let count = session
+                .history_count(output, &subshape, HistoryRelation::Modified)
+                .unwrap_or(0);
+            let descendants = (0..count)
+                .map(|index| session.history(output, &subshape, HistoryRelation::Modified, index))
+                .collect::<Result<Vec<_>, _>>();
+            let _ = session.remove(subshape);
+            match descendants {
+                Ok(descendants) if !descendants.is_empty() => next.extend(descendants),
+                result => {
+                    if let Ok(shapes) = result {
+                        cleanup_shapes(session, shapes);
+                    }
+                    cleanup_shapes(session, pending);
+                    cleanup_shapes(session, next);
+                    return Err(ModelError::new(format!(
+                        "persistent {noun} from '{origin}' were removed by feature '{step}'"
+                    )));
+                }
+            }
+        }
+        current = union_shapes(session, vec![next])?;
+    }
+    Ok(current)
+}

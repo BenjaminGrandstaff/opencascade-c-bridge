@@ -11,16 +11,16 @@ tracks status and order.
 | C ABI (`src/`, `include/`) | ABI 40 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 52 | Active development |
+| `occt-parametric` (engineering layer) | Schema 53 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 87 (+1 doc test), recipes 3, parametric 238 + merge driver 3, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 87 (+1 doc test), recipes 3, parametric 241 + merge driver 3, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 92.3% line coverage (2026-10-03); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
 | Coverage | 92.63% lines overall, test code excluded; C++ 94.30% lines, 87.59% branches, 100% functions; Rust 91.81% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 66 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Scale benchmarks | 67 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
 
@@ -180,6 +180,16 @@ tracks status and order.
   error-bounded (Bezier, B-spline) extrema.
 
 ### Parametric layer
+
+- Persistent references (schema 53): `FaceSelector::Persistent` and
+  `EdgeSelector::Persistent` choose topology on an earlier feature's output and
+  follow it forward through every later feature by operation history; split
+  faces yield every piece and removed ones fail, naming the feature. Three
+  tests cover a front face followed through a quarter turn and a splitting
+  notch (where a plain normal rule picks other faces), a width edit, removal
+  and unrelated-reference errors, a hollow consuming the reference, and
+  persistence. Four top edges followed through 100 sequential holes to a
+  chamfer take 3.082 s (10 s budget), most of it the holes.
 
 - Graph STEP export: `InstanceGraph::export_step` writes generated outputs as an
   assembly of instance-named components sharing one part per geometry variant,
@@ -615,9 +625,7 @@ every item below is defined in documents and the API, and verified in tests.
 
 ### Capabilities
 
-1. **Stable references across edits.** Semantic naming for faces and edges
-    that survives topology changes, beyond feature outputs and selectors.
-2. **Native viewer scripts.** A generated DRAW script per model that opens
+1. **Native viewer scripts.** A generated DRAW script per model that opens
     the exact B-rep parts with names and colors, like the wing's `view.tcl`.
 
 ## Later
@@ -639,8 +647,8 @@ every item below is defined in documents and the API, and verified in tests.
 - Undercut detection against a parting line, and exact (not sampled) minimum
   wall thickness and draft on curved BREP faces.
 - Assumptions and requirement-to-feature trace links in the document schema.
-- Semantic naming beyond feature outputs, and geometric tangency inference
-  when continuity metadata is absent.
+- Geometric tangency inference when continuity metadata is absent, and
+  reusable named references declared once per family.
 - Additional domain-specific expression functions.
 - Integration with the broader EIL source model in the sibling
   [`engineering-intent-language`](../engineering-intent-language) project.

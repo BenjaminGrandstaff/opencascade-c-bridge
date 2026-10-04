@@ -185,11 +185,21 @@ pub enum EdgeSelector {
         source: Box<EdgeSelector>,
         relation: SemanticHistoryRelation,
     },
+    /// Edges chosen by `select` on `feature`'s own output, followed through
+    /// every later feature like [`FaceSelector::Persistent`].
+    Persistent {
+        feature: String,
+        select: Box<EdgeSelector>,
+    },
 }
 
 impl EdgeSelector {
     pub(crate) fn dependencies<'a>(&'a self, dependencies: &mut Vec<&'a str>) {
         match self {
+            Self::Persistent { feature, select } => {
+                dependencies.push(feature);
+                select.dependencies(dependencies);
+            }
             Self::History {
                 source_feature,
                 source,
@@ -258,11 +268,25 @@ pub enum FaceSelector {
         source: Box<FaceSelector>,
         relation: SemanticHistoryRelation,
     },
+    /// Faces chosen by `select` on `feature`'s own output, where the rule is
+    /// unambiguous, then followed through every later feature to the one
+    /// being built: unchanged faces carry over, modified faces map to their
+    /// replacements (a split face yields every piece), and a face that a later
+    /// feature removes fails, naming that feature. A stable reference that
+    /// survives parameter edits, booleans, and placements downstream.
+    Persistent {
+        feature: String,
+        select: Box<FaceSelector>,
+    },
 }
 
 impl FaceSelector {
     pub(crate) fn dependencies<'a>(&'a self, dependencies: &mut Vec<&'a str>) {
         match self {
+            Self::Persistent { feature, select } => {
+                dependencies.push(feature);
+                select.dependencies(dependencies);
+            }
             Self::History {
                 source_feature,
                 source,

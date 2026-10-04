@@ -491,6 +491,7 @@ fn tangency_selector_finds_fillet_neighbors_without_topology_indices() {
         &selector,
         &HashMap::new(),
         &HashMap::new(),
+        &HashMap::new(),
     )
     .unwrap();
     assert!(!selected.is_empty());
@@ -524,6 +525,7 @@ fn selector_composition_performs_topological_set_operations() {
         &EdgeSelector::Union(vec![intersection, difference]),
         &HashMap::new(),
         &HashMap::new(),
+        &HashMap::new(),
     )
     .unwrap();
     assert_eq!(edges.len(), 4);
@@ -551,6 +553,7 @@ fn selector_composition_performs_topological_set_operations() {
         ]),
         &HashMap::new(),
         &HashMap::new(),
+        &HashMap::new(),
     )
     .unwrap();
     assert_eq!(faces.len(), 2);
@@ -560,6 +563,7 @@ fn selector_composition_performs_topological_set_operations() {
         &session,
         &box_shape,
         &EdgeSelector::Union(Vec::new()),
+        &HashMap::new(),
         &HashMap::new(),
         &HashMap::new(),
     )

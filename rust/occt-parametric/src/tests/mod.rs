@@ -11,6 +11,7 @@ mod holes;
 mod loft;
 mod mesh;
 mod patterns;
+mod persistent;
 mod regeneration;
 mod requirements;
 mod ribs;

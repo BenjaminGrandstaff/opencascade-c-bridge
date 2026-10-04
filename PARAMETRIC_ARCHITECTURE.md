@@ -1037,8 +1037,22 @@ hollow features consume the resolved handles and release all temporary
 subshapes, including on ambiguity or kernel failure. These rules do not store
 topology indices. An equal nearest match, disallowed size tie, missing history
 result, empty rule result, or out-of-range value fails with an actionable
-diagnostic. Geometric tangency inference when continuity metadata is absent, and semantic naming
-beyond feature outputs remain planned.
+diagnostic. Geometric tangency inference when continuity metadata is absent
+remains planned.
+
+Schema 53 adds persistent references. `FaceSelector::Persistent { feature,
+select }` and `EdgeSelector::Persistent` evaluate `select` on `feature`'s own
+output, where the rule is unambiguous (the box's -y face, the bare block's top
+edges), then follow that set forward to the consuming feature's input along the
+feature graph. At each later feature a subshape the result still contains
+carries over, a modified one maps to its descendants (a face split by a cut
+yields every piece), and one with neither fails regeneration, naming the
+feature that removed it. A reference that does not lead to the consumer's input
+also fails. This is the stable-reference mechanism the rule selectors lacked:
+a name chosen once survives placements, booleans, and parameter edits that
+would change which face a geometric rule picks on the final shape. Tracing
+costs, per later feature, one topology-map membership test and at most one
+history query per followed subshape; path search is O(features).
 
 ## Responsibility boundary
 

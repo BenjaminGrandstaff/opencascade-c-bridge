@@ -551,6 +551,7 @@ fn assert_profile_side_history(wire: bool, mode: RibThicknessMode, sign: f64) {
         &profile_side_selector(),
         &HashMap::new(),
         &generated.shapes,
+        &HashMap::new(),
     )
     .unwrap();
     assert_eq!(faces.len(), 1);
@@ -643,6 +644,7 @@ fn profile_history_drives_downstream_draft_round_trips_and_incremental_edits() {
         &profile_side_selector(),
         &HashMap::new(),
         &edited.shapes,
+        &HashMap::new(),
     )
     .unwrap();
     assert!((session.surface_area(&faces[0]).unwrap() - 3.0 * 72.0_f64.sqrt()).abs() < 1e-8);
@@ -712,6 +714,7 @@ fn profile_history_rejects_removed_faces_and_unknown_source_features_without_lea
         &bottom,
         &HashMap::new(),
         &generated.shapes,
+        &HashMap::new(),
     )
     .err()
     .unwrap();
@@ -779,6 +782,7 @@ fn open_sketch_ribs_have_exact_volume_and_composed_profile_history() {
             &profile_side_selector(),
             &HashMap::new(),
             &generated.shapes,
+            &HashMap::new(),
         )
         .unwrap();
         assert_eq!(faces.len(), 1);
@@ -1008,6 +1012,7 @@ fn extend_to_next_ribs_preserve_exact_geometry_history_and_thickness_placement()
                 &profile_side_selector(),
                 &HashMap::new(),
                 &generated.shapes,
+                &HashMap::new(),
             )
             .unwrap();
             assert_eq!(side.len(), 1);

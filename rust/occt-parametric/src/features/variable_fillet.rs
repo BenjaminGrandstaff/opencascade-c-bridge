@@ -50,6 +50,7 @@ pub(super) fn execute<'session>(
     law: EvaluatedLaw,
     parameters: &HashMap<String, ParameterValue>,
     shapes: &HashMap<String, Shape<'session>>,
+    definitions: &Features<'_>,
 ) -> Result<Shape<'session>, ModelError> {
     if session.subshape_count(input, ShapeType::Solid)? != 1 || !session.is_valid(input)? {
         return Err(ModelError::new(
@@ -63,6 +64,7 @@ pub(super) fn execute<'session>(
         parameters,
         shapes,
         "variable fillet",
+        definitions,
     )?;
     let references = selected.iter().collect::<Vec<_>>();
     let result = if law.stations.len() == 2

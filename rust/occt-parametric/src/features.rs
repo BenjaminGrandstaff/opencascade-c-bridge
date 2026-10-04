@@ -260,6 +260,7 @@ pub(crate) fn execute_feature<'session>(
                 scalar(radius, parameters, Dimension::Length)?,
                 parameters,
                 shapes,
+                definitions,
             );
         }
         FeatureOperation::VariableFillet {
@@ -283,6 +284,7 @@ pub(crate) fn execute_feature<'session>(
                 )?,
                 parameters,
                 shapes,
+                definitions,
             );
         }
         FeatureOperation::Chamfer {
@@ -297,6 +299,7 @@ pub(crate) fn execute_feature<'session>(
                 scalar(distance, parameters, Dimension::Length)?,
                 parameters,
                 shapes,
+                definitions,
             );
         }
         FeatureOperation::Draft {
@@ -323,7 +326,14 @@ pub(crate) fn execute_feature<'session>(
             let mut selected = Vec::new();
             let mut sizes = Vec::new();
             for selector in faces {
-                let matches = resolve_face_selector(session, input, selector, parameters, shapes)?;
+                let matches = resolve_face_selector(
+                    session,
+                    input,
+                    selector,
+                    parameters,
+                    shapes,
+                    definitions,
+                )?;
                 sizes.push(matches.len());
                 selected.extend(matches);
             }
@@ -351,10 +361,13 @@ pub(crate) fn execute_feature<'session>(
                 session,
                 shape(shapes, input)?,
                 faces,
-                scalar(thickness, parameters, Dimension::Length)?,
-                scalar(tolerance, parameters, Dimension::Length)?,
+                (
+                    scalar(thickness, parameters, Dimension::Length)?,
+                    scalar(tolerance, parameters, Dimension::Length)?,
+                ),
                 parameters,
                 shapes,
+                definitions,
             );
         }
     };
@@ -368,9 +381,17 @@ pub(crate) fn execute_fillet<'session>(
     radius: f64,
     parameters: &HashMap<String, ParameterValue>,
     shapes: &HashMap<String, Shape<'session>>,
+    definitions: &Features<'_>,
 ) -> Result<Shape<'session>, ModelError> {
-    let (selected, sizes) =
-        resolve_edge_selectors(session, input, selectors, parameters, shapes, "fillet")?;
+    let (selected, sizes) = resolve_edge_selectors(
+        session,
+        input,
+        selectors,
+        parameters,
+        shapes,
+        "fillet",
+        definitions,
+    )?;
     let references = selected.iter().collect::<Vec<_>>();
     let result = session
         .fillet(input, &references, radius)
@@ -386,9 +407,17 @@ pub(crate) fn execute_chamfer<'session>(
     distance: f64,
     parameters: &HashMap<String, ParameterValue>,
     shapes: &HashMap<String, Shape<'session>>,
+    definitions: &Features<'_>,
 ) -> Result<Shape<'session>, ModelError> {
-    let (selected, sizes) =
-        resolve_edge_selectors(session, input, selectors, parameters, shapes, "chamfer")?;
+    let (selected, sizes) = resolve_edge_selectors(
+        session,
+        input,
+        selectors,
+        parameters,
+        shapes,
+        "chamfer",
+        definitions,
+    )?;
     let references = selected.iter().collect::<Vec<_>>();
     let result = session
         .chamfer(input, &references, distance)
@@ -401,10 +430,10 @@ pub(crate) fn execute_hollow<'session>(
     session: &'session Session,
     input: &Shape<'session>,
     selectors: &[FaceSelector],
-    thickness: f64,
-    tolerance: f64,
+    (thickness, tolerance): (f64, f64),
     parameters: &HashMap<String, ParameterValue>,
     shapes: &HashMap<String, Shape<'session>>,
+    definitions: &Features<'_>,
 ) -> Result<Shape<'session>, ModelError> {
     if selectors.is_empty() {
         return Err(ModelError::new(
@@ -414,7 +443,7 @@ pub(crate) fn execute_hollow<'session>(
     let mut selected = Vec::new();
     let mut sizes = Vec::with_capacity(selectors.len());
     for selector in selectors {
-        match resolve_face_selector(session, input, selector, parameters, shapes) {
+        match resolve_face_selector(session, input, selector, parameters, shapes, definitions) {
             Ok(faces) => {
                 sizes.push(faces.len());
                 selected.extend(faces);

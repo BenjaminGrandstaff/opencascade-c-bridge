@@ -2,6 +2,10 @@
 
 use super::*;
 
+/// Feature definitions by id, for selectors that follow topology through the
+/// feature graph.
+pub(crate) type Features<'a> = HashMap<&'a str, &'a FeatureDefinition>;
+
 mod queries;
 pub(crate) use queries::*;
 
@@ -12,6 +16,7 @@ pub(crate) fn resolve_edge_selectors<'session>(
     parameters: &HashMap<String, ParameterValue>,
     shapes: &HashMap<String, Shape<'session>>,
     operation: &str,
+    definitions: &Features<'_>,
 ) -> Result<(Vec<Shape<'session>>, Vec<usize>), ModelError> {
     if selectors.is_empty() {
         return Err(ModelError::new(format!(
@@ -21,7 +26,7 @@ pub(crate) fn resolve_edge_selectors<'session>(
     let mut selected = Vec::new();
     let mut sizes = Vec::with_capacity(selectors.len());
     for selector in selectors {
-        match resolve_edge_selector(session, input, selector, parameters, shapes) {
+        match resolve_edge_selector(session, input, selector, parameters, shapes, definitions) {
             Ok(edges) => {
                 sizes.push(edges.len());
                 selected.extend(edges);
@@ -41,6 +46,7 @@ pub(crate) fn resolve_edge_selector<'session>(
     selector: &EdgeSelector,
     parameters: &HashMap<String, ParameterValue>,
     shapes: &HashMap<String, Shape<'session>>,
+    definitions: &Features<'_>,
 ) -> Result<Vec<Shape<'session>>, ModelError> {
     match selector {
         EdgeSelector::NearestCenter {
@@ -116,24 +122,59 @@ pub(crate) fn resolve_edge_selector<'session>(
             *require_entire_edge,
         ),
         EdgeSelector::Union(selectors) => {
-            let sets = resolve_edge_selector_sets(session, result, selectors, parameters, shapes)?;
+            let sets = resolve_edge_selector_sets(
+                session,
+                result,
+                selectors,
+                parameters,
+                shapes,
+                definitions,
+            )?;
             compose_shape_sets(session, sets, ShapeSetOperation::Union)
         }
         EdgeSelector::Intersection(selectors) => {
-            let sets = resolve_edge_selector_sets(session, result, selectors, parameters, shapes)?;
+            let sets = resolve_edge_selector_sets(
+                session,
+                result,
+                selectors,
+                parameters,
+                shapes,
+                definitions,
+            )?;
             compose_shape_sets(session, sets, ShapeSetOperation::Intersection)
         }
         EdgeSelector::Difference { base, subtract } => {
-            let base = resolve_edge_selector(session, result, base, parameters, shapes)?;
-            let subtract =
-                match resolve_edge_selector(session, result, subtract, parameters, shapes) {
-                    Ok(subtract) => subtract,
-                    Err(error) => {
-                        cleanup_shapes(session, base);
-                        return Err(error);
-                    }
-                };
+            let base =
+                resolve_edge_selector(session, result, base, parameters, shapes, definitions)?;
+            let subtract = match resolve_edge_selector(
+                session,
+                result,
+                subtract,
+                parameters,
+                shapes,
+                definitions,
+            ) {
+                Ok(subtract) => subtract,
+                Err(error) => {
+                    cleanup_shapes(session, base);
+                    return Err(error);
+                }
+            };
             compose_shape_sets(session, vec![base, subtract], ShapeSetOperation::Difference)
+        }
+        EdgeSelector::Persistent { feature, select } => {
+            let origin = shape(shapes, feature)?;
+            let chosen =
+                resolve_edge_selector(session, origin, select, parameters, shapes, definitions)?;
+            follow_forward(
+                session,
+                result,
+                chosen,
+                feature,
+                shapes,
+                definitions,
+                ShapeType::Edge,
+            )
         }
         EdgeSelector::History {
             source_feature,
@@ -141,8 +182,14 @@ pub(crate) fn resolve_edge_selector<'session>(
             relation,
         } => {
             let source_result = shape(shapes, source_feature)?;
-            let source_edges =
-                resolve_edge_selector(session, source_result, source, parameters, shapes)?;
+            let source_edges = resolve_edge_selector(
+                session,
+                source_result,
+                source,
+                parameters,
+                shapes,
+                definitions,
+            )?;
             resolve_history(
                 session,
                 result,
@@ -161,6 +208,7 @@ pub(crate) fn resolve_face_selector<'session>(
     selector: &FaceSelector,
     parameters: &HashMap<String, ParameterValue>,
     shapes: &HashMap<String, Shape<'session>>,
+    definitions: &Features<'_>,
 ) -> Result<Vec<Shape<'session>>, ModelError> {
     match selector {
         FaceSelector::NearestCenter {
@@ -212,35 +260,72 @@ pub(crate) fn resolve_face_selector<'session>(
             edges,
             minimum_count,
         } => {
-            let edges = resolve_edge_selector(session, result, edges, parameters, shapes)?;
+            let edges =
+                resolve_edge_selector(session, result, edges, parameters, shapes, definitions)?;
             select_faces_adjacent_to_edges(session, result, edges, *minimum_count)
         }
         FaceSelector::TangentTo {
             faces,
             minimum_count,
         } => {
-            let faces = resolve_face_selector(session, result, faces, parameters, shapes)?;
+            let faces =
+                resolve_face_selector(session, result, faces, parameters, shapes, definitions)?;
             select_faces_tangent_to_faces(session, result, faces, *minimum_count)
         }
         FaceSelector::Union(selectors) => {
-            let sets = resolve_face_selector_sets(session, result, selectors, parameters, shapes)?;
+            let sets = resolve_face_selector_sets(
+                session,
+                result,
+                selectors,
+                parameters,
+                shapes,
+                definitions,
+            )?;
             compose_shape_sets(session, sets, ShapeSetOperation::Union)
         }
         FaceSelector::Intersection(selectors) => {
-            let sets = resolve_face_selector_sets(session, result, selectors, parameters, shapes)?;
+            let sets = resolve_face_selector_sets(
+                session,
+                result,
+                selectors,
+                parameters,
+                shapes,
+                definitions,
+            )?;
             compose_shape_sets(session, sets, ShapeSetOperation::Intersection)
         }
         FaceSelector::Difference { base, subtract } => {
-            let base = resolve_face_selector(session, result, base, parameters, shapes)?;
-            let subtract =
-                match resolve_face_selector(session, result, subtract, parameters, shapes) {
-                    Ok(subtract) => subtract,
-                    Err(error) => {
-                        cleanup_shapes(session, base);
-                        return Err(error);
-                    }
-                };
+            let base =
+                resolve_face_selector(session, result, base, parameters, shapes, definitions)?;
+            let subtract = match resolve_face_selector(
+                session,
+                result,
+                subtract,
+                parameters,
+                shapes,
+                definitions,
+            ) {
+                Ok(subtract) => subtract,
+                Err(error) => {
+                    cleanup_shapes(session, base);
+                    return Err(error);
+                }
+            };
             compose_shape_sets(session, vec![base, subtract], ShapeSetOperation::Difference)
+        }
+        FaceSelector::Persistent { feature, select } => {
+            let origin = shape(shapes, feature)?;
+            let chosen =
+                resolve_face_selector(session, origin, select, parameters, shapes, definitions)?;
+            follow_forward(
+                session,
+                result,
+                chosen,
+                feature,
+                shapes,
+                definitions,
+                ShapeType::Face,
+            )
         }
         FaceSelector::History {
             source_feature,
@@ -248,8 +333,14 @@ pub(crate) fn resolve_face_selector<'session>(
             relation,
         } => {
             let source_result = shape(shapes, source_feature)?;
-            let source_faces =
-                resolve_face_selector(session, source_result, source, parameters, shapes)?;
+            let source_faces = resolve_face_selector(
+                session,
+                source_result,
+                source,
+                parameters,
+                shapes,
+                definitions,
+            )?;
             resolve_history(
                 session,
                 result,
@@ -264,7 +355,14 @@ pub(crate) fn resolve_face_selector<'session>(
             source,
         } => {
             let source_result = shape(shapes, source_feature)?;
-            let edges = resolve_edge_selector(session, source_result, source, parameters, shapes)?;
+            let edges = resolve_edge_selector(
+                session,
+                source_result,
+                source,
+                parameters,
+                shapes,
+                definitions,
+            )?;
             generated_faces_from_edges(session, result, edges, source_feature)
         }
     }
@@ -283,10 +381,11 @@ pub(crate) fn resolve_edge_selector_sets<'session>(
     selectors: &[EdgeSelector],
     parameters: &HashMap<String, ParameterValue>,
     shapes: &HashMap<String, Shape<'session>>,
+    definitions: &Features<'_>,
 ) -> Result<Vec<Vec<Shape<'session>>>, ModelError> {
     let mut sets = Vec::new();
     for selector in selectors {
-        match resolve_edge_selector(session, result, selector, parameters, shapes) {
+        match resolve_edge_selector(session, result, selector, parameters, shapes, definitions) {
             Ok(set) => sets.push(set),
             Err(error) => {
                 cleanup_shapes(session, sets.into_iter().flatten());
@@ -303,10 +402,11 @@ pub(crate) fn resolve_face_selector_sets<'session>(
     selectors: &[FaceSelector],
     parameters: &HashMap<String, ParameterValue>,
     shapes: &HashMap<String, Shape<'session>>,
+    definitions: &Features<'_>,
 ) -> Result<Vec<Vec<Shape<'session>>>, ModelError> {
     let mut sets = Vec::new();
     for selector in selectors {
-        match resolve_face_selector(session, result, selector, parameters, shapes) {
+        match resolve_face_selector(session, result, selector, parameters, shapes, definitions) {
             Ok(set) => sets.push(set),
             Err(error) => {
                 cleanup_shapes(session, sets.into_iter().flatten());
