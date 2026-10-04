@@ -227,6 +227,7 @@ pub fn family(project: &Project) -> Result<FamilyDefinition, Box<dyn Error>> {
         ));
     }
     Ok(FamilyDefinition {
+        references: Vec::new(),
         id: "wing".into(),
         version: 1,
         parameters,

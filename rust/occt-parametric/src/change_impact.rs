@@ -244,14 +244,15 @@ fn variant(instance: &PartInstance<'_>) -> Result<Variant, ModelError> {
         .iter()
         .map(|datum| (datum.id.as_str(), datum))
         .collect();
+    let references = reference_map(instance.definition);
     let mut signatures = BTreeMap::new();
     let mut downstream: HashMap<String, Vec<String>> = HashMap::new();
     for feature in &instance.definition.features {
         signatures.insert(
             feature.id.clone(),
-            regeneration::feature_signature(&datums, feature, &parameters)?,
+            regeneration::feature_signature(&datums, feature, &references, &parameters)?,
         );
-        for dependency in feature.operation.dependencies() {
+        for dependency in dependencies_with_references(feature, &references) {
             downstream
                 .entry(dependency.into())
                 .or_default()

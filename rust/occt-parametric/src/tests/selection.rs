@@ -491,7 +491,7 @@ fn tangency_selector_finds_fillet_neighbors_without_topology_indices() {
         &selector,
         &HashMap::new(),
         &HashMap::new(),
-        &HashMap::new(),
+        &Features::default(),
     )
     .unwrap();
     assert!(!selected.is_empty());
@@ -525,7 +525,7 @@ fn selector_composition_performs_topological_set_operations() {
         &EdgeSelector::Union(vec![intersection, difference]),
         &HashMap::new(),
         &HashMap::new(),
-        &HashMap::new(),
+        &Features::default(),
     )
     .unwrap();
     assert_eq!(edges.len(), 4);
@@ -553,7 +553,7 @@ fn selector_composition_performs_topological_set_operations() {
         ]),
         &HashMap::new(),
         &HashMap::new(),
-        &HashMap::new(),
+        &Features::default(),
     )
     .unwrap();
     assert_eq!(faces.len(), 2);
@@ -565,7 +565,7 @@ fn selector_composition_performs_topological_set_operations() {
         &EdgeSelector::Union(Vec::new()),
         &HashMap::new(),
         &HashMap::new(),
-        &HashMap::new(),
+        &Features::default(),
     )
     .err()
     .unwrap();
@@ -614,6 +614,7 @@ fn longest_edge_selector_drives_chamfer_and_rejects_disallowed_ties() {
 #[test]
 fn circular_and_curvature_radius_selectors_drive_cylinder_chamfers() {
     let definition = FamilyDefinition {
+        references: Vec::new(),
         id: "CylinderSelectorFamily".into(),
         version: 1,
         parameters: Vec::new(),

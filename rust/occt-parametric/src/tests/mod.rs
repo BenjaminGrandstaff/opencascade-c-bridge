@@ -11,6 +11,7 @@ mod hole_catalogs;
 mod holes;
 mod loft;
 mod mesh;
+mod named_references;
 mod patterns;
 mod persistent;
 mod regeneration;
@@ -34,6 +35,7 @@ fn length_parameter(id: &str, default: f64) -> ParameterDefinition {
 
 fn family(priority: RequirementPriority, maximum_volume: f64) -> FamilyDefinition {
     FamilyDefinition {
+        references: Vec::new(),
         id: "BlockFamily".into(),
         version: 1,
         parameters: vec![

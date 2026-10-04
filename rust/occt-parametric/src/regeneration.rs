@@ -221,17 +221,13 @@ impl<'session> FeatureBuild<'session> {
             .iter()
             .map(|datum| (datum.id.as_str(), datum))
             .collect::<HashMap<_, _>>();
-        let definitions = definition
-            .features
-            .iter()
-            .map(|feature| (feature.id.as_str(), feature))
-            .collect::<HashMap<_, _>>();
+        let definitions = Features::new(definition);
         let mut pending: Vec<&FeatureDefinition> = definition.features.iter().collect();
         while !pending.is_empty() {
             let before = pending.len();
             let mut index = 0;
             while index < pending.len() {
-                if self.is_ready(pending[index]) {
+                if self.is_ready(pending[index], &definitions) {
                     let feature = pending.remove(index);
                     self.add_feature(
                         session,
@@ -259,10 +255,8 @@ impl<'session> FeatureBuild<'session> {
         Ok(())
     }
 
-    pub(crate) fn is_ready(&self, feature: &FeatureDefinition) -> bool {
-        feature
-            .operation
-            .dependencies()
+    pub(crate) fn is_ready(&self, feature: &FeatureDefinition, definitions: &Features<'_>) -> bool {
+        dependencies_with_references(feature, &definitions.references)
             .iter()
             .all(|dependency| self.shapes.contains_key(*dependency))
     }
@@ -273,15 +267,13 @@ impl<'session> FeatureBuild<'session> {
         &mut self,
         session: &'session Session,
         datums: &HashMap<&str, &DatumDefinition>,
-        definitions: &HashMap<&str, &FeatureDefinition>,
+        definitions: &Features<'_>,
         feature: &FeatureDefinition,
         parameters: &HashMap<String, ParameterValue>,
         previous: Option<&GeneratedResult<'session>>,
     ) -> Result<(), ModelError> {
-        let signature = feature_signature(datums, feature, parameters)?;
-        let dependency_is_dirty = feature
-            .operation
-            .dependencies()
+        let signature = feature_signature(datums, feature, &definitions.references, parameters)?;
+        let dependency_is_dirty = dependencies_with_references(feature, &definitions.references)
             .iter()
             .any(|dependency| self.dirty_features.contains(*dependency));
         let reusable = previous
@@ -351,6 +343,8 @@ pub(crate) struct FeatureSignature<'a> {
     pub(crate) feature: &'a FeatureDefinition,
     pub(crate) parameters: Vec<(&'a str, &'a ParameterValue)>,
     pub(crate) datum: Option<&'a DatumDefinition>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(crate) references: Vec<&'a NamedReference>,
 }
 
 pub(crate) fn sketch_datum<'a>(
@@ -378,13 +372,34 @@ pub(crate) fn sketch_datum<'a>(
     Ok(Some(datum))
 }
 
+/// The feature, the parameter values it reads, its sketch datum, and the
+/// named references it uses: any change to these rebuilds it.
 pub(crate) fn feature_signature(
     datums: &HashMap<&str, &DatumDefinition>,
     feature: &FeatureDefinition,
+    references: &References<'_>,
     parameters: &HashMap<String, ParameterValue>,
 ) -> Result<Vec<u8>, ModelError> {
     let mut names = HashSet::new();
     collect_operation_parameters(&feature.operation, &mut names);
+    let mut used = feature
+        .operation
+        .reference_names()
+        .into_iter()
+        .filter_map(|(name, _)| references.get(name).copied())
+        .collect::<Vec<_>>();
+    used.sort_by(|a, b| a.name.cmp(&b.name));
+    used.dedup_by(|a, b| a.name == b.name);
+    for reference in &used {
+        match &reference.target {
+            ReferenceTarget::Faces(selector) => {
+                collect_face_selector_parameters(selector, &mut names)
+            }
+            ReferenceTarget::Edges(selector) => {
+                collect_edge_selector_parameters(selector, &mut names)
+            }
+        }
+    }
     let datum = sketch_datum(datums, &feature.operation)?;
     if let Some(DatumDefinition {
         kind: DatumKind::Plane { origin, normal },
@@ -409,6 +424,7 @@ pub(crate) fn feature_signature(
         feature,
         parameters: values,
         datum,
+        references: used,
     })
     .map_err(|error| ModelError::new(format!("create feature signature: {error}")))
 }
@@ -715,6 +731,8 @@ pub(crate) fn collect_edge_selector_parameters<'a>(
         }
         EdgeSelector::History { source, .. } => collect_edge_selector_parameters(source, names),
         EdgeSelector::Persistent { select, .. } => collect_edge_selector_parameters(select, names),
+        // A named reference's parameters join its users' signatures directly.
+        EdgeSelector::Named(_) => {}
     }
 }
 
@@ -760,6 +778,7 @@ pub(crate) fn collect_face_selector_parameters<'a>(
         }
         FaceSelector::History { source, .. } => collect_face_selector_parameters(source, names),
         FaceSelector::Persistent { select, .. } => collect_face_selector_parameters(select, names),
+        FaceSelector::Named(_) => {}
         FaceSelector::GeneratedFromEdges { source, .. } => {
             collect_edge_selector_parameters(source, names)
         }
@@ -779,12 +798,27 @@ pub(crate) fn validate_definition(definition: &FamilyDefinition) -> Result<(), M
             .map(|feature| feature.id.as_str()),
         "feature ids must be nonempty and unique",
     )?;
+    let references = validate_references(definition, &feature_ids)?;
     let datums = definition
         .datums
         .iter()
         .map(|datum| (datum.id.as_str(), datum))
         .collect::<HashMap<_, _>>();
     for feature in &definition.features {
+        for (name, kind) in feature.operation.reference_names() {
+            let found = references.get(name).ok_or_else(|| {
+                ModelError::new(format!(
+                    "feature '{}' uses unknown named reference '{name}'",
+                    feature.id
+                ))
+            })?;
+            if found.target.kind() != kind {
+                return Err(ModelError::new(format!(
+                    "feature '{}' uses named reference '{name}' as the wrong kind of topology",
+                    feature.id
+                )));
+            }
+        }
         match &feature.operation {
             FeatureOperation::SketchFace { sketch }
             | FeatureOperation::SketchWire { sketch }
@@ -870,6 +904,44 @@ pub(crate) fn validate_definition(definition: &FamilyDefinition) -> Result<(), M
         "requirement ids must be nonempty, versioned, and unique",
     )?;
     assembly::validate_datums(definition)
+}
+
+/// Checks named references: unique nonempty names, targets that use no other
+/// names, and features that exist. O(references + their selectors).
+fn validate_references<'a>(
+    definition: &'a FamilyDefinition,
+    feature_ids: &HashSet<&str>,
+) -> Result<References<'a>, ModelError> {
+    insert_unique_ids(
+        &mut HashSet::new(),
+        definition
+            .references
+            .iter()
+            .map(|reference| reference.name.as_str()),
+        "named reference names must be nonempty and unique",
+    )?;
+    for reference in &definition.references {
+        let mut names = Vec::new();
+        reference.target.names(&mut names);
+        if !names.is_empty() {
+            return Err(ModelError::new(format!(
+                "named reference '{}' cannot use other named references",
+                reference.name
+            )));
+        }
+        let mut dependencies = Vec::new();
+        reference.target.dependencies(&mut dependencies);
+        if let Some(missing) = dependencies
+            .into_iter()
+            .find(|dependency| !feature_ids.contains(dependency))
+        {
+            return Err(ModelError::new(format!(
+                "named reference '{}' references unknown output '{missing}'",
+                reference.name
+            )));
+        }
+    }
+    Ok(reference_map(definition))
 }
 
 /// Adds every id to `seen`, failing on the first empty or repeated id.

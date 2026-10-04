@@ -209,12 +209,7 @@ impl MeshExportDefinition {
             .ok_or_else(|| ModelError::new("mesh output was not generated"))?;
         let instance = graph.resolve_cached(&self.output.instance, &mut context.resolutions)?;
         let parameters = resolve_parameters(instance.definition, &instance.overrides)?;
-        let definitions = instance
-            .definition
-            .features
-            .iter()
-            .map(|feature| (feature.id.as_str(), feature))
-            .collect::<selection::Features<'_>>();
+        let definitions = selection::Features::new(instance.definition);
         let faces = session.subshapes(shape, ShapeType::Face)?;
         let mut face_tags = vec![0; faces.len()];
         let mut selected = Vec::new();

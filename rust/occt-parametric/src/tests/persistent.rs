@@ -78,11 +78,6 @@ fn resolve(
     generated: &GeneratedResult<'_>,
     selector: &FaceSelector,
 ) -> Result<Vec<(Vec3, f64)>, ModelError> {
-    let definitions = family
-        .features
-        .iter()
-        .map(|feature| (feature.id.as_str(), feature))
-        .collect::<HashMap<_, _>>();
     let parameters = resolve_parameters(family, &HashMap::new())?;
     let faces = resolve_face_selector(
         session,
@@ -90,7 +85,7 @@ fn resolve(
         selector,
         &parameters,
         &generated.shapes,
-        &definitions,
+        &Features::new(family),
     )?;
     let measured = faces
         .iter()

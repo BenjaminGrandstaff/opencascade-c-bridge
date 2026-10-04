@@ -41,6 +41,7 @@ fn linked_family() -> FamilyDefinition {
     sketch.origin = VectorExpr::Parameter("unused_origin".into());
     sketch.y_axis = VectorExpr::Parameter("unused_y_axis".into());
     FamilyDefinition {
+        references: Vec::new(),
         id: "LinkedSketch".into(),
         version: 1,
         parameters: vec![ParameterDefinition {

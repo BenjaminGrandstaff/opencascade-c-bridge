@@ -2,6 +2,7 @@ use super::*;
 
 fn family() -> FamilyDefinition {
     FamilyDefinition {
+        references: Vec::new(),
         id: "block".into(),
         version: 1,
         parameters: vec![ParameterDefinition {

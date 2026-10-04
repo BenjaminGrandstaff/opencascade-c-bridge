@@ -72,7 +72,8 @@ comparison-driven conditional scalar expressions,
 pre-generation parameter constraints, constraint-solved line/arc/circle/spline sketches that
 emit exact closed wires and planar faces on inline or named datum planes,
 semantic face and edge selectors with persistent references that follow
-topology through later features, and
+topology through later features and named references declared once per
+family, and
 versioned JSON model documents are implemented. Feature graphs include sewing
 and single- or multi-shell solid construction. Selectors support orientation,
 adjacency, extrema, nearest-center, longest-edge, circular-radius,

@@ -59,7 +59,7 @@ pub(crate) fn execute_profile_sweep<'session>(
 pub(crate) fn execute_feature<'session>(
     session: &'session Session,
     datums: &HashMap<&str, &DatumDefinition>,
-    definitions: &HashMap<&str, &FeatureDefinition>,
+    definitions: &Features<'_>,
     feature: &FeatureDefinition,
     parameters: &HashMap<String, ParameterValue>,
     shapes: &HashMap<String, Shape<'session>>,
@@ -75,7 +75,7 @@ pub(crate) fn execute_feature<'session>(
             let Some(FeatureDefinition {
                 operation: FeatureOperation::SheetMetal { definition },
                 ..
-            }) = definitions.get(input.as_str()).copied()
+            }) = definitions.by_id.get(input.as_str()).copied()
             else {
                 return Err(ModelError::new(
                     "flat pattern input must directly name a sheet-metal feature",

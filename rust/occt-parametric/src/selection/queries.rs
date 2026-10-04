@@ -725,8 +725,8 @@ fn feature_path<'a>(
         if !seen.insert(current) {
             continue;
         }
-        if let Some(feature) = definitions.get(current) {
-            for dependency in feature.operation.dependencies() {
+        if let Some(feature) = definitions.by_id.get(current) {
+            for dependency in dependencies_with_references(feature, &definitions.references) {
                 let mut next = path.clone();
                 next.push(dependency);
                 stack.push((dependency, next));

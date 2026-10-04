@@ -125,6 +125,7 @@ fn main() -> ExitCode {
     outcomes.push(step_export::step_assembly_case(definition));
     outcomes.push(step_export::draw_view_case(definition));
     outcomes.push(persistent::persistent_chain_case());
+    outcomes.push(persistent::named_reference_case());
     outcomes.push(profile_sweep_case(false));
     outcomes.push(profile_sweep_case(true));
     outcomes.push(hole_features_case());
@@ -190,6 +191,7 @@ fn block() -> FamilyDefinition {
     let direction = |x, y, z| VectorExpr::Literal(VectorQuantity::scalars(x, y, z));
     let point = |x, y, z| VectorExpr::Components { x, y, z };
     FamilyDefinition {
+        references: Vec::new(),
         id: "Block".into(),
         version: 1,
         parameters: vec![

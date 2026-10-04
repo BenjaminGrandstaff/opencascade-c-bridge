@@ -1,7 +1,7 @@
 //! Persistent references followed through long feature chains.
 
 use super::*;
-use occt_parametric::{EdgeSelector, HoleExtent, HoleFinish};
+use occt_parametric::{EdgeSelector, HoleExtent, HoleFinish, NamedReference, ReferenceTarget};
 
 /// A block's four top edges, named on the bare block, followed through 100
 /// sequential holes to a chamfer. On the final shape the same "top edges"
@@ -91,6 +91,98 @@ pub(crate) fn persistent_chain_case() -> Outcome {
             }
             Ok(format!(
                 "4 named edges followed through {HOLES} holes; chamfer removed {removed:.2} mm³"
+            ))
+        },
+    )
+}
+
+/// 200 boxes each filleted through its own named persistent reference, among
+/// 10,000 declared references, then regenerated again with nothing changed.
+/// Reference lookups are indexed, so declarations that no feature uses cost
+/// nothing beyond validation.
+pub(crate) fn named_reference_case() -> Outcome {
+    const PARTS: usize = 200;
+    const DECLARED: usize = 10_000;
+    timed(
+        format!("{PARTS} fillets through named references among {DECLARED} declared"),
+        ms(2_000),
+        Expectation::Required,
+        || {
+            let session = Session::new().map_err(|error| failure(error.to_string()))?;
+            let at = |x: f64, y: f64, z: f64| {
+                VectorExpr::Literal(VectorQuantity::lengths(x, y, z, LengthUnit::Millimeter))
+            };
+            let mut definition = block();
+            definition.datums.clear();
+            definition.requirements.clear();
+            definition.parameters.clear();
+            definition.features.clear();
+            for index in 0..DECLARED {
+                let part = index % PARTS;
+                definition.references.push(NamedReference {
+                    name: format!("top-{index}"),
+                    target: ReferenceTarget::Edges(EdgeSelector::Persistent {
+                        feature: format!("box-{part}"),
+                        select: Box::new(EdgeSelector::AtExtreme {
+                            axis: CoordinateAxis::Z,
+                            extremum: Extremum::Maximum,
+                            tolerance: ScalarExpr::Literal(Quantity::length(
+                                1e-6,
+                                LengthUnit::Millimeter,
+                            )),
+                        }),
+                    }),
+                });
+            }
+            for index in 0..PARTS {
+                definition.features.push(FeatureDefinition {
+                    id: format!("box-{index}"),
+                    operation: FeatureOperation::Box {
+                        origin: at(20.0 * index as f64, 0.0, 0.0),
+                        size: at(10.0, 10.0, 10.0),
+                    },
+                });
+                definition.features.push(FeatureDefinition {
+                    id: format!("eased-{index}"),
+                    operation: FeatureOperation::Fillet {
+                        input: format!("box-{index}"),
+                        edges: vec![EdgeSelector::Named(format!(
+                            "top-{}",
+                            DECLARED - PARTS + index
+                        ))],
+                        radius: ScalarExpr::Literal(Quantity::length(1.0, LengthUnit::Millimeter)),
+                    },
+                });
+            }
+            let part = PartInstance {
+                id: "part".into(),
+                definition: &definition,
+                overrides: HashMap::new(),
+                provenance: "bench".into(),
+            };
+            let first = part.regenerate(&session)?;
+            let second = part.regenerate_incremental(&session, &first)?;
+            if !second.regeneration.rebuilt.is_empty() {
+                return Err(failure(format!(
+                    "unchanged regeneration rebuilt {} features",
+                    second.regeneration.rebuilt.len()
+                )));
+            }
+            let eased = session.volume(
+                second
+                    .shape(&format!("eased-{}", PARTS - 1))
+                    .ok_or_else(|| failure("fillet missing".into()))?,
+            )?;
+            // Four 10 mm edges lose (1 - pi/4) mm² of section each, less the
+            // corner blends.
+            let removed = 1000.0 - eased;
+            let edge = 1.0 - std::f64::consts::FRAC_PI_4;
+            if !(4.0 * 8.0 * edge < removed && removed < 4.0 * 10.0 * edge) {
+                return Err(failure(format!("fillet removed {removed} mm³")));
+            }
+            Ok(format!(
+                "{PARTS} fillets resolved by name; unchanged regeneration reused all {}",
+                second.regeneration.reused.len()
             ))
         },
     )

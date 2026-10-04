@@ -12,6 +12,7 @@ fn direction(x: f64, y: f64, z: f64) -> VectorExpr {
 
 fn bore(extent: HoleExtent) -> FamilyDefinition {
     FamilyDefinition {
+        references: Vec::new(),
         id: "Bore".into(),
         version: 1,
         parameters: vec![

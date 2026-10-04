@@ -2,9 +2,44 @@
 
 use super::*;
 
-/// Feature definitions by id, for selectors that follow topology through the
-/// feature graph.
-pub(crate) type Features<'a> = HashMap<&'a str, &'a FeatureDefinition>;
+/// Feature definitions by id and the family's named references, for selectors
+/// that follow topology through the feature graph or use a reference by name.
+#[derive(Default)]
+pub(crate) struct Features<'a> {
+    pub(crate) by_id: HashMap<&'a str, &'a FeatureDefinition>,
+    pub(crate) references: References<'a>,
+}
+
+impl<'a> Features<'a> {
+    pub(crate) fn new(family: &'a FamilyDefinition) -> Self {
+        Self {
+            by_id: family
+                .features
+                .iter()
+                .map(|feature| (feature.id.as_str(), feature))
+                .collect(),
+            references: reference_map(family),
+        }
+    }
+
+    fn reference(&self, name: &str, kind: ReferenceUse) -> Result<&'a ReferenceTarget, ModelError> {
+        let reference = self
+            .references
+            .get(name)
+            .ok_or_else(|| ModelError::new(format!("unknown named reference '{name}'")))?;
+        if reference.target.kind() != kind {
+            let expected = if kind == ReferenceUse::Faces {
+                "faces"
+            } else {
+                "edges"
+            };
+            return Err(ModelError::new(format!(
+                "named reference '{name}' does not name {expected}"
+            )));
+        }
+        Ok(&reference.target)
+    }
+}
 
 mod queries;
 pub(crate) use queries::*;
@@ -162,6 +197,12 @@ pub(crate) fn resolve_edge_selector<'session>(
             };
             compose_shape_sets(session, vec![base, subtract], ShapeSetOperation::Difference)
         }
+        EdgeSelector::Named(name) => match definitions.reference(name, ReferenceUse::Edges)? {
+            ReferenceTarget::Edges(selector) => {
+                resolve_edge_selector(session, result, selector, parameters, shapes, definitions)
+            }
+            ReferenceTarget::Faces(_) => unreachable!("kind checked by reference()"),
+        },
         EdgeSelector::Persistent { feature, select } => {
             let origin = shape(shapes, feature)?;
             let chosen =
@@ -313,6 +354,12 @@ pub(crate) fn resolve_face_selector<'session>(
             };
             compose_shape_sets(session, vec![base, subtract], ShapeSetOperation::Difference)
         }
+        FaceSelector::Named(name) => match definitions.reference(name, ReferenceUse::Faces)? {
+            ReferenceTarget::Faces(selector) => {
+                resolve_face_selector(session, result, selector, parameters, shapes, definitions)
+            }
+            ReferenceTarget::Edges(_) => unreachable!("kind checked by reference()"),
+        },
         FaceSelector::Persistent { feature, select } => {
             let origin = shape(shapes, feature)?;
             let chosen =

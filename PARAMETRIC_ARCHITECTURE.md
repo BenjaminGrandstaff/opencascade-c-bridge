@@ -1066,6 +1066,20 @@ would change which face a geometric rule picks on the final shape. Tracing
 costs, per later feature, one topology-map membership test and at most one
 history query per followed subshape; path search is O(features).
 
+Schema 54 adds named references. `FamilyDefinition::references` lists
+`NamedReference { name, target }`, where the target is a face or edge selector
+(`{"faces": ...}` or `{"edges": ...}`), and `FaceSelector::Named` and
+`EdgeSelector::Named` use one by name, so a face such as "front" is chosen once
+and shared by every feature that needs it. Resolution substitutes the target
+selector in place; a name used for the wrong kind of topology fails. The
+target's features join the using feature's dependencies, and its parameters
+join that feature's signature, so editing a reference rebuilds its users and
+nothing else. Targets cannot name other references, which keeps resolution a
+single lookup with no alias cycles. References are indexed by name once per
+regeneration, so lookups are O(1) and unused declarations cost only
+validation. An empty list is omitted from documents, so older documents load
+unchanged.
+
 ## Responsibility boundary
 
 The C ABI exposes general, language-neutral OCCT capabilities:
