@@ -46,6 +46,7 @@ pub(crate) fn assembly_drawing_case(definition: &'static FamilyDefinition) -> Ou
                     show_hidden: false,
                     kind: DrawingViewKind::Orthographic,
                     detail: None,
+                    hatching: None,
                 }],
             };
             let generated = drawing.generate(
@@ -94,6 +95,7 @@ pub(crate) fn drawing_case(definition: &'static FamilyDefinition) -> Outcome {
                 metadata: Default::default(),
                 views: (0..1000)
                     .map(|index| DrawingView {
+                        hatching: None,
                         id: format!("view{index}"),
                         outputs: vec![InstanceOutputRef {
                             instance: "part".into(),

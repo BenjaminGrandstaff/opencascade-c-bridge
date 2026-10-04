@@ -55,6 +55,7 @@ fn fixture() -> (ModelDocument, DrawingDefinition) {
             show_hidden: false,
             kind: DrawingViewKind::Slice,
             detail: None,
+            hatching: None,
         }],
         guides: Vec::new(),
         dimensions: vec![],

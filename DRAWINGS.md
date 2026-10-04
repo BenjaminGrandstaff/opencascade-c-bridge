@@ -38,8 +38,8 @@ increase upward; the SVG exporter converts them to SVG's downward y direction.
 geometry. `Section { origin, normal, keep_positive }` first intersects valid
 solids with one side of an infinite cutting plane, retaining closed cut geometry,
 then projects the retained solid. It supports arbitrary cutting-plane directions.
-A cut that removes all geometry yields an empty view. Section views currently
-show cut outlines without automatic section hatching.
+A cut that removes all geometry yields an empty view. Optional section hatching
+is described below.
 
 Schema 57 includes `Slice`: the view origin and direction define a plane, and only
 the boundary of the solid material on that plane is exported, including holes.
@@ -275,10 +275,43 @@ strokes; cutting traces and arrows use 0.50 mm. DXF adds CENTER and CUTTING_PLAN
 layers, a CENTER linetype with the same pattern, per-entity solid overrides for
 marks/arrows, and corresponding lineweights. These are explicit drawing styles,
 not a standards-conformity claim. Standards-verified layout, projection symbols,
-automatic hatching and exact curve export remain on the roadmap.
+material-specific hatch conventions and exact curve export remain on the roadmap.
 
 Each center mark reserves 4 vertices, centerline 2, and cutting-plane indicator
 14 against the shared export budget. Guide validation/generation is linear in
 annotation count plus datum-frame resolution, with indexed view lookup and
 proportional output storage. The 10,000-guide benchmark covers all three types,
 SVG/DXF export, shared native generation and handle cleanup.
+
+
+## Section hatching
+
+Schema 60 adds optional `DrawingView.hatching: Option<SectionHatching>`. Existing
+views load with `None`. Set `Some(SectionHatching::default())` for lines at 45°,
+3 paper mm apart, with zero phase. Saved JSON can use `"hatching": {}` for these
+defaults, or set `angle_radians`, `spacing_mm` and `phase_mm` explicitly. Spacing
+and phase are perpendicular distances in paper millimeters, independent of scale.
+Angles and phase must be finite; spacing must be finite and positive.
+
+Hatching supports `Slice` and `Section`. A hatched section must look normal to
+its cutting plane. The fill comes from that plane's actual material intersection,
+even when the projection origin differs. Solids are intersected and clipped
+individually so overlapping components remain present. Sampled boundary parity
+preserves holes; interval union across faces preserves disconnected islands and
+avoids double fill where components overlap. A view uses one shared pattern;
+material-specific patterns and alternating adjacent-component angles remain future
+work. Detail windows clip the resulting lines alongside the outlines.
+
+`GeneratedDrawing.hatches` contains separate two-point polylines. SVG draws them
+behind outlines with a 0.13 mm stroke. DXF uses LWPOLYLINE entities on the
+SECTION_HATCH layer with lineweight 13. These exports retain the existing sampled
+curve limitation: `curve_samples` controls hole and curved-boundary resolution,
+without certifying chordal error or ASME conformance.
+
+For E sampled segments and K scanline crossings, fill generation takes
+O(E + K log K) time and O(E + K) temporary storage, in addition to one native
+plane intersection per solid. A hard limit of 2,000,000 samples/crossings per view
+rejects excessively dense patterns before emitting unbounded output. Line indices
+must stay below 2^52 in magnitude. Hatch endpoints share `maximum_vertices` with
+all other drawing geometry. The assembly benchmark checks 10,000 hatch segments
+across 1,000 placed parts, exports and native handle cleanup within 30 seconds.

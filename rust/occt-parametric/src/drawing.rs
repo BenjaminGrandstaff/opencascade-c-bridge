@@ -8,7 +8,9 @@ mod dimensions;
 pub use dimensions::{DimensionPresentation, DimensionTolerance};
 mod export;
 mod guides;
+mod hatching;
 pub use guides::{DrawingGuide, DrawingGuideKind, DrawingGuideLine, DrawingGuideLineKind};
+pub use hatching::SectionHatching;
 mod slice;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -48,6 +50,8 @@ pub struct DrawingView {
     pub kind: DrawingViewKind,
     #[serde(default)]
     pub detail: Option<DrawingDetail>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hatching: Option<SectionHatching>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -157,6 +161,7 @@ pub struct GeneratedDrawing {
     pub paper_size_mm: [f64; 2],
     pub polylines: Vec<DrawingPolyline>,
     pub guides: Vec<DrawingGuideLine>,
+    pub hatches: Vec<DrawingPolyline>,
     pub labels: Vec<DrawingLabel>,
     pub metadata: BTreeMap<String, String>,
     pub generated_variants: usize,
@@ -210,6 +215,7 @@ impl DrawingView {
             x_axis.z - direction.z * projection,
         ))?;
         self.validate_section()?;
+        hatching::validate(self)?;
         if let Some(detail) = self.detail {
             detail.validate()?;
         }
@@ -442,6 +448,7 @@ impl DrawingDefinition {
             paper_size_mm: self.paper_size_mm,
             polylines: Vec::new(),
             guides: Vec::new(),
+            hatches: Vec::new(),
             labels: Vec::new(),
             metadata: self.metadata.clone(),
             generated_variants: generation.generated_variants(),
@@ -577,6 +584,11 @@ fn append_view(
         })
         .collect::<Result<Vec<_>, _>>()?;
     let combined = session.create_compound(&shapes)?;
+    if view.hatching.is_some() && matches!(view.kind, DrawingViewKind::Section { .. }) {
+        let section_view = hatching::section_plane_view(view)?;
+        let section = slice::intersection(session, &section_view, &combined)?;
+        hatching::append(session, view, &section, options, vertices, drawing)?;
+    }
     let combined = match view.kind {
         DrawingViewKind::Slice => {
             return slice::append(session, view, &combined, options, vertices, drawing);
@@ -586,7 +598,8 @@ fn append_view(
             origin,
             normal,
             keep_positive,
-        } => session.clip_by_plane(
+        } => slice::clip_components(
+            session,
             &combined,
             origin.normalized(Dimension::Length)?,
             axis(normal)?,

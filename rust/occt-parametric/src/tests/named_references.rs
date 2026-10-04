@@ -275,6 +275,7 @@ fn integrated_schema_preserves_references_slice_drawings_and_joint_motion() {
             show_hidden: false,
             kind: DrawingViewKind::Slice,
             detail: None,
+            hatching: None,
         }],
         guides: Vec::new(),
         dimensions: Vec::new(),

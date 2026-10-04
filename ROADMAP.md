@@ -11,18 +11,28 @@ tracks status and order.
 | C ABI (`src/`, `include/`) | ABI 42 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 59 | Active development |
+| `occt-parametric` (engineering layer) | Schema 60 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 89 + first-use integration 1 (+1 doc test), recipes 3, parametric 321 + merge driver 3 + motion command 16 + balance command 4 + drawing command 2 + branch command 2, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
-| SonarQube (indexed Rust) | Gate OK, 0 issues, 93.5% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
+| Tests | C 5/5, bridge 89 + first-use integration 1 (+1 doc test), recipes 3, parametric 327 + merge driver 3 + motion command 16 + balance command 4 + drawing command 2 + branch command 2, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| SonarQube (indexed Rust) | Gate OK, 0 issues, 93.6% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
-| Coverage | 93.42% lines overall, test code excluded; C++ 94.17% lines, 87.40% branches, 100% functions; Rust 93.12% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 90 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Coverage | 93.45% lines overall, test code excluded; C++ 94.17% lines, 87.36% branches, 100% functions; Rust 93.17% lines | `tools/coverage/run.sh` |
+| Scale benchmarks | 91 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
+
+- Automatic section hatching (schema 60): saved paper-space angle, spacing and
+  phase for Slice/Section views; holes retain clear interiors, overlapping
+  components share a material union, and disconnected cut regions remain separate.
+  Per-solid cutting preserves overlapping components in section outlines too.
+  Detail clipping, work/vertex budgets and legacy migration are covered by six
+  tests. SVG uses thin hatch strokes; DXF uses a SECTION_HATCH layer. A benchmark
+  checks 10,000 hatch segments across 1,000 placed parts in 8.406 s (30 s budget).
+  Curved boundaries remain sampled; material-specific conventions and certified
+  approximation remain future work. See [Drawings](DRAWINGS.md).
 
 - Datum-linked drawing guides (schema 59): center marks with fixed paper sizes,
   projected centerlines with paper extensions, and straight cutting-plane
@@ -506,8 +516,7 @@ tracks status and order.
   sampled polylines. Seven tests cover regeneration, validation, persistence,
   semantic diff, export escaping, and cleanup. Independent DXF parsing reports
   zero errors or repairs. The 1,000-view case takes 1.235 s (10 s budget);
-  a view of a 1,000-part assembly takes 0.903 s (20 s budget). Section hatching
-  and certified curve approximation remain future extensions.
+  a view of a 1,000-part assembly takes 0.903 s (20 s budget). Certified curve approximation remains a future extension.
   API and limits: [Drawings](DRAWINGS.md).
 
 - Closed-linkage sampled motion (no schema or ABI change): each driven pose
@@ -874,7 +883,7 @@ remain lower priority. The ASME comparison below is based on public standard
 scopes and inspected repo capabilities, not a full conformity audit.
 
 1. **Drawing conventions and manufacturing sheets** — [Y14 family](https://www.asme.org/codes-standards/y14-standards):
-   automatic section hatching, projection symbols, standard sheet layouts,
+   projection symbols, standard sheet layouts, material-specific hatch conventions,
    and standards-verified dimension
    placement and typography, plus exact curve export. Current curves are sampled
    polylines; direct deviations and limits now render stacked values.

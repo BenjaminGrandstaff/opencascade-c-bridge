@@ -10,6 +10,16 @@ pub(super) fn append(
     vertices: &mut usize,
     drawing: &mut GeneratedDrawing,
 ) -> Result<(), ModelError> {
+    let section = intersection(session, view, shape)?;
+    hatching::append(session, view, &section, options, vertices, drawing)?;
+    append_edges(session, view, &section, false, options, vertices, drawing)
+}
+
+pub(super) fn intersection<'a>(
+    session: &'a Session,
+    view: &DrawingView,
+    shape: &Shape<'_>,
+) -> Result<Shape<'a>, ModelError> {
     let topology = crate::verification::connectivity(session, shape)?;
     if topology.solids == 0
         || topology.loose_faces + topology.loose_edges + topology.loose_vertices != 0
@@ -25,8 +35,17 @@ pub(super) fn append(
     let corners = plane_corners(frame, bounds, minimum, maximum);
     let wire = session.create_polyline_wire(&corners, true)?;
     let plane = session.create_face_from_wire(&wire)?;
-    let section = session.common(shape, &plane)?;
-    append_edges(session, view, &section, false, options, vertices, drawing)
+    // A compound may contain interpenetrating solids. Boolean common on that
+    // compound can drop material; intersect each solid independently instead.
+    let solids = session.subshapes(shape, ShapeType::Solid)?;
+    if solids.len() == 1 {
+        return Ok(session.common(&solids[0], &plane)?);
+    }
+    let sections = solids
+        .iter()
+        .map(|solid| session.common(solid, &plane))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(session.create_compound(&sections.iter().collect::<Vec<_>>())?)
 }
 
 fn projected_bounds(
@@ -87,4 +106,33 @@ fn plane_corners(
             frame.origin.z + frame.x_axis.z * x + up.z * y,
         )
     })
+}
+
+/// Preserve each component of an overlapping compound during half-space cuts.
+/// O(solids) kernel calls and temporary handles, plus Boolean work per solid.
+pub(super) fn clip_components<'a>(
+    session: &'a Session,
+    shape: &Shape<'_>,
+    origin: Vec3,
+    normal: Vec3,
+    keep_positive: bool,
+) -> Result<Shape<'a>, ModelError> {
+    let topology = crate::verification::connectivity(session, shape)?;
+    if topology.solids == 0
+        || topology.loose_faces + topology.loose_edges + topology.loose_vertices != 0
+        || !session.is_valid(shape)?
+    {
+        return Err(ModelError::new(
+            "section views require valid solid geometry without loose topology",
+        ));
+    }
+    let solids = session.subshapes(shape, ShapeType::Solid)?;
+    if solids.len() == 1 {
+        return Ok(session.clip_by_plane(&solids[0], origin, normal, keep_positive)?);
+    }
+    let sections = solids
+        .iter()
+        .map(|solid| session.clip_by_plane(solid, origin, normal, keep_positive))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(session.create_compound(&sections.iter().collect::<Vec<_>>())?)
 }

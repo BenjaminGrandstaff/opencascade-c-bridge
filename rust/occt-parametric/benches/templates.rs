@@ -67,6 +67,7 @@ fn fixture() -> (ModelDocument, DrawingDefinition) {
             show_hidden: false,
             kind: DrawingViewKind::Slice,
             detail: None,
+            hatching: None,
         }],
         guides: Vec::new(),
         dimensions: vec![],
@@ -309,6 +310,71 @@ fn main() {
     assert!(started.elapsed().as_secs_f64() < 10.0);
     println!(
         "10000 datum-linked drawing guides: {:?} (10s budget), one shared variant",
+        started.elapsed()
+    );
+    // One shared geometry variant, 1,000 disconnected material regions.
+    let family = document.family.clone();
+    let mut assembly = InstanceGraph::new(&family);
+    assembly.add_base("part", HashMap::new(), "test").unwrap();
+    let mut hatched = template.clone();
+    hatched.paper_size_mm = [15_100.0, 100.0];
+    hatched.views[0].outputs.clear();
+    hatched.views[0].hatching = Some(SectionHatching {
+        angle_radians: 0.0,
+        spacing_mm: 2.0,
+        phase_mm: 1.0,
+    });
+    for index in 0..1000 {
+        let id = if index == 0 {
+            "part".into()
+        } else {
+            format!("part-{index}")
+        };
+        if index > 0 {
+            assembly
+                .add_clone(&id, "part", HashMap::new(), "test")
+                .unwrap();
+            assembly
+                .set_placement(
+                    &id,
+                    Placement::translated(VectorQuantity::lengths(
+                        index as f64 * 15.0,
+                        0.0,
+                        0.0,
+                        LengthUnit::Millimeter,
+                    )),
+                )
+                .unwrap();
+        }
+        hatched.views[0].outputs.push(InstanceOutputRef {
+            instance: id,
+            output: "body".into(),
+        });
+    }
+    let started = Instant::now();
+    let generated = hatched
+        .generate(
+            &assembly,
+            &session,
+            DrawingRenderOptions {
+                curve_samples: 4,
+                maximum_vertices: 1_000_000,
+            },
+        )
+        .unwrap();
+    assert_eq!(generated.generated_variants, 1);
+    assert_eq!(generated.hatches.len(), 10_000);
+    for line in &generated.hatches {
+        assert_eq!(line.points_mm.len(), 2);
+        assert!((line.points_mm[1][0] - line.points_mm[0][0] - 10.0).abs() < 1e-8);
+        assert!((line.points_mm[0][1] - line.points_mm[1][1]).abs() < 1e-8);
+    }
+    assert!(generated.to_svg().contains("stroke-width=\"0.13\""));
+    assert!(generated.to_dxf().contains("8\nSECTION_HATCH\n"));
+    assert_eq!(session.shape_count().unwrap(), 0);
+    assert!(started.elapsed().as_secs_f64() < 30.0);
+    println!(
+        "10000 section hatch segments across 1000 placed parts: {:?} (30s budget), one shared variant",
         started.elapsed()
     );
 }
