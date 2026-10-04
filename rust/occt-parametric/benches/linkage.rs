@@ -145,4 +145,118 @@ fn main() {
         elapsed.as_secs_f64()
     );
     assert!(elapsed < Duration::from_secs(10));
+    // Start the study from an assembled pose on the positive-slider branch.
+    let mut initial = graph.clone();
+    let angle = 0.2_f64;
+    initial
+        .set_joint_coordinate("crank", JointDof::Angle, Quantity::scalar(angle))
+        .unwrap();
+    initial
+        .set_joint_coordinate(
+            "rod",
+            JointDof::Angle,
+            Quantity::scalar(-(2.0 * angle.sin() / 3.0).asin() - angle),
+        )
+        .unwrap();
+    initial
+        .set_joint_coordinate(
+            "slider",
+            JointDof::Axial,
+            Quantity::length(
+                2.0 * angle.cos() + (9.0 - (2.0 * angle.sin()).powi(2)).sqrt(),
+                LengthUnit::Millimeter,
+            ),
+        )
+        .unwrap();
+    closed_studies(&initial, &variables);
+}
+fn closed_studies(graph: &InstanceGraph<'_>, variables: &[JointVariable]) {
+    let outputs = vec![
+        InstanceOutputRef {
+            instance: "rod".into(),
+            output: "body".into(),
+        },
+        InstanceOutputRef {
+            instance: "slider".into(),
+            output: "body".into(),
+        },
+    ];
+    let study = MotionStudy::linear(
+        "crank",
+        JointDof::Angle,
+        Quantity::scalar(0.2),
+        Quantity::scalar(1.2),
+        10000,
+        outputs,
+        CollisionOptions::default(),
+    )
+    .unwrap();
+    let start = Instant::now();
+    let result = graph
+        .solve_motion_study(&study, variables, ClosedMotionOptions::default())
+        .unwrap();
+    let elapsed = start.elapsed();
+    assert_eq!(result.status, JointMotionStatus::Complete);
+    assert_eq!(result.solutions.len(), 10000);
+    for (index, solution) in result.solutions.iter().enumerate() {
+        let angle = study.samples[index].positions[0].value.value;
+        let expected = 2.0 * angle.cos() + (9.0 - (2.0 * angle.sin()).powi(2)).sqrt();
+        let distance = solution
+            .positions
+            .iter()
+            .find(|position| position.frame == "slider")
+            .unwrap()
+            .value
+            .value;
+        assert!(
+            (distance - expected).abs() < 1e-6,
+            "sample {index}: distance {distance}, expected {expected}, positions {:?}",
+            solution.positions
+        );
+    }
+    println!(
+        "closed motion 10000 analytic poses: {:.3}s (5s budget), {} iterations",
+        elapsed.as_secs_f64(),
+        result.iterations
+    );
+    assert!(elapsed < Duration::from_secs(5));
+    let study = MotionStudy::linear(
+        "crank",
+        JointDof::Angle,
+        Quantity::scalar(0.2),
+        Quantity::scalar(1.2),
+        1000,
+        study.outputs,
+        CollisionOptions::default(),
+    )
+    .unwrap();
+    let session = occt_bridge::Session::new().unwrap();
+    let start = Instant::now();
+    let result = graph
+        .run_closed_motion_study(&session, &study, variables, ClosedMotionOptions::default())
+        .unwrap();
+    let elapsed = start.elapsed();
+    assert_eq!(result.closure.status, JointMotionStatus::Complete);
+    let motion = result.motion.unwrap();
+    assert_eq!(motion.samples.len(), 1000);
+    assert_eq!(motion.generated_variants, 1);
+    assert!(
+        motion
+            .samples
+            .iter()
+            .flat_map(|sample| &sample.relationships)
+            .all(|check| check.satisfied)
+    );
+    assert!(
+        motion
+            .samples
+            .iter()
+            .all(|sample| sample.collisions.is_empty())
+    );
+    assert_eq!(session.shape_count().unwrap(), 0);
+    println!(
+        "closed motion 1000 poses with collision checks: {:.3}s (5s budget), one variant",
+        elapsed.as_secs_f64()
+    );
+    assert!(elapsed < Duration::from_secs(5));
 }

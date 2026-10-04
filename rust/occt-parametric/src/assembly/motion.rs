@@ -2,6 +2,9 @@
 
 use super::*;
 
+mod closed;
+pub use closed::*;
+
 mod continuous;
 pub use continuous::*;
 
@@ -112,6 +115,24 @@ fn sample_graph<'definition>(
     Ok(candidate)
 }
 
+fn validate_study(graph: &InstanceGraph<'_>, study: &MotionStudy) -> Result<(), ModelError> {
+    if study.samples.is_empty()
+        || study.samples.len() > MAX_MOTION_SAMPLES
+        || study.outputs.is_empty()
+    {
+        return Err(ModelError::new(
+            "motion needs 1–10000 samples and participating solid outputs",
+        ));
+    }
+    graph.validate_joints()?;
+    // Validate collision options even when a one-body study has no pairs.
+    CollisionOptions::validate(study.collision_options)?;
+    for (index, sample) in study.samples.iter().enumerate() {
+        sample_graph(graph, sample, index)?;
+    }
+    Ok(())
+}
+
 struct Binding {
     instance: String,
     group: usize,
@@ -131,20 +152,7 @@ impl InstanceGraph<'_> {
         session: &Session,
         study: &MotionStudy,
     ) -> Result<MotionResult, ModelError> {
-        if study.samples.is_empty()
-            || study.samples.len() > MAX_MOTION_SAMPLES
-            || study.outputs.is_empty()
-        {
-            return Err(ModelError::new(
-                "motion needs 1–10000 samples and participating solid outputs",
-            ));
-        }
-        self.validate_joints()?;
-        // Validate collision options even when a one-body study has no pairs.
-        CollisionOptions::validate(study.collision_options)?;
-        for (index, sample) in study.samples.iter().enumerate() {
-            sample_graph(self, sample, index)?;
-        }
+        validate_study(self, study)?;
         let (locals, bindings) = prepare_motion(session, self, &study.outputs)?;
         let mut samples = Vec::with_capacity(study.samples.len());
         for (index, sample) in study.samples.iter().enumerate() {

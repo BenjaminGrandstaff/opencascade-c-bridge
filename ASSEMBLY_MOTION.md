@@ -201,9 +201,10 @@ options reject the operation.
 
 The initial pose selects a local assembly branch. Singular seeds, incompatible
 relationships, exhausted budgets, or travel limits can prevent closure. There
-is no global branch search, force simulation, or automatic closure of sampled
-motion studies: drive a coordinate, solve closure, and then regenerate or query
-collisions for each desired pose. Continuous rotation path checking is described below. Tests compare crank-slider and four-bar closure against
+is no global branch search or force simulation. For an individual pose, drive a
+coordinate, solve closure, and then regenerate or query collisions. Closed
+motion studies below automate this sequence for sampled poses. Tests compare
+crank-slider and four-bar closure against
 independent geometry and cover scales, distant origins, planar alignment,
 limits, conflicts, unit preservation, persistence, and atomic failures. The
 scale suite also checks 1,000 driven crank-slider poses against an analytic
@@ -252,3 +253,66 @@ angles, invalid inputs, overflow, accepted-state preservation, and cleanup.
 Scale cases exercise 10,000 sparse independently rotating bodies and 1,000
 obstacle crossings checked against independent planar box geometry. These take
 0.180 s and 10.640 s respectively (10 s and 30 s budgets).
+
+## Closed-linkage motion studies
+
+`solve_motion_study(study, free, options)` closes each driven sample without
+creating geometry. `run_closed_motion_study(session, study, free, options)`
+then runs the sampled collision checks, generating each local parameter
+variant once. For a crank-slider, `study` drives the crank while `free` selects
+the connecting-rod angle and slider distance.
+
+```rust,ignore
+let result = graph.run_closed_motion_study(
+    &session, &study, &free, ClosedMotionOptions::default(),
+)?;
+match result.closure.status {
+    JointMotionStatus::Complete => {
+        let motion = result.motion.as_ref().unwrap();
+        // Each sample contains closed relationships and sampled collision checks.
+    }
+    JointMotionStatus::ClosureFailed | JointMotionStatus::BudgetExceeded => {
+        // Inspect failed_sample and solutions; collision checks have not run.
+    }
+}
+```
+
+The first pose starts from the source graph's free coordinates. Each later pose
+starts from the previous successful solution. Driver edits remain independent:
+a driver omitted from a sample uses the original graph's value, rather than
+inheriting the previous driver's value. A sample cannot both drive a coordinate
+and select it as free. All driver edits and collision options validate before
+solving begins; kernel-free solving does not validate the selected BREP outputs.
+
+`JointMotionSolution` reports each attempted closure, total reported iterations,
+status, and the first failed or unattempted sample index. `closed_study` is
+available only after every sample closes and contains the explicit driver
+edits plus solved free coordinates. Omitted drivers still refer to the original
+graph, so reuse that study with the same source graph. A closure or budget
+failure returns no partial study and no collision result; successful earlier
+closures and the last attempted best fit remain available for inspection.
+
+`ClosedMotionOptions` defaults to the ordinary 200-iteration per-pose solver
+and 100,000 total reported iterations. The total budget must be between 1 and
+1,000,000; each pose's iteration allowance is capped by the remaining budget.
+When it is exhausted, later samples are not attempted. The existing limits of
+10,000 samples, 32 free coordinates, and 256 relationships also apply. Report
+storage grows with sample count and its coordinates/checks; temporary native
+geometry stays bounded by the local variants and one sample's placed outputs.
+The graph and accepted geometry remain unchanged on success, closure failure,
+invalid input, and kernel errors.
+
+This is local pose continuation. Start from an assembled pose near the first
+driver sample and use suitably spaced samples. A large driver jump or singular
+configuration can reach another valid assembly branch; there is no global
+branch guarantee. Collision results are sampled. Even a returned closed study
+fed to `check_continuous_motion` describes independent linear interpolation of
+its coordinates, which can leave linkage closure between samples. It does not
+certify the continuous path of the constrained mechanism.
+
+Six tests compare driven poses against analytic slider positions, exercise both
+seeded assembly branches, check sampled interference after closure, and cover
+late travel-limit failures, omission semantics, budgets, invalid driver/free
+roles, generation failures, accepted-state preservation, and cleanup. The
+10,000-pose closure case takes 0.445 s; 1,000 closed poses with shared geometry
+and collision checks take 0.534 s (5 s budgets).

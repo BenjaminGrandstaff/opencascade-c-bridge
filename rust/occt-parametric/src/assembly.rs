@@ -24,8 +24,9 @@ pub use mass_properties::{
 };
 use materials::*;
 pub use motion::{
-    ContinuousCollisionOptions, ContinuousMotionResult, ContinuousPairResult, ContinuousStatus,
-    JointPosition, MAX_MOTION_SAMPLES, MotionResult, MotionSample, MotionSampleResult, MotionStudy,
+    ClosedMotionOptions, ClosedMotionResult, ContinuousCollisionOptions, ContinuousMotionResult,
+    ContinuousPairResult, ContinuousStatus, JointMotionSolution, JointMotionStatus, JointPosition,
+    MAX_MOTION_SAMPLES, MotionResult, MotionSample, MotionSampleResult, MotionStudy,
 };
 
 /// Linear tolerance, in millimeters, for relationship checks.

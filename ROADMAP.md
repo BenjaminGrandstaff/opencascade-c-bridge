@@ -15,12 +15,12 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 4/4, bridge 76 (+1 doc test), recipes 3, parametric 235 + merge driver 3, mesh Python 4 | `ctest`, `cargo test` (see README) |
-| SonarQube (indexed Rust) | Gate OK, 0 issues, 92.7% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
+| Tests | C 4/4, bridge 76 (+1 doc test), recipes 3, parametric 241 + merge driver 3, mesh Python 4 | `ctest`, `cargo test` (see README) |
+| SonarQube (indexed Rust) | Gate OK, 0 issues, 92.8% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
-| Coverage | 92.91% lines overall, test code excluded; C++ 94.30% lines, 87.67% branches, 100% functions; Rust 92.27% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 62 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Coverage | 92.96% lines overall, test code excluded; C++ 94.30% lines, 87.67% branches, 100% functions; Rust 92.34% lines | `tools/coverage/run.sh` |
+| Scale benchmarks | 64 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
 
@@ -193,6 +193,18 @@ tracks status and order.
   a view of a 1,000-part assembly takes 0.903 s (20 s budget). Section hatching
   and certified curve approximation remain future extensions.
   API and limits: [Drawings](DRAWINGS.md).
+
+- Closed-linkage sampled motion (no schema or ABI change): each driven pose
+  seeds its free coordinates from the preceding successful solve. All poses
+  must close before shared local geometry and sampled collision checks run.
+  Closure failures and a total iteration budget report the failed/unattempted
+  sample and best fits without exposing a partial study or changing the graph.
+  Six tests cover analytic positions on both seeded branches, collision checks,
+  late limits, omissions, budgets, invalid roles, native errors, and cleanup.
+  10,000 closures take 0.445 s; 1,000 closed poses with collision checks take
+  0.534 s (5 s budgets). This provides local continuation and sampled checks;
+  it does not certify a continuously closed mechanism's path. See
+  [Assembly motion](ASSEMBLY_MOTION.md).
 
 - Continuous rotating joint paths (no schema or ABI change): unwrapped angle
   interpolation preserves full, reverse, and multiple turns. Enclosing swept

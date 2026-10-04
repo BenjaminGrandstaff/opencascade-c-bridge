@@ -26,6 +26,20 @@ impl Default for JointSolveOptions {
     }
 }
 
+impl JointSolveOptions {
+    pub(super) fn checked(self) -> Result<f64, ModelError> {
+        let length = self.characteristic_length.normalized()?;
+        if self.characteristic_length.dimension != Dimension::Length
+            || length <= 0.0
+            || !length.is_finite()
+            || !(1..=1000).contains(&self.maximum_iterations)
+        {
+            return Err(ModelError::new("invalid joint solver options"));
+        }
+        Ok(length)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct JointSolution {
     /// All assembly relationships passed their authoritative geometric checks.
@@ -241,14 +255,7 @@ impl InstanceGraph<'_> {
         free: &[JointVariable],
         options: JointSolveOptions,
     ) -> Result<JointSolution, ModelError> {
-        let length = options.characteristic_length.normalized()?;
-        if options.characteristic_length.dimension != Dimension::Length
-            || length <= 0.0
-            || !length.is_finite()
-            || !(1..=1000).contains(&options.maximum_iterations)
-        {
-            return Err(ModelError::new("invalid joint solver options"));
-        }
+        let length = options.checked()?;
         if free.is_empty()
             || free.len() > 32
             || self.assembly.relationships.is_empty()

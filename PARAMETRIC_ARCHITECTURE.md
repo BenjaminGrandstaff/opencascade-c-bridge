@@ -119,6 +119,21 @@ The scale suite checks 10,000 joints, 10,000 sparse collision participants, and
 1,000 motion samples. See [Assembly motion](ASSEMBLY_MOTION.md) for frame
 conventions, resource bounds, and limits of sampled kinematics.
 
+Bounded joint-coordinate solving adjusts selected freedoms to satisfy all
+recorded relationships, keeping driver coordinates and rest placements fixed.
+Closed motion studies continue from the last successful pose and close every
+sample before generating shared geometry and checking sampled collisions.
+A failed pose or exhausted iteration budget returns closure reports with no
+partial motion study; the source graph and accepted geometry remain unchanged.
+
+Continuous joint checks retain unwrapped angular travel, including full and
+reverse multiple turns. Swept bounds and conservative point-speed bounds
+through nested frame paths reject clear intervals using exact BREP separation;
+uncertain intervals or exhausted budgets remain unresolved. These interpolated
+coordinate paths do not automatically maintain linkage closure between solved
+sample poses. Local branch selection and continuously constrained path
+certification remain separate limitations.
+
 - **Named datums.** A family declares points, axes, and planes from parameter
   expressions in its own coordinates, such as a hinge axis at a parameterized
   offset. `InstanceGraph::datum` resolves one for an instance in model

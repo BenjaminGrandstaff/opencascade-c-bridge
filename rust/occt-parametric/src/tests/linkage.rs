@@ -18,7 +18,7 @@ fn free(frame: &str, coordinate: JointDof) -> JointVariable {
         coordinate,
     }
 }
-fn definition(size: f64) -> FamilyDefinition {
+pub(super) fn definition(size: f64) -> FamilyDefinition {
     let mut definition = family(RequirementPriority::Required, 100000.0);
     definition.requirements.clear();
     definition.datums = vec![
@@ -37,7 +37,7 @@ fn definition(size: f64) -> FamilyDefinition {
     ];
     definition
 }
-fn mechanism(definition: &FamilyDefinition, size: f64, world: f64) -> InstanceGraph<'_> {
+pub(super) fn mechanism(definition: &FamilyDefinition, size: f64, world: f64) -> InstanceGraph<'_> {
     let mut graph = InstanceGraph::new(definition);
     graph
         .add_frame(
@@ -112,7 +112,7 @@ fn mechanism(definition: &FamilyDefinition, size: f64, world: f64) -> InstanceGr
         .unwrap();
     graph
 }
-fn variables() -> Vec<JointVariable> {
+pub(super) fn variables() -> Vec<JointVariable> {
     vec![
         free("rod", JointDof::Angle),
         free("slider", JointDof::Axial),

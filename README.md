@@ -275,7 +275,9 @@ nested frames, catching collisions between samples and reporting unresolved
 intervals explicitly. See [Assembly motion](ASSEMBLY_MOTION.md)
 for the supported joint paths and numeric limits. Closed-linkage solving adjusts
 selected joint coordinates while keeping driven coordinates fixed and enforcing
-travel limits; unsuccessful solves preserve the accepted pose.
+travel limits; unsuccessful solves preserve the accepted pose. Closed motion
+studies continue those solves across driven samples before generating shared
+geometry and checking sampled collisions.
 
 ABI 35 adds bounded surface tessellation and indexed topology matching. Schema 44
 adds tagged FEA hand-off, material-aware glTF scenes, and sampled wall, draft,
