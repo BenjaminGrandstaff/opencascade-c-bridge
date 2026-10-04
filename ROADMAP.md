@@ -15,12 +15,12 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 87 (+1 doc test), recipes 3, parametric 241 + merge driver 3, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 87 (+1 doc test), recipes 3, parametric 243 + merge driver 3, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 92.3% line coverage (2026-10-03); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
 | Coverage | 92.63% lines overall, test code excluded; C++ 94.30% lines, 87.59% branches, 100% functions; Rust 91.81% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 67 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Scale benchmarks | 68 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
 
@@ -180,6 +180,12 @@ tracks status and order.
   error-bounded (Bezier, B-spline) extrema.
 
 ### Parametric layer
+
+- Native viewer export: `InstanceGraph::export_draw_view` writes a placed B-rep
+  compound and a DRAW script that opens every part shaded, named after its
+  instance, and colored from its material. Two tests check the script, the
+  reloaded volume, name sanitizing, and an off-screen DRAW run. A 10,001-part
+  view exports in 0.440 s (2 s budget).
 
 - Persistent references (schema 53): `FaceSelector::Persistent` and
   `EdgeSelector::Persistent` choose topology on an earlier feature's output and
@@ -625,8 +631,7 @@ every item below is defined in documents and the API, and verified in tests.
 
 ### Capabilities
 
-1. **Native viewer scripts.** A generated DRAW script per model that opens
-    the exact B-rep parts with names and colors, like the wing's `view.tcl`.
+The near-term list is complete. Promote the next priority from **Later**.
 
 ## Later
 

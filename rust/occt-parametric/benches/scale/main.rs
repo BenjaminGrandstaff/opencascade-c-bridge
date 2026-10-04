@@ -123,6 +123,7 @@ fn main() -> ExitCode {
     outcomes.push(large_spline_case());
     outcomes.push(sweep::sweep_case());
     outcomes.push(step_export::step_assembly_case(definition));
+    outcomes.push(step_export::draw_view_case(definition));
     outcomes.push(persistent::persistent_chain_case());
     outcomes.push(profile_sweep_case(false));
     outcomes.push(profile_sweep_case(true));

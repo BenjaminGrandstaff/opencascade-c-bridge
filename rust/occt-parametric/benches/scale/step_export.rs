@@ -49,3 +49,56 @@ pub(crate) fn step_assembly_case(definition: &'static FamilyDefinition) -> Outco
         },
     )
 }
+
+/// 10,000 pattern members written as a DRAW view: one BREP and a script.
+pub(crate) fn draw_view_case(definition: &'static FamilyDefinition) -> Outcome {
+    const MEMBERS: usize = 10_000;
+    timed(
+        format!("DRAW view of {MEMBERS} pattern members: BREP and script"),
+        ms(2_000),
+        Expectation::Required,
+        || {
+            let session = Session::new().map_err(|error| failure(error.to_string()))?;
+            let mut graph = InstanceGraph::new(definition);
+            graph.add_base("source", HashMap::new(), "bench")?;
+            graph.add_linear_pattern(
+                "row",
+                "member",
+                "source",
+                MEMBERS,
+                VectorQuantity::lengths(50.0, 0.0, 0.0, LengthUnit::Millimeter),
+                "bench",
+            )?;
+            let generation = graph.regenerate_all(&session)?;
+            let directory =
+                std::env::temp_dir().join(format!("occb-bench-view-{}", std::process::id()));
+            let script = graph.export_draw_view(
+                &session,
+                &generation,
+                &directory,
+                &OutputSet::AllWithOutput("body".into()),
+            )?;
+            let lines = std::fs::read_to_string(&script)
+                .map_err(|error| failure(error.to_string()))?
+                .lines()
+                .filter(|line| line.starts_with("vdisplay"))
+                .count();
+            std::fs::remove_dir_all(&directory).map_err(|error| failure(error.to_string()))?;
+            if lines != MEMBERS + 1 {
+                return Err(failure(format!("{lines} displayed parts")));
+            }
+            drop(generation);
+            if session
+                .shape_count()
+                .map_err(|error| failure(error.to_string()))?
+                != 0
+            {
+                return Err(failure("view export retained handles".into()));
+            }
+            Ok(format!(
+                "{} named parts in one BREP and script",
+                MEMBERS + 1
+            ))
+        },
+    )
+}

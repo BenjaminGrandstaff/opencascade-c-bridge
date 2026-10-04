@@ -115,6 +115,18 @@ no file is written when arguments are invalid. A C++ test reads the file back
 through XCAF and checks the assembly, component and part names, shared parts,
 and colors.
 
+## Native viewer export
+
+`InstanceGraph::export_draw_view` writes the generated outputs of an
+`OutputSet` into a directory as `model.brep`, one placed compound of the exact
+B-rep parts, and `view.tcl`, a script for OCCT's DRAW test harness. Running
+`DRAWEXE -i -f view.tcl` there opens every part shaded, under a DRAW name
+derived from its instance id (letters, digits, and underscores, made unique),
+colored from its material appearance converted to sRGB, and prints which name
+belongs to which instance. The `-i` flag matters: with `-f` alone DRAW renders
+to an off-screen window and exits. A test runs the generated script in DRAW's
+off-screen mode when DRAW is installed.
+
 ## Assembly semantics
 
 Assembly semantics live in the `assembly` module and serialize with the

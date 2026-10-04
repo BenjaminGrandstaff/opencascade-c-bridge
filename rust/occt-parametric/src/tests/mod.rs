@@ -3,6 +3,7 @@ use super::*;
 mod assembly_motion;
 mod documents;
 mod draft;
+mod draw_view;
 mod drawing;
 mod expressions;
 mod graph;

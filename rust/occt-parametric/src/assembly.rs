@@ -6,6 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 mod collisions;
 mod configurations;
+mod draw_view;
 mod geometry;
 mod joints;
 mod mass_properties;
@@ -13,6 +14,8 @@ mod materials;
 mod motion;
 mod requirements;
 mod step_export;
+#[cfg(test)]
+pub(crate) use draw_view::draw_name_for_tests;
 #[cfg(test)]
 pub(crate) use step_export::srgb_for_tests;
 
