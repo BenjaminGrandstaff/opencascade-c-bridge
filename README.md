@@ -3,7 +3,7 @@
 A small, stable C ABI over Open Cascade (OCCT), designed to be wrapped safely
 from Rust and other languages. Open Cascade C++ objects never cross the ABI.
 
-The current C ABI version is **35**.
+The current C ABI version is **41**.
 
 ## Current API
 
@@ -30,7 +30,8 @@ The current C ABI version is **35**.
   midpoint edge-curvature, deterministic sampled full-edge curvature ranges,
   exact (line, conic) or error-bounded (Bezier, B-spline) curvature extrema,
   and direct topology-adjacency queries
-- Recorded G1-or-better tangency queries between adjacent faces
+- G1-or-better tangency queries between adjacent faces, from recorded
+  continuity or measured within an angular tolerance where none is recorded
 - Generated, modified, and deleted operation-history queries, with explicit
   composition through intermediate operations on a new shared-geometry handle
 - Tolerance-padded and exact bounds, surface area, volume, center-of-mass, and
@@ -277,7 +278,8 @@ and detail drawings, datum dimensions, parameter notes, and metadata title block
 exported as SVG or DXF. See [Drawings](DRAWINGS.md) for the API and sampling limits.
 `InstanceGraph::export_draw_view` writes a model's exact B-rep parts and a script that
 opens them, named and colored, in OCCT's DRAW viewer (`DRAWEXE -i -f view.tcl`).
-ABI 40 adds structured STEP assembly export (named components, shared parts,
+ABI 41 measures face tangency where booleans record no continuity, and schema 55
+lets `TangentTo` face selectors use it. ABI 40 adds structured STEP assembly export (named components, shared parts,
 and colors) used by `InstanceGraph::export_step`. ABI 39 adds profile sweeps along paths, and schema 52 the `Sweep` feature.
 ABI 38 adds wires mixing lines, arcs, and interpolated splines with end
 tangents, and schema 51 adds spline sketch entities. ABI 37 adds spline-section lofts and adaptive volume integration for freeform

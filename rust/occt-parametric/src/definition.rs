@@ -274,9 +274,15 @@ pub enum FaceSelector {
         source_feature: String,
         source: Box<EdgeSelector>,
     },
+    /// Faces meeting at least `minimum_count` of `faces` with G1 or better
+    /// continuity. Continuity recorded on the shared edge is used as is; with
+    /// an `angular_tolerance` (radians), an unrecorded edge is measured too,
+    /// which finds tangent junctions that booleans create.
     TangentTo {
         faces: Box<FaceSelector>,
         minimum_count: usize,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        angular_tolerance: Option<ScalarExpr>,
     },
     Union(Vec<FaceSelector>),
     Intersection(Vec<FaceSelector>),

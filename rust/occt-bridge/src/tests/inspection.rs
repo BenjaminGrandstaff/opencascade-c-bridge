@@ -405,6 +405,87 @@ fn reports_recorded_face_tangency_on_fillets() {
 }
 
 #[test]
+fn unrecorded_tangency_is_measured_within_a_tolerance() {
+    let session = Session::new().unwrap();
+    let origin = Vec3 {
+        x: 0.0,
+        y: 0.0,
+        z: 0.0,
+    };
+    let cylinder = session
+        .create_cylinder(
+            origin,
+            Vec3 {
+                x: 0.0,
+                y: 0.0,
+                z: 1.0,
+            },
+            5.0,
+            10.0,
+        )
+        .unwrap();
+    let block = session
+        .create_box(
+            Vec3 {
+                x: 0.0,
+                y: -5.0,
+                z: 0.0,
+            },
+            Vec3 {
+                x: 20.0,
+                y: 10.0,
+                z: 10.0,
+            },
+        )
+        .unwrap();
+    let stadium = session.fuse(&cylinder, &block).unwrap();
+    let faces = (0..session.subshape_count(&stadium, ShapeType::Face).unwrap())
+        .map(|index| session.subshape(&stadium, ShapeType::Face, index).unwrap())
+        .collect::<Vec<_>>();
+    let pairs = |tolerance: Option<f64>| {
+        let mut found = Vec::new();
+        for first in 0..faces.len() {
+            for second in first + 1..faces.len() {
+                let tangent = match tolerance {
+                    Some(tolerance) => session.faces_are_tangent_within(
+                        &stadium,
+                        &faces[first],
+                        &faces[second],
+                        tolerance,
+                    ),
+                    None => session.faces_are_tangent(&stadium, &faces[first], &faces[second]),
+                };
+                if tangent.unwrap() {
+                    found.push((first, second));
+                }
+            }
+        }
+        found
+    };
+    // The fuse records nothing on its new edges.
+    assert!(pairs(None).is_empty());
+    // Measured: each flat side meets the round end, and each half-disc cap
+    // meets the block's coplanar top or bottom.
+    let measured = pairs(Some(1e-3));
+    assert_eq!(measured.len(), 6);
+    let curved = measured
+        .iter()
+        .filter(|(first, second)| {
+            !session.face_is_planar(&faces[*first]).unwrap()
+                || !session.face_is_planar(&faces[*second]).unwrap()
+        })
+        .count();
+    assert_eq!(curved, 2);
+    for tolerance in [0.0, -1.0, f64::NAN, std::f64::consts::FRAC_PI_2] {
+        assert!(
+            session
+                .faces_are_tangent_within(&stadium, &faces[0], &faces[1], tolerance)
+                .is_err()
+        );
+    }
+}
+
+#[test]
 fn duplicate_handles_preserve_operation_history() {
     let session = Session::new().unwrap();
     let source = unit_box(&session, 0.0);

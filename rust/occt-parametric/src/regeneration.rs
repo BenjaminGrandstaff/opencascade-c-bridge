@@ -764,8 +764,15 @@ pub(crate) fn collect_face_selector_parameters<'a>(
         FaceSelector::AdjacentToEdges { edges, .. } => {
             collect_edge_selector_parameters(edges, names);
         }
-        FaceSelector::TangentTo { faces, .. } => {
+        FaceSelector::TangentTo {
+            faces,
+            angular_tolerance,
+            ..
+        } => {
             collect_face_selector_parameters(faces, names);
+            if let Some(tolerance) = angular_tolerance {
+                collect_scalar_parameters(tolerance, names);
+            }
         }
         FaceSelector::Union(selectors) | FaceSelector::Intersection(selectors) => {
             for selector in selectors {

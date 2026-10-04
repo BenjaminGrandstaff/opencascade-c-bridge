@@ -308,10 +308,22 @@ pub(crate) fn resolve_face_selector<'session>(
         FaceSelector::TangentTo {
             faces,
             minimum_count,
+            angular_tolerance,
         } => {
+            let angular_tolerance = angular_tolerance
+                .as_ref()
+                .map(|tolerance| scalar(tolerance, parameters, Dimension::Scalar))
+                .transpose()?;
+            if angular_tolerance.is_some_and(|tolerance| {
+                !(tolerance > 0.0 && tolerance < std::f64::consts::FRAC_PI_2)
+            }) {
+                return Err(ModelError::new(
+                    "face tangency angular tolerance must be in (0, pi/2) radians",
+                ));
+            }
             let faces =
                 resolve_face_selector(session, result, faces, parameters, shapes, definitions)?;
-            select_faces_tangent_to_faces(session, result, faces, *minimum_count)
+            select_faces_tangent_to_faces(session, result, faces, *minimum_count, angular_tolerance)
         }
         FaceSelector::Union(selectors) => {
             let sets = resolve_face_selector_sets(

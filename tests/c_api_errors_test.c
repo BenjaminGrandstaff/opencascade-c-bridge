@@ -682,6 +682,18 @@ static void topology_relations(occt_bridge_session_t* session) {
     EXPECT(occt_bridge_shape_faces_are_tangent(session, box, foreign_face, second_face, &flag), ARG);
     EXPECT(occt_bridge_shape_faces_are_tangent(session, box, face, foreign_face, &flag), ARG);
     EXPECT(occt_bridge_shape_faces_are_tangent(session, box, face, face, &flag), OK);
+
+    EXPECT(occt_bridge_shape_faces_are_tangent_within(session, box, face, second_face, 0.01, NULL), ARG);
+    EXPECT(occt_bridge_shape_faces_are_tangent_within(session, box, face, second_face, 0.0, &flag), ARG);
+    EXPECT(occt_bridge_shape_faces_are_tangent_within(session, box, face, second_face, -0.1, &flag), ARG);
+    EXPECT(occt_bridge_shape_faces_are_tangent_within(session, box, face, second_face, 1.6, &flag), ARG);
+    EXPECT(occt_bridge_shape_faces_are_tangent_within(session, box, face, second_face, NAN, &flag), ARG);
+    EXPECT(occt_bridge_shape_faces_are_tangent_within(session, box, unknown, second_face, 0.01, &flag), MISSING);
+    EXPECT(occt_bridge_shape_faces_are_tangent_within(session, box, edge, second_face, 0.01, &flag), ARG);
+    EXPECT(occt_bridge_shape_faces_are_tangent_within(session, box, face, foreign_face, 0.01, &flag), ARG);
+    flag = 1;
+    EXPECT(occt_bridge_shape_faces_are_tangent_within(session, box, face, second_face, 0.01, &flag), OK);
+    EXPECT_TRUE(flag == 0, "perpendicular box faces measured tangent");
 }
 
 static void history(occt_bridge_session_t* session) {

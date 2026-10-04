@@ -2,7 +2,7 @@
 
 use super::*;
 
-pub(crate) const ABI_VERSION: u32 = 40;
+pub(crate) const ABI_VERSION: u32 = 41;
 
 #[repr(C)]
 pub(crate) struct RawMeshOptions {
@@ -627,6 +627,14 @@ unsafe extern "C" {
         parent: RawShapeId,
         first_face: RawShapeId,
         second_face: RawShapeId,
+        out: *mut c_int,
+    ) -> RawStatus;
+    pub(crate) fn occt_bridge_shape_faces_are_tangent_within(
+        session: *mut c_void,
+        parent: RawShapeId,
+        first_face: RawShapeId,
+        second_face: RawShapeId,
+        angular_tolerance: f64,
         out: *mut c_int,
     ) -> RawStatus;
     pub(crate) fn occt_bridge_create_open_profile_face_to_next(

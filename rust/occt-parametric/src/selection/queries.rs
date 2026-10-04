@@ -466,6 +466,7 @@ pub(crate) fn select_faces_tangent_to_faces<'session>(
     shape: &Shape<'session>,
     sources: Vec<Shape<'session>>,
     minimum_count: usize,
+    angular_tolerance: Option<f64>,
 ) -> Result<Vec<Shape<'session>>, ModelError> {
     if minimum_count == 0 {
         cleanup_shapes(session, sources);
@@ -499,7 +500,13 @@ pub(crate) fn select_faces_tangent_to_faces<'session>(
         };
         let mut tangent_count = 0;
         for source in &sources {
-            match session.faces_are_tangent(shape, &face, source) {
+            let tangent = match angular_tolerance {
+                Some(tolerance) => {
+                    session.faces_are_tangent_within(shape, &face, source, tolerance)
+                }
+                None => session.faces_are_tangent(shape, &face, source),
+            };
+            match tangent {
                 Ok(true) => tangent_count += 1,
                 Ok(false) => {}
                 Err(error) => {

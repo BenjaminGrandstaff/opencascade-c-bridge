@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define OCCT_BRIDGE_ABI_VERSION 40u
+#define OCCT_BRIDGE_ABI_VERSION 41u
 #define OCCT_BRIDGE_INVALID_SHAPE_ID UINT64_C(0)
 
 #if defined(_WIN32) && defined(OCCT_BRIDGE_BUILD_SHARED)
@@ -902,6 +902,22 @@ OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_shape_faces_are_tangent(
     occt_bridge_shape_id_t parent,
     occt_bridge_shape_id_t first_face,
     occt_bridge_shape_id_t second_face,
+    int* out_are_tangent
+);
+
+/*
+ * Tests whether two adjacent faces meet with G1-or-better continuity. A
+ * continuity recorded on a shared edge is used as is; a shared edge without
+ * one (booleans that create new tangent junctions record none) is measured by
+ * sampling surface normals along it, which must agree within
+ * angular_tolerance radians, in (0, pi/2).
+ */
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_shape_faces_are_tangent_within(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t parent,
+    occt_bridge_shape_id_t first_face,
+    occt_bridge_shape_id_t second_face,
+    double angular_tolerance,
     int* out_are_tangent
 );
 

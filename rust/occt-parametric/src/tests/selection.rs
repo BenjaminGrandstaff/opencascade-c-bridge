@@ -484,6 +484,7 @@ fn tangency_selector_finds_fillet_neighbors_without_topology_indices() {
             maximum_distance: ScalarExpr::Literal(Quantity::length(0.001, LengthUnit::Millimeter)),
         }),
         minimum_count: 1,
+        angular_tolerance: None,
     };
     let selected = resolve_face_selector(
         &session,

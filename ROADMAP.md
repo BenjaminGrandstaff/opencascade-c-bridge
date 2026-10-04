@@ -8,23 +8,31 @@ tracks status and order.
 
 | Layer | Version | State |
 |---|---|---|
-| C ABI (`src/`, `include/`) | ABI 40 | Stable; exact version match required |
+| C ABI (`src/`, `include/`) | ABI 41 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 54 | Active development |
+| `occt-parametric` (engineering layer) | Schema 55 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 87 (+1 doc test), recipes 3, parametric 246 + merge driver 3, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 88 (+1 doc test), recipes 3, parametric 249 + merge driver 3, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 92.3% line coverage (2026-10-03); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
 | Coverage | 92.63% lines overall, test code excluded; C++ 94.30% lines, 87.59% branches, 100% functions; Rust 91.81% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 69 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Scale benchmarks | 70 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
 
 ### Kernel (C ABI)
+
+- Measured face tangency (ABI 41):
+  `occt_bridge_shape_faces_are_tangent_within` uses continuity recorded on a
+  shared edge and, where none is recorded, samples both faces' normals along
+  the edge against an angular tolerance in (0, pi/2). Shared edges are found
+  through an edge map, O(edges of both faces). C, C error, and bridge tests
+  check a block fused flush with a cylinder (no recorded tangency; six
+  measured tangent pairs, two of them curved) and tolerance validation.
 
 - Structured STEP export (ABI 40): `occt_bridge_step_save_assembly` writes one
   named assembly through OCCT XCAF, with a named component per placed shape and
@@ -180,6 +188,16 @@ tracks status and order.
   error-bounded (Bezier, B-spline) extrema.
 
 ### Parametric layer
+
+- Measured tangency in selectors (schema 55): `FaceSelector::TangentTo` takes
+  an optional `angular_tolerance`; when set, unrecorded junctions are measured,
+  so tangent and coplanar faces that a boolean split apart can be selected.
+  The tolerance's parameters join the consuming feature's signature, and an
+  absent tolerance is omitted from documents. Three tests cover recorded-only
+  failure on a fused stadium, the measured selection's exact area, tolerance
+  errors, signatures, and persistence. Checking all 410 faces of a 400-hole
+  stadium plate against its top takes 0.016 s (0.644 s with the booleans
+  building it; 2 s budget).
 
 - Named references (schema 54): `FamilyDefinition::references` declares a face
   or edge selector once under a name, and `FaceSelector::Named` and
@@ -665,7 +683,9 @@ The near-term list is complete. Promote the next priority from **Later**.
 - Undercut detection against a parting line, and exact (not sampled) minimum
   wall thickness and draft on curved BREP faces.
 - Assumptions and requirement-to-feature trace links in the document schema.
-- Geometric tangency inference when continuity metadata is absent.
+- Merging same-domain faces after booleans (OCCT's
+  `ShapeUpgrade_UnifySameDomain`), so fused shapes with split coplanar or
+  tangent faces can be shelled and drafted.
 - Additional domain-specific expression functions.
 - Integration with the broader EIL source model in the sibling
   [`engineering-intent-language`](../engineering-intent-language) project.

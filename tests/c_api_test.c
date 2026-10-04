@@ -444,6 +444,52 @@ static void test_failure_diagnostics(occt_bridge_session_t* session) {
     occt_bridge_shape_release(session, box);
 }
 
+/*
+ * A block fused flush against a cylinder meets it tangentially along new edges
+ * that the boolean records no continuity for: only measuring finds them.
+ */
+static void test_inferred_tangency(occt_bridge_session_t* session) {
+    occt_bridge_shape_id_t cylinder = OCCT_BRIDGE_INVALID_SHAPE_ID;
+    occt_bridge_shape_id_t block = OCCT_BRIDGE_INVALID_SHAPE_ID;
+    occt_bridge_shape_id_t stadium = OCCT_BRIDGE_INVALID_SHAPE_ID;
+    require_ok(session, occt_bridge_create_cylinder(
+        session, (occt_bridge_vec3_t){0, 0, 0}, (occt_bridge_vec3_t){0, 0, 1}, 5.0, 10.0, &cylinder));
+    require_ok(session, occt_bridge_create_box(
+        session, (occt_bridge_vec3_t){0, -5, 0}, (occt_bridge_vec3_t){20, 10, 10}, &block));
+    require_ok(session, occt_bridge_fuse(session, cylinder, block, &stadium));
+    size_t face_count = 0;
+    require_ok(session, occt_bridge_shape_subshape_count(session, stadium, OCCT_BRIDGE_SHAPE_FACE, &face_count));
+    occt_bridge_shape_id_t faces[16] = {0};
+    require_true(face_count <= 16, "stadium face count");
+    for (size_t index = 0; index < face_count; ++index) {
+        require_ok(session, occt_bridge_shape_subshape_at(
+            session, stadium, OCCT_BRIDGE_SHAPE_FACE, index, &faces[index]));
+    }
+    int recorded = 0;
+    int measured = 0;
+    for (size_t first = 0; first < face_count; ++first) {
+        for (size_t second = first + 1; second < face_count; ++second) {
+            int tangent = 0;
+            require_ok(session, occt_bridge_shape_faces_are_tangent(
+                session, stadium, faces[first], faces[second], &tangent));
+            recorded += tangent;
+            require_ok(session, occt_bridge_shape_faces_are_tangent_within(
+                session, stadium, faces[first], faces[second], 1e-3, &tangent));
+            measured += tangent;
+        }
+    }
+    require_true(recorded == 0, "the fuse records no continuity on its new edges");
+    /* Both flat sides meet the round end; on the top and on the bottom the
+     * split disc's halves meet each other and the block's notched face. */
+    require_true(measured == 6, "measuring finds the side and cap junctions");
+    for (size_t index = 0; index < face_count; ++index) {
+        require_ok(session, occt_bridge_shape_remove(session, faces[index]));
+    }
+    require_ok(session, occt_bridge_shape_remove(session, stadium));
+    require_ok(session, occt_bridge_shape_remove(session, block));
+    require_ok(session, occt_bridge_shape_remove(session, cylinder));
+}
+
 int main(void) {
     require_true(occt_bridge_abi_version() == OCCT_BRIDGE_ABI_VERSION, "ABI version");
 
@@ -945,6 +991,7 @@ int main(void) {
     test_step_round_trip(session);
     test_stl_export(session);
     test_sewing_and_solids(session);
+    test_inferred_tangency(session);
     test_session_options(session);
     test_failure_diagnostics(session);
     occt_bridge_session_destroy(session);

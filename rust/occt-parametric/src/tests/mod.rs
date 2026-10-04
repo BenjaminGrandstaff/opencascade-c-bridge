@@ -21,6 +21,7 @@ mod selection;
 mod sheet_metal;
 mod step_export;
 mod sweep;
+mod tangency;
 mod variable_fillet;
 
 fn length_parameter(id: &str, default: f64) -> ParameterDefinition {

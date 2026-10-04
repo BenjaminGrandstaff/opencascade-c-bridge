@@ -43,6 +43,7 @@ mod sketches;
 mod solver;
 mod step_export;
 mod sweep;
+mod tangency;
 mod validation;
 mod variable_fillet;
 
@@ -126,6 +127,7 @@ fn main() -> ExitCode {
     outcomes.push(step_export::draw_view_case(definition));
     outcomes.push(persistent::persistent_chain_case());
     outcomes.push(persistent::named_reference_case());
+    outcomes.push(tangency::measured_tangency_case());
     outcomes.push(profile_sweep_case(false));
     outcomes.push(profile_sweep_case(true));
     outcomes.push(hole_features_case());

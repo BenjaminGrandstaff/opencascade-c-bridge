@@ -9,12 +9,14 @@
 #include <BRepAdaptor_Surface.hxx>
 #include <BRepBndLib.hxx>
 #include <BRepGProp.hxx>
+#include <BRepLib.hxx>
 #include <BRepLProp_SLProps.hxx>
 #include <BRepTools.hxx>
 #include <BRep_Tool.hxx>
 #include <Bnd_Box.hxx>
 #include <GProp_GProps.hxx>
 #include <Precision.hxx>
+#include <TopExp.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopTools_IndexedMapOfShape.hxx>
 #include <TopoDS.hxx>
@@ -148,18 +150,64 @@ occt_bridge_status_t shape_bounds(
     return succeed(session);
 }
 
-/* True when the faces share an edge with recorded G1-or-better continuity. */
-bool faces_share_tangent_edge(const TopoDS_Face& first, const TopoDS_Face& second) {
-    for (TopExp_Explorer first_edges(first, TopAbs_EDGE); first_edges.More(); first_edges.Next()) {
-        const TopoDS_Edge edge = TopoDS::Edge(first_edges.Current());
-        for (TopExp_Explorer second_edges(second, TopAbs_EDGE); second_edges.More(); second_edges.Next()) {
-            if (edge.IsSame(second_edges.Current()) && BRep_Tool::HasContinuity(edge, first, second)
-                && BRep_Tool::Continuity(edge, first, second) >= GeomAbs_G1) {
-                return true;
-            }
+/*
+ * True when the faces share an edge with G1-or-better continuity. A recorded
+ * continuity is authoritative; an edge without one is measured at
+ * angular_tolerance radians, or treated as sharp when the tolerance is
+ * negative. O(edges of both faces) plus one sampled check per unrecorded
+ * shared edge.
+ */
+bool faces_share_tangent_edge(const TopoDS_Face& first, const TopoDS_Face& second, double angular_tolerance) {
+    TopTools_IndexedMapOfShape first_edges;
+    TopExp::MapShapes(first, TopAbs_EDGE, first_edges);
+    TopTools_IndexedMapOfShape checked;
+    for (TopExp_Explorer second_edges(second, TopAbs_EDGE); second_edges.More(); second_edges.Next()) {
+        const TopoDS_Edge edge = TopoDS::Edge(second_edges.Current());
+        if (!first_edges.Contains(edge) || checked.Add(edge) == 0 || BRep_Tool::Degenerated(edge)) {
+            continue;
+        }
+        GeomAbs_Shape continuity = GeomAbs_C0;
+        if (BRep_Tool::HasContinuity(edge, first, second)) {
+            continuity = BRep_Tool::Continuity(edge, first, second);
+        } else if (angular_tolerance >= 0.0) {
+            continuity = BRepLib::ContinuityOfFaces(edge, first, second, angular_tolerance);
+        }
+        if (continuity >= GeomAbs_G1) {
+            return true;
         }
     }
     return false;
+}
+
+// Shared argument checks and evaluation for both tangency entry points.
+occt_bridge_status_t faces_tangent(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t parent,
+    occt_bridge_shape_id_t first_face,
+    occt_bridge_shape_id_t second_face,
+    double angular_tolerance,
+    int* out_are_tangent) {
+    if (out_are_tangent == nullptr) {
+        return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_are_tangent is null");
+    }
+    *out_are_tangent = 0;
+    const TopoDS_Shape* parent_shape = find_shape(session, parent);
+    const TopoDS_Shape* first_shape = find_shape(session, first_face);
+    const TopoDS_Shape* second_shape = find_shape(session, second_face);
+    if (parent_shape == nullptr || first_shape == nullptr || second_shape == nullptr) {
+        return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "tangency shape was not found");
+    }
+    if (first_shape->ShapeType() != TopAbs_FACE || second_shape->ShapeType() != TopAbs_FACE) {
+        return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "tangency requires two faces");
+    }
+    if (!belongs_to(*parent_shape, *first_shape) || !belongs_to(*parent_shape, *second_shape)) {
+        return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "tangency faces must belong to the parent");
+    }
+    if (!first_shape->IsSame(*second_shape)
+        && faces_share_tangent_edge(TopoDS::Face(*first_shape), TopoDS::Face(*second_shape), angular_tolerance)) {
+        *out_are_tangent = 1;
+    }
+    return succeed(session);
 }
 
 occt_bridge_status_t store_subshape_handles(
@@ -599,30 +647,26 @@ occt_bridge_status_t occt_bridge_shape_faces_are_tangent(
     occt_bridge_shape_id_t second_face,
     int* out_are_tangent) {
     return guarded(session, [&] {
-        if (out_are_tangent == nullptr) {
-            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_are_tangent is null");
-        }
-        *out_are_tangent = 0;
-        const TopoDS_Shape* parent_shape = find_shape(session, parent);
-        const TopoDS_Shape* first_shape = find_shape(session, first_face);
-        const TopoDS_Shape* second_shape = find_shape(session, second_face);
-        if (parent_shape == nullptr || first_shape == nullptr || second_shape == nullptr) {
-            return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "tangency shape was not found");
-        }
-        if (first_shape->ShapeType() != TopAbs_FACE || second_shape->ShapeType() != TopAbs_FACE) {
-            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "tangency requires two faces");
-        }
-        if (!belongs_to(*parent_shape, *first_shape) || !belongs_to(*parent_shape, *second_shape)) {
+        return faces_tangent(session, parent, first_face, second_face, -1.0, out_are_tangent);
+    });
+}
+
+occt_bridge_status_t occt_bridge_shape_faces_are_tangent_within(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t parent,
+    occt_bridge_shape_id_t first_face,
+    occt_bridge_shape_id_t second_face,
+    double angular_tolerance,
+    int* out_are_tangent) {
+    return guarded(session, [&] {
+        if (!std::isfinite(angular_tolerance) || angular_tolerance <= 0.0 || angular_tolerance >= M_PI_2) {
+            if (out_are_tangent != nullptr) {
+                *out_are_tangent = 0;
+            }
             return fail(
-                session,
-                OCCT_BRIDGE_INVALID_ARGUMENT,
-                "tangency faces must belong to the parent");
+                session, OCCT_BRIDGE_INVALID_ARGUMENT, "angular tolerance must be in (0, pi/2) radians");
         }
-        if (!first_shape->IsSame(*second_shape)
-            && faces_share_tangent_edge(TopoDS::Face(*first_shape), TopoDS::Face(*second_shape))) {
-            *out_are_tangent = 1;
-        }
-        return succeed(session);
+        return faces_tangent(session, parent, first_face, second_face, angular_tolerance, out_are_tangent);
     });
 }
 

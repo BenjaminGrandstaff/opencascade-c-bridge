@@ -1049,8 +1049,22 @@ hollow features consume the resolved handles and release all temporary
 subshapes, including on ambiguity or kernel failure. These rules do not store
 topology indices. An equal nearest match, disallowed size tie, missing history
 result, empty rule result, or out-of-range value fails with an actionable
-diagnostic. Geometric tangency inference when continuity metadata is absent
-remains planned.
+diagnostic.
+
+Schema 55 adds measured tangency. `FaceSelector::TangentTo` takes an optional
+`angular_tolerance` (radians, in (0, pi/2)). Without it, only continuity
+recorded on a shared edge counts, as before. With it, a shared edge with no
+record is measured through ABI 41's
+`occt_bridge_shape_faces_are_tangent_within`, where the faces' normals sampled
+along the edge must agree within the tolerance; a recorded value stays
+authoritative. Booleans record nothing on the junctions they create: a block
+fused flush with a cylinder has no recorded tangency at all, though its flat
+sides meet the round end and its top is split into coplanar faces. The
+tolerance's parameters join the consuming feature's signature. Each face pair
+costs O(edges of both faces) plus one sampled check per unrecorded shared
+edge; all 410 faces of a 400-hole stadium plate are checked against its top
+in 0.016 s. OCCT's offset and draft may still fail on such fused shapes, which
+is a kernel limitation separate from selection.
 
 Schema 53 adds persistent references. `FaceSelector::Persistent { feature,
 select }` and `EdgeSelector::Persistent` evaluate `select` on `feature`'s own
