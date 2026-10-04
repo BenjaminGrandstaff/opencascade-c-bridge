@@ -641,6 +641,49 @@ pub enum VerificationRule {
         )]
         samples_per_direction: u32,
     },
+    /// Sampled: inward normal rays from up to `maximum_samples` triangle
+    /// centroids of the output's tessellation must travel at least `minimum`
+    /// (a positive length) before leaving the material.
+    MinimumWall {
+        output: String,
+        minimum: Quantity,
+        #[serde(default, skip_serializing_if = "MeshSettings::is_default")]
+        mesh: MeshSettings,
+        #[serde(
+            default = "default_wall_samples",
+            skip_serializing_if = "is_default_wall_samples"
+        )]
+        maximum_samples: usize,
+    },
+    /// Sampled: every face not perpendicular to the dimensionless
+    /// `pull_direction` has facet draft of at least `minimum_radians`, in
+    /// [0, pi/2). Negative draft is an undercut.
+    DraftAngle {
+        output: String,
+        pull_direction: VectorQuantity,
+        minimum_radians: f64,
+        #[serde(default, skip_serializing_if = "MeshSettings::is_default")]
+        mesh: MeshSettings,
+    },
+    /// Sampled: no downward-facing facet above the lowest build plane leans
+    /// more than `maximum_radians`, in [0, pi/2], from vertical.
+    Overhang {
+        output: String,
+        build_direction: VectorQuantity,
+        maximum_radians: f64,
+        #[serde(default, skip_serializing_if = "MeshSettings::is_default")]
+        mesh: MeshSettings,
+    },
+}
+
+pub const DEFAULT_WALL_SAMPLES: usize = 1_000;
+
+fn default_wall_samples() -> usize {
+    DEFAULT_WALL_SAMPLES
+}
+
+fn is_default_wall_samples(value: &usize) -> bool {
+    *value == DEFAULT_WALL_SAMPLES
 }
 
 /// Which way a surface curves relative to the part's outward normal.

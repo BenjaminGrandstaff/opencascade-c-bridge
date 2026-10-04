@@ -128,6 +128,7 @@ fn main() -> ExitCode {
     outcomes.extend(motion::assembly_cases(definition));
     outcomes.extend(requirements::requirement_cases(definition));
     outcomes.push(requirements::radius_case());
+    outcomes.push(requirements::manufacturing_rules_case(definition));
     outcomes.push(drawing::drawing_case(definition));
     outcomes.push(drawing::assembly_drawing_case(definition));
     outcomes.push(mesh::gltf_case(definition));

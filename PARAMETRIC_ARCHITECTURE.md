@@ -32,9 +32,9 @@ Rust layers:
    length units; versioned families; persistent instance identity; sparse
    instance overrides; dependency-ordered feature execution; named results;
    requirement priorities and provenance; validity, volume, connectivity,
-   minimum radius, mass, datum clearance, relationship-satisfaction,
-   no-interference, and minimum-clearance verification with measured values,
-   evidence quality, and witnesses;
+   minimum radius, sampled wall thickness, draft, and overhang, mass, datum
+   clearance, relationship-satisfaction, no-interference, and minimum-clearance
+   verification with measured values, evidence quality, and witnesses;
    clone inheritance with cycle detection and explicit detachment; accepted
    result revisions with stale-result retention and explicit freezing;
    independent translation/axis-angle placement; nested assembly frames;
@@ -70,7 +70,6 @@ The following major capabilities remain planned:
 - additional domain-specific expression functions;
 - additional schema migrations and integration with the broader EIL source
   model;
-- sampled manufacturing requirement rules (wall thickness, draft, overhang);
 - broader hole-size catalogs (countersink relief, tolerance classes) and
   sheet metal beyond single constant-width strips;
 - advanced ribs;

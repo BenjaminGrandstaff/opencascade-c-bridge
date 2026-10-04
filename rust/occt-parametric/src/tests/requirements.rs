@@ -722,3 +722,237 @@ fn freeform_radii_are_sampled_and_rules_validate_and_persist() {
     assert!(!json.contains("samples_per_direction"));
     assert_eq!(ModelDocument::from_json(&json).unwrap(), document);
 }
+
+fn block(id: &str, origin: (f64, f64, f64), size: (f64, f64, f64)) -> FeatureDefinition {
+    FeatureDefinition {
+        id: id.into(),
+        operation: FeatureOperation::Box {
+            origin: point(origin.0, origin.1, origin.2),
+            size: point(size.0, size.1, size.2),
+        },
+    }
+}
+
+fn binary(
+    id: &str,
+    operation: fn(String, String) -> FeatureOperation,
+    a: &str,
+    b: &str,
+) -> FeatureDefinition {
+    FeatureDefinition {
+        id: id.into(),
+        operation: operation(a.into(), b.into()),
+    }
+}
+
+/// `cup`: a 20 x 20 x 10 box with a pocket leaving 2 mm walls and floor.
+/// `tilted`: a 10 mm cube turned 5 degrees about x, so its y walls lean 5
+/// degrees from the +z pull. `tee`: a 4 x 4 stem under a 14 x 14 x 2 top whose
+/// underside faces straight down above the build plate.
+fn manufacturing_family() -> FamilyDefinition {
+    let mut family = topology_family();
+    let cut = |object, tool| FeatureOperation::Cut { object, tool };
+    let fuse = |left, right| FeatureOperation::Fuse { left, right };
+    family.features = vec![
+        block("shell", (0.0, 0.0, 0.0), (20.0, 20.0, 10.0)),
+        block("pocket", (2.0, 2.0, 2.0), (16.0, 16.0, 9.0)),
+        binary("cup", cut, "shell", "pocket"),
+        block("cube", (0.0, 0.0, 0.0), (10.0, 10.0, 10.0)),
+        FeatureDefinition {
+            id: "tilted".into(),
+            operation: FeatureOperation::Rotate {
+                input: "cube".into(),
+                origin: point(0.0, 0.0, 0.0),
+                axis: VectorExpr::Literal(VectorQuantity::scalars(1.0, 0.0, 0.0)),
+                angle_radians: ScalarExpr::Literal(Quantity::scalar(5f64.to_radians())),
+            },
+        },
+        block("stem", (0.0, 0.0, 0.0), (4.0, 4.0, 10.0)),
+        block("top", (-5.0, -5.0, 10.0), (14.0, 14.0, 2.0)),
+        binary("tee", fuse, "stem", "top"),
+    ];
+    family
+}
+
+fn up() -> VectorQuantity {
+    VectorQuantity::scalars(0.0, 0.0, 1.0)
+}
+
+fn wall(output: &str, minimum: f64) -> VerificationRule {
+    VerificationRule::MinimumWall {
+        output: output.into(),
+        minimum: mm(minimum),
+        mesh: MeshSettings::default(),
+        maximum_samples: DEFAULT_WALL_SAMPLES,
+    }
+}
+
+fn draft(output: &str, minimum_radians: f64) -> VerificationRule {
+    VerificationRule::DraftAngle {
+        output: output.into(),
+        pull_direction: up(),
+        minimum_radians,
+        mesh: MeshSettings::default(),
+    }
+}
+
+fn overhang(output: &str, maximum_radians: f64) -> VerificationRule {
+    VerificationRule::Overhang {
+        output: output.into(),
+        build_direction: up(),
+        maximum_radians,
+        mesh: MeshSettings::default(),
+    }
+}
+
+#[test]
+fn manufacturing_rules_screen_walls_draft_and_overhang_with_sampled_evidence() {
+    let family = manufacturing_family();
+    let degree = 1f64.to_radians();
+    let results = verify(
+        &family,
+        vec![
+            ("cup.ok", wall("cup", 1.5)),
+            ("cup.thin", wall("cup", 2.5)),
+            ("cube.zero", draft("cube", 0.0)),
+            ("cube.degree", draft("cube", degree)),
+            ("tilted.two", draft("tilted", 2f64.to_radians())),
+            ("tilted.six", draft("tilted", 6f64.to_radians())),
+            (
+                "cube.overhang",
+                overhang("cube", std::f64::consts::FRAC_PI_4),
+            ),
+            ("tee.overhang", overhang("tee", std::f64::consts::FRAC_PI_4)),
+        ],
+    )
+    .unwrap();
+    let get = |id: &str| find(&results, id);
+    for id in ["cup.ok", "cube.zero", "cube.overhang"] {
+        assert_eq!(
+            get(id).status,
+            VerificationStatus::Passed,
+            "{}",
+            get(id).message
+        );
+    }
+    for result in &results {
+        assert!(
+            matches!(result.evidence, Evidence::Sampled { .. }),
+            "{result:?}"
+        );
+    }
+
+    // Rays from the outer walls cross 2 mm of material.
+    let thin = get("cup.thin");
+    assert_eq!(thin.status, VerificationStatus::Failed);
+    assert!(
+        (thin.measured.unwrap().value - 2.0).abs() < 1e-6,
+        "{}",
+        thin.message
+    );
+    let Evidence::Sampled { samples, .. } = thin.evidence else {
+        unreachable!()
+    };
+    assert!(samples > 0 && samples <= DEFAULT_WALL_SAMPLES);
+    let witness = thin.witness.as_ref().unwrap();
+    let [entry, exit] = witness.points_mm[..] else {
+        panic!("entry and exit points")
+    };
+    let gap =
+        ((entry.x - exit.x).powi(2) + (entry.y - exit.y).powi(2) + (entry.z - exit.z).powi(2))
+            .sqrt();
+    assert!((gap - 2.0).abs() < 1e-6);
+
+    // Vertical walls have zero draft. Tilting 5 degrees about x gives the y
+    // walls 5 degrees either way, which both release, while the x walls stay
+    // vertical. Down-facing faces such as the base are not draft failures.
+    let zero = get("cube.zero").measured.unwrap();
+    assert!(zero.value.abs() < 1e-9);
+    assert_eq!(zero.unit, MeasurementUnit::Radian);
+    assert_eq!(get("cube.degree").status, VerificationStatus::Failed);
+    assert!(
+        get("cube.degree").message.contains("4 of 4 face(s)"),
+        "{}",
+        get("cube.degree").message
+    );
+    let two = get("tilted.two");
+    assert_eq!(two.status, VerificationStatus::Failed);
+    assert!(two.message.contains("2 of 6 face(s)"), "{}", two.message);
+    assert!(
+        two.measured.unwrap().value.abs() < 1e-9,
+        "x walls stay vertical"
+    );
+    let six = get("tilted.six");
+    assert!(six.message.contains("4 of 6 face(s)"), "{}", six.message);
+    assert!(six.witness.as_ref().unwrap().subjects[0].starts_with("face "));
+
+    // The cube's underside rests on the build plate; the tee's top does not.
+    let tee = get("tee.overhang");
+    assert_eq!(tee.status, VerificationStatus::Failed);
+    assert!(tee.measured.unwrap().value >= 2.0);
+    let point = tee.witness.as_ref().unwrap().points_mm[0];
+    assert!((point.z - 10.0).abs() < 1e-9, "on the underside of the top");
+}
+
+#[test]
+fn manufacturing_rules_validate_settings_and_persist_defaults_implicitly() {
+    let mut family = manufacturing_family();
+    let invalid = [
+        (draft("cube", std::f64::consts::FRAC_PI_2), "minimum draft"),
+        (overhang("cube", -0.1), "invalid manufacturing angles"),
+        (
+            VerificationRule::MinimumWall {
+                output: "cup".into(),
+                minimum: Quantity::scalar(1.0),
+                mesh: MeshSettings::default(),
+                maximum_samples: DEFAULT_WALL_SAMPLES,
+            },
+            "invalid manufacturing angles, wall units",
+        ),
+        (
+            VerificationRule::MinimumWall {
+                output: "cup".into(),
+                minimum: mm(1.0),
+                mesh: MeshSettings::default(),
+                maximum_samples: 0,
+            },
+            "sample budget",
+        ),
+        (
+            VerificationRule::DraftAngle {
+                output: "cube".into(),
+                pull_direction: VectorQuantity::scalars(0.0, 0.0, 0.0),
+                minimum_radians: 0.0,
+                mesh: MeshSettings::default(),
+            },
+            "nonzero",
+        ),
+        (
+            VerificationRule::Overhang {
+                output: "cube".into(),
+                build_direction: up(),
+                maximum_radians: 0.5,
+                mesh: MeshSettings {
+                    maximum_triangles: 0,
+                    ..MeshSettings::default()
+                },
+            },
+            "triangle budget",
+        ),
+    ];
+    for (rule, message) in invalid {
+        let error = verify(&family, vec![("bad", rule)]).unwrap_err();
+        assert!(error.message.contains(message), "{}", error.message);
+    }
+
+    family.requirements = vec![
+        requirement("wall", RequirementPriority::Advisory, wall("cup", 1.0)),
+        requirement("draft", RequirementPriority::Advisory, draft("cube", 0.0)),
+    ];
+    let mut graph = InstanceGraph::new(&family);
+    graph.add_base("part", HashMap::new(), "test").unwrap();
+    let document = ModelDocument::from_graph(&graph);
+    let json = document.to_json_pretty().unwrap();
+    assert!(!json.contains("maximum_samples") && !json.contains("\"mesh\""));
+    assert_eq!(ModelDocument::from_json(&json).unwrap(), document);
+}

@@ -155,6 +155,12 @@ cost; indexing is O(T log T), with O(T) storage and ray cost depending on candid
 facets. Dense overlapping bounds can degrade ray traversal. These cases and the
 1,000-part export run through `tools/bench/run.sh`.
 
+The same screens back the `MinimumWall`, `DraftAngle`, and `Overhang` part
+requirements (schema 48), which store their settings in the family and run on
+every regeneration; the requirement's draft check uses each face's smallest
+draft magnitude rather than the signed minimum reported here. See
+[Requirement rules](REQUIREMENTS.md).
+
 Primary references: [OCCT meshing](https://github.com/Open-Cascade-SAS/OCCT/wiki/mesh),
 [Gmsh API and formats](https://gmsh.info/doc/texinfo/), and
 [glTF 2.0 specification](https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html).

@@ -4,6 +4,9 @@
 use super::*;
 use occt_bridge::EdgeConcavity;
 
+mod manufacturing;
+pub(crate) use manufacturing::{Screen, screen};
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum VerificationStatus {
     Passed,
@@ -26,6 +29,7 @@ pub enum MeasurementUnit {
     Millimeter,
     CubicMillimeter,
     Kilogram,
+    Radian,
 }
 
 /// The value a rule measured and the limits it was compared against, in

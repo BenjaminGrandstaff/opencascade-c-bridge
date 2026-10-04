@@ -3,8 +3,8 @@
 
 use super::*;
 use occt_parametric::{
-    AssemblyRequirement, InstanceOutputRef, OutputSet, Requirement, RequirementKind,
-    VerificationRule, VerificationStatus,
+    AssemblyRequirement, DEFAULT_WALL_SAMPLES, InstanceOutputRef, MeshSettings, OutputSet,
+    Requirement, RequirementKind, VerificationRule, VerificationStatus,
 };
 
 fn assembly_requirement(id: &str, rule: AssemblyVerificationRule) -> AssemblyRequirement {
@@ -274,6 +274,68 @@ pub(crate) fn radius_case() -> Outcome {
                 sampled.map_or(0, |face| face.samples),
                 sampled_time.as_secs_f64()
             ))
+        },
+    )
+}
+
+/// Sampled manufacturing rules on 10,000 clones of one variant: tessellation
+/// and screening run once for the shared parameter set.
+pub(crate) fn manufacturing_rules_case(definition: &FamilyDefinition) -> Outcome {
+    let mut screened = definition.clone();
+    let rule = |id: &str, rule| Requirement {
+        id: id.into(),
+        version: 1,
+        kind: RequirementKind::Manufacturing,
+        priority: RequirementPriority::Required,
+        statement: id.into(),
+        rule,
+        provenance: "bench".into(),
+    };
+    let up = || VectorQuantity::scalars(0.0, 0.0, 1.0);
+    screened.requirements.extend([
+        rule(
+            "wall",
+            VerificationRule::MinimumWall {
+                output: "body".into(),
+                minimum: Quantity::length(5.0, LengthUnit::Millimeter),
+                mesh: MeshSettings::default(),
+                maximum_samples: DEFAULT_WALL_SAMPLES,
+            },
+        ),
+        rule(
+            "draft",
+            VerificationRule::DraftAngle {
+                output: "body".into(),
+                pull_direction: up(),
+                minimum_radians: 0.0,
+                mesh: MeshSettings::default(),
+            },
+        ),
+        rule(
+            "overhang",
+            VerificationRule::Overhang {
+                output: "body".into(),
+                build_direction: up(),
+                maximum_radians: std::f64::consts::FRAC_PI_4,
+                mesh: MeshSettings::default(),
+            },
+        ),
+    ]);
+    let screened: &'static FamilyDefinition = Box::leak(Box::new(screened));
+    timed(
+        "requirements 10000: wall, draft, overhang on one variant".into(),
+        ms(3_000),
+        Expectation::Required,
+        || {
+            let session = Session::new().map_err(|error| failure(error.to_string()))?;
+            let mut graph = row(screened, "part", 10_000, 0.0)?;
+            let generation = graph.regenerate_all(&session)?;
+            if generation.generated_variants() != 1 {
+                return Err(failure("manufacturing rules lost variant sharing".into()));
+            }
+            drop(generation);
+            released(&session)?;
+            Ok("10002 instances, rules screened once and passed, no retained handles".into())
         },
     )
 }

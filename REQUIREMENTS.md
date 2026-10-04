@@ -20,6 +20,9 @@ samples do not evaluate them.
 | `VolumeRange { output, minimum, maximum }` | Volume lies in the inclusive range. | Exact |
 | `Connectivity { output, solids, allow_voids }` (schema 46) | The output has exactly `solids` solids, no face, edge, or vertex outside them, and, unless `allow_voids`, one shell per solid. | Exact |
 | `MinimumRadius { output, minimum, side, sharp_edges, samples_per_direction }` (schema 47) | Every face radius on `side` is at least `minimum`. | Exact on planes, cylinders, cones, spheres, and tori; sampled on other surfaces |
+| `MinimumWall { output, minimum, mesh, maximum_samples }` (schema 48) | No inward ray from a sampled facet crosses less than `minimum` of material. | Sampled |
+| `DraftAngle { output, pull_direction, minimum_radians, mesh }` (schema 48) | No face runs closer than `minimum_radians` to parallel with the pull. | Sampled |
+| `Overhang { output, build_direction, maximum_radians, mesh }` (schema 48) | No downward facet above the build plate leans more than `maximum_radians` from vertical. | Sampled |
 
 Connectivity catches booleans that leave disjoint pieces, sewing that never
 closes into a solid, and hollow results with sealed internal voids. It maps each
@@ -56,6 +59,40 @@ result's witness names the face or edge (`face 3`, `edge 7`, indexed in
 measured side passes and reports no measured value. Cost is O(faces) for
 analytic faces plus O(samples²) face classifications per sampled face, and one
 edge analysis pass when sharp edges count.
+
+### Manufacturing screens
+
+The three manufacturing rules tessellate the output once, within `mesh`
+(`MeshSettings`: linear and angular deflection and a triangle budget, default
+0.1 mm, 0.3 rad, 1,000,000 triangles; omitted from documents when default), and
+screen the facets. Directions are dimensionless and in family coordinates,
+because part rules run before placement. All three report `Sampled` evidence:
+facet normals approximate curved surfaces to within the mesh deflection.
+
+- **`MinimumWall`** casts an inward normal ray from the centroid of up to
+  `maximum_samples` facets (1 to 20,000, default 1,000, omitted when default)
+  and measures the distance to where it leaves the material. The output's mesh
+  must be closed and consistently oriented. A ray's length is at least the
+  local wall thickness, so a sample below `minimum` is a real thin wall, up to
+  the mesh deflection; a pass does not prove a global minimum, because thin
+  regions between samples can be missed. The witness gives the ray's entry and
+  exit points. Samples whose ray finds no exit are counted as `unresolved`, and
+  a screen where no ray finds an exit is an error rather than a pass.
+- **`DraftAngle`** measures each face's smallest facet draft magnitude: the
+  angle between the facet and the pull direction, whichever way it leans. Faces
+  closer to parallel with the pull than `minimum_radians`, in [0, pi/2), "require
+  draft". Facets normal to the pull (caps) are skipped, and faces leaning either
+  way pass because they release from one mold half or the other. This is the
+  usual CAD draft analysis; it does not detect undercuts, which depend on the
+  parting line. (The mesh hand-off report keeps its signed per-face minimum.)
+- **`Overhang`** counts downward-facing facets, above the lowest build plane,
+  that lean more than `maximum_radians`, in [0, pi/2], from vertical. Bridging,
+  supports, and process settings are not modeled. The measured value is the
+  count, with a maximum of zero.
+
+Cost is one tessellation, O(T) for draft and overhang, and O(T log T) indexing
+plus one ray per wall sample, for T facets. Like other part rules they run once
+per shared parameter set.
 
 ## Assembly rules (`AssemblyVerificationRule`)
 
@@ -99,17 +136,22 @@ and volume are measured once per shared variant, not per instance. See
 
 - `status`: `Passed` or `Failed`, and a readable `message`;
 - `measured`: the value and its limits in normalized units (`Count`,
-  `Millimeter`, `CubicMillimeter`, `Kilogram`). `NoInterference` reports the
+  `Millimeter`, `CubicMillimeter`, `Kilogram`, `Radian`). `NoInterference` reports the
   largest overlap volume; `MinimumClearance` reports the closest violating pair
   and omits a value when nothing is closer than the minimum, because pruned
   pairs are not measured;
 - `evidence`: `Exact`, or `Sampled { samples, unresolved }` for rules that
-  screen finitely many samples, where a failure is a real violation but a pass
-  is not a proof;
-- `witness`: for collision failures, the two outputs (`instance:output`) and one
-  closest or overlapping point on each, in millimeters.
+  screen finitely many samples or facets, where a failure is a real violation
+  (up to the mesh deflection) but a pass is not a proof;
+- `witness`: on failure, what was found and where, in millimeters: the two
+  outputs (`instance:output`) and a point on each for collisions; the face or
+  edge (`face 3`, `edge 7`, in `Session::subshapes` order) and a point on it for
+  part rules, with a wall ray's entry and exit points.
 
-## Planned
+## Limits
 
-Sampled manufacturing rules (wall thickness, draft, overhang) follow; see the
-[Roadmap](ROADMAP.md).
+Sampled rules cannot prove the absence of violations between samples, and the
+draft rule does not find undercuts. Interference, minimum-clearance, and
+manufacturing rules evaluate one configuration and pose: the active
+configuration at `regenerate_all`, not every motion sample. See the
+[Roadmap](ROADMAP.md) for later extensions.

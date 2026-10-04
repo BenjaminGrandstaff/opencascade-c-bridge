@@ -55,18 +55,38 @@ impl TaggedSurfaceMesh {
         &self,
         settings: ManufacturingSettings,
     ) -> Result<ManufacturingReport, ModelError> {
+        self.screen(settings, true)
+    }
+
+    /// Draft and overhang always; the wall ray pass and its closed-mesh
+    /// requirement only when `walls` is set.
+    pub(crate) fn screen(
+        &self,
+        settings: ManufacturingSettings,
+        walls: bool,
+    ) -> Result<ManufacturingReport, ModelError> {
         let (pull, build, wall) = validate(settings)?;
         let normals = self
             .triangles
             .iter()
             .map(triangle_normal)
             .collect::<Result<Vec<_>, _>>()?;
-        closed_mesh(self)?;
+        if walls {
+            closed_mesh(self)?;
+        }
         let span = mesh_span(self)?;
         let tolerance = (span * 1e-10).max(1e-9);
         let (draft, overhang_triangles) =
             surface_screen(self, &normals, pull, build, settings, tolerance)?;
-        let wall = wall_screen(self, &normals, settings, span, tolerance, wall);
+        let wall = if walls {
+            wall_screen(self, &normals, settings, span, tolerance, wall)
+        } else {
+            WallScreen {
+                samples: Vec::new(),
+                minimum: None,
+                unresolved: 0,
+            }
+        };
         Ok(ManufacturingReport {
             draft,
             overhang_triangles,

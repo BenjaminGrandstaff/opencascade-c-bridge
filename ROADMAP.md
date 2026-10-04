@@ -11,16 +11,16 @@ tracks status and order.
 | C ABI (`src/`, `include/`) | ABI 36 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 47 | Active development |
+| `occt-parametric` (engineering layer) | Schema 48 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 4/4, bridge 79 (+1 doc test), recipes 3, parametric 225 + merge driver 3, mesh Python 4 | `ctest`, `cargo test` (see README) |
+| Tests | C 4/4, bridge 79 (+1 doc test), recipes 3, parametric 227 + merge driver 3, mesh Python 4 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 92.3% line coverage (2026-10-03); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
 | Coverage | 92.63% lines overall, test code excluded; C++ 94.30% lines, 87.59% branches, 100% functions; Rust 91.81% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 60 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Scale benchmarks | 61 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
 
@@ -146,6 +146,17 @@ tracks status and order.
   error-bounded (Bezier, B-spline) extrema.
 
 ### Parametric layer
+
+- Sampled manufacturing requirements (schema 48): `MinimumWall`, `DraftAngle`,
+  and `Overhang` store their mesh settings in the family and screen the output's
+  tessellation on every regeneration with `Sampled` evidence. Wall failures
+  report the ray's entry and exit; draft checks each face's smallest draft
+  magnitude, the usual "requires draft" analysis, without undercut detection.
+  Two tests cover a 2 mm-walled cup, vertical and tilted faces, a T-shaped
+  overhang, validation, and persistence. 10,002 instances with all three rules
+  regenerate in 0.477 s (3 s budget), screening the shared variant once. This
+  completes the richer requirement rules. See
+  [Requirement rules](REQUIREMENTS.md).
 
 - Minimum-radius requirements (schema 47; ABI 36): `MinimumRadius` checks
   convex, concave, or both radii against a positive length, optionally treating
@@ -524,11 +535,8 @@ every item below is defined in documents and the API, and verified in tests.
 
 ### Capabilities
 
-1. **Richer requirement rules.** Connectivity, no-interference,
-    minimum-clearance (schema 46), and minimum-radius (schema 47) rules have
-    landed. Remaining: sampled manufacturing rules for minimum wall thickness,
-    draft angle, and overhang, promoted from mesh hand-off to stored,
-    prioritized requirements with `Sampled` evidence.
+The near-term capability list is complete within the documented limits.
+Promote the next priority from **Later**.
 
 ## Later
 
@@ -538,6 +546,8 @@ every item below is defined in documents and the API, and verified in tests.
 
 - Advanced ribs with general support-following and nonuniform closure.
 - Closed-linkage constraint solving and continuous collision detection.
+- Undercut detection against a parting line, and exact (not sampled) minimum
+  wall thickness and draft on curved BREP faces.
 - Assumptions and requirement-to-feature trace links in the document schema.
 - Semantic naming beyond feature outputs, and geometric tangency inference
   when continuity metadata is absent.

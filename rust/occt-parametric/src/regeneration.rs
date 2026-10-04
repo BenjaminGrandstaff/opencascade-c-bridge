@@ -981,6 +981,51 @@ pub(crate) fn verify_requirement(
             *sharp_edges,
             *samples_per_direction,
         )?,
+        VerificationRule::MinimumWall {
+            output,
+            minimum,
+            mesh,
+            maximum_samples,
+        } => screen(
+            session,
+            id,
+            shape(shapes, output)?,
+            *mesh,
+            Screen::Wall {
+                minimum: *minimum,
+                maximum_samples: *maximum_samples,
+            },
+        )?,
+        VerificationRule::DraftAngle {
+            output,
+            pull_direction,
+            minimum_radians,
+            mesh,
+        } => screen(
+            session,
+            id,
+            shape(shapes, output)?,
+            *mesh,
+            Screen::Draft {
+                pull_direction: *pull_direction,
+                minimum_radians: *minimum_radians,
+            },
+        )?,
+        VerificationRule::Overhang {
+            output,
+            build_direction,
+            maximum_radians,
+            mesh,
+        } => screen(
+            session,
+            id,
+            shape(shapes, output)?,
+            *mesh,
+            Screen::Overhang {
+                build_direction: *build_direction,
+                maximum_radians: *maximum_radians,
+            },
+        )?,
     })
 }
 
