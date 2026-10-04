@@ -7,6 +7,7 @@ mod closed_motion;
 mod continuous_motion;
 mod documents;
 mod draft;
+mod draw_view;
 mod drawing;
 mod expressions;
 mod graph;
@@ -15,13 +16,18 @@ mod holes;
 mod linkage;
 mod loft;
 mod mesh;
+mod named_references;
 mod patterns;
+mod persistent;
 mod regeneration;
 mod requirements;
 mod ribs;
 mod rotating_motion;
 mod selection;
 mod sheet_metal;
+mod step_export;
+mod sweep;
+mod tangency;
 mod variable_fillet;
 
 fn length_parameter(id: &str, default: f64) -> ParameterDefinition {
@@ -36,6 +42,7 @@ fn length_parameter(id: &str, default: f64) -> ParameterDefinition {
 
 fn family(priority: RequirementPriority, maximum_volume: f64) -> FamilyDefinition {
     FamilyDefinition {
+        references: Vec::new(),
         id: "BlockFamily".into(),
         version: 1,
         parameters: vec![

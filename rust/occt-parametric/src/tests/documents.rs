@@ -211,6 +211,7 @@ fn schema_thirteen_round_trips_new_selectors_and_expressions() {
                 relative_tolerance: ScalarExpr::Literal(Quantity::scalar(1e-6)),
             }),
             minimum_count: 1,
+            angular_tolerance: Some(ScalarExpr::Literal(Quantity::scalar(1e-3))),
         },
         FaceSelector::Union(vec![FaceSelector::Intersection(vec![
             FaceSelector::Difference {

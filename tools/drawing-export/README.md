@@ -23,7 +23,7 @@ directory; existing destinations are rejected. It preserves the source model.
 Disk write failures can leave a partial destination. Outputs are `0001.svg`,
 `0001.dxf`, etc. `manifest.json` maps numbers to drawing IDs and records empty
 views, polyline counts and shared variant counts. `drawings.model.json` retains
-existing definitions and adds supplied definitions, ready to reload as schema 51.
+existing definitions and adds supplied definitions, ready to reload as schema 56.
 All drawings share generation and a cumulative vertex budget.
 
 `wing-example.json` selects `wing:right_body` and `wing:left_body` at the four

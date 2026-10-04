@@ -88,6 +88,7 @@ fn slider_array(
 
 fn main() {
     let definition = FamilyDefinition {
+        references: Vec::new(),
         id: "sliders".into(),
         version: 1,
         parameters: vec![],

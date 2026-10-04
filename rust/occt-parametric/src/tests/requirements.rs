@@ -40,6 +40,7 @@ fn connectivity(output: &str, solids: u32, allow_voids: bool) -> VerificationRul
 /// and `skin` the sewn faces of a cube without a solid.
 fn topology_family() -> FamilyDefinition {
     FamilyDefinition {
+        references: Vec::new(),
         id: "Topology".into(),
         version: 1,
         parameters: Vec::new(),

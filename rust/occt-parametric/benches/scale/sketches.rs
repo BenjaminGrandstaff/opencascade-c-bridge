@@ -1,6 +1,7 @@
 //! Sketch solving, datum-linked wires, and profile sweeps at scale.
 
 use super::*;
+use occt_parametric::{GeneratedResult, SketchSpline};
 
 pub(crate) fn profile_sweep_case(revolve: bool) -> Outcome {
     const COUNT: usize = 1_000;
@@ -44,6 +45,7 @@ pub(crate) fn profile_sweep_case(revolve: bool) -> Outcome {
             rim: "r".into(),
         }],
         arcs: Vec::new(),
+        splines: Vec::new(),
         profile: Vec::new(),
         constraints: Vec::new(),
     };
@@ -179,6 +181,7 @@ pub(crate) fn datum_sketch_wire_case() -> Outcome {
             rim: "r".into(),
         }],
         arcs: Vec::new(),
+        splines: Vec::new(),
         profile: Vec::new(),
         constraints: Vec::new(),
     };
@@ -282,6 +285,7 @@ pub(crate) fn curved_sketch_solver_case() -> Outcome {
             end: "b".into(),
             clockwise: false,
         }],
+        splines: Vec::new(),
         circles: Vec::new(),
         profile: Vec::new(),
         constraints: vec![
@@ -330,6 +334,7 @@ pub(crate) fn sketch_solver_case() -> Outcome {
         datum_plane: None,
         circles: Vec::new(),
         arcs: Vec::new(),
+        splines: Vec::new(),
         profile: Vec::new(),
         origin: VectorExpr::Literal(VectorQuantity::lengths(
             0.0,
@@ -395,6 +400,7 @@ pub(crate) fn large_sketch_case(chain: bool) -> Outcome {
         datum_plane: None,
         circles: Vec::new(),
         arcs: Vec::new(),
+        splines: Vec::new(),
         profile: Vec::new(),
         origin: VectorExpr::Literal(VectorQuantity::lengths(
             0.0,
@@ -468,6 +474,211 @@ pub(crate) fn large_sketch_case(chain: bool) -> Outcome {
                 "{} iterations; {} free coordinates",
                 solution.iterations,
                 count * 2
+            ))
+        },
+    )
+}
+
+fn spline_slot(crown: ScalarExpr) -> SketchDefinition {
+    let value = |x| ScalarExpr::Literal(Quantity::length(x, LengthUnit::Millimeter));
+    let point = |id: &str, x: ScalarExpr, y: ScalarExpr| SketchPoint {
+        id: id.into(),
+        x,
+        y,
+        fixed: true,
+    };
+    let line = |id: &str, start: &str, end: &str| SketchLine {
+        id: id.into(),
+        start: start.into(),
+        end: end.into(),
+    };
+    let tangent = |first: &str, second: &str, at: &str| SketchConstraint::Tangent {
+        first: first.into(),
+        second: second.into(),
+        point: at.into(),
+    };
+    SketchDefinition {
+        id: "slot".into(),
+        datum_plane: None,
+        origin: VectorExpr::Literal(VectorQuantity::lengths(
+            0.0,
+            0.0,
+            0.0,
+            LengthUnit::Millimeter,
+        )),
+        x_axis: VectorExpr::Literal(VectorQuantity::scalars(1.0, 0.0, 0.0)),
+        y_axis: VectorExpr::Literal(VectorQuantity::scalars(0.0, 1.0, 0.0)),
+        points: vec![
+            point("p0", value(0.0), value(0.0)),
+            point("p1", value(20.0), value(0.0)),
+            point("p2", value(20.0), value(10.0)),
+            point("p3", value(0.0), value(10.0)),
+            point("crown", value(10.0), crown),
+        ],
+        lines: vec![
+            line("bottom", "p0", "p1"),
+            line("right", "p1", "p2"),
+            line("left", "p3", "p0"),
+        ],
+        circles: Vec::new(),
+        arcs: Vec::new(),
+        splines: vec![SketchSpline {
+            id: "top".into(),
+            points: vec!["p2".into(), "crown".into(), "p3".into()],
+        }],
+        profile: vec!["bottom".into(), "right".into(), "top".into(), "left".into()],
+        constraints: vec![tangent("right", "top", "p2"), tangent("top", "left", "p3")],
+    }
+}
+
+/// 1,000 spline-topped slot sketches, each extruded, sharing a crown height.
+pub(crate) fn spline_sketch_case() -> Outcome {
+    const COUNT: usize = 1_000;
+    timed(
+        format!("{COUNT} spline-arch sketch extrusions: build and crown edit"),
+        ms(6_000),
+        Expectation::Required,
+        || {
+            let session = Session::new().map_err(|error| failure(error.to_string()))?;
+            let mut definition = block();
+            definition.datums.clear();
+            definition.requirements.clear();
+            definition.parameters = vec![ParameterDefinition {
+                id: "crown".into(),
+                parameter_type: ParameterType::Scalar(Dimension::Length),
+                default: length(15.0),
+                minimum: None,
+                maximum: None,
+            }];
+            definition.features = (0..COUNT)
+                .flat_map(|index| {
+                    [
+                        FeatureDefinition {
+                            id: format!("slot-{index}"),
+                            operation: FeatureOperation::SketchFace {
+                                sketch: Box::new(spline_slot(ScalarExpr::Parameter(
+                                    "crown".into(),
+                                ))),
+                            },
+                        },
+                        FeatureDefinition {
+                            id: format!("bar-{index}"),
+                            operation: FeatureOperation::Extrude {
+                                input: format!("slot-{index}"),
+                                direction: VectorExpr::Literal(VectorQuantity::lengths(
+                                    0.0,
+                                    0.0,
+                                    5.0,
+                                    LengthUnit::Millimeter,
+                                )),
+                            },
+                        },
+                    ]
+                })
+                .collect();
+            let mut part = PartInstance {
+                id: "part".into(),
+                definition: &definition,
+                overrides: HashMap::new(),
+                provenance: "bench".into(),
+            };
+            let first = part.regenerate(&session)?;
+            part.overrides.insert("crown".into(), length(18.0));
+            let second = part.regenerate_incremental(&session, &first)?;
+            if second.regeneration.rebuilt.len() != 2 * COUNT {
+                return Err(failure("crown edit did not rebuild every sketch".into()));
+            }
+            let volume = |result: &GeneratedResult<'_>| -> Result<f64, ModelError> {
+                Ok(session.volume(
+                    result
+                        .shape("bar-0")
+                        .ok_or_else(|| failure("bar missing".into()))?,
+                )?)
+            };
+            let (low, high) = (volume(&first)?, volume(&second)?);
+            if !(low > 1_000.0 && high > low + 10.0) {
+                return Err(failure(format!("crown edit volumes {low} -> {high}")));
+            }
+            drop((first, second));
+            if session
+                .shape_count()
+                .map_err(|error| failure(error.to_string()))?
+                != 0
+            {
+                return Err(failure("spline sketch handles retained".into()));
+            }
+            Ok(format!(
+                "{COUNT} tangent spline profiles; crown edit raised volume {low:.1} -> {high:.1} mm³"
+            ))
+        },
+    )
+}
+
+/// One closed spline through 1,000 points on a 100 mm circle.
+pub(crate) fn large_spline_case() -> Outcome {
+    const POINTS: usize = 1_000;
+    timed(
+        format!("one sketch spline through {POINTS} points: solve and face"),
+        ms(250),
+        Expectation::Required,
+        || {
+            let session = Session::new().map_err(|error| failure(error.to_string()))?;
+            let mut sketch = spline_slot(ScalarExpr::Literal(Quantity::length(
+                15.0,
+                LengthUnit::Millimeter,
+            )));
+            sketch.lines.clear();
+            sketch.constraints.clear();
+            sketch.profile.clear();
+            sketch.points = (0..POINTS)
+                .map(|index| {
+                    let angle = std::f64::consts::TAU * index as f64 / POINTS as f64;
+                    SketchPoint {
+                        id: format!("q{index}"),
+                        x: ScalarExpr::Literal(Quantity::length(
+                            100.0 * angle.cos(),
+                            LengthUnit::Millimeter,
+                        )),
+                        y: ScalarExpr::Literal(Quantity::length(
+                            100.0 * angle.sin(),
+                            LengthUnit::Millimeter,
+                        )),
+                        fixed: true,
+                    }
+                })
+                .collect();
+            sketch.splines = vec![SketchSpline {
+                id: "ring".into(),
+                points: (0..=POINTS)
+                    .map(|index| format!("q{}", index % POINTS))
+                    .collect(),
+            }];
+            let mut definition = block();
+            definition.datums.clear();
+            definition.requirements.clear();
+            definition.features = vec![FeatureDefinition {
+                id: "ring".into(),
+                operation: FeatureOperation::SketchFace {
+                    sketch: Box::new(sketch),
+                },
+            }];
+            let part = PartInstance {
+                id: "part".into(),
+                definition: &definition,
+                overrides: HashMap::new(),
+                provenance: "bench".into(),
+            };
+            let generated = part.regenerate(&session)?;
+            let face = generated
+                .shape("ring")
+                .ok_or_else(|| failure("ring missing".into()))?;
+            let area = session.surface_area(face)?;
+            let circle = std::f64::consts::PI * 100.0 * 100.0;
+            if (area - circle).abs() / circle > 1e-6 {
+                return Err(failure(format!("ring area {area}, circle {circle}")));
+            }
+            Ok(format!(
+                "periodic spline face area within 1e-6 of the circle ({area:.3} mm²)"
             ))
         },
     )

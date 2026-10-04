@@ -216,7 +216,7 @@ fn slices_export_only_swept_section_geometry_and_handle_root_tip_and_empty_plane
 }
 
 #[test]
-fn slices_retain_hole_boundaries_persist_in_schema_51_and_honor_vertex_budgets() {
+fn slices_retain_hole_boundaries_persist_in_current_schema_and_honor_vertex_budgets() {
     let mut family = family(RequirementPriority::Advisory, 1e12);
     family.requirements.clear();
     family.features.push(FeatureDefinition {
@@ -286,7 +286,7 @@ fn slices_retain_hole_boundaries_persist_in_schema_51_and_honor_vertex_budgets()
         ModelDocument::from_json(&old.to_string())
             .unwrap()
             .schema_version,
-        51
+        CURRENT_SCHEMA_VERSION
     );
 }
 

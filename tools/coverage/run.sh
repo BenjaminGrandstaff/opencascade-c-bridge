@@ -32,7 +32,10 @@ podman run --rm -v "$root:$root:ro,Z" -v "$out:/out:Z" "$image" bash -c "
     objects=()
     for crate in occt-bridge occt-recipes occt-parametric; do
         manifest='$root/rust/'\$crate/Cargo.toml
-        cargo test --quiet --locked --manifest-path \"\$manifest\" >/dev/null
+        if ! cargo test --quiet --locked --manifest-path \"\$manifest\" >/tmp/coverage-tests.log 2>&1; then
+            cat /tmp/coverage-tests.log
+            exit 1
+        fi
         while read -r executable; do
             objects+=(-object \"\$executable\")
         done < <(cargo test --quiet --locked --no-run --message-format=json \

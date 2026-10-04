@@ -7,6 +7,7 @@ use std::{
 
 fn fixture() -> (ModelDocument, DrawingDefinition) {
     let family = FamilyDefinition {
+        references: Vec::new(),
         id: "part".into(),
         version: 1,
         parameters: vec![],

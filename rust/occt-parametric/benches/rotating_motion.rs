@@ -13,6 +13,7 @@ fn vector(x: f64, y: f64, z: f64) -> VectorQuantity {
 }
 fn definition() -> FamilyDefinition {
     FamilyDefinition {
+        references: Vec::new(),
         id: "cube".into(),
         version: 1,
         parameters: vec![ParameterDefinition {

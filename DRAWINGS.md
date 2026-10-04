@@ -41,7 +41,7 @@ then projects the retained solid. It supports arbitrary cutting-plane directions
 A cut that removes all geometry yields an empty view. Section views currently
 show cut outlines without automatic section hatching.
 
-Schema 51 adds `Slice`: the view origin and direction define a plane, and only
+Schema 56 includes `Slice`: the view origin and direction define a plane, and only
 the boundary of the solid material on that plane is exported, including holes.
 Unlike `Section`, it does not project geometry behind the cut. This is useful
 for 1:1 cutting templates, gauges and cross-section inspection of any solid.

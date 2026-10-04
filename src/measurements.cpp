@@ -54,8 +54,8 @@ occt_bridge_status_t occt_bridge_shape_mass_properties(
         builder.MakeCompound(local);
         builder.Add(local, value->Moved(TopLoc_Location(rebase)));
         GProp_GProps properties;
-        const double error = BRepGProp::VolumeProperties(local, properties, 1e-9, Standard_True);
-        const double volume = properties.Mass();
+        const double error = measure_volume_moments(local, properties, true);
+        const double volume = measure_volume(local, true);
         if (!std::isfinite(volume) || volume <= 0.0 || !std::isfinite(error)) {
             return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "solid has no finite positive volume");
         }
@@ -136,9 +136,7 @@ occt_bridge_status_t occt_bridge_shape_overlap_volume(
             return fail(session, OCCT_BRIDGE_KERNEL_ERROR, "overlap intersection failed");
         }
         if (contains_topology(common.Shape(), TopAbs_SOLID)) {
-            GProp_GProps properties;
-            BRepGProp::VolumeProperties(common.Shape(), properties, 1e-9, Standard_True);
-            *out_volume = std::abs(properties.Mass());
+            *out_volume = std::abs(measure_volume(common.Shape(), true));
         }
         return succeed(session);
     });

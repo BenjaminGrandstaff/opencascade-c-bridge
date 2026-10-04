@@ -3,7 +3,7 @@
 A small, stable C ABI over Open Cascade (OCCT), designed to be wrapped safely
 from Rust and other languages. Open Cascade C++ objects never cross the ABI.
 
-The current C ABI version is **37**.
+The current C ABI version is **41**.
 
 ## Current API
 
@@ -30,7 +30,8 @@ The current C ABI version is **37**.
   midpoint edge-curvature, deterministic sampled full-edge curvature ranges,
   exact (line, conic) or error-bounded (Bezier, B-spline) curvature extrema,
   and direct topology-adjacency queries
-- Recorded G1-or-better tangency queries between adjacent faces
+- G1-or-better tangency queries between adjacent faces, from recorded
+  continuity or measured within an angular tolerance where none is recorded
 - Generated, modified, and deleted operation-history queries, with explicit
   composition through intermediate operations on a new shared-geometry handle
 - Tolerance-padded and exact bounds, surface area, volume, center-of-mass, and
@@ -69,9 +70,11 @@ multi-family instance graphs, explicit generation freezing, unit-aware derived s
 with negate, absolute, minimum, maximum, and clamp functions, derived vector
 composition with add, subtract, scale, and normalize operations, dimension-safe
 comparison-driven conditional scalar expressions,
-pre-generation parameter constraints, constraint-solved line/arc/circle sketches that
+pre-generation parameter constraints, constraint-solved line/arc/circle/spline sketches that
 emit exact closed wires and planar faces on inline or named datum planes,
-semantic face and edge selectors, and
+semantic face and edge selectors with persistent references that follow
+topology through later features and named references declared once per
+family, and
 versioned JSON model documents are implemented. Feature graphs include sewing
 and single- or multi-shell solid construction. Selectors support orientation,
 adjacency, extrema, nearest-center, longest-edge, circular-radius,
@@ -89,7 +92,7 @@ volume, solid connectivity, minimum convex or concave radius, and sampled wall
 thickness, draft, and overhang, all with required, preferred, or advisory
 priority. Results carry measured values, evidence quality, and collision
 witnesses; see [Requirement rules](REQUIREMENTS.md). Schema v1 through
-v50 documents migrate to v51 during load; unsupported
+v55 documents migrate to v56 during load; unsupported
 future versions are rejected.
 Managed regeneration incrementally reuses unchanged outputs and
 rebuilds dirty features plus their downstream dependents. Graph regeneration
@@ -193,7 +196,7 @@ builds an optimized copy of the library in `build/bench`, runs every case at
 the target sizes (10,000-member patterns, deep clone chains, 1,000-part solver
 stacks and grids, repeated regeneration, validation chains, and many-hole
 faces), and fails when a required case misses its time budget or correctness
-check. The current suite has 62 passing Rust cases, including single-leaf and
+check. The current suite has 68 passing Rust cases, including single-leaf and
 memoized all-node resolution of a 20,000-link clone chain and a 50-part stack
 1 km from the origin solved at a 1e-8 mm model tolerance, plus 10,000 checked
 datum-clearance requirements, 10,000 small constrained-sketch solves,
@@ -273,6 +276,9 @@ binary supplies a semantic Git merge driver. See [Model history](MODEL_HISTORY.m
 and [Document comparisons](DOCUMENT_DIFF.md). Schema 42 adds regenerated orthographic, section,
 and detail drawings, datum dimensions, parameter notes, and metadata title blocks
 exported as SVG or DXF. See [Drawings](DRAWINGS.md) for the API and sampling limits.
+Schema 56 combines the newer geometry and reference features with planar slice
+drawings and assembly motion workflows.
+
 Continuous joint path checks handle translations, unwrapped rotations, and
 nested frames, catching collisions between samples and reporting unresolved
 intervals explicitly. See [Assembly motion](ASSEMBLY_MOTION.md)
@@ -282,9 +288,15 @@ travel limits; unsuccessful solves preserve the accepted pose. Closed motion
 studies continue those solves across driven samples before generating shared
 geometry and checking sampled collisions.
 
-ABI 37 adds spline-section lofts and adaptive volume integration for freeform
-faces, and schema 49 adds parameter-placed `Loft` features. ABI 36 adds signed
-per-face radius bounds and per-edge concavity for minimum-radius requirements. ABI 35 adds bounded surface tessellation and
+`InstanceGraph::export_draw_view` writes a model's exact B-rep parts and a script that
+opens them, named and colored, in OCCT's DRAW viewer (`DRAWEXE -i -f view.tcl`).
+ABI 41 measures face tangency where booleans record no continuity, and schema 55
+lets `TangentTo` face selectors use it. ABI 40 adds structured STEP assembly export (named components, shared parts,
+and colors) used by `InstanceGraph::export_step`. ABI 39 adds profile sweeps along paths, and schema 52 the `Sweep` feature.
+ABI 38 adds wires mixing lines, arcs, and interpolated splines with end
+tangents, and schema 51 adds spline sketch entities. ABI 37 adds spline-section lofts and adaptive volume integration for freeform
+faces, and schema 49 adds parameter-placed `Loft` features. ABI 36 adds signed per-face radius bounds and per-edge concavity for
+minimum-radius requirements. ABI 35 adds bounded surface tessellation and
 indexed topology matching. Schema 44
 adds tagged FEA hand-off, material-aware glTF scenes, and sampled wall, draft,
 and printing-overhang checks. See [Mesh hand-off](MESH_HANDOFF.md) for APIs,

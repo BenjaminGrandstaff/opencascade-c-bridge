@@ -7,7 +7,7 @@ so they can generate and regenerate families of related parts.
 ## Implementation status
 
 The architecture in this document is both a description of implemented
-boundaries and a roadmap. As of ABI version 37, the repository contains three
+boundaries and a roadmap. As of ABI version 40, the repository contains three
 Rust layers:
 
 1. **`occt-bridge`** safely wraps session-owned OCCT handles. It includes
@@ -104,6 +104,35 @@ a partial document. Inputs and combined results undergo document validation so
 cross-branch reference and parameter failures are rejected before regeneration.
 The 10,000-instance repeated merge benchmark includes input/output validation
 and runs within an eight-second budget, without allocating kernel handles.
+
+## Structured STEP export
+
+`InstanceGraph::export_step` writes the generated outputs named by an
+`OutputSet` as one named STEP assembly through ABI 40's
+`occt_bridge_step_save_assembly` and OCCT's XCAF document model. Each instance
+becomes a component named by its id and placed where it was generated.
+Components whose placed shapes share local geometry, which graph regeneration
+already arranges for clones that differ only in placement or frame, become one
+STEP part placed several times, so ten thousand pattern members write one part
+and ten thousand placement records. Parts are named `family/output
+[representative instance]` and colored from the instance material's
+appearance, converted from linear RGB to sRGB. Assembly frames are applied to
+each component's placement rather than written as nested sub-assemblies, and
+no file is written when arguments are invalid. A C++ test reads the file back
+through XCAF and checks the assembly, component and part names, shared parts,
+and colors.
+
+## Native viewer export
+
+`InstanceGraph::export_draw_view` writes the generated outputs of an
+`OutputSet` into a directory as `model.brep`, one placed compound of the exact
+B-rep parts, and `view.tcl`, a script for OCCT's DRAW test harness. Running
+`DRAWEXE -i -f view.tcl` there opens every part shaded, under a DRAW name
+derived from its instance id (letters, digits, and underscores, made unique),
+colored from its material appearance converted to sRGB, and prints which name
+belongs to which instance. The `-i` flag matters: with `-f` alone DRAW renders
+to an off-screen window and exits. A test runs the generated script in DRAW's
+off-screen mode when DRAW is installed.
 
 ## Assembly semantics
 
@@ -281,6 +310,32 @@ include the referenced datum definition and its expression parameters, so
 datum parameter changes and definition edits rebuild sketches and dependent
 features while unrelated outputs remain reusable. Older documents default
 `datum_plane` to none and retain their inline plane behavior.
+
+Schema 51 adds `SketchSpline { id, points }`: a smooth B-spline interpolated
+through named sketch points in order, whose ends are its first and last points.
+Repeating the first point at the end makes a smooth periodic loop with no
+corner, which must be its profile's only entity. Spline points take part in
+solving like any other point, and splines join lines and arcs in profiles
+through the kernel's curve wire (ABI 38). A `Tangent` constraint between a
+spline end and a line or arc is not a solver equation: it sets the spline's
+end direction so the spline continues that entity's direction through the
+shared point, which keeps the joint smooth whatever the solved positions.
+Spline-to-spline and closed-spline tangency are rejected. Documents without
+splines omit the field and load unchanged.
+
+Schema 52 adds `FeatureOperation::Sweep { profile, path, orientation }`, which
+sweeps a profile output (a wire, or a face with one boundary) along a path
+output (an edge or wire, typically a `SketchOpenWire`) through ABI 39's
+`occt_bridge_sweep`. The profile stays where it is placed relative to the
+path's start, so it is drawn at the path's first point, usually across it. A
+face or closed wire makes a solid; an open wire a swept surface. Orientation is
+corrected Frenet (least twist, the default), Frenet, a fixed binormal
+direction, or fixed (sections stay parallel). Sharp path corners are mitered.
+A profile reaching as far from the path start as the path's smallest bend
+radius is rejected, because the result would fold through itself and the
+kernel's validity check does not see that; the check is exact on lines and
+arcs, sampled elsewhere, and conservative for flat profiles turned edgewise to
+a bend. Operation history maps profile edges to the faces they generate.
 
 Sketch solving reuses the assembly solver's sparse normal-matrix algebra.
 Each constraint differentiates only its referenced points (at most eight
@@ -1026,8 +1081,50 @@ hollow features consume the resolved handles and release all temporary
 subshapes, including on ambiguity or kernel failure. These rules do not store
 topology indices. An equal nearest match, disallowed size tie, missing history
 result, empty rule result, or out-of-range value fails with an actionable
-diagnostic. Geometric tangency inference when continuity metadata is absent, and semantic naming
-beyond feature outputs remain planned.
+diagnostic.
+
+Schema 55 adds measured tangency. `FaceSelector::TangentTo` takes an optional
+`angular_tolerance` (radians, in (0, pi/2)). Without it, only continuity
+recorded on a shared edge counts, as before. With it, a shared edge with no
+record is measured through ABI 41's
+`occt_bridge_shape_faces_are_tangent_within`, where the faces' normals sampled
+along the edge must agree within the tolerance; a recorded value stays
+authoritative. Booleans record nothing on the junctions they create: a block
+fused flush with a cylinder has no recorded tangency at all, though its flat
+sides meet the round end and its top is split into coplanar faces. The
+tolerance's parameters join the consuming feature's signature. Each face pair
+costs O(edges of both faces) plus one sampled check per unrecorded shared
+edge; all 410 faces of a 400-hole stadium plate are checked against its top
+in 0.016 s. OCCT's offset and draft may still fail on such fused shapes, which
+is a kernel limitation separate from selection.
+
+Schema 53 adds persistent references. `FaceSelector::Persistent { feature,
+select }` and `EdgeSelector::Persistent` evaluate `select` on `feature`'s own
+output, where the rule is unambiguous (the box's -y face, the bare block's top
+edges), then follow that set forward to the consuming feature's input along the
+feature graph. At each later feature a subshape the result still contains
+carries over, a modified one maps to its descendants (a face split by a cut
+yields every piece), and one with neither fails regeneration, naming the
+feature that removed it. A reference that does not lead to the consumer's input
+also fails. This is the stable-reference mechanism the rule selectors lacked:
+a name chosen once survives placements, booleans, and parameter edits that
+would change which face a geometric rule picks on the final shape. Tracing
+costs, per later feature, one topology-map membership test and at most one
+history query per followed subshape; path search is O(features).
+
+Schema 54 adds named references. `FamilyDefinition::references` lists
+`NamedReference { name, target }`, where the target is a face or edge selector
+(`{"faces": ...}` or `{"edges": ...}`), and `FaceSelector::Named` and
+`EdgeSelector::Named` use one by name, so a face such as "front" is chosen once
+and shared by every feature that needs it. Resolution substitutes the target
+selector in place; a name used for the wrong kind of topology fails. The
+target's features join the using feature's dependencies, and its parameters
+join that feature's signature, so editing a reference rebuilds its users and
+nothing else. Targets cannot name other references, which keeps resolution a
+single lookup with no alias cycles. References are indexed by name once per
+regeneration, so lookups are O(1) and unused declarations cost only
+validation. An empty list is omitted from documents, so older documents load
+unchanged.
 
 ## Responsibility boundary
 
@@ -1058,7 +1155,12 @@ application code should use the recipe crate.
 
 ## Compatibility rule
 
-The C interface currently requires an exact ABI version match. ABI version 37
+The C interface currently requires an exact ABI version match. ABI version 40
+adds structured STEP assembly export through OCCT's XCAF document model.
+ABI version 39
+adds profile sweeps along paths with orientation modes. ABI version 38
+adds curve wires with interpolated splines and one shared integration policy
+for volume, area, center, and inertia. ABI version 37
 adds spline-section lofts and adaptive volume integration for freeform faces.
 ABI version 36
 adds signed per-face radius bounds (exact on analytic surfaces, sampled
@@ -1122,9 +1224,11 @@ or bounds-driven fitted spans,
 nested assembly frames, semantic selectors, provenance, and regeneration audit records. Live
 OCCT handles and generated BREPs are never serialized. Loading reconstructs a
 validated `InstanceGraph`; regeneration creates fresh session-owned handles.
-Schema versions 1 through 50 migrate to version 51, supplying explicit defaults
-for fields absent from older documents. Version 51 adds planar slice views for
-cutting templates; existing drawing kinds and geometry retain their behavior. Version 38 adds open sketch wires and
+Schema versions 1 through 55 migrate to version 56, supplying explicit defaults
+for fields absent from older documents. Version 56 integrates planar slice views
+for cutting templates with spline sketches (51), sweeps (52), persistent references
+(53), named references (54), and measured tangency selectors (55). Existing
+drawing kinds and geometry retain their behavior. Version 38 adds open sketch wires and
 explicit translated rib-profile closure; earlier ribs default to closed profiles.
 Version 37 adds generated-face selectors
 from earlier feature edges; existing features and selectors remain unchanged.
@@ -1171,7 +1275,8 @@ inconsistent pattern membership, and invalid regeneration revisions before the
 model is accepted.
 
 The next cross-layer work should prioritize general assembly usability and
-large mechanism solving. Schema 51 adds true planar slice drawings; the
+large mechanism solving. Schema 56 integrates true planar slice drawings with
+the geometry branch's schema 55 features; the
 [drawing-export command](tools/drawing-export/README.md) shares regeneration
 across batches and writes reloadable definitions and SVG/DXF files. The balance-report command reports material
 totals and CG along an explicit chord or station-derived MAC; see

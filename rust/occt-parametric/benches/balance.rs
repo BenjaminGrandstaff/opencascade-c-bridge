@@ -35,6 +35,7 @@ fn planform() {
 
 fn assembly() {
     let family = FamilyDefinition {
+        references: Vec::new(),
         id: "unit".into(),
         version: 1,
         parameters: vec![],

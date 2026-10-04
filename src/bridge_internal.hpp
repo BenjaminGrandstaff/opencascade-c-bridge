@@ -168,12 +168,22 @@ occt_bridge_status_t check_result(
 bool contains_topology(const TopoDS_Shape& shape, TopAbs_ShapeEnum type);
 
 /*
- * Volume properties for every volume measurement: fixed-order integration when
- * all faces are analytic (exact to roundoff), adaptive to a 1e-9 relative error
- * estimate when any face is freeform. Fixed order alone was 20% low on a
- * lofted B-spline airfoil.
+ * Shared integration for every measurement. All-analytic shapes use
+ * fixed-order integration, exact to roundoff there. With any freeform face or
+ * edge, volume uses span-aware Gauss-Kronrod integration (1e-7 relative error
+ * target) and area adaptive integration (1e-9): fixed order was 20% low on a lofted
+ * B-spline airfoil and 0.03% low on a prism of a spline-bounded sketch.
+ * Centers and inertia of freeform shapes use adaptive Gauss integration
+ * (about 1e-4 relative on spline-bounded faces), because span-aware moments
+ * cost seconds per blend surface. measure_volume_moments returns the
+ * adaptive error estimate, 0 on the fixed-order path.
  */
-void adaptive_volume_properties(const TopoDS_Shape& shape, GProp_GProps& properties);
+double measure_volume(const TopoDS_Shape& shape, bool only_closed = false);
+double measure_volume_moments(
+    const TopoDS_Shape& shape,
+    GProp_GProps& properties,
+    bool only_closed = false);
+void measure_surface_properties(const TopoDS_Shape& shape, GProp_GProps& properties);
 
 bool is_descendant(
     const TopoDS_Shape& parent,

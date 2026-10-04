@@ -185,11 +185,42 @@ pub enum EdgeSelector {
         source: Box<EdgeSelector>,
         relation: SemanticHistoryRelation,
     },
+    /// The family's named edge reference (see [`FamilyDefinition::references`]).
+    Named(String),
+    /// Edges chosen by `select` on `feature`'s own output, followed through
+    /// every later feature like [`FaceSelector::Persistent`].
+    Persistent {
+        feature: String,
+        select: Box<EdgeSelector>,
+    },
 }
 
 impl EdgeSelector {
+    /// Named references used anywhere in this selector.
+    pub(crate) fn names<'a>(&'a self, names: &mut Vec<(&'a str, ReferenceUse)>) {
+        match self {
+            Self::Named(name) => names.push((name, ReferenceUse::Edges)),
+            Self::Union(selectors) | Self::Intersection(selectors) => {
+                for selector in selectors {
+                    selector.names(names);
+                }
+            }
+            Self::Difference { base, subtract } => {
+                base.names(names);
+                subtract.names(names);
+            }
+            Self::History { source, .. } => source.names(names),
+            Self::Persistent { select, .. } => select.names(names),
+            _ => {}
+        }
+    }
+
     pub(crate) fn dependencies<'a>(&'a self, dependencies: &mut Vec<&'a str>) {
         match self {
+            Self::Persistent { feature, select } => {
+                dependencies.push(feature);
+                select.dependencies(dependencies);
+            }
             Self::History {
                 source_feature,
                 source,
@@ -243,9 +274,15 @@ pub enum FaceSelector {
         source_feature: String,
         source: Box<EdgeSelector>,
     },
+    /// Faces meeting at least `minimum_count` of `faces` with G1 or better
+    /// continuity. Continuity recorded on the shared edge is used as is; with
+    /// an `angular_tolerance` (radians), an unrecorded edge is measured too,
+    /// which finds tangent junctions that booleans create.
     TangentTo {
         faces: Box<FaceSelector>,
         minimum_count: usize,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        angular_tolerance: Option<ScalarExpr>,
     },
     Union(Vec<FaceSelector>),
     Intersection(Vec<FaceSelector>),
@@ -258,11 +295,54 @@ pub enum FaceSelector {
         source: Box<FaceSelector>,
         relation: SemanticHistoryRelation,
     },
+    /// The family's named face reference (see [`FamilyDefinition::references`]).
+    Named(String),
+    /// Faces chosen by `select` on `feature`'s own output, where the rule is
+    /// unambiguous, then followed through every later feature to the one
+    /// being built: unchanged faces carry over, modified faces map to their
+    /// replacements (a split face yields every piece), and a face that a later
+    /// feature removes fails, naming that feature. A stable reference that
+    /// survives parameter edits, booleans, and placements downstream.
+    Persistent {
+        feature: String,
+        select: Box<FaceSelector>,
+    },
 }
 
 impl FaceSelector {
+    /// Named references used anywhere in this selector.
+    pub(crate) fn names<'a>(&'a self, names: &mut Vec<(&'a str, ReferenceUse)>) {
+        match self {
+            Self::Named(name) => names.push((name, ReferenceUse::Faces)),
+            Self::AdjacentToEdges { edges, .. } => edges.names(names),
+            Self::GeneratedFromEdges { source, .. } => source.names(names),
+            Self::TangentTo { faces, .. } => faces.names(names),
+            Self::Union(selectors) | Self::Intersection(selectors) => {
+                for selector in selectors {
+                    selector.names(names);
+                }
+            }
+            Self::Difference { base, subtract } => {
+                base.names(names);
+                subtract.names(names);
+            }
+            Self::History { source, .. } => source.names(names),
+            Self::Persistent { select, .. } => select.names(names),
+            Self::NearestCenter { .. }
+            | Self::AtExtreme { .. }
+            | Self::NormalAligned { .. }
+            | Self::LargestArea { .. } => {}
+        }
+    }
+
     pub(crate) fn dependencies<'a>(&'a self, dependencies: &mut Vec<&'a str>) {
         match self {
+            // Added by dependencies_with_references, which sees the family.
+            Self::Named(_) => {}
+            Self::Persistent { feature, select } => {
+                dependencies.push(feature);
+                select.dependencies(dependencies);
+            }
             Self::History {
                 source_feature,
                 source,
@@ -405,6 +485,15 @@ pub enum FeatureOperation {
         origin: VectorExpr,
         size: VectorExpr,
     },
+    /// Sweeps the `profile` output (a wire, or a face with one boundary) along
+    /// the `path` output (an edge or wire). Place the profile at the path's
+    /// start, usually across it. A face or closed wire makes a solid.
+    Sweep {
+        profile: String,
+        path: String,
+        #[serde(default)]
+        orientation: SweepOrientation,
+    },
     /// A solid through two or more sections with equal point counts. `smooth`
     /// interpolates each section as one B-spline with a corner only at its
     /// first point (an airfoil trailing edge); otherwise sections are
@@ -535,8 +624,30 @@ pub enum FeatureOperation {
 }
 
 impl FeatureOperation {
+    /// Named references used by this operation's selectors.
+    pub(crate) fn reference_names(&self) -> Vec<(&str, ReferenceUse)> {
+        let mut names = Vec::new();
+        match self {
+            Self::Fillet { edges, .. }
+            | Self::VariableFillet { edges, .. }
+            | Self::Chamfer { edges, .. } => {
+                for selector in edges {
+                    selector.names(&mut names);
+                }
+            }
+            Self::Hollow { faces, .. } | Self::Draft { faces, .. } => {
+                for selector in faces {
+                    selector.names(&mut names);
+                }
+            }
+            _ => {}
+        }
+        names
+    }
+
     pub(crate) fn dependencies(&self) -> Vec<&str> {
         match self {
+            Self::Sweep { profile, path, .. } => vec![profile, path],
             Self::SheetMetalFlat { input, .. }
             | Self::Translate { input, .. }
             | Self::Rotate { input, .. }
@@ -709,6 +820,21 @@ fn is_default_wall_samples(value: &usize) -> bool {
     *value == DEFAULT_WALL_SAMPLES
 }
 
+/// How a swept profile turns as it follows its path.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SweepOrientation {
+    /// Least twist; the usual choice.
+    #[default]
+    CorrectedFrenet,
+    /// Follows the path's curvature frame.
+    Frenet,
+    /// Keeps the profile's normal-side axis along a dimensionless direction.
+    Binormal { direction: VectorExpr },
+    /// Never rotates: every section stays parallel to the first.
+    Fixed,
+}
+
 /// A closed planar outline for a loft, in dimensionless profile units (for an
 /// airfoil, fractions of chord). Each profile point (u, v) is rotated by
 /// `rotation_radians` about `pivot`, counterclockwise from `x_axis` toward
@@ -824,6 +950,83 @@ pub struct FamilyDefinition {
     /// Named points, axes, and planes in family coordinates.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub datums: Vec<DatumDefinition>,
+    /// Face and edge rules declared once and used by name through
+    /// `FaceSelector::Named` and `EdgeSelector::Named`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub references: Vec<NamedReference>,
+}
+
+/// A face or edge rule declared once in a family and used by name, so the
+/// rule (often a persistent reference) is written and edited in one place.
+/// A reference's rule cannot itself use named references.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct NamedReference {
+    pub name: String,
+    pub target: ReferenceTarget,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReferenceTarget {
+    Faces(FaceSelector),
+    Edges(EdgeSelector),
+}
+
+/// Whether a named reference is used where faces or edges are expected.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ReferenceUse {
+    Faces,
+    Edges,
+}
+
+impl ReferenceTarget {
+    pub(crate) fn kind(&self) -> ReferenceUse {
+        match self {
+            Self::Faces(_) => ReferenceUse::Faces,
+            Self::Edges(_) => ReferenceUse::Edges,
+        }
+    }
+
+    pub(crate) fn dependencies<'a>(&'a self, dependencies: &mut Vec<&'a str>) {
+        match self {
+            Self::Faces(selector) => selector.dependencies(dependencies),
+            Self::Edges(selector) => selector.dependencies(dependencies),
+        }
+    }
+
+    pub(crate) fn names<'a>(&'a self, names: &mut Vec<(&'a str, ReferenceUse)>) {
+        match self {
+            Self::Faces(selector) => selector.names(names),
+            Self::Edges(selector) => selector.names(names),
+        }
+    }
+}
+
+/// A family's named references by name.
+pub(crate) type References<'a> = HashMap<&'a str, &'a NamedReference>;
+
+/// Indexes a family's named references by name. O(references).
+pub(crate) fn reference_map(family: &FamilyDefinition) -> References<'_> {
+    family
+        .references
+        .iter()
+        .map(|reference| (reference.name.as_str(), reference))
+        .collect()
+}
+
+/// Feature dependencies, including those of the named references it uses.
+/// O(selectors + used references).
+pub(crate) fn dependencies_with_references<'a>(
+    feature: &'a FeatureDefinition,
+    references: &References<'a>,
+) -> Vec<&'a str> {
+    let mut dependencies = feature.operation.dependencies();
+    for (name, _) in feature.operation.reference_names() {
+        if let Some(reference) = references.get(name) {
+            reference.target.dependencies(&mut dependencies);
+        }
+    }
+    dependencies
 }
 
 #[derive(Clone, Debug, PartialEq)]

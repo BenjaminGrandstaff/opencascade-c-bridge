@@ -2,6 +2,7 @@ use super::*;
 
 mod profiles;
 mod solving;
+mod splines;
 mod sweeps;
 
 fn length(value: f64) -> ScalarExpr {
@@ -23,6 +24,7 @@ fn rectangle() -> SketchDefinition {
         datum_plane: None,
         circles: Vec::new(),
         arcs: Vec::new(),
+        splines: Vec::new(),
         profile: Vec::new(),
         origin: VectorExpr::Literal(VectorQuantity::lengths(
             0.0,

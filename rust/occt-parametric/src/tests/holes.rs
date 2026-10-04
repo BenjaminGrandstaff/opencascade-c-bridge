@@ -12,6 +12,7 @@ fn direction(x: f64, y: f64, z: f64) -> VectorExpr {
 
 fn bore(extent: HoleExtent) -> FamilyDefinition {
     FamilyDefinition {
+        references: Vec::new(),
         id: "Bore".into(),
         version: 1,
         parameters: vec![
@@ -565,6 +566,7 @@ fn invalid_holes_fail_with_feature_context_and_release_all_handles() {
                 rim: "r".into(),
             }],
             arcs: Vec::new(),
+            splines: Vec::new(),
             profile: Vec::new(),
             constraints: Vec::new(),
         }),

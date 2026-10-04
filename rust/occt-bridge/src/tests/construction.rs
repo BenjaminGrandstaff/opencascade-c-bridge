@@ -638,3 +638,128 @@ fn volumes_of_freeform_lofts_use_adaptive_integration() {
     let center = session.center_of_mass(&smooth).unwrap();
     assert!((center.y - 500.0).abs() < 1e-6, "{center:?}");
 }
+
+fn on_circle(radius: f64, angle: f64) -> Vec3 {
+    Vec3::new(radius * angle.cos(), radius * angle.sin(), 0.0)
+}
+
+#[test]
+fn curve_wires_mix_lines_and_interpolated_splines() {
+    let session = Session::new().unwrap();
+    let pi = std::f64::consts::PI;
+    // A semicircle sampled at nine points, with vertical end tangents, closed
+    // by its diameter, encloses very nearly half the circle's area.
+    let arch = (0..=8)
+        .map(|index| on_circle(5.0, pi * index as f64 / 8.0))
+        .collect::<Vec<_>>();
+    let half_disc = session
+        .create_curve_wire(
+            &[
+                CurveSegment::Spline {
+                    points: arch,
+                    start_tangent: Some(Vec3::new(0.0, 1.0, 0.0)),
+                    end_tangent: Some(Vec3::new(0.0, -1.0, 0.0)),
+                    periodic: false,
+                },
+                CurveSegment::Line {
+                    start: Vec3::new(-5.0, 0.0, 0.0),
+                    end: Vec3::new(5.0, 0.0, 0.0),
+                },
+            ],
+            true,
+        )
+        .unwrap();
+    let face = session.create_face_from_wire(&half_disc).unwrap();
+    assert!(session.is_valid(&face).unwrap());
+    let area = session.surface_area(&face).unwrap();
+    assert!((area - pi * 12.5).abs() / (pi * 12.5) < 5e-3, "{area}");
+    assert_eq!(
+        session.subshape_count(&half_disc, ShapeType::Edge).unwrap(),
+        2
+    );
+
+    // Eight points on a circle make one smooth periodic loop.
+    let ring = (0..8)
+        .map(|index| on_circle(5.0, 2.0 * pi * index as f64 / 8.0))
+        .collect::<Vec<_>>();
+    let loop_wire = session
+        .create_curve_wire(
+            &[CurveSegment::Spline {
+                points: ring,
+                start_tangent: None,
+                end_tangent: None,
+                periodic: true,
+            }],
+            true,
+        )
+        .unwrap();
+    assert_eq!(
+        session.subshape_count(&loop_wire, ShapeType::Edge).unwrap(),
+        1
+    );
+    let disc = session.create_face_from_wire(&loop_wire).unwrap();
+    let area = session.surface_area(&disc).unwrap();
+    assert!((area - pi * 25.0).abs() / (pi * 25.0) < 1e-2, "{area}");
+}
+
+#[test]
+fn spline_end_tangents_set_the_departure_direction() {
+    let session = Session::new().unwrap();
+    let points = vec![
+        Vec3::new(0.0, 0.0, 0.0),
+        Vec3::new(5.0, 3.0, 0.0),
+        Vec3::new(10.0, 0.0, 0.0),
+    ];
+    // Slope just after the start: free, the curve heads up toward (5, 3);
+    // with a horizontal start tangent it leaves flat.
+    let departure = |start_tangent| {
+        let wire = session
+            .create_curve_wire(
+                &[CurveSegment::Spline {
+                    points: points.clone(),
+                    start_tangent,
+                    end_tangent: None,
+                    periodic: false,
+                }],
+                false,
+            )
+            .unwrap();
+        let edge = session.subshape(&wire, ShapeType::Edge, 0).unwrap();
+        let samples = session.edge_sample_points(&edge, 1001).unwrap();
+        samples[1].y / samples[1].x
+    };
+    assert!(departure(None) > 0.5);
+    assert!(departure(Some(Vec3::new(1.0, 0.0, 0.0))).abs() < 0.05);
+
+    let spline = |points: Vec<Vec3>, start_tangent, periodic| CurveSegment::Spline {
+        points,
+        start_tangent,
+        end_tangent: None,
+        periodic,
+    };
+    let line = |a: Vec3, b: Vec3| CurveSegment::Line { start: a, end: b };
+    let origin = Vec3::new(0.0, 0.0, 0.0);
+    for (segments, closed) in [
+        (vec![spline(vec![origin], None, false)], false),
+        (
+            vec![spline(
+                vec![origin, origin, Vec3::new(1.0, 0.0, 0.0)],
+                None,
+                false,
+            )],
+            false,
+        ),
+        (vec![spline(points.clone(), Some(origin), false)], false),
+        (vec![spline(points[..2].to_vec(), None, true)], true),
+        (
+            vec![
+                spline(points.clone(), None, false),
+                line(Vec3::new(20.0, 0.0, 0.0), origin),
+            ],
+            false,
+        ),
+        (vec![spline(points.clone(), None, false)], true),
+    ] {
+        assert!(session.create_curve_wire(&segments, closed).is_err());
+    }
+}

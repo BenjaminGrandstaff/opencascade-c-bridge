@@ -7,6 +7,7 @@
 #include "bridge_internal.hpp"
 
 #include <BRepGProp.hxx>
+#include <BRepAdaptor_Curve.hxx>
 #include <BRepAdaptor_Surface.hxx>
 
 #include <BRepCheck_ListOfStatus.hxx>
@@ -351,12 +352,14 @@ bool contains_topology(const TopoDS_Shape& shape, TopAbs_ShapeEnum type) {
     return shape.ShapeType() == type || TopExp_Explorer(shape, type).More();
 }
 
-void adaptive_volume_properties(const TopoDS_Shape& shape, GProp_GProps& properties) {
-    // Fixed-order Gauss integration is exact to roundoff on analytic faces but
-    // can be badly wrong on multi-span freeform faces, where adaptive
-    // integration is reliable but looser on analytic ones. Choose per shape.
-    bool freeform = false;
-    for (TopExp_Explorer explorer(shape, TopAbs_FACE); explorer.More() && !freeform; explorer.Next()) {
+namespace {
+
+// True when any face is not a plane, cylinder, cone, sphere, torus, or a
+// swept conic, or any edge is not a line, circle, or ellipse. Fixed-order
+// integration is exact to roundoff only on the analytic cases; it misses
+// knot spans of B-spline faces and of B-spline face boundaries.
+bool freeform(const TopoDS_Shape& shape) {
+    for (TopExp_Explorer explorer(shape, TopAbs_FACE); explorer.More(); explorer.Next()) {
         const BRepAdaptor_Surface surface(TopoDS::Face(explorer.Current()), Standard_False);
         switch (surface.GetType()) {
             case GeomAbs_Plane:
@@ -364,21 +367,62 @@ void adaptive_volume_properties(const TopoDS_Shape& shape, GProp_GProps& propert
             case GeomAbs_Cone:
             case GeomAbs_Sphere:
             case GeomAbs_Torus: break;
-            // A swept conic is a single span; a swept spline is not.
             case GeomAbs_SurfaceOfExtrusion:
-            case GeomAbs_SurfaceOfRevolution:
-                freeform = surface.BasisCurve()->GetType() == GeomAbs_BSplineCurve
-                    || surface.BasisCurve()->GetType() == GeomAbs_BezierCurve
-                    || surface.BasisCurve()->GetType() == GeomAbs_OffsetCurve
-                    || surface.BasisCurve()->GetType() == GeomAbs_OtherCurve;
+            case GeomAbs_SurfaceOfRevolution: {
+                const auto basis = surface.BasisCurve()->GetType();
+                if (basis != GeomAbs_Line && basis != GeomAbs_Circle && basis != GeomAbs_Ellipse) {
+                    return true;
+                }
                 break;
-            default: freeform = true; break;
+            }
+            default: return true;
         }
     }
-    if (freeform) {
-        BRepGProp::VolumeProperties(shape, properties, 1e-9, Standard_False);
+    for (TopExp_Explorer explorer(shape, TopAbs_EDGE); explorer.More(); explorer.Next()) {
+        const BRepAdaptor_Curve curve(TopoDS::Edge(explorer.Current()));
+        if (curve.GetType() != GeomAbs_Line && curve.GetType() != GeomAbs_Circle
+            && curve.GetType() != GeomAbs_Ellipse) {
+            return true;
+        }
+    }
+    return false;
+}
+
+}  // namespace
+
+double measure_volume(const TopoDS_Shape& shape, bool only_closed) {
+    GProp_GProps properties;
+    const auto closed = only_closed ? Standard_True : Standard_False;
+    if (freeform(shape)) {
+        // 1e-7 keeps blend volumes faster than the old fixed-order path;
+        // a 1e-9 target cost five times as much for no change on test parts.
+        BRepGProp::VolumePropertiesGK(shape, properties, 1e-7, closed, Standard_True);
     } else {
-        BRepGProp::VolumeProperties(shape, properties);
+        BRepGProp::VolumeProperties(shape, properties, closed);
+    }
+    return properties.Mass();
+}
+
+double measure_volume_moments(
+    const TopoDS_Shape& shape,
+    GProp_GProps& properties,
+    bool only_closed) {
+    const auto closed = only_closed ? Standard_True : Standard_False;
+    if (freeform(shape)) {
+        // Span-aware Gauss-Kronrod moments cost seconds per blend surface;
+        // adaptive Gauss keeps moments fast at about 1e-4 relative accuracy
+        // on spline-bounded faces.
+        return BRepGProp::VolumeProperties(shape, properties, 1e-9, closed);
+    }
+    BRepGProp::VolumeProperties(shape, properties, closed);
+    return 0.0;
+}
+
+void measure_surface_properties(const TopoDS_Shape& shape, GProp_GProps& properties) {
+    if (freeform(shape)) {
+        BRepGProp::SurfaceProperties(shape, properties, 1e-9);
+    } else {
+        BRepGProp::SurfaceProperties(shape, properties);
     }
 }
 

@@ -16,6 +16,7 @@ fn scalar(value: Quantity) -> JointScalar {
 }
 fn main() {
     let definition = FamilyDefinition {
+        references: Vec::new(),
         id: "link".into(),
         version: 1,
         parameters: vec![],

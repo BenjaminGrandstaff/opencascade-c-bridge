@@ -59,7 +59,7 @@ pub(crate) fn execute_profile_sweep<'session>(
 pub(crate) fn execute_feature<'session>(
     session: &'session Session,
     datums: &HashMap<&str, &DatumDefinition>,
-    definitions: &HashMap<&str, &FeatureDefinition>,
+    definitions: &Features<'_>,
     feature: &FeatureDefinition,
     parameters: &HashMap<String, ParameterValue>,
     shapes: &HashMap<String, Shape<'session>>,
@@ -75,7 +75,7 @@ pub(crate) fn execute_feature<'session>(
             let Some(FeatureDefinition {
                 operation: FeatureOperation::SheetMetal { definition },
                 ..
-            }) = definitions.get(input.as_str()).copied()
+            }) = definitions.by_id.get(input.as_str()).copied()
             else {
                 return Err(ModelError::new(
                     "flat pattern input must directly name a sheet-metal feature",
@@ -106,19 +106,7 @@ pub(crate) fn execute_feature<'session>(
                 scalar(thickness, parameters, Dimension::Length)?,
                 vector(direction, parameters, Dimension::Scalar)?,
                 *thickness_mode,
-                match profile_mode {
-                    RibProfileMode::Closed => ribs::ProfileClosure::Closed,
-                    RibProfileMode::OpenStrip { offset } => {
-                        ribs::ProfileClosure::Offset(vector(offset, parameters, Dimension::Length)?)
-                    }
-                    RibProfileMode::OpenToNext {
-                        direction,
-                        maximum_length,
-                    } => ribs::ProfileClosure::ToNext {
-                        direction: vector(direction, parameters, Dimension::Scalar)?,
-                        maximum_length: scalar(maximum_length, parameters, Dimension::Length)?,
-                    },
-                },
+                rib_closure(profile_mode, parameters)?,
             );
         }
         FeatureOperation::Loft {
@@ -126,6 +114,26 @@ pub(crate) fn execute_feature<'session>(
             smooth,
             ruled,
         } => return loft::execute(session, sections, *smooth, *ruled, parameters),
+        FeatureOperation::Sweep {
+            profile,
+            path,
+            orientation,
+        } => session.sweep(
+            shape(shapes, profile)?,
+            shape(shapes, path)?,
+            match orientation {
+                SweepOrientation::CorrectedFrenet => occt_bridge::SweepOrientation::CorrectedFrenet,
+                SweepOrientation::Frenet => occt_bridge::SweepOrientation::Frenet,
+                SweepOrientation::Binormal { direction } => {
+                    occt_bridge::SweepOrientation::Binormal(vector(
+                        direction,
+                        parameters,
+                        Dimension::Scalar,
+                    )?)
+                }
+                SweepOrientation::Fixed => occt_bridge::SweepOrientation::Fixed,
+            },
+        ),
         FeatureOperation::Cylinder {
             origin,
             axis,
@@ -240,6 +248,7 @@ pub(crate) fn execute_feature<'session>(
                 scalar(radius, parameters, Dimension::Length)?,
                 parameters,
                 shapes,
+                definitions,
             );
         }
         FeatureOperation::VariableFillet {
@@ -263,6 +272,7 @@ pub(crate) fn execute_feature<'session>(
                 )?,
                 parameters,
                 shapes,
+                definitions,
             );
         }
         FeatureOperation::Chamfer {
@@ -277,6 +287,7 @@ pub(crate) fn execute_feature<'session>(
                 scalar(distance, parameters, Dimension::Length)?,
                 parameters,
                 shapes,
+                definitions,
             );
         }
         FeatureOperation::Draft {
@@ -303,7 +314,14 @@ pub(crate) fn execute_feature<'session>(
             let mut selected = Vec::new();
             let mut sizes = Vec::new();
             for selector in faces {
-                let matches = resolve_face_selector(session, input, selector, parameters, shapes)?;
+                let matches = resolve_face_selector(
+                    session,
+                    input,
+                    selector,
+                    parameters,
+                    shapes,
+                    definitions,
+                )?;
                 sizes.push(matches.len());
                 selected.extend(matches);
             }
@@ -331,10 +349,13 @@ pub(crate) fn execute_feature<'session>(
                 session,
                 shape(shapes, input)?,
                 faces,
-                scalar(thickness, parameters, Dimension::Length)?,
-                scalar(tolerance, parameters, Dimension::Length)?,
+                (
+                    scalar(thickness, parameters, Dimension::Length)?,
+                    scalar(tolerance, parameters, Dimension::Length)?,
+                ),
                 parameters,
                 shapes,
+                definitions,
             );
         }
     };
@@ -348,9 +369,17 @@ pub(crate) fn execute_fillet<'session>(
     radius: f64,
     parameters: &HashMap<String, ParameterValue>,
     shapes: &HashMap<String, Shape<'session>>,
+    definitions: &Features<'_>,
 ) -> Result<Shape<'session>, ModelError> {
-    let (selected, sizes) =
-        resolve_edge_selectors(session, input, selectors, parameters, shapes, "fillet")?;
+    let (selected, sizes) = resolve_edge_selectors(
+        session,
+        input,
+        selectors,
+        parameters,
+        shapes,
+        "fillet",
+        definitions,
+    )?;
     let references = selected.iter().collect::<Vec<_>>();
     let result = session
         .fillet(input, &references, radius)
@@ -366,9 +395,17 @@ pub(crate) fn execute_chamfer<'session>(
     distance: f64,
     parameters: &HashMap<String, ParameterValue>,
     shapes: &HashMap<String, Shape<'session>>,
+    definitions: &Features<'_>,
 ) -> Result<Shape<'session>, ModelError> {
-    let (selected, sizes) =
-        resolve_edge_selectors(session, input, selectors, parameters, shapes, "chamfer")?;
+    let (selected, sizes) = resolve_edge_selectors(
+        session,
+        input,
+        selectors,
+        parameters,
+        shapes,
+        "chamfer",
+        definitions,
+    )?;
     let references = selected.iter().collect::<Vec<_>>();
     let result = session
         .chamfer(input, &references, distance)
@@ -381,10 +418,10 @@ pub(crate) fn execute_hollow<'session>(
     session: &'session Session,
     input: &Shape<'session>,
     selectors: &[FaceSelector],
-    thickness: f64,
-    tolerance: f64,
+    (thickness, tolerance): (f64, f64),
     parameters: &HashMap<String, ParameterValue>,
     shapes: &HashMap<String, Shape<'session>>,
+    definitions: &Features<'_>,
 ) -> Result<Shape<'session>, ModelError> {
     if selectors.is_empty() {
         return Err(ModelError::new(
@@ -394,7 +431,7 @@ pub(crate) fn execute_hollow<'session>(
     let mut selected = Vec::new();
     let mut sizes = Vec::with_capacity(selectors.len());
     for selector in selectors {
-        match resolve_face_selector(session, input, selector, parameters, shapes) {
+        match resolve_face_selector(session, input, selector, parameters, shapes, definitions) {
             Ok(faces) => {
                 sizes.push(faces.len());
                 selected.extend(faces);
@@ -411,4 +448,23 @@ pub(crate) fn execute_hollow<'session>(
         .map_err(|error| ModelError::from(error).locate_selections(&sizes, "face"));
     cleanup_shapes(session, selected);
     result
+}
+
+fn rib_closure(
+    mode: &RibProfileMode,
+    parameters: &HashMap<String, ParameterValue>,
+) -> Result<ribs::ProfileClosure, ModelError> {
+    Ok(match mode {
+        RibProfileMode::Closed => ribs::ProfileClosure::Closed,
+        RibProfileMode::OpenStrip { offset } => {
+            ribs::ProfileClosure::Offset(vector(offset, parameters, Dimension::Length)?)
+        }
+        RibProfileMode::OpenToNext {
+            direction,
+            maximum_length,
+        } => ribs::ProfileClosure::ToNext {
+            direction: vector(direction, parameters, Dimension::Scalar)?,
+            maximum_length: scalar(maximum_length, parameters, Dimension::Length)?,
+        },
+    })
 }

@@ -338,6 +338,58 @@ pub struct MassProperties {
     pub relative_volume_error: f64,
 }
 
+/// One placed component of [`Session::save_step_assembly`].
+#[derive(Clone, Copy, Debug)]
+pub struct StepComponent<'a, 'session> {
+    /// The placed shape. Components whose shapes share geometry at different
+    /// locations, such as rigidly placed copies, become one STEP part.
+    pub shape: &'a Shape<'session>,
+    pub name: &'a str,
+    /// Names the part; for a shared part, the first component's name wins.
+    pub part_name: &'a str,
+    /// sRGB channels in [0, 1]; for a shared part, the first component's wins.
+    pub color: Option<[f64; 3]>,
+}
+
+/// How a swept profile turns as it follows its path.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum SweepOrientation {
+    /// Least twist; the usual choice.
+    CorrectedFrenet,
+    /// Follows the path's curvature frame.
+    Frenet,
+    /// Keeps the profile's normal-side axis along this direction.
+    Binormal(Vec3),
+    /// Never rotates: every section is parallel to the first.
+    Fixed,
+}
+
+/// One piece of [`Session::create_curve_wire`]: like [`WireSegment`], plus
+/// B-splines interpolated through any number of points.
+#[derive(Clone, Debug, PartialEq)]
+pub enum CurveSegment {
+    Line {
+        start: Vec3,
+        end: Vec3,
+    },
+    /// The arc runs from `start` through `middle` to `end`.
+    Arc {
+        start: Vec3,
+        middle: Vec3,
+        end: Vec3,
+    },
+    /// Passes through `points` in order (at least two). Optional end
+    /// tangents fix the curve's direction at its ends; their length is
+    /// ignored. A periodic spline is a smooth closed loop through at least
+    /// three points, ending where it starts.
+    Spline {
+        points: Vec<Vec3>,
+        start_tangent: Option<Vec3>,
+        end_tangent: Option<Vec3>,
+        periodic: bool,
+    },
+}
+
 /// Smallest principal radii of one face, signed by its outward normal. A
 /// convex face curves away from the outward normal (outside of a cylinder or
 /// fillet); a concave face curves toward it (a bore or inside fillet). `None`

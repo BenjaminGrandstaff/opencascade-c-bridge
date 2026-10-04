@@ -515,6 +515,35 @@ impl Session {
         Ok(tangent != 0)
     }
 
+    /// Like [`Session::faces_are_tangent`], but a shared edge with no recorded
+    /// continuity is measured: the faces' normals along it must agree within
+    /// `angular_tolerance` radians, in (0, pi/2). Booleans that create new
+    /// tangent junctions record no continuity on them.
+    pub fn faces_are_tangent_within(
+        &self,
+        parent: &Shape<'_>,
+        first_face: &Shape<'_>,
+        second_face: &Shape<'_>,
+        angular_tolerance: f64,
+    ) -> Result<bool, BridgeError> {
+        self.validate_shape(parent)?;
+        self.validate_shape(first_face)?;
+        self.validate_shape(second_face)?;
+        let mut tangent = 0;
+        // SAFETY: The session, validated handles, and output pointer are valid.
+        self.check(unsafe {
+            occt_bridge_shape_faces_are_tangent_within(
+                self.raw.as_ptr(),
+                parent.id,
+                first_face.id,
+                second_face.id,
+                angular_tolerance,
+                &mut tangent,
+            )
+        })?;
+        Ok(tangent != 0)
+    }
+
     /// Share the result geometry while tracing an intermediate operation's
     /// sources through its history. Both inputs and their histories stay intact.
     /// The intermediate must be a direct input to the result. Rigid histories

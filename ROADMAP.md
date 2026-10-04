@@ -8,21 +8,29 @@ tracks status and order.
 
 | Layer | Version | State |
 |---|---|---|
-| C ABI (`src/`, `include/`) | ABI 37 | Stable; exact version match required |
+| C ABI (`src/`, `include/`) | ABI 41 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 51 | Active development |
+| `occt-parametric` (engineering layer) | Schema 56 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 4/4, bridge 81 + first-use integration 1 (+1 doc test), recipes 3, parametric 290 + merge driver 3 + motion command 9 + balance command 4 + drawing command 2 + branch command 2, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
-| SonarQube (indexed Rust) | Gate OK, 0 issues, 93.5% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
+| Tests | C 5/5, bridge 88 + first-use integration 1 (+1 doc test), recipes 3, parametric 309 + merge driver 3 + motion command 9 + balance command 4 + drawing command 2 + branch command 2, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| SonarQube (indexed Rust) | Gate OK, 0 issues, 93.4% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
-| Coverage | 93.42% lines overall, test code excluded; C++ 94.24% lines, 87.44% branches, 100% functions; Rust 93.09% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 78 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Coverage | 93.30% lines overall, test code excluded; C++ 94.09% lines, 87.31% branches, 100% functions; Rust 92.97% lines | `tools/coverage/run.sh` |
+| Scale benchmarks | 86 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
+
+- Integrated assembly/motion and geometry features (ABI 41, schema 56): spline
+  sketches, path sweeps, structured STEP assemblies, persistent/named references,
+  measured tangency, slicing drawings, balance reports, joint solving and
+  continuous collision checks are available in one branch. Schema 56 unifies the
+  drawing additions with the geometry branch's schema 55; older documents migrate
+  with additive defaults. The combined suite verifies both feature sets.
+
 
 - Explicit collision pair exclusions for static generations, sampled motion,
   continuous translation/rotation, and solved linkage studies. Exact selected
@@ -83,7 +91,7 @@ tracks status and order.
   still select assembly branches. See [Assembly motion](ASSEMBLY_MOTION.md).
 
 
-- General drawing batches and cutting templates (schema 51): true planar slices
+- General drawing batches and cutting templates (integrated schema 56): true planar slices
   export only the cross-section boundaries, including holes, without projecting
   geometry behind the plane. The command writes numbered SVG and millimeter DXF,
   a manifest and persisted drawing definitions. Eight mirrored starter-wing
@@ -117,6 +125,40 @@ tracks status and order.
   No ABI or model schema change. See [Motion-study command](tools/motion-study/README.md).
 
 ### Kernel (C ABI)
+
+- Measured face tangency (ABI 41):
+  `occt_bridge_shape_faces_are_tangent_within` uses continuity recorded on a
+  shared edge and, where none is recorded, samples both faces' normals along
+  the edge against an angular tolerance in (0, pi/2). Shared edges are found
+  through an edge map, O(edges of both faces). C, C error, and bridge tests
+  check a block fused flush with a cylinder (no recorded tangency; six
+  measured tangent pairs, two of them curved) and tolerance validation.
+
+- Structured STEP export (ABI 40): `occt_bridge_step_save_assembly` writes one
+  named assembly through OCCT XCAF, with a named component per placed shape and
+  shared, named, sRGB-colored parts for shapes that share geometry. A C++ test
+  reads it back through XCAF and checks structure, names, shared parts, and
+  colors; argument errors write nothing.
+
+- Sweeps along paths (ABI 39): `occt_bridge_sweep` carries a wire or
+  single-boundary face along an edge or wire with corrected-Frenet, Frenet,
+  binormal, or fixed orientation, mitering sharp corners, closing faces and
+  closed wires into solids, and recording generated-face history. A guard
+  rejects profiles reaching as far as the path's smallest bend radius, which
+  the kernel's validity check misses. Three bridge tests check exact volumes on
+  straight, curved (Pappus), fixed-orientation (sheared), and mitered paths.
+
+- Curve wires and accurate freeform measurements (ABI 38):
+  `occt_bridge_create_curve_wire` joins lines, arcs, and B-splines interpolated
+  through any number of points, with optional end tangents and periodic
+  (corner-free closed) splines. All measurements now share one integration
+  policy: fixed order on all-analytic shapes (exact to roundoff), span-aware
+  Gauss-Kronrod volume (1e-7 relative target) and adaptive area when any face
+  or edge is freeform; blend volumes are faster than before.
+  This fixes 0.03% volume and 0.003% area errors on prisms of spline-bounded
+  sketches, now exact. Centers and inertia of freeform shapes use adaptive Gauss
+  integration (about 1e-4 relative), because span-aware moments cost seconds
+  per blend surface.
 
 - Spline lofts and reliable volumes (ABI 37): `occt_bridge_create_spline_loft`
   interpolates each section as one B-spline closed back to its first point,
@@ -246,6 +288,70 @@ tracks status and order.
   error-bounded (Bezier, B-spline) extrema.
 
 ### Parametric layer
+
+- Measured tangency in selectors (schema 55): `FaceSelector::TangentTo` takes
+  an optional `angular_tolerance`; when set, unrecorded junctions are measured,
+  so tangent and coplanar faces that a boolean split apart can be selected.
+  The tolerance's parameters join the consuming feature's signature, and an
+  absent tolerance is omitted from documents. Three tests cover recorded-only
+  failure on a fused stadium, the measured selection's exact area, tolerance
+  errors, signatures, and persistence. Checking all 410 faces of a 400-hole
+  stadium plate against its top takes 0.016 s (0.644 s with the booleans
+  building it; 2 s budget).
+
+- Named references (schema 54): `FamilyDefinition::references` declares a face
+  or edge selector once under a name, and `FaceSelector::Named` and
+  `EdgeSelector::Named` use it in any fillet, chamfer, hollow, or draft. A
+  reference's features and parameters count as dependencies of each feature
+  that uses it, so editing one rebuilds exactly its users. Validation rejects
+  empty or repeated names, unknown names, a face reference used for edges (and
+  the reverse), references that name other references, and unknown features;
+  a reference to a downstream feature is reported as a cycle. Three tests
+  cover two shells sharing one reference, equivalence with the inline
+  selector, incremental rebuilds, every validation error, and persistence. 200
+  fillets through named references among 10,000 declarations, regenerated
+  twice, take 0.482 s (2 s budget); lookups are indexed by name.
+
+- Native viewer export: `InstanceGraph::export_draw_view` writes a placed B-rep
+  compound and a DRAW script that opens every part shaded, named after its
+  instance, and colored from its material. Two tests check the script, the
+  reloaded volume, name sanitizing, and an off-screen DRAW run. A 10,001-part
+  view exports in 0.440 s (2 s budget).
+
+- Persistent references (schema 53): `FaceSelector::Persistent` and
+  `EdgeSelector::Persistent` choose topology on an earlier feature's output and
+  follow it forward through every later feature by operation history; split
+  faces yield every piece and removed ones fail, naming the feature. Three
+  tests cover a front face followed through a quarter turn and a splitting
+  notch (where a plain normal rule picks other faces), a width edit, removal
+  and unrelated-reference errors, a hollow consuming the reference, and
+  persistence. Four top edges followed through 100 sequential holes to a
+  chamfer take 3.082 s (10 s budget), most of it the holes.
+
+- Graph STEP export: `InstanceGraph::export_step` writes generated outputs as an
+  assembly of instance-named components sharing one part per geometry variant,
+  colored from material appearances (linear RGB converted to sRGB). Frames are
+  flattened into component placements. Two tests cover shared variants, volume
+  after reloading, misspelled outputs, and color conversion. 10,001 pattern
+  instances export as one shared part in 0.828 s (4 s budget), at 617
+  bytes per component.
+
+- Sweep features (schema 52): `Sweep { profile, path, orientation }` sweeps a
+  sketch face or wire along an open sketch path, with a parameter-driven
+  binormal. Two tests cover exact volumes, parameter edits that rebuild only
+  the profile and sweep, rejected self-intersecting edits that keep the
+  accepted result, validation, and persistence. 1,000 sweeps rebuilt after a
+  radius edit take 0.974 s (4 s budget).
+
+- Spline sketch entities (schema 51): `SketchSpline` interpolates through named
+  sketch points, joins lines and arcs in profiles, closes into a smooth loop
+  when it repeats its first point, and takes end directions from `Tangent`
+  constraints with lines or arcs. Three sketch tests cover tangent arches,
+  solving, periodic loops, extrusion, validation, and persistence; two bridge
+  tests cover curve wires. 1,000 spline-arch sketches extruded and rebuilt
+  after a crown edit take 1.671 s (6 s budget); one spline through 1,000
+  points solves into a face within 1e-6 of the circle's area in 0.015 s
+  (250 ms budget).
 
 - Print-bed fit requirements (schema 50): `FitsWithin` checks exact bounding-box
   extents against a length envelope in any axis-aligned orientation, reporting
@@ -578,7 +684,7 @@ tracks status and order.
   failed-edit rollback, units, invalid inputs, and schema 27 migration.
   Building and editing 1,000 sweeps takes 0.562 s for extrude and 0.700 s
   for revolve (5 s budgets), checking every volume, profile reuse, and cleanup.
-- Constraint-solved 2D sketches: lines, exact arcs/circles, construction
+- Constraint-solved 2D sketches: lines, exact arcs/circles, splines (schema 51), construction
   geometry, coincident, horizontal, vertical, parallel, perpendicular,
   equal-length, distance, and contact-tangent constraints. Radius dimensions
   use center-to-boundary distance expressions; arcs enforce equal radii.
@@ -718,16 +824,21 @@ priority over additional rib variants.
 - Hole-catalog tolerance classes and optional under-head countersink relief.
 - Wing structure beyond solid printed segments: hollow shells with internal
   ribs, alignment pins independent of the spar, twist-exact hinge lines, and
-  print-bed fit in arbitrary (not only quarter-turn) orientations.
+  print-bed fit in arbitrary orientations.
+- Material property sheets with sources (stiffness, softening temperature),
+  service-temperature and manufacturing-step temperature checks, and a beam
+  theory spar bending check; stress analysis still needs an external solver.
 
 - Advanced ribs with general support-following and nonuniform closure.
+- STEP sub-assemblies mirroring nested assembly frames, and per-face colors.
 - Complete linkage branch enumeration, broader connected assembly solving, and
   bounds that preserve motion correlations in dense or deeply nested mechanisms.
 - Undercut detection against a parting line, and exact (not sampled) minimum
   wall thickness and draft on curved BREP faces.
 - Assumptions and requirement-to-feature trace links in the document schema.
-- Semantic naming beyond feature outputs, and geometric tangency inference
-  when continuity metadata is absent.
+- Merging same-domain faces after booleans (OCCT's
+  `ShapeUpgrade_UnifySameDomain`), so fused shapes with split coplanar or
+  tangent faces can be shelled and drafted.
 - Additional domain-specific expression functions.
 - Integration with the broader EIL source model in the sibling
   [`engineering-intent-language`](../engineering-intent-language) project.

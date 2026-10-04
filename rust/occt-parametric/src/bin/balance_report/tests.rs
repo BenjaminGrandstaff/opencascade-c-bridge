@@ -9,6 +9,7 @@ use std::{
 
 fn fixture() -> ModelDocument {
     let family = FamilyDefinition {
+        references: Vec::new(),
         id: "assembly".into(),
         version: 1,
         parameters: vec![],

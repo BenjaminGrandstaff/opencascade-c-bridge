@@ -27,6 +27,7 @@ impl Drop for Fixture {
 }
 fn document() -> ModelDocument {
     let family = FamilyDefinition {
+        references: Vec::new(),
         id: "part".into(),
         version: 1,
         parameters: ["enabled", "visible"]

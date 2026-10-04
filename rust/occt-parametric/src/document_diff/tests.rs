@@ -14,6 +14,7 @@ fn document() -> ModelDocument {
         maximum: None,
     };
     let family = FamilyDefinition {
+        references: Vec::new(),
         id: "part".into(),
         version: 1,
         parameters: vec![parameter("width/with~punctuation"), parameter("enabled")],

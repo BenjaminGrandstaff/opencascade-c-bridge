@@ -2,7 +2,7 @@
 
 use super::*;
 
-pub(crate) const ABI_VERSION: u32 = 37;
+pub(crate) const ABI_VERSION: u32 = 41;
 
 #[repr(C)]
 pub(crate) struct RawMeshOptions {
@@ -37,6 +37,25 @@ pub(crate) struct RawWireSegment {
     pub(crate) start: RawVec3,
     pub(crate) middle: RawVec3,
     pub(crate) end: RawVec3,
+}
+
+#[repr(C)]
+pub(crate) struct RawCurveSegment {
+    pub(crate) kind: i32,
+    pub(crate) flags: i32,
+    pub(crate) first_point: usize,
+    pub(crate) point_count: usize,
+    pub(crate) start_tangent: RawVec3,
+    pub(crate) end_tangent: RawVec3,
+}
+
+#[repr(C)]
+pub(crate) struct RawStepComponent {
+    pub(crate) shape: RawShapeId,
+    pub(crate) name: *const std::os::raw::c_char,
+    pub(crate) part_name: *const std::os::raw::c_char,
+    pub(crate) has_color: i32,
+    pub(crate) color: [f64; 3],
 }
 
 #[repr(C)]
@@ -245,6 +264,31 @@ unsafe extern "C" {
         segments: *const RawWireSegment,
         count: usize,
         closed: c_int,
+        out: *mut RawShapeId,
+    ) -> RawStatus;
+    pub(crate) fn occt_bridge_create_curve_wire(
+        session: *mut c_void,
+        points: *const RawVec3,
+        point_count: usize,
+        segments: *const RawCurveSegment,
+        segment_count: usize,
+        closed: c_int,
+        out: *mut RawShapeId,
+    ) -> RawStatus;
+    pub(crate) fn occt_bridge_step_save_assembly(
+        session: *mut c_void,
+        path: *const std::os::raw::c_char,
+        assembly_name: *const std::os::raw::c_char,
+        components: *const RawStepComponent,
+        component_count: usize,
+        out_part_count: *mut usize,
+    ) -> RawStatus;
+    pub(crate) fn occt_bridge_sweep(
+        session: *mut c_void,
+        profile: RawShapeId,
+        path: RawShapeId,
+        orientation: i32,
+        binormal: RawVec3,
         out: *mut RawShapeId,
     ) -> RawStatus;
     pub(crate) fn occt_bridge_create_circle_wire(
@@ -583,6 +627,14 @@ unsafe extern "C" {
         parent: RawShapeId,
         first_face: RawShapeId,
         second_face: RawShapeId,
+        out: *mut c_int,
+    ) -> RawStatus;
+    pub(crate) fn occt_bridge_shape_faces_are_tangent_within(
+        session: *mut c_void,
+        parent: RawShapeId,
+        first_face: RawShapeId,
+        second_face: RawShapeId,
+        angular_tolerance: f64,
         out: *mut c_int,
     ) -> RawStatus;
     pub(crate) fn occt_bridge_create_open_profile_face_to_next(

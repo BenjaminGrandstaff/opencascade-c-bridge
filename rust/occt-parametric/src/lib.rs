@@ -42,7 +42,7 @@ pub use assembly::{
 };
 pub use sketch::{
     SketchArc, SketchCircle, SketchConstraint, SketchDefinition, SketchLine, SketchPoint,
-    SketchPoint2, SketchSolution,
+    SketchPoint2, SketchSolution, SketchSpline,
 };
 pub use solve::PlacementSolution;
 

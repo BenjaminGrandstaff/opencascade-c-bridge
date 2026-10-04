@@ -81,9 +81,7 @@ struct SolidBoundary {
 };
 
 double solid_volume(const TopoDS_Shape& shape) {
-    GProp_GProps properties;
-    adaptive_volume_properties(shape, properties);
-    return std::abs(properties.Mass());
+    return std::abs(measure_volume(shape));
 }
 
 /* Normalizes each closed shell as an outward-oriented standalone solid. */

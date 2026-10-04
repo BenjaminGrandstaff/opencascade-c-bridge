@@ -8,6 +8,7 @@ fn sweep_family(
     operation: FeatureOperation,
 ) -> FamilyDefinition {
     FamilyDefinition {
+        references: Vec::new(),
         id: "Sweep".into(),
         version: 1,
         parameters: Vec::new(),

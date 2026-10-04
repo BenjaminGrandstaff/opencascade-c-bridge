@@ -26,6 +26,7 @@ fn spec(turns: &[f64]) -> SheetMetalDefinition {
 }
 fn definition(sheet: SheetMetalDefinition) -> FamilyDefinition {
     FamilyDefinition {
+        references: Vec::new(),
         id: "sheet".into(),
         version: 1,
         parameters: vec![],
