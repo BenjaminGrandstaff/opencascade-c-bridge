@@ -15,7 +15,8 @@ pub(crate) mod gdt;
 mod guides;
 pub use gdt::{
     ControlInspection, ControlMeasurement, ControlResult, InspectionRecord, InspectionReport,
-    MAX_INSPECTION_POINTS, MeasuredDatumFrame, MeasuredFeature,
+    MAX_INSPECTION_POINTS, MeasuredDatumFrame, MeasuredFeature, MeasuredTexture, TextureInspection,
+    TextureMeasurement, TextureResult,
 };
 pub use gdt::{
     DatumMaterialBoundary, DatumPrecedence, DrawingCompositeRefinement,
@@ -25,6 +26,10 @@ pub use gdt::{
     FeatureOfSizeKind, GeometricCharacteristic, GeometricToleranceAllowance,
     GeometricToleranceZone, PositionSampleEvaluation, PositionToleranceAxis,
     ResolvedDrawingDatumReference, ResolvedDrawingDatumReferenceFrame, ToleranceMaterialCondition,
+};
+pub use gdt::{
+    DrawingSurfaceTexture, MaterialRemoval, RoughnessLimits, RoughnessParameter, RoughnessUnit,
+    STANDARD_CUTOFFS_MM, SurfaceLay, Waviness,
 };
 mod hatching;
 pub use guides::{DrawingGuide, DrawingGuideKind, DrawingGuideLine, DrawingGuideLineKind};
@@ -131,6 +136,9 @@ pub struct DrawingDefinition {
     pub datum_features: Vec<DrawingDatumFeature>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub feature_control_frames: Vec<DrawingFeatureControlFrame>,
+    /// Surface texture symbols (schema 71).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub surface_textures: Vec<DrawingSurfaceTexture>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sheet: Option<DrawingSheet>,
     pub id: String,
@@ -414,6 +422,7 @@ impl DrawingDefinition {
             &views,
             graph,
         )?;
+        gdt::texture::validate(&self.surface_textures, &views, graph)?;
         let mut ids = HashSet::new();
         for note in &self.notes {
             if note.id.is_empty() || !ids.insert(&note.id) || !finite_pair(note.position_mm) {
@@ -528,6 +537,11 @@ impl DrawingDefinition {
                 &self.feature_control_frames,
                 &self.datum_reference_frames,
             )?)
+            .and_then(|sum| {
+                gdt::texture::vertex_count(&self.surface_textures)
+                    .ok()
+                    .and_then(|count| sum.checked_add(count))
+            })
             .ok_or_else(|| ModelError::new("GD&T vertex count overflow"))?;
         let added = self
             .dimensions
@@ -568,6 +582,7 @@ impl DrawingDefinition {
             graph,
             &mut drawing,
         )?;
+        gdt::texture::append(&self.surface_textures, &views, graph, &mut drawing)?;
         guides::append(&self.guides, &views, graph, &mut drawing)?;
         let context = dimensions::DimensionContext::new(&self.dimensions, graph)?;
         for dimension in &self.dimensions {

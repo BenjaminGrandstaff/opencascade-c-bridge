@@ -36,6 +36,8 @@ struct MeasuredPoints {
     datum_features: Vec<MeasuredFeature>,
     #[serde(default)]
     controls: Vec<MeasuredFeature>,
+    #[serde(default)]
+    surface_textures: Vec<MeasuredTexture>,
 }
 #[derive(Default, Serialize)]
 struct Summary {
@@ -72,6 +74,13 @@ impl Summary {
                 _ => self.controls_not_evaluated += 1,
             }
         }
+        for texture in &report.surface_textures {
+            match &texture.result {
+                TextureResult::Evaluated(m) if m.conforms => self.controls_conforming += 1,
+                TextureResult::Evaluated(_) => self.controls_nonconforming += 1,
+                TextureResult::NotMeasured => {}
+            }
+        }
         for result in &report.positions {
             if result.evaluation.samples_within_zone {
                 self.positions_within_zone += 1;
@@ -88,6 +97,8 @@ struct DrawingReport {
     positions: Vec<DrawingPositionMeasurementResult>,
     /// Measured controls only; controls without points are omitted.
     controls: Vec<ControlInspection>,
+    /// Measured surface textures only, counted with the controls.
+    surface_textures: Vec<TextureInspection>,
 }
 #[derive(Serialize)]
 struct Report {
@@ -167,26 +178,38 @@ fn evaluate(document: &ModelDocument, setup: &Setup) -> Result<Report, Box<dyn E
         let drawing = index
             .get(request.drawing.as_str())
             .ok_or_else(|| format!("unknown measurement drawing '{}'", request.drawing))?;
+        let (controls, surface_textures) = match &request.points {
+            Some(points) => {
+                let inspection = drawing.evaluate_inspection(
+                    &graph,
+                    &InspectionRecord {
+                        drawing: request.drawing.clone(),
+                        datum_features: points.datum_features.clone(),
+                        controls: points.controls.clone(),
+                        surface_textures: points.surface_textures.clone(),
+                    },
+                )?;
+                (
+                    inspection
+                        .controls
+                        .into_iter()
+                        .filter(|c| c.result != ControlResult::NotMeasured)
+                        .collect(),
+                    inspection
+                        .surface_textures
+                        .into_iter()
+                        .filter(|t| t.result != TextureResult::NotMeasured)
+                        .collect(),
+                )
+            }
+            None => (Vec::new(), Vec::new()),
+        };
         let report = DrawingReport {
             drawing: request.drawing.clone(),
             dimensions: drawing.evaluate_dimension_measurements(&graph, &request.dimensions)?,
             positions: drawing.evaluate_position_measurements(&graph, &request.positions)?,
-            controls: match &request.points {
-                Some(points) => drawing
-                    .evaluate_inspection(
-                        &graph,
-                        &InspectionRecord {
-                            drawing: request.drawing.clone(),
-                            datum_features: points.datum_features.clone(),
-                            controls: points.controls.clone(),
-                        },
-                    )?
-                    .controls
-                    .into_iter()
-                    .filter(|c| c.result != ControlResult::NotMeasured)
-                    .collect(),
-                None => Vec::new(),
-            },
+            controls,
+            surface_textures,
         };
         summary.add(&report);
         drawings.push(report);

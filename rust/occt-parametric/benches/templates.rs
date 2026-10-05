@@ -55,6 +55,7 @@ fn fixture() -> (ModelDocument, DrawingDefinition) {
         datum_reference_frames: Vec::new(),
         datum_features: Vec::new(),
         feature_control_frames: Vec::new(),
+        surface_textures: Vec::new(),
         sheet: None,
         id: "template".into(),
         title: "Section template".into(),

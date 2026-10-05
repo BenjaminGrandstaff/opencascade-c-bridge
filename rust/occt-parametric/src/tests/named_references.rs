@@ -261,6 +261,7 @@ fn integrated_schema_preserves_references_slice_drawings_and_joint_motion() {
         datum_reference_frames: Vec::new(),
         datum_features: Vec::new(),
         feature_control_frames: Vec::new(),
+        surface_textures: Vec::new(),
         sheet: None,
         id: "slice".into(),
         title: "Referenced shell template".into(),

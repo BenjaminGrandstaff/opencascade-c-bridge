@@ -279,7 +279,11 @@ binary supplies a semantic Git merge driver. See [Model history](MODEL_HISTORY.m
 and [Document comparisons](DOCUMENT_DIFF.md). Schema 42 adds regenerated orthographic, section,
 and detail drawings, datum dimensions, parameter notes, and metadata title blocks
 exported as SVG or DXF. See [Drawings](DRAWINGS.md) for the API and sampling limits.
-Schema 68 evaluates measured points against drawing GD&T: fitted datum
+Schema 71 adds drawing surface texture requirements (ASME B46.1 roughness
+limits, sampling length, waviness, lay, material removal and method) drawn with
+the Y14.36 symbol, and checks measured roughness readings in inspection
+reports; see [Drawings](DRAWINGS.md#surface-texture-schema-71). Schema 68
+evaluates measured points against drawing GD&T: fitted datum
 simulators, flatness and orientation zones, and position with MMC/LMC bonus from
 stated size limits (`DrawingSizeLimits`, also used for bonus arithmetic and
 supplied-axis position checks). Dimensional measurements are checked against

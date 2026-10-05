@@ -29,6 +29,7 @@ mod rotating_motion;
 mod selection;
 mod sheet_metal;
 mod step_export;
+mod surface_texture;
 mod sweep;
 mod tangency;
 mod traceability;
