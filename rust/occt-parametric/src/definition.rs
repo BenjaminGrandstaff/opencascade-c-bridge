@@ -966,6 +966,11 @@ pub struct FamilyDefinition {
     /// `FaceSelector::Named` and `EdgeSelector::Named`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub references: Vec<NamedReference>,
+    /// Linear RGB colors, channels in [0, 1], by feature id: a feature
+    /// colors the faces it creates, and later features carry those colors
+    /// to the faces they keep or modify. Exported as STEP face colors.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub feature_colors: BTreeMap<String, [f64; 3]>,
 }
 
 /// A face or edge rule declared once in a family and used by name, so the

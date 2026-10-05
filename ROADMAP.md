@@ -11,16 +11,16 @@ tracks status and order.
 | C ABI (`src/`, `include/`) | ABI 44 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 58 | Active development |
+| `occt-parametric` (engineering layer) | Schema 59 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 92 + first-use integration 1 (+1 doc test), recipes 3, parametric 320 + merge driver 3 + motion command 16 + balance command 4 + drawing command 2 + branch command 2, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 93 + first-use integration 1 (+1 doc test), recipes 3, parametric 323 + merge driver 3 + motion command 16 + balance command 4 + drawing command 2 + branch command 2, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.5% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
 | Coverage | 93.39% lines overall, test code excluded; C++ 94.17% lines, 87.51% branches, 100% functions; Rust 93.08% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 91 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Scale benchmarks | 92 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
 
@@ -156,10 +156,14 @@ tracks status and order.
   named sub-assemblies from parent-indexed nodes with rigid 3x4 transforms
   (validated as proper rotations), locating each component relative to its
   node so model-space geometry matches the flat export; nodes must hold
-  components. The flat export is the zero-node case. Shared-part occurrences
+  components; optional per-face colors index each component's faces and
+  color its part. The flat export is the zero-node case.
+  `occt_bridge_subshape_lookup` resolves many candidates in one traversal,
+  reporting missing ones instead of failing. Shared-part occurrences
   at the identity location now keep their own names (OCCT's name writer had
   attached them to other occurrences). A C++ XCAF test checks a three-level
-  tree's nesting, names, and recomposed placements, and argument errors.
+  tree's nesting, names, recomposed placements, and a face color, and
+  argument errors.
 
 - Exact pull ranges (ABI 43): `occt_bridge_shape_face_pull_ranges` reports
   each face's range of outward normal along a pull direction, with the points
@@ -339,6 +343,16 @@ tracks status and order.
   error-bounded (Bezier, B-spline) extrema.
 
 ### Parametric layer
+
+- Feature colors (schema 59): `FamilyDefinition::feature_colors` gives a
+  feature a color for the faces it creates; later features carry colors to
+  the faces they keep or modify, recomputed on every regeneration (also for
+  reused outputs, so recoloring rebuilds no geometry), and `export_step`
+  writes them as STEP face colors. Three tests follow a red block, a blue
+  notch tool, and green fillets through a cut and a fillet, recolor without
+  rebuilding, validate, persist, and export. Coloring a plate and 100
+  sequential holes costs 1.00x of the uncolored regeneration (3.0 s; 15 s
+  budget).
 
 - STEP sub-assemblies: `InstanceGraph::export_step` writes every frame that
   holds an exported output as a named sub-assembly, nested as the frame tree
@@ -930,7 +944,6 @@ scopes and inspected repo capabilities, not a full conformity audit.
   theory spar bending check; stress analysis still needs an external solver.
 
 - Advanced ribs with general support-following and nonuniform closure.
-- Per-face STEP colors.
 - Complete linkage branch enumeration, broader connected assembly solving, and
   bounds that preserve motion correlations in dense or deeply nested mechanisms.
 - Undercut detection against a parting line, exact (not sampled) minimum wall

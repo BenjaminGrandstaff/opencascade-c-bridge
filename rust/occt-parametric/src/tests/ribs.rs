@@ -62,6 +62,7 @@ fn rib_family(wire: bool) -> FamilyDefinition {
     };
     FamilyDefinition {
         references: Vec::new(),
+        feature_colors: Default::default(),
         id: "Rib".into(),
         version: 1,
         parameters: vec![

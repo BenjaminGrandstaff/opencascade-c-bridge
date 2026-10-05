@@ -15,6 +15,7 @@ fn vector(x: f64, y: f64, z: f64) -> VectorExpr {
 fn fixture() -> ModelDocument {
     let family = FamilyDefinition {
         references: Vec::new(),
+        feature_colors: Default::default(),
         id: "ControlSurface".into(),
         version: 1,
         parameters: vec![],

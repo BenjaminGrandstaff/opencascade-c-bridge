@@ -187,3 +187,93 @@ pub(crate) fn named_reference_case() -> Outcome {
         },
     )
 }
+
+/// 100 sequential holes in a plate, regenerated with the plate and every
+/// hole colored and without colors: carrying colors is one face lookup per
+/// input plus history queries for replaced faces at each feature.
+pub(crate) fn feature_colors_case() -> Outcome {
+    const HOLES: usize = 100;
+    let chain = |colored: bool| -> Result<(std::time::Duration, usize), ModelError> {
+        let session = Session::new().map_err(|error| failure(error.to_string()))?;
+        let at = |x: f64, y: f64, z: f64| {
+            VectorExpr::Literal(VectorQuantity::lengths(x, y, z, LengthUnit::Millimeter))
+        };
+        let mut definition = block();
+        definition.datums.clear();
+        definition.requirements.clear();
+        definition.parameters.clear();
+        definition.features = vec![FeatureDefinition {
+            id: "plate".into(),
+            operation: FeatureOperation::Box {
+                origin: at(0.0, 0.0, 0.0),
+                size: at(210.0, 210.0, 10.0),
+            },
+        }];
+        for index in 0..HOLES {
+            let (row, column) = ((index / 10) as f64, (index % 10) as f64);
+            definition.features.push(FeatureDefinition {
+                id: format!("hole-{index}"),
+                operation: FeatureOperation::Hole {
+                    input: if index == 0 {
+                        "plate".into()
+                    } else {
+                        format!("hole-{}", index - 1)
+                    },
+                    position: at(15.0 + 20.0 * column, 15.0 + 20.0 * row, 10.0),
+                    axis: VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, -1.0)),
+                    diameter: ScalarExpr::Literal(Quantity::length(6.0, LengthUnit::Millimeter)),
+                    extent: HoleExtent::ThroughAll,
+                    finish: HoleFinish::Plain,
+                    thread: None,
+                },
+            });
+            if colored {
+                definition
+                    .feature_colors
+                    .insert(format!("hole-{index}"), [0.0, 0.0, 1.0]);
+            }
+        }
+        if colored {
+            definition
+                .feature_colors
+                .insert("plate".into(), [1.0, 0.0, 0.0]);
+        }
+        let part = PartInstance {
+            id: "part".into(),
+            definition: &definition,
+            overrides: HashMap::new(),
+            provenance: "bench".into(),
+        };
+        let start = Instant::now();
+        let generated = part.regenerate(&session)?;
+        let elapsed = start.elapsed();
+        let last = format!("hole-{}", HOLES - 1);
+        let bores = generated
+            .face_colors(&last)
+            .iter()
+            .filter(|(_, color)| *color == [0.0, 0.0, 1.0])
+            .count();
+        Ok((elapsed, bores))
+    };
+    timed(
+        format!("feature colors through {HOLES} sequential holes"),
+        ms(15_000),
+        Expectation::Required,
+        || {
+            let (plain, _) = chain(false)?;
+            let (painted, bores) = chain(true)?;
+            if bores != HOLES {
+                return Err(failure(format!("{bores} blue bores, expected {HOLES}")));
+            }
+            let ratio = painted.as_secs_f64() / plain.as_secs_f64().max(1e-9);
+            if ratio > 1.5 {
+                return Err(failure(format!("colors cost {ratio:.2}x")));
+            }
+            Ok(format!(
+                "{HOLES} blue bores on a red plate; {:.3} s vs {:.3} s uncolored ({ratio:.2}x)",
+                painted.as_secs_f64(),
+                plain.as_secs_f64()
+            ))
+        },
+    )
+}

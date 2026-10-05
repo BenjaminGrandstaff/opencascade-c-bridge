@@ -89,6 +89,7 @@ fn slider_array(
 fn main() {
     let definition = FamilyDefinition {
         references: Vec::new(),
+        feature_colors: Default::default(),
         id: "sliders".into(),
         version: 1,
         parameters: vec![],

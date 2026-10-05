@@ -13,6 +13,7 @@
 #include <XCAFDoc_ColorTool.hxx>
 #include <XCAFDoc_DocumentTool.hxx>
 #include <XCAFDoc_ShapeTool.hxx>
+#include <TopExp_Explorer.hxx>
 #include <gp_Trsf.hxx>
 
 #include <cmath>
@@ -69,62 +70,32 @@ bool same_transform(const gp_Trsf& left, const gp_Trsf& right) {
     return true;
 }
 
-// Writes wing (translated) > flap (rotated a quarter turn, translated) with
-// one block at the top level, one in the wing, and the pin in the flap, then
-// checks the nesting and that chained locations reproduce each shape's own.
-// The top-level block is unplaced and shares its part with the wing's: OCCT
-// once named the wrong occurrence in that case.
-void nested(occt_bridge_session_t* session, const std::string& file) {
-    occt_bridge_shape_id_t block = 0;
-    occt_bridge_shape_id_t inner = 0;
-    occt_bridge_shape_id_t pin = 0;
-    occt_bridge_shape_id_t placed_pin = 0;
-    check(occt_bridge_create_box(session, {0, 0, 0}, {10, 20, 30}, &block) == OCCT_BRIDGE_OK, "tree box");
-    check(occt_bridge_translate(session, block, {120, 0, 0}, &inner) == OCCT_BRIDGE_OK, "tree inner copy");
-    check(occt_bridge_create_cylinder(session, {0, 0, 0}, {0, 0, 1}, 2, 40, &pin) == OCCT_BRIDGE_OK, "tree pin");
-    check(occt_bridge_translate(session, pin, {130, 60, 5}, &placed_pin) == OCCT_BRIDGE_OK, "tree pin placed");
-    // The flap turns a quarter turn about z, then moves 50 along y.
-    const occt_bridge_step_node_t nodes[] = {
-        {"wing", OCCT_BRIDGE_STEP_ROOT, {1, 0, 0, 100, 0, 1, 0, 0, 0, 0, 1, 0}},
-        {"flap", 0, {0, -1, 0, 0, 1, 0, 0, 50, 0, 0, 1, 0}},
-    };
-    const occt_bridge_step_component_t components[] = {
-        {block, "outer block", "block", 0, {0, 0, 0}},
-        {inner, "inner block", "block", 0, {0, 0, 0}},
-        {placed_pin, "flap pin", "pin", 0, {0, 0, 0}},
-    };
-    const size_t members[] = {OCCT_BRIDGE_STEP_ROOT, 0, 1};
-    size_t parts = 0;
-    check(occt_bridge_step_save_assembly_tree(session, file.c_str(), "plane", nodes, 2, components, members, 3, &parts)
-            == OCCT_BRIDGE_OK && parts == 2, "save assembly tree");
+// Faces of `part` whose surface color has the given sRGB green channel.
+int faces_colored(const Handle(TDocStd_Document)& document, const TDF_Label& part, double green) {
+    const Handle(XCAFDoc_ColorTool) colors = XCAFDoc_DocumentTool::ColorTool(document->Main());
+    int colored = 0;
+    for (TopExp_Explorer faces(XCAFDoc_ShapeTool::GetShape(part), TopAbs_FACE); faces.More(); faces.Next()) {
+        Quantity_Color color;
+        if (colors->GetColor(faces.Current(), XCAFDoc_ColorSurf, color)) {
+            double r = 0;
+            double g = 0;
+            double b = 0;
+            color.Values(r, g, b, Quantity_TOC_sRGB);
+            colored += std::abs(g - green) < 1e-3 ? 1 : 0;
+        }
+    }
+    return colored;
+}
 
-    // Forward parents, unknown or empty nodes, and missing arrays are refused.
-    occt_bridge_step_node_t forward[] = {nodes[0], nodes[1]};
-    forward[0].parent = 1;
-    check(occt_bridge_step_save_assembly_tree(session, file.c_str(), "plane", forward, 2, components, members, 3, nullptr)
-            == OCCT_BRIDGE_INVALID_ARGUMENT, "forward parent");
-    const size_t unknown_node[] = {OCCT_BRIDGE_STEP_ROOT, 0, 7};
-    check(occt_bridge_step_save_assembly_tree(session, file.c_str(), "plane", nodes, 2, components, unknown_node, 3, nullptr)
-            == OCCT_BRIDGE_INVALID_ARGUMENT, "unknown node");
-    const size_t empty_flap[] = {OCCT_BRIDGE_STEP_ROOT, 0, 0};
-    check(occt_bridge_step_save_assembly_tree(session, file.c_str(), "plane", nodes, 2, components, empty_flap, 3, nullptr)
-            == OCCT_BRIDGE_INVALID_ARGUMENT, "empty sub-assembly");
-    check(occt_bridge_step_save_assembly_tree(session, file.c_str(), "plane", nodes, 2, components, nullptr, 3, nullptr)
-            == OCCT_BRIDGE_INVALID_ARGUMENT, "missing memberships");
-    occt_bridge_step_node_t skewed[] = {nodes[0], nodes[1]};
-    skewed[1].transform[0] = 2.0;
-    check(occt_bridge_step_save_assembly_tree(session, file.c_str(), "plane", skewed, 2, components, members, 3, nullptr)
-            == OCCT_BRIDGE_INVALID_ARGUMENT, "scaling transform");
-    occt_bridge_step_node_t mirrored[] = {nodes[0], nodes[1]};
-    mirrored[0].transform[10] = -1.0;
-    check(occt_bridge_step_save_assembly_tree(session, file.c_str(), "plane", mirrored, 2, components, members, 3, nullptr)
-            == OCCT_BRIDGE_INVALID_ARGUMENT, "mirroring transform");
-
+// Reads the tree written by nested() back through XCAF and checks nesting,
+// names, recomposed placements, and the pin's face color.
+void check_tree(const std::string& file) {
     Handle(XCAFApp_Application) application = XCAFApp_Application::GetApplication();
     Handle(TDocStd_Document) document;
     application->NewDocument("MDTV-XCAF", document);
     STEPCAFControl_Reader reader;
     reader.SetNameMode(Standard_True);
+    reader.SetColorMode(Standard_True);
     check(reader.ReadFile(file.c_str()) == IFSelect_RetDone && reader.Transfer(document) == Standard_True, "read tree");
     const Handle(XCAFDoc_ShapeTool) shapes = XCAFDoc_DocumentTool::ShapeTool(document->Main());
     TDF_LabelSequence roots;
@@ -155,9 +126,84 @@ void nested(occt_bridge_session_t* session, const std::string& file) {
             gp_Trsf pin_expected;
             pin_expected.SetTranslation(gp_Vec(130, 60, 5));
             check(same_transform(pin_world, pin_expected), "flap pin keeps its model placement");
+            // Exactly one face of the pin part carries the face color.
+            check(faces_colored(document, referred(flap_pin), 0.6) == 1, "one pin face carries the face color");
         }
     }
     application->Close(document);
+}
+
+// Writes wing (translated) > flap (rotated a quarter turn, translated) with
+// one block at the top level, one in the wing, and the pin in the flap, then
+// checks the nesting and that chained locations reproduce each shape's own.
+// The top-level block is unplaced and shares its part with the wing's: OCCT
+// once named the wrong occurrence in that case.
+void nested(occt_bridge_session_t* session, const std::string& file) {
+    occt_bridge_shape_id_t block = 0;
+    occt_bridge_shape_id_t inner = 0;
+    occt_bridge_shape_id_t pin = 0;
+    occt_bridge_shape_id_t placed_pin = 0;
+    check(occt_bridge_create_box(session, {0, 0, 0}, {10, 20, 30}, &block) == OCCT_BRIDGE_OK, "tree box");
+    check(occt_bridge_translate(session, block, {120, 0, 0}, &inner) == OCCT_BRIDGE_OK, "tree inner copy");
+    check(occt_bridge_create_cylinder(session, {0, 0, 0}, {0, 0, 1}, 2, 40, &pin) == OCCT_BRIDGE_OK, "tree pin");
+    check(occt_bridge_translate(session, pin, {130, 60, 5}, &placed_pin) == OCCT_BRIDGE_OK, "tree pin placed");
+    // The flap turns a quarter turn about z, then moves 50 along y.
+    const occt_bridge_step_node_t nodes[] = {
+        {"wing", OCCT_BRIDGE_STEP_ROOT, {1, 0, 0, 100, 0, 1, 0, 0, 0, 0, 1, 0}},
+        {"flap", 0, {0, -1, 0, 0, 1, 0, 0, 50, 0, 0, 1, 0}},
+    };
+    const occt_bridge_step_component_t components[] = {
+        {block, "outer block", "block", 0, {0, 0, 0}},
+        {inner, "inner block", "block", 0, {0, 0, 0}},
+        {placed_pin, "flap pin", "pin", 0, {0, 0, 0}},
+    };
+    const size_t members[] = {OCCT_BRIDGE_STEP_ROOT, 0, 1};
+    size_t parts = 0;
+    // The pin's first face (its side) is colored over its uncolored part.
+    const occt_bridge_step_face_color_t face_colors[] = {{2, 0, {0.1, 0.6, 0.3}}};
+    check(occt_bridge_step_save_assembly_tree(
+              session, file.c_str(), "plane", nodes, 2, components, members, 3, face_colors, 1, &parts)
+            == OCCT_BRIDGE_OK && parts == 2, "save assembly tree");
+
+    // Forward parents, unknown or empty nodes, and missing arrays are refused.
+    occt_bridge_step_node_t forward[] = {nodes[0], nodes[1]};
+    forward[0].parent = 1;
+    check(occt_bridge_step_save_assembly_tree(session, file.c_str(), "plane", forward, 2, components, members, 3, nullptr, 0, nullptr)
+            == OCCT_BRIDGE_INVALID_ARGUMENT, "forward parent");
+    const size_t unknown_node[] = {OCCT_BRIDGE_STEP_ROOT, 0, 7};
+    check(occt_bridge_step_save_assembly_tree(session, file.c_str(), "plane", nodes, 2, components, unknown_node, 3, nullptr, 0, nullptr)
+            == OCCT_BRIDGE_INVALID_ARGUMENT, "unknown node");
+    const size_t empty_flap[] = {OCCT_BRIDGE_STEP_ROOT, 0, 0};
+    check(occt_bridge_step_save_assembly_tree(session, file.c_str(), "plane", nodes, 2, components, empty_flap, 3, nullptr, 0, nullptr)
+            == OCCT_BRIDGE_INVALID_ARGUMENT, "empty sub-assembly");
+    check(occt_bridge_step_save_assembly_tree(session, file.c_str(), "plane", nodes, 2, components, nullptr, 3, nullptr, 0, nullptr)
+            == OCCT_BRIDGE_INVALID_ARGUMENT, "missing memberships");
+    occt_bridge_step_node_t skewed[] = {nodes[0], nodes[1]};
+    skewed[1].transform[0] = 2.0;
+    check(occt_bridge_step_save_assembly_tree(session, file.c_str(), "plane", skewed, 2, components, members, 3, nullptr, 0, nullptr)
+            == OCCT_BRIDGE_INVALID_ARGUMENT, "scaling transform");
+    occt_bridge_step_node_t mirrored[] = {nodes[0], nodes[1]};
+    mirrored[0].transform[10] = -1.0;
+    check(occt_bridge_step_save_assembly_tree(session, file.c_str(), "plane", mirrored, 2, components, members, 3, nullptr, 0, nullptr)
+            == OCCT_BRIDGE_INVALID_ARGUMENT, "mirroring transform");
+
+    const occt_bridge_step_face_color_t no_face[] = {{2, 3, {0.1, 0.6, 0.3}}};
+    check(occt_bridge_step_save_assembly_tree(
+              session, file.c_str(), "plane", nodes, 2, components, members, 3, no_face, 1, nullptr)
+            == OCCT_BRIDGE_INVALID_ARGUMENT, "face beyond the pin's three");
+    const occt_bridge_step_face_color_t no_component[] = {{3, 0, {0.1, 0.6, 0.3}}};
+    check(occt_bridge_step_save_assembly_tree(
+              session, file.c_str(), "plane", nodes, 2, components, members, 3, no_component, 1, nullptr)
+            == OCCT_BRIDGE_INVALID_ARGUMENT, "unknown component");
+    const occt_bridge_step_face_color_t too_bright[] = {{2, 0, {0.1, 1.6, 0.3}}};
+    check(occt_bridge_step_save_assembly_tree(
+              session, file.c_str(), "plane", nodes, 2, components, members, 3, too_bright, 1, nullptr)
+            == OCCT_BRIDGE_INVALID_ARGUMENT, "face color outside [0, 1]");
+    check(occt_bridge_step_save_assembly_tree(
+              session, file.c_str(), "plane", nodes, 2, components, members, 3, nullptr, 1, nullptr)
+            == OCCT_BRIDGE_INVALID_ARGUMENT, "missing face colors");
+
+    check_tree(file);
     (void)std::remove(file.c_str());
 }
 

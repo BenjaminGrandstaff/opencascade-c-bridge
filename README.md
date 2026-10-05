@@ -293,7 +293,9 @@ geometry and checking sampled collisions.
 `InstanceGraph::export_draw_view` writes a model's exact B-rep parts and a script that
 opens them, named and colored, in OCCT's DRAW viewer (`DRAWEXE -i -f view.tcl`).
 ABI 44 writes assembly frames as nested STEP sub-assemblies (joint motion
-included) and fixes component names on shared parts placed at the origin.
+included) with per-face colors, adds a lenient batch subshape lookup, and
+fixes component names on shared parts placed at the origin. Schema 59 adds
+family feature colors, carried to faces through later features.
 ABI 43 adds exact per-face pull ranges, so `DraftAngle` requirements are exact
 on analytic faces. ABI 42 merges the same-domain faces and edges booleans leave split, with
 history, and schema 56 adds the `Unify` feature. ABI 41 measures face tangency where booleans record no continuity, and schema 55

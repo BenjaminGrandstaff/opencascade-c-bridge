@@ -348,6 +348,16 @@ pub struct StepNode<'a> {
     pub transform: [f64; 12],
 }
 
+/// A color for face `face` (in [`Session::subshapes`] order) of component
+/// `component`'s part, as sRGB channels in [0, 1]. Components sharing a part
+/// share its face colors.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct StepFaceColor {
+    pub component: usize,
+    pub face: usize,
+    pub color: [f64; 3],
+}
+
 /// One placed component of [`Session::save_step_assembly`].
 #[derive(Clone, Copy, Debug)]
 pub struct StepComponent<'a, 'session> {

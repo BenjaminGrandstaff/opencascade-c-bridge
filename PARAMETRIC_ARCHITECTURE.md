@@ -129,6 +129,21 @@ test reads a three-level tree back through XCAF and checks nesting, names,
 and that chained locations reproduce each shape's placement; 10,000 members in
 110 nested frames export in 0.702 s.
 
+Schema 59 adds `FamilyDefinition::feature_colors`, linear RGB by feature id.
+Regeneration colors each feature output's faces in feature order: the
+colored faces of every input are carried through the feature's history (kept
+faces stay, modified faces pass to their descendants, removed faces drop),
+and a colored feature then colors the faces no input face led to, the faces
+it created. A box colors all its faces, a fillet its rounds, a hole its bore;
+a boolean creates no faces of its own, so its tool feature's color reaches
+the walls it cuts. Each step costs one batch membership lookup per input
+(ABI 44's `occt_bridge_subshape_lookup`) plus a history query per replaced
+face, and runs even for reused outputs, whose duplicates keep their history,
+so recoloring rebuilds no geometry. Face indices survive rigid placement, and
+`export_step` writes them, converted to sRGB, as STEP face colors through ABI
+44's per-face color entries. On 100 sequential holes the cost is not
+measurable against regeneration.
+
 OCCT's STEP name writer attaches names to the wrong occurrences when a shared
 part has an occurrence at the identity location (a base instance at the
 origin beside placed clones): it cannot tell that occurrence from the part

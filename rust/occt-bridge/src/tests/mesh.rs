@@ -118,3 +118,28 @@ fn mesh_resolution_budget_invalid_geometry_and_foreign_sessions_are_checked() {
     assert!(fine.iter().all(|triangle| triangle.face_index < 3));
     assert!((session.volume(&cylinder).unwrap() - std::f64::consts::PI * 2000.0).abs() < 1e-7);
 }
+
+#[test]
+fn lenient_subshape_lookup_marks_missing_candidates() {
+    let session = Session::new().unwrap();
+    let block = session
+        .create_box(Vec3::new(0.0, 0.0, 0.0), Vec3::new(1.0, 2.0, 3.0))
+        .unwrap();
+    let other = session
+        .create_box(Vec3::new(5.0, 0.0, 0.0), Vec3::new(1.0, 1.0, 1.0))
+        .unwrap();
+    let face = session.subshape(&block, ShapeType::Face, 4).unwrap();
+    let foreign = session.subshape(&other, ShapeType::Face, 0).unwrap();
+    assert_eq!(
+        session
+            .subshape_lookup(&block, ShapeType::Face, &[&face, &foreign])
+            .unwrap(),
+        vec![Some(4), None]
+    );
+    assert!(
+        session
+            .subshape_indices(&block, ShapeType::Face, &[&face, &foreign])
+            .is_err(),
+        "the strict lookup still fails"
+    );
+}

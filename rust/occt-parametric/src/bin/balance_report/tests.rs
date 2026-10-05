@@ -10,6 +10,7 @@ use std::{
 fn fixture() -> ModelDocument {
     let family = FamilyDefinition {
         references: Vec::new(),
+        feature_colors: Default::default(),
         id: "assembly".into(),
         version: 1,
         parameters: vec![],

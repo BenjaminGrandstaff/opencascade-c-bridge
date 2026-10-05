@@ -20,6 +20,7 @@ fn scalar(value: Quantity) -> JointScalar {
 fn main() {
     let definition = FamilyDefinition {
         references: Vec::new(),
+        feature_colors: Default::default(),
         id: "link".into(),
         version: 1,
         parameters: vec![],

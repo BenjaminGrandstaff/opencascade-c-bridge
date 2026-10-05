@@ -6,6 +6,9 @@ use super::*;
 pub struct GeneratedResult<'session> {
     pub(crate) shapes: HashMap<String, Shape<'session>>,
     pub(crate) feature_signatures: HashMap<String, Vec<u8>>,
+    /// Colored faces per output, from the family's feature colors; face
+    /// indices survive rigid placement.
+    pub(crate) face_colors: HashMap<String, FaceColors>,
     pub verification: Vec<VerificationResult>,
     pub regeneration: RegenerationReport,
 }
@@ -19,6 +22,12 @@ pub struct RegenerationReport {
 impl<'session> GeneratedResult<'session> {
     pub fn shape(&self, name: &str) -> Option<&Shape<'session>> {
         self.shapes.get(name)
+    }
+
+    /// Colored faces of an output as (face index in `Session::subshapes`
+    /// order, linear RGB), ascending by index; empty when none are colored.
+    pub fn face_colors(&self, name: &str) -> &[(usize, [f64; 3])] {
+        self.face_colors.get(name).map_or(&[], Vec::as_slice)
     }
 
     pub fn named_outputs(&self) -> impl Iterator<Item = &str> {
@@ -184,6 +193,7 @@ impl PartInstance<'_> {
             Ok(verification) => Ok(GeneratedResult {
                 shapes: build.shapes,
                 feature_signatures: build.feature_signatures,
+                face_colors: build.face_colors,
                 verification,
                 regeneration: build.regeneration,
             }),
@@ -201,6 +211,7 @@ impl PartInstance<'_> {
 pub(crate) struct FeatureBuild<'session> {
     pub(crate) shapes: HashMap<String, Shape<'session>>,
     pub(crate) feature_signatures: HashMap<String, Vec<u8>>,
+    pub(crate) face_colors: HashMap<String, FaceColors>,
     pub(crate) dirty_features: HashSet<String>,
     pub(crate) regeneration: RegenerationReport,
 }
@@ -298,6 +309,21 @@ impl<'session> FeatureBuild<'session> {
         };
         let shape = generated.map_err(|error| error.in_feature(&feature.id))?;
         self.shapes.insert(feature.id.clone(), shape);
+        // Recomputed even for reused outputs: duplicates keep their history,
+        // so color edits need no geometry rebuild.
+        if !definitions.colors.is_empty() {
+            let colors = feature_face_colors(
+                session,
+                feature,
+                definitions.colors.get(feature.id.as_str()).copied(),
+                &self.shapes,
+                &self.face_colors,
+            )
+            .map_err(|error| error.in_feature(&feature.id))?;
+            if !colors.is_empty() {
+                self.face_colors.insert(feature.id.clone(), colors);
+            }
+        }
         self.feature_signatures
             .insert(feature.id.clone(), signature);
         let report = if reusable.is_some() {
@@ -814,6 +840,21 @@ pub(crate) fn validate_definition(definition: &FamilyDefinition) -> Result<(), M
         "feature ids must be nonempty and unique",
     )?;
     let references = validate_references(definition, &feature_ids)?;
+    for (feature, color) in &definition.feature_colors {
+        if !feature_ids.contains(feature.as_str()) {
+            return Err(ModelError::new(format!(
+                "feature color names unknown feature '{feature}'"
+            )));
+        }
+        if !color
+            .iter()
+            .all(|channel| channel.is_finite() && (0.0..=1.0).contains(channel))
+        {
+            return Err(ModelError::new(format!(
+                "feature '{feature}' color channels must be in [0, 1]"
+            )));
+        }
+    }
     let datums = definition
         .datums
         .iter()
@@ -1160,6 +1201,7 @@ pub(crate) fn duplicate_result<'session>(
     Ok(GeneratedResult {
         shapes,
         feature_signatures: result.feature_signatures.clone(),
+        face_colors: result.face_colors.clone(),
         verification: result.verification.clone(),
         regeneration: result.regeneration.clone(),
     })
@@ -1190,6 +1232,7 @@ pub(crate) fn apply_placement<'session>(
     let GeneratedResult {
         shapes,
         feature_signatures,
+        face_colors,
         verification,
         regeneration,
     } = result;
@@ -1210,6 +1253,7 @@ pub(crate) fn apply_placement<'session>(
     Ok(GeneratedResult {
         shapes: placed,
         feature_signatures,
+        face_colors,
         verification,
         regeneration,
     })

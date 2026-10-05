@@ -11,6 +11,7 @@
 #include <STEPCAFControl_Writer.hxx>
 #include <TCollection_ExtendedString.hxx>
 #include <TDF_Label.hxx>
+#include <TopTools_IndexedMapOfShape.hxx>
 #include <TDataStd_Name.hxx>
 #include <TDocStd_Document.hxx>
 #include <TopLoc_Location.hxx>
@@ -157,36 +158,113 @@ occt_bridge_status_t find_components(
     return OCCT_BRIDGE_OK;
 }
 
-// Fills the document's assembly, sub-assemblies, and components, and returns
-// the number of distinct parts.
+// Every input of a tree export.
+struct Tree {
+    const occt_bridge_step_node_t* nodes;
+    size_t node_count;
+    const occt_bridge_step_component_t* components;
+    const size_t* component_nodes;
+    size_t component_count;
+    const occt_bridge_step_face_color_t* face_colors;
+    size_t face_color_count;
+};
+
+// Face colors name existing components, faces of their shapes, and sRGB
+// channels in [0, 1].
+const char* face_color_error(const Tree& tree, const std::vector<const TopoDS_Shape*>& shapes) {
+    if (tree.face_color_count != 0 && tree.face_colors == nullptr) {
+        return "STEP face colors are missing";
+    }
+    std::vector<int> face_counts(shapes.size(), -1);
+    const auto outside = [](double channel) { return !std::isfinite(channel) || channel < 0.0 || channel > 1.0; };
+    for (size_t index = 0; index < tree.face_color_count; ++index) {
+        const auto& entry = tree.face_colors[index];
+        if (entry.component >= shapes.size()) {
+            return "a STEP face color names an unknown component";
+        }
+        int& faces = face_counts[entry.component];
+        if (faces < 0) {
+            faces = ordered(*shapes[entry.component], TopAbs_FACE).Extent();
+        }
+        if (entry.face >= static_cast<size_t>(faces)) {
+            return "a STEP face color names a face its component does not have";
+        }
+        if (std::any_of(std::begin(entry.color), std::end(entry.color), outside)) {
+            return "STEP colors must be sRGB channels in [0, 1]";
+        }
+    }
+    return nullptr;
+}
+
+// Colors part faces; each part's faces are indexed once.
+void apply_face_colors(
+    const Handle(XCAFDoc_ShapeTool)& shape_tool,
+    const Handle(XCAFDoc_ColorTool)& color_tool,
+    const Tree& tree,
+    const std::vector<TDF_Label>& component_parts,
+    const std::vector<const TopoDS_Shape*>& shapes) {
+    std::map<int, TopTools_IndexedMapOfShape> faces_by_part;
+    for (size_t index = 0; index < tree.face_color_count; ++index) {
+        const auto& entry = tree.face_colors[index];
+        const TDF_Label& part = component_parts[entry.component];
+        auto found = faces_by_part.find(part.Tag());
+        if (found == faces_by_part.end()) {
+            const TopoDS_Shape local = shapes[entry.component]->Located(TopLoc_Location());
+            found = faces_by_part.emplace(part.Tag(), ordered(local, TopAbs_FACE)).first;
+        }
+        const TopoDS_Shape& face = found->second(static_cast<int>(entry.face) + 1);
+        TDF_Label face_label;
+        if (!shape_tool->FindSubShape(part, face, face_label)) {
+            face_label = shape_tool->AddSubShape(part, face);
+        }
+        if (!face_label.IsNull()) {
+            color_tool->SetColor(
+                face_label,
+                Quantity_Color(entry.color[0], entry.color[1], entry.color[2], Quantity_TOC_sRGB),
+                XCAFDoc_ColorSurf);
+        }
+    }
+}
+
+// Adds the sub-assembly labels, returning each node's label and model-space
+// placement.
+std::pair<std::vector<TDF_Label>, std::vector<gp_Trsf>> add_nodes(
+    const Handle(XCAFDoc_ShapeTool)& shape_tool,
+    const TDF_Label& assembly,
+    const Tree& tree) {
+    std::vector<TDF_Label> labels(tree.node_count);
+    std::vector<gp_Trsf> world(tree.node_count);
+    for (size_t index = 0; index < tree.node_count; ++index) {
+        const auto& node = tree.nodes[index];
+        const gp_Trsf local = local_placement(node);
+        const bool top = node.parent == OCCT_BRIDGE_STEP_ROOT;
+        world[index] = top ? local : world[node.parent].Multiplied(local);
+        labels[index] = shape_tool->NewShape();
+        set_name(labels[index], node.name);
+        set_name(
+            shape_tool->AddComponent(top ? assembly : labels[node.parent], labels[index], TopLoc_Location(local)),
+            node.name);
+    }
+    return {labels, world};
+}
+
+// Fills the document's assembly, sub-assemblies, components, and face
+// colors, and returns the number of distinct parts.
 size_t build_assembly(
     const Handle(TDocStd_Document)& document,
     const char* assembly_name,
-    const occt_bridge_step_node_t* nodes,
-    size_t node_count,
-    const occt_bridge_step_component_t* components,
-    const size_t* component_nodes,
+    const Tree& tree,
     const std::vector<const TopoDS_Shape*>& shapes) {
     const Handle(XCAFDoc_ShapeTool) shape_tool = XCAFDoc_DocumentTool::ShapeTool(document->Main());
     const Handle(XCAFDoc_ColorTool) color_tool = XCAFDoc_DocumentTool::ColorTool(document->Main());
     const TDF_Label assembly = shape_tool->NewShape();
     set_name(assembly, assembly_name);
-    std::vector<TDF_Label> node_labels(node_count);
-    std::vector<gp_Trsf> node_world(node_count);
-    for (size_t index = 0; index < node_count; ++index) {
-        const auto& node = nodes[index];
-        const gp_Trsf local = local_placement(node);
-        const bool top = node.parent == OCCT_BRIDGE_STEP_ROOT;
-        node_world[index] = top ? local : node_world[node.parent].Multiplied(local);
-        node_labels[index] = shape_tool->NewShape();
-        set_name(node_labels[index], node.name);
-        set_name(
-            shape_tool->AddComponent(top ? assembly : node_labels[node.parent], node_labels[index], TopLoc_Location(local)),
-            node.name);
-    }
+    const auto [node_labels, node_world] = add_nodes(shape_tool, assembly, tree);
     std::map<std::pair<const TopoDS_TShape*, TopAbs_Orientation>, TDF_Label> parts;
+    std::vector<TDF_Label> component_parts;
+    component_parts.reserve(shapes.size());
     for (size_t index = 0; index < shapes.size(); ++index) {
-        const auto& component = components[index];
+        const auto& component = tree.components[index];
         const TopoDS_Shape& placed = *shapes[index];
         const TopoDS_Shape local = placed.Located(TopLoc_Location());
         const auto key = std::make_pair(local.TShape().get(), local.Orientation());
@@ -202,7 +280,8 @@ size_t build_assembly(
             }
             found = parts.emplace(key, part).first;
         }
-        const size_t node = component_nodes == nullptr ? OCCT_BRIDGE_STEP_ROOT : component_nodes[index];
+        component_parts.push_back(found->second);
+        const size_t node = tree.component_nodes == nullptr ? OCCT_BRIDGE_STEP_ROOT : tree.component_nodes[index];
         TDF_Label parent = assembly;
         TopLoc_Location location = placed.Location();
         if (node != OCCT_BRIDGE_STEP_ROOT) {
@@ -217,6 +296,7 @@ size_t build_assembly(
         }
         set_name(shape_tool->AddComponent(parent, found->second, location), component.name);
     }
+    apply_face_colors(shape_tool, color_tool, tree, component_parts, shapes);
     shape_tool->UpdateAssemblies();
     return parts.size();
 }
@@ -225,11 +305,7 @@ occt_bridge_status_t save_tree(
     occt_bridge_session_t* session,
     const char* path,
     const char* assembly_name,
-    const occt_bridge_step_node_t* nodes,
-    size_t node_count,
-    const occt_bridge_step_component_t* components,
-    const size_t* component_nodes,
-    size_t component_count,
+    const Tree& tree,
     size_t* out_part_count) {
     if (out_part_count != nullptr) {
         *out_part_count = 0;
@@ -237,21 +313,23 @@ occt_bridge_status_t save_tree(
     if (path == nullptr || path[0] == '\0' || assembly_name == nullptr || assembly_name[0] == '\0') {
         return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "path and assembly name must be nonempty");
     }
-    if (components == nullptr || component_count == 0) {
+    if (tree.components == nullptr || tree.component_count == 0) {
         return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "a STEP assembly needs at least one component");
     }
-    if (const char* error = tree_error(nodes, node_count, component_nodes, component_count)) {
+    if (const char* error = tree_error(tree.nodes, tree.node_count, tree.component_nodes, tree.component_count)) {
         return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, error);
     }
     std::vector<const TopoDS_Shape*> shapes;
-    if (const auto status = find_components(session, components, component_count, shapes);
+    if (const auto status = find_components(session, tree.components, tree.component_count, shapes);
         status != OCCT_BRIDGE_OK) {
         return status;
     }
+    if (const char* error = face_color_error(tree, shapes)) {
+        return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, error);
+    }
     DocumentGuard guard{XCAFApp_Application::GetApplication(), {}};
     guard.application->NewDocument("MDTV-XCAF", guard.document);
-    const size_t parts = build_assembly(
-        guard.document, assembly_name, nodes, node_count, components, component_nodes, shapes);
+    const size_t parts = build_assembly(guard.document, assembly_name, tree, shapes);
     STEPCAFControl_Writer writer;
     writer.SetNameMode(Standard_True);
     writer.SetColorMode(Standard_True);
@@ -269,8 +347,8 @@ occt_bridge_status_t save_tree(
 
 }  // namespace
 
-// O(nodes + components) labels plus one STEP transfer; parts are deduplicated
-// by the placed shapes' shared underlying geometry and orientation.
+// O(nodes + components + face colors) labels plus one STEP transfer; parts
+// are deduplicated by the placed shapes' shared geometry and orientation.
 occt_bridge_status_t occt_bridge_step_save_assembly(
     occt_bridge_session_t* session,
     const char* path,
@@ -279,7 +357,8 @@ occt_bridge_status_t occt_bridge_step_save_assembly(
     size_t component_count,
     size_t* out_part_count) {
     return guarded(session, [&] {
-        return save_tree(session, path, assembly_name, nullptr, 0, components, nullptr, component_count, out_part_count);
+        const Tree tree{nullptr, 0, components, nullptr, component_count, nullptr, 0};
+        return save_tree(session, path, assembly_name, tree, out_part_count);
     });
 }
 
@@ -292,10 +371,12 @@ occt_bridge_status_t occt_bridge_step_save_assembly_tree(
     const occt_bridge_step_component_t* components,
     const size_t* component_nodes,
     size_t component_count,
+    const occt_bridge_step_face_color_t* face_colors,
+    size_t face_color_count,
     size_t* out_part_count) {
     return guarded(session, [&] {
-        return save_tree(
-            session, path, assembly_name, nodes, node_count, components, component_nodes, component_count,
-            out_part_count);
+        const Tree tree{
+            nodes, node_count, components, component_nodes, component_count, face_colors, face_color_count};
+        return save_tree(session, path, assembly_name, tree, out_part_count);
     });
 }

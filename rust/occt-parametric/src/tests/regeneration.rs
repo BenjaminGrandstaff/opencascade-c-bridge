@@ -37,6 +37,7 @@ fn sewing_and_multi_shell_solids_are_feature_graph_operations() {
         |x, y, z| VectorExpr::Literal(VectorQuantity::lengths(x, y, z, LengthUnit::Millimeter));
     let definition = FamilyDefinition {
         references: Vec::new(),
+        feature_colors: Default::default(),
         id: "VoidBlock".into(),
         version: 1,
         parameters: Vec::new(),

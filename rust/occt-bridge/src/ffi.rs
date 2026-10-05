@@ -59,6 +59,13 @@ pub(crate) struct RawStepComponent {
 }
 
 #[repr(C)]
+pub(crate) struct RawStepFaceColor {
+    pub(crate) component: usize,
+    pub(crate) face: usize,
+    pub(crate) color: [f64; 3],
+}
+
+#[repr(C)]
 pub(crate) struct RawStepNode {
     pub(crate) name: *const std::os::raw::c_char,
     pub(crate) parent: usize,
@@ -158,6 +165,14 @@ unsafe extern "C" {
         capacity: usize,
         count: *mut usize,
     ) -> RawStatus;
+    pub(crate) fn occt_bridge_subshape_lookup(
+        session: *mut c_void,
+        shape: u64,
+        kind: c_int,
+        candidates: *const u64,
+        count: usize,
+        indices: *mut usize,
+    ) -> c_int;
     pub(crate) fn occt_bridge_shape_face_radius_bounds(
         session: *mut c_void,
         shape: RawShapeId,
@@ -309,6 +324,8 @@ unsafe extern "C" {
         components: *const RawStepComponent,
         component_nodes: *const usize,
         component_count: usize,
+        face_colors: *const RawStepFaceColor,
+        face_color_count: usize,
         out_part_count: *mut usize,
     ) -> RawStatus;
     pub(crate) fn occt_bridge_sweep(

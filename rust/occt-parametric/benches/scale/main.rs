@@ -129,6 +129,7 @@ fn main() -> ExitCode {
     outcomes.push(step_export::draw_view_case(definition));
     outcomes.push(persistent::persistent_chain_case());
     outcomes.push(persistent::named_reference_case());
+    outcomes.push(persistent::feature_colors_case());
     outcomes.push(tangency::measured_tangency_case());
     outcomes.push(tangency::unify_case());
     outcomes.push(tangency::pull_ranges_case());
@@ -199,6 +200,7 @@ fn block() -> FamilyDefinition {
     let point = |x, y, z| VectorExpr::Components { x, y, z };
     FamilyDefinition {
         references: Vec::new(),
+        feature_colors: Default::default(),
         id: "Block".into(),
         version: 1,
         parameters: vec![

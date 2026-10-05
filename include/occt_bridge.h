@@ -1055,13 +1055,23 @@ typedef struct occt_bridge_step_node {
     double transform[12];
 } occt_bridge_step_node_t;
 
+/* A color for one face of a component's part: face indexes the component
+ * shape's faces in occt_bridge_shape_subshapes order; color is sRGB in
+ * [0, 1]. Components sharing a part share its face colors. */
+typedef struct occt_bridge_step_face_color {
+    size_t component;
+    size_t face;
+    double color[3];
+} occt_bridge_step_face_color_t;
+
 /* Like occt_bridge_step_save_assembly, with nested sub-assemblies: component
  * i belongs to node component_nodes[i] (OCCT_BRIDGE_STEP_ROOT for the top
  * level; component_nodes may be null when node_count is 0). Shapes stay
  * placed in model coordinates; each component is located relative to its
  * node's accumulated placement, so the file's model-space geometry matches
  * the flat export. Every node must contain a component directly or through
- * its descendants. */
+ * its descendants. face_colors (null when face_color_count is 0) color
+ * individual part faces over the part color. */
 OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_step_save_assembly_tree(
     occt_bridge_session_t* session,
     const char* path,
@@ -1071,6 +1081,8 @@ OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_step_save_assembly_tree(
     const occt_bridge_step_component_t* components,
     const size_t* component_nodes,
     size_t component_count,
+    const occt_bridge_step_face_color_t* face_colors,
+    size_t face_color_count,
     size_t* out_part_count
 );
 
@@ -1147,6 +1159,18 @@ OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_surface_mesh(
  * map traversal. All candidates must belong to the requested topology map.
  * Buffers change only on complete success; count zero accepts NULL buffers. */
 OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_subshape_indices(
+    occt_bridge_session_t* session, occt_bridge_shape_id_t shape,
+    occt_bridge_shape_type_t type, const occt_bridge_shape_id_t* candidates,
+    size_t count, size_t* out_indices
+);
+
+/* Index reported by occt_bridge_subshape_lookup for a missing candidate. */
+#define OCCT_BRIDGE_NOT_FOUND SIZE_MAX
+
+/* Like occt_bridge_subshape_indices, but a candidate outside the topology map
+ * reports OCCT_BRIDGE_NOT_FOUND instead of failing the call, so membership of
+ * many candidates costs one map traversal. */
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_subshape_lookup(
     occt_bridge_session_t* session, occt_bridge_shape_id_t shape,
     occt_bridge_shape_type_t type, const occt_bridge_shape_id_t* candidates,
     size_t count, size_t* out_indices
