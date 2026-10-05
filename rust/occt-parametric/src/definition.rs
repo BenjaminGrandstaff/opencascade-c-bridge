@@ -74,6 +74,57 @@ pub enum ScalarExpr {
         when_true: Box<ScalarExpr>,
         when_false: Box<ScalarExpr>,
     },
+    /// Square root of a nonnegative dimensionless value.
+    SquareRoot(Box<ScalarExpr>),
+    /// `base` raised to `exponent`, both dimensionless.
+    Power {
+        base: Box<ScalarExpr>,
+        exponent: Box<ScalarExpr>,
+    },
+    /// sqrt(a^2 + b^2) of two values with the same dimension.
+    Hypotenuse(Box<ScalarExpr>, Box<ScalarExpr>),
+    /// Sine of dimensionless radians.
+    Sine(Box<ScalarExpr>),
+    /// Cosine of dimensionless radians.
+    Cosine(Box<ScalarExpr>),
+    /// Tangent of dimensionless radians.
+    Tangent(Box<ScalarExpr>),
+    /// Radians in [-pi/2, pi/2] of a dimensionless value in [-1, 1].
+    ArcSine(Box<ScalarExpr>),
+    /// Radians in [0, pi] of a dimensionless value in [-1, 1].
+    ArcCosine(Box<ScalarExpr>),
+    /// Radians in (-pi, pi] of the direction (x, y); same dimensions.
+    ArcTangent2 {
+        y: Box<ScalarExpr>,
+        x: Box<ScalarExpr>,
+    },
+    /// `from + (to - from) * fraction`: `from` and `to` share a dimension
+    /// and `fraction` is dimensionless (not limited to [0, 1]).
+    Interpolate {
+        from: Box<ScalarExpr>,
+        to: Box<ScalarExpr>,
+        fraction: Box<ScalarExpr>,
+    },
+    /// `value` rounded to a multiple of the positive `step`, which shares its
+    /// dimension, such as a standard stock size.
+    RoundToStep {
+        value: Box<ScalarExpr>,
+        step: Box<ScalarExpr>,
+        mode: RoundingMode,
+    },
+    /// Length of a vector, in the vector's dimension.
+    VectorLength(Box<VectorExpr>),
+    /// Dot product of two vectors, at most one of them a length.
+    DotProduct(Box<VectorExpr>, Box<VectorExpr>),
+}
+
+/// How `ScalarExpr::RoundToStep` picks a multiple.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RoundingMode {
+    Nearest,
+    Down,
+    Up,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

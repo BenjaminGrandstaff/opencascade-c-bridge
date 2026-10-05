@@ -68,7 +68,9 @@ stale-result retention, independent axis-angle placement, linear clone
 patterns, iterative stack-safe clone inheritance, parameter- or
 geometry-driven counts and fitted spans,
 multi-family instance graphs, explicit generation freezing, unit-aware derived scalar arithmetic
-with negate, absolute, minimum, maximum, and clamp functions, derived vector
+with negate, absolute, minimum, maximum, clamp, square root, power,
+trigonometric, hypotenuse, interpolation, step-rounding, vector length, and
+dot-product functions, derived vector
 composition with add, subtract, scale, and normalize operations, dimension-safe
 comparison-driven conditional scalar expressions,
 pre-generation parameter constraints, constraint-solved line/arc/circle/spline sketches that

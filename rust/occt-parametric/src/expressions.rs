@@ -205,6 +205,26 @@ pub(crate) fn evaluate_derived_expression(
             evaluate_derived_expression(when_true, definitions, resolved, visiting)?,
             evaluate_derived_expression(when_false, definitions, resolved, visiting)?,
         ),
+        // Vector operands of derived scalars may use only input vector
+        // parameters: derived vectors are resolved after derived scalars.
+        function @ (ScalarExpr::VectorLength(_) | ScalarExpr::DotProduct(..)) => evaluate_function(
+            function,
+            &mut |_| Err(ModelError::new("vector function has no scalar operand")),
+            &mut |operand| {
+                evaluate_resolved_vector_expression(operand, resolved).map_err(|error| {
+                    ModelError::new(format!(
+                        "{error} (derived scalar parameters may use only input vector parameters)"
+                    ))
+                })
+            },
+        )
+        .expect("vector functions are evaluated"),
+        function => evaluate_function(
+            function,
+            &mut |operand| evaluate_derived_expression(operand, definitions, resolved, visiting),
+            &mut |_| Err(ModelError::new("scalar function has no vector operand")),
+        )
+        .expect("every other expression is matched above"),
     }
 }
 
@@ -775,6 +795,12 @@ pub(crate) fn evaluate_resolved_expression(
             evaluate_resolved_expression(when_true, parameters)?,
             evaluate_resolved_expression(when_false, parameters)?,
         ),
+        function => evaluate_function(
+            function,
+            &mut |operand| evaluate_resolved_expression(operand, parameters),
+            &mut |operand| evaluate_resolved_vector_expression(operand, parameters),
+        )
+        .expect("every other expression is matched above"),
     }
 }
 
@@ -822,5 +848,146 @@ pub(crate) fn evaluate_resolved_vector_expression(
         VectorExpr::Normalize(vector) => {
             normalize_vector(evaluate_resolved_vector_expression(vector, parameters)?)
         }
+    }
+}
+
+/// Evaluates the mathematical functions shared by both expression contexts;
+/// `scalar` and `vector` evaluate operands in the caller's context. `None`
+/// for any other expression.
+pub(crate) fn evaluate_function(
+    expression: &ScalarExpr,
+    scalar: &mut dyn FnMut(&ScalarExpr) -> Result<EvaluatedScalar, ModelError>,
+    vector: &mut dyn FnMut(&VectorExpr) -> Result<EvaluatedVector, ModelError>,
+) -> Option<Result<EvaluatedScalar, ModelError>> {
+    let dimensionless = |value: EvaluatedScalar, what: &str| {
+        if value.dimension == Dimension::Scalar {
+            Ok(value.value)
+        } else {
+            Err(ModelError::new(format!(
+                "{what} requires a dimensionless value"
+            )))
+        }
+    };
+    let same = |left: EvaluatedScalar, right: EvaluatedScalar, what: &str| {
+        if left.dimension == right.dimension {
+            Ok(left.dimension)
+        } else {
+            Err(ModelError::new(format!(
+                "{what} requires matching dimensions"
+            )))
+        }
+    };
+    let result = (|| -> Result<Option<(f64, Dimension)>, ModelError> {
+        Ok(Some(match expression {
+            ScalarExpr::SquareRoot(value) => {
+                let value = dimensionless(scalar(value)?, "square root")?;
+                if value < 0.0 {
+                    return Err(ModelError::new("square root of a negative value"));
+                }
+                (value.sqrt(), Dimension::Scalar)
+            }
+            ScalarExpr::Power { base, exponent } => (
+                dimensionless(scalar(base)?, "power")?
+                    .powf(dimensionless(scalar(exponent)?, "power")?),
+                Dimension::Scalar,
+            ),
+            ScalarExpr::Hypotenuse(left, right) => {
+                let (left, right) = (scalar(left)?, scalar(right)?);
+                (
+                    left.value.hypot(right.value),
+                    same(left, right, "hypotenuse")?,
+                )
+            }
+            ScalarExpr::Sine(angle) => (
+                dimensionless(scalar(angle)?, "sine")?.sin(),
+                Dimension::Scalar,
+            ),
+            ScalarExpr::Cosine(angle) => (
+                dimensionless(scalar(angle)?, "cosine")?.cos(),
+                Dimension::Scalar,
+            ),
+            ScalarExpr::Tangent(angle) => (
+                dimensionless(scalar(angle)?, "tangent")?.tan(),
+                Dimension::Scalar,
+            ),
+            ScalarExpr::ArcSine(value) | ScalarExpr::ArcCosine(value) => {
+                let sine = matches!(expression, ScalarExpr::ArcSine(_));
+                let value = dimensionless(scalar(value)?, "inverse sine or cosine")?;
+                if !(-1.0..=1.0).contains(&value) {
+                    return Err(ModelError::new(
+                        "inverse sine or cosine requires a value in [-1, 1]",
+                    ));
+                }
+                (
+                    if sine { value.asin() } else { value.acos() },
+                    Dimension::Scalar,
+                )
+            }
+            ScalarExpr::ArcTangent2 { y, x } => {
+                let (y, x) = (scalar(y)?, scalar(x)?);
+                same(y, x, "two-argument arctangent")?;
+                if y.value == 0.0 && x.value == 0.0 {
+                    return Err(ModelError::new(
+                        "two-argument arctangent of a zero direction",
+                    ));
+                }
+                (y.value.atan2(x.value), Dimension::Scalar)
+            }
+            ScalarExpr::Interpolate { from, to, fraction } => {
+                let (from, to) = (scalar(from)?, scalar(to)?);
+                let dimension = same(from, to, "interpolation")?;
+                let fraction = dimensionless(scalar(fraction)?, "interpolation fraction")?;
+                (from.value + (to.value - from.value) * fraction, dimension)
+            }
+            ScalarExpr::RoundToStep { value, step, mode } => {
+                let (value, step) = (scalar(value)?, scalar(step)?);
+                let dimension = same(value, step, "rounding to a step")?;
+                if step.value.is_nan() || step.value <= 0.0 {
+                    return Err(ModelError::new("rounding step must be positive"));
+                }
+                let steps = value.value / step.value;
+                // Within roundoff of a multiple, that multiple, for any mode.
+                let nearest = steps.round();
+                let count = if (steps - nearest).abs() <= 1e-9 * nearest.abs().max(1.0) {
+                    nearest
+                } else {
+                    match mode {
+                        RoundingMode::Nearest => nearest,
+                        RoundingMode::Down => steps.floor(),
+                        RoundingMode::Up => steps.ceil(),
+                    }
+                };
+                (count * step.value, dimension)
+            }
+            ScalarExpr::VectorLength(value) => {
+                let value = vector(value)?;
+                let v = value.value;
+                (v.x.hypot(v.y.hypot(v.z)), value.dimension)
+            }
+            ScalarExpr::DotProduct(left, right) => {
+                let (left, right) = (vector(left)?, vector(right)?);
+                let dimension = match (left.dimension, right.dimension) {
+                    (Dimension::Scalar, dimension) | (dimension, Dimension::Scalar) => dimension,
+                    _ => {
+                        return Err(ModelError::new(
+                            "dot product requires at least one dimensionless vector",
+                        ));
+                    }
+                };
+                let (a, b) = (left.value, right.value);
+                (a.x * b.x + a.y * b.y + a.z * b.z, dimension)
+            }
+            _ => return Ok(None),
+        }))
+    })();
+    match result {
+        Ok(None) => None,
+        Ok(Some((value, dimension))) if value.is_finite() => {
+            Some(Ok(EvaluatedScalar { value, dimension }))
+        }
+        Ok(Some(_)) => Some(Err(ModelError::new(
+            "scalar expression result is not finite",
+        ))),
+        Err(error) => Some(Err(error)),
     }
 }

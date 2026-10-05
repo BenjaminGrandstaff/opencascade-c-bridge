@@ -1030,6 +1030,23 @@ addition, subtraction, scalar scaling, and normalization. Vector dependencies
 may also be declared out of order; cycles and zero-vector normalization fail
 before geometry creation.
 
+Schema 65 adds mathematical functions to scalar expressions. Square root,
+power, sine, cosine, tangent, arcsine, and arccosine take dimensionless
+values (angles in radians) and return dimensionless values; square root
+rejects negatives and the inverse functions values outside [-1, 1].
+Hypotenuse keeps its operands' shared dimension, and the two-argument
+arctangent turns a nonzero direction of matching components into radians.
+Interpolation blends two values of one dimension by a dimensionless fraction,
+which may extrapolate. Rounding to a step (nearest, down, or up) snaps a value
+to a multiple of a positive step of its dimension, such as a stock size;
+values within roundoff of a multiple keep it in every mode. Vector length
+and dot product bring vectors into scalar expressions, a dot product allowing
+at most one length operand. Every result must be finite. Derived scalars are
+resolved before derived vectors, so their vector operands may use only input
+vector parameters, and the error says so; feature expressions may use any
+parameter. Each function is O(1) over its operands: 10,000 chained derived
+parameters built from them resolve in 0.007 s.
+
 ## Regeneration model
 
 Definitions form a directed feature graph. Regeneration should:

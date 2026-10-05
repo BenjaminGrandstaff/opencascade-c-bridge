@@ -30,6 +30,7 @@ use std::time::{Duration, Instant};
 mod continuous_motion;
 mod draft;
 mod drawing;
+mod expressions;
 mod graphs;
 mod holes;
 mod loft;
@@ -119,6 +120,7 @@ fn main() -> ExitCode {
     outcomes.extend(regeneration_handle_cases(definition));
     outcomes.extend(solver_cases(definition));
     outcomes.push(sketch_solver_case());
+    outcomes.push(expressions::function_chain_case());
     outcomes.push(curved_sketch_solver_case());
     outcomes.push(datum_sketch_wire_case());
     outcomes.push(spline_sketch_case());

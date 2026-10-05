@@ -648,6 +648,12 @@ pub(crate) fn collect_scalar_parameters<'a>(
         }
         ScalarExpr::Negate(value)
         | ScalarExpr::Absolute(value)
+        | ScalarExpr::SquareRoot(value)
+        | ScalarExpr::Sine(value)
+        | ScalarExpr::Cosine(value)
+        | ScalarExpr::Tangent(value)
+        | ScalarExpr::ArcSine(value)
+        | ScalarExpr::ArcCosine(value)
         | ScalarExpr::CarrLaneSocketHeadV1 {
             nominal_diameter: value,
             ..
@@ -663,9 +669,30 @@ pub(crate) fn collect_scalar_parameters<'a>(
         | ScalarExpr::Multiply(left, right)
         | ScalarExpr::Divide(left, right)
         | ScalarExpr::Minimum(left, right)
-        | ScalarExpr::Maximum(left, right) => {
+        | ScalarExpr::Maximum(left, right)
+        | ScalarExpr::Hypotenuse(left, right)
+        | ScalarExpr::Power {
+            base: left,
+            exponent: right,
+        }
+        | ScalarExpr::ArcTangent2 { y: left, x: right }
+        | ScalarExpr::RoundToStep {
+            value: left,
+            step: right,
+            ..
+        } => {
             collect_scalar_parameters(left, names);
             collect_scalar_parameters(right, names);
+        }
+        ScalarExpr::Interpolate { from, to, fraction } => {
+            collect_scalar_parameters(from, names);
+            collect_scalar_parameters(to, names);
+            collect_scalar_parameters(fraction, names);
+        }
+        ScalarExpr::VectorLength(value) => collect_vector_parameters(value, names),
+        ScalarExpr::DotProduct(left, right) => {
+            collect_vector_parameters(left, names);
+            collect_vector_parameters(right, names);
         }
         ScalarExpr::Clamp {
             value,
