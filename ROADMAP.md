@@ -11,16 +11,16 @@ tracks status and order.
 | C ABI (`src/`, `include/`) | ABI 44 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 59 | Active development |
+| `occt-parametric` (engineering layer) | Schema 60 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 93 + first-use integration 1 (+1 doc test), recipes 3, parametric 323 + merge driver 3 + motion command 16 + balance command 4 + drawing command 2 + branch command 2, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 93 + first-use integration 1 (+1 doc test), recipes 3, parametric 326 + merge driver 3 + motion command 16 + balance command 4 + drawing command 2 + branch command 2, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.5% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
 | Coverage | 93.39% lines overall, test code excluded; C++ 94.17% lines, 87.51% branches, 100% functions; Rust 93.08% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 92 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Scale benchmarks | 93 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
 
@@ -343,6 +343,16 @@ tracks status and order.
   error-bounded (Bezier, B-spline) extrema.
 
 ### Parametric layer
+
+- Expression functions (schema 60): scalar expressions gain square root,
+  power, sine, cosine, tangent, arcsine, arccosine, two-argument arctangent,
+  hypotenuse, interpolation, rounding to a step (nearest, down, up), vector
+  length, and dot product, each dimension-checked with finite results. Three
+  tests check every value and dimension, every domain and dimension error
+  (including derived scalars reaching for derived vectors), a box width
+  rounded up from a hypotenuse to a 5 mm stock size and rebuilt by an edit,
+  and persistence. 10,000 chained derived parameters resolve in 0.007 s
+  (0.25 s budget).
 
 - Feature colors (schema 59): `FamilyDefinition::feature_colors` gives a
   feature a color for the faces it creates; later features carry colors to
@@ -949,7 +959,8 @@ scopes and inspected repo capabilities, not a full conformity audit.
 - Undercut detection against a parting line, exact (not sampled) minimum wall
   thickness, and exact draft on freeform BREP faces.
 - Assumptions and requirement-to-feature trace links in the document schema.
-- Additional domain-specific expression functions.
+- Domain-specific expression functions (airfoil sections, material and
+  catalog lookups).
 - Integration with the broader EIL source model in the sibling
   [`engineering-intent-language`](../engineering-intent-language) project.
 
