@@ -1,7 +1,8 @@
 //! Checks explicit dimensional limits against supplied measurements.
 use super::*;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum DimensionMeasurementDisposition {
     WithinLimits,
     BelowLowerLimit,
@@ -11,7 +12,7 @@ pub enum DimensionMeasurementDisposition {
     ReferenceDimension,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct DimensionMeasurementLimits {
     pub lower: Quantity,
     pub upper: Quantity,
@@ -20,7 +21,7 @@ pub struct DimensionMeasurementLimits {
 }
 
 /// Length quantities use mm; scalar quantities represent radians.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct DimensionMeasurementEvaluation {
     pub nominal: Quantity,
     pub measured: Quantity,
@@ -29,13 +30,14 @@ pub struct DimensionMeasurementEvaluation {
     pub disposition: DimensionMeasurementDisposition,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DrawingDimensionMeasurement {
     pub dimension: String,
     pub value: Quantity,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct DrawingDimensionMeasurementResult {
     pub dimension: String,
     pub evaluation: DimensionMeasurementEvaluation,

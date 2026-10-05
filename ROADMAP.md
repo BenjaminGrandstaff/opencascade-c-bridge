@@ -24,6 +24,18 @@ tracks status and order.
 
 ## Done
 
+- Scriptable inspection reports: `occt-inspection-report` reads saved model drawings
+  and dimensional/position measurement JSON, writes ordered typed evaluations and
+  summary counts, and returns 2 for explicit limit/zone violations. Dimensions
+  without acceptance limits retain distinct statuses. Invalid input creates no
+  report; existing files and source inputs are protected. Position batches validate
+  and index named/inline controls once. Four command tests cover mixed reports,
+  rejection, output protection, named batches and bit-exact floating JSON round
+  trips. A benchmark checks 100,000 position measurements across 10,000 controls
+  in 0.055 s (10 s budget), without kernel handles. Measured datum fitting, composite freedoms, datum shift,
+  uncertainty and standards-conformity certification remain future work.
+  See [Drawings](DRAWINGS.md).
+
 - Dimensional measurement checks: symmetric, signed-deviation and explicit-limit
   comparisons with unit-normalized nominal/measured values, signed deviations,
   margins and inclusive boundaries. Basic/reference/untoleranced dimensions

@@ -33,7 +33,7 @@ pub struct InspectionRecord {
     pub controls: Vec<MeasuredFeature>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct ControlMeasurement {
     /// Width of the measured zone: plane separation, or twice the radial axis offset.
     pub deviation_mm: f64,
@@ -46,7 +46,8 @@ pub struct ControlMeasurement {
     pub conforms: bool,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case", tag = "status", content = "detail")]
 pub enum ControlResult {
     Evaluated(ControlMeasurement),
     NotMeasured,
@@ -54,7 +55,7 @@ pub enum ControlResult {
     NotEvaluated(String),
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct ControlInspection {
     pub control: String,
     pub result: ControlResult,

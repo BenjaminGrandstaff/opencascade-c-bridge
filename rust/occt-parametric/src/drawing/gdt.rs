@@ -14,7 +14,10 @@ pub use inspection::{
     ControlInspection, ControlMeasurement, ControlResult, InspectionRecord, InspectionReport,
     MAX_INSPECTION_POINTS, MeasuredDatumFrame, MeasuredFeature,
 };
-pub use position::{PositionSampleEvaluation, PositionToleranceAxis};
+pub use position::{
+    DrawingPositionMeasurement, DrawingPositionMeasurementResult, PositionSampleEvaluation,
+    PositionToleranceAxis,
+};
 pub use size::{DrawingSizeLimits, FeatureOfSizeKind, GeometricToleranceAllowance};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
