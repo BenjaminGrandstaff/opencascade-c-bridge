@@ -17,7 +17,7 @@ pub struct DrawingSizeLimits {
 }
 
 /// Arithmetic allowance only: does not establish measured conformity or datum shift.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct GeometricToleranceAllowance {
     pub supplied_size_mm: f64,
     pub maximum_material_size_mm: f64,

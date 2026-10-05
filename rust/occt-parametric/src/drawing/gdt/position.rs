@@ -2,14 +2,15 @@
 use super::*;
 
 /// Nominal axis in the same established datum coordinate frame as the samples.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PositionToleranceAxis {
     pub origin: VectorQuantity,
     pub direction: VectorQuantity,
 }
 
 /// Checks only supplied samples; does not fit surfaces, datums or a mating envelope.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PositionSampleEvaluation {
     pub allowance: GeometricToleranceAllowance,
     pub sample_count: usize,
@@ -144,5 +145,48 @@ impl DrawingDefinition {
         let resolved =
             effective_frames(std::slice::from_ref(control), &self.datum_reference_frames)?;
         resolved[0].evaluate_position_samples(supplied_size, nominal_axis, samples)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DrawingPositionMeasurement {
+    pub control: String,
+    pub size: Quantity,
+    pub nominal_axis: PositionToleranceAxis,
+    pub samples: Vec<VectorQuantity>,
+}
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct DrawingPositionMeasurementResult {
+    pub control: String,
+    pub evaluation: PositionSampleEvaluation,
+}
+impl DrawingDefinition {
+    /// Validates once and indexes resolved controls for ordered sample batches.
+    pub fn evaluate_position_measurements(
+        &self,
+        graph: &InstanceGraph<'_>,
+        measurements: &[DrawingPositionMeasurement],
+    ) -> Result<Vec<DrawingPositionMeasurementResult>, ModelError> {
+        self.validate(graph)?;
+        let resolved =
+            effective_frames(&self.feature_control_frames, &self.datum_reference_frames)?;
+        let index: HashMap<_, _> = resolved.iter().map(|f| (f.id.as_str(), f)).collect();
+        measurements
+            .iter()
+            .map(|m| {
+                let frame = index
+                    .get(m.control.as_str())
+                    .ok_or_else(|| ModelError::new("unknown position control measurement"))?;
+                Ok(DrawingPositionMeasurementResult {
+                    control: m.control.clone(),
+                    evaluation: frame.evaluate_position_samples(
+                        m.size,
+                        m.nominal_axis,
+                        &m.samples,
+                    )?,
+                })
+            })
+            .collect()
     }
 }

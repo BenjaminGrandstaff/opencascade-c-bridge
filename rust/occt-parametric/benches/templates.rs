@@ -720,4 +720,44 @@ fn main() {
         "100000 dimensional measurements across 10000 saved dimensions: {:?} (10s budget), no kernel handles",
         started.elapsed()
     );
+    for frame in &mut gdt.feature_control_frames {
+        frame.refinement = None;
+        frame.size_limits = Some(DrawingSizeLimits {
+            kind: FeatureOfSizeKind::Internal,
+            lower: Quantity::length(10.0, LengthUnit::Millimeter),
+            upper: Quantity::length(12.0, LengthUnit::Millimeter),
+        });
+    }
+    for reference in &mut gdt.datum_reference_frames[0].datums {
+        reference.boundary = DatumMaterialBoundary::Regardless;
+    }
+    let positions: Vec<_> = (0..100_000)
+        .map(|i| DrawingPositionMeasurement {
+            control: format!("position-{}", i % 10_000),
+            size: Quantity::length(10.0, LengthUnit::Millimeter),
+            nominal_axis,
+            samples: vec![VectorQuantity::lengths(
+                0.03,
+                0.04,
+                5.0,
+                LengthUnit::Millimeter,
+            )],
+        })
+        .collect();
+    let started = Instant::now();
+    let results = gdt
+        .evaluate_position_measurements(&graph, &positions)
+        .unwrap();
+    assert_eq!(results.len(), 100_000);
+    for (input, result) in positions.iter().zip(&results) {
+        assert_eq!(result.control, input.control);
+        assert!(result.evaluation.samples_within_zone);
+        assert_eq!(result.evaluation.required_zone_diameter_mm, 0.1);
+    }
+    assert!(started.elapsed().as_secs_f64() < 10.0);
+    assert_eq!(session.shape_count().unwrap(), 0);
+    println!(
+        "100000 position measurements across 10000 named-frame controls: {:?} (10s budget), no kernel handles",
+        started.elapsed()
+    );
 }

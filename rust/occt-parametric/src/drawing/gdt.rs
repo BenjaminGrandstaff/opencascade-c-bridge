@@ -9,7 +9,10 @@ pub use datums::{
     DatumPrecedence, DrawingDatumCoordinateFrame, DrawingDatumReferenceFrame,
     ResolvedDrawingDatumReference, ResolvedDrawingDatumReferenceFrame,
 };
-pub use position::{PositionSampleEvaluation, PositionToleranceAxis};
+pub use position::{
+    DrawingPositionMeasurement, DrawingPositionMeasurementResult, PositionSampleEvaluation,
+    PositionToleranceAxis,
+};
 pub use size::{DrawingSizeLimits, FeatureOfSizeKind, GeometricToleranceAllowance};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

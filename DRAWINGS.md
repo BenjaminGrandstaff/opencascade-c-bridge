@@ -614,3 +614,65 @@ returns no results after validation. This checks supplied values only; it does
 not acquire measurements, apply uncertainty/guard bands, verify threads or
 establish geometric/form conformity. Saved schema remains 64. A benchmark checks
 100,000 measurements across 10,000 saved dimensions with no native handles.
+
+
+## Inspection report command
+
+Run saved dimensional and fixed cylindrical position checks from JSON:
+
+```sh
+cargo run --manifest-path rust/occt-parametric/Cargo.toml --bin occt-inspection-report -- MODEL.json MEASUREMENTS.json NEW_REPORT.json
+```
+
+The model must contain the referenced drawings. A minimal dimensional request is:
+
+```json
+{
+  "schema": "occb-inspection-setup-v1",
+  "drawings": [
+    {
+      "drawing": "page",
+      "dimensions": [
+        {
+          "dimension": "width",
+          "value": {"value": 10.25, "dimension": "length", "unit": "millimeter"}
+        }
+      ]
+    }
+  ]
+}
+```
+
+Each drawing group accepts optional `dimensions` and `positions` arrays and must
+contain at least one measurement. Drawing groups must have unique saved IDs;
+repeated dimension/control IDs inside a group are allowed. A position record has
+`control`, length `size`, `nominal_axis { origin, direction }` and nonempty
+`samples` of `VectorQuantity` values. Length vectors use dimensioned x/y/z
+quantities; the nominal direction uses scalar quantities. Axis and samples must
+already share the established reference coordinates described above. Position
+batches resolve and index saved inline/named references once via
+`DrawingDefinition.evaluate_position_measurements`.
+
+The versioned `occb-inspection-report-v1` JSON includes the model schema version,
+ordered per-drawing results and summary counts of dimensional values inside or
+outside limits, dimensions without acceptance limits, and position samples inside
+or outside their zones. Length results use mm, angles use scalar radians; output
+includes the full typed evaluation, margins, allowance and worst-sample index.
+Basic/reference/untoleranced dimensions retain their distinct dispositions and
+are counted as having no acceptance limits. No model/drawing edits, native shape
+regeneration or implicit measurement-coordinate transform occurs.
+
+Exit status is 0 when a report was written with no explicit violations, 2 when a
+report was written with dimensional or position violations, and 1 for invalid
+input or an I/O error. A 0 status with dimensions lacking limits does not assert
+acceptance of those dimensions. Invalid/unsupported requests publish no report;
+existing files are refused, with exclusive output creation after evaluation.
+The command does not certify whole-feature/ASME conformity or release a drawing.
+
+The crate enables serde_json's
+[`float_roundtrip` feature](https://docs.rs/crate/serde_json/latest/features#float_roundtrip);
+a regression test verifies bit-exact JSON round trips for position margins.
+Command tests cover mixed results, absent limits, invalid requests, protected
+outputs and named frames. A scale benchmark checks 100,000 position measurements
+across 10,000 controls with shared named datum references and no kernel handles.
+Document schema remains 64 and C ABI remains 42.
