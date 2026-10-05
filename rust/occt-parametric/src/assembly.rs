@@ -21,7 +21,7 @@ mod step_export;
 #[cfg(test)]
 pub(crate) use draw_view::draw_name_for_tests;
 #[cfg(test)]
-pub(crate) use step_export::srgb_for_tests;
+pub(crate) use step_export::{rigid_for_tests, srgb_for_tests};
 
 pub use collisions::{
     CollisionOptions, CollisionPairRef, InstanceOutputRef, PairCheck, PairStatus,

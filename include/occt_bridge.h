@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define OCCT_BRIDGE_ABI_VERSION 43u
+#define OCCT_BRIDGE_ABI_VERSION 44u
 #define OCCT_BRIDGE_INVALID_SHAPE_ID UINT64_C(0)
 
 #if defined(_WIN32) && defined(OCCT_BRIDGE_BUILD_SHARED)
@@ -1038,6 +1038,38 @@ OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_step_save_assembly(
     const char* path,
     const char* assembly_name,
     const occt_bridge_step_component_t* components,
+    size_t component_count,
+    size_t* out_part_count
+);
+
+/* Parent index of a top-level occt_bridge_step_node_t. */
+#define OCCT_BRIDGE_STEP_ROOT SIZE_MAX
+
+/* One named sub-assembly of occt_bridge_step_save_assembly_tree, placed in
+ * its parent by the rigid row-major 3x4 transform [R | t], p' = R p + t, with
+ * R a proper rotation (orthonormal within 1e-9, determinant +1). parent is
+ * OCCT_BRIDGE_STEP_ROOT or the index of an earlier node. */
+typedef struct occt_bridge_step_node {
+    const char* name;
+    size_t parent;
+    double transform[12];
+} occt_bridge_step_node_t;
+
+/* Like occt_bridge_step_save_assembly, with nested sub-assemblies: component
+ * i belongs to node component_nodes[i] (OCCT_BRIDGE_STEP_ROOT for the top
+ * level; component_nodes may be null when node_count is 0). Shapes stay
+ * placed in model coordinates; each component is located relative to its
+ * node's accumulated placement, so the file's model-space geometry matches
+ * the flat export. Every node must contain a component directly or through
+ * its descendants. */
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_step_save_assembly_tree(
+    occt_bridge_session_t* session,
+    const char* path,
+    const char* assembly_name,
+    const occt_bridge_step_node_t* nodes,
+    size_t node_count,
+    const occt_bridge_step_component_t* components,
+    const size_t* component_nodes,
     size_t component_count,
     size_t* out_part_count
 );

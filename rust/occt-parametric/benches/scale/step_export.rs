@@ -50,6 +50,90 @@ pub(crate) fn step_assembly_case(definition: &'static FamilyDefinition) -> Outco
     )
 }
 
+/// 10,000 pattern members in 100 patterns, each in its own frame under one
+/// of 10 turned top-level frames: 110 nested sub-assemblies, one part.
+pub(crate) fn step_frames_case(definition: &'static FamilyDefinition) -> Outcome {
+    const GROUPS: usize = 10;
+    const PATTERNS: usize = 100;
+    const MEMBERS: usize = 100;
+    timed(
+        format!(
+            "STEP assembly of {} members in {} nested frames",
+            PATTERNS * MEMBERS,
+            GROUPS + PATTERNS
+        ),
+        ms(3_000),
+        Expectation::Required,
+        || {
+            let session = Session::new().map_err(|error| failure(error.to_string()))?;
+            let mut graph = InstanceGraph::new(definition);
+            let lengths =
+                |x: f64, y: f64| VectorQuantity::lengths(x, y, 0.0, LengthUnit::Millimeter);
+            for group in 0..GROUPS {
+                graph.add_frame(
+                    format!("group-{group}"),
+                    None,
+                    Placement {
+                        translation: lengths(0.0, 2_000.0 * group as f64),
+                        rotation: Some(AxisAngle {
+                            origin: lengths(0.0, 0.0),
+                            axis: VectorQuantity::scalars(0.0, 0.0, 1.0),
+                            angle_radians: 0.01 * group as f64,
+                        }),
+                    },
+                    "bench",
+                )?;
+            }
+            graph.add_base("source", HashMap::new(), "bench")?;
+            for pattern in 0..PATTERNS {
+                let frame = format!("row-{pattern}");
+                graph.add_frame(
+                    frame.as_str(),
+                    Some(format!("group-{}", pattern % GROUPS).as_str()),
+                    Placement::translated(lengths(0.0, 100.0 * (pattern / GROUPS) as f64)),
+                    "bench",
+                )?;
+                let id = format!("pattern-{pattern}");
+                graph.add_linear_pattern(
+                    id.as_str(),
+                    format!("member-{pattern}").as_str(),
+                    "source",
+                    MEMBERS,
+                    lengths(50.0, 0.0),
+                    "bench",
+                )?;
+                graph.set_pattern_frame(&id, Some(&frame))?;
+            }
+            let generation = graph.regenerate_all(&session)?;
+            let path =
+                std::env::temp_dir().join(format!("occb-bench-frames-{}.step", std::process::id()));
+            let parts = graph.export_step(
+                &session,
+                &generation,
+                &path,
+                "fleet",
+                &OutputSet::AllWithOutput("body".into()),
+            )?;
+            let text =
+                std::fs::read_to_string(&path).map_err(|error| failure(error.to_string()))?;
+            std::fs::remove_file(&path).map_err(|error| failure(error.to_string()))?;
+            let occurrences = text.matches("NEXT_ASSEMBLY_USAGE_OCCURRENCE(").count();
+            // Every pattern also places its source member, plus the base.
+            let components = PATTERNS * MEMBERS + 1;
+            let expected = components + GROUPS + PATTERNS;
+            if parts != 1 || occurrences != expected {
+                return Err(failure(format!(
+                    "{parts} parts, {occurrences} occurrences; expected 1 and {expected}"
+                )));
+            }
+            Ok(format!(
+                "{components} components in {} sub-assemblies, 1 shared part",
+                GROUPS + PATTERNS
+            ))
+        },
+    )
+}
+
 /// 10,000 pattern members written as a DRAW view: one BREP and a script.
 pub(crate) fn draw_view_case(definition: &'static FamilyDefinition) -> Outcome {
     const MEMBERS: usize = 10_000;

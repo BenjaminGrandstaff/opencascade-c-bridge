@@ -13,6 +13,7 @@
 #include <XCAFDoc_ColorTool.hxx>
 #include <XCAFDoc_DocumentTool.hxx>
 #include <XCAFDoc_ShapeTool.hxx>
+#include <gp_Trsf.hxx>
 
 #include <cmath>
 #include <cstdio>
@@ -36,6 +37,128 @@ std::string name_of(const TDF_Label& label) {
         return {};
     }
     return TCollection_AsciiString(name->Get()).ToCString();
+}
+
+// The single child component of `assembly` named `name`, or a null label.
+TDF_Label child(const TDF_Label& assembly, const std::string& name) {
+    TDF_LabelSequence components;
+    XCAFDoc_ShapeTool::GetComponents(assembly, components);
+    for (int index = 1; index <= components.Length(); ++index) {
+        if (name_of(components.Value(index)) == name) {
+            return components.Value(index);
+        }
+    }
+    return {};
+}
+
+// The assembly or part a component refers to.
+TDF_Label referred(const TDF_Label& component) {
+    TDF_Label target;
+    XCAFDoc_ShapeTool::GetReferredShape(component, target);
+    return target;
+}
+
+bool same_transform(const gp_Trsf& left, const gp_Trsf& right) {
+    for (int row = 1; row <= 3; ++row) {
+        for (int column = 1; column <= 4; ++column) {
+            if (std::abs(left.Value(row, column) - right.Value(row, column)) > 1e-9) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+// Writes wing (translated) > flap (rotated a quarter turn, translated) with
+// one block at the top level, one in the wing, and the pin in the flap, then
+// checks the nesting and that chained locations reproduce each shape's own.
+// The top-level block is unplaced and shares its part with the wing's: OCCT
+// once named the wrong occurrence in that case.
+void nested(occt_bridge_session_t* session, const std::string& file) {
+    occt_bridge_shape_id_t block = 0;
+    occt_bridge_shape_id_t inner = 0;
+    occt_bridge_shape_id_t pin = 0;
+    occt_bridge_shape_id_t placed_pin = 0;
+    check(occt_bridge_create_box(session, {0, 0, 0}, {10, 20, 30}, &block) == OCCT_BRIDGE_OK, "tree box");
+    check(occt_bridge_translate(session, block, {120, 0, 0}, &inner) == OCCT_BRIDGE_OK, "tree inner copy");
+    check(occt_bridge_create_cylinder(session, {0, 0, 0}, {0, 0, 1}, 2, 40, &pin) == OCCT_BRIDGE_OK, "tree pin");
+    check(occt_bridge_translate(session, pin, {130, 60, 5}, &placed_pin) == OCCT_BRIDGE_OK, "tree pin placed");
+    // The flap turns a quarter turn about z, then moves 50 along y.
+    const occt_bridge_step_node_t nodes[] = {
+        {"wing", OCCT_BRIDGE_STEP_ROOT, {1, 0, 0, 100, 0, 1, 0, 0, 0, 0, 1, 0}},
+        {"flap", 0, {0, -1, 0, 0, 1, 0, 0, 50, 0, 0, 1, 0}},
+    };
+    const occt_bridge_step_component_t components[] = {
+        {block, "outer block", "block", 0, {0, 0, 0}},
+        {inner, "inner block", "block", 0, {0, 0, 0}},
+        {placed_pin, "flap pin", "pin", 0, {0, 0, 0}},
+    };
+    const size_t members[] = {OCCT_BRIDGE_STEP_ROOT, 0, 1};
+    size_t parts = 0;
+    check(occt_bridge_step_save_assembly_tree(session, file.c_str(), "plane", nodes, 2, components, members, 3, &parts)
+            == OCCT_BRIDGE_OK && parts == 2, "save assembly tree");
+
+    // Forward parents, unknown or empty nodes, and missing arrays are refused.
+    occt_bridge_step_node_t forward[] = {nodes[0], nodes[1]};
+    forward[0].parent = 1;
+    check(occt_bridge_step_save_assembly_tree(session, file.c_str(), "plane", forward, 2, components, members, 3, nullptr)
+            == OCCT_BRIDGE_INVALID_ARGUMENT, "forward parent");
+    const size_t unknown_node[] = {OCCT_BRIDGE_STEP_ROOT, 0, 7};
+    check(occt_bridge_step_save_assembly_tree(session, file.c_str(), "plane", nodes, 2, components, unknown_node, 3, nullptr)
+            == OCCT_BRIDGE_INVALID_ARGUMENT, "unknown node");
+    const size_t empty_flap[] = {OCCT_BRIDGE_STEP_ROOT, 0, 0};
+    check(occt_bridge_step_save_assembly_tree(session, file.c_str(), "plane", nodes, 2, components, empty_flap, 3, nullptr)
+            == OCCT_BRIDGE_INVALID_ARGUMENT, "empty sub-assembly");
+    check(occt_bridge_step_save_assembly_tree(session, file.c_str(), "plane", nodes, 2, components, nullptr, 3, nullptr)
+            == OCCT_BRIDGE_INVALID_ARGUMENT, "missing memberships");
+    occt_bridge_step_node_t skewed[] = {nodes[0], nodes[1]};
+    skewed[1].transform[0] = 2.0;
+    check(occt_bridge_step_save_assembly_tree(session, file.c_str(), "plane", skewed, 2, components, members, 3, nullptr)
+            == OCCT_BRIDGE_INVALID_ARGUMENT, "scaling transform");
+    occt_bridge_step_node_t mirrored[] = {nodes[0], nodes[1]};
+    mirrored[0].transform[10] = -1.0;
+    check(occt_bridge_step_save_assembly_tree(session, file.c_str(), "plane", mirrored, 2, components, members, 3, nullptr)
+            == OCCT_BRIDGE_INVALID_ARGUMENT, "mirroring transform");
+
+    Handle(XCAFApp_Application) application = XCAFApp_Application::GetApplication();
+    Handle(TDocStd_Document) document;
+    application->NewDocument("MDTV-XCAF", document);
+    STEPCAFControl_Reader reader;
+    reader.SetNameMode(Standard_True);
+    check(reader.ReadFile(file.c_str()) == IFSelect_RetDone && reader.Transfer(document) == Standard_True, "read tree");
+    const Handle(XCAFDoc_ShapeTool) shapes = XCAFDoc_DocumentTool::ShapeTool(document->Main());
+    TDF_LabelSequence roots;
+    shapes->GetFreeShapes(roots);
+    check(roots.Length() == 1 && name_of(roots.Value(1)) == "plane", "tree root");
+    if (roots.Length() == 1) {
+        const TDF_Label wing = child(roots.Value(1), "wing");
+        const TDF_Label outer = child(roots.Value(1), "outer block");
+        check(!wing.IsNull() && !outer.IsNull(), "root holds the wing and the outer block");
+        const TDF_Label wing_assembly = wing.IsNull() ? TDF_Label() : referred(wing);
+        check(!wing_assembly.IsNull() && XCAFDoc_ShapeTool::IsAssembly(wing_assembly), "wing is a sub-assembly");
+        const TDF_Label flap = wing_assembly.IsNull() ? TDF_Label() : child(wing_assembly, "flap");
+        const TDF_Label inner_block = wing_assembly.IsNull() ? TDF_Label() : child(wing_assembly, "inner block");
+        check(!flap.IsNull() && !inner_block.IsNull(), "wing holds the flap and the inner block");
+        const TDF_Label flap_assembly = flap.IsNull() ? TDF_Label() : referred(flap);
+        const TDF_Label flap_pin = flap_assembly.IsNull() ? TDF_Label() : child(flap_assembly, "flap pin");
+        check(!flap_pin.IsNull(), "flap holds the pin");
+        if (!inner_block.IsNull() && !flap_pin.IsNull()) {
+            const gp_Trsf wing_place = XCAFDoc_ShapeTool::GetLocation(wing).Transformation();
+            const gp_Trsf inner_world =
+                wing_place.Multiplied(XCAFDoc_ShapeTool::GetLocation(inner_block).Transformation());
+            gp_Trsf inner_expected;
+            inner_expected.SetTranslation(gp_Vec(120, 0, 0));
+            check(same_transform(inner_world, inner_expected), "inner block keeps its model placement");
+            const gp_Trsf pin_world = wing_place
+                .Multiplied(XCAFDoc_ShapeTool::GetLocation(flap).Transformation())
+                .Multiplied(XCAFDoc_ShapeTool::GetLocation(flap_pin).Transformation());
+            gp_Trsf pin_expected;
+            pin_expected.SetTranslation(gp_Vec(130, 60, 5));
+            check(same_transform(pin_world, pin_expected), "flap pin keeps its model placement");
+        }
+    }
+    application->Close(document);
+    (void)std::remove(file.c_str());
 }
 
 }  // namespace
@@ -128,9 +251,10 @@ int run(const std::string& file) {
     }
     application->Close(document);
     (void)std::remove(file.c_str());
+    nested(session, file);
     occt_bridge_session_destroy(session);
     if (failures == 0) {
-        (void)std::puts("PASS: STEP assembly structure, shared parts, names, and colors round-trip");
+        (void)std::puts("PASS: STEP assembly structure, sub-assemblies, shared parts, names, and colors round-trip");
     }
     return failures == 0 ? 0 : 1;
 }

@@ -2,7 +2,7 @@
 
 use super::*;
 
-pub(crate) const ABI_VERSION: u32 = 43;
+pub(crate) const ABI_VERSION: u32 = 44;
 
 #[repr(C)]
 pub(crate) struct RawMeshOptions {
@@ -56,6 +56,13 @@ pub(crate) struct RawStepComponent {
     pub(crate) part_name: *const std::os::raw::c_char,
     pub(crate) has_color: i32,
     pub(crate) color: [f64; 3],
+}
+
+#[repr(C)]
+pub(crate) struct RawStepNode {
+    pub(crate) name: *const std::os::raw::c_char,
+    pub(crate) parent: usize,
+    pub(crate) transform: [f64; 12],
 }
 
 #[repr(C)]
@@ -293,11 +300,14 @@ unsafe extern "C" {
         closed: c_int,
         out: *mut RawShapeId,
     ) -> RawStatus;
-    pub(crate) fn occt_bridge_step_save_assembly(
+    pub(crate) fn occt_bridge_step_save_assembly_tree(
         session: *mut c_void,
         path: *const std::os::raw::c_char,
         assembly_name: *const std::os::raw::c_char,
+        nodes: *const RawStepNode,
+        node_count: usize,
         components: *const RawStepComponent,
+        component_nodes: *const usize,
         component_count: usize,
         out_part_count: *mut usize,
     ) -> RawStatus;

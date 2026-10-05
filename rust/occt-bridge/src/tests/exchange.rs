@@ -268,3 +268,93 @@ fn step_assemblies_share_placed_copies_as_one_part() {
     assert!(session.save_step_assembly(&path, "rack", &[]).is_err());
     assert!(!path.exists(), "argument errors write nothing");
 }
+
+#[test]
+fn step_assembly_trees_keep_model_space_geometry() {
+    let session = Session::new().unwrap();
+    let block = session
+        .create_box(Vec3::new(0.0, 0.0, 0.0), Vec3::new(10.0, 20.0, 30.0))
+        .unwrap();
+    let moved = session
+        .translate(&block, Vec3::new(120.0, 0.0, 0.0))
+        .unwrap();
+    let turned = session
+        .rotate(
+            &block,
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(0.0, 0.0, 1.0),
+            std::f64::consts::FRAC_PI_2,
+        )
+        .unwrap();
+    let component = |shape, name| StepComponent {
+        shape,
+        name,
+        part_name: "block",
+        color: None,
+    };
+    let components = [
+        component(&block, "outer"),
+        component(&moved, "inner"),
+        component(&turned, "turned"),
+    ];
+    let (sine, cosine) = 0.3f64.sin_cos();
+    let nodes = [
+        StepNode {
+            name: "wing",
+            parent: None,
+            transform: [1.0, 0.0, 0.0, 100.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+        },
+        // A 0.3 rad turn about z, then 50 along y.
+        StepNode {
+            name: "flap",
+            parent: Some(0),
+            transform: [
+                cosine, -sine, 0.0, 0.0, sine, cosine, 0.0, 50.0, 0.0, 0.0, 1.0, 0.0,
+            ],
+        },
+    ];
+    let path = step_test_path("tree");
+    let parts = session
+        .save_step_assembly_tree(
+            &path,
+            "plane",
+            &nodes,
+            &components,
+            &[None, Some(0), Some(1)],
+        )
+        .unwrap();
+    assert_eq!(parts, 1, "all three share the block");
+    // Model space matches the shapes as placed, whatever the nesting.
+    let loaded = session.load_step(&path).unwrap();
+    let flat = session.create_compound(&[&block, &moved, &turned]).unwrap();
+    let (got, want) = (
+        session.bounds(&loaded).unwrap(),
+        session.bounds(&flat).unwrap(),
+    );
+    for (a, b) in [
+        (got.min.x, want.min.x),
+        (got.min.y, want.min.y),
+        (got.min.z, want.min.z),
+        (got.max.x, want.max.x),
+        (got.max.y, want.max.y),
+        (got.max.z, want.max.z),
+    ] {
+        assert!((a - b).abs() < 1e-6, "{got:?} vs {want:?}");
+    }
+    assert!((session.volume(&loaded).unwrap() - 18_000.0).abs() < 1e-6);
+    std::fs::remove_file(&path).unwrap();
+
+    // Memberships must match the components, and nodes must be nonempty.
+    assert!(
+        session
+            .save_step_assembly_tree(&path, "plane", &nodes, &components, &[None])
+            .is_err()
+    );
+    assert!(
+        session
+            .save_step_assembly_tree(&path, "plane", &nodes, &components, &[None, None, Some(0)])
+            .is_err(),
+        "the flap would be empty"
+    );
+    assert!(!path.exists(), "argument errors write nothing");
+}

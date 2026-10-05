@@ -30,8 +30,33 @@ impl Session {
         assembly_name: &str,
         components: &[StepComponent<'_, '_>],
     ) -> Result<usize, BridgeError> {
+        self.save_step_assembly_tree(path, assembly_name, &[], components, &[])
+    }
+
+    /// Like [`Self::save_step_assembly`], with nested named sub-assemblies:
+    /// component `i` belongs to `component_nodes[i]` (`None` for the top
+    /// level; an empty slice puts every component there). Shapes stay placed
+    /// in model coordinates and are located relative to their node, so the
+    /// model-space geometry matches the flat export. Every node must contain
+    /// a component directly or through its descendants.
+    pub fn save_step_assembly_tree(
+        &self,
+        path: impl AsRef<Path>,
+        assembly_name: &str,
+        nodes: &[StepNode<'_>],
+        components: &[StepComponent<'_, '_>],
+        component_nodes: &[Option<usize>],
+    ) -> Result<usize, BridgeError> {
         let path = path_to_c_string(path.as_ref())?;
         let name = text_to_c_string(assembly_name, "assembly name")?;
+        if !component_nodes.is_empty() && component_nodes.len() != components.len() {
+            return Err(BridgeError {
+                status: 1,
+                category: "invalid argument".into(),
+                message: "component_nodes must be empty or match the components".into(),
+                diagnostics: Vec::new(),
+            });
+        }
         let mut names = Vec::with_capacity(components.len());
         for component in components {
             self.validate_shape(component.shape)?;
@@ -40,6 +65,19 @@ impl Session {
                 text_to_c_string(component.part_name, "part name")?,
             ));
         }
+        let node_names = nodes
+            .iter()
+            .map(|node| text_to_c_string(node.name, "sub-assembly name"))
+            .collect::<Result<Vec<_>, _>>()?;
+        let raw_nodes = nodes
+            .iter()
+            .zip(&node_names)
+            .map(|(node, name)| RawStepNode {
+                name: name.as_ptr(),
+                parent: node.parent.unwrap_or(usize::MAX),
+                transform: node.transform,
+            })
+            .collect::<Vec<_>>();
         let raw = components
             .iter()
             .zip(&names)
@@ -51,15 +89,26 @@ impl Session {
                 color: component.color.unwrap_or([0.0; 3]),
             })
             .collect::<Vec<_>>();
+        let memberships = component_nodes
+            .iter()
+            .map(|node| node.unwrap_or(usize::MAX))
+            .collect::<Vec<_>>();
         let mut parts = 0;
-        // SAFETY: The strings and component buffer outlive the call, and the
-        // output count is writable.
+        // SAFETY: The strings and the node, component, and membership buffers
+        // outlive the call, and the output count is writable.
         self.check(unsafe {
-            occt_bridge_step_save_assembly(
+            occt_bridge_step_save_assembly_tree(
                 self.raw.as_ptr(),
                 path.as_ptr(),
                 name.as_ptr(),
+                raw_nodes.as_ptr(),
+                raw_nodes.len(),
                 raw.as_ptr(),
+                if memberships.is_empty() {
+                    std::ptr::null()
+                } else {
+                    memberships.as_ptr()
+                },
                 raw.len(),
                 &mut parts,
             )
