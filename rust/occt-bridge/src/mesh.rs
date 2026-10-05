@@ -28,6 +28,37 @@ impl Session {
         })?;
         Ok(indices)
     }
+    /// Like [`Self::subshape_indices`], but a candidate outside `shape`'s
+    /// topology map of `kind` is `None` instead of failing the call: one map
+    /// traversal for many membership tests.
+    pub fn subshape_lookup(
+        &self,
+        shape: &Shape<'_>,
+        kind: ShapeType,
+        candidates: &[&Shape<'_>],
+    ) -> Result<Vec<Option<usize>>, BridgeError> {
+        self.validate_shape(shape)?;
+        for candidate in candidates {
+            self.validate_shape(candidate)?;
+        }
+        let ids: Vec<_> = candidates.iter().map(|shape| shape.id).collect();
+        let mut indices = vec![0; ids.len()];
+        // SAFETY: Valid session-owned shapes and matching initialized buffers.
+        self.check(unsafe {
+            occt_bridge_subshape_lookup(
+                self.raw.as_ptr(),
+                shape.id,
+                kind as c_int,
+                ids.as_ptr(),
+                ids.len(),
+                indices.as_mut_ptr(),
+            )
+        })?;
+        Ok(indices
+            .into_iter()
+            .map(|index| (index != usize::MAX).then_some(index))
+            .collect())
+    }
     /// Tessellate on private copies, with oriented triangles and source face
     /// indices. Count and fill each mesh once. The returned triangle budget does
     /// not bound OCCT's meshing workspace. Linear deflection must be at least

@@ -41,6 +41,7 @@ fn connectivity(output: &str, solids: u32, allow_voids: bool) -> VerificationRul
 fn topology_family() -> FamilyDefinition {
     FamilyDefinition {
         references: Vec::new(),
+        feature_colors: Default::default(),
         id: "Topology".into(),
         version: 1,
         parameters: Vec::new(),

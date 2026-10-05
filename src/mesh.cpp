@@ -139,29 +139,53 @@ occt_bridge_status_t occt_bridge_surface_mesh(
     });
 }
 
+namespace {
+
+// Shared by the strict and lenient index lookups: with `lenient`, a
+// candidate outside the map reports OCCT_BRIDGE_NOT_FOUND instead of failing.
+occt_bridge_status_t lookup_subshapes(
+    occt_bridge_session_t* session, occt_bridge_shape_id_t shape,
+    occt_bridge_shape_type_t type, const occt_bridge_shape_id_t* candidates,
+    size_t count, size_t* out_indices, bool lenient) {
+    if (type < OCCT_BRIDGE_SHAPE_COMPOUND || type > OCCT_BRIDGE_SHAPE_VERTEX
+        || (count != 0 && (candidates == nullptr || out_indices == nullptr))) {
+        return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "invalid subshape index type or buffers");
+    }
+    const auto* source = find_shape(session, shape);
+    if (source == nullptr) { return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "shape was not found"); }
+    TopTools_IndexedMapOfShape subshapes;
+    TopExp::MapShapes(*source, static_cast<TopAbs_ShapeEnum>(static_cast<int>(type) - 1), subshapes);
+    std::vector<size_t> indices;
+    indices.reserve(count);
+    for (size_t candidate = 0; candidate < count; ++candidate) {
+        const auto* value = find_shape(session, candidates[candidate]);
+        if (value == nullptr) { return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "candidate shape was not found"); }
+        const int index = subshapes.FindIndex(*value);
+        if (index == 0 && !lenient) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "candidate is not a subshape of the requested type");
+        }
+        indices.push_back(index == 0 ? OCCT_BRIDGE_NOT_FOUND : static_cast<size_t>(index - 1));
+    }
+    std::copy(indices.begin(), indices.end(), out_indices);
+    return succeed(session);
+}
+
+}  // namespace
+
 occt_bridge_status_t occt_bridge_subshape_indices(
     occt_bridge_session_t* session, occt_bridge_shape_id_t shape,
     occt_bridge_shape_type_t type, const occt_bridge_shape_id_t* candidates,
     size_t count, size_t* out_indices) {
     return guarded(session, [&] {
-        if (type < OCCT_BRIDGE_SHAPE_COMPOUND || type > OCCT_BRIDGE_SHAPE_VERTEX
-            || (count != 0 && (candidates == nullptr || out_indices == nullptr))) {
-            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "invalid subshape index type or buffers");
-        }
-        const auto* source = find_shape(session, shape);
-        if (source == nullptr) { return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "shape was not found"); }
-        TopTools_IndexedMapOfShape subshapes;
-        TopExp::MapShapes(*source, static_cast<TopAbs_ShapeEnum>(static_cast<int>(type) - 1), subshapes);
-        std::vector<size_t> indices;
-        indices.reserve(count);
-        for (size_t candidate = 0; candidate < count; ++candidate) {
-            const auto* value = find_shape(session, candidates[candidate]);
-            if (value == nullptr) { return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "candidate shape was not found"); }
-            const int index = subshapes.FindIndex(*value);
-            if (index == 0) { return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "candidate is not a subshape of the requested type"); }
-            indices.push_back(static_cast<size_t>(index - 1));
-        }
-        std::copy(indices.begin(), indices.end(), out_indices);
-        return succeed(session);
+        return lookup_subshapes(session, shape, type, candidates, count, out_indices, false);
+    });
+}
+
+occt_bridge_status_t occt_bridge_subshape_lookup(
+    occt_bridge_session_t* session, occt_bridge_shape_id_t shape,
+    occt_bridge_shape_type_t type, const occt_bridge_shape_id_t* candidates,
+    size_t count, size_t* out_indices) {
+    return guarded(session, [&] {
+        return lookup_subshapes(session, shape, type, candidates, count, out_indices, true);
     });
 }

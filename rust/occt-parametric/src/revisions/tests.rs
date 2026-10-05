@@ -4,6 +4,7 @@ use crate::*;
 fn document() -> ModelDocument {
     let family = FamilyDefinition {
         references: Vec::new(),
+        feature_colors: Default::default(),
         id: "part".into(),
         version: 1,
         parameters: vec![],

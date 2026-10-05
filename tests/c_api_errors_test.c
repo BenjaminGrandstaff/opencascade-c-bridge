@@ -1072,6 +1072,15 @@ static void surface_mesh(occt_bridge_session_t* session) {
     EXPECT(occt_bridge_subshape_indices(session, body, OCCT_BRIDGE_SHAPE_FACE, NULL, 0, NULL), OK);
     occt_bridge_shape_id_t invalid = UINT64_MAX;
     EXPECT(occt_bridge_subshape_indices(session, body, OCCT_BRIDGE_SHAPE_FACE, &invalid, 1, &index), MISSING);
+    /* The lenient lookup reports a candidate outside the map instead of failing. */
+    {
+        const occt_bridge_shape_id_t both[] = {face, body};
+        size_t found[2] = {123, 123};
+        EXPECT(occt_bridge_subshape_lookup(session, body, OCCT_BRIDGE_SHAPE_FACE, both, 2, found), OK);
+        EXPECT_TRUE(found[0] == 2 && found[1] == OCCT_BRIDGE_NOT_FOUND, "lookup marks the missing candidate");
+        EXPECT(occt_bridge_subshape_lookup(session, body, OCCT_BRIDGE_SHAPE_FACE, &invalid, 1, found), MISSING);
+        EXPECT(occt_bridge_subshape_lookup(session, body, 999, both, 2, found), ARG);
+    }
     occt_bridge_shape_release(session, face);
     occt_bridge_shape_release(session, body);
 }

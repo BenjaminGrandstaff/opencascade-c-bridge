@@ -1,7 +1,7 @@
 //! Structured STEP export of generated instances.
 
 use super::*;
-use occt_bridge::{StepComponent, StepNode};
+use occt_bridge::{StepComponent, StepFaceColor, StepNode};
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 
@@ -82,7 +82,8 @@ impl InstanceGraph<'_> {
     /// placed by its frame placement and current joint motion; components
     /// are located within their frame, so model-space geometry matches the
     /// generation. Returns the number of distinct parts. O(outputs + frames
-    /// on their paths) plus the STEP write.
+    /// on their paths + colored faces) plus the STEP write. Faces colored
+    /// through the family's feature colors are written as STEP face colors.
     pub fn export_step(
         &self,
         session: &Session,
@@ -130,6 +131,19 @@ impl InstanceGraph<'_> {
                 })
             })
             .collect::<Result<Vec<_>, ModelError>>()?;
+        let mut face_colors = Vec::new();
+        for (component, output) in outputs.iter().enumerate() {
+            let colored = generation
+                .result(&output.instance)
+                .and_then(|result| result.face_colors.get(&output.output));
+            for (face, color) in colored.into_iter().flatten() {
+                face_colors.push(StepFaceColor {
+                    component,
+                    face: *face,
+                    color: color.map(srgb),
+                });
+            }
+        }
         let (frames, memberships) = self.step_frames(&outputs)?;
         let nodes = frames
             .iter()
@@ -145,6 +159,7 @@ impl InstanceGraph<'_> {
             &nodes,
             &components,
             &memberships,
+            &face_colors,
         )?)
     }
 

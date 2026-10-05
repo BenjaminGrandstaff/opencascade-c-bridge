@@ -3,6 +3,7 @@ use super::*;
 fn family() -> FamilyDefinition {
     FamilyDefinition {
         references: Vec::new(),
+        feature_colors: Default::default(),
         id: "block".into(),
         version: 1,
         parameters: vec![ParameterDefinition {

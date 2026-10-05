@@ -313,6 +313,11 @@ fn step_assembly_trees_keep_model_space_geometry() {
             ],
         },
     ];
+    let face_colors = [StepFaceColor {
+        component: 2,
+        face: 0,
+        color: [0.1, 0.6, 0.3],
+    }];
     let path = step_test_path("tree");
     let parts = session
         .save_step_assembly_tree(
@@ -321,6 +326,7 @@ fn step_assembly_trees_keep_model_space_geometry() {
             &nodes,
             &components,
             &[None, Some(0), Some(1)],
+            &face_colors,
         )
         .unwrap();
     assert_eq!(parts, 1, "all three share the block");
@@ -344,15 +350,39 @@ fn step_assembly_trees_keep_model_space_geometry() {
     assert!((session.volume(&loaded).unwrap() - 18_000.0).abs() < 1e-6);
     std::fs::remove_file(&path).unwrap();
 
-    // Memberships must match the components, and nodes must be nonempty.
+    // Memberships must match the components, nodes must be nonempty, and
+    // face colors must name real faces.
+    let beyond = [StepFaceColor {
+        face: 6,
+        ..face_colors[0]
+    }];
     assert!(
         session
-            .save_step_assembly_tree(&path, "plane", &nodes, &components, &[None])
+            .save_step_assembly_tree(
+                &path,
+                "plane",
+                &nodes,
+                &components,
+                &[None, Some(0), Some(1)],
+                &beyond
+            )
             .is_err()
     );
     assert!(
         session
-            .save_step_assembly_tree(&path, "plane", &nodes, &components, &[None, None, Some(0)])
+            .save_step_assembly_tree(&path, "plane", &nodes, &components, &[None], &[])
+            .is_err()
+    );
+    assert!(
+        session
+            .save_step_assembly_tree(
+                &path,
+                "plane",
+                &nodes,
+                &components,
+                &[None, None, Some(0)],
+                &[]
+            )
             .is_err(),
         "the flap would be empty"
     );

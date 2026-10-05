@@ -39,6 +39,7 @@ fn direction(x: f64, y: f64, z: f64) -> VectorExpr {
 pub(crate) fn block() -> FamilyDefinition {
     FamilyDefinition {
         references: Vec::new(),
+        feature_colors: Default::default(),
         id: "Block".into(),
         version: 1,
         parameters: vec![

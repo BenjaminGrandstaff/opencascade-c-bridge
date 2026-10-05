@@ -616,6 +616,7 @@ fn longest_edge_selector_drives_chamfer_and_rejects_disallowed_ties() {
 fn circular_and_curvature_radius_selectors_drive_cylinder_chamfers() {
     let definition = FamilyDefinition {
         references: Vec::new(),
+        feature_colors: Default::default(),
         id: "CylinderSelectorFamily".into(),
         version: 1,
         parameters: Vec::new(),

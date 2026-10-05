@@ -8,6 +8,8 @@ use super::*;
 pub(crate) struct Features<'a> {
     pub(crate) by_id: HashMap<&'a str, &'a FeatureDefinition>,
     pub(crate) references: References<'a>,
+    /// The family's feature colors.
+    pub(crate) colors: HashMap<&'a str, [f64; 3]>,
 }
 
 impl<'a> Features<'a> {
@@ -19,6 +21,11 @@ impl<'a> Features<'a> {
                 .map(|feature| (feature.id.as_str(), feature))
                 .collect(),
             references: reference_map(family),
+            colors: family
+                .feature_colors
+                .iter()
+                .map(|(feature, color)| (feature.as_str(), *color))
+                .collect(),
         }
     }
 

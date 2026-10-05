@@ -30,7 +30,7 @@ impl Session {
         assembly_name: &str,
         components: &[StepComponent<'_, '_>],
     ) -> Result<usize, BridgeError> {
-        self.save_step_assembly_tree(path, assembly_name, &[], components, &[])
+        self.save_step_assembly_tree(path, assembly_name, &[], components, &[], &[])
     }
 
     /// Like [`Self::save_step_assembly`], with nested named sub-assemblies:
@@ -38,7 +38,8 @@ impl Session {
     /// level; an empty slice puts every component there). Shapes stay placed
     /// in model coordinates and are located relative to their node, so the
     /// model-space geometry matches the flat export. Every node must contain
-    /// a component directly or through its descendants.
+    /// a component directly or through its descendants. `face_colors` color
+    /// individual part faces over the part color.
     pub fn save_step_assembly_tree(
         &self,
         path: impl AsRef<Path>,
@@ -46,6 +47,7 @@ impl Session {
         nodes: &[StepNode<'_>],
         components: &[StepComponent<'_, '_>],
         component_nodes: &[Option<usize>],
+        face_colors: &[StepFaceColor],
     ) -> Result<usize, BridgeError> {
         let path = path_to_c_string(path.as_ref())?;
         let name = text_to_c_string(assembly_name, "assembly name")?;
@@ -93,8 +95,16 @@ impl Session {
             .iter()
             .map(|node| node.unwrap_or(usize::MAX))
             .collect::<Vec<_>>();
+        let raw_faces = face_colors
+            .iter()
+            .map(|entry| RawStepFaceColor {
+                component: entry.component,
+                face: entry.face,
+                color: entry.color,
+            })
+            .collect::<Vec<_>>();
         let mut parts = 0;
-        // SAFETY: The strings and the node, component, and membership buffers
+        // SAFETY: The strings and the node, component, membership, and face buffers
         // outlive the call, and the output count is writable.
         self.check(unsafe {
             occt_bridge_step_save_assembly_tree(
@@ -110,6 +120,8 @@ impl Session {
                     memberships.as_ptr()
                 },
                 raw.len(),
+                raw_faces.as_ptr(),
+                raw_faces.len(),
                 &mut parts,
             )
         })?;

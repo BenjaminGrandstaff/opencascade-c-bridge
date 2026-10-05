@@ -27,6 +27,7 @@ fn spec(turns: &[f64]) -> SheetMetalDefinition {
 fn definition(sheet: SheetMetalDefinition) -> FamilyDefinition {
     FamilyDefinition {
         references: Vec::new(),
+        feature_colors: Default::default(),
         id: "sheet".into(),
         version: 1,
         parameters: vec![],
