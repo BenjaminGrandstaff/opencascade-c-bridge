@@ -38,6 +38,8 @@ fn fixture() -> (ModelDocument, DrawingDefinition) {
     let mut graph = InstanceGraph::new(&family);
     graph.add_base("part", HashMap::new(), "test").unwrap();
     let drawing = DrawingDefinition {
+        datum_features: Vec::new(),
+        feature_control_frames: Vec::new(),
         sheet: None,
         id: "../../unsafe-filename".into(),
         title: "Section template".into(),

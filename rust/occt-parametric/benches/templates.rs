@@ -50,6 +50,8 @@ fn fixture() -> (ModelDocument, DrawingDefinition) {
     let mut graph = InstanceGraph::new(&family);
     graph.add_base("part", HashMap::new(), "test").unwrap();
     let drawing = DrawingDefinition {
+        datum_features: Vec::new(),
+        feature_control_frames: Vec::new(),
         sheet: None,
         id: "template".into(),
         title: "Section template".into(),
@@ -425,6 +427,98 @@ fn main() {
     assert!(started.elapsed().as_secs_f64() < 10.0);
     println!(
         "1000 standard sheets with projection symbols and SVG/DXF exports: {:?} (10s budget), one shared variant",
+        started.elapsed()
+    );
+    let mut gdt = template.clone();
+    for (id, label, anchor, size) in [
+        ("primary", "A", "center", false),
+        ("secondary", "B", "x", true),
+        ("tertiary", "C", "y", true),
+    ] {
+        gdt.datum_features.push(DrawingDatumFeature {
+            id: id.into(),
+            label: label.into(),
+            feature_of_size: size,
+            attachment: DrawingGdtAttachment {
+                view: "profile".into(),
+                output: InstanceOutputRef {
+                    instance: "part".into(),
+                    output: "body".into(),
+                },
+                anchor: DatumRef::new("part", anchor),
+                offset_mm: [20.0, 30.0],
+            },
+        });
+    }
+    gdt.feature_control_frames = (0..10_000)
+        .map(|i| DrawingFeatureControlFrame {
+            id: format!("position-{i}"),
+            attachment: DrawingGdtAttachment {
+                view: "profile".into(),
+                output: InstanceOutputRef {
+                    instance: "part".into(),
+                    output: "body".into(),
+                },
+                anchor: DatumRef::new("part", "center"),
+                offset_mm: [30.0, 40.0],
+            },
+            characteristic: GeometricCharacteristic::Position,
+            tolerance: Quantity::length(0.1, LengthUnit::Millimeter),
+            display_unit: LengthUnit::Millimeter,
+            precision: 2,
+            zone: GeometricToleranceZone::Diameter,
+            material: ToleranceMaterialCondition::Maximum,
+            feature_of_size: true,
+            datums: vec![
+                DrawingDatumReference {
+                    datum_feature: "primary".into(),
+                    boundary: DatumMaterialBoundary::Regardless,
+                },
+                DrawingDatumReference {
+                    datum_feature: "secondary".into(),
+                    boundary: DatumMaterialBoundary::Maximum,
+                },
+                DrawingDatumReference {
+                    datum_feature: "tertiary".into(),
+                    boundary: DatumMaterialBoundary::Least,
+                },
+            ],
+        })
+        .collect();
+    let started = Instant::now();
+    let generated = gdt
+        .generate(
+            &graph,
+            &session,
+            DrawingRenderOptions {
+                curve_samples: 8,
+                maximum_vertices: 2_000_000,
+            },
+        )
+        .unwrap();
+    assert_eq!(generated.generated_variants, 1);
+    assert_eq!(
+        generated
+            .gdt_labels
+            .iter()
+            .filter(|l| l.text == "0.10 mm")
+            .count(),
+        10_000
+    );
+    assert_eq!(
+        generated
+            .gdt_lines
+            .iter()
+            .map(|l| l.points_mm.len())
+            .sum::<usize>(),
+        1_890_033
+    );
+    assert!(generated.to_svg().contains("0.10 mm"));
+    assert!(generated.to_dxf().contains("0.10 mm"));
+    assert_eq!(session.shape_count().unwrap(), 0);
+    assert!(started.elapsed().as_secs_f64() < 10.0);
+    println!(
+        "10000 structured GD&T frames with datum/material modifiers and SVG/DXF exports: {:?} (10s budget), one shared variant",
         started.elapsed()
     );
 }

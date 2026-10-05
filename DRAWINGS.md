@@ -370,3 +370,68 @@ blocks, lettering or sheet-format requirements. References:
 [ISO 5456-2 projection methods](https://www.iso.org/obp/ui?_escaped_fragment_=iso%3Astd%3Aiso%3A5456%3A-2%3Aed-1%3Av1%3Aen),
 and the projection-symbol examples in the
 [government engineering-drawing training manual](https://bharatskills.gov.in/pdf/E_Books/CTS/35/English/ED/Engineering%20Drawing%20-%20Group%207%20%282022%29.pdf).
+
+
+## Structured GD&T intent
+
+Schema 62 adds stable-ID `datum_features` and `feature_control_frames` collections.
+Both default to empty for legacy documents. Their object order is irrelevant for
+semantic diffs and merges; the order of a frame's `datums` array is significant.
+
+`DrawingDatumFeature` holds `id`, a unique one-to-three-letter uppercase `label`,
+excluding I/O/Q, `feature_of_size`, and a `DrawingGdtAttachment`. The attachment names a `view`,
+a selected `output: InstanceOutputRef`, an `anchor: DatumRef` on that instance,
+and `offset_mm` in paper coordinates. The output must belong to the selected
+view and be unsuppressed. Leaders follow the current world-space datum position;
+labels and frames retain fixed paper sizes through scales and detail offsets.
+Offsets must be finite and at least 8 mm long. Symbols use an open attachment
+triangle, leader and boxed datum label.
+
+`DrawingFeatureControlFrame` holds the same attachment plus:
+
+- `characteristic`: straightness, flatness, circularity, cylindricity, profile_line,
+  profile_surface, parallelism, perpendicularity, angularity, position,
+  circular_runout or total_runout.
+- `tolerance: Quantity`, `display_unit: LengthUnit`, and `precision` (0–8).
+  Values must be positive finite lengths, fit the display cell, and remain
+  positive after rounding. Exported values include their units.
+- `zone`: `characteristic` (default) or `diameter`.
+- `material`: `regardless` (default, no symbol), `maximum` (circled M), or
+  `least` (circled L), plus an explicit `feature_of_size` declaration.
+- Ordered `datums: Vec<DrawingDatumReference>`. Each reference names a
+  `datum_feature` ID and `boundary`: `regardless`, `maximum`, or `least`.
+
+For example, a position frame may state a 0.10 mm diameter zone at maximum
+material condition with primary A, secondary B at maximum material boundary,
+and tertiary C at least material boundary. References use feature IDs, preserving
+identity when labels or leader positions change. Datum letters themselves must
+remain unique within the drawing.
+
+The initial supported subset forbids datum references on form controls and
+requires one to three for orientation, position and runout; profile controls may
+have zero to three. Position currently requires a diameter zone. Diameter zones
+are supported for straightness, orientation and position on declared features of
+size. Tolerance material modifiers require declared features of size and are
+supported for straightness, flatness, orientation and position. Datum material
+boundaries require the referenced datum feature to be declared a feature of size.
+Missing/repeated references, duplicate IDs, invalid attachments and unsupported
+combinations fail before generation. These checks describe the supported subset;
+they do not claim to accept every valid ASME control or prove feature geometry.
+
+Glyphs, diameter marks and modifier circles use explicit vector strokes in both
+exporters, avoiding dependence on a GD&T symbol font. Generated geometry and text
+are available separately as `gdt_lines` and `gdt_labels`; DXF puts the linework on
+GD_T. Circle/arc glyphs use 32 segments. The exact line-vertex reservation is
+checked against the shared budget before allocating annotation geometry. Work is
+linear in annotation/text output plus selected-output lookup and datum-frame
+resolution, with indexed datum-feature reference lookup and proportional storage.
+The 10,000-frame benchmark includes three ordered datum references and all
+material modifiers, both exports, shared regeneration and native handle cleanup.
+
+Feature-of-size flags and geometric controls are manufacturing declarations.
+Anchors locate leaders on selected solid outputs; they do not identify persistent
+faces or establish datum simulators. Composite frames, common datums, targets,
+projected zones, advanced modifiers, datum-reference-frame solving, bonus/shift
+calculations, measured tolerance-zone inspection and semantic PMI exchange remain
+on the roadmap. References: [ASME Y14.5 scope and contents](https://www.asme.org/getmedia/da2ff89e-067b-4160-8e2e-53e6c7da1d3b/17707.pdf)
+and [NIST datum-system model](https://nvlpubs.nist.gov/nistpubs/jres/104/4/html/j44mac.htm).

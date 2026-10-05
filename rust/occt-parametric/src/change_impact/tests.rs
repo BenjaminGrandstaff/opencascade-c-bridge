@@ -143,6 +143,8 @@ fn placement_material_suppression_and_drawings_do_not_rebuild_local_geometry() {
         }
     }
     before.drawings.push(DrawingDefinition {
+        datum_features: Vec::new(),
+        feature_control_frames: Vec::new(),
         sheet: None,
         id: "view".into(),
         title: "Assembly".into(),

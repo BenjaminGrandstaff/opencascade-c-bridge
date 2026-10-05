@@ -7,7 +7,13 @@ mod detail;
 mod dimensions;
 pub use dimensions::{DimensionPresentation, DimensionTolerance};
 mod export;
+pub(crate) mod gdt;
 mod guides;
+pub use gdt::{
+    DatumMaterialBoundary, DrawingDatumFeature, DrawingDatumReference, DrawingFeatureControlFrame,
+    DrawingGdtAttachment, GeometricCharacteristic, GeometricToleranceZone,
+    ToleranceMaterialCondition,
+};
 mod hatching;
 pub use guides::{DrawingGuide, DrawingGuideKind, DrawingGuideLine, DrawingGuideLineKind};
 pub use hatching::SectionHatching;
@@ -107,6 +113,10 @@ pub struct DrawingNote {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct DrawingDefinition {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub datum_features: Vec<DrawingDatumFeature>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub feature_control_frames: Vec<DrawingFeatureControlFrame>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sheet: Option<DrawingSheet>,
     pub id: String,
@@ -160,6 +170,8 @@ pub struct DrawingLabel {
 }
 #[derive(Clone, Debug, PartialEq)]
 pub struct GeneratedDrawing {
+    pub gdt_lines: Vec<DrawingPolyline>,
+    pub gdt_labels: Vec<DrawingLabel>,
     pub sheet_lines: Vec<DrawingPolyline>,
     pub sheet_labels: Vec<DrawingLabel>,
     pub id: String,
@@ -381,6 +393,12 @@ impl DrawingDefinition {
             .collect::<HashMap<_, _>>();
         validate_dimensions(&self.dimensions, &views, graph)?;
         guides::validate(&self.guides, &views, graph)?;
+        gdt::validate(
+            &self.datum_features,
+            &self.feature_control_frames,
+            &views,
+            graph,
+        )?;
         let mut ids = HashSet::new();
         for note in &self.notes {
             if note.id.is_empty() || !ids.insert(&note.id) || !finite_pair(note.position_mm) {
@@ -460,6 +478,8 @@ impl DrawingDefinition {
         vertices: &mut usize,
     ) -> Result<GeneratedDrawing, ModelError> {
         let mut drawing = GeneratedDrawing {
+            gdt_lines: Vec::new(),
+            gdt_labels: Vec::new(),
             sheet_lines: Vec::new(),
             sheet_labels: Vec::new(),
             id: self.id.clone(),
@@ -487,6 +507,12 @@ impl DrawingDefinition {
                 .checked_add(count)
                 .ok_or_else(|| ModelError::new("sheet vertex count overflow"))?;
         }
+        *vertices = vertices
+            .checked_add(gdt::vertex_count(
+                &self.datum_features,
+                &self.feature_control_frames,
+            )?)
+            .ok_or_else(|| ModelError::new("GD&T vertex count overflow"))?;
         let added = self
             .dimensions
             .iter()
@@ -518,6 +544,13 @@ impl DrawingDefinition {
             .iter()
             .map(|view| (view.id.as_str(), view))
             .collect::<HashMap<_, _>>();
+        gdt::append(
+            &self.datum_features,
+            &self.feature_control_frames,
+            &views,
+            graph,
+            &mut drawing,
+        )?;
         guides::append(&self.guides, &views, graph, &mut drawing)?;
         let context = dimensions::DimensionContext::new(&self.dimensions, graph)?;
         for dimension in &self.dimensions {
