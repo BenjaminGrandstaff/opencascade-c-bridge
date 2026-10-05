@@ -649,3 +649,98 @@ fn instance_placements_are_shown_and_edited_but_pattern_members_follow_their_rul
         assert_eq!(edit(&mut studio, bad).0, 422);
     }
 }
+
+#[test]
+fn instances_are_copied_and_deleted_unless_something_depends_on_them_and_revert_undoes() {
+    let directory = Directory::new();
+    let model = PathBuf::from(directory.model(&document()));
+    let mut studio = serve::Studio::load(&model, None).unwrap();
+    let change = |studio: &mut serve::Studio, body: serde_json::Value| {
+        let response = studio.handle("POST", "/api/instances", body.to_string().as_bytes());
+        let value: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+        (response.status, value)
+    };
+    let ids = |studio: &mut serve::Studio| -> Vec<String> {
+        get(studio, "/api/instances").1["instances"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|i| i["id"].as_str().unwrap().to_owned())
+            .collect()
+    };
+    let moved = json!({"translation_mm": [0.0, 80.0, 0.0], "rotation": null});
+    let (status, state) = change(
+        &mut studio,
+        json!({"add": {"source": "source", "placement": moved}}),
+    );
+    assert_eq!(
+        (status, state["added"].as_str()),
+        (200, Some("source-copy"))
+    );
+    assert_eq!(state["dirty"], true);
+    let (_, state) = change(&mut studio, json!({"add": {"source": "source"}}));
+    assert_eq!(state["added"], "source-copy2");
+    assert_eq!(
+        ids(&mut studio),
+        [
+            "member[0]",
+            "member[1]",
+            "source",
+            "source-copy",
+            "source-copy2"
+        ]
+    );
+    // A copy inherits the source's parameters and material.
+    assert_eq!(
+        studio
+            .handle(
+                "POST",
+                "/api/parameters",
+                br#"{"instance": "source", "set": {"thickness": 7}}"#
+            )
+            .status,
+        200
+    );
+    let copy = get(&mut studio, "/api/instance?id=source-copy").1;
+    assert_eq!(source_of(&copy), (7.0, "inherited".into()));
+    assert_eq!(copy["placement"], moved);
+    let (_, gltf) = get(&mut studio, "/api/model.gltf");
+    assert_eq!(gltf["nodes"].as_array().unwrap().len(), 5);
+
+    // Instances others depend on cannot be deleted; others can.
+    for (body, fragment) in [
+        (json!({"delete": "source"}), "pattern 'row'"),
+        (json!({"delete": "member[0]"}), "pattern 'row'"),
+        (json!({"delete": "nobody"}), "unknown"),
+        (json!({"add": {"source": "nobody"}}), "unknown"),
+        (
+            json!({"add": {"source": "source", "id": "member[0]"}}),
+            "exists",
+        ),
+        (json!({"add": {"source": "source", "id": " "}}), "empty"),
+        (json!({"rename": "x"}), "invalid"),
+    ] {
+        let (status, value) = change(&mut studio, body.clone());
+        assert_eq!(status, 422, "{body}");
+        assert!(
+            value["error"].as_str().unwrap().contains(fragment),
+            "{body}: {value}"
+        );
+    }
+    assert_eq!(
+        change(&mut studio, json!({"delete": "source-copy2"})).0,
+        200
+    );
+    assert_eq!(ids(&mut studio).len(), 4);
+
+    // Revert discards every unsaved change.
+    let (status, state) = {
+        let response = studio.handle("POST", "/api/revert", b"{}");
+        (
+            response.status,
+            serde_json::from_slice::<serde_json::Value>(&response.body).unwrap(),
+        )
+    };
+    assert_eq!((status, state["dirty"].as_bool()), (200, Some(false)));
+    assert_eq!(ids(&mut studio), ["member[0]", "member[1]", "source"]);
+}

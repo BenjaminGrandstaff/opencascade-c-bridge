@@ -104,22 +104,157 @@ impl Studio {
         }
         self.seen = now;
         self.pending = None;
-        let loaded = fs::read_to_string(&self.model)
-            .map_err(|e| e.to_string())
-            .and_then(|text| ModelDocument::from_json(&text).map_err(|e| e.to_string()))
-            .and_then(|document| {
-                gltf(&document, self.output.as_deref()).map(|gltf| (document, gltf))
-            });
-        match loaded {
-            Ok((document, gltf)) => {
-                self.document = document;
-                self.gltf = gltf;
-                self.version += 1;
-                self.dirty = false;
-                self.error = None;
-            }
-            Err(error) => self.error = Some(format!("file change not loaded: {error}")),
+        if let Err(error) = self.reload() {
+            self.error = Some(format!("file change not loaded: {error}"));
         }
+    }
+
+    /// Replaces the model with the file's contents, discarding unsaved edits.
+    fn reload(&mut self) -> Result<(), String> {
+        let text = fs::read_to_string(&self.model).map_err(|e| e.to_string())?;
+        let document = ModelDocument::from_json(&text).map_err(|e| e.to_string())?;
+        let gltf = gltf(&document, self.output.as_deref())?;
+        self.seen = stamp(&self.model);
+        self.document = document;
+        self.gltf = gltf;
+        self.version += 1;
+        self.dirty = false;
+        self.error = None;
+        Ok(())
+    }
+
+    /// Validates an edited document like a saved file (by a JSON round trip),
+    /// regenerates it, and only then makes it current.
+    fn commit(&mut self, document: ModelDocument) -> Result<ModelDocument, String> {
+        let document = document
+            .to_json_pretty()
+            .and_then(|text| ModelDocument::from_json(&text))
+            .map_err(|e| e.to_string())?;
+        let gltf = gltf(&document, self.output.as_deref())?;
+        self.document = document.clone();
+        self.gltf = gltf;
+        self.version += 1;
+        self.dirty = true;
+        self.error = None;
+        Ok(document)
+    }
+
+    /// Adds a clone of `source` (inheriting its parameters, in its frame) or
+    /// deletes an instance, with its own material assignment. Anything still
+    /// referring to a deleted instance (clones, patterns, relationships,
+    /// drawings) makes validation refuse the change. Returns the new id.
+    fn change_instances(&mut self, body: &[u8]) -> Result<Option<String>, String> {
+        #[derive(serde::Deserialize)]
+        #[serde(deny_unknown_fields, rename_all = "snake_case")]
+        enum Change {
+            Add {
+                source: String,
+                #[serde(default)]
+                id: Option<String>,
+                #[serde(default)]
+                placement: Option<PlacementView>,
+            },
+            Delete(String),
+        }
+        let change: Change =
+            serde_json::from_slice(body).map_err(|e| format!("invalid instance change: {e}"))?;
+        let mut document = self.document.clone();
+        let added = match change {
+            Change::Add {
+                source,
+                id,
+                placement,
+            } => {
+                let original = document
+                    .instances
+                    .iter()
+                    .find(|node| node.id() == source)
+                    .ok_or_else(|| format!("unknown instance '{source}'"))?;
+                let taken = |id: &str| document.instances.iter().any(|node| node.id() == id);
+                let id = match id {
+                    Some(id) if id.trim().is_empty() => return Err("instance id is empty".into()),
+                    Some(id) if taken(&id) => {
+                        return Err(format!("instance '{id}' already exists"));
+                    }
+                    Some(id) => id,
+                    None => (1..)
+                        .map(|n| {
+                            if n == 1 {
+                                format!("{source}-copy")
+                            } else {
+                                format!("{source}-copy{n}")
+                            }
+                        })
+                        .find(|id| !taken(id))
+                        .expect("an unused id"),
+                };
+                let placement = match placement {
+                    Some(view) => view.placement()?,
+                    None => original.placement(),
+                };
+                let frame = original.frame().map(str::to_owned);
+                document.instances.push(InstanceNode::Clone {
+                    id: id.clone(),
+                    source,
+                    overrides: HashMap::new(),
+                    placement,
+                    frame,
+                    provenance: "occt-view".into(),
+                });
+                Some(id)
+            }
+            Change::Delete(id) => {
+                // Name what depends on it rather than the validation failure.
+                let mut clones: Vec<&str> = document
+                    .instances
+                    .iter()
+                    .filter_map(|node| match node {
+                        InstanceNode::Clone {
+                            id: clone, source, ..
+                        } if *source == id => Some(clone.as_str()),
+                        _ => None,
+                    })
+                    .collect();
+                clones.sort_unstable();
+                if let Some(pattern) = document
+                    .patterns
+                    .iter()
+                    .find(|p| p.source == id || p.member(&id).is_some())
+                {
+                    return Err(format!(
+                        "'{id}' belongs to pattern '{}'; edit the pattern instead",
+                        pattern.id
+                    ));
+                }
+                if !clones.is_empty() {
+                    let shown = clones
+                        .iter()
+                        .take(5)
+                        .copied()
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    let more = clones.len().saturating_sub(5);
+                    return Err(format!(
+                        "'{id}' cannot be deleted while {shown}{} {} cloned from it",
+                        if more > 0 {
+                            format!(" and {more} more")
+                        } else {
+                            String::new()
+                        },
+                        if clones.len() == 1 { "is" } else { "are" },
+                    ));
+                }
+                let before = document.instances.len();
+                document.instances.retain(|node| node.id() != id);
+                if document.instances.len() == before {
+                    return Err(format!("unknown instance '{id}'"));
+                }
+                document.assembly.material_assignments.remove(&id);
+                None
+            }
+        };
+        self.commit(document)?;
+        Ok(added)
     }
 
     fn state(&self) -> Value {
@@ -241,11 +376,13 @@ impl Studio {
                 }
             }
         }
-        // Round-trip through JSON so the edit is validated like a saved file.
-        let document = document
-            .to_json_pretty()
-            .and_then(|text| ModelDocument::from_json(&text))
-            .map_err(|e| e.to_string())?;
+        let previous = (
+            self.document.clone(),
+            self.gltf.clone(),
+            self.version,
+            self.dirty,
+        );
+        let document = self.commit(document)?;
         // Loading can re-derive placements (pattern members follow their rule),
         // so a placement that did not stick is refused rather than ignored.
         if let (Some(instance), Some(requested)) = (&edit.instance, &edit.placement) {
@@ -255,17 +392,12 @@ impl Studio {
                 .find(|node| node.id() == instance)
                 .ok_or_else(|| format!("unknown instance '{instance}'"))?;
             if !PlacementView::from(node.placement())?.close_to(requested) {
+                (self.document, self.gltf, self.version, self.dirty) = previous;
                 return Err(format!(
                     "the placement of '{instance}' is set by its pattern; edit the pattern instead"
                 ));
             }
         }
-        let gltf = gltf(&document, self.output.as_deref())?;
-        self.document = document;
-        self.gltf = gltf;
-        self.version += 1;
-        self.dirty = true;
-        self.error = None;
         Ok(())
     }
 
@@ -374,6 +506,18 @@ impl Studio {
             ("POST", "/api/parameters") => match self.edit(body) {
                 Ok(()) => Response::json(200, &self.state()),
                 Err(error) => Response::error(422, &error),
+            },
+            ("POST", "/api/instances") => match self.change_instances(body) {
+                Ok(added) => {
+                    let mut state = self.state();
+                    state["added"] = json!(added);
+                    Response::json(200, &state)
+                }
+                Err(error) => Response::error(422, &error),
+            },
+            ("POST", "/api/revert") => match self.reload() {
+                Ok(()) => Response::json(200, &self.state()),
+                Err(error) => Response::error(500, &error),
             },
             ("POST", "/api/save") => match self.save() {
                 Ok(()) => Response::json(200, &self.state()),

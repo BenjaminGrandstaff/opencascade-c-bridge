@@ -97,7 +97,19 @@ rotation (axis, angle in degrees, and the point the axis passes through) in
 millimeters, relative to its assembly frame when it has one. Changing a field
 moves the instance; an angle of 0 removes the rotation. Pattern members are
 placed by their pattern's rule, so a placement edit on a member is refused
-with a message instead of being silently undone. The page needs no external files. The server listens only on
+with a message instead of being silently undone.
+
+**Add copy** adds a clone of the selected instance: it inherits the
+instance's parameters and material, sits in the same frame, and is placed
+one part-width (plus a quarter) further along X; the copy is selected. Its
+id is the source's id with `-copy` (then `-copy2`, …). **Delete** removes the
+selected instance with its own material assignment. An instance that others
+are cloned from, or that belongs to a pattern, cannot be deleted; the message
+names what depends on it. Other references, such as relationships or
+drawing annotations, are caught by the model's validation.
+
+**Revert** discards every unsaved change and reloads the file, so a deletion
+or any other edit can be undone until **Save**. The page needs no external files. The server listens only on
 127.0.0.1, accepts only `127.0.0.1` or `localhost` Host headers, and accepts
 edits only with the `X-OCCT-View` header that the page sends, which other
 sites' pages cannot add; it is a local editing tool, not something to expose.

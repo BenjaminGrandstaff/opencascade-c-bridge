@@ -74,6 +74,7 @@
   </div>
   <div class="actions">
     <button class="primary" id="save" disabled>Save</button>
+    <button id="revert" disabled title="Discard unsaved changes and reload the file">Revert</button>
     <button id="fit">Fit view</button>
   </div>
   <div class="muted" id="status"></div>
@@ -327,7 +328,71 @@ function renderParameters() {
   if (state && !state.parameters.length) {
     container.innerHTML = '<div class="muted">This family has no parameters.</div>';
   }
-  if (scope && instanceView?.placement) container.append(placementEditor(instanceView));
+  if (scope && instanceView?.placement) {
+    container.append(placementEditor(instanceView), instanceActions(instanceView));
+  }
+}
+
+/** Model-space X extent (mm) of the drawn instance, for spacing a copy. */
+function extentX(name) {
+  const node = parsed?.nodes.find((n) => n.name === name);
+  if (!node) return 0;
+  const { min, max } = parsed.meshes[node.mesh].bounds;
+  let low = Infinity;
+  let high = -Infinity;
+  for (const x of [min[0], max[0]]) {
+    for (const y of [min[1], max[1]]) {
+      for (const z of [min[2], max[2]]) {
+        const m = node.matrix;
+        const world = m[0] * x + m[4] * y + m[8] * z + m[12];
+        low = Math.min(low, world);
+        high = Math.max(high, world);
+      }
+    }
+  }
+  return (high - low) * 1000;
+}
+
+/** Add-copy and delete buttons for the selected instance. */
+function instanceActions(view) {
+  const row = document.createElement("div");
+  row.className = "actions";
+  const add = document.createElement("button");
+  add.type = "button";
+  add.textContent = "Add copy";
+  add.title = "Add a clone that inherits from this instance, one part-width along X";
+  add.addEventListener("click", async () => {
+    await flush();
+    const placement = structuredClone(view.placement);
+    placement.translation_mm[0] += Math.ceil(extentX(view.id) * 1.25);
+    await changeInstances({ add: { source: view.id, placement } });
+  });
+  const remove = document.createElement("button");
+  remove.type = "button";
+  remove.textContent = "Delete";
+  remove.title = "Remove this instance (Revert undoes it until you save)";
+  remove.addEventListener("click", async () => {
+    await flush();
+    await changeInstances({ delete: view.id });
+  });
+  row.append(add, remove);
+  return row;
+}
+
+async function changeInstances(body) {
+  try {
+    const next = await api("/api/instances", { method: "POST", body: JSON.stringify(body) });
+    editError = null;
+    await apply(next);
+    // Select the new copy, or nothing after a delete.
+    scope = next.added ?? "";
+    $("scope").value = scope;
+    highlight();
+    await loadInstanceView();
+  } catch (error) {
+    editError = `Change rejected: ${error.message}`;
+    $("error").textContent = editError;
+  }
 }
 
 /** Translation, rotation axis, angle and origin fields for one instance. */
@@ -399,6 +464,7 @@ async function apply(next) {
   $("family").textContent = next.family;
   $("model").textContent = next.model;
   $("save").disabled = !next.dirty;
+  $("revert").disabled = !next.dirty;
   $("save").textContent = next.dirty ? "Save" : "Saved";
   $("error").textContent = next.error ?? editError ?? "";
   if (next.version !== version) {
@@ -433,6 +499,17 @@ $("save").addEventListener("click", async () => {
   await flush();
   try {
     await apply(await api("/api/save", { method: "POST", body: "{}" }));
+  } catch (error) {
+    $("error").textContent = error.message;
+  }
+});
+$("revert").addEventListener("click", async () => {
+  batches.length = 0;
+  try {
+    editError = null;
+    await apply(await api("/api/revert", { method: "POST", body: "{}" }));
+    if (scope && !instanceIds.has(scope)) await setScope("");
+    else await loadInstanceView();
   } catch (error) {
     $("error").textContent = error.message;
   }
