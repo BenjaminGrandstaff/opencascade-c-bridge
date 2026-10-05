@@ -431,9 +431,9 @@ material modifiers, both exports, shared regeneration and native handle cleanup.
 Feature-of-size flags and geometric controls are manufacturing declarations.
 Anchors locate leaders on selected solid outputs; they do not identify persistent
 faces or establish datum simulators. Multi-level composite frames, common datums, targets,
-projected zones, advanced modifiers, measured datum-reference-frame solving, bonus/shift
-calculations, measured tolerance-zone inspection and semantic PMI exchange remain
-on the roadmap. References: [ASME Y14.5 scope and contents](https://www.asme.org/getmedia/da2ff89e-067b-4160-8e2e-53e6c7da1d3b/17707.pdf)
+projected zones, advanced modifiers, datum shift and semantic PMI exchange remain
+on the roadmap; measured simulators, bonus tolerance and zone evaluation for a
+supported subset are described in [Measured inspection](#measured-inspection-schema-68). References: [ASME Y14.5 scope and contents](https://www.asme.org/getmedia/da2ff89e-067b-4160-8e2e-53e6c7da1d3b/17707.pdf)
 and [NIST datum-system model](https://nvlpubs.nist.gov/nistpubs/jres/104/4/html/j44mac.htm).
 
 
@@ -502,3 +502,78 @@ frames with nominal coordinates. References:
 [NIST composite-tolerance data model](https://tsapps.nist.gov/publication/get_pdf.cfm?pub_id=821122),
 [NIST datum-system definitions](https://nvlpubs.nist.gov/nistpubs/jres/104/4/html/j44mac.htm)
 and [ASME training scope on single-segment and composite controls](https://www.asme.org/learning-development/find-course/vcpd757-gd-t-comprehensive-fundamentals-%28virtual-classroom%29).
+
+## Measured inspection (schema 68)
+
+`DrawingDefinition::evaluate_inspection(graph, record)` checks measured points
+against the drawing's controls and returns an `InspectionReport`. The
+`InspectionRecord` names the `drawing` and lists `MeasuredFeature { id,
+points_mm }` entries: `datum_features` by datum-feature ID and `controls` by
+feature-control-frame ID. Records are separate from the model document, so
+measuring parts does not change design intent.
+
+Points are in model coordinates at the current poses, as from a coordinate
+measuring machine aligned to the part. Fits start from the nominal orientations,
+so the remaining misalignment must be small. Nominal datum plane normals must
+point out of the material.
+
+Datum simulators follow the precedence order:
+
+- **Primary plane:** the minimum-zone orientation, placed against the outermost
+  measured points (constrained L∞).
+- **Secondary plane:** held perpendicular to the primary, free to rotate about
+  the primary normal.
+- **Tertiary plane:** fixed perpendicular to both and placed against its high
+  point.
+
+The three simulators build the measured frame the same way
+`nominal_planar_321` builds the nominal one, so a feature's measured coordinates
+can be compared directly with its nominal (basic) coordinates. The report lists
+the measured frame of each named three-plane datum reference frame.
+
+Supported controls:
+
+| Control | Measured as |
+|---|---|
+| Flatness | Minimum-zone width over all orientations |
+| Parallelism, perpendicularity, angularity (planar zone) | Zone width at the basic orientation to the measured datums; with a single datum, rotation about its normal stays free |
+| Position (diameter zone, axis normal to primary plane) | Twice the radial offset of the related actual mating envelope from true position, in the measured frame |
+
+For position, the mating envelope is the largest inscribed cylinder for
+internal features and the smallest circumscribed cylinder for external ones,
+both perpendicular to the primary datum. A control states size limits with the
+optional `size_limits: FeatureSizeLimits { lower, upper, internal }`. Size limits
+are only allowed on declared features of size, and position evaluation requires
+them, because `internal` selects the envelope type. At maximum material
+condition (MMC), the bonus is the mating size's departure from the MMC size. At
+least material condition (LMC), the zone is located on the minimum-material
+envelope axis, and the bonus is that envelope's departure from the LMC size. A
+size outside its limits fails the control.
+
+Each fit linearizes, solves a small linear program (a dual simplex with an
+n × n basis), and repeats. Widths and radii are then recomputed exactly for the
+final orientation or center, so a fit that stops early can only overstate a
+deviation. Plane points must not be collinear, and circle points must surround
+their center.
+
+**Report results.** Each control has one of three results:
+- `Evaluated`: deviation, tolerance, bonus, actual size and conformance.
+- `NotMeasured`: the record has no points for the control.
+- `NotEvaluated`: a stated reason, for unsupported cases such as composite
+  frames, datum shift at a material boundary, profile, runout, and form
+  controls other than flatness, or a datum feature that was not measured.
+
+The call fails outright for unknown or repeated IDs, non-finite points, a
+different drawing, or more than `MAX_INSPECTION_POINTS` (10 million) points.
+`InspectionReport::conforms()` is true only when every control was evaluated
+and conforms.
+
+**Cost.** Simulators are fitted once per distinct datum precedence prefix and
+shared across controls. Time is O(controls · datums) plus the fit costs, and each
+fit is linear in its points per simplex pivot. The scale benchmark evaluates
+10,000 MMC position controls of 72 points each, plus a 100,000-point flatness
+surface, against one shared frame.
+
+**Not yet covered.** Datum features of size, datum shift, pattern and composite
+evaluation, measured datum targets, profile against nominal surfaces,
+cylindricity, and runout. Measurement uncertainty is not modeled.

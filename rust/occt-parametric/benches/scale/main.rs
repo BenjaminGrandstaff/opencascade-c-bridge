@@ -33,6 +33,7 @@ mod drawing;
 mod expressions;
 mod graphs;
 mod holes;
+mod inspection;
 mod loft;
 mod memory;
 mod mesh;
@@ -154,6 +155,7 @@ fn main() -> ExitCode {
     outcomes.push(requirements::manufacturing_rules_case(definition));
     outcomes.push(drawing::drawing_case(definition));
     outcomes.push(drawing::assembly_drawing_case(definition));
+    outcomes.push(inspection::inspection_case(definition));
     outcomes.push(mesh::gltf_case(definition));
     outcomes.push(mesh::manufacturing_case());
     outcomes.push(sheet_metal::sheet_case());

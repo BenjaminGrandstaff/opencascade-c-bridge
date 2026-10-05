@@ -10,11 +10,15 @@ mod export;
 pub(crate) mod gdt;
 mod guides;
 pub use gdt::{
+    ControlInspection, ControlMeasurement, ControlResult, InspectionRecord, InspectionReport,
+    MAX_INSPECTION_POINTS, MeasuredDatumFrame, MeasuredFeature,
+};
+pub use gdt::{
     DatumMaterialBoundary, DatumPrecedence, DrawingCompositeRefinement,
     DrawingDatumCoordinateFrame, DrawingDatumFeature, DrawingDatumReference,
     DrawingDatumReferenceFrame, DrawingFeatureControlFrame, DrawingGdtAttachment,
-    GeometricCharacteristic, GeometricToleranceZone, ResolvedDrawingDatumReference,
-    ResolvedDrawingDatumReferenceFrame, ToleranceMaterialCondition,
+    FeatureSizeLimits, GeometricCharacteristic, GeometricToleranceZone,
+    ResolvedDrawingDatumReference, ResolvedDrawingDatumReferenceFrame, ToleranceMaterialCondition,
 };
 mod hatching;
 pub use guides::{DrawingGuide, DrawingGuideKind, DrawingGuideLine, DrawingGuideLineKind};

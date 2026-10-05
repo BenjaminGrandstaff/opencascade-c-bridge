@@ -11,16 +11,16 @@ tracks status and order.
 | C ABI (`src/`, `include/`) | ABI 44 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 67 | Active development |
+| `occt-parametric` (engineering layer) | Schema 68 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 93 + first-use integration 1 (+1 doc test), recipes 3, parametric 351 + merge driver 3 + motion command 16 + balance command 4 + drawing command 2 + branch command 2, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 93 + first-use integration 1 (+1 doc test), recipes 3, parametric 358 + merge driver 3 + motion command 16 + balance command 4 + drawing command 2 + branch command 2, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
 | Coverage | 93.61% lines overall, test code excluded; C++ 94.13% lines, 87.40% branches, 100% functions; Rust 93.42% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 100 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Scale benchmarks | 101 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
 
@@ -404,6 +404,20 @@ tracks status and order.
   error-bounded (Bezier, B-spline) extrema.
 
 ### Parametric layer
+
+- Measured GD&T inspection (schema 68): `evaluate_inspection` checks an
+  inspection record of measured points against a drawing. Planar datum
+  simulators are fitted in precedence order (constrained L∞) into a measured
+  3-2-1 frame. Flatness and planar parallelism/perpendicularity/angularity
+  report minimum-zone widths at the basic orientation. Position of axis
+  features normal to the primary datum uses the related mating envelope, with
+  MMC/LMC bonus from new optional `size_limits`. Fits are minimax linear
+  programs whose final widths are exact, so they never understate deviation.
+  Unsupported controls are reported, not guessed. Seven tests cover tilt
+  removal, datum contact, free rotation, bonus/size failure, far rotated
+  placements, validation and persistence. 10,000 position controls plus a
+  100,000-point surface (821,200 points) evaluate in 0.200 s (1 s budget).
+  See [Drawings](DRAWINGS.md#measured-inspection-schema-68).
 
 - Traceability (schema 67): family assumptions and requirement traces to
   features, parameters, and assumptions, validated and omitted when empty.
@@ -993,11 +1007,12 @@ scopes and inspected repo capabilities, not a full conformity audit.
    placement and typography, plus exact curve export. Current curves are sampled
    polylines; direct deviations and limits now render stacked values.
 2. **Structured GD&T** — [Y14.5](https://www.asme.org/codes-standards/find-codes-standards/y14-5-dimensioning-tolerancing):
-   measured datum simulators and broader reference-frame establishment,
-   multi-level composites, common datums and advanced modifiers, verified
-   tolerance-zone evaluation and measured inspection. Saved single/composite
-   controls and named datum frames express intent; nominal orthogonal-plane
-   coordinates do not calculate bonus tolerance, datum shift or conformity.
+   datum features of size and datum shift, non-planar or non-orthogonal
+   datum simulators, pattern and composite evaluation, profile against
+   nominal surfaces, cylindricity and runout, common datums and advanced
+   modifiers, and measurement uncertainty. Measured planar datum frames,
+   flatness, planar orientation zones and position with MMC/LMC bonus are
+   evaluated (schema 68).
 3. **3D manufacturing annotations and exchange** — [Y14.41](https://www.asme.org/codes-standards/find-codes-standards/y14-41-digital-product-definition-data-practices):
    structured PMI attached to persistent geometry, annotation views, dataset
    authority and revision rules, and verified semantic PMI exchange. Geometry

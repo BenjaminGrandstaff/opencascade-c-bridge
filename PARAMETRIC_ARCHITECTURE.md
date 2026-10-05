@@ -1381,6 +1381,11 @@ once, and temporary handles are released before numeric drawing data is returned
 SVG and DXF include a page frame and metadata title block. Bounded uniform curve
 sampling is an approximation; section hatching is not yet generated. See
 [Drawings](DRAWINGS.md) for coordinates, budgets, examples, and export contracts.
+Schema 68 keeps measurement out of the model document: an inspection record of
+measured points is evaluated against a drawing's GD&T by fitting datum
+simulators and minimax zones with small linear programs, reporting each control
+as evaluated, unmeasured or unsupported (see
+[Measured inspection](DRAWINGS.md#measured-inspection-schema-68)).
 
 ## Model revisions and change impact
 

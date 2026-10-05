@@ -2135,6 +2135,7 @@ fn gdt_page() -> DrawingDefinition {
     }
     page.feature_control_frames
         .push(DrawingFeatureControlFrame {
+            size_limits: None,
             datum_reference_frame: None,
             refinement: None,
             id: "position".into(),

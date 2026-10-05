@@ -14,6 +14,7 @@ mod face_colors;
 mod graph;
 mod hole_catalogs;
 mod holes;
+mod inspection;
 mod linkage;
 mod loft;
 mod math_functions;
