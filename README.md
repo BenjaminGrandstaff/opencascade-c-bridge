@@ -281,7 +281,11 @@ and detail drawings, datum dimensions, parameter notes, and metadata title block
 exported as SVG or DXF. See [Drawings](DRAWINGS.md) for the API and sampling limits.
 Schema 68 evaluates measured points against drawing GD&T: fitted datum
 simulators, flatness and orientation zones, and position with MMC/LMC bonus from
-stated size limits. Schema 63 adds two-row composite controls, reusable named datum-reference frames
+stated size limits (`DrawingSizeLimits`, also used for bonus arithmetic and
+supplied-axis position checks). Dimensional measurements are checked against
+saved tolerances, and the `occt-inspection-report` command writes a JSON report
+covering dimensions, supplied-axis positions and measured points; see
+[Drawings](DRAWINGS.md). Schema 63 adds two-row composite controls, reusable named datum-reference frames
 and nominal planar 3-2-1 coordinates. Schema 62 adds datum-feature symbols and structured GD&T feature-control frames
 with ordered datum references and material modifiers. Schema 61 adds ANSI/ISO paper presets, structured title blocks, sheet numbering
 and first-/third-angle projection symbols. Schema 60 adds configurable automatic section hatching, preserving holes and

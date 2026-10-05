@@ -15,12 +15,12 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 93 + first-use integration 1 (+1 doc test), recipes 3, parametric 358 + merge driver 3 + motion command 16 + balance command 4 + drawing command 2 + branch command 2, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 93 + first-use integration 1 (+1 doc test), recipes 3, parametric 370 + merge driver 3 + motion command 16 + balance command 4 + drawing command 2 + inspection command 5 + branch command 2, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
 | Coverage | 93.61% lines overall, test code excluded; C++ 94.13% lines, 87.40% branches, 100% functions; Rust 93.42% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 101 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Scale benchmarks | 105 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
 
@@ -29,11 +29,13 @@ tracks status and order.
   summary counts, and returns 2 for explicit limit/zone violations. Dimensions
   without acceptance limits retain distinct statuses. Invalid input creates no
   report; existing files and source inputs are protected. Position batches validate
-  and index named/inline controls once. Four command tests cover mixed reports,
+  and index named/inline controls once. Five command tests cover mixed reports, measured points,
   rejection, output protection, named batches and bit-exact floating JSON round
   trips. A benchmark checks 100,000 position measurements across 10,000 controls
-  in 0.055 s (10 s budget), without kernel handles. Measured datum fitting, composite freedoms, datum shift,
-  uncertainty and standards-conformity certification remain future work.
+  in 0.055 s (10 s budget), without kernel handles. Groups may also carry raw `points`, evaluated by the
+  measured GD&T inspection below and summarized as conforming, nonconforming
+  or not evaluated. Composite freedoms, datum shift, uncertainty and
+  standards-conformity certification remain future work.
   See [Drawings](DRAWINGS.md).
 
 - Dimensional measurement checks: symmetric, signed-deviation and explicit-limit
@@ -55,18 +57,18 @@ tracks status and order.
   units, offset/tilted axes, material conditions, invalid inputs and named frames;
   a 100,000-sample benchmark runs in 0.003 s (10 s budget), using constant
   extra storage and no kernel handles.
-  Fitted surfaces/datums, composite-zone freedoms, datum shift and unsampled
-  whole-feature conformity remain future work. See [Drawings](DRAWINGS.md).
+  This entry point takes an already-established frame; fitted datums and
+  envelopes come from measured GD&T inspection. See [Drawings](DRAWINGS.md).
 
-- Feature-size limits and bonus allowances (schema 64): persisted internal/external
+- Feature-size limits and bonus allowances (schema 68): persisted internal/external
   size limits, unit-aware MMC/LMC/RFS arithmetic, and independent total allowances
   for both position-composite rows. Out-of-limit sizes and invalid/overflowing
   values fail. Drawing exports preserve the specified control. Four tests cover
   material conditions, endpoints, units, rejection, persistence, migration and
   independent merges; a 10,000-allowance benchmark runs in 0.005 s
   (10 s budget) and uses no kernel handles.
-  Mating-envelope fitting, datum shift and measured conformity remain future
-  work. See [Drawings](DRAWINGS.md).
+  Mating envelopes fitted from measured points use these limits (see measured
+  GD&T inspection below). See [Drawings](DRAWINGS.md).
 
 - Composite controls and named datum frames (schema 63): two-segment position/
   profile frames with a shared characteristic cell, a tighter lower tolerance and

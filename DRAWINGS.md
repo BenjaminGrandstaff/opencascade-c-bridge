@@ -643,8 +643,13 @@ The model must contain the referenced drawings. A minimal dimensional request is
 }
 ```
 
-Each drawing group accepts optional `dimensions` and `positions` arrays and must
-contain at least one measurement. Drawing groups must have unique saved IDs;
+Each drawing group accepts optional `dimensions` and `positions` arrays and an
+optional `points` object, and must contain at least one measurement. `points`
+holds `datum_features` and `controls` lists of `{ "id", "points_mm" }` entries,
+evaluated as described in [Measured inspection](#measured-inspection-schema-68);
+the report lists each measured control's `result` with a `status` of
+`evaluated` (with `detail` holding deviation, tolerance, bonus, size and
+conformance) or `not_evaluated` (with the reason). Drawing groups must have unique saved IDs;
 repeated dimension/control IDs inside a group are allowed. A position record has
 `control`, length `size`, `nominal_axis { origin, direction }` and nonempty
 `samples` of `VectorQuantity` values. Length vectors use dimensioned x/y/z
@@ -656,14 +661,15 @@ batches resolve and index saved inline/named references once via
 The versioned `occb-inspection-report-v1` JSON includes the model schema version,
 ordered per-drawing results and summary counts of dimensional values inside or
 outside limits, dimensions without acceptance limits, and position samples inside
-or outside their zones. Length results use mm, angles use scalar radians; output
+or outside their zones, and measured controls that conform, do not conform, or
+were not evaluated. Length results use mm, angles use scalar radians; output
 includes the full typed evaluation, margins, allowance and worst-sample index.
 Basic/reference/untoleranced dimensions retain their distinct dispositions and
 are counted as having no acceptance limits. No model/drawing edits, native shape
 regeneration or implicit measurement-coordinate transform occurs.
 
 Exit status is 0 when a report was written with no explicit violations, 2 when a
-report was written with dimensional or position violations, and 1 for invalid
+report was written with dimensional, position or measured-control violations, and 1 for invalid
 input or an I/O error. A 0 status with dimensions lacking limits does not assert
 acceptance of those dimensions. Invalid/unsupported requests publish no report;
 existing files are refused, with exclusive output creation after evaluation.
@@ -713,10 +719,10 @@ Supported controls:
 
 For position, the mating envelope is the largest inscribed cylinder for
 internal features and the smallest circumscribed cylinder for external ones,
-both perpendicular to the primary datum. A control states size limits with the
-optional `size_limits: FeatureSizeLimits { lower, upper, internal }`. Size limits
-are only allowed on declared features of size, and position evaluation requires
-them, because `internal` selects the envelope type. At maximum material
+both perpendicular to the primary datum. Position evaluation requires the
+control's `size_limits` (see
+[Feature size limits](#feature-size-limits-and-tolerance-allowances)), because
+their `kind` selects the envelope type. At maximum material
 condition (MMC), the bonus is the mating size's departure from the MMC size. At
 least material condition (LMC), the zone is located on the minimum-material
 envelope axis, and the bonus is that envelope's departure from the LMC size. A
