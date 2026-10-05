@@ -50,6 +50,7 @@ fn fixture() -> (ModelDocument, DrawingDefinition) {
     let mut graph = InstanceGraph::new(&family);
     graph.add_base("part", HashMap::new(), "test").unwrap();
     let drawing = DrawingDefinition {
+        datum_reference_frames: Vec::new(),
         datum_features: Vec::new(),
         feature_control_frames: Vec::new(),
         sheet: None,
@@ -452,6 +453,8 @@ fn main() {
     }
     gdt.feature_control_frames = (0..10_000)
         .map(|i| DrawingFeatureControlFrame {
+            datum_reference_frame: None,
+            refinement: None,
             id: format!("position-{i}"),
             attachment: DrawingGdtAttachment {
                 view: "profile".into(),
@@ -519,6 +522,106 @@ fn main() {
     assert!(started.elapsed().as_secs_f64() < 10.0);
     println!(
         "10000 structured GD&T frames with datum/material modifiers and SVG/DXF exports: {:?} (10s budget), one shared variant",
+        started.elapsed()
+    );
+    let references = gdt.feature_control_frames[0].datums.clone();
+    gdt.datum_reference_frames.push(DrawingDatumReferenceFrame {
+        id: "ABC".into(),
+        datums: references.clone(),
+    });
+    for f in &mut gdt.feature_control_frames {
+        f.datums.clear();
+        f.datum_reference_frame = Some("ABC".into());
+        f.refinement = Some(DrawingCompositeRefinement {
+            tolerance: Quantity::length(0.05, LengthUnit::Millimeter),
+            datums: vec![references[0].clone()],
+        });
+    }
+    let started = Instant::now();
+    let generated = gdt
+        .generate(
+            &graph,
+            &session,
+            DrawingRenderOptions {
+                curve_samples: 8,
+                maximum_vertices: 3_000_000,
+            },
+        )
+        .unwrap();
+    assert_eq!(generated.generated_variants, 1);
+    assert_eq!(
+        generated
+            .gdt_lines
+            .iter()
+            .map(|l| l.points_mm.len())
+            .sum::<usize>(),
+        2_630_033
+    );
+    assert_eq!(
+        generated
+            .gdt_labels
+            .iter()
+            .filter(|l| l.text == "0.05 mm")
+            .count(),
+        10_000
+    );
+    assert!(generated.to_svg().contains("0.05 mm"));
+    assert!(generated.to_dxf().contains("0.05 mm"));
+    assert_eq!(session.shape_count().unwrap(), 0);
+    assert!(started.elapsed().as_secs_f64() < 10.0);
+    println!(
+        "10000 composite GD&T frames with a shared named datum frame and SVG/DXF exports: {:?} (10s budget), one shared variant",
+        started.elapsed()
+    );
+
+    let mut planar_family = document.family.clone();
+    for (datum, normal) in
+        planar_family
+            .datums
+            .iter_mut()
+            .zip([[0.0, 0.0, 1.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
+    {
+        let DatumKind::Point { origin } = datum.kind.clone() else {
+            panic!("point fixture")
+        };
+        datum.kind = DatumKind::Plane {
+            origin,
+            normal: VectorExpr::Literal(VectorQuantity::scalars(normal[0], normal[1], normal[2])),
+        };
+    }
+    let mut planar = InstanceGraph::new(&planar_family);
+    planar.add_base("part", HashMap::new(), "test").unwrap();
+    let mut datum_page = template.clone();
+    datum_page.datum_features = gdt.datum_features.clone();
+    datum_page.datum_reference_frames = (0..10_000)
+        .map(|i| DrawingDatumReferenceFrame {
+            id: format!("frame-{i}"),
+            datums: references
+                .iter()
+                .map(|r| DrawingDatumReference {
+                    datum_feature: r.datum_feature.clone(),
+                    boundary: DatumMaterialBoundary::Regardless,
+                })
+                .collect(),
+        })
+        .collect();
+    let started = Instant::now();
+    let resolved = datum_page.resolve_datum_reference_frames(&planar).unwrap();
+    assert_eq!(resolved.len(), 10_000);
+    for frame in resolved {
+        let nominal = frame.nominal_planar_321().unwrap();
+        assert_eq!(nominal.origin_mm, occt_bridge::Vec3::new(5.0, 5.0, 15.0));
+        assert_eq!(
+            nominal
+                .coordinates_mm(occt_bridge::Vec3::new(7.0, 8.0, 19.0))
+                .unwrap(),
+            occt_bridge::Vec3::new(2.0, 3.0, 4.0)
+        );
+    }
+    assert_eq!(session.shape_count().unwrap(), 0);
+    assert!(started.elapsed().as_secs_f64() < 10.0);
+    println!(
+        "10000 named datum frames resolved and nominal planar 3-2-1 coordinates: {:?} (10s budget), no kernel handles",
         started.elapsed()
     );
 }

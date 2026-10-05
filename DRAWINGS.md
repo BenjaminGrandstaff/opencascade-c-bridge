@@ -430,8 +430,75 @@ material modifiers, both exports, shared regeneration and native handle cleanup.
 
 Feature-of-size flags and geometric controls are manufacturing declarations.
 Anchors locate leaders on selected solid outputs; they do not identify persistent
-faces or establish datum simulators. Composite frames, common datums, targets,
-projected zones, advanced modifiers, datum-reference-frame solving, bonus/shift
+faces or establish datum simulators. Multi-level composite frames, common datums, targets,
+projected zones, advanced modifiers, measured datum-reference-frame solving, bonus/shift
 calculations, measured tolerance-zone inspection and semantic PMI exchange remain
 on the roadmap. References: [ASME Y14.5 scope and contents](https://www.asme.org/getmedia/da2ff89e-067b-4160-8e2e-53e6c7da1d3b/17707.pdf)
 and [NIST datum-system model](https://nvlpubs.nist.gov/nistpubs/jres/104/4/html/j44mac.htm).
+
+
+## Composite controls and named datum-reference frames
+
+Schema 63 adds `DrawingDefinition.datum_reference_frames`, a stable-ID collection
+of `DrawingDatumReferenceFrame { id, datums }`. A named frame has one to three
+ordered references to datum-feature IDs. Names must be unique and references
+must satisfy the same feature-of-size/boundary rules as inline controls.
+
+A feature-control frame may set `datum_reference_frame: "ABC"` instead of its
+inline `datums`. Setting both is rejected. Renaming/moving datum-feature labels
+or editing the shared named frame updates all dependent controls. Named-frame
+object order is irrelevant to semantic merges; its datum order is significant.
+
+Optional `refinement: DrawingCompositeRefinement` adds a lower segment for
+position, profile-line or profile-surface controls:
+
+```json
+"refinement": {
+  "tolerance": {"value": 0.05, "dimension": "length", "unit": "millimeter"},
+  "datums": [{"datum_feature": "primary", "boundary": "regardless"}]
+}
+```
+
+The original tolerance/datum fields describe the upper pattern-locating segment.
+The lower segment describes feature-relating refinement and inherits zone shape,
+material condition, units and precision. It must be strictly tighter both in
+normalized length and after display rounding. Its references may be empty or an
+unchanged prefix of the upper references, including material boundaries. This
+prefix restriction is the initial supported subset; other composite arrangements
+are rejected. The refinement is not a second independent position tolerance:
+its datum references express orientation of the refining pattern rather than
+independently locating that pattern by translation. No numerical zone evaluator
+or pattern-fit solver is implied by these annotations.
+
+SVG and DXF show one shared 16 mm tall characteristic cell, two 8 mm rows and a
+stepped right edge when the lower row is shorter. The same leader attaches the
+entire control. Both rows and modifiers count in the exact vertex reservation;
+large batches fail their shared budget before allocating output geometry.
+
+`resolve_datum_reference_frame(id, graph)` returns a named frame with datum IDs,
+labels, explicit primary/secondary/tertiary precedence, material boundaries and
+current world-space nominal datum geometry. `resolve_datum_reference_frames(graph)`
+validates once and resolves all frames using an indexed datum-feature lookup.
+The returned `ResolvedDrawingDatumReferenceFrame::nominal_planar_321()` supports
+three mutually orthogonal plane datums at RFS. It intersects those planes for the
+origin, uses the primary normal for +Z, the orthogonalized secondary normal for
++X, and their cross product for +Y. Reversing a tertiary normal does not reverse
+the right-handed axes. `DrawingDatumCoordinateFrame::coordinates_mm(point)`
+transforms world points into that frame in millimeters.
+
+The orthogonality bound is 1e-9 on unit-normal dot products. Intersection offsets
+are evaluated relative to the primary plane origin to reduce cancellation far
+from the world origin. Non-finite results, partial frames, point/axis datums,
+nonorthogonal planes and material-boundary shift requests fail explicitly. This
+is a nominal coordinate utility over model planes, not a measured 3-2-1 simulator,
+fitted datum establishment or evidence of manufacturing conformity.
+
+Named-reference indexing and batch resolution require O(frames + references)
+additional work and proportional storage, plus existing document validation,
+selected-output lookup and datum-frame resolution. Each nominal planar solve
+uses constant time/storage. Composite generation adds one bounded row per frame.
+Benchmarks exercise 10,000 composite controls with both exports and 10,000 named
+frames with nominal coordinates. References:
+[NIST composite-tolerance data model](https://tsapps.nist.gov/publication/get_pdf.cfm?pub_id=821122),
+[NIST datum-system definitions](https://nvlpubs.nist.gov/nistpubs/jres/104/4/html/j44mac.htm)
+and [ASME training scope on single-segment and composite controls](https://www.asme.org/learning-development/find-course/vcpd757-gd-t-comprehensive-fundamentals-%28virtual-classroom%29).

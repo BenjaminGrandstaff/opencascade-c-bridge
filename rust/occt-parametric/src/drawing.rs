@@ -10,9 +10,11 @@ mod export;
 pub(crate) mod gdt;
 mod guides;
 pub use gdt::{
-    DatumMaterialBoundary, DrawingDatumFeature, DrawingDatumReference, DrawingFeatureControlFrame,
-    DrawingGdtAttachment, GeometricCharacteristic, GeometricToleranceZone,
-    ToleranceMaterialCondition,
+    DatumMaterialBoundary, DatumPrecedence, DrawingCompositeRefinement,
+    DrawingDatumCoordinateFrame, DrawingDatumFeature, DrawingDatumReference,
+    DrawingDatumReferenceFrame, DrawingFeatureControlFrame, DrawingGdtAttachment,
+    GeometricCharacteristic, GeometricToleranceZone, ResolvedDrawingDatumReference,
+    ResolvedDrawingDatumReferenceFrame, ToleranceMaterialCondition,
 };
 mod hatching;
 pub use guides::{DrawingGuide, DrawingGuideKind, DrawingGuideLine, DrawingGuideLineKind};
@@ -113,6 +115,8 @@ pub struct DrawingNote {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct DrawingDefinition {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub datum_reference_frames: Vec<DrawingDatumReferenceFrame>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub datum_features: Vec<DrawingDatumFeature>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -396,6 +400,7 @@ impl DrawingDefinition {
         gdt::validate(
             &self.datum_features,
             &self.feature_control_frames,
+            &self.datum_reference_frames,
             &views,
             graph,
         )?;
@@ -511,6 +516,7 @@ impl DrawingDefinition {
             .checked_add(gdt::vertex_count(
                 &self.datum_features,
                 &self.feature_control_frames,
+                &self.datum_reference_frames,
             )?)
             .ok_or_else(|| ModelError::new("GD&T vertex count overflow"))?;
         let added = self
@@ -547,6 +553,7 @@ impl DrawingDefinition {
         gdt::append(
             &self.datum_features,
             &self.feature_control_frames,
+            &self.datum_reference_frames,
             &views,
             graph,
             &mut drawing,

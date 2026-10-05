@@ -1,5 +1,12 @@
 //! Structured drawing GD&T intent. No inspection or datum-simulator solving.
 use super::*;
+mod composite;
+mod datums;
+pub use composite::DrawingCompositeRefinement;
+pub use datums::{
+    DatumPrecedence, DrawingDatumCoordinateFrame, DrawingDatumReferenceFrame,
+    ResolvedDrawingDatumReference, ResolvedDrawingDatumReferenceFrame,
+};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -100,6 +107,10 @@ pub struct DrawingDatumReference {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DrawingFeatureControlFrame {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub datum_reference_frame: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub refinement: Option<DrawingCompositeRefinement>,
     pub id: String,
     pub attachment: DrawingGdtAttachment,
     pub characteristic: GeometricCharacteristic,
@@ -173,6 +184,7 @@ fn number(frame: &DrawingFeatureControlFrame) -> Result<String, ModelError> {
 pub(super) fn validate(
     features: &[DrawingDatumFeature],
     frames: &[DrawingFeatureControlFrame],
+    reference_frames: &[DrawingDatumReferenceFrame],
     views: &HashMap<&str, &DrawingView>,
     graph: &InstanceGraph<'_>,
 ) -> Result<(), ModelError> {
@@ -195,8 +207,12 @@ pub(super) fn validate(
         }
         anchor(&feature.attachment, views, graph)?;
     }
+    for frame in reference_frames {
+        validate_references(&frame.datums, &index)?;
+    }
     let mut ids = HashSet::new();
-    for frame in frames {
+    let resolved = effective_frames(frames, reference_frames)?;
+    for frame in &resolved {
         if frame.id.is_empty() || !ids.insert(&frame.id) {
             return Err(ModelError::new(
                 "feature control frames need unique nonempty IDs",
@@ -205,6 +221,7 @@ pub(super) fn validate(
         anchor(&frame.attachment, views, graph)?;
         number(frame)?;
         validate_control(frame)?;
+        composite::validate(frame, &index)?;
         validate_references(&frame.datums, &index)?;
     }
     Ok(())
@@ -374,6 +391,7 @@ fn curved_glyph(d: &mut GeneratedDrawing, p: [f64; 2], c: GeometricCharacteristi
 pub(super) fn append(
     features: &[DrawingDatumFeature],
     frames: &[DrawingFeatureControlFrame],
+    reference_frames: &[DrawingDatumReferenceFrame],
     views: &HashMap<&str, &DrawingView>,
     graph: &InstanceGraph<'_>,
     d: &mut GeneratedDrawing,
@@ -386,8 +404,8 @@ pub(super) fn append(
         text(d, [p[0] + 2.0, p[1] + 2.5], f.label.clone());
         leader(d, point, [p[0] + width / 2.0, p[1]], true);
     }
-    for f in frames {
-        append_frame(f, &index, views, graph, d)?;
+    for f in effective_frames(frames, reference_frames)? {
+        append_frame(&f, &index, views, graph, d)?;
     }
     Ok(())
 }
@@ -399,14 +417,36 @@ fn append_frame(
     d: &mut GeneratedDrawing,
 ) -> Result<(), ModelError> {
     let (point, p) = anchor(&f.attachment, views, graph)?;
+    if f.refinement.is_some() {
+        return composite::append(f, index, point, p, d);
+    }
     let value = number(f)?;
-    let diameter = f.zone == GeometricToleranceZone::Diameter;
-    let material = f.material != ToleranceMaterialCondition::Regardless;
-    let value_width = 4.0
-        + value.len() as f64 * 2.0
-        + if diameter { 6.0 } else { 0.0 }
-        + if material { 6.0 } else { 0.0 };
-    let mut cells = vec![8.0, value_width];
+    let cells = cell_widths(f, &value, index);
+    rectangle(d, p, cells.iter().sum());
+    leader(d, point, p, false);
+    glyph(d, [p[0] + 4.0, p[1] + 4.0], f.characteristic);
+    append_row(f, p, &value, &cells, index, d, true);
+    Ok(())
+}
+fn cell_widths(
+    f: &DrawingFeatureControlFrame,
+    value: &str,
+    index: &HashMap<&str, &DrawingDatumFeature>,
+) -> Vec<f64> {
+    let mut cells = vec![
+        8.0,
+        4.0 + value.len() as f64 * 2.0
+            + if f.zone == GeometricToleranceZone::Diameter {
+                6.0
+            } else {
+                0.0
+            }
+            + if f.material != ToleranceMaterialCondition::Regardless {
+                6.0
+            } else {
+                0.0
+            },
+    ];
     cells.extend(f.datums.iter().map(|r| {
         4.0 + index[r.datum_feature.as_str()].label.len() as f64 * 3.0
             + if r.boundary != DatumMaterialBoundary::Regardless {
@@ -415,9 +455,19 @@ fn append_frame(
                 0.0
             }
     }));
-    rectangle(d, p, cells.iter().sum());
-    leader(d, point, p, false);
-    glyph(d, [p[0] + 4.0, p[1] + 4.0], f.characteristic);
+    cells
+}
+fn append_row(
+    f: &DrawingFeatureControlFrame,
+    p: [f64; 2],
+    value: &str,
+    cells: &[f64],
+    index: &HashMap<&str, &DrawingDatumFeature>,
+    d: &mut GeneratedDrawing,
+    first_divider: bool,
+) {
+    let diameter = f.zone == GeometricToleranceZone::Diameter;
+    let material = f.material != ToleranceMaterialCondition::Regardless;
     let mut x = p[0] + 8.0;
     let mut tx = x + 2.0;
     if diameter {
@@ -425,7 +475,7 @@ fn append_frame(
         line(d, vec![[tx, p[1] + 1.5], [tx + 4.0, p[1] + 6.5]]);
         tx += 6.0;
     }
-    text(d, [tx, p[1] + 2.5], value.clone());
+    text(d, [tx, p[1] + 2.5], value.to_owned());
     if material {
         modifier(
             d,
@@ -434,7 +484,9 @@ fn append_frame(
         );
     }
     for (i, width) in cells.iter().enumerate().skip(1) {
-        line(d, vec![[x, p[1]], [x, p[1] + 8.0]]);
+        if i > 1 || first_divider {
+            line(d, vec![[x, p[1]], [x, p[1] + 8.0]]);
+        }
         x += width;
         if let Some(r) = f.datums.get(i - 1) {
             let label = &index[r.datum_feature.as_str()].label;
@@ -448,49 +500,97 @@ fn append_frame(
             }
         }
     }
-    Ok(())
 }
 
 /// O(annotations + datum references), reserves the exact generated line vertices.
 pub(crate) fn vertex_count(
     features: &[DrawingDatumFeature],
     frames: &[DrawingFeatureControlFrame],
+    reference_frames: &[DrawingDatumReferenceFrame],
 ) -> Result<usize, ModelError> {
     let base = features
         .len()
         .checked_mul(11)
         .ok_or_else(|| ModelError::new("GD&T vertex count overflow"))?;
-    frames.iter().try_fold(base, |sum, f| {
-        let glyph = match f.characteristic {
-            GeometricCharacteristic::Straightness => 2,
-            GeometricCharacteristic::Flatness => 5,
-            GeometricCharacteristic::Circularity | GeometricCharacteristic::ProfileLine => 33,
-            GeometricCharacteristic::Cylindricity | GeometricCharacteristic::Position => 37,
-            GeometricCharacteristic::ProfileSurface => 35,
-            GeometricCharacteristic::Parallelism | GeometricCharacteristic::Perpendicularity => 4,
-            GeometricCharacteristic::Angularity => 3,
-            GeometricCharacteristic::CircularRunout => 5,
-            GeometricCharacteristic::TotalRunout => 12,
-        };
-        let count = 10
-            + 2 * (1 + f.datums.len())
-            + glyph
-            + if f.zone == GeometricToleranceZone::Diameter {
-                35
+    effective_frames(frames, reference_frames)?
+        .iter()
+        .try_fold(base, |sum, f| {
+            let count = if f.refinement.is_some() {
+                16 + glyph_vertices(f.characteristic)
+                    + row_vertices(f)
+                    + row_vertices(&composite::refined(f))
             } else {
-                0
+                12 + glyph_vertices(f.characteristic) + row_vertices(f)
+            };
+            sum.checked_add(count)
+                .ok_or_else(|| ModelError::new("GD&T vertex count overflow"))
+        })
+}
+fn glyph_vertices(c: GeometricCharacteristic) -> usize {
+    match c {
+        GeometricCharacteristic::Straightness => 2,
+        GeometricCharacteristic::Flatness => 5,
+        GeometricCharacteristic::Circularity | GeometricCharacteristic::ProfileLine => 33,
+        GeometricCharacteristic::Cylindricity | GeometricCharacteristic::Position => 37,
+        GeometricCharacteristic::ProfileSurface => 35,
+        GeometricCharacteristic::Parallelism | GeometricCharacteristic::Perpendicularity => 4,
+        GeometricCharacteristic::Angularity => 3,
+        GeometricCharacteristic::CircularRunout => 5,
+        GeometricCharacteristic::TotalRunout => 12,
+    }
+}
+fn row_vertices(f: &DrawingFeatureControlFrame) -> usize {
+    2 * f.datums.len()
+        + if f.zone == GeometricToleranceZone::Diameter {
+            35
+        } else {
+            0
+        }
+        + if f.material != ToleranceMaterialCondition::Regardless {
+            33
+        } else {
+            0
+        }
+        + 33 * f
+            .datums
+            .iter()
+            .filter(|r| r.boundary != DatumMaterialBoundary::Regardless)
+            .count()
+}
+fn effective_frames<'a>(
+    frames: &'a [DrawingFeatureControlFrame],
+    reference_frames: &'a [DrawingDatumReferenceFrame],
+) -> Result<Vec<std::borrow::Cow<'a, DrawingFeatureControlFrame>>, ModelError> {
+    let mut index = HashMap::new();
+    for frame in reference_frames {
+        if frame.id.is_empty()
+            || frame.datums.is_empty()
+            || frame.datums.len() > 3
+            || index.insert(frame.id.as_str(), frame).is_some()
+        {
+            return Err(ModelError::new(
+                "datum reference frames need unique IDs and one to three ordered datums",
+            ));
+        }
+    }
+    frames
+        .iter()
+        .map(|f| {
+            let Some(id) = &f.datum_reference_frame else {
+                return Ok(std::borrow::Cow::Borrowed(f));
+            };
+            if !f.datums.is_empty() {
+                return Err(ModelError::new(
+                    "use either inline datums or a named datum reference frame",
+                ));
             }
-            + if f.material != ToleranceMaterialCondition::Regardless {
-                33
-            } else {
-                0
-            }
-            + 33 * f
-                .datums
-                .iter()
-                .filter(|r| r.boundary != DatumMaterialBoundary::Regardless)
-                .count();
-        sum.checked_add(count)
-            .ok_or_else(|| ModelError::new("GD&T vertex count overflow"))
-    })
+            let frame = index
+                .get(id.as_str())
+                .ok_or_else(|| ModelError::new("unknown named datum reference frame"))?;
+            let mut resolved = f.clone();
+            resolved.datums = frame.datums.clone();
+            resolved.datum_reference_frame = None;
+            Ok(std::borrow::Cow::Owned(resolved))
+        })
+        .collect()
 }

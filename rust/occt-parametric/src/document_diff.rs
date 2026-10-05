@@ -98,6 +98,7 @@ fn collections(path: &[DocumentPathSegment]) -> &'static [&'static str] {
             "guides",
             "datum_features",
             "feature_control_frames",
+            "datum_reference_frames",
         ]
     } else if matches!(path, [DocumentPathSegment::Field(name), DocumentPathSegment::Entity(_)] if name == "mesh_exports")
     {

@@ -258,6 +258,7 @@ fn integrated_schema_preserves_references_slice_drawings_and_joint_motion() {
         .unwrap();
     graph.set_instance_frame("part", Some("hinge")).unwrap();
     let drawing = DrawingDefinition {
+        datum_reference_frames: Vec::new(),
         datum_features: Vec::new(),
         feature_control_frames: Vec::new(),
         sheet: None,

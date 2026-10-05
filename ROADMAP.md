@@ -11,18 +11,30 @@ tracks status and order.
 | C ABI (`src/`, `include/`) | ABI 42 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 62 | Active development |
+| `occt-parametric` (engineering layer) | Schema 63 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 89 + first-use integration 1 (+1 doc test), recipes 3, parametric 334 + merge driver 3 + motion command 16 + balance command 4 + drawing command 2 + branch command 2, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
-| SonarQube (indexed Rust) | Gate OK, 0 issues, 93.8% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
+| Tests | C 5/5, bridge 89 + first-use integration 1 (+1 doc test), recipes 3, parametric 338 + merge driver 3 + motion command 16 + balance command 4 + drawing command 2 + branch command 2, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
-| Coverage | 93.56% lines overall, test code excluded; C++ 94.17% lines, 87.58% branches, 100% functions; Rust 93.33% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 93 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Coverage | 93.61% lines overall, test code excluded; C++ 94.13% lines, 87.40% branches, 100% functions; Rust 93.42% lines | `tools/coverage/run.sh` |
+| Scale benchmarks | 95 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
+
+- Composite controls and named datum frames (schema 63): two-segment position/
+  profile frames with a shared characteristic cell, a tighter lower tolerance and
+  an unchanged prefix of upper datum references. Named frames preserve ordered
+  precedence and boundary conditions, work in controls and stable-ID merges,
+  and resolve current world-space datum geometry in a batch. Nominal planar 3-2-1
+  coordinates use three orthogonal model planes at RFS, with explicit rejection
+  of partial/non-planar/skew/material-boundary cases. Four tests cover exports,
+  exact budgets, validation, migration, merges, scaled and far rotated frames.
+  Benchmarks cover 10,000 composites with both exports in 0.714 s and 10,000
+  named frames with nominal coordinates in 0.015 s (10 s budgets). Fitted simulators, datum shift
+  and actual tolerance-zone inspection remain future work. See [Drawings](DRAWINGS.md).
 
 - Structured drawing GD&T intent (schema 62): datum-feature symbols and
   single-row feature-control frames for twelve form/profile/orientation/position/
@@ -36,7 +48,7 @@ tracks status and order.
   benchmark verifies generation, both exports and native cleanup in 0.504 s
   (10 s budget).
   These are persisted manufacturing declarations, not measured conformity results.
-  Composite controls, datum simulators, bonus/shift calculations and tolerance-zone
+  Datum simulators, bonus/shift calculations and tolerance-zone
   inspection remain future work. See [Drawings](DRAWINGS.md).
 
 - Standard paper presets and projection symbols (schema 61): ANSI A–E and ISO
@@ -914,10 +926,11 @@ scopes and inspected repo capabilities, not a full conformity audit.
    placement and typography, plus exact curve export. Current curves are sampled
    polylines; direct deviations and limits now render stacked values.
 2. **Structured GD&T** — [Y14.5](https://www.asme.org/codes-standards/find-codes-standards/y14-5-dimensioning-tolerancing):
-   datum reference-frame establishment and simulators, composite controls and
-   advanced modifiers, verified tolerance-zone evaluation and measured inspection.
-   Saved single-row controls and datum-feature symbols now express manufacturing
-   intent; they do not calculate bonus tolerance, datum shift or conformity.
+   measured datum simulators and broader reference-frame establishment,
+   multi-level composites, common datums and advanced modifiers, verified
+   tolerance-zone evaluation and measured inspection. Saved single/composite
+   controls and named datum frames express intent; nominal orthogonal-plane
+   coordinates do not calculate bonus tolerance, datum shift or conformity.
 3. **3D manufacturing annotations and exchange** — [Y14.41](https://www.asme.org/codes-standards/find-codes-standards/y14-41-digital-product-definition-data-practices):
    structured PMI attached to persistent geometry, annotation views, dataset
    authority and revision rules, and verified semantic PMI exchange. Geometry
