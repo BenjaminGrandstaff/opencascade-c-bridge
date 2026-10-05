@@ -116,11 +116,24 @@ already arranges for clones that differ only in placement or frame, become one
 STEP part placed several times, so ten thousand pattern members write one part
 and ten thousand placement records. Parts are named `family/output
 [representative instance]` and colored from the instance material's
-appearance, converted from linear RGB to sRGB. Assembly frames are applied to
-each component's placement rather than written as nested sub-assemblies, and
-no file is written when arguments are invalid. A C++ test reads the file back
-through XCAF and checks the assembly, component and part names, shared parts,
-and colors.
+appearance, converted from linear RGB to sRGB. Since ABI 44
+(`occt_bridge_step_save_assembly_tree`), every assembly frame that holds an
+exported output, directly or through descendants, becomes a named
+sub-assembly nested as the frame tree is. A frame's location in its parent is
+its placement followed by its joint's current motion, passed as a rigid 3x4
+transform that the kernel checks for orthonormality and handedness. Shapes
+stay placed in model coordinates, and the kernel locates each component
+relative to its frame's accumulated transform, so model-space geometry is the
+same as a flat export. No file is written when arguments are invalid. A C++
+test reads a three-level tree back through XCAF and checks nesting, names,
+and that chained locations reproduce each shape's placement; 10,000 members in
+110 nested frames export in 0.702 s.
+
+OCCT's STEP name writer attaches names to the wrong occurrences when a shared
+part has an occurrence at the identity location (a base instance at the
+origin beside placed clones): it cannot tell that occurrence from the part
+itself. Such occurrences are given an explicit identity transform, which keeps
+them distinct without changing the geometry.
 
 ## Native viewer export
 

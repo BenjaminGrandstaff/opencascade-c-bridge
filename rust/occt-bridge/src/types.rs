@@ -338,6 +338,16 @@ pub struct MassProperties {
     pub relative_volume_error: f64,
 }
 
+/// A named sub-assembly of [`Session::save_step_assembly_tree`], placed in
+/// its parent by the rigid row-major 3x4 transform `[R | t]`, `p' = R p + t`.
+/// `parent` is `None` at the top level or an earlier node's index.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct StepNode<'a> {
+    pub name: &'a str,
+    pub parent: Option<usize>,
+    pub transform: [f64; 12],
+}
+
 /// One placed component of [`Session::save_step_assembly`].
 #[derive(Clone, Copy, Debug)]
 pub struct StepComponent<'a, 'session> {

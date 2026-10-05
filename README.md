@@ -3,7 +3,7 @@
 A small, stable C ABI over Open Cascade (OCCT), designed to be wrapped safely
 from Rust and other languages. Open Cascade C++ objects never cross the ABI.
 
-The current C ABI version is **43**.
+The current C ABI version is **44**.
 
 ## Current API
 
@@ -297,6 +297,8 @@ geometry and checking sampled collisions.
 
 `InstanceGraph::export_draw_view` writes a model's exact B-rep parts and a script that
 opens them, named and colored, in OCCT's DRAW viewer (`DRAWEXE -i -f view.tcl`).
+ABI 44 writes assembly frames as nested STEP sub-assemblies (joint motion
+included) and fixes component names on shared parts placed at the origin.
 ABI 43 adds exact per-face pull ranges, so `DraftAngle` requirements are exact
 on analytic faces. ABI 42 merges the same-domain faces and edges booleans leave split, with
 history, and schema 56 adds the `Unify` feature. ABI 41 measures face tangency where booleans record no continuity, and schema 55
