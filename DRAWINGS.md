@@ -432,7 +432,7 @@ Feature-of-size flags and geometric controls are manufacturing declarations.
 Anchors locate leaders on selected solid outputs; they do not identify persistent
 faces or establish datum simulators. Multi-level composite frames, common datums, targets,
 projected zones, advanced modifiers, measured datum-reference-frame solving, datum-shift
-calculations, measured tolerance-zone inspection and semantic PMI exchange remain
+calculations, tolerance-zone inspection beyond fixed supplied-axis samples and semantic PMI exchange remain
 on the roadmap. References: [ASME Y14.5 scope and contents](https://www.asme.org/getmedia/da2ff89e-067b-4160-8e2e-53e6c7da1d3b/17707.pdf)
 and [NIST datum-system model](https://nvlpubs.nist.gov/nistpubs/jres/104/4/html/j44mac.htm).
 
@@ -536,3 +536,40 @@ which distinguishes increased geometric allowance from boundary requirements.
 This arithmetic API does not verify those geometric boundaries or certify ASME
 conformity. A benchmark evaluates 10,000 composite allowances without native
 geometry handles.
+
+
+## Fixed cylindrical position sample checks
+
+`DrawingFeatureControlFrame.evaluate_position_samples(size, nominal_axis, samples)`
+checks dimensioned points on a supplied feature axis against a fixed cylindrical
+zone. `PositionToleranceAxis` has a length-valued origin and scalar direction;
+its direction is normalized. Points and the nominal axis must already be in the
+same established datum coordinate frame. The checker supports single-row diameter
+position controls with three distinct RFS datum references and saved size limits.
+MMC/LMC controlled-feature bonus comes from `tolerance_allowance`; datum material
+boundaries and composites fail explicitly rather than ignoring their freedoms.
+
+`PositionSampleEvaluation` reports allowance, sample count, first worst-sample
+index, maximum perpendicular distance, required diameter (twice that distance),
+diameter margin (allowance minus required diameter), and `samples_within_zone`.
+The zone includes its boundary; comparisons use normalized values without a
+rounding or acceptance epsilon. Empty samples, inconsistent units, nonfinite
+geometry, zero direction, arithmetic overflow and out-of-limit sizes fail.
+The axis is an infinite nominal line: displacement along it does not affect
+radial position, and no finite-depth or projected-zone requirement is inferred.
+
+`DrawingDefinition.evaluate_position_samples(control_id, graph, size, axis, samples)`
+validates saved intent and resolves named datum references before checking. It
+does not transform samples or establish the supplied frame from the model datums.
+Neither entry point fits measured surfaces, derives median/mating axes, solves
+datum simulators or shift, evaluates composite pattern freedoms, or proves
+whole-feature conformity between samples. A straight segment between samples
+inside a fixed cylinder is contained by convexity; unsampled curved/bent geometry
+requires more information. Use an existing resolved nominal 3-2-1 frame only
+when nominal model coordinates are the intended reference.
+
+This implements the fixed cylindrical-zone geometry, a subset of the position
+zones described in [NIST's assembly tolerance model](https://tsapps.nist.gov/publication/get_pdf.cfm?pub_id=822117).
+It does not constitute a standards-conformity inspection engine. Work is linear
+in sample count with constant extra storage; the benchmark checks 100,000 samples
+without kernel handles. Saved document schema remains 64.

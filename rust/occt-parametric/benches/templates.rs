@@ -646,4 +646,35 @@ fn main() {
         "10000 composite feature-size allowances: {:?} (10s budget), no kernel handles",
         started.elapsed()
     );
+    control.refinement = None;
+    control.datum_reference_frame = None;
+    control.datums = references;
+    for reference in &mut control.datums {
+        reference.boundary = DatumMaterialBoundary::Regardless;
+    }
+    let nominal_axis = PositionToleranceAxis {
+        origin: VectorQuantity::lengths(0.0, 0.0, 0.0, LengthUnit::Millimeter),
+        direction: VectorQuantity::scalars(0.0, 0.0, 1.0),
+    };
+    let samples: Vec<_> = (0..100_000)
+        .map(|i| VectorQuantity::lengths(0.03, 0.04, i as f64, LengthUnit::Millimeter))
+        .collect();
+    let started = Instant::now();
+    let result = control
+        .evaluate_position_samples(
+            Quantity::length(10.0, LengthUnit::Millimeter),
+            nominal_axis,
+            &samples,
+        )
+        .unwrap();
+    assert_eq!(result.sample_count, 100_000);
+    assert_eq!(result.worst_sample_index, 0);
+    assert_eq!(result.required_zone_diameter_mm, 0.1);
+    assert!(result.samples_within_zone);
+    assert_eq!(session.shape_count().unwrap(), 0);
+    assert!(started.elapsed().as_secs_f64() < 10.0);
+    println!(
+        "100000 fixed cylindrical position samples: {:?} (10s budget), no kernel handles",
+        started.elapsed()
+    );
 }

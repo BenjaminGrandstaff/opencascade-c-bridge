@@ -1,13 +1,15 @@
-//! Structured drawing GD&T intent. No inspection or datum-simulator solving.
+//! Drawing GD&T intent, size allowances and fixed sample checks. No datum fitting.
 use super::*;
 mod composite;
 mod datums;
+mod position;
 mod size;
 pub use composite::DrawingCompositeRefinement;
 pub use datums::{
     DatumPrecedence, DrawingDatumCoordinateFrame, DrawingDatumReferenceFrame,
     ResolvedDrawingDatumReference, ResolvedDrawingDatumReferenceFrame,
 };
+pub use position::{PositionSampleEvaluation, PositionToleranceAxis};
 pub use size::{DrawingSizeLimits, FeatureOfSizeKind, GeometricToleranceAllowance};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

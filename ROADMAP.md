@@ -15,14 +15,25 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 89 + first-use integration 1 (+1 doc test), recipes 3, parametric 342 + merge driver 3 + motion command 16 + balance command 4 + drawing command 2 + branch command 2, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 89 + first-use integration 1 (+1 doc test), recipes 3, parametric 346 + merge driver 3 + motion command 16 + balance command 4 + drawing command 2 + branch command 2, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
-| Coverage | 93.63% lines overall, test code excluded; C++ 94.17% lines, 87.58% branches, 100% functions; Rust 93.42% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 96 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Coverage | 93.66% lines overall, test code excluded; C++ 94.17% lines, 87.44% branches, 100% functions; Rust 93.47% lines | `tools/coverage/run.sh` |
+| Scale benchmarks | 97 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
+
+- Fixed cylindrical position sample checks: single-row diameter controls with
+  three RFS datum references, arbitrary nominal axis direction and supplied
+  axis points in an established reference frame. Results report controlled-feature
+  bonus, required diameter, margin and first worst-sample index. Named references
+  resolve through saved drawing validation. Four tests cover exact boundaries,
+  units, offset/tilted axes, material conditions, invalid inputs and named frames;
+  a 100,000-sample benchmark runs in 0.003 s (10 s budget), using constant
+  extra storage and no kernel handles.
+  Fitted surfaces/datums, composite-zone freedoms, datum shift and unsampled
+  whole-feature conformity remain future work. See [Drawings](DRAWINGS.md).
 
 - Feature-size limits and bonus allowances (schema 64): persisted internal/external
   size limits, unit-aware MMC/LMC/RFS arithmetic, and independent total allowances
@@ -938,7 +949,8 @@ scopes and inspected repo capabilities, not a full conformity audit.
 2. **Structured GD&T** — [Y14.5](https://www.asme.org/codes-standards/find-codes-standards/y14-5-dimensioning-tolerancing):
    measured datum simulators and broader reference-frame establishment,
    multi-level composites, common datums and advanced modifiers, verified
-   tolerance-zone evaluation and measured inspection. Saved single/composite
+   tolerance-zone evaluation beyond fixed supplied-axis samples and measured
+   inspection. Saved single/composite
    controls and named datum frames express intent; nominal orthogonal-plane
    coordinates and size-departure allowance arithmetic do not establish datum
    shift or measured conformity.

@@ -14,8 +14,8 @@ pub use gdt::{
     DrawingDatumCoordinateFrame, DrawingDatumFeature, DrawingDatumReference,
     DrawingDatumReferenceFrame, DrawingFeatureControlFrame, DrawingGdtAttachment,
     DrawingSizeLimits, FeatureOfSizeKind, GeometricCharacteristic, GeometricToleranceAllowance,
-    GeometricToleranceZone, ResolvedDrawingDatumReference, ResolvedDrawingDatumReferenceFrame,
-    ToleranceMaterialCondition,
+    GeometricToleranceZone, PositionSampleEvaluation, PositionToleranceAxis,
+    ResolvedDrawingDatumReference, ResolvedDrawingDatumReferenceFrame, ToleranceMaterialCondition,
 };
 mod hatching;
 pub use guides::{DrawingGuide, DrawingGuideKind, DrawingGuideLine, DrawingGuideLineKind};
