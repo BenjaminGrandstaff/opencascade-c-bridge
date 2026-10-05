@@ -1177,6 +1177,21 @@ pub(crate) fn verify_requirement(
                 minimum_radians: *minimum_radians,
             },
         )?,
+        VerificationRule::Undercut {
+            output,
+            pull_direction,
+            parting_origin,
+            tolerance_radians,
+            mesh,
+        } => undercut(
+            session,
+            id,
+            shape(shapes, output)?,
+            *mesh,
+            *pull_direction,
+            *parting_origin,
+            *tolerance_radians,
+        )?,
         VerificationRule::Overhang {
             output,
             build_direction,

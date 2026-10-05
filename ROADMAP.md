@@ -11,16 +11,16 @@ tracks status and order.
 | C ABI (`src/`, `include/`) | ABI 44 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 65 | Active development |
+| `occt-parametric` (engineering layer) | Schema 66 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 93 + first-use integration 1 (+1 doc test), recipes 3, parametric 347 + merge driver 3 + motion command 16 + balance command 4 + drawing command 2 + branch command 2, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 93 + first-use integration 1 (+1 doc test), recipes 3, parametric 349 + merge driver 3 + motion command 16 + balance command 4 + drawing command 2 + branch command 2, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
 | Coverage | 93.61% lines overall, test code excluded; C++ 94.13% lines, 87.40% branches, 100% functions; Rust 93.42% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 99 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Scale benchmarks | 100 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
 
@@ -404,6 +404,18 @@ tracks status and order.
   error-bounded (Bezier, B-spline) extrema.
 
 ### Parametric layer
+
+- Undercut requirements (schema 66): `VerificationRule::Undercut` clips the
+  output at a parting plane and requires faces above it to release along the
+  pull and faces below against it, exact on analytic faces through the pull
+  ranges and facet-sampled elsewhere; faces in the parting plane are
+  skipped. For a planar parting and straight pull the per-face test is
+  complete: trapping material is entered through a face turned against the
+  pull on the same side. Two tests cover a split cube, a tee parted below and at its head,
+  a rod parted at and above its axis (release -asin(0.4) measured exactly,
+  witnessed at the plane), a sampled loft, and validation. Both halves of a
+  400-hole plate are clipped and bounded in 0.90 s (3 s budget); the
+  10,000-instance manufacturing case adds the rule at 0.50 s.
 
 - Feature colors (schema 64): `FamilyDefinition::feature_colors` gives a
   feature a color for the faces it creates; later features carry colors to
@@ -1012,8 +1024,8 @@ scopes and inspected repo capabilities, not a full conformity audit.
 - Advanced ribs with general support-following and nonuniform closure.
 - Complete linkage branch enumeration, broader connected assembly solving, and
   bounds that preserve motion correlations in dense or deeply nested mechanisms.
-- Undercut detection against a parting line, exact (not sampled) minimum wall
-  thickness, and exact draft on freeform BREP faces.
+- Exact (not sampled) minimum wall thickness, exact draft on freeform BREP
+  faces, and non-planar parting surfaces.
 - Assumptions and requirement-to-feature trace links in the document schema.
 - Domain-specific expression functions (airfoil sections, material and
   catalog lookups).

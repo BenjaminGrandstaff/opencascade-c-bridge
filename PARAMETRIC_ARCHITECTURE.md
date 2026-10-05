@@ -32,7 +32,7 @@ Rust layers:
    length units; versioned families; persistent instance identity; sparse
    instance overrides; dependency-ordered feature execution; named results;
    requirement priorities and provenance; validity, volume, connectivity,
-   minimum radius, sampled wall thickness and overhang, exact-where-analytic draft, mass, datum
+   minimum radius, sampled wall thickness and overhang, exact-where-analytic draft and undercuts against a parting plane, mass, datum
    clearance, relationship-satisfaction, no-interference, and minimum-clearance
    verification with measured values, evidence quality, and witnesses;
    clone inheritance with cycle detection and explicit detachment; accepted

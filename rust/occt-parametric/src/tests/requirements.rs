@@ -1142,3 +1142,107 @@ fn draft_is_exact_on_analytic_faces_and_sampled_on_freeform_ones() {
     let taper = get("horn.under").measured.unwrap().value;
     assert!((taper - (2.0f64 / 30.0).atan()).abs() < 0.01, "{taper}");
 }
+
+fn undercut(output: &str, parting_height: f64) -> VerificationRule {
+    VerificationRule::Undercut {
+        output: output.into(),
+        pull_direction: up(),
+        parting_origin: VectorQuantity::lengths(0.0, 0.0, parting_height, LengthUnit::Millimeter),
+        tolerance_radians: 0.0,
+        mesh: MeshSettings::default(),
+    }
+}
+
+#[test]
+fn undercuts_are_found_against_the_parting_plane() {
+    let mut family = manufacturing_family();
+    // A rod lying along x, axis at z = 0, radius 5.
+    family.features.push(FeatureDefinition {
+        id: "rod".into(),
+        operation: FeatureOperation::Cylinder {
+            origin: point(0.0, 0.0, 0.0),
+            axis: VectorExpr::Literal(VectorQuantity::scalars(1.0, 0.0, 0.0)),
+            radius: ScalarExpr::Literal(mm(5.0)),
+            height: ScalarExpr::Literal(mm(20.0)),
+        },
+    });
+    let results = verify(
+        &family,
+        vec![
+            ("cube.middle", undercut("cube", 5.0)),
+            ("tee.low", undercut("tee", 5.0)),
+            ("tee.at_top", undercut("tee", 10.0)),
+            ("rod.axis", undercut("rod", 0.0)),
+            ("rod.high", undercut("rod", 2.0)),
+        ],
+    )
+    .unwrap();
+    let get = |id: &str| find(&results, id);
+    for id in ["cube.middle", "tee.at_top", "rod.axis"] {
+        let result = get(id);
+        assert_eq!(
+            result.status,
+            VerificationStatus::Passed,
+            "{id}: {}",
+            result.message
+        );
+        assert_eq!(result.evidence, Evidence::Exact, "{id}");
+        assert!(
+            result.measured.unwrap().value.abs() < 1e-9,
+            "{id}: vertical faces release at 0"
+        );
+    }
+    // Parted below the tee's head, the head's underside faces the wrong half.
+    let low = get("tee.low");
+    assert_eq!(low.status, VerificationStatus::Failed);
+    assert!(
+        low.message.contains("1 face(s) undercut"),
+        "{}",
+        low.message
+    );
+    assert!((low.measured.unwrap().value + std::f64::consts::FRAC_PI_2).abs() < 1e-9);
+    let witness = low.witness.as_ref().unwrap();
+    assert!(witness.subjects[0].contains("above"));
+    assert!((witness.points_mm[0].z - 10.0).abs() < 1e-9);
+    // Parted 2 mm above the rod's axis, the band of rod between the plane
+    // and the axis faces up from the lower half: release -asin(2 / 5),
+    // exactly, at the plane.
+    let high = get("rod.high");
+    assert_eq!(high.status, VerificationStatus::Failed);
+    assert_eq!(high.evidence, Evidence::Exact);
+    let value = high.measured.unwrap().value;
+    assert!((value + 0.4f64.asin()).abs() < 1e-9, "{value}");
+    let witness = high.witness.as_ref().unwrap();
+    assert!(witness.subjects[0].contains("below"));
+    assert!((witness.points_mm[0].z - 2.0).abs() < 1e-9);
+}
+
+#[test]
+fn undercut_rules_sample_freeform_faces_and_validate() {
+    // The horn tapers toward +y; parted across its axis, pulled along y.
+    let family = curved_draft_family();
+    let along_y = |tolerance_radians| VerificationRule::Undercut {
+        output: "horn".into(),
+        pull_direction: VectorQuantity::scalars(0.0, 1.0, 0.0),
+        parting_origin: VectorQuantity::lengths(0.0, 0.0, 0.0, LengthUnit::Millimeter),
+        tolerance_radians,
+        mesh: MeshSettings::default(),
+    };
+    let results = verify(&family, vec![("horn", along_y(0.0))]).unwrap();
+    let horn = find(&results, "horn");
+    assert_eq!(horn.status, VerificationStatus::Passed, "{}", horn.message);
+    assert!(matches!(horn.evidence, Evidence::Sampled { samples, .. } if samples > 0));
+    assert!(horn.message.contains("sampled on the tessellation"));
+    for tolerance in [-0.1, std::f64::consts::FRAC_PI_2] {
+        let error = verify(&family, vec![("bad", along_y(tolerance))]).unwrap_err();
+        assert!(error.message.contains("[0, pi/2)"), "{}", error.message);
+    }
+    let still = VerificationRule::Undercut {
+        output: "horn".into(),
+        pull_direction: VectorQuantity::scalars(0.0, 0.0, 0.0),
+        parting_origin: VectorQuantity::lengths(0.0, 0.0, 0.0, LengthUnit::Millimeter),
+        tolerance_radians: 0.0,
+        mesh: MeshSettings::default(),
+    };
+    assert!(verify(&family, vec![("still", still)]).is_err());
+}

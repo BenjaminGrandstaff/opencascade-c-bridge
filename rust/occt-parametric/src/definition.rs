@@ -839,13 +839,30 @@ pub enum VerificationRule {
         )]
         maximum_samples: usize,
     },
-    /// Sampled: every face not perpendicular to the dimensionless
-    /// `pull_direction` has facet draft of at least `minimum_radians`, in
-    /// [0, pi/2). Negative draft is an undercut.
+    /// Every face not perpendicular to the dimensionless `pull_direction`
+    /// has draft of at least `minimum_radians`, in [0, pi/2), leaning either
+    /// way. Exact on analytic faces (planes, cylinders, cones, and spheres or
+    /// tori whose extremes lie on the face); other faces use facet draft.
     DraftAngle {
         output: String,
         pull_direction: VectorQuantity,
         minimum_radians: f64,
+        #[serde(default, skip_serializing_if = "MeshSettings::is_default")]
+        mesh: MeshSettings,
+    },
+    /// With the mold parted by the plane through the length-valued
+    /// `parting_origin` normal to the dimensionless `pull_direction`, no
+    /// face above the plane turns against the pull, and none below turns
+    /// along it, by more than `tolerance_radians`, in [0, pi/2). Exact on
+    /// analytic faces, facet-sampled on others. For a planar parting and a
+    /// straight pull this is complete: material that traps a face along the
+    /// pull is entered through a face turned against it on the same side.
+    Undercut {
+        output: String,
+        pull_direction: VectorQuantity,
+        parting_origin: VectorQuantity,
+        #[serde(default)]
+        tolerance_radians: f64,
         #[serde(default, skip_serializing_if = "MeshSettings::is_default")]
         mesh: MeshSettings,
     },

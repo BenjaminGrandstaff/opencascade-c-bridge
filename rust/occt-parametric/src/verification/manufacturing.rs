@@ -341,3 +341,165 @@ fn draft(
     result.evidence = evidence;
     Ok(result)
 }
+
+/// The worst release of one mold half: the most negative sine of release
+/// angle (normal along the half's pull) and where it occurs.
+struct Release {
+    sine: f64,
+    face: usize,
+    point: Vec3,
+}
+
+/// Faces of one clipped half and their worst release, with the faces left to
+/// the tessellation and their facet count. `sign` is +1 above the parting
+/// plane (faces must turn along the pull) and -1 below.
+fn half_release(
+    session: &Session,
+    half: &Shape<'_>,
+    mesh: MeshSettings,
+    pull: Vec3,
+    origin: Vec3,
+    sign: f64,
+    tolerance: f64,
+) -> Result<(Vec<Release>, usize, usize), ModelError> {
+    let ranges = session.face_pull_ranges(half, pull)?;
+    let height = |point: Vec3| dot(subtract(point, origin), pull);
+    let mut releases = Vec::new();
+    let mut unmeasured = BTreeMap::new();
+    for (face, range) in ranges.iter().enumerate() {
+        let Some(range) = range else {
+            unmeasured.insert(face, ());
+            continue;
+        };
+        let (sine, point) = if sign > 0.0 {
+            range.minimum
+        } else {
+            (-range.maximum.0, range.maximum.1)
+        };
+        // The cut cap and any face lying in the parting plane part the mold.
+        let flat = range.minimum.0 == range.maximum.0 && range.minimum.0.abs() >= CAP;
+        if flat && height(point).abs() <= tolerance {
+            continue;
+        }
+        releases.push(Release { sine, face, point });
+    }
+    let mut samples = 0;
+    if !unmeasured.is_empty() {
+        let triangles = session.surface_mesh(half, mesh.options()?)?;
+        for triangle in triangles
+            .iter()
+            .filter(|triangle| unmeasured.contains_key(&triangle.face_index))
+        {
+            samples += 1;
+            let sine = sign * dot(unit_normal(triangle), pull);
+            if sine.is_finite() {
+                releases.push(Release {
+                    sine,
+                    face: triangle.face_index,
+                    point: centroid(triangle),
+                });
+            }
+        }
+    }
+    Ok((releases, unmeasured.len(), samples))
+}
+
+/// Splits the output at the parting plane and checks each half's faces
+/// release toward their mold half. Complete for a planar parting: a line
+/// along the pull that met material again would enter it through a face
+/// turned against the pull on the same side, which this rejects. O(faces) exact ranges per half plus one
+/// tessellation per half only when some face is unmeasured.
+pub(crate) fn undercut(
+    session: &Session,
+    id: &str,
+    shape: &Shape<'_>,
+    mesh: MeshSettings,
+    pull_direction: VectorQuantity,
+    parting_origin: VectorQuantity,
+    tolerance_radians: f64,
+) -> Result<VerificationResult, ModelError> {
+    if !(tolerance_radians.is_finite()
+        && (0.0..std::f64::consts::FRAC_PI_2).contains(&tolerance_radians))
+    {
+        return Err(ModelError::new(
+            "undercut tolerance must be in [0, pi/2) radians",
+        ));
+    }
+    let pull = pull_direction.normalized(Dimension::Scalar)?;
+    let magnitude = length(pull);
+    if !(magnitude.is_finite() && magnitude > 0.0) {
+        return Err(ModelError::new("pull direction must be finite and nonzero"));
+    }
+    let pull = scale(pull, 1.0 / magnitude);
+    let origin = parting_origin.normalized(Dimension::Length)?;
+    let bounds = session.bounds(shape)?;
+    let span = length(subtract(bounds.max, bounds.min));
+    let on_plane = (span * 1e-9).max(1e-9);
+    let limit = -tolerance_radians.sin() - 1e-9;
+    let mut worst: Option<(Release, &str)> = None;
+    let mut violations = 0;
+    let mut sampled_faces = 0;
+    let mut samples = 0;
+    for (side, keep_positive, sign) in [("above", true, 1.0), ("below", false, -1.0)] {
+        let half = session.clip_by_plane(shape, origin, pull, keep_positive)?;
+        let released = half_release(session, &half, mesh, pull, origin, sign, on_plane);
+        let _ = session.remove(half);
+        let (releases, unmeasured, facets) = released?;
+        sampled_faces += unmeasured;
+        samples += facets;
+        let mut bad_faces = std::collections::BTreeSet::new();
+        for release in releases {
+            if release.sine < limit {
+                bad_faces.insert(release.face);
+            }
+            if worst
+                .as_ref()
+                .is_none_or(|(current, _)| release.sine < current.sine)
+            {
+                worst = Some((release, side));
+            }
+        }
+        violations += bad_faces.len();
+    }
+    let sampled_note = if sampled_faces == 0 {
+        String::new()
+    } else {
+        format!("; {sampled_faces} face(s) sampled on the tessellation")
+    };
+    let mut result = match worst {
+        None => VerificationResult::exact(id, true, "no face to release".into()),
+        Some((release, side)) => {
+            let angle = release.sine.clamp(-1.0, 1.0).asin();
+            let result = VerificationResult::exact(
+                id,
+                violations == 0,
+                format!(
+                    "{violations} face(s) undercut; least release {angle} rad on face {} \
+                     {side} the parting plane{sampled_note}",
+                    release.face
+                ),
+            )
+            .measured(Measurement {
+                value: angle,
+                unit: MeasurementUnit::Radian,
+                minimum: Some(-tolerance_radians),
+                maximum: None,
+            });
+            if violations == 0 {
+                result
+            } else {
+                result.witnessed(Witness {
+                    subjects: vec![format!("face {} {side} the parting plane", release.face)],
+                    points_mm: vec![release.point],
+                })
+            }
+        }
+    };
+    if sampled_faces != 0 {
+        result.evidence = Evidence::Sampled {
+            samples,
+            unresolved: 0,
+        };
+    }
+    Ok(result)
+}

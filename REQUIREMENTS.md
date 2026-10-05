@@ -23,6 +23,7 @@ samples do not evaluate them.
 | `FitsWithin { output, envelope }` (schema 50) | The output's bounding box fits the length-valued envelope, such as a print bed, in some axis-aligned orientation. | Exact |
 | `MinimumWall { output, minimum, mesh, maximum_samples }` (schema 48) | No inward ray from a sampled facet crosses less than `minimum` of material. | Sampled |
 | `DraftAngle { output, pull_direction, minimum_radians, mesh }` (schema 48) | No face runs closer than `minimum_radians` to parallel with the pull. | Exact on analytic faces; freeform faces sampled |
+| `Undercut { output, pull_direction, parting_origin, tolerance_radians, mesh }` (schema 66) | No face above the parting plane turns against the pull, and none below turns along it, by more than `tolerance_radians`. | Exact on analytic faces; freeform faces sampled |
 | `Overhang { output, build_direction, maximum_radians, mesh }` (schema 48) | No downward facet above the build plate leans more than `maximum_radians` from vertical. | Sampled |
 
 Connectivity catches booleans that leave disjoint pieces, sewing that never
@@ -101,6 +102,24 @@ facet normals approximate curved surfaces to within the mesh deflection.
   way pass because they release from one mold half or the other. This is the
   usual CAD draft analysis; it does not detect undercuts, which depend on the
   parting line. (The mesh hand-off report keeps its signed per-face minimum.)
+- **`Undercut`** parts the mold by the plane through `parting_origin` normal
+  to `pull_direction`, clips the output into the halves above and below it,
+  and requires every face of the upper half to turn along the pull and every
+  face of the lower half against it, within `tolerance_radians` in
+  [0, pi/2). Faces lying in the parting plane, including the clip's caps, are
+  parting surfaces and are skipped. Analytic faces use their exact pull
+  ranges, so a release angle is measured exactly where it occurs (a rod
+  parted 2 mm above its 5 mm axis releases at -asin(0.4), at the plane);
+  other faces use their facets, and the result is then `Sampled`. For a
+  planar parting and a straight pull the per-face test is complete, with no
+  ray casting: if a line along the pull from a point above the plane met
+  material again, it would enter it through a face turned against the pull,
+  also above the plane, which the test already rejects (likewise below).
+  Pockets under overhangs and sealed cavities are therefore found through
+  the faces that close them. Freeform faces between facets, angles within
+  `tolerance_radians`, and non-planar parting surfaces are outside this
+  guarantee. The measured value is the least release angle, negative for an
+  undercut, with a witness on the worst face.
 - **`Overhang`** counts downward-facing facets, above the lowest build plane,
   that lean more than `maximum_radians`, in [0, pi/2], from vertical. Bridging,
   supports, and process settings are not modeled. The measured value is the

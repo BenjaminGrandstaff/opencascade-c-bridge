@@ -5,7 +5,7 @@ use super::*;
 use occt_bridge::EdgeConcavity;
 
 mod manufacturing;
-pub(crate) use manufacturing::{Screen, screen};
+pub(crate) use manufacturing::{Screen, screen, undercut};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum VerificationStatus {

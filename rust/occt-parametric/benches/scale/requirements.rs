@@ -312,6 +312,16 @@ pub(crate) fn manufacturing_rules_case(definition: &FamilyDefinition) -> Outcome
             },
         ),
         rule(
+            "undercut",
+            VerificationRule::Undercut {
+                output: "body".into(),
+                pull_direction: up(),
+                parting_origin: VectorQuantity::lengths(0.0, 0.0, 5.0, LengthUnit::Millimeter),
+                tolerance_radians: 0.0,
+                mesh: MeshSettings::default(),
+            },
+        ),
+        rule(
             "overhang",
             VerificationRule::Overhang {
                 output: "body".into(),
@@ -323,7 +333,7 @@ pub(crate) fn manufacturing_rules_case(definition: &FamilyDefinition) -> Outcome
     ]);
     let screened: &'static FamilyDefinition = Box::leak(Box::new(screened));
     timed(
-        "requirements 10000: wall, draft, overhang on one variant".into(),
+        "requirements 10000: wall, draft, undercut, overhang on one variant".into(),
         ms(3_000),
         Expectation::Required,
         || {

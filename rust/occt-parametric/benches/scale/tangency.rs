@@ -141,3 +141,37 @@ pub(crate) fn pull_ranges_case() -> Outcome {
         },
     )
 }
+
+/// The work of an undercut rule on the 400-hole stadium plate: clip at the
+/// mid-plane, then exact pull ranges for every face of both halves.
+pub(crate) fn undercut_case() -> Outcome {
+    timed(
+        format!("undercut screening: {MANY_HOLES}-hole stadium plate halves"),
+        ms(3_000),
+        Expectation::Required,
+        || {
+            let session = Session::new()?;
+            let plate = stadium_plate(&session)?;
+            let up = Vec3::new(0.0, 0.0, 1.0);
+            let start = Instant::now();
+            let mut faces = 0;
+            let mut unmeasured = 0;
+            for keep_positive in [true, false] {
+                let half =
+                    session.clip_by_plane(&plate, Vec3::new(0.0, 0.0, 5.0), up, keep_positive)?;
+                let ranges = session.face_pull_ranges(&half, up)?;
+                faces += ranges.len();
+                unmeasured += ranges.iter().filter(|range| range.is_none()).count();
+                session.remove(half)?;
+            }
+            let elapsed = start.elapsed();
+            if unmeasured != 0 {
+                return Err(failure(format!("{unmeasured} faces unmeasured")));
+            }
+            Ok(format!(
+                "{faces} half faces bounded exactly in {:.3} s",
+                elapsed.as_secs_f64()
+            ))
+        },
+    )
+}
