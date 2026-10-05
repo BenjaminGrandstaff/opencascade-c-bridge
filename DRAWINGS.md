@@ -573,6 +573,47 @@ zones described in [NIST's assembly tolerance model](https://tsapps.nist.gov/pub
 It does not constitute a standards-conformity inspection engine. Work is linear
 in sample count with constant extra storage; the benchmark checks 100,000 samples
 without kernel handles.
+
+
+## Dimensional measurement limits
+
+`DimensionTolerance.evaluate_measurement(nominal, measured)` checks a supplied
+nonnegative measurement against symmetric deviations, signed deviations or
+explicit limits. Lengths accept mixed units and return millimetre quantities;
+angular values use scalar radians and return radians. Inputs are not rounded,
+wrapped or converted to absolute values. Limits must be finite, nonnegative
+and contain nominal; signed deviations must bracket zero.
+
+`DimensionMeasurementEvaluation` returns normalized nominal/measured values,
+signed deviation, optional `DimensionMeasurementLimits` and a
+`DimensionMeasurementDisposition`. Limits include lower/upper values and signed
+margin to the nearer limit. Boundaries are included, with no acceptance epsilon:
+inside is `WithinLimits`, outside is `BelowLowerLimit` or `AboveUpperLimit`.
+A 10 mm nominal with ±0.125 mm allows 9.875–10.125 mm; a 10.25 mm supplied
+measurement returns +0.25 mm deviation and −0.125 mm margin.
+
+`None`, `Basic` and `Reference` return no limits and distinct dispositions
+`NoSpecifiedTolerance`, `BasicDimension` and `ReferenceDimension`. They do not
+silently become zero-tolerance or unrestricted acceptance checks. No title-block
+or note tolerance is inferred. Basic dimensions supply geometric-control intent;
+reference dimensions supply information. This distinction follows the concepts
+in [NIST's dimension and tolerance model](https://tsapps.nist.gov/publication/get_pdf.cfm?pub_id=821122)
+and [NIST's ANSI/ISO tolerancing comparison](https://tsapps.nist.gov/publication/get_pdf.cfm?pub_id=821115).
+
+`DrawingDefinition.evaluate_dimension_measurements(graph, measurements)` accepts
+`DrawingDimensionMeasurement { dimension, value }` and returns ordered
+`DrawingDimensionMeasurementResult` entries. It validates once and resolves
+current model nominal values, including projected horizontal/vertical/aligned
+lengths, radius, diameter and the minor angular dimension. Live hole callouts
+use the Hole feature's evaluated diameter, independent of the leader's datum span.
+Repeated IDs are allowed for repeated measurements; each nominal is cached in
+the batch. Paper scale, display unit and precision do not affect acceptance.
+Unknown IDs, inconsistent units, invalid tolerances and nonfinite/negative inputs
+fail the entire request without changing drawing or graph state. An empty batch
+returns no results after validation. This checks supplied values only; it does
+not acquire measurements, apply uncertainty/guard bands, verify threads or
+establish geometric/form conformity. A benchmark checks
+100,000 measurements across 10,000 saved dimensions with no native handles.
 ## Measured inspection (schema 68)
 
 `DrawingDefinition::evaluate_inspection(graph, record)` checks measured points

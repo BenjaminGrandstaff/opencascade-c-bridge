@@ -24,6 +24,17 @@ tracks status and order.
 
 ## Done
 
+- Dimensional measurement checks: symmetric, signed-deviation and explicit-limit
+  comparisons with unit-normalized nominal/measured values, signed deviations,
+  margins and inclusive boundaries. Basic/reference/untoleranced dimensions
+  return distinct dispositions without inferred acceptance limits. Saved batches
+  resolve live projected lengths, radii, diameters, angles and hole-feature sizes;
+  repeated measurements share cached nominal values. Four tests cover limits,
+  units, rejection, paper independence, angular values and edited hole parameters.
+  A benchmark checks 100,000 measurements across 10,000 saved dimensions in
+  0.036 s (10 s budget), without kernel handles. Measurement acquisition, uncertainty/guard bands and geometric
+  conformity remain future work. See [Drawings](DRAWINGS.md).
+
 - Fixed cylindrical position sample checks: single-row diameter controls with
   three RFS datum references, arbitrary nominal axis direction and supplied
   axis points in an established reference frame. Results report controlled-feature

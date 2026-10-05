@@ -3265,3 +3265,373 @@ fn saved_position_checks_resolve_named_references_without_mutating_drawings() {
             .is_err()
     );
 }
+
+#[test]
+fn dimensional_measurements_check_explicit_limits_units_and_exact_boundaries() {
+    let mm = |v| Quantity::length(v, LengthUnit::Millimeter);
+    for tolerance in [
+        DimensionTolerance::Symmetric {
+            deviation: mm(0.125),
+        },
+        DimensionTolerance::Deviations {
+            lower: mm(-0.125),
+            upper: Quantity::length(0.0125, LengthUnit::Centimeter),
+        },
+        DimensionTolerance::Limits {
+            lower: mm(9.875),
+            upper: mm(10.125),
+        },
+    ] {
+        for (value, disposition, margin) in [
+            (
+                9.75,
+                DimensionMeasurementDisposition::BelowLowerLimit,
+                -0.125,
+            ),
+            (9.875, DimensionMeasurementDisposition::WithinLimits, 0.0),
+            (10.0, DimensionMeasurementDisposition::WithinLimits, 0.125),
+            (10.125, DimensionMeasurementDisposition::WithinLimits, 0.0),
+            (
+                10.25,
+                DimensionMeasurementDisposition::AboveUpperLimit,
+                -0.125,
+            ),
+        ] {
+            let result = tolerance
+                .evaluate_measurement(Quantity::length(1.0, LengthUnit::Centimeter), mm(value))
+                .unwrap();
+            assert_eq!(result.nominal, mm(10.0));
+            assert_eq!(result.measured, mm(value));
+            assert_eq!(result.deviation, mm(value - 10.0));
+            assert_eq!(result.disposition, disposition);
+            let limits = result.limits.unwrap();
+            assert_eq!(limits.lower, mm(9.875));
+            assert_eq!(limits.upper, mm(10.125));
+            assert_eq!(limits.margin, mm(margin));
+        }
+    }
+    let zero = DimensionTolerance::Symmetric { deviation: mm(0.0) };
+    assert_eq!(
+        zero.evaluate_measurement(mm(10.0), mm(f64::from_bits(10.0f64.to_bits() + 1)))
+            .unwrap()
+            .disposition,
+        DimensionMeasurementDisposition::AboveUpperLimit
+    );
+    let unilateral = DimensionTolerance::Deviations {
+        lower: mm(0.0),
+        upper: mm(0.25),
+    };
+    assert_eq!(
+        unilateral
+            .evaluate_measurement(mm(10.0), mm(10.25))
+            .unwrap()
+            .disposition,
+        DimensionMeasurementDisposition::WithinLimits
+    );
+    let angle = DimensionTolerance::Symmetric {
+        deviation: Quantity::scalar(0.125),
+    };
+    let result = angle
+        .evaluate_measurement(Quantity::scalar(1.0), Quantity::scalar(1.125))
+        .unwrap();
+    assert_eq!(result.limits.unwrap().margin, Quantity::scalar(0.0));
+    assert_eq!(
+        result.disposition,
+        DimensionMeasurementDisposition::WithinLimits
+    );
+    let inch = DimensionTolerance::Limits {
+        lower: mm(25.0),
+        upper: mm(26.0),
+    };
+    assert_eq!(
+        inch.evaluate_measurement(
+            Quantity::length(1.0, LengthUnit::Inch),
+            Quantity::length(1.0, LengthUnit::Inch)
+        )
+        .unwrap()
+        .nominal,
+        mm(25.4)
+    );
+}
+#[test]
+fn dimensional_measurements_distinguish_uncontrolled_annotations_and_reject_bad_values() {
+    let mm = |v| Quantity::length(v, LengthUnit::Millimeter);
+    for (tolerance, disposition) in [
+        (
+            DimensionTolerance::None,
+            DimensionMeasurementDisposition::NoSpecifiedTolerance,
+        ),
+        (
+            DimensionTolerance::Basic,
+            DimensionMeasurementDisposition::BasicDimension,
+        ),
+        (
+            DimensionTolerance::Reference,
+            DimensionMeasurementDisposition::ReferenceDimension,
+        ),
+    ] {
+        let result = tolerance.evaluate_measurement(mm(10.0), mm(20.0)).unwrap();
+        assert_eq!(result.disposition, disposition);
+        assert_eq!(result.limits, None);
+        assert_eq!(result.deviation, mm(10.0));
+    }
+    let limits = DimensionTolerance::Limits {
+        lower: mm(9.0),
+        upper: mm(11.0),
+    };
+    for value in [
+        Quantity::scalar(10.0),
+        mm(-1.0),
+        mm(f64::NAN),
+        Quantity::length(f64::MAX, LengthUnit::Meter),
+        Quantity {
+            value: 10.0,
+            dimension: Dimension::Length,
+            unit: None,
+        },
+    ] {
+        assert!(limits.evaluate_measurement(mm(10.0), value).is_err());
+        assert!(limits.evaluate_measurement(value, mm(10.0)).is_err());
+    }
+    for tolerance in [
+        DimensionTolerance::Symmetric {
+            deviation: mm(-0.1),
+        },
+        DimensionTolerance::Symmetric {
+            deviation: mm(11.0),
+        },
+        DimensionTolerance::Symmetric {
+            deviation: Quantity::scalar(0.1),
+        },
+        DimensionTolerance::Deviations {
+            lower: mm(0.1),
+            upper: mm(0.2),
+        },
+        DimensionTolerance::Deviations {
+            lower: mm(-0.2),
+            upper: mm(-0.1),
+        },
+        DimensionTolerance::Deviations {
+            lower: mm(-11.0),
+            upper: mm(0.0),
+        },
+        DimensionTolerance::Limits {
+            lower: mm(11.0),
+            upper: mm(9.0),
+        },
+        DimensionTolerance::Limits {
+            lower: mm(-1.0),
+            upper: mm(11.0),
+        },
+        DimensionTolerance::Limits {
+            lower: mm(9.0),
+            upper: mm(9.5),
+        },
+        DimensionTolerance::Limits {
+            lower: mm(10.5),
+            upper: mm(11.0),
+        },
+        DimensionTolerance::Limits {
+            lower: mm(9.0),
+            upper: mm(f64::INFINITY),
+        },
+    ] {
+        assert!(tolerance.evaluate_measurement(mm(10.0), mm(10.0)).is_err());
+    }
+    let overflow = DimensionTolerance::Symmetric {
+        deviation: mm(f64::MAX),
+    };
+    assert!(
+        overflow
+            .evaluate_measurement(mm(f64::MAX), mm(f64::MAX))
+            .is_err()
+    );
+    assert_eq!(
+        DimensionTolerance::Symmetric { deviation: mm(0.0) }
+            .evaluate_measurement(mm(0.0), mm(0.0))
+            .unwrap()
+            .disposition,
+        DimensionMeasurementDisposition::WithinLimits
+    );
+}
+#[test]
+fn saved_dimension_measurements_follow_live_geometry_units_and_view_edits() {
+    let definition = annotated_family();
+    let mut graph = InstanceGraph::new(&definition);
+    graph.add_base("part", HashMap::new(), "test").unwrap();
+    let mut page = drawing();
+    page.notes.clear();
+    page.dimensions = vec![manufactured_dimension(
+        DimensionDirection::Horizontal,
+        DimensionTolerance::Symmetric {
+            deviation: Quantity::length(0.125, LengthUnit::Millimeter),
+        },
+    )];
+    let measurement = DrawingDimensionMeasurement {
+        dimension: "manufactured".into(),
+        value: Quantity::length(5.0, LengthUnit::Millimeter),
+    };
+    let before = page.clone();
+    let report = page
+        .evaluate_dimension_measurements(&graph, &[measurement.clone(), measurement.clone()])
+        .unwrap();
+    assert_eq!(report[0], report[1]);
+    assert_eq!(report[0].evaluation.nominal.value, 5.0);
+    assert_eq!(
+        report[0].evaluation.disposition,
+        DimensionMeasurementDisposition::WithinLimits
+    );
+    assert_eq!(page, before);
+    page.views[0].scale = 10.0;
+    page.views[0].paper_origin_mm = [1000.0, 500.0];
+    page.views[0].detail = Some(DrawingDetail {
+        minimum_mm: [-1.0, -1.0],
+        maximum_mm: [30.0, 30.0],
+    });
+    page.dimensions[0].precision = 0;
+    page.dimensions[0].presentation.length_unit = LengthUnit::Inch;
+    assert_eq!(
+        page.evaluate_dimension_measurements(&graph, std::slice::from_ref(&measurement))
+            .unwrap()[0],
+        report[0]
+    );
+    page.dimensions[0].direction = DimensionDirection::Diameter;
+    assert_eq!(
+        page.evaluate_dimension_measurements(&graph, std::slice::from_ref(&measurement))
+            .unwrap()[0]
+            .evaluation
+            .nominal
+            .value,
+        10.0
+    );
+    page.dimensions[0].direction = DimensionDirection::Radius;
+    assert_eq!(
+        page.evaluate_dimension_measurements(&graph, std::slice::from_ref(&measurement))
+            .unwrap()[0]
+            .evaluation
+            .nominal
+            .value,
+        5.0
+    );
+
+    page.dimensions[0].direction = DimensionDirection::Vertical;
+    page.dimensions[0].second = DatumRef::new("part", "y");
+    assert_eq!(
+        page.evaluate_dimension_measurements(&graph, std::slice::from_ref(&measurement))
+            .unwrap()[0]
+            .evaluation
+            .nominal
+            .value,
+        5.0
+    );
+    page.dimensions[0].direction = DimensionDirection::Aligned;
+    page.dimensions[0].first = DatumRef::new("part", "x");
+    let aligned = page
+        .evaluate_dimension_measurements(&graph, std::slice::from_ref(&measurement))
+        .unwrap();
+    assert!((aligned[0].evaluation.nominal.value - 50.0f64.sqrt()).abs() < 1e-12);
+    page.dimensions[0].direction = DimensionDirection::Horizontal;
+    page.dimensions[0].first = DatumRef::new("part", "origin");
+    page.dimensions[0].second = DatumRef::new("part", "corner");
+    graph
+        .set_override(
+            "part",
+            "width",
+            ParameterValue::Scalar(Quantity::length(20.0, LengthUnit::Millimeter)),
+        )
+        .unwrap();
+    assert_eq!(
+        page.evaluate_dimension_measurements(&graph, std::slice::from_ref(&measurement))
+            .unwrap()[0]
+            .evaluation
+            .nominal
+            .value,
+        20.0
+    );
+    page.dimensions[0].direction = DimensionDirection::Angular {
+        vertex: DatumRef::new("part", "origin"),
+    };
+    page.dimensions[0].first = DatumRef::new("part", "x");
+    page.dimensions[0].second = DatumRef::new("part", "y");
+    page.dimensions[0].presentation.tolerance = DimensionTolerance::Symmetric {
+        deviation: Quantity::scalar(0.01),
+    };
+    let angle = DrawingDimensionMeasurement {
+        dimension: "manufactured".into(),
+        value: Quantity::scalar(std::f64::consts::FRAC_PI_2),
+    };
+    let result = page
+        .evaluate_dimension_measurements(&graph, std::slice::from_ref(&angle))
+        .unwrap();
+    assert_eq!(result[0].evaluation.nominal, angle.value);
+    assert_eq!(
+        result[0].evaluation.disposition,
+        DimensionMeasurementDisposition::WithinLimits
+    );
+    assert!(
+        page.evaluate_dimension_measurements(&graph, &[measurement])
+            .is_err()
+    );
+    assert!(
+        page.evaluate_dimension_measurements(
+            &graph,
+            &[DrawingDimensionMeasurement {
+                dimension: "missing".into(),
+                value: angle.value
+            }]
+        )
+        .is_err()
+    );
+    assert!(
+        page.evaluate_dimension_measurements(&graph, &[])
+            .unwrap()
+            .is_empty()
+    );
+}
+#[test]
+fn saved_hole_measurements_use_feature_diameter_and_current_parameters() {
+    let definition = callout_family(HoleFinish::Plain, HoleExtent::ThroughAll);
+    let mut graph = InstanceGraph::new(&definition);
+    graph.add_base("part", HashMap::new(), "test").unwrap();
+    let mut page = callout_page();
+    page.dimensions[0].presentation.tolerance = DimensionTolerance::Symmetric {
+        deviation: Quantity::length(0.125, LengthUnit::Millimeter),
+    };
+    let measurements = [DrawingDimensionMeasurement {
+        dimension: "manufactured".into(),
+        value: Quantity::length(4.125, LengthUnit::Millimeter),
+    }];
+    let report = page
+        .evaluate_dimension_measurements(&graph, &measurements)
+        .unwrap();
+    assert_eq!(report[0].evaluation.nominal.value, 4.0);
+    assert_eq!(
+        report[0].evaluation.disposition,
+        DimensionMeasurementDisposition::WithinLimits
+    );
+    graph
+        .set_override(
+            "part",
+            "bore",
+            ParameterValue::Scalar(Quantity::length(5.0, LengthUnit::Millimeter)),
+        )
+        .unwrap();
+    let report = page
+        .evaluate_dimension_measurements(&graph, &measurements)
+        .unwrap();
+    assert_eq!(report[0].evaluation.nominal.value, 5.0);
+    assert_eq!(
+        report[0].evaluation.disposition,
+        DimensionMeasurementDisposition::BelowLowerLimit
+    );
+    page.dimensions[0]
+        .presentation
+        .hole
+        .as_mut()
+        .unwrap()
+        .output = "missing".into();
+    assert!(
+        page.evaluate_dimension_measurements(&graph, &measurements)
+            .is_err()
+    );
+}
