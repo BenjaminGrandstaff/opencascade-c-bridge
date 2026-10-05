@@ -3,6 +3,7 @@ use super::*;
 mod composite;
 mod datums;
 mod inspection;
+mod position;
 mod size;
 pub use composite::DrawingCompositeRefinement;
 pub use datums::{
@@ -13,6 +14,7 @@ pub use inspection::{
     ControlInspection, ControlMeasurement, ControlResult, InspectionRecord, InspectionReport,
     MAX_INSPECTION_POINTS, MeasuredDatumFrame, MeasuredFeature,
 };
+pub use position::{PositionSampleEvaluation, PositionToleranceAxis};
 pub use size::{DrawingSizeLimits, FeatureOfSizeKind, GeometricToleranceAllowance};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

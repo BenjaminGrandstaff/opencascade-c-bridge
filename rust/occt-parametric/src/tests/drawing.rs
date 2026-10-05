@@ -2973,3 +2973,295 @@ fn feature_size_limits_persist_migrate_merge_and_preserve_specified_exports() {
             .is_err()
     );
 }
+
+fn position_check_control() -> DrawingFeatureControlFrame {
+    let mut control = gdt_page().feature_control_frames.remove(0);
+    control.size_limits = Some(size_limits(FeatureOfSizeKind::Internal));
+    control.tolerance = Quantity::length(0.125, LengthUnit::Millimeter);
+    control.precision = 3;
+    control.material = ToleranceMaterialCondition::Regardless;
+    for reference in &mut control.datums {
+        reference.boundary = DatumMaterialBoundary::Regardless;
+    }
+    control
+}
+fn position_axis() -> PositionToleranceAxis {
+    PositionToleranceAxis {
+        origin: VectorQuantity::lengths(0.0, 0.0, 0.0, LengthUnit::Millimeter),
+        direction: VectorQuantity::scalars(0.0, 0.0, 1.0),
+    }
+}
+#[test]
+fn position_samples_report_boundary_margin_and_worst_point() {
+    let control = position_check_control();
+    let size = Quantity::length(11.0, LengthUnit::Millimeter);
+    let samples = [
+        VectorQuantity::lengths(0.0, 0.0, -1000.0, LengthUnit::Millimeter),
+        VectorQuantity::lengths(0.0625, 0.0, 1000.0, LengthUnit::Millimeter),
+        VectorQuantity::lengths(0.0625, 0.0, 0.0, LengthUnit::Millimeter),
+    ];
+    let result = control
+        .evaluate_position_samples(size, position_axis(), &samples)
+        .unwrap();
+    assert!(result.samples_within_zone);
+    assert_eq!(result.sample_count, 3);
+    assert_eq!(result.worst_sample_index, 1);
+    assert_eq!(result.maximum_radial_error_mm, 0.0625);
+    assert_eq!(result.required_zone_diameter_mm, 0.125);
+    assert_eq!(result.diameter_margin_mm, 0.0);
+    let outside = f64::from_bits(0.0625f64.to_bits() + 1);
+    let result = control
+        .evaluate_position_samples(
+            size,
+            position_axis(),
+            &[VectorQuantity::lengths(
+                outside,
+                0.0,
+                0.0,
+                LengthUnit::Millimeter,
+            )],
+        )
+        .unwrap();
+    assert!(!result.samples_within_zone);
+    assert!(result.diameter_margin_mm < 0.0);
+    let tilted = [
+        samples[0],
+        VectorQuantity::lengths(0.125, 0.0, 1000.0, LengthUnit::Millimeter),
+    ];
+    let result = control
+        .evaluate_position_samples(size, position_axis(), &tilted)
+        .unwrap();
+    assert!(!result.samples_within_zone);
+    assert_eq!(result.required_zone_diameter_mm, 0.25);
+    let mixed = [VectorQuantity {
+        x: Quantity::length(0.003, LengthUnit::Centimeter),
+        y: Quantity::length(0.04, LengthUnit::Millimeter),
+        z: Quantity::length(1.0, LengthUnit::Inch),
+    }];
+    let result = control
+        .evaluate_position_samples(size, position_axis(), &mixed)
+        .unwrap();
+    assert!((result.required_zone_diameter_mm - 0.1).abs() < 1e-15);
+    assert!(result.samples_within_zone);
+}
+#[test]
+fn position_samples_use_feature_bonus_and_arbitrary_fixed_axes() {
+    let mut control = position_check_control();
+    let samples = [VectorQuantity::lengths(
+        0.3125,
+        0.0,
+        100.0,
+        LengthUnit::Millimeter,
+    )];
+    for (kind, material, size) in [
+        (
+            FeatureOfSizeKind::Internal,
+            ToleranceMaterialCondition::Maximum,
+            10.5,
+        ),
+        (
+            FeatureOfSizeKind::External,
+            ToleranceMaterialCondition::Maximum,
+            11.5,
+        ),
+        (
+            FeatureOfSizeKind::Internal,
+            ToleranceMaterialCondition::Least,
+            11.5,
+        ),
+        (
+            FeatureOfSizeKind::External,
+            ToleranceMaterialCondition::Least,
+            10.5,
+        ),
+    ] {
+        control.size_limits = Some(size_limits(kind));
+        control.material = material;
+        let result = control
+            .evaluate_position_samples(
+                Quantity::length(size, LengthUnit::Millimeter),
+                position_axis(),
+                &samples,
+            )
+            .unwrap();
+        assert_eq!(result.allowance.bonus_mm, 0.5);
+        assert_eq!(result.diameter_margin_mm, 0.0);
+        assert!(result.samples_within_zone);
+    }
+    control.material = ToleranceMaterialCondition::Regardless;
+    let mut nominal = PositionToleranceAxis {
+        origin: VectorQuantity::lengths(1e6, -1e6, 3e5, LengthUnit::Millimeter),
+        direction: VectorQuantity::scalars(f64::MAX, f64::MAX, 0.0),
+    };
+    let samples = [VectorQuantity::lengths(
+        1e6 + 10.0,
+        -1e6 + 10.0,
+        3e5 + 0.03125,
+        LengthUnit::Millimeter,
+    )];
+    let result = control
+        .evaluate_position_samples(
+            Quantity::length(11.0, LengthUnit::Millimeter),
+            nominal,
+            &samples,
+        )
+        .unwrap();
+    assert!((result.required_zone_diameter_mm - 0.0625).abs() < 1e-12);
+    assert!(result.samples_within_zone);
+    nominal.direction = VectorQuantity::scalars(-1.0, -1.0, 0.0);
+    assert_eq!(
+        control
+            .evaluate_position_samples(
+                Quantity::length(11.0, LengthUnit::Millimeter),
+                nominal,
+                &samples
+            )
+            .unwrap(),
+        result
+    );
+}
+#[test]
+fn position_samples_reject_unsupported_controls_and_invalid_geometry() {
+    let original = position_check_control();
+    let size = Quantity::length(11.0, LengthUnit::Millimeter);
+    let points = [VectorQuantity::lengths(
+        0.0,
+        0.0,
+        0.0,
+        LengthUnit::Millimeter,
+    )];
+    for case in 0..9 {
+        let mut control = original.clone();
+        match case {
+            0 => control.characteristic = GeometricCharacteristic::Parallelism,
+            1 => control.zone = GeometricToleranceZone::Characteristic,
+            2 => {
+                control.refinement = Some(DrawingCompositeRefinement {
+                    tolerance: Quantity::length(0.05, LengthUnit::Millimeter),
+                    datums: Vec::new(),
+                })
+            }
+            3 => control.datum_reference_frame = Some("ABC".into()),
+            4 => {
+                control.datums.pop();
+            }
+            5 => control.datums[0].boundary = DatumMaterialBoundary::Maximum,
+            6 => control.datums[0].datum_feature.clear(),
+            7 => control.datums[1] = control.datums[0].clone(),
+            _ => control.size_limits = None,
+        }
+        assert!(
+            control
+                .evaluate_position_samples(size, position_axis(), &points)
+                .is_err(),
+            "case {case}"
+        );
+    }
+    assert!(
+        original
+            .evaluate_position_samples(size, position_axis(), &[])
+            .is_err()
+    );
+    assert!(
+        original
+            .evaluate_position_samples(
+                Quantity::length(9.0, LengthUnit::Millimeter),
+                position_axis(),
+                &points
+            )
+            .is_err()
+    );
+    for sample in [
+        VectorQuantity::scalars(0.0, 0.0, 0.0),
+        VectorQuantity::lengths(f64::NAN, 0.0, 0.0, LengthUnit::Millimeter),
+        VectorQuantity::lengths(f64::MAX, 0.0, 0.0, LengthUnit::Meter),
+        VectorQuantity::lengths(f64::MAX, f64::MAX, 0.0, LengthUnit::Millimeter),
+        VectorQuantity::lengths(f64::MAX, 0.0, 0.0, LengthUnit::Millimeter),
+    ] {
+        assert!(
+            original
+                .evaluate_position_samples(size, position_axis(), &[sample])
+                .is_err()
+        );
+    }
+    for direction in [
+        VectorQuantity::scalars(0.0, 0.0, 0.0),
+        VectorQuantity::scalars(f64::NAN, 1.0, 0.0),
+        VectorQuantity::lengths(0.0, 0.0, 1.0, LengthUnit::Millimeter),
+    ] {
+        assert!(
+            original
+                .evaluate_position_samples(
+                    size,
+                    PositionToleranceAxis {
+                        direction,
+                        ..position_axis()
+                    },
+                    &points
+                )
+                .is_err()
+        );
+    }
+    let mut nominal = position_axis();
+    nominal.origin = VectorQuantity::lengths(-f64::MAX, 0.0, 0.0, LengthUnit::Millimeter);
+    assert!(
+        original
+            .evaluate_position_samples(
+                size,
+                nominal,
+                &[VectorQuantity::lengths(
+                    f64::MAX,
+                    0.0,
+                    0.0,
+                    LengthUnit::Millimeter
+                )]
+            )
+            .is_err()
+    );
+}
+#[test]
+fn saved_position_checks_resolve_named_references_without_mutating_drawings() {
+    let definition = family_with_datums();
+    let mut graph = InstanceGraph::new(&definition);
+    graph.add_base("part", HashMap::new(), "test").unwrap();
+    let mut page = gdt_page();
+    page.feature_control_frames[0] = position_check_control();
+    let size = Quantity::length(11.0, LengthUnit::Millimeter);
+    let points = [VectorQuantity::lengths(
+        0.0,
+        0.0,
+        1.0,
+        LengthUnit::Millimeter,
+    )];
+    let expected = page.feature_control_frames[0]
+        .evaluate_position_samples(size, position_axis(), &points)
+        .unwrap();
+    let references = std::mem::take(&mut page.feature_control_frames[0].datums);
+    page.datum_reference_frames
+        .push(DrawingDatumReferenceFrame {
+            id: "ABC".into(),
+            datums: references,
+        });
+    page.feature_control_frames[0].datum_reference_frame = Some("ABC".into());
+    let before = page.clone();
+    assert_eq!(
+        page.evaluate_position_samples("position", &graph, size, position_axis(), &points)
+            .unwrap(),
+        expected
+    );
+    assert_eq!(page, before);
+    assert!(
+        page.evaluate_position_samples("missing", &graph, size, position_axis(), &points)
+            .is_err()
+    );
+    page.datum_reference_frames[0].datums[1].boundary = DatumMaterialBoundary::Least;
+    assert!(
+        page.evaluate_position_samples("position", &graph, size, position_axis(), &points)
+            .is_err()
+    );
+    page.datum_reference_frames[0].datums[1].datum_feature = "missing".into();
+    assert!(
+        page.evaluate_position_samples("position", &graph, size, position_axis(), &points)
+            .is_err()
+    );
+}

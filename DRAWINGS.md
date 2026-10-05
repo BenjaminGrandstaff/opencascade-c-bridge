@@ -536,6 +536,43 @@ which distinguishes increased geometric allowance from boundary requirements.
 This arithmetic API does not verify those geometric boundaries or certify ASME
 conformity. A benchmark evaluates 10,000 composite allowances without native
 geometry handles.
+
+
+## Fixed cylindrical position sample checks
+
+`DrawingFeatureControlFrame.evaluate_position_samples(size, nominal_axis, samples)`
+checks dimensioned points on a supplied feature axis against a fixed cylindrical
+zone. `PositionToleranceAxis` has a length-valued origin and scalar direction;
+its direction is normalized. Points and the nominal axis must already be in the
+same established datum coordinate frame. The checker supports single-row diameter
+position controls with three distinct RFS datum references and saved size limits.
+MMC/LMC controlled-feature bonus comes from `tolerance_allowance`; datum material
+boundaries and composites fail explicitly rather than ignoring their freedoms.
+
+`PositionSampleEvaluation` reports allowance, sample count, first worst-sample
+index, maximum perpendicular distance, required diameter (twice that distance),
+diameter margin (allowance minus required diameter), and `samples_within_zone`.
+The zone includes its boundary; comparisons use normalized values without a
+rounding or acceptance epsilon. Empty samples, inconsistent units, nonfinite
+geometry, zero direction, arithmetic overflow and out-of-limit sizes fail.
+The axis is an infinite nominal line: displacement along it does not affect
+radial position, and no finite-depth or projected-zone requirement is inferred.
+
+`DrawingDefinition.evaluate_position_samples(control_id, graph, size, axis, samples)`
+validates saved intent and resolves named datum references before checking. It
+does not transform samples or establish the supplied frame from the model datums.
+Neither entry point fits measured surfaces, derives median/mating axes, solves
+datum simulators or shift, evaluates composite pattern freedoms, or proves
+whole-feature conformity between samples. A straight segment between samples
+inside a fixed cylinder is contained by convexity; unsampled curved/bent geometry
+requires more information. Use an existing resolved nominal 3-2-1 frame only
+when nominal model coordinates are the intended reference.
+
+This implements the fixed cylindrical-zone geometry, a subset of the position
+zones described in [NIST's assembly tolerance model](https://tsapps.nist.gov/publication/get_pdf.cfm?pub_id=822117).
+It does not constitute a standards-conformity inspection engine. Work is linear
+in sample count with constant extra storage; the benchmark checks 100,000 samples
+without kernel handles.
 ## Measured inspection (schema 68)
 
 `DrawingDefinition::evaluate_inspection(graph, record)` checks measured points

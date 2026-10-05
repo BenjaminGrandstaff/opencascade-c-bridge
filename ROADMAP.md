@@ -24,6 +24,17 @@ tracks status and order.
 
 ## Done
 
+- Fixed cylindrical position sample checks: single-row diameter controls with
+  three RFS datum references, arbitrary nominal axis direction and supplied
+  axis points in an established reference frame. Results report controlled-feature
+  bonus, required diameter, margin and first worst-sample index. Named references
+  resolve through saved drawing validation. Four tests cover exact boundaries,
+  units, offset/tilted axes, material conditions, invalid inputs and named frames;
+  a 100,000-sample benchmark runs in 0.003 s (10 s budget), using constant
+  extra storage and no kernel handles.
+  Fitted surfaces/datums, composite-zone freedoms, datum shift and unsampled
+  whole-feature conformity remain future work. See [Drawings](DRAWINGS.md).
+
 - Feature-size limits and bonus allowances (schema 64): persisted internal/external
   size limits, unit-aware MMC/LMC/RFS arithmetic, and independent total allowances
   for both position-composite rows. Out-of-limit sizes and invalid/overflowing
