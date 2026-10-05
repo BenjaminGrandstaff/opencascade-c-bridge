@@ -45,6 +45,14 @@
   main { position: relative; background: var(--canvas); }
   canvas { width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
   #hint { position: absolute; left: 12px; bottom: 10px; }
+  .scope { display: grid; gap: 4px; }
+  .tag {
+    font-size: 11px; padding: 0 6px; border-radius: 8px; border: 1px solid var(--line);
+    color: var(--muted); white-space: nowrap;
+  }
+  .tag.own { border-color: var(--accent); color: var(--accent); }
+  .reset { flex: none; padding: 0 6px; font-size: 11px; }
+  .label-end { display: flex; gap: 6px; align-items: center; }
   @media (max-width: 700px) {
     body { grid-template-columns: 1fr; grid-template-rows: 55vh 1fr; }
     main { grid-row: 1; }
@@ -63,15 +71,20 @@
     <button id="fit">Fit view</button>
   </div>
   <div class="muted" id="status"></div>
+  <div class="scope">
+    <label class="muted" for="scope">Editing</label>
+    <select id="scope"><option value="">Family defaults (all instances)</option></select>
+    <div class="muted">Click a part to edit only that instance; click empty space to go back.</div>
+  </div>
   <div id="error"></div>
   <div id="parameters"></div>
 </aside>
 <main>
   <canvas id="view"></canvas>
-  <div class="muted" id="hint">Drag to orbit · Shift-drag or right-drag to pan · Wheel to zoom</div>
+  <div class="muted" id="hint">Click to select · Drag to orbit · Shift-drag or right-drag to pan · Wheel to zoom</div>
 </main>
 <script type="module">
-import { createRenderer, fitCamera, pan, parseGltf } from "./viewer.mjs";
+import { createRenderer, fitCamera, pan, parseGltf, pick, ray } from "./viewer.mjs";
 
 const $ = (id) => document.getElementById(id);
 const canvas = $("view");
@@ -81,13 +94,17 @@ try {
 } catch (error) {
   $("error").textContent = error.message;
 }
+const aspect = () => canvas.clientWidth / Math.max(1, canvas.clientHeight);
 let camera = fitCamera(null);
-let bounds = null;
+let parsed = null;
 let version = 0;
 let state = null;
 let frame = 0;
-
-const aspect = () => canvas.clientWidth / Math.max(1, canvas.clientHeight);
+// "" edits family defaults; otherwise the id of the instance being edited.
+let scope = "";
+let instanceIds = new Set();
+// The selected instance's effective values, by parameter id.
+let instanceView = null;
 
 function redraw() {
   if (frame || !renderer) return;
@@ -107,68 +124,146 @@ async function api(path, options = {}) {
   return body;
 }
 
+function highlight() {
+  const index = parsed && scope ? parsed.nodes.findIndex((node) => node.name === scope) : -1;
+  renderer?.setSelection(index);
+  redraw();
+}
+
 async function loadModel(first) {
   const gltf = await (await fetch("/api/model.gltf")).json();
-  const parsed = parseGltf(gltf);
-  bounds = parsed.bounds;
+  parsed = parseGltf(gltf);
   renderer?.setModel(parsed);
-  if (first) camera = fitCamera(bounds, aspect());
+  if (first) camera = fitCamera(parsed.bounds, aspect());
   $("status").textContent =
     `${parsed.nodes.length} part${parsed.nodes.length === 1 ? "" : "s"} · ` +
     `${parsed.meshes.length} distinct mesh${parsed.meshes.length === 1 ? "" : "es"}`;
-  redraw();
+  highlight();
+}
+
+async function loadInstances() {
+  const { instances } = await api("/api/instances");
+  instanceIds = new Set(instances.map((instance) => instance.id));
+  const select = $("scope");
+  const options = [new Option("Family defaults (all instances)", "")];
+  for (const instance of instances) {
+    const count = instance.overrides.length;
+    const label = count ? `${instance.id} (${count} override${count === 1 ? "" : "s"})` : instance.id;
+    options.push(new Option(label, instance.id));
+  }
+  select.replaceChildren(...options);
+  if (scope && !instanceIds.has(scope)) scope = "";
+  select.value = scope;
+}
+
+async function loadInstanceView() {
+  instanceView = scope ? await api(`/api/instance?id=${encodeURIComponent(scope)}`) : null;
+  renderParameters();
+}
+
+async function setScope(next) {
+  if (next === scope) return;
+  await flush();
+  scope = next;
+  $("scope").value = scope;
+  editError = null;
+  $("error").textContent = state?.error ?? "";
+  highlight();
+  await loadInstanceView().catch((error) => ($("error").textContent = error.message));
 }
 
 function format(value) {
   return Number.isInteger(value) ? String(value) : String(Number(value.toPrecision(6)));
 }
 
-// Edits to any parameter merge until sent; one request is in flight at a
-// time, so no edit is dropped and the server applies them in order.
-const pending = {};
-// A rejected edit's message, kept until an edit succeeds.
-let editError = null;
+// Changes merge into the last batch while its scope is current; batches are
+// sent in order, one request at a time, so none is lost or misdirected.
+const batches = [];
 let timer = null;
 let sending = false;
-function edit(id, value) {
-  pending[id] = value;
+// A rejected edit's message, kept until an edit succeeds.
+let editError = null;
+
+function queue(change) {
+  let batch = batches.at(-1);
+  if (!batch || batch.scope !== scope) {
+    batch = { scope, set: {}, clear: [] };
+    batches.push(batch);
+  }
+  if ("set" in change) {
+    batch.set[change.id] = change.set;
+    batch.clear = batch.clear.filter((id) => id !== change.id);
+  } else {
+    delete batch.set[change.id];
+    batch.clear.push(change.id);
+  }
   clearTimeout(timer);
-  timer = setTimeout(flush, 150);
+  timer = setTimeout(flush, "set" in change ? 150 : 0);
 }
 
 async function flush() {
-  if (sending || !Object.keys(pending).length) return;
-  const body = { ...pending };
-  for (const id of Object.keys(body)) delete pending[id];
+  clearTimeout(timer);
+  if (sending || !batches.length) return;
+  const { scope: target, set, clear } = batches.shift();
   sending = true;
+  const body = target ? { instance: target, set, clear } : { set };
   try {
     const next = await api("/api/parameters", { method: "POST", body: JSON.stringify(body) });
     editError = null;
-    apply(next);
+    await apply(next);
   } catch (error) {
     editError = `Edit rejected: ${error.message}`;
     $("error").textContent = editError;
-    renderParameters(state);
+    renderParameters();
   } finally {
     sending = false;
-    flush();
+    if (batches.length) flush();
   }
 }
 
-function renderParameters(current) {
+/** Rows for the current scope: metadata from the family, values per scope. */
+function rows() {
+  if (!state) return [];
+  const values = new Map((instanceView?.parameters ?? []).map((p) => [p.id, p]));
+  return state.parameters.map((parameter) => {
+    const view = scope ? values.get(parameter.id) : null;
+    return { ...parameter, value: view ? view.value : parameter.value, source: view?.source ?? null };
+  });
+}
+
+function renderParameters() {
   const container = $("parameters");
   container.replaceChildren();
-  for (const parameter of current.parameters) {
+  for (const parameter of rows()) {
     const row = document.createElement("div");
     row.className = "parameter";
     const label = document.createElement("label");
     const name = document.createElement("span");
     name.textContent = parameter.id;
+    const end = document.createElement("span");
+    end.className = "label-end";
+    if (parameter.source === "own" || parameter.source === "inherited") {
+      const tag = document.createElement("span");
+      tag.className = `tag ${parameter.source}`;
+      tag.textContent = parameter.source === "own" ? "override" : "inherited";
+      end.append(tag);
+    }
+    if (parameter.source === "own") {
+      const reset = document.createElement("button");
+      reset.className = "reset";
+      reset.type = "button";
+      reset.textContent = "Reset";
+      reset.title = "Remove this override so the instance inherits again";
+      reset.addEventListener("click", () => queue({ id: parameter.id }));
+      end.append(reset);
+    }
     const unit = document.createElement("span");
     unit.className = "muted";
     unit.textContent = typeof parameter.unit === "string" ? parameter.unit : "";
-    label.append(name, unit);
+    end.append(unit);
+    label.append(name, end);
     row.append(label);
+    const change = (value) => queue({ id: parameter.id, set: value });
     if (parameter.kind === "scalar" || parameter.kind === "integer") {
       const number = document.createElement("input");
       number.type = "number";
@@ -189,13 +284,13 @@ function renderParameters(current) {
       const parse = (text) => (parameter.kind === "integer" ? parseInt(text, 10) : parseFloat(text));
       range.addEventListener("input", () => {
         number.value = format(parse(range.value));
-        edit(parameter.id, parse(range.value));
+        change(parse(range.value));
       });
       number.addEventListener("change", () => {
         const value = parse(number.value);
         if (Number.isFinite(value)) {
           range.value = value;
-          edit(parameter.id, value);
+          change(value);
         }
       });
       row.append(number, range);
@@ -203,15 +298,14 @@ function renderParameters(current) {
       const box = document.createElement("input");
       box.type = "checkbox";
       box.checked = parameter.value;
-      box.addEventListener("change", () => edit(parameter.id, box.checked));
-      label.prepend(box);
+      box.addEventListener("change", () => change(box.checked));
+      name.prepend(box);
     } else if (parameter.kind === "choice") {
       const select = document.createElement("select");
       for (const choice of parameter.choices ?? []) {
-        const option = new Option(choice, choice, false, choice === parameter.value);
-        select.append(option);
+        select.append(new Option(choice, choice, false, choice === parameter.value));
       }
-      select.addEventListener("change", () => edit(parameter.id, select.value));
+      select.addEventListener("change", () => change(select.value));
       row.append(select);
     } else {
       const note = document.createElement("div");
@@ -221,37 +315,39 @@ function renderParameters(current) {
     }
     container.append(row);
   }
-  if (!current.parameters.length) {
+  if (state && !state.parameters.length) {
     container.innerHTML = '<div class="muted">This family has no parameters.</div>';
   }
 }
 
-function apply(next) {
+let rendered = "";
+async function apply(next) {
   const first = version === 0;
-  const structureChanged =
-    !state || JSON.stringify(state.parameters) !== JSON.stringify(next.parameters);
   state = next;
   $("family").textContent = next.family;
   $("model").textContent = next.model;
   $("save").disabled = !next.dirty;
   $("save").textContent = next.dirty ? "Save" : "Saved";
   $("error").textContent = next.error ?? editError ?? "";
-  // Rebuilding inputs while dragging would interrupt the drag.
-  // Nor while edits are unsent, which the server state does not yet show.
-  const editing =
-    sending || Object.keys(pending).length || document.activeElement?.matches("input[type=range]");
-  if (structureChanged && !editing) {
-    renderParameters(next);
-  }
   if (next.version !== version) {
     version = next.version;
-    loadModel(first).catch((error) => ($("error").textContent = error.message));
+    await Promise.all([
+      loadModel(first),
+      loadInstances().then(() => (scope ? loadInstanceView() : null)),
+    ]).catch((error) => ($("error").textContent = error.message));
+  }
+  // Rebuilding inputs mid-drag or with unsent edits would lose them.
+  const editing = sending || batches.length || document.activeElement?.matches("input[type=range]");
+  const shown = JSON.stringify(rows());
+  if (shown !== rendered && !editing) {
+    rendered = shown;
+    renderParameters();
   }
 }
 
 async function poll() {
   try {
-    apply(await api("/api/state"));
+    await apply(await api("/api/state"));
   } catch (error) {
     $("error").textContent = `Server not reachable: ${error.message}`;
   }
@@ -259,21 +355,23 @@ async function poll() {
 }
 
 $("save").addEventListener("click", async () => {
+  await flush();
   try {
-    apply(await api("/api/save", { method: "POST", body: "{}" }));
+    await apply(await api("/api/save", { method: "POST", body: "{}" }));
   } catch (error) {
     $("error").textContent = error.message;
   }
 });
 $("fit").addEventListener("click", () => {
-  camera = fitCamera(bounds, aspect());
+  camera = fitCamera(parsed?.bounds ?? null, aspect());
   redraw();
 });
+$("scope").addEventListener("change", (event) => setScope(event.target.value));
 
 let drag = null;
 canvas.addEventListener("contextmenu", (event) => event.preventDefault());
 canvas.addEventListener("pointerdown", (event) => {
-  drag = { x: event.clientX, y: event.clientY, pan: event.shiftKey || event.button === 2 };
+  drag = { x: event.clientX, y: event.clientY, moved: 0, pan: event.shiftKey || event.button === 2 };
   canvas.setPointerCapture(event.pointerId);
   canvas.style.cursor = "grabbing";
 });
@@ -283,6 +381,7 @@ canvas.addEventListener("pointermove", (event) => {
   const dy = event.clientY - drag.y;
   drag.x = event.clientX;
   drag.y = event.clientY;
+  drag.moved += Math.abs(dx) + Math.abs(dy);
   if (drag.pan) {
     camera = pan(camera, dx, dy, canvas.clientHeight);
   } else {
@@ -295,12 +394,22 @@ canvas.addEventListener("pointermove", (event) => {
   }
   redraw();
 });
-const endDrag = () => {
+canvas.addEventListener("pointerup", (event) => {
+  const click = drag && drag.moved < 4 && event.button === 0;
   drag = null;
   canvas.style.cursor = "grab";
-};
-canvas.addEventListener("pointerup", endDrag);
-canvas.addEventListener("pointercancel", endDrag);
+  if (!click || !parsed) return;
+  const box = canvas.getBoundingClientRect();
+  const x = ((event.clientX - box.left) / box.width) * 2 - 1;
+  const y = 1 - ((event.clientY - box.top) / box.height) * 2;
+  const index = pick(parsed, ray(camera, aspect(), x, y));
+  const name = index >= 0 ? parsed.nodes[index].name : "";
+  setScope(instanceIds.has(name) ? name : "");
+});
+canvas.addEventListener("pointercancel", () => {
+  drag = null;
+  canvas.style.cursor = "grab";
+});
 canvas.addEventListener(
   "wheel",
   (event) => {

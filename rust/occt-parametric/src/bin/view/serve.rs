@@ -2,9 +2,10 @@
 //! family parameter defaults, saves them, and follows saves made elsewhere.
 use super::{POLL, stamp};
 use occt_bridge::Session;
-use occt_parametric::{MeshSettings, ModelDocument, ParameterValue};
+use occt_parametric::{InstanceNode, MeshSettings, ModelDocument, ParameterValue};
 use serde_json::{Value, json};
 use std::{
+    collections::{HashMap, HashSet},
     error::Error,
     fs,
     io::{BufRead, BufReader, Read, Write},
@@ -125,13 +126,14 @@ impl Studio {
             .parameters
             .iter()
             .map(|p| {
-                let (kind, value, unit) = match &p.default {
-                    ParameterValue::Scalar(q) => ("scalar", json!(q.value), json!(q.unit)),
-                    ParameterValue::Integer(i) => ("integer", json!(i), Value::Null),
-                    ParameterValue::Boolean(b) => ("boolean", json!(b), Value::Null),
-                    ParameterValue::Choice(c) => ("choice", json!(c), Value::Null),
-                    ParameterValue::Vector(_) => ("vector", Value::Null, Value::Null),
+                let (kind, unit) = match &p.default {
+                    ParameterValue::Scalar(q) => ("scalar", json!(q.unit)),
+                    ParameterValue::Integer(_) => ("integer", Value::Null),
+                    ParameterValue::Boolean(_) => ("boolean", Value::Null),
+                    ParameterValue::Choice(_) => ("choice", Value::Null),
+                    ParameterValue::Vector(_) => ("vector", Value::Null),
                 };
+                let value = value_json(&p.default);
                 let choices = match &p.parameter_type {
                     occt_parametric::ParameterType::Choice(choices) => json!(choices),
                     _ => Value::Null,
@@ -154,33 +156,74 @@ impl Studio {
         })
     }
 
-    /// Applies `{ "id": value }` edits to family parameter defaults, keeping
-    /// each scalar's unit. All edits apply or none: an edit that fails
-    /// validation or regeneration leaves the model and view unchanged.
+    /// Applies `{"instance"?, "set": {id: value}, "clear": [id]}`. Without
+    /// an instance, `set` changes family defaults (keeping each scalar's
+    /// unit); with one, it sets that instance's own overrides and `clear`
+    /// removes them, so it inherits again. All changes apply or none: one
+    /// that fails validation or regeneration leaves the model unchanged.
     fn edit(&mut self, body: &[u8]) -> Result<(), String> {
-        let edits: serde_json::Map<String, Value> =
-            serde_json::from_slice(body).map_err(|e| format!("edit must be a JSON object: {e}"))?;
+        #[derive(serde::Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Edit {
+            #[serde(default)]
+            instance: Option<String>,
+            #[serde(default)]
+            set: serde_json::Map<String, Value>,
+            #[serde(default)]
+            clear: Vec<String>,
+        }
+        let edit: Edit = serde_json::from_slice(body).map_err(|e| format!("invalid edit: {e}"))?;
         let mut document = self.document.clone();
-        for (id, value) in &edits {
-            let parameter = document
-                .family
-                .parameters
-                .iter_mut()
-                .find(|p| &p.id == id)
-                .ok_or_else(|| format!("unknown parameter '{id}'"))?;
-            parameter.default = match (&parameter.default, value) {
-                (ParameterValue::Scalar(q), Value::Number(n)) => {
-                    let mut q = *q;
-                    q.value = n.as_f64().ok_or("invalid number")?;
-                    ParameterValue::Scalar(q)
+        let defaults: HashMap<String, ParameterValue> = document
+            .family
+            .parameters
+            .iter()
+            .map(|p| (p.id.clone(), p.default.clone()))
+            .collect();
+        let default = |id: &str| {
+            defaults
+                .get(id)
+                .ok_or_else(|| format!("unknown parameter '{id}'"))
+        };
+        match &edit.instance {
+            None => {
+                if !edit.clear.is_empty() {
+                    return Err("family defaults cannot be cleared".into());
                 }
-                (ParameterValue::Integer(_), Value::Number(n)) => {
-                    ParameterValue::Integer(n.as_i64().ok_or("integer parameter needs an integer")?)
+                for (id, value) in &edit.set {
+                    let parameter = document
+                        .family
+                        .parameters
+                        .iter_mut()
+                        .find(|p| &p.id == id)
+                        .ok_or_else(|| format!("unknown parameter '{id}'"))?;
+                    parameter.default = value_from(id, &parameter.default, value)?;
                 }
-                (ParameterValue::Boolean(_), Value::Bool(b)) => ParameterValue::Boolean(*b),
-                (ParameterValue::Choice(_), Value::String(s)) => ParameterValue::Choice(s.clone()),
-                _ => return Err(format!("parameter '{id}' cannot take {value}")),
-            };
+            }
+            Some(instance) => {
+                if !primary_instances(&document)?.contains(instance) {
+                    return Err(format!(
+                        "'{instance}' is not an instance of family '{}'",
+                        document.family.id
+                    ));
+                }
+                let node = document
+                    .instances
+                    .iter_mut()
+                    .find(|node| node.id() == instance)
+                    .ok_or_else(|| format!("unknown instance '{instance}'"))?;
+                let (InstanceNode::Base { overrides, .. } | InstanceNode::Clone { overrides, .. }) =
+                    node;
+                for id in &edit.clear {
+                    default(id)?;
+                    overrides.remove(id);
+                }
+                for (id, value) in &edit.set {
+                    // An existing override keeps its own unit.
+                    let like = overrides.get(id).unwrap_or(default(id)?).clone();
+                    overrides.insert(id.clone(), value_from(id, &like, value)?);
+                }
+            }
         }
         // Round-trip through JSON so the edit is validated like a saved file.
         let document = document
@@ -194,6 +237,62 @@ impl Studio {
         self.dirty = true;
         self.error = None;
         Ok(())
+    }
+
+    /// Instances of the primary family, by id, with their own overrides.
+    /// O(instances log instances); the page fetches it once per version.
+    fn instances(&self) -> Result<Value, String> {
+        let primary = primary_instances(&self.document)?;
+        let mut list: Vec<Value> = self
+            .document
+            .instances
+            .iter()
+            .filter(|node| primary.contains(node.id()))
+            .map(|node| {
+                let mut own: Vec<&String> = node.overrides().keys().collect();
+                own.sort();
+                json!({ "id": node.id(), "overrides": own })
+            })
+            .collect();
+        list.sort_by(|a, b| a["id"].as_str().cmp(&b["id"].as_str()));
+        Ok(json!({ "version": self.version, "instances": list }))
+    }
+
+    /// One instance's effective parameter values, each marked as its own
+    /// override, inherited from a clone source, or the family default.
+    fn instance(&self, id: &str) -> Result<Value, String> {
+        if !primary_instances(&self.document)?.contains(id) {
+            return Err(format!("unknown instance '{id}'"));
+        }
+        let node = self
+            .document
+            .instances
+            .iter()
+            .find(|node| node.id() == id)
+            .ok_or_else(|| format!("unknown instance '{id}'"))?;
+        let graph = self.document.instance_graph().map_err(|e| e.to_string())?;
+        let merged = graph.resolve(id).map_err(|e| e.to_string())?.overrides;
+        let parameters: Vec<Value> = self
+            .document
+            .family
+            .parameters
+            .iter()
+            .map(|p| {
+                let source = if node.overrides().contains_key(&p.id) {
+                    "own"
+                } else if merged.contains_key(&p.id) {
+                    "inherited"
+                } else {
+                    "default"
+                };
+                json!({
+                    "id": p.id,
+                    "value": value_json(merged.get(&p.id).unwrap_or(&p.default)),
+                    "source": source,
+                })
+            })
+            .collect();
+        Ok(json!({ "id": id, "version": self.version, "parameters": parameters }))
     }
 
     /// Writes the edited document beside the model, then renames it over the
@@ -213,13 +312,29 @@ impl Studio {
         Ok(())
     }
 
-    pub(super) fn handle(&mut self, method: &str, path: &str, body: &[u8]) -> Response {
+    pub(super) fn handle(&mut self, method: &str, target: &str, body: &[u8]) -> Response {
         self.follow_disk();
+        let (path, query) = target.split_once('?').unwrap_or((target, ""));
         match (method, path) {
             ("GET", "/") => Response::text(200, "text/html; charset=utf-8", INDEX),
             ("GET", "/viewer.mjs") => Response::text(200, "text/javascript", VIEWER),
             ("GET", "/api/state") => Response::json(200, &self.state()),
             ("GET", "/api/model.gltf") => Response::text(200, "model/gltf+json", &self.gltf),
+            ("GET", "/api/instances") => match self.instances() {
+                Ok(list) => Response::json(200, &list),
+                Err(error) => Response::error(500, &error),
+            },
+            ("GET", "/api/instance") => {
+                let id = query
+                    .split('&')
+                    .find_map(|pair| pair.strip_prefix("id="))
+                    .and_then(percent_decode);
+                match id.map(|id| self.instance(&id)) {
+                    Some(Ok(view)) => Response::json(200, &view),
+                    Some(Err(error)) => Response::error(404, &error),
+                    None => Response::error(400, "instance view needs ?id="),
+                }
+            }
             ("POST", "/api/parameters") => match self.edit(body) {
                 Ok(()) => Response::json(200, &self.state()),
                 Err(error) => Response::error(422, &error),
@@ -232,6 +347,73 @@ impl Studio {
             _ => Response::error(405, "method not allowed"),
         }
     }
+}
+
+/// Ids of instances that resolve to the primary family, whose parameters
+/// the page edits. O(instances) resolutions sharing one cache.
+fn primary_instances(document: &ModelDocument) -> Result<HashSet<String>, String> {
+    let graph = document.instance_graph().map_err(|e| e.to_string())?;
+    let mut ids = HashSet::new();
+    for node in &document.instances {
+        let resolved = graph.resolve(node.id()).map_err(|e| e.to_string())?;
+        if resolved.definition.id == document.family.id {
+            ids.insert(node.id().to_owned());
+        }
+    }
+    Ok(ids)
+}
+
+/// A parameter value as JSON: number, boolean or string; vectors are null.
+fn value_json(value: &ParameterValue) -> Value {
+    match value {
+        ParameterValue::Scalar(q) => json!(q.value),
+        ParameterValue::Integer(i) => json!(i),
+        ParameterValue::Boolean(b) => json!(b),
+        ParameterValue::Choice(c) => json!(c),
+        ParameterValue::Vector(_) => Value::Null,
+    }
+}
+
+/// `value` as a parameter value of the same kind (and scalar unit) as `like`.
+fn value_from(id: &str, like: &ParameterValue, value: &Value) -> Result<ParameterValue, String> {
+    Ok(match (like, value) {
+        (ParameterValue::Scalar(q), Value::Number(n)) => {
+            let mut q = *q;
+            q.value = n.as_f64().ok_or("invalid number")?;
+            ParameterValue::Scalar(q)
+        }
+        (ParameterValue::Integer(_), Value::Number(n)) => {
+            ParameterValue::Integer(n.as_i64().ok_or("integer parameter needs an integer")?)
+        }
+        (ParameterValue::Boolean(_), Value::Bool(b)) => ParameterValue::Boolean(*b),
+        (ParameterValue::Choice(_), Value::String(s)) => ParameterValue::Choice(s.clone()),
+        _ => return Err(format!("parameter '{id}' cannot take {value}")),
+    })
+}
+
+/// Decodes `%XX` escapes (and `+` as space) in a query value.
+fn percent_decode(text: &str) -> Option<String> {
+    let bytes = text.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'%' => {
+                let hex = std::str::from_utf8(bytes.get(i + 1..i + 3)?).ok()?;
+                out.push(u8::from_str_radix(hex, 16).ok()?);
+                i += 3;
+            }
+            b'+' => {
+                out.push(b' ');
+                i += 1;
+            }
+            byte => {
+                out.push(byte);
+                i += 1;
+            }
+        }
+    }
+    String::from_utf8(out).ok()
 }
 
 /// The model's glTF, showing `output` or by default the primary family's
@@ -280,7 +462,7 @@ fn read_request(stream: &mut TcpStream, port: u16) -> Result<(String, String, Ve
     let (Some(method), Some(target)) = (parts.next(), parts.next()) else {
         return Err(bad("request line"));
     };
-    let path = target.split('?').next().unwrap_or("/").to_owned();
+    let path = target.to_owned();
     let method = method.to_owned();
     let mut length = 0usize;
     let mut host_ok = false;

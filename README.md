@@ -308,7 +308,8 @@ opens them, named and colored, in OCCT's DRAW viewer (`DRAWEXE -i -f view.tcl`).
 The `occt-view MODEL.json` command does this for a saved model document and starts
 the viewer, and `--watch` reloads it on every save; see
 [Model viewer](tools/view/README.md). `occt-view MODEL.json --serve` shows it in a
-browser page that also edits and saves family parameters. `set_material_appearance`
+browser page that also edits and saves family parameters and per-instance
+overrides. `set_material_appearance`
 sets the colors it shows.
 ABI 44 writes assembly frames as nested STEP sub-assemblies (joint motion
 included) with per-face colors, adds a lenient batch subshape lookup, and

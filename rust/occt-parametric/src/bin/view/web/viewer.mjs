@@ -35,8 +35,17 @@ export function parseGltf(gltf) {
       throw new Error("only unindexed triangle meshes are supported");
     }
     const material = gltf.materials?.[primitive.material];
+    const positions = vectors(gltf, buffers, primitive.attributes.POSITION);
+    const low = [Infinity, Infinity, Infinity];
+    const high = [-Infinity, -Infinity, -Infinity];
+    for (let i = 0; i < positions.length; i += 1) {
+      const axis = i % 3;
+      if (positions[i] < low[axis]) low[axis] = positions[i];
+      if (positions[i] > high[axis]) high[axis] = positions[i];
+    }
     return {
-      positions: vectors(gltf, buffers, primitive.attributes.POSITION),
+      positions,
+      bounds: { min: low, max: high },
       normals: vectors(gltf, buffers, primitive.attributes.NORMAL),
       color: material?.pbrMetallicRoughness?.baseColorFactor ?? [0.8, 0.8, 0.8, 1],
     };
@@ -146,6 +155,70 @@ export function pan(camera, dx, dy, height) {
   };
 }
 
+/** World-space ray through normalized device coordinates (x, y) in [-1, 1]. */
+export function ray(camera, aspect, x, y) {
+  const origin = eye(camera);
+  const forward = unit(subtract(camera.target, origin));
+  const right = unit(cross(forward, [0, 1, 0]));
+  const up = cross(right, forward);
+  const t = Math.tan(Math.PI / 8);
+  const direction = unit(
+    forward.map((f, axis) => f + right[axis] * x * aspect * t + up[axis] * y * t),
+  );
+  return { origin, direction };
+}
+
+/**
+ * Index of the nearest node a ray hits, or -1. Each node's rigid matrix is
+ * inverted to test its mesh in local space: a bounds check, then every
+ * triangle of the meshes it passes (Möller–Trumbore). O(nodes + triangles
+ * of the nodes whose bounds the ray crosses).
+ */
+export function pick(parsed, { origin, direction }) {
+  let best = Infinity;
+  let hit = -1;
+  parsed.nodes.forEach((node, index) => {
+    const m = node.matrix;
+    const shifted = [0, 1, 2].map((axis) => origin[axis] - m[12 + axis]);
+    // Rigid inverse: the transpose of the rotation, applied to the shift.
+    const local = (v) => [0, 1, 2].map((c) => m[4 * c] * v[0] + m[4 * c + 1] * v[1] + m[4 * c + 2] * v[2]);
+    const o = local(shifted);
+    const d = local(direction);
+    const mesh = parsed.meshes[node.mesh];
+    let near = 0;
+    let far = best;
+    for (let axis = 0; axis < 3; axis += 1) {
+      const inverse = 1 / d[axis];
+      let t0 = (mesh.bounds.min[axis] - o[axis]) * inverse;
+      let t1 = (mesh.bounds.max[axis] - o[axis]) * inverse;
+      if (t0 > t1) [t0, t1] = [t1, t0];
+      near = Math.max(near, t0);
+      far = Math.min(far, t1);
+      if (!(near <= far)) return;
+    }
+    const p = mesh.positions;
+    for (let i = 0; i < p.length; i += 9) {
+      const e1 = [p[i + 3] - p[i], p[i + 4] - p[i + 1], p[i + 5] - p[i + 2]];
+      const e2 = [p[i + 6] - p[i], p[i + 7] - p[i + 1], p[i + 8] - p[i + 2]];
+      const q = cross(d, e2);
+      const determinant = dot(e1, q);
+      if (Math.abs(determinant) < 1e-20) continue;
+      const s = [o[0] - p[i], o[1] - p[i + 1], o[2] - p[i + 2]];
+      const u = dot(s, q) / determinant;
+      if (u < 0 || u > 1) continue;
+      const r = cross(s, e1);
+      const v = dot(d, r) / determinant;
+      if (v < 0 || u + v > 1) continue;
+      const t = dot(e2, r) / determinant;
+      if (t > 0 && t < best) {
+        best = t;
+        hit = index;
+      }
+    }
+  });
+  return hit;
+}
+
 const VERTEX = `
 attribute vec3 position;
 attribute vec3 normal;
@@ -164,12 +237,16 @@ const FRAGMENT = `
 precision mediump float;
 uniform vec4 color;
 uniform vec3 eye;
+uniform float dimmed;
 varying vec3 surfaceNormal;
 varying vec3 world;
 void main() {
   vec3 toEye = normalize(eye - world);
   float light = 0.3 + 0.7 * abs(dot(normalize(surfaceNormal), toEye));
-  gl_FragColor = vec4(pow(color.rgb * light, vec3(1.0 / 2.2)), color.a);
+  vec3 shaded = color.rgb * light;
+  // Unselected parts fade toward gray while one part is selected.
+  shaded = mix(shaded, vec3(0.35) * light, 0.7 * dimmed);
+  gl_FragColor = vec4(pow(shaded, vec3(1.0 / 2.2)), color.a);
 }`;
 
 function compile(gl, type, source) {
@@ -196,7 +273,9 @@ export function createRenderer(canvas) {
     model: gl.getUniformLocation(program, "model"),
     color: gl.getUniformLocation(program, "color"),
     eye: gl.getUniformLocation(program, "eye"),
+    dimmed: gl.getUniformLocation(program, "dimmed"),
   };
+  let selected = -1;
   let model = { meshes: [], nodes: [] };
   let buffers = [];
 
@@ -216,6 +295,10 @@ export function createRenderer(canvas) {
   }
 
   return {
+    /** Highlights node `index` by fading the others; -1 clears it. */
+    setSelection(index) {
+      selected = index;
+    },
     setModel(parsed) {
       release();
       model = parsed;
@@ -249,6 +332,7 @@ export function createRenderer(canvas) {
         gl.vertexAttribPointer(location.normal, 3, gl.FLOAT, false, 0, 0);
         gl.uniformMatrix4fv(location.model, false, node.matrix);
         gl.uniform4fv(location.color, model.meshes[node.mesh].color);
+        gl.uniform1f(location.dimmed, selected >= 0 && model.nodes[selected] !== node ? 1 : 0);
         gl.drawArrays(gl.TRIANGLES, 0, mesh.count);
       }
     },

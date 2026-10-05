@@ -80,3 +80,20 @@ test("panning moves the target across the view, not along it", () => {
   assert.ok(Math.hypot(...shift) > 0);
   assert.ok(Math.abs(shift.reduce((sum, v, axis) => sum + v * forward[axis], 0)) < 1e-12);
 });
+
+test("picking finds the nearest hit node through its matrix, or none", async () => {
+  const { ray, pick } = await import("./viewer.mjs");
+  const parsed = parseGltf(gltf());
+  // Straight down onto node b (translated +2 in X): its triangle spans x 2..3, y 0..1 at z=0.
+  const down = { origin: [2.25, 0.25, 5], direction: [0, 0, -1] };
+  assert.equal(pick(parsed, down), 1);
+  // Node c's triangle is turned onto the YZ plane at x = 5: hit it along -X.
+  assert.equal(pick(parsed, { origin: [9, 0.2, -0.2], direction: [-1, 0, 0] }), 2);
+  assert.equal(pick(parsed, { origin: [20, 20, 5], direction: [0, 0, -1] }), -1);
+  // A camera ray through the view center points at the target.
+  const camera = fitCamera(parsed.bounds, 1.5);
+  const center = ray(camera, 1.5, 0, 0);
+  const toTarget = camera.target.map((t, axis) => t - center.origin[axis]);
+  const length = Math.hypot(...toTarget);
+  center.direction.forEach((d, axis) => assert.ok(Math.abs(d - toTarget[axis] / length) < 1e-12));
+});

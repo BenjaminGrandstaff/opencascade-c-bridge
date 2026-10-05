@@ -357,7 +357,7 @@ fn studio_serves_the_page_and_model_and_applies_saves_and_follows_edits() {
 
     // Edits apply together or not at all, and never touch the file.
     let before = fs::read(&model).unwrap();
-    let edited = studio.handle("POST", "/api/parameters", br#"{"thickness": 8}"#);
+    let edited = studio.handle("POST", "/api/parameters", br#"{"set": {"thickness": 8}}"#);
     assert_eq!(edited.status, 200);
     let (_, state) = get(&mut studio, "/api/state");
     assert_eq!(
@@ -370,11 +370,15 @@ fn studio_serves_the_page_and_model_and_applies_saves_and_follows_edits() {
     );
     assert_ne!(get(&mut studio, "/api/model.gltf").1, gltf);
     for bad in [
-        &br#"{"thickness": 100}"#[..],
-        br#"{"missing": 1}"#,
-        br#"{"thickness": true}"#,
+        &br#"{"set": {"thickness": 100}}"#[..],
+        br#"{"set": {"missing": 1}}"#,
+        br#"{"set": {"thickness": true}}"#,
         b"[",
-        br#"{"thickness": 9, "missing": 1}"#,
+        br#"{"set": {"thickness": 9, "missing": 1}}"#,
+        br#"{"thickness": 9}"#,
+        br#"{"clear": ["thickness"]}"#,
+        br#"{"instance": "nobody", "set": {"thickness": 9}}"#,
+        br#"{"instance": "source", "set": {"thickness": 50}}"#,
     ] {
         assert_eq!(studio.handle("POST", "/api/parameters", bad).status, 422);
     }
@@ -456,7 +460,7 @@ fn server_accepts_only_local_hosts_and_marked_posts() {
         403
     );
     assert_eq!(request("GET /api/state HTTP/1.1\r\n\r\n".into()), 403);
-    let body = r#"{"thickness": 6}"#;
+    let body = r#"{"set": {"thickness": 6}}"#;
     assert_eq!(
         request(format!(
             "POST /api/parameters HTTP/1.1\r\nHost: {host}\r\nContent-Length: {}\r\n\r\n{body}",
@@ -478,4 +482,101 @@ fn server_accepts_only_local_hosts_and_marked_posts() {
         413
     );
     assert_eq!(request("garbage\r\n\r\n".into()), 400);
+}
+
+fn source_of(view: &serde_json::Value) -> (f64, String) {
+    let parameter = &view["parameters"][0];
+    (
+        parameter["value"].as_f64().unwrap(),
+        parameter["source"].as_str().unwrap().to_owned(),
+    )
+}
+
+#[test]
+fn instances_take_own_overrides_inherit_from_sources_and_reset() {
+    let directory = Directory::new();
+    let model = PathBuf::from(directory.model(&document()));
+    let mut studio = serve::Studio::load(&model, None).unwrap();
+    let (_, list) = get(&mut studio, "/api/instances");
+    let ids: Vec<_> = list["instances"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| i["id"].as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(ids, ["member[0]", "member[1]", "source"]);
+    let view =
+        |studio: &mut serve::Studio, id: &str| get(studio, &format!("/api/instance?id={id}")).1;
+    assert_eq!(
+        source_of(&view(&mut studio, "member%5B0%5D")),
+        (5.0, "default".into())
+    );
+
+    // A source override is inherited by its pattern members.
+    let edit = |studio: &mut serve::Studio, body: &str| {
+        studio
+            .handle("POST", "/api/parameters", body.as_bytes())
+            .status
+    };
+    assert_eq!(
+        edit(
+            &mut studio,
+            r#"{"instance": "source", "set": {"thickness": 9}}"#
+        ),
+        200
+    );
+    assert_eq!(source_of(&view(&mut studio, "source")), (9.0, "own".into()));
+    assert_eq!(
+        source_of(&view(&mut studio, "member%5B1%5D")),
+        (9.0, "inherited".into())
+    );
+    // A member's own override wins, and the family default stays put.
+    assert_eq!(
+        edit(
+            &mut studio,
+            r#"{"instance": "member[1]", "set": {"thickness": 12}}"#
+        ),
+        200
+    );
+    assert_eq!(
+        source_of(&view(&mut studio, "member%5B1%5D")),
+        (12.0, "own".into())
+    );
+    assert_eq!(thickness(&get(&mut studio, "/api/state").1), 5.0);
+    let (_, list) = get(&mut studio, "/api/instances");
+    assert_eq!(list["instances"][1]["overrides"], json!(["thickness"]));
+    // The overridden member is generated differently from its sibling.
+    let (_, gltf) = get(&mut studio, "/api/model.gltf");
+    assert_eq!(gltf["meshes"].as_array().unwrap().len(), 2);
+    // Reset removes the override so the member inherits again.
+    assert_eq!(
+        edit(
+            &mut studio,
+            r#"{"instance": "member[1]", "clear": ["thickness"]}"#
+        ),
+        200
+    );
+    assert_eq!(
+        source_of(&view(&mut studio, "member%5B1%5D")),
+        (9.0, "inherited".into())
+    );
+    assert_eq!(studio.handle("POST", "/api/save", b"{}").status, 200);
+    let saved = ModelDocument::from_json(&fs::read_to_string(&model).unwrap()).unwrap();
+    let source = saved.instances.iter().find(|n| n.id() == "source").unwrap();
+    assert_eq!(
+        source.overrides().get("thickness"),
+        Some(&ParameterValue::Scalar(Quantity::length(
+            9.0,
+            LengthUnit::Millimeter
+        )))
+    );
+    assert_eq!(
+        studio.handle("GET", "/api/instance?id=nobody", b"").status,
+        404
+    );
+    assert_eq!(studio.handle("GET", "/api/instance", b"").status, 400);
+    assert_eq!(
+        studio.handle("GET", "/api/instance?id=%zz", b"").status,
+        400
+    );
 }

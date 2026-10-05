@@ -77,13 +77,27 @@ choices a list; vector parameters are shown but edited in the file.
   about a second once two checks agree. It replaces unsaved browser edits. A
   file that does not load is reported and the last model stays.
 
-Edits change family defaults, so they apply to every instance without its own
-override. The page needs no external files. The server listens only on
+### Editing one instance
+
+The **Editing** list chooses what the fields change: *Family defaults* (every
+instance without its own value) or one instance of the primary family.
+Clicking a part selects its instance and fades the others; clicking empty
+space returns to the family defaults.
+
+For an instance, each field shows its effective value, tagged **override**
+when the instance sets it itself (with **Reset** to remove it) or
+**inherited** when it comes from a clone source; untagged values are the
+family default. Editing a field sets the instance's own override, keeping the
+default's unit. The list shows how many overrides each instance has.
+Instances with overrides become their own generated variants, so they no
+longer share a mesh with their siblings. The page needs no external files. The server listens only on
 127.0.0.1, accepts only `127.0.0.1` or `localhost` Host headers, and accepts
 edits only with the `X-OCCT-View` header that the page sends, which other
 sites' pages cannot add; it is a local editing tool, not something to expose.
 
-Each edit costs one full regeneration and glTF export. Instances sharing a
+Each edit costs one full regeneration and glTF export. On a 10,000-instance
+model, listing instances takes about 26 ms, one instance's values 33 ms, and an
+override edit with regeneration 0.55 s. Instances sharing a
 generated variant are tessellated once, so 10,000 pattern members export in
 about a quarter second. The renderer's tests run with
 `node --test rust/occt-parametric/src/bin/view/web/viewer.test.mjs`.
