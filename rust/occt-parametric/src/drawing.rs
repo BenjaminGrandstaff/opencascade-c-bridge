@@ -7,7 +7,21 @@ mod detail;
 mod dimensions;
 pub use dimensions::{DimensionPresentation, DimensionTolerance};
 mod export;
+pub(crate) mod gdt;
+mod guides;
+pub use gdt::{
+    DatumMaterialBoundary, DatumPrecedence, DrawingCompositeRefinement,
+    DrawingDatumCoordinateFrame, DrawingDatumFeature, DrawingDatumReference,
+    DrawingDatumReferenceFrame, DrawingFeatureControlFrame, DrawingGdtAttachment,
+    GeometricCharacteristic, GeometricToleranceZone, ResolvedDrawingDatumReference,
+    ResolvedDrawingDatumReferenceFrame, ToleranceMaterialCondition,
+};
+mod hatching;
+pub use guides::{DrawingGuide, DrawingGuideKind, DrawingGuideLine, DrawingGuideLineKind};
+pub use hatching::SectionHatching;
+mod sheets;
 mod slice;
+pub use sheets::{DrawingSheet, DrawingSheetOrientation, DrawingSheetSize, ProjectionConvention};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -46,6 +60,8 @@ pub struct DrawingView {
     pub kind: DrawingViewKind,
     #[serde(default)]
     pub detail: Option<DrawingDetail>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hatching: Option<SectionHatching>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -99,12 +115,22 @@ pub struct DrawingNote {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct DrawingDefinition {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub datum_reference_frames: Vec<DrawingDatumReferenceFrame>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub datum_features: Vec<DrawingDatumFeature>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub feature_control_frames: Vec<DrawingFeatureControlFrame>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sheet: Option<DrawingSheet>,
     pub id: String,
     pub title: String,
     pub paper_size_mm: [f64; 2],
     pub views: Vec<DrawingView>,
     #[serde(default)]
     pub dimensions: Vec<DrawingDimension>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub guides: Vec<DrawingGuide>,
     #[serde(default)]
     pub notes: Vec<DrawingNote>,
     /// Title-block fields, in deterministic key order.
@@ -148,10 +174,16 @@ pub struct DrawingLabel {
 }
 #[derive(Clone, Debug, PartialEq)]
 pub struct GeneratedDrawing {
+    pub gdt_lines: Vec<DrawingPolyline>,
+    pub gdt_labels: Vec<DrawingLabel>,
+    pub sheet_lines: Vec<DrawingPolyline>,
+    pub sheet_labels: Vec<DrawingLabel>,
     pub id: String,
     pub title: String,
     pub paper_size_mm: [f64; 2],
     pub polylines: Vec<DrawingPolyline>,
+    pub guides: Vec<DrawingGuideLine>,
+    pub hatches: Vec<DrawingPolyline>,
     pub labels: Vec<DrawingLabel>,
     pub metadata: BTreeMap<String, String>,
     pub generated_variants: usize,
@@ -205,6 +237,7 @@ impl DrawingView {
             x_axis.z - direction.z * projection,
         ))?;
         self.validate_section()?;
+        hatching::validate(self)?;
         if let Some(detail) = self.detail {
             detail.validate()?;
         }
@@ -311,6 +344,13 @@ fn datum_origin(graph: &InstanceGraph<'_>, reference: &DatumRef) -> Result<Vec3,
 }
 
 impl DrawingDefinition {
+    /// A saved preset controls paper dimensions; otherwise use custom paper_size_mm.
+    pub fn effective_paper_size_mm(&self) -> [f64; 2] {
+        self.sheet
+            .as_ref()
+            .map_or(self.paper_size_mm, DrawingSheet::paper_size_mm)
+    }
+
     pub(crate) fn validate(&self, graph: &InstanceGraph<'_>) -> Result<(), ModelError> {
         self.validate_cached(graph, &mut HashMap::new(), &mut HashMap::new())
     }
@@ -321,9 +361,10 @@ impl DrawingDefinition {
         resolutions: &mut ResolutionCache<'definition>,
         features: &mut HashMap<&'definition str, HashSet<&'definition str>>,
     ) -> Result<(), ModelError> {
+        let paper_size = self.effective_paper_size_mm();
         if self.id.is_empty()
-            || !finite_pair(self.paper_size_mm)
-            || self.paper_size_mm.iter().any(|value| *value <= 0.0)
+            || !finite_pair(paper_size)
+            || paper_size.iter().any(|value| *value <= 0.0)
             || self.views.is_empty()
         {
             return Err(ModelError::new(
@@ -331,6 +372,9 @@ impl DrawingDefinition {
             ));
         }
         validate_text(&self.title)?;
+        if let Some(sheet) = &self.sheet {
+            sheet.validate(self)?;
+        }
         for (key, value) in &self.metadata {
             if key.len().saturating_add(value.len()).saturating_add(2) > 2049 {
                 return Err(ModelError::new(
@@ -352,6 +396,14 @@ impl DrawingDefinition {
             .map(|view| (view.id.as_str(), view))
             .collect::<HashMap<_, _>>();
         validate_dimensions(&self.dimensions, &views, graph)?;
+        guides::validate(&self.guides, &views, graph)?;
+        gdt::validate(
+            &self.datum_features,
+            &self.feature_control_frames,
+            &self.datum_reference_frames,
+            &views,
+            graph,
+        )?;
         let mut ids = HashSet::new();
         for note in &self.notes {
             if note.id.is_empty() || !ids.insert(&note.id) || !finite_pair(note.position_mm) {
@@ -431,18 +483,46 @@ impl DrawingDefinition {
         vertices: &mut usize,
     ) -> Result<GeneratedDrawing, ModelError> {
         let mut drawing = GeneratedDrawing {
+            gdt_lines: Vec::new(),
+            gdt_labels: Vec::new(),
+            sheet_lines: Vec::new(),
+            sheet_labels: Vec::new(),
             id: self.id.clone(),
             title: self.title.clone(),
-            paper_size_mm: self.paper_size_mm,
+            paper_size_mm: self.effective_paper_size_mm(),
             polylines: Vec::new(),
+            guides: Vec::new(),
+            hatches: Vec::new(),
             labels: Vec::new(),
             metadata: self.metadata.clone(),
             generated_variants: generation.generated_variants(),
         };
+        if let Some(sheet) = &self.sheet {
+            sheets::decorate(
+                &mut drawing,
+                sheet,
+                &self.views.iter().map(|v| v.scale).collect::<Vec<_>>(),
+            );
+            let count: usize = drawing
+                .sheet_lines
+                .iter()
+                .map(|line| line.points_mm.len())
+                .sum();
+            *vertices = vertices
+                .checked_add(count)
+                .ok_or_else(|| ModelError::new("sheet vertex count overflow"))?;
+        }
+        *vertices = vertices
+            .checked_add(gdt::vertex_count(
+                &self.datum_features,
+                &self.feature_control_frames,
+                &self.datum_reference_frames,
+            )?)
+            .ok_or_else(|| ModelError::new("GD&T vertex count overflow"))?;
         let added = self
             .dimensions
             .iter()
-            .try_fold(9usize, |sum, d| {
+            .try_fold(guides::vertex_count(&self.guides)?, |sum, d| {
                 let count = match d.direction {
                     DimensionDirection::Angular { .. } => 77,
                     DimensionDirection::Radius => 8,
@@ -470,6 +550,15 @@ impl DrawingDefinition {
             .iter()
             .map(|view| (view.id.as_str(), view))
             .collect::<HashMap<_, _>>();
+        gdt::append(
+            &self.datum_features,
+            &self.feature_control_frames,
+            &self.datum_reference_frames,
+            &views,
+            graph,
+            &mut drawing,
+        )?;
+        guides::append(&self.guides, &views, graph, &mut drawing)?;
         let context = dimensions::DimensionContext::new(&self.dimensions, graph)?;
         for dimension in &self.dimensions {
             append_dimension(
@@ -569,6 +658,11 @@ fn append_view(
         })
         .collect::<Result<Vec<_>, _>>()?;
     let combined = session.create_compound(&shapes)?;
+    if view.hatching.is_some() && matches!(view.kind, DrawingViewKind::Section { .. }) {
+        let section_view = hatching::section_plane_view(view)?;
+        let section = slice::intersection(session, &section_view, &combined)?;
+        hatching::append(session, view, &section, options, vertices, drawing)?;
+    }
     let combined = match view.kind {
         DrawingViewKind::Slice => {
             return slice::append(session, view, &combined, options, vertices, drawing);
@@ -578,7 +672,8 @@ fn append_view(
             origin,
             normal,
             keep_positive,
-        } => session.clip_by_plane(
+        } => slice::clip_components(
+            session,
             &combined,
             origin.normalized(Dimension::Length)?,
             axis(normal)?,

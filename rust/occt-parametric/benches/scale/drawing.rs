@@ -22,9 +22,14 @@ pub(crate) fn assembly_drawing_case(definition: &'static FamilyDefinition) -> Ou
                 "bench",
             )?;
             let drawing = DrawingDefinition {
+                datum_reference_frames: Vec::new(),
+                datum_features: Vec::new(),
+                feature_control_frames: Vec::new(),
+                sheet: None,
                 id: "assembly-drawing".into(),
                 title: "Assembly drawing".into(),
                 paper_size_mm: [1000.0, 1000.0],
+                guides: Vec::new(),
                 dimensions: Vec::new(),
                 notes: Vec::new(),
                 metadata: Default::default(),
@@ -45,6 +50,7 @@ pub(crate) fn assembly_drawing_case(definition: &'static FamilyDefinition) -> Ou
                     show_hidden: false,
                     kind: DrawingViewKind::Orthographic,
                     detail: None,
+                    hatching: None,
                 }],
             };
             let generated = drawing.generate(
@@ -84,14 +90,20 @@ pub(crate) fn drawing_case(definition: &'static FamilyDefinition) -> Outcome {
             let mut graph = InstanceGraph::new(definition);
             graph.add_base("part", HashMap::new(), "bench")?;
             let drawing = DrawingDefinition {
+                datum_reference_frames: Vec::new(),
+                datum_features: Vec::new(),
+                feature_control_frames: Vec::new(),
+                sheet: None,
                 id: "scale-drawing".into(),
                 title: "Scale drawing".into(),
                 paper_size_mm: [1000.0, 1000.0],
+                guides: Vec::new(),
                 dimensions: Vec::new(),
                 notes: Vec::new(),
                 metadata: Default::default(),
                 views: (0..1000)
                     .map(|index| DrawingView {
+                        hatching: None,
                         id: format!("view{index}"),
                         outputs: vec![InstanceOutputRef {
                             instance: "part".into(),

@@ -143,6 +143,10 @@ fn placement_material_suppression_and_drawings_do_not_rebuild_local_geometry() {
         }
     }
     before.drawings.push(DrawingDefinition {
+        datum_reference_frames: Vec::new(),
+        datum_features: Vec::new(),
+        feature_control_frames: Vec::new(),
+        sheet: None,
         id: "view".into(),
         title: "Assembly".into(),
         paper_size_mm: [297.0, 210.0],
@@ -160,7 +164,9 @@ fn placement_material_suppression_and_drawings_do_not_rebuild_local_geometry() {
             show_hidden: false,
             kind: DrawingViewKind::Orthographic,
             detail: None,
+            hatching: None,
         }],
+        guides: Vec::new(),
         dimensions: vec![],
         notes: vec![],
         metadata: BTreeMap::new(),

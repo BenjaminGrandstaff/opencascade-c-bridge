@@ -258,6 +258,10 @@ fn integrated_schema_preserves_references_slice_drawings_and_joint_motion() {
         .unwrap();
     graph.set_instance_frame("part", Some("hinge")).unwrap();
     let drawing = DrawingDefinition {
+        datum_reference_frames: Vec::new(),
+        datum_features: Vec::new(),
+        feature_control_frames: Vec::new(),
+        sheet: None,
         id: "slice".into(),
         title: "Referenced shell template".into(),
         paper_size_mm: [100.0, 100.0],
@@ -275,7 +279,9 @@ fn integrated_schema_preserves_references_slice_drawings_and_joint_motion() {
             show_hidden: false,
             kind: DrawingViewKind::Slice,
             detail: None,
+            hatching: None,
         }],
+        guides: Vec::new(),
         dimensions: Vec::new(),
         notes: Vec::new(),
         metadata: BTreeMap::new(),

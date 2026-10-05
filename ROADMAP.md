@@ -11,18 +11,79 @@ tracks status and order.
 | C ABI (`src/`, `include/`) | ABI 43 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 58 | Active development |
+| `occt-parametric` (engineering layer) | Schema 63 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 91 + first-use integration 1 (+1 doc test), recipes 3, parametric 318 + merge driver 3 + motion command 16 + balance command 4 + drawing command 2 + branch command 2, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
-| SonarQube (indexed Rust) | Gate OK, 0 issues, 93.5% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
+| Tests | C 5/5, bridge 91 + first-use integration 1 (+1 doc test), recipes 3, parametric 339 + merge driver 3 + motion command 16 + balance command 4 + drawing command 2 + branch command 2, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
-| Coverage | 93.39% lines overall, test code excluded; C++ 94.17% lines, 87.51% branches, 100% functions; Rust 93.08% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 90 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Coverage | 93.61% lines overall, test code excluded; C++ 94.13% lines, 87.40% branches, 100% functions; Rust 93.42% lines | `tools/coverage/run.sh` |
+| Scale benchmarks | 96 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
+
+- Composite controls and named datum frames (schema 63): two-segment position/
+  profile frames with a shared characteristic cell, a tighter lower tolerance and
+  an unchanged prefix of upper datum references. Named frames preserve ordered
+  precedence and boundary conditions, work in controls and stable-ID merges,
+  and resolve current world-space datum geometry in a batch. Nominal planar 3-2-1
+  coordinates use three orthogonal model planes at RFS, with explicit rejection
+  of partial/non-planar/skew/material-boundary cases. Four tests cover exports,
+  exact budgets, validation, migration, merges, scaled and far rotated frames.
+  Benchmarks cover 10,000 composites with both exports in 0.714 s and 10,000
+  named frames with nominal coordinates in 0.015 s (10 s budgets). Fitted simulators, datum shift
+  and actual tolerance-zone inspection remain future work. See [Drawings](DRAWINGS.md).
+
+- Structured drawing GD&T intent (schema 62): datum-feature symbols and
+  single-row feature-control frames for twelve form/profile/orientation/position/
+  runout characteristics, dimensioned tolerance values, characteristic/diameter
+  zones, explicit feature-of-size declarations, MMC/LMC tolerance modifiers and
+  MMB/LMB datum references in primary/secondary/tertiary order. Live model anchors
+  drive leaders; symbols use vector strokes, with a dedicated DXF GD_T layer.
+  Validation rejects unsupported combinations, missing/duplicate references,
+  rounded-zero values and exhausted export budgets. Four tests cover symbols,
+  units, edits, paper sizing, migration and semantic merges. A 10,000-frame
+  benchmark verifies generation, both exports and native cleanup in 0.504 s
+  (10 s budget).
+  These are persisted manufacturing declarations, not measured conformity results.
+  Datum simulators, bonus/shift calculations and tolerance-zone
+  inspection remain future work. See [Drawings](DRAWINGS.md).
+
+- Standard paper presets and projection symbols (schema 61): ANSI A–E and ISO
+  A0–A4 in portrait/landscape, a bounded lower-right title block with drawing
+  number, revision, scale, sheet numbering and metadata, and explicit first- or
+  third-angle symbols. Presets override custom paper dimensions; legacy drawings
+  retain their earlier frame. Three tests cover all 20 size/orientation pairs,
+  symbol direction, paper-space sizing, exports, persistence, migration and budgets.
+  A 1,000-sheet benchmark verifies shared regeneration and SVG/DXF exports in
+  1.717 s (10 s budget). Views remain explicitly positioned; prescribed zones, approval and
+  revision tables, lettering and a full standards-conformity audit remain future
+  work. API and references: [Drawings](DRAWINGS.md).
+
+- Automatic section hatching (schema 60): saved paper-space angle, spacing and
+  phase for Slice/Section views; holes retain clear interiors, overlapping
+  components share a material union, and disconnected cut regions remain separate.
+  Per-solid cutting preserves overlapping components in section outlines too.
+  Detail clipping, work/vertex budgets and legacy migration are covered by six
+  tests. SVG uses thin hatch strokes; DXF uses a SECTION_HATCH layer. A benchmark
+  checks 10,000 hatch segments across 1,000 placed parts in 8.406 s (30 s budget).
+  Curved boundaries remain sampled; material-specific conventions and certified
+  approximation remain future work. See [Drawings](DRAWINGS.md).
+
+- Datum-linked drawing guides (schema 59): center marks with fixed paper sizes,
+  projected centerlines with paper extensions, and straight cutting-plane
+  indicators linked to section views. Source endpoints must lie on the cut
+  plane; the section looks normal to it and the cut is edge-on in the source
+  view. Arrows follow viewing direction and captions identify the linked section.
+  SVG and DXF distinguish thin center guides, thick cutting-plane lines and
+  solid arrowheads; DXF adds CENTER/CUTTING_PLANE layers and a center linetype.
+  Guides regenerate at current placements, persist, and merge by stable ID.
+  Four tests cover edits, viewing direction, migration, merges, invalid guides,
+  budgets, far rotated origins, scale and crop behavior; 10,000 mixed guides
+  generate and export within a 10 s budget with one shared variant. This does
+  not certify ASME line weights or layouts. See [Drawings](DRAWINGS.md).
 
 - Manufacturing dimensions and tolerances (schema 58): radial, diametric and
   minor-angle dimensions join aligned/horizontal/vertical dimensions. Display
@@ -508,8 +569,7 @@ tracks status and order.
   sampled polylines. Seven tests cover regeneration, validation, persistence,
   semantic diff, export escaping, and cleanup. Independent DXF parsing reports
   zero errors or repairs. The 1,000-view case takes 1.235 s (10 s budget);
-  a view of a 1,000-part assembly takes 0.903 s (20 s budget). Section hatching
-  and certified curve approximation remain future extensions.
+  a view of a 1,000-part assembly takes 0.903 s (20 s budget). Certified curve approximation remains a future extension.
   API and limits: [Drawings](DRAWINGS.md).
 
 - Closed-linkage sampled motion (no schema or ABI change): each driven pose
@@ -876,15 +936,16 @@ remain lower priority. The ASME comparison below is based on public standard
 scopes and inspected repo capabilities, not a full conformity audit.
 
 1. **Drawing conventions and manufacturing sheets** — [Y14 family](https://www.asme.org/codes-standards/y14-standards):
-   automatic section hatching, cutting-plane indicators, centerlines/center marks,
-   projection symbols, standard sheet layouts, and standards-verified dimension
+   material-specific hatch conventions, standards-verified sheet formats,
+   and standards-verified dimension
    placement and typography, plus exact curve export. Current curves are sampled
    polylines; direct deviations and limits now render stacked values.
 2. **Structured GD&T** — [Y14.5](https://www.asme.org/codes-standards/find-codes-standards/y14-5-dimensioning-tolerancing):
-   datum-feature symbols and datum reference frames, feature-control frames,
-   position/profile/form/orientation/runout controls, material-condition modifiers,
-   tolerance-zone semantics and validation. Existing geometric datums and solver
-   tolerances do not supply manufacturing GD&T.
+   measured datum simulators and broader reference-frame establishment,
+   multi-level composites, common datums and advanced modifiers, verified
+   tolerance-zone evaluation and measured inspection. Saved single/composite
+   controls and named datum frames express intent; nominal orthogonal-plane
+   coordinates do not calculate bonus tolerance, datum shift or conformity.
 3. **3D manufacturing annotations and exchange** — [Y14.41](https://www.asme.org/codes-standards/find-codes-standards/y14-41-digital-product-definition-data-practices):
    structured PMI attached to persistent geometry, annotation views, dataset
    authority and revision rules, and verified semantic PMI exchange. Geometry
@@ -901,6 +962,11 @@ scopes and inspected repo capabilities, not a full conformity audit.
    assembly balloons, and links between released drawing/model revisions.
 
 ## Later
+
+- Investigate intermittent native STEP transfer/healing in
+  `invalid_results_are_rejected_healed_or_allowed_by_option`: one coverage run
+  rejected the bowtie STEP fixture with unorientable/self-intersecting diagnostics;
+  the full rerun passed. No native code changed in the GD&T increment.
 
 - General sheet-metal edge flanges, bend reliefs, hems, cutouts, bend tables,
   and unfolding edited solids beyond constant-width strips.

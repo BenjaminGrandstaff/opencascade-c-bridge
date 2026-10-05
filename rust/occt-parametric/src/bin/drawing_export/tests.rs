@@ -38,6 +38,10 @@ fn fixture() -> (ModelDocument, DrawingDefinition) {
     let mut graph = InstanceGraph::new(&family);
     graph.add_base("part", HashMap::new(), "test").unwrap();
     let drawing = DrawingDefinition {
+        datum_reference_frames: Vec::new(),
+        datum_features: Vec::new(),
+        feature_control_frames: Vec::new(),
+        sheet: None,
         id: "../../unsafe-filename".into(),
         title: "Section template".into(),
         paper_size_mm: [100.0, 100.0],
@@ -55,7 +59,9 @@ fn fixture() -> (ModelDocument, DrawingDefinition) {
             show_hidden: false,
             kind: DrawingViewKind::Slice,
             detail: None,
+            hatching: None,
         }],
+        guides: Vec::new(),
         dimensions: vec![],
         notes: vec![],
         metadata: BTreeMap::new(),

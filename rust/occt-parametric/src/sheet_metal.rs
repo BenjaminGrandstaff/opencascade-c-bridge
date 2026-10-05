@@ -367,10 +367,16 @@ impl FlatPatternMetrics {
             hidden: true,
         }));
         Ok(GeneratedDrawing {
+            gdt_lines: Vec::new(),
+            gdt_labels: Vec::new(),
+            sheet_lines: Vec::new(),
+            sheet_labels: Vec::new(),
             id: id.into(),
             title: format!("{id} flat pattern"),
             paper_size_mm,
             polylines,
+            guides: Vec::new(),
+            hatches: Vec::new(),
             labels: vec![],
             metadata: BTreeMap::from([
                 ("Thickness mm".into(), self.thickness_mm.to_string()),
