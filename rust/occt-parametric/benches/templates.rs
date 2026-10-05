@@ -677,4 +677,47 @@ fn main() {
         "100000 fixed cylindrical position samples: {:?} (10s budget), no kernel handles",
         started.elapsed()
     );
+    let mut measured_page = template.clone();
+    measured_page.dimensions = (0..10_000)
+        .map(|i| DrawingDimension {
+            id: format!("width-{i}"),
+            view: "profile".into(),
+            first: DatumRef::new("part", "center"),
+            second: DatumRef::new("part", "x"),
+            direction: DimensionDirection::Horizontal,
+            offset_mm: 10.0,
+            precision: 3,
+            presentation: DimensionPresentation {
+                tolerance: DimensionTolerance::Symmetric {
+                    deviation: Quantity::length(0.125, LengthUnit::Millimeter),
+                },
+                ..Default::default()
+            },
+        })
+        .collect();
+    let measurements: Vec<_> = (0..100_000)
+        .map(|i| DrawingDimensionMeasurement {
+            dimension: format!("width-{}", i % 10_000),
+            value: Quantity::length(5.0 + (i % 3) as f64 * 0.125 - 0.125, LengthUnit::Millimeter),
+        })
+        .collect();
+    let started = Instant::now();
+    let results = measured_page
+        .evaluate_dimension_measurements(&graph, &measurements)
+        .unwrap();
+    assert_eq!(results.len(), 100_000);
+    for (input, result) in measurements.iter().zip(results.iter()) {
+        assert_eq!(result.dimension, input.dimension);
+        assert_eq!(result.evaluation.nominal.value, 5.0);
+        assert_eq!(
+            result.evaluation.disposition,
+            DimensionMeasurementDisposition::WithinLimits
+        );
+    }
+    assert_eq!(session.shape_count().unwrap(), 0);
+    assert!(started.elapsed().as_secs_f64() < 10.0);
+    println!(
+        "100000 dimensional measurements across 10000 saved dimensions: {:?} (10s budget), no kernel handles",
+        started.elapsed()
+    );
 }

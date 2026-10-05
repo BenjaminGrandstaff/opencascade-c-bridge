@@ -277,6 +277,8 @@ binary supplies a semantic Git merge driver. See [Model history](MODEL_HISTORY.m
 and [Document comparisons](DOCUMENT_DIFF.md). Schema 42 adds regenerated orthographic, section,
 and detail drawings, datum dimensions, parameter notes, and metadata title blocks
 exported as SVG or DXF. See [Drawings](DRAWINGS.md) for the API and sampling limits.
+Dimensional measurement checks resolve current lengths, angles and hole diameters
+and report explicit limits, signed deviations and margins in a batch.
 Fixed cylindrical position checks evaluate supplied axis samples in an established
 datum frame, with feature bonus, worst-sample error and margin; see [Drawings](DRAWINGS.md).
 Schema 64 adds saved internal/external feature-size limits and unit-aware MMC/LMC/RFS

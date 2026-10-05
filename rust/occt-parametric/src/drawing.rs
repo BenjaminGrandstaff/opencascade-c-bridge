@@ -5,7 +5,11 @@ use std::collections::BTreeSet;
 
 mod detail;
 mod dimensions;
-pub use dimensions::{DimensionPresentation, DimensionTolerance};
+pub use dimensions::{
+    DimensionMeasurementDisposition, DimensionMeasurementEvaluation, DimensionMeasurementLimits,
+    DimensionPresentation, DimensionTolerance, DrawingDimensionMeasurement,
+    DrawingDimensionMeasurementResult,
+};
 mod export;
 pub(crate) mod gdt;
 mod guides;

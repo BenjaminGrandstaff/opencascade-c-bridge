@@ -1,5 +1,10 @@
 //! Manufacturing dimension presentation; no GD&T or thread-fit certification.
 use super::*;
+mod measurement;
+pub use measurement::{
+    DimensionMeasurementDisposition, DimensionMeasurementEvaluation, DimensionMeasurementLimits,
+    DrawingDimensionMeasurement, DrawingDimensionMeasurementResult,
+};
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
@@ -251,11 +256,10 @@ pub(super) fn validate(
     Ok(())
 }
 
-fn hole_label(
-    d: &DrawingDimension,
+fn hole_source<'a>(
     reference: &InstanceOutputRef,
-    context: &DimensionContext<'_>,
-) -> Result<String, ModelError> {
+    context: &'a DimensionContext<'_>,
+) -> Result<(&'a FeatureOperation, &'a HashMap<String, ParameterValue>), ModelError> {
     let source = context
         .holes
         .get(&reference.instance)
@@ -264,19 +268,27 @@ fn hole_label(
         .features
         .get(reference.output.as_str())
         .ok_or_else(|| ModelError::new("hole callout feature is unknown"))?;
+    Ok((&feature.operation, &source.parameters))
+}
+
+fn hole_label(
+    d: &DrawingDimension,
+    reference: &InstanceOutputRef,
+    context: &DimensionContext<'_>,
+) -> Result<String, ModelError> {
+    let (operation, params) = hole_source(reference, context)?;
     let FeatureOperation::Hole {
         diameter,
         extent,
         finish,
         thread,
         ..
-    } = &feature.operation
+    } = operation
     else {
         return Err(ModelError::new(
             "hole callout must reference a Hole feature",
         ));
     };
-    let params = &source.parameters;
     let factor = d.presentation.length_unit.millimeter_factor();
     let eval = |expr: &ScalarExpr, dimension: Dimension| -> Result<f64, ModelError> {
         let result = evaluate_resolved_expression(expr, params)?;

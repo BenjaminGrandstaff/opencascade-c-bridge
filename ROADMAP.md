@@ -15,14 +15,25 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 89 + first-use integration 1 (+1 doc test), recipes 3, parametric 346 + merge driver 3 + motion command 16 + balance command 4 + drawing command 2 + branch command 2, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 89 + first-use integration 1 (+1 doc test), recipes 3, parametric 350 + merge driver 3 + motion command 16 + balance command 4 + drawing command 2 + branch command 2, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
-| Coverage | 93.66% lines overall, test code excluded; C++ 94.17% lines, 87.44% branches, 100% functions; Rust 93.47% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 97 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Coverage | 93.67% lines overall, test code excluded; C++ 94.17% lines, 87.44% branches, 100% functions; Rust 93.49% lines | `tools/coverage/run.sh` |
+| Scale benchmarks | 98 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
+
+- Dimensional measurement checks: symmetric, signed-deviation and explicit-limit
+  comparisons with unit-normalized nominal/measured values, signed deviations,
+  margins and inclusive boundaries. Basic/reference/untoleranced dimensions
+  return distinct dispositions without inferred acceptance limits. Saved batches
+  resolve live projected lengths, radii, diameters, angles and hole-feature sizes;
+  repeated measurements share cached nominal values. Four tests cover limits,
+  units, rejection, paper independence, angular values and edited hole parameters.
+  A benchmark checks 100,000 measurements across 10,000 saved dimensions in
+  0.036 s (10 s budget), without kernel handles. Measurement acquisition, uncertainty/guard bands and geometric
+  conformity remain future work. See [Drawings](DRAWINGS.md).
 
 - Fixed cylindrical position sample checks: single-row diameter controls with
   three RFS datum references, arbitrary nominal axis direction and supplied
