@@ -24,6 +24,16 @@ tracks status and order.
 
 ## Done
 
+- Feature-size limits and bonus allowances (schema 64): persisted internal/external
+  size limits, unit-aware MMC/LMC/RFS arithmetic, and independent total allowances
+  for both position-composite rows. Out-of-limit sizes and invalid/overflowing
+  values fail. Drawing exports preserve the specified control. Four tests cover
+  material conditions, endpoints, units, rejection, persistence, migration and
+  independent merges; a 10,000-allowance benchmark runs in 0.005 s
+  (10 s budget) and uses no kernel handles.
+  Mating-envelope fitting, datum shift and measured conformity remain future
+  work. See [Drawings](DRAWINGS.md).
+
 - Composite controls and named datum frames (schema 63): two-segment position/
   profile frames with a shared characteristic cell, a tighter lower tolerance and
   an unchanged prefix of upper datum references. Named frames preserve ordered
@@ -48,7 +58,7 @@ tracks status and order.
   benchmark verifies generation, both exports and native cleanup in 0.504 s
   (10 s budget).
   These are persisted manufacturing declarations, not measured conformity results.
-  Datum simulators, bonus/shift calculations and tolerance-zone
+  Datum simulators, datum-shift calculations and tolerance-zone
   inspection remain future work. See [Drawings](DRAWINGS.md).
 
 - Standard paper presets and projection symbols (schema 61): ANSI A–E and ISO

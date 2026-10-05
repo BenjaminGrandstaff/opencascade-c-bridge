@@ -3,6 +3,7 @@ use super::*;
 mod composite;
 mod datums;
 mod inspection;
+mod size;
 pub use composite::DrawingCompositeRefinement;
 pub use datums::{
     DatumPrecedence, DrawingDatumCoordinateFrame, DrawingDatumReferenceFrame,
@@ -12,6 +13,7 @@ pub use inspection::{
     ControlInspection, ControlMeasurement, ControlResult, InspectionRecord, InspectionReport,
     MAX_INSPECTION_POINTS, MeasuredDatumFrame, MeasuredFeature,
 };
+pub use size::{DrawingSizeLimits, FeatureOfSizeKind, GeometricToleranceAllowance};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -109,36 +111,11 @@ pub struct DrawingDatumReference {
     #[serde(default)]
     pub boundary: DatumMaterialBoundary,
 }
-/// Size tolerance of a controlled feature of size, which sets its maximum and
-/// least material conditions. `internal` features (holes) are at maximum
-/// material at `lower`; external ones (pins) at `upper`.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct FeatureSizeLimits {
-    pub lower: Quantity,
-    pub upper: Quantity,
-    pub internal: bool,
-}
-impl FeatureSizeLimits {
-    /// Lower and upper limits in millimeters.
-    pub fn millimeters(&self) -> Result<(f64, f64), ModelError> {
-        if self.lower.dimension != Dimension::Length || self.upper.dimension != Dimension::Length {
-            return Err(ModelError::new("feature size limits must be lengths"));
-        }
-        let (lower, upper) = (self.lower.normalized()?, self.upper.normalized()?);
-        if !(lower.is_finite() && upper.is_finite() && lower > 0.0 && lower < upper) {
-            return Err(ModelError::new(
-                "feature size limits need finite positive lower and larger upper values",
-            ));
-        }
-        Ok((lower, upper))
-    }
-}
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DrawingFeatureControlFrame {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub size_limits: Option<FeatureSizeLimits>,
+    pub size_limits: Option<DrawingSizeLimits>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub datum_reference_frame: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -253,6 +230,7 @@ pub(super) fn validate(
         anchor(&frame.attachment, views, graph)?;
         number(frame)?;
         validate_control(frame)?;
+        size::validate(frame)?;
         composite::validate(frame, &index)?;
         validate_references(&frame.datums, &index)?;
     }
@@ -306,14 +284,6 @@ fn validate_control(frame: &DrawingFeatureControlFrame) -> Result<(), ModelError
         return Err(ModelError::new(
             "tolerance material modifier requires a supported feature-of-size control",
         ));
-    }
-    if let Some(limits) = &frame.size_limits {
-        if !frame.feature_of_size {
-            return Err(ModelError::new(
-                "feature size limits require a declared feature of size",
-            ));
-        }
-        limits.millimeters()?;
     }
     Ok(())
 }

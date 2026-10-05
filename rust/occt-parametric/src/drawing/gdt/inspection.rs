@@ -447,12 +447,13 @@ impl Context<'_, '_> {
             .map_err(|e| e.to_string())?;
         // Internal features mate with the largest inscribed cylinder normal to
         // the primary datum; external ones with the smallest circumscribed one.
-        let (mating, minimum_material) = if limits.internal {
+        let internal = limits.kind == FeatureOfSizeKind::Internal;
+        let (mating, minimum_material) = if internal {
             (Fit::Inscribed, Fit::Circumscribed)
         } else {
             (Fit::Circumscribed, Fit::Inscribed)
         };
-        let (lower, upper) = limits.millimeters().map_err(|e| e.to_string())?;
+        let (lower, upper) = limits.bounds().map_err(|e| e.to_string())?;
         let (center, radius) = fit_circle(&projected, mating).map_err(|e| e.to_string())?;
         let size = 2.0 * radius;
         let (minimum_center, minimum_radius) =
@@ -462,17 +463,12 @@ impl Context<'_, '_> {
             ToleranceMaterialCondition::Regardless => (center, 0.0),
             ToleranceMaterialCondition::Maximum => (
                 center,
-                if limits.internal {
-                    size - lower
-                } else {
-                    upper - size
-                }
-                .max(0.0),
+                if internal { size - lower } else { upper - size }.max(0.0),
             ),
             // Least material is located on the minimum material envelope axis.
             ToleranceMaterialCondition::Least => (
                 minimum_center,
-                if limits.internal {
+                if internal {
                     upper - minimum_size
                 } else {
                     minimum_size - lower
@@ -481,7 +477,7 @@ impl Context<'_, '_> {
             ),
         };
         let deviation = 2.0 * (center[0] - true_position.x).hypot(center[1] - true_position.y);
-        let size_conforms = if limits.internal {
+        let size_conforms = if internal {
             size >= lower && minimum_size <= upper
         } else {
             size <= upper && minimum_size >= lower

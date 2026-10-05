@@ -5,9 +5,9 @@ use super::*;
 use occt_parametric::{
     ControlResult, DatumMaterialBoundary, DrawingDatumFeature, DrawingDatumReference,
     DrawingDatumReferenceFrame, DrawingDefinition, DrawingFeatureControlFrame,
-    DrawingGdtAttachment, DrawingView, DrawingViewKind, FeatureSizeLimits, GeometricCharacteristic,
-    GeometricToleranceZone, InspectionRecord, InstanceOutputRef, MeasuredFeature,
-    ToleranceMaterialCondition,
+    DrawingGdtAttachment, DrawingSizeLimits, DrawingView, DrawingViewKind, FeatureOfSizeKind,
+    GeometricCharacteristic, GeometricToleranceZone, InspectionRecord, InstanceOutputRef,
+    MeasuredFeature, ToleranceMaterialCondition,
 };
 
 const HOLES_PER_SIDE: usize = 10;
@@ -100,10 +100,10 @@ pub(crate) fn inspection_case(definition: &FamilyDefinition) -> Outcome {
             };
             let mut controls: Vec<DrawingFeatureControlFrame> = (0..CONTROLS)
                 .map(|i| DrawingFeatureControlFrame {
-                    size_limits: Some(FeatureSizeLimits {
+                    size_limits: Some(DrawingSizeLimits {
+                        kind: FeatureOfSizeKind::Internal,
                         lower: Quantity::length(5.9, LengthUnit::Millimeter),
                         upper: Quantity::length(6.1, LengthUnit::Millimeter),
-                        internal: true,
                     }),
                     datum_reference_frame: Some("ABC".into()),
                     refinement: None,

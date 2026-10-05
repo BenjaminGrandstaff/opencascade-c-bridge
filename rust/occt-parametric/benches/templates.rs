@@ -627,4 +627,25 @@ fn main() {
         "10000 named datum frames resolved and nominal planar 3-2-1 coordinates: {:?} (10s budget), no kernel handles",
         started.elapsed()
     );
+    let mut control = gdt.feature_control_frames[0].clone();
+    control.size_limits = Some(DrawingSizeLimits {
+        kind: FeatureOfSizeKind::Internal,
+        lower: Quantity::length(10.0, LengthUnit::Millimeter),
+        upper: Quantity::length(12.0, LengthUnit::Millimeter),
+    });
+    let started = Instant::now();
+    for _ in 0..10_000 {
+        let result = control
+            .tolerance_allowance(Quantity::length(11.0, LengthUnit::Millimeter))
+            .unwrap();
+        assert_eq!(result.bonus_mm, 1.0);
+        assert_eq!(result.total_tolerance_mm, 1.1);
+        assert_eq!(result.refinement_total_tolerance_mm, Some(1.05));
+    }
+    assert!(started.elapsed().as_secs_f64() < 10.0);
+    assert_eq!(session.shape_count().unwrap(), 0);
+    println!(
+        "10000 composite feature-size allowances: {:?} (10s budget), no kernel handles",
+        started.elapsed()
+    );
 }

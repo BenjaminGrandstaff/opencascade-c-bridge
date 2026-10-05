@@ -104,10 +104,10 @@ fn position(
     f.zone = GeometricToleranceZone::Diameter;
     f.material = material;
     f.feature_of_size = true;
-    f.size_limits = Some(FeatureSizeLimits {
+    f.size_limits = Some(DrawingSizeLimits {
+        kind: FeatureOfSizeKind::Internal,
         lower: Quantity::length(9.9, LengthUnit::Millimeter),
         upper: Quantity::length(10.1, LengthUnit::Millimeter),
-        internal: true,
     });
     f
 }
@@ -518,7 +518,7 @@ fn size_limits_validate_persist_and_inspection_records_round_trip() {
         let limits = frame.size_limits.as_mut().unwrap();
         match edit {
             0 => frame.feature_of_size = false,
-            1 => limits.upper = limits.lower,
+            1 => limits.upper = Quantity::length(9.0, LengthUnit::Millimeter),
             2 => limits.lower = Quantity::length(f64::NAN, LengthUnit::Millimeter),
             _ => limits.upper = Quantity::scalar(1.0),
         }
