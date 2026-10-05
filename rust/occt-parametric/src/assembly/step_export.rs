@@ -6,11 +6,11 @@ use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 
 /// Row-major rigid transform `[R | t]`.
-type Rigid = [f64; 12];
+pub(crate) type Rigid = [f64; 12];
 
 /// A placement as a rigid transform: rotate about the axis through the
 /// origin, then translate. Rodrigues' formula; O(1).
-fn rigid(placement: Placement) -> Result<Rigid, ModelError> {
+pub(crate) fn rigid(placement: Placement) -> Result<Rigid, ModelError> {
     let placement = placement.normalized()?;
     let t = placement.translation;
     let Some((o, axis, angle)) = placement.rotation else {
@@ -37,7 +37,7 @@ fn rigid(placement: Placement) -> Result<Rigid, ModelError> {
 }
 
 /// `outer` after `inner`: p -> outer(inner(p)).
-fn compose(outer: &Rigid, inner: &Rigid) -> Rigid {
+pub(crate) fn compose(outer: &Rigid, inner: &Rigid) -> Rigid {
     let mut m = [0.0; 12];
     for row in 0..3 {
         for column in 0..4 {
@@ -51,6 +51,18 @@ fn compose(outer: &Rigid, inner: &Rigid) -> Rigid {
         }
     }
     m
+}
+
+/// The inverse rigid transform `[Rᵀ | -Rᵀt]`.
+pub(crate) fn invert(m: &Rigid) -> Rigid {
+    let mut inverse = [0.0; 12];
+    for row in 0..3 {
+        for column in 0..3 {
+            inverse[4 * row + column] = m[4 * column + row];
+        }
+        inverse[4 * row + 3] = -(0..3).map(|k| m[4 * k + row] * m[4 * k + 3]).sum::<f64>();
+    }
+    inverse
 }
 
 #[cfg(test)]

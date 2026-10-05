@@ -1,8 +1,9 @@
 # Model viewer
 
-`occt-view` regenerates a saved model document and opens every part in OCCT's
-DRAW viewer, shaded, named after its instance and colored by its material
-appearance.
+`occt-view` regenerates a saved model document and shows every part, named
+after its instance and colored by its material appearance: in OCCT's DRAW
+viewer, or with `--serve` in a browser page that also edits the family's
+parameters.
 
 ```sh
 OCCT_BRIDGE_LIB_DIR="$PWD/build" LD_LIBRARY_PATH="$PWD/build" \
@@ -44,3 +45,45 @@ are rewritten.
 
 In DRAW, `vfit` refits the view and `vdisplay -dispMode 0 NAME` switches a part
 to wireframe.
+
+## Browser viewer and parameter editing
+
+```sh
+OCCT_BRIDGE_LIB_DIR="$PWD/build" LD_LIBRARY_PATH="$PWD/build" \
+  cargo run --manifest-path rust/occt-parametric/Cargo.toml --bin occt-view -- MODEL.json --serve
+```
+
+The command prints `http://127.0.0.1:8791/` (choose another port with
+`--port`, or `--port 0` for any free one) and opens it with `xdg-open` unless
+`--no-open` is given. It serves until stopped with Ctrl-C. `--output` works as
+above; `--watch` and `--dir` do not apply.
+
+The page renders the model's glTF with WebGL: drag to orbit, Shift-drag or
+right-drag to pan, wheel to zoom, and **Fit view** to reframe. The side panel
+lists the family's parameters with their units: scalars and integers get a
+number field and a slider between their limits, booleans a checkbox and
+choices a list; vector parameters are shown but edited in the file.
+
+- An edit changes the parameter's default in the family, regenerates and
+  redraws within a moment, keeping the camera. Edits to several parameters
+  merge, and one request is in flight at a time, so none is lost.
+- An edit that fails validation or regeneration (outside a parameter's limits,
+  for example) is rejected as a whole: the field reverts, the message stays
+  in the panel, and the model is unchanged.
+- **Save** writes the edited document over the model file, through a
+  temporary file and a rename so other readers never see a partial file.
+  Nothing is written until then.
+- A save made elsewhere, by an editor or another tool, reloads the page within
+  about a second once two checks agree. It replaces unsaved browser edits. A
+  file that does not load is reported and the last model stays.
+
+Edits change family defaults, so they apply to every instance without its own
+override. The page needs no external files. The server listens only on
+127.0.0.1, accepts only `127.0.0.1` or `localhost` Host headers, and accepts
+edits only with the `X-OCCT-View` header that the page sends, which other
+sites' pages cannot add; it is a local editing tool, not something to expose.
+
+Each edit costs one full regeneration and glTF export. Instances sharing a
+generated variant are tessellated once, so 10,000 pattern members export in
+about a quarter second. The renderer's tests run with
+`node --test rust/occt-parametric/src/bin/view/web/viewer.test.mjs`.

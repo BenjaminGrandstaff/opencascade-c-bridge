@@ -194,7 +194,7 @@ impl MeshExportDefinition {
         let result = generated
             .result(&self.output.instance)
             .ok_or_else(|| ModelError::new("mesh instance was not generated"))?;
-        self.tagged_result(graph, session, result, &mut context)
+        self.tagged_result(graph, session, result, &mut context, true)
     }
 
     fn tagged_result<'definition>(
@@ -203,6 +203,9 @@ impl MeshExportDefinition {
         session: &Session,
         result: &GeneratedResult<'_>,
         context: &mut ExportContext<'definition>,
+        // Exact per-face descriptors (area, center, bounds) for volume
+        // meshers; renderers such as glTF skip their per-face cost.
+        descriptors: bool,
     ) -> Result<TaggedSurfaceMesh, ModelError> {
         let shape = result
             .shape(&self.output.output)
@@ -241,6 +244,7 @@ impl MeshExportDefinition {
         }
         let descriptors = faces
             .iter()
+            .take(if descriptors { faces.len() } else { 0 })
             .enumerate()
             .map(|(index, face)| {
                 let center = session.center_of_mass(face)?;
@@ -288,7 +292,7 @@ impl MeshExportDefinition {
                 "volume mesh hand-off requires exactly one valid solid",
             ));
         }
-        let mesh = self.tagged_result(graph, session, result, &mut context)?;
+        let mesh = self.tagged_result(graph, session, result, &mut context, true)?;
         let manifest = serde_json::json!({ "version": 1, "units": "mm", "volume_name": self.id,
             "face_tags": mesh.names, "faces": mesh.faces });
         let json = serde_json::to_string_pretty(&manifest)

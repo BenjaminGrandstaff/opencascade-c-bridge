@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Model viewer</title>
+<style>
+  :root {
+    --bg: #f4f5f7; --panel: #ffffff; --text: #1d2330; --muted: #5d6677;
+    --line: #d9dde4; --accent: #2f6fdb; --error: #b42318; --canvas: #e9ecf1;
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14171c; --panel: #1c2027; --text: #e6e9ef; --muted: #9aa3b2;
+      --line: #2c323c; --accent: #6ea0ff; --error: #ff8a80; --canvas: #20252d;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; height: 100vh; display: grid; grid-template-columns: 300px 1fr;
+    font: 14px/1.4 system-ui, sans-serif; background: var(--bg); color: var(--text);
+  }
+  aside {
+    background: var(--panel); border-right: 1px solid var(--line);
+    padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px;
+  }
+  h1 { font-size: 16px; margin: 0; overflow-wrap: anywhere; }
+  .muted { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+  .parameter { display: grid; gap: 4px; padding: 8px 0; border-top: 1px solid var(--line); }
+  .parameter label { display: flex; justify-content: space-between; gap: 8px; }
+  .parameter input[type=number], select {
+    width: 100%; padding: 4px 6px; font: inherit; color: inherit;
+    background: var(--bg); border: 1px solid var(--line); border-radius: 4px;
+  }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  .actions { display: flex; gap: 8px; }
+  button {
+    flex: 1; padding: 6px 10px; font: inherit; border-radius: 4px; cursor: pointer;
+    border: 1px solid var(--line); background: var(--bg); color: var(--text);
+  }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button:disabled { opacity: 0.45; cursor: default; }
+  #error { color: var(--error); white-space: pre-wrap; font-size: 12px; }
+  main { position: relative; background: var(--canvas); }
+  canvas { width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
+  #hint { position: absolute; left: 12px; bottom: 10px; }
+  @media (max-width: 700px) {
+    body { grid-template-columns: 1fr; grid-template-rows: 55vh 1fr; }
+    main { grid-row: 1; }
+    aside { border-right: 0; border-top: 1px solid var(--line); }
+  }
+</style>
+</head>
+<body>
+<aside>
+  <div>
+    <h1 id="family">Loading…</h1>
+    <div class="muted" id="model"></div>
+  </div>
+  <div class="actions">
+    <button class="primary" id="save" disabled>Save</button>
+    <button id="fit">Fit view</button>
+  </div>
+  <div class="muted" id="status"></div>
+  <div id="error"></div>
+  <div id="parameters"></div>
+</aside>
+<main>
+  <canvas id="view"></canvas>
+  <div class="muted" id="hint">Drag to orbit · Shift-drag or right-drag to pan · Wheel to zoom</div>
+</main>
+<script type="module">
+import { createRenderer, fitCamera, pan, parseGltf } from "./viewer.mjs";
+
+const $ = (id) => document.getElementById(id);
+const canvas = $("view");
+let renderer;
+try {
+  renderer = createRenderer(canvas);
+} catch (error) {
+  $("error").textContent = error.message;
+}
+let camera = fitCamera(null);
+let bounds = null;
+let version = 0;
+let state = null;
+let frame = 0;
+
+const aspect = () => canvas.clientWidth / Math.max(1, canvas.clientHeight);
+
+function redraw() {
+  if (frame || !renderer) return;
+  frame = requestAnimationFrame(() => {
+    frame = 0;
+    renderer.draw(camera);
+  });
+}
+
+async function api(path, options = {}) {
+  const response = await fetch(path, {
+    ...options,
+    headers: { "Content-Type": "application/json", "X-OCCT-View": "1" },
+  });
+  const body = await response.json();
+  if (!response.ok) throw new Error(body.error ?? response.statusText);
+  return body;
+}
+
+async function loadModel(first) {
+  const gltf = await (await fetch("/api/model.gltf")).json();
+  const parsed = parseGltf(gltf);
+  bounds = parsed.bounds;
+  renderer?.setModel(parsed);
+  if (first) camera = fitCamera(bounds, aspect());
+  $("status").textContent =
+    `${parsed.nodes.length} part${parsed.nodes.length === 1 ? "" : "s"} · ` +
+    `${parsed.meshes.length} distinct mesh${parsed.meshes.length === 1 ? "" : "es"}`;
+  redraw();
+}
+
+function format(value) {
+  return Number.isInteger(value) ? String(value) : String(Number(value.toPrecision(6)));
+}
+
+// Edits to any parameter merge until sent; one request is in flight at a
+// time, so no edit is dropped and the server applies them in order.
+const pending = {};
+// A rejected edit's message, kept until an edit succeeds.
+let editError = null;
+let timer = null;
+let sending = false;
+function edit(id, value) {
+  pending[id] = value;
+  clearTimeout(timer);
+  timer = setTimeout(flush, 150);
+}
+
+async function flush() {
+  if (sending || !Object.keys(pending).length) return;
+  const body = { ...pending };
+  for (const id of Object.keys(body)) delete pending[id];
+  sending = true;
+  try {
+    const next = await api("/api/parameters", { method: "POST", body: JSON.stringify(body) });
+    editError = null;
+    apply(next);
+  } catch (error) {
+    editError = `Edit rejected: ${error.message}`;
+    $("error").textContent = editError;
+    renderParameters(state);
+  } finally {
+    sending = false;
+    flush();
+  }
+}
+
+function renderParameters(current) {
+  const container = $("parameters");
+  container.replaceChildren();
+  for (const parameter of current.parameters) {
+    const row = document.createElement("div");
+    row.className = "parameter";
+    const label = document.createElement("label");
+    const name = document.createElement("span");
+    name.textContent = parameter.id;
+    const unit = document.createElement("span");
+    unit.className = "muted";
+    unit.textContent = typeof parameter.unit === "string" ? parameter.unit : "";
+    label.append(name, unit);
+    row.append(label);
+    if (parameter.kind === "scalar" || parameter.kind === "integer") {
+      const number = document.createElement("input");
+      number.type = "number";
+      number.value = format(parameter.value);
+      number.step = parameter.kind === "integer" ? "1" : "any";
+      const low = parameter.minimum ?? (parameter.value > 0 ? 0 : parameter.value * 2);
+      const high = parameter.maximum ?? Math.max(low + 1, Math.abs(parameter.value) * 3);
+      const range = document.createElement("input");
+      range.type = "range";
+      range.min = low;
+      range.max = high;
+      // A power-of-ten step gives round values over at least ~100 positions.
+      range.step =
+        parameter.kind === "integer"
+          ? "1"
+          : String(10 ** Math.floor(Math.log10((high - low) / 100)));
+      range.value = parameter.value;
+      const parse = (text) => (parameter.kind === "integer" ? parseInt(text, 10) : parseFloat(text));
+      range.addEventListener("input", () => {
+        number.value = format(parse(range.value));
+        edit(parameter.id, parse(range.value));
+      });
+      number.addEventListener("change", () => {
+        const value = parse(number.value);
+        if (Number.isFinite(value)) {
+          range.value = value;
+          edit(parameter.id, value);
+        }
+      });
+      row.append(number, range);
+    } else if (parameter.kind === "boolean") {
+      const box = document.createElement("input");
+      box.type = "checkbox";
+      box.checked = parameter.value;
+      box.addEventListener("change", () => edit(parameter.id, box.checked));
+      label.prepend(box);
+    } else if (parameter.kind === "choice") {
+      const select = document.createElement("select");
+      for (const choice of parameter.choices ?? []) {
+        const option = new Option(choice, choice, false, choice === parameter.value);
+        select.append(option);
+      }
+      select.addEventListener("change", () => edit(parameter.id, select.value));
+      row.append(select);
+    } else {
+      const note = document.createElement("div");
+      note.className = "muted";
+      note.textContent = "Vector parameter: edit in the model file.";
+      row.append(note);
+    }
+    container.append(row);
+  }
+  if (!current.parameters.length) {
+    container.innerHTML = '<div class="muted">This family has no parameters.</div>';
+  }
+}
+
+function apply(next) {
+  const first = version === 0;
+  const structureChanged =
+    !state || JSON.stringify(state.parameters) !== JSON.stringify(next.parameters);
+  state = next;
+  $("family").textContent = next.family;
+  $("model").textContent = next.model;
+  $("save").disabled = !next.dirty;
+  $("save").textContent = next.dirty ? "Save" : "Saved";
+  $("error").textContent = next.error ?? editError ?? "";
+  // Rebuilding inputs while dragging would interrupt the drag.
+  // Nor while edits are unsent, which the server state does not yet show.
+  const editing =
+    sending || Object.keys(pending).length || document.activeElement?.matches("input[type=range]");
+  if (structureChanged && !editing) {
+    renderParameters(next);
+  }
+  if (next.version !== version) {
+    version = next.version;
+    loadModel(first).catch((error) => ($("error").textContent = error.message));
+  }
+}
+
+async function poll() {
+  try {
+    apply(await api("/api/state"));
+  } catch (error) {
+    $("error").textContent = `Server not reachable: ${error.message}`;
+  }
+  setTimeout(poll, 1000);
+}
+
+$("save").addEventListener("click", async () => {
+  try {
+    apply(await api("/api/save", { method: "POST", body: "{}" }));
+  } catch (error) {
+    $("error").textContent = error.message;
+  }
+});
+$("fit").addEventListener("click", () => {
+  camera = fitCamera(bounds, aspect());
+  redraw();
+});
+
+let drag = null;
+canvas.addEventListener("contextmenu", (event) => event.preventDefault());
+canvas.addEventListener("pointerdown", (event) => {
+  drag = { x: event.clientX, y: event.clientY, pan: event.shiftKey || event.button === 2 };
+  canvas.setPointerCapture(event.pointerId);
+  canvas.style.cursor = "grabbing";
+});
+canvas.addEventListener("pointermove", (event) => {
+  if (!drag) return;
+  const dx = event.clientX - drag.x;
+  const dy = event.clientY - drag.y;
+  drag.x = event.clientX;
+  drag.y = event.clientY;
+  if (drag.pan) {
+    camera = pan(camera, dx, dy, canvas.clientHeight);
+  } else {
+    const limit = Math.PI / 2 - 0.01;
+    camera = {
+      ...camera,
+      yaw: camera.yaw - dx * 0.008,
+      pitch: Math.max(-limit, Math.min(limit, camera.pitch + dy * 0.008)),
+    };
+  }
+  redraw();
+});
+const endDrag = () => {
+  drag = null;
+  canvas.style.cursor = "grab";
+};
+canvas.addEventListener("pointerup", endDrag);
+canvas.addEventListener("pointercancel", endDrag);
+canvas.addEventListener(
+  "wheel",
+  (event) => {
+    event.preventDefault();
+    camera = { ...camera, distance: camera.distance * Math.exp(event.deltaY * 0.001) };
+    redraw();
+  },
+  { passive: false },
+);
+new ResizeObserver(redraw).observe(canvas);
+poll();
+</script>
+</body>
+</html>

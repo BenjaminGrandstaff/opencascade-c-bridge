@@ -157,6 +157,7 @@ fn main() -> ExitCode {
     outcomes.push(drawing::assembly_drawing_case(definition));
     outcomes.push(inspection::inspection_case(definition));
     outcomes.push(mesh::gltf_case(definition));
+    outcomes.push(mesh::gltf_output_case(definition));
     outcomes.push(mesh::manufacturing_case());
     outcomes.push(sheet_metal::sheet_case());
     outcomes.push(clearance_catalog_case());

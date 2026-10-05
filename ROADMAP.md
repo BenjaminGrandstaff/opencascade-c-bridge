@@ -15,12 +15,12 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 93 + first-use integration 1 (+1 doc test), recipes 3, parametric 370 + merge driver 3 + motion command 16 + balance command 4 + drawing command 2 + inspection command 5 + view command 5 + branch command 2, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 93 + first-use integration 1 (+1 doc test), recipes 3, parametric 372 + merge driver 3 + motion command 16 + balance command 4 + drawing command 2 + inspection command 5 + view command 7 + viewer Node 4 + branch command 2, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
 | Coverage | 93.61% lines overall, test code excluded; C++ 94.13% lines, 87.40% branches, 100% functions; Rust 93.42% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 105 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Scale benchmarks | 106 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
 
@@ -556,6 +556,20 @@ tracks status and order.
   output selection, detached and missing viewers, a watch cycle with a broken
   save, and invalid arguments; the DRAW test also runs the reload script.
   Each poll is O(1) and each reload one full regeneration and export.
+  `occt-view --serve` serves a dependency-free WebGL page on 127.0.0.1 that
+  renders the model's glTF and edits family parameter defaults: edits merge,
+  apply atomically or are rejected with the model's message, and are written
+  only by Save (temporary file and rename); saves made elsewhere reload the
+  page. Hosts other than 127.0.0.1/localhost and unmarked POSTs are refused.
+  `InstanceGraph::export_gltf_output` exports one named output of every
+  instance. Two server tests, one library test and four Node renderer tests
+  cover rendering math, edits, saves, followed and broken files, and request
+  checks; the page was also exercised in Chrome. glTF export now tessellates
+  once per shared variant and places the other instances by node transforms
+  (matrices when rotated, frames and joint motion included): a 10,000-part
+  viewer export takes 0.253 s (2 s budget), and the 1,000-part glTF case fell
+  from 1.354 s to 0.009 s. A test checks rotated, framed, far-placed clones
+  against regenerated bounds.
 
 - Persistent references (schema 53): `FaceSelector::Persistent` and
   `EdgeSelector::Persistent` choose topology on an earlier feature's output and
@@ -1046,8 +1060,9 @@ session. Before a change lands:
 
 Ordered by priority. Each item should land with tests, a schema bump when the
 document format changes, the scaling requirement above, and updates to this
-file. The project is a code-first engine, not an interactive application:
-every item below is defined in documents and the API, and verified in tests.
+file. The project is a code-first engine: every item below is defined in
+documents and the API, and verified in tests. The local viewer
+(`occt-view --serve`) edits those documents but adds no capability of its own.
 
 ### Capabilities
 

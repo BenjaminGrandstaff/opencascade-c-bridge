@@ -12,8 +12,12 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-const USAGE: &str =
-    "usage: occt-view MODEL.json [--output NAME] [--dir NEW_DIRECTORY] [--no-open] [--watch]";
+const USAGE: &str = "usage: occt-view MODEL.json [--output NAME] [--dir NEW_DIRECTORY] [--no-open] [--watch]\n       occt-view MODEL.json --serve [--port PORT] [--output NAME] [--no-open]";
+/// Default `--serve` port, next to the wing layout workshop's 8790.
+const DEFAULT_PORT: u16 = 8791;
+
+#[path = "view/serve.rs"]
+mod serve;
 /// How often `--watch` checks the model file and the viewer.
 const POLL: Duration = Duration::from_millis(250);
 
@@ -23,6 +27,8 @@ struct Options {
     directory: Option<PathBuf>,
     open: bool,
     watch: bool,
+    serve: bool,
+    port: u16,
 }
 
 fn main() -> ExitCode {
@@ -43,6 +49,8 @@ fn parse(args: &[OsString]) -> Result<Options, Box<dyn Error>> {
     let mut directory = None;
     let mut open = true;
     let mut watch = false;
+    let mut serve = false;
+    let mut port = DEFAULT_PORT;
     let mut args = args.iter();
     while let Some(arg) = args.next() {
         let mut value = || args.next().ok_or(USAGE);
@@ -58,6 +66,13 @@ fn parse(args: &[OsString]) -> Result<Options, Box<dyn Error>> {
             Some("--dir") => directory = Some(PathBuf::from(value()?)),
             Some("--no-open") => open = false,
             Some("--watch") => watch = true,
+            Some("--serve") => serve = true,
+            Some("--port") => {
+                port = value()?
+                    .to_str()
+                    .and_then(|text| text.parse().ok())
+                    .ok_or("port must be a number from 0 to 65535")?
+            }
             Some(flag) if flag.starts_with("--") => return Err(USAGE.into()),
             _ if model.is_none() => model = Some(PathBuf::from(arg)),
             _ => return Err(USAGE.into()),
@@ -69,6 +84,8 @@ fn parse(args: &[OsString]) -> Result<Options, Box<dyn Error>> {
         directory,
         open,
         watch,
+        serve,
+        port,
     })
 }
 
@@ -115,6 +132,9 @@ fn export(options: &Options, directory: &Path) -> Result<PathBuf, Box<dyn Error>
 /// close; with `--watch`, keeps reloading it as the model file changes.
 fn run(args: &[OsString], viewer: &OsStr) -> Result<(), Box<dyn Error>> {
     let options = parse(args)?;
+    if options.serve {
+        return serve_model(&options);
+    }
     let directory = match &options.directory {
         Some(directory) => {
             if directory.try_exists()? {
@@ -155,6 +175,31 @@ fn run(args: &[OsString], viewer: &OsStr) -> Result<(), Box<dyn Error>> {
         watch(&options, &directory, child)?;
     }
     Ok(())
+}
+
+/// Serves the browser viewer on 127.0.0.1 until the process is stopped.
+fn serve_model(options: &Options) -> Result<(), Box<dyn Error>> {
+    if options.watch || options.directory.is_some() {
+        return Err("--serve follows file changes itself and writes no view directory".into());
+    }
+    let mut studio = serve::Studio::load(&options.model, options.output.clone())?;
+    let listener = std::net::TcpListener::bind(("127.0.0.1", options.port))?;
+    let url = format!("http://127.0.0.1:{}/", listener.local_addr()?.port());
+    println!("{url}");
+    eprintln!(
+        "occt-view: serving {}; press Ctrl-C to stop",
+        options.model.display()
+    );
+    if options.open {
+        // Best effort: the URL is printed either way.
+        let _ = Command::new("xdg-open")
+            .arg(&url)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn();
+    }
+    serve::serve(&mut studio, &listener)
 }
 
 /// Modification time and length, which change when an editor saves.

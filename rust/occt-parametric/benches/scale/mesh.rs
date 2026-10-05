@@ -111,3 +111,41 @@ pub(crate) fn manufacturing_case() -> Outcome {
         },
     )
 }
+
+/// The browser viewer's model export: every instance with an output, selected
+/// by name rather than listed, at the 10,000-instance target.
+pub(crate) fn gltf_output_case(definition: &'static FamilyDefinition) -> Outcome {
+    timed(
+        "glTF of a named output on 10000 parts (viewer export)".into(),
+        ms(2_000),
+        Expectation::Required,
+        || {
+            let session = Session::new().map_err(|error| failure(error.to_string()))?;
+            let mut graph = InstanceGraph::new(definition);
+            graph.add_base("part", HashMap::new(), "bench")?;
+            graph.add_linear_pattern(
+                "row",
+                "member",
+                "part",
+                10_000,
+                VectorQuantity::lengths(50.0, 0.0, 0.0, LengthUnit::Millimeter),
+                "bench",
+            )?;
+            let exported = graph.export_gltf_output(&session, "body", MeshSettings::default())?;
+            let value: serde_json::Value =
+                serde_json::from_str(&exported).map_err(|error| failure(error.to_string()))?;
+            if value["nodes"].as_array().map(Vec::len) != Some(10_001)
+                || value["meshes"].as_array().map(Vec::len) != Some(1)
+                || session
+                    .shape_count()
+                    .map_err(|error| failure(error.to_string()))?
+                    != 0
+            {
+                return Err(failure(
+                    "viewer glTF lost parts, failed sharing, or leaked handles".into(),
+                ));
+            }
+            Ok("10001 named nodes, one shared mesh, no retained handles".into())
+        },
+    )
+}

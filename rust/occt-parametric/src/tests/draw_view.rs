@@ -111,3 +111,37 @@ fn draw_output(directory: &std::path::Path) -> Option<std::process::Output> {
         .output()
         .ok()
 }
+
+#[test]
+fn gltf_output_names_every_instance_with_the_output_and_shares_meshes() {
+    let mut definition = family(RequirementPriority::Advisory, 1e12);
+    definition.requirements.clear();
+    let graph = view_graph(&definition);
+    let session = Session::new().unwrap();
+    let gltf: serde_json::Value = serde_json::from_str(
+        &graph
+            .export_gltf_output(&session, "body", MeshSettings::default())
+            .unwrap(),
+    )
+    .unwrap();
+    let names: Vec<_> = gltf["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|node| node["name"].as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(names, ["member[0]", "member[1]", "member[2]", "source"]);
+    // Identical placed members share one mesh and one material.
+    assert_eq!(gltf["meshes"].as_array().unwrap().len(), 1);
+    assert!(
+        graph
+            .export_gltf_output(&session, "missing", MeshSettings::default())
+            .is_err()
+    );
+    let invalid = MeshSettings {
+        maximum_triangles: 0,
+        ..MeshSettings::default()
+    };
+    assert!(graph.export_gltf_output(&session, "body", invalid).is_err());
+    assert_eq!(session.shape_count().unwrap(), 0);
+}

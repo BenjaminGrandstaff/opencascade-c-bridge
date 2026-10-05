@@ -20,6 +20,7 @@ mod requirements;
 mod step_export;
 #[cfg(test)]
 pub(crate) use draw_view::draw_name_for_tests;
+pub(crate) use step_export::{Rigid, compose, invert, rigid};
 #[cfg(test)]
 pub(crate) use step_export::{rigid_for_tests, srgb_for_tests};
 

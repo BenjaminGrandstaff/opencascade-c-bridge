@@ -471,3 +471,163 @@ fn bore_boundaries_and_tapered_draft_keep_physical_geometry() {
     drop(cone);
     assert_eq!(session.shape_count().unwrap(), 0);
 }
+
+/// World-space bounds in millimeters (Z up) of one glTF node's mesh.
+fn gltf_node_bounds(gltf: &serde_json::Value, node: &serde_json::Value) -> ([f64; 3], [f64; 3]) {
+    let accessor =
+        &gltf["accessors"][gltf["meshes"][node["mesh"].as_u64().unwrap() as usize]["primitives"][0]
+            ["attributes"]["POSITION"]
+            .as_u64()
+            .unwrap() as usize];
+    let view = &gltf["bufferViews"][accessor["bufferView"].as_u64().unwrap() as usize];
+    let uri = gltf["buffers"][0]["uri"].as_str().unwrap();
+    let encoded = uri.split_once(',').unwrap().1.as_bytes();
+    let value = |c: u8| match c {
+        b'A'..=b'Z' => c - b'A',
+        b'a'..=b'z' => c - b'a' + 26,
+        b'0'..=b'9' => c - b'0' + 52,
+        b'+' => 62,
+        _ => 63,
+    } as u32;
+    let mut bytes = Vec::new();
+    for chunk in encoded.chunks(4) {
+        let n = chunk.iter().take_while(|c| **c != b'=').count();
+        let word = chunk[..n].iter().fold(0, |acc, c| (acc << 6) | value(*c)) << (6 * (4 - n));
+        bytes.extend(&word.to_be_bytes()[1..n]);
+    }
+    let start = view["byteOffset"].as_u64().unwrap() as usize;
+    let count = accessor["count"].as_u64().unwrap() as usize;
+    let floats: Vec<f64> = bytes[start..start + count * 12]
+        .chunks(4)
+        .map(|b| f64::from(f32::from_le_bytes([b[0], b[1], b[2], b[3]])))
+        .collect();
+    let matrix: Vec<f64> = match node.get("matrix") {
+        Some(m) => m
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_f64().unwrap())
+            .collect(),
+        None => {
+            let t: Vec<f64> = node["translation"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|v| v.as_f64().unwrap())
+                .collect();
+            vec![
+                1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, t[0], t[1], t[2], 1.0,
+            ]
+        }
+    };
+    let mut low = [f64::INFINITY; 3];
+    let mut high = [f64::NEG_INFINITY; 3];
+    for p in floats.chunks(3) {
+        let g: [f64; 3] = std::array::from_fn(|row| {
+            (0..3).map(|k| matrix[4 * k + row] * p[k]).sum::<f64>() + matrix[12 + row]
+        });
+        // glTF (x, y, z) = model (x, z, -y) in meters.
+        let model = [g[0] * 1000.0, -g[2] * 1000.0, g[1] * 1000.0];
+        for axis in 0..3 {
+            low[axis] = low[axis].min(model[axis]);
+            high[axis] = high[axis].max(model[axis]);
+        }
+    }
+    (low, high)
+}
+
+#[test]
+fn gltf_tessellates_shared_variants_once_and_places_rotated_framed_clones() {
+    let family = model();
+    let mut graph = InstanceGraph::new(&family);
+    graph.add_base("part", HashMap::new(), "test").unwrap();
+    let turned = |axis: VectorQuantity, angle: f64, x: f64| Placement {
+        translation: VectorQuantity::lengths(x, 7.0, -3.0, LengthUnit::Millimeter),
+        rotation: Some(AxisAngle {
+            origin: VectorQuantity::lengths(5.0, 5.0, 5.0, LengthUnit::Millimeter),
+            axis,
+            angle_radians: angle,
+        }),
+    };
+    graph
+        .add_frame(
+            "arm",
+            None,
+            turned(VectorQuantity::scalars(0.0, 1.0, 0.0), 0.4, 1e5),
+            "test",
+        )
+        .unwrap();
+    for (id, placement, frame) in [
+        (
+            "turned",
+            turned(VectorQuantity::scalars(0.0, 0.0, 1.0), 1.1, 200.0),
+            None,
+        ),
+        (
+            "tilted",
+            turned(VectorQuantity::scalars(1.0, 2.0, 3.0), 2.3, -150.0),
+            None,
+        ),
+        (
+            "framed",
+            turned(VectorQuantity::scalars(1.0, 0.0, 0.0), 0.7, 40.0),
+            Some("arm"),
+        ),
+        (
+            "moved",
+            Placement::translated(VectorQuantity::lengths(
+                0.0,
+                90.0,
+                0.0,
+                LengthUnit::Millimeter,
+            )),
+            None,
+        ),
+    ] {
+        graph.add_clone(id, "part", HashMap::new(), "test").unwrap();
+        graph.set_placement(id, placement).unwrap();
+        if frame.is_some() {
+            graph.set_instance_frame(id, frame).unwrap();
+        }
+    }
+    let session = Session::new().unwrap();
+    let gltf: serde_json::Value = serde_json::from_str(
+        &graph
+            .export_gltf_output(&session, "body", MeshSettings::default())
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(gltf["meshes"].as_array().unwrap().len(), 1);
+    // The first instance (by id) is tessellated in place; the others are
+    // rotated relative to it, so they carry matrices.
+    let matrices = gltf["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|n| n.get("matrix").is_some());
+    assert_eq!(matrices.count(), 4);
+    let generation = graph.regenerate_all(&session).unwrap();
+    for node in gltf["nodes"].as_array().unwrap() {
+        let name = node["name"].as_str().unwrap();
+        let shape = generation.result(name).unwrap().shape("body").unwrap();
+        let exact = session.exact_bounds(shape).unwrap();
+        let (low, high) = gltf_node_bounds(&gltf, node);
+        let expected = [
+            [exact.min.x, exact.min.y, exact.min.z],
+            [exact.max.x, exact.max.y, exact.max.z],
+        ];
+        for axis in 0..3 {
+            // float32 positions about 1e5 mm from the origin round near 1e-2 mm.
+            assert!(
+                (low[axis] - expected[0][axis]).abs() < 0.02,
+                "{name} {low:?} {expected:?}"
+            );
+            assert!(
+                (high[axis] - expected[1][axis]).abs() < 0.02,
+                "{name} {high:?} {expected:?}"
+            );
+        }
+    }
+    drop(generation);
+    assert_eq!(session.shape_count().unwrap(), 0);
+}

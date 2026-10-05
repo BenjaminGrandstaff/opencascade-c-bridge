@@ -94,13 +94,15 @@ python3 -m unittest discover -s tools/mesh/tests -v
 ## glTF rendering
 
 ```rust,ignore
-graph.assembly.material_appearances.insert("steel".into(), MaterialAppearance {
+graph.set_material_appearance("steel", Some(MaterialAppearance {
     base_color: [0.2, 0.3, 0.4, 1.0], // linear RGBA
     metallic: 0.9,
     roughness: 0.2,
     double_sided: false,
-});
+}))?;
 let gltf = graph.export_gltf(&session, &[definition])?;
+// Or the named output of every instance that has it, nodes named by instance:
+let scene = graph.export_gltf_output(&session, "body", MeshSettings::default())?;
 ```
 
 Appearance keys identify existing materials. Color, metallic, and roughness
@@ -113,12 +115,18 @@ normals, and meters. Model Z-up coordinates become glTF Y-up via `[x, z, -y]`.
 Each component rebases vertices near its center before converting them to float32;
 its world offset remains in the node translation. Overflow or collapsed float32
 triangles fail. Identical rebased geometry and appearances share meshes and
-materials. Graph generation runs once per distinct parameter variant. Temporary
+materials. Graph generation runs once per distinct parameter variant, and so
+does tessellation: untagged instances sharing a generated variant, output,
+settings and appearance reuse one mesh, each node carrying the rigid transform
+from the tessellated instance's placement (frames and joint motion included)
+to its own, as a translation or, when rotated, a matrix. Face-tagged
+definitions are tessellated per instance so their tag names stay their own. Temporary
 geometry is released on success and failure.
 
 Khronos's glTF validator reports zero errors and warnings for a box, a drilled
 block, and a posed assembly with inherited appearance. A 1,000-part scene exports
-in 1.393 seconds against a ten-second budget, with one generated variant and one
+in 0.009 seconds against a ten-second budget (1.393 seconds before shared
+tessellation), and the 10,000-part viewer export in 0.253 seconds, with one generated variant and one
 shared mesh. Mesh definitions and material appearances participate in semantic
 comparison/merge; change impact lists affected mesh exports.
 
