@@ -60,6 +60,28 @@ impl<'definition> InstanceGraph<'definition> {
         Ok(())
     }
 
+    /// Sets or clears a material's display appearance, which the DRAW view,
+    /// glTF and STEP color exports use for every part made of it.
+    pub fn set_material_appearance(
+        &mut self,
+        material: &str,
+        appearance: Option<MaterialAppearance>,
+    ) -> Result<(), ModelError> {
+        self.material(material)?;
+        match appearance {
+            Some(appearance) => {
+                appearance.validate()?;
+                self.assembly
+                    .material_appearances
+                    .insert(material.to_owned(), appearance);
+            }
+            None => {
+                self.assembly.material_appearances.remove(material);
+            }
+        }
+        Ok(())
+    }
+
     pub(crate) fn material(&self, id: &str) -> Result<&Material, ModelError> {
         self.assembly
             .materials

@@ -15,7 +15,7 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 93 + first-use integration 1 (+1 doc test), recipes 3, parametric 370 + merge driver 3 + motion command 16 + balance command 4 + drawing command 2 + inspection command 5 + branch command 2, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 93 + first-use integration 1 (+1 doc test), recipes 3, parametric 370 + merge driver 3 + motion command 16 + balance command 4 + drawing command 2 + inspection command 5 + view command 4 + branch command 2, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -547,6 +547,12 @@ tracks status and order.
   instance, and colored from its material. Two tests check the script, the
   reloaded volume, name sanitizing, and an off-screen DRAW run. A 10,001-part
   view exports in 0.440 s (2 s budget).
+  `occt-view MODEL.json` regenerates a saved model and starts DRAW on it
+  (see [Model viewer](tools/view/README.md)), and
+  `InstanceGraph::set_material_appearance` sets the persisted material colors
+  it uses. Four command tests cover inherited colors, output selection,
+  detached and missing viewers, and invalid arguments. It adds no algorithm
+  beyond the export above.
 
 - Persistent references (schema 53): `FaceSelector::Persistent` and
   `EdgeSelector::Persistent` choose topology on an earlier feature's output and
