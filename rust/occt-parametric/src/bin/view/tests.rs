@@ -744,3 +744,84 @@ fn instances_are_copied_and_deleted_unless_something_depends_on_them_and_revert_
     assert_eq!((status, state["dirty"].as_bool()), (200, Some(false)));
     assert_eq!(ids(&mut studio), ["member[0]", "member[1]", "source"]);
 }
+
+/// The fixture with an advisory volume limit per part and an advisory 30 mm
+/// clearance between parts that sit 20 mm apart.
+fn checked_document() -> ModelDocument {
+    let mut document = document();
+    document.family.requirements.push(Requirement {
+        id: "light".into(),
+        version: 1,
+        kind: RequirementKind::Dimensional,
+        priority: RequirementPriority::Advisory,
+        statement: "Each part stays under 5,500 mm³.".into(),
+        rule: VerificationRule::VolumeRange {
+            output: "bracket".into(),
+            minimum: Volume {
+                value: 1.0,
+                unit: LengthUnit::Millimeter,
+            },
+            maximum: Volume {
+                value: 5_500.0,
+                unit: LengthUnit::Millimeter,
+            },
+        },
+        provenance: "test".into(),
+        traces: Vec::new(),
+    });
+    document.assembly.requirements.push(AssemblyRequirement {
+        id: "spacing".into(),
+        version: 1,
+        kind: RequirementKind::Assembly,
+        priority: RequirementPriority::Advisory,
+        statement: "Parts keep 30 mm apart.".into(),
+        rule: AssemblyVerificationRule::MinimumClearance {
+            first: OutputSet::AllWithOutput("bracket".into()),
+            second: None,
+            minimum: Quantity::length(30.0, LengthUnit::Millimeter),
+        },
+        provenance: "test".into(),
+    });
+    document
+}
+
+#[test]
+fn requirement_results_follow_edits_per_variant_with_assembly_witnesses() {
+    let directory = Directory::new();
+    let model = PathBuf::from(directory.model(&checked_document()));
+    let mut studio = serve::Studio::load(&model, None).unwrap();
+    let (status, report) = get(&mut studio, "/api/requirements");
+    assert_eq!(status, 200);
+    assert_eq!(report["requirements"]["light"]["priority"], "advisory");
+    assert_eq!(report["requirements"]["spacing"]["scope"], "assembly");
+    assert_eq!(report["instances"].as_object().unwrap().len(), 3);
+    // All three share one variant, which passes the volume limit.
+    let variants = report["variants"].as_object().unwrap();
+    assert_eq!(variants.len(), 1);
+    let light = &variants.values().next().unwrap()[0];
+    assert_eq!(
+        (light["requirement"].as_str(), light["passed"].as_bool()),
+        (Some("light"), Some(true))
+    );
+    assert_eq!(light["measured"]["unit"], "cubicmillimeter");
+    // The 20 mm gaps fail the 30 mm clearance, with witness points.
+    let spacing = &report["assembly"][0];
+    assert_eq!(spacing["passed"], false);
+    assert!(
+        !spacing["witness"]["points_mm"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+
+    // A thicker member becomes its own variant and fails the volume limit.
+    let edit = br#"{"instance": "member[1]", "set": {"thickness": 6}}"#;
+    assert_eq!(studio.handle("POST", "/api/parameters", edit).status, 200);
+    let (_, report) = get(&mut studio, "/api/requirements");
+    assert_eq!(report["variants"].as_object().unwrap().len(), 2);
+    let variant = report["instances"]["member[1]"].as_str().unwrap();
+    assert_eq!(report["variants"][variant][0]["passed"], false);
+    let other = report["instances"]["member[0]"].as_str().unwrap();
+    assert_eq!(report["variants"][other][0]["passed"], true);
+    assert_eq!(report["version"], 2);
+}

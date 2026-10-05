@@ -103,6 +103,9 @@ graph.set_material_appearance("steel", Some(MaterialAppearance {
 let gltf = graph.export_gltf(&session, &[definition])?;
 // Or the named output of every instance that has it, nodes named by instance:
 let scene = graph.export_gltf_output(&session, "body", MeshSettings::default())?;
+// Or from a regeneration you keep, e.g. for its verification results:
+let generation = graph.regenerate_all(&session)?;
+let scene = graph.export_gltf_generated(&session, &generation, "body", MeshSettings::default())?;
 ```
 
 Appearance keys identify existing materials. Color, metallic, and roughness

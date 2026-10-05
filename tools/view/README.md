@@ -108,6 +108,25 @@ are cloned from, or that belongs to a pattern, cannot be deleted; the message
 names what depends on it. Other references, such as relationships or
 drawing annotations, are caught by the model's validation.
 
+### Requirement results
+
+The panel's **Requirements** section shows the model's requirement checks
+from the same regeneration that drew it, failures first, with each
+requirement's priority when it is not *required* and its statement on hover.
+
+- With *Family defaults*, it lists every assembly check, and for each part
+  requirement whether it passes on all instances or which ones fail.
+- With an instance selected, it lists that instance's own checks and the
+  assembly checks that name it, noting failing assembly checks elsewhere.
+- Failing assembly checks that report where they fail (clearance and
+  interference witnesses, for example) are marked with red dots drawn over the
+  parts.
+
+A *required* failure rejects the edit or file that caused it, as loading the
+model would, so the page only ever shows a model that meets its required
+checks. Results are shared by instances with identical parameters, so a
+10,000-instance report is about 250 KB.
+
 **Revert** discards every unsaved change and reloads the file, so a deletion
 or any other edit can be undone until **Save**. The page needs no external files. The server listens only on
 127.0.0.1, accepts only `127.0.0.1` or `localhost` Host headers, and accepts
@@ -115,8 +134,9 @@ edits only with the `X-OCCT-View` header that the page sends, which other
 sites' pages cannot add; it is a local editing tool, not something to expose.
 
 Each edit costs one full regeneration and glTF export. On a 10,000-instance
-model, listing instances takes about 26 ms, one instance's values 33 ms, and an
-override edit with regeneration 0.55 s. Instances sharing a
+model, startup takes 0.8 s, listing instances about 26 ms, one instance's
+values 33 ms, the requirement report 2 ms, and an override edit with
+regeneration and assembly checks 0.74 s. Instances sharing a
 generated variant are tessellated once, so 10,000 pattern members export in
 about a quarter second. The renderer's tests run with
 `node --test rust/occt-parametric/src/bin/view/web/viewer.test.mjs`.

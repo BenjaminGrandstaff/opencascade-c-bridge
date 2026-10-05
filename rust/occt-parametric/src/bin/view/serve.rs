@@ -54,6 +54,8 @@ pub(super) struct Studio {
     output: Option<String>,
     document: ModelDocument,
     gltf: String,
+    /// Requirement results of the generation `gltf` was drawn from.
+    requirements: Value,
     /// Incremented whenever `gltf` changes, so the page knows to refetch it.
     version: u64,
     /// Unsaved parameter edits since the last load or save.
@@ -68,12 +70,13 @@ impl Studio {
     pub(super) fn load(model: &Path, output: Option<String>) -> Result<Self, Box<dyn Error>> {
         let seen = stamp(model);
         let document = ModelDocument::from_json(&fs::read_to_string(model)?)?;
-        let gltf = gltf(&document, output.as_deref())?;
+        let (gltf, requirements) = build(&document, output.as_deref())?;
         Ok(Self {
             model: model.to_owned(),
             output,
             document,
             gltf,
+            requirements,
             version: 1,
             dirty: false,
             error: None,
@@ -113,10 +116,11 @@ impl Studio {
     fn reload(&mut self) -> Result<(), String> {
         let text = fs::read_to_string(&self.model).map_err(|e| e.to_string())?;
         let document = ModelDocument::from_json(&text).map_err(|e| e.to_string())?;
-        let gltf = gltf(&document, self.output.as_deref())?;
+        let (gltf, requirements) = build(&document, self.output.as_deref())?;
         self.seen = stamp(&self.model);
         self.document = document;
         self.gltf = gltf;
+        self.requirements = requirements;
         self.version += 1;
         self.dirty = false;
         self.error = None;
@@ -130,9 +134,10 @@ impl Studio {
             .to_json_pretty()
             .and_then(|text| ModelDocument::from_json(&text))
             .map_err(|e| e.to_string())?;
-        let gltf = gltf(&document, self.output.as_deref())?;
+        let (gltf, requirements) = build(&document, self.output.as_deref())?;
         self.document = document.clone();
         self.gltf = gltf;
+        self.requirements = requirements;
         self.version += 1;
         self.dirty = true;
         self.error = None;
@@ -379,6 +384,7 @@ impl Studio {
         let previous = (
             self.document.clone(),
             self.gltf.clone(),
+            self.requirements.clone(),
             self.version,
             self.dirty,
         );
@@ -392,7 +398,13 @@ impl Studio {
                 .find(|node| node.id() == instance)
                 .ok_or_else(|| format!("unknown instance '{instance}'"))?;
             if !PlacementView::from(node.placement())?.close_to(requested) {
-                (self.document, self.gltf, self.version, self.dirty) = previous;
+                (
+                    self.document,
+                    self.gltf,
+                    self.requirements,
+                    self.version,
+                    self.dirty,
+                ) = previous;
                 return Err(format!(
                     "the placement of '{instance}' is set by its pattern; edit the pattern instead"
                 ));
@@ -488,6 +500,11 @@ impl Studio {
             ("GET", "/viewer.mjs") => Response::text(200, "text/javascript", VIEWER),
             ("GET", "/api/state") => Response::json(200, &self.state()),
             ("GET", "/api/model.gltf") => Response::text(200, "model/gltf+json", &self.gltf),
+            ("GET", "/api/requirements") => {
+                let mut report = self.requirements.clone();
+                report["version"] = json!(self.version);
+                Response::json(200, &report)
+            }
             ("GET", "/api/instances") => match self.instances() {
                 Ok(list) => Response::json(200, &list),
                 Err(error) => Response::error(500, &error),
@@ -687,9 +704,10 @@ fn percent_decode(text: &str) -> Option<String> {
     String::from_utf8(out).ok()
 }
 
-/// The model's glTF, showing `output` or by default the primary family's
-/// last feature on every instance that has it.
-fn gltf(document: &ModelDocument, output: Option<&str>) -> Result<String, String> {
+/// Regenerates every instance once and returns the glTF of `output` (by
+/// default the primary family's last feature) with the requirement report
+/// of that same generation. Required failures reject the model, as on load.
+fn build(document: &ModelDocument, output: Option<&str>) -> Result<(String, Value), String> {
     let output = match output {
         Some(output) => output.to_owned(),
         None => document
@@ -699,11 +717,83 @@ fn gltf(document: &ModelDocument, output: Option<&str>) -> Result<String, String
             .map(|feature| feature.id.clone())
             .ok_or("model family has no features; pass --output")?,
     };
-    let graph = document.instance_graph().map_err(|e| e.to_string())?;
+    let mut graph = document.instance_graph().map_err(|e| e.to_string())?;
     let session = Session::new().map_err(|e| e.to_string())?;
-    graph
-        .export_gltf_output(&session, &output, MeshSettings::default())
-        .map_err(|e| e.to_string())
+    let generation = graph.regenerate_all(&session).map_err(|e| e.to_string())?;
+    let gltf = graph
+        .export_gltf_generated(&session, &generation, &output, MeshSettings::default())
+        .map_err(|e| e.to_string())?;
+    Ok((gltf, requirement_report(document, &generation)))
+}
+
+/// Requirement statements, results per generated variant (shared by its
+/// instances), each instance's variant, and assembly results.
+/// O(instances + results).
+fn requirement_report(
+    document: &ModelDocument,
+    generation: &occt_parametric::GraphRegeneration<'_>,
+) -> Value {
+    let lower = |text: String| text.to_lowercase();
+    let mut requirements = serde_json::Map::new();
+    for family in std::iter::once(&document.family).chain(&document.additional_families) {
+        for r in &family.requirements {
+            requirements.insert(
+                r.id.clone(),
+                json!({"statement": r.statement, "priority": lower(format!("{:?}", r.priority)), "scope": "instance"}),
+            );
+        }
+    }
+    for r in &document.assembly.requirements {
+        requirements.insert(
+            r.id.clone(),
+            json!({"statement": r.statement, "priority": lower(format!("{:?}", r.priority)), "scope": "assembly"}),
+        );
+    }
+    let mut variants = serde_json::Map::new();
+    let mut instances = serde_json::Map::new();
+    for node in &document.instances {
+        let id = node.id();
+        let Some(result) = generation.result(id) else {
+            continue;
+        };
+        let variant = generation.shared_from(id).unwrap_or(id);
+        instances.insert(id.to_owned(), json!(variant));
+        if !variants.contains_key(variant) {
+            variants.insert(
+                variant.to_owned(),
+                result.verification.iter().map(result_json).collect(),
+            );
+        }
+    }
+    json!({
+        "requirements": requirements,
+        "variants": variants,
+        "instances": instances,
+        "assembly": generation.verification().iter().map(result_json).collect::<Vec<_>>(),
+    })
+}
+
+fn result_json(result: &occt_parametric::VerificationResult) -> Value {
+    use occt_parametric::{Evidence, VerificationStatus};
+    json!({
+        "requirement": result.requirement_id,
+        "passed": result.status == VerificationStatus::Passed,
+        "message": result.message,
+        "measured": result.measured.map(|m| json!({
+            "value": m.value,
+            "unit": format!("{:?}", m.unit).to_lowercase(),
+            "minimum": m.minimum,
+            "maximum": m.maximum,
+        })),
+        "sampled": match result.evidence {
+            Evidence::Exact => Value::Null,
+            Evidence::Sampled { samples, unresolved } => json!({"samples": samples, "unresolved": unresolved}),
+        },
+        "witness": result.witness.as_ref().map(|w| json!({
+            "subjects": w.subjects,
+            "points_mm": w.points_mm.iter().map(|p| [p.x, p.y, p.z]).collect::<Vec<_>>(),
+        })),
+    })
 }
 
 /// Serves requests one at a time until the process ends.

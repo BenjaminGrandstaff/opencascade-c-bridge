@@ -15,7 +15,7 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 93 + first-use integration 1 (+1 doc test), recipes 3, parametric 372 + merge driver 3 + motion command 16 + balance command 4 + drawing command 2 + inspection command 5 + view command 10 + viewer Node 5 + branch command 2, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 93 + first-use integration 1 (+1 doc test), recipes 3, parametric 372 + merge driver 3 + motion command 16 + balance command 4 + drawing command 2 + inspection command 5 + view command 11 + viewer Node 6 + branch command 2, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -578,7 +578,11 @@ tracks status and order.
   re-derives it. `Quantity::normalized` is now public. **Add copy** clones
   the selected instance (inheriting it, a part-width along X), **Delete**
   removes one unless clones or a pattern depend on it (the message names
-  them), and **Revert** reloads the file to undo unsaved changes.
+  them), and **Revert** reloads the file to undo unsaved changes. The panel
+  lists requirement results from the same regeneration (per variant, with
+  assembly checks and their witness points marked in 3D);
+  `InstanceGraph::export_gltf_generated` builds glTF from an existing
+  regeneration so geometry and results are generated once.
 
 - Persistent references (schema 53): `FaceSelector::Persistent` and
   `EdgeSelector::Persistent` choose topology on an earlier feature's output and

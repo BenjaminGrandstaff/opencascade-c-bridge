@@ -389,7 +389,7 @@ fn base64(bytes: &[u8]) -> String {
     result
 }
 
-impl InstanceGraph<'_> {
+impl<'definition> InstanceGraph<'definition> {
     /// glTF of the named output of every unsuppressed instance whose family
     /// has it, nodes named by instance id: the mesh counterpart of
     /// `OutputSet::AllWithOutput`. O(instances log instances) to select, plus
@@ -400,31 +400,8 @@ impl InstanceGraph<'_> {
         output: &str,
         settings: MeshSettings,
     ) -> Result<String, ModelError> {
-        settings.options()?;
         let mut context = ExportContext::new(self);
-        let mut ids: Vec<&String> = self.nodes.keys().collect();
-        ids.sort_unstable();
-        let definitions: Vec<_> = ids
-            .into_iter()
-            .enumerate()
-            .map(|(index, instance)| MeshExportDefinition {
-                // Instance ids need not be safe mesh names; nodes keep the id.
-                id: format!("part_{index}"),
-                output: InstanceOutputRef {
-                    instance: instance.clone(),
-                    output: output.to_owned(),
-                },
-                settings,
-                face_tags: Vec::new(),
-                manufacturing: None,
-            })
-            .filter(|definition| definition.validate_cached(self, &mut context).is_ok())
-            .collect();
-        if definitions.is_empty() {
-            return Err(ModelError::new(format!(
-                "no unsuppressed instance has output '{output}'"
-            )));
-        }
+        let definitions = self.output_definitions(output, settings, &mut context, |_| true)?;
         self.export_gltf(session, &definitions)
     }
 
@@ -452,6 +429,72 @@ impl InstanceGraph<'_> {
         }
         let generation =
             self.regenerate_instances_current(session, &ids.into_iter().collect::<Vec<_>>())?;
+        self.scene(session, &generation, definitions, &mut context)
+    }
+
+    /// glTF of the named output of every generated instance that has it, from
+    /// an existing regeneration (such as `regenerate_all`, whose verification
+    /// results the caller keeps), so geometry is not generated twice. Nodes
+    /// are named by instance id. O(instances log instances) to select, plus
+    /// one tessellation per shared variant.
+    pub fn export_gltf_generated(
+        &self,
+        session: &Session,
+        generation: &GraphRegeneration<'_>,
+        output: &str,
+        settings: MeshSettings,
+    ) -> Result<String, ModelError> {
+        let mut context = ExportContext::new(self);
+        let definitions = self.output_definitions(output, settings, &mut context, |id| {
+            generation.result(id).is_some()
+        })?;
+        self.scene(session, generation, &definitions, &mut context)
+    }
+
+    /// One untagged mesh definition per instance that `include`s and whose
+    /// family has `output`, in instance-id order.
+    fn output_definitions(
+        &self,
+        output: &str,
+        settings: MeshSettings,
+        context: &mut ExportContext<'definition>,
+        include: impl Fn(&str) -> bool,
+    ) -> Result<Vec<MeshExportDefinition>, ModelError> {
+        settings.options()?;
+        let mut ids: Vec<&String> = self.nodes.keys().filter(|id| include(id)).collect();
+        ids.sort_unstable();
+        let definitions: Vec<_> = ids
+            .into_iter()
+            .enumerate()
+            .map(|(index, instance)| MeshExportDefinition {
+                // Instance ids need not be safe mesh names; nodes keep the id.
+                id: format!("part_{index}"),
+                output: InstanceOutputRef {
+                    instance: instance.clone(),
+                    output: output.to_owned(),
+                },
+                settings,
+                face_tags: Vec::new(),
+                manufacturing: None,
+            })
+            .filter(|definition| definition.validate_cached(self, context).is_ok())
+            .collect();
+        if definitions.is_empty() {
+            return Err(ModelError::new(format!(
+                "no unsuppressed instance has output '{output}'"
+            )));
+        }
+        Ok(definitions)
+    }
+
+    /// Writes the glTF scene for already generated `definitions`.
+    fn scene(
+        &self,
+        session: &Session,
+        generation: &GraphRegeneration<'_>,
+        definitions: &[MeshExportDefinition],
+        context: &mut ExportContext<'definition>,
+    ) -> Result<String, ModelError> {
         let mut scene = Scene::default();
         // Instances sharing a generated variant have the same local geometry,
         // so one tessellation serves all of them, moved by the rigid transform
@@ -471,7 +514,7 @@ impl InstanceGraph<'_> {
                 .and_then(|material| self.assembly.material_appearances.get(material))
                 .copied()
                 .unwrap_or_default();
-            let world = world_transform(self, instance, &mut context)?;
+            let world = world_transform(self, instance, context)?;
             let key = definition.face_tags.is_empty().then(|| {
                 (
                     generation
@@ -494,7 +537,7 @@ impl InstanceGraph<'_> {
                 );
                 continue;
             }
-            let mesh = definition.tagged_result(self, session, result, &mut context, false)?;
+            let mesh = definition.tagged_result(self, session, result, context, false)?;
             let (mesh_index, center) = scene.add_mesh(&mesh, appearance)?;
             scene.add_node(mesh_index, center, None, instance, &mesh);
             if let Some(key) = key {

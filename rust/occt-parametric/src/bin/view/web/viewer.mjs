@@ -249,6 +249,31 @@ void main() {
   gl_FragColor = vec4(pow(shaded, vec3(1.0 / 2.2)), color.a);
 }`;
 
+const MARKER_VERTEX = `
+attribute vec3 position;
+uniform mat4 viewProjection;
+void main() {
+  gl_Position = viewProjection * vec4(position, 1.0);
+  gl_PointSize = 12.0;
+}`;
+
+const MARKER_FRAGMENT = `
+precision mediump float;
+void main() {
+  vec2 offset = gl_PointCoord - vec2(0.5);
+  float distance = length(offset);
+  if (distance > 0.5) discard;
+  // A red dot with a white rim, visible on light and dark parts.
+  gl_FragColor = distance > 0.36 ? vec4(1.0) : vec4(0.86, 0.15, 0.15, 1.0);
+}`;
+
+/** Model-space millimeter points (Z up) as glTF meters (Y up). */
+export function modelToGltf(points) {
+  const out = new Float32Array(points.length * 3);
+  points.forEach(([x, y, z], i) => out.set([x * 0.001, z * 0.001, -y * 0.001], i * 3));
+  return out;
+}
+
 function compile(gl, type, source) {
   const shader = gl.createShader(type);
   gl.shaderSource(shader, source);
@@ -276,6 +301,16 @@ export function createRenderer(canvas) {
     dimmed: gl.getUniformLocation(program, "dimmed"),
   };
   let selected = -1;
+  const markerProgram = gl.createProgram();
+  gl.attachShader(markerProgram, compile(gl, gl.VERTEX_SHADER, MARKER_VERTEX));
+  gl.attachShader(markerProgram, compile(gl, gl.FRAGMENT_SHADER, MARKER_FRAGMENT));
+  gl.linkProgram(markerProgram);
+  const markerLocation = {
+    position: gl.getAttribLocation(markerProgram, "position"),
+    viewProjection: gl.getUniformLocation(markerProgram, "viewProjection"),
+  };
+  const markerBuffer = gl.createBuffer();
+  let markerCount = 0;
   let model = { meshes: [], nodes: [] };
   let buffers = [];
 
@@ -298,6 +333,12 @@ export function createRenderer(canvas) {
     /** Highlights node `index` by fading the others; -1 clears it. */
     setSelection(index) {
       selected = index;
+    },
+    /** Draws dots at glTF-space points (see `modelToGltf`) over the model. */
+    setMarkers(points) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, markerBuffer);
+      gl.bufferData(gl.ARRAY_BUFFER, points, gl.STATIC_DRAW);
+      markerCount = points.length / 3;
     },
     setModel(parsed) {
       release();
@@ -334,6 +375,19 @@ export function createRenderer(canvas) {
         gl.uniform4fv(location.color, model.meshes[node.mesh].color);
         gl.uniform1f(location.dimmed, selected >= 0 && model.nodes[selected] !== node ? 1 : 0);
         gl.drawArrays(gl.TRIANGLES, 0, mesh.count);
+      }
+      if (markerCount) {
+        // Markers stay visible through the parts that would hide them.
+        gl.disable(gl.DEPTH_TEST);
+        // Only position feeds the marker shader; a stale normal array could be
+        // shorter than the marker count.
+        gl.disableVertexAttribArray(location.normal);
+        gl.useProgram(markerProgram);
+        gl.uniformMatrix4fv(markerLocation.viewProjection, false, viewProjection(camera, width / height));
+        gl.bindBuffer(gl.ARRAY_BUFFER, markerBuffer);
+        gl.enableVertexAttribArray(markerLocation.position);
+        gl.vertexAttribPointer(markerLocation.position, 3, gl.FLOAT, false, 0, 0);
+        gl.drawArrays(gl.POINTS, 0, markerCount);
       }
     },
   };

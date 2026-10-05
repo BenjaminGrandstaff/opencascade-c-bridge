@@ -97,3 +97,8 @@ test("picking finds the nearest hit node through its matrix, or none", async () 
   const length = Math.hypot(...toTarget);
   center.direction.forEach((d, axis) => assert.ok(Math.abs(d - toTarget[axis] / length) < 1e-12));
 });
+
+test("witness points convert from model millimeters (Z up) to glTF meters (Y up)", async () => {
+  const { modelToGltf } = await import("./viewer.mjs");
+  assert.deepEqual([...modelToGltf([[1000, 2000, 3000]])], [1, 3, -2]);
+});

@@ -7,13 +7,13 @@
 <style>
   :root {
     --bg: #f4f5f7; --panel: #ffffff; --text: #1d2330; --muted: #5d6677;
-    --line: #d9dde4; --accent: #2f6fdb; --error: #b42318; --canvas: #e9ecf1;
+    --line: #d9dde4; --accent: #2f6fdb; --error: #b42318; --canvas: #e9ecf1; --pass: #1a7f37;
     color-scheme: light dark;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #14171c; --panel: #1c2027; --text: #e6e9ef; --muted: #9aa3b2;
-      --line: #2c323c; --accent: #6ea0ff; --error: #ff8a80; --canvas: #20252d;
+      --line: #2c323c; --accent: #6ea0ff; --error: #ff8a80; --canvas: #20252d; --pass: #56d364;
     }
   }
   * { box-sizing: border-box; }
@@ -53,6 +53,12 @@
   .tag.own { border-color: var(--accent); color: var(--accent); }
   .reset { flex: none; padding: 0 6px; font-size: 11px; }
   .label-end { display: flex; gap: 6px; align-items: center; }
+  #requirements { display: grid; gap: 6px; }
+  .summary { font-weight: 600; }
+  .summary .failed, .check.failed .mark { color: var(--error); }
+  .summary .passed, .check.passed .mark { color: var(--pass); }
+  .check { display: grid; grid-template-columns: 16px 1fr; gap: 0 6px; font-size: 12px; }
+  .check .detail { grid-column: 2; color: var(--muted); overflow-wrap: anywhere; }
   .placement { display: grid; gap: 6px; padding: 8px 0; border-top: 1px solid var(--line); }
   .triple { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; }
   .triple input, .placement input[type=number] {
@@ -78,6 +84,7 @@
     <button id="fit">Fit view</button>
   </div>
   <div class="muted" id="status"></div>
+  <div id="requirements"></div>
   <div class="scope">
     <label class="muted" for="scope">Editing</label>
     <select id="scope"><option value="">Family defaults (all instances)</option></select>
@@ -91,7 +98,7 @@
   <div class="muted" id="hint">Click to select · Drag to orbit · Shift-drag or right-drag to pan · Wheel to zoom</div>
 </main>
 <script type="module">
-import { createRenderer, fitCamera, pan, parseGltf, pick, ray } from "./viewer.mjs";
+import { createRenderer, fitCamera, modelToGltf, pan, parseGltf, pick, ray } from "./viewer.mjs";
 
 const $ = (id) => document.getElementById(id);
 const canvas = $("view");
@@ -112,6 +119,8 @@ let scope = "";
 let instanceIds = new Set();
 // The selected instance's effective values, by parameter id.
 let instanceView = null;
+// Requirement results of the current model version.
+let report = null;
 
 function redraw() {
   if (frame || !renderer) return;
@@ -166,6 +175,103 @@ async function loadInstances() {
 async function loadInstanceView() {
   instanceView = scope ? await api(`/api/instance?id=${encodeURIComponent(scope)}`) : null;
   renderParameters();
+  renderRequirements();
+}
+
+async function loadRequirements() {
+  report = await api("/api/requirements");
+  renderRequirements();
+}
+
+const UNITS = { millimeter: "mm", cubicmillimeter: "mm³", kilogram: "kg", radian: "rad", count: "" };
+function measured(m) {
+  if (!m) return "";
+  const unit = UNITS[m.unit] ?? m.unit;
+  const limits = [m.minimum != null && `min ${format(m.minimum)}`, m.maximum != null && `max ${format(m.maximum)}`]
+    .filter(Boolean)
+    .join(", ");
+  return `${format(m.value)} ${unit}`.trim() + (limits ? ` (${limits})` : "");
+}
+
+/**
+ * Pass/fail summary and checks for the current scope: an instance's own
+ * results (shared by its variant) and the assembly checks naming it, or
+ * every assembly check plus each instance requirement across instances.
+ * Failed assembly checks with witness points are marked in the view.
+ */
+function renderRequirements() {
+  const container = $("requirements");
+  container.replaceChildren();
+  const markers = [];
+  if (!report || !Object.keys(report.requirements).length) {
+    renderer?.setMarkers(new Float32Array());
+    redraw();
+    return;
+  }
+  const checks = [];
+  const assembly = report.assembly.filter(
+    (r) => !scope || r.witness?.subjects?.some((subject) => subject === scope || subject.startsWith(`${scope}:`)),
+  );
+  for (const result of assembly) {
+    checks.push({ ...result, detail: [result.message || measured(result.measured)] });
+    if (!result.passed) markers.push(...(result.witness?.points_mm ?? []));
+  }
+  if (scope) {
+    for (const result of report.variants[report.instances[scope]] ?? []) {
+      checks.push({ ...result, detail: [result.message || measured(result.measured)] });
+    }
+  } else {
+    const totals = new Map();
+    for (const [instance, variant] of Object.entries(report.instances)) {
+      for (const result of report.variants[variant] ?? []) {
+        const total = totals.get(result.requirement) ?? { passed: 0, failed: [] };
+        if (result.passed) total.passed += 1;
+        else total.failed.push(instance);
+        totals.set(result.requirement, total);
+      }
+    }
+    for (const [requirement, { passed, failed }] of totals) {
+      const shown = failed.slice(0, 4).join(", ") + (failed.length > 4 ? ` and ${failed.length - 4} more` : "");
+      checks.push({
+        requirement,
+        passed: !failed.length,
+        detail: [failed.length ? `Fails on ${shown}` : `Passes on all ${passed} instances`],
+      });
+    }
+  }
+  checks.sort((a, b) => Number(a.passed) - Number(b.passed));
+  const failures = checks.filter((c) => !c.passed).length;
+  const summary = document.createElement("div");
+  summary.className = "summary";
+  summary.innerHTML = failures
+    ? `Requirements: <span class="failed">${failures} failing</span> · ${checks.length - failures} passing`
+    : `Requirements: <span class="passed">all ${checks.length} passing</span>`;
+  container.append(summary);
+  const elsewhere = scope ? report.assembly.filter((r) => !r.passed && !assembly.includes(r)).length : 0;
+  if (elsewhere) {
+    const note = document.createElement("div");
+    note.className = "muted";
+    note.textContent = `${elsewhere} failing assembly check${elsewhere === 1 ? " does" : "s do"} not name this instance; see Family defaults.`;
+    container.append(note);
+  }
+  for (const check of checks) {
+    const info = report.requirements[check.requirement] ?? {};
+    const row = document.createElement("div");
+    row.className = `check ${check.passed ? "passed" : "failed"}`;
+    row.title = info.statement ?? "";
+    const mark = document.createElement("span");
+    mark.className = "mark";
+    mark.textContent = check.passed ? "✓" : "✗";
+    const name = document.createElement("span");
+    name.textContent = check.requirement + (info.priority && info.priority !== "required" ? ` (${info.priority})` : "");
+    const detail = document.createElement("span");
+    detail.className = "detail";
+    detail.textContent = (check.detail ?? []).filter(Boolean).join(" · ");
+    row.append(mark, name, detail);
+    container.append(row);
+  }
+  renderer?.setMarkers(modelToGltf(markers));
+  redraw();
 }
 
 async function setScope(next) {
@@ -471,6 +577,7 @@ async function apply(next) {
     version = next.version;
     await Promise.all([
       loadModel(first),
+      loadRequirements(),
       loadInstances().then(() => (scope ? loadInstanceView() : null)),
     ]).catch((error) => ($("error").textContent = error.message));
   }
