@@ -580,3 +580,72 @@ fn instances_take_own_overrides_inherit_from_sources_and_reset() {
         400
     );
 }
+
+#[test]
+fn instance_placements_are_shown_and_edited_but_pattern_members_follow_their_rule() {
+    let directory = Directory::new();
+    let model = PathBuf::from(directory.model(&document()));
+    let mut studio = serve::Studio::load(&model, None).unwrap();
+    let placement = |studio: &mut serve::Studio, id: &str| {
+        get(studio, &format!("/api/instance?id={id}")).1["placement"].clone()
+    };
+    assert_eq!(
+        placement(&mut studio, "member%5B1%5D"),
+        json!({"translation_mm": [60.0, 0.0, 0.0], "rotation": null})
+    );
+    let edit = |studio: &mut serve::Studio, body: serde_json::Value| {
+        let response = studio.handle("POST", "/api/parameters", body.to_string().as_bytes());
+        (response.status, String::from_utf8(response.body).unwrap())
+    };
+    let turned = json!({
+        "translation_mm": [5.0, -10.0, 2.5],
+        "rotation": {"origin_mm": [20.0, 10.0, 0.0], "axis": [0.0, 0.0, 2.0], "angle_degrees": 30.0}
+    });
+    assert_eq!(
+        edit(
+            &mut studio,
+            json!({"instance": "source", "placement": turned})
+        )
+        .0,
+        200
+    );
+    assert_eq!(placement(&mut studio, "source"), turned);
+    // The turned source is drawn with a rotation matrix.
+    let (_, gltf) = get(&mut studio, "/api/model.gltf");
+    let source = gltf["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|n| n["name"] == "source")
+        .unwrap();
+    assert!(source.get("matrix").is_some() || gltf["meshes"].as_array().unwrap().len() > 1);
+    assert_eq!(studio.handle("POST", "/api/save", b"{}").status, 200);
+    let saved = ModelDocument::from_json(&fs::read_to_string(&model).unwrap()).unwrap();
+    let node = saved.instances.iter().find(|n| n.id() == "source").unwrap();
+    assert_eq!(
+        node.placement().rotation.unwrap().angle_radians,
+        30f64.to_radians()
+    );
+
+    let member = json!({"translation_mm": [999.0, 0.0, 0.0], "rotation": null});
+    let (status, message) = edit(
+        &mut studio,
+        json!({"instance": "member[1]", "placement": member}),
+    );
+    assert_eq!(status, 422);
+    assert!(
+        message.contains("pattern") || message.contains("member"),
+        "{message}"
+    );
+    assert_eq!(
+        placement(&mut studio, "member%5B1%5D")["translation_mm"],
+        json!([60.0, 0.0, 0.0])
+    );
+    for bad in [
+        json!({"placement": turned}),
+        json!({"instance": "source", "placement": {"translation_mm": [0.0, 0.0, 0.0], "rotation": {"origin_mm": [0.0, 0.0, 0.0], "axis": [0.0, 0.0, 0.0], "angle_degrees": 5.0}}}),
+        json!({"instance": "source", "placement": {"translation_mm": [0.0, 0.0]}}),
+    ] {
+        assert_eq!(edit(&mut studio, bad).0, 422);
+    }
+}

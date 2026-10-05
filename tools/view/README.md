@@ -90,7 +90,14 @@ when the instance sets it itself (with **Reset** to remove it) or
 family default. Editing a field sets the instance's own override, keeping the
 default's unit. The list shows how many overrides each instance has.
 Instances with overrides become their own generated variants, so they no
-longer share a mesh with their siblings. The page needs no external files. The server listens only on
+longer share a mesh with their siblings.
+
+Below the parameters, **Placement** shows the instance's translation and
+rotation (axis, angle in degrees, and the point the axis passes through) in
+millimeters, relative to its assembly frame when it has one. Changing a field
+moves the instance; an angle of 0 removes the rotation. Pattern members are
+placed by their pattern's rule, so a placement edit on a member is refused
+with a message instead of being silently undone. The page needs no external files. The server listens only on
 127.0.0.1, accepts only `127.0.0.1` or `localhost` Host headers, and accepts
 edits only with the `X-OCCT-View` header that the page sends, which other
 sites' pages cannot add; it is a local editing tool, not something to expose.

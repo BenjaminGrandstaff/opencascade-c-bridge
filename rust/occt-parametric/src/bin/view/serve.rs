@@ -2,7 +2,10 @@
 //! family parameter defaults, saves them, and follows saves made elsewhere.
 use super::{POLL, stamp};
 use occt_bridge::Session;
-use occt_parametric::{InstanceNode, MeshSettings, ModelDocument, ParameterValue};
+use occt_parametric::{
+    AxisAngle, InstanceNode, LengthUnit, MeshSettings, ModelDocument, ParameterValue, Placement,
+    VectorQuantity,
+};
 use serde_json::{Value, json};
 use std::{
     collections::{HashMap, HashSet},
@@ -171,6 +174,8 @@ impl Studio {
             set: serde_json::Map<String, Value>,
             #[serde(default)]
             clear: Vec<String>,
+            #[serde(default)]
+            placement: Option<PlacementView>,
         }
         let edit: Edit = serde_json::from_slice(body).map_err(|e| format!("invalid edit: {e}"))?;
         let mut document = self.document.clone();
@@ -187,8 +192,8 @@ impl Studio {
         };
         match &edit.instance {
             None => {
-                if !edit.clear.is_empty() {
-                    return Err("family defaults cannot be cleared".into());
+                if !edit.clear.is_empty() || edit.placement.is_some() {
+                    return Err("only an instance can clear overrides or take a placement".into());
                 }
                 for (id, value) in &edit.set {
                     let parameter = document
@@ -212,8 +217,19 @@ impl Studio {
                     .iter_mut()
                     .find(|node| node.id() == instance)
                     .ok_or_else(|| format!("unknown instance '{instance}'"))?;
-                let (InstanceNode::Base { overrides, .. } | InstanceNode::Clone { overrides, .. }) =
-                    node;
+                let (InstanceNode::Base {
+                    overrides,
+                    placement,
+                    ..
+                }
+                | InstanceNode::Clone {
+                    overrides,
+                    placement,
+                    ..
+                }) = node;
+                if let Some(view) = &edit.placement {
+                    *placement = view.placement()?;
+                }
                 for id in &edit.clear {
                     default(id)?;
                     overrides.remove(id);
@@ -230,6 +246,20 @@ impl Studio {
             .to_json_pretty()
             .and_then(|text| ModelDocument::from_json(&text))
             .map_err(|e| e.to_string())?;
+        // Loading can re-derive placements (pattern members follow their rule),
+        // so a placement that did not stick is refused rather than ignored.
+        if let (Some(instance), Some(requested)) = (&edit.instance, &edit.placement) {
+            let node = document
+                .instances
+                .iter()
+                .find(|node| node.id() == instance)
+                .ok_or_else(|| format!("unknown instance '{instance}'"))?;
+            if !PlacementView::from(node.placement())?.close_to(requested) {
+                return Err(format!(
+                    "the placement of '{instance}' is set by its pattern; edit the pattern instead"
+                ));
+            }
+        }
         let gltf = gltf(&document, self.output.as_deref())?;
         self.document = document;
         self.gltf = gltf;
@@ -292,7 +322,13 @@ impl Studio {
                 })
             })
             .collect();
-        Ok(json!({ "id": id, "version": self.version, "parameters": parameters }))
+        Ok(json!({
+            "id": id,
+            "version": self.version,
+            "parameters": parameters,
+            "frame": node.frame(),
+            "placement": PlacementView::from(node.placement())?,
+        }))
     }
 
     /// Writes the edited document beside the model, then renames it over the
@@ -346,6 +382,97 @@ impl Studio {
             ("GET" | "POST", _) => Response::error(404, "not found"),
             _ => Response::error(405, "method not allowed"),
         }
+    }
+}
+
+/// A placement in millimeters and degrees, as the page shows and edits it.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PlacementView {
+    translation_mm: [f64; 3],
+    rotation: Option<RotationView>,
+}
+
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RotationView {
+    origin_mm: [f64; 3],
+    axis: [f64; 3],
+    angle_degrees: f64,
+}
+
+fn millimeters(v: VectorQuantity) -> Result<[f64; 3], String> {
+    [v.x, v.y, v.z]
+        .map(|q| q.normalized().map_err(|e| e.to_string()))
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()
+        .map(|v| [v[0], v[1], v[2]])
+}
+
+impl PlacementView {
+    fn from(placement: Placement) -> Result<Self, String> {
+        Ok(Self {
+            translation_mm: millimeters(placement.translation)?,
+            rotation: placement
+                .rotation
+                .map(|r| {
+                    Ok::<_, String>(RotationView {
+                        origin_mm: millimeters(r.origin)?,
+                        axis: millimeters(r.axis)?,
+                        // Rounded to a nanodegree so degrees typed in read back unchanged.
+                        angle_degrees: (r.angle_radians.to_degrees() * 1e9).round() / 1e9,
+                    })
+                })
+                .transpose()?,
+        })
+    }
+
+    fn placement(&self) -> Result<Placement, String> {
+        let finite = |v: &[f64; 3]| v.iter().all(|x| x.is_finite());
+        let [x, y, z] = self.translation_mm;
+        let rotation = match &self.rotation {
+            None => None,
+            Some(r) => {
+                let [ox, oy, oz] = r.origin_mm;
+                let [ax, ay, az] = r.axis;
+                if !finite(&r.origin_mm) || !finite(&r.axis) || !r.angle_degrees.is_finite() {
+                    return Err("rotation values must be finite".into());
+                }
+                if ax.hypot(ay.hypot(az)) == 0.0 {
+                    return Err("rotation axis must be nonzero".into());
+                }
+                Some(AxisAngle {
+                    origin: VectorQuantity::lengths(ox, oy, oz, LengthUnit::Millimeter),
+                    axis: VectorQuantity::scalars(ax, ay, az),
+                    angle_radians: r.angle_degrees.to_radians(),
+                })
+            }
+        };
+        if !finite(&self.translation_mm) {
+            return Err("translation must be finite".into());
+        }
+        Ok(Placement {
+            translation: VectorQuantity::lengths(x, y, z, LengthUnit::Millimeter),
+            rotation,
+        })
+    }
+
+    fn close_to(&self, other: &Self) -> bool {
+        let near = |a: &[f64; 3], b: &[f64; 3]| {
+            a.iter()
+                .zip(b)
+                .all(|(a, b)| (a - b).abs() <= 1e-9 * a.abs().max(b.abs()).max(1.0))
+        };
+        near(&self.translation_mm, &other.translation_mm)
+            && match (&self.rotation, &other.rotation) {
+                (None, None) => true,
+                (Some(a), Some(b)) => {
+                    near(&a.origin_mm, &b.origin_mm)
+                        && near(&a.axis, &b.axis)
+                        && near(&[a.angle_degrees; 3], &[b.angle_degrees; 3])
+                }
+                _ => false,
+            }
     }
 }
 

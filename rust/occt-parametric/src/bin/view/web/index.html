@@ -53,6 +53,12 @@
   .tag.own { border-color: var(--accent); color: var(--accent); }
   .reset { flex: none; padding: 0 6px; font-size: 11px; }
   .label-end { display: flex; gap: 6px; align-items: center; }
+  .placement { display: grid; gap: 6px; padding: 8px 0; border-top: 1px solid var(--line); }
+  .triple { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; }
+  .triple input, .placement input[type=number] {
+    width: 100%; min-width: 0; padding: 4px 6px; font: inherit; color: inherit;
+    background: var(--bg); border: 1px solid var(--line); border-radius: 4px;
+  }
   @media (max-width: 700px) {
     body { grid-template-columns: 1fr; grid-template-rows: 55vh 1fr; }
     main { grid-row: 1; }
@@ -190,7 +196,9 @@ function queue(change) {
     batch = { scope, set: {}, clear: [] };
     batches.push(batch);
   }
-  if ("set" in change) {
+  if ("placement" in change) {
+    batch.placement = change.placement;
+  } else if ("set" in change) {
     batch.set[change.id] = change.set;
     batch.clear = batch.clear.filter((id) => id !== change.id);
   } else {
@@ -204,9 +212,10 @@ function queue(change) {
 async function flush() {
   clearTimeout(timer);
   if (sending || !batches.length) return;
-  const { scope: target, set, clear } = batches.shift();
+  const { scope: target, set, clear, placement } = batches.shift();
   sending = true;
   const body = target ? { instance: target, set, clear } : { set };
+  if (target && placement) body.placement = placement;
   try {
     const next = await api("/api/parameters", { method: "POST", body: JSON.stringify(body) });
     editError = null;
@@ -318,6 +327,69 @@ function renderParameters() {
   if (state && !state.parameters.length) {
     container.innerHTML = '<div class="muted">This family has no parameters.</div>';
   }
+  if (scope && instanceView?.placement) container.append(placementEditor(instanceView));
+}
+
+/** Translation, rotation axis, angle and origin fields for one instance. */
+function placementEditor(view) {
+  const section = document.createElement("div");
+  section.className = "placement";
+  const title = document.createElement("label");
+  title.innerHTML = "<span>Placement</span>";
+  const where = document.createElement("span");
+  where.className = "muted";
+  where.textContent = view.frame ? `mm, in frame ${view.frame}` : "mm";
+  title.append(where);
+  title.style.display = "flex";
+  title.style.justifyContent = "space-between";
+  section.append(title);
+  const rotation = view.placement.rotation ?? { origin_mm: [0, 0, 0], axis: [0, 0, 1], angle_degrees: 0 };
+  const fields = {};
+  function triple(name, caption, values) {
+    const label = document.createElement("div");
+    label.className = "muted";
+    label.textContent = caption;
+    const row = document.createElement("div");
+    row.className = "triple";
+    fields[name] = values.map((value, axis) => {
+      const input = document.createElement("input");
+      input.type = "number";
+      input.step = "any";
+      input.value = format(value);
+      input.title = `${caption} ${"XYZ"[axis]}`;
+      input.setAttribute("aria-label", input.title);
+      input.addEventListener("change", send);
+      row.append(input);
+      return input;
+    });
+    section.append(label, row);
+  }
+  triple("translation", "Translation X, Y, Z", view.placement.translation_mm);
+  triple("axis", "Rotation axis X, Y, Z", rotation.axis);
+  const angleLabel = document.createElement("div");
+  angleLabel.className = "muted";
+  angleLabel.textContent = "Angle (degrees; 0 for none)";
+  const angle = document.createElement("input");
+  angle.type = "number";
+  angle.step = "any";
+  angle.value = format(rotation.angle_degrees);
+  angle.setAttribute("aria-label", "Rotation angle in degrees");
+  angle.addEventListener("change", send);
+  section.append(angleLabel, angle);
+  triple("origin", "Rotation origin X, Y, Z", rotation.origin_mm);
+  function send() {
+    const read = (inputs) => inputs.map((input) => parseFloat(input.value));
+    const values = [...read(fields.translation), ...read(fields.axis), ...read(fields.origin), parseFloat(angle.value)];
+    if (!values.every(Number.isFinite)) return;
+    const degrees = parseFloat(angle.value);
+    queue({
+      placement: {
+        translation_mm: read(fields.translation),
+        rotation: degrees === 0 ? null : { origin_mm: read(fields.origin), axis: read(fields.axis), angle_degrees: degrees },
+      },
+    });
+  }
+  return section;
 }
 
 let rendered = "";
@@ -337,8 +409,11 @@ async function apply(next) {
     ]).catch((error) => ($("error").textContent = error.message));
   }
   // Rebuilding inputs mid-drag or with unsent edits would lose them.
-  const editing = sending || batches.length || document.activeElement?.matches("input[type=range]");
-  const shown = JSON.stringify(rows());
+  const editing =
+    sending ||
+    batches.length ||
+    document.activeElement?.matches("input[type=range], .placement input");
+  const shown = JSON.stringify([rows(), scope && instanceView?.placement]);
   if (shown !== rendered && !editing) {
     rendered = shown;
     renderParameters();
@@ -398,7 +473,8 @@ canvas.addEventListener("pointerup", (event) => {
   const click = drag && drag.moved < 4 && event.button === 0;
   drag = null;
   canvas.style.cursor = "grab";
-  if (!click || !parsed) return;
+  // Until the instance list arrives a click could not be resolved; ignore it.
+  if (!click || !parsed || !instanceIds.size) return;
   const box = canvas.getBoundingClientRect();
   const x = ((event.clientX - box.left) / box.width) * 2 - 1;
   const y = 1 - ((event.clientY - box.top) / box.height) * 2;

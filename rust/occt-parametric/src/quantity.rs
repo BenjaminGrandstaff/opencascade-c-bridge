@@ -53,7 +53,9 @@ impl Quantity {
         }
     }
 
-    pub(crate) fn normalized(self) -> Result<f64, ModelError> {
+    /// The value in millimeters for lengths, or as is for scalars; fails
+    /// for non-finite values or a unit that does not match the dimension.
+    pub fn normalized(self) -> Result<f64, ModelError> {
         if !self.value.is_finite() {
             return Err(ModelError::new("quantity is not finite"));
         }

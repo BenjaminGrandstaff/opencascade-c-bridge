@@ -15,7 +15,7 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 93 + first-use integration 1 (+1 doc test), recipes 3, parametric 372 + merge driver 3 + motion command 16 + balance command 4 + drawing command 2 + inspection command 5 + view command 8 + viewer Node 5 + branch command 2, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 93 + first-use integration 1 (+1 doc test), recipes 3, parametric 372 + merge driver 3 + motion command 16 + balance command 4 + drawing command 2 + inspection command 5 + view command 9 + viewer Node 5 + branch command 2, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -573,6 +573,9 @@ tracks status and order.
   click a part (ray picking through node transforms) or choose it in a list
   to see its effective values tagged own, inherited or default, set its own
   overrides, or reset them; the other parts fade while it is selected.
+  Its placement (translation, axis, angle in degrees, origin) is shown and
+  edited too; a pattern member's placement edit is refused because its rule
+  re-derives it. `Quantity::normalized` is now public.
 
 - Persistent references (schema 53): `FaceSelector::Persistent` and
   `EdgeSelector::Persistent` choose topology on an earlier feature's output and
