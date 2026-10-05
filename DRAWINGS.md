@@ -431,7 +431,7 @@ material modifiers, both exports, shared regeneration and native handle cleanup.
 Feature-of-size flags and geometric controls are manufacturing declarations.
 Anchors locate leaders on selected solid outputs; they do not identify persistent
 faces or establish datum simulators. Multi-level composite frames, common datums, targets,
-projected zones, advanced modifiers, measured datum-reference-frame solving, bonus/shift
+projected zones, advanced modifiers, measured datum-reference-frame solving, datum-shift
 calculations, measured tolerance-zone inspection and semantic PMI exchange remain
 on the roadmap. References: [ASME Y14.5 scope and contents](https://www.asme.org/getmedia/da2ff89e-067b-4160-8e2e-53e6c7da1d3b/17707.pdf)
 and [NIST datum-system model](https://nvlpubs.nist.gov/nistpubs/jres/104/4/html/j44mac.htm).
@@ -502,3 +502,37 @@ frames with nominal coordinates. References:
 [NIST composite-tolerance data model](https://tsapps.nist.gov/publication/get_pdf.cfm?pub_id=821122),
 [NIST datum-system definitions](https://nvlpubs.nist.gov/nistpubs/jres/104/4/html/j44mac.htm)
 and [ASME training scope on single-segment and composite controls](https://www.asme.org/learning-development/find-course/vcpd757-gd-t-comprehensive-fundamentals-%28virtual-classroom%29).
+
+
+## Feature size limits and tolerance allowances
+
+Schema 64 adds optional `DrawingFeatureControlFrame.size_limits`:
+`DrawingSizeLimits { kind, lower, upper }`, with internal/external
+`FeatureOfSizeKind` and dimensioned positive length limits. Limits must be ordered,
+may use different units, and require `feature_of_size: true`. Legacy controls
+retain `None`. Limits are calculation inputs; annotate the size separately with
+an existing limit dimension or hole callout.
+
+`control.tolerance_allowance(supplied_size)` returns millimetre values for the
+supplied size, maximum/least material sizes, bonus, total tolerance and optional
+position-composite refinement total. For internal features MMC is the lower size
+and LMC the upper; external features reverse these. MMC/LMC bonus is the size
+departure from that condition; RFS bonus is zero. Each composite row adds that
+bonus to its own specified tolerance. Out-of-limit, non-length, nonfinite,
+nonpositive and overflowing inputs fail, without clamping or display rounding.
+For example, an internal feature limited to 10–12 mm with position Ø0.1 mm at
+MMC and supplied size 10.5 mm returns 0.5 mm bonus and 0.6 mm total allowance.
+
+The API supports declared straightness, flatness, orientation and position size
+controls, with position-only composites. Validate the drawing separately for
+attachment and datum-reference semantics. It does not derive a mating size,
+fit an envelope, establish simulators, calculate datum shift or determine
+conformity. Datum MMB/LMB modifiers never contribute feature bonus. SVG/DXF
+continue to show the specified tolerance, not an allowance for a supplied size.
+
+The size-departure model follows the concepts described in the
+[NIST comparison of ANSI/ISO tolerancing and STEP Part 47](https://tsapps.nist.gov/publication/get_pdf.cfm?pub_id=821115),
+which distinguishes increased geometric allowance from boundary requirements.
+This arithmetic API does not verify those geometric boundaries or certify ASME
+conformity. A benchmark evaluates 10,000 composite allowances without native
+geometry handles.

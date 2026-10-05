@@ -2,11 +2,13 @@
 use super::*;
 mod composite;
 mod datums;
+mod size;
 pub use composite::DrawingCompositeRefinement;
 pub use datums::{
     DatumPrecedence, DrawingDatumCoordinateFrame, DrawingDatumReferenceFrame,
     ResolvedDrawingDatumReference, ResolvedDrawingDatumReferenceFrame,
 };
+pub use size::{DrawingSizeLimits, FeatureOfSizeKind, GeometricToleranceAllowance};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -107,6 +109,8 @@ pub struct DrawingDatumReference {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DrawingFeatureControlFrame {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size_limits: Option<DrawingSizeLimits>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub datum_reference_frame: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -221,6 +225,7 @@ pub(super) fn validate(
         anchor(&frame.attachment, views, graph)?;
         number(frame)?;
         validate_control(frame)?;
+        size::validate(frame)?;
         composite::validate(frame, &index)?;
         validate_references(&frame.datums, &index)?;
     }

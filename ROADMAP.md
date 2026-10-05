@@ -11,18 +11,28 @@ tracks status and order.
 | C ABI (`src/`, `include/`) | ABI 42 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 63 | Active development |
+| `occt-parametric` (engineering layer) | Schema 64 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 89 + first-use integration 1 (+1 doc test), recipes 3, parametric 338 + merge driver 3 + motion command 16 + balance command 4 + drawing command 2 + branch command 2, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 89 + first-use integration 1 (+1 doc test), recipes 3, parametric 342 + merge driver 3 + motion command 16 + balance command 4 + drawing command 2 + branch command 2, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
-| Coverage | 93.61% lines overall, test code excluded; C++ 94.13% lines, 87.40% branches, 100% functions; Rust 93.42% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 95 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Coverage | 93.63% lines overall, test code excluded; C++ 94.17% lines, 87.58% branches, 100% functions; Rust 93.42% lines | `tools/coverage/run.sh` |
+| Scale benchmarks | 96 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
+
+- Feature-size limits and bonus allowances (schema 64): persisted internal/external
+  size limits, unit-aware MMC/LMC/RFS arithmetic, and independent total allowances
+  for both position-composite rows. Out-of-limit sizes and invalid/overflowing
+  values fail. Drawing exports preserve the specified control. Four tests cover
+  material conditions, endpoints, units, rejection, persistence, migration and
+  independent merges; a 10,000-allowance benchmark runs in 0.005 s
+  (10 s budget) and uses no kernel handles.
+  Mating-envelope fitting, datum shift and measured conformity remain future
+  work. See [Drawings](DRAWINGS.md).
 
 - Composite controls and named datum frames (schema 63): two-segment position/
   profile frames with a shared characteristic cell, a tighter lower tolerance and
@@ -48,7 +58,7 @@ tracks status and order.
   benchmark verifies generation, both exports and native cleanup in 0.504 s
   (10 s budget).
   These are persisted manufacturing declarations, not measured conformity results.
-  Datum simulators, bonus/shift calculations and tolerance-zone
+  Datum simulators, datum-shift calculations and tolerance-zone
   inspection remain future work. See [Drawings](DRAWINGS.md).
 
 - Standard paper presets and projection symbols (schema 61): ANSI A–E and ISO
@@ -930,7 +940,8 @@ scopes and inspected repo capabilities, not a full conformity audit.
    multi-level composites, common datums and advanced modifiers, verified
    tolerance-zone evaluation and measured inspection. Saved single/composite
    controls and named datum frames express intent; nominal orthogonal-plane
-   coordinates do not calculate bonus tolerance, datum shift or conformity.
+   coordinates and size-departure allowance arithmetic do not establish datum
+   shift or measured conformity.
 3. **3D manufacturing annotations and exchange** — [Y14.41](https://www.asme.org/codes-standards/find-codes-standards/y14-41-digital-product-definition-data-practices):
    structured PMI attached to persistent geometry, annotation views, dataset
    authority and revision rules, and verified semantic PMI exchange. Geometry

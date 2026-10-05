@@ -2135,6 +2135,7 @@ fn gdt_page() -> DrawingDefinition {
     }
     page.feature_control_frames
         .push(DrawingFeatureControlFrame {
+            size_limits: None,
             datum_reference_frame: None,
             refinement: None,
             id: "position".into(),
@@ -2768,6 +2769,207 @@ fn named_datum_frames_resolve_precedence_and_nominal_321_coordinates_at_current_
     assert!(
         frame
             .coordinates_mm(Vec3::new(f64::INFINITY, 0.0, 0.0))
+            .is_err()
+    );
+}
+
+fn size_limits(kind: FeatureOfSizeKind) -> DrawingSizeLimits {
+    DrawingSizeLimits {
+        kind,
+        lower: Quantity::length(10.0, LengthUnit::Millimeter),
+        upper: Quantity::length(12.0, LengthUnit::Millimeter),
+    }
+}
+
+#[test]
+fn feature_size_allowances_cover_material_conditions_and_composites() {
+    let mut page = composite_gdt_page();
+    let frame = &mut page.feature_control_frames[0];
+    for (kind, maximum, least) in [
+        (FeatureOfSizeKind::Internal, 10.0, 12.0),
+        (FeatureOfSizeKind::External, 12.0, 10.0),
+    ] {
+        frame.size_limits = Some(size_limits(kind));
+        for (condition, bonus) in [
+            (ToleranceMaterialCondition::Maximum, 0.5),
+            (ToleranceMaterialCondition::Least, 1.5),
+            (ToleranceMaterialCondition::Regardless, 0.0),
+        ] {
+            frame.material = condition;
+            let size = if kind == FeatureOfSizeKind::Internal {
+                10.5
+            } else {
+                11.5
+            };
+            let result = frame
+                .tolerance_allowance(Quantity::length(size / 10.0, LengthUnit::Centimeter))
+                .unwrap();
+            assert_eq!(result.maximum_material_size_mm, maximum);
+            assert_eq!(result.least_material_size_mm, least);
+            assert_eq!(result.bonus_mm, bonus);
+            assert_eq!(result.total_tolerance_mm, bonus + 0.1);
+            assert_eq!(result.refinement_total_tolerance_mm, Some(bonus + 0.05));
+        }
+        frame.material = ToleranceMaterialCondition::Maximum;
+        assert_eq!(
+            frame
+                .tolerance_allowance(Quantity::length(maximum, LengthUnit::Millimeter))
+                .unwrap()
+                .bonus_mm,
+            0.0
+        );
+        assert_eq!(
+            frame
+                .tolerance_allowance(Quantity::length(least, LengthUnit::Millimeter))
+                .unwrap()
+                .bonus_mm,
+            2.0
+        );
+    }
+    frame.refinement = None;
+    frame.size_limits = Some(DrawingSizeLimits {
+        kind: FeatureOfSizeKind::Internal,
+        lower: Quantity::length(1.0, LengthUnit::Inch),
+        upper: Quantity::length(25.4, LengthUnit::Millimeter),
+    });
+    let result = frame
+        .tolerance_allowance(Quantity::length(1.0, LengthUnit::Inch))
+        .unwrap();
+    assert_eq!(result.supplied_size_mm, 25.4);
+    assert_eq!(result.refinement_total_tolerance_mm, None);
+}
+
+#[test]
+fn feature_size_allowances_reject_invalid_inputs_and_overflow() {
+    let mut frame = gdt_page().feature_control_frames.remove(0);
+    assert!(frame.tolerance_allowance(Quantity::scalar(11.0)).is_err());
+    frame.size_limits = Some(size_limits(FeatureOfSizeKind::Internal));
+    for value in [
+        Quantity::scalar(11.0),
+        Quantity::length(0.0, LengthUnit::Millimeter),
+        Quantity::length(9.0, LengthUnit::Millimeter),
+        Quantity::length(13.0, LengthUnit::Millimeter),
+        Quantity::length(f64::NAN, LengthUnit::Millimeter),
+        Quantity::length(f64::MAX, LengthUnit::Meter),
+    ] {
+        assert!(frame.tolerance_allowance(value).is_err());
+    }
+    for limits in [
+        DrawingSizeLimits {
+            lower: Quantity::scalar(10.0),
+            ..size_limits(FeatureOfSizeKind::Internal)
+        },
+        DrawingSizeLimits {
+            lower: Quantity::length(-1.0, LengthUnit::Millimeter),
+            ..size_limits(FeatureOfSizeKind::Internal)
+        },
+        DrawingSizeLimits {
+            upper: Quantity::length(9.0, LengthUnit::Millimeter),
+            ..size_limits(FeatureOfSizeKind::Internal)
+        },
+        DrawingSizeLimits {
+            upper: Quantity::length(f64::MAX, LengthUnit::Meter),
+            ..size_limits(FeatureOfSizeKind::Internal)
+        },
+    ] {
+        frame.size_limits = Some(limits);
+        assert!(
+            frame
+                .tolerance_allowance(Quantity::length(11.0, LengthUnit::Millimeter))
+                .is_err()
+        );
+    }
+    frame.size_limits = Some(size_limits(FeatureOfSizeKind::Internal));
+    frame.feature_of_size = false;
+    assert!(
+        frame
+            .tolerance_allowance(Quantity::length(11.0, LengthUnit::Millimeter))
+            .is_err()
+    );
+    frame.feature_of_size = true;
+    frame.characteristic = GeometricCharacteristic::Circularity;
+    assert!(
+        frame
+            .tolerance_allowance(Quantity::length(11.0, LengthUnit::Millimeter))
+            .is_err()
+    );
+    let mut composite = composite_gdt_page().feature_control_frames.remove(0);
+    composite.size_limits = frame.size_limits;
+    composite.refinement.as_mut().unwrap().tolerance = composite.tolerance;
+    assert!(
+        composite
+            .tolerance_allowance(Quantity::length(11.0, LengthUnit::Millimeter))
+            .is_err()
+    );
+}
+
+#[test]
+fn feature_size_limits_persist_migrate_merge_and_preserve_specified_exports() {
+    let definition = family_with_datums();
+    let mut graph = InstanceGraph::new(&definition);
+    graph.add_base("part", HashMap::new(), "test").unwrap();
+    let mut page = composite_gdt_page();
+    let session = Session::new().unwrap();
+    let before = page
+        .generate(&graph, &session, DrawingRenderOptions::default())
+        .unwrap();
+    page.feature_control_frames[0].size_limits = Some(size_limits(FeatureOfSizeKind::Internal));
+    assert_eq!(
+        page.generate(&graph, &session, DrawingRenderOptions::default())
+            .unwrap(),
+        before
+    );
+    let mut document = ModelDocument::from_graph(&graph);
+    document.drawings.push(page);
+    assert_eq!(
+        ModelDocument::from_json(&document.to_json_pretty().unwrap()).unwrap(),
+        document
+    );
+    let mut legacy = serde_json::to_value(&document).unwrap();
+    legacy["schema_version"] = serde_json::json!(63);
+    legacy["drawings"][0]["feature_control_frames"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("size_limits");
+    let migrated = ModelDocument::from_json(&legacy.to_string()).unwrap();
+    assert_eq!(migrated.schema_version, CURRENT_SCHEMA_VERSION);
+    assert!(
+        migrated.drawings[0].feature_control_frames[0]
+            .size_limits
+            .is_none()
+    );
+    let mut ours = document.clone();
+    ours.drawings[0].feature_control_frames[0]
+        .size_limits
+        .as_mut()
+        .unwrap()
+        .upper
+        .value = 13.0;
+    let mut theirs = document.clone();
+    theirs.drawings[0].feature_control_frames[0]
+        .refinement
+        .as_mut()
+        .unwrap()
+        .tolerance
+        .value = 0.03;
+    let DocumentMerge::Merged(merged) =
+        ModelDocument::three_way_merge(&document, &ours, &theirs).unwrap()
+    else {
+        panic!("independent size and tolerance edits should merge")
+    };
+    let result = merged.drawings[0].feature_control_frames[0]
+        .tolerance_allowance(Quantity::length(12.0, LengthUnit::Millimeter))
+        .unwrap();
+    assert_eq!(result.bonus_mm, 2.0);
+    assert_eq!(result.refinement_total_tolerance_mm, Some(2.03));
+    let frame = &mut document.drawings[0].feature_control_frames[0];
+    frame.feature_of_size = false;
+    frame.material = ToleranceMaterialCondition::Regardless;
+    frame.zone = GeometricToleranceZone::Characteristic;
+    frame.characteristic = GeometricCharacteristic::ProfileSurface;
+    assert!(
+        document.drawings[0]
+            .generate(&graph, &session, DrawingRenderOptions::default())
             .is_err()
     );
 }
