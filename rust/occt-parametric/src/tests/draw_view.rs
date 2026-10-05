@@ -70,7 +70,14 @@ fn draw_views_write_named_colored_parts_that_draw_opens() {
     // The BREP and script assertions above always run. Executing the viewer
     // additionally needs DRAW and an X display, even in DRAW virtual mode.
     let wrapper = directory.join("check.tcl");
-    std::fs::write(&wrapper, "source view.tcl\nputs VIEW_OK\n").unwrap();
+    let reload = std::fs::read_to_string(directory.join("reload.tcl")).unwrap();
+    assert!(reload.contains("vremove -all\n") && !reload.contains("vinit"));
+    assert!(reload.contains("vsetcolor member_2_ #7CBCE7\n"), "{reload}");
+    std::fs::write(
+        &wrapper,
+        "source view.tcl\nputs VIEW_OK\nsource reload.tcl\nputs RELOAD_OK\n",
+    )
+    .unwrap();
     if let Some(output) = draw_output(&directory) {
         let stdout = String::from_utf8_lossy(&output.stdout);
         assert!(
@@ -79,6 +86,7 @@ fn draw_views_write_named_colored_parts_that_draw_opens() {
             String::from_utf8_lossy(&output.stderr)
         );
         assert!(stdout.contains("source = source:body"), "{stdout}");
+        assert!(stdout.contains("RELOAD_OK"), "{stdout}");
     }
     std::fs::remove_dir_all(&directory).unwrap();
 }

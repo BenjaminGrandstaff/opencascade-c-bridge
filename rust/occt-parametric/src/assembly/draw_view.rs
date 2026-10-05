@@ -40,12 +40,14 @@ fn hex(appearance: &MaterialAppearance) -> String {
 }
 
 impl InstanceGraph<'_> {
-    /// Writes `model.brep` (the generated `outputs` as one compound, placed)
-    /// and `view.tcl` into `directory`, creating it if needed. Run
-    /// `DRAWEXE -i -f view.tcl` there to open every part shaded, named after
-    /// its instance, and colored from its material appearance; the script
-    /// prints which DRAW name belongs to which instance. Returns the script
-    /// path. O(outputs) plus one BREP write.
+    /// Writes `model.brep` (the generated `outputs` as one compound, placed),
+    /// `view.tcl` and `reload.tcl` into `directory`, creating it if needed.
+    /// Run `DRAWEXE -i -f view.tcl` there to open every part shaded, named
+    /// after its instance, and colored from its material appearance; the
+    /// script prints which DRAW name belongs to which instance. After a later
+    /// export to the same directory, `source reload.tcl` in that DRAW session
+    /// replaces the displayed parts and keeps the camera. Returns the
+    /// `view.tcl` path. O(outputs) plus one BREP write.
     pub fn export_draw_view(
         &self,
         session: &Session,
@@ -77,38 +79,51 @@ impl InstanceGraph<'_> {
         saved?;
 
         let mut used = HashSet::new();
-        let mut script = String::from(
+        let restore = "set here [file dirname [file normalize [info script]]]\n\
+                       restore [file join $here model.brep] model\n\
+                       explode model\n";
+        let mut script = format!(
             "# Opens model.brep in OCCT's DRAW viewer: DRAWEXE -i -f view.tcl\n\
              # (-i is required: with -f alone DRAW draws off screen and exits).\n\
              pload MODELING VISUALIZATION\n\
-             set here [file dirname [file normalize [info script]]]\n\
-             restore [file join $here model.brep] model\n\
-             explode model\n\
-             vinit name=Model w=1280 h=800\n",
+             {restore}vinit name=Model w=1280 h=800\n",
         );
+        let mut parts = String::new();
         let mut legend = String::new();
         for (index, output) in outputs.iter().enumerate() {
             let name = draw_name(&output.instance, &mut used);
-            let _ = writeln!(script, "copy model_{} {name}", index + 1);
-            let _ = writeln!(script, "vdisplay -dispMode 1 {name}");
+            let _ = writeln!(parts, "copy model_{} {name}", index + 1);
+            let _ = writeln!(parts, "vdisplay -dispMode 1 {name}");
             let appearance = self
                 .material_of(&output.instance)?
                 .and_then(|material| self.assembly.material_appearances.get(&material.id));
             if let Some(appearance) = appearance {
-                let _ = writeln!(script, "vsetcolor {name} {}", hex(appearance));
+                let _ = writeln!(parts, "vsetcolor {name} {}", hex(appearance));
             }
             let _ = writeln!(legend, "{name} = {}:{}", output.instance, output.output);
         }
-        script.push_str("vaxo\nvfit\n");
+        let mut puts = String::new();
         for line in legend.lines() {
             // Braces keep instance ids literal in Tcl; ids lose their own braces.
             let line = line.replace('{', "(").replace('}', ")");
-            let _ = writeln!(script, "puts {{{line}}}");
+            let _ = writeln!(puts, "puts {{{line}}}");
         }
-        let path = directory.join("view.tcl");
-        std::fs::write(&path, script)
-            .map_err(|error| ModelError::new(format!("cannot write view script: {error}")))?;
-        Ok(path)
+        script.push_str(&parts);
+        script.push_str("vaxo\nvfit\n");
+        script.push_str(&puts);
+        // Removes every displayed part, so instances deleted since the last
+        // export disappear, then shows the new ones without moving the camera.
+        let reload = format!(
+            "# Replaces the parts shown by view.tcl after a new export: source reload.tcl\n\
+             {restore}vremove -all\n{parts}vrepaint\n{puts}"
+        );
+        let write = |name: &str, text: String| {
+            std::fs::write(directory.join(name), text)
+                .map_err(|error| ModelError::new(format!("cannot write view script: {error}")))
+        };
+        write("reload.tcl", reload)?;
+        write("view.tcl", script)?;
+        Ok(directory.join("view.tcl"))
     }
 }
 

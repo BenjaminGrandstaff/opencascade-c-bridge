@@ -9,8 +9,12 @@ fn point(x: f64, y: f64, z: f64) -> VectorExpr {
     VectorExpr::Literal(VectorQuantity::lengths(x, y, z, LengthUnit::Millimeter))
 }
 
-/// A plate with a fused boss, patterned three times, colored by material.
 fn document() -> ModelDocument {
+    document_with(2)
+}
+
+/// A plate with a fused boss and `members` pattern copies, colored by material.
+fn document_with(members: usize) -> ModelDocument {
     let family = FamilyDefinition {
         references: Vec::new(),
         assumptions: Vec::new(),
@@ -56,7 +60,7 @@ fn document() -> ModelDocument {
             "row",
             "member",
             "source",
-            2,
+            members,
             VectorQuantity::lengths(60.0, 0.0, 0.0, LengthUnit::Millimeter),
             "test",
         )
@@ -240,4 +244,58 @@ fn appearances_require_known_materials_and_valid_values() {
     assert!(graph.set_material_appearance("al", Some(invalid)).is_err());
     graph.set_material_appearance("al", None).unwrap();
     assert!(graph.assembly().material_appearances.is_empty());
+}
+
+#[test]
+fn watch_reloads_the_viewer_after_valid_saves_and_stops_when_it_closes() {
+    use std::os::unix::fs::PermissionsExt;
+    let directory = Directory::new();
+    let model = directory.model(&document());
+    // Stand-in viewer: records the first command it is sent, then exits.
+    let viewer = directory.0.join("viewer.sh");
+    fs::write(&viewer, "#!/bin/sh\nhead -n 1 > received\n").unwrap();
+    fs::set_permissions(&viewer, fs::Permissions::from_mode(0o755)).unwrap();
+    let view = directory.0.join("view");
+    let watch_args = args(&[
+        &model,
+        "--dir".as_ref(),
+        view.as_os_str(),
+        "--watch".as_ref(),
+    ]);
+    let (done, finished) = std::sync::mpsc::channel();
+    let viewer_path = viewer.clone().into_os_string();
+    thread::spawn(move || {
+        let result = run(&watch_args, &viewer_path).map_err(|e| e.to_string());
+        done.send(result).unwrap();
+    });
+    let wait_for = |path: &Path| {
+        for _ in 0..200 {
+            if path.exists() {
+                return;
+            }
+            thread::sleep(Duration::from_millis(50));
+        }
+        panic!("{} never appeared", path.display());
+    };
+    wait_for(&view.join("view.tcl"));
+    assert!(
+        !fs::read_to_string(view.join("reload.tcl"))
+            .unwrap()
+            .contains("member_2_")
+    );
+    // A broken save is reported and skipped; the next valid one reloads.
+    fs::write(&model, "{").unwrap();
+    thread::sleep(POLL * 4);
+    fs::write(&model, document_with(3).to_json_pretty().unwrap()).unwrap();
+    let result = finished.recv_timeout(Duration::from_secs(30)).unwrap();
+    assert!(result.is_ok(), "{result:?}");
+    assert_eq!(
+        fs::read_to_string(view.join("received")).unwrap(),
+        "source reload.tcl\n"
+    );
+    assert!(
+        fs::read_to_string(view.join("reload.tcl"))
+            .unwrap()
+            .contains("vdisplay -dispMode 1 member_2_\n")
+    );
 }
