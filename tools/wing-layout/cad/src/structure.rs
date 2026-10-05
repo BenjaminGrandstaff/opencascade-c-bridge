@@ -177,6 +177,7 @@ fn requirement(
         priority,
         rule,
         provenance: "occb-wing-cad build".into(),
+        traces: Vec::new(),
     }
 }
 

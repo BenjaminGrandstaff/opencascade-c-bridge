@@ -30,6 +30,7 @@ mod sheet_metal;
 mod step_export;
 mod sweep;
 mod tangency;
+mod traceability;
 mod unify;
 mod variable_fillet;
 
@@ -47,6 +48,7 @@ fn family(priority: RequirementPriority, maximum_volume: f64) -> FamilyDefinitio
     FamilyDefinition {
         references: Vec::new(),
         feature_colors: Default::default(),
+        assumptions: Vec::new(),
         id: "BlockFamily".into(),
         version: 1,
         parameters: vec![
@@ -99,6 +101,7 @@ fn family(priority: RequirementPriority, maximum_volume: f64) -> FamilyDefinitio
                     output: "placed".into(),
                 },
                 provenance: "test".into(),
+                traces: Vec::new(),
             },
             Requirement {
                 id: "block.volume".into(),
@@ -118,6 +121,7 @@ fn family(priority: RequirementPriority, maximum_volume: f64) -> FamilyDefinitio
                     },
                 },
                 provenance: "test".into(),
+                traces: Vec::new(),
             },
         ],
     }

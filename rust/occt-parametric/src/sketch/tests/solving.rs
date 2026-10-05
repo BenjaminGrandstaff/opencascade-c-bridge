@@ -269,6 +269,7 @@ fn schema_twenty_six_round_trips_curves_and_migrates_line_sketches() {
     let family = |sketch| FamilyDefinition {
         references: Vec::new(),
         feature_colors: Default::default(),
+        assumptions: Vec::new(),
         id: "SketchPart".into(),
         version: 1,
         parameters: Vec::new(),
@@ -335,6 +336,7 @@ fn solves_dimensioned_rectangle_and_generates_face() {
     let family = FamilyDefinition {
         references: Vec::new(),
         feature_colors: Default::default(),
+        assumptions: Vec::new(),
         id: "SketchPart".into(),
         version: 1,
         parameters: Vec::new(),

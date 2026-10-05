@@ -16,6 +16,7 @@ fn document() -> ModelDocument {
     let family = FamilyDefinition {
         references: Vec::new(),
         feature_colors: Default::default(),
+        assumptions: Vec::new(),
         id: "part".into(),
         version: 1,
         parameters: vec![parameter("width/with~punctuation"), parameter("enabled")],

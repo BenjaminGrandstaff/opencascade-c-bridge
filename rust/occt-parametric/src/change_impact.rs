@@ -25,6 +25,11 @@ pub struct InstanceImpact {
     pub material_changed: bool,
     pub suppression_changed: bool,
     pub intent_changed: bool,
+    /// Family requirements to re-verify: added, removed, or edited ones, and
+    /// those whose rule output or traced feature, parameter, or assumption
+    /// changed.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub requirements: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -45,6 +50,10 @@ struct Variant {
     signatures: BTreeMap<String, Vec<u8>>,
     downstream: HashMap<String, Vec<String>>,
     definition: Vec<u8>,
+    /// Each requirement's serialized form and the items it depends on: its
+    /// rule's output and its traces.
+    requirements: BTreeMap<String, (Vec<u8>, Vec<TraceTarget>)>,
+    assumptions: BTreeMap<String, Vec<u8>>,
 }
 struct Snapshot {
     variant: Rc<Variant>,
@@ -259,12 +268,26 @@ fn variant(instance: &PartInstance<'_>) -> Result<Variant, ModelError> {
                 .push(feature.id.clone());
         }
     }
+    let mut requirements = BTreeMap::new();
+    for requirement in &instance.definition.requirements {
+        let mut depends = requirement.traces.clone();
+        depends.push(TraceTarget::Feature(requirement.rule.output().to_owned()));
+        requirements.insert(requirement.id.clone(), (encode(requirement)?, depends));
+    }
+    let assumptions = instance
+        .definition
+        .assumptions
+        .iter()
+        .map(|assumption| Ok((assumption.id.clone(), encode(assumption)?)))
+        .collect::<Result<_, ModelError>>()?;
     Ok(Variant {
         family: instance.definition.id.clone(),
         parameters: parameters.into_iter().collect(),
         signatures,
         downstream,
         definition: definition_signature(instance.definition)?,
+        requirements,
+        assumptions,
     })
 }
 
@@ -318,7 +341,48 @@ fn affected_features(before: &Variant, after: &Variant) -> Vec<String> {
     dirty.into_iter().collect()
 }
 
-type PairCache = HashMap<(usize, usize), (Vec<String>, Vec<String>)>;
+/// Requirements to re-verify between two variants: changed ones, and those
+/// depending on a changed feature, parameter, or assumption. O(requirements
+/// + traces) after the feature and parameter diffs.
+fn affected_requirements(
+    before: &Variant,
+    after: &Variant,
+    parameters: &[String],
+    features: &[String],
+) -> Vec<String> {
+    let parameters: HashSet<_> = parameters.iter().map(String::as_str).collect();
+    let features: HashSet<_> = features.iter().map(String::as_str).collect();
+    let assumptions: HashSet<&str> = before
+        .assumptions
+        .keys()
+        .chain(after.assumptions.keys())
+        .filter(|id| before.assumptions.get(*id) != after.assumptions.get(*id))
+        .map(String::as_str)
+        .collect();
+    let changed = |depends: &[TraceTarget]| {
+        depends.iter().any(|target| match target {
+            TraceTarget::Feature(id) => features.contains(id.as_str()),
+            TraceTarget::Parameter(id) => parameters.contains(id.as_str()),
+            TraceTarget::Assumption(id) => assumptions.contains(id.as_str()),
+        })
+    };
+    let ids: BTreeSet<_> = before
+        .requirements
+        .keys()
+        .chain(after.requirements.keys())
+        .collect();
+    ids.into_iter()
+        .filter(
+            |id| match (before.requirements.get(*id), after.requirements.get(*id)) {
+                (Some((old, _)), Some((new, depends))) => old != new || changed(depends),
+                _ => true,
+            },
+        )
+        .cloned()
+        .collect()
+}
+
+type PairCache = HashMap<(usize, usize), (Vec<String>, Vec<String>, Vec<String>)>;
 fn compare_instance(
     id: &str,
     before: Option<&Snapshot>,
@@ -336,6 +400,7 @@ fn compare_instance(
             },
             parameters: value.variant.parameters.keys().cloned().collect(),
             features: value.variant.signatures.keys().cloned().collect(),
+            requirements: value.variant.requirements.keys().cloned().collect(),
             placement_changed: true,
             material_changed: value.material.is_some(),
             suppression_changed: value.suppressed,
@@ -346,7 +411,7 @@ fn compare_instance(
         Rc::as_ptr(&before.variant) as usize,
         Rc::as_ptr(&after.variant) as usize,
     );
-    let (parameters, features) = pairs.entry(key).or_insert_with(|| {
+    let (parameters, features, requirements) = pairs.entry(key).or_insert_with(|| {
         let ids: BTreeSet<_> = before
             .variant
             .parameters
@@ -357,11 +422,11 @@ fn compare_instance(
             .into_iter()
             .filter(|id| before.variant.parameters.get(*id) != after.variant.parameters.get(*id))
             .cloned()
-            .collect();
-        (
-            parameters,
-            affected_features(&before.variant, &after.variant),
-        )
+            .collect::<Vec<_>>();
+        let features = affected_features(&before.variant, &after.variant);
+        let requirements =
+            affected_requirements(&before.variant, &after.variant, &parameters, &features);
+        (parameters, features, requirements)
     });
     let impact = InstanceImpact {
         instance: id.into(),
@@ -373,14 +438,16 @@ fn compare_instance(
         suppression_changed: before.suppressed != after.suppressed,
         intent_changed: before.intent != after.intent
             || before.variant.definition != after.variant.definition,
+        requirements: requirements.clone(),
     };
     (!impact.parameters.is_empty()
         || !impact.features.is_empty()
         || impact.placement_changed
         || impact.material_changed
         || impact.suppression_changed
-        || impact.intent_changed)
-        .then_some(impact)
+        || impact.intent_changed
+        || !impact.requirements.is_empty())
+    .then_some(impact)
 }
 
 fn drawing_impact(

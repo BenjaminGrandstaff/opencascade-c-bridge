@@ -980,6 +980,47 @@ pub struct Requirement {
     pub statement: String,
     pub rule: VerificationRule,
     pub provenance: String,
+    /// The design items this requirement constrains or rests on, beyond its
+    /// rule's own output. Change impact reports the requirement when any of
+    /// them changes.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub traces: Vec<TraceTarget>,
+}
+
+/// A design item a requirement traces to.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TraceTarget {
+    Feature(String),
+    /// An input, derived scalar, or derived vector parameter.
+    Parameter(String),
+    Assumption(String),
+}
+
+/// A stated engineering assumption, such as a load case or a material
+/// property, that requirements can trace to.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Assumption {
+    pub id: String,
+    pub statement: String,
+    pub provenance: String,
+}
+
+impl VerificationRule {
+    /// The named output the rule checks.
+    pub fn output(&self) -> &str {
+        match self {
+            Self::ShapeValid { output }
+            | Self::VolumeRange { output, .. }
+            | Self::Connectivity { output, .. }
+            | Self::MinimumRadius { output, .. }
+            | Self::MinimumWall { output, .. }
+            | Self::DraftAngle { output, .. }
+            | Self::Undercut { output, .. }
+            | Self::FitsWithin { output, .. }
+            | Self::Overhang { output, .. } => output,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -1039,6 +1080,9 @@ pub struct FamilyDefinition {
     /// to the faces they keep or modify. Exported as STEP face colors.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub feature_colors: BTreeMap<String, [f64; 3]>,
+    /// Engineering assumptions that requirements trace to.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub assumptions: Vec<Assumption>,
 }
 
 /// A face or edge rule declared once in a family and used by name, so the

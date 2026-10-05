@@ -37,6 +37,7 @@ fn assembly() {
     let family = FamilyDefinition {
         references: Vec::new(),
         feature_colors: Default::default(),
+        assumptions: Vec::new(),
         id: "unit".into(),
         version: 1,
         parameters: vec![],

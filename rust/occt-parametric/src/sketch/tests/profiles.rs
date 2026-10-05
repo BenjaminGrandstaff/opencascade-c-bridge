@@ -43,6 +43,7 @@ fn linked_family() -> FamilyDefinition {
     FamilyDefinition {
         references: Vec::new(),
         feature_colors: Default::default(),
+        assumptions: Vec::new(),
         id: "LinkedSketch".into(),
         version: 1,
         parameters: vec![ParameterDefinition {

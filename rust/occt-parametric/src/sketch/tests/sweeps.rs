@@ -10,6 +10,7 @@ fn sweep_family(
     FamilyDefinition {
         references: Vec::new(),
         feature_colors: Default::default(),
+        assumptions: Vec::new(),
         id: "Sweep".into(),
         version: 1,
         parameters: Vec::new(),

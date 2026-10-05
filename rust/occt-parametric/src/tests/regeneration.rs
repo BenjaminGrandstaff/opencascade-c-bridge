@@ -38,6 +38,7 @@ fn sewing_and_multi_shell_solids_are_feature_graph_operations() {
     let definition = FamilyDefinition {
         references: Vec::new(),
         feature_colors: Default::default(),
+        assumptions: Vec::new(),
         id: "VoidBlock".into(),
         version: 1,
         parameters: Vec::new(),
@@ -87,6 +88,7 @@ fn sewing_and_multi_shell_solids_are_feature_graph_operations() {
                 output: "void-solid".into(),
             },
             provenance: "test".into(),
+            traces: Vec::new(),
         }],
     };
     let instance = PartInstance {

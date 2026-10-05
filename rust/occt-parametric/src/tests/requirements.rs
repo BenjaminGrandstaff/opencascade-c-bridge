@@ -25,6 +25,7 @@ fn requirement(id: &str, priority: RequirementPriority, rule: VerificationRule) 
         statement: format!("{id} holds"),
         rule,
         provenance: "test".into(),
+        traces: Vec::new(),
     }
 }
 
@@ -42,6 +43,7 @@ fn topology_family() -> FamilyDefinition {
     FamilyDefinition {
         references: Vec::new(),
         feature_colors: Default::default(),
+        assumptions: Vec::new(),
         id: "Topology".into(),
         version: 1,
         parameters: Vec::new(),

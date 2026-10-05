@@ -986,6 +986,7 @@ pub(crate) fn validate_definition(definition: &FamilyDefinition) -> Result<(), M
             .map(|requirement| requirement.id.as_str()),
         "requirement ids must be nonempty, versioned, and unique",
     )?;
+    validate_traces(definition, &feature_ids, &parameter_ids)?;
     assembly::validate_datums(definition)
 }
 
@@ -1025,6 +1026,54 @@ fn validate_references<'a>(
         }
     }
     Ok(reference_map(definition))
+}
+
+/// Assumptions have unique ids and statements; every requirement trace names
+/// an existing feature, parameter, or assumption. O(assumptions + traces).
+fn validate_traces(
+    definition: &FamilyDefinition,
+    feature_ids: &HashSet<&str>,
+    parameter_ids: &HashSet<&str>,
+) -> Result<(), ModelError> {
+    let mut assumptions = HashSet::new();
+    insert_unique_ids(
+        &mut assumptions,
+        definition
+            .assumptions
+            .iter()
+            .map(|assumption| assumption.id.as_str()),
+        "assumption ids must be nonempty and unique",
+    )?;
+    if let Some(assumption) = definition
+        .assumptions
+        .iter()
+        .find(|assumption| assumption.statement.trim().is_empty())
+    {
+        return Err(ModelError::new(format!(
+            "assumption '{}' needs a statement",
+            assumption.id
+        )));
+    }
+    for requirement in &definition.requirements {
+        for trace in &requirement.traces {
+            let (known, kind, id) = match trace {
+                TraceTarget::Feature(id) => (feature_ids.contains(id.as_str()), "feature", id),
+                TraceTarget::Parameter(id) => {
+                    (parameter_ids.contains(id.as_str()), "parameter", id)
+                }
+                TraceTarget::Assumption(id) => {
+                    (assumptions.contains(id.as_str()), "assumption", id)
+                }
+            };
+            if !known {
+                return Err(ModelError::new(format!(
+                    "requirement '{}' traces to unknown {kind} '{id}'",
+                    requirement.id
+                )));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Adds every id to `seen`, failing on the first empty or repeated id.

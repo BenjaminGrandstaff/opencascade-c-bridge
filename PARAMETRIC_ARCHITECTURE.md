@@ -1389,6 +1389,10 @@ audits. Semantic change payloads exclude that ledger. Kernel-free impact reports
 resolve inherited/configured parameters and propagate feature signatures through
 the union of old/new dependencies, caching shared variants and clone ancestry.
 Placement and material changes have separate flags from local feature rebuilds.
+Schema 67's assumptions and requirement traces add, per instance, the
+requirements to re-verify: changed ones and those whose rule output, traced
+features or parameters, or traced assumptions changed (see
+[Requirement rules](REQUIREMENTS.md#traceability)).
 A Git merge driver validates merged intent before atomically replacing its
 current file. See [Model history](MODEL_HISTORY.md) and
 [Document comparisons](DOCUMENT_DIFF.md) for persistence and conflict contracts.

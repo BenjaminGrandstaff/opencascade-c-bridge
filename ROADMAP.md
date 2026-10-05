@@ -11,11 +11,11 @@ tracks status and order.
 | C ABI (`src/`, `include/`) | ABI 44 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 66 | Active development |
+| `occt-parametric` (engineering layer) | Schema 67 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 93 + first-use integration 1 (+1 doc test), recipes 3, parametric 349 + merge driver 3 + motion command 16 + balance command 4 + drawing command 2 + branch command 2, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 93 + first-use integration 1 (+1 doc test), recipes 3, parametric 351 + merge driver 3 + motion command 16 + balance command 4 + drawing command 2 + branch command 2, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -404,6 +404,15 @@ tracks status and order.
   error-bounded (Bezier, B-spline) extrema.
 
 ### Parametric layer
+
+- Traceability (schema 67): family assumptions and requirement traces to
+  features, parameters, and assumptions, validated and omitted when empty.
+  Change impact lists the requirements to re-verify per instance: edited
+  ones and those whose rule output or traced items changed, so restating an
+  assumption flags only what rests on it. Two tests cover assumption,
+  parameter, requirement, and addition edits, validation, and persistence.
+  10,000 instances with 1,000 traced requirements report one restated
+  assumption in 0.111 s (10 s budget).
 
 - Undercut requirements (schema 66): `VerificationRule::Undercut` clips the
   output at a parting plane and requires faces above it to release along the
@@ -1026,7 +1035,6 @@ scopes and inspected repo capabilities, not a full conformity audit.
   bounds that preserve motion correlations in dense or deeply nested mechanisms.
 - Exact (not sampled) minimum wall thickness, exact draft on freeform BREP
   faces, and non-planar parting surfaces.
-- Assumptions and requirement-to-feature trace links in the document schema.
 - Domain-specific expression functions (airfoil sections, material and
   catalog lookups).
 - Integration with the broader EIL source model in the sibling

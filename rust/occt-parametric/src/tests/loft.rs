@@ -205,6 +205,7 @@ fn schema_50_lofts_with_stored_rules_support_continuous_joint_motion() {
             statement: id.into(),
             rule,
             provenance: "integration".into(),
+            traces: Vec::new(),
         });
     }
     let mut graph = InstanceGraph::new(&family);

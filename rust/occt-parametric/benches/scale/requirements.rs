@@ -101,6 +101,7 @@ pub(crate) fn requirement_cases(definition: &FamilyDefinition) -> Vec<Outcome> {
             allow_voids: false,
         },
         provenance: "bench".into(),
+        traces: Vec::new(),
     });
     let checked: &'static FamilyDefinition = Box::leak(Box::new(checked));
     vec![
@@ -290,6 +291,7 @@ pub(crate) fn manufacturing_rules_case(definition: &FamilyDefinition) -> Outcome
         statement: id.into(),
         rule,
         provenance: "bench".into(),
+        traces: Vec::new(),
     };
     let up = || VectorQuantity::scalars(0.0, 0.0, 1.0);
     screened.requirements.extend([

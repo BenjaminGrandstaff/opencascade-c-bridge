@@ -117,6 +117,7 @@ fn requirement(id: String, kind: RequirementKind, rule: VerificationRule) -> Req
         priority: RequirementPriority::Required,
         rule,
         provenance: "occb-wing-cad".into(),
+        traces: Vec::new(),
     }
 }
 
@@ -229,6 +230,7 @@ pub fn family(project: &Project) -> Result<FamilyDefinition, Box<dyn Error>> {
     Ok(FamilyDefinition {
         references: Vec::new(),
         feature_colors: Default::default(),
+        assumptions: Vec::new(),
         id: "wing".into(),
         version: 1,
         parameters,

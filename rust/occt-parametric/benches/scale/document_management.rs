@@ -9,6 +9,7 @@ fn document() -> ModelDocument {
     let family = FamilyDefinition {
         references: Vec::new(),
         feature_colors: Default::default(),
+        assumptions: Vec::new(),
         id: "part".into(),
         version: 1,
         parameters: vec![ParameterDefinition {
@@ -98,6 +99,49 @@ fn main() {
     );
     println!(
         "PASS: 10,000 inherited instances, 100 dependent features, shared impact walk: {elapsed:.3?} (10s budget); no kernel handles"
+    );
+
+    // 1,000 requirements tracing 100 assumptions, ten each; restating one
+    // assumption flags exactly its ten requirements on every instance.
+    let mut traced = base.clone();
+    traced.family.assumptions = (0..100)
+        .map(|index| Assumption {
+            id: format!("a-{index:03}"),
+            statement: "stated".into(),
+            provenance: "bench".into(),
+        })
+        .collect();
+    traced.family.requirements = (0..1_000)
+        .map(|index| Requirement {
+            id: format!("r-{index:04}"),
+            version: 1,
+            kind: RequirementKind::Functional,
+            priority: RequirementPriority::Advisory,
+            statement: "holds".into(),
+            rule: VerificationRule::ShapeValid {
+                output: format!("feature-{:03}", index % 100),
+            },
+            provenance: "bench".into(),
+            traces: vec![TraceTarget::Assumption(format!("a-{:03}", index % 100))],
+        })
+        .collect();
+    let mut restated = traced.clone();
+    restated.family.assumptions[7].statement = "restated".into();
+    let start = Instant::now();
+    let report = traced.change_impact(&restated).unwrap();
+    let elapsed = start.elapsed();
+    assert_eq!(report.instances.len(), 10_000);
+    assert!(report.instances.iter().all(|impact| {
+        impact.features.is_empty()
+            && impact.requirements.len() == 10
+            && impact.requirements.iter().all(|id| id.ends_with('7'))
+    }));
+    assert!(
+        elapsed < Duration::from_secs(10),
+        "traced impact exceeded 10s budget: {elapsed:?}"
+    );
+    println!(
+        "PASS: 10,000 instances, 1,000 traced requirements, one restated assumption flags 10 each: {elapsed:.3?} (10s budget)"
     );
 
     let mut history_base = base;
