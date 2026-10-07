@@ -12,19 +12,8 @@ pub fn diagnostics(items: &[FeatureDiagnostic]) -> Value {
             .collect::<Vec<_>>()
     )
 }
-pub(super) fn result(scope: &str, r: &VerificationResult) -> Value {
-    let measured = r.measured.map(|m| json!({"value":m.value,"unit":format!("{:?}",m.unit),"minimum":m.minimum,"maximum":m.maximum}));
-    let evidence = match r.evidence {
-        Evidence::Exact => json!({"kind":"exact"}),
-        Evidence::Sampled {
-            samples,
-            unresolved,
-        } => json!({"kind":"sampled","samples":samples,"unresolved":unresolved}),
-    };
-    let witness = r.witness.as_ref().map(|w| json!({"subjects":w.subjects,"points_mm":w.points_mm.iter().map(|p| [p.x,p.y,p.z]).collect::<Vec<_>>()}));
-    json!({"scope":scope,"requirement":r.requirement_id,
-        "status":if r.status == VerificationStatus::Passed {"passed"} else {"failed"},
-        "message":r.message,"measured":measured,"evidence":evidence,"witness":witness})
+pub(super) fn result(scope: &str, result: &VerificationResult) -> Value {
+    super::view_data::verification_result(scope, result)
 }
 pub fn verification(generation: &GraphRegeneration<'_>) -> Value {
     let mut instances = generation.instances().collect::<Vec<_>>();

@@ -42,7 +42,13 @@
   button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
   button:disabled { opacity: 0.45; cursor: default; }
   #error { color: var(--error); white-space: pre-wrap; font-size: 12px; }
-  main { position: relative; background: var(--canvas); }
+  main { position: relative; background: var(--canvas); min-width: 0; }
+  .view-switch { position: absolute; top: 12px; left: 12px; z-index: 2; padding: 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); display: flex; align-items: center; gap: 8px; }
+  #view-mode { width: auto; }
+  #annotated { position: absolute; inset: 58px 0 0; overflow: auto; }
+  #annotation-message { position: absolute; top: 62px; left: 18px; z-index: 3; background: var(--panel); padding: 6px; }
+  [hidden] { display: none !important; }
+  .parameter.linked { border-left: 3px solid var(--accent); padding-left: 8px; }
   canvas { width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
   #hint { position: absolute; left: 12px; bottom: 10px; }
   .scope { display: grid; gap: 4px; }
@@ -94,10 +100,15 @@
   <div id="parameters"></div>
 </aside>
 <main>
+  <div class="view-switch"><label for="view-mode">View</label><select id="view-mode"><option value="annotated">Dimensions &amp; sketches</option><option value="assembly">Assembly</option></select></div>
+  <div id="annotation-message" class="muted" hidden></div>
+  <div id="annotated"></div>
   <canvas id="view"></canvas>
   <div class="muted" id="hint">Click to select · Drag to orbit · Shift-drag or right-drag to pan · Wheel to zoom</div>
 </main>
+<script src="/annotations.js"></script>
 <script type="module">
+import { createAnnotationController, editableControls } from "./annotations.mjs";
 import { createRenderer, fitCamera, modelToGltf, pan, parseGltf, pick, ray } from "./viewer.mjs";
 
 const $ = (id) => document.getElementById(id);
@@ -121,6 +132,87 @@ let instanceIds = new Set();
 let instanceView = null;
 // Requirement results of the current model version.
 let report = null;
+let annotationRoot = null;
+let linked = [];
+const annotations = createAnnotationController({
+  request: id => api(`/api/annotations?id=${encodeURIComponent(id)}`),
+  mount: async data => {
+    if (!annotationRoot) {
+      annotationRoot = $("annotated").attachShadow({ mode: "open" });
+      const panel = await (await fetch('/annotation-panel.html')).text();
+      annotationRoot.innerHTML = `<link rel="stylesheet" href="/annotations.css"><style>
+        :host{display:block;color:#202c3b;background:#f3f5f8;color-scheme:light;font:14px system-ui,sans-serif}
+        main{padding:12px;gap:12px;grid-template-columns:minmax(0,1fr) 285px}
+        #viewport{height:max(350px,calc(100vh - 265px))}.panel-summary{padding:8px 14px;font-weight:600}
+        .linked-edit{display:grid;gap:8px;margin-top:12px;padding-top:12px;border-top:1px solid #dce2e9}
+        .linked-edit label{display:grid;gap:4px}.linked-edit input,.linked-edit select{width:100%;padding:6px;border:1px solid #cad4e0;border-radius:4px}
+        @media(max-width:1050px){main{grid-template-columns:1fr}#viewport{height:420px}}
+      </style>${panel}`;
+    }
+    return window.createOcctAnnotatedViewer(annotationRoot, data, renderLinkedEditor);
+  },
+  changed: (message, waiting = true) => {
+    $("annotation-message").textContent = message;
+    $("annotation-message").hidden = !message || $("view-mode").value !== 'annotated';
+    $("annotated").inert = Boolean(message && waiting);
+  },
+});
+
+function refreshAnnotations() {
+  const showing = $("view-mode").value === 'annotated';
+  $("annotated").hidden = !showing;
+  canvas.hidden = showing;
+  $("hint").hidden = showing;
+  if (!showing) { $("annotation-message").hidden = true; return; }
+  return annotations.refresh(scope || instanceIds.values().next().value, version);
+}
+
+function renderLinkedEditor(annotation, scene) {
+  linked = annotation?.parameters ?? [];
+  for (const row of $("parameters").children) row.classList.toggle('linked', linked.includes(row.dataset.parameter));
+  const controls = scene.instance === (scope || instanceIds.values().next().value) ? editableControls(annotation, rows()) : [];
+  const selection = annotationRoot.getElementById('selection');
+  const section = document.createElement('section');
+  section.className = 'linked-edit';
+  const title = document.createElement('strong');
+  title.textContent = controls.length ? `Edit ${scope ? scope : 'family defaults'}` : 'Geometry measurement';
+  section.append(title);
+  if (!controls.length) {
+    const note = document.createElement('p');
+    note.textContent = linked.length ? 'These values are derived or require editing in the model file.' : 'This measurement has no linked driving parameter.';
+    section.append(note);
+  }
+  for (const p of controls) {
+    const label = document.createElement('label');
+    const caption = document.createElement('span');
+    caption.textContent = `${p.id}${p.unit ? ` (${p.unit})` : ''}`;
+    const input = document.createElement(p.kind === 'choice' ? 'select' : 'input');
+    input.setAttribute('aria-label', `Edit ${p.id}`);
+    if (p.kind === 'choice') {
+      for (const choice of p.choices ?? []) input.append(new Option(choice, choice, false, choice === p.value));
+    } else {
+      input.type = p.kind === 'boolean' ? 'checkbox' : 'number';
+      input.step = p.kind === 'integer' ? '1' : 'any';
+      input.value = p.value;
+      input.checked = p.value;
+      if (p.minimum != null) input.min = p.minimum;
+      if (p.maximum != null) input.max = p.maximum;
+    }
+    const target = scope, displayed = scene.instance;
+    input.addEventListener('change', () => {
+      if (scope !== target || displayed !== (scope || instanceIds.values().next().value)) return;
+      const value = p.kind === 'boolean' ? input.checked : p.kind === 'choice' ? input.value : Number(input.value);
+      if (typeof value === 'number' && (!input.value.trim() || !Number.isFinite(value))) return;
+      queue({ id: p.id, set: value });
+    });
+    label.append(caption, input);
+    section.append(label);
+  }
+  const note = document.createElement('p');
+  note.textContent = `Views use ${scene.coordinate_system || 'family-local coordinates'}. Changes regenerate immediately; Save writes them to the model file.`;
+  section.append(note);
+  selection.append(section);
+}
 
 function redraw() {
   if (frame || !renderer) return;
@@ -136,7 +228,11 @@ async function api(path, options = {}) {
     headers: { "Content-Type": "application/json", "X-OCCT-View": "1" },
   });
   const body = await response.json();
-  if (!response.ok) throw new Error(body.error ?? response.statusText);
+  if (!response.ok) {
+    const error = new Error(body.error ?? response.statusText);
+    error.details = body;
+    throw error;
+  }
   return body;
 }
 
@@ -278,11 +374,13 @@ async function setScope(next) {
   if (next === scope) return;
   await flush();
   scope = next;
+  linked = [];
   $("scope").value = scope;
   editError = null;
   $("error").textContent = state?.error ?? "";
   highlight();
   await loadInstanceView().catch((error) => ($("error").textContent = error.message));
+  await refreshAnnotations();
 }
 
 function format(value) {
@@ -316,9 +414,15 @@ function queue(change) {
   timer = setTimeout(flush, "set" in change ? 150 : 0);
 }
 
-async function flush() {
+let flushing = null;
+function flush() {
   clearTimeout(timer);
-  if (sending || !batches.length) return;
+  if (flushing) return flushing;
+  if (!batches.length) return Promise.resolve();
+  flushing = drainBatches().finally(() => { flushing = null; });
+  return flushing;
+}
+async function drainBatches() {
   const { scope: target, set, clear, placement } = batches.shift();
   sending = true;
   const body = target ? { instance: target, set, clear } : { set };
@@ -326,14 +430,21 @@ async function flush() {
   try {
     const next = await api("/api/parameters", { method: "POST", body: JSON.stringify(body) });
     editError = null;
+    annotations.invalidate();
     await apply(next);
   } catch (error) {
     editError = `Edit rejected: ${error.message}`;
     $("error").textContent = editError;
     renderParameters();
+    if (error.details?.annotations) {
+      await annotations.preview(error.details.annotations);
+    } else {
+      annotations.invalidate();
+      await refreshAnnotations();
+    }
   } finally {
     sending = false;
-    if (batches.length) flush();
+    if (batches.length) await drainBatches();
   }
 }
 
@@ -352,7 +463,8 @@ function renderParameters() {
   container.replaceChildren();
   for (const parameter of rows()) {
     const row = document.createElement("div");
-    row.className = "parameter";
+    row.className = "parameter" + (linked.includes(parameter.id) ? " linked" : "");
+    row.dataset.parameter = parameter.id;
     const label = document.createElement("label");
     const name = document.createElement("span");
     name.textContent = parameter.id;
@@ -495,6 +607,7 @@ async function changeInstances(body) {
     $("scope").value = scope;
     highlight();
     await loadInstanceView();
+    await refreshAnnotations();
   } catch (error) {
     editError = `Change rejected: ${error.message}`;
     $("error").textContent = editError;
@@ -591,6 +704,7 @@ async function apply(next) {
     rendered = shown;
     renderParameters();
   }
+  await refreshAnnotations();
 }
 
 async function poll() {
@@ -614,6 +728,7 @@ $("revert").addEventListener("click", async () => {
   batches.length = 0;
   try {
     editError = null;
+    annotations.invalidate();
     await apply(await api("/api/revert", { method: "POST", body: "{}" }));
     if (scope && !instanceIds.has(scope)) await setScope("");
     else await loadInstanceView();
@@ -621,7 +736,9 @@ $("revert").addEventListener("click", async () => {
     $("error").textContent = error.message;
   }
 });
+$("view-mode").addEventListener("change", () => { refreshAnnotations(); redraw(); });
 $("fit").addEventListener("click", () => {
+  if ($("view-mode").value === "annotated") { annotations.fit(); return; }
   camera = fitCamera(parsed?.bounds ?? null, aspect());
   redraw();
 });

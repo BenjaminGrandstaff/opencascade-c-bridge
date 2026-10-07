@@ -621,3 +621,7 @@ through [the drawing-export command](tools/drawing-export/README.md).
 
 Alternative closed-linkage poses can be discovered and exported as reloadable
 models with [the joint-branches command](tools/joint-branches/README.md).
+
+The [editable model studio](tools/view/README.md) now includes selectable sketch
+and solid annotations, linked dimension editing, regenerated constraint results
+and rejected-edit diagnostic previews in the same workspace.

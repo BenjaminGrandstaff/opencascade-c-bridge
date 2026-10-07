@@ -15,7 +15,7 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 95 + first-use integration 1 (+1 doc test), recipes 3, parametric 380 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 11 + viewer Node 6 + branch command 2 + model command 12, MCP Python 8, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 95 + first-use integration 1 (+1 doc test), recipes 3, parametric 380 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 13 + branch command 2 + model command 12, MCP Python 8, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -23,6 +23,18 @@ tracks status and order.
 | Scale benchmarks | 109 Rust cases plus 5 model-command and 7 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
+
+- Combined editable model and annotation viewer: the studio defaults to native
+  dimension/sketch inspection, with an Assembly view for placed colored parts.
+  Selecting a label opens linked parameter fields; edits regenerate geometry
+  and checks while retaining the camera/selection. Failed candidates show a
+  marked diagnostic preview without changing or saving accepted geometry.
+  Shared native scene/renderer code serves both studio and offline artifacts;
+  lazy, bounded, versioned requests prevent stale scope updates. Save waits
+  for pending edits. Two native integration tests and seven JavaScript
+  integration/concurrency tests cover regeneration, instance isolation,
+  rejection, save/revert, unit preservation and racing replies. Browser UI
+  automation was unavailable. See [Model viewer](tools/view/README.md).
 
 - Annotated sketches and 3D shape viewer (no ABI/model-schema change):
   self-contained HTML orbit/pan/zoom views and SVG snapshots show measured versus

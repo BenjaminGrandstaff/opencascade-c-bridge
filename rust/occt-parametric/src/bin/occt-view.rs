@@ -18,6 +18,8 @@ const DEFAULT_PORT: u16 = 8791;
 
 #[path = "view/serve.rs"]
 mod serve;
+#[path = "model/view_data.rs"]
+mod view_data;
 /// How often `--watch` checks the model file and the viewer.
 const POLL: Duration = Duration::from_millis(250);
 

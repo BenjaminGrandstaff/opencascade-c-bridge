@@ -9,6 +9,8 @@ mod preview;
 mod report;
 #[path = "model/schema.rs"]
 mod schema;
+#[path = "model/view_data.rs"]
+mod view_data;
 #[path = "model/view_svg.rs"]
 mod view_svg;
 #[path = "model/visualize.rs"]

@@ -1,5 +1,10 @@
 # Dimensions and constraints on sketches and solids
 
+For live editing, use the [combined model studio](../view/README.md) with
+`occt-view MODEL.json --serve`. Select a dimension to edit its linked parameter
+and regenerate both geometry and checks. The studio and these standalone
+artifacts share their native scene builder and annotation renderer.
+
 Model builds with `preview: true` now include **viewer.html**, **view.json** and
 numbered **view-NNNN.svg** annotated snapshots alongside the existing HLR SVGs.
 Open `viewer.html` in a browser: it is self-contained, loads without a server or

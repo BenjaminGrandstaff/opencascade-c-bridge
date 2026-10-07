@@ -58,18 +58,41 @@ The command prints `http://127.0.0.1:8791/` (choose another port with
 `--no-open` is given. It serves until stopped with Ctrl-C. `--output` works as
 above; `--watch` and `--dir` do not apply.
 
-The page renders the model's glTF with WebGL: drag to orbit, Shift-drag or
-right-drag to pan, wheel to zoom, and **Fit view** to reframe. The side panel
-lists the family's parameters with their units: scalars and integers get a
-number field and a slider between their limits, booleans a checkbox and
-choices a list; vector parameters are shown but edited in the file.
+The page opens with **Dimensions & sketches**: annotated 3D geometry and sketch
+views of the instance selected under **Editing**, or the first instance when
+editing family defaults. Choose its solid or a sketch from the inner **View**
+list. Click a dimension or constraint label to highlight related geometry,
+inspect native measurements/residuals, and edit its linked parameters directly
+in the selection panel. Corresponding fields in the main parameter panel are
+highlighted. Values without a declared driving parameter remain measurements.
+
+An edit regenerates the geometry, dimensions and constraint checks together,
+keeping the selected annotation and camera when its feature remains available.
+Linked parameter fields use the parameter's actual unit, including for
+multi-parameter formulas; they do not silently invert a dimension expression.
+Native checks and geometry are shared with the standalone
+[dimension viewer](../model/VIEWER.md).
+
+Choose **Assembly** to see every placed part and material color in the WebGL
+glTF view: click a part to select it, drag to orbit, Shift-drag or right-drag to
+pan, and wheel to zoom. The annotated views use **family-local coordinates**;
+Assembly shows placements and frames. **Fit view** applies to the current view.
+The side panel still edits defaults, instance overrides and placements, and
+supports Add copy, Delete, Save and Revert. Scalars and integers get number
+fields/sliders, booleans a checkbox, and choices a list; vectors are edited in
+the file.
 
 - An edit changes the parameter's default in the family, regenerates and
   redraws within a moment, keeping the camera. Edits to several parameters
   merge, and one request is in flight at a time, so none is lost.
 - An edit that fails validation or regeneration (outside a parameter's limits,
   for example) is rejected as a whole: the field reverts, the message stays
-  in the panel, and the model is unchanged.
+  in the panel, and the model is unchanged. When the attempted geometry can be
+  visualized, the annotated view shows a **Rejected edit preview** with failed
+  constraints/checks in red. An unavailable solid switches to the failing
+  sketch when possible. The preview is never accepted or saved; Revert or a
+  successful edit restores the accepted view. Invalid parameter/model data
+  that cannot produce a diagnostic preview retains the prior accepted view.
 - **Save** writes the edited document over the model file, through a
   temporary file and a rename so other readers never see a partial file.
   Nothing is written until then.
@@ -123,8 +146,8 @@ requirement's priority when it is not *required* and its statement on hover.
   parts.
 
 A *required* failure rejects the edit or file that caused it, as loading the
-model would, so the page only ever shows a model that meets its required
-checks. Results are shared by instances with identical parameters, so a
+model would. Assembly and saved geometry always meet required checks; an
+explicitly marked rejected-edit preview may show the failed candidate. Results are shared by instances with identical parameters, so a
 10,000-instance report is about 250 KB.
 
 **Revert** discards every unsaved change and reloads the file, so a deletion
@@ -139,4 +162,11 @@ values 33 ms, the requirement report 2 ms, and an override edit with
 regeneration and assembly checks 0.74 s. Instances sharing a
 generated variant are tessellated once, so 10,000 pattern members export in
 about a quarter second. The renderer's tests run with
-`node --test rust/occt-parametric/src/bin/view/web/viewer.test.mjs`.
+`node --test rust/occt-parametric/src/bin/view/web/*.test.mjs`.
+Annotation work is lazy and bounded per selected instance, with one cached
+result keyed by model version. Late requests cannot replace a newer instance
+or pair new geometry with older controls. Save waits for queued edits to finish.
+Native tests cover live sketch/solid updates, override isolation, save/revert,
+and rejected-constraint previews without acceptance. Browser automation was
+unavailable; the real page logic and shared renderer run against minimal DOM
+hosts in the JavaScript tests.

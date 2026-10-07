@@ -1,6 +1,6 @@
 //! `--serve`: a localhost page that renders the model with WebGL, edits
 //! family parameter defaults, saves them, and follows saves made elsewhere.
-use super::{POLL, stamp};
+use super::{POLL, stamp, view_data};
 use occt_bridge::Session;
 use occt_parametric::{
     AxisAngle, InstanceNode, LengthUnit, MeshSettings, ModelDocument, ParameterValue, Placement,
@@ -19,6 +19,10 @@ use std::{
 
 const INDEX: &str = include_str!("web/index.html");
 const VIEWER: &str = include_str!("web/viewer.mjs");
+const ANNOTATIONS: &str = include_str!("../../../../../tools/model/viewer/viewer.js");
+const ANNOTATION_PANEL: &str = include_str!("../../../../../tools/model/viewer/panel.html");
+const ANNOTATION_BRIDGE: &str = include_str!("web/annotations.mjs");
+const ANNOTATION_STYLE: &str = include_str!("../../../../../tools/model/viewer/viewer.css");
 const MAX_HEADER_BYTES: usize = 16 * 1024;
 const MAX_BODY_BYTES: usize = 1024 * 1024;
 
@@ -56,6 +60,9 @@ pub(super) struct Studio {
     gltf: String,
     /// Requirement results of the generation `gltf` was drawn from.
     requirements: Value,
+    /// Only the selected part is annotated; keep one bounded, versioned result.
+    annotations: Option<(u64, String, Value)>,
+    rejected_annotations: Option<Value>,
     /// Incremented whenever `gltf` changes, so the page knows to refetch it.
     version: u64,
     /// Unsaved parameter edits since the last load or save.
@@ -77,6 +84,8 @@ impl Studio {
             document,
             gltf,
             requirements,
+            annotations: None,
+            rejected_annotations: None,
             version: 1,
             dirty: false,
             error: None,
@@ -305,6 +314,7 @@ impl Studio {
     /// removes them, so it inherits again. All changes apply or none: one
     /// that fails validation or regeneration leaves the model unchanged.
     fn edit(&mut self, body: &[u8]) -> Result<(), String> {
+        self.rejected_annotations = None;
         #[derive(serde::Deserialize)]
         #[serde(deny_unknown_fields)]
         struct Edit {
@@ -388,7 +398,39 @@ impl Studio {
             self.version,
             self.dirty,
         );
-        let document = self.commit(document)?;
+        let document = match self.commit(document.clone()) {
+            Ok(document) => document,
+            Err(error) => {
+                let id = edit
+                    .instance
+                    .clone()
+                    .or_else(|| primary_instances(&document).ok()?.into_iter().min());
+                if let Some(id) = id {
+                    let output = self
+                        .output
+                        .as_deref()
+                        .or_else(|| document.family.features.last().map(|f| f.id.as_str()));
+                    if let Some(output) = output {
+                        let outputs = [occt_parametric::InstanceOutputRef {
+                            instance: id,
+                            output: output.to_owned(),
+                        }];
+                        if let Ok(mut data) = view_data::collect(
+                            &document,
+                            &outputs,
+                            true,
+                            &view_data::ViewOptions::default(),
+                        ) {
+                            data["version"] = json!(self.version);
+                            data["accepted"] = json!(false);
+                            data["rejection"] = json!(error);
+                            self.rejected_annotations = Some(data);
+                        }
+                    }
+                }
+                return Err(error);
+            }
+        };
         // Loading can re-derive placements (pattern members follow their rule),
         // so a placement that did not stick is refused rather than ignored.
         if let (Some(instance), Some(requested)) = (&edit.instance, &edit.placement) {
@@ -492,12 +534,67 @@ impl Studio {
         Ok(())
     }
 
+    /// Native family-local sketches and dimensions, built lazily for one part.
+    fn annotated_view(&mut self, id: &str) -> Result<Value, String> {
+        if let Some((version, instance, data)) = &self.annotations
+            && *version == self.version
+            && instance == id
+        {
+            return Ok(data.clone());
+        }
+        if !primary_instances(&self.document)?.contains(id) {
+            return Err(format!("unknown editable instance '{id}'"));
+        }
+        let output = self
+            .output
+            .as_deref()
+            .or_else(|| self.document.family.features.last().map(|f| f.id.as_str()))
+            .ok_or("model family has no features")?;
+        let outputs = [occt_parametric::InstanceOutputRef {
+            instance: id.to_owned(),
+            output: output.to_owned(),
+        }];
+        let mut data = view_data::collect(
+            &self.document,
+            &outputs,
+            true,
+            &view_data::ViewOptions::default(),
+        )
+        .map_err(|error| {
+            let _ = &error.diagnostics;
+            error.to_string()
+        })?;
+        data["version"] = json!(self.version);
+        data["accepted"] = json!(true);
+        self.annotations = Some((self.version, id.to_owned(), data.clone()));
+        Ok(data)
+    }
+
     pub(super) fn handle(&mut self, method: &str, target: &str, body: &[u8]) -> Response {
         self.follow_disk();
         let (path, query) = target.split_once('?').unwrap_or((target, ""));
         match (method, path) {
             ("GET", "/") => Response::text(200, "text/html; charset=utf-8", INDEX),
             ("GET", "/viewer.mjs") => Response::text(200, "text/javascript", VIEWER),
+            ("GET", "/annotations.mjs") => {
+                Response::text(200, "text/javascript", ANNOTATION_BRIDGE)
+            }
+            ("GET", "/annotation-panel.html") => {
+                Response::text(200, "text/html; charset=utf-8", ANNOTATION_PANEL)
+            }
+            ("GET", "/annotations.js") => Response::text(200, "text/javascript", ANNOTATIONS),
+            ("GET", "/annotations.css") => Response::text(200, "text/css", ANNOTATION_STYLE),
+            ("GET", "/api/annotations") => {
+                let id = query
+                    .split('&')
+                    .find_map(|pair| pair.strip_prefix("id="))
+                    .and_then(percent_decode);
+                match id.map(|id| self.annotated_view(&id)) {
+                    Some(Ok(data)) => Response::json(200, &data),
+                    Some(Err(error)) => Response::error(422, &error),
+                    None => Response::error(400, "annotations need ?id="),
+                }
+            }
             ("GET", "/api/state") => Response::json(200, &self.state()),
             ("GET", "/api/model.gltf") => Response::text(200, "model/gltf+json", &self.gltf),
             ("GET", "/api/requirements") => {
@@ -522,7 +619,10 @@ impl Studio {
             }
             ("POST", "/api/parameters") => match self.edit(body) {
                 Ok(()) => Response::json(200, &self.state()),
-                Err(error) => Response::error(422, &error),
+                Err(error) => Response::json(
+                    422,
+                    &json!({"error":error,"annotations":self.rejected_annotations.take(),"version":self.version}),
+                ),
             },
             ("POST", "/api/instances") => match self.change_instances(body) {
                 Ok(added) => {

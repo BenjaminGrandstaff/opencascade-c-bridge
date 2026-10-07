@@ -825,3 +825,167 @@ fn requirement_results_follow_edits_per_variant_with_assembly_witnesses() {
     assert_eq!(report["variants"][other][0]["passed"], true);
     assert_eq!(report["version"], 2);
 }
+
+#[test]
+fn annotated_dimensions_follow_live_edits_instance_scope_and_save_revert() {
+    let directory = Directory::new();
+    let request: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../tools/model/sketch-block.request.json"
+    ))
+    .unwrap();
+    let mut document = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+    document
+        .instances
+        .push(occt_parametric::InstanceNode::Clone {
+            id: "copy".into(),
+            source: "block".into(),
+            overrides: Default::default(),
+            placement: Default::default(),
+            frame: None,
+            provenance: "test".into(),
+        });
+    let model = PathBuf::from(directory.model(&document));
+    let original = fs::read_to_string(&model).unwrap();
+    let mut studio = serve::Studio::load(&model, None).unwrap();
+    let get = |studio: &mut serve::Studio, id: &str| {
+        let response = studio.handle("GET", &format!("/api/annotations?id={id}"), b"");
+        assert_eq!(
+            response.status,
+            200,
+            "{}",
+            String::from_utf8_lossy(&response.body)
+        );
+        serde_json::from_slice::<serde_json::Value>(&response.body).unwrap()
+    };
+    let width = |data: &serde_json::Value| {
+        let scene = data["scenes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["kind"] == "solid")
+            .unwrap();
+        scene["bounds"][1][0].as_f64().unwrap() - scene["bounds"][0][0].as_f64().unwrap()
+    };
+    let first = get(&mut studio, "block");
+    assert_eq!(first["version"], 1);
+    assert_eq!(first["accepted"], true);
+    assert!((width(&first) - 40.0).abs() < 1e-6);
+    assert_eq!(first, get(&mut studio, "block")); // Cached result has the same evidence.
+    assert!(
+        first["scenes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|s| s["kind"] == "sketch" && s["solver"]["solved"] == true)
+    );
+    let edit = studio.handle(
+        "POST",
+        "/api/parameters",
+        br#"{"instance":"copy","set":{"width":60}}"#,
+    );
+    assert_eq!(edit.status, 200);
+    let changed = get(&mut studio, "copy");
+    assert_eq!(changed["version"], 2);
+    assert!((width(&changed) - 60.0).abs() < 1e-6);
+    let sketch = changed["scenes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["kind"] == "sketch")
+        .unwrap();
+    assert!(
+        sketch["annotations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|a| a["kind"] == "dimension"
+                && a["parameters"] == serde_json::json!(["width"])
+                && a["label"] == "60.000 mm"
+                && a["status"] == "passed")
+    );
+    assert!((width(&get(&mut studio, "block")) - 40.0).abs() < 1e-6);
+    assert_eq!(fs::read_to_string(&model).unwrap(), original);
+    assert_eq!(studio.handle("POST", "/api/save", b"{}").status, 200);
+    let saved = fs::read_to_string(&model).unwrap();
+    assert_ne!(saved, original);
+    assert_eq!(
+        studio
+            .handle(
+                "POST",
+                "/api/parameters",
+                br#"{"instance":"copy","set":{"width":70}}"#
+            )
+            .status,
+        200
+    );
+    assert_eq!(studio.handle("POST", "/api/revert", b"{}").status, 200);
+    assert!((width(&get(&mut studio, "copy")) - 60.0).abs() < 1e-6);
+    assert_eq!(studio.handle("GET", "/api/annotations", b"").status, 400);
+    assert_eq!(
+        studio
+            .handle("GET", "/api/annotations?id=missing", b"")
+            .status,
+        422
+    );
+    for asset in [
+        "/annotations.js",
+        "/annotations.css",
+        "/annotations.mjs",
+        "/annotation-panel.html",
+    ] {
+        assert_eq!(studio.handle("GET", asset, b"").status, 200);
+    }
+}
+
+#[test]
+fn rejected_dimension_edits_show_conflicts_without_accepting_or_saving_geometry() {
+    let directory = Directory::new();
+    let mut request: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../tools/model/sketch-conflict.request.json"
+    ))
+    .unwrap();
+    request["model"]["instances"][0]["base"]["overrides"] = serde_json::json!({});
+    let document = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+    let model = PathBuf::from(directory.model(&document));
+    let original = fs::read_to_string(&model).unwrap();
+    let mut studio = serve::Studio::load(&model, None).unwrap();
+    let gltf = studio.handle("GET", "/api/model.gltf", b"").body;
+    let response = studio.handle(
+        "POST",
+        "/api/parameters",
+        br#"{"instance":"block","set":{"width":60}}"#,
+    );
+    assert_eq!(response.status, 422);
+    let rejected: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+    assert_eq!(rejected["annotations"]["accepted"], false);
+    assert_eq!(rejected["annotations"]["version"], 1);
+    let scenes = rejected["annotations"]["scenes"].as_array().unwrap();
+    let sketch = scenes.iter().find(|s| s["kind"] == "sketch").unwrap();
+    assert_eq!(sketch["solver"]["solved"], false);
+    assert!(
+        sketch["annotations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|a| a["status"] == "failed"
+                && a["parameters"] == serde_json::json!(["width"])
+                && (a["detail"]["max_residual"].as_f64().unwrap() - 20.0).abs() < 1e-6)
+    );
+    let state: serde_json::Value =
+        serde_json::from_slice(&studio.handle("GET", "/api/state", b"").body).unwrap();
+    assert_eq!(state["version"], 1);
+    assert_eq!(state["dirty"], false);
+    assert_eq!(studio.handle("GET", "/api/model.gltf", b"").body, gltf);
+    assert_eq!(fs::read_to_string(&model).unwrap(), original);
+    let accepted: serde_json::Value =
+        serde_json::from_slice(&studio.handle("GET", "/api/annotations?id=block", b"").body)
+            .unwrap();
+    assert_eq!(accepted["accepted"], true);
+    assert!(
+        accepted["scenes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|s| s["kind"] == "sketch" && s["solver"]["solved"] == true)
+    );
+}
