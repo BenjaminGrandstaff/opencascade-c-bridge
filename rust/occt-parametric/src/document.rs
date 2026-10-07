@@ -4,7 +4,7 @@ use super::*;
 
 /// A named assembly coordinate frame. Its placement maps frame-local
 /// coordinates into the parent frame, or into model coordinates at the root.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct AssemblyFrame {
     pub id: String,
     #[serde(default)]
@@ -14,7 +14,7 @@ pub struct AssemblyFrame {
     pub provenance: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct GenerationRecord {
     pub instance_id: String,
     pub attempted_revision: u64,
@@ -23,9 +23,9 @@ pub struct GenerationRecord {
     pub last_error: Option<String>,
 }
 
-pub const CURRENT_SCHEMA_VERSION: u32 = 67;
+pub const CURRENT_SCHEMA_VERSION: u32 = 69;
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ModelDocument {
     pub schema_version: u32,
     pub family: FamilyDefinition,
@@ -266,11 +266,19 @@ impl ModelDocument {
 
     fn validate_drawings(&self, graph: &InstanceGraph<'_>) -> Result<(), ModelError> {
         let mut drawings = HashSet::new();
+        let materials = graph
+            .assembly
+            .materials
+            .iter()
+            .map(|m| m.id.as_str())
+            .collect();
+        let mut resolutions = HashMap::new();
+        let mut features = HashMap::new();
         for drawing in &self.drawings {
             if !drawings.insert(&drawing.id) {
                 return Err(ModelError::new("document drawing IDs must be unique"));
             }
-            drawing.validate(graph)?;
+            drawing.validate_cached(graph, &mut resolutions, &mut features, &materials)?;
         }
         Ok(())
     }

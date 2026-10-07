@@ -73,6 +73,7 @@ fn fixture() -> (ModelDocument, DrawingDefinition) {
             show_hidden: false,
             kind: DrawingViewKind::Slice,
             detail: None,
+            material_hatching: Default::default(),
             hatching: None,
         }],
         guides: Vec::new(),
@@ -84,6 +85,9 @@ fn fixture() -> (ModelDocument, DrawingDefinition) {
 }
 fn main() {
     let (document, template) = fixture();
+    exact_curve_export(&document, &template);
+    exact_spline_details(&document, &template);
+    material_hatch_case(&document, &template);
     let mut annotated = template.clone();
     let graph = document.instance_graph().unwrap();
     let definitions: Vec<_> = (0..1000)
@@ -160,6 +164,8 @@ fn main() {
             &graph,
             &session,
             DrawingRenderOptions {
+                curve_tolerance_mm: 0.01,
+                exact_curves: false,
                 curve_samples: 8,
                 maximum_vertices: 1_000_000,
             },
@@ -187,6 +193,8 @@ fn main() {
         &graph,
         &session,
         DrawingRenderOptions {
+            curve_tolerance_mm: 0.01,
+            exact_curves: false,
             curve_samples: 8,
             maximum_vertices: 100000,
         },
@@ -242,6 +250,8 @@ fn main() {
             &hole_graph,
             &session,
             DrawingRenderOptions {
+                curve_tolerance_mm: 0.01,
+                exact_curves: false,
                 curve_samples: 8,
                 maximum_vertices: 1_000_000,
             },
@@ -296,6 +306,8 @@ fn main() {
             &graph,
             &session,
             DrawingRenderOptions {
+                curve_tolerance_mm: 0.01,
+                exact_curves: false,
                 curve_samples: 8,
                 maximum_vertices: 1_000_000,
             },
@@ -357,32 +369,37 @@ fn main() {
             output: "body".into(),
         });
     }
-    let started = Instant::now();
-    let generated = hatched
-        .generate(
-            &assembly,
-            &session,
-            DrawingRenderOptions {
-                curve_samples: 4,
-                maximum_vertices: 1_000_000,
-            },
-        )
-        .unwrap();
-    assert_eq!(generated.generated_variants, 1);
-    assert_eq!(generated.hatches.len(), 10_000);
-    for line in &generated.hatches {
-        assert_eq!(line.points_mm.len(), 2);
-        assert!((line.points_mm[1][0] - line.points_mm[0][0] - 10.0).abs() < 1e-8);
-        assert!((line.points_mm[0][1] - line.points_mm[1][1]).abs() < 1e-8);
+    for exact_curves in [false, true] {
+        let started = Instant::now();
+        let generated = hatched
+            .generate(
+                &assembly,
+                &session,
+                DrawingRenderOptions {
+                    curve_tolerance_mm: 0.01,
+                    exact_curves,
+                    curve_samples: 4,
+                    maximum_vertices: 1_000_000,
+                },
+            )
+            .unwrap();
+        assert_eq!(generated.generated_variants, 1);
+        assert_eq!(generated.hatches.len(), 10_000);
+        for line in &generated.hatches {
+            assert_eq!(line.points_mm.len(), 2);
+            assert!((line.points_mm[1][0] - line.points_mm[0][0] - 10.0).abs() < 1e-8);
+            assert!((line.points_mm[0][1] - line.points_mm[1][1]).abs() < 1e-8);
+        }
+        assert!(generated.to_svg().contains("stroke-width=\"0.13\""));
+        assert!(generated.to_dxf().contains("8\nSECTION_HATCH\n"));
+        assert_eq!(session.shape_count().unwrap(), 0);
+        assert!(started.elapsed().as_secs_f64() < 30.0);
+        println!(
+            "10000 section hatch segments across 1000 placed parts (exact={exact_curves}): {:?} (30s budget), one shared variant",
+            started.elapsed()
+        );
     }
-    assert!(generated.to_svg().contains("stroke-width=\"0.13\""));
-    assert!(generated.to_dxf().contains("8\nSECTION_HATCH\n"));
-    assert_eq!(session.shape_count().unwrap(), 0);
-    assert!(started.elapsed().as_secs_f64() < 30.0);
-    println!(
-        "10000 section hatch segments across 1000 placed parts: {:?} (30s budget), one shared variant",
-        started.elapsed()
-    );
+    exact_curved_hatches(&document, &template);
     let sheets: Vec<_> = definitions
         .into_iter()
         .enumerate()
@@ -409,6 +426,8 @@ fn main() {
         &graph,
         &session,
         DrawingRenderOptions {
+            curve_tolerance_mm: 0.01,
+            exact_curves: false,
             curve_samples: 8,
             maximum_vertices: 1_000_000,
         },
@@ -496,6 +515,8 @@ fn main() {
             &graph,
             &session,
             DrawingRenderOptions {
+                curve_tolerance_mm: 0.01,
+                exact_curves: false,
                 curve_samples: 8,
                 maximum_vertices: 2_000_000,
             },
@@ -545,6 +566,8 @@ fn main() {
             &graph,
             &session,
             DrawingRenderOptions {
+                curve_tolerance_mm: 0.01,
+                exact_curves: false,
                 curve_samples: 8,
                 maximum_vertices: 3_000_000,
             },
@@ -624,6 +647,322 @@ fn main() {
     assert!(started.elapsed().as_secs_f64() < 10.0);
     println!(
         "10000 named datum frames resolved and nominal planar 3-2-1 coordinates: {:?} (10s budget), no kernel handles",
+        started.elapsed()
+    );
+}
+
+fn exact_curve_export(document: &ModelDocument, template: &DrawingDefinition) {
+    let session = Session::new().unwrap();
+    let graph = document.instance_graph().unwrap();
+    let definitions: Vec<_> = (0..2500)
+        .map(|i| {
+            let mut d = template.clone();
+            d.id = format!("analytic-{i}");
+            d
+        })
+        .collect();
+    let started = Instant::now();
+    let drawings = DrawingDefinition::generate_many(
+        &definitions,
+        &graph,
+        &session,
+        DrawingRenderOptions {
+            curve_tolerance_mm: 0.01,
+            exact_curves: true,
+            curve_samples: 100_000,
+            maximum_vertices: 42_500,
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        drawings.iter().map(|d| d.curves.len()).sum::<usize>(),
+        10_000
+    );
+    for drawing in &drawings {
+        assert!(drawing.polylines.is_empty());
+        assert_eq!(drawing.generated_variants, 1);
+        assert_eq!(drawing.to_dxf().matches("0\nLINE\n").count(), 4);
+        assert_eq!(drawing.to_svg().matches("<path ").count(), 4);
+    }
+    assert_eq!(session.shape_count().unwrap(), 0);
+    assert!(started.elapsed().as_secs_f64() < 10.0);
+    println!(
+        "10000 exact drawing lines, both exports and exact budget: {:?} (10s budget), one shared variant",
+        started.elapsed()
+    );
+}
+
+fn exact_spline_details(document: &ModelDocument, template: &DrawingDefinition) {
+    let mut family = document.family.clone();
+    let profile: Vec<_> = (0..12)
+        .map(|i| {
+            let angle = std::f64::consts::TAU * i as f64 / 12.0;
+            [5.0 + 5.0 * angle.cos(), 5.0 + 5.0 * angle.sin()]
+        })
+        .collect();
+    let section = |z| LoftSection {
+        profile: profile.clone(),
+        origin: VectorExpr::Literal(VectorQuantity::lengths(0.0, 0.0, z, LengthUnit::Millimeter)),
+        x_axis: VectorExpr::Literal(VectorQuantity::scalars(1.0, 0.0, 0.0)),
+        y_axis: VectorExpr::Literal(VectorQuantity::scalars(0.0, 1.0, 0.0)),
+        scale: ScalarExpr::Literal(Quantity::length(1.0, LengthUnit::Millimeter)),
+        rotation_radians: None,
+        pivot: [0.0, 0.0],
+    };
+    family.features = vec![FeatureDefinition {
+        id: "body".into(),
+        operation: FeatureOperation::Loft {
+            sections: vec![section(0.0), section(30.0)],
+            smooth: true,
+            ruled: true,
+        },
+    }];
+    let mut graph = InstanceGraph::new(&family);
+    graph.add_base("part", HashMap::new(), "bench").unwrap();
+    let session = Session::new().unwrap();
+    for detail in [
+        None,
+        Some(DrawingDetail {
+            minimum_mm: [2.0, -10.0],
+            maximum_mm: [6.0, 20.0],
+        }),
+    ] {
+        let definitions: Vec<_> = (0..1000)
+            .map(|i| {
+                let mut d = template.clone();
+                d.id = format!("spline-{i}");
+                d.views[0].detail = detail;
+                d
+            })
+            .collect();
+        let started = Instant::now();
+        let generated = DrawingDefinition::generate_many(
+            &definitions,
+            &graph,
+            &session,
+            DrawingRenderOptions {
+                exact_curves: true,
+                ..DrawingRenderOptions::default()
+            },
+        )
+        .unwrap();
+        let mut spans = 0;
+        for d in &generated {
+            assert_eq!(d.generated_variants, 1);
+            assert!(d.polylines.is_empty());
+            assert!(
+                d.curves
+                    .iter()
+                    .all(|c| matches!(c.geometry, DrawingCurveGeometry::Bezier { .. }))
+            );
+            assert_eq!(d.to_dxf().matches("0\nSPLINE\n").count(), d.curves.len());
+            assert_eq!(d.to_svg().matches("<path ").count(), d.curves.len());
+            spans += d.curves.len();
+        }
+        assert!(spans >= if detail.is_none() { 10_000 } else { 2000 });
+        assert_eq!(session.shape_count().unwrap(), 0);
+        assert!(
+            started.elapsed().as_secs_f64() < 30.0,
+            "freeform view workload took {:?}",
+            started.elapsed()
+        );
+        println!(
+            "1000 exact spline views (detail={}): {spans} Bezier spans and both exports in {:?} (30s budget), one shared variant",
+            detail.is_some(),
+            started.elapsed()
+        );
+    }
+}
+
+fn exact_curved_hatches(document: &ModelDocument, template: &DrawingDefinition) {
+    let mut family = document.family.clone();
+    family.features = vec![FeatureDefinition {
+        id: "body".into(),
+        operation: FeatureOperation::Cylinder {
+            origin: VectorExpr::Literal(VectorQuantity::lengths(
+                0.0,
+                0.0,
+                0.0,
+                LengthUnit::Millimeter,
+            )),
+            axis: VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, 1.0)),
+            radius: ScalarExpr::Literal(Quantity::length(5.0, LengthUnit::Millimeter)),
+            height: ScalarExpr::Literal(Quantity::length(30.0, LengthUnit::Millimeter)),
+        },
+    }];
+    let mut graph = InstanceGraph::new(&family);
+    graph.add_base("part", HashMap::new(), "bench").unwrap();
+    let mut page = template.clone();
+    page.views[0].outputs.clear();
+    page.views[0].hatching = Some(SectionHatching {
+        angle_radians: 0.0,
+        spacing_mm: 0.25,
+        phase_mm: 0.125,
+    });
+    for i in 0..1000 {
+        let id = if i == 0 {
+            "part".into()
+        } else {
+            format!("round-{i}")
+        };
+        if i > 0 {
+            graph
+                .add_clone(&id, "part", HashMap::new(), "bench")
+                .unwrap();
+            graph
+                .set_placement(
+                    &id,
+                    Placement::translated(VectorQuantity::lengths(
+                        15.0 * i as f64,
+                        0.0,
+                        0.0,
+                        LengthUnit::Millimeter,
+                    )),
+                )
+                .unwrap();
+        }
+        page.views[0].outputs.push(InstanceOutputRef {
+            instance: id,
+            output: "body".into(),
+        });
+    }
+    let session = Session::new().unwrap();
+    let started = Instant::now();
+    let generated = page
+        .generate(
+            &graph,
+            &session,
+            DrawingRenderOptions {
+                exact_curves: true,
+                curve_samples: 2,
+                ..DrawingRenderOptions::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(generated.hatches.len(), 40_000);
+    assert_eq!(generated.generated_variants, 1);
+    for line in &generated.hatches {
+        for p in &line.points_mm {
+            let member = ((p[0] - 20.0) / 15.0).round();
+            assert!(((p[0] - 20.0 - member * 15.0).hypot(p[1] - 40.0) - 5.0).abs() < 1e-7);
+        }
+    }
+    assert!(generated.to_svg().contains("stroke-width=\"0.13\""));
+    assert!(generated.to_dxf().contains("SECTION_HATCH"));
+    assert_eq!(session.shape_count().unwrap(), 0);
+    assert!(
+        started.elapsed().as_secs_f64() < 30.0,
+        "curved hatch workload took {:?}",
+        started.elapsed()
+    );
+    println!(
+        "40000 exact curved-boundary hatch segments across 1000 cylinders and both exports: {:?} (30s budget), one shared variant",
+        started.elapsed()
+    );
+}
+
+fn material_hatch_case(document: &ModelDocument, template: &DrawingDefinition) {
+    let mut source = document.clone();
+    source.assembly.materials = (0..10_000)
+        .map(|i| Material {
+            id: format!("m{i}"),
+            name: format!("Material {i}"),
+            density_kg_per_cubic_meter: 1000.0,
+        })
+        .collect();
+    let mut graph = source.instance_graph().unwrap();
+    graph.assign_material("part", Some("m9999")).unwrap();
+    let mut page = template.clone();
+    page.views[0].outputs.clear();
+    page.views[0].material_hatching = graph
+        .assembly()
+        .materials
+        .iter()
+        .map(|m| (m.id.clone(), vec![]))
+        .collect();
+    page.views[0].material_hatching.insert(
+        "m9999".into(),
+        vec![
+            SectionHatching {
+                angle_radians: 0.0,
+                spacing_mm: 2.0,
+                phase_mm: 0.5,
+            },
+            SectionHatching {
+                angle_radians: 0.0,
+                spacing_mm: 2.0,
+                phase_mm: 1.5,
+            },
+        ],
+    );
+    page.views[0].material_hatching.insert(
+        "m9998".into(),
+        vec![SectionHatching {
+            angle_radians: std::f64::consts::FRAC_PI_2,
+            spacing_mm: 2.0,
+            phase_mm: 0.5,
+        }],
+    );
+    for i in 0..1000 {
+        let id = if i == 0 {
+            "part".into()
+        } else {
+            format!("material-part-{i}")
+        };
+        if i > 0 {
+            graph
+                .add_clone(&id, "part", HashMap::new(), "bench")
+                .unwrap();
+            graph
+                .set_placement(
+                    &id,
+                    Placement::translated(VectorQuantity::lengths(
+                        i as f64 * 15.0,
+                        0.0,
+                        0.0,
+                        LengthUnit::Millimeter,
+                    )),
+                )
+                .unwrap();
+        }
+        if i % 2 == 1 {
+            graph.assign_material(&id, Some("m9998")).unwrap();
+        }
+        page.views[0].outputs.push(InstanceOutputRef {
+            instance: id,
+            output: "body".into(),
+        });
+    }
+    let session = Session::new().unwrap();
+    let started = Instant::now();
+    let generated = page
+        .generate(
+            &graph,
+            &session,
+            DrawingRenderOptions {
+                exact_curves: true,
+                ..DrawingRenderOptions::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(generated.generated_variants, 1);
+    assert_eq!(generated.hatches.len(), 12_500);
+    let vertical = generated
+        .hatches
+        .iter()
+        .filter(|l| (l.points_mm[0][0] - l.points_mm[1][0]).abs() < 1e-7)
+        .count();
+    assert_eq!(vertical, 2500);
+    assert!(generated.to_svg().contains("stroke-width=\"0.13\""));
+    assert!(generated.to_dxf().contains("SECTION_HATCH"));
+    assert_eq!(session.shape_count().unwrap(), 0);
+    assert!(
+        started.elapsed().as_secs_f64() < 30.0,
+        "material hatch workload took {:?}",
+        started.elapsed()
+    );
+    println!(
+        "1000 material-hatched parts, 10000 material mappings, 12500 hatch segments and both exports: {:?} (30s budget), one shared variant",
         started.elapsed()
     );
 }

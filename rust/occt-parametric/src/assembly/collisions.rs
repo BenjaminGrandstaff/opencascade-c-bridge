@@ -5,7 +5,9 @@ mod exclusions;
 pub use exclusions::CollisionPairRef;
 pub(super) use exclusions::PairExclusions;
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(
+    Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, schemars::JsonSchema,
+)]
 pub struct InstanceOutputRef {
     pub instance: String,
     pub output: String,

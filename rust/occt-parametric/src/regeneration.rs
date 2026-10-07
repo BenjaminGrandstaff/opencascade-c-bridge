@@ -35,7 +35,7 @@ impl<'session> GeneratedResult<'session> {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum RegenerationState {
     NeverGenerated,
@@ -161,7 +161,44 @@ impl Drop for ManagedPartInstance<'_, '_> {
     }
 }
 
+/// Geometry and check results for visualization only; never an accepted build.
+pub struct DiagnosticGeneration<'session> {
+    pub generated: GeneratedResult<'session>,
+    pub verification_errors: Vec<(String, ModelError)>,
+}
+
 impl PartInstance<'_> {
+    /// Generate a local diagnostic snapshot even when required checks fail.
+    /// Geometry creation still validates results. Verification errors remain
+    /// explicitly unverified; callers must not publish this as an accepted build.
+    pub fn diagnostic_geometry<'session>(
+        &self,
+        session: &'session Session,
+    ) -> Result<DiagnosticGeneration<'session>, ModelError> {
+        validate_definition(self.definition)?;
+        let parameters = self.resolved_parameters()?;
+        let mut build = FeatureBuild::default();
+        build.run(session, self.definition, &parameters, None)?;
+        let mut verification = Vec::new();
+        let mut errors = Vec::new();
+        for requirement in &self.definition.requirements {
+            match verify_requirement(session, requirement, &build.shapes) {
+                Ok(result) => verification.push(result),
+                Err(error) => errors.push((requirement.id.clone(), error)),
+            }
+        }
+        Ok(DiagnosticGeneration {
+            generated: GeneratedResult {
+                shapes: build.shapes,
+                feature_signatures: build.feature_signatures,
+                face_colors: build.face_colors,
+                verification,
+                regeneration: build.regeneration,
+            },
+            verification_errors: errors,
+        })
+    }
+
     pub fn regenerate<'session>(
         &self,
         session: &'session Session,
@@ -364,7 +401,7 @@ pub(crate) fn verify_requirements(
     Ok(verification)
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, schemars::JsonSchema)]
 pub(crate) struct FeatureSignature<'a> {
     pub(crate) feature: &'a FeatureDefinition,
     pub(crate) parameters: Vec<(&'a str, &'a ParameterValue)>,
@@ -484,6 +521,23 @@ pub(crate) fn collect_operation_parameters<'a>(
             collect_vector_parameters(axis, names);
             collect_scalar_parameters(radius, names);
             collect_scalar_parameters(height, names);
+        }
+        FeatureOperation::Cone {
+            origin,
+            axis,
+            base_radius,
+            top_radius,
+            height,
+        } => {
+            collect_vector_parameters(origin, names);
+            collect_vector_parameters(axis, names);
+            collect_scalar_parameters(base_radius, names);
+            collect_scalar_parameters(top_radius, names);
+            collect_scalar_parameters(height, names);
+        }
+        FeatureOperation::Sphere { center, radius } => {
+            collect_vector_parameters(center, names);
+            collect_scalar_parameters(radius, names);
         }
         FeatureOperation::SketchFace { sketch }
         | FeatureOperation::SketchWire { sketch }

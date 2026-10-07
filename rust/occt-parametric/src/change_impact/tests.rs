@@ -166,6 +166,7 @@ fn placement_material_suppression_and_drawings_do_not_rebuild_local_geometry() {
             show_hidden: false,
             kind: DrawingViewKind::Orthographic,
             detail: None,
+            material_hatching: Default::default(),
             hatching: None,
         }],
         guides: Vec::new(),

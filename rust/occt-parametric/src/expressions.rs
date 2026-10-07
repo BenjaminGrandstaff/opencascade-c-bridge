@@ -2,6 +2,56 @@
 
 use super::*;
 
+impl PartInstance<'_> {
+    /// Validated input and derived values, including inherited overrides.
+    /// This resolves expressions and constraints without generating geometry.
+    pub fn resolved_parameters(&self) -> Result<HashMap<String, ParameterValue>, ModelError> {
+        resolve_parameters(self.definition, &self.overrides)
+    }
+}
+
+impl ScalarExpr {
+    /// Evaluate with resolved parameter values; length results use millimeters.
+    pub fn evaluate(
+        &self,
+        parameters: &HashMap<String, ParameterValue>,
+    ) -> Result<Quantity, ModelError> {
+        let value = evaluate_resolved_expression(self, parameters)?;
+        Ok(match value.dimension {
+            Dimension::Scalar => Quantity::scalar(value.value),
+            Dimension::Length => Quantity::length(value.value, LengthUnit::Millimeter),
+        })
+    }
+    /// Direct parameter references, for linking annotations to their controls.
+    pub fn parameter_names(&self) -> Vec<&str> {
+        let mut names = HashSet::new();
+        collect_scalar_parameters(self, &mut names);
+        let mut names = names.into_iter().collect::<Vec<_>>();
+        names.sort_unstable();
+        names
+    }
+}
+impl VectorExpr {
+    /// Evaluate with resolved parameter values; length results use millimeters.
+    pub fn evaluate(
+        &self,
+        parameters: &HashMap<String, ParameterValue>,
+    ) -> Result<VectorQuantity, ModelError> {
+        let value = evaluate_resolved_vector_expression(self, parameters)?;
+        Ok(match value.dimension {
+            Dimension::Scalar => {
+                VectorQuantity::scalars(value.value.x, value.value.y, value.value.z)
+            }
+            Dimension::Length => VectorQuantity::lengths(
+                value.value.x,
+                value.value.y,
+                value.value.z,
+                LengthUnit::Millimeter,
+            ),
+        })
+    }
+}
+
 pub(crate) fn resolve_parameters(
     definition: &FamilyDefinition,
     overrides: &HashMap<String, ParameterValue>,

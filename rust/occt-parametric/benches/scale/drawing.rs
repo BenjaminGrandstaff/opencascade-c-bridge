@@ -50,6 +50,7 @@ pub(crate) fn assembly_drawing_case(definition: &'static FamilyDefinition) -> Ou
                     show_hidden: false,
                     kind: DrawingViewKind::Orthographic,
                     detail: None,
+                    material_hatching: Default::default(),
                     hatching: None,
                 }],
             };
@@ -57,6 +58,8 @@ pub(crate) fn assembly_drawing_case(definition: &'static FamilyDefinition) -> Ou
                 &graph,
                 &session,
                 DrawingRenderOptions {
+                    curve_tolerance_mm: 0.01,
+                    exact_curves: false,
                     curve_samples: 4,
                     maximum_vertices: 1_000_000,
                 },
@@ -103,6 +106,7 @@ pub(crate) fn drawing_case(definition: &'static FamilyDefinition) -> Outcome {
                 metadata: Default::default(),
                 views: (0..1000)
                     .map(|index| DrawingView {
+                        material_hatching: Default::default(),
                         hatching: None,
                         id: format!("view{index}"),
                         outputs: vec![InstanceOutputRef {
@@ -144,6 +148,8 @@ pub(crate) fn drawing_case(definition: &'static FamilyDefinition) -> Outcome {
                 &graph,
                 &session,
                 DrawingRenderOptions {
+                    curve_tolerance_mm: 0.01,
+                    exact_curves: false,
                     curve_samples: 4,
                     maximum_vertices: 1_000_000,
                 },

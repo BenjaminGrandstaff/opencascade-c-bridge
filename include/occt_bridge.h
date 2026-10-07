@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define OCCT_BRIDGE_ABI_VERSION 44u
+#define OCCT_BRIDGE_ABI_VERSION 46u
 #define OCCT_BRIDGE_INVALID_SHAPE_ID UINT64_C(0)
 
 #if defined(_WIN32) && defined(OCCT_BRIDGE_BUILD_SHARED)
@@ -1116,6 +1116,43 @@ OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_orthographic_projection(
     occt_bridge_vec3_t x_axis,
     occt_bridge_shape_id_t* out_visible,
     occt_bridge_shape_id_t* out_hidden
+);
+
+/* Exact finite analytic edge data; O(1) time/storage. kind: 0 unsupported,
+ * 1 line (origin=start, x_vector=end), 2 circle, 3 ellipse. Conics are
+ * origin + x_vector*cos(t) + y_vector*sin(t), in model coordinates.
+ * first/last follow topological orientation, so reversed edges descend.
+ * Unsupported curves succeed with zero data. Output is zeroed on failure. */
+typedef struct {
+    int kind;
+    occt_bridge_vec3_t origin, x_vector, y_vector;
+    double first, last;
+} occt_bridge_analytic_curve_t;
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_edge_analytic_curve(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t edge,
+    occt_bridge_analytic_curve_t* out_curve
+);
+
+/* Exact adjacent rational Bezier spans for finite standard curves (including
+ * parabola, hyperbola, Bezier and B-spline). Poles follow edge orientation;
+ * span indices start at zero and increase, with degree = poles per span - 1.
+ * Weights are positive. Other/offset curves succeed with zero count.
+ * NULL/0 queries count; insufficient capacity reports required count without
+ * touching the buffer. Other failures report zero. maximum_poles: 2–1000000.
+ * The pole budget bounds returned data, not OCCT conversion workspace. */
+typedef struct {
+    size_t span_index;
+    occt_bridge_vec3_t point;
+    double weight;
+} occt_bridge_bezier_pole_t;
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_edge_bezier_poles(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t edge,
+    size_t maximum_poles,
+    occt_bridge_bezier_pole_t* out_poles,
+    size_t capacity,
+    size_t* out_count
 );
 
 /* Uniform normalized-parameter samples of a finite edge's exact curve.

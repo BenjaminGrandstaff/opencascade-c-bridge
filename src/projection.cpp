@@ -14,6 +14,8 @@
 #include <TopoDS.hxx>
 #include <TopoDS_Compound.hxx>
 #include <gp_Ax2.hxx>
+#include <gp_Circ.hxx>
+#include <gp_Elips.hxx>
 #include <gp_Dir.hxx>
 #include <gp_Pln.hxx>
 
@@ -94,6 +96,66 @@ occt_bridge_status_t occt_bridge_orthographic_projection(
             *out_visible = 0;
             throw;
         }
+    });
+}
+
+// O(1) analytic extraction; adaptor applies edge locations to geometry.
+occt_bridge_status_t occt_bridge_edge_analytic_curve(
+    occt_bridge_session_t* session, occt_bridge_shape_id_t edge,
+    occt_bridge_analytic_curve_t* out_curve) {
+    if (out_curve != nullptr) { *out_curve = {}; }
+    return guarded(session, [&] {
+        if (out_curve == nullptr) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "analytic curve output is null");
+        }
+        const auto* value = find_shape(session, edge);
+        if (value == nullptr) { return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "edge was not found"); }
+        if (value->ShapeType() != TopAbs_EDGE) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "analytic curve requires an edge");
+        }
+        BRepAdaptor_Curve curve(TopoDS::Edge(*value));
+        occt_bridge_analytic_curve_t result{};
+        result.first = curve.FirstParameter();
+        result.last = curve.LastParameter();
+        if (!std::isfinite(result.first) || !std::isfinite(result.last) || result.last <= result.first) {
+            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "analytic edge needs a finite positive range");
+        }
+        if (value->Orientation() == TopAbs_REVERSED) { std::swap(result.first, result.last); }
+        if (curve.GetType() == GeomAbs_Line) {
+            result.kind = 1;
+            const auto start = curve.Value(result.first);
+            const auto end = curve.Value(result.last);
+            result.origin = {start.X(), start.Y(), start.Z()};
+            result.x_vector = {end.X(), end.Y(), end.Z()};
+        } else if (curve.GetType() == GeomAbs_Circle || curve.GetType() == GeomAbs_Ellipse) {
+            gp_Ax2 axes;
+            double major = 0.0, minor = 0.0;
+            if (curve.GetType() == GeomAbs_Circle) {
+                const auto circle = curve.Circle();
+                axes = circle.Position();
+                major = minor = circle.Radius();
+                result.kind = 2;
+            } else {
+                const auto ellipse = curve.Ellipse();
+                axes = ellipse.Position();
+                major = ellipse.MajorRadius();
+                minor = ellipse.MinorRadius();
+                result.kind = 3;
+            }
+            const auto center = axes.Location();
+            const auto x = axes.XDirection();
+            const auto y = axes.YDirection();
+            result.origin = {center.X(), center.Y(), center.Z()};
+            result.x_vector = {x.X() * major, x.Y() * major, x.Z() * major};
+            result.y_vector = {y.X() * minor, y.Y() * minor, y.Z() * minor};
+        } else {
+            return succeed(session);
+        }
+        if (!finite(result.origin) || !finite(result.x_vector) || !finite(result.y_vector)) {
+            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "analytic curve exceeds finite coordinates");
+        }
+        *out_curve = result;
+        return succeed(session);
     });
 }
 

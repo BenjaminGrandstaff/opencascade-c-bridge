@@ -3,7 +3,7 @@
 A small, stable C ABI over Open Cascade (OCCT), designed to be wrapped safely
 from Rust and other languages. Open Cascade C++ objects never cross the ABI.
 
-The current C ABI version is **44**.
+The current C ABI version is **46**.
 
 ## Current API
 
@@ -79,7 +79,9 @@ semantic face and edge selectors with persistent references that follow
 topology through later features and named references declared once per
 family, and
 versioned JSON model documents are implemented. Feature graphs include sewing
-and single- or multi-shell solid construction. Selectors support orientation,
+and single- or multi-shell solid construction. Schema 69 adds saved cone/frustum
+and sphere features, including apex and cylindrical limits, typed expressions
+and incremental regeneration. Selectors support orientation,
 adjacency, extrema, nearest-center, longest-edge, circular-radius,
 curvature-radius, sampled full-edge curvature-radius range, proven-bound
 curvature-radius range,
@@ -95,7 +97,7 @@ volume, solid connectivity, minimum convex or concave radius, and sampled wall
 thickness, draft, and overhang, all with required, preferred, or advisory
 priority. Results carry measured values, evidence quality, and collision
 witnesses; see [Requirement rules](REQUIREMENTS.md). Schema v1 through
-v56 documents migrate to v57 during load; unsupported
+v68 documents migrate to v69 during load; unsupported
 future versions are rejected.
 Managed regeneration incrementally reuses unchanged outputs and
 rebuilds dirty features plus their downstream dependents. Graph regeneration
@@ -110,6 +112,24 @@ The sibling [`engineering-intent-language`](../engineering-intent-language)
 project provides the broader serialized source model, including semantic
 validation and clone inheritance resolution. The local `occt-parametric` crate
 is the kernel-facing execution layer for an initial subset of that model.
+
+## AI part authoring
+
+[The `occt-model` command](tools/model/README.md) builds a saved model from a
+single JSON request, applies typed parameter edits, verifies requirements, and
+writes an editable model, structured measurements/diagnostics, STEP/STL, and
+isometric SVG previews. Complete bracket, enclosure, shaft, and mating-part
+examples demonstrate the authoring and repair loop. Earlier build directories
+and the source document remain intact after rejected changes.
+[The local MCP server](tools/model/MCP.md) exposes generated schemas for all
+feature operations, complete examples, build tools and readable artifact
+resources to AI clients. Read-only inspection exposes resolved parameters,
+feature dependencies and semantic face/edge queries before edits. Guarded
+feature edits branch from accepted snapshots, retain requirements, and publish
+verified revision records without overwriting previous builds. The
+[annotated viewer](tools/model/VIEWER.md) shows dimensions and constraint symbols
+on sketches and 3D shapes, links controls to geometry, and displays diagnostic
+failures while keeping model acceptance separate.
 
 ## Repository layout
 
@@ -278,7 +298,11 @@ API reports resolved instance/feature change impact. The `occt-document-merge`
 binary supplies a semantic Git merge driver. See [Model history](MODEL_HISTORY.md)
 and [Document comparisons](DOCUMENT_DIFF.md). Schema 42 adds regenerated orthographic, section,
 and detail drawings, datum dimensions, parameter notes, and metadata title blocks
-exported as SVG or DXF. See [Drawings](DRAWINGS.md) for the API and sampling limits.
+exported as SVG or DXF. Optional exact geometry export preserves standard curves
+and detail trims in DXF, with exact SVG curves where representable and
+error-controlled SVG approximation otherwise. See [Drawings](DRAWINGS.md) for
+the API and export limits. Schema 68 adds per-view material hatch families,
+including inherited assignments, paired lines, crosshatching and suppression.
 Schema 63 adds two-row composite controls, reusable named datum-reference frames
 and nominal planar 3-2-1 coordinates. Schema 62 adds datum-feature symbols and structured GD&T feature-control frames
 with ordered datum references and material modifiers. Schema 61 adds ANSI/ISO paper presets, structured title blocks, sheet numbering

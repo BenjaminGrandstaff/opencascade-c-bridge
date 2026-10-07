@@ -6,7 +6,7 @@ use super::*;
 pub const MAX_PATTERN_MEMBERS: usize = 10_000;
 
 /// How a linear fit chooses its member count along the span.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum LinearSpacing {
     /// Exactly this many members, ends included.
@@ -18,7 +18,7 @@ pub enum LinearSpacing {
 }
 
 /// How a circular fit chooses its member count over the sweep.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum AngularSpacing {
     Count(usize),
@@ -26,7 +26,7 @@ pub enum AngularSpacing {
     MaximumRadians(f64),
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum PatternRule {
     Linear {
@@ -55,7 +55,7 @@ pub enum PatternRule {
 
 /// Resolves a freely counted pattern's slot count from an instance parameter
 /// or from the measured extent of generated assembly geometry.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum PatternCountDriver {
     Parameter {
@@ -75,7 +75,7 @@ pub enum PatternCountDriver {
 /// Resolves the span of a `LinearFit` rule. A scalar parameter supplies a
 /// length along `direction`; a bounds extent measures a named generated
 /// output along `axis` and applies that length along `direction`.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum PatternSpanDriver {
     Parameter {
@@ -284,7 +284,7 @@ pub(crate) fn normalized_pattern_direction(direction: VectorQuantity) -> Result<
 
 /// One linked copy in a pattern. `index` is its slot in the rule and stays
 /// fixed when other members leave the pattern.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct PatternMember {
     pub id: String,
     pub index: usize,
@@ -296,7 +296,7 @@ pub struct PatternMember {
     pub suppressed: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct Pattern {
     pub id: String,
     pub source: String,

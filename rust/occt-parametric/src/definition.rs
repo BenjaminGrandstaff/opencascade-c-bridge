@@ -3,7 +3,7 @@
 
 use super::*;
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ParameterValue {
     Scalar(Quantity),
@@ -13,7 +13,7 @@ pub enum ParameterValue {
     Vector(VectorQuantity),
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ParameterType {
     Scalar(Dimension),
@@ -23,7 +23,7 @@ pub enum ParameterType {
     Vector(Dimension),
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ParameterDefinition {
     pub id: String,
     pub parameter_type: ParameterType,
@@ -32,7 +32,7 @@ pub struct ParameterDefinition {
     pub maximum: Option<Quantity>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ScalarExpr {
     Literal(Quantity),
@@ -119,7 +119,7 @@ pub enum ScalarExpr {
 }
 
 /// How `ScalarExpr::RoundToStep` picks a multiple.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum RoundingMode {
     Nearest,
@@ -127,7 +127,7 @@ pub enum RoundingMode {
     Up,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum VectorExpr {
     Literal(VectorQuantity),
@@ -146,14 +146,14 @@ pub enum VectorExpr {
     Normalize(Box<VectorExpr>),
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SemanticHistoryRelation {
     Generated,
     Modified,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum CoordinateAxis {
     X,
@@ -171,7 +171,7 @@ impl CoordinateAxis {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Extremum {
     Minimum,
@@ -187,7 +187,7 @@ impl From<SemanticHistoryRelation> for HistoryRelation {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum EdgeSelector {
     NearestCenter {
@@ -294,7 +294,7 @@ impl EdgeSelector {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum FaceSelector {
     NearestCenter {
@@ -430,7 +430,7 @@ impl FaceSelector {
 
 /// A flat-bottom blind bore or a bore through the complete input along its
 /// axis line. Through-all covers both directions from the supplied position.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum HoleExtent {
     Blind { depth: ScalarExpr },
@@ -438,7 +438,7 @@ pub enum HoleExtent {
 }
 
 /// Entry recess, starting at the hole position along its axis.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum HoleFinish {
     #[default]
@@ -454,7 +454,7 @@ pub enum HoleFinish {
     },
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ThreadHandedness {
     Right,
@@ -463,7 +463,7 @@ pub enum ThreadHandedness {
 
 /// Caller-supplied internal-thread intent, not a standards lookup or modeled
 /// helix. The hole diameter remains the explicit cylindrical bore diameter.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ThreadSpecification {
     pub designation: String,
     pub nominal_diameter: ScalarExpr,
@@ -472,7 +472,9 @@ pub struct ThreadSpecification {
 }
 
 /// How a rib's total thickness is placed relative to its profile plane.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum RibThicknessMode {
     /// Extrude from the profile plane along the supplied direction.
@@ -483,7 +485,7 @@ pub enum RibThicknessMode {
 }
 
 /// The bounded planar region used before applying rib thickness.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum RibProfileMode {
     #[default]
@@ -502,13 +504,13 @@ pub enum RibProfileMode {
 
 /// An interior sample of a smooth radius law. Position is dimensionless and
 /// strictly between 0 and 1; radius is a positive length.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct FilletRadiusStation {
     pub position: ScalarExpr,
     pub radius: ScalarExpr,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum FilletSpineDirection {
     #[default]
@@ -520,7 +522,7 @@ pub enum FilletSpineDirection {
     },
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum FeatureOperation {
     /// Constant-width sheet with tangent-length flanges and circular bends.
@@ -559,6 +561,20 @@ pub enum FeatureOperation {
         axis: VectorExpr,
         radius: ScalarExpr,
         height: ScalarExpr,
+    },
+    /// Full cone/frustum. Radii are nonnegative (not both zero), height positive.
+    /// Equal radii produce a cylinder; origin is the base center.
+    Cone {
+        origin: VectorExpr,
+        axis: VectorExpr,
+        base_radius: ScalarExpr,
+        top_radius: ScalarExpr,
+        height: ScalarExpr,
+    },
+    /// Full sphere with length-valued center and positive radius.
+    Sphere {
+        center: VectorExpr,
+        radius: ScalarExpr,
     },
     SketchFace {
         sketch: Box<SketchDefinition>,
@@ -707,7 +723,9 @@ impl FeatureOperation {
         names
     }
 
-    pub(crate) fn dependencies(&self) -> Vec<&str> {
+    /// Direct output dependencies, including embedded selectors.
+    /// Use `FamilyDefinition::feature_inputs` to expand named references.
+    pub fn dependencies(&self) -> Vec<&str> {
         match self {
             Self::Sweep { profile, path, .. } => vec![profile, path],
             Self::SheetMetalFlat { input, .. }
@@ -742,6 +760,8 @@ impl FeatureOperation {
             | Self::Loft { .. }
             | Self::Box { .. }
             | Self::Cylinder { .. }
+            | Self::Cone { .. }
+            | Self::Sphere { .. }
             | Self::SketchFace { .. }
             | Self::SketchWire { .. }
             | Self::SketchOpenWire { .. } => Vec::new(),
@@ -749,13 +769,13 @@ impl FeatureOperation {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct FeatureDefinition {
     pub id: String,
     pub operation: FeatureOperation,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum RequirementPriority {
     Required,
@@ -763,7 +783,7 @@ pub enum RequirementPriority {
     Advisory,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum RequirementKind {
     Dimensional,
@@ -776,7 +796,7 @@ pub enum RequirementKind {
     Validation,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct Volume {
     pub value: f64,
     pub unit: LengthUnit,
@@ -791,7 +811,7 @@ impl Volume {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum VerificationRule {
     ShapeValid {
@@ -901,7 +921,7 @@ fn is_default_wall_samples(value: &usize) -> bool {
 }
 
 /// How a swept profile turns as it follows its path.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SweepOrientation {
     /// Least twist; the usual choice.
@@ -921,7 +941,7 @@ pub enum SweepOrientation {
 /// `y_axis`, scaled by the length `scale`, and placed at
 /// `origin + scale * (u * x_axis + v * y_axis)`. The axes are dimensionless,
 /// nonzero, and perpendicular. The first point is not repeated at the end.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct LoftSection {
     pub profile: Vec<[f64; 2]>,
     pub origin: VectorExpr,
@@ -939,7 +959,7 @@ fn is_origin(point: &[f64; 2]) -> bool {
 }
 
 /// Which way a surface curves relative to the part's outward normal.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum RadiusSide {
     /// Outside surfaces: cylinders, spheres, fillets on outside corners.
@@ -950,7 +970,7 @@ pub enum RadiusSide {
 }
 
 /// Whether sharp (non-tangent) edges on the measured side count as radius zero.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SharpEdges {
     /// Measure curved faces only, such as checking fillet sizes.
@@ -971,7 +991,7 @@ fn is_default_radius_samples(value: &u32) -> bool {
     *value == DEFAULT_RADIUS_SAMPLES
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct Requirement {
     pub id: String,
     pub version: u32,
@@ -988,7 +1008,9 @@ pub struct Requirement {
 }
 
 /// A design item a requirement traces to.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(
+    Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, schemars::JsonSchema,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum TraceTarget {
     Feature(String),
@@ -999,7 +1021,7 @@ pub enum TraceTarget {
 
 /// A stated engineering assumption, such as a load case or a material
 /// property, that requirements can trace to.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct Assumption {
     pub id: String,
     pub statement: String,
@@ -1023,21 +1045,21 @@ impl VerificationRule {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct DerivedParameterDefinition {
     pub id: String,
     pub dimension: Dimension,
     pub expression: ScalarExpr,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct DerivedVectorParameterDefinition {
     pub id: String,
     pub dimension: Dimension,
     pub expression: VectorExpr,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ConstraintRelation {
     LessOrEqual,
@@ -1045,7 +1067,7 @@ pub enum ConstraintRelation {
     Equal { tolerance: Quantity },
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ParameterConstraint {
     pub id: String,
     pub statement: String,
@@ -1055,7 +1077,7 @@ pub struct ParameterConstraint {
     pub provenance: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct FamilyDefinition {
     pub id: String,
     pub version: u32,
@@ -1088,13 +1110,13 @@ pub struct FamilyDefinition {
 /// A face or edge rule declared once in a family and used by name, so the
 /// rule (often a persistent reference) is written and edited in one place.
 /// A reference's rule cannot itself use named references.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct NamedReference {
     pub name: String,
     pub target: ReferenceTarget,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ReferenceTarget {
     Faces(FaceSelector),
@@ -1141,6 +1163,27 @@ pub(crate) fn reference_map(family: &FamilyDefinition) -> References<'_> {
         .iter()
         .map(|reference| (reference.name.as_str(), reference))
         .collect()
+}
+
+impl FamilyDefinition {
+    /// Validated, sorted input-output identities for every feature, including
+    /// dependencies introduced by named references. Does not generate geometry.
+    pub fn feature_inputs(
+        &self,
+    ) -> Result<std::collections::BTreeMap<&str, Vec<&str>>, ModelError> {
+        validate_definition(self)?;
+        let references = reference_map(self);
+        Ok(self
+            .features
+            .iter()
+            .map(|feature| {
+                let mut inputs = dependencies_with_references(feature, &references);
+                inputs.sort_unstable();
+                inputs.dedup();
+                (feature.id.as_str(), inputs)
+            })
+            .collect())
+    }
 }
 
 /// Feature dependencies, including those of the named references it uses.

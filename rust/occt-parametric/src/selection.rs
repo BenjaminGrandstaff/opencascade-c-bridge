@@ -602,3 +602,51 @@ pub(crate) fn filter_by_membership<'session>(
     }
     Ok(kept)
 }
+
+impl PartInstance<'_> {
+    /// Resolve a semantic face query against a result generated from this
+    /// instance's current definition/parameters. Returned handles are owned;
+    /// dropping them releases query temporaries. Topology indices are not
+    /// persistent identities across regeneration.
+    pub fn select_faces<'session>(
+        &self,
+        session: &'session Session,
+        generated: &GeneratedResult<'session>,
+        output: &str,
+        selector: &FaceSelector,
+    ) -> Result<Vec<Shape<'session>>, ModelError> {
+        let shape = generated
+            .shape(output)
+            .ok_or_else(|| ModelError::new(format!("unknown generated output '{output}'")))?;
+        resolve_face_selector(
+            session,
+            shape,
+            selector,
+            &self.resolved_parameters()?,
+            &generated.shapes,
+            &Features::new(self.definition),
+        )
+    }
+
+    /// Resolve a semantic edge query against a result generated from this
+    /// instance's current definition/parameters. Returned handles are owned.
+    pub fn select_edges<'session>(
+        &self,
+        session: &'session Session,
+        generated: &GeneratedResult<'session>,
+        output: &str,
+        selector: &EdgeSelector,
+    ) -> Result<Vec<Shape<'session>>, ModelError> {
+        let shape = generated
+            .shape(output)
+            .ok_or_else(|| ModelError::new(format!("unknown generated output '{output}'")))?;
+        resolve_edge_selector(
+            session,
+            shape,
+            selector,
+            &self.resolved_parameters()?,
+            &generated.shapes,
+            &Features::new(self.definition),
+        )
+    }
+}

@@ -11,7 +11,7 @@ pub use catalogs::{
 };
 pub(crate) use catalogs::{socket_scalar, tap_scalar};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ClearanceSeries {
     Fine,

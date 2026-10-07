@@ -1,6 +1,6 @@
 //! Ordered datum intent and a strictly nominal orthogonal-plane coordinate frame.
 use super::*;
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct DrawingDatumReferenceFrame {
     pub id: String,

@@ -3,13 +3,13 @@ use super::*;
 use crate::assembly::{add, cross, dot, scale};
 use occt_bridge::WireSegment;
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SheetMetalBend {
     /// Signed change of tangent direction, in dimensionless radians.
     pub angle_radians: ScalarExpr,
     pub inside_radius: ScalarExpr,
 }
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SheetMetalDefinition {
     /// Start of the thickness centerline; width extends along width_axis.
     pub origin: VectorExpr,
@@ -367,6 +367,7 @@ impl FlatPatternMetrics {
             hidden: true,
         }));
         Ok(GeneratedDrawing {
+            curves: Vec::new(),
             gdt_lines: Vec::new(),
             gdt_labels: Vec::new(),
             sheet_lines: Vec::new(),

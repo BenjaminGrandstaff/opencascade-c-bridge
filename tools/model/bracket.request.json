@@ -1,0 +1,334 @@
+{
+  "schema": "occb-model-request-v1",
+  "model": {
+    "schema_version": 69,
+    "family": {
+      "id": "bracket",
+      "version": 1,
+      "parameters": [
+        {
+          "id": "thickness",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 4,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": null,
+          "maximum": null
+        },
+        {
+          "id": "hole_spacing",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 30,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": null,
+          "maximum": null
+        }
+      ],
+      "derived_parameters": [],
+      "derived_vector_parameters": [],
+      "constraints": [],
+      "requirements": [
+        {
+          "id": "valid",
+          "version": 1,
+          "kind": "validation",
+          "priority": "required",
+          "statement": "valid",
+          "rule": {
+            "shape_valid": {
+              "output": "body"
+            }
+          },
+          "provenance": "example; demonstration assumptions",
+          "traces": [
+            {
+              "feature": "body"
+            }
+          ]
+        },
+        {
+          "id": "wall",
+          "version": 1,
+          "kind": "validation",
+          "priority": "required",
+          "statement": "wall",
+          "rule": {
+            "minimum_wall": {
+              "output": "body",
+              "minimum": {
+                "value": 2,
+                "dimension": "length",
+                "unit": "millimeter"
+              },
+              "maximum_samples": 1000
+            }
+          },
+          "provenance": "example; demonstration assumptions",
+          "traces": [
+            {
+              "feature": "body"
+            }
+          ]
+        }
+      ],
+      "datums": [],
+      "features": [
+        {
+          "id": "base",
+          "operation": {
+            "box": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 0,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "size": {
+                "components": {
+                  "x": {
+                    "literal": {
+                      "value": 60,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "y": {
+                    "literal": {
+                      "value": 30,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "z": {
+                    "parameter": "thickness"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "upright",
+          "operation": {
+            "box": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 0,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "size": {
+                "components": {
+                  "x": {
+                    "literal": {
+                      "value": 60,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "y": {
+                    "parameter": "thickness"
+                  },
+                  "z": {
+                    "literal": {
+                      "value": 25,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "blank",
+          "operation": {
+            "fuse": {
+              "left": "base",
+              "right": "upright"
+            }
+          }
+        },
+        {
+          "id": "first_hole",
+          "operation": {
+            "hole": {
+              "input": "blank",
+              "position": {
+                "literal": {
+                  "x": {
+                    "value": 10,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 18,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 0,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "axis": {
+                "literal": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "z": {
+                    "value": 1,
+                    "dimension": "scalar",
+                    "unit": null
+                  }
+                }
+              },
+              "diameter": {
+                "literal": {
+                  "value": 5,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                }
+              },
+              "extent": "through_all"
+            }
+          }
+        },
+        {
+          "id": "body",
+          "operation": {
+            "hole": {
+              "input": "first_hole",
+              "position": {
+                "components": {
+                  "x": {
+                    "add": [
+                      {
+                        "literal": {
+                          "value": 10,
+                          "dimension": "length",
+                          "unit": "millimeter"
+                        }
+                      },
+                      {
+                        "parameter": "hole_spacing"
+                      }
+                    ]
+                  },
+                  "y": {
+                    "literal": {
+                      "value": 18,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "z": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                }
+              },
+              "axis": {
+                "literal": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "z": {
+                    "value": 1,
+                    "dimension": "scalar",
+                    "unit": null
+                  }
+                }
+              },
+              "diameter": {
+                "literal": {
+                  "value": 5,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                }
+              },
+              "extent": "through_all"
+            }
+          }
+        }
+      ]
+    },
+    "instances": [
+      {
+        "base": {
+          "id": "bracket",
+          "overrides": {},
+          "provenance": "example; dimensions are demonstration assumptions"
+        }
+      }
+    ]
+  },
+  "outputs": [
+    {
+      "instance": "bracket",
+      "output": "body"
+    }
+  ],
+  "step": true,
+  "stl": true,
+  "preview": true
+}

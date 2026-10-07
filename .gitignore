@@ -5,3 +5,5 @@
 *.brep
 !/tests/fixtures/*.brep
 /tools/mesh/**/__pycache__/
+
+/tools/model/**/__pycache__/

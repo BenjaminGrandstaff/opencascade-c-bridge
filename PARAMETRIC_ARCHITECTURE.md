@@ -7,7 +7,7 @@ so they can generate and regenerate families of related parts.
 ## Implementation status
 
 The architecture in this document is both a description of implemented
-boundaries and a roadmap. As of ABI version 40, the repository contains three
+boundaries and a roadmap. As of ABI version 46, the repository contains three
 Rust layers:
 
 1. **`occt-bridge`** safely wraps session-owned OCCT handles. It includes
@@ -381,6 +381,37 @@ arc/tangent case takes 0.117 s and checks implicit radii and contact coordinates
 (both have a 2 s budget). A further benchmark creates 10,000 wire features on
 10,000 named datum planes, checks the final placement, and verifies all handles
 are released in 0.082 s (5 s budget).
+
+## Cone and sphere features
+
+Schema 69 adds `FeatureOperation::Cone { origin, axis, base_radius, top_radius,
+height }` and `FeatureOperation::Sphere { center, radius }`, using the existing
+bridge constructors. Origins/centers, radii and height are length-valued
+expressions with normal unit conversion. Cone axes are dimensionless, finite and
+nonzero. A sphere has a positive radius; cone radii are nonnegative and not both
+zero, and cone height is positive. The origin is the base center, and the top
+center is one height along the normalized axis. Either end may be an apex.
+Equal cone radii produce the exact cylindrical limit.
+
+Cone directions normalize by their largest component before computing length,
+so finite magnitudes such as 1e-300 and 1e300 preserve direction. Constructor
+setup and returned topology/storage are O(1) per primitive, beyond expression
+evaluation and the existing graph/kernel costs. No C ABI change is needed.
+
+Every expression joins the feature's incremental signature. Radius or center
+changes rebuild the sphere and its dependents; cone origin, axis, either radius
+or height changes rebuild the cone branch. Unaffected geometry is reused.
+Transforms/booleans use ordinary operation history and selectors. Managed failures
+retain the accepted generation and release staged shapes. Earlier documents
+migrate to schema 69 with their original feature operations.
+
+Four tests compare analytic volumes and centroids, transform ancestry, apex and
+cylinder limits, unit conversion, millimeter-to-meter scales at kilometer offsets,
+extreme direction magnitudes, every parameter's rebuild impact, repeated handle
+counts, invalid dimensions/geometry, persistence and independent merges. The full
+core scale suite passes: building/editing and checking 1,000 independent cone
+features takes 0.319 s; the sphere case takes 0.448 s (10 s budgets), with an
+unaffected anchor reused and all handles returned to baseline.
 
 ## Extrude and revolve features
 
@@ -797,6 +828,95 @@ requirements:
 
 The feature may later change from a round drilled hole to a reinforced slot
 without erasing the functional requirement or its verification history.
+
+### AI build tool
+
+[`occt-model`](tools/model/README.md) exposes the existing authoring/execution
+boundary as a versioned JSON request/report command. A request supplies the
+complete model, explicit selected outputs, and typed instance parameter edits.
+It migrates/validates the document, regenerates all unsuppressed instances with
+required verification guards, and publishes selected geometry, per-output
+measurements, all accepted verification evidence, and an editable document.
+Kernel failures preserve structured feature/operand/selector diagnostics.
+
+Each invocation uses a new directory, preserving previous successful builds.
+A failed export removes its own directory where possible; the final report is
+the completion marker. Source metadata and review history persist, while
+transient generation-state records are cleared. SVG previews use bounded
+sampling and are for visual review. Required failures currently expose their
+error context rather than a full rejected measurement table.
+[The local MCP adapter](tools/model/MCP.md) provides schema/example discovery,
+build calls, and accepted-artifact resources. Concurrent revision-aware shared
+sessions remain future integration.
+
+Command checks exercise the bracket edit/reject/repair loop and four published
+examples. A release 1,000-instance report with one shared geometry variant,
+validity/analytic volume checks, requirement evidence and persistence completed
+in 0.245 s against a 10 s budget. Complexity is existing regeneration plus
+selected geometry inspection/export, report serialization, and preview HLR;
+preview serialization is bounded to one million vertices per selected output.
+
+Generated Draft 2020-12 authoring schemas use `schemars::JsonSchema` on the
+engine's serde-compatible types, covering all 28 feature operations and 122
+nested definitions in the request schema. The CLI exposes twelve schema targets;
+the Python standard-library MCP adapter caches them at startup and advertises
+the complete build request through `tools/list`. Worker processes isolate
+native output and geometry lifetimes from protocol traffic. Timed-out/cancelled
+workers terminate and release their unaccepted directories; accepted artifacts
+remain readable by scoped resource URI. Five wire/schema tests validate the
+examples and build/edit/reject/repair loop. Release scale checks take 0.080 s
+for 1,000 schema calls and 0.283 s for a 1,000-part report/model roundtrip
+(10 s budgets), integrated into `tools/bench/run.sh`.
+
+Read-only [model inspection](tools/model/MCP.md#inspect-existing-parts-before-editing)
+adds paged authoring inventory, inherited/derived parameter resolution, complete
+feature inputs including named references, and optional face/edge measurements
+with actual semantic selector queries. Geometry inspection verifies the graph
+and creates one additional family-local authoring snapshot so tested selectors
+can be reused in features regardless of instance placement. Placement/frame
+chains are reported separately. Snapshot-local selection indices are explicitly
+not durable references. MCP inspection workers remove their scratch directories
+on both success and failure and preserve accepted builds. Metadata inspection
+avoids geometry generation; geometry work includes full regeneration/topology
+traversal but only requested pages are measured (default 100, limit 1..1000).
+Three command tests plus one MCP test cover paging, inheritance, named inputs,
+selector measurements, local coordinates, cleanup and preservation. A release
+10,000-instance metadata inventory takes 0.134 s, and a 1,000-feature geometry
+inspection takes 0.110 s (10 s budgets).
+
+[Guarded feature editing](tools/model/MCP.md#guarded-edits-and-revision-history)
+adds a versioned edit request with per-feature expected definitions, scoped
+additions, parameter overrides and caller-supplied revision metadata. MCP edits
+capture an accepted model only after checking its SHA-256 fingerprint; the CLI
+uses its explicitly supplied baseline. Feature IDs remain stable on replacement,
+unknown/colliding/duplicate targets fail, and existing requirements cannot be
+weakened or removed. Declaration changes increment each affected family version
+once, while parameter-only edits retain it. Geometry and required checks pass
+before a new immutable build and actual semantic revision record are returned.
+The ledger includes generated parameter/pattern changes and keeps the preceding
+revision as parent; `changes.json` exposes the same review record. Stale guards,
+invalid dependencies, failed required checks, duplicate revision IDs and semantic
+no-ops preserve previous builds. This provides checked snapshot branching rather
+than mutable-head locking. Three command tests and one MCP test cover this loop.
+Patch application uses indexed family/entity batches; work is linear in the
+scanned declarations and changed payloads, followed by existing validation,
+regeneration and O(S log N + P + C) semantic diff/serialization. The scale suite
+checks 10,000 guarded feature edits, all saved dimensions, analytic final volume,
+complete ledger and source preservation, in 1.684 s against a 30 s budget.
+
+[Annotated sketch/solid visualization](tools/model/VIEWER.md) adds self-contained
+HTML and SVG snapshots with native meshes/curve samples, measured versus driving
+dimensions, linked controls and per-sketch-constraint residual verdicts. Native
+solver equations are reused rather than approximated in the frontend; spline
+end tangency stays marked as construction rather than a measured residual.
+Diagnostic generation retains failed required part checks and unverified errors
+without becoming an accepted build; normal regeneration remains unchanged.
+Witnesses and exact/sampled evidence follow the rendered family-local geometry.
+Global scene/triangle/vertex/annotation budgets bound returned visualization data,
+while native meshing workspace still depends on geometric complexity. Three
+command tests and one MCP test check failures, links, safe labels, cleanup and
+acceptance separation. JavaScript logic tests and rendered SVG inspection cover
+the frontend; interactive browser QA was unavailable in this session.
 
 ## Part instances
 
@@ -1345,8 +1465,9 @@ defaults, units, constraints, placements, clone cycles, missing links,
 inconsistent pattern membership, and invalid regeneration revisions before the
 model is accepted.
 
-The next cross-layer work should prioritize general assembly usability and
-large mechanism solving. Schema 57 integrates true planar slice drawings with
+The next cross-layer work should prioritize manufacturing product definition:
+standards-verified material hatch presets and drawing conventions, followed by
+broader GD&T evaluation and structured PMI. Schema 57 integrates true planar slice drawings with
 the geometry branch's schema 56 features; the
 [drawing-export command](tools/drawing-export/README.md) shares regeneration
 across batches and writes reloadable definitions and SVG/DXF files. The balance-report command reports material
@@ -1378,8 +1499,13 @@ explicit instance outputs and use exact OCCT hidden-line removal, optionally
 after solid section clipping or with a detail crop. Datum dimensions and
 parameter notes resolve from the current document. Shared variants regenerate
 once, and temporary handles are released before numeric drawing data is returned.
-SVG and DXF include a page frame and metadata title block. Bounded uniform curve
-sampling is an approximation; section hatching is not yet generated. See
+SVG and DXF include a page frame and metadata title block. ABI 46 supports optional
+exact standard-curve DXF export and detail trimming. SVG retains exact conics and
+low-degree polynomial Bézier spans, with bounded approximation of rational or
+higher-degree spans. Exact mode also trims hatch lines against native cut faces
+in bounded batches; default exports and hatching retain sampled boundaries.
+Schema 68 adds per-view material-ID hatch-family maps, inherited assignments,
+fallback/suppression and cached grouping with shared work/vertex limits. See
 [Drawings](DRAWINGS.md) for coordinates, budgets, examples, and export contracts.
 
 ## Model revisions and change impact

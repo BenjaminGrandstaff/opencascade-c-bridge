@@ -5,6 +5,7 @@ use super::*;
 mod holes;
 mod loft;
 pub(crate) use loft::collect_parameters as collect_loft_parameters;
+mod primitives;
 mod ribs;
 mod variable_fillet;
 
@@ -144,6 +145,26 @@ pub(crate) fn execute_feature<'session>(
             vector(axis, parameters, Dimension::Scalar)?,
             scalar(radius, parameters, Dimension::Length)?,
             scalar(height, parameters, Dimension::Length)?,
+        ),
+        FeatureOperation::Cone {
+            origin,
+            axis,
+            base_radius,
+            top_radius,
+            height,
+        } => {
+            return primitives::cone(
+                session,
+                vector(origin, parameters, Dimension::Length)?,
+                vector(axis, parameters, Dimension::Scalar)?,
+                scalar(base_radius, parameters, Dimension::Length)?,
+                scalar(top_radius, parameters, Dimension::Length)?,
+                scalar(height, parameters, Dimension::Length)?,
+            );
+        }
+        FeatureOperation::Sphere { center, radius } => session.create_sphere(
+            vector(center, parameters, Dimension::Length)?,
+            scalar(radius, parameters, Dimension::Length)?,
         ),
         FeatureOperation::SketchFace { sketch }
         | FeatureOperation::SketchWire { sketch }

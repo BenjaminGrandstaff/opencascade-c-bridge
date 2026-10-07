@@ -8,21 +8,129 @@ tracks status and order.
 
 | Layer | Version | State |
 |---|---|---|
-| C ABI (`src/`, `include/`) | ABI 44 | Stable; exact version match required |
+| C ABI (`src/`, `include/`) | ABI 46 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 67 | Active development |
+| `occt-parametric` (engineering layer) | Schema 69 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 93 + first-use integration 1 (+1 doc test), recipes 3, parametric 351 + merge driver 3 + motion command 16 + balance command 4 + drawing command 2 + branch command 2, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 95 + first-use integration 1 (+1 doc test), recipes 3, parametric 366 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + branch command 2 + model command 12, MCP Python 8, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
 | Coverage | 93.61% lines overall, test code excluded; C++ 94.13% lines, 87.40% branches, 100% functions; Rust 93.42% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 100 Rust cases plus a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Scale benchmarks | 108 Rust cases plus 5 model-command and 7 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
+
+- Annotated sketches and 3D shape viewer (no ABI/model-schema change):
+  self-contained HTML orbit/pan/zoom views and SVG snapshots show measured versus
+  driving dimensions, native sketch-constraint residuals/symbols, linked controls
+  and failed requirement witnesses. Normal previews include the viewer; separate
+  diagnostic visualization preserves failed checks without accepting a build.
+  Three additional command tests and one MCP test cover solved/conflicting
+  sketches, geometric failures, budgets, safe labels and acceptance separation;
+  JavaScript logic tests and rendered SVG inspection pass. Interactive browser
+  QA was unavailable. Release 1,000-constraint sketch visualization takes 0.119 s
+  (10 s budget); 1,000 annotated solid scenes take 2.451 s (30 s budget), both
+  included in `tools/bench/run.sh`. See [Annotated viewer](tools/model/VIEWER.md).
+
+- Guarded AI feature edits and revision history (no ABI/model-schema change):
+  typed feature additions/replacements/removals, new parameters/requirements/
+  references and instance parameter edits use stable IDs and expected-feature
+  guards; MCP also checks the accepted model's SHA-256. Existing requirements
+  remain intact, changed family definitions increment their version, and verified
+  immutable child builds append actual semantic revision records with readable
+  `changes.json`. Stale guards, invalid models, required failures and no-ops
+  preserve sources. Three additional command tests and one MCP test cover
+  geometry, guard conflicts, additions/removal, requirement preservation,
+  revision chains and cleanup. A 10,000-feature edit/verification/ledger/resource
+  roundtrip takes 1.684 s (30 s budget), included in `tools/bench/run.sh`.
+  See [Guarded edits](tools/model/MCP.md#guarded-edits-and-revision-history).
+
+- Read-only AI model inspection (no ABI/model-schema change): CLI and MCP tools
+  return paged declarations, inherited/derived parameter values, complete
+  feature inputs including named references, requirements/datums/references and
+  optional native face/edge measurements with actual semantic selector queries.
+  Geometry queries use an additional family-local authoring snapshot, with
+  assembly placement reported separately and indices marked snapshot-local.
+  Successful inspection removes its scratch work and preserves accepted builds.
+  Three additional command tests and one MCP test cover inventory/paging,
+  inheritance, named inputs, local coordinates, query cleanup, errors and
+  preservation. A 10,000-instance inventory takes 0.134 s; a 1,000-feature
+  regenerated geometry inspection takes 0.110 s (10 s budgets), included in
+  `tools/bench/run.sh`. See [AI inspection](tools/model/MCP.md#inspect-existing-parts-before-editing).
+
+- AI MCP interface and generated authoring schemas (no ABI/model-schema change):
+  six initial serde-derived schema targets cover all 28 feature operations; the local
+  stdio server exposes schema/example/build tools and accepted artifact resources.
+  Independent worker processes contain kernel logs and geometry lifetimes;
+  timeouts, repeated cancellation and stdin closure clean unaccepted builds.
+  Five Python wire/schema tests independently validate all schemas/examples and
+  exercise bracket creation/edit/rejection/repair, artifact reads and errors.
+  Release 1,000-call schema discovery takes 0.080 s; a 1,000-part single-variant
+  build/report/accepted-model resource roundtrip takes 0.283 s (10 s budgets),
+  included in `tools/bench/run.sh`. See [AI MCP interface](tools/model/MCP.md).
+
+- AI model build command (no ABI/schema change): `occt-model` accepts versioned
+  JSON models, selected outputs and typed parameter edits, preserves structured
+  kernel diagnostics and accepted requirement evidence, and publishes editable
+  models, STEP/STL and bounded isometric SVG previews into new directories.
+  Three command tests cover bracket creation/edit/rejection/repair, re-import,
+  source/accepted-output preservation, malformed inputs and migration. Four
+  complete authoring examples pass; a 1,000-instance single-variant measurement,
+  verification and persistence/report case takes 0.245 s (10 s budget), checked
+  by `tools/bench/run.sh`. See [AI model command](tools/model/README.md).
+
+- Saved cone and sphere features (schema 69; no ABI change): typed length
+  expressions define cone/frustum radii and height, origin, sphere radius and
+  center; cone axes are dimensionless and normalized without overflow/underflow.
+  Either cone radius may be zero, and equal radii use a cylinder. Every input
+  participates in incremental signatures; only changed branches and dependents
+  rebuild. Four tests cover analytic volumes/centroids, transform history,
+  unit conversion, apex/cylinder limits, small/large/distant geometry, extreme
+  axes, repeated regeneration, failure rollback, persistence, migration and
+  independent merges. Full core scale checks pass; 1,000-feature build/edit cases
+  take 0.319 s for cones and 0.448 s for spheres (10 s budgets), with unaffected
+  geometry reused and all handles released. Older feature operations are unchanged.
+  See [Parametric architecture](PARAMETRIC_ARCHITECTURE.md#cone-and-sphere-features).
+
+- Explicit material hatch families (schema 68): per-view material-ID maps select
+  up to eight angle/spacing/phase line families for paired lines or crosshatching.
+  Clone inheritance, fallback patterns, explicit suppression, same-material union,
+  shared work/vertex limits, cached material lookup and reused cut faces work in
+  both render modes. Three tests cover rendering, sections/details, edits,
+  validation, migration, semantic merges and cleanup. A 1,000-part case with
+  10,000 material mappings exports 12,500 hatch segments in 5.910 s against a
+  30 s budget, with one generated variant and no retained handles. Older views
+  keep empty maps and their existing shared pattern. Standards-verified material
+  presets and automatic adjacent-component alternation remain future work.
+  See [Drawings](DRAWINGS.md#material-hatch-families-schema-68).
+
+- Exact section-hatch intersections (no ABI/schema change): `exact_curves`
+  now trims bounded batches of hatch lines against native cut faces, preserving
+  curved/spline boundaries and holes without boundary sampling. Material unions,
+  disconnected islands, actual face planes, detail windows, native resolution,
+  work/vertex budgets and cleanup are covered by three tests with analytic circle
+  and parabola oracles. The 1,000-part/10,000-segment case takes 8.773 s; the
+  1,000-cylinder/40,000-segment case with both exports takes 7.754 s (30 s budgets),
+  with one shared variant and all handles released. Legacy setups stay sampled.
+  See [Drawings](DRAWINGS.md#kernel-trimmed-hatching).
+
+- Exact drawing geometry (ABI 46): optional `exact_curves` preserves lines,
+  circles, ellipses, Bézier/B-spline curves, parabolas and hyperbolas, including
+  exact detail trims, as native DXF geometry. SVG uses exact line/conic and
+  quadratic/cubic paths where representable, and positive-weight control-hull
+  subdivision with a paper-space tolerance elsewhere. Tests cover conic/spline
+  correctness, periodic edges, crop-perimeter exclusion, far rotated placement,
+  error/work/vertex bounds, legacy defaults, CLI counts and cleanup. Optimized
+  benchmarks export 10,000 lines in 4.211 s (10 s budget), 26,000 Bézier spans
+  across 1,000 spline views in 14.330 s and 8,000 spans across 1,000 cropped views
+  in 15.364 s (30 s budgets), with one shared variant and no retained handles.
+  Model schema stays 67. Native hatch intersections are described above;
+  offset/other curves fail explicitly in exact mode.
+  See [Drawings](DRAWINGS.md#exact-drawing-geometry-abi-46).
 
 - Composite controls and named datum frames (schema 63): two-segment position/
   profile frames with a shared characteristic cell, a tighter lower tolerance and
@@ -69,8 +177,9 @@ tracks status and order.
   Detail clipping, work/vertex budgets and legacy migration are covered by six
   tests. SVG uses thin hatch strokes; DXF uses a SECTION_HATCH layer. A benchmark
   checks 10,000 hatch segments across 1,000 placed parts in 8.406 s (30 s budget).
-  Curved boundaries remain sampled; material-specific conventions and certified
-  approximation remain future work. See [Drawings](DRAWINGS.md).
+  Sampled mode retains its earlier boundary approximation; exact intersections
+  and explicit material maps are described above. Standards-verified presets
+  remain future work. See [Drawings](DRAWINGS.md).
 
 - Datum-linked drawing guides (schema 59): center marks with fixed paper sizes,
   projected centerlines with paper extensions, and straight cutting-plane
@@ -988,10 +1097,12 @@ remain lower priority. The ASME comparison below is based on public standard
 scopes and inspected repo capabilities, not a full conformity audit.
 
 1. **Drawing conventions and manufacturing sheets** — [Y14 family](https://www.asme.org/codes-standards/y14-standards):
-   material-specific hatch conventions, standards-verified sheet formats,
+   standards-verified material hatch presets and sheet formats,
    and standards-verified dimension
-   placement and typography, plus exact curve export. Current curves are sampled
-   polylines; direct deviations and limits now render stacked values.
+   placement and typography.
+   Standard drawing curves and detail trims now support exact DXF export, with
+   bounded SVG approximation for curves SVG cannot represent. Direct deviations
+   and limits render stacked values.
 2. **Structured GD&T** — [Y14.5](https://www.asme.org/codes-standards/find-codes-standards/y14-5-dimensioning-tolerancing):
    measured datum simulators and broader reference-frame establishment,
    multi-level composites, common datums and advanced modifiers, verified

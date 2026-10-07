@@ -2,7 +2,7 @@
 use super::*;
 use std::collections::BTreeMap;
 
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ManufacturingSettings {
     pub pull_direction: VectorQuantity,
     pub build_direction: VectorQuantity,

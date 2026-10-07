@@ -3,7 +3,7 @@
 
 use super::*;
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct JointScalar {
     pub value: Quantity,
     pub minimum: Option<Quantity>,
@@ -19,7 +19,7 @@ pub enum JointDof {
     PlanarY,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum JointKind {
     Fixed,
@@ -41,7 +41,7 @@ pub enum JointKind {
     },
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct AssemblyJoint {
     pub id: String,
     pub frame: String,

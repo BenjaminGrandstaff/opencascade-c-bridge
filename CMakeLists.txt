@@ -32,6 +32,7 @@ add_library(
     src/sweep.cpp
     src/step_assembly.cpp
     src/projection.cpp
+    src/curve_export.cpp
     src/mesh.cpp
     src/history.cpp
     src/open_profile.cpp

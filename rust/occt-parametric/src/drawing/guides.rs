@@ -1,14 +1,14 @@
 //! Datum-linked drawing guides; fixed paper sizes, current instance poses.
 use super::*;
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct DrawingGuide {
     pub id: String,
     pub view: String,
     pub kind: DrawingGuideKind,
 }
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum DrawingGuideKind {
     CenterMark {

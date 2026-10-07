@@ -58,7 +58,8 @@ fn run(args: &[OsString]) -> Result<(), Box<dyn Error>> {
                 "id":drawing.id,"title":drawing.title,
                 "dxf":format!("{:04}.dxf",index+1),"svg":format!("{:04}.svg",index+1),
                 "polylines":drawing.polylines.len(),"generated_variants":drawing.generated_variants,
-                "empty":drawing.polylines.is_empty(),
+                "curves":drawing.curves.len(),
+                "empty":drawing.polylines.is_empty() && drawing.curves.is_empty(),
             })
         })
         .collect();
