@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
+import { drawAssemblyAnnotations } from './assembly_annotations.mjs';
 import { createAnnotationController, editableControls } from './annotations.mjs';
 
 class Element {
@@ -32,12 +33,12 @@ const settle=async check=>{for(let i=0;i<40;i++){if(check())return;await new Pro
   let hold=true, failed=false;
   const state=()=>({version:currentVersion,family:'block-family',model:'block.json',dirty:width!==saved,parameters:[{id:'width',kind:'scalar',value:40,unit:'mm'},{id:'height',kind:'scalar',value:25,unit:'mm'}]});
   const annotation=()=>({id:'distance-width',kind:'dimension',status:failed?'failed':'passed',label:`${width} mm`,parameters:['width'],detail:{},targets:['AB']});
-  const scenes=(id,accepted=true)=>({version:currentVersion,accepted,scenes:[{kind:'sketch',instance:id,feature:'profile',annotations:[annotation()]}]});
+  const scenes=(id,accepted=true)=>({version:currentVersion,accepted,scenes:[{kind:'sketch',instance:id,feature:'profile',annotations:[annotation()]},{kind:'solid',instance:id,feature:'body',annotations:[{...annotation(),anchors:[[0,0,0],[40,0,0]]}]}]});
   const response=(body,ok=true)=>({ok,statusText:'rejected',json:async()=>body,text:async()=>'<div id="selection"></div>'});
   const fetch=async(path,options={})=>{
     calls.push([path,options]);
     if(path==='/api/state')return response(state());
-    if(path==='/api/model.gltf')return response({nodes:[],meshes:[]});
+    if(path==='/api/model.gltf')return response({nodes:[{name:'block'},{name:'copy'}],meshes:[]});
     if(path==='/api/requirements')return response({requirements:{},assembly:[],variants:{},instances:{}});
     if(path==='/api/instances')return response({instances:[{id:'block',overrides:[]},{id:'copy',overrides:[]}]});
     if(path.startsWith('/api/instance?'))return response({id:new URL(path,'http://local').searchParams.get('id'),parameters:[{id:'width',value:width,source:'own'},{id:'height',value:25}]});
@@ -55,7 +56,7 @@ const settle=async check=>{for(let i=0;i<40;i++){if(check())return;await new Pro
   };
   const renderer={draw(){},setSelection(){},setModel(){},setMarkers(){}};
   const context={document,fetch,console,URL,Option:class extends Element{constructor(label,value){super('option');this.textContent=label;this.value=value;}},ResizeObserver:class{observe(){}},setTimeout:()=>1,clearTimeout(){},requestAnimationFrame:()=>1,
-    createAnnotationController,editableControls,createRenderer:()=>renderer,fitCamera:()=>({}),modelToGltf:v=>v,pan:()=>({}),parseGltf:g=>({...g,bounds:null}),pick:()=>-1,ray:()=>({}),
+    createAnnotationController,editableControls,drawAssemblyAnnotations,createRenderer:()=>renderer,fitCamera:()=>({}),modelToGltf:v=>v,pan:()=>({}),parseGltf:g=>({...g,bounds:null}),pick:()=>-1,ray:()=>({}),
     window:{createOcctAnnotatedViewer:(root,data,select)=>{onSelect=select;component={data,fit(){},update(next){this.data=next;if(selectedAnnotation){selectedScene=next.scenes[0];selectedAnnotation=selectedScene.annotations[0];root.getElementById('selection').replaceChildren();select(selectedAnnotation,selectedScene);}}};return component;}}};
   vm.createContext(context);
   const page=fs.readFileSync(new URL('./index.html',import.meta.url),'utf8').split('<script type="module">')[1].split('</script>')[0].replace(/^import .*;$/gm,'');
@@ -81,12 +82,21 @@ const settle=async check=>{for(let i=0;i<40;i++){if(check())return;await new Pro
   assert.equal(component.data.version,2);
   assert.equal(component.data.scenes[0].annotations[0].label,'60 mm');
   assert.equal(Number(descendants(selection).find(e=>e.attributes['aria-label']==='Edit width').value),60);
+  // Assembly labels use the same scoped edit queue without changing views.
+  $('view-mode').value='assembly';await $('view-mode').emit('change');
+  vm.runInContext('selectAssemblyAnnotation(annotations.viewer.data.scenes[1].annotations[0],annotations.viewer.data.scenes[1])',context);
+  const assemblyInput=descendants($('assembly-selection-content')).find(e=>e.attributes['aria-label']==='Edit width');
+  assert(assemblyInput);assemblyInput.value='70';assemblyInput.emit('change');await vm.runInContext('flush()',context);
+  assert.equal($('view-mode').value,'assembly');assert.equal(width,70);
+  assert($('assembly-selection-content').children[0].textContent.includes('70 mm'));
+  assert.equal(Number(descendants($('assembly-selection-content')).find(e=>e.attributes['aria-label']==='Edit width').value),70);
+  await $('save').emit('click');assert.equal(saved,70);
   // A rejected edit displays diagnostic data but cannot be saved as accepted.
   const retry=descendants(selection).find(e=>e.attributes['aria-label']==='Edit width');
   retry.value='100';retry.emit('change');await vm.runInContext('flush()',context);
-  assert.equal(component.data.accepted,false);assert.equal(width,60);assert.equal(saved,60);
+  assert.equal(component.data.accepted,false);assert.equal(width,70);assert.equal(saved,70);
   assert($('error').textContent.includes('Edit rejected'));
   assert($('annotation-message').textContent.includes('accepted model is unchanged'));
   await $('revert').emit('click');
-  assert.equal(component.data.accepted,true);assert.equal(component.data.version,3);
+  assert.equal(component.data.accepted,true);assert.equal(component.data.version,4);
 });

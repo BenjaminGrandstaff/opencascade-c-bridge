@@ -71,7 +71,8 @@ export function parseGltf(gltf) {
           if (value > max[axis]) max[axis] = value;
         }
       }
-      return { name: node.name ?? "", mesh: node.mesh, matrix };
+      return { name: node.name ?? "", mesh: node.mesh, matrix,
+        annotationMatrix: node.extras?.familyLocalMatrix ? new Float64Array(node.extras.familyLocalMatrix) : null };
     });
   return { meshes, nodes, bounds: nodes.length ? { min, max } : null };
 }

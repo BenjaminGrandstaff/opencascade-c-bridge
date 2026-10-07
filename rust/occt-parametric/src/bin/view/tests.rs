@@ -928,6 +928,7 @@ fn annotated_dimensions_follow_live_edits_instance_scope_and_save_revert() {
         422
     );
     for asset in [
+        "/assembly_annotations.mjs",
         "/annotations.js",
         "/annotations.css",
         "/annotations.mjs",

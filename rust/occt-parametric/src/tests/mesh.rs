@@ -616,6 +616,44 @@ fn gltf_tessellates_shared_variants_once_and_places_rotated_framed_clones() {
             [exact.min.x, exact.min.y, exact.min.z],
             [exact.max.x, exact.max.y, exact.max.z],
         ];
+        // Dimension anchors are family-local, while render meshes are
+        // centered in a placed representative's coordinates. The explicit
+        // matrix must position the same native corners even for the first,
+        // already rotated/framed representative and its shared copies.
+        let matrix = node["extras"]["familyLocalMatrix"].as_array().unwrap();
+        let local = graph.resolve(name).unwrap().regenerate(&session).unwrap();
+        let bounds = session.exact_bounds(local.shape("body").unwrap()).unwrap();
+        let mut anchor_low = [f64::INFINITY; 3];
+        let mut anchor_high = [f64::NEG_INFINITY; 3];
+        for x in [bounds.min.x, bounds.max.x] {
+            for y in [bounds.min.y, bounds.max.y] {
+                for z in [bounds.min.z, bounds.max.z] {
+                    let p = [x * 0.001, z * 0.001, -y * 0.001];
+                    let g: [f64; 3] = std::array::from_fn(|row| {
+                        (0..3)
+                            .map(|k| matrix[4 * k + row].as_f64().unwrap() * p[k])
+                            .sum::<f64>()
+                            + matrix[12 + row].as_f64().unwrap()
+                    });
+                    let world = [g[0] * 1000.0, -g[2] * 1000.0, g[1] * 1000.0];
+                    for axis in 0..3 {
+                        anchor_low[axis] = anchor_low[axis].min(world[axis]);
+                        anchor_high[axis] = anchor_high[axis].max(world[axis]);
+                    }
+                }
+            }
+        }
+        for axis in 0..3 {
+            assert!(
+                (anchor_low[axis] - expected[0][axis]).abs() < 1e-7,
+                "{name}: local anchors {anchor_low:?} vs placed geometry {expected:?}"
+            );
+            assert!(
+                (anchor_high[axis] - expected[1][axis]).abs() < 1e-7,
+                "{name}: local anchors {anchor_high:?} vs placed geometry {expected:?}"
+            );
+        }
+        drop(local);
         for axis in 0..3 {
             // float32 positions about 1e5 mm from the origin round near 1e-2 mm.
             assert!(

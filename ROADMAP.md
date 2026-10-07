@@ -15,7 +15,7 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 95 + first-use integration 1 (+1 doc test), recipes 3, parametric 380 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 13 + branch command 2 + model command 12, MCP Python 8, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 95 + first-use integration 1 (+1 doc test), recipes 3, parametric 380 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 16 + branch command 2 + model command 12, MCP Python 8, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -23,6 +23,16 @@ tracks status and order.
 | Scale benchmarks | 109 Rust cases plus 5 model-command and 7 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
+
+- Assembly dimension/check overlays: native anchors follow the selected part's
+  placement and frames, using an explicit family-local glTF matrix independent
+  of render-mesh centering and shared variants. Labels share the WebGL camera,
+  support clipping, visibility toggles, mouse/keyboard selection and inline
+  parameter edits without leaving Assembly. Failed candidates switch to a
+  marked diagnostic view. Three projection/interaction tests and the extended
+  real-page logic test cover transforms, true values, scoped edits and rejection;
+  native glTF tests compare transformed anchors against exact rotated/framed
+  geometry. See [Model viewer](tools/view/README.md).
 
 - Combined editable model and annotation viewer: the studio defaults to native
   dimension/sketch inspection, with an Assembly view for placed colored parts.

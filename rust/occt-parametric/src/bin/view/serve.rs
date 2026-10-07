@@ -21,6 +21,7 @@ const INDEX: &str = include_str!("web/index.html");
 const VIEWER: &str = include_str!("web/viewer.mjs");
 const ANNOTATIONS: &str = include_str!("../../../../../tools/model/viewer/viewer.js");
 const ANNOTATION_PANEL: &str = include_str!("../../../../../tools/model/viewer/panel.html");
+const ASSEMBLY_ANNOTATIONS: &str = include_str!("web/assembly_annotations.mjs");
 const ANNOTATION_BRIDGE: &str = include_str!("web/annotations.mjs");
 const ANNOTATION_STYLE: &str = include_str!("../../../../../tools/model/viewer/viewer.css");
 const MAX_HEADER_BYTES: usize = 16 * 1024;
@@ -576,6 +577,9 @@ impl Studio {
         match (method, path) {
             ("GET", "/") => Response::text(200, "text/html; charset=utf-8", INDEX),
             ("GET", "/viewer.mjs") => Response::text(200, "text/javascript", VIEWER),
+            ("GET", "/assembly_annotations.mjs") => {
+                Response::text(200, "text/javascript", ASSEMBLY_ANNOTATIONS)
+            }
             ("GET", "/annotations.mjs") => {
                 Response::text(200, "text/javascript", ANNOTATION_BRIDGE)
             }

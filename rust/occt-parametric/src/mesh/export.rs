@@ -156,6 +156,29 @@ fn gltf_axis(point: [f64; 3]) -> [f64; 3] {
     [point[0], point[2], -point[1]]
 }
 
+/// A family-local rigid placement in glTF axes/meters, independent of mesh
+/// centering and the representative instance used to share tessellation.
+fn family_local_matrix(m: Rigid) -> [f64; 16] {
+    let r = |row: usize, column: usize| m[4 * row + column];
+    let a = |row: usize, k: usize| match (row, k) {
+        (0, 0) | (1, 2) => 1.0,
+        (2, 1) => -1.0,
+        _ => 0.0,
+    };
+    let mut matrix = [0.0; 16];
+    for column in 0..3 {
+        for row in 0..3 {
+            matrix[4 * column + row] = (0..3)
+                .flat_map(|i| (0..3).map(move |j| (i, j)))
+                .map(|(i, j)| a(row, i) * r(i, j) * a(column, j))
+                .sum();
+        }
+    }
+    matrix[12..15].copy_from_slice(&gltf_axis([m[3] * 0.001, m[7] * 0.001, m[11] * 0.001]));
+    matrix[15] = 1.0;
+    matrix
+}
+
 /// Model-space rigid transform from an instance's local geometry to its
 /// generated placement: its placement, then each enclosing frame and joint
 /// motion, in the order regeneration applies them. O(frame depth).
@@ -308,27 +331,8 @@ impl Scene {
         let mut node = json!({ "name": name, "mesh": mesh_index,
             "extras": {"sourceMesh": mesh.id, "faceTags": mesh.names} });
         if rotated {
-            // glTF axes are A·model with A = [[1,0,0],[0,0,1],[0,-1,0]], so the
-            // rotation is A·R·Aᵀ; the matrix is column-major.
-            let a = |row: usize, k: usize| match (row, k) {
-                (0, 0) | (1, 2) => 1.0,
-                (2, 1) => -1.0,
-                _ => 0.0,
-            };
-            let turned = |row: usize, column: usize| {
-                (0..3)
-                    .flat_map(|i| (0..3).map(move |j| (i, j)))
-                    .map(|(i, j)| a(row, i) * r(i, j) * a(column, j))
-                    .sum::<f64>()
-            };
-            let mut matrix = [0.0; 16];
-            for column in 0..3 {
-                for row in 0..3 {
-                    matrix[4 * column + row] = turned(row, column);
-                }
-            }
+            let mut matrix = family_local_matrix(m);
             matrix[12..15].copy_from_slice(&translation);
-            matrix[15] = 1.0;
             node["matrix"] = json!(matrix);
         } else {
             node["translation"] = json!(translation);
@@ -535,11 +539,15 @@ impl<'definition> InstanceGraph<'definition> {
                     instance,
                     &shared.source,
                 );
+                scene.nodes.last_mut().expect("added node")["extras"]["familyLocalMatrix"] =
+                    json!(family_local_matrix(world));
                 continue;
             }
             let mesh = definition.tagged_result(self, session, result, context, false)?;
             let (mesh_index, center) = scene.add_mesh(&mesh, appearance)?;
             scene.add_node(mesh_index, center, None, instance, &mesh);
+            scene.nodes.last_mut().expect("added node")["extras"]["familyLocalMatrix"] =
+                json!(family_local_matrix(world));
             if let Some(key) = key {
                 tessellated.insert(
                     key,

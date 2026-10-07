@@ -46,6 +46,17 @@
   .view-switch { position: absolute; top: 12px; left: 12px; z-index: 2; padding: 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); display: flex; align-items: center; gap: 8px; }
   #view-mode { width: auto; }
   #annotated { position: absolute; inset: 58px 0 0; overflow: auto; }
+  #assembly-overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  .assembly-annotation { pointer-events: auto; cursor: pointer; }
+  .assembly-annotation rect { fill: var(--panel); stroke: currentColor; }
+  .assembly-annotation text { fill: currentColor; font: 12px system-ui,sans-serif; dominant-baseline: middle; pointer-events: none; }
+  .assembly-annotation.selected rect { stroke-width: 2; }
+  .assembly-dimension { stroke-width: 1.4; }
+  #assembly-selection { padding: 10px; border: 1px solid var(--line); border-radius: 6px; }
+  #assembly-selection h3 { margin: 0 0 6px; font-size: 14px; }
+  .linked-edit { display: grid; gap: 8px; }
+  .linked-edit label { display: grid; gap: 4px; }
+  .linked-edit input { width: 100%; min-width: 0; }
   #annotation-message { position: absolute; top: 62px; left: 18px; z-index: 3; background: var(--panel); padding: 6px; }
   [hidden] { display: none !important; }
   .parameter.linked { border-left: 3px solid var(--accent); padding-left: 8px; }
@@ -97,17 +108,20 @@
     <div class="muted">Click a part to edit only that instance; click empty space to go back.</div>
   </div>
   <div id="error"></div>
+  <section id="assembly-selection" hidden><div id="assembly-selection-content"></div></section>
   <div id="parameters"></div>
 </aside>
 <main>
-  <div class="view-switch"><label for="view-mode">View</label><select id="view-mode"><option value="annotated">Dimensions &amp; sketches</option><option value="assembly">Assembly</option></select></div>
+  <div class="view-switch"><label for="view-mode">View</label><select id="view-mode"><option value="annotated">Dimensions &amp; sketches</option><option value="assembly">Assembly</option></select><span id="assembly-controls" hidden><label><input id="assembly-dimensions" type="checkbox" checked>Dimensions</label><label><input id="assembly-constraints" type="checkbox" checked>Checks</label></span></div>
   <div id="annotation-message" class="muted" hidden></div>
   <div id="annotated"></div>
   <canvas id="view"></canvas>
+  <svg id="assembly-overlay" aria-label="Dimensions and checks on the selected assembly part"></svg>
   <div class="muted" id="hint">Click to select · Drag to orbit · Shift-drag or right-drag to pan · Wheel to zoom</div>
 </main>
 <script src="/annotations.js"></script>
 <script type="module">
+import { drawAssemblyAnnotations } from "./assembly_annotations.mjs";
 import { createAnnotationController, editableControls } from "./annotations.mjs";
 import { createRenderer, fitCamera, modelToGltf, pan, parseGltf, pick, ray } from "./viewer.mjs";
 
@@ -134,6 +148,7 @@ let instanceView = null;
 let report = null;
 let annotationRoot = null;
 let linked = [];
+let assemblySelected = null;
 const annotations = createAnnotationController({
   request: id => api(`/api/annotations?id=${encodeURIComponent(id)}`),
   mount: async data => {
@@ -155,6 +170,13 @@ const annotations = createAnnotationController({
     $("annotation-message").textContent = message;
     $("annotation-message").hidden = !message || $("view-mode").value !== 'annotated';
     $("annotated").inert = Boolean(message && waiting);
+    if (!message && assemblySelected) {
+      const scene = assemblyScene();
+      const selected = scene?.annotations.find(a => a.id === assemblySelected);
+      if (selected) selectAssemblyAnnotation(selected, scene);
+      else { assemblySelected = null; $("assembly-selection").hidden = true; }
+    }
+    redraw();
   },
 });
 
@@ -163,15 +185,18 @@ function refreshAnnotations() {
   $("annotated").hidden = !showing;
   canvas.hidden = showing;
   $("hint").hidden = showing;
-  if (!showing) { $("annotation-message").hidden = true; return; }
+  $("assembly-overlay").hidden = showing;
+  $("assembly-controls").hidden = showing;
+  $("assembly-selection").hidden = showing || !assemblySelected;
+  if (!showing) $("annotation-message").hidden = true;
   return annotations.refresh(scope || instanceIds.values().next().value, version);
 }
 
-function renderLinkedEditor(annotation, scene) {
+function renderLinkedEditor(annotation, scene, destination = null) {
   linked = annotation?.parameters ?? [];
   for (const row of $("parameters").children) row.classList.toggle('linked', linked.includes(row.dataset.parameter));
   const controls = scene.instance === (scope || instanceIds.values().next().value) ? editableControls(annotation, rows()) : [];
-  const selection = annotationRoot.getElementById('selection');
+  const selection = destination || annotationRoot.getElementById('selection');
   const section = document.createElement('section');
   section.className = 'linked-edit';
   const title = document.createElement('strong');
@@ -214,11 +239,49 @@ function renderLinkedEditor(annotation, scene) {
   selection.append(section);
 }
 
+function assemblyScene() {
+  const data = annotations.viewer?.data;
+  const id = scope || instanceIds.values().next().value;
+  return data?.accepted !== false && data?.version === version
+    ? data.scenes.find(s => s.kind === 'solid' && s.instance === id && !s.error) : null;
+}
+
+function selectAssemblyAnnotation(annotation, scene) {
+  assemblySelected = annotation.id;
+  const container = $("assembly-selection-content");
+  container.replaceChildren();
+  const heading = document.createElement('h3');
+  heading.textContent = `${scene.instance} · ${annotation.label}`;
+  const status = document.createElement('p');
+  status.textContent = `${annotation.kind} · ${annotation.status}`;
+  const references = document.createElement('details'), summary = document.createElement('summary'), evidence = document.createElement('pre');
+  summary.textContent = 'Native measurements and model references';
+  evidence.textContent = JSON.stringify(annotation.detail, null, 2);
+  evidence.style.whiteSpace = 'pre-wrap';evidence.style.overflowWrap = 'anywhere';
+  references.append(summary, evidence);
+  container.append(heading, status, references);
+  renderLinkedEditor(annotation, scene, container);
+  $("assembly-selection").hidden = $("view-mode").value !== "assembly";
+  renderer?.setSelection(parsed?.nodes.findIndex(n => n.name === scene.instance) ?? -1);
+  redraw();
+}
+
+function drawAssemblyOverlay() {
+  const scene = assemblyScene();
+  const node = parsed?.nodes.find(n => n.name === scene?.instance);
+  drawAssemblyAnnotations($("assembly-overlay"), scene, node, camera, {
+    width: canvas.clientWidth, height: canvas.clientHeight,
+    dimensions: $("assembly-dimensions").checked, constraints: $("assembly-constraints").checked,
+    selected: assemblySelected,
+  }, selectAssemblyAnnotation);
+}
+
 function redraw() {
   if (frame || !renderer) return;
   frame = requestAnimationFrame(() => {
     frame = 0;
     renderer.draw(camera);
+    drawAssemblyOverlay();
   });
 }
 
@@ -375,6 +438,8 @@ async function setScope(next) {
   await flush();
   scope = next;
   linked = [];
+  assemblySelected = null;
+  $("assembly-selection").hidden = true;
   $("scope").value = scope;
   editError = null;
   $("error").textContent = state?.error ?? "";
@@ -437,6 +502,8 @@ async function drainBatches() {
     $("error").textContent = editError;
     renderParameters();
     if (error.details?.annotations) {
+      $("view-mode").value = "annotated";
+      await refreshAnnotations();
       await annotations.preview(error.details.annotations);
     } else {
       annotations.invalidate();
@@ -736,6 +803,15 @@ $("revert").addEventListener("click", async () => {
     $("error").textContent = error.message;
   }
 });
+$("assembly-overlay").addEventListener('keydown', event => {
+  if (event.key !== 'Escape') return;
+  assemblySelected = null;
+  linked = [];
+  $("assembly-selection").hidden = true;
+  for (const row of $("parameters").children) row.classList.toggle('linked', false);
+  highlight();
+});
+for (const id of ['assembly-dimensions','assembly-constraints']) $(id).addEventListener('change', redraw);
 $("view-mode").addEventListener("change", () => { refreshAnnotations(); redraw(); });
 $("fit").addEventListener("click", () => {
   if ($("view-mode").value === "annotated") { annotations.fit(); return; }

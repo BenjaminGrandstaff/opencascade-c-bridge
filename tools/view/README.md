@@ -76,7 +76,22 @@ Native checks and geometry are shared with the standalone
 Choose **Assembly** to see every placed part and material color in the WebGL
 glTF view: click a part to select it, drag to orbit, Shift-drag or right-drag to
 pan, and wheel to zoom. The annotated views use **family-local coordinates**;
-Assembly shows placements and frames. **Fit view** applies to the current view.
+Assembly shows placements and frames. The selected part (or the first editable
+part under Family defaults) now carries selectable dimension and check labels.
+Click a driving label to edit its linked controls directly in the side panel,
+without leaving Assembly; measured spans remain read-only. Dimensions and
+Checks toggles hide/show the overlays, and Escape clears the annotation
+selection. Labels follow orbit/pan/zoom and the part's placement, frame rotation
+and offset, while their native measurement values remain unchanged by placement.
+A rejected edit opens its marked diagnostic view instead of drawing failed
+candidate annotations on accepted assembly geometry.
+
+**Fit view** applies to the current view. Native glTF nodes include a
+`extras.familyLocalMatrix` transform for annotations. It differs from the render
+matrix: shared tessellations are recentered on a placed representative, so
+native family-local anchors need their own full placement/frames transform.
+The JavaScript projector clips anchors behind the camera or outside its depth
+range; labels render over the geometry.
 The side panel still edits defaults, instance overrides and placements, and
 supports Add copy, Delete, Save and Revert. Scalars and integers get number
 fields/sliders, booleans a checkbox, and choices a list; vectors are edited in
