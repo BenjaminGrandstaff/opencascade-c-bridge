@@ -52,7 +52,7 @@ pub const RELATIONSHIP_LINEAR_TOLERANCE: f64 = 1e-6;
 pub const RELATIONSHIP_ANGULAR_TOLERANCE: f64 = 1e-9;
 
 /// Per-model tolerances used to solve and check assembly relationships.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct RelationshipTolerances {
     pub linear_millimeters: f64,
     pub angular_radians: f64,
@@ -89,13 +89,13 @@ impl RelationshipTolerances {
 
 /// A named reference point, axis, or plane defined in a family's local
 /// coordinates from parameter expressions.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct DatumDefinition {
     pub id: String,
     pub kind: DatumKind,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum DatumKind {
     Point {
@@ -191,7 +191,7 @@ pub(crate) fn validate_datums(definition: &FamilyDefinition) -> Result<(), Model
 }
 
 /// Names one datum on one instance.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct DatumRef {
     pub instance: String,
     pub datum: String,
@@ -206,7 +206,7 @@ impl DatumRef {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum RelationKind {
     /// Points meet; a point lies on an axis or plane; axes are collinear;
@@ -223,7 +223,7 @@ pub enum RelationKind {
 
 /// Design intent between two instance datums. Relationships are recorded and
 /// checked against the current placements; they do not move instances.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct AssemblyRelationship {
     pub id: String,
     pub kind: RelationKind,
@@ -243,7 +243,7 @@ pub struct RelationshipCheck {
 
 /// A named variant layering parameter overrides and instance suppression
 /// over the base graph without changing it.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct Configuration {
     pub id: String,
     /// Per-instance overrides applied after the instance's own overrides and
@@ -255,7 +255,7 @@ pub struct Configuration {
     pub suppressed: BTreeSet<String>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct Material {
     pub id: String,
     pub name: String,
@@ -263,7 +263,7 @@ pub struct Material {
 }
 
 /// A graph-level rule evaluated after every requested instance is generated.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum AssemblyVerificationRule {
     MassRange {
@@ -299,7 +299,7 @@ pub enum AssemblyVerificationRule {
 }
 
 /// The placed instance outputs an assembly rule applies to.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum OutputSet {
     /// These outputs, at most one per instance.
@@ -320,7 +320,7 @@ impl OutputSet {
 
 /// Stable assembly intent with the same priority semantics as family
 /// requirements, but evaluated with instance, datum, and material context.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct AssemblyRequirement {
     pub id: String,
     pub version: u32,
@@ -332,7 +332,7 @@ pub struct AssemblyRequirement {
 }
 
 /// Relationships, configurations, and materials of one instance graph.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct AssemblySemantics {
     /// Tolerances used by every relationship in this model.
     #[serde(default, skip_serializing_if = "RelationshipTolerances::is_default")]

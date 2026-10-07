@@ -21,6 +21,7 @@ mod session;
 mod types;
 
 use ffi::*;
+pub use projection::{AnalyticCurve, BezierSpan};
 pub use session::*;
 pub use types::*;
 

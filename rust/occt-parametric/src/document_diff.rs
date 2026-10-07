@@ -9,7 +9,7 @@ mod merge;
 pub use merge::*;
 
 /// A field or stable entity identity; IDs containing punctuation stay unambiguous.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum DocumentPathSegment {
     Field(String),
@@ -20,7 +20,7 @@ pub enum DocumentPathSegment {
 /// Added/removed entities contain the whole canonical entity (nested declaration
 /// lists are ID maps); edits contain changed fields. These are review records,
 /// not JSON Patch operations against the original document.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct DocumentChange {
     pub path: Vec<DocumentPathSegment>,
     #[serde(

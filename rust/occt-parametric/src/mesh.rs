@@ -7,7 +7,7 @@ mod export;
 mod manufacturing;
 pub use manufacturing::*;
 
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct MaterialAppearance {
     /// Linear RGBA, each component in [0, 1].
     pub base_color: [f64; 4],
@@ -42,7 +42,7 @@ impl MaterialAppearance {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct MeshSettings {
     pub linear_deflection: Quantity,
     pub angular_deflection_radians: f64,
@@ -85,13 +85,13 @@ impl MeshSettings {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct MeshFaceTag {
     pub id: String,
     pub faces: Vec<FaceSelector>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct MeshExportDefinition {
     pub id: String,
     pub output: InstanceOutputRef,

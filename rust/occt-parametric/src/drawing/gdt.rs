@@ -20,7 +20,7 @@ pub use position::{
 };
 pub use size::{DrawingSizeLimits, FeatureOfSizeKind, GeometricToleranceAllowance};
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct DrawingGdtAttachment {
     pub view: String,
@@ -29,7 +29,7 @@ pub struct DrawingGdtAttachment {
     pub anchor: DatumRef,
     pub offset_mm: [f64; 2],
 }
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct DrawingDatumFeature {
     pub id: String,
@@ -38,7 +38,7 @@ pub struct DrawingDatumFeature {
     pub feature_of_size: bool,
     pub attachment: DrawingGdtAttachment,
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum GeometricCharacteristic {
     Straightness,
@@ -86,14 +86,18 @@ impl GeometricCharacteristic {
         )
     }
 }
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum GeometricToleranceZone {
     #[default]
     Characteristic,
     Diameter,
 }
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum ToleranceMaterialCondition {
     #[default]
@@ -101,7 +105,9 @@ pub enum ToleranceMaterialCondition {
     Maximum,
     Least,
 }
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum DatumMaterialBoundary {
     #[default]
@@ -109,14 +115,14 @@ pub enum DatumMaterialBoundary {
     Maximum,
     Least,
 }
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct DrawingDatumReference {
     pub datum_feature: String,
     #[serde(default)]
     pub boundary: DatumMaterialBoundary,
 }
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct DrawingFeatureControlFrame {
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -1,12 +1,15 @@
-//! Paper-space scanline hatching of sampled planar cut faces, with hole parity
-//! per face and material union across faces. No chordal-error certification.
+//! Paper-space section hatching: legacy sampled parity, or exact-mode bounded
+//! kernel line/face trims, with material union across faces.
 use super::*;
 use std::collections::BTreeMap;
+
+mod exact;
+pub(crate) mod materials;
 
 const MAXIMUM_WORK: usize = 2_000_000;
 const MAXIMUM_LINE_INDEX: f64 = (1u64 << 52) as f64;
 
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct SectionHatching {
     pub angle_radians: f64,
@@ -24,17 +27,11 @@ impl Default for SectionHatching {
     }
 }
 pub(super) fn validate(view: &DrawingView) -> Result<(), ModelError> {
-    let Some(pattern) = view.hatching else {
+    if view.hatching.is_none() && view.material_hatching.is_empty() {
         return Ok(());
-    };
-    if !pattern.angle_radians.is_finite()
-        || !pattern.spacing_mm.is_finite()
-        || pattern.spacing_mm <= 0.0
-        || !pattern.phase_mm.is_finite()
-    {
-        return Err(ModelError::new(
-            "section hatching needs a finite angle/phase and positive spacing",
-        ));
+    }
+    if let Some(pattern) = view.hatching {
+        validate_pattern(pattern)?;
     }
     match view.kind {
         DrawingViewKind::Orthographic => {
@@ -51,6 +48,18 @@ pub(super) fn validate(view: &DrawingView) -> Result<(), ModelError> {
         DrawingViewKind::Slice => Ok(()),
     }
 }
+fn validate_pattern(pattern: SectionHatching) -> Result<(), ModelError> {
+    if !pattern.angle_radians.is_finite()
+        || !pattern.spacing_mm.is_finite()
+        || pattern.spacing_mm <= 0.0
+        || !pattern.phase_mm.is_finite()
+    {
+        return Err(ModelError::new(
+            "section hatching needs a finite angle/phase and positive spacing",
+        ));
+    }
+    Ok(())
+}
 pub(super) fn section_plane_view(view: &DrawingView) -> Result<DrawingView, ModelError> {
     let DrawingViewKind::Section { origin, .. } = view.kind else {
         return Err(ModelError::new("hatching cut-plane view requires Section"));
@@ -59,6 +68,7 @@ pub(super) fn section_plane_view(view: &DrawingView) -> Result<DrawingView, Mode
     plane.kind = DrawingViewKind::Slice;
     plane.origin = origin;
     plane.hatching = None;
+    plane.material_hatching.clear();
     Ok(plane)
 }
 
@@ -193,10 +203,26 @@ pub(super) fn append(
     vertices: &mut usize,
     drawing: &mut GeneratedDrawing,
 ) -> Result<(), ModelError> {
+    append_with_work(session, view, section, options, vertices, drawing, &mut 0)
+}
+
+pub(super) fn append_with_work(
+    session: &Session,
+    view: &DrawingView,
+    section: &Shape<'_>,
+    options: DrawingRenderOptions,
+    vertices: &mut usize,
+    drawing: &mut GeneratedDrawing,
+    work: &mut usize,
+) -> Result<(), ModelError> {
     let Some(pattern) = view.hatching else {
         return Ok(());
     };
+    if options.exact_curves {
+        return exact::append(session, view, section, options, vertices, drawing, work);
+    }
     let mut grid = ScanGrid::new(pattern);
+    grid.work = *work;
     let mut union = Intervals::new();
     for face in session.subshapes(section, ShapeType::Face)? {
         let mut crossings = BTreeMap::new();
@@ -218,6 +244,7 @@ pub(super) fn append(
         }
         face_intervals(crossings, &mut union)?;
     }
+    *work = grid.work;
     append_intervals(view, options, vertices, drawing, &grid, union)
 }
 

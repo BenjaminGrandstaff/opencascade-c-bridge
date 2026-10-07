@@ -22,6 +22,7 @@ mod mesh;
 mod named_references;
 mod patterns;
 mod persistent;
+mod primitives;
 mod regeneration;
 mod requirements;
 mod ribs;

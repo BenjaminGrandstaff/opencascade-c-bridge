@@ -1,0 +1,2 @@
+# Tests only: the MCP server itself uses the Python standard library.
+jsonschema>=4.23,<5

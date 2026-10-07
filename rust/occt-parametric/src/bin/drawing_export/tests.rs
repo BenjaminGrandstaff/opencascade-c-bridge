@@ -61,6 +61,7 @@ fn fixture() -> (ModelDocument, DrawingDefinition) {
             show_hidden: false,
             kind: DrawingViewKind::Slice,
             detail: None,
+            material_hatching: Default::default(),
             hatching: None,
         }],
         guides: Vec::new(),
@@ -164,4 +165,29 @@ fn stored_drawings_are_used_and_conflicting_definitions_or_budget_failures_publi
     let directory = Directory::new();
     let args = inputs(&directory, &document, &[]);
     assert!(run(&args).is_err());
+}
+
+#[test]
+fn command_exact_curves_are_counted_as_nonempty_geometry() {
+    let (document, drawing) = fixture();
+    let directory = Directory::new();
+    let args = inputs(&directory, &document, &[drawing]);
+    let mut setup: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&args[1]).unwrap()).unwrap();
+    setup["options"]["exact_curves"] = json!(true);
+    fs::write(&args[1], setup.to_string()).unwrap();
+    run(&args).unwrap();
+    let output = Path::new(&args[2]);
+    let manifest: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(output.join("manifest.json")).unwrap()).unwrap();
+    assert_eq!(manifest["drawings"][0]["curves"], 4);
+    assert_eq!(manifest["drawings"][0]["polylines"], 0);
+    assert_eq!(manifest["drawings"][0]["empty"], false);
+    assert_eq!(
+        fs::read_to_string(output.join("0001.dxf"))
+            .unwrap()
+            .matches("0\nLINE\n")
+            .count(),
+        4
+    );
 }

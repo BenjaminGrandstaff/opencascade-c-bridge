@@ -6,7 +6,7 @@ pub use measurement::{
     DrawingDimensionMeasurement, DrawingDimensionMeasurementResult,
 };
 
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum DimensionTolerance {
     #[default]
@@ -27,7 +27,7 @@ pub enum DimensionTolerance {
     Reference,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct DimensionPresentation {
     pub length_unit: LengthUnit,

@@ -27,6 +27,7 @@ fn slice_definition(
             show_hidden: false,
             kind: DrawingViewKind::Slice,
             detail: None,
+            material_hatching: Default::default(),
             hatching: None,
         }],
         guides: Vec::new(),
@@ -52,6 +53,8 @@ fn drawing_batches_share_variants_and_enforce_global_budgets_and_unique_ids() {
     let definitions = vec![first, second];
     let session = Session::new().unwrap();
     let options = DrawingRenderOptions {
+        curve_tolerance_mm: 0.01,
+        exact_curves: false,
         curve_samples: 8,
         maximum_vertices: 1000,
     };
@@ -279,6 +282,8 @@ fn slices_retain_hole_boundaries_persist_in_current_schema_and_honor_vertex_budg
                 &graph,
                 &session,
                 DrawingRenderOptions {
+                    curve_tolerance_mm: 0.01,
+                    exact_curves: false,
                     curve_samples: 64,
                     maximum_vertices: 10
                 }
@@ -347,6 +352,7 @@ fn drawing() -> DrawingDefinition {
             show_hidden: true,
             kind: DrawingViewKind::Orthographic,
             detail: None,
+            material_hatching: Default::default(),
             hatching: None,
         }],
         guides: Vec::new(),
@@ -458,6 +464,8 @@ fn drawing_failures_release_projection_geometry_and_preserve_document() {
                 &graph,
                 &session,
                 DrawingRenderOptions {
+                    curve_tolerance_mm: 0.01,
+                    exact_curves: false,
                     curve_samples: 64,
                     maximum_vertices: 2
                 }
@@ -1055,6 +1063,8 @@ fn invalid_manufacturing_dimensions_fail_without_handles_or_document_mutation() 
             &graph,
             &session,
             DrawingRenderOptions {
+                curve_tolerance_mm: 0.01,
+                exact_curves: false,
                 curve_samples: 2,
                 maximum_vertices: 70
             }
@@ -1552,6 +1562,8 @@ fn invalid_drawing_guides_and_export_budgets_release_all_geometry() {
             &graph,
             &session,
             DrawingRenderOptions {
+                curve_tolerance_mm: 0.01,
+                exact_curves: false,
                 curve_samples: 2,
                 maximum_vertices: 25
             }
@@ -1867,6 +1879,8 @@ fn hatching_rejects_invalid_patterns_projection_and_work_or_export_exhaustion() 
             &graph,
             &session,
             DrawingRenderOptions {
+                curve_tolerance_mm: 0.01,
+                exact_curves: false,
                 curve_samples: 2,
                 maximum_vertices: 25
             }
@@ -2091,6 +2105,8 @@ fn standard_sheet_validation_budgets_and_legacy_migration_preserve_document() {
             &graph,
             &session,
             DrawingRenderOptions {
+                curve_tolerance_mm: 0.01,
+                exact_curves: false,
                 curve_samples: 2,
                 maximum_vertices: 10
             }
@@ -2325,6 +2341,8 @@ fn gdt_rejects_invalid_references_units_zones_material_rules_and_budgets() {
             &graph,
             &session,
             DrawingRenderOptions {
+                curve_tolerance_mm: 0.01,
+                exact_curves: false,
                 curve_samples: 2,
                 maximum_vertices: 100
             }
@@ -2520,6 +2538,8 @@ fn composite_frames_export_one_shared_symbol_two_tolerance_rows_and_exact_budget
             &graph,
             &session,
             DrawingRenderOptions {
+                curve_tolerance_mm: 0.01,
+                exact_curves: false,
                 curve_samples: 2,
                 maximum_vertices: 100
             }
@@ -2773,865 +2793,735 @@ fn named_datum_frames_resolve_precedence_and_nominal_321_coordinates_at_current_
     );
 }
 
-fn size_limits(kind: FeatureOfSizeKind) -> DrawingSizeLimits {
-    DrawingSizeLimits {
-        kind,
-        lower: Quantity::length(10.0, LengthUnit::Millimeter),
-        upper: Quantity::length(12.0, LengthUnit::Millimeter),
-    }
-}
-
 #[test]
-fn feature_size_allowances_cover_material_conditions_and_composites() {
-    let mut page = composite_gdt_page();
-    let frame = &mut page.feature_control_frames[0];
-    for (kind, maximum, least) in [
-        (FeatureOfSizeKind::Internal, 10.0, 12.0),
-        (FeatureOfSizeKind::External, 12.0, 10.0),
-    ] {
-        frame.size_limits = Some(size_limits(kind));
-        for (condition, bonus) in [
-            (ToleranceMaterialCondition::Maximum, 0.5),
-            (ToleranceMaterialCondition::Least, 1.5),
-            (ToleranceMaterialCondition::Regardless, 0.0),
-        ] {
-            frame.material = condition;
-            let size = if kind == FeatureOfSizeKind::Internal {
-                10.5
-            } else {
-                11.5
-            };
-            let result = frame
-                .tolerance_allowance(Quantity::length(size / 10.0, LengthUnit::Centimeter))
-                .unwrap();
-            assert_eq!(result.maximum_material_size_mm, maximum);
-            assert_eq!(result.least_material_size_mm, least);
-            assert_eq!(result.bonus_mm, bonus);
-            assert_eq!(result.total_tolerance_mm, bonus + 0.1);
-            assert_eq!(result.refinement_total_tolerance_mm, Some(bonus + 0.05));
-        }
-        frame.material = ToleranceMaterialCondition::Maximum;
-        assert_eq!(
-            frame
-                .tolerance_allowance(Quantity::length(maximum, LengthUnit::Millimeter))
-                .unwrap()
-                .bonus_mm,
-            0.0
-        );
-        assert_eq!(
-            frame
-                .tolerance_allowance(Quantity::length(least, LengthUnit::Millimeter))
-                .unwrap()
-                .bonus_mm,
-            2.0
-        );
-    }
-    frame.refinement = None;
-    frame.size_limits = Some(DrawingSizeLimits {
-        kind: FeatureOfSizeKind::Internal,
-        lower: Quantity::length(1.0, LengthUnit::Inch),
-        upper: Quantity::length(25.4, LengthUnit::Millimeter),
-    });
-    let result = frame
-        .tolerance_allowance(Quantity::length(1.0, LengthUnit::Inch))
-        .unwrap();
-    assert_eq!(result.supplied_size_mm, 25.4);
-    assert_eq!(result.refinement_total_tolerance_mm, None);
-}
-
-#[test]
-fn feature_size_allowances_reject_invalid_inputs_and_overflow() {
-    let mut frame = gdt_page().feature_control_frames.remove(0);
-    assert!(frame.tolerance_allowance(Quantity::scalar(11.0)).is_err());
-    frame.size_limits = Some(size_limits(FeatureOfSizeKind::Internal));
-    for value in [
-        Quantity::scalar(11.0),
-        Quantity::length(0.0, LengthUnit::Millimeter),
-        Quantity::length(9.0, LengthUnit::Millimeter),
-        Quantity::length(13.0, LengthUnit::Millimeter),
-        Quantity::length(f64::NAN, LengthUnit::Millimeter),
-        Quantity::length(f64::MAX, LengthUnit::Meter),
-    ] {
-        assert!(frame.tolerance_allowance(value).is_err());
-    }
-    for limits in [
-        DrawingSizeLimits {
-            lower: Quantity::scalar(10.0),
-            ..size_limits(FeatureOfSizeKind::Internal)
-        },
-        DrawingSizeLimits {
-            lower: Quantity::length(-1.0, LengthUnit::Millimeter),
-            ..size_limits(FeatureOfSizeKind::Internal)
-        },
-        DrawingSizeLimits {
-            upper: Quantity::length(9.0, LengthUnit::Millimeter),
-            ..size_limits(FeatureOfSizeKind::Internal)
-        },
-        DrawingSizeLimits {
-            upper: Quantity::length(f64::MAX, LengthUnit::Meter),
-            ..size_limits(FeatureOfSizeKind::Internal)
-        },
-    ] {
-        frame.size_limits = Some(limits);
-        assert!(
-            frame
-                .tolerance_allowance(Quantity::length(11.0, LengthUnit::Millimeter))
-                .is_err()
-        );
-    }
-    frame.size_limits = Some(size_limits(FeatureOfSizeKind::Internal));
-    frame.feature_of_size = false;
-    assert!(
-        frame
-            .tolerance_allowance(Quantity::length(11.0, LengthUnit::Millimeter))
-            .is_err()
-    );
-    frame.feature_of_size = true;
-    frame.characteristic = GeometricCharacteristic::Circularity;
-    assert!(
-        frame
-            .tolerance_allowance(Quantity::length(11.0, LengthUnit::Millimeter))
-            .is_err()
-    );
-    let mut composite = composite_gdt_page().feature_control_frames.remove(0);
-    composite.size_limits = frame.size_limits;
-    composite.refinement.as_mut().unwrap().tolerance = composite.tolerance;
-    assert!(
-        composite
-            .tolerance_allowance(Quantity::length(11.0, LengthUnit::Millimeter))
-            .is_err()
-    );
-}
-
-#[test]
-fn feature_size_limits_persist_migrate_merge_and_preserve_specified_exports() {
-    let definition = family_with_datums();
-    let mut graph = InstanceGraph::new(&definition);
-    graph.add_base("part", HashMap::new(), "test").unwrap();
-    let mut page = composite_gdt_page();
-    let session = Session::new().unwrap();
-    let before = page
-        .generate(&graph, &session, DrawingRenderOptions::default())
-        .unwrap();
-    page.feature_control_frames[0].size_limits = Some(size_limits(FeatureOfSizeKind::Internal));
-    assert_eq!(
-        page.generate(&graph, &session, DrawingRenderOptions::default())
-            .unwrap(),
-        before
-    );
-    let mut document = ModelDocument::from_graph(&graph);
-    document.drawings.push(page);
-    assert_eq!(
-        ModelDocument::from_json(&document.to_json_pretty().unwrap()).unwrap(),
-        document
-    );
-    let mut legacy = serde_json::to_value(&document).unwrap();
-    legacy["schema_version"] = serde_json::json!(63);
-    legacy["drawings"][0]["feature_control_frames"][0]
-        .as_object_mut()
-        .unwrap()
-        .remove("size_limits");
-    let migrated = ModelDocument::from_json(&legacy.to_string()).unwrap();
-    assert_eq!(migrated.schema_version, CURRENT_SCHEMA_VERSION);
-    assert!(
-        migrated.drawings[0].feature_control_frames[0]
-            .size_limits
-            .is_none()
-    );
-    let mut ours = document.clone();
-    ours.drawings[0].feature_control_frames[0]
-        .size_limits
-        .as_mut()
-        .unwrap()
-        .upper
-        .value = 13.0;
-    let mut theirs = document.clone();
-    theirs.drawings[0].feature_control_frames[0]
-        .refinement
-        .as_mut()
-        .unwrap()
-        .tolerance
-        .value = 0.03;
-    let DocumentMerge::Merged(merged) =
-        ModelDocument::three_way_merge(&document, &ours, &theirs).unwrap()
-    else {
-        panic!("independent size and tolerance edits should merge")
-    };
-    let result = merged.drawings[0].feature_control_frames[0]
-        .tolerance_allowance(Quantity::length(12.0, LengthUnit::Millimeter))
-        .unwrap();
-    assert_eq!(result.bonus_mm, 2.0);
-    assert_eq!(result.refinement_total_tolerance_mm, Some(2.03));
-    let frame = &mut document.drawings[0].feature_control_frames[0];
-    frame.feature_of_size = false;
-    frame.material = ToleranceMaterialCondition::Regardless;
-    frame.zone = GeometricToleranceZone::Characteristic;
-    frame.characteristic = GeometricCharacteristic::ProfileSurface;
-    assert!(
-        document.drawings[0]
-            .generate(&graph, &session, DrawingRenderOptions::default())
-            .is_err()
-    );
-}
-
-fn position_check_control() -> DrawingFeatureControlFrame {
-    let mut control = gdt_page().feature_control_frames.remove(0);
-    control.size_limits = Some(size_limits(FeatureOfSizeKind::Internal));
-    control.tolerance = Quantity::length(0.125, LengthUnit::Millimeter);
-    control.precision = 3;
-    control.material = ToleranceMaterialCondition::Regardless;
-    for reference in &mut control.datums {
-        reference.boundary = DatumMaterialBoundary::Regardless;
-    }
-    control
-}
-fn position_axis() -> PositionToleranceAxis {
-    PositionToleranceAxis {
-        origin: VectorQuantity::lengths(0.0, 0.0, 0.0, LengthUnit::Millimeter),
-        direction: VectorQuantity::scalars(0.0, 0.0, 1.0),
-    }
-}
-#[test]
-fn position_samples_report_boundary_margin_and_worst_point() {
-    let control = position_check_control();
-    let size = Quantity::length(11.0, LengthUnit::Millimeter);
-    let samples = [
-        VectorQuantity::lengths(0.0, 0.0, -1000.0, LengthUnit::Millimeter),
-        VectorQuantity::lengths(0.0625, 0.0, 1000.0, LengthUnit::Millimeter),
-        VectorQuantity::lengths(0.0625, 0.0, 0.0, LengthUnit::Millimeter),
-    ];
-    let result = control
-        .evaluate_position_samples(size, position_axis(), &samples)
-        .unwrap();
-    assert!(result.samples_within_zone);
-    assert_eq!(result.sample_count, 3);
-    assert_eq!(result.worst_sample_index, 1);
-    assert_eq!(result.maximum_radial_error_mm, 0.0625);
-    assert_eq!(result.required_zone_diameter_mm, 0.125);
-    assert_eq!(result.diameter_margin_mm, 0.0);
-    let outside = f64::from_bits(0.0625f64.to_bits() + 1);
-    let result = control
-        .evaluate_position_samples(
-            size,
-            position_axis(),
-            &[VectorQuantity::lengths(
-                outside,
+fn exact_drawing_conics_export_without_sampling_and_keep_legacy_and_detail_paths() {
+    let mut family = family_with_datums();
+    family.features.push(FeatureDefinition {
+        id: "round".into(),
+        operation: FeatureOperation::Cylinder {
+            origin: VectorExpr::Literal(VectorQuantity::lengths(
+                0.0,
                 0.0,
                 0.0,
                 LengthUnit::Millimeter,
-            )],
-        )
-        .unwrap();
-    assert!(!result.samples_within_zone);
-    assert!(result.diameter_margin_mm < 0.0);
-    let tilted = [
-        samples[0],
-        VectorQuantity::lengths(0.125, 0.0, 1000.0, LengthUnit::Millimeter),
-    ];
-    let result = control
-        .evaluate_position_samples(size, position_axis(), &tilted)
-        .unwrap();
-    assert!(!result.samples_within_zone);
-    assert_eq!(result.required_zone_diameter_mm, 0.25);
-    let mixed = [VectorQuantity {
-        x: Quantity::length(0.003, LengthUnit::Centimeter),
-        y: Quantity::length(0.04, LengthUnit::Millimeter),
-        z: Quantity::length(1.0, LengthUnit::Inch),
-    }];
-    let result = control
-        .evaluate_position_samples(size, position_axis(), &mixed)
-        .unwrap();
-    assert!((result.required_zone_diameter_mm - 0.1).abs() < 1e-15);
-    assert!(result.samples_within_zone);
-}
-#[test]
-fn position_samples_use_feature_bonus_and_arbitrary_fixed_axes() {
-    let mut control = position_check_control();
-    let samples = [VectorQuantity::lengths(
-        0.3125,
-        0.0,
-        100.0,
-        LengthUnit::Millimeter,
-    )];
-    for (kind, material, size) in [
-        (
-            FeatureOfSizeKind::Internal,
-            ToleranceMaterialCondition::Maximum,
-            10.5,
-        ),
-        (
-            FeatureOfSizeKind::External,
-            ToleranceMaterialCondition::Maximum,
-            11.5,
-        ),
-        (
-            FeatureOfSizeKind::Internal,
-            ToleranceMaterialCondition::Least,
-            11.5,
-        ),
-        (
-            FeatureOfSizeKind::External,
-            ToleranceMaterialCondition::Least,
-            10.5,
-        ),
-    ] {
-        control.size_limits = Some(size_limits(kind));
-        control.material = material;
-        let result = control
-            .evaluate_position_samples(
-                Quantity::length(size, LengthUnit::Millimeter),
-                position_axis(),
-                &samples,
-            )
-            .unwrap();
-        assert_eq!(result.allowance.bonus_mm, 0.5);
-        assert_eq!(result.diameter_margin_mm, 0.0);
-        assert!(result.samples_within_zone);
-    }
-    control.material = ToleranceMaterialCondition::Regardless;
-    let mut nominal = PositionToleranceAxis {
-        origin: VectorQuantity::lengths(1e6, -1e6, 3e5, LengthUnit::Millimeter),
-        direction: VectorQuantity::scalars(f64::MAX, f64::MAX, 0.0),
-    };
-    let samples = [VectorQuantity::lengths(
-        1e6 + 10.0,
-        -1e6 + 10.0,
-        3e5 + 0.03125,
-        LengthUnit::Millimeter,
-    )];
-    let result = control
-        .evaluate_position_samples(
-            Quantity::length(11.0, LengthUnit::Millimeter),
-            nominal,
-            &samples,
-        )
-        .unwrap();
-    assert!((result.required_zone_diameter_mm - 0.0625).abs() < 1e-12);
-    assert!(result.samples_within_zone);
-    nominal.direction = VectorQuantity::scalars(-1.0, -1.0, 0.0);
-    assert_eq!(
-        control
-            .evaluate_position_samples(
-                Quantity::length(11.0, LengthUnit::Millimeter),
-                nominal,
-                &samples
-            )
-            .unwrap(),
-        result
-    );
-}
-#[test]
-fn position_samples_reject_unsupported_controls_and_invalid_geometry() {
-    let original = position_check_control();
-    let size = Quantity::length(11.0, LengthUnit::Millimeter);
-    let points = [VectorQuantity::lengths(
-        0.0,
-        0.0,
-        0.0,
-        LengthUnit::Millimeter,
-    )];
-    for case in 0..9 {
-        let mut control = original.clone();
-        match case {
-            0 => control.characteristic = GeometricCharacteristic::Parallelism,
-            1 => control.zone = GeometricToleranceZone::Characteristic,
-            2 => {
-                control.refinement = Some(DrawingCompositeRefinement {
-                    tolerance: Quantity::length(0.05, LengthUnit::Millimeter),
-                    datums: Vec::new(),
-                })
-            }
-            3 => control.datum_reference_frame = Some("ABC".into()),
-            4 => {
-                control.datums.pop();
-            }
-            5 => control.datums[0].boundary = DatumMaterialBoundary::Maximum,
-            6 => control.datums[0].datum_feature.clear(),
-            7 => control.datums[1] = control.datums[0].clone(),
-            _ => control.size_limits = None,
-        }
-        assert!(
-            control
-                .evaluate_position_samples(size, position_axis(), &points)
-                .is_err(),
-            "case {case}"
-        );
-    }
-    assert!(
-        original
-            .evaluate_position_samples(size, position_axis(), &[])
-            .is_err()
-    );
-    assert!(
-        original
-            .evaluate_position_samples(
-                Quantity::length(9.0, LengthUnit::Millimeter),
-                position_axis(),
-                &points
-            )
-            .is_err()
-    );
-    for sample in [
-        VectorQuantity::scalars(0.0, 0.0, 0.0),
-        VectorQuantity::lengths(f64::NAN, 0.0, 0.0, LengthUnit::Millimeter),
-        VectorQuantity::lengths(f64::MAX, 0.0, 0.0, LengthUnit::Meter),
-        VectorQuantity::lengths(f64::MAX, f64::MAX, 0.0, LengthUnit::Millimeter),
-        VectorQuantity::lengths(f64::MAX, 0.0, 0.0, LengthUnit::Millimeter),
-    ] {
-        assert!(
-            original
-                .evaluate_position_samples(size, position_axis(), &[sample])
-                .is_err()
-        );
-    }
-    for direction in [
-        VectorQuantity::scalars(0.0, 0.0, 0.0),
-        VectorQuantity::scalars(f64::NAN, 1.0, 0.0),
-        VectorQuantity::lengths(0.0, 0.0, 1.0, LengthUnit::Millimeter),
-    ] {
-        assert!(
-            original
-                .evaluate_position_samples(
-                    size,
-                    PositionToleranceAxis {
-                        direction,
-                        ..position_axis()
-                    },
-                    &points
-                )
-                .is_err()
-        );
-    }
-    let mut nominal = position_axis();
-    nominal.origin = VectorQuantity::lengths(-f64::MAX, 0.0, 0.0, LengthUnit::Millimeter);
-    assert!(
-        original
-            .evaluate_position_samples(
-                size,
-                nominal,
-                &[VectorQuantity::lengths(
-                    f64::MAX,
-                    0.0,
-                    0.0,
-                    LengthUnit::Millimeter
-                )]
-            )
-            .is_err()
-    );
-}
-#[test]
-fn saved_position_checks_resolve_named_references_without_mutating_drawings() {
-    let definition = family_with_datums();
-    let mut graph = InstanceGraph::new(&definition);
-    graph.add_base("part", HashMap::new(), "test").unwrap();
-    let mut page = gdt_page();
-    page.feature_control_frames[0] = position_check_control();
-    let size = Quantity::length(11.0, LengthUnit::Millimeter);
-    let points = [VectorQuantity::lengths(
-        0.0,
-        0.0,
-        1.0,
-        LengthUnit::Millimeter,
-    )];
-    let expected = page.feature_control_frames[0]
-        .evaluate_position_samples(size, position_axis(), &points)
-        .unwrap();
-    let references = std::mem::take(&mut page.feature_control_frames[0].datums);
-    page.datum_reference_frames
-        .push(DrawingDatumReferenceFrame {
-            id: "ABC".into(),
-            datums: references,
-        });
-    page.feature_control_frames[0].datum_reference_frame = Some("ABC".into());
-    let before = page.clone();
-    assert_eq!(
-        page.evaluate_position_samples("position", &graph, size, position_axis(), &points)
-            .unwrap(),
-        expected
-    );
-    assert_eq!(page, before);
-    assert!(
-        page.evaluate_position_samples("missing", &graph, size, position_axis(), &points)
-            .is_err()
-    );
-    page.datum_reference_frames[0].datums[1].boundary = DatumMaterialBoundary::Least;
-    assert!(
-        page.evaluate_position_samples("position", &graph, size, position_axis(), &points)
-            .is_err()
-    );
-    page.datum_reference_frames[0].datums[1].datum_feature = "missing".into();
-    assert!(
-        page.evaluate_position_samples("position", &graph, size, position_axis(), &points)
-            .is_err()
-    );
-}
-
-#[test]
-fn dimensional_measurements_check_explicit_limits_units_and_exact_boundaries() {
-    let mm = |v| Quantity::length(v, LengthUnit::Millimeter);
-    for tolerance in [
-        DimensionTolerance::Symmetric {
-            deviation: mm(0.125),
+            )),
+            axis: VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, 1.0)),
+            radius: ScalarExpr::Literal(Quantity::length(5.0, LengthUnit::Millimeter)),
+            height: ScalarExpr::Literal(Quantity::length(30.0, LengthUnit::Millimeter)),
         },
-        DimensionTolerance::Deviations {
-            lower: mm(-0.125),
-            upper: Quantity::length(0.0125, LengthUnit::Centimeter),
-        },
-        DimensionTolerance::Limits {
-            lower: mm(9.875),
-            upper: mm(10.125),
-        },
-    ] {
-        for (value, disposition, margin) in [
-            (
-                9.75,
-                DimensionMeasurementDisposition::BelowLowerLimit,
-                -0.125,
-            ),
-            (9.875, DimensionMeasurementDisposition::WithinLimits, 0.0),
-            (10.0, DimensionMeasurementDisposition::WithinLimits, 0.125),
-            (10.125, DimensionMeasurementDisposition::WithinLimits, 0.0),
-            (
-                10.25,
-                DimensionMeasurementDisposition::AboveUpperLimit,
-                -0.125,
-            ),
-        ] {
-            let result = tolerance
-                .evaluate_measurement(Quantity::length(1.0, LengthUnit::Centimeter), mm(value))
-                .unwrap();
-            assert_eq!(result.nominal, mm(10.0));
-            assert_eq!(result.measured, mm(value));
-            assert_eq!(result.deviation, mm(value - 10.0));
-            assert_eq!(result.disposition, disposition);
-            let limits = result.limits.unwrap();
-            assert_eq!(limits.lower, mm(9.875));
-            assert_eq!(limits.upper, mm(10.125));
-            assert_eq!(limits.margin, mm(margin));
-        }
-    }
-    let zero = DimensionTolerance::Symmetric { deviation: mm(0.0) };
-    assert_eq!(
-        zero.evaluate_measurement(mm(10.0), mm(f64::from_bits(10.0f64.to_bits() + 1)))
-            .unwrap()
-            .disposition,
-        DimensionMeasurementDisposition::AboveUpperLimit
-    );
-    let unilateral = DimensionTolerance::Deviations {
-        lower: mm(0.0),
-        upper: mm(0.25),
-    };
-    assert_eq!(
-        unilateral
-            .evaluate_measurement(mm(10.0), mm(10.25))
-            .unwrap()
-            .disposition,
-        DimensionMeasurementDisposition::WithinLimits
-    );
-    let angle = DimensionTolerance::Symmetric {
-        deviation: Quantity::scalar(0.125),
-    };
-    let result = angle
-        .evaluate_measurement(Quantity::scalar(1.0), Quantity::scalar(1.125))
-        .unwrap();
-    assert_eq!(result.limits.unwrap().margin, Quantity::scalar(0.0));
-    assert_eq!(
-        result.disposition,
-        DimensionMeasurementDisposition::WithinLimits
-    );
-    let inch = DimensionTolerance::Limits {
-        lower: mm(25.0),
-        upper: mm(26.0),
-    };
-    assert_eq!(
-        inch.evaluate_measurement(
-            Quantity::length(1.0, LengthUnit::Inch),
-            Quantity::length(1.0, LengthUnit::Inch)
-        )
-        .unwrap()
-        .nominal,
-        mm(25.4)
-    );
-}
-#[test]
-fn dimensional_measurements_distinguish_uncontrolled_annotations_and_reject_bad_values() {
-    let mm = |v| Quantity::length(v, LengthUnit::Millimeter);
-    for (tolerance, disposition) in [
-        (
-            DimensionTolerance::None,
-            DimensionMeasurementDisposition::NoSpecifiedTolerance,
-        ),
-        (
-            DimensionTolerance::Basic,
-            DimensionMeasurementDisposition::BasicDimension,
-        ),
-        (
-            DimensionTolerance::Reference,
-            DimensionMeasurementDisposition::ReferenceDimension,
-        ),
-    ] {
-        let result = tolerance.evaluate_measurement(mm(10.0), mm(20.0)).unwrap();
-        assert_eq!(result.disposition, disposition);
-        assert_eq!(result.limits, None);
-        assert_eq!(result.deviation, mm(10.0));
-    }
-    let limits = DimensionTolerance::Limits {
-        lower: mm(9.0),
-        upper: mm(11.0),
-    };
-    for value in [
-        Quantity::scalar(10.0),
-        mm(-1.0),
-        mm(f64::NAN),
-        Quantity::length(f64::MAX, LengthUnit::Meter),
-        Quantity {
-            value: 10.0,
-            dimension: Dimension::Length,
-            unit: None,
-        },
-    ] {
-        assert!(limits.evaluate_measurement(mm(10.0), value).is_err());
-        assert!(limits.evaluate_measurement(value, mm(10.0)).is_err());
-    }
-    for tolerance in [
-        DimensionTolerance::Symmetric {
-            deviation: mm(-0.1),
-        },
-        DimensionTolerance::Symmetric {
-            deviation: mm(11.0),
-        },
-        DimensionTolerance::Symmetric {
-            deviation: Quantity::scalar(0.1),
-        },
-        DimensionTolerance::Deviations {
-            lower: mm(0.1),
-            upper: mm(0.2),
-        },
-        DimensionTolerance::Deviations {
-            lower: mm(-0.2),
-            upper: mm(-0.1),
-        },
-        DimensionTolerance::Deviations {
-            lower: mm(-11.0),
-            upper: mm(0.0),
-        },
-        DimensionTolerance::Limits {
-            lower: mm(11.0),
-            upper: mm(9.0),
-        },
-        DimensionTolerance::Limits {
-            lower: mm(-1.0),
-            upper: mm(11.0),
-        },
-        DimensionTolerance::Limits {
-            lower: mm(9.0),
-            upper: mm(9.5),
-        },
-        DimensionTolerance::Limits {
-            lower: mm(10.5),
-            upper: mm(11.0),
-        },
-        DimensionTolerance::Limits {
-            lower: mm(9.0),
-            upper: mm(f64::INFINITY),
-        },
-    ] {
-        assert!(tolerance.evaluate_measurement(mm(10.0), mm(10.0)).is_err());
-    }
-    let overflow = DimensionTolerance::Symmetric {
-        deviation: mm(f64::MAX),
-    };
-    assert!(
-        overflow
-            .evaluate_measurement(mm(f64::MAX), mm(f64::MAX))
-            .is_err()
-    );
-    assert_eq!(
-        DimensionTolerance::Symmetric { deviation: mm(0.0) }
-            .evaluate_measurement(mm(0.0), mm(0.0))
-            .unwrap()
-            .disposition,
-        DimensionMeasurementDisposition::WithinLimits
-    );
-}
-#[test]
-fn saved_dimension_measurements_follow_live_geometry_units_and_view_edits() {
-    let definition = annotated_family();
-    let mut graph = InstanceGraph::new(&definition);
-    graph.add_base("part", HashMap::new(), "test").unwrap();
-    let mut page = drawing();
-    page.notes.clear();
-    page.dimensions = vec![manufactured_dimension(
-        DimensionDirection::Horizontal,
-        DimensionTolerance::Symmetric {
-            deviation: Quantity::length(0.125, LengthUnit::Millimeter),
-        },
-    )];
-    let measurement = DrawingDimensionMeasurement {
-        dimension: "manufactured".into(),
-        value: Quantity::length(5.0, LengthUnit::Millimeter),
-    };
-    let before = page.clone();
-    let report = page
-        .evaluate_dimension_measurements(&graph, &[measurement.clone(), measurement.clone()])
-        .unwrap();
-    assert_eq!(report[0], report[1]);
-    assert_eq!(report[0].evaluation.nominal.value, 5.0);
-    assert_eq!(
-        report[0].evaluation.disposition,
-        DimensionMeasurementDisposition::WithinLimits
-    );
-    assert_eq!(page, before);
-    page.views[0].scale = 10.0;
-    page.views[0].paper_origin_mm = [1000.0, 500.0];
-    page.views[0].detail = Some(DrawingDetail {
-        minimum_mm: [-1.0, -1.0],
-        maximum_mm: [30.0, 30.0],
     });
-    page.dimensions[0].precision = 0;
-    page.dimensions[0].presentation.length_unit = LengthUnit::Inch;
-    assert_eq!(
-        page.evaluate_dimension_measurements(&graph, std::slice::from_ref(&measurement))
-            .unwrap()[0],
-        report[0]
+    let mut graph = InstanceGraph::new(&family);
+    graph.add_base("part", HashMap::new(), "test").unwrap();
+    let session = Session::new().unwrap();
+    let mut drawing = slice_definition(
+        "round",
+        VectorQuantity::lengths(0.0, 0.0, 15.0, LengthUnit::Millimeter),
+        VectorQuantity::scalars(0.0, 0.0, 1.0),
     );
-    page.dimensions[0].direction = DimensionDirection::Diameter;
-    assert_eq!(
-        page.evaluate_dimension_measurements(&graph, std::slice::from_ref(&measurement))
-            .unwrap()[0]
-            .evaluation
-            .nominal
-            .value,
-        10.0
-    );
-    page.dimensions[0].direction = DimensionDirection::Radius;
-    assert_eq!(
-        page.evaluate_dimension_measurements(&graph, std::slice::from_ref(&measurement))
-            .unwrap()[0]
-            .evaluation
-            .nominal
-            .value,
-        5.0
-    );
-
-    page.dimensions[0].direction = DimensionDirection::Vertical;
-    page.dimensions[0].second = DatumRef::new("part", "y");
-    assert_eq!(
-        page.evaluate_dimension_measurements(&graph, std::slice::from_ref(&measurement))
-            .unwrap()[0]
-            .evaluation
-            .nominal
-            .value,
-        5.0
-    );
-    page.dimensions[0].direction = DimensionDirection::Aligned;
-    page.dimensions[0].first = DatumRef::new("part", "x");
-    let aligned = page
-        .evaluate_dimension_measurements(&graph, std::slice::from_ref(&measurement))
-        .unwrap();
-    assert!((aligned[0].evaluation.nominal.value - 50.0f64.sqrt()).abs() < 1e-12);
-    page.dimensions[0].direction = DimensionDirection::Horizontal;
-    page.dimensions[0].first = DatumRef::new("part", "origin");
-    page.dimensions[0].second = DatumRef::new("part", "corner");
-    graph
-        .set_override(
-            "part",
-            "width",
-            ParameterValue::Scalar(Quantity::length(20.0, LengthUnit::Millimeter)),
-        )
-        .unwrap();
-    assert_eq!(
-        page.evaluate_dimension_measurements(&graph, std::slice::from_ref(&measurement))
-            .unwrap()[0]
-            .evaluation
-            .nominal
-            .value,
-        20.0
-    );
-    page.dimensions[0].direction = DimensionDirection::Angular {
-        vertex: DatumRef::new("part", "origin"),
+    drawing.views[0].scale = 2.0;
+    drawing.views[0].paper_origin_mm = [20.0, 30.0];
+    let options = DrawingRenderOptions {
+        curve_tolerance_mm: 0.01,
+        exact_curves: true,
+        curve_samples: 2,
+        maximum_vertices: 13,
     };
-    page.dimensions[0].first = DatumRef::new("part", "x");
-    page.dimensions[0].second = DatumRef::new("part", "y");
-    page.dimensions[0].presentation.tolerance = DimensionTolerance::Symmetric {
-        deviation: Quantity::scalar(0.01),
+    let generated = drawing.generate(&graph, &session, options).unwrap();
+    assert!(generated.polylines.is_empty());
+    assert_eq!(generated.curves.len(), 1);
+    let DrawingCurveGeometry::Ellipse {
+        center_mm,
+        major_axis_mm,
+        minor_radius_mm,
+        start_parameter,
+        end_parameter,
+    } = generated.curves[0].geometry
+    else {
+        panic!("expected circle")
     };
-    let angle = DrawingDimensionMeasurement {
-        dimension: "manufactured".into(),
-        value: Quantity::scalar(std::f64::consts::FRAC_PI_2),
-    };
-    let result = page
-        .evaluate_dimension_measurements(&graph, std::slice::from_ref(&angle))
-        .unwrap();
-    assert_eq!(result[0].evaluation.nominal, angle.value);
-    assert_eq!(
-        result[0].evaluation.disposition,
-        DimensionMeasurementDisposition::WithinLimits
-    );
+    assert_eq!(center_mm, [20.0, 30.0]);
+    assert!((major_axis_mm[0].hypot(major_axis_mm[1]) - 10.0).abs() < 1e-9);
+    assert!((minor_radius_mm - 10.0).abs() < 1e-9);
+    assert_eq!(start_parameter, 0.0);
+    assert_eq!(end_parameter, std::f64::consts::TAU);
+    assert!(generated.to_dxf().contains("0\nCIRCLE\n"));
+    assert_eq!(generated.to_svg().matches(" A ").count(), 2);
     assert!(
-        page.evaluate_dimension_measurements(&graph, &[measurement])
+        drawing
+            .generate(
+                &graph,
+                &session,
+                DrawingRenderOptions {
+                    maximum_vertices: 12,
+                    ..options
+                }
+            )
             .is_err()
     );
-    assert!(
-        page.evaluate_dimension_measurements(
+    let sampled = drawing
+        .generate(&graph, &session, DrawingRenderOptions::default())
+        .unwrap();
+    assert_eq!(sampled.polylines.len(), 1);
+    assert!(sampled.curves.is_empty());
+    drawing.views[0].detail = Some(DrawingDetail {
+        minimum_mm: [-2.0, -2.0],
+        maximum_mm: [2.0, 2.0],
+    });
+    let detail = drawing
+        .generate(
             &graph,
-            &[DrawingDimensionMeasurement {
-                dimension: "missing".into(),
-                value: angle.value
-            }]
+            &session,
+            DrawingRenderOptions {
+                exact_curves: true,
+                ..DrawingRenderOptions::default()
+            },
         )
-        .is_err()
+        .unwrap();
+    assert!(detail.curves.is_empty());
+    drawing.views[0].detail = None;
+    drawing.views[0].kind = DrawingViewKind::Orthographic;
+    drawing.views[0].direction = VectorQuantity::scalars(0.0, 1.0, 1.0);
+    drawing.views[0].show_hidden = true;
+    let tilted = drawing
+        .generate(
+            &graph,
+            &session,
+            DrawingRenderOptions {
+                maximum_vertices: 100,
+                ..options
+            },
+        )
+        .unwrap();
+    assert!(tilted.to_dxf().contains("0\nELLIPSE\n"));
+    assert!(tilted.curves.iter().any(|c| c.hidden));
+    assert!(tilted.polylines.is_empty());
+    assert_eq!(session.shape_count().unwrap(), 0);
+    let old: DrawingRenderOptions = serde_json::from_str("{}").unwrap();
+    assert!(!old.exact_curves);
+}
+
+#[test]
+fn exact_details_trim_curved_boundaries_and_splines_without_crop_perimeters() {
+    let mut family = family_with_datums();
+    let section = |z| LoftSection {
+        profile: vec![
+            [0.0, 0.0],
+            [5.0, -1.0],
+            [10.0, 0.0],
+            [8.0, 5.0],
+            [4.0, 7.0],
+            [-1.0, 4.0],
+        ],
+        origin: VectorExpr::Literal(VectorQuantity::lengths(0.0, 0.0, z, LengthUnit::Millimeter)),
+        x_axis: VectorExpr::Literal(VectorQuantity::scalars(1.0, 0.0, 0.0)),
+        y_axis: VectorExpr::Literal(VectorQuantity::scalars(0.0, 1.0, 0.0)),
+        scale: ScalarExpr::Literal(Quantity::length(1.0, LengthUnit::Millimeter)),
+        rotation_radians: None,
+        pivot: [0.0, 0.0],
+    };
+    family.features = vec![FeatureDefinition {
+        id: "curved".into(),
+        operation: FeatureOperation::Loft {
+            sections: vec![section(0.0), section(30.0)],
+            smooth: true,
+            ruled: true,
+        },
+    }];
+    let mut graph = InstanceGraph::new(&family);
+    graph.add_base("part", HashMap::new(), "test").unwrap();
+    let session = Session::new().unwrap();
+    let mut drawing = slice_definition(
+        "curved",
+        VectorQuantity::lengths(0.0, 0.0, 15.0, LengthUnit::Millimeter),
+        VectorQuantity::scalars(0.0, 0.0, 1.0),
     );
+    drawing.views[0].detail = Some(DrawingDetail {
+        minimum_mm: [2.0, -10.0],
+        maximum_mm: [6.0, 20.0],
+    });
+    drawing.views[0].scale = 2.0;
+    drawing.views[0].paper_origin_mm = [20.0, 40.0];
+    let options = DrawingRenderOptions {
+        exact_curves: true,
+        curve_samples: 2,
+        ..DrawingRenderOptions::default()
+    };
+    let generated = drawing.generate(&graph, &session, options).unwrap();
+    assert!(generated.polylines.is_empty());
+    assert!(generated.curves.len() >= 2);
+    for curve in &generated.curves {
+        let DrawingCurveGeometry::Bezier { poles_mm, .. } = &curve.geometry else {
+            panic!("crop introduced a non-spline edge")
+        };
+        for p in [poles_mm[0], *poles_mm.last().unwrap()] {
+            assert!(
+                (p[0] - 20.0).abs() < 1e-6
+                    || (p[0] - 28.0).abs() < 1e-6
+                    || (20.0..=28.0).contains(&p[0])
+            );
+            assert!((40.0..=100.0).contains(&p[1]));
+        }
+    }
+    assert!(generated.to_dxf().contains("0\nSPLINE\n"));
+    assert_eq!(
+        generated.to_svg().matches("<path ").count(),
+        generated.curves.len()
+    );
+    let denser = drawing
+        .generate(
+            &graph,
+            &session,
+            DrawingRenderOptions {
+                curve_samples: 100000,
+                ..options
+            },
+        )
+        .unwrap();
+    assert_eq!(generated.curves, denser.curves);
+    graph
+        .add_frame(
+            "mounted",
+            None,
+            Placement {
+                translation: VectorQuantity::lengths(1e6, -1e6, 1e6, LengthUnit::Millimeter),
+                rotation: Some(AxisAngle {
+                    origin: VectorQuantity::lengths(0.0, 0.0, 0.0, LengthUnit::Millimeter),
+                    axis: VectorQuantity::scalars(0.0, 0.0, 1.0),
+                    angle_radians: std::f64::consts::FRAC_PI_4,
+                }),
+            },
+            "test",
+        )
+        .unwrap();
+    graph.set_instance_frame("part", Some("mounted")).unwrap();
+    drawing.views[0].origin =
+        VectorQuantity::lengths(1e6, -1e6, 1e6 + 15.0, LengthUnit::Millimeter);
+    let d = std::f64::consts::FRAC_1_SQRT_2;
+    drawing.views[0].x_axis = VectorQuantity::scalars(d, d, 0.0);
+    let mounted = drawing.generate(&graph, &session, options).unwrap();
+    assert_eq!(mounted.curves.len(), generated.curves.len());
+    for (a, b) in mounted.curves.iter().zip(&generated.curves) {
+        let DrawingCurveGeometry::Bezier { poles_mm: a, .. } = &a.geometry else {
+            panic!()
+        };
+        let DrawingCurveGeometry::Bezier { poles_mm: b, .. } = &b.geometry else {
+            panic!()
+        };
+        for (a, b) in a.iter().zip(b) {
+            assert!((a[0] - b[0]).hypot(a[1] - b[1]) < 1e-4);
+        }
+    }
+    drawing.views[0].detail = Some(DrawingDetail {
+        minimum_mm: [100.0, 100.0],
+        maximum_mm: [110.0, 110.0],
+    });
     assert!(
-        page.evaluate_dimension_measurements(&graph, &[])
+        drawing
+            .generate(&graph, &session, options)
             .unwrap()
+            .curves
             .is_empty()
     );
+    drawing.views[0].origin.z.value = 1e6 + 100.0;
+    assert!(
+        drawing
+            .generate(&graph, &session, options)
+            .unwrap()
+            .curves
+            .is_empty()
+    );
+    assert_eq!(session.shape_count().unwrap(), 0);
+    assert!(
+        drawing
+            .generate(
+                &graph,
+                &session,
+                DrawingRenderOptions {
+                    curve_tolerance_mm: f64::NAN,
+                    ..options
+                }
+            )
+            .is_err()
+    );
 }
+
 #[test]
-fn saved_hole_measurements_use_feature_diameter_and_current_parameters() {
+fn exact_hatching_intersects_circle_boundaries_independently_of_curve_samples() {
     let definition = callout_family(HoleFinish::Plain, HoleExtent::ThroughAll);
     let mut graph = InstanceGraph::new(&definition);
     graph.add_base("part", HashMap::new(), "test").unwrap();
-    let mut page = callout_page();
-    page.dimensions[0].presentation.tolerance = DimensionTolerance::Symmetric {
-        deviation: Quantity::length(0.125, LengthUnit::Millimeter),
+    let mut page = hatched_slice("hole");
+    let session = Session::new().unwrap();
+    let options = DrawingRenderOptions {
+        exact_curves: true,
+        curve_samples: 2,
+        ..DrawingRenderOptions::default()
     };
-    let measurements = [DrawingDimensionMeasurement {
-        dimension: "manufactured".into(),
-        value: Quantity::length(4.125, LengthUnit::Millimeter),
-    }];
-    let report = page
-        .evaluate_dimension_measurements(&graph, &measurements)
-        .unwrap();
-    assert_eq!(report[0].evaluation.nominal.value, 4.0);
-    assert_eq!(
-        report[0].evaluation.disposition,
-        DimensionMeasurementDisposition::WithinLimits
-    );
-    graph
-        .set_override(
-            "part",
-            "bore",
-            ParameterValue::Scalar(Quantity::length(5.0, LengthUnit::Millimeter)),
+    let generated = page.generate(&graph, &session, options).unwrap();
+    for i in 0..20 {
+        let y = i as f64 + 0.5;
+        let row: Vec<_> = generated
+            .hatches
+            .iter()
+            .filter(|l| (l.points_mm[0][1] - y).abs() < 1e-8)
+            .collect();
+        if (y - 5.0).abs() < 2.0 {
+            assert_eq!(row.len(), 2);
+            let half = (4.0 - (y - 5.0).powi(2)).sqrt();
+            assert!((row[0].points_mm[1][0] - (5.0 - half)).abs() < 1e-7);
+            assert!((row[1].points_mm[0][0] - (5.0 + half)).abs() < 1e-7);
+        } else {
+            assert_eq!(row.len(), 1);
+            assert!((row[0].points_mm[0][0]).abs() < 1e-8);
+            assert!((row[0].points_mm[1][0] - 10.0).abs() < 1e-8);
+        }
+    }
+    let dense = page
+        .generate(
+            &graph,
+            &session,
+            DrawingRenderOptions {
+                curve_samples: 100000,
+                ..options
+            },
         )
         .unwrap();
-    let report = page
-        .evaluate_dimension_measurements(&graph, &measurements)
-        .unwrap();
-    assert_eq!(report[0].evaluation.nominal.value, 5.0);
-    assert_eq!(
-        report[0].evaluation.disposition,
-        DimensionMeasurementDisposition::BelowLowerLimit
-    );
-    page.dimensions[0]
-        .presentation
-        .hole
-        .as_mut()
-        .unwrap()
-        .output = "missing".into();
+    assert_eq!(generated.hatches, dense.hatches);
+    page.views[0].kind = DrawingViewKind::Section {
+        origin: VectorQuantity::lengths(0.0, 0.0, 5.0, LengthUnit::Millimeter),
+        normal: VectorQuantity::scalars(0.0, 0.0, 1.0),
+        keep_positive: false,
+    };
+    // A section's camera origin need not lie on its cut plane.
+    page.views[0].origin.z.value = 100.0;
+    let section = page.generate(&graph, &session, options).unwrap();
+    assert_eq!(section.hatches, generated.hatches);
+    page.views[0].kind = DrawingViewKind::Slice;
+    page.views[0].origin.z.value = 5.0;
+    page.views[0].detail = Some(DrawingDetail {
+        minimum_mm: [3.0, 3.0],
+        maximum_mm: [7.0, 7.0],
+    });
+    let detail = page.generate(&graph, &session, options).unwrap();
+    assert!(!detail.hatches.is_empty());
+    for line in &detail.hatches {
+        for p in &line.points_mm {
+            assert!(p[0] >= -1e-7 && p[0] <= 4.0 + 1e-7 && p[1] >= -1e-7 && p[1] <= 4.0 + 1e-7);
+            assert!((p[0] - 2.0).hypot(p[1] - 2.0) >= 2.0 - 1e-7);
+        }
+    }
     assert!(
-        page.evaluate_dimension_measurements(&graph, &measurements)
-            .is_err()
+        page.generate(
+            &graph,
+            &session,
+            DrawingRenderOptions {
+                maximum_vertices: 10,
+                ..options
+            }
+        )
+        .is_err()
     );
+    page.views[0].hatching.as_mut().unwrap().spacing_mm = 1e-8;
+    assert!(
+        page.generate(&graph, &session, options)
+            .unwrap_err()
+            .message
+            .contains("resolution")
+    );
+    assert_eq!(session.shape_count().unwrap(), 0);
+}
+
+#[test]
+fn exact_hatching_unions_overlaps_preserves_islands_and_handles_far_frames() {
+    let definition = family_with_datums();
+    let mut graph = InstanceGraph::new(&definition);
+    graph.add_base("part", HashMap::new(), "test").unwrap();
+    let mut page = hatched_slice("body");
+    for (id, x) in [("overlap", 5.0), ("island", 30.0)] {
+        graph.add_clone(id, "part", HashMap::new(), "test").unwrap();
+        graph
+            .set_placement(
+                id,
+                Placement::translated(VectorQuantity::lengths(x, 0.0, 0.0, LengthUnit::Millimeter)),
+            )
+            .unwrap();
+        page.views[0].outputs.push(InstanceOutputRef {
+            instance: id.into(),
+            output: "body".into(),
+        });
+    }
+    let session = Session::new().unwrap();
+    let options = DrawingRenderOptions {
+        exact_curves: true,
+        ..DrawingRenderOptions::default()
+    };
+    let generated = page.generate(&graph, &session, options).unwrap();
+    assert_eq!(generated.hatches.len(), 40);
+    for row in generated.hatches.as_chunks::<2>().0 {
+        assert!((row[0].points_mm[0][0]).abs() < 1e-7);
+        assert!((row[0].points_mm[1][0] - 15.0).abs() < 1e-7);
+        assert!((row[1].points_mm[0][0] - 30.0).abs() < 1e-7);
+        assert!((row[1].points_mm[1][0] - 40.0).abs() < 1e-7);
+    }
+    graph
+        .add_frame(
+            "mounted",
+            None,
+            Placement {
+                translation: VectorQuantity::lengths(1e6, -1e6, 1e6, LengthUnit::Millimeter),
+                rotation: Some(AxisAngle {
+                    origin: VectorQuantity::lengths(0.0, 0.0, 0.0, LengthUnit::Millimeter),
+                    axis: VectorQuantity::scalars(0.0, 0.0, 1.0),
+                    angle_radians: std::f64::consts::FRAC_PI_4,
+                }),
+            },
+            "test",
+        )
+        .unwrap();
+    for id in ["part", "overlap", "island"] {
+        graph.set_instance_frame(id, Some("mounted")).unwrap();
+    }
+    let d = std::f64::consts::FRAC_1_SQRT_2;
+    page.views[0].origin = VectorQuantity::lengths(1e6, -1e6, 1e6 + 5.0, LengthUnit::Millimeter);
+    page.views[0].x_axis = VectorQuantity::scalars(d, d, 0.0);
+    let mounted = page.generate(&graph, &session, options).unwrap();
+    assert_eq!(mounted.hatches.len(), 40);
+    for (a, b) in generated.hatches.iter().zip(&mounted.hatches) {
+        for (a, b) in a.points_mm.iter().zip(&b.points_mm) {
+            assert!((a[0] - b[0]).hypot(a[1] - b[1]) < 1e-6);
+        }
+    }
+    page.views[0].origin.z.value += 100.0;
+    assert!(
+        page.generate(&graph, &session, options)
+            .unwrap()
+            .hatches
+            .is_empty()
+    );
+    assert_eq!(session.shape_count().unwrap(), 0);
+}
+
+fn hatch_materials(graph: &mut InstanceGraph<'_>) {
+    for id in ["steel", "plastic"] {
+        graph
+            .add_material(Material {
+                id: id.into(),
+                name: id.into(),
+                density_kg_per_cubic_meter: 1000.0,
+            })
+            .unwrap();
+    }
+}
+fn hatch_family(angle: f64, spacing: f64, phase: f64) -> SectionHatching {
+    SectionHatching {
+        angle_radians: angle,
+        spacing_mm: spacing,
+        phase_mm: phase,
+    }
+}
+
+#[test]
+fn material_hatch_families_follow_inheritance_fallback_and_suppression_in_both_modes() {
+    let definition = family_with_datums();
+    let mut graph = InstanceGraph::new(&definition);
+    graph.add_base("part", HashMap::new(), "test").unwrap();
+    hatch_materials(&mut graph);
+    graph.assign_material("part", Some("steel")).unwrap();
+    let mut page = hatched_slice("body");
+    for (id, x, clone) in [
+        ("steel-clone", 20.0, true),
+        ("plastic-part", 40.0, true),
+        ("unassigned", 60.0, false),
+    ] {
+        if clone {
+            graph.add_clone(id, "part", HashMap::new(), "test").unwrap();
+        } else {
+            graph.add_base(id, HashMap::new(), "test").unwrap();
+        }
+        graph
+            .set_placement(
+                id,
+                Placement::translated(VectorQuantity::lengths(x, 0.0, 0.0, LengthUnit::Millimeter)),
+            )
+            .unwrap();
+        page.views[0].outputs.push(InstanceOutputRef {
+            instance: id.into(),
+            output: "body".into(),
+        });
+    }
+    graph
+        .assign_material("plastic-part", Some("plastic"))
+        .unwrap();
+    page.views[0].material_hatching.insert(
+        "steel".into(),
+        vec![hatch_family(0.0, 2.0, 0.5), hatch_family(0.0, 2.0, 1.5)],
+    );
+    page.views[0].material_hatching.insert(
+        "plastic".into(),
+        vec![
+            hatch_family(std::f64::consts::FRAC_PI_2, 2.0, 0.5),
+            hatch_family(0.0, 2.0, 0.5),
+        ],
+    );
+    let session = Session::new().unwrap();
+    for exact_curves in [false, true] {
+        let options = DrawingRenderOptions {
+            exact_curves,
+            curve_samples: 2,
+            ..DrawingRenderOptions::default()
+        };
+        let generated = page.generate(&graph, &session, options).unwrap();
+        assert_eq!(generated.hatches.len(), 75);
+        assert_eq!(generated.generated_variants, 1);
+        let plastic: Vec<_> = generated
+            .hatches
+            .iter()
+            .filter(|l| l.points_mm[0][0] > 40.0 && l.points_mm[0][0] < 50.0)
+            .collect();
+        assert_eq!(plastic.len(), 5);
+        assert!(
+            plastic
+                .iter()
+                .all(|l| (l.points_mm[0][0] - l.points_mm[1][0]).abs() < 1e-8)
+        );
+        assert!(generated.to_svg().contains("stroke-width=\"0.13\""));
+        assert!(generated.to_dxf().contains("SECTION_HATCH"));
+        assert_eq!(session.shape_count().unwrap(), 0);
+    }
+    let exact = DrawingRenderOptions {
+        exact_curves: true,
+        ..DrawingRenderOptions::default()
+    };
+    let slice = page.generate(&graph, &session, exact).unwrap();
+    let mut section = page.clone();
+    section.views[0].kind = DrawingViewKind::Section {
+        origin: VectorQuantity::lengths(0.0, 0.0, 5.0, LengthUnit::Millimeter),
+        normal: VectorQuantity::scalars(0.0, 0.0, 1.0),
+        keep_positive: false,
+    };
+    section.views[0].origin.z.value = 100.0;
+    assert_eq!(
+        section.generate(&graph, &session, exact).unwrap().hatches,
+        slice.hatches
+    );
+    let mut detail = page.clone();
+    detail.views[0].detail = Some(DrawingDetail {
+        minimum_mm: [1.0, 2.0],
+        maximum_mm: [9.0, 18.0],
+    });
+    detail.views[0].paper_origin_mm = [10.0, 20.0];
+    detail.views[0].scale = 2.0;
+    let cropped = detail.generate(&graph, &session, exact).unwrap();
+    assert_eq!(cropped.hatches.len(), 32);
+    assert!(cropped.hatches.iter().all(
+        |l| (l.points_mm[0][0] - 10.0).abs() < 1e-7 && (l.points_mm[1][0] - 26.0).abs() < 1e-7
+    ));
+    graph
+        .set_placement(
+            "steel-clone",
+            Placement::translated(VectorQuantity::lengths(
+                5.0,
+                0.0,
+                0.0,
+                LengthUnit::Millimeter,
+            )),
+        )
+        .unwrap();
+    let union = page
+        .generate(
+            &graph,
+            &session,
+            DrawingRenderOptions {
+                exact_curves: true,
+                ..DrawingRenderOptions::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(union.hatches.len(), 55);
+    let steel: Vec<_> = union
+        .hatches
+        .iter()
+        .filter(|l| l.points_mm[0][0].abs() < 1e-8)
+        .collect();
+    assert_eq!(steel.len(), 20);
+    assert!(
+        steel
+            .iter()
+            .all(|l| (l.points_mm[1][0] - 15.0).abs() < 1e-7)
+    );
+    graph
+        .set_placement(
+            "steel-clone",
+            Placement::translated(VectorQuantity::lengths(
+                20.0,
+                0.0,
+                0.0,
+                LengthUnit::Millimeter,
+            )),
+        )
+        .unwrap();
+    graph.assign_material("part", Some("plastic")).unwrap();
+    let options = DrawingRenderOptions {
+        exact_curves: true,
+        ..DrawingRenderOptions::default()
+    };
+    let changed = page.generate(&graph, &session, options).unwrap();
+    assert_eq!(changed.hatches.len(), 65);
+    assert_eq!(changed.curves.len(), 16);
+    page.views[0]
+        .material_hatching
+        .insert("plastic".into(), vec![]);
+    assert_eq!(
+        page.generate(&graph, &session, options)
+            .unwrap()
+            .hatches
+            .len(),
+        20
+    );
+    page.views[0].hatching = None;
+    let suppressed = page.generate(&graph, &session, options).unwrap();
+    assert!(suppressed.hatches.is_empty());
+    assert_eq!(suppressed.curves.len(), 16);
+    assert_eq!(session.shape_count().unwrap(), 0);
+}
+
+#[test]
+fn material_hatch_maps_migrate_persist_and_merge_independent_material_edits() {
+    let definition = family_with_datums();
+    let mut graph = InstanceGraph::new(&definition);
+    graph.add_base("part", HashMap::new(), "test").unwrap();
+    hatch_materials(&mut graph);
+    let mut base = ModelDocument::from_graph(&graph);
+    base.drawings.push(hatched_slice("body"));
+    let mut old: serde_json::Value = serde_json::from_str(&base.to_json_pretty().unwrap()).unwrap();
+    old["schema_version"] = 67.into();
+    assert!(
+        old["drawings"][0]["views"][0]
+            .get("material_hatching")
+            .is_none()
+    );
+    let loaded = ModelDocument::from_json(&old.to_string()).unwrap();
+    assert_eq!(loaded.schema_version, CURRENT_SCHEMA_VERSION);
+    assert!(loaded.drawings[0].views[0].material_hatching.is_empty());
+    let mut left = base.clone();
+    let mut right = base.clone();
+    left.drawings[0].views[0]
+        .material_hatching
+        .insert("steel".into(), vec![hatch_family(0.0, 2.0, 0.5)]);
+    right.drawings[0].views[0]
+        .material_hatching
+        .insert("plastic".into(), vec![hatch_family(1.0, 3.0, 1.0)]);
+    let DocumentMerge::Merged(merged) = base.three_way_merge(&left, &right).unwrap() else {
+        panic!("independent maps should merge")
+    };
+    assert_eq!(merged.drawings[0].views[0].material_hatching.len(), 2);
+    assert_eq!(
+        ModelDocument::from_json(&merged.to_json_pretty().unwrap()).unwrap(),
+        *merged
+    );
+    let base = *merged;
+    let mut left = base.clone();
+    let mut right = base.clone();
+    left.drawings[0].views[0]
+        .material_hatching
+        .get_mut("steel")
+        .unwrap()[0]
+        .spacing_mm = 4.0;
+    right.drawings[0].views[0]
+        .material_hatching
+        .get_mut("steel")
+        .unwrap()[0]
+        .spacing_mm = 5.0;
+    assert!(matches!(
+        base.three_way_merge(&left, &right).unwrap(),
+        DocumentMerge::Conflicts(_)
+    ));
+    let mut left = base.clone();
+    let mut right = base.clone();
+    left.drawings[0].views[0].material_hatching.remove("steel");
+    right.drawings[0].views[0]
+        .material_hatching
+        .get_mut("plastic")
+        .unwrap()[0]
+        .spacing_mm = 5.0;
+    let DocumentMerge::Merged(merged) = base.three_way_merge(&left, &right).unwrap() else {
+        panic!("independent deletion/edit should merge")
+    };
+    assert!(
+        !merged.drawings[0].views[0]
+            .material_hatching
+            .contains_key("steel")
+    );
+    assert_eq!(
+        merged.drawings[0].views[0].material_hatching["plastic"][0].spacing_mm,
+        5.0
+    );
+}
+
+#[test]
+fn material_hatching_rejects_bad_references_patterns_and_cumulative_budgets() {
+    let definition = family_with_datums();
+    let mut graph = InstanceGraph::new(&definition);
+    graph.add_base("part", HashMap::new(), "test").unwrap();
+    hatch_materials(&mut graph);
+    graph.assign_material("part", Some("steel")).unwrap();
+    let session = Session::new().unwrap();
+    let options = DrawingRenderOptions {
+        exact_curves: true,
+        ..DrawingRenderOptions::default()
+    };
+    let mut page = hatched_slice("body");
+    for (id, patterns) in [
+        ("unknown", vec![hatch_family(0.0, 1.0, 0.0)]),
+        ("steel", vec![hatch_family(0.0, 0.0, 0.0)]),
+        ("steel", vec![SectionHatching::default(); 9]),
+    ] {
+        page.views[0].material_hatching = BTreeMap::from([(id.into(), patterns)]);
+        assert!(page.generate(&graph, &session, options).is_err());
+        assert_eq!(session.shape_count().unwrap(), 0);
+    }
+    page.views[0].material_hatching =
+        BTreeMap::from([("steel".into(), vec![hatch_family(0.0, 4.0, 2.0)])]);
+    assert!(
+        page.generate(
+            &graph,
+            &session,
+            DrawingRenderOptions {
+                maximum_vertices: 27,
+                ..options
+            }
+        )
+        .is_ok()
+    );
+    page.views[0]
+        .material_hatching
+        .get_mut("steel")
+        .unwrap()
+        .push(hatch_family(0.0, 4.0, 3.0));
+    assert!(
+        page.generate(
+            &graph,
+            &session,
+            DrawingRenderOptions {
+                maximum_vertices: 27,
+                ..options
+            }
+        )
+        .is_err()
+    );
+    page.views[0].hatching = None;
+    page.views[0].kind = DrawingViewKind::Orthographic;
+    assert!(page.generate(&graph, &session, options).is_err());
+    page.views[0].kind = DrawingViewKind::Slice;
+    graph
+        .assembly
+        .material_assignments
+        .insert("part".into(), "missing-assignment".into());
+    assert!(
+        page.generate(&graph, &session, options)
+            .unwrap_err()
+            .message
+            .contains("unknown material")
+    );
+    assert_eq!(session.shape_count().unwrap(), 0);
 }

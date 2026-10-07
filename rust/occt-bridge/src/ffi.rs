@@ -2,7 +2,26 @@
 
 use super::*;
 
-pub(crate) const ABI_VERSION: u32 = 44;
+pub(crate) const ABI_VERSION: u32 = 46;
+
+#[repr(C)]
+#[derive(Default)]
+pub(crate) struct RawBezierPole {
+    pub(crate) span_index: usize,
+    pub(crate) point: RawVec3,
+    pub(crate) weight: f64,
+}
+
+#[repr(C)]
+#[derive(Default)]
+pub(crate) struct RawAnalyticCurve {
+    pub(crate) kind: c_int,
+    pub(crate) origin: RawVec3,
+    pub(crate) x_vector: RawVec3,
+    pub(crate) y_vector: RawVec3,
+    pub(crate) first: f64,
+    pub(crate) last: f64,
+}
 
 #[repr(C)]
 pub(crate) struct RawMeshOptions {
@@ -18,7 +37,7 @@ pub(crate) struct RawMeshTriangle {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 pub(crate) struct RawVec3 {
     pub(crate) x: f64,
     pub(crate) y: f64,
@@ -213,6 +232,19 @@ unsafe extern "C" {
         x_axis: RawVec3,
         visible: *mut RawShapeId,
         hidden: *mut RawShapeId,
+    ) -> RawStatus;
+    pub(crate) fn occt_bridge_edge_bezier_poles(
+        session: *mut c_void,
+        edge: RawShapeId,
+        maximum_poles: usize,
+        poles: *mut RawBezierPole,
+        capacity: usize,
+        count: *mut usize,
+    ) -> RawStatus;
+    pub(crate) fn occt_bridge_edge_analytic_curve(
+        session: *mut c_void,
+        edge: RawShapeId,
+        curve: *mut RawAnalyticCurve,
     ) -> RawStatus;
     pub(crate) fn occt_bridge_edge_sample_points(
         session: *mut c_void,

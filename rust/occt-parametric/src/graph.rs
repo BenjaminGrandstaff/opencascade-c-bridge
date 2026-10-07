@@ -5,7 +5,7 @@ use super::*;
 
 mod pattern_edits;
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum InstanceNode {
     Base {
@@ -114,6 +114,14 @@ pub struct GraphRegeneration<'session> {
 }
 
 impl<'session> GraphRegeneration<'session> {
+    /// Generated instances, including dynamically expanded pattern members.
+    /// Iteration order is unspecified.
+    pub fn instances(&self) -> impl Iterator<Item = (&str, &GeneratedResult<'session>)> {
+        self.results
+            .iter()
+            .map(|(id, result)| (id.as_str(), result))
+    }
+
     pub fn result(&self, instance_id: &str) -> Option<&GeneratedResult<'session>> {
         self.results.get(instance_id)
     }

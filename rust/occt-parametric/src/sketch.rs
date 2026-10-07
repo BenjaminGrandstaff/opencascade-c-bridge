@@ -11,7 +11,7 @@ const RESIDUAL_TOLERANCE: f64 = 1e-9;
 const DIFFERENCE_STEP: f64 = 1e-6;
 const PIVOT_TOLERANCE: f64 = 1e-10;
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SketchPoint {
     pub id: String,
     pub x: ScalarExpr,
@@ -20,7 +20,7 @@ pub struct SketchPoint {
     pub fixed: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SketchLine {
     pub id: String,
     pub start: String,
@@ -28,7 +28,7 @@ pub struct SketchLine {
 }
 
 /// A full circle. The center-to-rim distance defines its radius.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SketchCircle {
     pub id: String,
     pub center: String,
@@ -36,7 +36,7 @@ pub struct SketchCircle {
 }
 
 /// A circular arc; the solver enforces equal start/end radii automatically.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SketchArc {
     pub id: String,
     pub center: String,
@@ -52,7 +52,7 @@ pub struct SketchArc {
 /// constraint at an end with a line or arc sets the spline's end direction so
 /// it continues smoothly from that entity; spline-to-spline tangency is not
 /// supported. Interior points move with the solver like any other point.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SketchSpline {
     pub id: String,
     pub points: Vec<String>,
@@ -64,7 +64,7 @@ impl SketchSpline {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SketchConstraint {
     /// Tangency at a shared named endpoint (or a circle's rim point).
@@ -105,7 +105,7 @@ pub enum SketchConstraint {
 /// A sketch in a typed 3D plane. `profile` names an ordered, closed boundary;
 /// omitted entities are construction geometry. An empty profile uses all lines
 /// in their original order, or a sole circle when there are no lines/arcs.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SketchDefinition {
     pub id: String,
     /// Optional plane datum in the owning family. Its origin/normal replace
@@ -1220,4 +1220,134 @@ fn validate_spline_tangency(kinds: [Option<Entity<'_>>; 2]) -> Result<(), ModelE
         }
     }
     Ok(())
+}
+
+/// Per-constraint diagnostics from the same residual equations as the solver.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SketchConstraintCheck {
+    pub index: usize,
+    pub max_residual: Option<f64>,
+    pub satisfied: bool,
+    /// Spline end tangency is imposed during curve construction, not solved
+    /// by a residual equation. It must not be reported as a measured zero.
+    pub by_construction: bool,
+}
+impl SketchDefinition {
+    pub fn constraint_checks(
+        &self,
+        parameters: &HashMap<String, ParameterValue>,
+        solution: &SketchSolution,
+    ) -> Result<Vec<SketchConstraintCheck>, ModelError> {
+        self.validate(parameters)?;
+        let mut fixed = HashMap::new();
+        for point in &self.points {
+            let value = solution
+                .points
+                .get(&point.id)
+                .ok_or_else(|| ModelError::new("sketch diagnostic solution is missing a point"))?;
+            if !value.x.is_finite() || !value.y.is_finite() {
+                return Err(ModelError::new("sketch diagnostic point is not finite"));
+            }
+            fixed.insert(point.id.as_str(), *value);
+        }
+        let problem = SketchProblem {
+            sketch: self,
+            parameters,
+            variables: HashMap::new(),
+            fixed,
+            lines: self.lines.iter().map(|l| (l.id.as_str(), l)).collect(),
+            entities: self.entities(),
+        };
+        self.constraints
+            .iter()
+            .enumerate()
+            .map(|(index, constraint)| {
+                if self.spline_tangency(constraint) {
+                    return Ok(SketchConstraintCheck {
+                        index,
+                        max_residual: None,
+                        satisfied: false,
+                        by_construction: true,
+                    });
+                }
+                let mut residuals = Vec::new();
+                problem.constraint_residuals(constraint, &[], &mut residuals)?;
+                let residual = max_abs(&residuals);
+                Ok(SketchConstraintCheck {
+                    index,
+                    max_residual: Some(residual),
+                    satisfied: residual <= RESIDUAL_TOLERANCE,
+                    by_construction: false,
+                })
+            })
+            .collect()
+    }
+
+    /// Sample each entity in sketch-local XY using native curve construction,
+    /// including spline end tangency. Available for unsolved diagnostic sketches.
+    pub fn preview_curves(
+        &self,
+        session: &Session,
+        solution: &SketchSolution,
+        samples: usize,
+    ) -> Result<Vec<(String, Vec<SketchPoint2>)>, ModelError> {
+        if !(2..=256).contains(&samples) {
+            return Err(ModelError::new("sketch preview samples must be in 2..256"));
+        }
+        for point in &self.points {
+            let p = solution
+                .points
+                .get(&point.id)
+                .ok_or_else(|| ModelError::new("sketch preview solution is missing a point"))?;
+            if !p.x.is_finite() || !p.y.is_finite() {
+                return Err(ModelError::new("sketch preview point is not finite"));
+            }
+        }
+        self.validate_curve_geometry(&solution.points)?;
+        let transform = |p: SketchPoint2| Vec3::new(p.x, p.y, 0.0);
+        let mut result = Vec::new();
+        for entity in self.entities().values() {
+            let id = match entity {
+                Entity::Line(e) => &e.id,
+                Entity::Arc(e) => &e.id,
+                Entity::Circle(e) => &e.id,
+                Entity::Spline(e) => &e.id,
+            };
+            let wire = match entity {
+                Entity::Circle(circle) => {
+                    let center = solution.points[&circle.center];
+                    let radius = line_length((center, solution.points[&circle.rim]));
+                    session.create_circle_wire(
+                        transform(center),
+                        Vec3::new(0.0, 0.0, 1.0),
+                        radius,
+                    )?
+                }
+                _ => {
+                    // A single segment has no connectivity condition to a neighbor.
+                    let closed = matches!(entity,Entity::Spline(s) if s.closed());
+                    let segments = self.profile_segments(
+                        &[*entity],
+                        solution,
+                        &transform,
+                        &transform,
+                        closed,
+                    )?;
+                    session.create_curve_wire(&segments, closed)?
+                }
+            };
+            let mut points = Vec::new();
+            for edge in session.subshapes(&wire, ShapeType::Edge)? {
+                points.extend(
+                    session
+                        .edge_sample_points(&edge, samples)?
+                        .into_iter()
+                        .map(|p| SketchPoint2 { x: p.x, y: p.y }),
+                );
+            }
+            result.push((id.clone(), points));
+        }
+        result.sort_by(|a, b| a.0.cmp(&b.0));
+        Ok(result)
+    }
 }

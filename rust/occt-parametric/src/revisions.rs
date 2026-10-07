@@ -5,7 +5,7 @@ use std::collections::HashSet;
 
 /// Caller-supplied revision identity and review metadata. `recorded_at` is an
 /// opaque nonempty timestamp string; the engine does not read the wall clock.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct RevisionMetadata {
     pub id: String,
     pub author: String,
@@ -16,7 +16,7 @@ pub struct RevisionMetadata {
 /// A linear history entry containing semantic changes from the previous state.
 /// Payloads exclude the revision ledger, so records never recursively copy it.
 /// These are review records, not restorable snapshots or kernel generations.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct DocumentRevision {
     pub metadata: RevisionMetadata,
     pub parent: Option<String>,

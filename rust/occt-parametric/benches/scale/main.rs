@@ -39,6 +39,7 @@ mod memory;
 mod mesh;
 mod motion;
 mod persistent;
+mod primitives;
 mod requirements;
 mod ribs;
 mod sheet_metal;
@@ -127,6 +128,8 @@ fn main() -> ExitCode {
     outcomes.push(spline_sketch_case());
     outcomes.push(large_spline_case());
     outcomes.push(sweep::sweep_case());
+    outcomes.push(primitives::round_primitive_case(false));
+    outcomes.push(primitives::round_primitive_case(true));
     outcomes.push(step_export::step_assembly_case(definition));
     outcomes.push(step_export::step_frames_case(definition));
     outcomes.push(step_export::draw_view_case(definition));

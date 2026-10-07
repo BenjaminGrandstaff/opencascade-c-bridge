@@ -56,11 +56,75 @@ first and visible geometry afterward, preserving visible outlines where projecte
 edges coincide.
 
 Visibility comes from OCCT's exact BREP hidden-line algorithm. It can retain
-superimposed edges. Curves in SVG and DXF are **polyline approximations** sampled
-uniformly along each edge's parameter range, rather than exact exported arcs or
-splines. `curve_samples` controls resolution (2–100,000 points per edge);
-it does not certify a chordal tolerance. The default is 64. See
+superimposed edges. By default SVG and DXF use **polyline approximations**
+sampled uniformly along each edge's parameter range. `curve_samples` controls
+resolution (2–100,000 points per edge); it does not certify a chordal tolerance.
+The default is 64. See
 [OCCT hidden-line removal](https://github.com/Open-Cascade-SAS/OCCT/blob/master/dox/user_guides/modeling_algos/modeling_algos.md).
+
+### Exact drawing geometry (ABI 46)
+
+Set `DrawingRenderOptions::exact_curves` to `true` (or `"exact_curves": true`
+in the export setup's `options`) to preserve finite standard curves. Lines,
+circles, ellipses and trimmed arcs retain native SVG paths and DXF `LINE`,
+`CIRCLE`, `ARC` and `ELLIPSE` entities. Bézier/B-spline curves, parabolas and
+hyperbolas convert to adjacent exact rational Bézier spans, exported as native
+DXF `SPLINE` entities with clamped knots, degree, control points and weights.
+Periodic and reversed edges retain their geometry and traversal direction.
+Offset/other curve types are rejected in exact mode rather than silently sampled.
+
+SVG emits exact polynomial line, quadratic and cubic Bézier commands. SVG's
+[path syntax](https://www.w3.org/TR/SVG2/paths.html) cannot represent arbitrary
+rational or higher-degree splines. For those spans, `curve_tolerance_mm`
+(default 0.01 paper mm) controls adaptive positive-weight subdivision. Each
+accepted control hull lies within that tolerance of its chord, including a
+scale-aware floating-point margin. This is a numerical error bound, not formal
+interval-arithmetic certification or certification of OCCT's projection/Boolean
+accuracy. Exhausted vertex/work/depth budgets or unrepresentable precision fail
+before returning a drawing. Subdivision charges at most two million work units
+per visible/hidden edge set and has a depth limit of 48.
+
+Exact-mode detail views intersect the **existing edges** with a rectangular
+face in their current projection/slice plane. The crop's perimeter never becomes
+model geometry. Trimming preserves curved boundaries and disconnected fragments;
+paper scale and placement still map the crop minimum to `paper_origin_mm`.
+The same option enables kernel-trimmed section hatching; see
+[Section hatching](#section-hatching).
+
+`GeneratedDrawing::curves` holds paper-space `DrawingCurve` records, separately
+from default-mode `polylines`. Ellipse records use a center, major-axis vector,
+minor radius and a counterclockwise parameter interval; a full turn is 2π.
+Bézier records hold control points, positive weights and any SVG approximation
+vertices. Hidden and visible styles apply to both representations together,
+with visible geometry drawn last.
+
+`Session::edge_analytic_curve` extracts exact located 3D lines/conics in O(1).
+`Session::edge_bezier_spans` returns located rational spans following edge
+orientation, using count/fill conversion on private geometry. Returned data is
+bounded to at most 1,000,000 poles; the limit does not bound OCCT workspace.
+Other/offset curves return no spans. Conversion and detail Boolean costs depend
+on kernel topology/degree. Exported storage is O(E + P + V) for analytic edges,
+Bézier poles and SVG vertices; subdivision costs O(d²) per node for degree d.
+
+The shared vertex budget charges two entries per analytic line, four per conic,
+and control-point plus SVG-vertex counts for Bézier spans, alongside existing
+frame/annotation/hatch costs. Existing JSON setups default to `exact_curves: false`;
+no model schema change is needed. The command manifest counts exact entities
+as `curves` and considers both exact and sampled geometry when reporting emptiness.
+`curve_samples` applies to default-mode polylines and sampled hatch boundaries;
+exact standard curves, detail trimming and hatching are independent of sample count.
+
+Tests compare native spans to analytic conics and B-spline samples, check periodic
+edges, cubic/quadratic and rational SVG output, loop error bounds, exact cropped
+arcs/splines, empty crops, far rotated placements, CLI manifests, budgets and
+cleanup. Optimized benchmarks export 10,000 lines in 4.211 s (10 s budget),
+1,000 spline views with 26,000 spans in 14.330 s, and 1,000 cropped spline views
+with 8,000 spans in 15.364 s (30 s budgets), each sharing one generated variant
+and releasing all kernel handles.
+
+Entity definitions follow Autodesk's [ARC reference](https://help.autodesk.com/cloudhelp/2024/ENU/AutoCAD-DXF/files/GUID-0B14D8F1-0EBA-44BF-9108-57D8CE614BC8.htm),
+[ELLIPSE reference](https://help.autodesk.com/cloudhelp/2023/ENU/AutoCAD-DXF/files/GUID-107CB04F-AD4D-4D2F-8EC9-AC90888063AB.htm),
+and [SPLINE reference](https://help.autodesk.com/cloudhelp/2016/ENU/AutoCAD-DXF/files/GUID-E1F884F8-AA90-4864-A215-3182D47A9C74.htm).
 
 ## Annotations and exports
 
@@ -275,14 +339,14 @@ strokes; cutting traces and arrows use 0.50 mm. DXF adds CENTER and CUTTING_PLAN
 layers, a CENTER linetype with the same pattern, per-entity solid overrides for
 marks/arrows, and corresponding lineweights. These are explicit drawing styles,
 not a standards-conformity claim. Standards-verified layout,
-material-specific hatch conventions and exact curve export remain on the roadmap.
+standards-verified material hatch presets remain on the roadmap; exact drawing geometry
+is available as an export option.
 
 Each center mark reserves 4 vertices, centerline 2, and cutting-plane indicator
 14 against the shared export budget. Guide validation/generation is linear in
 annotation count plus datum-frame resolution, with indexed view lookup and
 proportional output storage. The 10,000-guide benchmark covers all three types,
 SVG/DXF export, shared native generation and handle cleanup.
-
 
 ## Section hatching
 
@@ -296,19 +360,20 @@ Angles and phase must be finite; spacing must be finite and positive.
 Hatching supports `Slice` and `Section`. A hatched section must look normal to
 its cutting plane. The fill comes from that plane's actual material intersection,
 even when the projection origin differs. Solids are intersected and clipped
-individually so overlapping components remain present. Sampled boundary parity
-preserves holes; interval union across faces preserves disconnected islands and
-avoids double fill where components overlap. A view uses one shared pattern;
-material-specific patterns and alternating adjacent-component angles remain future
-work. Detail windows clip the resulting lines alongside the outlines.
+individually so overlapping components remain present. In default sampled mode,
+boundary parity preserves holes; interval union across faces preserves disconnected islands and
+avoids double fill where components overlap. By default a view uses one shared pattern. Schema 68 adds explicit material
+overrides, described below. Automatic adjacent-component alternation remains
+future work. Detail windows clip the resulting lines alongside the outlines.
 
 `GeneratedDrawing.hatches` contains separate two-point polylines. SVG draws them
 behind outlines with a 0.13 mm stroke. DXF uses LWPOLYLINE entities on the
-SECTION_HATCH layer with lineweight 13. These exports retain the existing sampled
-curve limitation: `curve_samples` controls hole and curved-boundary resolution,
-without certifying chordal error or ASME conformance.
+SECTION_HATCH layer with lineweight 13. In sampled mode, `curve_samples` controls
+hole and curved-boundary resolution without certifying chordal error. Exact mode
+uses kernel-trimmed boundaries as described below. Neither mode certifies ASME
+conformance.
 
-For E sampled segments and K scanline crossings, fill generation takes
+In sampled mode, for E segments and K scanline crossings, fill generation takes
 O(E + K log K) time and O(E + K) temporary storage, in addition to one native
 plane intersection per solid. A hard limit of 2,000,000 samples/crossings per view
 rejects excessively dense patterns before emitting unbounded output. Line indices
@@ -316,6 +381,100 @@ must stay below 2^52 in magnitude. Hatch endpoints share `maximum_vertices` with
 all other drawing geometry. The assembly benchmark checks 10,000 hatch segments
 across 1,000 placed parts, exports and native handle cleanup within 30 seconds.
 
+### Material hatch families (schema 68)
+
+`DrawingView.material_hatching: BTreeMap<String, Vec<SectionHatching>>` maps
+existing assembly material IDs to zero through eight line families. Each family
+has its own paper-space angle, spacing and phase. Parallel families with offset
+phases express paired-line patterns; different angles express crosshatching.
+For example, inside a saved view:
+
+```json
+"material_hatching": {
+  "steel": [
+    {"angle_radians": 0.7853981633974483, "spacing_mm": 3, "phase_mm": 0},
+    {"angle_radians": 0.7853981633974483, "spacing_mm": 3, "phase_mm": 0.6}
+  ],
+  "plastic": [
+    {"angle_radians": 0, "spacing_mm": 3, "phase_mm": 0},
+    {"angle_radians": 1.5707963267948966, "spacing_mm": 3, "phase_mm": 0}
+  ]
+}
+```
+
+These are illustrative explicit settings, not verified standard material
+symbols. Material names do not select patterns automatically. Add a drawing
+note or metadata field when a printed sheet needs a pattern legend.
+
+The nearest material assignment along a clone's ancestry selects the override.
+Unmatched or unassigned outputs use `view.hatching`; if that is `None`, they have
+no hatch fill. An empty vector suppresses fill for the named material even when
+there is a fallback. Outlines always remain. Maps apply only to Slice/Section
+views and work with both sampled and exact rendering, including detail crops.
+References to unknown materials, more than 10,000 mappings, more than eight
+families per material and invalid family values fail validation. Older documents
+load with an empty map, preserving their shared pattern.
+
+Outputs are grouped by the selected override or fallback. Each solid is cut
+once; its section faces are reused across line families. Interval union applies
+within each material/family group. Different families/materials retain their
+independent fills, including intentional overlaps. All groups and families in
+one view share the existing two-million hatch work limit and the cumulative
+export vertex limit. Identical supplied families may therefore emit duplicate
+lines and consume their corresponding budget.
+
+A material-ID index and memoized clone ancestry are shared across the drawing
+batch. Cache construction/resolution is O(M + N) for materials and visited nodes;
+per-view grouping is O(N log G), with G override/fallback groups. Temporary section
+storage is O(N + G), beyond kernel topology and emitted hatches. Document and
+batch validation also index material IDs once, avoiding a catalog scan for every
+output or pattern reference.
+
+Maps persist and participate in semantic comparison. Independent material-key
+edits merge; competing edits to the same ordered family array conflict. Tests
+cover inherited assignments, paired lines/crosshatching, fallback/suppression,
+same-material overlap union, both render modes, section origins, scaled details,
+invalid references, cumulative limits, migration, merges and cleanup. A benchmark
+with 1,000 parts and 10,000 material mappings exports 12,500 hatch segments in
+5.910 seconds (30-second budget), with one generated variant and no retained
+kernel handles.
+
+### Kernel-trimmed hatching
+
+With `DrawingRenderOptions::exact_curves: true`, hatching trims straight scanlines
+against each planar cut face using OCCT Boolean Common. Lines meet the actual
+curve geometry, including spline boundaries and internal holes, rather than
+sampled boundary chords. The result is exact to OCCT's intersection tolerances;
+it is not a standards-conformity or formal arithmetic certification.
+
+Per-face bounds restrict the candidate grid; detail windows restrict it further.
+Batches contain at most 64 lines, bounding temporary input handles and avoiding
+one Boolean over every scanline. The actual face plane and a centroid-relative
+lift preserve section origins, paper scale, phase and far rotated placements.
+Interval unions merge overlapping components and retain disconnected regions.
+Nonzero ON-boundary line segments are included; isolated tangent points are not.
+The conservative grid uses half-open bounding ranges, including the lower extent
+and excluding an exactly aligned upper extent.
+
+Preprocessing is O(F + E + L), and union/sorting is O(K log K), for F faces,
+E boundary edges, L candidate lines and K returned intervals. Temporary returned
+storage is O(F + K + 64), beyond source and kernel topology. Boolean costs depend
+on boundary topology; the two-million work budget accounts for edge/line
+candidates and returned intervals, not kernel workspace. Emitted endpoints use
+the shared drawing vertex budget. Native spacing must be at least
+max(1e-6 model mm, 256 × machine epsilon × face-anchor coordinate magnitude);
+smaller spacing fails explicitly instead of merging indistinguishable lines.
+Existing setups retain the sampled algorithm by default. Kernel-trimmed hatching
+uses ABI 46; schema 68 adds the optional material maps described above.
+
+Tests compare circular-hole and quadratic-spline endpoints to analytic curves,
+verify sample-count independence, section origins, details, tangencies, multiple
+batches, overlaps, islands, far placements, work/vertex limits and cleanup.
+The optimized benchmark generates 10,000 exact hatch segments across 1,000 parts
+in 8.773 s, and 40,000 circular-boundary segments across 1,000 cylinders with
+both exports in 7.754 s; both have 30 s budgets and one shared generated variant.
+
+Kernel semantics follow [OCCT Boolean operations](https://sso.opencascade.com/doc/occt-6.8.0/overview/html/occt_user_guides__boolean_operations.html).
 
 ## Standard paper presets and projection symbols
 
@@ -370,7 +529,6 @@ blocks, lettering or sheet-format requirements. References:
 [ISO 5456-2 projection methods](https://www.iso.org/obp/ui?_escaped_fragment_=iso%3Astd%3Aiso%3A5456%3A-2%3Aed-1%3Av1%3Aen),
 and the projection-symbol examples in the
 [government engineering-drawing training manual](https://bharatskills.gov.in/pdf/E_Books/CTS/35/English/ED/Engineering%20Drawing%20-%20Group%207%20%282022%29.pdf).
-
 
 ## Structured GD&T intent
 
@@ -435,7 +593,6 @@ projected zones, advanced modifiers, datum shift and semantic PMI exchange remai
 on the roadmap; measured simulators, bonus tolerance and zone evaluation for a
 supported subset are described in [Measured inspection](#measured-inspection-schema-68). References: [ASME Y14.5 scope and contents](https://www.asme.org/getmedia/da2ff89e-067b-4160-8e2e-53e6c7da1d3b/17707.pdf)
 and [NIST datum-system model](https://nvlpubs.nist.gov/nistpubs/jres/104/4/html/j44mac.htm).
-
 
 ## Composite controls and named datum-reference frames
 

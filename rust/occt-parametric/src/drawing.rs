@@ -3,6 +3,9 @@ use super::*;
 use crate::assembly::{cross, dot, subtract};
 use std::collections::BTreeSet;
 
+mod bezier;
+mod curves;
+pub use curves::{DrawingCurve, DrawingCurveGeometry};
 mod detail;
 mod dimensions;
 pub use dimensions::{
@@ -33,7 +36,7 @@ mod sheets;
 mod slice;
 pub use sheets::{DrawingSheet, DrawingSheetOrientation, DrawingSheetSize, ProjectionConvention};
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum DrawingViewKind {
     #[default]
@@ -48,14 +51,14 @@ pub enum DrawingViewKind {
     },
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct DrawingDetail {
     /// Crop window in view-local model mm. Its minimum maps to paper_origin_mm.
     pub minimum_mm: [f64; 2],
     pub maximum_mm: [f64; 2],
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct DrawingView {
     pub id: String,
     pub outputs: Vec<InstanceOutputRef>,
@@ -72,9 +75,12 @@ pub struct DrawingView {
     pub detail: Option<DrawingDetail>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hatching: Option<SectionHatching>,
+    /// Material-ID overrides: up to eight line families, or none to suppress fill.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub material_hatching: BTreeMap<String, Vec<SectionHatching>>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum DimensionDirection {
     Aligned,
@@ -89,7 +95,7 @@ pub enum DimensionDirection {
     },
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct DrawingDimension {
     pub id: String,
     pub view: String,
@@ -103,7 +109,7 @@ pub struct DrawingDimension {
     pub presentation: DimensionPresentation,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum DrawingText {
     Literal(String),
@@ -116,14 +122,14 @@ pub enum DrawingText {
     },
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct DrawingNote {
     pub id: String,
     pub position_mm: [f64; 2],
     pub text: DrawingText,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct DrawingDefinition {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub datum_reference_frames: Vec<DrawingDatumReferenceFrame>,
@@ -151,12 +157,19 @@ pub struct DrawingDefinition {
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct DrawingRenderOptions {
+    /// Exact standard curves, detail trims and hatch intersections.
+    /// SVG uses bounded fallback for curves the format cannot represent.
+    pub exact_curves: bool,
+    /// Paper-space chord tolerance for SVG rational/high-degree Bezier fallback.
+    pub curve_tolerance_mm: f64,
     pub curve_samples: usize,
     pub maximum_vertices: usize,
 }
 impl Default for DrawingRenderOptions {
     fn default() -> Self {
         Self {
+            exact_curves: false,
+            curve_tolerance_mm: 0.01,
             curve_samples: 64,
             maximum_vertices: 1_000_000,
         }
@@ -184,6 +197,7 @@ pub struct DrawingLabel {
 }
 #[derive(Clone, Debug, PartialEq)]
 pub struct GeneratedDrawing {
+    pub curves: Vec<DrawingCurve>,
     pub gdt_lines: Vec<DrawingPolyline>,
     pub gdt_labels: Vec<DrawingLabel>,
     pub sheet_lines: Vec<DrawingPolyline>,
@@ -362,14 +376,21 @@ impl DrawingDefinition {
     }
 
     pub(crate) fn validate(&self, graph: &InstanceGraph<'_>) -> Result<(), ModelError> {
-        self.validate_cached(graph, &mut HashMap::new(), &mut HashMap::new())
+        let materials = graph
+            .assembly
+            .materials
+            .iter()
+            .map(|m| m.id.as_str())
+            .collect();
+        self.validate_cached(graph, &mut HashMap::new(), &mut HashMap::new(), &materials)
     }
 
-    fn validate_cached<'definition>(
+    pub(crate) fn validate_cached<'definition>(
         &self,
         graph: &InstanceGraph<'definition>,
         resolutions: &mut ResolutionCache<'definition>,
         features: &mut HashMap<&'definition str, HashSet<&'definition str>>,
+        materials: &HashSet<&str>,
     ) -> Result<(), ModelError> {
         let paper_size = self.effective_paper_size_mm();
         if self.id.is_empty()
@@ -398,6 +419,7 @@ impl DrawingDefinition {
                 return Err(ModelError::new("drawing views need unique IDs and outputs"));
             }
             view.frame()?;
+            hatching::materials::validate_materials(view, materials)?;
             validate_outputs(view, graph, resolutions, features)?;
         }
         let views = self
@@ -427,8 +449,8 @@ impl DrawingDefinition {
     }
 
     /// Regenerates each participating parameter variant once, at current poses.
-    /// Exact HLR determines visibility; exported curves are bounded uniform-
-    /// parameter polyline approximations, not chordal-error certified geometry.
+    /// Exact HLR determines visibility. Exact mode preserves standard curves;
+    /// default mode exports uniform-parameter polyline approximations.
     /// Time: generation + kernel edge/face HLR work + O(exported vertices).
     /// Storage: generated outputs + projection topology + exported vertices.
     pub fn generate(
@@ -456,11 +478,22 @@ impl DrawingDefinition {
         let mut ids = HashSet::new();
         let mut resolutions = HashMap::new();
         let mut features = HashMap::new();
+        let materials = graph
+            .assembly
+            .materials
+            .iter()
+            .map(|m| m.id.as_str())
+            .collect();
         for definition in definitions {
             if !ids.insert(&definition.id) {
                 return Err(ModelError::new("drawing batch IDs must be unique"));
             }
-            definition.validate_cached(graph, &mut resolutions, &mut features)?;
+            definition.validate_cached(graph, &mut resolutions, &mut features, &materials)?;
+        }
+        if !options.curve_tolerance_mm.is_finite() || options.curve_tolerance_mm <= 0.0 {
+            return Err(ModelError::new(
+                "drawing curve tolerance must be finite and positive",
+            ));
         }
         if !(2..=100_000).contains(&options.curve_samples) || options.maximum_vertices < 2 {
             return Err(ModelError::new(
@@ -476,10 +509,18 @@ impl DrawingDefinition {
             .collect::<Vec<_>>();
         let generation = graph.regenerate_instances_current(session, &instances)?;
         let mut vertices = 0;
+        let mut hatching = hatching::materials::MaterialCache::new(graph);
         definitions
             .iter()
             .map(|definition| {
-                definition.generate_from(graph, session, &generation, options, &mut vertices)
+                definition.generate_from(
+                    graph,
+                    session,
+                    &generation,
+                    options,
+                    &mut vertices,
+                    &mut hatching,
+                )
             })
             .collect()
     }
@@ -491,8 +532,10 @@ impl DrawingDefinition {
         generation: &GraphRegeneration<'_>,
         options: DrawingRenderOptions,
         vertices: &mut usize,
+        hatching: &mut hatching::materials::MaterialCache<'_, '_>,
     ) -> Result<GeneratedDrawing, ModelError> {
         let mut drawing = GeneratedDrawing {
+            curves: Vec::new(),
             gdt_lines: Vec::new(),
             gdt_labels: Vec::new(),
             sheet_lines: Vec::new(),
@@ -553,7 +596,15 @@ impl DrawingDefinition {
             return Err(ModelError::new("drawing exceeds export vertex budget"));
         }
         for view in &self.views {
-            append_view(session, view, generation, options, vertices, &mut drawing)?;
+            append_view(
+                session,
+                view,
+                generation,
+                options,
+                vertices,
+                &mut drawing,
+                hatching,
+            )?;
         }
         let views = self
             .views
@@ -656,6 +707,7 @@ fn append_view(
     options: DrawingRenderOptions,
     vertices: &mut usize,
     drawing: &mut GeneratedDrawing,
+    hatching: &mut hatching::materials::MaterialCache<'_, '_>,
 ) -> Result<(), ModelError> {
     let shapes = view
         .outputs
@@ -668,7 +720,22 @@ fn append_view(
         })
         .collect::<Result<Vec<_>, _>>()?;
     let combined = session.create_compound(&shapes)?;
-    if view.hatching.is_some() && matches!(view.kind, DrawingViewKind::Section { .. }) {
+    if !view.material_hatching.is_empty() {
+        let mut section = hatching::materials::SectionContext {
+            session,
+            options,
+            vertices,
+            drawing,
+        };
+        let cut = section.append(view, &shapes, hatching)?;
+        if matches!(view.kind, DrawingViewKind::Slice) {
+            return append_edges(session, view, &cut, false, options, vertices, drawing);
+        }
+    }
+    if view.material_hatching.is_empty()
+        && view.hatching.is_some()
+        && matches!(view.kind, DrawingViewKind::Section { .. })
+    {
         let section_view = hatching::section_plane_view(view)?;
         let section = slice::intersection(session, &section_view, &combined)?;
         hatching::append(session, view, &section, options, vertices, drawing)?;
@@ -726,6 +793,9 @@ fn append_edges(
     vertices: &mut usize,
     drawing: &mut GeneratedDrawing,
 ) -> Result<(), ModelError> {
+    if options.exact_curves {
+        return curves::append(session, view, shape, hidden, options, vertices, drawing);
+    }
     let count = session.subshape_count(shape, ShapeType::Edge)?;
     let sample_budget = options
         .curve_samples
