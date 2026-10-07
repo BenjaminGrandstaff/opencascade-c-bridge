@@ -31,6 +31,43 @@ pub struct InspectionRecord {
     pub datum_features: Vec<MeasuredFeature>,
     #[serde(default)]
     pub controls: Vec<MeasuredFeature>,
+    /// Measured roughness values by drawing surface texture ID.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub surface_textures: Vec<MeasuredTexture>,
+}
+
+/// Roughness readings for one surface texture requirement, each in the
+/// requirement's parameter and unit (for example several Ra traces in µm).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MeasuredTexture {
+    pub id: String,
+    pub values: Vec<f64>,
+}
+
+/// Measured roughness against a requirement by the maximum rule: every
+/// reading must be at or below the maximum and at or above any minimum.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct TextureMeasurement {
+    pub readings: usize,
+    pub highest: f64,
+    pub lowest: f64,
+    pub maximum: f64,
+    pub minimum: Option<f64>,
+    pub conforms: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case", tag = "status", content = "detail")]
+pub enum TextureResult {
+    Evaluated(TextureMeasurement),
+    NotMeasured,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct TextureInspection {
+    pub texture: String,
+    pub result: TextureResult,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -74,14 +111,21 @@ pub struct InspectionReport {
     pub datum_frames: Vec<MeasuredDatumFrame>,
     /// One entry per effective feature control frame, in drawing order.
     pub controls: Vec<ControlInspection>,
+    /// One entry per surface texture requirement, in drawing order.
+    pub surface_textures: Vec<TextureInspection>,
 }
 
 impl InspectionReport {
-    /// True only when every control was evaluated and conforms.
+    /// True only when every control and surface texture was evaluated and
+    /// conforms.
     pub fn conforms(&self) -> bool {
         self.controls
             .iter()
             .all(|c| matches!(&c.result, ControlResult::Evaluated(m) if m.conforms))
+            && self
+                .surface_textures
+                .iter()
+                .all(|t| matches!(&t.result, TextureResult::Evaluated(m) if m.conforms))
     }
 }
 
@@ -161,11 +205,77 @@ impl DrawingDefinition {
                 });
             }
         }
+        let surface_textures = self.inspect_textures(&record.surface_textures, &mut total)?;
         Ok(InspectionReport {
             drawing: self.id.clone(),
             datum_frames,
             controls,
+            surface_textures,
         })
+    }
+
+    /// Compares readings with each texture requirement. Unknown or repeated
+    /// IDs, empty or invalid readings, and the shared reading budget fail the
+    /// record. O(textures + readings).
+    fn inspect_textures(
+        &self,
+        measured: &[MeasuredTexture],
+        total: &mut usize,
+    ) -> Result<Vec<TextureInspection>, ModelError> {
+        let mut readings: HashMap<&str, &[f64]> = HashMap::with_capacity(measured.len());
+        for texture in measured {
+            *total = total.saturating_add(texture.values.len());
+            if *total > MAX_INSPECTION_POINTS {
+                return Err(ModelError::new(
+                    "inspection record exceeds the measured-point budget",
+                ));
+            }
+            if !self.surface_textures.iter().any(|t| t.id == texture.id) {
+                return Err(ModelError::new(format!(
+                    "inspection record references unknown surface texture '{}'",
+                    texture.id
+                )));
+            }
+            if texture.values.is_empty()
+                || !texture.values.iter().all(|v| v.is_finite() && *v >= 0.0)
+            {
+                return Err(ModelError::new(
+                    "roughness readings must be nonempty, finite and nonnegative",
+                ));
+            }
+            if readings
+                .insert(texture.id.as_str(), &texture.values)
+                .is_some()
+            {
+                return Err(ModelError::new(
+                    "inspection record repeats a surface texture",
+                ));
+            }
+        }
+        Ok(self
+            .surface_textures
+            .iter()
+            .map(|texture| TextureInspection {
+                texture: texture.id.clone(),
+                result: match readings.get(texture.id.as_str()) {
+                    None => TextureResult::NotMeasured,
+                    Some(values) => {
+                        let highest = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+                        let lowest = values.iter().copied().fold(f64::INFINITY, f64::min);
+                        let limits = &texture.roughness;
+                        TextureResult::Evaluated(TextureMeasurement {
+                            readings: values.len(),
+                            highest,
+                            lowest,
+                            maximum: limits.maximum,
+                            minimum: limits.minimum,
+                            conforms: highest <= limits.maximum
+                                && limits.minimum.is_none_or(|minimum| lowest >= minimum),
+                        })
+                    }
+                },
+            })
+            .collect())
     }
 }
 

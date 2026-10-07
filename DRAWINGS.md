@@ -912,3 +912,51 @@ surface, against one shared frame.
 **Not yet covered.** Datum features of size, datum shift, pattern and composite
 evaluation, measured datum targets, profile against nominal surfaces,
 cylindricity, and runout. Measurement uncertainty is not modeled.
+
+## Surface texture (schema 71)
+
+`DrawingDefinition.surface_textures` holds stable-ID `DrawingSurfaceTexture`
+requirements, drawn with the ASME Y14.36 symbol and attached like GD&T controls
+(a `DrawingGdtAttachment` whose leader points at the anchor datum). Each holds:
+
+- `unit`: `micrometer` or `microinch`, and `roughness`: a B46.1 parameter
+  (`ra`, `rq`, `rz` or `rmax`) with a `maximum` and optional `minimum`. A
+  single value is a maximum; with a minimum it is a range (`Rz 32-63 µin`).
+- `cutoff_mm`: the roughness sampling length, one of B46.1's standard values
+  0.08, 0.25, 0.8, 2.5 or 8 mm (`STANDARD_CUTOFFS_MM`).
+- `waviness`: maximum height and spacing in millimeters.
+- `lay`: `parallel` (=), `perpendicular` (⊥, drawn as strokes), `crossed` (X),
+  `multidirectional` (M), `circular` (C), `radial` (R) or `particulate` (P).
+- `material_removal`: `any` (basic symbol), `required` (bar closing the V) or
+  `prohibited` (circle in the V).
+- `method`: a production-method note such as `GRIND` (1–40 printable ASCII
+  characters), and `all_around`: a circle at the symbol's corner.
+
+The roughness value sits above the short leg, ending before the long leg. Any
+method, sampling length, waviness, lay or all-around turns on the extension bar:
+the method above it, `Lc 0.8  W 0.05-25` below it, and the lay symbol at its
+end; the bar grows to fit its notes. Symbols are vector strokes plus text in
+`gdt_lines`/`gdt_labels` (DXF layer `GD_T`) and count exactly in the vertex
+budget. Text positions use a 2 mm per character estimate; the layout follows
+Y14.36's arrangement but has not been checked against the standard's figures.
+Validation rejects repeated IDs, nonpositive or nonfinite values, a minimum at
+or above the maximum, a nonstandard cutoff, an invalid method and the usual
+attachment errors. Like GD&T anchors, a texture's anchor locates the leader;
+it does not select a persistent face.
+
+### Checking measured roughness
+
+An `InspectionRecord` may list `surface_textures: [{ "id", "values" }]`:
+readings in the requirement's parameter and unit (for example several Ra
+traces). The report's `surface_textures` evaluates each requirement by the
+maximum rule: every reading at or below the maximum and at or above any
+minimum, reporting the count, highest and lowest readings. Requirements
+without readings are `not_measured`, and `InspectionReport::conforms()` then
+fails. Unknown or repeated IDs, empty, negative or nonfinite readings fail the
+record; readings count toward `MAX_INSPECTION_POINTS`. The
+`occt-inspection-report` command accepts the same list inside a group's
+`points` and counts textures with the controls. The 16% rule, filtering and
+instrument settings are not modeled.
+
+A scale benchmark generates one drawing with 10,000 texture symbols and exports
+it as SVG and DXF.

@@ -48,6 +48,7 @@ mod solver;
 mod step_export;
 mod sweep;
 mod tangency;
+mod textures;
 mod validation;
 mod variable_fillet;
 
@@ -159,6 +160,7 @@ fn main() -> ExitCode {
     outcomes.push(drawing::drawing_case(definition));
     outcomes.push(drawing::assembly_drawing_case(definition));
     outcomes.push(inspection::inspection_case(definition));
+    outcomes.push(textures::texture_case(definition));
     outcomes.push(mesh::gltf_case(definition));
     outcomes.push(mesh::gltf_output_case(definition));
     outcomes.push(mesh::manufacturing_case());

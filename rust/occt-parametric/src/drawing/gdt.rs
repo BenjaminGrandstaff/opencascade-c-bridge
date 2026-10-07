@@ -5,6 +5,7 @@ mod datums;
 mod inspection;
 mod position;
 mod size;
+pub(in crate::drawing) mod texture;
 pub use composite::DrawingCompositeRefinement;
 pub use datums::{
     DatumPrecedence, DrawingDatumCoordinateFrame, DrawingDatumReferenceFrame,
@@ -12,13 +13,18 @@ pub use datums::{
 };
 pub use inspection::{
     ControlInspection, ControlMeasurement, ControlResult, InspectionRecord, InspectionReport,
-    MAX_INSPECTION_POINTS, MeasuredDatumFrame, MeasuredFeature,
+    MAX_INSPECTION_POINTS, MeasuredDatumFrame, MeasuredFeature, MeasuredTexture, TextureInspection,
+    TextureMeasurement, TextureResult,
 };
 pub use position::{
     DrawingPositionMeasurement, DrawingPositionMeasurementResult, PositionSampleEvaluation,
     PositionToleranceAxis,
 };
 pub use size::{DrawingSizeLimits, FeatureOfSizeKind, GeometricToleranceAllowance};
+pub use texture::{
+    DrawingSurfaceTexture, MaterialRemoval, RoughnessLimits, RoughnessParameter, RoughnessUnit,
+    STANDARD_CUTOFFS_MM, SurfaceLay, Waviness,
+};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]

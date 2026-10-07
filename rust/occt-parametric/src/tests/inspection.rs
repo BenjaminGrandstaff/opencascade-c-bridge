@@ -19,7 +19,7 @@ fn plane(id: &str, p: [f64; 3], n: [f64; 3]) -> DatumDefinition {
 
 /// A 60 × 40 × 10 mm plate: outward datum planes, a top, a side, a 45° chamfer
 /// face, and a vertical hole axis.
-fn plate() -> FamilyDefinition {
+pub(super) fn plate() -> FamilyDefinition {
     let mut definition = family(RequirementPriority::Required, 100000.0);
     definition.requirements.clear();
     let s = std::f64::consts::FRAC_1_SQRT_2;
@@ -46,7 +46,7 @@ fn plate() -> FamilyDefinition {
     definition
 }
 
-fn attachment(anchor: &str) -> DrawingGdtAttachment {
+pub(super) fn attachment(anchor: &str) -> DrawingGdtAttachment {
     DrawingGdtAttachment {
         view: "top".into(),
         output: InstanceOutputRef {
@@ -112,7 +112,7 @@ fn position(
     f
 }
 
-fn page() -> DrawingDefinition {
+pub(super) fn page() -> DrawingDefinition {
     let datum = |id: &str, label: &str, anchor: &str| DrawingDatumFeature {
         id: id.into(),
         label: label.into(),
@@ -135,6 +135,7 @@ fn page() -> DrawingDefinition {
             datum("B", "B", "left"),
             datum("C", "C", "front"),
         ],
+        surface_textures: Vec::new(),
         feature_control_frames: vec![
             control("flat", "top", GeometricCharacteristic::Flatness, 0.05, &[]),
             control(
@@ -217,9 +218,10 @@ fn measured(id: &str, points_mm: Vec<[f64; 3]>) -> MeasuredFeature {
 }
 
 /// Exact datum and feature surfaces of the nominal plate.
-fn nominal_record() -> InspectionRecord {
+pub(super) fn nominal_record() -> InspectionRecord {
     InspectionRecord {
         drawing: "plate".into(),
+        surface_textures: Vec::new(),
         datum_features: vec![
             measured("A", grid(|u, v| [60.0 * u, 40.0 * v, 0.0])),
             measured("B", grid(|u, v| [0.0, 40.0 * u, 10.0 * v])),
@@ -530,7 +532,7 @@ fn size_limits_validate_persist_and_inspection_records_round_trip() {
     assert!(json.contains("\"size_limits\""));
     let restored = ModelDocument::from_json(&json).unwrap();
     assert_eq!(restored, document);
-    assert_eq!(restored.schema_version, 68);
+    assert_eq!(restored.schema_version, CURRENT_SCHEMA_VERSION);
     let mut legacy: serde_json::Value = serde_json::from_str(&json).unwrap();
     legacy["schema_version"] = serde_json::json!(67);
     for frame in legacy["drawings"][0]["feature_control_frames"]
@@ -547,6 +549,7 @@ fn size_limits_validate_persist_and_inspection_records_round_trip() {
     );
     let record = InspectionRecord {
         drawing: "plate".into(),
+        surface_textures: Vec::new(),
         datum_features: vec![measured("A", vec![[0.5, -2.0, 1e6]])],
         controls: vec![measured("flat", vec![[1.0, 2.0, 3.0]])],
     };

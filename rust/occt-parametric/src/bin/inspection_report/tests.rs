@@ -83,6 +83,7 @@ fn fixture() -> ModelDocument {
         datum_features: Vec::new(),
         datum_reference_frames: Vec::new(),
         feature_control_frames: Vec::new(),
+        surface_textures: Vec::new(),
     };
     for (id, tolerance) in [
         (

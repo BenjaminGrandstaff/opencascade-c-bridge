@@ -303,7 +303,10 @@ and detail trims in DXF, with exact SVG curves where representable and
 error-controlled SVG approximation otherwise. See [Drawings](DRAWINGS.md) for
 the API and export limits. Schema 69 adds per-view material hatch families,
 including inherited assignments, paired lines, crosshatching and suppression.
-Schema 68 evaluates measured points against drawing GD&T: fitted datum
+Schema 71 adds drawing surface texture requirements (ASME B46.1 roughness
+limits, sampling length, waviness, lay, material removal and method) drawn with
+the Y14.36 symbol, and checks measured roughness readings in inspection
+reports; see [Drawings](DRAWINGS.md#surface-texture-schema-71). Schema 68 evaluates measured points against drawing GD&T: fitted datum
 simulators, flatness and orientation zones, and position with MMC/LMC bonus from
 stated size limits (`DrawingSizeLimits`, also used for bonus arithmetic and
 supplied-axis position checks). Dimensional measurements are checked against

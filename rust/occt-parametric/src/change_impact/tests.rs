@@ -148,6 +148,7 @@ fn placement_material_suppression_and_drawings_do_not_rebuild_local_geometry() {
         datum_reference_frames: Vec::new(),
         datum_features: Vec::new(),
         feature_control_frames: Vec::new(),
+        surface_textures: Vec::new(),
         sheet: None,
         id: "view".into(),
         title: "Assembly".into(),

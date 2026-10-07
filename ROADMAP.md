@@ -11,7 +11,7 @@ tracks status and order.
 | C ABI (`src/`, `include/`) | ABI 46 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 69 | Active development |
+| `occt-parametric` (engineering layer) | Schema 71 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
@@ -20,7 +20,7 @@ tracks status and order.
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
 | Coverage | 93.61% lines overall, test code excluded; C++ 94.13% lines, 87.40% branches, 100% functions; Rust 93.42% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 108 Rust cases plus 5 model-command and 7 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Scale benchmarks | 109 Rust cases plus 5 model-command and 7 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
 
@@ -559,6 +559,16 @@ tracks status and order.
   error-bounded (Bezier, B-spline) extrema.
 
 ### Parametric layer
+
+- Surface texture (schema 71; 69 and 70 are reserved for the material hatch
+  families and cone/sphere features in progress elsewhere): drawing
+  requirements with B46.1 roughness limits (Ra, Rq, Rz, Rmax in µm or µin),
+  standard sampling lengths, waviness, lay, material-removal requirement,
+  method note and all-around, drawn as Y14.36 symbols with exact vertex
+  budgets; inspection records check readings by the maximum rule. Four tests
+  cover rendering in SVG and DXF, validation, persistence and inspection.
+  10,000 symbols generate with SVG and DXF exports in 0.102 s (1 s budget).
+  See [Drawings](DRAWINGS.md#surface-texture-schema-71).
 
 - Measured GD&T inspection (schema 68): `evaluate_inspection` checks an
   inspection record of measured points against a drawing. Planar datum
@@ -1216,8 +1226,11 @@ scopes and inspected repo capabilities, not a full conformity audit.
    callouts now show recorded intent; nominal drill catalogs and thread strings
    still do not verify compliance or engagement/strength.
 5. **Manufacturing surface texture** — [B46.1](https://www.asme.org/codes-standards/about-standards/technology-highlights/advanced-manufacturing):
-   roughness, waviness and lay requirements attached to surfaces and shown on
-   drawings. Rendering-material roughness is independent of these requirements.
+   requirements attached to persistent faces rather than leader anchors, the
+   16% rule and filtering for measured readings, and Y14.36 symbol placement
+   checked against the standard. Drawing requirements, symbols and maximum-rule
+   reading checks exist (schema 71). Rendering-material roughness is
+   independent of these requirements.
 6. **Controlled drawing release and assembly lists** — [Y14.100](https://www.asme.org/codes-standards/find-codes-standards/engineering-drawing-practices):
    structured approval/release records, drawing revision tables, parts lists,
    assembly balloons, and links between released drawing/model revisions.

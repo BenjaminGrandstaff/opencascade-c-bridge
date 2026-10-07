@@ -147,6 +147,7 @@ pub(crate) fn inspection_case(definition: &FamilyDefinition) -> Outcome {
                     })
                     .collect(),
                 feature_control_frames: controls,
+                surface_textures: Vec::new(),
                 sheet: None,
                 id: "inspected".into(),
                 title: "Inspected plate".into(),
@@ -205,6 +206,7 @@ pub(crate) fn inspection_case(definition: &FamilyDefinition) -> Outcome {
             });
             let record = InspectionRecord {
                 drawing: "inspected".into(),
+                surface_textures: Vec::new(),
                 datum_features: vec![
                     datum("A", &|u, v| [side * u, side * v, 0.0]),
                     datum("B", &|u, v| [0.0, side * u, 10.0 * v]),
