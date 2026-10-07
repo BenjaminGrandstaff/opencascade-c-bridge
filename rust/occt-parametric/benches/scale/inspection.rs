@@ -171,6 +171,7 @@ pub(crate) fn inspection_case(definition: &FamilyDefinition) -> Outcome {
                     kind: DrawingViewKind::Orthographic,
                     detail: None,
                     hatching: None,
+                    material_hatching: Default::default(),
                 }],
             };
             let datum = |id: &str, point: &dyn Fn(f64, f64) -> [f64; 3]| MeasuredFeature {

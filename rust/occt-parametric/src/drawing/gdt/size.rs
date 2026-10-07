@@ -1,14 +1,14 @@
 //! Size-departure arithmetic; inputs are supplied sizes, not fitted measurements.
 use super::*;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum FeatureOfSizeKind {
     Internal,
     External,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct DrawingSizeLimits {
     pub kind: FeatureOfSizeKind,
@@ -17,7 +17,7 @@ pub struct DrawingSizeLimits {
 }
 
 /// Arithmetic allowance only: does not establish measured conformity or datum shift.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct GeometricToleranceAllowance {
     pub supplied_size_mm: f64,
     pub maximum_material_size_mm: f64,

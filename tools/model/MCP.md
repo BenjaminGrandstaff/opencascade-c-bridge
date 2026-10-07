@@ -49,7 +49,7 @@ or remote service is started.
 input schema. All 28 current feature operations and 122 nested request-schema
 definitions are discoverable. Schemas derive from serde-compatible Rust types;
 new serialized variants require schema support at compilation. Authoring schemas
-target current model schema 69. The engine still migrates older documents.
+target current model schema 71. The engine still migrates older documents.
 Schemas describe serialization and basic request bounds; units, dependency
 references, dimensional constraints, selector resolution, and geometry validity
 are checked by the build engine.

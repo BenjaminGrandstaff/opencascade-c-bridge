@@ -384,7 +384,7 @@ are released in 0.082 s (5 s budget).
 
 ## Cone and sphere features
 
-Schema 69 adds `FeatureOperation::Cone { origin, axis, base_radius, top_radius,
+Schema 70 adds `FeatureOperation::Cone { origin, axis, base_radius, top_radius,
 height }` and `FeatureOperation::Sphere { center, radius }`, using the existing
 bridge constructors. Origins/centers, radii and height are length-valued
 expressions with normal unit conversion. Cone axes are dimensionless, finite and
@@ -403,7 +403,7 @@ changes rebuild the sphere and its dependents; cone origin, axis, either radius
 or height changes rebuild the cone branch. Unaffected geometry is reused.
 Transforms/booleans use ordinary operation history and selectors. Managed failures
 retain the accepted generation and release staged shapes. Earlier documents
-migrate to schema 69 with their original feature operations.
+migrate to schema 71 with their original feature operations.
 
 Four tests compare analytic volumes and centroids, transform ancestry, apex and
 cylinder limits, unit conversion, millimeter-to-meter scales at kilometer offsets,
@@ -1504,7 +1504,7 @@ exact standard-curve DXF export and detail trimming. SVG retains exact conics an
 low-degree polynomial Bézier spans, with bounded approximation of rational or
 higher-degree spans. Exact mode also trims hatch lines against native cut faces
 in bounded batches; default exports and hatching retain sampled boundaries.
-Schema 68 adds per-view material-ID hatch-family maps, inherited assignments,
+Schema 69 adds per-view material-ID hatch-family maps, inherited assignments,
 fallback/suppression and cached grouping with shared work/vertex limits. See
 [Drawings](DRAWINGS.md) for coordinates, budgets, examples, and export contracts.
 Schema 68 keeps measurement out of the model document: an inspection record of

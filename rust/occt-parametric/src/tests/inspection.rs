@@ -180,6 +180,7 @@ pub(super) fn page() -> DrawingDefinition {
             kind: DrawingViewKind::Orthographic,
             detail: None,
             hatching: None,
+            material_hatching: BTreeMap::new(),
         }],
         dimensions: Vec::new(),
         guides: Vec::new(),

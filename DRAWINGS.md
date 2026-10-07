@@ -362,7 +362,7 @@ its cutting plane. The fill comes from that plane's actual material intersection
 even when the projection origin differs. Solids are intersected and clipped
 individually so overlapping components remain present. In default sampled mode,
 boundary parity preserves holes; interval union across faces preserves disconnected islands and
-avoids double fill where components overlap. By default a view uses one shared pattern. Schema 68 adds explicit material
+avoids double fill where components overlap. By default a view uses one shared pattern. Schema 69 adds explicit material
 overrides, described below. Automatic adjacent-component alternation remains
 future work. Detail windows clip the resulting lines alongside the outlines.
 
@@ -381,7 +381,7 @@ must stay below 2^52 in magnitude. Hatch endpoints share `maximum_vertices` with
 all other drawing geometry. The assembly benchmark checks 10,000 hatch segments
 across 1,000 placed parts, exports and native handle cleanup within 30 seconds.
 
-### Material hatch families (schema 68)
+### Material hatch families (schema 69)
 
 `DrawingView.material_hatching: BTreeMap<String, Vec<SectionHatching>>` maps
 existing assembly material IDs to zero through eight line families. Each family
@@ -465,7 +465,7 @@ the shared drawing vertex budget. Native spacing must be at least
 max(1e-6 model mm, 256 × machine epsilon × face-anchor coordinate magnitude);
 smaller spacing fails explicitly instead of merging indistinguishable lines.
 Existing setups retain the sampled algorithm by default. Kernel-trimmed hatching
-uses ABI 46; schema 68 adds the optional material maps described above.
+uses ABI 46; schema 69 adds the optional material maps described above.
 
 Tests compare circular-hole and quadratic-spline endpoints to analytic curves,
 verify sample-count independence, section origins, details, tangencies, multiple

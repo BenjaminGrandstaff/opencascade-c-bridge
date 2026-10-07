@@ -4,7 +4,7 @@
 use super::*;
 
 /// Roughness parameters of ASME B46.1, each a height in the stated unit.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum RoughnessParameter {
     /// Arithmetic mean deviation of the profile.
@@ -28,7 +28,7 @@ impl RoughnessParameter {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum RoughnessUnit {
     Micrometer,
@@ -45,7 +45,7 @@ impl RoughnessUnit {
 }
 
 /// Direction of the predominant surface pattern (Y14.36 lay symbols).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SurfaceLay {
     /// `=`: parallel to the line representing the surface in the view.
@@ -64,7 +64,9 @@ pub enum SurfaceLay {
     Particulate,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum MaterialRemoval {
     /// Basic symbol: any production method.
@@ -78,7 +80,7 @@ pub enum MaterialRemoval {
 
 /// Roughness limits. A single value is a maximum; with a minimum it is a
 /// range. Values use the requirement's unit.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct RoughnessLimits {
     pub parameter: RoughnessParameter,
@@ -88,7 +90,7 @@ pub struct RoughnessLimits {
 }
 
 /// Waviness height (maximum) and spacing, both in millimeters.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Waviness {
     pub height_mm: f64,
@@ -97,7 +99,7 @@ pub struct Waviness {
 
 /// A surface texture requirement shown on a drawing, attached like a GD&T
 /// control: the leader points at the anchor datum on the selected output.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct DrawingSurfaceTexture {
     pub id: String,

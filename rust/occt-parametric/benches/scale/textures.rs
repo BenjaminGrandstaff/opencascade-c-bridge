@@ -95,12 +95,15 @@ pub(crate) fn texture_case(definition: &FamilyDefinition) -> Outcome {
                     kind: DrawingViewKind::Orthographic,
                     detail: None,
                     hatching: None,
+                    material_hatching: Default::default(),
                 }],
             };
             let generated = drawing.generate(
                 &graph,
                 &session,
                 DrawingRenderOptions {
+                    exact_curves: false,
+                    curve_tolerance_mm: 0.01,
                     curve_samples: 8,
                     maximum_vertices: 2_000_000,
                 },

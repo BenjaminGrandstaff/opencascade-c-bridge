@@ -15,7 +15,7 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 95 + first-use integration 1 (+1 doc test), recipes 3, parametric 366 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + branch command 2 + model command 12, MCP Python 8, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 95 + first-use integration 1 (+1 doc test), recipes 3, parametric 380 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 11 + viewer Node 6 + branch command 2 + model command 12, MCP Python 8, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -83,7 +83,7 @@ tracks status and order.
   verification and persistence/report case takes 0.245 s (10 s budget), checked
   by `tools/bench/run.sh`. See [AI model command](tools/model/README.md).
 
-- Saved cone and sphere features (schema 69; no ABI change): typed length
+- Saved cone and sphere features (schema 70; no ABI change): typed length
   expressions define cone/frustum radii and height, origin, sphere radius and
   center; cone axes are dimensionless and normalized without overflow/underflow.
   Either cone radius may be zero, and equal radii use a cylinder. Every input
@@ -96,7 +96,7 @@ tracks status and order.
   geometry reused and all handles released. Older feature operations are unchanged.
   See [Parametric architecture](PARAMETRIC_ARCHITECTURE.md#cone-and-sphere-features).
 
-- Explicit material hatch families (schema 68): per-view material-ID maps select
+- Explicit material hatch families (schema 69): per-view material-ID maps select
   up to eight angle/spacing/phase line families for paired lines or crosshatching.
   Clone inheritance, fallback patterns, explicit suppression, same-material union,
   shared work/vertex limits, cached material lookup and reused cut faces work in
@@ -106,7 +106,7 @@ tracks status and order.
   30 s budget, with one generated variant and no retained handles. Older views
   keep empty maps and their existing shared pattern. Standards-verified material
   presets and automatic adjacent-component alternation remain future work.
-  See [Drawings](DRAWINGS.md#material-hatch-families-schema-68).
+  See [Drawings](DRAWINGS.md#material-hatch-families-schema-69).
 
 - Exact section-hatch intersections (no ABI/schema change): `exact_curves`
   now trims bounded batches of hatch lines against native cut faces, preserving

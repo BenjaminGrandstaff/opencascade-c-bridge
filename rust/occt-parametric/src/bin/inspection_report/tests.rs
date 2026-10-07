@@ -74,6 +74,7 @@ fn fixture() -> ModelDocument {
             kind: DrawingViewKind::Orthographic,
             detail: None,
             hatching: None,
+            material_hatching: BTreeMap::new(),
         }],
         dimensions: Vec::new(),
         notes: Vec::new(),
