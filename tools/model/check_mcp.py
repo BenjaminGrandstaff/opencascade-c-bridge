@@ -153,5 +153,23 @@ with tempfile.TemporaryDirectory(prefix='occb-mcp-scale-') as root:
         elapsed=time.monotonic()-started
         assert elapsed<10
         print(f'PASS MCP 100 curved sweep scenes, native route lengths and bounded overlays: {elapsed:.3f}s / 10s')
+        ring=client.tool('occt_get_example',dict(name='revolved-ring'))['structuredContent']
+        ring['sketches']=False
+        for i in range(1,100):ring['model']['instances'].append({'clone':dict(id=f'ring-{i}',source='ring',overrides={},provenance='scale')})
+        ring['outputs']=[dict(instance='ring' if i==0 else f'ring-{i}',output='body')for i in range(100)]
+        started=time.monotonic()
+        result=client.tool('occt_visualize_model',ring)
+        assert not result['isError'],result
+        data=json.loads(client.call('resources/read',dict(uri=result['structuredContent']['resources']['view.json']))['result']['contents'][0]['text'])
+        assert len(data['scenes'])==100
+        for scene in data['scenes']:
+            angle=next(a for a in scene['annotations'] if a['id']=='driving-revolve-angle')
+            assert abs(angle['detail']['value_radians']-math.tau)<1e-12
+            assert abs(angle['detail']['arc_radius_mm']-7)<1e-7
+            assert angle['parameters']==['angle']
+            assert len(angle['detail']['angular_arc'])==65
+        elapsed=time.monotonic()-started
+        assert elapsed<10
+        print(f'PASS MCP 100 revolved scenes, signed angle arcs and linked controls: {elapsed:.3f}s / 10s')
     finally:
         client.close()

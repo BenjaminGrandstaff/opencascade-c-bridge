@@ -1,0 +1,344 @@
+{
+  "schema": "occb-model-view-v1",
+  "model": {
+    "schema_version": 77,
+    "family": {
+      "id": "turned-ring",
+      "version": 1,
+      "parameters": [
+        {
+          "id": "inner_radius",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 6,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 0.1,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": null
+        },
+        {
+          "id": "wall",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 2,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 0.1,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": null
+        },
+        {
+          "id": "height",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 10,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 0.1,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": null
+        },
+        {
+          "id": "angle",
+          "parameter_type": {
+            "scalar": "scalar"
+          },
+          "default": {
+            "scalar": {
+              "value": 6.283185307179586,
+              "dimension": "scalar",
+              "unit": null
+            }
+          },
+          "minimum": {
+            "value": -6.283185307179586,
+            "dimension": "scalar",
+            "unit": null
+          },
+          "maximum": {
+            "value": 6.283185307179586,
+            "dimension": "scalar",
+            "unit": null
+          }
+        }
+      ],
+      "derived_parameters": [],
+      "derived_vector_parameters": [],
+      "constraints": [],
+      "requirements": [
+        {
+          "id": "valid",
+          "version": 1,
+          "kind": "validation",
+          "priority": "required",
+          "statement": "Revolved ring valid",
+          "rule": {
+            "shape_valid": {
+              "output": "body"
+            }
+          },
+          "provenance": "Demonstration assumptions",
+          "traces": [
+            {
+              "feature": "body"
+            }
+          ]
+        }
+      ],
+      "datums": [],
+      "features": [
+        {
+          "id": "body",
+          "operation": {
+            "revolve": {
+              "input": "profile",
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 0,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "axis": {
+                "literal": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "z": {
+                    "value": 1,
+                    "dimension": "scalar",
+                    "unit": null
+                  }
+                }
+              },
+              "angle_radians": {
+                "parameter": "angle"
+              }
+            }
+          }
+        },
+        {
+          "id": "profile",
+          "operation": {
+            "sketch_face": {
+              "sketch": {
+                "id": "section",
+                "origin": {
+                  "literal": {
+                    "x": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    },
+                    "y": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                },
+                "x_axis": {
+                  "literal": {
+                    "x": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "y_axis": {
+                  "literal": {
+                    "x": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "points": [
+                  {
+                    "id": "a",
+                    "x": {
+                      "parameter": "inner_radius"
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "b",
+                    "x": {
+                      "add": [
+                        {
+                          "parameter": "inner_radius"
+                        },
+                        {
+                          "parameter": "wall"
+                        }
+                      ]
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "c",
+                    "x": {
+                      "add": [
+                        {
+                          "parameter": "inner_radius"
+                        },
+                        {
+                          "parameter": "wall"
+                        }
+                      ]
+                    },
+                    "y": {
+                      "parameter": "height"
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "d",
+                    "x": {
+                      "parameter": "inner_radius"
+                    },
+                    "y": {
+                      "parameter": "height"
+                    },
+                    "fixed": true
+                  }
+                ],
+                "lines": [
+                  {
+                    "id": "bottom",
+                    "start": "a",
+                    "end": "b"
+                  },
+                  {
+                    "id": "outer",
+                    "start": "b",
+                    "end": "c"
+                  },
+                  {
+                    "id": "top",
+                    "start": "c",
+                    "end": "d"
+                  },
+                  {
+                    "id": "inner",
+                    "start": "d",
+                    "end": "a"
+                  }
+                ],
+                "circles": [],
+                "profile": [
+                  "bottom",
+                  "outer",
+                  "top",
+                  "inner"
+                ],
+                "constraints": []
+              }
+            }
+          }
+        }
+      ]
+    },
+    "instances": [
+      {
+        "base": {
+          "id": "ring",
+          "overrides": {},
+          "provenance": "dimensions are illustrative assumptions"
+        }
+      }
+    ]
+  },
+  "outputs": [
+    {
+      "instance": "ring",
+      "output": "body"
+    }
+  ],
+  "sketches": true
+}

@@ -61,7 +61,7 @@ LD_LIBRARY_PATH="$PWD/build" rust/occt-parametric/target/debug/occt-model \
   --schema request > /tmp/occt-request.schema.json
 ```
 
-`resources/list` advertises twelve `occt://schema/NAME` and thirteen
+`resources/list` advertises twelve `occt://schema/NAME` and fourteen
 `occt://example/NAME` resources. Accepted builds return specific
 `occt://build/BUILD_ID/ARTIFACT` URIs; a resource template advertises this form.
 JSON and SVG resources return text, while STEP and STL return base64 blobs.
@@ -358,3 +358,9 @@ and quarter-circle route. The solid view measures native route length, exposes
 `run` and `bend_radius` controls, and overlays the sampled route. Changing
 `radius` changes the section; it does not change route length. Dimensions are
 family-local and follow placement in the assembly viewer.
+
+`revolved-ring` defines a rectangular radial/axial sketch and revolves it about
+its Z axis. `inner_radius`, `wall`, `height` and signed `angle` controls regenerate
+the part. Angles are dimensionless radians; a zero sweep is rejected by the
+kernel, and the magnitude may not exceed one full turn. The solid view shows
+a linked angular arc around the native axis.

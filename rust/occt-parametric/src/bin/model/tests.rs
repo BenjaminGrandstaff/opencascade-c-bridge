@@ -1230,3 +1230,144 @@ fn sweep_route_overlay_vertices_obey_the_global_view_budget() {
     request["options"]["maximum_vertices"] = json!(geometry_vertices + 64);
     view_request(&dir, request, "exact-budget").unwrap();
 }
+
+#[test]
+fn revolved_views_show_signed_angles_on_the_actual_axis() {
+    let dir = Directory::new();
+    for (index, angle, y_axis, wire) in [
+        (0, std::f64::consts::FRAC_PI_2, false, false),
+        (1, -std::f64::consts::FRAC_PI_2, true, true),
+        (2, std::f64::consts::TAU, false, false),
+    ] {
+        let mut request = view_example("revolved-ring");
+        let f = &mut request["model"]["family"];
+        f["parameters"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|p| p["id"] == "angle")
+            .unwrap()["default"]["scalar"]["value"] = json!(angle);
+        let origin = point(4.0, -3.0, 2.0);
+        let direction = VectorExpr::Literal(VectorQuantity::scalars(
+            0.0,
+            if y_axis { 100.0 } else { 0.0 },
+            if y_axis { 0.0 } else { 100.0 },
+        ));
+        f["features"][0]["operation"]["revolve"]["origin"] = serde_json::to_value(&origin).unwrap();
+        f["features"][0]["operation"]["revolve"]["axis"] = serde_json::to_value(direction).unwrap();
+        let operation = &mut f["features"][1]["operation"];
+        let mut sketch = operation["sketch_face"]["sketch"].clone();
+        sketch["origin"] = serde_json::to_value(origin).unwrap();
+        if y_axis {
+            sketch["y_axis"] =
+                serde_json::to_value(VectorExpr::Literal(VectorQuantity::scalars(0.0, 1.0, 0.0)))
+                    .unwrap();
+        }
+        *operation = if wire {
+            json!({"sketch_wire":{"sketch":sketch}})
+        } else {
+            json!({"sketch_face":{"sketch":sketch}})
+        };
+        let name = format!("revolve-{index}");
+        view_request(&dir, request.clone(), &name).unwrap();
+        let data: Value =
+            serde_json::from_str(&fs::read_to_string(dir.0.join(&name).join("view.json")).unwrap())
+                .unwrap();
+        let solid = &data["scenes"][0];
+        assert_eq!(solid["valid"], true);
+        let dimension = solid["annotations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|a| a["id"] == "driving-revolve-angle")
+            .unwrap();
+        assert_eq!(dimension["parameters"], json!(["angle"]));
+        assert_eq!(dimension["detail"]["value_radians"], json!(angle));
+        assert!((dimension["detail"]["arc_radius_mm"].as_f64().unwrap() - 7.0).abs() < 1e-7);
+        let arc = dimension["detail"]["angular_arc"].as_array().unwrap();
+        assert_eq!(arc.len(), if index == 2 { 65 } else { 17 });
+        let center = if y_axis {
+            [4.0, 2.0, 2.0]
+        } else {
+            [4.0, -3.0, 7.0]
+        };
+        let expected_end = match index {
+            0 => [4.0, 4.0, 7.0],
+            1 => [4.0, 2.0, 9.0],
+            _ => [11.0, -3.0, 7.0],
+        };
+        for (a, b) in arc
+            .last()
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .iter()
+            .zip(expected_end)
+        {
+            assert!((a.as_f64().unwrap() - b).abs() < 1e-7);
+        }
+        for sample in arc {
+            let p = sample
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|v| v.as_f64().unwrap())
+                .collect::<Vec<_>>();
+            assert!(
+                (p.iter()
+                    .zip(center)
+                    .map(|(a, b)| (a - b).powi(2))
+                    .sum::<f64>()
+                    .sqrt()
+                    - 7.0)
+                    .abs()
+                    < 1e-7
+            );
+            assert!(
+                (p[if y_axis { 1 } else { 2 }] - center[if y_axis { 1 } else { 2 }]).abs() < 1e-7
+            );
+        }
+        let snapshot = fs::read_to_string(dir.0.join(&name).join("view-0001.svg")).unwrap();
+        assert!(snapshot.contains("data-entity=\"angular-dimension\""));
+        let document = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+        let session = Session::new().unwrap();
+        let generated = PartInstance {
+            id: "ring".into(),
+            definition: &document.family,
+            overrides: HashMap::new(),
+            provenance: "test".into(),
+        }
+        .regenerate(&session)
+        .unwrap();
+        assert!(
+            (session.volume(generated.shape("body").unwrap()).unwrap() - 140.0 * angle.abs()).abs()
+                < 1e-6
+        );
+        drop(generated);
+        assert_eq!(session.shape_count().unwrap(), 0);
+    }
+}
+
+#[test]
+fn revolve_angle_arc_obeys_the_global_vertex_budget() {
+    let dir = Directory::new();
+    let mut request = view_example("revolved-ring");
+    request["sketches"] = json!(false);
+    view_request(&dir, request.clone(), "ring-full").unwrap();
+    let data: Value =
+        serde_json::from_str(&fs::read_to_string(dir.0.join("ring-full/view.json")).unwrap())
+            .unwrap();
+    let scene = &data["scenes"][0];
+    let geometry_vertices = scene["mesh"].as_array().unwrap().len() * 3
+        + scene["lines"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|line| line.as_array().unwrap().len())
+            .sum::<usize>();
+    request["options"] = json!({"maximum_vertices":geometry_vertices+64});
+    let error = view_request(&dir, request.clone(), "ring-short").unwrap_err();
+    assert!(error.message.contains("vertex"), "{error}");
+    request["options"]["maximum_vertices"] = json!(geometry_vertices + 65);
+    view_request(&dir, request, "ring-exact").unwrap();
+}

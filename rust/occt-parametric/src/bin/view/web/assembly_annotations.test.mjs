@@ -67,3 +67,14 @@ test('curved dimension routes follow assembly placement without endpoint chords'
   drawAssemblyAnnotations(root,scene,{annotationMatrix:identity},camera,{...options,dimensions:false},()=>{});
   assert.equal(root.children.length,0);
 });
+
+test('angular annotations render their signed arc instead of an anchor chord',()=>{
+  const root=new Element(),camera=fitCamera({min:[0,0,0],max:[.05,.05,.05]},1.5);
+  const arc=[[10,0,5],[7,-7,5],[0,-10,5]];
+  const annotation={id:'angle',kind:'dimension',status:'driving',label:'-1.571 rad',anchors:[arc[0],[0,0,5],arc[2]],detail:{angular_arc:arc}};
+  drawAssemblyAnnotations(root,{instance:'ring',annotations:[annotation]},{annotationMatrix:identity},camera,{width:900,height:600},()=>{});
+  assert.equal(root.children.filter(e=>e.tag==='polyline').length,1);
+  assert(!root.children.some(e=>e.tag==='path'));
+  const expected=arc.map(p=>screenPoint(placedPoint(p,identity),viewProjection(camera,1.5),900,600).join(',')).join(' ');
+  assert.equal(root.children.find(e=>e.tag==='polyline').attributes.points,expected);
+});

@@ -1,5 +1,5 @@
 //! Shared native dimension and constraint scenes for live and standalone viewers.
-use occt_bridge::{MeshOptions, Session, ShapeType, Vec3};
+use occt_bridge::{MeshOptions, Session, Shape, ShapeType, Vec3};
 use occt_parametric::*;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -397,6 +397,19 @@ fn solid_scene(
     // downstream booleans/transforms, controls stay in the linked side panel.
     if let Some(feature) = part.definition.features.iter().find(|f| f.id == output) {
         primitive_dimensions(feature, parameters, &mut annotations)?;
+        if let FeatureOperation::Revolve { input, .. } = &feature.operation {
+            let profile = generated
+                .shape(input)
+                .ok_or_else(|| failure("visualization", "revolve profile unavailable"))?;
+            revolve_dimension(
+                session,
+                feature,
+                parameters,
+                profile,
+                &mut annotations,
+                budget,
+            )?;
+        }
         if let FeatureOperation::Sweep {
             path, orientation, ..
         } = &feature.operation
@@ -628,6 +641,89 @@ fn solid_scene(
         json!({"kind":"solid","instance":part.id,"feature":output,"title":format!("{}/{}",part.id,output),"bounds":[min,max],"mesh":mesh,"lines":lines,"parameters":controls,"annotations":annotations,"coordinate_system":"family-local mm","valid":session.is_valid(shape).map_err(|e|failure("visualization",e))?}),
     )
 }
+fn revolve_dimension(
+    session: &Session,
+    feature: &FeatureDefinition,
+    parameters: &HashMap<String, ParameterValue>,
+    profile: &Shape<'_>,
+    annotations: &mut Vec<Value>,
+    budget: &mut Budget,
+) -> Result<(), Failure> {
+    let FeatureOperation::Revolve {
+        input,
+        origin,
+        axis,
+        angle_radians,
+    } = &feature.operation
+    else {
+        return Ok(());
+    };
+    let evaluate = |expression: &VectorExpr| {
+        expression
+            .evaluate(parameters)
+            .map(|v| [v.x.value, v.y.value, v.z.value])
+            .map_err(|e| model_failure("visualization", e))
+    };
+    let origin_value = evaluate(origin)?;
+    let direction = evaluate(axis)?;
+    // Scale first to avoid overflow for large dimensionless axis components.
+    let scale = direction.into_iter().map(f64::abs).fold(0.0, f64::max);
+    let n = direction.map(|v| v / scale);
+    let magnitude = n[0].hypot(n[1].hypot(n[2]));
+    let n = n.map(|v| v / magnitude);
+    let angle = angle_radians
+        .evaluate(parameters)
+        .map_err(|e| model_failure("visualization", e))?
+        .value;
+    let face = if session
+        .shape_type(profile)
+        .map_err(|e| failure("visualization", e))?
+        == ShapeType::Wire
+    {
+        Some(
+            session
+                .create_face_from_wire(profile)
+                .map_err(|e| failure("visualization", e))?,
+        )
+    } else {
+        None
+    };
+    let start = point(
+        session
+            .center_of_mass(face.as_ref().unwrap_or(profile))
+            .map_err(|e| failure("visualization", e))?,
+    );
+    let along = (0..3)
+        .map(|i| (start[i] - origin_value[i]) * n[i])
+        .sum::<f64>();
+    let center = std::array::from_fn::<_, 3, _>(|i| origin_value[i] + along * n[i]);
+    let u = std::array::from_fn::<_, 3, _>(|i| start[i] - center[i]);
+    let radius = u[0].hypot(u[1].hypot(u[2]));
+    let v = [
+        n[1] * u[2] - n[2] * u[1],
+        n[2] * u[0] - n[0] * u[2],
+        n[0] * u[1] - n[1] * u[0],
+    ];
+    let mut arc = Vec::new();
+    if radius > 1e-7 {
+        let segments = ((angle.abs() / std::f64::consts::TAU * 64.0).ceil() as usize).clamp(2, 64);
+        check_budget(&mut budget.vertices, segments + 1, "vertex")?;
+        for i in 0..=segments {
+            let t = angle * i as f64 / segments as f64;
+            arc.push(std::array::from_fn::<_, 3, _>(|j| {
+                center[j] + u[j] * t.cos() + v[j] * t.sin()
+            }));
+        }
+    }
+    let anchors = if let Some(end) = arc.last() {
+        json!([start, center, end])
+    } else {
+        json!([center])
+    };
+    annotations.push(annotation("driving-revolve-angle".into(),format!("revolve ∠ {angle:.3} rad"),"dimension","driving",vec![feature.id.clone()],names(&serde_json::to_value(angle_radians).map_err(|e|failure("visualization",e))?),anchors,json!({"input":input,"expression":angle_radians,"value_radians":angle,"axis_origin":origin_value,"axis_direction":n,"arc_center":center,"arc_radius_mm":radius,"angular_arc":arc,"driving":true,"description":"Signed right-hand sweep around the native axis. The display arc passes through the source profile's area centroid; its radius is not a part size dimension."})));
+    Ok(())
+}
+
 fn primitive_dimensions(
     feature: &FeatureDefinition,
     parameters: &HashMap<String, ParameterValue>,

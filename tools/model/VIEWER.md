@@ -157,3 +157,18 @@ points, with 32 samples per edge. Linked-control discovery takes O(F + D) over
 feature definitions and traversed dependencies. Temporary native edge handles
 are released after measurement. A 100-pipe MCP scale gate verifies measurements,
 controls and bounded curve overlays with a 10-second budget.
+
+Revolved solids expose `driving-revolve-angle`, a signed right-hand sweep in
+radians linked to its angle expression. Its display arc follows the source
+profile's area centroid about the supplied axis, including translated and
+non-unit axis definitions. Closed wire inputs use a temporary planar face so
+the anchor agrees with face inputs. The arc radius is a display anchor, not a
+part radius or diameter measurement. If the profile centroid lies on the axis,
+the label remains available without an invented arc radius.
+
+Arcs use at most 65 points (64 segments per turn), charged against the global
+vertex budget. Native centroid work depends on the profile topology; arc
+construction takes O(A) time and storage for A <= 65 samples. Positive and
+negative partial turns and complete turns are covered by geometry, snapshot,
+control and assembly-overlay tests. The `revolved-ring` AI example and a
+100-scene MCP gate exercise the same view path.
