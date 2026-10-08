@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Release-scale checks for MCP discovery and a 1,000-part build/report roundtrip."""
+import math
 import json
 import os
 import pathlib
@@ -132,5 +133,25 @@ with tempfile.TemporaryDirectory(prefix='occb-mcp-scale-') as root:
         elapsed=time.monotonic()-started
         assert elapsed<30
         print(f'PASS MCP 1000 annotated solid scenes, global budgets, dimension data and artifacts: {elapsed:.3f}s / 30s')
+        # Native sweep-route measurements and bounded sampled curve overlays.
+        pipe=client.tool('occt_get_example',dict(name='curved-pipe'))['structuredContent']
+        pipe['sketches']=False
+        pipe['options']=dict(maximum_triangles=120000,maximum_vertices=400000)
+        for i in range(1,100):pipe['model']['instances'].append({'clone':dict(id=f'pipe-{i}',source='pipe',overrides={},provenance='scale')})
+        pipe['outputs']=[dict(instance='pipe' if i==0 else f'pipe-{i}',output='body')for i in range(100)]
+        started=time.monotonic()
+        result=client.tool('occt_visualize_model',pipe)
+        assert not result['isError'],result
+        data=json.loads(client.call('resources/read',dict(uri=result['structuredContent']['resources']['view.json']))['result']['contents'][0]['text'])
+        assert len(data['scenes'])==100
+        for scene in data['scenes']:
+            route=next(a for a in scene['annotations'] if a['id']=='sweep-route-length')
+            assert abs(route['detail']['value_mm']-(10+5*math.pi))<1e-7
+            assert route['parameters']==['bend_radius','run']
+            assert len(route['detail']['dimension_paths'])==2
+            assert sum(len(p) for p in route['detail']['dimension_paths'])==64
+        elapsed=time.monotonic()-started
+        assert elapsed<10
+        print(f'PASS MCP 100 curved sweep scenes, native route lengths and bounded overlays: {elapsed:.3f}s / 10s')
     finally:
         client.close()

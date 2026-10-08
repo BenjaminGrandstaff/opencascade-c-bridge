@@ -93,6 +93,11 @@ pub fn render(scene: &Value) -> String {
     }
     if let Some(annotations) = scene["annotations"].as_array() {
         for a in annotations {
+            if let Some(paths) = a["detail"]["dimension_paths"].as_array() {
+                for path in paths {
+                    lines.push((path, "route-dimension"));
+                }
+            }
             if a["detail"]["angular_arc"]
                 .as_array()
                 .is_some_and(|p| !p.is_empty())

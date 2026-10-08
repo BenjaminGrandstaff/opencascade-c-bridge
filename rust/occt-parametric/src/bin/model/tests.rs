@@ -1144,3 +1144,89 @@ fn saved_profile_loft_viewer_keeps_sketches_and_measures_section_spacing() {
         }
     }
 }
+
+#[test]
+fn sweep_viewer_measures_native_route_length_and_links_path_controls() {
+    let dir = Directory::new();
+    for (run, bend) in [(10.0, 10.0), (15.0, 20.0)] {
+        let mut request = view_example("curved-pipe");
+        for parameter in request["model"]["family"]["parameters"]
+            .as_array_mut()
+            .unwrap()
+        {
+            match parameter["id"].as_str().unwrap() {
+                "run" => parameter["default"]["scalar"]["value"] = json!(run),
+                "bend_radius" => parameter["default"]["scalar"]["value"] = json!(bend),
+                _ => {}
+            }
+        }
+        let name = format!("sweep-{run}");
+        view_request(&dir, request, &name).unwrap();
+        let data: Value =
+            serde_json::from_str(&fs::read_to_string(dir.0.join(&name).join("view.json")).unwrap())
+                .unwrap();
+        let scene = data["scenes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["kind"] == "solid")
+            .unwrap();
+        let route = scene["annotations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|a| a["id"] == "sweep-route-length")
+            .unwrap();
+        let expected = run + bend * std::f64::consts::FRAC_PI_2;
+        assert!((route["detail"]["value_mm"].as_f64().unwrap() - expected).abs() < 1e-7);
+        assert_eq!(route["detail"]["measurement"], "native_edge_length_sum");
+        assert_eq!(route["detail"]["driving"], false);
+        assert_eq!(route["parameters"], json!(["bend_radius", "run"]));
+        assert_eq!(route["anchors"].as_array().unwrap().len(), 1);
+        let paths = route["detail"]["dimension_paths"].as_array().unwrap();
+        assert_eq!(paths.len(), 2);
+        assert!(paths.iter().all(|p| p.as_array().unwrap().len() == 32));
+        let samples = paths
+            .iter()
+            .flat_map(|p| p.as_array().unwrap())
+            .collect::<Vec<_>>();
+        assert!(samples.iter().all(|p| p[2] == 0.0));
+        assert!(
+            samples
+                .iter()
+                .any(|p| (p[0].as_f64().unwrap() - run - bend).abs() < 1e-7
+                    && (p[1].as_f64().unwrap() - bend).abs() < 1e-7)
+        );
+        let snapshot = fs::read_to_string(dir.0.join(&name).join("view-0001.svg")).unwrap();
+        assert_eq!(
+            snapshot.matches("data-entity=\"route-dimension\"").count(),
+            2
+        );
+        assert!(snapshot.contains("route length"));
+    }
+}
+
+#[test]
+fn sweep_route_overlay_vertices_obey_the_global_view_budget() {
+    let dir = Directory::new();
+    let mut request = view_example("curved-pipe");
+    request["sketches"] = json!(false);
+    view_request(&dir, request.clone(), "full-route").unwrap();
+    let data: Value =
+        serde_json::from_str(&fs::read_to_string(dir.0.join("full-route/view.json")).unwrap())
+            .unwrap();
+    let scene = &data["scenes"][0];
+    let geometry_vertices = scene["mesh"].as_array().unwrap().len() * 3
+        + scene["lines"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|line| line.as_array().unwrap().len())
+            .sum::<usize>();
+    // The route contributes two separately sampled 32-point edges.
+    request["options"] = json!({"maximum_vertices":geometry_vertices+63});
+    let error = view_request(&dir, request.clone(), "short-budget").unwrap_err();
+    assert!(error.message.contains("vertex"), "{error}");
+    request["options"]["maximum_vertices"] = json!(geometry_vertices + 64);
+    view_request(&dir, request, "exact-budget").unwrap();
+}

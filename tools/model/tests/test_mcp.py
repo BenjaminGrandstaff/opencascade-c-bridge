@@ -1,5 +1,6 @@
 """Wire-protocol, schema, and geometry checks against the actual model binary."""
 import json
+import math
 import os
 import pathlib
 import sys
@@ -57,7 +58,7 @@ class McpTests(unittest.TestCase):
         with self.assertRaises(jsonschema.ValidationError):
             jsonschema.validate(bad, schema)
         resources = self.client.call('resources/list')['result']['resources']
-        self.assertEqual(len(resources), 24)
+        self.assertEqual(len(resources), 25)
         self.assertEqual(len(self.client.call('resources/templates/list')['result']['resourceTemplates']), 1)
         read = self.client.call('resources/read', dict(uri='occt://schema/request'))['result']['contents'][0]
         self.assertEqual(json.loads(read['text']), schema)
@@ -256,6 +257,15 @@ class McpTests(unittest.TestCase):
         spacing = next(a for a in data['scenes'][0]['annotations'] if a['id']=='loft-spacing-0')
         self.assertAlmostEqual(spacing['detail']['value_mm'],20.0)
         self.assertIn('height',spacing['parameters'])
+        pipe = self.client.tool('occt_get_example',dict(name='curved-pipe'))['structuredContent']
+        jsonschema.validate(pipe,schema)
+        result = self.client.tool('occt_visualize_model',pipe)
+        self.assertFalse(result['isError'])
+        data = json.loads(self.client.call('resources/read',dict(uri=result['structuredContent']['resources']['view.json']))['result']['contents'][0]['text'])
+        route = next(a for a in data['scenes'][0]['annotations'] if a['id']=='sweep-route-length')
+        self.assertAlmostEqual(route['detail']['value_mm'],10+5*math.pi)
+        self.assertEqual(route['parameters'],['bend_radius','run'])
+        self.assertEqual(len(route['detail']['dimension_paths']),2)
         # Ordinary accepted builds also publish the annotated viewer when preview is on.
         build_request = dict(schema='occb-model-request-v1',model=request['model'],outputs=request['outputs'],preview=True,step=False,stl=False)
         built = self.client.tool('occt_build',build_request)['structuredContent']

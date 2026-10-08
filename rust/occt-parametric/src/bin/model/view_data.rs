@@ -397,6 +397,58 @@ fn solid_scene(
     // downstream booleans/transforms, controls stay in the linked side panel.
     if let Some(feature) = part.definition.features.iter().find(|f| f.id == output) {
         primitive_dimensions(feature, parameters, &mut annotations)?;
+        if let FeatureOperation::Sweep {
+            path, orientation, ..
+        } = &feature.operation
+        {
+            let route = generated
+                .shape(path)
+                .ok_or_else(|| failure("visualization", "sweep route unavailable"))?;
+            let mut distance = 0.0;
+            let mut paths = Vec::new();
+            for edge in session
+                .subshapes(route, ShapeType::Edge)
+                .map_err(|e| failure("visualization", e))?
+            {
+                distance += session
+                    .edge_length(&edge)
+                    .map_err(|e| failure("visualization", e))?;
+                let samples = session
+                    .edge_sample_points(&edge, 32)
+                    .map_err(|e| failure("visualization", e))?;
+                check_budget(&mut budget.vertices, samples.len(), "vertex")?;
+                paths.push(samples.into_iter().map(point).collect::<Vec<_>>());
+            }
+            let definitions = part
+                .definition
+                .features
+                .iter()
+                .map(|f| (f.id.as_str(), f))
+                .collect::<HashMap<_, _>>();
+            let mut pending = vec![path.as_str()];
+            let mut visited = BTreeSet::new();
+            let mut controls = BTreeSet::new();
+            while let Some(id) = pending.pop() {
+                if !visited.insert(id) {
+                    continue;
+                }
+                if let Some(f) = definitions.get(id) {
+                    controls.extend(names(
+                        &serde_json::to_value(&f.operation)
+                            .map_err(|e| failure("visualization", e))?,
+                    ));
+                }
+                if let Some(inputs) = input_map.get(id) {
+                    pending.extend(inputs.iter().copied());
+                }
+            }
+            let anchor = point(
+                session
+                    .center_of_mass(route)
+                    .map_err(|e| failure("visualization", e))?,
+            );
+            annotations.push(annotation("sweep-route-length".into(),format!("route length {} mm",length_label(distance)),"dimension","measured",vec![output.into()],controls.into_iter().collect(),json!([anchor]),json!({"path":path,"orientation":orientation,"value_mm":distance,"measurement":"native_edge_length_sum","dimension_paths":paths,"driving":false,"description":"Native route length; the displayed curve is sampled for visualization. This is not the endpoint distance or material cut length."})));
+        }
         if let FeatureOperation::ProfileLoft { profiles, .. } = &feature.operation {
             let section_definitions = part
                 .definition

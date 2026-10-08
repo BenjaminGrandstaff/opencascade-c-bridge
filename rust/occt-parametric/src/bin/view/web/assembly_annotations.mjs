@@ -38,7 +38,21 @@ export function drawAssemblyAnnotations(root, scene, node, camera, options, sele
     // Ignore annotations whose anchors are wholly outside the viewport.
     if (points.every(p => p[0] < 0 || p[0] > width || p[1] < 0 || p[1] > height)) continue;
     const color = a.status === 'failed' ? '#b52b36' : a.status === 'passed' ? '#24734d' : '#315fb3';
-    if (a.kind === 'dimension' && points.length > 1) {
+    const curves = a.detail?.dimension_paths ?? (a.detail?.angular_arc?.length ? [a.detail.angular_arc] : []);
+    for (const curve of curves) {
+      // Split at clipped samples so a route never bridges a hidden segment.
+      let run = [];
+      const flush = () => {
+        if (run.length > 1) root.append(make('polyline', {points:run.map(p=>p.join(',')).join(' '),stroke:color,fill:'none',class:'assembly-dimension', 'data-route':a.id}));
+        run = [];
+      };
+      for (const sample of curve) {
+        const projected = screenPoint(placedPoint(sample, node.annotationMatrix), projection, width, height);
+        if (projected) run.push(projected); else flush();
+      }
+      flush();
+    }
+    if (a.kind === 'dimension' && points.length > 1 && !curves.length) {
       const [p, q] = points;
       root.append(make('path', {d: `M${p[0]},${p[1]} L${q[0]},${q[1]}`, stroke:color, fill:'none', class:'assembly-dimension'}));
       const length = Math.hypot(q[0]-p[0], q[1]-p[1]);

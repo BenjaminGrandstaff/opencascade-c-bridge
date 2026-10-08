@@ -61,7 +61,7 @@ LD_LIBRARY_PATH="$PWD/build" rust/occt-parametric/target/debug/occt-model \
   --schema request > /tmp/occt-request.schema.json
 ```
 
-`resources/list` advertises twelve `occt://schema/NAME` and twelve
+`resources/list` advertises twelve `occt://schema/NAME` and thirteen
 `occt://example/NAME` resources. Accepted builds return specific
 `occt://build/BUILD_ID/ARTIFACT` URIs; a resource template advertises this form.
 JSON and SVG resources return text, while STEP and STL return base64 blobs.
@@ -352,3 +352,9 @@ profiles. Edit section radii or `height`; dependencies regenerate the native
 solid and viewer spacing. Profiles must be closed planar single boundaries.
 The authoring schema includes `profile_loft` with 2–1,000 section IDs and a
 `ruled` flag. See [saved-profile loft semantics](../../LOFTS.md).
+
+`curved-pipe` demonstrates a native circular sketch swept along a tangent line
+and quarter-circle route. The solid view measures native route length, exposes
+`run` and `bend_radius` controls, and overlays the sampled route. Changing
+`radius` changes the section; it does not change route length. Dimensions are
+family-local and follow placement in the assembly viewer.

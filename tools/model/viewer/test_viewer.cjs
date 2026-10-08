@@ -21,6 +21,7 @@ for(let i=0;i<data.scenes.length;i++){
  elements.scene.value=String(i);elements.scene.emit('change');
  assert.equal(viewer.scene.title,data.scenes[i].title);
  if(viewer.scene.error)continue;
+ for(const route of viewer.scene.annotations.filter(a=>a.detail?.dimension_paths?.length)){assert.equal(elements.overlay.children.filter(e=>e.attributes['data-route']===route.id).length,route.detail.dimension_paths.length);elements.dimensions.checked=false;elements.dimensions.emit('change');assert(!elements.overlay.children.some(e=>e.attributes['data-route']===route.id));elements.dimensions.checked=true;elements.dimensions.emit('change');}
  const dimension=viewer.scene.annotations.find(a=>a.kind==='dimension')||viewer.scene.annotations.find(a=>a.kind==='profile_operation')||viewer.scene.annotations[0];
  assert(dimension,'scene needs an inspectable annotation');
  // Click the same list button a user would select, and inspect related controls.

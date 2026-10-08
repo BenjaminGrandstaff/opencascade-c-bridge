@@ -50,3 +50,20 @@ test('assembly labels select their native annotation and update with transforms 
   assert(root.children.some(e=>e.attributes['data-annotation']==='valid'));
   drawAssemblyAnnotations(root,null,node,camera,options,select);assert.equal(root.children.length,0);
 });
+
+test('curved dimension routes follow assembly placement without endpoint chords',()=>{
+  const root=new Element(), camera=fitCamera({min:[0,0,0],max:[.15,.05,.05]},1.5);
+  const annotation={id:'route',kind:'dimension',status:'measured',label:'25.708 mm',anchors:[[10,4,0]],detail:{dimension_paths:[[[0,0,0],[10,0,0]],[[10,0,0],[17,3,0],[20,10,0]]]}};
+  const scene={instance:'pipe',annotations:[annotation]}, options={width:900,height:600};
+  drawAssemblyAnnotations(root,scene,{annotationMatrix:identity},camera,options,()=>{});
+  const curves=root.children.filter(e=>e.tag==='polyline');
+  assert.equal(curves.length,2);
+  assert(!root.children.some(e=>e.tag==='path'),'route has no straight distance arrow');
+  const expected=annotation.detail.dimension_paths[1].map(p=>screenPoint(placedPoint(p,identity),viewProjection(camera,1.5),900,600).join(',')).join(' ');
+  assert.equal(curves[1].attributes.points,expected);
+  const shifted=[...identity];shifted[12]=.02;
+  drawAssemblyAnnotations(root,scene,{annotationMatrix:shifted},camera,options,()=>{});
+  assert.notEqual(root.children.find(e=>e.tag==='polyline').attributes.points,curves[0].attributes.points);
+  drawAssemblyAnnotations(root,scene,{annotationMatrix:identity},camera,{...options,dimensions:false},()=>{});
+  assert.equal(root.children.length,0);
+});

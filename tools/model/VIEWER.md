@@ -143,3 +143,17 @@ symmetry and point-on-curve markers, and native edited profiles in purple.
 Source curves remain visible, faded when a derived profile exists. Operation
 rows expose linked controls and native failure details. See
 [Sketches](../../SKETCHES.md) and the `sketch-advanced` example.
+
+Swept solids show native route length (`sweep-route-length`) with linked route
+parameters and curve overlays in both viewers and SVG snapshots. The displayed
+route uses 32 samples per native edge; its measured length is the sum of native
+edge lengths, not sampled segment lengths or endpoint separation. Route samples
+consume the global vertex budget. The label is anchored at the route's
+length-weighted centre, and assembly curves follow the part placement. The
+`curved-pipe` AI example illustrates a tangent line/arc sweep.
+
+Route measurements and sampling take O(E + P), for E route edges and P sampled
+points, with 32 samples per edge. Linked-control discovery takes O(F + D) over
+feature definitions and traversed dependencies. Temporary native edge handles
+are released after measurement. A 100-pipe MCP scale gate verifies measurements,
+controls and bounded curve overlays with a 10-second budget.

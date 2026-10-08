@@ -15,15 +15,23 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 102 + first-use integration 1 (+1 doc test), recipes 3, parametric 409 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 16 + branch command 2 + model command 18, MCP Python 8, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 102 + first-use integration 1 (+1 doc test), recipes 3, parametric 409 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 17 + branch command 2 + model command 20, MCP Python 8, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. New profile-loft code passes targeted lint. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
 | Coverage | Last recorded: 93.61% lines overall, test code excluded; C++ 94.13% lines, 87.40% branches, 100% functions; Rust 93.42% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 117 Rust cases plus 5 model-command and 7 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Scale benchmarks | 117 Rust cases plus 5 model-command and 8 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
 
+- Native sweep route annotations (no ABI/schema change): solid views show
+  native summed edge length and sampled route curves, with links to upstream
+  path controls. Both viewers and SVG snapshots display curves; assembly
+  overlays transform routes through family placement and clip hidden samples.
+  Route samples obey the global vertex budget. AI example `curved-pipe` exposes
+  a tangent line/arc sweep. Model, MCP and JavaScript tests cover edits, exact
+  length, controls, rendering, placement and budget boundaries.
+  The 100-scene release-scale gate passes in 6.278 s (10 s budget).
 - Saved-profile lofts (ABI 49, schema 77): native closed planar sketch
   faces/wires become ordered ruled or smooth solid transitions. Circles,
   ellipses, arcs, splines and mixed edge counts retain native section geometry;
