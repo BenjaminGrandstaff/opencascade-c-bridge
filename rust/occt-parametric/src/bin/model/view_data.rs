@@ -397,6 +397,51 @@ fn solid_scene(
     // downstream booleans/transforms, controls stay in the linked side panel.
     if let Some(feature) = part.definition.features.iter().find(|f| f.id == output) {
         primitive_dimensions(feature, parameters, &mut annotations)?;
+        if let FeatureOperation::Hole {
+            input,
+            extent: extent @ (HoleExtent::UpToFace { .. } | HoleExtent::UpToNext),
+            ..
+        } = &feature.operation
+        {
+            let witness = part
+                .hole_limit_measurement(session, generated, output)
+                .map_err(|e| model_failure("visualization", e))?
+                .ok_or_else(|| failure("visualization", "hole limit has no measurement"))?;
+            let inputs = part
+                .definition
+                .feature_inputs()
+                .map_err(|e| model_failure("visualization", e))?;
+            let definitions = part
+                .definition
+                .features
+                .iter()
+                .map(|f| (f.id.as_str(), f))
+                .collect::<HashMap<_, _>>();
+            let mut pending = vec![output];
+            let mut seen = BTreeSet::new();
+            let mut controls = BTreeSet::new();
+            while let Some(id) = pending.pop() {
+                if !seen.insert(id) {
+                    continue;
+                }
+                if let Some(feature) = definitions.get(id) {
+                    controls.extend(names(
+                        &serde_json::to_value(&feature.operation)
+                            .map_err(|e| failure("visualization", e))?,
+                    ));
+                }
+                if let Some(parents) = inputs.get(id) {
+                    pending.extend(parents.iter().copied());
+                }
+            }
+            let controls = controls.into_iter().collect::<Vec<_>>();
+            let mode = if matches!(extent, HoleExtent::UpToNext) {
+                "next face"
+            } else {
+                "selected face"
+            };
+            annotations.push(annotation("measured-hole-limit".into(),format!("hole to {mode}: {} mm",length_label(witness.distance)),"dimension","measured",vec![output.into()],controls,json!([point(witness.first),point(witness.second)]),json!({"extent":extent,"value_mm":witness.distance,"measurement":"bore_centre_ray","input":input,"driving":false})));
+        }
     }
     if let Some(FeatureDefinition {
         operation:

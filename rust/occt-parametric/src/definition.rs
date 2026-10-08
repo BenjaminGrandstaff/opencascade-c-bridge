@@ -433,8 +433,16 @@ impl FaceSelector {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum HoleExtent {
-    Blind { depth: ScalarExpr },
+    Blind {
+        depth: ScalarExpr,
+    },
     ThroughAll,
+    /// One selected bounded face, resolved against the hole input.
+    UpToFace {
+        face: Box<FaceSelector>,
+    },
+    /// Nearest whole-profile forward cutoff among the hole input's faces.
+    UpToNext,
 }
 
 /// Shape below a blind hole's full-diameter bore depth.
@@ -746,6 +754,10 @@ impl FeatureOperation {
             Self::Extrude {
                 extent: ExtrudeExtent::UpToFace { face, .. },
                 ..
+            }
+            | Self::Hole {
+                extent: HoleExtent::UpToFace { face },
+                ..
             } => face.names(&mut names),
             Self::Fillet { edges, .. }
             | Self::VariableFillet { edges, .. }
@@ -780,12 +792,18 @@ impl FeatureOperation {
                 }
                 dependencies
             }
+            Self::Hole { input, extent, .. } => {
+                let mut dependencies = vec![input.as_str()];
+                if let HoleExtent::UpToFace { face } = extent {
+                    face.dependencies(&mut dependencies);
+                }
+                dependencies
+            }
             Self::Sweep { profile, path, .. } => vec![profile, path],
             Self::SheetMetalFlat { input, .. }
             | Self::Translate { input, .. }
             | Self::Rotate { input, .. }
             | Self::Revolve { input, .. }
-            | Self::Hole { input, .. }
             | Self::Unify { input, .. } => vec![input],
             Self::Fillet { input, edges, .. }
             | Self::VariableFillet { input, edges, .. }

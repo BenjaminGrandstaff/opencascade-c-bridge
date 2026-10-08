@@ -1,7 +1,7 @@
 {
   "schema": "occb-model-request-v1",
   "model": {
-    "schema_version": 75,
+    "schema_version": 76,
     "family": {
       "id": "mating-parts",
       "version": 1,

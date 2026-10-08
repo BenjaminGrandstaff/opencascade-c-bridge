@@ -1592,3 +1592,23 @@ retained. Point-angle expressions enter incremental parameter signatures.
 Drawing callouts preserve full-diameter depth and record the point angle. The
 shared solid viewer adds bore diameter/depth, a 17-point angle arc and computed
 tip/total depth with linked controls. ABI 48 is unchanged; see [hole semantics](HOLES.md).
+
+
+## Schema 76 geometry-driven hole extents
+
+`HoleExtent::UpToFace` carries a face selector resolved on the input; `UpToNext`
+selects its earliest complete forward cutoff. The shared extrusion helpers now
+return both a bounded cutter and its selected limiting face. Hole execution
+creates a circular profile, uses the same native whole-base/cap and containment
+checks, then cuts once from the original solid to retain its history.
+
+Face selectors contribute named references, source dependencies and parameter
+signatures. Counterbores/countersinks are tested for contact against the same
+bounded face, so they cannot extend past it; smaller cavity faces do not impose
+an unnecessary recess-radius restriction. Drill points still require blind depth.
+
+`PartInstance::hole_limit_measurement` rebuilds only the bounded cutter for a
+single-output centre-ray query, using family-local generated input geometry.
+Scratch handles are released on return. The viewer traverses upstream inputs
+once with an ID index to link geometry and selector controls; drawings record
+which face-limit mode was supplied. See [semantics](HOLES.md).

@@ -3559,3 +3559,31 @@ fn pointed_hole_callouts_distinguish_full_diameter_depth_and_included_angle() {
     assert!(sheet.to_dxf().contains("DRILL POINT 120.000"));
     assert_eq!(session.shape_count().unwrap(), 0);
 }
+
+#[test]
+fn geometry_driven_hole_callouts_preserve_the_face_limit_mode() {
+    let session = Session::new().unwrap();
+    for (extent, label) in [
+        (HoleExtent::UpToNext, "UP TO NEXT FACE"),
+        (
+            HoleExtent::UpToFace {
+                face: Box::new(FaceSelector::AtExtreme {
+                    axis: CoordinateAxis::Z,
+                    extremum: Extremum::Maximum,
+                    tolerance: ScalarExpr::Literal(Quantity::length(1e-6, LengthUnit::Millimeter)),
+                }),
+            },
+            "UP TO FACE",
+        ),
+    ] {
+        let definition = callout_family(HoleFinish::Plain, extent);
+        let mut graph = InstanceGraph::new(&definition);
+        graph.add_base("part", HashMap::new(), "test").unwrap();
+        let sheet = callout_page()
+            .generate(&graph, &session, DrawingRenderOptions::default())
+            .unwrap();
+        assert!(sheet.labels[0].text.contains(label));
+        assert!(sheet.to_dxf().contains(label));
+        assert_eq!(session.shape_count().unwrap(), 0);
+    }
+}

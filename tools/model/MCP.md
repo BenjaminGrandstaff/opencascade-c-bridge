@@ -49,7 +49,7 @@ or remote service is started.
 input schema. All 28 current feature operations and 136 nested request-schema
 definitions are discoverable. Schemas derive from serde-compatible Rust types;
 new serialized variants require schema support at compilation. Authoring schemas
-target current model schema 75. The engine still migrates older documents.
+target current model schema 76. The engine still migrates older documents.
 Schemas describe serialization and basic request bounds; units, dependency
 references, dimensional constraints, selector resolution, and geometry validity
 are checked by the build engine.
@@ -61,7 +61,7 @@ LD_LIBRARY_PATH="$PWD/build" rust/occt-parametric/target/debug/occt-model \
   --schema request > /tmp/occt-request.schema.json
 ```
 
-`resources/list` advertises twelve `occt://schema/NAME` and ten
+`resources/list` advertises twelve `occt://schema/NAME` and eleven
 `occt://example/NAME` resources. Accepted builds return specific
 `occt://build/BUILD_ID/ARTIFACT` URIs; a resource template advertises this form.
 JSON and SVG resources return text, while STEP and STL return base64 blobs.
@@ -338,3 +338,10 @@ up-to-face selector. Native ABI 48 is required.
 parameter is the included angle in radians; `depth` remains the full-diameter
 bore depth. The engine verifies tip containment before cutting, and the viewer
 links angle, diameter and depth dimensions to edits. See [hole semantics](../../HOLES.md).
+
+
+`hole-limits` demonstrates schema-76 holes up to a selected or next input face,
+including spherical exits. Change `depth` to move the cap; native bore-centre
+measurements follow it. Named/persistent selectors use the normal reference and
+dependency rules. Entry recesses must remain before the selected face, and drill
+points require numeric blind depth. See [geometry-driven holes](../../HOLES.md).

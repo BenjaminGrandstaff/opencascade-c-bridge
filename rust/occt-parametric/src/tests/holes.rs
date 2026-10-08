@@ -1106,3 +1106,415 @@ fn drill_points_combine_with_entry_recesses_and_follow_other_axes() {
     }
     assert_eq!(session.shape_count().unwrap(), 0);
 }
+
+fn selected_hole_limit() -> HoleExtent {
+    HoleExtent::UpToFace {
+        face: Box::new(FaceSelector::AtExtreme {
+            axis: CoordinateAxis::Z,
+            extremum: Extremum::Minimum,
+            tolerance: length_expr(1e-6),
+        }),
+    }
+}
+
+#[test]
+fn geometric_hole_limits_remove_exact_volume_and_measure_the_chosen_face() {
+    let session = Session::new().unwrap();
+    for extent in [selected_hole_limit(), HoleExtent::UpToNext] {
+        let definition = bore(extent);
+        let instance = part(&definition);
+        let result = instance.regenerate(&session).unwrap();
+        assert!(
+            (session.volume(result.shape("hole").unwrap()).unwrap()
+                - (1000.0 - 10.0 * std::f64::consts::PI))
+                .abs()
+                < 1e-7
+        );
+        let count = session.shape_count().unwrap();
+        let witness = instance
+            .hole_limit_measurement(&session, &result, "hole")
+            .unwrap()
+            .unwrap();
+        assert!((witness.distance - 10.0).abs() < 1e-7);
+        assert!((witness.first.z - 10.0).abs() < 1e-7 && witness.second.z.abs() < 1e-7);
+        assert_eq!(session.shape_count().unwrap(), count);
+        let faces = session
+            .subshapes(result.shape("body").unwrap(), ShapeType::Face)
+            .unwrap();
+        let top = faces
+            .iter()
+            .find(|f| session.face_normal(f).unwrap().z > 0.99)
+            .unwrap();
+        assert!(
+            session
+                .history_count(
+                    result.shape("hole").unwrap(),
+                    top,
+                    HistoryRelation::Modified
+                )
+                .unwrap()
+                > 0
+        );
+    }
+    assert_eq!(session.shape_count().unwrap(), 0);
+}
+
+#[test]
+fn geometric_hole_limits_track_thickness_named_selectors_and_incremental_reuse() {
+    let session = Session::new().unwrap();
+    let mut definition = bore(selected_hole_limit());
+    definition
+        .parameters
+        .push(length_parameter("thickness", 10.0));
+    let FeatureOperation::Box { size, .. } = &mut definition.features[1].operation else {
+        panic!()
+    };
+    *size = VectorExpr::Components {
+        x: length_expr(10.0),
+        y: length_expr(10.0),
+        z: ScalarExpr::Parameter("thickness".into()),
+    };
+    let FeatureOperation::Hole {
+        position, extent, ..
+    } = &mut definition.features[0].operation
+    else {
+        panic!()
+    };
+    *position = VectorExpr::Components {
+        x: length_expr(5.0),
+        y: length_expr(5.0),
+        z: ScalarExpr::Parameter("thickness".into()),
+    };
+    let HoleExtent::UpToFace { face } = extent else {
+        panic!()
+    };
+    definition.references.push(NamedReference {
+        name: "exit".into(),
+        target: ReferenceTarget::Faces((**face).clone()),
+    });
+    **face = FaceSelector::Named("exit".into());
+    let first = part(&definition).regenerate(&session).unwrap();
+    let mut edited = part(&definition);
+    edited.overrides.insert(
+        "thickness".into(),
+        ParameterValue::Scalar(Quantity::length(20.0, LengthUnit::Millimeter)),
+    );
+    let second = edited.regenerate_incremental(&session, &first).unwrap();
+    assert!(second.regeneration.rebuilt.contains(&"hole".into()));
+    assert!(
+        (edited
+            .hole_limit_measurement(&session, &second, "hole")
+            .unwrap()
+            .unwrap()
+            .distance
+            - 20.0)
+            .abs()
+            < 1e-7
+    );
+    assert!(
+        (session.volume(second.shape("hole").unwrap()).unwrap()
+            - (2000.0 - 20.0 * std::f64::consts::PI))
+            .abs()
+            < 1e-7
+    );
+    let document = ModelDocument::from_graph(&InstanceGraph::new(&definition));
+    assert_eq!(
+        ModelDocument::from_json(&document.to_json_pretty().unwrap()).unwrap(),
+        document
+    );
+}
+
+#[test]
+fn geometric_hole_recesses_stay_before_the_same_limit_and_points_require_blind_depth() {
+    let session = Session::new().unwrap();
+    for extent in [selected_hole_limit(), HoleExtent::UpToNext] {
+        let definition = finished_bore(
+            extent.clone(),
+            HoleFinish::Counterbore {
+                diameter: length_expr(4.0),
+                depth: length_expr(2.0),
+            },
+        );
+        {
+            let result = part(&definition).regenerate(&session).unwrap();
+            assert!(
+                (session.volume(result.shape("hole").unwrap()).unwrap()
+                    - (1000.0 - 16.0 * std::f64::consts::PI))
+                    .abs()
+                    < 1e-7
+            );
+        }
+        let too_deep = finished_bore(
+            extent.clone(),
+            HoleFinish::Counterbore {
+                diameter: length_expr(4.0),
+                depth: length_expr(12.0),
+            },
+        );
+        let error = part(&too_deep).regenerate(&session).err().unwrap();
+        assert!(error.message.contains("recess reaches or extends beyond"));
+        let mut pointed = bore(extent);
+        let FeatureOperation::Hole { bottom, .. } = &mut pointed.features[0].operation else {
+            panic!()
+        };
+        *bottom = HoleBottom::DrillPoint {
+            angle_radians: ScalarExpr::Literal(Quantity::scalar(2.0)),
+        };
+        assert!(part(&pointed).regenerate(&session).is_err());
+        assert_eq!(session.shape_count().unwrap(), 0);
+    }
+}
+
+#[test]
+fn geometric_holes_follow_inclined_exits_and_native_curved_caps() {
+    let session = Session::new().unwrap();
+    for next in [false, true] {
+        let extent = if next {
+            HoleExtent::UpToNext
+        } else {
+            HoleExtent::UpToFace {
+                face: Box::new(FaceSelector::NormalAligned {
+                    direction: direction(0., 0., -1.),
+                    minimum_dot: ScalarExpr::Literal(Quantity::scalar(0.9)),
+                }),
+            }
+        };
+        let mut definition = bore(extent);
+        let blank = definition.features[1].operation.clone();
+        definition.features.push(FeatureDefinition {
+            id: "blank".into(),
+            operation: blank,
+        });
+        definition.features[1].operation = FeatureOperation::Rotate {
+            input: "blank".into(),
+            origin: position(5., 5., 10.),
+            axis: direction(0., 1., 0.),
+            angle_radians: ScalarExpr::Literal(Quantity::scalar(0.3)),
+        };
+        let instance = part(&definition);
+        let result = instance.regenerate(&session).unwrap();
+        let removed = std::f64::consts::PI * 10.0 / 0.3_f64.cos() - 2.0 * 0.3_f64.tan() / 3.0;
+        assert!(
+            (session.volume(result.shape("hole").unwrap()).unwrap() - (1000.0 - removed)).abs()
+                < 1e-6
+        );
+        assert!(
+            (instance
+                .hole_limit_measurement(&session, &result, "hole")
+                .unwrap()
+                .unwrap()
+                .distance
+                - 10.0 / 0.3_f64.cos())
+            .abs()
+                < 1e-6
+        );
+    }
+    let request: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../tools/model/curved-extrusions.request.json"
+    ))
+    .unwrap();
+    for next in [false, true] {
+        let mut document = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+        document.family.features.push(FeatureDefinition {
+            id: "bored".into(),
+            operation: FeatureOperation::Hole {
+                input: "body".into(),
+                position: position(20., 12.5, 0.),
+                axis: direction(0., 0., 1.),
+                diameter: length_expr(2.0),
+                extent: if next {
+                    HoleExtent::UpToNext
+                } else {
+                    HoleExtent::UpToFace {
+                        face: Box::new(FaceSelector::LargestArea {
+                            planar_only: false,
+                            allow_ties: false,
+                            relative_tolerance: ScalarExpr::Literal(Quantity::scalar(1e-9)),
+                        }),
+                    }
+                },
+                bottom: HoleBottom::Flat,
+                finish: HoleFinish::Plain,
+                thread: None,
+            },
+        });
+        let instance = part(&document.family);
+        let result = instance.regenerate(&session).unwrap();
+        let removed = 50.0 * std::f64::consts::PI
+            - 2.0 * std::f64::consts::PI / 3.0 * (27000.0 - 899_f64.powf(1.5));
+        let original_volume = session.volume(result.shape("body").unwrap()).unwrap();
+        let actual = original_volume - session.volume(result.shape("bored").unwrap()).unwrap();
+        // Trimmed-surface mass integration and subtraction are conditioned by
+        // the whole body volume, not only the small removed bore.
+        assert!(
+            (actual - removed).abs() < original_volume * 1e-8,
+            "{actual} / {removed}"
+        );
+        let before = session.shape_count().unwrap();
+        assert!(
+            (instance
+                .hole_limit_measurement(&session, &result, "bored")
+                .unwrap()
+                .unwrap()
+                .distance
+                - 20.0)
+                .abs()
+                < 1e-6
+        );
+        assert_eq!(session.shape_count().unwrap(), before);
+    }
+    assert_eq!(session.shape_count().unwrap(), 0);
+}
+
+#[test]
+fn geometric_hole_selector_edits_invalidate_only_its_branch_and_bad_limits_clean_up() {
+    let session = Session::new().unwrap();
+    {
+        let mut definition = bore(selected_hole_limit());
+        definition.parameters.push(ParameterDefinition {
+            id: "selector_tolerance".into(),
+            parameter_type: ParameterType::Scalar(Dimension::Length),
+            default: ParameterValue::Scalar(Quantity::length(1e-6, LengthUnit::Millimeter)),
+            minimum: None,
+            maximum: None,
+        });
+        let FeatureOperation::Hole {
+            extent: HoleExtent::UpToFace { face },
+            ..
+        } = &mut definition.features[0].operation
+        else {
+            panic!()
+        };
+        let FaceSelector::AtExtreme { tolerance, .. } = &mut **face else {
+            panic!()
+        };
+        *tolerance = ScalarExpr::Parameter("selector_tolerance".into());
+        let mut sibling = definition.features[0].clone();
+        sibling.id = "sibling".into();
+        let FeatureOperation::Hole { extent, .. } = &mut sibling.operation else {
+            panic!()
+        };
+        *extent = HoleExtent::UpToNext;
+        definition.features.push(sibling);
+        let first = part(&definition).regenerate(&session).unwrap();
+        let mut edited = part(&definition);
+        edited.overrides.insert(
+            "selector_tolerance".into(),
+            ParameterValue::Scalar(Quantity::length(1e-5, LengthUnit::Millimeter)),
+        );
+        let second = edited.regenerate_incremental(&session, &first).unwrap();
+        assert!(second.regeneration.rebuilt.contains(&"hole".into()));
+        assert!(second.regeneration.rebuilt.contains(&"placed".into()));
+        assert!(second.regeneration.reused.contains(&"body".into()));
+        assert!(second.regeneration.reused.contains(&"sibling".into()));
+    }
+    assert_eq!(session.shape_count().unwrap(), 0);
+    for extent in [
+        HoleExtent::UpToFace {
+            face: Box::new(FaceSelector::AtExtreme {
+                axis: CoordinateAxis::Z,
+                extremum: Extremum::Maximum,
+                tolerance: length_expr(1e-6),
+            }),
+        },
+        HoleExtent::UpToFace {
+            face: Box::new(FaceSelector::NormalAligned {
+                direction: direction(0., 0., 1.),
+                minimum_dot: ScalarExpr::Literal(Quantity::scalar(-1.0)),
+            }),
+        },
+    ] {
+        let definition = bore(extent);
+        assert!(part(&definition).regenerate(&session).is_err());
+        assert_eq!(session.shape_count().unwrap(), 0);
+    }
+    let mut definition = bore(HoleExtent::UpToNext);
+    let FeatureOperation::Hole {
+        position: origin, ..
+    } = &mut definition.features[0].operation
+    else {
+        panic!()
+    };
+    *origin = position(20., 20., 10.);
+    assert!(part(&definition).regenerate(&session).is_err());
+    assert_eq!(session.shape_count().unwrap(), 0);
+}
+
+#[test]
+fn shallow_wide_recesses_can_end_at_a_smaller_internal_cavity_face() {
+    let session = Session::new().unwrap();
+    for next in [false, true] {
+        let extent = if next {
+            HoleExtent::UpToNext
+        } else {
+            HoleExtent::UpToFace {
+                face: Box::new(FaceSelector::NearestCenter {
+                    target: position(5., 5., 5.),
+                    maximum_distance: length_expr(1e-6),
+                }),
+            }
+        };
+        let mut definition = finished_bore(
+            extent,
+            HoleFinish::Counterbore {
+                diameter: length_expr(4.0),
+                depth: length_expr(2.0),
+            },
+        );
+        let blank = definition.features[1].operation.clone();
+        definition.features.push(FeatureDefinition {
+            id: "blank".into(),
+            operation: blank,
+        });
+        definition.features.push(FeatureDefinition {
+            id: "cavity".into(),
+            operation: FeatureOperation::Cylinder {
+                origin: position(5., 5., 3.),
+                axis: direction(0., 0., 1.),
+                radius: length_expr(1.5),
+                height: length_expr(2.0),
+            },
+        });
+        definition.features[1].operation = FeatureOperation::Cut {
+            object: "blank".into(),
+            tool: "cavity".into(),
+        };
+        {
+            let instance = part(&definition);
+            let result = instance.regenerate(&session).unwrap();
+            assert!(
+                (instance
+                    .hole_limit_measurement(&session, &result, "hole")
+                    .unwrap()
+                    .unwrap()
+                    .distance
+                    - 5.0)
+                    .abs()
+                    < 1e-6
+            );
+            assert!(
+                (session.volume(result.shape("hole").unwrap()).unwrap()
+                    - (1000.0 - 15.5 * std::f64::consts::PI))
+                    .abs()
+                    < 1e-6
+            );
+        }
+        let FeatureOperation::Hole {
+            finish: HoleFinish::Counterbore { depth, .. },
+            ..
+        } = &mut definition.features[0].operation
+        else {
+            panic!()
+        };
+        *depth = length_expr(7.0);
+        assert!(
+            part(&definition)
+                .regenerate(&session)
+                .err()
+                .unwrap()
+                .message
+                .contains("recess reaches or extends beyond")
+        );
+        assert_eq!(session.shape_count().unwrap(), 0);
+    }
+}

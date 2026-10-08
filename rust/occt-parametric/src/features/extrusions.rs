@@ -32,52 +32,64 @@ pub(super) fn execute<'a>(
                     "up-to-face must select exactly one limiting face",
                 ));
             }
-            let candidate =
-                limited_face(session, profile, &faces[0], direction)?.ok_or_else(|| {
-                    ModelError::new(
-                        "limiting face must terminate the whole profile strictly forward",
-                    )
-                })?;
-            Ok(candidate.solid)
+            Ok(to_face(session, profile, &faces[0], direction)?.solid)
         }
         ExtrudeExtent::UpToNext { target } => {
-            let faces = session.subshapes(shape(shapes, target)?, ShapeType::Face)?;
-            let mut candidates = Vec::new();
-            for face in &faces {
-                if let Some(candidate) = limited_face(session, profile, face, direction)? {
-                    candidates.push(candidate);
-                }
-            }
-            let nearest = candidates
-                .iter()
-                .enumerate()
-                .min_by(|(_, a), (_, b)| a.volume.total_cmp(&b.volume))
-                .map(|(index, _)| index)
-                .ok_or_else(|| {
-                    ModelError::new("no forward face terminates the whole extrusion profile")
-                })?;
-            let chosen = &candidates[nearest];
-            // Minimum volume must also be contained in every competing
-            // cutoff. Crossing limits have no single nearest face for all rays.
-            // One scan and at most N containment intersections, not N² pairs.
-            for (index, other) in candidates.iter().enumerate() {
-                if index == nearest || (chosen.uniform && other.uniform) {
-                    continue;
-                }
-                let overlap = session.overlap_volume(&chosen.solid, &other.solid)?;
-                if (overlap - chosen.volume).abs() > chosen.volume * 1e-9 {
-                    return Err(ModelError::new(
-                        "next-face limits cross; select an explicit up-to-face limit",
-                    ));
-                }
-            }
-            Ok(candidates.swap_remove(nearest).solid)
+            Ok(to_next(session, profile, shape(shapes, target)?, direction)?.solid)
         }
     }
 }
 
-struct Candidate<'a> {
-    solid: Shape<'a>,
+pub(super) fn to_face<'a>(
+    session: &'a Session,
+    profile: &Shape<'_>,
+    face: &Shape<'_>,
+    direction: Vec3,
+) -> Result<Candidate<'a>, ModelError> {
+    limited_face(session, profile, face, direction)?.ok_or_else(|| {
+        ModelError::new("limiting face must terminate the whole profile strictly forward")
+    })
+}
+
+pub(super) fn to_next<'a>(
+    session: &'a Session,
+    profile: &Shape<'_>,
+    target: &Shape<'_>,
+    direction: Vec3,
+) -> Result<Candidate<'a>, ModelError> {
+    let faces = session.subshapes(target, ShapeType::Face)?;
+    let mut candidates = Vec::new();
+    for face in &faces {
+        if let Some(candidate) = limited_face(session, profile, face, direction)? {
+            candidates.push(candidate);
+        }
+    }
+    let nearest = candidates
+        .iter()
+        .enumerate()
+        .min_by(|(_, a), (_, b)| a.volume.total_cmp(&b.volume))
+        .map(|(i, _)| i)
+        .ok_or_else(|| ModelError::new("no forward face terminates the whole profile"))?;
+    let chosen = &candidates[nearest];
+    // A least-volume cutoff must also precede every other complete cutoff.
+    // One linear scan and at most N native containment intersections.
+    for (index, other) in candidates.iter().enumerate() {
+        if index == nearest || (chosen.uniform && other.uniform) {
+            continue;
+        }
+        let overlap = session.overlap_volume(&chosen.solid, &other.solid)?;
+        if (overlap - chosen.volume).abs() > chosen.volume * 1e-9 {
+            return Err(ModelError::new(
+                "next-face limits cross; select an explicit up-to-face limit",
+            ));
+        }
+    }
+    Ok(candidates.swap_remove(nearest))
+}
+
+pub(super) struct Candidate<'a> {
+    pub solid: Shape<'a>,
+    pub limiting_face: Shape<'a>,
     volume: f64,
     uniform: bool,
 }
@@ -212,6 +224,7 @@ fn limited_face<'a>(
     let volume = session.volume(&solid)?;
     Ok(Some(Candidate {
         solid,
+        limiting_face: session.subshape(face, ShapeType::Face, 0)?,
         volume,
         uniform,
     }))

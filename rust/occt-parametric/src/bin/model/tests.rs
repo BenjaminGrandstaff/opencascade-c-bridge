@@ -1048,3 +1048,52 @@ fn drill_point_viewer_shows_bore_depth_tip_depth_angle_and_linked_controls() {
         15000.0 - 72.0 * std::f64::consts::PI - 3.0 * std::f64::consts::PI * 3.0_f64.sqrt();
     assert!((session.volume(result.shape("body").unwrap()).unwrap() - expected).abs() < 1e-7);
 }
+
+#[test]
+fn geometric_hole_viewer_measures_curved_limits_and_links_upstream_controls() {
+    let dir = Directory::new();
+    for depth in [12.0, 22.0] {
+        let mut request = view_example("hole-limits");
+        let parameter = request["model"]["family"]["parameters"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|p| p["id"] == "depth")
+            .unwrap();
+        parameter["default"]["scalar"]["value"] = json!(depth);
+        let name = format!("hole-{depth}");
+        view_request(&dir, request, &name).unwrap();
+        let data: Value =
+            serde_json::from_str(&fs::read_to_string(dir.0.join(&name).join("view.json")).unwrap())
+                .unwrap();
+        for feature in ["bored", "selected-hole"] {
+            let scene = data["scenes"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|s| s["feature"] == feature)
+                .unwrap();
+            let extent = scene["annotations"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|a| a["id"] == "measured-hole-limit")
+                .unwrap_or_else(|| panic!("missing limit on {feature}: {scene}"));
+            assert!((extent["detail"]["value_mm"].as_f64().unwrap() - depth - 8.0).abs() < 1e-6);
+            assert_eq!(extent["detail"]["measurement"], "bore_centre_ray");
+            assert!(
+                extent["parameters"]
+                    .as_array()
+                    .unwrap()
+                    .contains(&json!("depth"))
+            );
+            assert!(
+                extent["parameters"]
+                    .as_array()
+                    .unwrap()
+                    .contains(&json!("diameter"))
+            );
+            assert!((extent["anchors"][1][2].as_f64().unwrap() - depth - 8.0).abs() < 1e-6);
+        }
+    }
+}

@@ -3,7 +3,7 @@
   "model": {
     "schema_version": 76,
     "family": {
-      "id": "curved-extrusions",
+      "id": "geometry-holes",
       "version": 1,
       "parameters": [
         {
@@ -50,6 +50,21 @@
           },
           "minimum": null,
           "maximum": null
+        },
+        {
+          "id": "diameter",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 6,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": null,
+          "maximum": null
         }
       ],
       "derived_parameters": [],
@@ -88,6 +103,24 @@
           "traces": [
             {
               "feature": "body"
+            }
+          ]
+        },
+        {
+          "id": "bore.valid",
+          "version": 1,
+          "kind": "validation",
+          "priority": "required",
+          "statement": "Hole valid",
+          "rule": {
+            "shape_valid": {
+              "output": "bored"
+            }
+          },
+          "provenance": "Demonstration assumptions",
+          "traces": [
+            {
+              "feature": "bored"
             }
           ]
         }
@@ -592,6 +625,156 @@
               }
             }
           }
+        },
+        {
+          "id": "bored",
+          "operation": {
+            "hole": {
+              "input": "body",
+              "position": {
+                "literal": {
+                  "x": {
+                    "value": 20,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 12.5,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 0,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "axis": {
+                "literal": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "z": {
+                    "value": 1,
+                    "dimension": "scalar",
+                    "unit": null
+                  }
+                }
+              },
+              "diameter": {
+                "parameter": "diameter"
+              },
+              "extent": "up_to_next",
+              "bottom": "flat",
+              "finish": "plain"
+            }
+          }
+        },
+        {
+          "id": "selected-hole",
+          "operation": {
+            "hole": {
+              "input": "body",
+              "position": {
+                "literal": {
+                  "x": {
+                    "value": 20,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 12.5,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 0,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "axis": {
+                "literal": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "z": {
+                    "value": 1,
+                    "dimension": "scalar",
+                    "unit": null
+                  }
+                }
+              },
+              "diameter": {
+                "parameter": "diameter"
+              },
+              "extent": {
+                "up_to_face": {
+                  "face": {
+                    "nearest_center": {
+                      "target": {
+                        "components": {
+                          "x": {
+                            "literal": {
+                              "value": 20,
+                              "dimension": "length",
+                              "unit": "millimeter"
+                            }
+                          },
+                          "y": {
+                            "literal": {
+                              "value": 12.5,
+                              "dimension": "length",
+                              "unit": "millimeter"
+                            }
+                          },
+                          "z": {
+                            "add": [
+                              {
+                                "parameter": "depth"
+                              },
+                              {
+                                "literal": {
+                                  "value": 8,
+                                  "dimension": "length",
+                                  "unit": "millimeter"
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      "maximum_distance": {
+                        "literal": {
+                          "value": 10,
+                          "dimension": "length",
+                          "unit": "millimeter"
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "bottom": "flat",
+              "finish": "plain"
+            }
+          }
         }
       ]
     },
@@ -608,16 +791,11 @@
   "outputs": [
     {
       "instance": "block",
-      "output": "body"
+      "output": "bored"
     },
     {
       "instance": "block",
-      "output": "selected"
-    },
-    {
-      "instance": "block",
-      "output": "symmetric"
+      "output": "selected-hole"
     }
-  ],
-  "sketches": true
+  ]
 }

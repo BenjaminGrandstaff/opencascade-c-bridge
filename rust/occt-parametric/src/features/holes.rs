@@ -18,6 +18,8 @@ pub(super) fn execute_hole<'session>(
     input: &Shape<'_>,
     parameters: &HashMap<String, ParameterValue>,
     spec: HoleSpec<'_>,
+    shapes: &HashMap<String, Shape<'session>>,
+    definitions: &Features<'_>,
 ) -> Result<Shape<'session>, ModelError> {
     let HoleSpec {
         position,
@@ -41,14 +43,30 @@ pub(super) fn execute_hole<'session>(
         validate_thread(thread, diameter, parameters)?;
     }
     let radius = diameter / 2.0;
+    let limit = geometry_limit(
+        session,
+        input,
+        position,
+        axis,
+        radius,
+        extent,
+        parameters,
+        shapes,
+        definitions,
+    )?;
     let (start, depth) = match extent {
         HoleExtent::Blind { depth } => (position, scalar(depth, parameters, Dimension::Length)?),
         HoleExtent::ThroughAll => through_span(session, input, position, axis, radius)?,
+        HoleExtent::UpToFace { .. } | HoleExtent::UpToNext => (position, 0.0),
     };
-    if !depth.is_finite() || depth <= 0.0 {
+    if limit.is_none() && (!depth.is_finite() || depth <= 0.0) {
         return Err(ModelError::new("hole depth must be finite and positive"));
     }
-    let tool = session.create_cylinder(start, axis, radius, depth)?;
+    let (tool, limiting_face) = if let Some(limit) = limit {
+        (limit.solid, Some(limit.limiting_face))
+    } else {
+        (session.create_cylinder(start, axis, radius, depth)?, None)
+    };
     let tool = if let HoleBottom::DrillPoint { angle_radians } = bottom {
         if !matches!(extent, HoleExtent::Blind { .. }) {
             return Err(ModelError::new("a drill point requires a blind hole"));
@@ -113,6 +131,17 @@ pub(super) fn execute_hole<'session>(
     // Fuse overlapping cutters so validation never sees an overlapping-solid
     // compound. One cut records history directly from the original input.
     let tool = if let Some(recess) = recess {
+        if let Some(face) = &limiting_face {
+            // A connected entry recess contains the bore's cross-section at
+            // every depth. Reaching/passing the selected bounded face therefore
+            // creates a surface contact, even when that face lies wholly inside
+            // the recess. A wider shallow recess need not fit its footprint.
+            if session.distance(&recess, face)?.distance <= 1e-7 {
+                return Err(ModelError::new(
+                    "hole entry recess reaches or extends beyond its limiting face",
+                ));
+            }
+        }
         session.fuse(&tool, &recess)?
     } else {
         tool
@@ -124,6 +153,108 @@ pub(super) fn execute_hole<'session>(
     // temporary handle. Preserve the kernel's result wrapper rather than
     // extracting a solid subshape, which would discard the recorded history.
     Ok(result)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn geometry_limit<'a>(
+    session: &'a Session,
+    input: &Shape<'_>,
+    position: Vec3,
+    axis: Vec3,
+    radius: f64,
+    extent: &HoleExtent,
+    parameters: &HashMap<String, ParameterValue>,
+    shapes: &HashMap<String, Shape<'a>>,
+    definitions: &Features<'_>,
+) -> Result<Option<extrusions::Candidate<'a>>, ModelError> {
+    if !matches!(extent, HoleExtent::UpToFace { .. } | HoleExtent::UpToNext) {
+        return Ok(None);
+    }
+    let wire = session.create_circle_wire(position, axis, radius)?;
+    let profile = session.create_face_from_wire(&wire)?;
+    match extent {
+        HoleExtent::UpToFace { face } => {
+            let faces =
+                resolve_face_selector(session, input, face, parameters, shapes, definitions)?;
+            if faces.len() != 1 {
+                return Err(ModelError::new(
+                    "up-to-face hole must select exactly one limiting face",
+                ));
+            }
+            Ok(Some(extrusions::to_face(
+                session, &profile, &faces[0], axis,
+            )?))
+        }
+        HoleExtent::UpToNext => Ok(Some(extrusions::to_next(session, &profile, input, axis)?)),
+        _ => unreachable!(),
+    }
+}
+
+impl PartInstance<'_> {
+    /// Exact centre-ray witness of a geometric hole limit, for a result generated
+    /// from this instance's current definition/parameters. None for numeric or
+    /// through-all extents. Returned measurements create no retained handles.
+    pub fn hole_limit_measurement<'a>(
+        &self,
+        session: &'a Session,
+        generated: &GeneratedResult<'a>,
+        output: &str,
+    ) -> Result<Option<occt_bridge::DistanceResult>, ModelError> {
+        let operation = &self
+            .definition
+            .features
+            .iter()
+            .find(|f| f.id == output)
+            .ok_or_else(|| ModelError::new("unknown hole feature"))?
+            .operation;
+        let FeatureOperation::Hole {
+            input,
+            position,
+            axis,
+            diameter,
+            extent,
+            ..
+        } = operation
+        else {
+            return Err(ModelError::new(
+                "hole limit measurement requires a hole feature",
+            ));
+        };
+        if !matches!(extent, HoleExtent::UpToFace { .. } | HoleExtent::UpToNext) {
+            return Ok(None);
+        }
+        if generated.shape(output).is_none() {
+            return Err(ModelError::new("unknown generated hole output"));
+        }
+        let parameters = self.resolved_parameters()?;
+        let position = vector(position, &parameters, Dimension::Length)?;
+        let axis = unit(vector(axis, &parameters, Dimension::Scalar)?)?;
+        let radius = scalar(diameter, &parameters, Dimension::Length)? / 2.0;
+        let Some(limit) = geometry_limit(
+            session,
+            shape(&generated.shapes, input)?,
+            position,
+            axis,
+            radius,
+            extent,
+            &parameters,
+            &generated.shapes,
+            &Features::new(self.definition),
+        )?
+        else {
+            return Ok(None);
+        };
+        let b = session.bounds(&limit.solid)?;
+        let span = (b.max.x - b.min.x).hypot((b.max.y - b.min.y).hypot(b.max.z - b.min.z)) + 1.0;
+        let (end, distance) = session
+            .ray_first_hit(&limit.solid, position, axis, span)?
+            .ok_or_else(|| ModelError::new("hole limit has no forward centre-ray witness"))?;
+        Ok(Some(occt_bridge::DistanceResult {
+            distance,
+            first: position,
+            second: end,
+        }))
+    }
 }
 
 fn check_recess(

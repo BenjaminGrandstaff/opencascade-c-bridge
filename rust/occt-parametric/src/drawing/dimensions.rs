@@ -312,6 +312,8 @@ fn hole_label(
     );
     match extent {
         HoleExtent::ThroughAll => text.push_str(" THRU"),
+        HoleExtent::UpToFace { .. } => text.push_str(" UP TO FACE"),
+        HoleExtent::UpToNext => text.push_str(" UP TO NEXT FACE"),
         HoleExtent::Blind { depth } => text.push_str(&format!(
             "{} DEPTH {:.p$} {unit}",
             if matches!(bottom, HoleBottom::DrillPoint { .. }) {

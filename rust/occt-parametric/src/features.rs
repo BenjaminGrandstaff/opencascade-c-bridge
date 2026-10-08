@@ -251,6 +251,8 @@ pub(crate) fn execute_feature<'session>(
                     finish,
                     thread: thread.as_deref(),
                 },
+                shapes,
+                definitions,
             )
             .map_err(|error| error.context(&format!("hole input '{input}'")));
         }

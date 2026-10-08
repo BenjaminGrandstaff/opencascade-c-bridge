@@ -1447,8 +1447,10 @@ fn collect_hole_parameters<'a>(
         collect_scalar_parameters(&thread.nominal_diameter, names);
         collect_scalar_parameters(&thread.pitch, names);
     }
-    if let HoleExtent::Blind { depth } = extent {
-        collect_scalar_parameters(depth, names);
+    match extent {
+        HoleExtent::Blind { depth } => collect_scalar_parameters(depth, names),
+        HoleExtent::UpToFace { face } => collect_face_selector_parameters(face, names),
+        _ => {}
     }
     match finish {
         HoleFinish::Plain => {}

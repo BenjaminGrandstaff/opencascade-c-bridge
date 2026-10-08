@@ -71,3 +71,7 @@ harness = false
 [[bench]]
 name = "drill_points"
 harness = false
+
+[[bench]]
+name = "hole_limits"
+harness = false
