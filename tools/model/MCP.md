@@ -46,10 +46,10 @@ or remote service is started.
 | `occt_build` | The entire `occb-model-request-v1` object | Accepted report, build ID, local directory, and artifact resource URIs |
 
 `tools/list` provides the generated complete request schema as `occt_build`'s
-input schema. All 28 current feature operations and 136 nested request-schema
+input schema. All 29 current feature operations and 136 nested request-schema
 definitions are discoverable. Schemas derive from serde-compatible Rust types;
 new serialized variants require schema support at compilation. Authoring schemas
-target current model schema 76. The engine still migrates older documents.
+target current model schema 77. The engine still migrates older documents.
 Schemas describe serialization and basic request bounds; units, dependency
 references, dimensional constraints, selector resolution, and geometry validity
 are checked by the build engine.
@@ -61,7 +61,7 @@ LD_LIBRARY_PATH="$PWD/build" rust/occt-parametric/target/debug/occt-model \
   --schema request > /tmp/occt-request.schema.json
 ```
 
-`resources/list` advertises twelve `occt://schema/NAME` and eleven
+`resources/list` advertises twelve `occt://schema/NAME` and twelve
 `occt://example/NAME` resources. Accepted builds return specific
 `occt://build/BUILD_ID/ARTIFACT` URIs; a resource template advertises this form.
 JSON and SVG resources return text, while STEP and STL return base64 blobs.
@@ -331,7 +331,7 @@ length. Limit faces must terminate the complete profile strictly forward; see [e
 `curved-extrusions` demonstrates schema-74 inclined and spherical limits.
 Its view request uses the native centroid ray measurement and tracks both
 surfaces when `depth` changes. Crossing next-face limits require an explicit
-up-to-face selector. Native ABI 48 is required.
+up-to-face selector. Native ABI 49 is required by the current build.
 
 
 `drill-point` demonstrates schema-75 blind-hole bottoms. Its `point_angle`
@@ -345,3 +345,10 @@ including spherical exits. Change `depth` to move the cap; native bore-centre
 measurements follow it. Named/persistent selectors use the normal reference and
 dependency rules. Entry recesses must remain before the selected face, and drill
 points require numeric blind depth. See [geometry-driven holes](../../HOLES.md).
+
+
+`profile-loft` demonstrates schema-77 lofts directly between saved sketch
+profiles. Edit section radii or `height`; dependencies regenerate the native
+solid and viewer spacing. Profiles must be closed planar single boundaries.
+The authoring schema includes `profile_loft` with 2–1,000 section IDs and a
+`ruled` flag. See [saved-profile loft semantics](../../LOFTS.md).

@@ -317,3 +317,120 @@ fn schema_50_lofts_with_stored_rules_support_continuous_joint_motion() {
     drop(accepted);
     assert_eq!(session.shape_count().unwrap(), 0);
 }
+
+fn native_profile_family() -> FamilyDefinition {
+    let request: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../tools/model/profile-loft.request.json"
+    ))
+    .unwrap();
+    ModelDocument::from_json(&request["model"].to_string())
+        .unwrap()
+        .family
+}
+
+#[test]
+fn saved_face_and_wire_profiles_loft_to_native_solids_with_history() {
+    let session = Session::new().unwrap();
+    for ruled in [false, true] {
+        let mut definition = native_profile_family();
+        let FeatureOperation::ProfileLoft { ruled: mode, .. } =
+            &mut definition.features[0].operation
+        else {
+            panic!()
+        };
+        *mode = ruled;
+        let result = part(&definition).regenerate(&session).unwrap();
+        let body = result.shape("body").unwrap();
+        let expected = 20.0 * std::f64::consts::PI * (64.0 + 32.0 + 16.0) / 3.0;
+        assert!((session.volume(body).unwrap() - expected).abs() < 1e-5);
+        assert!(session.is_valid(body).unwrap());
+        let edge = session
+            .subshape(result.shape("lower").unwrap(), ShapeType::Edge, 0)
+            .unwrap();
+        assert!(
+            session
+                .history_count(body, &edge, HistoryRelation::Generated)
+                .unwrap()
+                > 0
+        );
+        assert_eq!(
+            session
+                .subshape_count(result.shape("upper").unwrap(), ShapeType::Edge)
+                .unwrap(),
+            1
+        );
+    }
+    assert_eq!(session.shape_count().unwrap(), 0);
+}
+
+#[test]
+fn saved_profile_edits_reuse_unaffected_sections_and_roundtrip() {
+    let session = Session::new().unwrap();
+    let definition = native_profile_family();
+    let first = part(&definition).regenerate(&session).unwrap();
+    let mut edited = part(&definition);
+    edited.overrides.insert(
+        "upper_radius".into(),
+        ParameterValue::Scalar(Quantity::length(5.0, LengthUnit::Millimeter)),
+    );
+    let second = edited.regenerate_incremental(&session, &first).unwrap();
+    assert_eq!(second.regeneration.reused, ["lower"]);
+    assert!(second.regeneration.rebuilt.contains(&"upper".into()));
+    assert!(second.regeneration.rebuilt.contains(&"body".into()));
+    assert!(
+        (session.volume(second.shape("body").unwrap()).unwrap()
+            - 20.0 * std::f64::consts::PI * (64.0 + 40.0 + 25.0) / 3.0)
+            .abs()
+            < 1e-5
+    );
+    let document = ModelDocument::from_graph(&InstanceGraph::new(&definition));
+    assert_eq!(
+        ModelDocument::from_json(&document.to_json_pretty().unwrap()).unwrap(),
+        document
+    );
+}
+
+#[test]
+fn saved_profile_lofts_reject_bad_counts_duplicates_wrong_shapes_and_open_wires() {
+    let session = Session::new().unwrap();
+    for profiles in [
+        vec!["lower"],
+        vec!["lower", "lower"],
+        vec!["lower", "absent"],
+    ] {
+        let mut definition = native_profile_family();
+        let FeatureOperation::ProfileLoft {
+            profiles: sections, ..
+        } = &mut definition.features[0].operation
+        else {
+            panic!()
+        };
+        *sections = profiles.into_iter().map(str::to_owned).collect();
+        assert!(part(&definition).regenerate(&session).is_err());
+        assert_eq!(session.shape_count().unwrap(), 0);
+    }
+    let mut definition = native_profile_family();
+    definition.features[2].operation = FeatureOperation::Box {
+        origin: point(0., 0., 20.),
+        size: point(1., 1., 1.),
+    };
+    assert!(part(&definition).regenerate(&session).is_err());
+    assert_eq!(session.shape_count().unwrap(), 0);
+    let mut definition = native_profile_family();
+    let FeatureOperation::SketchWire { sketch } = &definition.features[2].operation else {
+        panic!()
+    };
+    let mut sketch = sketch.clone();
+    sketch.circles.clear();
+    sketch.constraints.clear();
+    sketch.lines = vec![SketchLine {
+        id: "line".into(),
+        start: "center".into(),
+        end: "edge".into(),
+    }];
+    sketch.profile = vec!["line".into()];
+    definition.features[2].operation = FeatureOperation::SketchOpenWire { sketch };
+    let error = part(&definition).regenerate(&session).err().unwrap();
+    assert!(error.message.contains("closed wires"), "{}", error.message);
+    assert_eq!(session.shape_count().unwrap(), 0);
+}

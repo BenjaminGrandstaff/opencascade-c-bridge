@@ -597,6 +597,14 @@ pub enum FeatureOperation {
         smooth: bool,
         ruled: bool,
     },
+    /// Solid loft through ordered saved planar sketch faces/wires, retaining
+    /// native boundary curves. Faces must have exactly one boundary wire.
+    ProfileLoft {
+        #[schemars(length(min = 2, max = 1000))]
+        profiles: Vec<String>,
+        #[serde(default)]
+        ruled: bool,
+    },
     Cylinder {
         origin: VectorExpr,
         axis: VectorExpr,
@@ -799,6 +807,7 @@ impl FeatureOperation {
                 }
                 dependencies
             }
+            Self::ProfileLoft { profiles, .. } => profiles.iter().map(String::as_str).collect(),
             Self::Sweep { profile, path, .. } => vec![profile, path],
             Self::SheetMetalFlat { input, .. }
             | Self::Translate { input, .. }

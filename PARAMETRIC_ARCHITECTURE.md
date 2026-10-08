@@ -1612,3 +1612,22 @@ single-output centre-ray query, using family-local generated input geometry.
 Scratch handles are released on return. The viewer traverses upstream inputs
 once with an ID index to link geometry and selector controls; drawings record
 which face-limit mode was supplied. See [semantics](HOLES.md).
+
+
+## Schema 77 saved-profile lofts
+
+ABI 49 adds `create_loft_from_wires`, a native OCCT ThruSections operation over
+2–1,000 valid closed planar wires. Compatibility may align/split copies, with
+mutable input disabled. The operation records generated edge/vertex history
+and applies session result validation. Existing point/spline-array loft APIs
+remain unchanged.
+
+`ProfileLoft` references ordered outputs, taking a single-boundary planar face
+or closed wire at each section. Face extraction does not discard inner wires;
+holed/curved faces are rejected. The result must be a valid positive-volume
+solid. Dependency signatures reuse unaffected profiles after edits.
+
+The viewer measures area-centroid spacing between sections with a section-ID
+index, keeping source sketch views and linked controls. Native source geometry
+is preserved; smooth lateral fitting uses kernel approximation precision.
+See [loft semantics](LOFTS.md).

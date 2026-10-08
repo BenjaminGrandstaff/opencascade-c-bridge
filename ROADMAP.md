@@ -8,22 +8,32 @@ tracks status and order.
 
 | Layer | Version | State |
 |---|---|---|
-| C ABI (`src/`, `include/`) | ABI 48 | Stable; exact version match required |
+| C ABI (`src/`, `include/`) | ABI 49 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 76 | Active development |
+| `occt-parametric` (engineering layer) | Schema 77 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 99 + first-use integration 1 (+1 doc test), recipes 3, parametric 405 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 16 + branch command 2 + model command 17, MCP Python 8, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 102 + first-use integration 1 (+1 doc test), recipes 3, parametric 409 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 16 + branch command 2 + model command 18, MCP Python 8, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
-| clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
+| clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. New profile-loft code passes targeted lint. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
 | Coverage | Last recorded: 93.61% lines overall, test code excluded; C++ 94.13% lines, 87.40% branches, 100% functions; Rust 93.42% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 116 Rust cases plus 5 model-command and 7 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Scale benchmarks | 117 Rust cases plus 5 model-command and 7 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
 
+- Saved-profile lofts (ABI 49, schema 77): native closed planar sketch
+  faces/wires become ordered ruled or smooth solid transitions. Circles,
+  ellipses, arcs, splines and mixed edge counts retain native section geometry;
+  compatibility operates on copies and source-edge history is preserved.
+  Dependencies support selective section rebuilds. Viewer centroid-spacing
+  dimensions, sketch scenes and AI example `profile-loft` expose the result.
+  Four library tests, three bridge tests and C argument checks cover volumes,
+  history, immutable inputs, malformed profiles and cleanup. The 1,000-case
+  regeneration gate passes in 1.515 s (10 s budget). The native rebuild also
+  corrects old C error tests that used void shape-release calls as status values.
 - Geometry-driven holes (schema 76, native ABI unchanged at 48): up-to-face
   and up-to-next depth with exact bounded planar/inclined/curved cutoffs.
   Selected/named references and selector parameters enter dependencies and

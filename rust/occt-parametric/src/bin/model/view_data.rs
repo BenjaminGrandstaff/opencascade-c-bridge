@@ -397,6 +397,53 @@ fn solid_scene(
     // downstream booleans/transforms, controls stay in the linked side panel.
     if let Some(feature) = part.definition.features.iter().find(|f| f.id == output) {
         primitive_dimensions(feature, parameters, &mut annotations)?;
+        if let FeatureOperation::ProfileLoft { profiles, .. } = &feature.operation {
+            let section_definitions = part
+                .definition
+                .features
+                .iter()
+                .map(|f| (f.id.as_str(), f))
+                .collect::<HashMap<_, _>>();
+            let mut centers = Vec::new();
+            for id in profiles {
+                let section = generated
+                    .shape(id)
+                    .ok_or_else(|| failure("visualization", "missing loft profile"))?;
+                let face = if session
+                    .shape_type(section)
+                    .map_err(|e| failure("visualization", e))?
+                    == ShapeType::Wire
+                {
+                    Some(
+                        session
+                            .create_face_from_wire(section)
+                            .map_err(|e| failure("visualization", e))?,
+                    )
+                } else {
+                    None
+                };
+                centers.push(point(
+                    session
+                        .center_of_mass(face.as_ref().unwrap_or(section))
+                        .map_err(|e| failure("visualization", e))?,
+                ));
+            }
+            for (index, pair) in centers.windows(2).enumerate() {
+                let delta = std::array::from_fn::<_, 3, _>(|i| pair[1][i] - pair[0][i]);
+                let distance = delta[0].hypot(delta[1].hypot(delta[2]));
+                let mut control_names = BTreeSet::new();
+                for id in &profiles[index..index + 2] {
+                    if let Some(section) = section_definitions.get(id.as_str()) {
+                        control_names.extend(names(
+                            &serde_json::to_value(&section.operation)
+                                .map_err(|e| failure("visualization", e))?,
+                        ));
+                    }
+                }
+                annotations.push(annotation(format!("loft-spacing-{index}"),format!("section spacing {} mm",length_label(distance)),"dimension","measured",vec![output.into()],control_names.into_iter().collect(),json!(pair),json!({"profiles":&profiles[index..index+2],"value_mm":distance,"measurement":"section_area_centroid_spacing","driving":false})));
+            }
+        }
+
         if let FeatureOperation::Hole {
             input,
             extent: extent @ (HoleExtent::UpToFace { .. } | HoleExtent::UpToNext),

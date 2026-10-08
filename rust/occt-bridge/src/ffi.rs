@@ -2,7 +2,7 @@
 
 use super::*;
 
-pub(crate) const ABI_VERSION: u32 = 48;
+pub(crate) const ABI_VERSION: u32 = 49;
 
 #[repr(C)]
 #[derive(Default)]
@@ -499,6 +499,14 @@ unsafe extern "C" {
         session: *mut c_void,
         points: *const RawVec3,
         section_point_counts: *const usize,
+        section_count: usize,
+        make_solid: c_int,
+        ruled: c_int,
+        out: *mut RawShapeId,
+    ) -> RawStatus;
+    pub(crate) fn occt_bridge_create_loft_from_wires(
+        session: *mut c_void,
+        sections: *const RawShapeId,
         section_count: usize,
         make_solid: c_int,
         ruled: c_int,

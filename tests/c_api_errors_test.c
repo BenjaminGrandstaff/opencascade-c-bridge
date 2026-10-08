@@ -1165,7 +1165,7 @@ static void extrusion_limits(occt_bridge_session_t* session) {
     const occt_bridge_vec3_t zero=vec(0,0,0),up=vec(0,0,1),travel=vec(0,0,30);
     EXPECT(occt_bridge_create_circle_wire(session,zero,up,2,&wire),OK);
     EXPECT(occt_bridge_create_face_from_wire(session,wire,&profile),OK);
-    EXPECT(occt_bridge_shape_release(session,wire),OK);
+    occt_bridge_shape_release(session,wire);
     EXPECT(occt_bridge_create_circle_wire(session,vec(0,0,10),up,10,&wire),OK);
     EXPECT(occt_bridge_create_face_from_wire(session,wire,&limit),OK);
     EXPECT(occt_bridge_create_box(session,zero,vec(1,1,1),&box),OK);
@@ -1190,11 +1190,38 @@ static void extrusion_limits(occt_bridge_session_t* session) {
     EXPECT_TRUE(length==0 && point.x==0 && point.y==0 && point.z==0,"failed ray clears outputs");
     EXPECT(occt_bridge_shape_ray_first_hit(session,out,zero,up,30,&point,&length),OK);
     EXPECT_TRUE(fabs(length-10)<1e-7 && fabs(point.z-10)<1e-7,"native ray physical distance");
-    EXPECT(occt_bridge_shape_release(session,out),OK);
-    EXPECT(occt_bridge_shape_release(session,wire),OK);
-    EXPECT(occt_bridge_shape_release(session,profile),OK);
-    EXPECT(occt_bridge_shape_release(session,limit),OK);
-    EXPECT(occt_bridge_shape_release(session,box),OK);
+    occt_bridge_shape_release(session,out);
+    occt_bridge_shape_release(session,wire);
+    occt_bridge_shape_release(session,profile);
+    occt_bridge_shape_release(session,limit);
+    occt_bridge_shape_release(session,box);
+}
+
+static void profile_lofts(occt_bridge_session_t* session) {
+    occt_bridge_shape_id_t a=0,b=0,open=0,box=0,out=0;
+    const occt_bridge_vec3_t points[]={vec(0,0,10),vec(2,0,10)};
+    EXPECT(occt_bridge_create_circle_wire(session,vec(0,0,0),vec(0,0,1),2,&a),OK);
+    EXPECT(occt_bridge_create_circle_wire(session,vec(0,0,10),vec(0,0,1),4,&b),OK);
+    EXPECT(occt_bridge_create_polyline_wire(session,points,2,0,&open),OK);
+    EXPECT(occt_bridge_create_box(session,vec(0,0,0),vec(1,1,1),&box),OK);
+    const occt_bridge_shape_id_t good[]={a,b},duplicate[]={a,a},missing[]={a,unknown},bad[]={a,box},unclosed[]={a,open};
+    EXPECT(occt_bridge_create_loft_from_wires(session,good,2,1,1,NULL),ARG);
+    EXPECT(occt_bridge_create_loft_from_wires(session,NULL,2,1,1,&out),ARG);
+    EXPECT(occt_bridge_create_loft_from_wires(session,good,1,1,1,&out),ARG);
+    EXPECT(occt_bridge_create_loft_from_wires(session,good,1001,1,1,&out),ARG);
+    EXPECT(occt_bridge_create_loft_from_wires(session,good,2,2,1,&out),ARG);
+    EXPECT(occt_bridge_create_loft_from_wires(session,good,2,1,2,&out),ARG);
+    EXPECT(occt_bridge_create_loft_from_wires(session,duplicate,2,1,1,&out),GEOMETRY);
+    EXPECT(occt_bridge_create_loft_from_wires(session,missing,2,1,1,&out),MISSING);
+    EXPECT(occt_bridge_create_loft_from_wires(session,bad,2,1,1,&out),GEOMETRY);
+    EXPECT(occt_bridge_create_loft_from_wires(session,unclosed,2,1,1,&out),GEOMETRY);
+    EXPECT_TRUE(out==0,"failed loft clears output");
+    EXPECT(occt_bridge_create_loft_from_wires(session,good,2,1,1,&out),OK);
+    occt_bridge_shape_release(session,out);
+    occt_bridge_shape_release(session,a);
+    occt_bridge_shape_release(session,b);
+    occt_bridge_shape_release(session,open);
+    occt_bridge_shape_release(session,box);
 }
 
 int main(void) {
@@ -1207,6 +1234,7 @@ int main(void) {
     primitives(session);
     sketch_edits(session);
     extrusion_limits(session);
+    profile_lofts(session);
     wires_and_faces(session);
     recipes_sweeps_and_lofts(session);
     combinations_and_features(session);

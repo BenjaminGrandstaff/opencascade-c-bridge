@@ -75,3 +75,7 @@ harness = false
 [[bench]]
 name = "hole_limits"
 harness = false
+
+[[bench]]
+name = "profile_lofts"
+harness = false

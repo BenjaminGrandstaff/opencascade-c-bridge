@@ -504,6 +504,33 @@ impl Session {
         self.loft_with(sections, make_solid, ruled, occt_bridge_create_loft)
     }
 
+    /// Native loft between immutable closed planar wires, without sampling.
+    /// Compatibility may align or split copies of section edges.
+    pub fn create_loft_from_wires<'a>(
+        &'a self,
+        sections: &[&Shape<'_>],
+        make_solid: bool,
+        ruled: bool,
+    ) -> Result<Shape<'a>, BridgeError> {
+        for section in sections {
+            self.validate_shape(section)?;
+        }
+        let ids = sections.iter().map(|s| s.id).collect::<Vec<_>>();
+        let mut result = 0;
+        // SAFETY: All IDs belong to this session; the slice and output are valid.
+        self.check(unsafe {
+            occt_bridge_create_loft_from_wires(
+                self.raw.as_ptr(),
+                ids.as_ptr(),
+                ids.len(),
+                make_solid.into(),
+                ruled.into(),
+                &mut result,
+            )
+        })?;
+        Ok(self.shape(result))
+    }
+
     /// Lofts through sections that are each one B-spline interpolated through
     /// their points and closed back to the first point: smooth except for a
     /// corner at the first point, such as an airfoil trailing edge. `ruled`

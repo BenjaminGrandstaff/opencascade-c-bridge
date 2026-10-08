@@ -89,7 +89,7 @@ Through MCP, get either example with `occt_get_example`, then pass it to
 ```json
 {
   "schema": "occb-model-view-v1",
-  "model": { "schema_version": 76, "...": "complete model" },
+  "model": { "schema_version": 77, "...": "complete model" },
   "outputs": [{ "instance": "block", "output": "body" }],
   "sketches": true,
   "options": {

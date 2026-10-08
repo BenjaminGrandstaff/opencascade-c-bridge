@@ -1097,3 +1097,50 @@ fn geometric_hole_viewer_measures_curved_limits_and_links_upstream_controls() {
         }
     }
 }
+
+#[test]
+fn saved_profile_loft_viewer_keeps_sketches_and_measures_section_spacing() {
+    let dir = Directory::new();
+    for height in [20.0, 30.0] {
+        let mut request = view_example("profile-loft");
+        let parameter = request["model"]["family"]["parameters"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|p| p["id"] == "height")
+            .unwrap();
+        parameter["default"]["scalar"]["value"] = json!(height);
+        let name = format!("loft-{height}");
+        view_request(&dir, request, &name).unwrap();
+        let data: Value =
+            serde_json::from_str(&fs::read_to_string(dir.0.join(&name).join("view.json")).unwrap())
+                .unwrap();
+        let scenes = data["scenes"].as_array().unwrap();
+        let solid = scenes.iter().find(|s| s["feature"] == "body").unwrap();
+        let spacing = solid["annotations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|a| a["id"] == "loft-spacing-0")
+            .unwrap();
+        assert!((spacing["detail"]["value_mm"].as_f64().unwrap() - height).abs() < 1e-7);
+        assert!(
+            spacing["parameters"]
+                .as_array()
+                .unwrap()
+                .contains(&json!("height"))
+        );
+        assert_eq!(
+            spacing["detail"]["measurement"],
+            "section_area_centroid_spacing"
+        );
+        assert!((spacing["anchors"][1][2].as_f64().unwrap() - height).abs() < 1e-7);
+        for profile in ["lower", "upper"] {
+            let sketch = scenes
+                .iter()
+                .find(|s| s["feature"] == profile && s["kind"] == "sketch")
+                .unwrap();
+            assert_eq!(sketch["solver"]["solved"], true);
+        }
+    }
+}

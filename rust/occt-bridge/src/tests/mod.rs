@@ -11,6 +11,7 @@ mod inspection;
 mod mesh;
 mod open_profile;
 mod operations;
+mod profile_loft;
 mod projection;
 mod results;
 mod session;

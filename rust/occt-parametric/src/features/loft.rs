@@ -118,3 +118,110 @@ pub(crate) fn collect_parameters<'a>(sections: &'a [LoftSection], names: &mut Ha
         }
     }
 }
+
+/// Linear profile/topology indexing; native curve compatibility and surface
+/// interpolation cost depends on edge correspondence, sections and degree.
+pub(crate) fn execute_profiles<'a>(
+    session: &'a Session,
+    profiles: &[String],
+    ruled: bool,
+    shapes: &HashMap<String, Shape<'a>>,
+) -> Result<Shape<'a>, ModelError> {
+    if !(2..=MAXIMUM_SECTIONS).contains(&profiles.len())
+        || profiles.iter().collect::<HashSet<_>>().len() != profiles.len()
+    {
+        return Err(ModelError::new(
+            "profile loft needs 2-1000 distinct profile outputs",
+        ));
+    }
+    let mut temporary = Vec::new();
+    let mut wires = Vec::new();
+    for id in profiles {
+        let profile = shape(shapes, id)?;
+        match session.shape_type(profile)? {
+            ShapeType::Wire => {}
+            ShapeType::Face => {
+                if !session.face_is_planar(profile)? || !session.is_valid(profile)? {
+                    return Err(ModelError::new(
+                        "profile loft faces must be valid planar regions",
+                    ));
+                }
+                if session.subshape_count(profile, ShapeType::Wire)? != 1 {
+                    return Err(ModelError::new(
+                        "profile loft faces must have exactly one boundary; loft holes separately and cut",
+                    ));
+                }
+                temporary.push(session.subshape(profile, ShapeType::Wire, 0)?);
+            }
+            _ => {
+                return Err(ModelError::new(
+                    "profile loft sections must be planar faces or closed wires",
+                ));
+            }
+        }
+    }
+    let mut extracted = temporary.iter();
+    for id in profiles {
+        let profile = shape(shapes, id)?;
+        wires.push(if session.shape_type(profile)? == ShapeType::Face {
+            extracted.next().expect("face wire extracted above")
+        } else {
+            profile
+        });
+    }
+    let result = session.create_loft_from_wires(&wires, true, ruled)?;
+    let volume = session.volume(&result)?;
+    if session.shape_type(&result)? != ShapeType::Solid
+        || !session.is_valid(&result)?
+        || !volume.is_finite()
+        || volume <= 0.0
+    {
+        return Err(ModelError::new(
+            "profile loft must produce one valid solid with finite positive volume",
+        ));
+    }
+    Ok(result)
+}
+
+#[cfg(test)]
+mod profile_tests {
+    use super::*;
+    #[test]
+    fn rejects_holed_native_faces_without_discarding_inner_boundaries() {
+        let session = Session::new().unwrap();
+        {
+            let outer = session
+                .create_cylinder(Vec3::new(0., 0., 0.), Vec3::new(0., 0., 1.), 4., 1.)
+                .unwrap();
+            let inner = session
+                .create_cylinder(Vec3::new(0., 0., -1.), Vec3::new(0., 0., 1.), 1., 3.)
+                .unwrap();
+            let ring = session.cut(&outer, &inner).unwrap();
+            let face = session
+                .subshapes(&ring, ShapeType::Face)
+                .unwrap()
+                .into_iter()
+                .find(|f| {
+                    session.face_is_planar(f).unwrap() && session.face_normal(f).unwrap().z > 0.9
+                })
+                .unwrap();
+            assert_eq!(session.subshape_count(&face, ShapeType::Wire).unwrap(), 2);
+            let upper = session
+                .create_circle_wire(Vec3::new(0., 0., 10.), Vec3::new(0., 0., 1.), 3.)
+                .unwrap();
+            let shapes = HashMap::from([("ring".into(), face), ("upper".into(), upper)]);
+            let error = execute_profiles(&session, &["ring".into(), "upper".into()], true, &shapes)
+                .unwrap_err();
+            assert!(error.message.contains("one boundary"));
+            let sphere = session.create_sphere(Vec3::new(0., 0., 0.), 3.).unwrap();
+            let curved = session.subshape(&sphere, ShapeType::Face, 0).unwrap();
+            let mut shapes = shapes;
+            shapes.insert("curved".into(), curved);
+            let error =
+                execute_profiles(&session, &["curved".into(), "upper".into()], true, &shapes)
+                    .unwrap_err();
+            assert!(error.message.contains("planar regions"));
+        }
+        assert_eq!(session.shape_count().unwrap(), 0);
+    }
+}

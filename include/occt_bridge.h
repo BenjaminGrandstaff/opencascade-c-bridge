@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define OCCT_BRIDGE_ABI_VERSION 48u
+#define OCCT_BRIDGE_ABI_VERSION 49u
 #define OCCT_BRIDGE_INVALID_SHAPE_ID UINT64_C(0)
 
 #if defined(_WIN32) && defined(OCCT_BRIDGE_BUILD_SHARED)
@@ -512,6 +512,19 @@ OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_create_loft(
     occt_bridge_session_t* session,
     const occt_bridge_vec3_t* points,
     const size_t* section_point_counts,
+    size_t section_count,
+    int make_solid,
+    int ruled,
+    occt_bridge_shape_id_t* out_shape
+);
+
+/* ABI 49: loft between 2-1000 distinct, valid closed planar wire profiles.
+ * Section order defines the transition. Compatibility aligns/splits copies;
+ * source geometry and topology are immutable. Flags are 0/1. Records native
+ * generated edge/vertex history and applies session result validation. */
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_create_loft_from_wires(
+    occt_bridge_session_t* session,
+    const occt_bridge_shape_id_t* sections,
     size_t section_count,
     int make_solid,
     int ruled,

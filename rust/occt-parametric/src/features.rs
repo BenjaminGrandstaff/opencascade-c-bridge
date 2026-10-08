@@ -122,6 +122,9 @@ pub(crate) fn execute_feature<'session>(
                 rib_closure(profile_mode, parameters)?,
             );
         }
+        FeatureOperation::ProfileLoft { profiles, ruled } => {
+            return loft::execute_profiles(session, profiles, *ruled, shapes);
+        }
         FeatureOperation::Loft {
             sections,
             smooth,
