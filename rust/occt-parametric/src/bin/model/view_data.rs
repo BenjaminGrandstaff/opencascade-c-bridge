@@ -654,6 +654,7 @@ fn revolve_dimension(
         origin,
         axis,
         angle_radians,
+        extent,
     } = &feature.operation
     else {
         return Ok(());
@@ -705,22 +706,27 @@ fn revolve_dimension(
         n[0] * u[1] - n[1] * u[0],
     ];
     let mut arc = Vec::new();
+    let start_angle = if matches!(extent, RevolveExtent::Symmetric) {
+        -0.5 * angle
+    } else {
+        0.0
+    };
     if radius > 1e-7 {
         let segments = ((angle.abs() / std::f64::consts::TAU * 64.0).ceil() as usize).clamp(2, 64);
         check_budget(&mut budget.vertices, segments + 1, "vertex")?;
         for i in 0..=segments {
-            let t = angle * i as f64 / segments as f64;
+            let t = start_angle + angle * i as f64 / segments as f64;
             arc.push(std::array::from_fn::<_, 3, _>(|j| {
                 center[j] + u[j] * t.cos() + v[j] * t.sin()
             }));
         }
     }
-    let anchors = if let Some(end) = arc.last() {
-        json!([start, center, end])
+    let anchors = if let (Some(begin), Some(end)) = (arc.first(), arc.last()) {
+        json!([begin, center, end])
     } else {
         json!([center])
     };
-    annotations.push(annotation("driving-revolve-angle".into(),format!("revolve ∠ {angle:.3} rad"),"dimension","driving",vec![feature.id.clone()],names(&serde_json::to_value(angle_radians).map_err(|e|failure("visualization",e))?),anchors,json!({"input":input,"expression":angle_radians,"value_radians":angle,"axis_origin":origin_value,"axis_direction":n,"arc_center":center,"arc_radius_mm":radius,"angular_arc":arc,"driving":true,"description":"Signed right-hand sweep around the native axis. The display arc passes through the source profile's area centroid; its radius is not a part size dimension."})));
+    annotations.push(annotation("driving-revolve-angle".into(),format!("{}revolve ∠ {angle:.3} rad",if matches!(extent,RevolveExtent::Symmetric){"symmetric "}else{""}),"dimension","driving",vec![feature.id.clone()],names(&serde_json::to_value(angle_radians).map_err(|e|failure("visualization",e))?),anchors,json!({"input":input,"expression":angle_radians,"extent":extent,"start_angle_radians":start_angle,"end_angle_radians":start_angle+angle,"value_radians":angle,"axis_origin":origin_value,"axis_direction":n,"arc_center":center,"arc_radius_mm":radius,"angular_arc":arc,"driving":true,"description":"Signed right-hand sweep around the native axis. The display arc uses the source profile's centroid radius; its radius is not a part size dimension."})));
     Ok(())
 }
 

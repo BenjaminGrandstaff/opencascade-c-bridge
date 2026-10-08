@@ -89,7 +89,7 @@ Through MCP, get either example with `occt_get_example`, then pass it to
 ```json
 {
   "schema": "occb-model-view-v1",
-  "model": { "schema_version": 77, "...": "complete model" },
+  "model": { "schema_version": 78, "...": "complete model" },
   "outputs": [{ "instance": "block", "output": "body" }],
   "sketches": true,
   "options": {
@@ -172,3 +172,8 @@ construction takes O(A) time and storage for A <= 65 samples. Positive and
 negative partial turns and complete turns are covered by geometry, snapshot,
 control and assembly-overlay tests. The `revolved-ring` AI example and a
 100-scene MCP gate exercise the same view path.
+
+Schema-78 symmetric revolutions display their arc from minus half the total
+angle to plus half, matching native geometry. The source sketch remains in its
+original plane. Annotation details record the mode and signed start/end angles.
+The `symmetric-revolve` example demonstrates this view.

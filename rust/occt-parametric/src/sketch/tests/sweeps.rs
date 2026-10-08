@@ -133,6 +133,7 @@ fn revolves_offset_circle_profiles_into_full_and_signed_partial_tori() {
                 sketch.clone(),
                 wire,
                 FeatureOperation::Revolve {
+                    extent: RevolveExtent::Angle,
                     input: "profile".into(),
                     origin: sketch.origin.clone(),
                     axis: VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, 2.0)),
@@ -177,6 +178,7 @@ fn sweep_parameters_rebuild_solids_and_reuse_unchanged_profiles() {
             sketch.points[1].x = length(4.0);
             sketch.y_axis = VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, 1.0));
             FeatureOperation::Revolve {
+                extent: RevolveExtent::Angle,
                 input: "profile".into(),
                 origin: sketch.origin.clone(),
                 axis: VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, 1.0)),
@@ -266,12 +268,14 @@ fn invalid_sweep_values_and_inputs_fail_without_leaking_profiles() {
             direction: VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, 1.0)),
         },
         FeatureOperation::Revolve {
+            extent: RevolveExtent::Angle,
             input: "profile".into(),
             origin: VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, 0.0)),
             axis: VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, 1.0)),
             angle_radians: ScalarExpr::Literal(Quantity::scalar(1.0)),
         },
         FeatureOperation::Revolve {
+            extent: RevolveExtent::Angle,
             input: "profile".into(),
             origin: rectangle().origin,
             axis: VectorExpr::Literal(VectorQuantity::lengths(
@@ -283,12 +287,14 @@ fn invalid_sweep_values_and_inputs_fail_without_leaking_profiles() {
             angle_radians: ScalarExpr::Literal(Quantity::scalar(1.0)),
         },
         FeatureOperation::Revolve {
+            extent: RevolveExtent::Angle,
             input: "profile".into(),
             origin: rectangle().origin,
             axis: VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, 1.0)),
             angle_radians: length(1.0),
         },
         FeatureOperation::Revolve {
+            extent: RevolveExtent::Angle,
             input: "missing".into(),
             origin: rectangle().origin,
             axis: VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, 1.0)),
@@ -358,6 +364,7 @@ fn schema_twenty_eight_round_trips_sweeps_and_migrates_sketch_documents() {
             )),
         },
         FeatureOperation::Revolve {
+            extent: RevolveExtent::Angle,
             input: "profile".into(),
             origin: VectorExpr::Literal(VectorQuantity::lengths(
                 -3.0,

@@ -563,6 +563,17 @@ pub enum ExtrudeExtent {
     UpToNext { target: String },
 }
 
+/// Angular extent of a profile revolution. Angles are signed radians.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RevolveExtent {
+    /// Begin at the source sketch plane and sweep through the signed angle.
+    #[default]
+    Angle,
+    /// Sweep from minus half the angle to plus half about the sketch plane.
+    Symmetric,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum FeatureOperation {
@@ -659,6 +670,8 @@ pub enum FeatureOperation {
         origin: VectorExpr,
         axis: VectorExpr,
         angle_radians: ScalarExpr,
+        #[serde(default)]
+        extent: RevolveExtent,
     },
     Translate {
         input: String,

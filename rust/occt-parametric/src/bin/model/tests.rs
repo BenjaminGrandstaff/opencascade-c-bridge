@@ -1371,3 +1371,51 @@ fn revolve_angle_arc_obeys_the_global_vertex_budget() {
     request["options"]["maximum_vertices"] = json!(geometry_vertices + 65);
     view_request(&dir, request, "ring-exact").unwrap();
 }
+
+#[test]
+fn symmetric_revolve_views_center_signed_arcs_on_the_source_plane() {
+    let dir = Directory::new();
+    for angle in [std::f64::consts::FRAC_PI_2, -std::f64::consts::FRAC_PI_2] {
+        let mut request = view_example("symmetric-revolve");
+        request["model"]["family"]["parameters"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|p| p["id"] == "angle")
+            .unwrap()["default"]["scalar"]["value"] = json!(angle);
+        let name = if angle > 0.0 {
+            "symmetric-positive"
+        } else {
+            "symmetric-negative"
+        };
+        view_request(&dir, request, name).unwrap();
+        let data: Value =
+            serde_json::from_str(&fs::read_to_string(dir.0.join(name).join("view.json")).unwrap())
+                .unwrap();
+        let solid = &data["scenes"][0];
+        let a = solid["annotations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|a| a["id"] == "driving-revolve-angle")
+            .unwrap();
+        assert_eq!(a["detail"]["extent"], "symmetric");
+        assert_eq!(a["detail"]["start_angle_radians"], json!(-angle / 2.0));
+        assert_eq!(a["detail"]["end_angle_radians"], json!(angle / 2.0));
+        assert_eq!(a["parameters"], json!(["angle"]));
+        let arc = a["detail"]["angular_arc"].as_array().unwrap();
+        assert_eq!(arc.len(), 17);
+        let first = &arc[0];
+        let last = arc.last().unwrap();
+        assert!((first[0].as_f64().unwrap() - 7.0 * (angle / 2.0).cos()).abs() < 1e-7);
+        assert!((first[1].as_f64().unwrap() + 7.0 * (angle / 2.0).sin()).abs() < 1e-7);
+        assert!((last[1].as_f64().unwrap() - 7.0 * (angle / 2.0).sin()).abs() < 1e-7);
+        assert_eq!(a["anchors"][0], *first);
+        assert_eq!(a["anchors"][2], *last);
+        assert!(
+            (solid["bounds"][0][1].as_f64().unwrap() + solid["bounds"][1][1].as_f64().unwrap())
+                .abs()
+                < 1e-7
+        );
+    }
+}

@@ -1631,3 +1631,16 @@ The viewer measures area-centroid spacing between sections with a section-ID
 index, keeping source sketch views and linked controls. Native source geometry
 is preserved; smooth lateral fitting uses kernel approximation precision.
 See [loft semantics](LOFTS.md).
+
+## Schema 78 symmetric sketch revolutions
+
+`RevolveExtent::Angle` preserves the default start-at-profile behavior.
+`Symmetric` places the profile at minus half the signed angle, revolves through
+the total angle, and composes native history through placement. Source topology
+remains immutable and generated faces retain source-edge identities. No new
+native API is needed. Extent changes enter the feature signature; angle/axis/
+origin expression dependencies already participate in incremental regeneration.
+
+Older documents default to angle extent. Viewer arcs start/end at the same
+half-angle placements as geometry; source sketch scenes stay in their original
+plane. See [revolution semantics](REVOLUTIONS.md).

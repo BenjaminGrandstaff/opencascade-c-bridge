@@ -49,7 +49,7 @@ or remote service is started.
 input schema. All 29 current feature operations and 136 nested request-schema
 definitions are discoverable. Schemas derive from serde-compatible Rust types;
 new serialized variants require schema support at compilation. Authoring schemas
-target current model schema 77. The engine still migrates older documents.
+target current model schema 78. The engine still migrates older documents.
 Schemas describe serialization and basic request bounds; units, dependency
 references, dimensional constraints, selector resolution, and geometry validity
 are checked by the build engine.
@@ -61,7 +61,7 @@ LD_LIBRARY_PATH="$PWD/build" rust/occt-parametric/target/debug/occt-model \
   --schema request > /tmp/occt-request.schema.json
 ```
 
-`resources/list` advertises twelve `occt://schema/NAME` and fourteen
+`resources/list` advertises twelve `occt://schema/NAME` and fifteen
 `occt://example/NAME` resources. Accepted builds return specific
 `occt://build/BUILD_ID/ARTIFACT` URIs; a resource template advertises this form.
 JSON and SVG resources return text, while STEP and STL return base64 blobs.
@@ -364,3 +364,9 @@ its Z axis. `inner_radius`, `wall`, `height` and signed `angle` controls regener
 the part. Angles are dimensionless radians; a zero sweep is rejected by the
 kernel, and the magnitude may not exceed one full turn. The solid view shows
 a linked angular arc around the native axis.
+
+`symmetric-revolve` demonstrates schema-78 `revolve.extent: "symmetric"`. Its
+90-degree total angle runs from -45 to +45 degrees about the source sketch
+plane. Changing the signed angle regenerates geometry and the linked arc.
+The feature schema exposes `angle` and `symmetric` extent values; older missing
+extents default to `angle`. See [revolution semantics](../../REVOLUTIONS.md).

@@ -79,3 +79,7 @@ harness = false
 [[bench]]
 name = "profile_lofts"
 harness = false
+
+[[bench]]
+name = "symmetric_revolves"
+harness = false

@@ -49,13 +49,20 @@ pub(crate) fn execute_profile_sweep<'session>(
             origin,
             axis,
             angle_radians,
+            extent,
             ..
-        } => session.create_revolve_from_face(
-            face,
-            vector(origin, parameters, Dimension::Length)?,
-            vector(axis, parameters, Dimension::Scalar)?,
-            scalar(angle_radians, parameters, Dimension::Scalar)?,
-        )?,
+        } => {
+            let origin = vector(origin, parameters, Dimension::Length)?;
+            let axis = vector(axis, parameters, Dimension::Scalar)?;
+            let angle = scalar(angle_radians, parameters, Dimension::Scalar)?;
+            if matches!(extent, RevolveExtent::Symmetric) {
+                let placed = session.rotate(face, origin, axis, -0.5 * angle)?;
+                let revolved = session.create_revolve_from_face(&placed, origin, axis, angle)?;
+                session.compose_history(&revolved, &placed)?
+            } else {
+                session.create_revolve_from_face(face, origin, axis, angle)?
+            }
+        }
         _ => unreachable!("only profile sweep operations are dispatched here"),
     };
     if session.shape_type(&solid)? != ShapeType::Solid

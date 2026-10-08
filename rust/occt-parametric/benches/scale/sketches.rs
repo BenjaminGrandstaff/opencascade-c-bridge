@@ -1,7 +1,7 @@
 //! Sketch solving, datum-linked wires, and profile sweeps at scale.
 
 use super::*;
-use occt_parametric::{ExtrudeExtent, GeneratedResult, SketchSpline};
+use occt_parametric::{ExtrudeExtent, GeneratedResult, RevolveExtent, SketchSpline};
 
 pub(crate) fn profile_sweep_case(revolve: bool) -> Outcome {
     const COUNT: usize = 1_000;
@@ -69,6 +69,7 @@ pub(crate) fn profile_sweep_case(revolve: bool) -> Outcome {
     for index in 0..COUNT {
         let operation = if revolve {
             FeatureOperation::Revolve {
+                extent: RevolveExtent::Angle,
                 input: "profile".into(),
                 origin: VectorExpr::Literal(VectorQuantity::lengths(
                     0.0,
