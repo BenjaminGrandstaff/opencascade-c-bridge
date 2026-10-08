@@ -428,13 +428,25 @@ impl FaceSelector {
     }
 }
 
-/// A flat-bottom blind bore or a bore through the complete input along its
+/// A full-diameter blind bore depth or a bore through the complete input along its
 /// axis line. Through-all covers both directions from the supplied position.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum HoleExtent {
     Blind { depth: ScalarExpr },
     ThroughAll,
+}
+
+/// Shape below a blind hole's full-diameter bore depth.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum HoleBottom {
+    #[default]
+    Flat,
+    /// Included point angle in scalar radians (0 < angle < pi).
+    /// The conical tip adds diameter / (2*tan(angle/2)) to the bore depth.
+    /// The complete tip must remain within the input material.
+    DrillPoint { angle_radians: ScalarExpr },
 }
 
 /// Entry recess, starting at the hole position along its axis.
@@ -658,6 +670,8 @@ pub enum FeatureOperation {
         axis: VectorExpr,
         diameter: ScalarExpr,
         extent: HoleExtent,
+        #[serde(default)]
+        bottom: HoleBottom,
         #[serde(default)]
         finish: HoleFinish,
         #[serde(default, skip_serializing_if = "Option::is_none")]

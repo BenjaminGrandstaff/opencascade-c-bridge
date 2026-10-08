@@ -635,5 +635,10 @@ profiles (ABI 47, model schema 72).
 up to a selected face, and up to the next complete face limit, including
 inclined and curved surfaces. Target
 geometry participates in regeneration; the viewer shows the actual length.
-The native ABI is 48; model schema is 74. Native surface-ray witnesses measure
+The native ABI is 48; model schema is 75. Native surface-ray witnesses measure
 viewer extents on nonuniform caps.
+
+
+[Blind drill-point holes](HOLES.md) add configurable conical bottoms, native tip
+containment checks, full-diameter depth callouts and linked viewer dimensions.
+Model schema is 75; native ABI remains 48.

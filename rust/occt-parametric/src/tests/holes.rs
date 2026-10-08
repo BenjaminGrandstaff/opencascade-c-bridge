@@ -30,6 +30,7 @@ fn bore(extent: HoleExtent) -> FamilyDefinition {
             FeatureDefinition {
                 id: "hole".into(),
                 operation: FeatureOperation::Hole {
+                    bottom: HoleBottom::Flat,
                     input: "body".into(),
                     position: position(5.0, 5.0, 10.0),
                     axis: direction(0.0, 0.0, -3.0),
@@ -532,6 +533,7 @@ fn invalid_holes_fail_with_feature_context_and_release_all_handles() {
     }
     let mut definition = bore(HoleExtent::ThroughAll);
     definition.features[0].operation = FeatureOperation::Hole {
+        bottom: HoleBottom::Flat,
         input: "body".into(),
         position: position(5.0, 5.0, 10.0),
         axis: direction(0.0, 0.0, -1.0),
@@ -953,5 +955,154 @@ fn thread_parameter_and_literal_edits_invalidate_only_the_hole_branch() {
     assert_eq!(session.shape_count().unwrap(), count);
     assert!(session.is_valid(first.shape("hole").unwrap()).unwrap());
     drop(first);
+    assert_eq!(session.shape_count().unwrap(), 0);
+}
+
+fn pointed_bore(angle: ScalarExpr) -> FamilyDefinition {
+    let mut definition = bore(HoleExtent::Blind {
+        depth: ScalarExpr::Parameter("depth".into()),
+    });
+    let FeatureOperation::Hole { bottom, .. } = &mut definition.features[0].operation else {
+        panic!()
+    };
+    *bottom = HoleBottom::DrillPoint {
+        angle_radians: angle,
+    };
+    definition
+}
+
+#[test]
+fn drill_points_remove_exact_conical_volume_and_preserve_body_history() {
+    let session = Session::new().unwrap();
+    for angle in [
+        std::f64::consts::FRAC_PI_2,
+        2.0 * std::f64::consts::PI / 3.0,
+    ] {
+        let definition = pointed_bore(ScalarExpr::Literal(Quantity::scalar(angle)));
+        let result = part(&definition).regenerate(&session).unwrap();
+        let tip_depth = 1.0 / (angle / 2.0).tan();
+        let expected = 1000.0 - 4.0 * std::f64::consts::PI - std::f64::consts::PI * tip_depth / 3.0;
+        assert!((session.volume(result.shape("hole").unwrap()).unwrap() - expected).abs() < 1e-7);
+        let faces = session
+            .subshapes(result.shape("body").unwrap(), ShapeType::Face)
+            .unwrap();
+        let top = faces
+            .iter()
+            .find(|f| session.face_normal(f).unwrap().z > 0.99)
+            .unwrap();
+        assert!(
+            session
+                .history_count(
+                    result.shape("hole").unwrap(),
+                    top,
+                    HistoryRelation::Modified
+                )
+                .unwrap()
+                > 0
+        );
+    }
+    assert_eq!(session.shape_count().unwrap(), 0);
+}
+
+#[test]
+fn drill_angle_edits_rebuild_the_hole_and_reuse_the_body() {
+    let session = Session::new().unwrap();
+    let mut definition = pointed_bore(ScalarExpr::Parameter("point_angle".into()));
+    definition.parameters.push(ParameterDefinition {
+        id: "point_angle".into(),
+        parameter_type: ParameterType::Scalar(Dimension::Scalar),
+        default: ParameterValue::Scalar(Quantity::scalar(std::f64::consts::FRAC_PI_2)),
+        minimum: None,
+        maximum: None,
+    });
+    let first = part(&definition).regenerate(&session).unwrap();
+    let mut edited = part(&definition);
+    edited.overrides.insert(
+        "point_angle".into(),
+        ParameterValue::Scalar(Quantity::scalar(2.0 * std::f64::consts::PI / 3.0)),
+    );
+    let second = edited.regenerate_incremental(&session, &first).unwrap();
+    assert_eq!(second.regeneration.reused, ["body"]);
+    assert!(second.regeneration.rebuilt.contains(&"hole".into()));
+    assert!(second.regeneration.rebuilt.contains(&"placed".into()));
+    assert!(
+        session.volume(second.shape("hole").unwrap()).unwrap()
+            > session.volume(first.shape("hole").unwrap()).unwrap()
+    );
+    let document = ModelDocument::from_graph(&InstanceGraph::new(&definition));
+    assert_eq!(
+        ModelDocument::from_json(&document.to_json_pretty().unwrap()).unwrap(),
+        document
+    );
+}
+
+#[test]
+fn drill_points_reject_breakout_through_all_and_invalid_angles_without_leaks() {
+    let session = Session::new().unwrap();
+    for angle in [0.0, -1.0, std::f64::consts::PI, 4.0] {
+        let definition = pointed_bore(ScalarExpr::Literal(Quantity::scalar(angle)));
+        assert!(part(&definition).regenerate(&session).is_err());
+        assert_eq!(session.shape_count().unwrap(), 0);
+    }
+    let mut definition = pointed_bore(ScalarExpr::Literal(Quantity::scalar(
+        std::f64::consts::FRAC_PI_2,
+    )));
+    let FeatureOperation::Hole { extent, .. } = &mut definition.features[0].operation else {
+        panic!()
+    };
+    *extent = HoleExtent::ThroughAll;
+    assert!(part(&definition).regenerate(&session).is_err());
+    let FeatureOperation::Hole { extent, .. } = &mut definition.features[0].operation else {
+        panic!()
+    };
+    *extent = HoleExtent::Blind {
+        depth: length_expr(9.5),
+    };
+    let error = part(&definition).regenerate(&session).err().unwrap();
+    assert!(error.message.contains("breaks out"));
+    assert_eq!(session.shape_count().unwrap(), 0);
+    let definition = pointed_bore(length_expr(1.0));
+    assert!(part(&definition).regenerate(&session).is_err());
+    assert_eq!(session.shape_count().unwrap(), 0);
+}
+
+#[test]
+fn drill_points_combine_with_entry_recesses_and_follow_other_axes() {
+    let session = Session::new().unwrap();
+    for (finish, extra) in [
+        (
+            HoleFinish::Counterbore {
+                diameter: length_expr(4.0),
+                depth: length_expr(2.0),
+            },
+            6.0 * std::f64::consts::PI,
+        ),
+        (
+            HoleFinish::Countersink {
+                diameter: length_expr(4.0),
+                angle_radians: ScalarExpr::Literal(Quantity::scalar(std::f64::consts::FRAC_PI_2)),
+            },
+            4.0 * std::f64::consts::PI / 3.0,
+        ),
+    ] {
+        let mut definition = pointed_bore(ScalarExpr::Literal(Quantity::scalar(
+            std::f64::consts::FRAC_PI_2,
+        )));
+        let FeatureOperation::Hole {
+            finish: entry,
+            position: entry_position,
+            axis,
+            ..
+        } = &mut definition.features[0].operation
+        else {
+            panic!()
+        };
+        *entry = finish;
+        *entry_position = position(10.0, 5.0, 5.0);
+        *axis = direction(-1.0, 0.0, 0.0);
+        let result = part(&definition).regenerate(&session).unwrap();
+        let expected = 1000.0 - 4.0 * std::f64::consts::PI - std::f64::consts::PI / 3.0 - extra;
+        assert!((session.volume(result.shape("hole").unwrap()).unwrap() - expected).abs() < 1e-7);
+    }
     assert_eq!(session.shape_count().unwrap(), 0);
 }

@@ -67,3 +67,7 @@ harness = false
 [[bench]]
 name = "curved_extrusion_extents"
 harness = false
+
+[[bench]]
+name = "drill_points"
+harness = false

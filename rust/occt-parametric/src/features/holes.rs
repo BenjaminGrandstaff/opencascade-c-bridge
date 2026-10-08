@@ -8,6 +8,7 @@ pub(super) struct HoleSpec<'a> {
     pub axis: &'a VectorExpr,
     pub diameter: &'a ScalarExpr,
     pub extent: &'a HoleExtent,
+    pub bottom: &'a HoleBottom,
     pub finish: &'a HoleFinish,
     pub thread: Option<&'a ThreadSpecification>,
 }
@@ -23,6 +24,7 @@ pub(super) fn execute_hole<'session>(
         axis,
         diameter,
         extent,
+        bottom,
         finish,
         thread,
     } = spec;
@@ -47,6 +49,40 @@ pub(super) fn execute_hole<'session>(
         return Err(ModelError::new("hole depth must be finite and positive"));
     }
     let tool = session.create_cylinder(start, axis, radius, depth)?;
+    let tool = if let HoleBottom::DrillPoint { angle_radians } = bottom {
+        if !matches!(extent, HoleExtent::Blind { .. }) {
+            return Err(ModelError::new("a drill point requires a blind hole"));
+        }
+        let angle = scalar(angle_radians, parameters, Dimension::Scalar)?;
+        if angle <= 0.0 || angle >= std::f64::consts::PI {
+            return Err(ModelError::new(
+                "drill point included angle must be between zero and pi radians",
+            ));
+        }
+        let tip_depth = radius / (angle / 2.0).tan();
+        if !tip_depth.is_finite() || tip_depth <= 0.0 {
+            return Err(ModelError::new(
+                "drill point depth must be finite and positive",
+            ));
+        }
+        let tip =
+            session.create_cone(add(start, scale(axis, depth)), axis, radius, 0.0, tip_depth)?;
+        let tip_volume = session.volume(&tip)?;
+        let inside_volume = session.overlap_volume(input, &tip)?;
+        if !tip_volume.is_finite() || !inside_volume.is_finite() || tip_volume <= 0.0 {
+            return Err(ModelError::new(
+                "drill point must have finite positive volume",
+            ));
+        }
+        if (tip_volume - inside_volume).abs() > tip_volume * 1e-9 {
+            return Err(ModelError::new(
+                "blind drill point breaks out of the input material",
+            ));
+        }
+        session.fuse(&tool, &tip)?
+    } else {
+        tool
+    };
     let recess = match finish {
         HoleFinish::Plain => None,
         HoleFinish::Counterbore {

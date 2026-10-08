@@ -517,6 +517,7 @@ fn primitive_dimensions(
             Ok(())
         };
     match &feature.operation {
+        FeatureOperation::Hole { .. } => hole_dimensions(feature, parameters, annotations)?,
         FeatureOperation::Box { origin, size } => {
             let a = vec(origin)?;
             let lengths = vec(size)?;
@@ -581,6 +582,84 @@ fn primitive_dimensions(
             }
         }
         _ => {}
+    }
+    Ok(())
+}
+
+fn hole_dimensions(
+    feature: &FeatureDefinition,
+    parameters: &HashMap<String, ParameterValue>,
+    annotations: &mut Vec<Value>,
+) -> Result<(), Failure> {
+    let FeatureOperation::Hole {
+        position,
+        axis,
+        diameter,
+        extent,
+        bottom,
+        ..
+    } = &feature.operation
+    else {
+        unreachable!()
+    };
+    let vector = |expr: &VectorExpr| {
+        expr.evaluate(parameters)
+            .map(|q| [q.x.value, q.y.value, q.z.value])
+            .map_err(|e| model_failure("visualization", e))
+    };
+    let scalar = |expr: &ScalarExpr| {
+        expr.evaluate(parameters)
+            .map(|q| q.value)
+            .map_err(|e| model_failure("visualization", e))
+    };
+    let a = vector(position)?;
+    let axis = vector(axis)?;
+    let maximum = axis.into_iter().map(f64::abs).fold(0.0, f64::max);
+    let n = axis.map(|x| x / maximum);
+    let magnitude = n[0].hypot(n[1].hypot(n[2]));
+    let n = n.map(|x| x / magnitude);
+    let u = if n[0].abs() < 0.9 {
+        [0.0, n[2], -n[1]]
+    } else {
+        [-n[2], 0.0, n[0]]
+    };
+    let magnitude = u[0].hypot(u[1].hypot(u[2]));
+    let u = u.map(|x| x / magnitude);
+    let d = scalar(diameter)?;
+    let offset = |p: [f64; 3], v: [f64; 3], scale: f64| {
+        std::array::from_fn::<_, 3, _>(|i| p[i] + v[i] * scale)
+    };
+    annotations.push(annotation(
+        "driving-hole-diameter".into(),
+        format!("bore Ø {} mm", length_label(d)),
+        "dimension",
+        "driving",
+        vec![feature.id.clone()],
+        names(&serde_json::to_value(diameter).map_err(|e| failure("visualization", e))?),
+        json!([offset(a, u, -d / 2.0), offset(a, u, d / 2.0)]),
+        json!({"expression":diameter,"value_mm":d,"driving":true}),
+    ));
+    if let HoleExtent::Blind { depth } = extent {
+        let full_depth = scalar(depth)?;
+        let end = offset(a, n, full_depth);
+        annotations.push(annotation("driving-hole-depth".into(),format!("full diameter depth {} mm",length_label(full_depth)),"dimension","driving",vec![feature.id.clone()],names(&serde_json::to_value(depth).map_err(|e|failure("visualization",e))?),json!([a,end]),json!({"expression":depth,"value_mm":full_depth,"depth_reference":"full_diameter","driving":true})));
+        if let HoleBottom::DrillPoint { angle_radians } = bottom {
+            let angle = scalar(angle_radians)?;
+            let tip_depth = d / (2.0 * (angle / 2.0).tan());
+            let apex = offset(end, n, tip_depth);
+            let arc_radius = tip_depth.min(d / 2.0) * 0.5;
+            let arc = (0..=16)
+                .map(|i| {
+                    let theta = -angle / 2.0 + angle * f64::from(i) / 16.0;
+                    std::array::from_fn::<_, 3, _>(|j| {
+                        apex[j] + arc_radius * (theta.sin() * u[j] - theta.cos() * n[j])
+                    })
+                })
+                .collect::<Vec<_>>();
+            let controls = names(&json!({"diameter":diameter,"bottom":bottom}));
+            annotations.push(annotation("driving-drill-angle".into(),format!("drill point ∠ {angle:.3} rad"),"dimension","driving",vec![feature.id.clone()],names(&serde_json::to_value(angle_radians).map_err(|e|failure("visualization",e))?),json!([offset(end,u,-d/2.0),apex,offset(end,u,d/2.0)]),json!({"expression":angle_radians,"value_radians":angle,"angular_arc":arc,"driving":true})));
+            annotations.push(annotation("measured-drill-tip".into(),format!("tip depth {} mm",length_label(tip_depth)),"dimension","measured",vec![feature.id.clone()],controls,json!([end,apex]),json!({"value_mm":tip_depth,"total_depth_mm":full_depth+tip_depth,"bottom":bottom,"driving":false})));
+        }
     }
     Ok(())
 }

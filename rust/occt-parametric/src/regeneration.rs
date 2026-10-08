@@ -576,6 +576,7 @@ pub(crate) fn collect_operation_parameters<'a>(
             axis,
             diameter,
             extent,
+            bottom,
             finish,
             thread,
             ..
@@ -583,7 +584,7 @@ pub(crate) fn collect_operation_parameters<'a>(
             collect_vector_parameters(position, names);
             collect_vector_parameters(axis, names);
             collect_scalar_parameters(diameter, names);
-            collect_hole_parameters(extent, finish, thread.as_deref(), names);
+            collect_hole_parameters(extent, bottom, finish, thread.as_deref(), names);
         }
 
         FeatureOperation::Rotate {
@@ -1434,10 +1435,14 @@ pub(crate) fn place_shape<'session>(
 
 fn collect_hole_parameters<'a>(
     extent: &'a HoleExtent,
+    bottom: &'a HoleBottom,
     finish: &'a HoleFinish,
     thread: Option<&'a ThreadSpecification>,
     names: &mut HashSet<&'a str>,
 ) {
+    if let HoleBottom::DrillPoint { angle_radians } = bottom {
+        collect_scalar_parameters(angle_radians, names);
+    }
     if let Some(thread) = thread {
         collect_scalar_parameters(&thread.nominal_diameter, names);
         collect_scalar_parameters(&thread.pitch, names);

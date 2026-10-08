@@ -1578,3 +1578,17 @@ The shared viewer replaces the uniform-prism centroid identity with ABI 48
 that ray's actual surface witness; a missing centroid-ray hit has no length or
 glyph. This ray is for measurement only; coverage decisions use native topology
 and Boolean intersections. See [full semantics](EXTRUSIONS.md).
+
+
+## Schema 75 blind drill-point holes
+
+`HoleBottom` defaults to flat. Drill-point included angles are scalar radians
+between zero and pi, and only blind extent is accepted. The existing depth
+means full-diameter bore length; the conical point adds radius/tan(angle/2).
+Native overlap volume verifies the tip is contained in original input material
+before fusing cutters and cutting once. The original input's cut history is
+retained. Point-angle expressions enter incremental parameter signatures.
+
+Drawing callouts preserve full-diameter depth and record the point angle. The
+shared solid viewer adds bore diameter/depth, a 17-point angle arc and computed
+tip/total depth with linked controls. ABI 48 is unchanged; see [hole semantics](HOLES.md).

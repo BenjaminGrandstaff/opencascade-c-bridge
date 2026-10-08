@@ -217,6 +217,7 @@ fn main() {
     hole_document.family.features.push(FeatureDefinition {
         id: "hole".into(),
         operation: FeatureOperation::Hole {
+            bottom: HoleBottom::Flat,
             input: "body".into(),
             position: VectorExpr::Literal(VectorQuantity::lengths(
                 5.0,

@@ -1,7 +1,7 @@
 {
   "schema": "occb-model-view-v1",
   "model": {
-    "schema_version": 74,
+    "schema_version": 75,
     "family": {
       "id": "extrusion-limits",
       "version": 1,

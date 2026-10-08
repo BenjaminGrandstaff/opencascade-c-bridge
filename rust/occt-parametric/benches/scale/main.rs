@@ -15,12 +15,12 @@ use occt_bridge::{Session, SessionOptions, ShapeType, Vec3};
 use occt_parametric::{
     AssemblyRelationship, AssemblyRequirement, AssemblyVerificationRule, AxisAngle,
     ClearanceSeries, CoordinateAxis, DatumDefinition, DatumKind, DatumRef, Dimension, Extremum,
-    FaceSelector, FamilyDefinition, FeatureDefinition, FeatureOperation, HoleCatalogSystem,
-    HoleExtent, HoleFinish, InstanceGraph, LengthUnit, ModelDocument, ModelError,
-    ParameterDefinition, ParameterType, ParameterValue, PartInstance, PatternRule, Placement,
-    Quantity, RelationKind, RelationshipTolerances, RequirementKind, RequirementPriority,
-    ScalarExpr, SketchArc, SketchCircle, SketchConstraint, SketchDefinition, SketchLine,
-    SketchPoint, ThreadHandedness, ThreadSpecification, VectorExpr, VectorQuantity,
+    FaceSelector, FamilyDefinition, FeatureDefinition, FeatureOperation, HoleBottom,
+    HoleCatalogSystem, HoleExtent, HoleFinish, InstanceGraph, LengthUnit, ModelDocument,
+    ModelError, ParameterDefinition, ParameterType, ParameterValue, PartInstance, PatternRule,
+    Placement, Quantity, RelationKind, RelationshipTolerances, RequirementKind,
+    RequirementPriority, ScalarExpr, SketchArc, SketchCircle, SketchConstraint, SketchDefinition,
+    SketchLine, SketchPoint, ThreadHandedness, ThreadSpecification, VectorExpr, VectorQuantity,
     carr_lane_socket_head_v1, carr_lane_tap_drill_v1, iso273_clearance_v1,
 };
 use std::collections::HashMap;

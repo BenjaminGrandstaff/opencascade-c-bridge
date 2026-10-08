@@ -57,7 +57,7 @@ class McpTests(unittest.TestCase):
         with self.assertRaises(jsonschema.ValidationError):
             jsonschema.validate(bad, schema)
         resources = self.client.call('resources/list')['result']['resources']
-        self.assertEqual(len(resources), 21)
+        self.assertEqual(len(resources), 22)
         self.assertEqual(len(self.client.call('resources/templates/list')['result']['resourceTemplates']), 1)
         read = self.client.call('resources/read', dict(uri='occt://schema/request'))['result']['contents'][0]
         self.assertEqual(json.loads(read['text']), schema)
@@ -232,6 +232,14 @@ class McpTests(unittest.TestCase):
         extent = next(a for a in rounded['annotations'] if a['id']=='driving-extrusion')
         self.assertAlmostEqual(extent['detail']['value_mm'],20.0)
         self.assertEqual(extent['detail']['measurement'],'profile_centroid_ray')
+        pointed = self.client.tool('occt_get_example',dict(name='drill-point'))['structuredContent']
+        jsonschema.validate(pointed,schema)
+        result = self.client.tool('occt_visualize_model',pointed)
+        self.assertFalse(result['isError'])
+        data = json.loads(self.client.call('resources/read',dict(uri=result['structuredContent']['resources']['view.json']))['result']['contents'][0]['text'])
+        tip = next(a for a in data['scenes'][0]['annotations'] if a['id']=='measured-drill-tip')
+        self.assertAlmostEqual(tip['detail']['value_mm'],3.0**0.5)
+        self.assertEqual(tip['parameters'],['diameter','point_angle'])
         # Ordinary accepted builds also publish the annotated viewer when preview is on.
         build_request = dict(schema='occb-model-request-v1',model=request['model'],outputs=request['outputs'],preview=True,step=False,stl=False)
         built = self.client.tool('occt_build',build_request)['structuredContent']

@@ -141,6 +141,7 @@ fn catalog_family() -> FamilyDefinition {
         FeatureDefinition {
             id: "tap".into(),
             operation: FeatureOperation::Hole {
+                bottom: HoleBottom::Flat,
                 input: "body".into(),
                 position: position(10.0, 10.0, 20.0),
                 axis: VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, -1.0)),
@@ -153,6 +154,7 @@ fn catalog_family() -> FamilyDefinition {
         FeatureDefinition {
             id: "recess".into(),
             operation: FeatureOperation::Hole {
+                bottom: HoleBottom::Flat,
                 input: "tap".into(),
                 position: position(30.0, 30.0, 20.0),
                 axis: VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, -1.0)),

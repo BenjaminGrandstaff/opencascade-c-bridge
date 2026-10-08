@@ -46,10 +46,10 @@ or remote service is started.
 | `occt_build` | The entire `occb-model-request-v1` object | Accepted report, build ID, local directory, and artifact resource URIs |
 
 `tools/list` provides the generated complete request schema as `occt_build`'s
-input schema. All 28 current feature operations and 135 nested request-schema
+input schema. All 28 current feature operations and 136 nested request-schema
 definitions are discoverable. Schemas derive from serde-compatible Rust types;
 new serialized variants require schema support at compilation. Authoring schemas
-target current model schema 74. The engine still migrates older documents.
+target current model schema 75. The engine still migrates older documents.
 Schemas describe serialization and basic request bounds; units, dependency
 references, dimensional constraints, selector resolution, and geometry validity
 are checked by the build engine.
@@ -61,7 +61,7 @@ LD_LIBRARY_PATH="$PWD/build" rust/occt-parametric/target/debug/occt-model \
   --schema request > /tmp/occt-request.schema.json
 ```
 
-`resources/list` advertises twelve `occt://schema/NAME` and nine
+`resources/list` advertises twelve `occt://schema/NAME` and ten
 `occt://example/NAME` resources. Accepted builds return specific
 `occt://build/BUILD_ID/ARTIFACT` URIs; a resource template advertises this form.
 JSON and SVG resources return text, while STEP and STL return base64 blobs.
@@ -332,3 +332,9 @@ length. Limit faces must terminate the complete profile strictly forward; see [e
 Its view request uses the native centroid ray measurement and tracks both
 surfaces when `depth` changes. Crossing next-face limits require an explicit
 up-to-face selector. Native ABI 48 is required.
+
+
+`drill-point` demonstrates schema-75 blind-hole bottoms. Its `point_angle`
+parameter is the included angle in radians; `depth` remains the full-diameter
+bore depth. The engine verifies tip containment before cutting, and the viewer
+links angle, diameter and depth dimensions to edits. See [hole semantics](../../HOLES.md).

@@ -129,6 +129,7 @@ fn hole_case(
         definition.features.push(FeatureDefinition {
             id: format!("hole{index}"),
             operation: FeatureOperation::Hole {
+                bottom: HoleBottom::Flat,
                 input: if index == 0 {
                     "body".into()
                 } else {

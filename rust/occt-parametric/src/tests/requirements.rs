@@ -526,6 +526,7 @@ fn radius_family() -> FamilyDefinition {
         FeatureDefinition {
             id: "drilled".into(),
             operation: FeatureOperation::Hole {
+                bottom: HoleBottom::Flat,
                 input: "plate".into(),
                 position: point(20.0, 20.0, 10.0),
                 axis: VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, -1.0)),

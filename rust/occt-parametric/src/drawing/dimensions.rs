@@ -280,6 +280,7 @@ fn hole_label(
     let FeatureOperation::Hole {
         diameter,
         extent,
+        bottom,
         finish,
         thread,
         ..
@@ -312,9 +313,20 @@ fn hole_label(
     match extent {
         HoleExtent::ThroughAll => text.push_str(" THRU"),
         HoleExtent::Blind { depth } => text.push_str(&format!(
-            " DEPTH {:.p$} {unit}",
+            "{} DEPTH {:.p$} {unit}",
+            if matches!(bottom, HoleBottom::DrillPoint { .. }) {
+                " FULL DIA"
+            } else {
+                ""
+            },
             eval(depth, Dimension::Length)?
         )),
+    }
+    if let HoleBottom::DrillPoint { angle_radians } = bottom {
+        text.push_str(&format!(
+            "; DRILL POINT {:.p$}°",
+            eval(angle_radians, Dimension::Scalar)?
+        ));
     }
     match finish {
         HoleFinish::Plain => {}

@@ -82,6 +82,7 @@ fn fixture() -> ModelDocument {
         family.features.push(FeatureDefinition {
             id: id.into(),
             operation: FeatureOperation::Hole {
+                bottom: HoleBottom::Flat,
                 input: input.into(),
                 position: VectorExpr::Components {
                     x,
@@ -1007,4 +1008,43 @@ fn curved_extent_viewer_measures_actual_cap_hits_and_target_edits() {
             assert!((annotation["anchors"][1][2].as_f64().unwrap() - expected).abs() < 1e-6);
         }
     }
+}
+
+#[test]
+fn drill_point_viewer_shows_bore_depth_tip_depth_angle_and_linked_controls() {
+    let dir = Directory::new();
+    let request = view_example("drill-point");
+    view_request(&dir, request.clone(), "point").unwrap();
+    let data: Value =
+        serde_json::from_str(&fs::read_to_string(dir.0.join("point/view.json")).unwrap()).unwrap();
+    let scene = &data["scenes"][0];
+    let annotations = scene["annotations"].as_array().unwrap();
+    let find = |id: &str| annotations.iter().find(|a| a["id"] == id).unwrap();
+    assert_eq!(
+        find("driving-hole-depth")["detail"]["depth_reference"],
+        "full_diameter"
+    );
+    assert_eq!(find("driving-hole-depth")["detail"]["value_mm"], 8.0);
+    let tip = find("measured-drill-tip");
+    assert!((tip["detail"]["value_mm"].as_f64().unwrap() - 3.0_f64.sqrt()).abs() < 1e-7);
+    assert!(
+        (tip["detail"]["total_depth_mm"].as_f64().unwrap() - 8.0 - 3.0_f64.sqrt()).abs() < 1e-7
+    );
+    assert_eq!(tip["parameters"], json!(["diameter", "point_angle"]));
+    let angle = find("driving-drill-angle");
+    assert_eq!(angle["detail"]["angular_arc"].as_array().unwrap().len(), 17);
+    assert_eq!(angle["parameters"], json!(["point_angle"]));
+    assert!((tip["anchors"][1][2].as_f64().unwrap() - (12.0 - 3.0_f64.sqrt())).abs() < 1e-7);
+    let model = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+    let session = Session::new().unwrap();
+    let result = model
+        .instance_graph()
+        .unwrap()
+        .resolve("block")
+        .unwrap()
+        .regenerate(&session)
+        .unwrap();
+    let expected =
+        15000.0 - 72.0 * std::f64::consts::PI - 3.0 * std::f64::consts::PI * 3.0_f64.sqrt();
+    assert!((session.volume(result.shape("body").unwrap()).unwrap() - expected).abs() < 1e-7);
 }

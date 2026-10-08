@@ -33,6 +33,7 @@ pub(crate) fn persistent_chain_case() -> Outcome {
                 definition.features.push(FeatureDefinition {
                     id: format!("hole-{index}"),
                     operation: FeatureOperation::Hole {
+                        bottom: HoleBottom::Flat,
                         input: if index == 0 {
                             "plate".into()
                         } else {
@@ -214,6 +215,7 @@ pub(crate) fn feature_colors_case() -> Outcome {
             definition.features.push(FeatureDefinition {
                 id: format!("hole-{index}"),
                 operation: FeatureOperation::Hole {
+                    bottom: HoleBottom::Flat,
                     input: if index == 0 {
                         "plate".into()
                     } else {

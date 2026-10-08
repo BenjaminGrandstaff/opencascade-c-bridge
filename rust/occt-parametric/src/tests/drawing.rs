@@ -1082,6 +1082,7 @@ fn callout_family(finish: HoleFinish, extent: HoleExtent) -> FamilyDefinition {
     definition.features.push(FeatureDefinition {
         id: "hole".into(),
         operation: FeatureOperation::Hole {
+            bottom: HoleBottom::Flat,
             input: "body".into(),
             position: VectorExpr::Literal(VectorQuantity::lengths(
                 5.0,
@@ -3525,5 +3526,36 @@ fn material_hatching_rejects_bad_references_patterns_and_cumulative_budgets() {
             .message
             .contains("unknown material")
     );
+    assert_eq!(session.shape_count().unwrap(), 0);
+}
+
+#[test]
+fn pointed_hole_callouts_distinguish_full_diameter_depth_and_included_angle() {
+    let mut definition = callout_family(
+        HoleFinish::Plain,
+        HoleExtent::Blind {
+            depth: ScalarExpr::Literal(Quantity::length(4.0, LengthUnit::Millimeter)),
+        },
+    );
+    let FeatureOperation::Hole { bottom, .. } =
+        &mut definition.features.last_mut().unwrap().operation
+    else {
+        panic!()
+    };
+    *bottom = HoleBottom::DrillPoint {
+        angle_radians: ScalarExpr::Literal(Quantity::scalar(2.0 * std::f64::consts::PI / 3.0)),
+    };
+    let mut graph = InstanceGraph::new(&definition);
+    graph.add_base("part", HashMap::new(), "test").unwrap();
+    let session = Session::new().unwrap();
+    let sheet = callout_page()
+        .generate(&graph, &session, DrawingRenderOptions::default())
+        .unwrap();
+    assert!(
+        sheet.labels[0]
+            .text
+            .contains("FULL DIA DEPTH 4.000 mm; DRILL POINT 120.000°")
+    );
+    assert!(sheet.to_dxf().contains("DRILL POINT 120.000"));
     assert_eq!(session.shape_count().unwrap(), 0);
 }

@@ -234,6 +234,7 @@ pub(crate) fn execute_feature<'session>(
             axis,
             diameter,
             extent,
+            bottom,
             finish,
             thread,
         } => {
@@ -246,6 +247,7 @@ pub(crate) fn execute_feature<'session>(
                     axis,
                     diameter,
                     extent,
+                    bottom,
                     finish,
                     thread: thread.as_deref(),
                 },

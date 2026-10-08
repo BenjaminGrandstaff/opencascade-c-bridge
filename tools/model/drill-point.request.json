@@ -1,11 +1,57 @@
 {
-  "schema": "occb-model-request-v1",
+  "schema": "occb-model-view-v1",
   "model": {
     "schema_version": 75,
     "family": {
-      "id": "enclosure",
+      "id": "drilled-block",
       "version": 1,
-      "parameters": [],
+      "parameters": [
+        {
+          "id": "diameter",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 6,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": null,
+          "maximum": null
+        },
+        {
+          "id": "depth",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 8,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": null,
+          "maximum": null
+        },
+        {
+          "id": "point_angle",
+          "parameter_type": {
+            "scalar": "scalar"
+          },
+          "default": {
+            "scalar": {
+              "value": 2.0943951023931953,
+              "dimension": "scalar",
+              "unit": null
+            }
+          },
+          "minimum": null,
+          "maximum": null
+        }
+      ],
       "derived_parameters": [],
       "derived_vector_parameters": [],
       "constraints": [],
@@ -32,7 +78,7 @@
       "datums": [],
       "features": [
         {
-          "id": "outer",
+          "id": "blank",
           "operation": {
             "box": {
               "origin": {
@@ -57,62 +103,17 @@
               "size": {
                 "literal": {
                   "x": {
-                    "value": 60,
+                    "value": 30,
                     "dimension": "length",
                     "unit": "millimeter"
                   },
                   "y": {
-                    "value": 40,
-                    "dimension": "length",
-                    "unit": "millimeter"
-                  },
-                  "z": {
                     "value": 25,
                     "dimension": "length",
                     "unit": "millimeter"
-                  }
-                }
-              }
-            }
-          }
-        },
-        {
-          "id": "cavity",
-          "operation": {
-            "box": {
-              "origin": {
-                "literal": {
-                  "x": {
-                    "value": 3,
-                    "dimension": "length",
-                    "unit": "millimeter"
-                  },
-                  "y": {
-                    "value": 3,
-                    "dimension": "length",
-                    "unit": "millimeter"
                   },
                   "z": {
-                    "value": 3,
-                    "dimension": "length",
-                    "unit": "millimeter"
-                  }
-                }
-              },
-              "size": {
-                "literal": {
-                  "x": {
-                    "value": 54,
-                    "dimension": "length",
-                    "unit": "millimeter"
-                  },
-                  "y": {
-                    "value": 34,
-                    "dimension": "length",
-                    "unit": "millimeter"
-                  },
-                  "z": {
-                    "value": 25,
+                    "value": 20,
                     "dimension": "length",
                     "unit": "millimeter"
                   }
@@ -124,9 +125,64 @@
         {
           "id": "body",
           "operation": {
-            "cut": {
-              "object": "outer",
-              "tool": "cavity"
+            "hole": {
+              "input": "blank",
+              "position": {
+                "literal": {
+                  "x": {
+                    "value": 15,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 12.5,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 20,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "axis": {
+                "literal": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "z": {
+                    "value": -1,
+                    "dimension": "scalar",
+                    "unit": null
+                  }
+                }
+              },
+              "diameter": {
+                "parameter": "diameter"
+              },
+              "extent": {
+                "blind": {
+                  "depth": {
+                    "parameter": "depth"
+                  }
+                }
+              },
+              "bottom": {
+                "drill_point": {
+                  "angle_radians": {
+                    "parameter": "point_angle"
+                  }
+                }
+              },
+              "finish": "plain"
             }
           }
         }
@@ -135,7 +191,7 @@
     "instances": [
       {
         "base": {
-          "id": "enclosure",
+          "id": "block",
           "overrides": {},
           "provenance": "example; dimensions are demonstration assumptions"
         }
@@ -144,11 +200,8 @@
   },
   "outputs": [
     {
-      "instance": "enclosure",
+      "instance": "block",
       "output": "body"
     }
-  ],
-  "step": true,
-  "stl": true,
-  "preview": true
+  ]
 }
