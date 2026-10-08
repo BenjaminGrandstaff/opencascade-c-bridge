@@ -968,3 +968,43 @@ fn extrusion_extent_annotations_use_generated_lengths_and_centered_anchors() {
         );
     }
 }
+
+#[test]
+fn curved_extent_viewer_measures_actual_cap_hits_and_target_edits() {
+    let dir = Directory::new();
+    for depth in [12.0, 22.0] {
+        let mut request = view_example("curved-extrusions");
+        let parameter = request["model"]["family"]["parameters"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|p| p["id"] == "depth")
+            .unwrap();
+        parameter["default"]["scalar"]["value"] = json!(depth);
+        let name = format!("curved-{depth}");
+        view_request(&dir, request, &name).unwrap();
+        let data: Value =
+            serde_json::from_str(&fs::read_to_string(dir.0.join(&name).join("view.json")).unwrap())
+                .unwrap();
+        for (feature, expected) in [("body", depth + 8.0), ("selected", depth)] {
+            let scene = data["scenes"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|s| s["feature"] == feature && s["kind"] == "solid")
+                .unwrap();
+            let annotation = scene["annotations"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|a| a["id"] == "driving-extrusion")
+                .unwrap();
+            assert!(
+                (annotation["detail"]["value_mm"].as_f64().unwrap() - expected).abs() < 1e-6,
+                "{annotation}"
+            );
+            assert_eq!(annotation["detail"]["measurement"], "profile_centroid_ray");
+            assert!((annotation["anchors"][1][2].as_f64().unwrap() - expected).abs() < 1e-6);
+        }
+    }
+}

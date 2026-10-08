@@ -1160,6 +1160,43 @@ static void sketch_edits(occt_bridge_session_t* session) {
     occt_bridge_shape_release(session,wire);occt_bridge_shape_release(session,box);
 }
 
+static void extrusion_limits(occt_bridge_session_t* session) {
+    occt_bridge_shape_id_t wire=0,profile=0,limit=0,box=0,out=0;
+    const occt_bridge_vec3_t zero=vec(0,0,0),up=vec(0,0,1),travel=vec(0,0,30);
+    EXPECT(occt_bridge_create_circle_wire(session,zero,up,2,&wire),OK);
+    EXPECT(occt_bridge_create_face_from_wire(session,wire,&profile),OK);
+    EXPECT(occt_bridge_shape_release(session,wire),OK);
+    EXPECT(occt_bridge_create_circle_wire(session,vec(0,0,10),up,10,&wire),OK);
+    EXPECT(occt_bridge_create_face_from_wire(session,wire,&limit),OK);
+    EXPECT(occt_bridge_create_box(session,zero,vec(1,1,1),&box),OK);
+    EXPECT(occt_bridge_create_prism_until_face(session,profile,travel,limit,NULL),ARG);
+    EXPECT(occt_bridge_create_prism_until_face(session,profile,zero,limit,&out),ARG);
+    EXPECT(occt_bridge_create_prism_until_face(session,profile,vec(NAN,0,1),limit,&out),ARG);
+    EXPECT(occt_bridge_create_prism_until_face(session,unknown,travel,limit,&out),MISSING);
+    EXPECT(occt_bridge_create_prism_until_face(session,profile,travel,unknown,&out),MISSING);
+    EXPECT(occt_bridge_create_prism_until_face(session,box,travel,limit,&out),GEOMETRY);
+    EXPECT(occt_bridge_create_prism_until_face(session,profile,travel,box,&out),GEOMETRY);
+    EXPECT(occt_bridge_create_prism_until_face(session,profile,travel,limit,&out),OK);
+    double length=0;
+    occt_bridge_vec3_t point;
+    EXPECT(occt_bridge_shape_ray_first_hit(session,out,zero,up,30,NULL,&length),ARG);
+    EXPECT(occt_bridge_shape_ray_first_hit(session,out,zero,up,30,&point,NULL),ARG);
+    EXPECT(occt_bridge_shape_ray_first_hit(session,out,zero,zero,30,&point,&length),ARG);
+    EXPECT(occt_bridge_shape_ray_first_hit(session,out,vec(NAN,0,0),up,30,&point,&length),ARG);
+    EXPECT(occt_bridge_shape_ray_first_hit(session,out,zero,up,0,&point,&length),ARG);
+    EXPECT(occt_bridge_shape_ray_first_hit(session,out,zero,up,NAN,&point,&length),ARG);
+    EXPECT(occt_bridge_shape_ray_first_hit(session,unknown,zero,up,30,&point,&length),MISSING);
+    EXPECT(occt_bridge_shape_ray_first_hit(session,out,zero,up,5,&point,&length),GEOMETRY);
+    EXPECT_TRUE(length==0 && point.x==0 && point.y==0 && point.z==0,"failed ray clears outputs");
+    EXPECT(occt_bridge_shape_ray_first_hit(session,out,zero,up,30,&point,&length),OK);
+    EXPECT_TRUE(fabs(length-10)<1e-7 && fabs(point.z-10)<1e-7,"native ray physical distance");
+    EXPECT(occt_bridge_shape_release(session,out),OK);
+    EXPECT(occt_bridge_shape_release(session,wire),OK);
+    EXPECT(occt_bridge_shape_release(session,profile),OK);
+    EXPECT(occt_bridge_shape_release(session,limit),OK);
+    EXPECT(occt_bridge_shape_release(session,box),OK);
+}
+
 int main(void) {
     occt_bridge_session_t* session = NULL;
     if (occt_bridge_session_create(OCCT_BRIDGE_ABI_VERSION, &session) != OK) {
@@ -1169,6 +1206,7 @@ int main(void) {
     session_and_diagnostics(session);
     primitives(session);
     sketch_edits(session);
+    extrusion_limits(session);
     wires_and_faces(session);
     recipes_sweeps_and_lofts(session);
     combinations_and_features(session);

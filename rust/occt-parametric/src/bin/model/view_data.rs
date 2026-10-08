@@ -295,7 +295,7 @@ fn solid_scene(
     for axis in 0..3 {
         let mut end = min;
         end[axis] = max[axis];
-        annotations.push(annotation(format!("extent-{axis}"),format!("{} span {} mm",["X","Y","Z"][axis],max[axis]-min[axis]),"dimension","measured",vec![output.into()],vec![],json!([min,end]),json!({"measured_mm":max[axis]-min[axis],"axis":(["X","Y","Z"][axis]),"driving":false,"description":"Exact geometry bounding extent along the family axis; independent of view rotation"})));
+        annotations.push(annotation(format!("extent-{axis}"),format!("{} span {} mm",["X","Y","Z"][axis],length_label(max[axis]-min[axis])),"dimension","measured",vec![output.into()],vec![],json!([min,end]),json!({"measured_mm":max[axis]-min[axis],"axis":(["X","Y","Z"][axis]),"driving":false,"description":"Exact geometry bounding extent along the family axis; independent of view rotation"})));
     }
     let center = [
         min[0] * 0.5 + max[0] * 0.5,
@@ -437,13 +437,27 @@ fn solid_scene(
             extent,
             ExtrudeExtent::UpToFace { .. } | ExtrudeExtent::UpToNext { .. }
         );
+        let mut has_measurement = true;
         if geometry_driven {
-            let center = point(
-                session
-                    .center_of_mass(shape)
-                    .map_err(|e| failure("visualization", e))?,
-            );
-            d = std::array::from_fn(|i| 2.0 * (center[i] - a[i]));
+            let search_length =
+                (max[0] - min[0]).hypot((max[1] - min[1]).hypot(max[2] - min[2])) + 1.0;
+            let hit = session
+                .ray_first_hit(
+                    shape,
+                    Vec3::new(a[0], a[1], a[2]),
+                    Vec3::new(d[0], d[1], d[2]),
+                    search_length,
+                )
+                .map_err(|e| failure("visualization", e))?;
+            if let Some((end, _)) = hit {
+                let end = point(end);
+                d = std::array::from_fn(|i| end[i] - a[i]);
+            } else {
+                // A holed/concave profile can have a centroid outside material.
+                // Keep the extent control but do not invent a distance glyph.
+                has_measurement = false;
+                d = [0.0; 3];
+            }
         } else if matches!(extent, ExtrudeExtent::Symmetric) {
             a = std::array::from_fn(|i| a[i] - 0.5 * d[i]);
         }
@@ -451,18 +465,18 @@ fn solid_scene(
         let mode = match extent {
             ExtrudeExtent::Distance => "extrusion",
             ExtrudeExtent::Symmetric => "symmetric extrusion",
-            ExtrudeExtent::UpToFace { .. } => "up-to-face extrusion",
-            ExtrudeExtent::UpToNext { .. } => "up-to-next extrusion",
+            ExtrudeExtent::UpToFace { .. } => "up-to-face",
+            ExtrudeExtent::UpToNext { .. } => "up-to-next",
         };
         annotations.push(annotation(
             "driving-extrusion".into(),
-            format!("{mode} {} mm", length_label(length)),
+            if has_measurement {format!("{mode}{} {} mm",if geometry_driven {": centroid"} else {""},length_label(length))} else {format!("{mode}: no centroid-ray intersection")},
             "dimension",
             if geometry_driven { "measured" } else { "driving" },
             vec![output.into()],
             names(&serde_json::to_value(direction).map_err(|e| failure("visualization", e))?),
-            json!([a, std::array::from_fn::<_, 3, _>(|i| a[i] + d[i])]),
-            json!({"feature":output,"expression":direction,"extent":extent,"value_mm":length,"driving":!geometry_driven}),
+            if has_measurement {json!([a, std::array::from_fn::<_, 3, _>(|i| a[i] + d[i])])} else {json!([])},
+            json!({"feature":output,"expression":direction,"extent":extent,"value_mm":if has_measurement {Some(length)} else {None},"measurement":if geometry_driven {"profile_centroid_ray"} else {"direction_length"},"driving":!geometry_driven}),
         ));
     }
     check_budget(&mut budget.annotations, annotations.len(), "annotation")?;

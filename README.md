@@ -632,6 +632,8 @@ profiles (ABI 47, model schema 72).
 
 
 [Extrusion end conditions](EXTRUSIONS.md) support symmetric total length,
-up to a selected face, and up to the next covering parallel face. Target
+up to a selected face, and up to the next complete face limit, including
+inclined and curved surfaces. Target
 geometry participates in regeneration; the viewer shows the actual length.
-The native ABI remains 47; model schema is 73.
+The native ABI is 48; model schema is 74. Native surface-ray witnesses measure
+viewer extents on nonuniform caps.

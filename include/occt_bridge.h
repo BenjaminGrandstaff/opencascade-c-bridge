@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define OCCT_BRIDGE_ABI_VERSION 47u
+#define OCCT_BRIDGE_ABI_VERSION 48u
 #define OCCT_BRIDGE_INVALID_SHAPE_ID UINT64_C(0)
 
 #if defined(_WIN32) && defined(OCCT_BRIDGE_BUILD_SHARED)
@@ -411,6 +411,33 @@ OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_create_prism_from_face(
     occt_bridge_shape_id_t face,
     occt_bridge_vec3_t direction,
     occt_bridge_shape_id_t* out_shape
+);
+
+/* ABI 48: exact bounded face termination. Direction is a finite search travel
+ * extending beyond the entire limiting face. Requires a valid planar profile
+ * and one valid limiting face. Retains the complete base; partial, coincident,
+ * backward or insufficient-search limits return INVALID_GEOMETRY. Records
+ * generated profile-edge history and modified limiting-face history. */
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_create_prism_until_face(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t profile,
+    occt_bridge_vec3_t direction,
+    occt_bridge_shape_id_t limiting_face,
+    occt_bridge_shape_id_t* out_shape
+);
+
+/* ABI 48: nearest strictly positive ray/surface intersection, excluding the
+ * origin within 2*OCCT confusion tolerance. Direction is normalized internally;
+ * maximum_length and returned length are physical distances. No hit returns
+ * INVALID_GEOMETRY; outputs are cleared on failure. */
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_shape_ray_first_hit(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t shape,
+    occt_bridge_vec3_t origin,
+    occt_bridge_vec3_t direction,
+    double maximum_length,
+    occt_bridge_vec3_t* out_point,
+    double* out_length
 );
 
 /* Revolves a face about origin/axis. Axis is finite and nonzero; angle is in

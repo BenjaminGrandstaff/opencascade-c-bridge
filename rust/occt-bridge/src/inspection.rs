@@ -339,6 +339,37 @@ impl Session {
             .collect())
     }
 
+    /// Native nearest forward surface hit; excludes contacts at the origin.
+    /// Returns None when no bounded face intersects the ray before maximum_length.
+    pub fn ray_first_hit(
+        &self,
+        shape: &Shape<'_>,
+        origin: Vec3,
+        direction: Vec3,
+        maximum_length: f64,
+    ) -> Result<Option<(Vec3, f64)>, BridgeError> {
+        self.validate_shape(shape)?;
+        let mut point = origin.into();
+        let mut length = 0.0;
+        // SAFETY: The shape belongs to this session and both outputs are writable.
+        let status = unsafe {
+            occt_bridge_shape_ray_first_hit(
+                self.raw.as_ptr(),
+                shape.id,
+                origin.into(),
+                direction.into(),
+                maximum_length,
+                &mut point,
+                &mut length,
+            )
+        };
+        if status == 4 {
+            return Ok(None);
+        }
+        self.check(status)?;
+        Ok(Some((point.into(), length)))
+    }
+
     /// Minimum BREP separation and witness points. Zero includes touching,
     /// overlapping, and contained shapes. No persistent handles are created.
     pub fn distance(

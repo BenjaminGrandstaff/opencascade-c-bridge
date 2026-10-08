@@ -49,7 +49,7 @@ or remote service is started.
 input schema. All 28 current feature operations and 135 nested request-schema
 definitions are discoverable. Schemas derive from serde-compatible Rust types;
 new serialized variants require schema support at compilation. Authoring schemas
-target current model schema 73. The engine still migrates older documents.
+target current model schema 74. The engine still migrates older documents.
 Schemas describe serialization and basic request bounds; units, dependency
 references, dimensional constraints, selector resolution, and geometry validity
 are checked by the build engine.
@@ -61,7 +61,7 @@ LD_LIBRARY_PATH="$PWD/build" rust/occt-parametric/target/debug/occt-model \
   --schema request > /tmp/occt-request.schema.json
 ```
 
-`resources/list` advertises twelve `occt://schema/NAME` and eight
+`resources/list` advertises twelve `occt://schema/NAME` and nine
 `occt://example/NAME` resources. Accepted builds return specific
 `occt://build/BUILD_ID/ARTIFACT` URIs; a resource template advertises this form.
 JSON and SVG resources return text, while STEP and STL return base64 blobs.
@@ -325,5 +325,10 @@ profile operations. See [Sketches](../../SKETCHES.md).
 `extrusion-limits` demonstrates symmetric, up-to-face and up-to-next extrusion.
 Change `depth` to move the target body: `body` follows its nearest face and
 `selected` follows its far face. `symmetric` uses `depth` as total centered
-length. Limit faces must be planar, parallel to the sketch, and cover the
-complete translated profile; see [extrusion semantics](../../EXTRUSIONS.md).
+length. Limit faces must terminate the complete profile strictly forward; see [extrusion semantics](../../EXTRUSIONS.md).
+
+
+`curved-extrusions` demonstrates schema-74 inclined and spherical limits.
+Its view request uses the native centroid ray measurement and tracks both
+surfaces when `depth` changes. Crossing next-face limits require an explicit
+up-to-face selector. Native ABI 48 is required.

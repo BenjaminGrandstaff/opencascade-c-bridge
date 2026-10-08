@@ -319,6 +319,26 @@ impl Session {
         })
     }
 
+    /// Terminates a planar profile prism at a complete finite limiting face.
+    /// Search travel must extend beyond that face. Partial or zero-depth limits fail.
+    pub fn create_prism_until_face<'a>(
+        &'a self,
+        profile: &Shape<'_>,
+        direction: Vec3,
+        limiting_face: &Shape<'_>,
+    ) -> Result<Shape<'a>, BridgeError> {
+        self.validate_shape(limiting_face)?;
+        self.derived_shape(profile, |out| unsafe {
+            occt_bridge_create_prism_until_face(
+                self.raw.as_ptr(),
+                profile.id,
+                direction.into(),
+                limiting_face.id,
+                out,
+            )
+        })
+    }
+
     /// Revolves a face by a signed angle in radians, up to one full turn.
     pub fn create_revolve_from_face<'a>(
         &'a self,

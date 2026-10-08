@@ -22,6 +22,7 @@ add_library(
     src/core.cpp
     src/session.cpp
     src/construction.cpp
+    src/extrusion_limits.cpp
     src/sketch_ops.cpp
     src/recipes.cpp
     src/solids.cpp

@@ -1556,3 +1556,25 @@ The shared viewer derives geometric travel from the prism and profile area
 centroids, constructing a temporary face for wire profiles because boundary
 centroids can differ. Its dimensions reflect actual geometry and centered
 anchors. The native ABI stays at 47.
+
+
+## Schema 74 inclined and curved extrusion limits
+
+ABI 48 `create_prism_until_face` splits a finite search prism by a bounded native
+face. It selects one base-connected solid retaining the full source base,
+requires a limiting cap, rejects any remaining far-cap area, and checks positive
+base/cap separation. History is filtered to the retained output and composes
+primitive generated source-edge faces through splitter modifications. Targets
+are immutable; no intermediate native shape handles escape.
+
+Parallel planar limits retain their coplanar coverage fast path. The target's
+conservative bounds choose a finite search length for other surfaces. Next-face
+limits pick the least-volume cutoff and check containment against every other
+candidate. Incomparable crossing caps fail explicitly. This adds linear
+candidate storage and at most N Boolean containment checks, not N² pairs.
+
+The shared viewer replaces the uniform-prism centroid identity with ABI 48
+`ray_first_hit`, starting at the profile area centroid. Nonuniform caps display
+that ray's actual surface witness; a missing centroid-ray hit has no length or
+glyph. This ray is for measurement only; coverage decisions use native topology
+and Boolean intersections. See [full semantics](EXTRUSIONS.md).

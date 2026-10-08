@@ -3,7 +3,7 @@
   "model": {
     "schema_version": 74,
     "family": {
-      "id": "extrusion-limits",
+      "id": "curved-extrusions",
       "version": 1,
       "parameters": [
         {
@@ -335,7 +335,7 @@
               },
               "extent": {
                 "up_to_next": {
-                  "target": "limit"
+                  "target": "sphere"
                 }
               }
             }
@@ -373,16 +373,33 @@
               },
               "extent": {
                 "up_to_face": {
-                  "target": "limit",
+                  "target": "inclined",
                   "face": {
-                    "at_extreme": {
-                      "axis": "z",
-                      "extremum": "maximum",
-                      "tolerance": {
+                    "normal_aligned": {
+                      "direction": {
                         "literal": {
-                          "value": 1e-06,
-                          "dimension": "length",
-                          "unit": "millimeter"
+                          "x": {
+                            "value": 0,
+                            "dimension": "scalar",
+                            "unit": null
+                          },
+                          "y": {
+                            "value": 0,
+                            "dimension": "scalar",
+                            "unit": null
+                          },
+                          "z": {
+                            "value": -1,
+                            "dimension": "scalar",
+                            "unit": null
+                          }
+                        }
+                      },
+                      "minimum_dot": {
+                        "literal": {
+                          "value": 0.9,
+                          "dimension": "scalar",
+                          "unit": null
                         }
                       }
                     }
@@ -470,6 +487,107 @@
                       "unit": "millimeter"
                     }
                   }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "inclined",
+          "operation": {
+            "rotate": {
+              "input": "limit",
+              "origin": {
+                "components": {
+                  "x": {
+                    "literal": {
+                      "value": 20,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "y": {
+                    "literal": {
+                      "value": 12.5,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "z": {
+                    "parameter": "depth"
+                  }
+                }
+              },
+              "axis": {
+                "literal": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "y": {
+                    "value": 1,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "z": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  }
+                }
+              },
+              "angle_radians": {
+                "literal": {
+                  "value": 0.3,
+                  "dimension": "scalar",
+                  "unit": null
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "sphere",
+          "operation": {
+            "sphere": {
+              "center": {
+                "components": {
+                  "x": {
+                    "literal": {
+                      "value": 20,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "y": {
+                    "literal": {
+                      "value": 12.5,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "z": {
+                    "add": [
+                      {
+                        "parameter": "depth"
+                      },
+                      {
+                        "literal": {
+                          "value": 38,
+                          "dimension": "length",
+                          "unit": "millimeter"
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              "radius": {
+                "literal": {
+                  "value": 30,
+                  "dimension": "length",
+                  "unit": "millimeter"
                 }
               }
             }

@@ -57,7 +57,7 @@ class McpTests(unittest.TestCase):
         with self.assertRaises(jsonschema.ValidationError):
             jsonschema.validate(bad, schema)
         resources = self.client.call('resources/list')['result']['resources']
-        self.assertEqual(len(resources), 20)
+        self.assertEqual(len(resources), 21)
         self.assertEqual(len(self.client.call('resources/templates/list')['result']['resourceTemplates']), 1)
         read = self.client.call('resources/read', dict(uri='occt://schema/request'))['result']['contents'][0]
         self.assertEqual(json.loads(read['text']), schema)
@@ -223,6 +223,15 @@ class McpTests(unittest.TestCase):
         data = json.loads(self.client.call('resources/read',dict(uri=failed['resources']['view.json']))['result']['contents'][0]['text'])
         self.assertFalse(data['scenes'][1]['solver']['solved'])
         self.assertTrue(any(a['status']=='failed' for a in data['scenes'][1]['annotations']))
+        curved = self.client.tool('occt_get_example',dict(name='curved-extrusions'))['structuredContent']
+        jsonschema.validate(curved,schema)
+        result = self.client.tool('occt_visualize_model',curved)
+        self.assertFalse(result['isError'])
+        data = json.loads(self.client.call('resources/read',dict(uri=result['structuredContent']['resources']['view.json']))['result']['contents'][0]['text'])
+        rounded = next(s for s in data['scenes'] if s['kind']=='solid' and s['feature']=='body')
+        extent = next(a for a in rounded['annotations'] if a['id']=='driving-extrusion')
+        self.assertAlmostEqual(extent['detail']['value_mm'],20.0)
+        self.assertEqual(extent['detail']['measurement'],'profile_centroid_ray')
         # Ordinary accepted builds also publish the annotated viewer when preview is on.
         build_request = dict(schema='occb-model-request-v1',model=request['model'],outputs=request['outputs'],preview=True,step=False,stl=False)
         built = self.client.tool('occt_build',build_request)['structuredContent']

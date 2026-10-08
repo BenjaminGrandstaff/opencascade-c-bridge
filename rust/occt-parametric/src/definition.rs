@@ -522,8 +522,8 @@ pub enum FilletSpineDirection {
     },
 }
 
-/// End condition for a planar profile extrusion. Geometric limits must be
-/// parallel planar faces covering the entire translated profile.
+/// End condition for a planar profile extrusion. Geometric limits must
+/// terminate the entire profile strictly forward, using their finite boundaries.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ExtrudeExtent {
@@ -537,7 +537,8 @@ pub enum ExtrudeExtent {
         target: String,
         face: Box<FaceSelector>,
     },
-    /// Nearest forward parallel face covering the complete profile.
+    /// Nearest forward face terminating the complete profile. Crossing
+    /// competing limits are ambiguous and require an explicit face selector.
     /// The vector supplies orientation; its magnitude is ignored.
     UpToNext { target: String },
 }

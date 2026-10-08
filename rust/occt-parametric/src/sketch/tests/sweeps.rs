@@ -704,3 +704,155 @@ fn geometric_extrusion_accepts_oblique_travel_and_legacy_distance_defaults() {
     ));
     assert_eq!(session.shape_count().unwrap(), 0);
 }
+
+#[test]
+fn inclined_and_spherical_limits_regenerate_with_exact_cap_volumes() {
+    let session = Session::new().unwrap();
+    for spherical in [false, true] {
+        let mut definition = extrusion_limit_family(
+            ExtrudeExtent::UpToNext {
+                target: "curved".into(),
+            },
+            10.0,
+            30.0,
+            1.0,
+        );
+        let operation = if spherical {
+            FeatureOperation::Sphere {
+                center: VectorExpr::Literal(VectorQuantity::lengths(
+                    0.,
+                    0.,
+                    15.,
+                    LengthUnit::Millimeter,
+                )),
+                radius: length(5.),
+            }
+        } else {
+            FeatureOperation::Rotate {
+                input: "limit".into(),
+                origin: VectorExpr::Literal(VectorQuantity::lengths(
+                    0.,
+                    0.,
+                    10.,
+                    LengthUnit::Millimeter,
+                )),
+                axis: VectorExpr::Literal(VectorQuantity::scalars(0., 1., 0.)),
+                angle_radians: ScalarExpr::Literal(Quantity::scalar(0.4)),
+            }
+        };
+        definition.features.push(FeatureDefinition {
+            id: "curved".into(),
+            operation,
+        });
+        let result = PartInstance {
+            id: "part".into(),
+            definition: &definition,
+            overrides: HashMap::new(),
+            provenance: "test".into(),
+        }
+        .regenerate(&session)
+        .unwrap();
+        let expected = if spherical {
+            60. * std::f64::consts::PI - 2. * std::f64::consts::PI / 3. * (125. - 21_f64.powf(1.5))
+        } else {
+            40. * std::f64::consts::PI
+        };
+        assert!((session.volume(result.shape("solid").unwrap()).unwrap() - expected).abs() < 1e-6);
+        let edge = session
+            .subshape(result.shape("profile").unwrap(), ShapeType::Edge, 0)
+            .unwrap();
+        assert!(
+            session
+                .history_count(
+                    result.shape("solid").unwrap(),
+                    &edge,
+                    occt_bridge::HistoryRelation::Generated
+                )
+                .unwrap()
+                > 0
+        );
+    }
+    assert_eq!(session.shape_count().unwrap(), 0);
+}
+
+#[test]
+fn next_face_rejects_crossing_limits_but_explicit_limit_resolves_them() {
+    let session = Session::new().unwrap();
+    let mut definition = extrusion_limit_family(
+        ExtrudeExtent::UpToNext {
+            target: "limits".into(),
+        },
+        10.0,
+        30.0,
+        1.0,
+    );
+    // Two large sketch faces at z=10, tilted in opposite directions.
+    let mut plane = circular_profile();
+    plane.points[1].x = length(10.0);
+    plane.origin =
+        VectorExpr::Literal(VectorQuantity::lengths(0., 0., 10., LengthUnit::Millimeter));
+    definition.features.push(FeatureDefinition {
+        id: "plane".into(),
+        operation: FeatureOperation::SketchFace {
+            sketch: Box::new(plane),
+        },
+    });
+    for (id, angle) in [("a", 0.4), ("b", -0.4)] {
+        definition.features.push(FeatureDefinition {
+            id: id.into(),
+            operation: FeatureOperation::Rotate {
+                input: "plane".into(),
+                origin: VectorExpr::Literal(VectorQuantity::lengths(
+                    0.,
+                    0.,
+                    10.,
+                    LengthUnit::Millimeter,
+                )),
+                axis: VectorExpr::Literal(VectorQuantity::scalars(0., 1., 0.)),
+                angle_radians: ScalarExpr::Literal(Quantity::scalar(angle)),
+            },
+        });
+    }
+    definition.features.push(FeatureDefinition {
+        id: "limits".into(),
+        operation: FeatureOperation::Sew {
+            inputs: vec!["a".into(), "b".into()],
+            tolerance: length(1e-7),
+        },
+    });
+    let error = PartInstance {
+        id: "part".into(),
+        definition: &definition,
+        overrides: HashMap::new(),
+        provenance: "test".into(),
+    }
+    .regenerate(&session)
+    .err()
+    .unwrap();
+    assert!(error.message.contains("limits cross"), "{}", error.message);
+    assert_eq!(session.shape_count().unwrap(), 0);
+    let FeatureOperation::Extrude { extent, .. } = &mut definition.features[0].operation else {
+        panic!()
+    };
+    *extent = ExtrudeExtent::UpToFace {
+        target: "a".into(),
+        face: Box::new(FaceSelector::LargestArea {
+            planar_only: true,
+            allow_ties: false,
+            relative_tolerance: ScalarExpr::Literal(Quantity::scalar(1e-9)),
+        }),
+    };
+    let result = PartInstance {
+        id: "part".into(),
+        definition: &definition,
+        overrides: HashMap::new(),
+        provenance: "test".into(),
+    }
+    .regenerate(&session)
+    .unwrap();
+    assert!(
+        (session.volume(result.shape("solid").unwrap()).unwrap() - 40. * std::f64::consts::PI)
+            .abs()
+            < 1e-6
+    );
+}

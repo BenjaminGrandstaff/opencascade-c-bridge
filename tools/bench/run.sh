@@ -31,6 +31,10 @@ OCCT_BRIDGE_LIB_DIR="$build" LD_LIBRARY_PATH="$build" \
 OCCT_BRIDGE_LIB_DIR="$build" LD_LIBRARY_PATH="$build" \
     cargo bench --quiet --manifest-path "$root/rust/occt-parametric/Cargo.toml" --bench extrusion_extents
 
+# Schema-74 inclined/curved cutoff solids and exact ray dimensions.
+OCCT_BRIDGE_LIB_DIR="$build" LD_LIBRARY_PATH="$build" \
+    cargo bench --quiet --manifest-path "$root/rust/occt-parametric/Cargo.toml" --bench curved_extrusion_extents
+
 # Includes the bounded 10,000-face geometric matcher case.
 python3 -m unittest discover -s "$root/tools/mesh/tests"
 
