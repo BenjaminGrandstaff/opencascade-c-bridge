@@ -568,6 +568,8 @@ fn invalid_holes_fail_with_feature_context_and_release_all_handles() {
                 rim: "r".into(),
             }],
             arcs: Vec::new(),
+            ellipses: Vec::new(),
+            profile_operations: Vec::new(),
             splines: Vec::new(),
             profile: Vec::new(),
             constraints: Vec::new(),

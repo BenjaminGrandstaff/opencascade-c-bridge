@@ -625,3 +625,7 @@ models with [the joint-branches command](tools/joint-branches/README.md).
 The [editable model studio](tools/view/README.md) now includes selectable sketch
 and solid annotations, linked dimension editing, regenerated constraint results
 and rejected-edit diagnostic previews in the same workspace.
+
+[Sketch capabilities](SKETCHES.md) now include ellipses, angle/radius/diameter,
+symmetry and point-on-curve constraints, with saved native trim/extend/offset
+profiles (ABI 47, model schema 72).

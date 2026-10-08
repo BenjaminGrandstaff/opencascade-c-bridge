@@ -35,6 +35,52 @@ pub struct SketchCircle {
     pub rim: String,
 }
 
+/// Full ellipse defined by center and positive major/minor axis endpoints.
+/// The solver keeps the axes perpendicular; major radius must be >= minor.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct SketchEllipse {
+    pub id: String,
+    pub center: String,
+    pub major: String,
+    pub minor: String,
+}
+
+/// Saved edits to the solved profile. Constraints refer to the source entities;
+/// these operations derive the profile used by features, in recorded order.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SketchProfileOperation {
+    /// Fractions of the entity's native parameter interval, in [0,1].
+    Trim {
+        entity: String,
+        first: ScalarExpr,
+        last: ScalarExpr,
+    },
+    /// Nonnegative extension distances; analytic curves continue naturally,
+    /// splines use native tangent-continuous extension to the tangent targets.
+    Extend {
+        entity: String,
+        start: ScalarExpr,
+        end: ScalarExpr,
+    },
+    /// Signed planar profile offset: positive expands a closed profile;
+    /// for an open profile positive is to the right of traversal.
+    Offset {
+        distance: ScalarExpr,
+        #[serde(default)]
+        join: SketchOffsetJoin,
+    },
+}
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum SketchOffsetJoin {
+    #[default]
+    Arc,
+    Intersection,
+}
+
 /// A circular arc; the solver enforces equal start/end radii automatically.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SketchArc {
@@ -67,6 +113,31 @@ impl SketchSpline {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SketchConstraint {
+    /// Signed angle from the first directed line to the second, in radians.
+    Angle {
+        first: String,
+        second: String,
+        value: ScalarExpr,
+    },
+    Radius {
+        curve: String,
+        value: ScalarExpr,
+    },
+    Diameter {
+        curve: String,
+        value: ScalarExpr,
+    },
+    /// Two points reflected across the infinite line `axis`.
+    Symmetric {
+        first: String,
+        second: String,
+        axis: String,
+    },
+    /// Point on the supporting line, circle, arc span, or ellipse.
+    PointOnCurve {
+        point: String,
+        curve: String,
+    },
     /// Tangency at a shared named endpoint (or a circle's rim point).
     Tangent {
         first: String,
@@ -119,6 +190,10 @@ pub struct SketchDefinition {
     pub lines: Vec<SketchLine>,
     #[serde(default)]
     pub circles: Vec<SketchCircle>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ellipses: Vec<SketchEllipse>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub profile_operations: Vec<SketchProfileOperation>,
     #[serde(default)]
     pub arcs: Vec<SketchArc>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -149,15 +224,26 @@ pub struct SketchSolution {
 enum Entity<'a> {
     Line(&'a SketchLine),
     Circle(&'a SketchCircle),
+    Ellipse(&'a SketchEllipse),
     Arc(&'a SketchArc),
     Spline(&'a SketchSpline),
 }
 
 impl<'a> Entity<'a> {
+    fn id(self) -> &'a str {
+        match self {
+            Self::Line(l) => &l.id,
+            Self::Circle(c) => &c.id,
+            Self::Ellipse(e) => &e.id,
+            Self::Arc(a) => &a.id,
+            Self::Spline(s) => &s.id,
+        }
+    }
     fn endpoints(self) -> (&'a str, &'a str) {
         match self {
             Self::Line(line) => (&line.start, &line.end),
             Self::Circle(circle) => (&circle.rim, &circle.rim),
+            Self::Ellipse(ellipse) => (&ellipse.major, &ellipse.major),
             Self::Arc(arc) => (&arc.start, &arc.end),
             Self::Spline(spline) => (&spline.points[0], &spline.points[spline.points.len() - 1]),
         }
@@ -167,6 +253,7 @@ impl<'a> Entity<'a> {
         match self {
             Self::Line(line) => (&line.start, &line.end),
             Self::Circle(circle) => (&circle.center, contact),
+            Self::Ellipse(ellipse) => (&ellipse.center, contact),
             Self::Arc(arc) => (&arc.center, contact),
             // Spline tangency shapes the spline; it is never a solver equation.
             Self::Spline(_) => unreachable!("spline tangency is applied geometrically"),
@@ -183,6 +270,11 @@ impl SketchDefinition {
                 self.circles
                     .iter()
                     .map(|circle| (circle.id.as_str(), Entity::Circle(circle))),
+            )
+            .chain(
+                self.ellipses
+                    .iter()
+                    .map(|e| (e.id.as_str(), Entity::Ellipse(e))),
             )
             .chain(
                 self.arcs
@@ -202,6 +294,36 @@ impl SketchDefinition {
     fn spline_tangency(&self, constraint: &SketchConstraint) -> bool {
         matches!(constraint, SketchConstraint::Tangent { first, second, .. }
             if self.splines.iter().any(|spline| spline.id == *first || spline.id == *second))
+    }
+
+    fn spline_tangent_index(&self) -> Result<HashMap<(&str, &str), &str>, ModelError> {
+        let splines = self
+            .splines
+            .iter()
+            .map(|s| s.id.as_str())
+            .collect::<HashSet<_>>();
+        let mut result = HashMap::new();
+        for constraint in &self.constraints {
+            if let SketchConstraint::Tangent {
+                first,
+                second,
+                point,
+            } = constraint
+            {
+                for (s, n) in [(first, second), (second, first)] {
+                    if splines.contains(s.as_str())
+                        && result
+                            .insert((s.as_str(), point.as_str()), n.as_str())
+                            .is_some()
+                    {
+                        return Err(ModelError::new(
+                            "a spline endpoint has more than one tangent neighbor",
+                        ));
+                    }
+                }
+            }
+        }
+        Ok(result)
     }
 
     fn validate_curve_geometry(
@@ -224,6 +346,20 @@ impl SketchDefinition {
             if !distance.is_finite() || distance <= RESIDUAL_TOLERANCE {
                 return Err(ModelError::new(
                     "sketch curve has coincident or non-finite defining points",
+                ));
+            }
+        }
+        for ellipse in &self.ellipses {
+            let c = points[&ellipse.center];
+            let a = line_length((c, points[&ellipse.major]));
+            let b = line_length((c, points[&ellipse.minor]));
+            if !a.is_finite()
+                || !b.is_finite()
+                || b <= RESIDUAL_TOLERANCE
+                || a + RESIDUAL_TOLERANCE < b
+            {
+                return Err(ModelError::new(
+                    "ellipse needs positive radii with major >= minor",
                 ));
             }
         }
@@ -251,17 +387,39 @@ impl SketchDefinition {
             collect_scalar_parameters(&point.x, names);
             collect_scalar_parameters(&point.y, names);
         }
+        for operation in &self.profile_operations {
+            match operation {
+                SketchProfileOperation::Trim { first, last, .. } => {
+                    collect_scalar_parameters(first, names);
+                    collect_scalar_parameters(last, names);
+                }
+                SketchProfileOperation::Extend { start, end, .. } => {
+                    collect_scalar_parameters(start, names);
+                    collect_scalar_parameters(end, names);
+                }
+                SketchProfileOperation::Offset { distance, .. } => {
+                    collect_scalar_parameters(distance, names)
+                }
+            }
+        }
         for constraint in &self.constraints {
-            if let SketchConstraint::Distance { value, .. } = constraint {
+            if let SketchConstraint::Distance { value, .. }
+            | SketchConstraint::Angle { value, .. }
+            | SketchConstraint::Radius { value, .. }
+            | SketchConstraint::Diameter { value, .. } = constraint
+            {
                 collect_scalar_parameters(value, names);
             }
         }
     }
 
     /// Solves using the assembly solver's sparse normal-matrix algebra.
-    /// Each constraint touches at most eight coordinates. Jacobian assembly
-    /// takes O(points + constraints) time and memory per iteration; elimination
-    /// cost depends on fill-in (small for chains and disconnected components).
+    /// Analytic constraints touch at most eight coordinates. Point-on-spline
+    /// also touches its interpolation and tangent-neighbor points: native
+    /// projection/interpolation and local finite differences scale with that
+    /// curve, not the full sketch. Normal assembly is O(sum(row widths²));
+    /// elimination depends on fill-in, small for independent components.
+    /// Source constraints are solved before saved profile edits are applied.
     pub fn solve(
         &self,
         parameters: &HashMap<String, ParameterValue>,
@@ -288,6 +446,8 @@ impl SketchDefinition {
             variables,
             fixed,
             entities: self.entities(),
+            native: Session::new()?,
+            spline_tangents: self.spline_tangent_index()?,
             lines: self
                 .lines
                 .iter()
@@ -299,7 +459,20 @@ impl SketchDefinition {
         while iterations < MAX_ITERATIONS && max_abs(&residual) > RESIDUAL_TOLERANCE {
             iterations += 1;
             let jacobian = problem.jacobian(&values)?;
-            let Some(step) = least_squares_step(&jacobian, &residual) else {
+            let Some(step) = least_squares_step(
+                &jacobian,
+                &residual,
+                self.constraints.iter().any(|c| {
+                    matches!(
+                        c,
+                        SketchConstraint::Angle { .. }
+                            | SketchConstraint::Radius { .. }
+                            | SketchConstraint::Diameter { .. }
+                            | SketchConstraint::Symmetric { .. }
+                            | SketchConstraint::PointOnCurve { .. }
+                    )
+                }),
+            ) else {
                 break;
             };
             let current_cost = squared_norm(&residual);
@@ -359,6 +532,30 @@ impl SketchDefinition {
         parameters: &HashMap<String, ParameterValue>,
     ) -> Result<Shape<'session>, ModelError> {
         self.face_on_plane(session, parameters, None)
+    }
+
+    fn ellipse_wire<'a>(
+        &self,
+        session: &'a Session,
+        ellipse: &SketchEllipse,
+        solution: &SketchSolution,
+        transform: &impl Fn(SketchPoint2) -> Vec3,
+        direction: &impl Fn(SketchPoint2) -> Vec3,
+        normal: Vec3,
+    ) -> Result<Shape<'a>, ModelError> {
+        let c = solution.points[&ellipse.center];
+        let a = solution.points[&ellipse.major];
+        let b = solution.points[&ellipse.minor];
+        Ok(session.create_ellipse_wire_axes(
+            transform(c),
+            normal,
+            direction(SketchPoint2 {
+                x: a.x - c.x,
+                y: a.y - c.y,
+            }),
+            line_length((c, a)),
+            line_length((c, b)),
+        )?)
     }
 
     pub(crate) fn face_on_plane<'session>(
@@ -427,13 +624,40 @@ impl SketchDefinition {
         let transform =
             |point: SketchPoint2| add(origin, add(scale(x_axis, point.x), scale(y_axis, point.y)));
         let profile = self.profile_entities()?;
-        let wire = if let [Entity::Circle(circle)] = profile.as_slice() {
+        let wire = if !self.profile_operations.is_empty() {
+            let direction = |d: SketchPoint2| add(scale(x_axis, d.x), scale(y_axis, d.y));
+            self.edited_profile(
+                session,
+                parameters,
+                &solution,
+                &profile,
+                &transform,
+                &direction,
+                cross(x_axis, y_axis),
+                closed,
+            )?
+        } else if let [Entity::Circle(circle)] = profile.as_slice() {
             if !closed {
                 return Err(ModelError::new("open sketch profile cannot be a circle"));
             }
             let center = solution.points[&circle.center];
             let radius = line_length((center, solution.points[&circle.rim]));
             session.create_circle_wire(transform(center), cross(x_axis, y_axis), radius)?
+        } else if let [Entity::Ellipse(ellipse)] = profile.as_slice() {
+            if !closed && self.profile_operations.is_empty() {
+                return Err(ModelError::new(
+                    "open sketch profile cannot be a full ellipse",
+                ));
+            }
+            let direction = |d: SketchPoint2| add(scale(x_axis, d.x), scale(y_axis, d.y));
+            self.ellipse_wire(
+                session,
+                ellipse,
+                &solution,
+                &transform,
+                &direction,
+                cross(x_axis, y_axis),
+            )?
         } else {
             let direction = |d: SketchPoint2| add(scale(x_axis, d.x), scale(y_axis, d.y));
             let segments =
@@ -444,6 +668,171 @@ impl SketchDefinition {
             return Err(ModelError::new("sketch profile produced an invalid wire"));
         }
         Ok(wire)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn entity_wire<'a>(
+        &self,
+        session: &'a Session,
+        entity: Entity<'_>,
+        solution: &SketchSolution,
+        transform: &impl Fn(SketchPoint2) -> Vec3,
+        direction: &impl Fn(SketchPoint2) -> Vec3,
+        normal: Vec3,
+    ) -> Result<Shape<'a>, ModelError> {
+        match entity {
+            Entity::Circle(c) => {
+                let center = solution.points[&c.center];
+                let rim = solution.points[&c.rim];
+                let radius = line_length((center, rim));
+                Ok(session.create_ellipse_wire_axes(
+                    transform(center),
+                    normal,
+                    direction(SketchPoint2 {
+                        x: rim.x - center.x,
+                        y: rim.y - center.y,
+                    }),
+                    radius,
+                    radius,
+                )?)
+            }
+            Entity::Ellipse(e) => {
+                self.ellipse_wire(session, e, solution, transform, direction, normal)
+            }
+            _ => {
+                let closed = matches!(entity,Entity::Spline(s) if s.closed());
+                let segments =
+                    self.profile_segments(&[entity], solution, transform, direction, closed)?;
+                Ok(session.create_curve_wire(&segments, closed)?)
+            }
+        }
+    }
+    #[allow(clippy::too_many_arguments)]
+    fn edited_profile<'a>(
+        &self,
+        session: &'a Session,
+        parameters: &HashMap<String, ParameterValue>,
+        solution: &SketchSolution,
+        profile: &[Entity<'_>],
+        transform: &impl Fn(SketchPoint2) -> Vec3,
+        direction: &impl Fn(SketchPoint2) -> Vec3,
+        normal: Vec3,
+        closed: bool,
+    ) -> Result<Shape<'a>, ModelError> {
+        let index = profile
+            .iter()
+            .enumerate()
+            .map(|(i, e)| (e.id(), i))
+            .collect::<HashMap<_, _>>();
+        let mut wires = profile
+            .iter()
+            .map(|e| self.entity_wire(session, *e, solution, transform, direction, normal))
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut joined = None;
+        for operation in &self.profile_operations {
+            match operation {
+                SketchProfileOperation::Trim {
+                    entity,
+                    first,
+                    last,
+                } => {
+                    let i = *index.get(entity.as_str()).ok_or_else(|| {
+                        ModelError::new("trim entity must belong to the selected profile")
+                    })?;
+                    wires[i] = session.trim_curve(
+                        &wires[i],
+                        scalar(first, parameters, Dimension::Scalar)?,
+                        scalar(last, parameters, Dimension::Scalar)?,
+                    )?;
+                }
+                SketchProfileOperation::Extend { entity, start, end } => {
+                    let i = *index.get(entity.as_str()).ok_or_else(|| {
+                        ModelError::new("extend entity must belong to the selected profile")
+                    })?;
+                    wires[i] = session.extend_curve(
+                        &wires[i],
+                        scalar(start, parameters, Dimension::Length)?,
+                        scalar(end, parameters, Dimension::Length)?,
+                    )?;
+                }
+                SketchProfileOperation::Offset { distance, join } => {
+                    let source = match joined.take() {
+                        Some(shape) => shape,
+                        None => session.join_wires(&wires.iter().collect::<Vec<_>>(), false)?,
+                    };
+                    joined = Some(session.offset_wire(
+                        &source,
+                        normal,
+                        scalar(distance, parameters, Dimension::Length)?,
+                        *join == SketchOffsetJoin::Intersection,
+                    )?);
+                }
+            }
+        }
+        let wire = match joined {
+            Some(shape) => shape,
+            None => session.join_wires(&wires.iter().collect::<Vec<_>>(), closed)?,
+        };
+        if session.wire_is_closed(&wire)? != closed {
+            return Err(ModelError::new(if closed {
+                "edited sketch profile must be closed"
+            } else {
+                "edited sketch profile must be open"
+            }));
+        }
+        Ok(wire)
+    }
+
+    /// Native sampled edited profile in sketch-local XY, for diagnostics.
+    /// Source constraints stay attached to source entities; these curves show
+    /// the derived boundary actually used by solid/wire features.
+    pub fn preview_edited_profile(
+        &self,
+        session: &Session,
+        parameters: &HashMap<String, ParameterValue>,
+        solution: &SketchSolution,
+        samples: usize,
+        closed: bool,
+    ) -> Result<Vec<Vec<SketchPoint2>>, ModelError> {
+        if !(2..=256).contains(&samples) {
+            return Err(ModelError::new("profile preview samples must be in 2..256"));
+        }
+        if self.profile_operations.is_empty() {
+            return Ok(Vec::new());
+        }
+        self.validate(parameters)?;
+        for p in &self.points {
+            if !solution
+                .points
+                .get(&p.id)
+                .is_some_and(|p| p.x.is_finite() && p.y.is_finite())
+            {
+                return Err(ModelError::new("profile preview is missing a finite point"));
+            }
+        }
+        self.validate_curve_geometry(&solution.points)?;
+        let transform = |p: SketchPoint2| Vec3::new(p.x, p.y, 0.0);
+        let wire = self.edited_profile(
+            session,
+            parameters,
+            solution,
+            &self.profile_entities()?,
+            &transform,
+            &transform,
+            Vec3::new(0.0, 0.0, 1.0),
+            closed,
+        )?;
+        session
+            .subshapes(&wire, ShapeType::Edge)?
+            .iter()
+            .map(|edge| {
+                Ok(session
+                    .edge_sample_points(edge, samples)?
+                    .into_iter()
+                    .map(|p| SketchPoint2 { x: p.x, y: p.y })
+                    .collect())
+            })
+            .collect()
     }
 
     /// Wire segments for the profile in order. Spline ends tangent to a line
@@ -506,7 +895,9 @@ impl SketchDefinition {
                         periodic,
                     }
                 }
-                Entity::Circle(_) => unreachable!("circles handled above"),
+                Entity::Circle(_) | Entity::Ellipse(_) => {
+                    unreachable!("closed conics handled above")
+                }
             };
             segments.push(segment);
         }
@@ -596,7 +987,8 @@ impl SketchDefinition {
 
     fn profile_entities(&self) -> Result<Vec<Entity<'_>>, ModelError> {
         let entities = self.entities();
-        let only_lines = self.arcs.is_empty() && self.splines.is_empty();
+        let only_lines =
+            self.arcs.is_empty() && self.splines.is_empty() && self.ellipses.is_empty();
         let profile = if !self.profile.is_empty() {
             self.profile
                 .iter()
@@ -604,10 +996,18 @@ impl SketchDefinition {
                 .collect::<Vec<_>>()
         } else if self.circles.len() == 1 && self.lines.is_empty() && only_lines {
             vec![Entity::Circle(&self.circles[0])]
+        } else if self.ellipses.len() == 1
+            && self.lines.is_empty()
+            && self.arcs.is_empty()
+            && self.circles.is_empty()
+            && self.splines.is_empty()
+        {
+            vec![Entity::Ellipse(&self.ellipses[0])]
         } else if self.splines.len() == 1
             && self.lines.is_empty()
             && self.arcs.is_empty()
             && self.circles.is_empty()
+            && self.ellipses.is_empty()
         {
             vec![Entity::Spline(&self.splines[0])]
         } else if only_lines && self.circles.is_empty() {
@@ -628,6 +1028,34 @@ impl SketchDefinition {
         for constraint in &self.constraints {
             constraint.validate(&point_ids, &line_ids, parameters)?;
         }
+        for op in &self.profile_operations {
+            match op {
+                SketchProfileOperation::Trim { first, last, .. } => {
+                    let a = scalar(first, parameters, Dimension::Scalar)?;
+                    let b = scalar(last, parameters, Dimension::Scalar)?;
+                    if a < 0.0 || b > 1.0 || a >= b {
+                        return Err(ModelError::new(
+                            "trim fractions need 0 <= first < last <= 1",
+                        ));
+                    }
+                }
+                SketchProfileOperation::Extend { start, end, .. } => {
+                    let a = scalar(start, parameters, Dimension::Length)?;
+                    let b = scalar(end, parameters, Dimension::Length)?;
+                    if a < 0.0 || b < 0.0 || a + b <= 0.0 {
+                        return Err(ModelError::new(
+                            "extension needs nonnegative distances, at least one positive",
+                        ));
+                    }
+                }
+                SketchProfileOperation::Offset { distance, .. } => {
+                    if scalar(distance, parameters, Dimension::Length)?.abs() <= RESIDUAL_TOLERANCE
+                    {
+                        return Err(ModelError::new("profile offset must be nonzero"));
+                    }
+                }
+            }
+        }
         Ok(())
     }
 
@@ -639,10 +1067,57 @@ impl SketchDefinition {
         let line_ids = self.validate_lines(&point_ids)?;
         let entity_ids = self.validate_curves(&point_ids, &line_ids)?;
         self.validate_profile(&entity_ids)?;
+        if self.profile_operations.len() > 1024 {
+            return Err(ModelError::new("sketch profile operations exceed 1024"));
+        }
+        let mut offset = false;
+        for op in &self.profile_operations {
+            match op {
+                SketchProfileOperation::Offset { .. } => offset = true,
+                _ if offset => {
+                    return Err(ModelError::new(
+                        "entity trim/extend operations must precede whole-profile offsets",
+                    ));
+                }
+                _ => {}
+            }
+        }
+        for op in &self.profile_operations {
+            match op {
+                SketchProfileOperation::Trim { entity, .. }
+                | SketchProfileOperation::Extend { entity, .. }
+                    if !entity_ids.contains(entity.as_str()) =>
+                {
+                    return Err(ModelError::new(
+                        "profile operation refers to an unknown entity",
+                    ));
+                }
+                _ => {}
+            }
+        }
         let entities = self.entities();
         for constraint in &self.constraints {
             constraint.validate_references(&point_ids, &line_ids)?;
             validate_tangency(constraint, &entities)?;
+            match constraint {
+                SketchConstraint::Radius { curve, .. }
+                | SketchConstraint::Diameter { curve, .. }
+                    if !matches!(
+                        entities.get(curve.as_str()),
+                        Some(Entity::Circle(_) | Entity::Arc(_))
+                    ) =>
+                {
+                    return Err(ModelError::new(
+                        "radius/diameter constraints require a circle or arc",
+                    ));
+                }
+                SketchConstraint::PointOnCurve { curve, .. }
+                    if !entities.contains_key(curve.as_str()) =>
+                {
+                    return Err(ModelError::new(format!("unknown sketch curve '{curve}'")));
+                }
+                _ => {}
+            }
         }
         Ok((point_ids, line_ids))
     }
@@ -709,6 +1184,25 @@ impl SketchDefinition {
                 )));
             }
         }
+        for ellipse in &self.ellipses {
+            if ellipse.id.is_empty() || !entity_ids.insert(&ellipse.id) {
+                return Err(ModelError::new(
+                    "sketch entity ids must be nonempty and unique",
+                ));
+            }
+            let refs = [
+                ellipse.center.as_str(),
+                ellipse.major.as_str(),
+                ellipse.minor.as_str(),
+            ];
+            if refs.iter().any(|id| !point_ids.contains(id))
+                || refs.into_iter().collect::<HashSet<_>>().len() != 3
+            {
+                return Err(ModelError::new(
+                    "ellipse needs three distinct known defining points",
+                ));
+            }
+        }
         for spline in &self.splines {
             if spline.id.is_empty() || !entity_ids.insert(spline.id.as_str()) {
                 return Err(ModelError::new(
@@ -751,13 +1245,24 @@ impl SketchConstraint {
                 .ok_or_else(|| ModelError::new(format!("unknown sketch line '{id}'")))
         };
         match self {
-            Self::Tangent { point: id, .. } => point(id),
+            Self::Radius { .. } | Self::Diameter { .. } => Ok(()),
+            Self::PointOnCurve { point: id, .. } | Self::Tangent { point: id, .. } => point(id),
+            Self::Symmetric {
+                first,
+                second,
+                axis,
+            } => {
+                point(first)?;
+                point(second)?;
+                line(axis)
+            }
             Self::Coincident { first, second } | Self::Distance { first, second, .. } => {
                 point(first)?;
                 point(second)
             }
             Self::Horizontal { line: id } | Self::Vertical { line: id } => line(id),
-            Self::Parallel { first, second }
+            Self::Angle { first, second, .. }
+            | Self::Parallel { first, second }
             | Self::Perpendicular { first, second }
             | Self::EqualLength { first, second } => {
                 line(first)?;
@@ -774,6 +1279,19 @@ impl SketchConstraint {
     ) -> Result<(), ModelError> {
         self.validate_references(points, lines)?;
         match self {
+            Self::Angle { value, .. } => {
+                let angle = scalar(value, parameters, Dimension::Scalar)?;
+                if angle.abs() > std::f64::consts::PI {
+                    return Err(ModelError::new("sketch angle must be in [-pi, pi] radians"));
+                }
+                Ok(())
+            }
+            Self::Radius { value, .. } | Self::Diameter { value, .. } => {
+                if scalar(value, parameters, Dimension::Length)? <= 0.0 {
+                    return Err(ModelError::new("sketch radius/diameter must be positive"));
+                }
+                Ok(())
+            }
             Self::Distance { value, .. } => {
                 let value = scalar(value, parameters, Dimension::Length)?;
                 if value >= 0.0 {
@@ -794,12 +1312,15 @@ struct SketchProblem<'a> {
     fixed: HashMap<&'a str, SketchPoint2>,
     lines: HashMap<&'a str, &'a SketchLine>,
     entities: HashMap<&'a str, Entity<'a>>,
+    native: Session,
+    spline_tangents: HashMap<(&'a str, &'a str), &'a str>,
 }
 
 #[derive(Clone, Copy)]
 enum Equation<'a> {
     Constraint(&'a SketchConstraint),
     Arc(&'a SketchArc),
+    Ellipse(&'a SketchEllipse),
 }
 
 impl SketchProblem<'_> {
@@ -810,6 +1331,7 @@ impl SketchProblem<'_> {
             .filter(|constraint| !self.sketch.spline_tangency(constraint))
             .map(Equation::Constraint)
             .chain(self.sketch.arcs.iter().map(Equation::Arc))
+            .chain(self.sketch.ellipses.iter().map(Equation::Ellipse))
     }
 
     fn equation_residuals(
@@ -821,6 +1343,14 @@ impl SketchProblem<'_> {
         match equation {
             Equation::Constraint(constraint) => {
                 self.constraint_residuals(constraint, values, residuals)
+            }
+            Equation::Ellipse(e) => {
+                let c = self.point(&e.center, values);
+                residuals.push(normalized_dot(
+                    (c, self.point(&e.major, values)),
+                    (c, self.point(&e.minor, values)),
+                )?);
+                Ok(())
             }
             Equation::Arc(arc) => {
                 let center = self.point(&arc.center, values);
@@ -851,6 +1381,82 @@ impl SketchProblem<'_> {
             }
         };
         (SketchPoint2 { x: 0.0, y: 0.0 }, direction)
+    }
+
+    fn spline_neighbor_refs<'a>(&'a self, spline: &'a SketchSpline) -> Vec<&'a str> {
+        let mut refs = spline.points.iter().map(String::as_str).collect::<Vec<_>>();
+        for at in [
+            spline.points.first().unwrap(),
+            spline.points.last().unwrap(),
+        ] {
+            if let Some(neighbor) = self.spline_tangents.get(&(spline.id.as_str(), at.as_str())) {
+                match self.entities[neighbor] {
+                    Entity::Line(l) => refs.extend([l.start.as_str(), l.end.as_str()]),
+                    Entity::Arc(a) => {
+                        refs.extend([a.center.as_str(), a.start.as_str(), a.end.as_str()])
+                    }
+                    _ => {}
+                }
+            }
+        }
+        refs
+    }
+    fn spline_curve<'a>(
+        &'a self,
+        spline: &SketchSpline,
+        values: &[f64],
+    ) -> Result<Shape<'a>, ModelError> {
+        let away = |at: &str| -> Option<Vec3> {
+            let neighbor = self.spline_tangents.get(&(spline.id.as_str(), at))?;
+            let p = self.point(at, values);
+            let d = match self.entities[neighbor] {
+                Entity::Line(l) => {
+                    let other = self.point(if l.start == at { &l.end } else { &l.start }, values);
+                    SketchPoint2 {
+                        x: other.x - p.x,
+                        y: other.y - p.y,
+                    }
+                }
+                Entity::Arc(a) => {
+                    let c = self.point(&a.center, values);
+                    let k = (if a.clockwise { -1.0 } else { 1.0 })
+                        * (if a.start == at { 1.0 } else { -1.0 });
+                    SketchPoint2 {
+                        x: -(p.y - c.y) * k,
+                        y: (p.x - c.x) * k,
+                    }
+                }
+                _ => unreachable!("validated spline tangency"),
+            };
+            Some(Vec3::new(d.x, d.y, 0.0))
+        };
+        let periodic = spline.closed();
+        let through = if periodic {
+            &spline.points[..spline.points.len() - 1]
+        } else {
+            &spline.points[..]
+        };
+        let segment = CurveSegment::Spline {
+            points: through
+                .iter()
+                .map(|id| {
+                    let p = self.point(id, values);
+                    Vec3::new(p.x, p.y, 0.0)
+                })
+                .collect(),
+            start_tangent: away(&spline.points[0]).map(|d| Vec3::new(-d.x, -d.y, -d.z)),
+            end_tangent: away(spline.points.last().unwrap()),
+            periodic,
+        };
+        Ok(self.native.create_curve_wire(&[segment], periodic)?)
+    }
+
+    fn radius_points<'a>(&'a self, id: &str) -> (&'a str, &'a str) {
+        match self.entities[id] {
+            Entity::Circle(c) => (&c.center, &c.rim),
+            Entity::Arc(a) => (&a.center, &a.start),
+            _ => unreachable!("validated radius curve"),
+        }
     }
 
     fn point(&self, id: &str, values: &[f64]) -> SketchPoint2 {
@@ -887,6 +1493,109 @@ impl SketchProblem<'_> {
     ) -> Result<(), ModelError> {
         let start = residuals.len();
         match constraint {
+            SketchConstraint::Angle {
+                first,
+                second,
+                value,
+            } => {
+                let angle =
+                    normalized_cross(self.line(first, values), self.line(second, values))?.atan2(
+                        normalized_dot(self.line(first, values), self.line(second, values))?,
+                    );
+                let target = scalar(value, self.parameters, Dimension::Scalar)?;
+                let delta = angle - target;
+                residuals.push(delta.sin().atan2(delta.cos()));
+            }
+            SketchConstraint::Radius { curve, value }
+            | SketchConstraint::Diameter { curve, value } => {
+                let (center, rim) = self.radius_points(curve);
+                let radius = line_length((self.point(center, values), self.point(rim, values)));
+                let factor = if matches!(constraint, SketchConstraint::Diameter { .. }) {
+                    2.0
+                } else {
+                    1.0
+                };
+                residuals
+                    .push(factor * radius - scalar(value, self.parameters, Dimension::Length)?);
+            }
+            SketchConstraint::Symmetric {
+                first,
+                second,
+                axis,
+            } => {
+                let (a, b) = (self.point(first, values), self.point(second, values));
+                let (u, v) = self.line(axis, values);
+                let (dx, dy) = (v.x - u.x, v.y - u.y);
+                let length = dx.hypot(dy);
+                if length <= f64::EPSILON {
+                    return Err(ModelError::new("symmetry axis has zero length"));
+                }
+                residuals.push(
+                    ((a.x + b.x) * 0.5 - u.x) * dy / length
+                        - ((a.y + b.y) * 0.5 - u.y) * dx / length,
+                );
+                residuals.push((b.x - a.x) * dx / length + (b.y - a.y) * dy / length);
+            }
+            SketchConstraint::PointOnCurve { point, curve } => {
+                let p = self.point(point, values);
+                match self.entities[curve.as_str()] {
+                    Entity::Line(line) => {
+                        let (a, b) = (
+                            self.point(&line.start, values),
+                            self.point(&line.end, values),
+                        );
+                        let length = line_length((a, b));
+                        if length <= f64::EPSILON {
+                            return Err(ModelError::new("point-on-line has a zero length line"));
+                        }
+                        residuals
+                            .push(((p.x - a.x) * (b.y - a.y) - (p.y - a.y) * (b.x - a.x)) / length);
+                    }
+                    Entity::Circle(_) | Entity::Arc(_) => {
+                        let (center, rim) = self.radius_points(curve);
+                        let c = self.point(center, values);
+                        residuals
+                            .push(line_length((c, p)) - line_length((c, self.point(rim, values))));
+                        if let Entity::Arc(arc) = self.entities[curve.as_str()] {
+                            let a = self.point(&arc.start, values);
+                            let b = self.point(&arc.end, values);
+                            let sign = if arc.clockwise { -1.0 } else { 1.0 };
+                            let start = (a.y - c.y).atan2(a.x - c.x);
+                            let end = (b.y - c.y).atan2(b.x - c.x);
+                            let at = (p.y - c.y).atan2(p.x - c.x);
+                            let span = (sign * (end - start)).rem_euclid(std::f64::consts::TAU);
+                            let along = (sign * (at - start)).rem_euclid(std::f64::consts::TAU);
+                            let violation = if along <= span {
+                                0.0
+                            } else {
+                                (along - span).min(std::f64::consts::TAU - along)
+                            };
+                            residuals.push(violation * line_length((c, a)));
+                        }
+                    }
+                    Entity::Ellipse(e) => {
+                        let c = self.point(&e.center, values);
+                        let major = self.point(&e.major, values);
+                        let minor = self.point(&e.minor, values);
+                        let a = line_length((c, major));
+                        let b = line_length((c, minor));
+                        if a <= f64::EPSILON || b <= f64::EPSILON {
+                            return Err(ModelError::new("point-on-ellipse needs positive axes"));
+                        }
+                        let x = ((p.x - c.x) * (major.x - c.x) + (p.y - c.y) * (major.y - c.y)) / a;
+                        let y =
+                            (-(p.x - c.x) * (major.y - c.y) + (p.y - c.y) * (major.x - c.x)) / a;
+                        residuals.push(((x / a).hypot(y / b) - 1.0) * b);
+                    }
+                    Entity::Spline(spline) => {
+                        let curve = self.spline_curve(spline, values)?;
+                        let nearest = self
+                            .native
+                            .curve_closest_point(&curve, Vec3::new(p.x, p.y, 0.0))?;
+                        residuals.extend([p.x - nearest.x, p.y - nearest.y]);
+                    }
+                }
+            }
             SketchConstraint::Tangent {
                 first,
                 second,
@@ -944,6 +1653,33 @@ impl SketchProblem<'_> {
 
     fn columns(&self, constraint: &SketchConstraint) -> Vec<usize> {
         let points = match constraint {
+            SketchConstraint::Radius { curve, .. } | SketchConstraint::Diameter { curve, .. } => {
+                let (a, b) = self.radius_points(curve);
+                vec![a, b]
+            }
+            SketchConstraint::Symmetric {
+                first,
+                second,
+                axis,
+            } => {
+                let line = self.lines[axis.as_str()];
+                vec![first.as_str(), second.as_str(), &line.start, &line.end]
+            }
+            SketchConstraint::PointOnCurve { point, curve } => {
+                let mut refs = vec![point.as_str()];
+                match self.entities[curve.as_str()] {
+                    Entity::Line(l) => refs.extend([l.start.as_str(), l.end.as_str()]),
+                    Entity::Circle(c) => refs.extend([c.center.as_str(), c.rim.as_str()]),
+                    Entity::Arc(a) => {
+                        refs.extend([a.center.as_str(), a.start.as_str(), a.end.as_str()])
+                    }
+                    Entity::Ellipse(e) => {
+                        refs.extend([e.center.as_str(), e.major.as_str(), e.minor.as_str()])
+                    }
+                    Entity::Spline(spline) => refs.extend(self.spline_neighbor_refs(spline)),
+                }
+                refs
+            }
             SketchConstraint::Tangent {
                 first,
                 second,
@@ -961,7 +1697,8 @@ impl SketchProblem<'_> {
                 let line = self.lines[line.as_str()];
                 vec![line.start.as_str(), line.end.as_str()]
             }
-            SketchConstraint::Parallel { first, second }
+            SketchConstraint::Angle { first, second, .. }
+            | SketchConstraint::Parallel { first, second }
             | SketchConstraint::Perpendicular { first, second }
             | SketchConstraint::EqualLength { first, second } => {
                 let (a, b) = (self.lines[first.as_str()], self.lines[second.as_str()]);
@@ -999,6 +1736,7 @@ impl SketchProblem<'_> {
             let columns = match equation {
                 Equation::Constraint(constraint) => self.columns(constraint),
                 Equation::Arc(arc) => self.point_columns(vec![&arc.center, &arc.start, &arc.end]),
+                Equation::Ellipse(e) => self.point_columns(vec![&e.center, &e.major, &e.minor]),
             };
             for column in columns {
                 let step = DIFFERENCE_STEP * values[column].abs().max(1.0);
@@ -1056,15 +1794,28 @@ fn normalized_dot(
     Ok((u.0 * v.0 + u.1 * v.1) / scale)
 }
 
-fn least_squares_step(jacobian: &SparseJacobian, residual: &[f64]) -> Option<Vec<f64>> {
+fn least_squares_step(
+    jacobian: &SparseJacobian,
+    residual: &[f64],
+    minimum_change: bool,
+) -> Option<Vec<f64>> {
     let rhs = jacobian
         .transpose_times(residual)
         .into_iter()
         .map(|value| -value)
         .collect();
-    jacobian
-        .normal_matrix()
-        .solve_dropping_null(rhs, PIVOT_TOLERANCE)
+    let mut normal = jacobian.normal_matrix();
+    // Curved underconstrained equations must move all constrained coordinates:
+    // dropping a dependent pivot can otherwise freeze the coordinate needed to
+    // reach a circle/ellipse. Small relative LM damping leaves untouched
+    // columns untouched; rank/free-degree reporting uses the undamped matrix.
+    if minimum_change {
+        for i in 0..normal.size() {
+            let damping = normal.diagonal(i) * 1e-8;
+            normal.add_diagonal(i, damping);
+        }
+    }
+    normal.solve_dropping_null(rhs, PIVOT_TOLERANCE)
 }
 
 fn max_abs(values: &[f64]) -> f64 {
@@ -1159,7 +1910,7 @@ fn validate_curve_entities(profile: &[Entity<'_>]) -> Result<(), ModelError> {
     if profile.is_empty()
         || profile
             .iter()
-            .any(|entity| matches!(entity, Entity::Circle(_)))
+            .any(|entity| matches!(entity, Entity::Circle(_) | Entity::Ellipse(_)))
     {
         return Err(ModelError::new(
             "profile must contain connected lines, arcs, and splines, or one circle",
@@ -1257,6 +2008,8 @@ impl SketchDefinition {
             fixed,
             lines: self.lines.iter().map(|l| (l.id.as_str(), l)).collect(),
             entities: self.entities(),
+            native: Session::new()?,
+            spline_tangents: self.spline_tangent_index()?,
         };
         self.constraints
             .iter()
@@ -1311,9 +2064,18 @@ impl SketchDefinition {
                 Entity::Line(e) => &e.id,
                 Entity::Arc(e) => &e.id,
                 Entity::Circle(e) => &e.id,
+                Entity::Ellipse(e) => &e.id,
                 Entity::Spline(e) => &e.id,
             };
             let wire = match entity {
+                Entity::Ellipse(ellipse) => self.ellipse_wire(
+                    session,
+                    ellipse,
+                    solution,
+                    &transform,
+                    &transform,
+                    Vec3::new(0.0, 0.0, 1.0),
+                )?,
                 Entity::Circle(circle) => {
                     let center = solution.points[&circle.center];
                     let radius = line_length((center, solution.points[&circle.rim]));

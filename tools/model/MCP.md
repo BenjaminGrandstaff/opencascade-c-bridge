@@ -49,7 +49,7 @@ or remote service is started.
 input schema. All 28 current feature operations and 122 nested request-schema
 definitions are discoverable. Schemas derive from serde-compatible Rust types;
 new serialized variants require schema support at compilation. Authoring schemas
-target current model schema 71. The engine still migrates older documents.
+target current model schema 72. The engine still migrates older documents.
 Schemas describe serialization and basic request bounds; units, dependency
 references, dimensional constraints, selector resolution, and geometry validity
 are checked by the build engine.
@@ -61,7 +61,7 @@ LD_LIBRARY_PATH="$PWD/build" rust/occt-parametric/target/debug/occt-model \
   --schema request > /tmp/occt-request.schema.json
 ```
 
-`resources/list` advertises twelve `occt://schema/NAME` and six
+`resources/list` advertises twelve `occt://schema/NAME` and seven
 `occt://example/NAME` resources. Accepted builds return specific
 `occt://build/BUILD_ID/ARTIFACT` URIs; a resource template advertises this form.
 JSON and SVG resources return text, while STEP and STL return base64 blobs.
@@ -316,3 +316,7 @@ interactive solid orbiting. Accepted previews include it automatically;
 `occt_visualize_model` can display unaccepted proposals without promoting them
 into builds. `view` is the twelfth schema, and `sketch-block`/`sketch-conflict`
 are additional diagnostic examples.
+
+`sketch-advanced` demonstrates the schema-72 sketch additions. Its view request
+contains all new constraints, an ellipse solid, and native trim/extend/offset
+profile operations. See [Sketches](../../SKETCHES.md).

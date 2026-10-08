@@ -1109,6 +1109,57 @@ static void surface_mesh(occt_bridge_session_t* session) {
     occt_bridge_shape_release(session, body);
 }
 
+static void sketch_edits(occt_bridge_session_t* session) {
+    occt_bridge_shape_id_t wire=0,box=0,out=0;
+    const occt_bridge_vec3_t z=vec(0,0,0),normal=vec(0,0,1),axis=vec(1,0,0);
+    const occt_bridge_vec3_t points[]={vec(0,0,0),vec(10,0,0)};
+    EXPECT(occt_bridge_create_polyline_wire(session,points,2,0,&wire),OK);
+    EXPECT(occt_bridge_create_box(session,z,vec(1,1,1),&box),OK);
+    EXPECT(occt_bridge_create_ellipse_wire_axes(session,z,normal,axis,6,3,NULL),ARG);
+    EXPECT(occt_bridge_create_ellipse_wire_axes(session,z,z,axis,6,3,&out),ARG);
+    EXPECT(occt_bridge_create_ellipse_wire_axes(session,z,normal,normal,6,3,&out),ARG);
+    EXPECT(occt_bridge_create_ellipse_wire_axes(session,z,normal,axis,2,3,&out),ARG);
+    EXPECT(occt_bridge_create_ellipse_wire_axes(session,z,normal,axis,6,0,&out),ARG);
+    EXPECT(occt_bridge_trim_curve(session,wire,0,1,NULL),ARG);
+    EXPECT(occt_bridge_trim_curve(session,unknown,0,1,&out),MISSING);
+    EXPECT(occt_bridge_trim_curve(session,wire,NAN,1,&out),ARG);
+    EXPECT(occt_bridge_trim_curve(session,wire,-1,1,&out),ARG);
+    EXPECT(occt_bridge_trim_curve(session,wire,0,2,&out),ARG);
+    EXPECT(occt_bridge_trim_curve(session,wire,.8,.2,&out),ARG);
+    EXPECT(occt_bridge_trim_curve(session,box,0,1,&out),ARG);
+    EXPECT(occt_bridge_extend_curve(session,wire,1,1,NULL),ARG);
+    EXPECT(occt_bridge_extend_curve(session,unknown,1,1,&out),MISSING);
+    EXPECT(occt_bridge_extend_curve(session,wire,-1,1,&out),ARG);
+    EXPECT(occt_bridge_extend_curve(session,wire,0,0,&out),ARG);
+    EXPECT(occt_bridge_extend_curve(session,wire,NAN,1,&out),ARG);
+    EXPECT(occt_bridge_extend_curve(session,box,1,1,&out),ARG);
+    EXPECT(occt_bridge_join_wires(session,&wire,1,0,NULL),ARG);
+    EXPECT(occt_bridge_join_wires(session,NULL,1,0,&out),ARG);
+    EXPECT(occt_bridge_join_wires(session,&wire,0,0,&out),ARG);
+    EXPECT(occt_bridge_join_wires(session,&wire,1,2,&out),ARG);
+    EXPECT(occt_bridge_join_wires(session,&unknown,1,0,&out),MISSING);
+    EXPECT(occt_bridge_join_wires(session,&box,1,0,&out),ARG);
+    EXPECT(occt_bridge_offset_wire(session,wire,normal,1,0,NULL),ARG);
+    EXPECT(occt_bridge_offset_wire(session,unknown,normal,1,0,&out),MISSING);
+    EXPECT(occt_bridge_offset_wire(session,box,normal,1,0,&out),ARG);
+    EXPECT(occt_bridge_offset_wire(session,wire,z,1,0,&out),ARG);
+    EXPECT(occt_bridge_offset_wire(session,wire,normal,0,0,&out),ARG);
+    EXPECT(occt_bridge_offset_wire(session,wire,normal,1,2,&out),ARG);
+    EXPECT(occt_bridge_curve_closest_point(session,wire,z,NULL),ARG);
+    occt_bridge_vec3_t nearest;
+    EXPECT(occt_bridge_curve_closest_point(session,unknown,z,&nearest),MISSING);
+    EXPECT(occt_bridge_curve_closest_point(session,wire,vec(NAN,0,0),&nearest),ARG);
+    EXPECT(occt_bridge_curve_closest_point(session,wire,vec(5,3,0),&nearest),OK);
+    EXPECT_TRUE(fabs(nearest.x-5)<1e-9 && fabs(nearest.y)<1e-9,"curve projection point");
+    int closed=0;
+    EXPECT(occt_bridge_wire_is_closed(session,wire,NULL),ARG);
+    EXPECT(occt_bridge_wire_is_closed(session,unknown,&closed),MISSING);
+    EXPECT(occt_bridge_wire_is_closed(session,box,&closed),ARG);
+    EXPECT(occt_bridge_wire_is_closed(session,wire,&closed),OK);
+    EXPECT_TRUE(closed==0,"line wire must be open");
+    occt_bridge_shape_release(session,wire);occt_bridge_shape_release(session,box);
+}
+
 int main(void) {
     occt_bridge_session_t* session = NULL;
     if (occt_bridge_session_create(OCCT_BRIDGE_ABI_VERSION, &session) != OK) {
@@ -1117,6 +1168,7 @@ int main(void) {
     }
     session_and_diagnostics(session);
     primitives(session);
+    sketch_edits(session);
     wires_and_faces(session);
     recipes_sweeps_and_lofts(session);
     combinations_and_features(session);

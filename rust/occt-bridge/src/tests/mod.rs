@@ -13,6 +13,7 @@ mod operations;
 mod projection;
 mod results;
 mod session;
+mod sketch_ops;
 mod surface_radius;
 mod sweep;
 mod variable_fillet;

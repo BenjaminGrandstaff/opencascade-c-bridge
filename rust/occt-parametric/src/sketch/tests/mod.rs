@@ -1,5 +1,6 @@
 use super::*;
 
+mod advanced;
 mod profiles;
 mod solving;
 mod splines;
@@ -24,6 +25,8 @@ fn rectangle() -> SketchDefinition {
         datum_plane: None,
         circles: Vec::new(),
         arcs: Vec::new(),
+        ellipses: Vec::new(),
+        profile_operations: Vec::new(),
         splines: Vec::new(),
         profile: Vec::new(),
         origin: VectorExpr::Literal(VectorQuantity::lengths(

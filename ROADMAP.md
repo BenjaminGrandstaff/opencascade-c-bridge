@@ -8,21 +8,32 @@ tracks status and order.
 
 | Layer | Version | State |
 |---|---|---|
-| C ABI (`src/`, `include/`) | ABI 46 | Stable; exact version match required |
+| C ABI (`src/`, `include/`) | ABI 47 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 71 | Active development |
+| `occt-parametric` (engineering layer) | Schema 72 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 95 + first-use integration 1 (+1 doc test), recipes 3, parametric 380 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 16 + branch command 2 + model command 12, MCP Python 8, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 96 + first-use integration 1 (+1 doc test), recipes 3, parametric 386 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 16 + branch command 2 + model command 13, MCP Python 8, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
 | Coverage | 93.61% lines overall, test code excluded; C++ 94.13% lines, 87.40% branches, 100% functions; Rust 93.42% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 109 Rust cases plus 5 model-command and 7 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Scale benchmarks | 112 Rust cases plus 5 model-command and 7 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
+
+- Sketch completion (ABI 47, schema 72): native ellipses, signed angle,
+  radius/diameter, symmetry and point-on-line/circle/arc/ellipse/spline equations;
+  saved exact trims, natural conic and C1 spline extensions, and planar offsets
+  derive profiles without overwriting source identities. Sparse damped solves
+  handle underconstrained curved targets; diagnostics use the same equations.
+  AI schemas/examples and both viewers expose new dimensions and derived
+  profiles. Six library tests, a command integration test, bridge tests and C
+  argument conformance cover geometry, conflicts, migration and cleanup.
+  Three 1,000-case scale gates pass in 0.063/0.115/0.088 s (10 s budgets).
+  See [Sketches](SKETCHES.md).
 
 - Assembly dimension/check overlays: native anchors follow the selected part's
   placement and frames, using an explicit family-local glTF matrix independent

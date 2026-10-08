@@ -21,22 +21,23 @@ for(let i=0;i<data.scenes.length;i++){
  elements.scene.value=String(i);elements.scene.emit('change');
  assert.equal(viewer.scene.title,data.scenes[i].title);
  if(viewer.scene.error)continue;
- const dimension=viewer.scene.annotations.find(a=>a.kind==='dimension');
- assert(dimension,'scene needs a dimension annotation');
+ const dimension=viewer.scene.annotations.find(a=>a.kind==='dimension')||viewer.scene.annotations.find(a=>a.kind==='profile_operation')||viewer.scene.annotations[0];
+ assert(dimension,'scene needs an inspectable annotation');
  // Click the same list button a user would select, and inspect related controls.
  const button=elements.annotations.children.find(e=>e.dataset.annotation===dimension.id);assert(button);button.emit('click');
  assert.equal(viewer.selected,dimension.id);
  const nodes=e=>[e,...e.children.flatMap(nodes)];assert(nodes(elements.selection).some(e=>e.tagName==='pre'&&e.textContent===JSON.stringify(dimension.detail,null,2)));
- assert(elements.overlay.children.some(e=>e.attributes['data-annotation']===dimension.id));
+ if(dimension.anchors?.length)assert(elements.overlay.children.some(e=>e.attributes['data-annotation']===dimension.id));
  const before=viewer.project(viewer.scene.bounds[1]);
  elements.viewport.emit('pointerdown',{clientX:50,clientY:50,pointerId:1,target:new Element()});
  elements.viewport.emit('pointermove',{clientX:90,clientY:70});elements.viewport.emit('pointerup');
  const after=viewer.project(viewer.scene.bounds[1]);assert.notDeepEqual([...before],[...after],'orbit/pan changes projection');
  elements.viewport.emit('wheel',{deltaY:-100});assert.notDeepEqual([...after],[...viewer.project(viewer.scene.bounds[1])],'zoom changes projection');
  elements.fit.emit('click');
- elements.dimensions.checked=false;elements.dimensions.emit('change');
+ const visibility=dimension.kind==='dimension'?elements.dimensions:elements.constraints;
+ visibility.checked=false;visibility.emit('change');
  assert(!elements.overlay.children.some(e=>e.attributes['data-annotation']===dimension.id),'dimension toggle hides annotations');
- elements.dimensions.checked=true;elements.dimensions.emit('change');
+ visibility.checked=true;visibility.emit('change');
  elements.viewport.emit('keydown',{key:'Escape'});assert.equal(viewer.selected,undefined);
  if(viewer.scene.solver&&!viewer.scene.solver.solved){assert(elements.status.textContent.includes('Conflicting'));assert(viewer.scene.annotations.some(a=>a.status==='failed'));}
 }

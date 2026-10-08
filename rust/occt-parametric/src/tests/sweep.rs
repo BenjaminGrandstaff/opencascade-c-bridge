@@ -31,6 +31,8 @@ fn plane_sketch(id: &str, x_axis: (f64, f64, f64), y_axis: (f64, f64, f64)) -> S
         lines: Vec::new(),
         circles: Vec::new(),
         arcs: Vec::new(),
+        ellipses: Vec::new(),
+        profile_operations: Vec::new(),
         splines: Vec::new(),
         profile: Vec::new(),
         constraints: Vec::new(),

@@ -210,7 +210,8 @@ function renderLinkedEditor(annotation, scene, destination = null) {
   for (const p of controls) {
     const label = document.createElement('label');
     const caption = document.createElement('span');
-    caption.textContent = `${p.id}${p.unit ? ` (${p.unit})` : ''}`;
+    const unit = p.unit || (annotation.detail?.constraint?.angle ? 'rad' : '');
+    caption.textContent = `${p.id}${unit ? ` (${unit})` : ''}`;
     const input = document.createElement(p.kind === 'choice' ? 'select' : 'input');
     input.setAttribute('aria-label', `Edit ${p.id}`);
     if (p.kind === 'choice') {

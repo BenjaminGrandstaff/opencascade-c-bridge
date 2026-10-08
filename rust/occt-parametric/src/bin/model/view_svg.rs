@@ -86,6 +86,21 @@ pub fn render(scene: &Value) -> String {
             lines.push((edge, ""));
         }
     }
+    if let Some(edited) = scene["edited_profile"].as_array() {
+        for line in edited {
+            lines.push((line, "edited-profile"));
+        }
+    }
+    if let Some(annotations) = scene["annotations"].as_array() {
+        for a in annotations {
+            if a["detail"]["angular_arc"]
+                .as_array()
+                .is_some_and(|p| !p.is_empty())
+            {
+                lines.push((&a["detail"]["angular_arc"], "angular-dimension"));
+            }
+        }
+    }
     for (points, id) in lines {
         let points = points
             .as_array()
@@ -97,7 +112,22 @@ pub fn render(scene: &Value) -> String {
             })
             .collect::<Vec<_>>()
             .join(" ");
-        write!(result,"<polyline data-entity=\"{}\" points=\"{points}\" fill=\"none\" stroke=\"#365472\" stroke-width=\"1.3\"/>",escape(id)).unwrap();
+        let stroke = if id == "edited-profile" {
+            "#8254bc"
+        } else {
+            "#365472"
+        };
+        let opacity = if id != "edited-profile"
+            && id != "angular-dimension"
+            && scene["edited_profile"]
+                .as_array()
+                .is_some_and(|p| !p.is_empty())
+        {
+            0.35
+        } else {
+            1.0
+        };
+        write!(result,"<polyline opacity=\"{opacity}\" data-entity=\"{}\" points=\"{points}\" fill=\"none\" stroke=\"{stroke}\" stroke-width=\"1.3\"/>",escape(id)).unwrap();
     }
     if let Some(points) = scene["points"].as_object() {
         for (id, point) in points {
@@ -110,12 +140,21 @@ pub fn render(scene: &Value) -> String {
     for (index, a) in annotations.iter().enumerate() {
         let status = a["status"].as_str().unwrap_or("");
         let c = color(status);
+        if index < 22 {
+            let y = 100 + index * 26;
+            write!(result,"<text x=\"710\" y=\"{y}\" fill=\"{c}\" font-family=\"sans-serif\" font-size=\"12\">{} · {status}</text>",escape(a["label"].as_str().unwrap_or(""))).unwrap();
+        }
         let anchors = a["anchors"].as_array().unwrap();
         let points = anchors.iter().map(|v| project(p(v))).collect::<Vec<_>>();
         if points.is_empty() {
             continue;
         }
-        if a["kind"] == "dimension" && points.len() >= 2 {
+        if a["kind"] == "dimension"
+            && points.len() >= 2
+            && !a["detail"]["angular_arc"]
+                .as_array()
+                .is_some_and(|p| !p.is_empty())
+        {
             write!(
                 result,
                 "<path d=\"M{},{} L{},{}\" stroke=\"{c}\" stroke-width=\"1.6\" fill=\"none\"/>",
@@ -152,10 +191,6 @@ pub fn render(scene: &Value) -> String {
         positions.push(at);
         if a["kind"] != "parameter" {
             write!(result,"<g data-annotation=\"{}\" fill=\"{c}\" font-family=\"sans-serif\" font-size=\"12\"><title>{}</title><rect x=\"{}\" y=\"{}\" width=\"160\" height=\"23\" rx=\"4\" fill=\"white\" stroke=\"{c}\"/><text x=\"{}\" y=\"{}\" text-anchor=\"middle\">{}</text></g>",escape(a["id"].as_str().unwrap_or("")),escape(&a["detail"].to_string()),at[0]-80.0,at[1]-15.0,at[0],at[1],escape(a["label"].as_str().unwrap_or(""))).unwrap();
-        }
-        if index < 22 {
-            let y = 100 + index * 26;
-            write!(result,"<text x=\"710\" y=\"{y}\" fill=\"{c}\" font-family=\"sans-serif\" font-size=\"12\">{} · {status}</text>",escape(a["label"].as_str().unwrap_or(""))).unwrap();
         }
     }
     result.push_str("</svg>");

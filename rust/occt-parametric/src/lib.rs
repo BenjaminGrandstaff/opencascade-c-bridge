@@ -42,8 +42,9 @@ pub use assembly::{
     JointSeedAxis, JointSolution, JointSolveOptions, JointVariable,
 };
 pub use sketch::{
-    SketchArc, SketchCircle, SketchConstraint, SketchConstraintCheck, SketchDefinition, SketchLine,
-    SketchPoint, SketchPoint2, SketchSolution, SketchSpline,
+    SketchArc, SketchCircle, SketchConstraint, SketchConstraintCheck, SketchDefinition,
+    SketchEllipse, SketchLine, SketchOffsetJoin, SketchPoint, SketchPoint2, SketchProfileOperation,
+    SketchSolution, SketchSpline,
 };
 pub use solve::PlacementSolution;
 

@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define OCCT_BRIDGE_ABI_VERSION 46u
+#define OCCT_BRIDGE_ABI_VERSION 47u
 #define OCCT_BRIDGE_INVALID_SHAPE_ID UINT64_C(0)
 
 #if defined(_WIN32) && defined(OCCT_BRIDGE_BUILD_SHARED)
@@ -718,6 +718,20 @@ OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_scale(
     double factor,
     occt_bridge_shape_id_t* out_shape
 );
+
+/* Exact/native sketch profile editing (ABI 47). Inputs are immutable.
+ * Trim fractions follow the oriented edge's native parameter interval.
+ * Extend continues lines/conics by arc length; splines extend C1 to tangent
+ * targets. Join requires ordered connected wires. Offset returns one planar
+ * profile or fails explicitly; join 0=round arcs, 1=intersections.
+ */
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_create_ellipse_wire_axes(occt_bridge_session_t*, occt_bridge_vec3_t center, occt_bridge_vec3_t normal, occt_bridge_vec3_t major_axis, double major, double minor, occt_bridge_shape_id_t*);
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_trim_curve(occt_bridge_session_t*, occt_bridge_shape_id_t, double first_fraction, double last_fraction, occt_bridge_shape_id_t*);
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_extend_curve(occt_bridge_session_t*, occt_bridge_shape_id_t, double start, double end, occt_bridge_shape_id_t*);
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_join_wires(occt_bridge_session_t*, const occt_bridge_shape_id_t*, size_t, int closed, occt_bridge_shape_id_t*);
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_offset_wire(occt_bridge_session_t*, occt_bridge_shape_id_t, occt_bridge_vec3_t normal, double distance, int join, occt_bridge_shape_id_t*);
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_curve_closest_point(occt_bridge_session_t*, occt_bridge_shape_id_t, occt_bridge_vec3_t point, occt_bridge_vec3_t*);
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_wire_is_closed(occt_bridge_session_t*, occt_bridge_shape_id_t, int*);
 
 /* Shape inspection and lifetime management. */
 /* Creates another session-owned handle to the same immutable OCCT shape. */

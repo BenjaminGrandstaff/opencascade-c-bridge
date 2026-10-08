@@ -303,6 +303,14 @@ definition.
 
 ## Constraint-solved sketches
 
+Schema 72 adds ellipses, signed line angles in radians, circular radius and
+diameter dimensions, point symmetry and point-on-curve equations, including
+native interpolated spline projection. Saved `profile_operations` derive
+trimmed/extended/offset boundaries after the source sketch solves. They retain
+source identities and reject disconnected or invalid boundaries. ABI 47
+provides native editing, oriented ellipse creation and curve projection.
+See [Sketches](SKETCHES.md) for semantics, limits, viewer/AI support and scale.
+
 Schema 26 extends the schema 25 line sketches with exact circles, arcs, and
 tangency. A `SketchDefinition` places parameter-driven 2D points and named
 entities in a typed 3D plane. `SketchCircle` names a center and rim point;

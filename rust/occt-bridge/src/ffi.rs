@@ -2,7 +2,7 @@
 
 use super::*;
 
-pub(crate) const ABI_VERSION: u32 = 46;
+pub(crate) const ABI_VERSION: u32 = 47;
 
 #[repr(C)]
 #[derive(Default)]
@@ -160,6 +160,52 @@ pub(crate) const OK: RawStatus = 0;
 
 #[link(name = "occt_bridge")]
 unsafe extern "C" {
+    pub fn occt_bridge_create_ellipse_wire_axes(
+        s: *mut c_void,
+        center: RawVec3,
+        normal: RawVec3,
+        major_axis: RawVec3,
+        major: f64,
+        minor: f64,
+        out: *mut u64,
+    ) -> i32;
+    pub fn occt_bridge_trim_curve(
+        s: *mut c_void,
+        shape: u64,
+        first: f64,
+        last: f64,
+        out: *mut u64,
+    ) -> i32;
+    pub fn occt_bridge_extend_curve(
+        s: *mut c_void,
+        shape: u64,
+        start: f64,
+        end: f64,
+        out: *mut u64,
+    ) -> i32;
+    pub fn occt_bridge_join_wires(
+        s: *mut c_void,
+        shapes: *const u64,
+        count: usize,
+        closed: i32,
+        out: *mut u64,
+    ) -> i32;
+    pub fn occt_bridge_offset_wire(
+        s: *mut c_void,
+        shape: u64,
+        normal: RawVec3,
+        distance: f64,
+        join: i32,
+        out: *mut u64,
+    ) -> i32;
+    pub fn occt_bridge_curve_closest_point(
+        s: *mut c_void,
+        shape: u64,
+        point: RawVec3,
+        out: *mut RawVec3,
+    ) -> i32;
+    pub fn occt_bridge_wire_is_closed(s: *mut c_void, shape: u64, out: *mut i32) -> i32;
+
     pub(crate) fn occt_bridge_subshape_indices(
         session: *mut c_void,
         shape: u64,

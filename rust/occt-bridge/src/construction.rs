@@ -596,3 +596,106 @@ impl Session {
         Ok(self.shape(compound))
     }
 }
+
+impl Session {
+    /// Ellipse with an explicit major-axis direction in its plane.
+    pub fn create_ellipse_wire_axes(
+        &self,
+        center: Vec3,
+        normal: Vec3,
+        major_axis: Vec3,
+        major: f64,
+        minor: f64,
+    ) -> Result<Shape<'_>, BridgeError> {
+        let mut shape = 0;
+        // SAFETY: Valid session, by-value inputs and a writable output handle.
+        self.check(unsafe {
+            occt_bridge_create_ellipse_wire_axes(
+                self.raw.as_ptr(),
+                center.into(),
+                normal.into(),
+                major_axis.into(),
+                major,
+                minor,
+                &mut shape,
+            )
+        })?;
+        Ok(self.shape(shape))
+    }
+    pub fn trim_curve<'a>(
+        &'a self,
+        shape: &Shape<'_>,
+        first: f64,
+        last: f64,
+    ) -> Result<Shape<'a>, BridgeError> {
+        self.derived_shape(shape, |out| unsafe {
+            occt_bridge_trim_curve(self.raw.as_ptr(), shape.id, first, last, out)
+        })
+    }
+    pub fn extend_curve<'a>(
+        &'a self,
+        shape: &Shape<'_>,
+        start: f64,
+        end: f64,
+    ) -> Result<Shape<'a>, BridgeError> {
+        self.derived_shape(shape, |out| unsafe {
+            occt_bridge_extend_curve(self.raw.as_ptr(), shape.id, start, end, out)
+        })
+    }
+    pub fn offset_wire<'a>(
+        &'a self,
+        shape: &Shape<'_>,
+        normal: Vec3,
+        distance: f64,
+        intersection: bool,
+    ) -> Result<Shape<'a>, BridgeError> {
+        self.derived_shape(shape, |out| unsafe {
+            occt_bridge_offset_wire(
+                self.raw.as_ptr(),
+                shape.id,
+                normal.into(),
+                distance,
+                i32::from(intersection),
+                out,
+            )
+        })
+    }
+    pub fn join_wires<'a>(
+        &'a self,
+        wires: &[&Shape<'_>],
+        closed: bool,
+    ) -> Result<Shape<'a>, BridgeError> {
+        for wire in wires {
+            self.validate_shape(wire)?;
+        }
+        let ids = wires.iter().map(|s| s.id).collect::<Vec<_>>();
+        let mut shape = 0;
+        // SAFETY: Validated handles and both buffers remain alive for the call.
+        self.check(unsafe {
+            occt_bridge_join_wires(
+                self.raw.as_ptr(),
+                ids.as_ptr(),
+                ids.len(),
+                i32::from(closed),
+                &mut shape,
+            )
+        })?;
+        Ok(self.shape(shape))
+    }
+    pub fn curve_closest_point(&self, shape: &Shape<'_>, point: Vec3) -> Result<Vec3, BridgeError> {
+        self.validate_shape(shape)?;
+        let mut out = RawVec3::default();
+        // SAFETY: Validated handle, by-value point and writable output vector.
+        self.check(unsafe {
+            occt_bridge_curve_closest_point(self.raw.as_ptr(), shape.id, point.into(), &mut out)
+        })?;
+        Ok(out.into())
+    }
+    pub fn wire_is_closed(&self, shape: &Shape<'_>) -> Result<bool, BridgeError> {
+        self.validate_shape(shape)?;
+        let mut out = 0;
+        // SAFETY: Validated handle and writable output flag.
+        self.check(unsafe { occt_bridge_wire_is_closed(self.raw.as_ptr(), shape.id, &mut out) })?;
+        Ok(out != 0)
+    }
+}

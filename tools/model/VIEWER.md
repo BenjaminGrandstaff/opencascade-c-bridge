@@ -89,7 +89,7 @@ Through MCP, get either example with `occt_get_example`, then pass it to
 ```json
 {
   "schema": "occb-model-view-v1",
-  "model": { "schema_version": 71, "...": "complete model" },
+  "model": { "schema_version": 72, "...": "complete model" },
   "outputs": [{ "instance": "block", "output": "body" }],
   "sketches": true,
   "options": {
@@ -137,3 +137,9 @@ node tools/model/viewer/test_viewer.cjs /tmp/block-view/view.json
 `tools/bench/run.sh` additionally checks 1,000 native sketch constraints with
 curve/annotation/snapshot output (10-second budget), and 1,000 annotated solid
 views with global mesh/vertex budgets and dimension data (30-second budget).
+
+Schema-72 views also include radial/full-diameter and angular dimensions,
+symmetry and point-on-curve markers, and native edited profiles in purple.
+Source curves remain visible, faded when a derived profile exists. Operation
+rows expose linked controls and native failure details. See
+[Sketches](../../SKETCHES.md) and the `sketch-advanced` example.

@@ -838,3 +838,66 @@ fn visualization_budgets_and_untrusted_label_roundtrip_are_safe() {
             .any(|a| a["label"] == text)
     );
 }
+
+#[test]
+fn advanced_sketch_dimensions_and_profile_operations_reach_the_ai_view_contract() {
+    let dir = Directory::new();
+    let request: Value = serde_json::from_str(include_str!(
+        "../../../../../tools/model/sketch-advanced.request.json"
+    ))
+    .unwrap();
+    let model = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+    view_request(&dir, request, "advanced").unwrap();
+    let data: Value =
+        serde_json::from_str(&fs::read_to_string(dir.0.join("advanced/view.json")).unwrap())
+            .unwrap();
+    let scenes = data["scenes"].as_array().unwrap();
+    let sketch = scenes
+        .iter()
+        .find(|s| s["feature"] == "profile" && s["kind"] == "sketch")
+        .unwrap();
+    assert_eq!(sketch["solver"]["solved"], true);
+    let annotations = sketch["annotations"].as_array().unwrap();
+    for label in ["R 6.000 mm", "Ø 12.000 mm", "∠ 1.047 rad", "SYM", "ON"] {
+        assert!(
+            annotations
+                .iter()
+                .any(|a| a["label"] == label && a["status"] == "passed"),
+            "missing {label}"
+        );
+    }
+    let angle = annotations
+        .iter()
+        .find(|a| a["label"] == "∠ 1.047 rad")
+        .unwrap();
+    assert_eq!(angle["detail"]["residual_unit"], "rad");
+    assert_eq!(angle["detail"]["angular_arc"].as_array().unwrap().len(), 17);
+    let diameter = annotations
+        .iter()
+        .find(|a| a["label"] == "Ø 12.000 mm")
+        .unwrap();
+    let anchors = diameter["anchors"].as_array().unwrap();
+    assert!((anchors[1][0].as_f64().unwrap() - anchors[0][0].as_f64().unwrap() - 12.).abs() < 1e-7);
+    let edited = scenes
+        .iter()
+        .find(|s| s["feature"] == "edited-path")
+        .unwrap();
+    assert_eq!(edited["profile_error"], Value::Null);
+    assert!(!edited["edited_profile"].as_array().unwrap().is_empty());
+    assert_eq!(edited["profile_operations"].as_array().unwrap().len(), 3);
+    let session = Session::new().unwrap();
+    let part = PartInstance {
+        id: "part".into(),
+        definition: &model.family,
+        overrides: Default::default(),
+        provenance: "test".into(),
+    };
+    let generated = part.regenerate(&session).unwrap();
+    assert!(
+        (session.volume(generated.shape("body").unwrap()).unwrap() - 320. * std::f64::consts::PI)
+            .abs()
+            < 1e-6
+    );
+    drop(generated);
+    assert_eq!(session.shape_count().unwrap(), 0);
+}

@@ -23,6 +23,10 @@ OCCT_BRIDGE_LIB_DIR="$build" LD_LIBRARY_PATH="$build" \
 OCCT_BRIDGE_LIB_DIR="$build" LD_LIBRARY_PATH="$build" \
     cargo bench --quiet --manifest-path "$root/rust/occt-parametric/Cargo.toml" --bench document_management
 
+# Schema-72 constraints, native spline projection and saved sketch profile edits.
+OCCT_BRIDGE_LIB_DIR="$build" LD_LIBRARY_PATH="$build" \
+    cargo bench --quiet --manifest-path "$root/rust/occt-parametric/Cargo.toml" --bench sketch_advanced
+
 # Includes the bounded 10,000-face geometric matcher case.
 python3 -m unittest discover -s "$root/tools/mesh/tests"
 
