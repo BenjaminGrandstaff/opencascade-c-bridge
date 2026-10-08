@@ -901,3 +901,70 @@ fn advanced_sketch_dimensions_and_profile_operations_reach_the_ai_view_contract(
     drop(generated);
     assert_eq!(session.shape_count().unwrap(), 0);
 }
+
+#[test]
+fn extrusion_extent_annotations_use_generated_lengths_and_centered_anchors() {
+    let dir = Directory::new();
+    view_request(&dir, view_example("extrusion-limits"), "limits").unwrap();
+    let data: Value =
+        serde_json::from_str(&fs::read_to_string(dir.0.join("limits/view.json")).unwrap()).unwrap();
+    for (feature, expected, centered) in [
+        ("body", 12.0, false),
+        ("selected", 14.0, false),
+        ("symmetric", 12.0, true),
+    ] {
+        let scene = data["scenes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["feature"] == feature && s["kind"] == "solid")
+            .unwrap();
+        let annotation = scene["annotations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|a| a["id"] == "driving-extrusion")
+            .unwrap();
+        assert!((annotation["detail"]["value_mm"].as_f64().unwrap() - expected).abs() < 1e-6);
+        assert_eq!(annotation["detail"]["driving"], centered);
+        let start = annotation["anchors"][0][2].as_f64().unwrap();
+        let end = annotation["anchors"][1][2].as_f64().unwrap();
+        assert!((start - if centered { -expected / 2.0 } else { 0.0 }).abs() < 1e-6);
+        assert!((end - if centered { expected / 2.0 } else { expected }).abs() < 1e-6);
+    }
+    let mut wire_request = view_example("extrusion-limits");
+    let operation = wire_request["model"]["family"]["features"][0]["operation"]
+        .as_object_mut()
+        .unwrap();
+    let mut profile = operation.remove("sketch_face").unwrap();
+    profile["sketch"]["constraints"] = json!([]);
+    for point in profile["sketch"]["points"].as_array_mut().unwrap() {
+        point["fixed"] = json!(true);
+    }
+    profile["sketch"]["points"][2]["x"] = serde_json::to_value(mm(30.0)).unwrap();
+    operation.insert("sketch_wire".into(), profile);
+    view_request(&dir, wire_request, "wire").unwrap();
+    let data: Value =
+        serde_json::from_str(&fs::read_to_string(dir.0.join("wire/view.json")).unwrap()).unwrap();
+    let scene = data["scenes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["feature"] == "body" && s["kind"] == "solid")
+        .unwrap();
+    let annotation = scene["annotations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["id"] == "driving-extrusion")
+        .unwrap();
+    assert!((annotation["detail"]["value_mm"].as_f64().unwrap() - 12.0).abs() < 1e-6);
+    for axis in 0..2 {
+        assert!(
+            (annotation["anchors"][0][axis].as_f64().unwrap()
+                - annotation["anchors"][1][axis].as_f64().unwrap())
+            .abs()
+                < 1e-6
+        );
+    }
+}

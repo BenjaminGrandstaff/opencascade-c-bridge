@@ -1,7 +1,7 @@
 //! Sketch solving, datum-linked wires, and profile sweeps at scale.
 
 use super::*;
-use occt_parametric::{GeneratedResult, SketchSpline};
+use occt_parametric::{ExtrudeExtent, GeneratedResult, SketchSpline};
 
 pub(crate) fn profile_sweep_case(revolve: bool) -> Outcome {
     const COUNT: usize = 1_000;
@@ -81,6 +81,7 @@ pub(crate) fn profile_sweep_case(revolve: bool) -> Outcome {
             }
         } else {
             FeatureOperation::Extrude {
+                extent: ExtrudeExtent::Distance,
                 input: "profile".into(),
                 direction: VectorExpr::Components {
                     x: value(0.0),
@@ -576,6 +577,7 @@ pub(crate) fn spline_sketch_case() -> Outcome {
                         FeatureDefinition {
                             id: format!("bar-{index}"),
                             operation: FeatureOperation::Extrude {
+                                extent: ExtrudeExtent::Distance,
                                 input: format!("slot-{index}"),
                                 direction: VectorExpr::Literal(VectorQuantity::lengths(
                                     0.0,

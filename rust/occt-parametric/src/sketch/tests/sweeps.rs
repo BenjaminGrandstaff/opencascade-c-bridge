@@ -71,6 +71,7 @@ fn extrudes_line_arc_and_circle_faces_and_wires_to_exact_solids() {
                     sketch.clone(),
                     wire,
                     FeatureOperation::Extrude {
+                        extent: ExtrudeExtent::Distance,
                         input: "profile".into(),
                         direction: VectorExpr::Literal(VectorQuantity::lengths(
                             1.0,
@@ -183,6 +184,7 @@ fn sweep_parameters_rebuild_solids_and_reuse_unchanged_profiles() {
             }
         } else {
             FeatureOperation::Extrude {
+                extent: ExtrudeExtent::Distance,
                 input: "profile".into(),
                 direction: VectorExpr::Components {
                     x: length(0.0),
@@ -239,6 +241,7 @@ fn invalid_sweep_values_and_inputs_fail_without_leaking_profiles() {
     let session = Session::new().unwrap();
     for operation in [
         FeatureOperation::Extrude {
+            extent: ExtrudeExtent::Distance,
             input: "profile".into(),
             direction: VectorExpr::Literal(VectorQuantity::lengths(
                 0.0,
@@ -248,6 +251,7 @@ fn invalid_sweep_values_and_inputs_fail_without_leaking_profiles() {
             )),
         },
         FeatureOperation::Extrude {
+            extent: ExtrudeExtent::Distance,
             input: "profile".into(),
             direction: VectorExpr::Literal(VectorQuantity::lengths(
                 1.0,
@@ -257,6 +261,7 @@ fn invalid_sweep_values_and_inputs_fail_without_leaking_profiles() {
             )),
         },
         FeatureOperation::Extrude {
+            extent: ExtrudeExtent::Distance,
             input: "profile".into(),
             direction: VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, 1.0)),
         },
@@ -307,6 +312,7 @@ fn invalid_sweep_values_and_inputs_fail_without_leaking_profiles() {
         rectangle(),
         true,
         FeatureOperation::Extrude {
+            extent: ExtrudeExtent::Distance,
             input: "profile".into(),
             direction: VectorExpr::Literal(VectorQuantity::lengths(
                 0.0,
@@ -342,6 +348,7 @@ fn invalid_sweep_values_and_inputs_fail_without_leaking_profiles() {
 fn schema_twenty_eight_round_trips_sweeps_and_migrates_sketch_documents() {
     for operation in [
         FeatureOperation::Extrude {
+            extent: ExtrudeExtent::Distance,
             input: "profile".into(),
             direction: VectorExpr::Literal(VectorQuantity::lengths(
                 0.0,
@@ -384,4 +391,316 @@ fn schema_twenty_eight_round_trips_sweeps_and_migrates_sketch_documents() {
         assert_eq!(migrated.schema_version, CURRENT_SCHEMA_VERSION);
         assert_eq!(migrated.family.features.len(), 1);
     }
+}
+
+fn extrusion_limit_family(extent: ExtrudeExtent, z: f64, size: f64, sign: f64) -> FamilyDefinition {
+    let mut definition = sweep_family(
+        circular_profile(),
+        false,
+        FeatureOperation::Extrude {
+            input: "profile".into(),
+            direction: VectorExpr::Literal(VectorQuantity::lengths(
+                0.0,
+                0.0,
+                sign,
+                LengthUnit::Millimeter,
+            )),
+            extent,
+        },
+    );
+    definition.features.push(FeatureDefinition {
+        id: "limit".into(),
+        operation: FeatureOperation::Box {
+            origin: VectorExpr::Literal(VectorQuantity::lengths(
+                -size / 2.0,
+                -size / 2.0,
+                z,
+                LengthUnit::Millimeter,
+            )),
+            size: VectorExpr::Literal(VectorQuantity::lengths(
+                size,
+                size,
+                2.0,
+                LengthUnit::Millimeter,
+            )),
+        },
+    });
+    definition
+}
+
+fn limiting_face(extremum: Extremum) -> ExtrudeExtent {
+    ExtrudeExtent::UpToFace {
+        target: "limit".into(),
+        face: Box::new(FaceSelector::AtExtreme {
+            axis: CoordinateAxis::Z,
+            extremum,
+            tolerance: length(1e-6),
+        }),
+    }
+}
+
+#[test]
+fn symmetric_extrusion_centers_full_length_and_preserves_history() {
+    let session = Session::new().unwrap();
+    for sign in [-8.0, 8.0] {
+        let definition = extrusion_limit_family(ExtrudeExtent::Symmetric, 10.0, 20.0, sign);
+        let result = PartInstance {
+            id: "part".into(),
+            definition: &definition,
+            overrides: HashMap::new(),
+            provenance: "test".into(),
+        }
+        .regenerate(&session)
+        .unwrap();
+        let solid = result.shape("solid").unwrap();
+        let bounds = session.bounds(solid).unwrap();
+        assert!((bounds.min.z + 4.0).abs() < 1e-6);
+        assert!((bounds.max.z - 4.0).abs() < 1e-6);
+        assert!((session.volume(solid).unwrap() - 32.0 * std::f64::consts::PI).abs() < 1e-7);
+        let edge = session
+            .subshape(result.shape("profile").unwrap(), ShapeType::Edge, 0)
+            .unwrap();
+        assert!(
+            session
+                .history_count(solid, &edge, occt_bridge::HistoryRelation::Generated)
+                .unwrap()
+                > 0
+        );
+    }
+    assert_eq!(session.shape_count().unwrap(), 0);
+}
+
+#[test]
+fn extrusion_limits_follow_selected_or_next_faces_in_both_directions() {
+    let session = Session::new().unwrap();
+    for (extent, z, sign, expected) in [
+        (limiting_face(Extremum::Maximum), 10.0, 1.0, 12.0),
+        (
+            ExtrudeExtent::UpToNext {
+                target: "limit".into(),
+            },
+            10.0,
+            100.0,
+            10.0,
+        ),
+        (limiting_face(Extremum::Minimum), -12.0, -1.0, 12.0),
+        (
+            ExtrudeExtent::UpToNext {
+                target: "limit".into(),
+            },
+            -12.0,
+            -100.0,
+            10.0,
+        ),
+    ] {
+        let definition = extrusion_limit_family(extent, z, 20.0, sign);
+        let result = PartInstance {
+            id: "part".into(),
+            definition: &definition,
+            overrides: HashMap::new(),
+            provenance: "test".into(),
+        }
+        .regenerate(&session)
+        .unwrap();
+        let solid = result.shape("solid").unwrap();
+        assert!(
+            (session.volume(solid).unwrap() - 4.0 * std::f64::consts::PI * expected).abs() < 1e-7
+        );
+        let bounds = session.bounds(solid).unwrap();
+        assert!(
+            (if sign > 0.0 {
+                bounds.max.z
+            } else {
+                -bounds.min.z
+            } - expected)
+                .abs()
+                < 1e-6
+        );
+        let edge = session
+            .subshape(result.shape("profile").unwrap(), ShapeType::Edge, 0)
+            .unwrap();
+        assert!(
+            session
+                .history_count(solid, &edge, occt_bridge::HistoryRelation::Generated)
+                .unwrap()
+                > 0
+        );
+    }
+    assert_eq!(session.shape_count().unwrap(), 0);
+}
+
+#[test]
+fn extrusion_limits_reject_partial_backward_ambiguous_and_missing_faces() {
+    let session = Session::new().unwrap();
+    for (extent, z, size) in [
+        (limiting_face(Extremum::Minimum), 10.0, 2.0),
+        (limiting_face(Extremum::Minimum), -12.0, 20.0),
+        (
+            ExtrudeExtent::UpToNext {
+                target: "limit".into(),
+            },
+            10.0,
+            2.0,
+        ),
+        (
+            ExtrudeExtent::UpToFace {
+                target: "limit".into(),
+                face: Box::new(FaceSelector::NormalAligned {
+                    direction: VectorExpr::Literal(VectorQuantity::scalars(1.0, 1.0, 1.0)),
+                    minimum_dot: ScalarExpr::Literal(Quantity::scalar(-1.0)),
+                }),
+            },
+            10.0,
+            20.0,
+        ),
+        (
+            ExtrudeExtent::UpToNext {
+                target: "missing".into(),
+            },
+            10.0,
+            20.0,
+        ),
+    ] {
+        let definition = extrusion_limit_family(extent, z, size, 1.0);
+        assert!(
+            PartInstance {
+                id: "part".into(),
+                definition: &definition,
+                overrides: HashMap::new(),
+                provenance: "test".into()
+            }
+            .regenerate(&session)
+            .is_err()
+        );
+        assert_eq!(session.shape_count().unwrap(), 0);
+    }
+}
+
+#[test]
+fn extrusion_face_limit_tracks_parameters_and_named_reference() {
+    let session = Session::new().unwrap();
+    let mut definition = extrusion_limit_family(limiting_face(Extremum::Maximum), 0.0, 20.0, 1.0);
+    let FeatureOperation::Extrude {
+        extent: ExtrudeExtent::UpToFace { face, .. },
+        ..
+    } = &mut definition.features[0].operation
+    else {
+        panic!()
+    };
+    let selector = (**face).clone();
+    **face = FaceSelector::Named("stop".into());
+    definition.references.push(NamedReference {
+        name: "stop".into(),
+        target: ReferenceTarget::Faces(selector),
+    });
+    definition.parameters.push(ParameterDefinition {
+        id: "height".into(),
+        parameter_type: ParameterType::Scalar(Dimension::Length),
+        default: ParameterValue::Scalar(Quantity::length(5.0, LengthUnit::Millimeter)),
+        minimum: None,
+        maximum: None,
+    });
+    let FeatureOperation::Box { origin, .. } = &mut definition.features[2].operation else {
+        panic!()
+    };
+    *origin = VectorExpr::Components {
+        x: length(-10.0),
+        y: length(-10.0),
+        z: ScalarExpr::Parameter("height".into()),
+    };
+    for height in [5.0, 15.0] {
+        let result = PartInstance {
+            id: "part".into(),
+            definition: &definition,
+            overrides: HashMap::from([(
+                "height".into(),
+                ParameterValue::Scalar(Quantity::length(height, LengthUnit::Millimeter)),
+            )]),
+            provenance: "test".into(),
+        }
+        .regenerate(&session)
+        .unwrap();
+        assert!(
+            (session.volume(result.shape("solid").unwrap()).unwrap()
+                - 4.0 * std::f64::consts::PI * (height + 2.0))
+                .abs()
+                < 1e-7
+        );
+    }
+    {
+        let part = |height| PartInstance {
+            id: "part".into(),
+            definition: &definition,
+            overrides: HashMap::from([(
+                "height".into(),
+                ParameterValue::Scalar(Quantity::length(height, LengthUnit::Millimeter)),
+            )]),
+            provenance: "test".into(),
+        };
+        let first = part(5.0).regenerate(&session).unwrap();
+        let second = part(15.0).regenerate_incremental(&session, &first).unwrap();
+        assert_eq!(second.regeneration.reused, ["profile"]);
+        assert!(second.regeneration.rebuilt.contains(&"limit".to_string()));
+        assert!(second.regeneration.rebuilt.contains(&"solid".to_string()));
+        assert!(
+            (session.volume(second.shape("solid").unwrap()).unwrap() - 68.0 * std::f64::consts::PI)
+                .abs()
+                < 1e-7
+        );
+    }
+    let document = ModelDocument::from_graph(&InstanceGraph::new(&definition));
+    let json = document.to_json_pretty().unwrap();
+    assert_eq!(ModelDocument::from_json(&json).unwrap(), document);
+    assert_eq!(session.shape_count().unwrap(), 0);
+}
+
+#[test]
+fn geometric_extrusion_accepts_oblique_travel_and_legacy_distance_defaults() {
+    let session = Session::new().unwrap();
+    let mut definition = extrusion_limit_family(limiting_face(Extremum::Minimum), 10.0, 40.0, 1.0);
+    let FeatureOperation::Extrude { direction, .. } = &mut definition.features[0].operation else {
+        panic!()
+    };
+    *direction = VectorExpr::Literal(VectorQuantity::lengths(
+        1.0,
+        0.0,
+        1.0,
+        LengthUnit::Millimeter,
+    ));
+    {
+        let result = PartInstance {
+            id: "part".into(),
+            definition: &definition,
+            overrides: HashMap::new(),
+            provenance: "test".into(),
+        }
+        .regenerate(&session)
+        .unwrap();
+        assert!(
+            (session.volume(result.shape("solid").unwrap()).unwrap() - 40.0 * std::f64::consts::PI)
+                .abs()
+                < 1e-7
+        );
+        assert!(
+            (session
+                .bounds(result.shape("solid").unwrap())
+                .unwrap()
+                .max
+                .x
+                - 12.0)
+                .abs()
+                < 1e-6
+        );
+    }
+    let mut legacy = serde_json::to_value(&definition.features[0].operation).unwrap();
+    legacy["extrude"].as_object_mut().unwrap().remove("extent");
+    let restored: FeatureOperation = serde_json::from_value(legacy).unwrap();
+    assert!(matches!(
+        restored,
+        FeatureOperation::Extrude {
+            extent: ExtrudeExtent::Distance,
+            ..
+        }
+    ));
+    assert_eq!(session.shape_count().unwrap(), 0);
 }

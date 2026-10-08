@@ -522,6 +522,26 @@ pub enum FilletSpineDirection {
     },
 }
 
+/// End condition for a planar profile extrusion. Geometric limits must be
+/// parallel planar faces covering the entire translated profile.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ExtrudeExtent {
+    /// The direction vector is the full length and direction of travel.
+    #[default]
+    Distance,
+    /// Total length is split equally about the sketch plane.
+    Symmetric,
+    /// The vector supplies orientation; its magnitude is ignored.
+    UpToFace {
+        target: String,
+        face: Box<FaceSelector>,
+    },
+    /// Nearest forward parallel face covering the complete profile.
+    /// The vector supplies orientation; its magnitude is ignored.
+    UpToNext { target: String },
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum FeatureOperation {
@@ -589,6 +609,8 @@ pub enum FeatureOperation {
     Extrude {
         input: String,
         direction: VectorExpr,
+        #[serde(default)]
+        extent: ExtrudeExtent,
     },
     /// Extrudes a planar rib region normally by positive thickness into one solid.
     /// OpenStrip explicitly closes an open profile; direction is dimensionless.
@@ -706,6 +728,10 @@ impl FeatureOperation {
     pub(crate) fn reference_names(&self) -> Vec<(&str, ReferenceUse)> {
         let mut names = Vec::new();
         match self {
+            Self::Extrude {
+                extent: ExtrudeExtent::UpToFace { face, .. },
+                ..
+            } => face.names(&mut names),
             Self::Fillet { edges, .. }
             | Self::VariableFillet { edges, .. }
             | Self::Chamfer { edges, .. } => {
@@ -727,11 +753,22 @@ impl FeatureOperation {
     /// Use `FamilyDefinition::feature_inputs` to expand named references.
     pub fn dependencies(&self) -> Vec<&str> {
         match self {
+            Self::Extrude { input, extent, .. } => {
+                let mut dependencies = vec![input.as_str()];
+                match extent {
+                    ExtrudeExtent::UpToFace { target, face } => {
+                        dependencies.push(target);
+                        face.dependencies(&mut dependencies);
+                    }
+                    ExtrudeExtent::UpToNext { target } => dependencies.push(target),
+                    _ => {}
+                }
+                dependencies
+            }
             Self::Sweep { profile, path, .. } => vec![profile, path],
             Self::SheetMetalFlat { input, .. }
             | Self::Translate { input, .. }
             | Self::Rotate { input, .. }
-            | Self::Extrude { input, .. }
             | Self::Revolve { input, .. }
             | Self::Hole { input, .. }
             | Self::Unify { input, .. } => vec![input],

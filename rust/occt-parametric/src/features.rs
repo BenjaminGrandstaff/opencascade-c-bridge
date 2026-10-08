@@ -2,6 +2,7 @@
 
 use super::*;
 
+mod extrusions;
 mod holes;
 mod loft;
 pub(crate) use loft::collect_parameters as collect_loft_parameters;
@@ -14,6 +15,8 @@ pub(crate) fn execute_profile_sweep<'session>(
     operation: &FeatureOperation,
     parameters: &HashMap<String, ParameterValue>,
     profile: &Shape<'_>,
+    shapes: &HashMap<String, Shape<'session>>,
+    definitions: &Features<'_>,
 ) -> Result<Shape<'session>, ModelError> {
     let temporary_face = match session.shape_type(profile)? {
         ShapeType::Wire => Some(session.create_face_from_wire(profile)?),
@@ -31,8 +34,17 @@ pub(crate) fn execute_profile_sweep<'session>(
         ));
     }
     let solid = match operation {
-        FeatureOperation::Extrude { direction, .. } => session
-            .create_prism_from_face(face, vector(direction, parameters, Dimension::Length)?)?,
+        FeatureOperation::Extrude {
+            direction, extent, ..
+        } => extrusions::execute(
+            session,
+            face,
+            vector(direction, parameters, Dimension::Length)?,
+            extent,
+            parameters,
+            shapes,
+            definitions,
+        )?,
         FeatureOperation::Revolve {
             origin,
             axis,
@@ -190,6 +202,8 @@ pub(crate) fn execute_feature<'session>(
                 &feature.operation,
                 parameters,
                 shape(shapes, input)?,
+                shapes,
+                definitions,
             )
             .map_err(|error| error.context(&format!("profile '{input}'")));
         }

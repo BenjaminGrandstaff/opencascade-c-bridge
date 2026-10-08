@@ -3,7 +3,7 @@
   "model": {
     "schema_version": 73,
     "family": {
-      "id": "dimensioned-block",
+      "id": "extrusion-limits",
       "version": 1,
       "parameters": [
         {
@@ -43,7 +43,7 @@
           },
           "default": {
             "scalar": {
-              "value": 10,
+              "value": 12,
               "dimension": "length",
               "unit": "millimeter"
             }
@@ -325,7 +325,150 @@
                     }
                   },
                   "z": {
+                    "literal": {
+                      "value": 1,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                }
+              },
+              "extent": {
+                "up_to_next": {
+                  "target": "limit"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "selected",
+          "operation": {
+            "extrude": {
+              "input": "profile",
+              "direction": {
+                "components": {
+                  "x": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "y": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "z": {
+                    "literal": {
+                      "value": 1,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                }
+              },
+              "extent": {
+                "up_to_face": {
+                  "target": "limit",
+                  "face": {
+                    "at_extreme": {
+                      "axis": "z",
+                      "extremum": "maximum",
+                      "tolerance": {
+                        "literal": {
+                          "value": 1e-06,
+                          "dimension": "length",
+                          "unit": "millimeter"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "symmetric",
+          "operation": {
+            "extrude": {
+              "input": "profile",
+              "direction": {
+                "components": {
+                  "x": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "y": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "z": {
                     "parameter": "depth"
+                  }
+                }
+              },
+              "extent": "symmetric"
+            }
+          }
+        },
+        {
+          "id": "limit",
+          "operation": {
+            "box": {
+              "origin": {
+                "components": {
+                  "x": {
+                    "literal": {
+                      "value": -10,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "y": {
+                    "literal": {
+                      "value": -10,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "z": {
+                    "parameter": "depth"
+                  }
+                }
+              },
+              "size": {
+                "components": {
+                  "x": {
+                    "literal": {
+                      "value": 100,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "y": {
+                    "literal": {
+                      "value": 100,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "z": {
+                    "literal": {
+                      "value": 2,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
                   }
                 }
               }
@@ -348,6 +491,14 @@
     {
       "instance": "block",
       "output": "body"
+    },
+    {
+      "instance": "block",
+      "output": "selected"
+    },
+    {
+      "instance": "block",
+      "output": "symmetric"
     }
   ],
   "sketches": true

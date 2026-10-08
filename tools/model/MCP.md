@@ -46,10 +46,10 @@ or remote service is started.
 | `occt_build` | The entire `occb-model-request-v1` object | Accepted report, build ID, local directory, and artifact resource URIs |
 
 `tools/list` provides the generated complete request schema as `occt_build`'s
-input schema. All 28 current feature operations and 122 nested request-schema
+input schema. All 28 current feature operations and 135 nested request-schema
 definitions are discoverable. Schemas derive from serde-compatible Rust types;
 new serialized variants require schema support at compilation. Authoring schemas
-target current model schema 72. The engine still migrates older documents.
+target current model schema 73. The engine still migrates older documents.
 Schemas describe serialization and basic request bounds; units, dependency
 references, dimensional constraints, selector resolution, and geometry validity
 are checked by the build engine.
@@ -61,7 +61,7 @@ LD_LIBRARY_PATH="$PWD/build" rust/occt-parametric/target/debug/occt-model \
   --schema request > /tmp/occt-request.schema.json
 ```
 
-`resources/list` advertises twelve `occt://schema/NAME` and seven
+`resources/list` advertises twelve `occt://schema/NAME` and eight
 `occt://example/NAME` resources. Accepted builds return specific
 `occt://build/BUILD_ID/ARTIFACT` URIs; a resource template advertises this form.
 JSON and SVG resources return text, while STEP and STL return base64 blobs.
@@ -320,3 +320,10 @@ are additional diagnostic examples.
 `sketch-advanced` demonstrates the schema-72 sketch additions. Its view request
 contains all new constraints, an ellipse solid, and native trim/extend/offset
 profile operations. See [Sketches](../../SKETCHES.md).
+
+
+`extrusion-limits` demonstrates symmetric, up-to-face and up-to-next extrusion.
+Change `depth` to move the target body: `body` follows its nearest face and
+`selected` follows its far face. `symmetric` uses `depth` as total centered
+length. Limit faces must be planar, parallel to the sketch, and cover the
+complete translated profile; see [extrusion semantics](../../EXTRUSIONS.md).

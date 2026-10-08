@@ -543,7 +543,14 @@ pub(crate) fn collect_operation_parameters<'a>(
         | FeatureOperation::SketchWire { sketch }
         | FeatureOperation::SketchOpenWire { sketch } => sketch.collect_parameters(names),
         FeatureOperation::Translate { offset, .. } => collect_vector_parameters(offset, names),
-        FeatureOperation::Extrude { direction, .. } => collect_vector_parameters(direction, names),
+        FeatureOperation::Extrude {
+            direction, extent, ..
+        } => {
+            collect_vector_parameters(direction, names);
+            if let ExtrudeExtent::UpToFace { face, .. } = extent {
+                collect_face_selector_parameters(face, names);
+            }
+        }
         FeatureOperation::Rib {
             thickness,
             direction,

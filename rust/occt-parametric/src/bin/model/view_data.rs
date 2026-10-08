@@ -399,30 +399,70 @@ fn solid_scene(
         primitive_dimensions(feature, parameters, &mut annotations)?;
     }
     if let Some(FeatureDefinition {
-        operation: FeatureOperation::Extrude { input, direction },
+        operation:
+            FeatureOperation::Extrude {
+                input,
+                direction,
+                extent,
+            },
         ..
     }) = part.definition.features.iter().find(|f| f.id == output)
         && let Some(profile) = generated.shape(input)
     {
-        let a = point(
+        // Wire centroids weight boundary length; the generated prism weights
+        // profile area. Use the same face centroid for geometric travel.
+        let profile_face = if session
+            .shape_type(profile)
+            .map_err(|e| failure("visualization", e))?
+            == ShapeType::Wire
+        {
+            Some(
+                session
+                    .create_face_from_wire(profile)
+                    .map_err(|e| failure("visualization", e))?,
+            )
+        } else {
+            None
+        };
+        let mut a = point(
             session
-                .center_of_mass(profile)
+                .center_of_mass(profile_face.as_ref().unwrap_or(profile))
                 .map_err(|e| failure("visualization", e))?,
         );
         let d = direction
             .evaluate(parameters)
             .map_err(|e| model_failure("visualization", e))?;
-        let d = [d.x.value, d.y.value, d.z.value];
+        let mut d = [d.x.value, d.y.value, d.z.value];
+        let geometry_driven = matches!(
+            extent,
+            ExtrudeExtent::UpToFace { .. } | ExtrudeExtent::UpToNext { .. }
+        );
+        if geometry_driven {
+            let center = point(
+                session
+                    .center_of_mass(shape)
+                    .map_err(|e| failure("visualization", e))?,
+            );
+            d = std::array::from_fn(|i| 2.0 * (center[i] - a[i]));
+        } else if matches!(extent, ExtrudeExtent::Symmetric) {
+            a = std::array::from_fn(|i| a[i] - 0.5 * d[i]);
+        }
         let length = d[0].hypot(d[1].hypot(d[2]));
+        let mode = match extent {
+            ExtrudeExtent::Distance => "extrusion",
+            ExtrudeExtent::Symmetric => "symmetric extrusion",
+            ExtrudeExtent::UpToFace { .. } => "up-to-face extrusion",
+            ExtrudeExtent::UpToNext { .. } => "up-to-next extrusion",
+        };
         annotations.push(annotation(
             "driving-extrusion".into(),
-            format!("extrusion {} mm", length_label(length)),
+            format!("{mode} {} mm", length_label(length)),
             "dimension",
-            "driving",
+            if geometry_driven { "measured" } else { "driving" },
             vec![output.into()],
             names(&serde_json::to_value(direction).map_err(|e| failure("visualization", e))?),
             json!([a, std::array::from_fn::<_, 3, _>(|i| a[i] + d[i])]),
-            json!({"feature":output,"expression":direction,"value_mm":length,"driving":true}),
+            json!({"feature":output,"expression":direction,"extent":extent,"value_mm":length,"driving":!geometry_driven}),
         ));
     }
     check_budget(&mut budget.annotations, annotations.len(), "annotation")?;

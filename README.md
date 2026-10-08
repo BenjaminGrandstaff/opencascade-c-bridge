@@ -629,3 +629,9 @@ and rejected-edit diagnostic previews in the same workspace.
 [Sketch capabilities](SKETCHES.md) now include ellipses, angle/radius/diameter,
 symmetry and point-on-curve constraints, with saved native trim/extend/offset
 profiles (ABI 47, model schema 72).
+
+
+[Extrusion end conditions](EXTRUSIONS.md) support symmetric total length,
+up to a selected face, and up to the next covering parallel face. Target
+geometry participates in regeneration; the viewer shows the actual length.
+The native ABI remains 47; model schema is 73.

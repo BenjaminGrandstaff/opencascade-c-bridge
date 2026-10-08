@@ -1535,3 +1535,24 @@ features or parameters, or traced assumptions changed (see
 A Git merge driver validates merged intent before atomically replacing its
 current file. See [Model history](MODEL_HISTORY.md) and
 [Document comparisons](DOCUMENT_DIFF.md) for persistence and conflict contracts.
+
+
+## Schema 73 extrusion end conditions
+
+`ExtrudeExtent` defaults to distance, preserving older serialized requests.
+Symmetric extrusion uses a full prism translated by half its travel; composed
+history traces its faces back to source edges. Geometric extents add the target
+output and selector references to dependencies. Selector expressions enter
+incremental parameter invalidation.
+
+The limiting-face solver requires parallel planar surfaces and positive travel.
+A translated profile face is intersected with each candidate using native OCCT
+Booleans; area equality verifies complete coverage, including holes. Selected
+limits must resolve to one face. Next limits enumerate only the supplied target
+and choose its nearest fully covering forward face. No sampled ray inference or
+assembly-wide scan is used. See [semantics and limits](EXTRUSIONS.md).
+
+The shared viewer derives geometric travel from the prism and profile area
+centroids, constructing a temporary face for wire profiles because boundary
+centroids can differ. Its dimensions reflect actual geometry and centered
+anchors. The native ABI stays at 47.

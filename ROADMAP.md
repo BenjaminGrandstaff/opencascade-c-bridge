@@ -11,7 +11,7 @@ tracks status and order.
 | C ABI (`src/`, `include/`) | ABI 47 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 72 | Active development |
+| `occt-parametric` (engineering layer) | Schema 73 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
@@ -20,10 +20,17 @@ tracks status and order.
 | clang-tidy, cppcheck, clang `-Werror` | Clean | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
 | Coverage | 93.61% lines overall, test code excluded; C++ 94.13% lines, 87.40% branches, 100% functions; Rust 93.42% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 112 Rust cases plus 5 model-command and 7 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Scale benchmarks | 113 Rust cases plus 5 model-command and 7 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
 
+- Extrusion end conditions (schema 73): symmetric full length, selected-face
+  and next-face limits with exact bounded coverage. Planar parallel limits
+  support oblique and negative travel, named selectors, incremental rebuilds,
+  AI schema/example resources and actual viewer dimension anchors. Curved
+  or inclined limiting surfaces remain a separate extension.
+  The 1,000 three-extent regeneration gate passes in 6.454 s (10 s budget),
+  checks exact volumes/validity and releases all handles.
 - Sketch completion (ABI 47, schema 72): native ellipses, signed angle,
   radius/diameter, symmetry and point-on-line/circle/arc/ellipse/spline equations;
   saved exact trims, natural conic and C1 spline extensions, and planar offsets
