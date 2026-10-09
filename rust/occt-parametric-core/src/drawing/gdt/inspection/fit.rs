@@ -406,3 +406,118 @@ pub fn fit_circle(points: &[[f64; 2]], fit: Fit) -> Result<([f64; 2], f64), Mode
     }
     Ok(([center.x + c[0] * size, center.y + c[1] * size], r * size))
 }
+
+/// Radial width of the narrowest pair of concentric circles holding planar
+/// points (circularity), with the center free. Exact for the returned
+/// center. O(linearizations · pivots · n).
+pub fn circle_zone(points: &[[f64; 2]]) -> Result<f64, ModelError> {
+    if points.len() < 4 {
+        return Err(ModelError::new(
+            "a circularity section needs at least four points",
+        ));
+    }
+    let lifted: Vec<Vec3> = points.iter().map(|p| Vec3::new(p[0], p[1], 0.0)).collect();
+    let (center, size) = normalization(&lifted);
+    let q: Vec<[f64; 2]> = points
+        .iter()
+        .map(|p| [(p[0] - center.x) / size, (p[1] - center.y) / size])
+        .collect();
+    let width = |c: [f64; 2]| {
+        let (lo, hi) = q.iter().fold((f64::INFINITY, 0.0_f64), |(lo, hi), p| {
+            let rho = (p[0] - c[0]).hypot(p[1] - c[1]);
+            (lo.min(rho), hi.max(rho))
+        });
+        hi - lo
+    };
+    let mut c = [0.0, 0.0];
+    let mut best = width(c);
+    for _ in 0..MAX_LINEARIZATIONS {
+        let mut t = Vec::with_capacity(q.len());
+        let mut phi = Vec::with_capacity(q.len() * 3);
+        for p in &q {
+            let d = [p[0] - c[0], p[1] - c[1]];
+            let rho = d[0].hypot(d[1]);
+            if rho < 1e-12 {
+                return Err(ModelError::new(
+                    "measured section points coincide with its center",
+                ));
+            }
+            t.push(rho);
+            phi.extend([d[0] / rho, d[1] / rho, 1.0]);
+        }
+        let step = chebyshev(&t, &phi, 3, Fit::Zone)?;
+        c = [c[0] + step[0], c[1] + step[1]];
+        best = best.min(width(c));
+        if step[0].hypot(step[1]) < 1e-13 {
+            break;
+        }
+    }
+    Ok(best * size)
+}
+
+/// Unit vectors completing a right-handed basis with unit `n`.
+fn basis(n: Vec3) -> (Vec3, Vec3) {
+    let seed = if n.x.abs() < 0.9 {
+        Vec3::new(1.0, 0.0, 0.0)
+    } else {
+        Vec3::new(0.0, 1.0, 0.0)
+    };
+    let u = scale(cross(n, seed), 1.0 / length(cross(n, seed)));
+    (u, cross(n, u))
+}
+
+/// Radial width of the narrowest pair of coaxial cylinders holding the
+/// points (cylindricity), with the axis free to shift and tilt from
+/// `axis`. Exact for the returned axis. O(linearizations · pivots · n).
+pub fn cylinder_zone(points: &[Vec3], axis: Vec3) -> Result<f64, ModelError> {
+    if points.len() < 6 {
+        return Err(ModelError::new(
+            "a cylindricity measurement needs at least six points",
+        ));
+    }
+    let (center, size) = normalization(points);
+    let q: Vec<Vec3> = points
+        .iter()
+        .map(|&p| scale(subtract(p, center), 1.0 / size))
+        .collect();
+    let mut origin = Vec3::new(0.0, 0.0, 0.0);
+    let mut direction = unit(axis)?;
+    // Radial distance and unit direction of a point from the current axis,
+    // and its position along it.
+    let radial = |p: Vec3, origin: Vec3, direction: Vec3| {
+        let d = subtract(p, origin);
+        let along = dot(d, direction);
+        let r = subtract(d, scale(direction, along));
+        (length(r), r, along)
+    };
+    let width = |origin: Vec3, direction: Vec3| {
+        let (lo, hi) = q.iter().fold((f64::INFINITY, 0.0_f64), |(lo, hi), &p| {
+            let (rho, _, _) = radial(p, origin, direction);
+            (lo.min(rho), hi.max(rho))
+        });
+        hi - lo
+    };
+    let mut best = width(origin, direction);
+    for _ in 0..MAX_LINEARIZATIONS {
+        let (e1, e2) = basis(direction);
+        let mut t = Vec::with_capacity(q.len());
+        let mut phi = Vec::with_capacity(q.len() * 5);
+        for &p in &q {
+            let (rho, r, along) = radial(p, origin, direction);
+            if rho < 1e-12 {
+                return Err(ModelError::new("measured points lie on the cylinder axis"));
+            }
+            let (a, b) = (dot(r, e1) / rho, dot(r, e2) / rho);
+            t.push(rho);
+            phi.extend([a, b, a * along, b * along, 1.0]);
+        }
+        let step = chebyshev(&t, &phi, 5, Fit::Zone)?;
+        origin = add(origin, add(scale(e1, step[0]), scale(e2, step[1])));
+        direction = unit(add(direction, add(scale(e1, step[2]), scale(e2, step[3]))))?;
+        best = best.min(width(origin, direction));
+        if step[..4].iter().all(|s| s.abs() < 1e-13) {
+            break;
+        }
+    }
+    Ok(best * size)
+}

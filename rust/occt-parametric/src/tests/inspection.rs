@@ -562,3 +562,133 @@ fn size_limits_validate_persist_and_inspection_records_round_trip() {
         serde_json::from_str(&serde_json::to_string(&record).unwrap()).unwrap();
     assert_eq!(parsed, record);
 }
+
+/// Points on a circle of radius 5 + `lobes(θ)` about `center` at height `z`.
+fn section(center: [f64; 2], z: f64, lobes: impl Fn(f64) -> f64) -> Vec<[f64; 3]> {
+    (0..72)
+        .map(|i| {
+            let a = i as f64 * std::f64::consts::TAU / 72.0;
+            let r = 5.0 + lobes(a);
+            [center[0] + r * a.cos(), center[1] + r * a.sin(), z]
+        })
+        .collect()
+}
+
+/// Points on a cylinder about the axis through `base` along `axis`, radius
+/// `radius(s)` at distance `s` along it.
+fn cylinder(base: [f64; 3], axis: [f64; 3], radius: impl Fn(f64) -> f64) -> Vec<[f64; 3]> {
+    let n = (axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2]).sqrt();
+    let w = [axis[0] / n, axis[1] / n, axis[2] / n];
+    // u ⟂ w from the x axis, v = w × u.
+    let d = w[0];
+    let u = {
+        let u = [1.0 - d * w[0], -d * w[1], -d * w[2]];
+        let m = (u[0] * u[0] + u[1] * u[1] + u[2] * u[2]).sqrt();
+        [u[0] / m, u[1] / m, u[2] / m]
+    };
+    let v = [
+        w[1] * u[2] - w[2] * u[1],
+        w[2] * u[0] - w[0] * u[2],
+        w[0] * u[1] - w[1] * u[0],
+    ];
+    (0..=10)
+        .flat_map(|k| (0..36).map(move |i| (k as f64, i as f64 * std::f64::consts::TAU / 36.0)))
+        .map(|(s, a)| {
+            let r = radius(s);
+            [0, 1, 2].map(|j| base[j] + w[j] * s + r * (a.cos() * u[j] + a.sin() * v[j]))
+        })
+        .collect()
+}
+
+fn round_page() -> DrawingDefinition {
+    let mut page = page();
+    page.feature_control_frames = vec![
+        control(
+            "round",
+            "hole",
+            GeometricCharacteristic::Circularity,
+            0.03,
+            &[],
+        ),
+        control(
+            "straight",
+            "hole",
+            GeometricCharacteristic::Cylindricity,
+            0.05,
+            &[],
+        ),
+    ];
+    page
+}
+
+fn round_record(round: Vec<[f64; 3]>, straight: Vec<[f64; 3]>) -> InspectionRecord {
+    InspectionRecord {
+        drawing: "plate".into(),
+        surface_textures: Vec::new(),
+        datum_features: Vec::new(),
+        controls: vec![measured("round", round), measured("straight", straight)],
+    }
+}
+
+#[test]
+fn circularity_takes_the_worst_minimum_zone_section_with_free_centers() {
+    let definition = plate();
+    let mut graph = InstanceGraph::new(&definition);
+    graph.add_base("part", HashMap::new(), "test").unwrap();
+    let page = round_page();
+    // Three-lobed sections: the minimum zone is twice the lobe amplitude,
+    // wherever each section's center sits.
+    let mut round = section([30.02, 19.99], 1.0, |a| 0.01 * (3.0 * a).cos());
+    round.extend(section([29.97, 20.03], 5.0, |a| 0.012 * (3.0 * a).cos()));
+    round.extend(section([30.0, 20.0], 9.0, |a| {
+        0.005 * (3.0 * a + 0.4).cos()
+    }));
+    let straight = cylinder([30.0, 20.0, 0.0], [0.0, 0.0, 1.0], |_| 5.0);
+    let report = page
+        .evaluate_inspection(&graph, &round_record(round, straight))
+        .unwrap();
+    let round = evaluated(&report, "round");
+    assert!((round.deviation_mm - 0.024).abs() < 1e-6, "{round:?}");
+    assert!(round.conforms);
+    // A perfect cylinder has no cylindricity deviation.
+    assert!(evaluated(&report, "straight").deviation_mm < 1e-7);
+}
+
+#[test]
+fn cylindricity_frees_the_axis_and_keeps_taper() {
+    let definition = plate();
+    let mut graph = InstanceGraph::new(&definition);
+    graph.add_base("part", HashMap::new(), "test").unwrap();
+    let page = round_page();
+    let base = [30.05, 19.97, 0.0];
+    let axis = [0.002, -0.001, 1.0];
+    // A perfect cylinder on a shifted, tilted axis: the fit finds the axis.
+    let tilted = cylinder(base, axis, |_| 5.0);
+    let round = section([30.0, 20.0], 5.0, |_| 0.0);
+    let report = page
+        .evaluate_inspection(&graph, &round_record(round.clone(), tilted))
+        .unwrap();
+    assert!(evaluated(&report, "straight").deviation_mm < 1e-6);
+    // A 0.03 mm taper over the length cannot be removed by moving the axis.
+    let tapered = cylinder(base, axis, |s| 5.0 + 0.003 * s);
+    let report = page
+        .evaluate_inspection(&graph, &round_record(round.clone(), tapered))
+        .unwrap();
+    let straight = evaluated(&report, "straight");
+    assert!((straight.deviation_mm - 0.03).abs() < 1e-6, "{straight:?}");
+    assert!(straight.conforms);
+    // One section cannot fix an axis tilt, so cylindricity is reported, not guessed.
+    let single = section([30.0, 20.0], 5.0, |_| 0.0);
+    let report = page
+        .evaluate_inspection(&graph, &round_record(round, single))
+        .unwrap();
+    let straight = report
+        .controls
+        .iter()
+        .find(|c| c.control == "straight")
+        .unwrap();
+    assert!(
+        matches!(&straight.result, ControlResult::NotEvaluated(r) if r.contains("determine")),
+        "{straight:?}"
+    );
+}

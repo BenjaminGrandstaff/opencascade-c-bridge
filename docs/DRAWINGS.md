@@ -897,12 +897,16 @@ Supported controls:
 | Control | Measured as |
 |---|---|
 | Flatness | Minimum-zone width over all orientations |
+| Circularity | Worst section's radial width between the narrowest concentric circles, center free. Sections are points sharing a position along the anchor's nominal axis (within 1e-3 mm or 1e-6 of the axial span); each needs at least four points |
+| Cylindricity | Radial width between the narrowest coaxial cylinders, axis free to shift and tilt from the anchor's nominal axis; at least six points |
 | Parallelism, perpendicularity, angularity (planar zone) | Zone width at the basic orientation to the measured datums; with a single datum, rotation about its normal stays free |
 | Position (diameter zone, axis normal to primary plane) | Twice the radial offset of the related actual mating envelope from true position, in the measured frame |
 
 For position, the mating envelope is the largest inscribed cylinder for
 internal features and the smallest circumscribed cylinder for external ones,
-both perpendicular to the primary datum. Position evaluation requires the
+both perpendicular to the primary datum. Circularity and cylindricity need
+axis geometry on the control's anchor and are evaluated regardless of feature
+size, with the characteristic zone. Position evaluation requires the
 control's `size_limits` (see
 [Feature size limits](#feature-size-limits-and-tolerance-allowances)), because
 their `kind` selects the envelope type. At maximum material
@@ -915,14 +919,15 @@ Each fit linearizes, solves a small linear program (a dual simplex with an
 n × n basis), and repeats. Widths and radii are then recomputed exactly for the
 final orientation or center, so a fit that stops early can only overstate a
 deviation. Plane points must not be collinear, and circle points must surround
-their center.
+their center. Round-form zones linearize the radial distance the same way.
 
 **Report results.** Each control has one of three results:
 - `Evaluated`: deviation, tolerance, bonus, actual size and conformance.
 - `NotMeasured`: the record has no points for the control.
 - `NotEvaluated`: a stated reason, for unsupported cases such as composite
-  frames, datum shift at a material boundary, profile, runout, and form
-  controls other than flatness, or a datum feature that was not measured.
+  frames, datum shift at a material boundary, profile, runout, straightness,
+  round form at a material condition or with a non-characteristic zone, or a
+  datum feature that was not measured.
 
 The call fails outright for unknown or repeated IDs, non-finite points, a
 different drawing, or more than `MAX_INSPECTION_POINTS` (10 million) points.
@@ -933,11 +938,12 @@ and conforms.
 shared across controls. Time is O(controls · datums) plus the fit costs, and each
 fit is linear in its points per simplex pivot. The scale benchmark evaluates
 10,000 MMC position controls of 72 points each, plus a 100,000-point flatness
-surface, against one shared frame.
+surface, against one shared frame, in 0.19 s; and 1,000 cylindricity plus 1,000
+circularity controls (612,000 points) in 0.13 s (1 s budgets).
 
 **Not yet covered.** Datum features of size, datum shift, pattern and composite
 evaluation, measured datum targets, profile against nominal surfaces,
-cylindricity, and runout. Measurement uncertainty is not modeled.
+straightness, and runout. Measurement uncertainty is not modeled.
 
 ## Surface texture (schema 71)
 

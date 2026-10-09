@@ -26,6 +26,14 @@ tracks status and order.
 
 ## Done
 
+- Measured circularity and cylindricity (schema 133 / ABI 68 unchanged).
+  Inspection reports evaluate round-form controls about the anchor's nominal
+  axis: circularity as the worst section's minimum-zone concentric circles
+  with the center free, cylindricity as the minimum-zone coaxial cylinders
+  with the axis free to shift and tilt. Both are regardless of feature size.
+  1,000 cylindricity plus 1,000 circularity controls (612,000 points) in
+  0.13 s (1 s budget).
+
 - Kernel-free parametric core (schema 133, ABI 68 unchanged). The engineering
   layer is now two crates: `occt-parametric-core` (definitions, documents,
   expressions, sketch validation, placement solving, diff/merge, change
@@ -2113,10 +2121,10 @@ scopes and inspected repo capabilities, not a full conformity audit.
 2. **Structured GD&T** — [Y14.5](https://www.asme.org/codes-standards/find-codes-standards/y14-5-dimensioning-tolerancing):
    datum features of size and datum shift, non-planar or non-orthogonal
    datum simulators, pattern and composite evaluation, profile against
-   nominal surfaces, cylindricity and runout, common datums and advanced
-   modifiers, and measurement uncertainty. Measured planar datum frames,
-   flatness, planar orientation zones and position with MMC/LMC bonus are
-   evaluated (schema 68).
+   nominal surfaces, runout, common datums and advanced modifiers, and
+   measurement uncertainty. Measured planar datum frames, flatness,
+   circularity, cylindricity, planar orientation zones and position with
+   MMC/LMC bonus are evaluated (schema 68).
 3. **3D manufacturing annotations and exchange** — [Y14.41](https://www.asme.org/codes-standards/find-codes-standards/y14-41-digital-product-definition-data-practices):
    structured PMI attached to persistent geometry, annotation views, dataset
    authority and revision rules, and verified semantic PMI exchange. Geometry

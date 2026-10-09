@@ -352,7 +352,7 @@ Schema 71 adds drawing surface texture requirements (ASME B46.1 roughness
 limits, sampling length, waviness, lay, material removal and method) drawn with
 the Y14.36 symbol, and checks measured roughness readings in inspection
 reports; see [Drawings](docs/DRAWINGS.md#surface-texture-schema-71). Schema 68 evaluates measured points against drawing GD&T: fitted datum
-simulators, flatness and orientation zones, and position with MMC/LMC bonus from
+simulators, flatness, circularity, cylindricity and orientation zones, and position with MMC/LMC bonus from
 stated size limits (`DrawingSizeLimits`, also used for bonus arithmetic and
 supplied-axis position checks). Dimensional measurements are checked against
 saved tolerances, and the `occt-inspection-report` command writes a JSON report

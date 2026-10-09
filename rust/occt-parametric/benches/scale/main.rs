@@ -167,6 +167,7 @@ fn main() -> ExitCode {
     outcomes.push(drawing::drawing_case(definition));
     outcomes.push(drawing::assembly_drawing_case(definition));
     outcomes.push(inspection::inspection_case(definition));
+    outcomes.push(inspection::form_case(definition));
     outcomes.push(helix::helix_case());
     outcomes.push(helix::helix_pattern_case(definition));
     outcomes.push(threads::thread_case(definition));

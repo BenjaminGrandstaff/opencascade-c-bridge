@@ -1,5 +1,6 @@
 //! Measured inspection: datum simulators fitted to measured points and
-//! conformance of planar form/orientation and axis position controls.
+//! conformance of planar form/orientation, round form (circularity and
+//! cylindricity, minimum zone) and axis position controls.
 //!
 //! Measured points are in model coordinates at the current poses, as from a
 //! coordinate measuring machine aligned to the part; the residual misalignment
@@ -9,7 +10,7 @@
 use super::*;
 use crate::assembly::{add, length, scale, unit};
 pub mod fit;
-use fit::{Fit, fit_circle, fit_plane};
+use fit::{Fit, circle_zone, cylinder_zone, fit_circle, fit_plane};
 
 /// Upper bound on measured points in one record, which bounds memory and time.
 pub const MAX_INSPECTION_POINTS: usize = 10_000_000;
@@ -72,7 +73,8 @@ pub struct TextureInspection {
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct ControlMeasurement {
-    /// Width of the measured zone: plane separation, or twice the radial axis offset.
+    /// Width of the measured zone: plane separation, radial separation of the
+    /// minimum-zone circles or cylinders, or twice the radial axis offset.
     pub deviation_mm: f64,
     pub tolerance_mm: f64,
     /// Material-condition bonus from the measured size; zero regardless of size.
@@ -454,6 +456,12 @@ impl Context<'_, '_> {
         if c == GeometricCharacteristic::Position {
             return self.position(frame, points, tolerance);
         }
+        if matches!(
+            c,
+            GeometricCharacteristic::Circularity | GeometricCharacteristic::Cylindricity
+        ) {
+            return self.round_form(frame, points, tolerance);
+        }
         if frame.material != ToleranceMaterialCondition::Regardless
             || frame.zone != GeometricToleranceZone::Characteristic
         {
@@ -481,6 +489,62 @@ impl Context<'_, '_> {
             actual_size_mm: None,
             size_conforms: None,
             conforms: fitted.width <= tolerance,
+        })
+    }
+
+    /// Circularity (worst section) or cylindricity about the nominal axis of
+    /// the control's axis anchor. Sections are the points sharing a position
+    /// along that axis (within 1e-3 mm or 1e-6 of the axial span).
+    fn round_form(
+        &mut self,
+        frame: &DrawingFeatureControlFrame,
+        points: &[Vec3],
+        tolerance: f64,
+    ) -> Result<ControlMeasurement, String> {
+        if frame.material != ToleranceMaterialCondition::Regardless
+            || frame.zone != GeometricToleranceZone::Characteristic
+        {
+            return Err(
+                "circularity and cylindricity are evaluated regardless of feature size".into(),
+            );
+        }
+        let ResolvedDatum::Axis { origin, direction } = self.nominal(&frame.attachment.anchor)?
+        else {
+            return Err("circularity and cylindricity need axis datum geometry".into());
+        };
+        let axis = unit(direction).map_err(|e| e.to_string())?;
+        let deviation = if frame.characteristic == GeometricCharacteristic::Cylindricity {
+            cylinder_zone(points, axis).map_err(|e| e.to_string())?
+        } else {
+            let (u, v) = perpendiculars(axis);
+            let mut placed: Vec<(f64, [f64; 2])> = points
+                .iter()
+                .map(|&p| {
+                    let d = subtract(p, origin);
+                    (dot(d, axis), [dot(d, u), dot(d, v)])
+                })
+                .collect();
+            placed.sort_by(|a, b| a.0.total_cmp(&b.0));
+            let span = placed.last().map_or(0.0, |p| p.0) - placed.first().map_or(0.0, |p| p.0);
+            let gap = (1e-6 * span).max(1e-3);
+            let mut worst: f64 = 0.0;
+            let mut start = 0;
+            for end in 1..=placed.len() {
+                if end == placed.len() || placed[end].0 - placed[end - 1].0 > gap {
+                    let section: Vec<[f64; 2]> = placed[start..end].iter().map(|p| p.1).collect();
+                    worst = worst.max(circle_zone(&section).map_err(|e| e.to_string())?);
+                    start = end;
+                }
+            }
+            worst
+        };
+        Ok(ControlMeasurement {
+            deviation_mm: deviation,
+            tolerance_mm: tolerance,
+            bonus_mm: 0.0,
+            actual_size_mm: None,
+            size_conforms: None,
+            conforms: deviation <= tolerance,
         })
     }
 

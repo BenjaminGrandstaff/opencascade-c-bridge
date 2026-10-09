@@ -242,3 +242,164 @@ pub(crate) fn inspection_case(definition: &FamilyDefinition) -> Outcome {
         },
     )
 }
+
+const FORM_CONTROLS: usize = 1_000;
+
+/// Points on a hole of radius 3 about `center`: `sections` circles of
+/// `per_section` points between z = 1 and 9, with a radial taper across the
+/// length and `lobes`-lobed waviness of the given amplitude.
+fn bore(
+    [x, y]: [f64; 2],
+    sections: usize,
+    per_section: usize,
+    taper: f64,
+    waviness: f64,
+) -> Vec<[f64; 3]> {
+    (0..sections)
+        .flat_map(|s| (0..per_section).map(move |k| (s, k)))
+        .map(|(s, k)| {
+            let along = s as f64 / (sections - 1) as f64;
+            let a = k as f64 * std::f64::consts::TAU / per_section as f64;
+            let r = 3.0 + taper * along + waviness * (3.0 * a).cos();
+            [x + r * a.cos(), y + r * a.sin(), 1.0 + 8.0 * along]
+        })
+        .collect()
+}
+
+/// Minimum-zone round form: 1,000 cylindricity controls (6 sections of 66
+/// points) and 1,000 circularity controls (3 sections of 72 points), every
+/// tenth of each out of tolerance.
+pub(crate) fn form_case(definition: &FamilyDefinition) -> Outcome {
+    timed(
+        format!("inspection: {FORM_CONTROLS} cylindricity + {FORM_CONTROLS} circularity controls"),
+        Duration::from_secs(1),
+        Expectation::Required,
+        || {
+            let mut definition = definition.clone();
+            definition.datums = (0..HOLES_PER_SIDE * HOLES_PER_SIDE)
+                .map(|h| {
+                    let [x, y] = hole_center(h);
+                    DatumDefinition {
+                        id: format!("hole-{h}"),
+                        kind: DatumKind::Axis {
+                            origin: literal([x, y, 0.0]),
+                            direction: VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, 1.0)),
+                        },
+                    }
+                })
+                .collect();
+            let mut graph = InstanceGraph::new(&definition);
+            graph.add_base("part", HashMap::new(), "bench")?;
+            let holes = HOLES_PER_SIDE * HOLES_PER_SIDE;
+            let control = |i: usize, cylindricity: bool| DrawingFeatureControlFrame {
+                size_limits: None,
+                datum_reference_frame: None,
+                refinement: None,
+                id: format!("{}-{i}", if cylindricity { "cyl" } else { "round" }),
+                attachment: attachment(&format!("hole-{}", i % holes)),
+                characteristic: if cylindricity {
+                    GeometricCharacteristic::Cylindricity
+                } else {
+                    GeometricCharacteristic::Circularity
+                },
+                tolerance: Quantity::length(
+                    if cylindricity { 0.05 } else { 0.03 },
+                    LengthUnit::Millimeter,
+                ),
+                display_unit: LengthUnit::Millimeter,
+                precision: 2,
+                zone: GeometricToleranceZone::Characteristic,
+                material: ToleranceMaterialCondition::Regardless,
+                feature_of_size: false,
+                datums: Vec::new(),
+            };
+            let drawing = DrawingDefinition {
+                datum_reference_frames: Vec::new(),
+                datum_features: Vec::new(),
+                feature_control_frames: (0..FORM_CONTROLS)
+                    .map(|i| control(i, true))
+                    .chain((0..FORM_CONTROLS).map(|i| control(i, false)))
+                    .collect(),
+                surface_textures: Vec::new(),
+                parts_list: None,
+                balloons: Vec::new(),
+                releases: Vec::new(),
+                revision_table: None,
+                sheet: None,
+                id: "round".into(),
+                title: "Round form".into(),
+                paper_size_mm: [1000.0, 1000.0],
+                guides: Vec::new(),
+                dimensions: Vec::new(),
+                notes: Vec::new(),
+                metadata: Default::default(),
+                views: vec![DrawingView {
+                    id: "top".into(),
+                    outputs: vec![InstanceOutputRef {
+                        instance: "part".into(),
+                        output: "body".into(),
+                    }],
+                    origin: VectorQuantity::lengths(0.0, 0.0, 0.0, LengthUnit::Millimeter),
+                    direction: VectorQuantity::scalars(0.0, 0.0, 1.0),
+                    x_axis: VectorQuantity::scalars(1.0, 0.0, 0.0),
+                    paper_origin_mm: [10.0, 100.0],
+                    scale: 1.0,
+                    show_hidden: false,
+                    kind: DrawingViewKind::Orthographic,
+                    detail: None,
+                    hatching: None,
+                    material_hatching: Default::default(),
+                }],
+            };
+            // Out-of-tolerance holes taper 0.06 mm or have 0.02 mm lobes
+            // (a 0.04 mm zone); the rest carry 0.005 mm lobes.
+            let controls = (0..FORM_CONTROLS)
+                .map(|i| MeasuredFeature {
+                    id: format!("cyl-{i}"),
+                    points_mm: bore(
+                        hole_center(i % holes),
+                        6,
+                        66,
+                        if i.is_multiple_of(10) { 0.06 } else { 0.0 },
+                        0.005,
+                    ),
+                })
+                .chain((0..FORM_CONTROLS).map(|i| MeasuredFeature {
+                    id: format!("round-{i}"),
+                    points_mm: bore(
+                        hole_center(i % holes),
+                        3,
+                        72,
+                        0.0,
+                        if i.is_multiple_of(10) { 0.02 } else { 0.005 },
+                    ),
+                }))
+                .collect();
+            let record = InspectionRecord {
+                drawing: "round".into(),
+                surface_textures: Vec::new(),
+                datum_features: Vec::new(),
+                controls,
+            };
+            let report = drawing.evaluate_inspection(&graph, &record)?;
+            let mut conforming = 0;
+            for (i, control) in report.controls.iter().enumerate() {
+                let ControlResult::Evaluated(m) = &control.result else {
+                    return Err(failure(format!("{} was not evaluated", control.control)));
+                };
+                if m.conforms == (i % FORM_CONTROLS).is_multiple_of(10) {
+                    return Err(failure(format!(
+                        "{} measured {} conformance {}",
+                        control.control, m.deviation_mm, m.conforms
+                    )));
+                }
+                conforming += usize::from(m.conforms);
+            }
+            Ok(format!(
+                "{conforming} of {} conform, {} measured points",
+                report.controls.len(),
+                FORM_CONTROLS * (396 + 216)
+            ))
+        },
+    )
+}
