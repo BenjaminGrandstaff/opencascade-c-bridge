@@ -83,8 +83,8 @@ Hole profiles enter feature dependencies. Bore edits rebuild affected sections
 and the loft while reusing unaffected sections. Invalid edits retain accepted
 geometry. The [hollow-loft AI example](tools/model/hollow-loft.request.json)
 shows a tapered duct, all four boundary sketches, linked bore controls and
-outer-section centroid spacing. Native ABI remains 50; the current model schema
-is 80. The low-level wire-loft API still constructs one boundary track at a time.
+outer-section centroid spacing. The current native ABI is 51; the current model schema
+is 81. The low-level wire-loft API still constructs one boundary track at a time.
 
 For N stations and H holes, station bookkeeping and pair screening are
 O(NH²), with cached bounds before native pair distances. Complete inner-solid

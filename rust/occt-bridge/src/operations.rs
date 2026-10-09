@@ -210,6 +210,25 @@ impl Session {
         })
     }
 
+    /// Reflect native geometry across a plane, retaining modification ancestry.
+    /// The finite nonzero normal's magnitude is ignored. Source data is immutable.
+    pub fn mirror<'a>(
+        &'a self,
+        shape: &Shape<'_>,
+        origin: Vec3,
+        normal: Vec3,
+    ) -> Result<Shape<'a>, BridgeError> {
+        self.transform(shape, |out| unsafe {
+            occt_bridge_mirror(
+                self.raw.as_ptr(),
+                shape.id,
+                origin.into(),
+                normal.into(),
+                out,
+            )
+        })
+    }
+
     pub fn rotate<'a>(
         &'a self,
         shape: &Shape<'_>,

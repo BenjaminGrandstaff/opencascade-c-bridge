@@ -1689,3 +1689,17 @@ use one common native containment/subtraction helper, composing all boundary
 histories before extracting the final solid with retained ancestry. Native ABI
 50 is reused. Viewer source sketches and linked parameters include hole sections.
 See [hollow loft semantics](LOFTS.md#explicit-hollow-tracks-schema-80).
+
+## Schema 81 plane mirrors (ABI 51)
+
+`Mirror` references one input, a length-valued plane origin and a dimensionless
+normal. Native normalization is robust to extreme finite magnitudes. Negative
+determinant requires transformed geometry rather than a proper rigid location.
+The result passes native validation and retains modification ancestry. History
+targets are oriented to actual output topology after any healing, preserving
+correct reflected face normals for selectors and later operations.
+
+Source and plane expression dependencies enter incremental signatures. Geometry
+is reflected while family datums and assembly placements remain explicitly
+authored. Linked clones share the generated reflected variant. See
+[mirror semantics](MIRRORS.md).

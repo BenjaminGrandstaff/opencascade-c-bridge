@@ -95,3 +95,7 @@ harness = false
 [[bench]]
 name = "hollow_lofts"
 harness = false
+
+[[bench]]
+name = "mirrors"
+harness = false

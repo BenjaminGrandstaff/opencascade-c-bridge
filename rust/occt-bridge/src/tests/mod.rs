@@ -35,3 +35,5 @@ fn assert_wrong_session(error: BridgeError) {
 fn fixture(name: &str) -> String {
     format!("{}/../../tests/fixtures/{name}", env!("CARGO_MANIFEST_DIR"))
 }
+
+mod mirror;

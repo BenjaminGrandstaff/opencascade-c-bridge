@@ -397,6 +397,26 @@ fn solid_scene(
     // downstream booleans/transforms, controls stay in the linked side panel.
     if let Some(feature) = part.definition.features.iter().find(|f| f.id == output) {
         primitive_dimensions(feature, parameters, &mut annotations)?;
+        if let FeatureOperation::Mirror {
+            input,
+            origin,
+            normal,
+        } = &feature.operation
+        {
+            let o = origin
+                .evaluate(parameters)
+                .map_err(|e| model_failure("visualization", e))?;
+            let n = normal
+                .evaluate(parameters)
+                .map_err(|e| model_failure("visualization", e))?;
+            let raw = [n.x.value, n.y.value, n.z.value];
+            let scale = raw.into_iter().map(f64::abs).fold(0.0, f64::max);
+            let unit = raw.map(|v| v / scale);
+            let magnitude = unit[0].hypot(unit[1].hypot(unit[2]));
+            let unit = unit.map(|v| v / magnitude);
+            let expressions = json!([origin, normal]);
+            annotations.push(annotation("driving-mirror-plane".into(),"mirror plane".into(),"constraint","driving",vec![output.into()],names(&expressions),json!([center]),json!({"input":input,"plane_origin":[o.x.value,o.y.value,o.z.value],"plane_normal":unit,"expressions":expressions,"driving":true,"description":"Plane controls define native reflection. The label is anchored at the result's bounding centre."})));
+        }
         if let FeatureOperation::Revolve { input, .. } = &feature.operation {
             let profile = generated
                 .shape(input)

@@ -21,6 +21,7 @@ mod linkage;
 mod loft;
 mod math_functions;
 mod mesh;
+mod mirror;
 mod named_references;
 mod patterns;
 mod persistent;

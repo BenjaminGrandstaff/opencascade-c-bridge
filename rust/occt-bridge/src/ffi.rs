@@ -2,7 +2,7 @@
 
 use super::*;
 
-pub(crate) const ABI_VERSION: u32 = 50;
+pub(crate) const ABI_VERSION: u32 = 51;
 
 #[repr(C)]
 #[derive(Default)]
@@ -637,6 +637,13 @@ unsafe extern "C" {
         session: *mut c_void,
         shape: RawShapeId,
         offset: RawVec3,
+        out: *mut RawShapeId,
+    ) -> RawStatus;
+    pub(crate) fn occt_bridge_mirror(
+        session: *mut c_void,
+        shape: RawShapeId,
+        origin: RawVec3,
+        normal: RawVec3,
         out: *mut RawShapeId,
     ) -> RawStatus;
     pub(crate) fn occt_bridge_rotate(

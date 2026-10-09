@@ -588,6 +588,10 @@ pub(crate) fn collect_operation_parameters<'a>(
             collect_hole_parameters(extent, bottom, finish, thread.as_deref(), names);
         }
 
+        FeatureOperation::Mirror { origin, normal, .. } => {
+            collect_vector_parameters(origin, names);
+            collect_vector_parameters(normal, names);
+        }
         FeatureOperation::Rotate {
             origin,
             axis,

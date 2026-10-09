@@ -232,6 +232,15 @@ pub(crate) fn execute_feature<'session>(
             )
             .map_err(|error| error.context(&format!("profile '{input}'")));
         }
+        FeatureOperation::Mirror {
+            input,
+            origin,
+            normal,
+        } => session.mirror(
+            shape(shapes, input)?,
+            vector(origin, parameters, Dimension::Length)?,
+            vector(normal, parameters, Dimension::Scalar)?,
+        ),
         FeatureOperation::Rotate {
             input,
             origin,

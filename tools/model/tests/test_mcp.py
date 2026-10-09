@@ -45,7 +45,7 @@ class McpTests(unittest.TestCase):
         jsonschema.Draft202012Validator.check_schema(schema)
         self.assertEqual(schema['properties']['model']['$ref'], '#/$defs/ModelDocument')
         variants = schema['$defs']['FeatureOperation']['oneOf']
-        self.assertEqual(len(variants), 30)
+        self.assertEqual(len(variants), 31)
         for name in ['request', 'model', 'feature', 'parameter', 'sketch', 'requirement', 'inspection', 'face_selector', 'edge_selector', 'edit', 'change', 'view']:
             result = self.client.tool('occt_get_schema', dict(name=name))
             self.assertFalse(result['isError'])
@@ -58,7 +58,7 @@ class McpTests(unittest.TestCase):
         with self.assertRaises(jsonschema.ValidationError):
             jsonschema.validate(bad, schema)
         resources = self.client.call('resources/list')['result']['resources']
-        self.assertEqual(len(resources), 30)
+        self.assertEqual(len(resources), 31)
         self.assertEqual(len(self.client.call('resources/templates/list')['result']['resourceTemplates']), 1)
         read = self.client.call('resources/read', dict(uri='occt://schema/request'))['result']['contents'][0]
         self.assertEqual(json.loads(read['text']), schema)
@@ -309,6 +309,15 @@ class McpTests(unittest.TestCase):
         self.assertIn('lower_bore_radius',data['scenes'][0]['parameters'])
         self.assertIn('upper_bore_radius',data['scenes'][0]['parameters'])
         self.assertEqual(len(data['scenes']),5)
+        mirrored = self.client.tool('occt_get_example',dict(name='mirrored-part'))['structuredContent']
+        jsonschema.validate(mirrored,schema)
+        result = self.client.tool('occt_visualize_model',mirrored)
+        self.assertFalse(result['isError'])
+        data = json.loads(self.client.call('resources/read',dict(uri=result['structuredContent']['resources']['view.json']))['result']['contents'][0]['text'])
+        plane = next(a for a in data['scenes'][0]['annotations'] if a['id']=='driving-mirror-plane')
+        self.assertEqual(plane['parameters'],['plane_tilt','plane_x'])
+        self.assertEqual(plane['detail']['plane_normal'],[1.0,0.0,0.0])
+        self.assertAlmostEqual(data['scenes'][0]['bounds'][0][0],-25.0)
         # Ordinary accepted builds also publish the annotated viewer when preview is on.
         build_request = dict(schema='occb-model-request-v1',model=request['model'],outputs=request['outputs'],preview=True,step=False,stl=False)
         built = self.client.tool('occt_build',build_request)['structuredContent']

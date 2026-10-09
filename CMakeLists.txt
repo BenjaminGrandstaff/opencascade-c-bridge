@@ -28,6 +28,7 @@ add_library(
     src/recipes.cpp
     src/solids.cpp
     src/operations.cpp
+    src/mirror.cpp
     src/inspection.cpp
     src/measurements.cpp
     src/surface_radius.cpp

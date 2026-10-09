@@ -536,6 +536,14 @@ static void combinations_and_features(occt_bridge_session_t* session) {
     EXPECT(occt_bridge_rotate(session, box, zero, nan_x, 1, &out), ARG);
     EXPECT(occt_bridge_rotate(session, box, zero, up, NAN, &out), ARG);
     EXPECT(occt_bridge_rotate(session, box, zero, zero, 1, &out), ARG);
+    EXPECT(occt_bridge_mirror(session, box, zero, up, NULL), ARG);
+    EXPECT(occt_bridge_mirror(session, unknown, zero, up, &out), MISSING);
+    EXPECT(occt_bridge_mirror(session, box, nan_x, up, &out), ARG);
+    EXPECT(occt_bridge_mirror(session, box, zero, nan_x, &out), ARG);
+    EXPECT(occt_bridge_mirror(session, box, zero, zero, &out), ARG);
+    EXPECT_TRUE(out == OCCT_BRIDGE_INVALID_SHAPE_ID, "failed mirror clears output");
+    EXPECT(occt_bridge_mirror(session, box, zero, up, &out), OK);
+    occt_bridge_shape_release(session, out);
     EXPECT(occt_bridge_scale(session, box, nan_x, 2, &out), ARG);
     EXPECT(occt_bridge_scale(session, box, zero, NAN, &out), ARG);
     EXPECT(occt_bridge_scale(session, box, zero, 0, &out), ARG);

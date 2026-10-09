@@ -46,10 +46,10 @@ or remote service is started.
 | `occt_build` | The entire `occb-model-request-v1` object | Accepted report, build ID, local directory, and artifact resource URIs |
 
 `tools/list` provides the generated complete request schema as `occt_build`'s
-input schema. All 30 current feature operations and 137 nested request-schema
+input schema. All 31 current feature operations and 137 nested request-schema
 definitions are discoverable. Schemas derive from serde-compatible Rust types;
 new serialized variants require schema support at compilation. Authoring schemas
-target current model schema 80. The engine still migrates older documents.
+target current model schema 81. The engine still migrates older documents.
 Schemas describe serialization and basic request bounds; units, dependency
 references, dimensional constraints, selector resolution, and geometry validity
 are checked by the build engine.
@@ -61,7 +61,7 @@ LD_LIBRARY_PATH="$PWD/build" rust/occt-parametric/target/debug/occt-model \
   --schema request > /tmp/occt-request.schema.json
 ```
 
-`resources/list` advertises twelve `occt://schema/NAME` and eighteen
+`resources/list` advertises twelve `occt://schema/NAME` and nineteen
 `occt://example/NAME` resources. Accepted builds return specific
 `occt://build/BUILD_ID/ARTIFACT` URIs; a resource template advertises this form.
 JSON and SVG resources return text, while STEP and STL return base64 blobs.
@@ -331,7 +331,7 @@ length. Limit faces must terminate the complete profile strictly forward; see [e
 `curved-extrusions` demonstrates schema-74 inclined and spherical limits.
 Its view request uses the native centroid ray measurement and tracks both
 surfaces when `depth` changes. Crossing next-face limits require an explicit
-up-to-face selector. Native ABI 50 is required by the current build.
+up-to-face selector. Native ABI 51 is required by the current build.
 
 
 `drill-point` demonstrates schema-75 blind-hole bottoms. Its `point_angle`
@@ -390,3 +390,9 @@ The example exposes two bore radii and all four section sketches, with linked
 solid controls and measured spacing. Station containment and whole-loft crossing
 checks reject invalid tracks; older missing hole arrays remain solid lofts.
 See [hollow lofts](../../LOFTS.md#explicit-hollow-tracks-schema-80).
+
+`mirrored-part` demonstrates schema-81 plane reflection of an asymmetric bracket.
+`plane_x` moves the plane and `plane_tilt` changes its normal direction. Native
+geometry and source-face history remain valid after reflection, with correct
+outward normals. Viewer annotations expose plane data and related controls.
+See [mirrors](../../MIRRORS.md); current builds require native ABI 51.

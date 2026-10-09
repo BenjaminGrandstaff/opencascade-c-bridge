@@ -689,6 +689,13 @@ pub enum FeatureOperation {
         input: String,
         offset: VectorExpr,
     },
+    /// Reflect the input geometry across a plane; origin is length-valued,
+    /// normal dimensionless and finite/nonzero. Produces the reflected part only.
+    Mirror {
+        input: String,
+        origin: VectorExpr,
+        normal: VectorExpr,
+    },
     Rotate {
         input: String,
         origin: VectorExpr,
@@ -846,6 +853,7 @@ impl FeatureOperation {
             Self::SheetMetalFlat { input, .. }
             | Self::Translate { input, .. }
             | Self::Rotate { input, .. }
+            | Self::Mirror { input, .. }
             | Self::Revolve { input, .. }
             | Self::Unify { input, .. } => vec![input],
             Self::Fillet { input, edges, .. }

@@ -1521,3 +1521,37 @@ fn hollow_loft_viewer_keeps_hole_sketches_spacing_and_linked_bore_controls() {
         );
     }
 }
+
+#[test]
+fn mirror_viewer_exposes_plane_controls_and_follows_native_reflected_bounds() {
+    let dir = Directory::new();
+    for plane in [0.0, 2.0] {
+        let mut request = view_example("mirrored-part");
+        request["model"]["family"]["parameters"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|p| p["id"] == "plane_x")
+            .unwrap()["default"]["scalar"]["value"] = json!(plane);
+        let name = format!("mirror-{plane}");
+        view_request(&dir, request, &name).unwrap();
+        let data: Value =
+            serde_json::from_str(&fs::read_to_string(dir.0.join(name).join("view.json")).unwrap())
+                .unwrap();
+        let solid = &data["scenes"][0];
+        assert_eq!(solid["valid"], true);
+        assert!((solid["bounds"][0][0].as_f64().unwrap() - (2.0 * plane - 25.0)).abs() < 1e-7);
+        let annotation = solid["annotations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|a| a["id"] == "driving-mirror-plane")
+            .unwrap();
+        assert_eq!(
+            annotation["detail"]["plane_origin"],
+            json!([plane, 0.0, 0.0])
+        );
+        assert_eq!(annotation["detail"]["plane_normal"], json!([1.0, 0.0, 0.0]));
+        assert_eq!(annotation["parameters"], json!(["plane_tilt", "plane_x"]));
+    }
+}

@@ -1,6 +1,6 @@
 # Hollow sketch profiles
 
-Schema 79 adds a `planar_region` feature. The current native ABI is 50,
+Schema 79 adds a `planar_region` feature. The current native ABI is 51,
 which also retains cut history when extracting the resulting face.
 
 ```json

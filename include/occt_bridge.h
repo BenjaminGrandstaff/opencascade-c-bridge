@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define OCCT_BRIDGE_ABI_VERSION 50u
+#define OCCT_BRIDGE_ABI_VERSION 51u
 #define OCCT_BRIDGE_INVALID_SHAPE_ID UINT64_C(0)
 
 #if defined(_WIN32) && defined(OCCT_BRIDGE_BUILD_SHARED)
@@ -743,6 +743,18 @@ OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_translate(
     occt_bridge_vec3_t offset,
     occt_bridge_shape_id_t* out_shape
 );
+/* ABI 51: reflect across the plane through origin with a finite nonzero normal.
+ * Normal magnitude is ignored and normalized without overflow/underflow.
+ * Negative-determinant reflection copies native geometry, validates the result
+ * and records modified topology; the source remains immutable. */
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_mirror(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t shape,
+    occt_bridge_vec3_t origin,
+    occt_bridge_vec3_t normal,
+    occt_bridge_shape_id_t* out_shape
+);
+
 OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_rotate(
     occt_bridge_session_t* session,
     occt_bridge_shape_id_t shape,
