@@ -1,0 +1,57 @@
+# Helices, springs and coils
+
+`FeatureOperation::Helix` makes an open helical wire to sweep profiles along:
+
+```json
+{ "id": "coil", "operation": { "helix": {
+    "origin": { "literal": { "x": {"value": 0, "dimension": "length", "unit": "millimeter"},
+                             "y": {"value": 0, "dimension": "length", "unit": "millimeter"},
+                             "z": {"value": 0, "dimension": "length", "unit": "millimeter"} } },
+    "axis":  { "literal": { "x": {"value": 0, "dimension": "scalar", "unit": null},
+                            "y": {"value": 0, "dimension": "scalar", "unit": null},
+                            "z": {"value": 1, "dimension": "scalar", "unit": null} } },
+    "start": { "literal": { "x": {"value": 1, "dimension": "scalar", "unit": null},
+                            "y": {"value": 0, "dimension": "scalar", "unit": null},
+                            "z": {"value": 0, "dimension": "scalar", "unit": null} } },
+    "radius": { "literal": {"value": 10, "dimension": "length", "unit": "millimeter"} },
+    "pitch":  { "literal": {"value": 4, "dimension": "length", "unit": "millimeter"} },
+    "turns":  { "parameter": "turns" } } } }
+```
+
+- The helix winds about the axis through `origin`, starting at
+  `origin + radius * start` (`start` is made perpendicular to the axis), and
+  rises `pitch` along the axis per turn. `turns` may be fractional, up to
+  10,000. It is right-handed (counterclockwise looking against the axis as it
+  climbs) unless `left_handed` is true.
+- All values are expressions, so radius, pitch and turns can be family
+  parameters; a spring regenerates when they change, reusing features that do
+  not depend on them.
+
+## Making a spring
+
+Sweep a closed profile placed at the helix start along it with
+`SweepOrientation::Binormal` set to the helix axis, which keeps the section
+from twisting as it climbs. For a round wire, sketch a circle centered on the
+start point in the plane perpendicular to the start tangent
+`(0, 2π·radius, pitch)` (for an axis along z and a start along x; the y
+component is negative for left-handed helices). A section larger than the
+coil's tightest bend fails, as for any sweep.
+
+## Kernel
+
+`occt_bridge_create_helix_wire` (ABI 52; `Session::create_helix_wire` with
+`HelixOptions` in Rust) builds the helix as a straight line on its exact
+cylinder, with a 3D B-spline within `Precision::Confusion()` (16 segments per
+turn, at least 30). Tests check its length against
+`turns · √((2π·radius)² + pitch²)` to 1e-6, that sampled points lie on the
+cylinder, its end points for whole and fractional turns and both hands, and
+that a circle swept along it is a valid solid whose volume matches the tube
+formula (area × centerline length) within 0.1%. Zero or negative radius,
+pitch or turns, more than 10,000 turns, a start direction along the axis and
+non-finite values are rejected.
+
+## Not yet included
+
+Modeled screw threads (a thread form swept along a helix and cut from a
+cylinder) and variable-pitch or tapered (conical) helices. Hole thread
+callouts still record intent without geometry.

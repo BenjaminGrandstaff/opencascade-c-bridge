@@ -2,7 +2,7 @@
 
 use super::*;
 
-pub(crate) const ABI_VERSION: u32 = 51;
+pub(crate) const ABI_VERSION: u32 = 52;
 
 #[repr(C)]
 #[derive(Default)]
@@ -419,6 +419,18 @@ unsafe extern "C" {
         center: RawVec3,
         normal: RawVec3,
         radius: f64,
+        out: *mut RawShapeId,
+    ) -> RawStatus;
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn occt_bridge_create_helix_wire(
+        session: *mut c_void,
+        origin: RawVec3,
+        axis: RawVec3,
+        start_direction: RawVec3,
+        radius: f64,
+        pitch: f64,
+        turns: f64,
+        left_handed: i32,
         out: *mut RawShapeId,
     ) -> RawStatus;
     pub(crate) fn occt_bridge_create_ellipse_wire(

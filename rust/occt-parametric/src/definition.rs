@@ -702,6 +702,23 @@ pub enum FeatureOperation {
         axis: VectorExpr,
         angle_radians: ScalarExpr,
     },
+    /// An open helical wire about the axis through the length-valued `origin`
+    /// along the dimensionless `axis`, starting at `origin + radius * start`
+    /// (`start` is made perpendicular to the axis) and rising the length
+    /// `pitch` per turn for the dimensionless `turns` (fractional allowed, at
+    /// most 10,000). Right-handed unless `left_handed`. Use it as a `Sweep`
+    /// path with `SweepOrientation::Binormal` along the axis for springs and
+    /// coils (schema 82).
+    Helix {
+        origin: VectorExpr,
+        axis: VectorExpr,
+        start: VectorExpr,
+        radius: ScalarExpr,
+        pitch: ScalarExpr,
+        turns: ScalarExpr,
+        #[serde(default)]
+        left_handed: bool,
+    },
     Fuse {
         left: String,
         right: String,
@@ -880,6 +897,7 @@ impl FeatureOperation {
             Self::SheetMetal { .. }
             | Self::Loft { .. }
             | Self::Box { .. }
+            | Self::Helix { .. }
             | Self::Cylinder { .. }
             | Self::Cone { .. }
             | Self::Sphere { .. }

@@ -4,7 +4,12 @@
 
 #include "bridge_internal.hpp"
 
+#include <BRepBuilderAPI_MakeEdge.hxx>
 #include <BRepBuilderAPI_MakeWire.hxx>
+#include <BRepLib.hxx>
+#include <Geom2d_Line.hxx>
+#include <Geom_CylindricalSurface.hxx>
+#include <gp_Ax3.hxx>
 #include <BRepAdaptor_Curve.hxx>
 #include <BRepLProp_CLProps.hxx>
 #include <BRep_Tool.hxx>
@@ -203,5 +208,71 @@ occt_bridge_status_t occt_bridge_sweep(
                 "sweep produced an invalid shape; the profile may self-intersect along the path");
         }
         return store_shape_with_history(session, shape, out_shape, builder, {profile_shape});
+    });
+}
+
+// A helix is a straight line on a cylinder: angle advances 2*pi per pitch of
+// height. The edge keeps that exact 2D curve on the exact cylinder and gets a
+// 3D B-spline within Precision::Confusion(), so sweeps and measurements see a
+// helix to kernel tolerance. O(turns) approximation segments.
+occt_bridge_status_t occt_bridge_create_helix_wire(
+    occt_bridge_session_t* session,
+    occt_bridge_vec3_t origin,
+    occt_bridge_vec3_t axis,
+    occt_bridge_vec3_t start_direction,
+    double radius,
+    double pitch,
+    double turns,
+    int left_handed,
+    occt_bridge_shape_id_t* out_shape) {
+    return guarded(session, [&] {
+        if (out_shape == nullptr) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_shape is null");
+        }
+        *out_shape = OCCT_BRIDGE_INVALID_SHAPE_ID;
+        if (!finite(origin) || !finite(axis) || !finite(start_direction)
+            || !std::isfinite(radius) || !std::isfinite(pitch) || !std::isfinite(turns)
+            || radius <= 0.0 || pitch <= 0.0
+            || turns <= 0.0 || turns > 10000.0) {
+            return fail(
+                session,
+                OCCT_BRIDGE_INVALID_ARGUMENT,
+                "helix needs a finite positive radius and pitch and 0 < turns <= 10000");
+        }
+        const gp_Vec along(axis.x, axis.y, axis.z);
+        const gp_Vec start(start_direction.x, start_direction.y, start_direction.z);
+        if (along.Magnitude() <= Precision::Confusion()
+            || start.Magnitude() <= Precision::Confusion()
+            || along.IsParallel(start, Precision::Angular())) {
+            return fail(
+                session,
+                OCCT_BRIDGE_INVALID_ARGUMENT,
+                "helix axis and start direction must be nonzero and not parallel");
+        }
+        // The start direction is made perpendicular to the axis; the helix
+        // starts at origin + radius * that direction.
+        const gp_Dir normal(along);
+        const gp_Dir x_direction(start - normal.XYZ() * start.Dot(gp_Vec(normal)));
+        const gp_Ax3 frame(gp_Pnt(origin.x, origin.y, origin.z), normal, x_direction);
+        const Handle(Geom_CylindricalSurface) cylinder =
+            new Geom_CylindricalSurface(frame, radius);
+        const double sweep = (left_handed != 0 ? -2.0 : 2.0) * M_PI;
+        const gp_Dir2d direction(sweep, pitch);
+        const Handle(Geom2d_Line) line = new Geom2d_Line(gp_Pnt2d(0.0, 0.0), direction);
+        const double length = turns * std::hypot(sweep, pitch);
+        BRepBuilderAPI_MakeEdge edge(line, cylinder, 0.0, length);
+        if (!edge.IsDone()) {
+            return fail(session, OCCT_BRIDGE_KERNEL_ERROR, "helix edge could not be built");
+        }
+        TopoDS_Edge built = edge.Edge();
+        const int segments = static_cast<int>(std::min(65535.0, std::max(30.0, 16.0 * turns)));
+        if (!BRepLib::BuildCurves3d(built, Precision::Confusion(), GeomAbs_C2, 14, segments)) {
+            return fail(session, OCCT_BRIDGE_KERNEL_ERROR, "helix curve could not be approximated");
+        }
+        BRepBuilderAPI_MakeWire wire(built);
+        if (!wire.IsDone()) {
+            return fail(session, OCCT_BRIDGE_KERNEL_ERROR, "helix wire could not be built");
+        }
+        return store_shape(session, wire.Wire(), out_shape);
     });
 }

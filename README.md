@@ -677,3 +677,7 @@ checks and retained wall ancestry. Native ABI remains 50.
 [Plane mirrors](MIRRORS.md) create handed parts with native reflected geometry,
 retained source-face ancestry and editable plane controls. Schema 81 adds
 `mirror`; ABI 51 adds the native reflection operation.
+
+[Helices](HELIX.md) are exact helical wires to sweep along for springs and
+coils, with parameter-driven radius, pitch, turns and handedness. ABI 52 adds
+`occt_bridge_create_helix_wire`; schema 82 adds the `helix` feature.

@@ -12,6 +12,7 @@ mod drawing;
 mod expressions;
 mod face_colors;
 mod graph;
+mod helix;
 mod hole_catalogs;
 mod holes;
 mod hollow_lofts;

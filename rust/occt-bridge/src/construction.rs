@@ -245,6 +245,28 @@ impl Session {
         Ok(self.shape(shape))
     }
 
+    /// An exact helical wire (a line on its cylinder) with a 3D curve within
+    /// kernel tolerance. Sweep a profile placed at its start along it with
+    /// `SweepOrientation::Binormal(axis)` for springs and coils.
+    pub fn create_helix_wire(&self, helix: HelixOptions) -> Result<Shape<'_>, BridgeError> {
+        let mut shape = 0;
+        // SAFETY: The session and output pointers are valid; values are passed by value.
+        self.check(unsafe {
+            occt_bridge_create_helix_wire(
+                self.raw.as_ptr(),
+                helix.origin.into(),
+                helix.axis.into(),
+                helix.start_direction.into(),
+                helix.radius,
+                helix.pitch,
+                helix.turns,
+                i32::from(helix.left_handed),
+                &mut shape,
+            )
+        })?;
+        Ok(self.shape(shape))
+    }
+
     pub fn create_ellipse_wire(
         &self,
         center: Vec3,

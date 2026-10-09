@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define OCCT_BRIDGE_ABI_VERSION 51u
+#define OCCT_BRIDGE_ABI_VERSION 52u
 #define OCCT_BRIDGE_INVALID_SHAPE_ID UINT64_C(0)
 
 #if defined(_WIN32) && defined(OCCT_BRIDGE_BUILD_SHARED)
@@ -402,6 +402,25 @@ OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_sweep(
     occt_bridge_shape_id_t path,
     occt_bridge_sweep_orientation_t orientation,
     occt_bridge_vec3_t binormal,
+    occt_bridge_shape_id_t* out_shape
+);
+
+/* A helical wire (ABI 52) about the axis through origin, starting at
+ * origin + radius * start_direction (made perpendicular to the axis) and
+ * rising pitch along the axis per turn; turns may be fractional (at most
+ * 10000). Right-handed unless left_handed is nonzero. The edge lies exactly
+ * on its cylinder with a 3D curve within Precision::Confusion(); sweep a
+ * profile along it with OCCT_BRIDGE_SWEEP_BINORMAL and the axis as binormal
+ * for springs and coils. */
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_create_helix_wire(
+    occt_bridge_session_t* session,
+    occt_bridge_vec3_t origin,
+    occt_bridge_vec3_t axis,
+    occt_bridge_vec3_t start_direction,
+    double radius,
+    double pitch,
+    double turns,
+    int left_handed,
     occt_bridge_shape_id_t* out_shape
 );
 

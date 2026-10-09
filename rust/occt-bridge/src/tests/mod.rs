@@ -6,6 +6,7 @@ mod draft;
 mod exchange;
 mod extrusion_limits;
 mod face_pull;
+mod helix;
 mod history;
 mod inspection;
 mod mesh;

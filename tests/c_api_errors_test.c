@@ -547,6 +547,15 @@ static void combinations_and_features(occt_bridge_session_t* session) {
     EXPECT(occt_bridge_scale(session, box, nan_x, 2, &out), ARG);
     EXPECT(occt_bridge_scale(session, box, zero, NAN, &out), ARG);
     EXPECT(occt_bridge_scale(session, box, zero, 0, &out), ARG);
+    occt_bridge_vec3_t across = {1, 0, 0};
+    EXPECT(occt_bridge_create_helix_wire(session, zero, up, across, 0, 1, 1, 0, &out), ARG);
+    EXPECT(occt_bridge_create_helix_wire(session, zero, up, across, 1, 0, 1, 0, &out), ARG);
+    EXPECT(occt_bridge_create_helix_wire(session, zero, up, across, 1, 1, 0, 0, &out), ARG);
+    EXPECT(occt_bridge_create_helix_wire(session, zero, up, across, 1, 1, 20000, 0, &out), ARG);
+    EXPECT(occt_bridge_create_helix_wire(session, zero, up, up, 1, 1, 1, 0, &out), ARG);
+    EXPECT(occt_bridge_create_helix_wire(session, zero, zero, across, 1, 1, 1, 0, &out), ARG);
+    EXPECT(occt_bridge_create_helix_wire(session, nan_x, up, across, 1, 1, 1, 0, &out), ARG);
+    EXPECT(occt_bridge_create_helix_wire(session, zero, up, across, 1, 1, 1, 0, NULL), ARG);
     EXPECT(occt_bridge_shape_duplicate(session, box, NULL), ARG);
     EXPECT(occt_bridge_shape_duplicate(session, unknown, &out), MISSING);
 }

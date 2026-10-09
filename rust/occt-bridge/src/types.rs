@@ -154,6 +154,20 @@ pub struct Diagnostic {
     pub has_shape: bool,
 }
 
+/// A helix about the axis through `origin`, starting at
+/// `origin + radius * start_direction` (made perpendicular to the axis) and
+/// rising `pitch` per turn for `turns` (fractional allowed, at most 10,000).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct HelixOptions {
+    pub origin: Vec3,
+    pub axis: Vec3,
+    pub start_direction: Vec3,
+    pub radius: f64,
+    pub pitch: f64,
+    pub turns: f64,
+    pub left_handed: bool,
+}
+
 /// Neutral plane, pull direction, and signed angle for a draft operation.
 #[derive(Clone, Copy, Debug)]
 pub struct DraftOptions {

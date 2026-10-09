@@ -252,6 +252,23 @@ pub(crate) fn execute_feature<'session>(
             vector(axis, parameters, Dimension::Scalar)?,
             scalar(angle_radians, parameters, Dimension::Scalar)?,
         ),
+        FeatureOperation::Helix {
+            origin,
+            axis,
+            start,
+            radius,
+            pitch,
+            turns,
+            left_handed,
+        } => session.create_helix_wire(occt_bridge::HelixOptions {
+            origin: vector(origin, parameters, Dimension::Length)?,
+            axis: vector(axis, parameters, Dimension::Scalar)?,
+            start_direction: vector(start, parameters, Dimension::Scalar)?,
+            radius: scalar(radius, parameters, Dimension::Length)?,
+            pitch: scalar(pitch, parameters, Dimension::Length)?,
+            turns: scalar(turns, parameters, Dimension::Scalar)?,
+            left_handed: *left_handed,
+        }),
         FeatureOperation::Fuse { left, right } => {
             return session
                 .fuse(shape(shapes, left)?, shape(shapes, right)?)

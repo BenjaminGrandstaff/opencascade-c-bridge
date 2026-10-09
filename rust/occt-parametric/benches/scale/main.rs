@@ -32,6 +32,7 @@ mod draft;
 mod drawing;
 mod expressions;
 mod graphs;
+mod helix;
 mod holes;
 mod inspection;
 mod loft;
@@ -160,6 +161,8 @@ fn main() -> ExitCode {
     outcomes.push(drawing::drawing_case(definition));
     outcomes.push(drawing::assembly_drawing_case(definition));
     outcomes.push(inspection::inspection_case(definition));
+    outcomes.push(helix::helix_case());
+    outcomes.push(helix::helix_pattern_case(definition));
     outcomes.push(textures::texture_case(definition));
     outcomes.push(mesh::gltf_case(definition));
     outcomes.push(mesh::gltf_output_case(definition));
