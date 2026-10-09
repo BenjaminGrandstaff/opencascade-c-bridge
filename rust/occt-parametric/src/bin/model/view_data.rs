@@ -464,6 +464,27 @@ fn solid_scene(
     // downstream booleans/transforms, controls stay in the linked side panel.
     if let Some(feature) = part.definition.features.iter().find(|f| f.id == output) {
         primitive_dimensions(feature, parameters, &mut annotations)?;
+        if let FeatureOperation::Offset {
+            input,
+            distance,
+            tolerance,
+        } = &feature.operation
+        {
+            let value = distance
+                .evaluate(parameters)
+                .map_err(|e| model_failure("visualization", e))?
+                .value;
+            let tolerance_mm = tolerance
+                .evaluate(parameters)
+                .map_err(|e| model_failure("visualization", e))?
+                .value;
+            let expressions = json!([distance, tolerance]);
+            annotations.push(annotation(
+                "driving-skin-offset".into(), format!("skin offset {value:+.3} mm"),
+                "dimension", "driving", vec![output.into()], names(&expressions), json!([center]),
+                json!({"input":input,"value_mm":value,"tolerance_mm":tolerance_mm,"expressions":expressions,"driving":true,"description":"Signed native skin offset. Label anchored at result bounds; this is not a wall-thickness measurement."})
+            ));
+        }
         if let FeatureOperation::Scale {
             input,
             center: scale_center,

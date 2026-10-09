@@ -683,6 +683,14 @@ pub(crate) fn collect_operation_parameters<'a>(
             collect_scalar_parameters(thickness, names);
             collect_scalar_parameters(tolerance, names);
         }
+        FeatureOperation::Offset {
+            distance,
+            tolerance,
+            ..
+        } => {
+            collect_scalar_parameters(distance, names);
+            collect_scalar_parameters(tolerance, names);
+        }
         FeatureOperation::Unify {
             linear_tolerance,
             angular_tolerance,

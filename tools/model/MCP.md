@@ -46,10 +46,10 @@ or remote service is started.
 | `occt_build` | The entire `occb-model-request-v1` object | Accepted report, build ID, local directory, and artifact resource URIs |
 
 `tools/list` provides the generated complete request schema as `occt_build`'s
-input schema. All 33 current feature operations and 137 nested request-schema
+input schema. All 35 current feature operations and 137 nested request-schema
 definitions are discoverable. Schemas derive from serde-compatible Rust types;
 new serialized variants require schema support at compilation. Authoring schemas
-target current model schema 83. The engine still migrates older documents.
+target current model schema 85. The engine still migrates older documents.
 Schemas describe serialization and basic request bounds; units, dependency
 references, dimensional constraints, selector resolution, and geometry validity
 are checked by the build engine.
@@ -402,8 +402,8 @@ See [mirrors](../../MIRRORS.md); current builds require native ABI 52.
 `scale_factor` is dimensionless and positive; `scale_center_x` moves the centre
 in millimetres. Native geometry, bounds, volume and source-face ancestry follow
 edits. The viewer links both controls to the scale label and displays measured
-result spans. See [scaling](../../SCALING.md). The catalog contains 21 examples
-and 12 generated schemas, exposed as 33 discovery resources.
+result spans. See [scaling](../../SCALING.md). The catalog contains 22 examples
+and 12 generated schemas, exposed as 34 discovery resources.
 
 
 `spring` combines the schema-82 helix operation with a parameter-driven circular
@@ -411,3 +411,10 @@ section and native binormal sweep. Radius, pitch, fractional turns and wire
 radius are editable. The section plane follows radius and pitch edits; the
 viewer links helix dimensions and samples the route per turn. Geometric guards
 are illustrative assumptions. See [springs and coils](../../HELIX.md).
+
+
+`offset-part` demonstrates schema-85 native joined skin offsets. Positive
+`allowance` expands the spherical example; negative values contract it. Both
+`allowance` and `offset_tolerance` are lengths; distance must be nonzero and
+tolerance positive. Geometry, native ancestry and the signed driving annotation
+follow edits. See [offset semantics](../../OFFSETS.md).

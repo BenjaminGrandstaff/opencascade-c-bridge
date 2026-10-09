@@ -1731,3 +1731,15 @@ and the native 100,000-point edge limit rejects oversized displays. The AI
 spring example derives section position and tangent orientation from radius
 and pitch, so incremental edits rebuild affected geometry correctly. No ABI
 or document schema change is needed. See [helices](HELIX.md).
+
+
+## Schema 85 joined skin offsets
+
+`Offset` depends on one input and two length-valued expressions: signed nonzero
+distance and positive tolerance. Native `PerformByJoin` constructs an offset
+skin with retained modification/generated ancestry and result validation.
+Distance/tolerance expression dependencies enter incremental signatures, so
+edits reuse the source and rebuild its offset and dependents. Failed edits
+retain accepted geometry. Linked clones share generated variants. Bookkeeping
+follows topology/history size; native construction cost depends on surface
+intersections and joins. See [offset semantics](OFFSETS.md).

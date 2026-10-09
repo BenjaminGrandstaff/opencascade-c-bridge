@@ -242,6 +242,15 @@ pub(crate) fn execute_feature<'session>(
             vector(origin, parameters, Dimension::Length)?,
             vector(normal, parameters, Dimension::Scalar)?,
         ),
+        FeatureOperation::Offset {
+            input,
+            distance,
+            tolerance,
+        } => session.offset(
+            shape(shapes, input)?,
+            scalar(distance, parameters, Dimension::Length)?,
+            scalar(tolerance, parameters, Dimension::Length)?,
+        ),
         FeatureOperation::Scale {
             input,
             center,

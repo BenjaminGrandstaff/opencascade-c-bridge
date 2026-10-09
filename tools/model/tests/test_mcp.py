@@ -45,7 +45,7 @@ class McpTests(unittest.TestCase):
         jsonschema.Draft202012Validator.check_schema(schema)
         self.assertEqual(schema['properties']['model']['$ref'], '#/$defs/ModelDocument')
         variants = schema['$defs']['FeatureOperation']['oneOf']
-        self.assertEqual(len(variants), 33)
+        self.assertEqual(len(variants), 35)
         for name in ['request', 'model', 'feature', 'parameter', 'sketch', 'requirement', 'inspection', 'face_selector', 'edge_selector', 'edit', 'change', 'view']:
             result = self.client.tool('occt_get_schema', dict(name=name))
             self.assertFalse(result['isError'])
@@ -58,7 +58,7 @@ class McpTests(unittest.TestCase):
         with self.assertRaises(jsonschema.ValidationError):
             jsonschema.validate(bad, schema)
         resources = self.client.call('resources/list')['result']['resources']
-        self.assertEqual(len(resources), 33)
+        self.assertEqual(len(resources), 34)
         self.assertEqual(len(self.client.call('resources/templates/list')['result']['resourceTemplates']), 1)
         read = self.client.call('resources/read', dict(uri='occt://schema/request'))['result']['contents'][0]
         self.assertEqual(json.loads(read['text']), schema)
@@ -337,6 +337,16 @@ class McpTests(unittest.TestCase):
         self.assertEqual(annotations['helix-rise']['detail']['value'],20)
         self.assertEqual(annotations['helix-radius']['parameters'],['coil_radius'])
         self.assertEqual(len(annotations['sweep-route-length']['detail']['dimension_paths'][0]),161)
+        offset = self.client.tool('occt_get_example',dict(name='offset-part'))['structuredContent']
+        jsonschema.validate(offset,schema)
+        result = self.client.tool('occt_visualize_model',offset)
+        self.assertFalse(result['isError'])
+        data = json.loads(self.client.call('resources/read',dict(uri=result['structuredContent']['resources']['view.json']))['result']['contents'][0]['text'])
+        self.assertTrue(data['scenes'][0]['valid'])
+        annotation = next(a for a in data['scenes'][0]['annotations'] if a['id']=='driving-skin-offset')
+        self.assertEqual(annotation['detail']['value_mm'],1)
+        self.assertEqual(annotation['parameters'],['allowance','offset_tolerance'])
+        self.assertAlmostEqual(data['scenes'][0]['bounds'][1][0],11)
         # Ordinary accepted builds also publish the annotated viewer when preview is on.
         build_request = dict(schema='occb-model-request-v1',model=request['model'],outputs=request['outputs'],preview=True,step=False,stl=False)
         built = self.client.tool('occt_build',build_request)['structuredContent']

@@ -11,18 +11,29 @@ tracks status and order.
 | C ABI (`src/`, `include/`) | ABI 52 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 84 | Active development |
+| `occt-parametric` (engineering layer) | Schema 85 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 109 + first-use integration 1 (+1 doc test), recipes 3, parametric 435 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 18 + branch command 2 + model command 31, MCP Python 8, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 109 + first-use integration 1 (+1 doc test), recipes 3, parametric 437 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 18 + branch command 2 + model command 32, MCP Python 8, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform code also passes. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
 | Coverage | Last recorded: 93.61% lines overall, test code excluded; C++ 94.13% lines, 87.40% branches, 100% functions; Rust 93.42% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 132 Rust cases plus 5 model-command and 11 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Scale benchmarks | 134 Rust cases plus 5 model-command and 11 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
+
+- Signed skin offsets (schema 85; native ABI 52 unchanged): `Offset` exposes
+  native joined offsets with length-valued signed nonzero distance and positive
+  tolerance. Native ancestry, validation and diagnostics are retained; edits
+  reuse source geometry and failed changes retain accepted results. AI example
+  `offset-part` and viewer annotations link distance/tolerance controls without
+  inventing a wall-thickness measurement. Tests cover outward/inward geometry,
+  mass, bounds, source history, units, rollback and cleanup. Scale gates pass:
+  500 signed offsets in 0.246 s and 10,000 linked parts in 0.086 s
+  (10 s budgets). The AI catalog exposes 35 operations and 22 examples.
+  See [offsets](OFFSETS.md).
 
 - AI spring example and helix visualization (schema 83 / ABI 52 unchanged):
   `spring` combines an expression-driven section with a native helix sweep.

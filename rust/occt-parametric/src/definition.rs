@@ -812,6 +812,13 @@ pub enum FeatureOperation {
         linear_tolerance: ScalarExpr,
         angular_tolerance: ScalarExpr,
     },
+    /// Joined skin offset. Distance is a signed, nonzero length; tolerance is
+    /// a positive length. Uses native join semantics and retained ancestry.
+    Offset {
+        input: String,
+        distance: ScalarExpr,
+        tolerance: ScalarExpr,
+    },
     Hollow {
         input: String,
         faces: Vec<FaceSelector>,
@@ -899,6 +906,7 @@ impl FeatureOperation {
             | Self::Scale { input, .. }
             | Self::Thread { input, .. }
             | Self::Revolve { input, .. }
+            | Self::Offset { input, .. }
             | Self::Unify { input, .. } => vec![input],
             Self::Fillet { input, edges, .. }
             | Self::VariableFillet { input, edges, .. }

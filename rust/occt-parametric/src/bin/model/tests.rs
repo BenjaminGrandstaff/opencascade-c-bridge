@@ -1679,3 +1679,29 @@ fn standalone_helix_wire_view_has_native_lines_and_dimensions_without_a_surface_
             .any(|a| a["id"] == "helix-rise" && a["detail"]["value"].as_f64() == Some(20.0))
     );
 }
+
+#[test]
+fn offset_viewer_exposes_signed_distance_tolerance_and_regenerated_bounds() {
+    let dir = Directory::new();
+    for (name, allowance, radius) in [("outward", 1.0, 11.0), ("inward", -2.0, 8.0)] {
+        let mut request = view_example("offset-part");
+        request["model"]["instances"][0]["base"]["overrides"] = json!({"allowance":{"scalar":{"value":allowance,"dimension":"length","unit":"millimeter"}}});
+        view_request(&dir, request, name).unwrap();
+        let data: Value =
+            serde_json::from_str(&fs::read_to_string(dir.0.join(name).join("view.json")).unwrap())
+                .unwrap();
+        let scene = &data["scenes"][0];
+        assert_eq!(scene["valid"], true);
+        assert!((scene["bounds"][1][0].as_f64().unwrap() - radius).abs() < 1e-7);
+        let a = scene["annotations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|a| a["id"] == "driving-skin-offset")
+            .unwrap();
+        assert_eq!(a["detail"]["value_mm"], allowance);
+        assert_eq!(a["detail"]["tolerance_mm"], 1e-6);
+        assert_eq!(a["parameters"], json!(["allowance", "offset_tolerance"]));
+        assert_eq!(a["anchors"].as_array().unwrap().len(), 1);
+    }
+}
