@@ -771,6 +771,15 @@ pub enum FeatureOperation {
         left: String,
         right: String,
     },
+    /// Rotates copies by i*angle_step_radians, including the seed. Count is
+    /// an integer-valued scalar; origin is length-valued and axis scalar.
+    CircularPattern {
+        input: String,
+        origin: VectorExpr,
+        axis: VectorExpr,
+        count: ScalarExpr,
+        angle_step_radians: ScalarExpr,
+    },
     /// Repeats the input at i*step, including i=0, into an unfused compound.
     /// Step is a length vector. Count is an integer-valued scalar in 1..=10000.
     LinearPattern {
@@ -919,6 +928,7 @@ impl FeatureOperation {
             | Self::Scale { input, .. }
             | Self::Thread { input, .. }
             | Self::Revolve { input, .. }
+            | Self::CircularPattern { input, .. }
             | Self::LinearPattern { input, .. }
             | Self::Offset { input, .. }
             | Self::Unify { input, .. } => vec![input],

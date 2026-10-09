@@ -464,6 +464,72 @@ fn solid_scene(
     // downstream booleans/transforms, controls stay in the linked side panel.
     if let Some(feature) = part.definition.features.iter().find(|f| f.id == output) {
         primitive_dimensions(feature, parameters, &mut annotations)?;
+        if let FeatureOperation::CircularPattern {
+            input,
+            origin,
+            axis,
+            count,
+            angle_step_radians,
+        } = &feature.operation
+        {
+            let vector = |e: &VectorExpr| {
+                e.evaluate(parameters)
+                    .map(|v| [v.x.value, v.y.value, v.z.value])
+                    .map_err(|e| model_failure("visualization", e))
+            };
+            let o = vector(origin)?;
+            let raw = vector(axis)?;
+            let scale = raw.into_iter().map(f64::abs).fold(0.0, f64::max);
+            let n = raw.map(|v| v / scale);
+            let magnitude = n[0].hypot(n[1].hypot(n[2]));
+            let n = n.map(|v| v / magnitude);
+            let c = count
+                .evaluate(parameters)
+                .map_err(|e| model_failure("visualization", e))?
+                .value;
+            let angle = angle_step_radians
+                .evaluate(parameters)
+                .map_err(|e| model_failure("visualization", e))?
+                .value;
+            let source = generated
+                .shape(input)
+                .ok_or_else(|| failure("visualization", "circular pattern source unavailable"))?;
+            let start = point(
+                session
+                    .center_of_mass(source)
+                    .map_err(|e| failure("visualization", e))?,
+            );
+            let v = std::array::from_fn::<_, 3, _>(|i| start[i] - o[i]);
+            let height = (0..3).map(|i| v[i] * n[i]).sum::<f64>();
+            let pivot = std::array::from_fn::<_, 3, _>(|i| o[i] + height * n[i]);
+            let radial = std::array::from_fn::<_, 3, _>(|i| start[i] - pivot[i]);
+            let tangent = [
+                n[1] * radial[2] - n[2] * radial[1],
+                n[2] * radial[0] - n[0] * radial[2],
+                n[0] * radial[1] - n[1] * radial[0],
+            ];
+            let arc = (0..=32)
+                .map(|j| {
+                    let a = angle * j as f64 / 32.0;
+                    std::array::from_fn::<_, 3, _>(|i| {
+                        pivot[i] + radial[i] * a.cos() + tangent[i] * a.sin()
+                    })
+                })
+                .collect::<Vec<_>>();
+            check_budget(&mut budget.vertices, arc.len(), "vertex")?;
+            let expressions = json!([origin, axis, count, angle_step_radians]);
+            annotations.push(annotation(
+                "circular-pattern-count".into(),
+                format!("circular pattern · {c:.0} copies"),
+                "dimension",
+                "driving",
+                vec![output.into()],
+                names(&json!([count])),
+                json!([center]),
+                json!({"input":input,"count":c,"axis_origin":o,"axis":n,"driving":true}),
+            ));
+            annotations.push(annotation("circular-pattern-angle".into(),format!("angular step {:.3}°",angle.to_degrees()),"dimension","driving",vec![output.into()],names(&expressions),json!([start]),json!({"input":input,"count":c,"value_radians":angle,"angular_arc":arc,"axis_origin":o,"axis":n,"expressions":expressions,"driving":true,"description":"Signed angular spacing between source placements. An on-axis source has no radial arc extent."})));
+        }
         if let FeatureOperation::LinearPattern { input, step, count } = &feature.operation {
             let step_value = step
                 .evaluate(parameters)

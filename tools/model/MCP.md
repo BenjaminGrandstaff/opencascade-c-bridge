@@ -46,10 +46,10 @@ or remote service is started.
 | `occt_build` | The entire `occb-model-request-v1` object | Accepted report, build ID, local directory, and artifact resource URIs |
 
 `tools/list` provides the generated complete request schema as `occt_build`'s
-input schema. All 37 current feature operations and 139 nested request-schema
+input schema. All 38 current feature operations and 139 nested request-schema
 definitions are discoverable. Schemas derive from serde-compatible Rust types;
 new serialized variants require schema support at compilation. Authoring schemas
-target current model schema 88. The engine still migrates older documents.
+target current model schema 89. The engine still migrates older documents.
 Schemas describe serialization and basic request bounds; units, dependency
 references, dimensional constraints, selector resolution, and geometry validity
 are checked by the build engine.
@@ -402,8 +402,8 @@ See [mirrors](../../MIRRORS.md); current builds require native ABI 52.
 `scale_factor` is dimensionless and positive; `scale_center_x` moves the centre
 in millimetres. Native geometry, bounds, volume and source-face ancestry follow
 edits. The viewer links both controls to the scale label and displays measured
-result spans. See [scaling](../../SCALING.md). The catalog contains 24 examples
-and 12 generated schemas, exposed as 36 discovery resources.
+result spans. See [scaling](../../SCALING.md). The catalog contains 25 examples
+and 12 generated schemas, exposed as 37 discovery resources.
 
 
 `spring` combines the schema-82 helix operation with a parameter-driven circular
@@ -433,3 +433,10 @@ grid. `columns` and `rows` are integer-valued scalar parameters, and `spacing`
 is a length. Count changes resize the plate and tool grid. Pattern outputs
 show linked count, step and first-to-last placement span.
 See [linear part patterns](../../PART_PATTERNS.md).
+
+
+`bolt-circle` demonstrates schema-89 circular part patterns with one repeated
+cutter and one cut. Count and sweep derive angular spacing; an illustrative
+chord-distance constraint keeps holes apart. Selecting `tools` as an output
+shows linked count and angular-step labels with a native source-radius arc.
+See [circular patterns](../../PART_PATTERNS.md#circular-patterns-schema-89).

@@ -1779,3 +1779,44 @@ fn linear_pattern_viewer_follows_count_and_spacing_and_labels_placement_span() {
         assert!((distance - span).abs() < 1e-7);
     }
 }
+
+#[test]
+fn circular_pattern_viewer_links_count_sweep_and_an_arc_at_the_source_radius() {
+    let dir = Directory::new();
+    let mut request = view_example("bolt-circle");
+    request["outputs"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"instance":"plate","output":"tools"}));
+    view_request(&dir, request, "circle").unwrap();
+    let data: Value =
+        serde_json::from_str(&fs::read_to_string(dir.0.join("circle/view.json")).unwrap()).unwrap();
+    assert_eq!(data["scenes"][0]["valid"], true);
+    let scene = &data["scenes"][1];
+    let get = |id| {
+        scene["annotations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|a| a["id"] == id)
+            .unwrap()
+    };
+    assert_eq!(get("circular-pattern-count")["detail"]["count"], 6.0);
+    assert_eq!(
+        get("circular-pattern-count")["parameters"],
+        json!(["count"])
+    );
+    let angle = get("circular-pattern-angle");
+    assert_eq!(angle["parameters"], json!(["count", "sweep_angle"]));
+    assert!(
+        (angle["detail"]["value_radians"].as_f64().unwrap() - std::f64::consts::TAU / 6.0).abs()
+            < 1e-12
+    );
+    let arc = angle["detail"]["angular_arc"].as_array().unwrap();
+    assert_eq!(arc.len(), 33);
+    for p in arc {
+        assert!((p[0].as_f64().unwrap().hypot(p[1].as_f64().unwrap()) - 12.0).abs() < 1e-6);
+    }
+    assert!((arc[32][0].as_f64().unwrap() - 6.0).abs() < 1e-6);
+    assert!((arc[32][1].as_f64().unwrap() - 6.0 * 3.0_f64.sqrt()).abs() < 1e-6);
+}

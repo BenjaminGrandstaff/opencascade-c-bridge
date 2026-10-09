@@ -3,17 +3,40 @@
   "model": {
     "schema_version": 89,
     "family": {
-      "id": "patterned-plate",
+      "id": "bolt-circle",
       "version": 1,
       "parameters": [
         {
-          "id": "spacing",
+          "id": "plate_radius",
           "parameter_type": {
             "scalar": "length"
           },
           "default": {
             "scalar": {
-              "value": 10,
+              "value": 20,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 18,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 50,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "bolt_radius",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 12,
               "dimension": "length",
               "unit": "millimeter"
             }
@@ -24,7 +47,7 @@
             "unit": "millimeter"
           },
           "maximum": {
-            "value": 20,
+            "value": 14,
             "dimension": "length",
             "unit": "millimeter"
           }
@@ -47,7 +70,7 @@
             "unit": "millimeter"
           },
           "maximum": {
-            "value": 3,
+            "value": 2.5,
             "dimension": "length",
             "unit": "millimeter"
           }
@@ -76,62 +99,143 @@
           }
         },
         {
-          "id": "columns",
+          "id": "count",
           "parameter_type": {
             "scalar": "scalar"
           },
           "default": {
             "scalar": {
-              "value": 3,
+              "value": 6,
               "dimension": "scalar",
               "unit": null
             }
           },
           "minimum": {
-            "value": 1,
+            "value": 2,
             "dimension": "scalar",
             "unit": null
           },
           "maximum": {
-            "value": 20,
+            "value": 8,
             "dimension": "scalar",
             "unit": null
           }
         },
         {
-          "id": "rows",
+          "id": "sweep_angle",
           "parameter_type": {
             "scalar": "scalar"
           },
           "default": {
             "scalar": {
-              "value": 3,
+              "value": 6.283185307179586,
               "dimension": "scalar",
               "unit": null
             }
           },
           "minimum": {
-            "value": 1,
+            "value": 3.141592653589793,
             "dimension": "scalar",
             "unit": null
           },
           "maximum": {
-            "value": 20,
+            "value": 6.283185307179586,
             "dimension": "scalar",
             "unit": null
           }
         }
       ],
-      "derived_parameters": [],
+      "derived_parameters": [
+        {
+          "id": "angle_step",
+          "dimension": "scalar",
+          "expression": {
+            "divide": [
+              {
+                "parameter": "sweep_angle"
+              },
+              {
+                "parameter": "count"
+              }
+            ]
+          }
+        }
+      ],
       "derived_vector_parameters": [],
-      "constraints": [],
+      "constraints": [
+        {
+          "id": "hole-separation",
+          "statement": "Keep circular holes separated",
+          "left": {
+            "add": [
+              {
+                "multiply": [
+                  {
+                    "literal": {
+                      "value": 2,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  },
+                  {
+                    "parameter": "hole_radius"
+                  }
+                ]
+              },
+              {
+                "literal": {
+                  "value": 0.1,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                }
+              }
+            ]
+          },
+          "relation": "less_or_equal",
+          "right": {
+            "multiply": [
+              {
+                "multiply": [
+                  {
+                    "literal": {
+                      "value": 2,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  },
+                  {
+                    "parameter": "bolt_radius"
+                  }
+                ]
+              },
+              {
+                "sine": {
+                  "divide": [
+                    {
+                      "parameter": "angle_step"
+                    },
+                    {
+                      "literal": {
+                        "value": 2,
+                        "dimension": "scalar",
+                        "unit": null
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "provenance": "Illustrative geometric spacing guard"
+        }
+      ],
       "requirements": [
         {
           "id": "valid",
           "version": 1,
           "kind": "validation",
           "priority": "required",
-          "statement": "Patterned plate valid",
+          "statement": "Bolt-circle plate valid",
           "rule": {
             "shape_valid": {
               "output": "body"
@@ -150,7 +254,7 @@
         {
           "id": "plate",
           "operation": {
-            "box": {
+            "cylinder": {
               "origin": {
                 "components": {
                   "x": {
@@ -176,76 +280,36 @@
                   }
                 }
               },
-              "size": {
+              "axis": {
                 "components": {
                   "x": {
-                    "add": [
-                      {
-                        "multiply": [
-                          {
-                            "subtract": [
-                              {
-                                "parameter": "columns"
-                              },
-                              {
-                                "literal": {
-                                  "value": 1,
-                                  "dimension": "scalar",
-                                  "unit": null
-                                }
-                              }
-                            ]
-                          },
-                          {
-                            "parameter": "spacing"
-                          }
-                        ]
-                      },
-                      {
-                        "literal": {
-                          "value": 10,
-                          "dimension": "length",
-                          "unit": "millimeter"
-                        }
-                      }
-                    ]
+                    "literal": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
                   },
                   "y": {
-                    "add": [
-                      {
-                        "multiply": [
-                          {
-                            "subtract": [
-                              {
-                                "parameter": "rows"
-                              },
-                              {
-                                "literal": {
-                                  "value": 1,
-                                  "dimension": "scalar",
-                                  "unit": null
-                                }
-                              }
-                            ]
-                          },
-                          {
-                            "parameter": "spacing"
-                          }
-                        ]
-                      },
-                      {
-                        "literal": {
-                          "value": 10,
-                          "dimension": "length",
-                          "unit": "millimeter"
-                        }
-                      }
-                    ]
+                    "literal": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
                   },
                   "z": {
-                    "parameter": "thickness"
+                    "literal": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
                   }
                 }
+              },
+              "radius": {
+                "parameter": "plate_radius"
+              },
+              "height": {
+                "parameter": "thickness"
               }
             }
           }
@@ -257,54 +321,14 @@
               "origin": {
                 "components": {
                   "x": {
-                    "add": [
-                      {
-                        "literal": {
-                          "value": 5,
-                          "dimension": "length",
-                          "unit": "millimeter"
-                        }
-                      },
-                      {
-                        "multiply": [
-                          {
-                            "literal": {
-                              "value": 0,
-                              "dimension": "scalar",
-                              "unit": null
-                            }
-                          },
-                          {
-                            "parameter": "spacing"
-                          }
-                        ]
-                      }
-                    ]
+                    "parameter": "bolt_radius"
                   },
                   "y": {
-                    "add": [
-                      {
-                        "literal": {
-                          "value": 5,
-                          "dimension": "length",
-                          "unit": "millimeter"
-                        }
-                      },
-                      {
-                        "multiply": [
-                          {
-                            "literal": {
-                              "value": 0,
-                              "dimension": "scalar",
-                              "unit": null
-                            }
-                          },
-                          {
-                            "parameter": "spacing"
-                          }
-                        ]
-                      }
-                    ]
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
                   },
                   "z": {
                     "literal": {
@@ -316,21 +340,27 @@
                 }
               },
               "axis": {
-                "literal": {
+                "components": {
                   "x": {
-                    "value": 0,
-                    "dimension": "scalar",
-                    "unit": null
+                    "literal": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
                   },
                   "y": {
-                    "value": 0,
-                    "dimension": "scalar",
-                    "unit": null
+                    "literal": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
                   },
                   "z": {
-                    "value": 1,
-                    "dimension": "scalar",
-                    "unit": null
+                    "literal": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
                   }
                 }
               },
@@ -355,43 +385,11 @@
           }
         },
         {
-          "id": "column-tools",
-          "operation": {
-            "linear_pattern": {
-              "input": "cutter",
-              "step": {
-                "components": {
-                  "x": {
-                    "parameter": "spacing"
-                  },
-                  "y": {
-                    "literal": {
-                      "value": 0,
-                      "dimension": "length",
-                      "unit": "millimeter"
-                    }
-                  },
-                  "z": {
-                    "literal": {
-                      "value": 0,
-                      "dimension": "length",
-                      "unit": "millimeter"
-                    }
-                  }
-                }
-              },
-              "count": {
-                "parameter": "columns"
-              }
-            }
-          }
-        },
-        {
           "id": "tools",
           "operation": {
-            "linear_pattern": {
-              "input": "column-tools",
-              "step": {
+            "circular_pattern": {
+              "input": "cutter",
+              "origin": {
                 "components": {
                   "x": {
                     "literal": {
@@ -401,7 +399,11 @@
                     }
                   },
                   "y": {
-                    "parameter": "spacing"
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
                   },
                   "z": {
                     "literal": {
@@ -412,8 +414,43 @@
                   }
                 }
               },
+              "axis": {
+                "components": {
+                  "x": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  },
+                  "y": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  },
+                  "z": {
+                    "literal": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                }
+              },
               "count": {
-                "parameter": "rows"
+                "parameter": "count"
+              },
+              "angle_step_radians": {
+                "divide": [
+                  {
+                    "parameter": "sweep_angle"
+                  },
+                  {
+                    "parameter": "count"
+                  }
+                ]
               }
             }
           }

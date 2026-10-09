@@ -23,7 +23,7 @@ pub struct GenerationRecord {
     pub last_error: Option<String>,
 }
 
-pub const CURRENT_SCHEMA_VERSION: u32 = 88;
+pub const CURRENT_SCHEMA_VERSION: u32 = 89;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ModelDocument {

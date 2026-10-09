@@ -11,18 +11,30 @@ tracks status and order.
 | C ABI (`src/`, `include/`) | ABI 52 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 88 | Active development |
+| `occt-parametric` (engineering layer) | Schema 89 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 109 + first-use integration 1 (+1 doc test), recipes 3, parametric 444 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 18 + branch command 2 + model command 34, MCP Python 8, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 109 + first-use integration 1 (+1 doc test), recipes 3, parametric 446 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 18 + branch command 2 + model command 35, MCP Python 8, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform code also passes. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
 | Coverage | Last recorded: 93.61% lines overall, test code excluded; C++ 94.13% lines, 87.40% branches, 100% functions; Rust 93.42% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 139 Rust cases plus 5 model-command and 11 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Scale benchmarks | 141 Rust cases plus 5 model-command and 11 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
+
+- Circular part patterns (schema 89; native ABI 52 unchanged): `CircularPattern`
+  rotates shared source geometry at absolute signed angular steps into an
+  unfused compound. Count includes the seed; first-to-last sweep stays below a
+  full turn. Shared bounds limit copy count and nested topology. AI example
+  `bolt-circle` derives spacing from count/sweep and cuts one tool group, with
+  a geometric hole-separation guard. Viewer labels show count and angular
+  spacing with source-radius arcs. Tests cover volume, reuse, signed partial
+  turns, invalid inputs, duplicate wraparound, rollback and cleanup. Scale gates
+  pass: 100 bolt-circle cuts in 0.946 s and 10,000 radial copies in 2.267 s
+  (15 s budgets). The AI catalog exposes 38 operations and 25 examples.
+  See [part patterns](PART_PATTERNS.md#circular-patterns-schema-89).
 
 - Linear part patterns (schema 88; native ABI 52 unchanged): `LinearPattern`
   repeats one source at absolute multiples of a length-valued step into an

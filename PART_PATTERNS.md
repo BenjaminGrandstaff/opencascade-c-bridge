@@ -51,3 +51,43 @@ pattern, each within 15 seconds.
 
 Release gates passed in 1.946 seconds for 100 grid cuts and 7.241 seconds for
 the 10,000-copy pattern, which retains only the source and final output handles.
+
+
+## Circular patterns (schema 89)
+
+`CircularPattern { input, origin, axis, count, angle_step_radians }` groups
+absolute rotations of the source about an axis. Origin is a length vector;
+axis is a dimensionless finite nonzero vector. Count is an integer-valued
+scalar from 1 to 10,000, including the unrotated seed. Angular step is signed
+scalar radians. Every member rotates the original source, avoiding cumulative
+rotation drift. Copies share source geometry through native locations.
+
+For multiple copies, spacing must be nonzero and the magnitude of the
+first-to-last sweep, (count − 1) × step, must be below one full turn. This
+rejects wraparound and repeated end placement. A full bolt circle uses
+step = 2π/count, with no member duplicated at 2π. Negative steps reverse the
+winding. Partial groups use a smaller signed step. The result stays an unfused
+compound; overlapping geometry remains, and grouping does not aggregate
+per-copy operation history. Semantic selectors can select output topology.
+
+The [bolt-circle example](tools/model/bolt-circle.request.json) repeats a
+cylindrical cutter and removes the group from a disk in one cut. Count,
+`sweep_angle`, bolt radius, hole radius and thickness are editable. Spacing is
+sweep_angle/count, so partial sweeps exclude the terminal sweep angle. An
+illustrative chord-distance guard keeps holes separated; it does not establish
+bolt strength, fastener fit or a manufacturing standard.
+
+Circular patterns share the linear pattern's conservative 1,000,000-topology
+expansion bound. Bookkeeping is O(N), and native topology validation is O(NT).
+Temporary copy handles are released after grouping. Viewer labels show count
+and signed angular spacing; a bounded 33-point arc lies in the plane through
+the source mass centre, at its radial distance from the axis. An on-axis source
+has no radial arc extent. Family coordinates follow assembly placement.
+
+Tests cover analytical bolt-hole volume, count edits with source reuse,
+signed partial turns, invalid counts/units/axes, duplicate wraparound and
+failed-edit retention. Release gates cover 100 bolt-circle cuts and 10,000
+radial copies, each within 15 seconds.
+
+Circular release gates passed in 0.946 seconds for 100 bolt-circle cuts and
+2.267 seconds for 10,000 radial copies, with only source/output handles retained.

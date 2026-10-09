@@ -365,6 +365,22 @@ pub(crate) fn execute_feature<'session>(
             scalar(linear_tolerance, parameters, Dimension::Length)?,
             scalar(angular_tolerance, parameters, Dimension::Scalar)?,
         ),
+        FeatureOperation::CircularPattern {
+            input,
+            origin,
+            axis,
+            count,
+            angle_step_radians,
+        } => {
+            return patterns::circular(
+                session,
+                shape(shapes, input)?,
+                vector(origin, parameters, Dimension::Length)?,
+                vector(axis, parameters, Dimension::Scalar)?,
+                scalar(count, parameters, Dimension::Scalar)?,
+                scalar(angle_step_radians, parameters, Dimension::Scalar)?,
+            );
+        }
         FeatureOperation::LinearPattern { input, step, count } => {
             return patterns::linear(
                 session,

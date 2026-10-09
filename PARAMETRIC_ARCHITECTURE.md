@@ -1777,3 +1777,19 @@ reject multiplication overflow. Per-copy history is not aggregated into the
 compound; use semantic selection on generated topology. Direct pattern labels
 show count, step and placement span in family coordinates.
 See [part pattern semantics](PART_PATTERNS.md).
+
+
+## Schema 89 circular part patterns
+
+`CircularPattern` resolves length-valued axis origin, scalar axis, count and
+signed angular step. It repeats absolute source rotations in native locations,
+then groups copies without fusion. Counts and nested topology use the shared
+part-pattern bounds. Multiple-copy sweeps stay strictly below a full turn to
+avoid duplicate terminal placement. Full circles use 2π/count. Step/count/origin
+and axis expressions participate in regeneration; count-only changes reuse
+the source. Bookkeeping is O(N); validation follows O(NT) topology.
+
+Native copy history is not aggregated by the compound. The shared viewer
+projects the source mass centre to the axis, then samples a bounded angular
+arc in its perpendicular plane. Count and step labels link defining expressions.
+See [circular patterns](PART_PATTERNS.md#circular-patterns-schema-89).

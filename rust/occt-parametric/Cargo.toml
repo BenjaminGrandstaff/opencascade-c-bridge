@@ -115,3 +115,7 @@ harness = false
 [[bench]]
 name = "part_patterns"
 harness = false
+
+[[bench]]
+name = "circular_part_patterns"
+harness = false

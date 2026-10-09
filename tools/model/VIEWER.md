@@ -186,7 +186,7 @@ region and solid while keeping unaffected source sketches.
 The `hollow-sweep` example shows a bent tube plus its outer, inner and route
 sketches. Native route length and the bore control remain linked to the solid.
 Holed profile sweeps use the same shared scene builder and annotations as simple
-sweeps; current model schema is 88 and the current native ABI is 52.
+sweeps; current model schema is 89 and the current native ABI is 52.
 
 The schema-80 `hollow-loft` example adds all inner section sketches and bore
 controls to the solid's linked parameters. Existing section-spacing annotations
@@ -237,3 +237,10 @@ first-to-last placement span. Count includes the source at its original
 placement. Span runs between source mass centres and excludes source size.
 The `patterned-plate` example can show column and row tool patterns alongside
 the final body. Ancestor controls remain linked in the side panel of a cut.
+
+
+Direct circular pattern outputs show linked count and signed angular step.
+The spacing arc uses the source mass centre's distance from the rotation axis,
+in the corresponding perpendicular plane. Its 33 points consume the global
+vertex budget. For an on-axis source the arc has no radial extent.
+`bolt-circle` demonstrates count/sweep controls alongside the final cut body.

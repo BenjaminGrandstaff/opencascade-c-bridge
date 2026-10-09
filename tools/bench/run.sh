@@ -83,6 +83,10 @@ OCCT_BRIDGE_LIB_DIR="$build" LD_LIBRARY_PATH="$build" \
 OCCT_BRIDGE_LIB_DIR="$build" LD_LIBRARY_PATH="$build" \
     cargo bench --quiet --manifest-path "$root/rust/occt-parametric/Cargo.toml" --bench part_patterns
 
+# Schema-89 circular tool sets and 10,000 radial copies.
+OCCT_BRIDGE_LIB_DIR="$build" LD_LIBRARY_PATH="$build" \
+    cargo bench --quiet --manifest-path "$root/rust/occt-parametric/Cargo.toml" --bench circular_part_patterns
+
 # Includes the bounded 10,000-face geometric matcher case.
 python3 -m unittest discover -s "$root/tools/mesh/tests"
 

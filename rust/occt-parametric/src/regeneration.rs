@@ -622,6 +622,18 @@ pub(crate) fn collect_operation_parameters<'a>(
             collect_vector_parameters(origin, names);
             collect_vector_parameters(normal, names);
         }
+        FeatureOperation::CircularPattern {
+            origin,
+            axis,
+            count,
+            angle_step_radians,
+            ..
+        } => {
+            collect_vector_parameters(origin, names);
+            collect_vector_parameters(axis, names);
+            collect_scalar_parameters(count, names);
+            collect_scalar_parameters(angle_step_radians, names);
+        }
         FeatureOperation::LinearPattern { step, count, .. } => {
             collect_vector_parameters(step, names);
             collect_scalar_parameters(count, names);
