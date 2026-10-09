@@ -622,6 +622,10 @@ pub(crate) fn collect_operation_parameters<'a>(
             collect_vector_parameters(origin, names);
             collect_vector_parameters(normal, names);
         }
+        FeatureOperation::LinearPattern { step, count, .. } => {
+            collect_vector_parameters(step, names);
+            collect_scalar_parameters(count, names);
+        }
         FeatureOperation::Scale { center, factor, .. } => {
             collect_vector_parameters(center, names);
             collect_scalar_parameters(factor, names);

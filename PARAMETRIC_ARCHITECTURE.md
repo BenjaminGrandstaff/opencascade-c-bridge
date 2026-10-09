@@ -1759,3 +1759,21 @@ Input lookup/uniqueness costs O(N) time and memory; native validation and
 inspection follow combined topology size. Located child copies can share one
 source geometry. Group overlaps are not resolved and compound mass sums its
 solids. Use a union for net material volume. See [compounds](COMPOUNDS.md).
+
+
+## Schema 88 linear part patterns
+
+`LinearPattern` depends on one input, a length-vector step, and an integer-valued
+scalar count in 1–10,000. Count includes the source placement. Each member uses
+an absolute i-times-step location, sharing source geometry. One compound groups
+the copies; no fusion or cumulative transform drift is introduced. Temporary
+copy handles are released after grouping. Step/count expressions participate
+in incremental signatures, so count-only edits can reuse source geometry.
+
+Bookkeeping costs O(N) memory/time; topology inspection/validation is O(NT).
+Eight source subshape counts form a conservative expansion estimate, checked
+against 1,000,000 topology entries before placing copies. Finite placement checks
+reject multiplication overflow. Per-copy history is not aggregated into the
+compound; use semantic selection on generated topology. Direct pattern labels
+show count, step and placement span in family coordinates.
+See [part pattern semantics](PART_PATTERNS.md).

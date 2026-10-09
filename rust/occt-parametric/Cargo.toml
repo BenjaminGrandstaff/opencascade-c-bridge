@@ -111,3 +111,7 @@ harness = false
 [[bench]]
 name = "compounds"
 harness = false
+
+[[bench]]
+name = "part_patterns"
+harness = false

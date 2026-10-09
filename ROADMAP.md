@@ -11,18 +11,30 @@ tracks status and order.
 | C ABI (`src/`, `include/`) | ABI 52 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 87 | Active development |
+| `occt-parametric` (engineering layer) | Schema 88 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 109 + first-use integration 1 (+1 doc test), recipes 3, parametric 442 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 18 + branch command 2 + model command 33, MCP Python 8, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 109 + first-use integration 1 (+1 doc test), recipes 3, parametric 444 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 18 + branch command 2 + model command 34, MCP Python 8, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform code also passes. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
 | Coverage | Last recorded: 93.61% lines overall, test code excluded; C++ 94.13% lines, 87.40% branches, 100% functions; Rust 93.42% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 137 Rust cases plus 5 model-command and 11 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Scale benchmarks | 139 Rust cases plus 5 model-command and 11 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
+
+- Linear part patterns (schema 88; native ABI 52 unchanged): `LinearPattern`
+  repeats one source at absolute multiples of a length-valued step into an
+  unfused compound. Integer-valued scalar count includes the seed, with up to
+  10,000 copies. Located members share source geometry; a conservative topology
+  budget bounds nested expansion before allocation. AI example `patterned-plate`
+  creates rows/columns with two patterns and one cut. Linked viewer labels show
+  count, step and placement span. Tests cover resized grids, volume, selective
+  reuse, negative steps, invalid counts/units, overflow, rollback and cleanup.
+  Scale gates pass: 100 grid cuts in 1.946 s and a 10,000-copy pattern
+  in 7.241 s (15 s budgets). The AI catalog exposes 37 operations and 24 examples.
+  See [part patterns](PART_PATTERNS.md).
 
 - Compound tool groups (schema 86; native ABI 52 unchanged): `Compound`
   groups 1–10,000 distinct input IDs without fusion or sewing. Child topology

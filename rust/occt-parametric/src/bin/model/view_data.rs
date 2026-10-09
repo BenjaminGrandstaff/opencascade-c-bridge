@@ -464,6 +464,48 @@ fn solid_scene(
     // downstream booleans/transforms, controls stay in the linked side panel.
     if let Some(feature) = part.definition.features.iter().find(|f| f.id == output) {
         primitive_dimensions(feature, parameters, &mut annotations)?;
+        if let FeatureOperation::LinearPattern { input, step, count } = &feature.operation {
+            let step_value = step
+                .evaluate(parameters)
+                .map_err(|e| model_failure("visualization", e))?;
+            let step_mm = [step_value.x.value, step_value.y.value, step_value.z.value];
+            let count_value = count
+                .evaluate(parameters)
+                .map_err(|e| model_failure("visualization", e))?
+                .value;
+            let source = generated
+                .shape(input)
+                .ok_or_else(|| failure("visualization", "pattern source unavailable"))?;
+            let anchor = point(
+                session
+                    .center_of_mass(source)
+                    .map_err(|e| failure("visualization", e))?,
+            );
+            let end =
+                std::array::from_fn::<_, 3, _>(|i| anchor[i] + (count_value - 1.0) * step_mm[i]);
+            let expressions = json!([step, count]);
+            annotations.push(annotation(
+                "linear-pattern-count".into(),format!("pattern · {count_value:.0} copies"),"dimension","driving",vec![output.into()],names(&json!([count])),json!([center]),
+                json!({"input":input,"count":count_value,"step_mm":step_mm,"expressions":expressions,"driving":true,"description":"Unfused copies including the original placement."})
+            ));
+            annotations.push(annotation(
+                "linear-pattern-spacing".into(),
+                format!(
+                    "step {} mm",
+                    length_label(step_mm[0].hypot(step_mm[1].hypot(step_mm[2])))
+                ),
+                "dimension",
+                "driving",
+                vec![output.into()],
+                names(&json!([step])),
+                json!([anchor]),
+                json!({"input":input,"step_mm":step_mm,"expressions":step,"driving":true}),
+            ));
+            annotations.push(annotation(
+                "linear-pattern-span".into(),format!("pattern span {} mm",length_label((count_value-1.0)*step_mm[0].hypot(step_mm[1].hypot(step_mm[2])))),"dimension","derived",vec![output.into()],names(&expressions),json!([anchor,end]),
+                json!({"input":input,"count":count_value,"step_mm":step_mm,"driving":false,"description":"Displacement from first to last source placement; excludes source size."})
+            ));
+        }
         if let FeatureOperation::Compound { inputs } = &feature.operation {
             annotations.push(annotation(
                 "compound-inputs".into(), format!("group · {} inputs", inputs.len()),

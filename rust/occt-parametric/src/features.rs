@@ -7,6 +7,7 @@ mod holes;
 mod hollow;
 mod loft;
 pub(crate) use loft::collect_parameters as collect_loft_parameters;
+mod patterns;
 mod primitives;
 mod regions;
 mod ribs;
@@ -364,6 +365,14 @@ pub(crate) fn execute_feature<'session>(
             scalar(linear_tolerance, parameters, Dimension::Length)?,
             scalar(angular_tolerance, parameters, Dimension::Scalar)?,
         ),
+        FeatureOperation::LinearPattern { input, step, count } => {
+            return patterns::linear(
+                session,
+                shape(shapes, input)?,
+                vector(step, parameters, Dimension::Length)?,
+                scalar(count, parameters, Dimension::Scalar)?,
+            );
+        }
         FeatureOperation::Compound { inputs } => {
             if inputs.is_empty() || inputs.len() > 10_000 {
                 return Err(ModelError::new("compound requires 1 to 10000 inputs"));

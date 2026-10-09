@@ -1,0 +1,449 @@
+{
+  "schema": "occb-model-view-v1",
+  "model": {
+    "schema_version": 88,
+    "family": {
+      "id": "patterned-plate",
+      "version": 1,
+      "parameters": [
+        {
+          "id": "spacing",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 10,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 8,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 20,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "hole_radius",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 2,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 0.5,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 3,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "thickness",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 4,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 1,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 10,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "columns",
+          "parameter_type": {
+            "scalar": "scalar"
+          },
+          "default": {
+            "scalar": {
+              "value": 3,
+              "dimension": "scalar",
+              "unit": null
+            }
+          },
+          "minimum": {
+            "value": 1,
+            "dimension": "scalar",
+            "unit": null
+          },
+          "maximum": {
+            "value": 20,
+            "dimension": "scalar",
+            "unit": null
+          }
+        },
+        {
+          "id": "rows",
+          "parameter_type": {
+            "scalar": "scalar"
+          },
+          "default": {
+            "scalar": {
+              "value": 3,
+              "dimension": "scalar",
+              "unit": null
+            }
+          },
+          "minimum": {
+            "value": 1,
+            "dimension": "scalar",
+            "unit": null
+          },
+          "maximum": {
+            "value": 20,
+            "dimension": "scalar",
+            "unit": null
+          }
+        }
+      ],
+      "derived_parameters": [],
+      "derived_vector_parameters": [],
+      "constraints": [],
+      "requirements": [
+        {
+          "id": "valid",
+          "version": 1,
+          "kind": "validation",
+          "priority": "required",
+          "statement": "Patterned plate valid",
+          "rule": {
+            "shape_valid": {
+              "output": "body"
+            }
+          },
+          "provenance": "Demonstration assumptions",
+          "traces": [
+            {
+              "feature": "body"
+            }
+          ]
+        }
+      ],
+      "datums": [],
+      "features": [
+        {
+          "id": "plate",
+          "operation": {
+            "box": {
+              "origin": {
+                "components": {
+                  "x": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "y": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "z": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                }
+              },
+              "size": {
+                "components": {
+                  "x": {
+                    "add": [
+                      {
+                        "multiply": [
+                          {
+                            "subtract": [
+                              {
+                                "parameter": "columns"
+                              },
+                              {
+                                "literal": {
+                                  "value": 1,
+                                  "dimension": "scalar",
+                                  "unit": null
+                                }
+                              }
+                            ]
+                          },
+                          {
+                            "parameter": "spacing"
+                          }
+                        ]
+                      },
+                      {
+                        "literal": {
+                          "value": 10,
+                          "dimension": "length",
+                          "unit": "millimeter"
+                        }
+                      }
+                    ]
+                  },
+                  "y": {
+                    "add": [
+                      {
+                        "multiply": [
+                          {
+                            "subtract": [
+                              {
+                                "parameter": "rows"
+                              },
+                              {
+                                "literal": {
+                                  "value": 1,
+                                  "dimension": "scalar",
+                                  "unit": null
+                                }
+                              }
+                            ]
+                          },
+                          {
+                            "parameter": "spacing"
+                          }
+                        ]
+                      },
+                      {
+                        "literal": {
+                          "value": 10,
+                          "dimension": "length",
+                          "unit": "millimeter"
+                        }
+                      }
+                    ]
+                  },
+                  "z": {
+                    "parameter": "thickness"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "cutter",
+          "operation": {
+            "cylinder": {
+              "origin": {
+                "components": {
+                  "x": {
+                    "add": [
+                      {
+                        "literal": {
+                          "value": 5,
+                          "dimension": "length",
+                          "unit": "millimeter"
+                        }
+                      },
+                      {
+                        "multiply": [
+                          {
+                            "literal": {
+                              "value": 0,
+                              "dimension": "scalar",
+                              "unit": null
+                            }
+                          },
+                          {
+                            "parameter": "spacing"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  "y": {
+                    "add": [
+                      {
+                        "literal": {
+                          "value": 5,
+                          "dimension": "length",
+                          "unit": "millimeter"
+                        }
+                      },
+                      {
+                        "multiply": [
+                          {
+                            "literal": {
+                              "value": 0,
+                              "dimension": "scalar",
+                              "unit": null
+                            }
+                          },
+                          {
+                            "parameter": "spacing"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  "z": {
+                    "literal": {
+                      "value": -1,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                }
+              },
+              "axis": {
+                "literal": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "z": {
+                    "value": 1,
+                    "dimension": "scalar",
+                    "unit": null
+                  }
+                }
+              },
+              "radius": {
+                "parameter": "hole_radius"
+              },
+              "height": {
+                "add": [
+                  {
+                    "parameter": "thickness"
+                  },
+                  {
+                    "literal": {
+                      "value": 2,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "column-tools",
+          "operation": {
+            "linear_pattern": {
+              "input": "cutter",
+              "step": {
+                "components": {
+                  "x": {
+                    "parameter": "spacing"
+                  },
+                  "y": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "z": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                }
+              },
+              "count": {
+                "parameter": "columns"
+              }
+            }
+          }
+        },
+        {
+          "id": "tools",
+          "operation": {
+            "linear_pattern": {
+              "input": "column-tools",
+              "step": {
+                "components": {
+                  "x": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "y": {
+                    "parameter": "spacing"
+                  },
+                  "z": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                }
+              },
+              "count": {
+                "parameter": "rows"
+              }
+            }
+          }
+        },
+        {
+          "id": "body",
+          "operation": {
+            "cut": {
+              "object": "plate",
+              "tool": "tools"
+            }
+          }
+        }
+      ]
+    },
+    "instances": [
+      {
+        "base": {
+          "id": "plate",
+          "overrides": {},
+          "provenance": "dimensions are illustrative assumptions"
+        }
+      }
+    ]
+  },
+  "outputs": [
+    {
+      "instance": "plate",
+      "output": "body"
+    }
+  ],
+  "sketches": false
+}

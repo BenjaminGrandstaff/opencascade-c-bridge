@@ -1737,3 +1737,45 @@ fn grouped_cutter_view_exposes_membership_and_multi_hole_plate_controls() {
     assert_eq!(group["detail"]["inputs"].as_array().unwrap().len(), 9);
     assert_eq!(group["kind"], "group");
 }
+
+#[test]
+fn linear_pattern_viewer_follows_count_and_spacing_and_labels_placement_span() {
+    let dir = Directory::new();
+    let mut request = view_example("patterned-plate");
+    request["outputs"] = json!([{"instance":"plate","output":"body"},{"instance":"plate","output":"column-tools"},{"instance":"plate","output":"tools"}]);
+    request["model"]["instances"][0]["base"]["overrides"] = json!({"columns":{"scalar":{"value":4,"dimension":"scalar","unit":null}},"rows":{"scalar":{"value":2,"dimension":"scalar","unit":null}},"spacing":{"scalar":{"value":12,"dimension":"length","unit":"millimeter"}}});
+    view_request(&dir, request, "patterns").unwrap();
+    let data: Value =
+        serde_json::from_str(&fs::read_to_string(dir.0.join("patterns/view.json")).unwrap())
+            .unwrap();
+    assert_eq!(data["scenes"].as_array().unwrap().len(), 3);
+    let body = &data["scenes"][0];
+    assert_eq!(body["valid"], true);
+    assert!((body["bounds"][1][0].as_f64().unwrap() - 46.0).abs() < 1e-7);
+    assert!((body["bounds"][1][1].as_f64().unwrap() - 22.0).abs() < 1e-7);
+    for (index, count, span, control) in [(1, 4.0, 36.0, "columns"), (2, 2.0, 12.0, "rows")] {
+        let scene = &data["scenes"][index];
+        let get = |id| {
+            scene["annotations"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|a| a["id"] == id)
+                .unwrap()
+        };
+        assert_eq!(get("linear-pattern-count")["detail"]["count"], count);
+        assert_eq!(get("linear-pattern-count")["parameters"], json!([control]));
+        assert_eq!(
+            get("linear-pattern-spacing")["parameters"],
+            json!(["spacing"])
+        );
+        let anchors = get("linear-pattern-span")["anchors"].as_array().unwrap();
+        let a = anchors[0].as_array().unwrap();
+        let b = anchors[1].as_array().unwrap();
+        let distance = (0..3)
+            .map(|i| (b[i].as_f64().unwrap() - a[i].as_f64().unwrap()).powi(2))
+            .sum::<f64>()
+            .sqrt();
+        assert!((distance - span).abs() < 1e-7);
+    }
+}

@@ -17,7 +17,7 @@ import uuid
 
 PROTOCOLS = ('2025-11-25', '2025-06-18')
 SCHEMAS = ('request', 'model', 'feature', 'parameter', 'sketch', 'requirement', 'inspection', 'face_selector', 'edge_selector', 'edit', 'change', 'view')
-EXAMPLES = ('bracket', 'enclosure', 'shaft', 'mating-parts', 'sketch-block', 'sketch-conflict', 'sketch-advanced', 'extrusion-limits', 'curved-extrusions', 'drill-point', 'hole-limits', 'profile-loft', 'curved-pipe', 'revolved-ring', 'symmetric-revolve', 'hollow-profile', 'hollow-sweep', 'hollow-loft', 'mirrored-part', 'scaled-part', 'spring', 'offset-part', 'multi-hole-plate')
+EXAMPLES = ('bracket', 'enclosure', 'shaft', 'mating-parts', 'sketch-block', 'sketch-conflict', 'sketch-advanced', 'extrusion-limits', 'curved-extrusions', 'drill-point', 'hole-limits', 'profile-loft', 'curved-pipe', 'revolved-ring', 'symmetric-revolve', 'hollow-profile', 'hollow-sweep', 'hollow-loft', 'mirrored-part', 'scaled-part', 'spring', 'offset-part', 'multi-hole-plate', 'patterned-plate')
 MAX_MESSAGE = 64 * 1024 * 1024
 MAX_RESOURCE = 32 * 1024 * 1024
 ROOT = pathlib.Path(__file__).resolve().parents[2]

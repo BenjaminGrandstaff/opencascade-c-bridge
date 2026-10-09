@@ -1,7 +1,7 @@
 {
   "schema": "occb-model-request-v1",
   "model": {
-    "schema_version": 86,
+    "schema_version": 88,
     "family": {
       "id": "shaft",
       "version": 1,

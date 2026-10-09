@@ -45,7 +45,7 @@ class McpTests(unittest.TestCase):
         jsonschema.Draft202012Validator.check_schema(schema)
         self.assertEqual(schema['properties']['model']['$ref'], '#/$defs/ModelDocument')
         variants = schema['$defs']['FeatureOperation']['oneOf']
-        self.assertEqual(len(variants), 36)
+        self.assertEqual(len(variants), 37)
         for name in ['request', 'model', 'feature', 'parameter', 'sketch', 'requirement', 'inspection', 'face_selector', 'edge_selector', 'edit', 'change', 'view']:
             result = self.client.tool('occt_get_schema', dict(name=name))
             self.assertFalse(result['isError'])
@@ -58,7 +58,7 @@ class McpTests(unittest.TestCase):
         with self.assertRaises(jsonschema.ValidationError):
             jsonschema.validate(bad, schema)
         resources = self.client.call('resources/list')['result']['resources']
-        self.assertEqual(len(resources), 35)
+        self.assertEqual(len(resources), 36)
         self.assertEqual(len(self.client.call('resources/templates/list')['result']['resourceTemplates']), 1)
         read = self.client.call('resources/read', dict(uri='occt://schema/request'))['result']['contents'][0]
         self.assertEqual(json.loads(read['text']), schema)
@@ -357,6 +357,16 @@ class McpTests(unittest.TestCase):
         group = next(a for a in data['scenes'][1]['annotations'] if a['id']=='compound-inputs')
         self.assertEqual(group['detail']['input_count'],9)
         self.assertEqual(len(group['detail']['inputs']),9)
+        plate = self.client.tool('occt_get_example',dict(name='patterned-plate'))['structuredContent']
+        jsonschema.validate(plate,schema)
+        plate['outputs'].append(dict(instance='plate',output='column-tools'))
+        result = self.client.tool('occt_visualize_model',plate)
+        self.assertFalse(result['isError'])
+        data = json.loads(self.client.call('resources/read',dict(uri=result['structuredContent']['resources']['view.json']))['result']['contents'][0]['text'])
+        self.assertTrue(data['scenes'][0]['valid'])
+        count = next(a for a in data['scenes'][1]['annotations'] if a['id']=='linear-pattern-count')
+        self.assertEqual(count['detail']['count'],3)
+        self.assertEqual(count['parameters'],['columns'])
         # Ordinary accepted builds also publish the annotated viewer when preview is on.
         build_request = dict(schema='occb-model-request-v1',model=request['model'],outputs=request['outputs'],preview=True,step=False,stl=False)
         built = self.client.tool('occt_build',build_request)['structuredContent']

@@ -771,6 +771,13 @@ pub enum FeatureOperation {
         left: String,
         right: String,
     },
+    /// Repeats the input at i*step, including i=0, into an unfused compound.
+    /// Step is a length vector. Count is an integer-valued scalar in 1..=10000.
+    LinearPattern {
+        input: String,
+        step: VectorExpr,
+        count: ScalarExpr,
+    },
     /// Groups child shapes without fusing or sewing. Useful as a multi-tool
     /// input to Cut. Children keep geometry and locations; overlaps remain.
     Compound {
@@ -912,6 +919,7 @@ impl FeatureOperation {
             | Self::Scale { input, .. }
             | Self::Thread { input, .. }
             | Self::Revolve { input, .. }
+            | Self::LinearPattern { input, .. }
             | Self::Offset { input, .. }
             | Self::Unify { input, .. } => vec![input],
             Self::Fillet { input, edges, .. }
