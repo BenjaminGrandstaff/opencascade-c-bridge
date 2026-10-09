@@ -11,16 +11,16 @@ tracks status and order.
 | C ABI (`src/`, `include/`) | ABI 52 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 86 | Active development |
+| `occt-parametric` (engineering layer) | Schema 87 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 109 + first-use integration 1 (+1 doc test), recipes 3, parametric 439 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 18 + branch command 2 + model command 33, MCP Python 8, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 109 + first-use integration 1 (+1 doc test), recipes 3, parametric 442 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 18 + branch command 2 + model command 33, MCP Python 8, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform code also passes. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
 | Coverage | Last recorded: 93.61% lines overall, test code excluded; C++ 94.13% lines, 87.40% branches, 100% functions; Rust 93.42% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 136 Rust cases plus 5 model-command and 11 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Scale benchmarks | 137 Rust cases plus 5 model-command and 11 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
 
@@ -766,6 +766,15 @@ tracks status and order.
 
 ### Parametric layer
 
+- Parts lists and balloons (schema 87): drawings group shown, unsuppressed
+  instances into numbered items by family, effective parameters, output and
+  material (with optional part numbers and variant suffixes), draw them as a
+  table with the sheet linework, and point item balloons at instances from
+  their placed origin or a datum. Three tests cover grouping, exact vertex
+  budgets, SVG/DXF output, leader placement, validation and persistence.
+  10,000 shown instances group into items with 100 balloons validated in
+  0.394 s (2 s budget). See [Drawings](DRAWINGS.md#parts-lists-and-balloons-schema-87).
+
 - Modeled threads (schema 84):
   `FeatureOperation::Thread` sweeps an ISO 68-1 basic-profile groove along a
   helix and cuts it from a rod (external) or a minor-diameter hole (internal),
@@ -1456,8 +1465,9 @@ scopes and inspected repo capabilities, not a full conformity audit.
    reading checks exist (schema 71). Rendering-material roughness is
    independent of these requirements.
 6. **Controlled drawing release and assembly lists** — [Y14.100](https://www.asme.org/codes-standards/find-codes-standards/engineering-drawing-practices):
-   structured approval/release records, drawing revision tables, parts lists,
-   assembly balloons, and links between released drawing/model revisions.
+   structured approval/release records, drawing revision tables, nested
+   assembly lists, and links between released drawing/model revisions. Flat
+   parts lists and item balloons exist (schema 87).
 
 ## Later
 

@@ -24,6 +24,7 @@ mod math_functions;
 mod mesh;
 mod mirror;
 mod named_references;
+mod parts_list;
 mod patterns;
 mod persistent;
 mod primitives;

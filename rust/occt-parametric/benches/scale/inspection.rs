@@ -148,6 +148,8 @@ pub(crate) fn inspection_case(definition: &FamilyDefinition) -> Outcome {
                     .collect(),
                 feature_control_frames: controls,
                 surface_textures: Vec::new(),
+                parts_list: None,
+                balloons: Vec::new(),
                 sheet: None,
                 id: "inspected".into(),
                 title: "Inspected plate".into(),

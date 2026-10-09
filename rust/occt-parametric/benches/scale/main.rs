@@ -39,6 +39,7 @@ mod loft;
 mod memory;
 mod mesh;
 mod motion;
+mod parts_list;
 mod persistent;
 mod primitives;
 mod requirements;
@@ -166,6 +167,7 @@ fn main() -> ExitCode {
     outcomes.push(helix::helix_pattern_case(definition));
     outcomes.push(threads::thread_case(definition));
     outcomes.push(threads::thread_pattern_case(definition));
+    outcomes.push(parts_list::parts_list_case(definition));
     outcomes.push(textures::texture_case(definition));
     outcomes.push(mesh::gltf_case(definition));
     outcomes.push(mesh::gltf_output_case(definition));

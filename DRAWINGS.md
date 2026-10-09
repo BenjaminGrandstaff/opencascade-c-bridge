@@ -960,3 +960,42 @@ instrument settings are not modeled.
 
 A scale benchmark generates one drawing with 10,000 texture symbols and exports
 it as SVG and DXF.
+
+## Parts lists and balloons (schema 87)
+
+`DrawingDefinition.parts_list` draws a bill of materials for the instances the
+drawing's views show, and `balloons` point numbered item balloons at them.
+
+```json
+"parts_list": { "position_mm": [250, 280], "part_numbers": { "BlockFamily": "BLK-100" } },
+"balloons": [ { "id": "b1", "view": "top", "instance": "plate", "offset_mm": [-15, 20] } ]
+```
+
+**Items.** Shown, unsuppressed instances are grouped by part identity: family,
+effective parameter values (defaults, inherited and own overrides), the shown
+output and material. Items are numbered by first appearance, view by view and
+output by output, so numbers stay put while the views keep their order. Each
+row lists item, quantity, part and material. The part is the family's part
+number from `part_numbers` (1–40 characters) or its ID; when one family appears
+with different parameter values, each gets `/ variant n` in order of
+appearance. `DrawingDefinition::parts_list_items(graph)` returns the same rows
+(with each item's instances) without drawing anything.
+
+**Table.** The table's top-left corner is at `position_mm` on the paper, with
+7 mm rows and ITEM, QTY, PART and MATERIAL columns (12, 12, 64 and 40 mm). It
+is drawn with the sheet linework (`sheet_lines`/`sheet_labels`), so it exports
+alongside the title block.
+
+**Balloons.** Each balloon is a 4 mm-radius circle holding its item number,
+placed `offset_mm` (at least 8 mm) from where its leader touches the part, with
+a small dot there. The leader starts at an optional `anchor` datum on the same
+instance, or by default the instance's placed origin. The instance must be
+shown, unsuppressed, in the balloon's view. Balloons are annotation linework
+(`gdt_lines`/`gdt_labels`) and both table and balloons count exactly in the
+vertex budget.
+
+Grouping is O(shown instances × parameters); validation indexes each view's
+shown instances once. A scale case groups 10,000 shown pattern members into
+one item and validates 100 balloons. Not yet included: revision tables,
+approval and release records, nested (indented) assembly lists, custom
+columns, and automatic balloon placement.
