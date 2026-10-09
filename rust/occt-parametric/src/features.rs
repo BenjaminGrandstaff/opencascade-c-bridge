@@ -11,6 +11,7 @@ mod primitives;
 mod regions;
 mod ribs;
 mod sweeps;
+pub(crate) mod threads;
 mod variable_fillet;
 
 pub(crate) fn execute_profile_sweep<'session>(
@@ -261,6 +262,30 @@ pub(crate) fn execute_feature<'session>(
             vector(axis, parameters, Dimension::Scalar)?,
             scalar(angle_radians, parameters, Dimension::Scalar)?,
         ),
+        FeatureOperation::Thread {
+            input,
+            origin,
+            axis,
+            major_diameter,
+            pitch,
+            length,
+            internal,
+            left_handed,
+        } => {
+            return threads::execute_thread(
+                session,
+                shape(shapes, input)?,
+                threads::ThreadGeometry {
+                    origin: vector(origin, parameters, Dimension::Length)?,
+                    axis: vector(axis, parameters, Dimension::Scalar)?,
+                    major_diameter: scalar(major_diameter, parameters, Dimension::Length)?,
+                    pitch: scalar(pitch, parameters, Dimension::Length)?,
+                    length: scalar(length, parameters, Dimension::Length)?,
+                    internal: *internal,
+                    left_handed: *left_handed,
+                },
+            );
+        }
         FeatureOperation::Helix {
             origin,
             axis,

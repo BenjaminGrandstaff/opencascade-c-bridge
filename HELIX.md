@@ -41,8 +41,11 @@ coil's tightest bend fails, as for any sweep.
 
 `occt_bridge_create_helix_wire` (ABI 52; `Session::create_helix_wire` with
 `HelixOptions` in Rust) builds the helix as a straight line on its exact
-cylinder, with a 3D B-spline within `Precision::Confusion()` (16 segments per
-turn, at least 30). Tests check its length against
+cylinder, one edge per turn (a fractional count is split into equal parts, so
+no sliver edge is left over), each with a 3D B-spline within
+`Precision::Confusion()`. Per-turn edges keep each swept face small, so a
+boolean against a swept helix grows linearly with the turns: cutting a
+100-turn thread groove took 14.6 s with one long edge and 3.8 s per turn-edge. Tests check its length against
 `turns · √((2π·radius)² + pitch²)` to 1e-6, that sampled points lie on the
 cylinder, its end points for whole and fractional turns and both hands, and
 that a circle swept along it is a valid solid whose volume matches the tube

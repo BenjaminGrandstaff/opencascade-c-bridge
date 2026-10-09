@@ -408,8 +408,9 @@ OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_sweep(
 /* A helical wire (ABI 52) about the axis through origin, starting at
  * origin + radius * start_direction (made perpendicular to the axis) and
  * rising pitch along the axis per turn; turns may be fractional (at most
- * 10000). Right-handed unless left_handed is nonzero. The edge lies exactly
- * on its cylinder with a 3D curve within Precision::Confusion(); sweep a
+ * 10000). Right-handed unless left_handed is nonzero. The wire has one edge
+ * per turn (equal parts for fractional counts), each exactly on its cylinder
+ * with a 3D curve within Precision::Confusion(); sweep a
  * profile along it with OCCT_BRIDGE_SWEEP_BINORMAL and the axis as binormal
  * for springs and coils. */
 OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_create_helix_wire(

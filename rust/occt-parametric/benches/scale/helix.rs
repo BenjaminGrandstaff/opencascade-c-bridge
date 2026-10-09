@@ -7,7 +7,9 @@ use occt_bridge::{HelixOptions, SweepOrientation};
 pub(crate) fn helix_case() -> Outcome {
     timed(
         "helix: 200-turn spring sweep".into(),
-        Duration::from_secs(2),
+        // The sweep takes about 0.15 s; integrating the 200-face spring's
+        // volume for the correctness check takes about 1.6 s.
+        Duration::from_secs(5),
         Expectation::Required,
         || {
             let session = Session::new().map_err(|error| failure(error.to_string()))?;

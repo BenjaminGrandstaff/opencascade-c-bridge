@@ -588,6 +588,20 @@ pub(crate) fn collect_operation_parameters<'a>(
             collect_hole_parameters(extent, bottom, finish, thread.as_deref(), names);
         }
 
+        FeatureOperation::Thread {
+            origin,
+            axis,
+            major_diameter,
+            pitch,
+            length,
+            ..
+        } => {
+            collect_vector_parameters(origin, names);
+            collect_vector_parameters(axis, names);
+            collect_scalar_parameters(major_diameter, names);
+            collect_scalar_parameters(pitch, names);
+            collect_scalar_parameters(length, names);
+        }
         FeatureOperation::Helix {
             origin,
             axis,

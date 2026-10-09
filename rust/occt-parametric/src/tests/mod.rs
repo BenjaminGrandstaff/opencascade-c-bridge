@@ -40,6 +40,7 @@ mod step_export;
 mod surface_texture;
 mod sweep;
 mod tangency;
+mod threads;
 mod traceability;
 mod unify;
 mod variable_fillet;

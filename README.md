@@ -692,3 +692,8 @@ The [spring AI example](tools/model/spring.request.json) combines helices with a
 parameter-driven circular sweep. Coil radius, pitch and fractional turn edits
 update the section orientation, native solid, linked viewer dimensions and
 route overlays. See [helix viewer semantics](HELIX.md#ai-example-and-linked-viewer-dimensions).
+
+[Modeled threads](THREADS.md) cut ISO 68-1 basic-profile 60° threads into rods
+and holes, external or internal, either hand, with parameter-driven diameter,
+pitch and length. Schema 84 adds the `thread` feature; the native ABI is
+unchanged.

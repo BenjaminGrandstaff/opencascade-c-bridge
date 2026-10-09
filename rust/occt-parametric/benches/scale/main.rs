@@ -50,6 +50,7 @@ mod step_export;
 mod sweep;
 mod tangency;
 mod textures;
+mod threads;
 mod validation;
 mod variable_fillet;
 
@@ -163,6 +164,8 @@ fn main() -> ExitCode {
     outcomes.push(inspection::inspection_case(definition));
     outcomes.push(helix::helix_case());
     outcomes.push(helix::helix_pattern_case(definition));
+    outcomes.push(threads::thread_case(definition));
+    outcomes.push(threads::thread_pattern_case(definition));
     outcomes.push(textures::texture_case(definition));
     outcomes.push(mesh::gltf_case(definition));
     outcomes.push(mesh::gltf_output_case(definition));

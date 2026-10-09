@@ -11,16 +11,16 @@ tracks status and order.
 | C ABI (`src/`, `include/`) | ABI 52 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 83 | Active development |
+| `occt-parametric` (engineering layer) | Schema 84 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 109 + first-use integration 1 (+1 doc test), recipes 3, parametric 431 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 18 + branch command 2 + model command 31, MCP Python 8, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 109 + first-use integration 1 (+1 doc test), recipes 3, parametric 435 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 18 + branch command 2 + model command 31, MCP Python 8, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform code also passes. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
 | Coverage | Last recorded: 93.61% lines overall, test code excluded; C++ 94.13% lines, 87.40% branches, 100% functions; Rust 93.42% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 130 Rust cases plus 5 model-command and 11 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Scale benchmarks | 132 Rust cases plus 5 model-command and 11 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
 
@@ -549,7 +549,8 @@ tracks status and order.
   handedness. Tests check exact length, points on the cylinder, end points for
   both hands, invalid inputs, and binormal sweeps of a circle into valid
   springs within 0.1% of the tube-formula volume. A 200-turn spring sweeps in
-  0.399 s (2 s budget).
+  about 0.15 s; its benchmark, dominated by volume integration over the
+  per-turn faces, takes 1.81 s (5 s budget).
 
 - STEP assembly trees (ABI 44): `occt_bridge_step_save_assembly_tree` writes
   named sub-assemblies from parent-indexed nodes with rigid 3x4 transforms
@@ -743,6 +744,17 @@ tracks status and order.
 
 ### Parametric layer
 
+- Modeled threads (schema 84):
+  `FeatureOperation::Thread` sweeps an ISO 68-1 basic-profile groove along a
+  helix and cuts it from a rod (external) or a minor-diameter hole (internal),
+  either hand. Four tests check the ISO proportions, removed volume against
+  the screw-motion formula within 1e-4, a single valid solid, pitch and hand
+  edits with reuse, invalid pitches without leaked handles, and persistence.
+  A 100-turn thread cuts in 3.99 s (12 s budget) and 10,000 pattern members
+  of a threaded rod regenerate as one variant in 0.838 s (4 s budget); the
+  helix now has one edge per turn, which made the 100-turn cut linear (15.1 s
+  before). See [Modeled threads](THREADS.md).
+
 - Helix features (schema 82): `FeatureOperation::Helix` outputs a
   parameter-driven helical wire for `Sweep` paths, so springs and coils follow
   radius, pitch, turns and handedness edits. Two tests sweep springs, change
@@ -750,8 +762,7 @@ tracks status and order.
   zero turns. 10,000 pattern members of a helix family regenerate as one
   variant in 0.374 s (2 s budget). See [Helices](HELIX.md).
 
-- Surface texture (schema 71; 69 and 70 are reserved for the material hatch
-  families and cone/sphere features in progress elsewhere): drawing
+- Surface texture (schema 71): drawing
   requirements with B46.1 roughness limits (Ra, Rq, Rz, Rmax in µm or µin),
   standard sampling lengths, waviness, lay, material-removal requirement,
   method note and all-around, drawn as Y14.36 symbols with exact vertex
@@ -1413,8 +1424,9 @@ scopes and inspected repo capabilities, not a full conformity audit.
    and assembly STEP export alone does not preserve this product definition.
 4. **Standards-backed thread specifications** — [B1.1](https://www.asme.org/codes-standards/find-codes-standards/b1-1-unified-inch-screw-threads-un-unr-thread-form):
    thread limits/classes, fit validation and standard representations. Live drawing
-   callouts now show recorded intent; nominal drill catalogs and thread strings
-   still do not verify compliance or engagement/strength.
+   callouts now show recorded intent, and basic-profile thread geometry can be
+   modeled (schema 84); nominal drill catalogs and thread strings still do not
+   verify compliance or engagement/strength.
 5. **Manufacturing surface texture** — [B46.1](https://www.asme.org/codes-standards/about-standards/technology-highlights/advanced-manufacturing):
    requirements attached to persistent faces rather than leader anchors, the
    16% rule and filtering for measured readings, and Y14.36 symbol placement

@@ -22,11 +22,18 @@ fn helix_length_endpoints_and_handedness_match_the_exact_curve() {
             .create_helix_wire(helix(turns, left_handed))
             .unwrap();
         assert_eq!(session.shape_type(&wire).unwrap(), ShapeType::Wire);
-        let edge = session.subshape(&wire, ShapeType::Edge, 0).unwrap();
+        // One edge per (possibly partial) turn, in order along the helix.
+        let edges = session.subshape_count(&wire, ShapeType::Edge).unwrap();
+        assert_eq!(edges, (turns - 1e-9_f64).ceil() as usize);
         let exact = turns * (TAU * 10.0).hypot(4.0);
-        let length = session.edge_length(&edge).unwrap();
+        let mut length = 0.0;
+        let mut points = Vec::new();
+        for index in 0..edges {
+            let edge = session.subshape(&wire, ShapeType::Edge, index).unwrap();
+            length += session.edge_length(&edge).unwrap();
+            points.extend(session.edge_sample_points(&edge, 41).unwrap());
+        }
         assert!((length - exact).abs() < 1e-6 * exact, "{length} vs {exact}");
-        let points = session.edge_sample_points(&edge, 41).unwrap();
         let first = points[0];
         let last = *points.last().unwrap();
         assert!((first.x - 110.0).abs() < 1e-6 && (first.y + 50.0).abs() < 1e-6);

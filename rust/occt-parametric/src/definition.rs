@@ -709,6 +709,24 @@ pub enum FeatureOperation {
         axis: VectorExpr,
         angle_radians: ScalarExpr,
     },
+    /// A modeled 60° screw thread (ISO 68-1 basic profile) cut into `input`
+    /// about the axis through the length-valued `origin`, running the length
+    /// `length` along the dimensionless `axis`. External threads cut a rod of
+    /// `major_diameter`; internal threads cut a hole of the minor diameter
+    /// (`major_diameter` − 2 · 5H/8, H = √3/2 · `pitch`) out to the major
+    /// diameter. Right-handed unless `left_handed` (schema 84).
+    Thread {
+        input: String,
+        origin: VectorExpr,
+        axis: VectorExpr,
+        major_diameter: ScalarExpr,
+        pitch: ScalarExpr,
+        length: ScalarExpr,
+        #[serde(default)]
+        internal: bool,
+        #[serde(default)]
+        left_handed: bool,
+    },
     /// An open helical wire about the axis through the length-valued `origin`
     /// along the dimensionless `axis`, starting at `origin + radius * start`
     /// (`start` is made perpendicular to the axis) and rising the length
@@ -879,6 +897,7 @@ impl FeatureOperation {
             | Self::Rotate { input, .. }
             | Self::Mirror { input, .. }
             | Self::Scale { input, .. }
+            | Self::Thread { input, .. }
             | Self::Revolve { input, .. }
             | Self::Unify { input, .. } => vec![input],
             Self::Fillet { input, edges, .. }

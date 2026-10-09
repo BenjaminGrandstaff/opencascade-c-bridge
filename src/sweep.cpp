@@ -212,9 +212,9 @@ occt_bridge_status_t occt_bridge_sweep(
 }
 
 // A helix is a straight line on a cylinder: angle advances 2*pi per pitch of
-// height. The edge keeps that exact 2D curve on the exact cylinder and gets a
-// 3D B-spline within Precision::Confusion(), so sweeps and measurements see a
-// helix to kernel tolerance. O(turns) approximation segments.
+// height. Each turn is an edge keeping that exact 2D curve on the exact
+// cylinder with a 3D B-spline within Precision::Confusion(), so sweeps and
+// measurements see a helix to kernel tolerance. O(turns) edges.
 occt_bridge_status_t occt_bridge_create_helix_wire(
     occt_bridge_session_t* session,
     occt_bridge_vec3_t origin,
@@ -259,19 +259,29 @@ occt_bridge_status_t occt_bridge_create_helix_wire(
         const double sweep = (left_handed != 0 ? -2.0 : 2.0) * M_PI;
         const gp_Dir2d direction(sweep, pitch);
         const Handle(Geom2d_Line) line = new Geom2d_Line(gp_Pnt2d(0.0, 0.0), direction);
+        // One edge per turn keeps every edge's B-spline (and every swept face)
+        // small, so booleans against swept helices stay roughly linear in the
+        // number of turns instead of meeting one huge surface.
+        // Equal parts of at most one turn, so no sliver edge is left over.
         const double length = turns * std::hypot(sweep, pitch);
-        BRepBuilderAPI_MakeEdge edge(line, cylinder, 0.0, length);
-        if (!edge.IsDone()) {
-            return fail(session, OCCT_BRIDGE_KERNEL_ERROR, "helix edge could not be built");
-        }
-        TopoDS_Edge built = edge.Edge();
-        const int segments = static_cast<int>(std::min(65535.0, std::max(30.0, 16.0 * turns)));
-        if (!BRepLib::BuildCurves3d(built, Precision::Confusion(), GeomAbs_C2, 14, segments)) {
-            return fail(session, OCCT_BRIDGE_KERNEL_ERROR, "helix curve could not be approximated");
-        }
-        BRepBuilderAPI_MakeWire wire(built);
-        if (!wire.IsDone()) {
-            return fail(session, OCCT_BRIDGE_KERNEL_ERROR, "helix wire could not be built");
+        const int edges = std::max(1, static_cast<int>(std::ceil(turns - 1e-9)));
+        const double step = length / edges;
+        BRepBuilderAPI_MakeWire wire;
+        for (int index = 0; index < edges; ++index) {
+            const double end = index + 1 == edges ? length : (index + 1) * step;
+            BRepBuilderAPI_MakeEdge edge(line, cylinder, index * step, end);
+            if (!edge.IsDone()) {
+                return fail(session, OCCT_BRIDGE_KERNEL_ERROR, "helix edge could not be built");
+            }
+            TopoDS_Edge built = edge.Edge();
+            if (!BRepLib::BuildCurves3d(built, Precision::Confusion(), GeomAbs_C2, 14, 30)) {
+                return fail(
+                    session, OCCT_BRIDGE_KERNEL_ERROR, "helix curve could not be approximated");
+            }
+            wire.Add(built);
+            if (!wire.IsDone()) {
+                return fail(session, OCCT_BRIDGE_KERNEL_ERROR, "helix wire could not be built");
+            }
         }
         return store_shape(session, wire.Wire(), out_shape);
     });
