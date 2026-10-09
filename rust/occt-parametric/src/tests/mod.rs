@@ -30,6 +30,7 @@ mod persistent;
 mod primitives;
 mod regeneration;
 mod regions;
+mod releases;
 mod requirements;
 mod revolutions;
 mod ribs;

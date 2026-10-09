@@ -250,6 +250,17 @@ impl Layout {
         out: &mut GeneratedDrawing,
     ) -> Result<(), ModelError> {
         if let Some(list) = &drawing.parts_list {
+            // Rows depend on the model, so the fit is checked when drawing.
+            let [x, top] = list.position_mm;
+            let [width, height] = drawing.effective_paper_size_mm();
+            let bottom = top - ROW_MM * (self.items.len() + 1) as f64;
+            if x < 0.0 || bottom < 0.0 || x + COLUMNS_MM.iter().sum::<f64>() > width || top > height
+            {
+                return Err(ModelError::new(format!(
+                    "parts list of {} items must fit on the paper",
+                    self.items.len()
+                )));
+            }
             self.append_table(list, out);
         }
         let item_of: HashMap<&str, usize> = self

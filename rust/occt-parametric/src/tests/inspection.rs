@@ -138,6 +138,8 @@ pub(super) fn page() -> DrawingDefinition {
         surface_textures: Vec::new(),
         parts_list: None,
         balloons: Vec::new(),
+        releases: Vec::new(),
+        revision_table: None,
         feature_control_frames: vec![
             control("flat", "top", GeometricCharacteristic::Flatness, 0.05, &[]),
             control(

@@ -36,9 +36,11 @@ pub use gdt::{
 };
 mod hatching;
 mod parts_list;
+pub(crate) mod releases;
 pub use guides::{DrawingGuide, DrawingGuideKind, DrawingGuideLine, DrawingGuideLineKind};
 pub use hatching::SectionHatching;
 pub use parts_list::{DrawingBalloon, DrawingPartsList, PartsListItem};
+pub use releases::{DrawingApproval, DrawingRelease, DrawingReleaseStatus, DrawingRevisionTable};
 mod sheets;
 mod slice;
 pub use sheets::{DrawingSheet, DrawingSheetOrientation, DrawingSheetSize, ProjectionConvention};
@@ -153,6 +155,12 @@ pub struct DrawingDefinition {
     /// Item balloons pointing at instances in views (schema 87).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub balloons: Vec<DrawingBalloon>,
+    /// Release records, oldest first, with approvals and model links (schema 90).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub releases: Vec<DrawingRelease>,
+    /// A revision table listing the releases (schema 90).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revision_table: Option<DrawingRevisionTable>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sheet: Option<DrawingSheet>,
     pub id: String,
@@ -454,6 +462,7 @@ impl DrawingDefinition {
         )?;
         gdt::texture::validate(&self.surface_textures, &views, graph)?;
         parts_list::validate(self, &views, graph)?;
+        releases::validate(self)?;
         let mut ids = HashSet::new();
         for note in &self.notes {
             if note.id.is_empty() || !ids.insert(&note.id) || !finite_pair(note.position_mm) {
@@ -597,7 +606,7 @@ impl DrawingDefinition {
             .ok_or_else(|| ModelError::new("GD&T vertex count overflow"))?;
         let parts = parts_list::Layout::new(self, graph)?;
         *vertices = vertices
-            .checked_add(parts.vertex_count(self))
+            .checked_add(parts.vertex_count(self) + releases::vertex_count(self))
             .ok_or_else(|| ModelError::new("parts list vertex count overflow"))?;
         let added = self
             .dimensions
@@ -648,6 +657,7 @@ impl DrawingDefinition {
         )?;
         gdt::texture::append(&self.surface_textures, &views, graph, &mut drawing)?;
         parts.append(self, &views, graph, &mut drawing)?;
+        releases::append(self, &mut drawing);
         guides::append(&self.guides, &views, graph, &mut drawing)?;
         let context = dimensions::DimensionContext::new(&self.dimensions, graph)?;
         for dimension in &self.dimensions {

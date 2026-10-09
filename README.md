@@ -693,6 +693,11 @@ parameter-driven circular sweep. Coil radius, pitch and fractional turn edits
 update the section orientation, native solid, linked viewer dimensions and
 route overlays. See [helix viewer semantics](HELIX.md#ai-example-and-linked-viewer-dimensions).
 
+Drawings record [releases and revision tables](DRAWINGS.md#releases-and-revision-tables-schema-90):
+dated revisions with approvals, links to the model's revision ledger, a status
+that flags model changes since the latest release, and a drawn revision table.
+Schema 90 adds them.
+
 Drawings can carry [parts lists and item balloons](DRAWINGS.md#parts-lists-and-balloons-schema-87):
 shown instances group into numbered items by family, parameter values, output
 and material, with optional part numbers. Schema 87 adds them.

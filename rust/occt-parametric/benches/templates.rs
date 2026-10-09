@@ -58,6 +58,8 @@ fn fixture() -> (ModelDocument, DrawingDefinition) {
         surface_textures: Vec::new(),
         parts_list: None,
         balloons: Vec::new(),
+        releases: Vec::new(),
+        revision_table: None,
         sheet: None,
         id: "template".into(),
         title: "Section template".into(),

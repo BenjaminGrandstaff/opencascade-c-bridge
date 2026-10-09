@@ -77,6 +77,8 @@ pub(crate) fn texture_case(definition: &FamilyDefinition) -> Outcome {
                 surface_textures,
                 parts_list: None,
                 balloons: Vec::new(),
+                releases: Vec::new(),
+                revision_table: None,
                 sheet: None,
                 id: "textures".into(),
                 title: "Textures".into(),

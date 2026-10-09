@@ -23,7 +23,7 @@ pub struct GenerationRecord {
     pub last_error: Option<String>,
 }
 
-pub const CURRENT_SCHEMA_VERSION: u32 = 89;
+pub const CURRENT_SCHEMA_VERSION: u32 = 90;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ModelDocument {
@@ -279,6 +279,7 @@ impl ModelDocument {
                 return Err(ModelError::new("document drawing IDs must be unique"));
             }
             drawing.validate_cached(graph, &mut resolutions, &mut features, &materials)?;
+            crate::drawing::releases::validate_model_links(drawing, &self.revisions)?;
         }
         Ok(())
     }

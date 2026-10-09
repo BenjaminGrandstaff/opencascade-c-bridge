@@ -98,6 +98,8 @@ fn page(members: &[String]) -> DrawingDefinition {
                 offset_mm: [10.0, 25.0],
             },
         ],
+        releases: Vec::new(),
+        revision_table: None,
         sheet: None,
         id: "assembly".into(),
         title: "Plate assembly".into(),
@@ -223,6 +225,13 @@ fn tables_and_balloons_render_with_exact_budgets_in_svg_and_dxf() {
     );
     let svg = generated.to_svg();
     let dxf = generated.to_dxf();
+    // A table that would run off the paper is refused when drawing.
+    let mut low = page.clone();
+    low.parts_list.as_mut().unwrap().position_mm = [250.0, 20.0];
+    let error = low
+        .generate(&graph, &session, DrawingRenderOptions::default())
+        .unwrap_err();
+    assert!(error.message.contains("fit on the paper"), "{error}");
     if let Some(directory) = std::env::var_os("OCCB_PARTS_QA_DIR") {
         std::fs::write(std::path::Path::new(&directory).join("parts.svg"), &svg).unwrap();
     }

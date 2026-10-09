@@ -50,6 +50,8 @@ pub(crate) fn parts_list_case(definition: &'static FamilyDefinition) -> Outcome 
                         offset_mm: [0.0, 12.0],
                     })
                     .collect(),
+                releases: Vec::new(),
+                revision_table: None,
                 sheet: None,
                 id: "bom".into(),
                 title: "BOM".into(),

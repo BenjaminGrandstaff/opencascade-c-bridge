@@ -999,3 +999,47 @@ shown instances once. A scale case groups 10,000 shown pattern members into
 one item and validates 100 balloons. Not yet included: revision tables,
 approval and release records, nested (indented) assembly lists, custom
 columns, and automatic balloon placement.
+
+## Releases and revision tables (schema 90)
+
+`DrawingDefinition.releases` records the drawing's released revisions, oldest
+first, and `revision_table` draws them:
+
+```json
+"releases": [
+  { "revision": "A", "description": "Initial release", "date": "2026-10-01",
+    "approvals": [ { "role": "CHECKED", "name": "R. Checker", "date": "2026-09-30" },
+                   { "role": "APPROVED", "name": "A. Approver", "date": "2026-10-01" } ],
+    "model_revision": "r1" }
+],
+"revision_table": { "position_mm": [240, 260] }
+```
+
+- `revision` is 1–8 letters and digits, unique within the drawing. Releases are
+  in date order; dates are calendar-checked `YYYY-MM-DD` (leap years included).
+- Approvals carry a role, a name and a date on or before the release date.
+- `model_revision` optionally names the model document revision (an ID in the
+  document's revision ledger) the release was made from. It must exist, and a
+  later release may not name an earlier model revision.
+- When the drawing has a sheet, its title-block `revision` must equal the
+  latest release, so the sheet and the release history cannot disagree.
+
+**Status.** `ModelDocument::drawing_release_status(id)` reports `unreleased`,
+`current` (the latest release names the latest model revision),
+`model_changed` (the model has recorded revisions since; the drawing should be
+re-released, with both revision IDs) or `untracked` (no model revisions are
+linked or recorded).
+
+**Table.** The revision table's top-left corner is at `position_mm`, with REV,
+DESCRIPTION, DATE and APPROVED columns (12, 80, 24 and 34 mm) and 7 mm rows. It
+must fit on the paper; descriptions longer than the column (38 characters)
+are shortened with an ellipsis on the drawing only. APPROVED shows the
+approver in an `APPROVED` role, or else the last sign-off. The table is sheet
+linework and counts exactly in the vertex budget. Parts lists are likewise
+refused when their rows would run off the paper.
+
+Validation is O(releases + approvals + model revisions). A scale case
+validates 10,000 releases with approvals and reports their status. Not yet
+included: per-revision change zones and change markers on the drawing,
+approval workflow states, electronic signatures, and multi-sheet revision
+tables.

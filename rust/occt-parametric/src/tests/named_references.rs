@@ -264,6 +264,8 @@ fn integrated_schema_preserves_references_slice_drawings_and_joint_motion() {
         surface_textures: Vec::new(),
         parts_list: None,
         balloons: Vec::new(),
+        releases: Vec::new(),
+        revision_table: None,
         sheet: None,
         id: "slice".into(),
         title: "Referenced shell template".into(),

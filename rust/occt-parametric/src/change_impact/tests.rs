@@ -151,6 +151,8 @@ fn placement_material_suppression_and_drawings_do_not_rebuild_local_geometry() {
         surface_textures: Vec::new(),
         parts_list: None,
         balloons: Vec::new(),
+        releases: Vec::new(),
+        revision_table: None,
         sheet: None,
         id: "view".into(),
         title: "Assembly".into(),
