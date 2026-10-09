@@ -397,6 +397,22 @@ fn solid_scene(
     // downstream booleans/transforms, controls stay in the linked side panel.
     if let Some(feature) = part.definition.features.iter().find(|f| f.id == output) {
         primitive_dimensions(feature, parameters, &mut annotations)?;
+        if let FeatureOperation::Scale {
+            input,
+            center: scale_center,
+            factor,
+        } = &feature.operation
+        {
+            let c = scale_center
+                .evaluate(parameters)
+                .map_err(|e| model_failure("visualization", e))?;
+            let value = factor
+                .evaluate(parameters)
+                .map_err(|e| model_failure("visualization", e))?
+                .value;
+            let expressions = json!([scale_center, factor]);
+            annotations.push(annotation("driving-scale-factor".into(),format!("scale × {value:.4}"),"dimension","driving",vec![output.into()],names(&expressions),json!([center]),json!({"input":input,"scale_center":[c.x.value,c.y.value,c.z.value],"factor":value,"expressions":expressions,"driving":true,"description":"Dimensionless uniform geometry scale about the specified centre. Label anchored at result bounds."})));
+        }
         if let FeatureOperation::Mirror {
             input,
             origin,

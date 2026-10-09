@@ -1703,3 +1703,15 @@ Source and plane expression dependencies enter incremental signatures. Geometry
 is reflected while family datums and assembly placements remain explicitly
 authored. Linked clones share the generated reflected variant. See
 [mirror semantics](MIRRORS.md).
+
+
+## Schema 83 uniform scaling (native ABI 52 unchanged)
+
+`Scale` depends on one source feature, a length-valued centre and a positive
+scalar factor. Expression parameter dependencies participate in regeneration
+signatures, so centre/factor edits reuse the source. Native nonunit transforms
+copy geometry and retain modification ancestry; only exactly unit positive
+transforms use rigid locations. Copied transforms follow session validation and
+healing policy. Linked instances share a regenerated variant. Family datums
+and assembly frames retain their separately authored definitions.
+See [scaling semantics](SCALING.md).

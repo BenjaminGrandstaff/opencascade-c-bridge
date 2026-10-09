@@ -315,3 +315,26 @@ fn unifying_a_fused_stadium_lets_it_be_shelled() {
         );
     }
 }
+
+#[test]
+fn scaling_preserves_near_unit_changes_and_handles_shifted_centres_and_model_sizes() {
+    let session = Session::new().unwrap();
+    let source = session
+        .create_box(Vec3::new(2.0, 1.0, 0.0), Vec3::new(3.0, 4.0, 5.0))
+        .unwrap();
+    for factor in [1.0, 1.0 + 1e-8, 1.0 - 1e-8, 0.001, 1000.0] {
+        let scaled = session
+            .scale(&source, Vec3::new(1.0, 2.0, 0.0), factor)
+            .unwrap();
+        assert!(session.is_valid(&scaled).unwrap());
+        let expected = 60.0 * factor.powi(3);
+        assert!((session.volume(&scaled).unwrap() - expected).abs() / expected < 1e-10);
+        let bounds = session.exact_bounds(&scaled).unwrap();
+        assert!((bounds.min.x - (1.0 + factor)).abs() < 1e-8 * factor.max(1.0));
+        assert!((bounds.max.y - (2.0 + 3.0 * factor)).abs() < 1e-8 * factor.max(1.0));
+    }
+    let bounds = session.exact_bounds(&source).unwrap();
+    assert!((bounds.min.x - 2.0).abs() < 1e-7 && (bounds.max.x - 5.0).abs() < 1e-7);
+    drop(source);
+    assert_eq!(session.shape_count().unwrap(), 0);
+}

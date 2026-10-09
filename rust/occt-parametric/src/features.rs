@@ -241,6 +241,15 @@ pub(crate) fn execute_feature<'session>(
             vector(origin, parameters, Dimension::Length)?,
             vector(normal, parameters, Dimension::Scalar)?,
         ),
+        FeatureOperation::Scale {
+            input,
+            center,
+            factor,
+        } => session.scale(
+            shape(shapes, input)?,
+            vector(center, parameters, Dimension::Length)?,
+            scalar(factor, parameters, Dimension::Scalar)?,
+        ),
         FeatureOperation::Rotate {
             input,
             origin,

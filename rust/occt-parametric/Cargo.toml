@@ -99,3 +99,7 @@ harness = false
 [[bench]]
 name = "mirrors"
 harness = false
+
+[[bench]]
+name = "scaling"
+harness = false

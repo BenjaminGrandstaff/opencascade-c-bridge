@@ -3,7 +3,7 @@
   "model": {
     "schema_version": 83,
     "family": {
-      "id": "handed-bracket",
+      "id": "scaled-bracket",
       "version": 1,
       "parameters": [
         {
@@ -64,7 +64,26 @@
           "maximum": null
         },
         {
-          "id": "plane_x",
+          "id": "scale_factor",
+          "parameter_type": {
+            "scalar": "scalar"
+          },
+          "default": {
+            "scalar": {
+              "value": 1.2,
+              "dimension": "scalar",
+              "unit": null
+            }
+          },
+          "minimum": {
+            "value": 0.001,
+            "dimension": "scalar",
+            "unit": null
+          },
+          "maximum": null
+        },
+        {
+          "id": "scale_center_x",
           "parameter_type": {
             "scalar": "length"
           },
@@ -73,21 +92,6 @@
               "value": 0,
               "dimension": "length",
               "unit": "millimeter"
-            }
-          },
-          "minimum": null,
-          "maximum": null
-        },
-        {
-          "id": "plane_tilt",
-          "parameter_type": {
-            "scalar": "scalar"
-          },
-          "default": {
-            "scalar": {
-              "value": 0,
-              "dimension": "scalar",
-              "unit": null
             }
           },
           "minimum": null,
@@ -103,7 +107,7 @@
           "version": 1,
           "kind": "validation",
           "priority": "required",
-          "statement": "Mirrored bracket valid",
+          "statement": "Scaled bracket valid",
           "rule": {
             "shape_valid": {
               "output": "body"
@@ -122,12 +126,12 @@
         {
           "id": "body",
           "operation": {
-            "mirror": {
+            "scale": {
               "input": "source",
-              "origin": {
+              "center": {
                 "components": {
                   "x": {
-                    "parameter": "plane_x"
+                    "parameter": "scale_center_x"
                   },
                   "y": {
                     "literal": {
@@ -145,26 +149,8 @@
                   }
                 }
               },
-              "normal": {
-                "components": {
-                  "x": {
-                    "literal": {
-                      "value": 1,
-                      "dimension": "scalar",
-                      "unit": null
-                    }
-                  },
-                  "y": {
-                    "parameter": "plane_tilt"
-                  },
-                  "z": {
-                    "literal": {
-                      "value": 0,
-                      "dimension": "scalar",
-                      "unit": null
-                    }
-                  }
-                }
+              "factor": {
+                "parameter": "scale_factor"
               }
             }
           }

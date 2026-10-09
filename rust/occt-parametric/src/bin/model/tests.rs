@@ -1555,3 +1555,23 @@ fn mirror_viewer_exposes_plane_controls_and_follows_native_reflected_bounds() {
         assert_eq!(annotation["parameters"], json!(["plane_tilt", "plane_x"]));
     }
 }
+
+#[test]
+fn scale_viewer_exposes_dimensionless_factor_centre_and_resized_bounds() {
+    let dir = Directory::new();
+    view_request(&dir, view_example("scaled-part"), "scaled").unwrap();
+    let data: Value =
+        serde_json::from_str(&fs::read_to_string(dir.0.join("scaled/view.json")).unwrap()).unwrap();
+    let solid = &data["scenes"][0];
+    assert_eq!(solid["valid"], true);
+    assert!((solid["bounds"][1][0].as_f64().unwrap() - 30.0).abs() < 1e-7);
+    let a = solid["annotations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["id"] == "driving-scale-factor")
+        .unwrap();
+    assert_eq!(a["detail"]["factor"], 1.2);
+    assert_eq!(a["detail"]["scale_center"], json!([0.0, 0.0, 0.0]));
+    assert_eq!(a["parameters"], json!(["scale_center_x", "scale_factor"]));
+}

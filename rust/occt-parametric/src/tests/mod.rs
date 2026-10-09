@@ -33,6 +33,7 @@ mod requirements;
 mod revolutions;
 mod ribs;
 mod rotating_motion;
+mod scaling;
 mod selection;
 mod sheet_metal;
 mod step_export;

@@ -194,7 +194,8 @@ occt_bridge_status_t transformed_shape(
      * copies share one geometry instead of each owning a deep copy. Scaling
      * cannot be expressed as a location and still copies geometry.
      */
-    const bool rigid = std::abs(std::abs(transform.ScaleFactor()) - 1.0) <= Precision::Confusion();
+    // Near-unit scaling is still scaling, especially for large source parts.
+    const bool rigid = transform.ScaleFactor() == 1.0 && !transform.IsNegative();
     if (rigid) {
         return store_located_shape(session, *value, TopLoc_Location(transform), out_shape);
     }
@@ -203,8 +204,9 @@ occt_bridge_status_t transformed_shape(
     if (!operation.IsDone() || operation.Shape().IsNull()) {
         return fail(session, OCCT_BRIDGE_KERNEL_ERROR, "shape transform failed");
     }
-    return store_shape_with_history(
+    return store_checked_result(
         session,
+        "shape transform",
         operation.Shape(),
         out_shape,
         operation,
@@ -606,7 +608,7 @@ occt_bridge_status_t select_draft_faces(
 
 occt_bridge_status_t draft_failure(
     occt_bridge_session_t* session,
-    BRepOffsetAPI_DraftAngle& builder,
+    const BRepOffsetAPI_DraftAngle& builder,
     int64_t index,
     const std::string& exception) {
     const Draft_ErrorStatus error = builder.Status();
@@ -646,10 +648,10 @@ struct ToolsHistory {
     opencascade::handle<BRepTools_History> history;
     TopTools_ListOfShape none;
 
-    const TopTools_ListOfShape& Generated(const TopoDS_Shape& source) {
+    const TopTools_ListOfShape& Generated(const TopoDS_Shape& source) const {
         return BRepTools_History::IsSupportedType(source) ? history->Generated(source) : none;
     }
-    const TopTools_ListOfShape& Modified(const TopoDS_Shape& source) {
+    const TopTools_ListOfShape& Modified(const TopoDS_Shape& source) const {
         return BRepTools_History::IsSupportedType(source) ? history->Modified(source) : none;
     }
     bool IsDeleted(const TopoDS_Shape& source) const {

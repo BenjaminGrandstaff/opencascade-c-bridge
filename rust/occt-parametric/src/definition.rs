@@ -696,6 +696,13 @@ pub enum FeatureOperation {
         origin: VectorExpr,
         normal: VectorExpr,
     },
+    /// Uniform positive scaling about a length-valued centre. Factor is
+    /// dimensionless; geometry is scaled while family datums stay explicit.
+    Scale {
+        input: String,
+        center: VectorExpr,
+        factor: ScalarExpr,
+    },
     Rotate {
         input: String,
         origin: VectorExpr,
@@ -871,6 +878,7 @@ impl FeatureOperation {
             | Self::Translate { input, .. }
             | Self::Rotate { input, .. }
             | Self::Mirror { input, .. }
+            | Self::Scale { input, .. }
             | Self::Revolve { input, .. }
             | Self::Unify { input, .. } => vec![input],
             Self::Fillet { input, edges, .. }

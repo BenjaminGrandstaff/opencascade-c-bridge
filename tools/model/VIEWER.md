@@ -186,7 +186,7 @@ region and solid while keeping unaffected source sketches.
 The `hollow-sweep` example shows a bent tube plus its outer, inner and route
 sketches. Native route length and the bore control remain linked to the solid.
 Holed profile sweeps use the same shared scene builder and annotations as simple
-sweeps; current model schema is 81 and the current native ABI is 51.
+sweeps; current model schema is 83 and the current native ABI is 52.
 
 The schema-80 `hollow-loft` example adds all inner section sketches and bore
 controls to the solid's linked parameters. Existing section-spacing annotations
@@ -197,3 +197,11 @@ The schema-81 `mirrored-part` example exposes native plane reflection controls.
 The mirror annotation records the plane origin and normalized normal and links
 position/tilt controls. Its label is anchored to result bounds; it is not a
 plane-size measurement. Native ABI 51 supplies reflected geometry/history.
+
+
+Uniform scaling outputs show a driving `scale × factor` label, linked centre
+and factor parameters, and the measured result spans. The factor is
+dimensionless; the label uses the result bounding centre as its anchor rather
+than a length arrow. Metadata includes the evaluated scale centre, factor and
+source expressions. The `scaled-part` example demonstrates both controls.
+See [scaling](../../SCALING.md).
