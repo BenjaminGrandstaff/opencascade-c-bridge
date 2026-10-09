@@ -11,19 +11,31 @@ tracks status and order.
 | C ABI (`src/`, `include/`) | ABI 50 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 79 | Active development |
+| `occt-parametric` (engineering layer) | Schema 80 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 104 + first-use integration 1 (+1 doc test), recipes 3, parametric 419 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 18 + branch command 2 + model command 25, MCP Python 8, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 104 + first-use integration 1 (+1 doc test), recipes 3, parametric 424 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 18 + branch command 2 + model command 26, MCP Python 8, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection code pass targeted lint. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
 | Coverage | Last recorded: 93.61% lines overall, test code excluded; C++ 94.13% lines, 87.40% branches, 100% functions; Rust 93.42% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 122 Rust cases plus 5 model-command and 9 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Scale benchmarks | 124 Rust cases plus 5 model-command and 9 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
 
+- Explicit hollow profile lofts (schema 80; ABI 50 unchanged): optional
+  `ProfileLoft::holes` defines up to 100 ordered inner section tracks. Matching
+  station counts, distinct output IDs, coplanarity, containment and pair
+  separation are validated; complete inner lofts are also checked for crossings
+  and containment between stations. One native cut preserves outer/inner wall
+  ancestry and one valid solid. Hole dependencies support selective rebuilds;
+  old documents retain solid loft behavior. AI example `hollow-loft` keeps four
+  source sketches and linked bore controls. Five library tests plus model/MCP
+  checks cover volume, history, edit reuse, invalid tracks and migration. Native
+  subtraction/history logic is shared with hollow sweeps. Scale gates pass:
+  500 tapered ducts in 6.864 s and a 100-bore loft in 0.995 s (10 s budgets),
+  with zero retained handles; hollow-sweep gates also pass after the refactor.
 - Hollow path sweeps and retained subset history (ABI 50; schema 79 unchanged):
   holed planar faces sweep each native boundary under one transport rule, check
   containment/separation and cut the inner volumes. One valid solid retains

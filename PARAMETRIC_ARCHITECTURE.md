@@ -1675,3 +1675,17 @@ retains source ownership after parent release and marks omitted sources deleted
 relative to the subset. The final hollow sweep remains one solid, and planar
 regions retain native cut face history through the same extraction path.
 See [hollow sweep semantics](HOLLOW_SWEEPS.md) for scope and complexity.
+
+## Schema 80 explicit hollow loft tracks
+
+`ProfileLoft::holes` defaults to empty for compatibility. Each of at most 100
+tracks supplies a simple profile for every outer station. All profile IDs enter
+dependencies, and runtime validation requires matching counts and distinct IDs.
+Native planar-region checks validate coplanarity, strict containment and disjoint
+holes at every station. Whole-solid checks also reject crossings between stations.
+
+Outer and inner native lofts share their fitting mode. Hollow sweeps and lofts
+use one common native containment/subtraction helper, composing all boundary
+histories before extracting the final solid with retained ancestry. Native ABI
+50 is reused. Viewer source sketches and linked parameters include hole sections.
+See [hollow loft semantics](LOFTS.md#explicit-hollow-tracks-schema-80).

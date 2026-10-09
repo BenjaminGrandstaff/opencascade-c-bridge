@@ -91,3 +91,7 @@ harness = false
 [[bench]]
 name = "hollow_sweeps"
 harness = false
+
+[[bench]]
+name = "hollow_lofts"
+harness = false

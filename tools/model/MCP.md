@@ -49,7 +49,7 @@ or remote service is started.
 input schema. All 30 current feature operations and 137 nested request-schema
 definitions are discoverable. Schemas derive from serde-compatible Rust types;
 new serialized variants require schema support at compilation. Authoring schemas
-target current model schema 79. The engine still migrates older documents.
+target current model schema 80. The engine still migrates older documents.
 Schemas describe serialization and basic request bounds; units, dependency
 references, dimensional constraints, selector resolution, and geometry validity
 are checked by the build engine.
@@ -61,7 +61,7 @@ LD_LIBRARY_PATH="$PWD/build" rust/occt-parametric/target/debug/occt-model \
   --schema request > /tmp/occt-request.schema.json
 ```
 
-`resources/list` advertises twelve `occt://schema/NAME` and seventeen
+`resources/list` advertises twelve `occt://schema/NAME` and eighteen
 `occt://example/NAME` resources. Accepted builds return specific
 `occt://build/BUILD_ID/ARTIFACT` URIs; a resource template advertises this form.
 JSON and SVG resources return text, while STEP and STL return base64 blobs.
@@ -383,3 +383,10 @@ region and a tangent line/arc route. Inner/outer section controls and native
 route length link to the solid. ABI 50 retains composed wall ancestry when
 extracting the final solid. The current engineering layer handles up to 100
 inner boundaries; see [hollow sweeps](../../HOLLOW_SWEEPS.md).
+
+`hollow-loft` demonstrates schema-80 optional `profile_loft.holes` arrays of
+inner section tracks. Each track has the same section count as the outer track.
+The example exposes two bore radii and all four section sketches, with linked
+solid controls and measured spacing. Station containment and whole-loft crossing
+checks reject invalid tracks; older missing hole arrays remain solid lofts.
+See [hollow lofts](../../LOFTS.md#explicit-hollow-tracks-schema-80).

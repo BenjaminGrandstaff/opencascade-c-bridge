@@ -614,6 +614,10 @@ pub enum FeatureOperation {
     ProfileLoft {
         #[schemars(length(min = 2, max = 1000))]
         profiles: Vec<String>,
+        /// Each inner track supplies one simple profile for every outer station.
+        #[serde(default)]
+        #[schemars(length(max = 100))]
+        holes: Vec<Vec<String>>,
         #[serde(default)]
         ruled: bool,
     },
@@ -828,7 +832,13 @@ impl FeatureOperation {
                 }
                 dependencies
             }
-            Self::ProfileLoft { profiles, .. } => profiles.iter().map(String::as_str).collect(),
+            Self::ProfileLoft {
+                profiles, holes, ..
+            } => profiles
+                .iter()
+                .chain(holes.iter().flatten())
+                .map(String::as_str)
+                .collect(),
             Self::PlanarRegion { outer, holes } => std::iter::once(outer.as_str())
                 .chain(holes.iter().map(String::as_str))
                 .collect(),

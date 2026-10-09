@@ -4,6 +4,7 @@ use super::*;
 
 mod extrusions;
 mod holes;
+mod hollow;
 mod loft;
 pub(crate) use loft::collect_parameters as collect_loft_parameters;
 mod primitives;
@@ -131,8 +132,12 @@ pub(crate) fn execute_feature<'session>(
                 rib_closure(profile_mode, parameters)?,
             );
         }
-        FeatureOperation::ProfileLoft { profiles, ruled } => {
-            return loft::execute_profiles(session, profiles, *ruled, shapes);
+        FeatureOperation::ProfileLoft {
+            profiles,
+            holes,
+            ruled,
+        } => {
+            return loft::execute_profiles(session, profiles, holes, *ruled, shapes);
         }
         FeatureOperation::Loft {
             sections,

@@ -3,74 +3,93 @@
   "model": {
     "schema_version": 80,
     "family": {
-      "id": "hollow-sweep",
+      "id": "tapered-duct",
       "version": 1,
       "parameters": [
         {
-          "id": "radius",
+          "id": "lower_radius",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 8,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 0.1,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": null
+        },
+        {
+          "id": "upper_radius",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 4,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 0.1,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": null
+        },
+        {
+          "id": "height",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 20,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 0.1,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": null
+        },
+        {
+          "id": "lower_bore_radius",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 4,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 0.1,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": null
+        },
+        {
+          "id": "upper_bore_radius",
           "parameter_type": {
             "scalar": "length"
           },
           "default": {
             "scalar": {
               "value": 2,
-              "dimension": "length",
-              "unit": "millimeter"
-            }
-          },
-          "minimum": {
-            "value": 0.1,
-            "dimension": "length",
-            "unit": "millimeter"
-          },
-          "maximum": null
-        },
-        {
-          "id": "run",
-          "parameter_type": {
-            "scalar": "length"
-          },
-          "default": {
-            "scalar": {
-              "value": 10,
-              "dimension": "length",
-              "unit": "millimeter"
-            }
-          },
-          "minimum": {
-            "value": 0.1,
-            "dimension": "length",
-            "unit": "millimeter"
-          },
-          "maximum": null
-        },
-        {
-          "id": "bend_radius",
-          "parameter_type": {
-            "scalar": "length"
-          },
-          "default": {
-            "scalar": {
-              "value": 10,
-              "dimension": "length",
-              "unit": "millimeter"
-            }
-          },
-          "minimum": {
-            "value": 0.1,
-            "dimension": "length",
-            "unit": "millimeter"
-          },
-          "maximum": null
-        },
-        {
-          "id": "inner_radius",
-          "parameter_type": {
-            "scalar": "length"
-          },
-          "default": {
-            "scalar": {
-              "value": 1,
               "dimension": "length",
               "unit": "millimeter"
             }
@@ -92,7 +111,7 @@
           "version": 1,
           "kind": "validation",
           "priority": "required",
-          "statement": "Hollow sweep valid",
+          "statement": "Hollow loft valid",
           "rule": {
             "shape_valid": {
               "output": "body"
@@ -111,30 +130,27 @@
         {
           "id": "body",
           "operation": {
-            "sweep": {
-              "profile": "profile",
-              "path": "path",
-              "orientation": "corrected_frenet"
-            }
-          }
-        },
-        {
-          "id": "profile",
-          "operation": {
-            "planar_region": {
-              "outer": "outer",
+            "profile_loft": {
+              "profiles": [
+                "lower",
+                "upper"
+              ],
+              "ruled": true,
               "holes": [
-                "inner"
+                [
+                  "lower-bore",
+                  "upper-bore"
+                ]
               ]
             }
           }
         },
         {
-          "id": "outer",
+          "id": "lower",
           "operation": {
             "sketch_face": {
               "sketch": {
-                "id": "outer",
+                "id": "lower",
                 "origin": {
                   "literal": {
                     "x": {
@@ -157,12 +173,12 @@
                 "x_axis": {
                   "literal": {
                     "x": {
-                      "value": 0,
+                      "value": 1,
                       "dimension": "scalar",
                       "unit": null
                     },
                     "y": {
-                      "value": 1,
+                      "value": 0,
                       "dimension": "scalar",
                       "unit": null
                     },
@@ -181,12 +197,12 @@
                       "unit": null
                     },
                     "y": {
-                      "value": 0,
+                      "value": 1,
                       "dimension": "scalar",
                       "unit": null
                     },
                     "z": {
-                      "value": 1,
+                      "value": 0,
                       "dimension": "scalar",
                       "unit": null
                     }
@@ -214,7 +230,7 @@
                   {
                     "id": "edge",
                     "x": {
-                      "parameter": "radius"
+                      "parameter": "lower_radius"
                     },
                     "y": {
                       "literal": {
@@ -242,7 +258,7 @@
                     "radius": {
                       "curve": "rim",
                       "value": {
-                        "parameter": "radius"
+                        "parameter": "lower_radius"
                       }
                     }
                   }
@@ -252,39 +268,41 @@
           }
         },
         {
-          "id": "inner",
+          "id": "upper",
           "operation": {
             "sketch_wire": {
               "sketch": {
-                "id": "inner",
+                "id": "upper",
                 "origin": {
-                  "literal": {
+                  "components": {
                     "x": {
-                      "value": 0,
-                      "dimension": "length",
-                      "unit": "millimeter"
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
                     },
                     "y": {
-                      "value": 0,
-                      "dimension": "length",
-                      "unit": "millimeter"
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
                     },
                     "z": {
-                      "value": 0,
-                      "dimension": "length",
-                      "unit": "millimeter"
+                      "parameter": "height"
                     }
                   }
                 },
                 "x_axis": {
                   "literal": {
                     "x": {
-                      "value": 0,
+                      "value": 1,
                       "dimension": "scalar",
                       "unit": null
                     },
                     "y": {
-                      "value": 1,
+                      "value": 0,
                       "dimension": "scalar",
                       "unit": null
                     },
@@ -303,12 +321,12 @@
                       "unit": null
                     },
                     "y": {
-                      "value": 0,
+                      "value": 1,
                       "dimension": "scalar",
                       "unit": null
                     },
                     "z": {
-                      "value": 1,
+                      "value": 0,
                       "dimension": "scalar",
                       "unit": null
                     }
@@ -336,7 +354,7 @@
                   {
                     "id": "edge",
                     "x": {
-                      "parameter": "inner_radius"
+                      "parameter": "upper_radius"
                     },
                     "y": {
                       "literal": {
@@ -364,7 +382,7 @@
                     "radius": {
                       "curve": "rim",
                       "value": {
-                        "parameter": "inner_radius"
+                        "parameter": "upper_radius"
                       }
                     }
                   }
@@ -374,11 +392,11 @@
           }
         },
         {
-          "id": "path",
+          "id": "lower-bore",
           "operation": {
-            "sketch_open_wire": {
+            "sketch_wire": {
               "sketch": {
-                "id": "route",
+                "id": "lower-bore",
                 "origin": {
                   "literal": {
                     "x": {
@@ -438,7 +456,7 @@
                 },
                 "points": [
                   {
-                    "id": "a",
+                    "id": "center",
                     "x": {
                       "literal": {
                         "value": 0,
@@ -456,9 +474,9 @@
                     "fixed": true
                   },
                   {
-                    "id": "b",
+                    "id": "edge",
                     "x": {
-                      "parameter": "run"
+                      "parameter": "lower_bore_radius"
                     },
                     "y": {
                       "literal": {
@@ -466,57 +484,153 @@
                         "dimension": "length",
                         "unit": "millimeter"
                       }
-                    },
-                    "fixed": true
-                  },
-                  {
-                    "id": "o",
-                    "x": {
-                      "parameter": "run"
-                    },
-                    "y": {
-                      "parameter": "bend_radius"
-                    },
-                    "fixed": true
-                  },
-                  {
-                    "id": "e",
-                    "x": {
-                      "add": [
-                        {
-                          "parameter": "run"
-                        },
-                        {
-                          "parameter": "bend_radius"
-                        }
-                      ]
-                    },
-                    "y": {
-                      "parameter": "bend_radius"
                     },
                     "fixed": true
                   }
                 ],
-                "lines": [
+                "lines": [],
+                "circles": [
                   {
-                    "id": "run",
-                    "start": "a",
-                    "end": "b"
+                    "id": "rim",
+                    "center": "center",
+                    "rim": "edge"
                   }
                 ],
-                "circles": [],
                 "profile": [
-                  "run",
-                  "bend"
+                  "rim"
                 ],
-                "constraints": [],
-                "arcs": [
+                "constraints": [
                   {
-                    "id": "bend",
-                    "center": "o",
-                    "start": "b",
-                    "end": "e",
-                    "clockwise": false
+                    "radius": {
+                      "curve": "rim",
+                      "value": {
+                        "parameter": "lower_bore_radius"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "upper-bore",
+          "operation": {
+            "sketch_wire": {
+              "sketch": {
+                "id": "upper-bore",
+                "origin": {
+                  "components": {
+                    "x": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "z": {
+                      "parameter": "height"
+                    }
+                  }
+                },
+                "x_axis": {
+                  "literal": {
+                    "x": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "y_axis": {
+                  "literal": {
+                    "x": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "points": [
+                  {
+                    "id": "center",
+                    "x": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "edge",
+                    "x": {
+                      "parameter": "upper_bore_radius"
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": true
+                  }
+                ],
+                "lines": [],
+                "circles": [
+                  {
+                    "id": "rim",
+                    "center": "center",
+                    "rim": "edge"
+                  }
+                ],
+                "profile": [
+                  "rim"
+                ],
+                "constraints": [
+                  {
+                    "radius": {
+                      "curve": "rim",
+                      "value": {
+                        "parameter": "upper_bore_radius"
+                      }
+                    }
                   }
                 ]
               }
@@ -528,7 +642,7 @@
     "instances": [
       {
         "base": {
-          "id": "pipe",
+          "id": "duct",
           "overrides": {},
           "provenance": "dimensions are illustrative assumptions"
         }
@@ -537,7 +651,7 @@
   },
   "outputs": [
     {
-      "instance": "pipe",
+      "instance": "duct",
       "output": "body"
     }
   ],

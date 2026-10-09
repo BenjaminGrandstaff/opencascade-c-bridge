@@ -89,7 +89,7 @@ Through MCP, get either example with `occt_get_example`, then pass it to
 ```json
 {
   "schema": "occb-model-view-v1",
-  "model": { "schema_version": 79, "...": "complete model" },
+  "model": { "schema_version": 80, "...": "complete model" },
   "outputs": [{ "instance": "block", "output": "body" }],
   "sketches": true,
   "options": {
@@ -186,4 +186,9 @@ region and solid while keeping unaffected source sketches.
 The `hollow-sweep` example shows a bent tube plus its outer, inner and route
 sketches. Native route length and the bore control remain linked to the solid.
 Holed profile sweeps use the same shared scene builder and annotations as simple
-sweeps; model schema remains 79 and the current native ABI is 50.
+sweeps; current model schema is 80 and the current native ABI is 50.
+
+The schema-80 `hollow-loft` example adds all inner section sketches and bore
+controls to the solid's linked parameters. Existing section-spacing annotations
+measure outer profile centroids. Hole-track dependencies preserve selective
+regeneration of unchanged sections.

@@ -635,13 +635,13 @@ profiles (ABI 47, model schema 72).
 up to a selected face, and up to the next complete face limit, including
 inclined and curved surfaces. Target
 geometry participates in regeneration; the viewer shows the actual length.
-The native ABI is 50; model schema is 79. Native surface-ray witnesses measure
+The native ABI is 50; model schema is 80. Native surface-ray witnesses measure
 viewer extents on nonuniform caps.
 
 
 [Blind drill-point holes](HOLES.md) add configurable conical bottoms, native tip
 containment checks, full-diameter depth callouts and linked viewer dimensions.
-The current model schema is 79 and native ABI is 50.
+The current model schema is 80 and native ABI is 50.
 
 
 [Geometry-driven holes](HOLES.md) stop at a selected or next covering input
@@ -667,4 +667,9 @@ Schema 79 adds `planar_region`; ABI 50 also retains its extracted face history.
 [Hollow path sweeps](HOLLOW_SWEEPS.md) transport holed planar sections into
 bent tubes and multiple-bore parts, preserving wall ancestry and linked route
 controls. ABI 50 adds explicit history-preserving topology extraction; the
-model schema remains 79. Rebuild the native library and Rust executables together.
+current model schema is 80. Rebuild the native library and Rust executables together.
+
+[Hollow profile lofts](LOFTS.md#explicit-hollow-tracks-schema-80) use explicit
+inner section tracks to make tapered ducts and multiple-bore transitions.
+Schema 80 adds optional `profile_loft.holes`, with native containment, crossing
+checks and retained wall ancestry. Native ABI remains 50.

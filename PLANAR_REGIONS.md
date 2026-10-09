@@ -32,9 +32,8 @@ there is no polygon conversion. Temporary native shape handles are released.
 
 Use the result directly as an `extrude` or `revolve` profile to make hollow
 solids. Symmetric revolution is supported. The engineering `sweep` feature also accepts holed faces; see
-[hollow path sweeps](HOLLOW_SWEEPS.md). Saved-profile lofts currently accept
-single-boundary sections, so hollow loft transitions still use separate
-outer/inner constructions and a cut.
+[hollow path sweeps](HOLLOW_SWEEPS.md). Saved-profile lofts accept explicit outer/inner section tracks to build hollow
+transitions; see [hollow lofts](LOFTS.md#explicit-hollow-tracks-schema-80).
 
 All boundary outputs enter dependencies. Hole edits rebuild the region and its
 downstream solid while reusing unaffected sketches. Invalid edits retain the

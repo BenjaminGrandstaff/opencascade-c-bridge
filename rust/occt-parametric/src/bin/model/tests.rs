@@ -1487,3 +1487,37 @@ fn hollow_sweep_viewer_exposes_route_length_bore_controls_and_all_source_sketche
         );
     }
 }
+
+#[test]
+fn hollow_loft_viewer_keeps_hole_sketches_spacing_and_linked_bore_controls() {
+    let dir = Directory::new();
+    view_request(&dir, view_example("hollow-loft"), "hollow-loft").unwrap();
+    let data: Value =
+        serde_json::from_str(&fs::read_to_string(dir.0.join("hollow-loft/view.json")).unwrap())
+            .unwrap();
+    let scenes = data["scenes"].as_array().unwrap();
+    assert_eq!(scenes.len(), 5);
+    let solid = &scenes[0];
+    assert_eq!(solid["valid"], true);
+    for parameter in ["lower_bore_radius", "upper_bore_radius"] {
+        assert!(
+            solid["parameters"]
+                .as_object()
+                .unwrap()
+                .contains_key(parameter)
+        );
+    }
+    let spacing = solid["annotations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["id"] == "loft-spacing-0")
+        .unwrap();
+    assert_eq!(spacing["detail"]["value_mm"], 20.0);
+    for feature in ["lower", "upper", "lower-bore", "upper-bore"] {
+        assert_eq!(
+            scenes.iter().find(|s| s["feature"] == feature).unwrap()["solver"]["solved"],
+            true
+        );
+    }
+}

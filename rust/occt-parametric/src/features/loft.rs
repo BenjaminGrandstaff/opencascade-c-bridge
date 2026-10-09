@@ -124,6 +124,53 @@ pub(crate) fn collect_parameters<'a>(sections: &'a [LoftSection], names: &mut Ha
 pub(crate) fn execute_profiles<'a>(
     session: &'a Session,
     profiles: &[String],
+    holes: &[Vec<String>],
+    ruled: bool,
+    shapes: &HashMap<String, Shape<'a>>,
+) -> Result<Shape<'a>, ModelError> {
+    if holes.is_empty() {
+        return execute_simple_profiles(session, profiles, ruled, shapes);
+    }
+    if !(2..=MAXIMUM_SECTIONS).contains(&profiles.len())
+        || holes.len() > 100
+        || holes.iter().any(|track| track.len() != profiles.len())
+    {
+        return Err(ModelError::new(
+            "loft needs 2-1000 outer sections and at most 100 hole tracks with matching section counts",
+        ));
+    }
+    let mut used = HashSet::new();
+    if profiles
+        .iter()
+        .chain(holes.iter().flatten())
+        .any(|id| !used.insert(id))
+    {
+        return Err(ModelError::new(
+            "loft sections must be distinct across outer and hole tracks",
+        ));
+    }
+    for (index, outer) in profiles.iter().enumerate() {
+        let inner = holes
+            .iter()
+            .map(|track| track[index].clone())
+            .collect::<Vec<_>>();
+        let _ = super::regions::execute(session, outer, &inner, shapes)
+            .map_err(|e| e.context(&format!("loft section {index}")))?;
+    }
+    let outer = execute_simple_profiles(session, profiles, ruled, shapes)?;
+    let mut inners = Vec::new();
+    for (index, track) in holes.iter().enumerate() {
+        inners.push(
+            execute_simple_profiles(session, track, ruled, shapes)
+                .map_err(|e| e.context(&format!("loft hole track {index}")))?,
+        );
+    }
+    super::hollow::subtract(session, &outer, &inners)
+}
+
+fn execute_simple_profiles<'a>(
+    session: &'a Session,
+    profiles: &[String],
     ruled: bool,
     shapes: &HashMap<String, Shape<'a>>,
 ) -> Result<Shape<'a>, ModelError> {
@@ -148,7 +195,7 @@ pub(crate) fn execute_profiles<'a>(
                 }
                 if session.subshape_count(profile, ShapeType::Wire)? != 1 {
                     return Err(ModelError::new(
-                        "profile loft faces must have exactly one boundary; loft holes separately and cut",
+                        "profile loft sections must each have one boundary; provide explicit hole tracks",
                     ));
                 }
                 temporary.push(session.subshape(profile, ShapeType::Wire, 0)?);
@@ -210,16 +257,21 @@ mod profile_tests {
                 .create_circle_wire(Vec3::new(0., 0., 10.), Vec3::new(0., 0., 1.), 3.)
                 .unwrap();
             let shapes = HashMap::from([("ring".into(), face), ("upper".into(), upper)]);
-            let error = execute_profiles(&session, &["ring".into(), "upper".into()], true, &shapes)
-                .unwrap_err();
+            let error =
+                execute_simple_profiles(&session, &["ring".into(), "upper".into()], true, &shapes)
+                    .unwrap_err();
             assert!(error.message.contains("one boundary"));
             let sphere = session.create_sphere(Vec3::new(0., 0., 0.), 3.).unwrap();
             let curved = session.subshape(&sphere, ShapeType::Face, 0).unwrap();
             let mut shapes = shapes;
             shapes.insert("curved".into(), curved);
-            let error =
-                execute_profiles(&session, &["curved".into(), "upper".into()], true, &shapes)
-                    .unwrap_err();
+            let error = execute_simple_profiles(
+                &session,
+                &["curved".into(), "upper".into()],
+                true,
+                &shapes,
+            )
+            .unwrap_err();
             assert!(error.message.contains("planar regions"));
         }
         assert_eq!(session.shape_count().unwrap(), 0);

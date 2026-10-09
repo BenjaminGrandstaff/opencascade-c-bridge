@@ -1,7 +1,7 @@
 # Sweeping hollow sketch profiles
 
 The existing `sweep` feature now accepts a valid planar face with up to 100 inner
-boundaries. Model schema remains 79; the current native ABI is 50.
+boundaries. The current model schema is 80; the current native ABI is 50.
 
 ```json
 "sweep": {
@@ -58,3 +58,7 @@ Copies share geometry, and temporary native handles are released on success or
 failure. Scale gates check 250 curved hollow sweeps and one 100-bore straight
 sweep, each within a 10-second budget, with analytical volumes, every bore's wall
 ancestry and zero retained handles. Region scale gates also continue to pass.
+
+Hollow sweeps and schema-80 hollow profile lofts share their native containment,
+subtraction and history helper. Their source transport/fitting operations remain
+specific to each feature.
