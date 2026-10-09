@@ -1,0 +1,470 @@
+{
+  "schema": "occb-model-view-v1",
+  "model": {
+    "schema_version": 83,
+    "family": {
+      "id": "spring",
+      "version": 1,
+      "parameters": [
+        {
+          "id": "coil_radius",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 10,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 2,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 50,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "pitch",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 4,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 0.5,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 30,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "turns",
+          "parameter_type": {
+            "scalar": "scalar"
+          },
+          "default": {
+            "scalar": {
+              "value": 5,
+              "dimension": "scalar",
+              "unit": null
+            }
+          },
+          "minimum": {
+            "value": 0.5,
+            "dimension": "scalar",
+            "unit": null
+          },
+          "maximum": {
+            "value": 50,
+            "dimension": "scalar",
+            "unit": null
+          }
+        },
+        {
+          "id": "wire_radius",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 1,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 0.1,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 5,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        }
+      ],
+      "derived_parameters": [
+        {
+          "id": "lead",
+          "dimension": "length",
+          "expression": {
+            "multiply": [
+              {
+                "literal": {
+                  "value": 6.283185307179586,
+                  "dimension": "scalar",
+                  "unit": null
+                }
+              },
+              {
+                "parameter": "coil_radius"
+              }
+            ]
+          }
+        },
+        {
+          "id": "tangent_length",
+          "dimension": "length",
+          "expression": {
+            "hypotenuse": [
+              {
+                "parameter": "lead"
+              },
+              {
+                "parameter": "pitch"
+              }
+            ]
+          }
+        }
+      ],
+      "derived_vector_parameters": [],
+      "constraints": [
+        {
+          "id": "turn-clearance",
+          "left": {
+            "multiply": [
+              {
+                "literal": {
+                  "value": 2.1,
+                  "dimension": "scalar",
+                  "unit": null
+                }
+              },
+              {
+                "parameter": "wire_radius"
+              }
+            ]
+          },
+          "relation": "less_or_equal",
+          "right": {
+            "parameter": "pitch"
+          },
+          "statement": "Keep separation between adjacent turns",
+          "provenance": "Illustrative geometric guard, not a spring design standard"
+        },
+        {
+          "id": "section-curvature",
+          "left": {
+            "multiply": [
+              {
+                "literal": {
+                  "value": 1.1,
+                  "dimension": "scalar",
+                  "unit": null
+                }
+              },
+              {
+                "parameter": "wire_radius"
+              }
+            ]
+          },
+          "relation": "less_or_equal",
+          "right": {
+            "parameter": "coil_radius"
+          },
+          "statement": "Keep section smaller than coil radius",
+          "provenance": "Illustrative geometric guard, not a spring design standard"
+        }
+      ],
+      "requirements": [
+        {
+          "id": "valid",
+          "version": 1,
+          "kind": "validation",
+          "priority": "required",
+          "statement": "Spring solid valid",
+          "rule": {
+            "shape_valid": {
+              "output": "body"
+            }
+          },
+          "provenance": "Demonstration assumptions",
+          "traces": [
+            {
+              "feature": "body"
+            }
+          ]
+        }
+      ],
+      "datums": [],
+      "features": [
+        {
+          "id": "coil",
+          "operation": {
+            "helix": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 0,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "axis": {
+                "literal": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "z": {
+                    "value": 1,
+                    "dimension": "scalar",
+                    "unit": null
+                  }
+                }
+              },
+              "start": {
+                "literal": {
+                  "x": {
+                    "value": 1,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "z": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  }
+                }
+              },
+              "radius": {
+                "parameter": "coil_radius"
+              },
+              "pitch": {
+                "parameter": "pitch"
+              },
+              "turns": {
+                "parameter": "turns"
+              },
+              "left_handed": false
+            }
+          }
+        },
+        {
+          "id": "profile",
+          "operation": {
+            "sketch_face": {
+              "sketch": {
+                "id": "wire-section",
+                "origin": {
+                  "components": {
+                    "x": {
+                      "parameter": "coil_radius"
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "z": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    }
+                  }
+                },
+                "x_axis": {
+                  "literal": {
+                    "x": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "y_axis": {
+                  "components": {
+                    "x": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "scalar",
+                        "unit": null
+                      }
+                    },
+                    "y": {
+                      "negate": {
+                        "divide": [
+                          {
+                            "parameter": "pitch"
+                          },
+                          {
+                            "parameter": "tangent_length"
+                          }
+                        ]
+                      }
+                    },
+                    "z": {
+                      "divide": [
+                        {
+                          "parameter": "lead"
+                        },
+                        {
+                          "parameter": "tangent_length"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "points": [
+                  {
+                    "id": "center",
+                    "x": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "edge",
+                    "x": {
+                      "parameter": "wire_radius"
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": true
+                  }
+                ],
+                "lines": [],
+                "circles": [
+                  {
+                    "id": "rim",
+                    "center": "center",
+                    "rim": "edge"
+                  }
+                ],
+                "profile": [
+                  "rim"
+                ],
+                "constraints": [
+                  {
+                    "radius": {
+                      "curve": "rim",
+                      "value": {
+                        "parameter": "wire_radius"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "body",
+          "operation": {
+            "sweep": {
+              "profile": "profile",
+              "path": "coil",
+              "orientation": {
+                "binormal": {
+                  "direction": {
+                    "literal": {
+                      "x": {
+                        "value": 0,
+                        "dimension": "scalar",
+                        "unit": null
+                      },
+                      "y": {
+                        "value": 0,
+                        "dimension": "scalar",
+                        "unit": null
+                      },
+                      "z": {
+                        "value": 1,
+                        "dimension": "scalar",
+                        "unit": null
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "instances": [
+      {
+        "base": {
+          "id": "spring",
+          "overrides": {},
+          "provenance": "dimensions are illustrative assumptions"
+        }
+      }
+    ]
+  },
+  "outputs": [
+    {
+      "instance": "spring",
+      "output": "body"
+    }
+  ],
+  "sketches": true
+}

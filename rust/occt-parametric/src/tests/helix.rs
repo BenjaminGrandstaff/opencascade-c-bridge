@@ -201,3 +201,41 @@ fn left_handed_springs_mirror_right_handed_ones_and_helices_persist() {
     drop((a, b));
     assert_eq!(session.shape_count().unwrap(), 0);
 }
+
+#[test]
+fn ai_spring_example_reorients_its_profile_after_radius_and_pitch_edits() {
+    let request: serde_json::Value =
+        serde_json::from_str(include_str!("../../../../tools/model/spring.request.json")).unwrap();
+    let document = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+    let session = Session::new().unwrap();
+    let mut instance = part(&document.family);
+    let first = instance.regenerate(&session).unwrap();
+    instance.overrides.insert(
+        "coil_radius".into(),
+        ParameterValue::Scalar(Quantity::length(12.0, LengthUnit::Millimeter)),
+    );
+    instance.overrides.insert(
+        "pitch".into(),
+        ParameterValue::Scalar(Quantity::length(6.0, LengthUnit::Millimeter)),
+    );
+    instance.overrides.insert(
+        "turns".into(),
+        ParameterValue::Scalar(Quantity::scalar(7.5)),
+    );
+    let edited = instance.regenerate_incremental(&session, &first).unwrap();
+    assert_eq!(edited.regeneration.rebuilt, vec!["coil", "profile", "body"]);
+    let body = edited.shape("body").unwrap();
+    assert!(session.is_valid(body).unwrap());
+    let expected = std::f64::consts::PI * 7.5 * (TAU * 12.0).hypot(6.0);
+    assert!((session.volume(body).unwrap() - expected).abs() < expected * 1e-3);
+    let count = session.shape_count().unwrap();
+    instance.overrides.insert(
+        "wire_radius".into(),
+        ParameterValue::Scalar(Quantity::length(4.0, LengthUnit::Millimeter)),
+    );
+    assert!(instance.regenerate_incremental(&session, &edited).is_err());
+    assert_eq!(session.shape_count().unwrap(), count);
+    assert!(session.is_valid(body).unwrap());
+    drop((first, edited));
+    assert_eq!(session.shape_count().unwrap(), 0);
+}

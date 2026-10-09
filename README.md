@@ -686,3 +686,9 @@ coils, with parameter-driven radius, pitch, turns and handedness. ABI 52 adds
 centre with a positive dimensionless factor. Schema 83 adds `scale`, linked
 viewer controls and the AI example `scaled-part`. Native ABI remains 52; rebuild
 the native library for the correction to factors very close to one.
+
+
+The [spring AI example](tools/model/spring.request.json) combines helices with a
+parameter-driven circular sweep. Coil radius, pitch and fractional turn edits
+update the section orientation, native solid, linked viewer dimensions and
+route overlays. See [helix viewer semantics](HELIX.md#ai-example-and-linked-viewer-dimensions).

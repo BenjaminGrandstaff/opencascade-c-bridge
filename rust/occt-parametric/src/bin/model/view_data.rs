@@ -235,6 +235,45 @@ pub fn verification_result(scope: &str, r: &VerificationResult) -> Value {
         "status":if r.status == VerificationStatus::Passed {"passed"} else {"failed"},
         "message":r.message,"measured":measured,"evidence":evidence,"witness":witness})
 }
+/// O(F) lookup for a directly displayed helix or a sweep with an immediate helix route.
+fn helix_route<'a>(
+    part: &PartInstance<'a>,
+    output: &str,
+) -> Option<(&'a str, &'a FeatureOperation)> {
+    let feature = part.definition.features.iter().find(|f| f.id == output)?;
+    match &feature.operation {
+        FeatureOperation::Helix { .. } => Some((&feature.id, &feature.operation)),
+        FeatureOperation::Sweep { path, .. } => part
+            .definition
+            .features
+            .iter()
+            .find(|f| f.id == *path && matches!(f.operation, FeatureOperation::Helix { .. }))
+            .map(|f| (f.id.as_str(), &f.operation)),
+        _ => None,
+    }
+}
+/// O(turns) display points, with 32 intervals per turn and native's 100k bound.
+pub(super) fn helix_samples(
+    operation: &FeatureOperation,
+    parameters: &HashMap<String, ParameterValue>,
+) -> Result<usize, Failure> {
+    let FeatureOperation::Helix { turns, .. } = operation else {
+        return Ok(32);
+    };
+    let turns = turns
+        .evaluate(parameters)
+        .map_err(|e| model_failure("visualization", e))?
+        .value;
+    let count = (turns * 32.0).ceil().max(32.0) as usize + 1;
+    if count > 100_000 {
+        return Err(failure(
+            "visualization",
+            "helix display needs more than the native 100000-point edge sampling limit",
+        ));
+    }
+    Ok(count)
+}
+
 #[allow(clippy::too_many_arguments)]
 fn solid_scene(
     session: &Session,
@@ -246,6 +285,11 @@ fn solid_scene(
     budget: &mut Budget,
 ) -> Result<Value, Failure> {
     let generated = &diagnostic.generated;
+    let helix = helix_route(part, output);
+    let edge_samples = helix
+        .map(|(_, op)| helix_samples(op, parameters))
+        .transpose()?
+        .unwrap_or(32);
     let shape = generated.shape(output).ok_or_else(|| {
         failure(
             "selection",
@@ -264,16 +308,25 @@ fn solid_scene(
             "shape has no finite visual extent",
         ));
     }
-    let mesh = session
-        .surface_mesh(
-            shape,
-            MeshOptions {
-                linear_deflection: 0.1_f64.max(span * 1e-5),
-                angular_deflection_radians: 0.3,
-                maximum_triangles: budget.triangles.max(1),
-            },
-        )
-        .map_err(|e| failure("visualization", e))?;
+    // Wires and edges have no faces to triangulate, but retain native outlines.
+    let mesh = if session
+        .subshape_count(shape, ShapeType::Face)
+        .map_err(|e| failure("visualization", e))?
+        == 0
+    {
+        Vec::new()
+    } else {
+        session
+            .surface_mesh(
+                shape,
+                MeshOptions {
+                    linear_deflection: 0.1_f64.max(span * 1e-5),
+                    angular_deflection_radians: 0.3,
+                    maximum_triangles: budget.triangles.max(1),
+                },
+            )
+            .map_err(|e| failure("visualization", e))?
+    };
     check_budget(&mut budget.triangles, mesh.len(), "triangle")?;
     check_budget(&mut budget.vertices, mesh.len() * 3, "vertex")?;
     let mesh = mesh
@@ -285,10 +338,10 @@ fn solid_scene(
         .subshapes(shape, ShapeType::Edge)
         .map_err(|e| failure("visualization", e))?
     {
+        check_budget(&mut budget.vertices, edge_samples, "vertex")?;
         let points = session
-            .edge_sample_points(&edge, 32)
+            .edge_sample_points(&edge, edge_samples)
             .map_err(|e| failure("visualization", e))?;
-        check_budget(&mut budget.vertices, points.len(), "vertex")?;
         lines.push(points.into_iter().map(point).collect::<Vec<_>>());
     }
     let mut annotations = Vec::new();
@@ -393,6 +446,20 @@ fn solid_scene(
             json!({"requirement":requirement,"verification":verification}),
         ));
     }
+    if let Some((path, operation)) = helix {
+        let route = generated
+            .shape(path)
+            .ok_or_else(|| failure("visualization", "helix route unavailable"))?;
+        helix_dimensions(
+            session,
+            route,
+            path,
+            output,
+            operation,
+            parameters,
+            &mut annotations,
+        )?;
+    }
     // Direct primitive dimensions have their true feature-frame anchors. For
     // downstream booleans/transforms, controls stay in the linked side panel.
     if let Some(feature) = part.definition.features.iter().find(|f| f.id == output) {
@@ -453,6 +520,7 @@ fn solid_scene(
             let route = generated
                 .shape(path)
                 .ok_or_else(|| failure("visualization", "sweep route unavailable"))?;
+            let route_samples = edge_samples;
             let mut distance = 0.0;
             let mut paths = Vec::new();
             for edge in session
@@ -462,10 +530,10 @@ fn solid_scene(
                 distance += session
                     .edge_length(&edge)
                     .map_err(|e| failure("visualization", e))?;
+                check_budget(&mut budget.vertices, route_samples, "vertex")?;
                 let samples = session
-                    .edge_sample_points(&edge, 32)
+                    .edge_sample_points(&edge, route_samples)
                     .map_err(|e| failure("visualization", e))?;
-                check_budget(&mut budget.vertices, samples.len(), "vertex")?;
                 paths.push(samples.into_iter().map(point).collect::<Vec<_>>());
             }
             let definitions = part
@@ -763,6 +831,110 @@ fn revolve_dimension(
         json!([center])
     };
     annotations.push(annotation("driving-revolve-angle".into(),format!("{}revolve ∠ {angle:.3} rad",if matches!(extent,RevolveExtent::Symmetric){"symmetric "}else{""}),"dimension","driving",vec![feature.id.clone()],names(&serde_json::to_value(angle_radians).map_err(|e|failure("visualization",e))?),anchors,json!({"input":input,"expression":angle_radians,"extent":extent,"start_angle_radians":start_angle,"end_angle_radians":start_angle+angle,"value_radians":angle,"axis_origin":origin_value,"axis_direction":n,"arc_center":center,"arc_radius_mm":radius,"angular_arc":arc,"driving":true,"description":"Signed right-hand sweep around the native axis. The display arc uses the source profile's centroid radius; its radius is not a part size dimension."})));
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn helix_dimensions(
+    session: &Session,
+    route: &Shape<'_>,
+    path: &str,
+    output: &str,
+    operation: &FeatureOperation,
+    parameters: &HashMap<String, ParameterValue>,
+    annotations: &mut Vec<Value>,
+) -> Result<(), Failure> {
+    let FeatureOperation::Helix {
+        origin,
+        axis,
+        radius,
+        pitch,
+        turns,
+        left_handed,
+        ..
+    } = operation
+    else {
+        return Ok(());
+    };
+    let vector = |expr: &VectorExpr| {
+        expr.evaluate(parameters)
+            .map(|v| [v.x.value, v.y.value, v.z.value])
+            .map_err(|e| model_failure("visualization", e))
+    };
+    let scalar = |expr: &ScalarExpr| {
+        expr.evaluate(parameters)
+            .map(|v| v.value)
+            .map_err(|e| model_failure("visualization", e))
+    };
+    let o = vector(origin)?;
+    let direction = vector(axis)?;
+    let scale = direction.into_iter().map(f64::abs).fold(0.0, f64::max);
+    let n = direction.map(|v| v / scale);
+    let magnitude = n[0].hypot(n[1].hypot(n[2]));
+    let n = n.map(|v| v / magnitude);
+    let (r, p, t) = (scalar(radius)?, scalar(pitch)?, scalar(turns)?);
+    let edge = session
+        .subshape(route, ShapeType::Edge, 0)
+        .map_err(|e| failure("visualization", e))?;
+    let endpoints = session
+        .edge_sample_points(&edge, 2)
+        .map_err(|e| failure("visualization", e))?;
+    let start = point(endpoints[0]);
+    let end_axis = std::array::from_fn::<_, 3, _>(|i| o[i] + p * t * n[i]);
+    let next_turn = std::array::from_fn::<_, 3, _>(|i| start[i] + p * n[i]);
+    let common = json!({"path":path,"axis":n,"left_handed":left_handed,"driving":true});
+    for (id, label, value, expressions, anchors) in [
+        (
+            "radius",
+            format!("coil radius {} mm", length_label(r)),
+            r,
+            json!([origin, axis, radius]),
+            json!([o, start]),
+        ),
+        (
+            "pitch",
+            format!("pitch {} mm / turn", length_label(p)),
+            p,
+            json!([origin, axis, pitch]),
+            json!([start, next_turn]),
+        ),
+        (
+            "turns",
+            format!("turns {t:.3}"),
+            t,
+            json!([turns]),
+            json!([end_axis]),
+        ),
+        (
+            "rise",
+            format!("axial rise {} mm", length_label(p * t)),
+            p * t,
+            json!([origin, axis, pitch, turns]),
+            json!([o, end_axis]),
+        ),
+    ] {
+        let mut detail = common.clone();
+        detail["value"] = json!(value);
+        detail["dimension"] = json!(if id == "turns" { "scalar" } else { "length" });
+        detail["expressions"] = expressions.clone();
+        detail["description"] = json!(if id == "rise" {
+            "Helix axis rise; excludes wire thickness and end treatments."
+        } else if id == "pitch" {
+            "Reference axial advance per complete turn, including fractional-turn helices."
+        } else {
+            "Driving helix geometry."
+        });
+        annotations.push(annotation(
+            format!("helix-{id}"),
+            label,
+            "dimension",
+            "driving",
+            vec![output.into()],
+            names(&expressions),
+            anchors,
+            detail,
+        ));
+    }
     Ok(())
 }
 

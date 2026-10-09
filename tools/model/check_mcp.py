@@ -171,5 +171,47 @@ with tempfile.TemporaryDirectory(prefix='occb-mcp-scale-') as root:
         elapsed=time.monotonic()-started
         assert elapsed<10
         print(f'PASS MCP 100 revolved scenes, signed angle arcs and linked controls: {elapsed:.3f}s / 10s')
+        spring=client.tool('occt_get_example',dict(name='spring'))['structuredContent']
+        spring['sketches']=False
+        spring['options']=dict(maximum_triangles=1000000,maximum_vertices=1000000)
+        for i in range(1,10):spring['model']['instances'].append({'clone':dict(id=f'spring-{i}',source='spring',overrides={},provenance='scale')})
+        spring['outputs']=[dict(instance='spring' if i==0 else f'spring-{i}',output='body')for i in range(10)]
+        started=time.monotonic()
+        result=client.tool('occt_visualize_model',spring)
+        assert not result['isError'],result
+        resource=client.call('resources/read',dict(uri=result['structuredContent']['resources']['view.json']))
+        assert resource['error']['code']==-32002 and '32 MiB' in resource['error']['message']
+        # Dense spring meshes exceed the bounded MCP read size; use the returned local artifact.
+        data=json.loads((pathlib.Path(result['structuredContent']['directory'])/'view.json').read_text())
+        assert len(data['scenes'])==10
+        for scene in data['scenes']:
+            assert scene['valid']
+            annotations={a['id']:a for a in scene['annotations']}
+            assert annotations['helix-rise']['detail']['value']==20
+            assert annotations['helix-radius']['parameters']==['coil_radius']
+            assert annotations['helix-pitch']['parameters']==['pitch']
+            route=annotations['sweep-route-length']
+            assert abs(route['detail']['value_mm']-5*math.hypot(20*math.pi,4))<1e-4
+            assert len(route['detail']['dimension_paths'][0])==161
+        elapsed=time.monotonic()-started
+        assert elapsed<30
+        print(f'PASS MCP 10 spring scenes, helix dimensions and samples per turn: {elapsed:.3f}s / 30s')
+        helix=client.tool('occt_get_example',dict(name='spring'))['structuredContent']
+        helix['sketches']=False
+        helix['model']['family']['features']=helix['model']['family']['features'][:1]
+        helix['model']['family']['requirements']=[]
+        for i in range(1,100):helix['model']['instances'].append({'clone':dict(id=f'coil-{i}',source='spring',overrides={},provenance='scale')})
+        helix['outputs']=[dict(instance='spring' if i==0 else f'coil-{i}',output='coil')for i in range(100)]
+        started=time.monotonic()
+        result=client.tool('occt_visualize_model',helix)
+        assert not result['isError'],result
+        data=json.loads(client.call('resources/read',dict(uri=result['structuredContent']['resources']['view.json']))['result']['contents'][0]['text'])
+        assert len(data['scenes'])==100
+        for scene in data['scenes']:
+            assert len(scene['lines'][0])==161
+            assert next(a for a in scene['annotations'] if a['id']=='helix-rise')['detail']['value']==20
+        elapsed=time.monotonic()-started
+        assert elapsed<10
+        print(f'PASS MCP 100 helix wire scenes, axial dimensions and bounded route samples: {elapsed:.3f}s / 10s')
     finally:
         client.close()

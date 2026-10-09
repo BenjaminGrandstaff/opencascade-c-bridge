@@ -1715,3 +1715,19 @@ transforms use rigid locations. Copied transforms follow session validation and
 healing policy. Linked instances share a regenerated variant. Family datums
 and assembly frames retain their separately authored definitions.
 See [scaling semantics](SCALING.md).
+
+
+## Helix visualization and spring example
+
+The shared native view collector resolves direct helices and immediate helix
+sweep routes in O(F) feature lookup. Native edge measurements supply route
+length and the radius starting point. Evaluated helix expressions supply
+radius, pitch, turns and axial-rise anchors. Labels link expression parameters
+and retain family coordinates for assembly placement.
+
+Route and swept-outline sampling uses at least 32 intervals per turn, with
+O(turns) points per edge. Global vertex limits are charged before allocation,
+and the native 100,000-point edge limit rejects oversized displays. The AI
+spring example derives section position and tangent orientation from radius
+and pitch, so incremental edits rebuild affected geometry correctly. No ABI
+or document schema change is needed. See [helices](HELIX.md).

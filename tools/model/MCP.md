@@ -402,5 +402,12 @@ See [mirrors](../../MIRRORS.md); current builds require native ABI 52.
 `scale_factor` is dimensionless and positive; `scale_center_x` moves the centre
 in millimetres. Native geometry, bounds, volume and source-face ancestry follow
 edits. The viewer links both controls to the scale label and displays measured
-result spans. See [scaling](../../SCALING.md). The catalog contains 20 examples
-and 12 generated schemas, exposed as 32 discovery resources.
+result spans. See [scaling](../../SCALING.md). The catalog contains 21 examples
+and 12 generated schemas, exposed as 33 discovery resources.
+
+
+`spring` combines the schema-82 helix operation with a parameter-driven circular
+section and native binormal sweep. Radius, pitch, fractional turns and wire
+radius are editable. The section plane follows radius and pitch edits; the
+viewer links helix dimensions and samples the route per turn. Geometric guards
+are illustrative assumptions. See [springs and coils](../../HELIX.md).

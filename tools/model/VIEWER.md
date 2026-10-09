@@ -205,3 +205,15 @@ dimensionless; the label uses the result bounding centre as its anchor rather
 than a length arrow. Metadata includes the evaluated scale centre, factor and
 source expressions. The `scaled-part` example demonstrates both controls.
 See [scaling](../../SCALING.md).
+
+
+Direct helices and solids swept directly along them show coil radius, pitch,
+turn count and axial rise. Radius anchors at the native starting point; rise
+excludes section thickness. Pitch is a complete-turn reference. These labels
+link to their defining parameters, and helix routes/outlines sample at least
+32 intervals per turn. Sampling respects the global vertex budget and native
+100,000-point limit. The `spring` example demonstrates live edits and a source
+section whose orientation follows radius/pitch changes.
+
+Wire and edge outputs display native line geometry without requesting a surface
+mesh. This also allows a helix path to be inspected directly before sweeping.
