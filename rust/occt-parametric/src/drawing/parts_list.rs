@@ -12,9 +12,14 @@ use crate::assembly::{compose, rigid};
 #[serde(deny_unknown_fields)]
 pub struct DrawingPartsList {
     pub position_mm: [f64; 2],
-    /// Part numbers by family ID; families without one show their ID.
+    /// Part numbers by family ID (or, for nested lists, by sub-assembly
+    /// frame ID); others show their ID.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub part_numbers: BTreeMap<String, String>,
+    /// List sub-assemblies (assembly frames) as rows with their parts and
+    /// sub-frames indented beneath, numbered `1`, `1.1`, `1.1.1` (schema 91).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub nested: bool,
 }
 
 /// An item balloon: a numbered circle with a leader to an instance in a view.
@@ -35,7 +40,13 @@ pub struct DrawingBalloon {
 /// One parts-list row.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct PartsListItem {
+    /// Row number, from 1.
     pub item: usize,
+    /// The item number shown: the row number in flat lists, or a
+    /// hierarchical number such as `1.2` in nested ones.
+    pub label: String,
+    /// Indentation level: 0 at the top, one more per enclosing sub-assembly.
+    pub depth: usize,
     pub quantity: usize,
     /// Part number, or the family ID with a variant suffix when one family
     /// appears with different parameter values.
@@ -43,7 +54,10 @@ pub struct PartsListItem {
     pub family: String,
     pub output: String,
     pub material: Option<String>,
-    /// Instances in the item, in order of first appearance.
+    /// The sub-assembly frame a row stands for; parts have none.
+    pub frame: Option<String>,
+    /// Instances in a part item, in order of first appearance; empty for
+    /// sub-assembly rows.
     pub instances: Vec<String>,
 }
 
@@ -59,13 +73,13 @@ impl DrawingDefinition {
         &self,
         graph: &InstanceGraph<'_>,
     ) -> Result<Vec<PartsListItem>, ModelError> {
-        let part_numbers = self.parts_list.as_ref().map(|list| &list.part_numbers);
-        let mut items: Vec<PartsListItem> = Vec::new();
-        let mut index: HashMap<String, usize> = HashMap::new();
+        let list = self.parts_list.as_ref();
+        let part_numbers = list.map(|list| &list.part_numbers);
+        let nested = list.is_some_and(|list| list.nested);
+        let mut root = Level::default();
         let mut seen = HashSet::new();
+        // Parameter value sets per family, in order of first appearance.
         let mut variants: HashMap<String, Vec<String>> = HashMap::new();
-        // Each item's parameter values, for naming variants of one family.
-        let mut item_values: Vec<String> = Vec::new();
         for view in &self.views {
             for output in &view.outputs {
                 if graph.is_suppressed(&output.instance) || !seen.insert(output.instance.as_str()) {
@@ -84,49 +98,164 @@ impl DrawingDefinition {
                     .map_err(|error| ModelError::new(format!("part identity: {error}")))?;
                 let key = serde_json::to_string(&(&family, &output.output, &material, &values))
                     .map_err(|error| ModelError::new(format!("part identity: {error}")))?;
-                match index.get(&key) {
-                    Some(&row) => {
-                        items[row].quantity += 1;
-                        items[row].instances.push(output.instance.clone());
-                    }
+                let family_variants = variants.entry(family.clone()).or_default();
+                if !family_variants.contains(&values) {
+                    family_variants.push(values.clone());
+                }
+                let chain = if nested {
+                    frame_chain(graph, &output.instance)
+                } else {
+                    Vec::new()
+                };
+                root.insert(&chain, key, || PartsListItem {
+                    item: 0,
+                    label: String::new(),
+                    depth: 0,
+                    quantity: 0,
+                    part: values.clone(),
+                    family: family.clone(),
+                    output: output.output.clone(),
+                    material: material.clone(),
+                    frame: None,
+                    instances: Vec::new(),
+                })
+                .add(&output.instance);
+            }
+        }
+        let mut items = Vec::new();
+        root.flatten("", 0, part_numbers, &variants, &mut items);
+        Ok(items)
+    }
+}
+
+/// The frames enclosing an instance, outermost first. Frame cycles are
+/// rejected by graph validation, so the walk ends.
+fn frame_chain(graph: &InstanceGraph<'_>, instance: &str) -> Vec<String> {
+    let mut chain = Vec::new();
+    let mut current = graph
+        .node(instance)
+        .and_then(|node| node.frame())
+        .map(str::to_owned);
+    while let Some(id) = current {
+        current = graph.frame(&id).and_then(|frame| frame.parent.clone());
+        chain.push(id);
+    }
+    chain.reverse();
+    chain
+}
+
+/// One level of the parts tree: grouped parts and sub-assembly frames, in
+/// order of first appearance.
+#[derive(Default)]
+struct Level {
+    entries: Vec<Entry>,
+    parts: HashMap<String, usize>,
+    frames: HashMap<String, usize>,
+}
+
+enum Entry {
+    Part(PartsListItem),
+    Frame(String, Level),
+}
+
+impl Entry {
+    fn add(&mut self, instance: &str) {
+        if let Entry::Part(item) = self {
+            item.quantity += 1;
+            item.instances.push(instance.to_owned());
+        }
+    }
+}
+
+impl Level {
+    /// The part entry for `key` under the frames in `chain`, created by
+    /// `make` on first appearance. O(chain length) hash lookups.
+    fn insert(
+        &mut self,
+        chain: &[String],
+        key: String,
+        make: impl FnOnce() -> PartsListItem,
+    ) -> &mut Entry {
+        match chain.split_first() {
+            None => {
+                let index = match self.parts.get(&key) {
+                    Some(&index) => index,
                     None => {
-                        let family_variants = variants.entry(family.clone()).or_default();
-                        if !family_variants.contains(&values) {
-                            family_variants.push(values.clone());
-                        }
-                        index.insert(key, items.len());
-                        item_values.push(values);
-                        items.push(PartsListItem {
-                            item: items.len() + 1,
-                            quantity: 1,
-                            part: String::new(),
-                            family,
-                            output: output.output.clone(),
-                            material,
-                            instances: vec![output.instance.clone()],
-                        });
+                        self.entries.push(Entry::Part(make()));
+                        self.parts.insert(key, self.entries.len() - 1);
+                        self.entries.len() - 1
                     }
+                };
+                &mut self.entries[index]
+            }
+            Some((frame, rest)) => {
+                let index = match self.frames.get(frame) {
+                    Some(&index) => index,
+                    None => {
+                        self.entries
+                            .push(Entry::Frame(frame.clone(), Level::default()));
+                        self.frames.insert(frame.clone(), self.entries.len() - 1);
+                        self.entries.len() - 1
+                    }
+                };
+                let Entry::Frame(_, level) = &mut self.entries[index] else {
+                    unreachable!("frame index holds a frame entry")
+                };
+                level.insert(rest, key, make)
+            }
+        }
+    }
+
+    /// Rows depth first with hierarchical labels (`1`, `1.2`, `1.2.1`).
+    fn flatten(
+        self,
+        prefix: &str,
+        depth: usize,
+        part_numbers: Option<&BTreeMap<String, String>>,
+        variants: &HashMap<String, Vec<String>>,
+        out: &mut Vec<PartsListItem>,
+    ) {
+        let number = |id: &str| part_numbers.and_then(|numbers| numbers.get(id)).cloned();
+        for (position, entry) in self.entries.into_iter().enumerate() {
+            let label = format!("{prefix}{}", position + 1);
+            match entry {
+                Entry::Part(mut item) => {
+                    // `part` held the parameter values until now.
+                    let values = std::mem::take(&mut item.part);
+                    let base = number(&item.family).unwrap_or_else(|| item.family.clone());
+                    let family_variants = &variants[&item.family];
+                    item.part = if family_variants.len() > 1 {
+                        let variant = family_variants
+                            .iter()
+                            .position(|candidate| *candidate == values)
+                            .expect("variant recorded")
+                            + 1;
+                        format!("{base} / variant {variant}")
+                    } else {
+                        base
+                    };
+                    item.item = out.len() + 1;
+                    item.label = label;
+                    item.depth = depth;
+                    out.push(item);
+                }
+                Entry::Frame(id, level) => {
+                    out.push(PartsListItem {
+                        item: out.len() + 1,
+                        label: label.clone(),
+                        depth,
+                        quantity: 1,
+                        part: number(&id).unwrap_or_else(|| id.clone()),
+                        family: String::new(),
+                        output: String::new(),
+                        material: None,
+                        frame: Some(id),
+                        instances: Vec::new(),
+                    });
+                    level.flatten(&format!("{label}."), depth + 1, part_numbers, variants, out);
                 }
             }
         }
-        for (item, values) in items.iter_mut().zip(&item_values) {
-            let family_variants = &variants[&item.family];
-            let base = part_numbers
-                .and_then(|numbers| numbers.get(&item.family))
-                .cloned()
-                .unwrap_or_else(|| item.family.clone());
-            item.part = if family_variants.len() > 1 {
-                let variant = family_variants
-                    .iter()
-                    .position(|candidate| candidate == values)
-                    .expect("variant recorded")
-                    + 1;
-                format!("{base} / variant {variant}")
-            } else {
-                base
-            };
-        }
-        Ok(items)
     }
 }
 
@@ -263,10 +392,14 @@ impl Layout {
             }
             self.append_table(list, out);
         }
-        let item_of: HashMap<&str, usize> = self
+        let item_of: HashMap<&str, &str> = self
             .items
             .iter()
-            .flat_map(|item| item.instances.iter().map(move |i| (i.as_str(), item.item)))
+            .flat_map(|item| {
+                item.instances
+                    .iter()
+                    .map(move |i| (i.as_str(), item.label.as_str()))
+            })
             .collect();
         for balloon in &drawing.balloons {
             let view = views[balloon.view.as_str()];
@@ -287,7 +420,7 @@ impl Layout {
             line(out, vec![point, rim]);
             circle(out, center, BALLOON_RADIUS_MM, 32);
             circle(out, point, 0.5, 8);
-            let text = number.to_string();
+            let text = (*number).to_owned();
             out.gdt_labels.push(DrawingLabel {
                 position_mm: [center[0] - 1.0 * text.len() as f64, center[1] - 1.2],
                 text,
@@ -330,17 +463,24 @@ impl Layout {
         let cells =
             std::iter::once(HEADERS.map(str::to_owned)).chain(self.items.iter().map(|item| {
                 [
-                    item.item.to_string(),
+                    item.label.clone(),
                     item.quantity.to_string(),
                     item.part.clone(),
                     item.material.clone().unwrap_or_else(|| "—".into()),
                 ]
             }));
-        for (row, values) in cells.enumerate() {
+        // Sub-assembly contents are indented 3 mm per level in the PART
+        // column (by position, since SVG collapses leading spaces).
+        let depths = std::iter::once(0).chain(self.items.iter().map(|item| item.depth));
+        for (row, (values, depth)) in cells.zip(depths).enumerate() {
             let mut column_x = x;
-            for (value, width) in values.into_iter().zip(COLUMNS_MM) {
+            for (column, (value, width)) in values.into_iter().zip(COLUMNS_MM).enumerate() {
+                let indent = if column == 2 { 3.0 * depth as f64 } else { 0.0 };
                 out.sheet_labels.push(DrawingLabel {
-                    position_mm: [column_x + 1.5, top - ROW_MM * (row as f64 + 1.0) + 2.0],
+                    position_mm: [
+                        column_x + 1.5 + indent,
+                        top - ROW_MM * (row as f64 + 1.0) + 2.0,
+                    ],
                     text: value,
                     stack: None,
                 });

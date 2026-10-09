@@ -6,9 +6,16 @@ use occt_parametric::{
     InstanceOutputRef,
 };
 
-pub(crate) fn parts_list_case(definition: &'static FamilyDefinition) -> Outcome {
+pub(crate) fn parts_list_case(definition: &'static FamilyDefinition, nested: bool) -> Outcome {
     timed(
-        "parts list: 10000 shown instances, 100 balloons".into(),
+        format!(
+            "parts list{}: 10000 shown instances, 100 balloons",
+            if nested {
+                " (nested in a sub-assembly)"
+            } else {
+                ""
+            }
+        ),
         Duration::from_secs(2),
         Expectation::Required,
         || {
@@ -22,6 +29,10 @@ pub(crate) fn parts_list_case(definition: &'static FamilyDefinition) -> Outcome 
                 VectorQuantity::lengths(50.0, 0.0, 0.0, LengthUnit::Millimeter),
                 "bench",
             )?;
+            if nested {
+                graph.add_frame("sub", None, Placement::identity(), "bench")?;
+                graph.set_pattern_frame("row", Some("sub"))?;
+            }
             let outputs: Vec<_> = members
                 .iter()
                 .map(|instance| InstanceOutputRef {
@@ -37,6 +48,7 @@ pub(crate) fn parts_list_case(definition: &'static FamilyDefinition) -> Outcome 
                 parts_list: Some(DrawingPartsList {
                     position_mm: [10.0, 990.0],
                     part_numbers: Default::default(),
+                    nested,
                 }),
                 balloons: members
                     .iter()
@@ -80,10 +92,14 @@ pub(crate) fn parts_list_case(definition: &'static FamilyDefinition) -> Outcome 
             let mut document = ModelDocument::from_graph(&graph);
             document.drawings.push(drawing);
             document.instance_graph()?;
-            if items.len() != 1 || items[0].quantity != 10_000 {
+            let part = &items[items.len() - 1];
+            if items.len() != 1 + usize::from(nested) || part.quantity != 10_000 {
                 return Err(failure(format!("{} items", items.len())));
             }
-            Ok("10000 instances grouped into one item; 100 balloons validated".into())
+            Ok(format!(
+                "10000 instances grouped into item {}; 100 balloons validated",
+                part.label
+            ))
         },
     )
 }

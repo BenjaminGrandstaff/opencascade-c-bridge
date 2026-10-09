@@ -81,6 +81,7 @@ fn page(members: &[String]) -> DrawingDefinition {
         parts_list: Some(DrawingPartsList {
             position_mm: [250.0, 280.0],
             part_numbers: BTreeMap::new(),
+            nested: false,
         }),
         balloons: vec![
             DrawingBalloon {
@@ -278,4 +279,106 @@ fn balloons_and_part_numbers_are_validated_and_persist() {
     drawing.remove("balloons");
     let migrated = ModelDocument::from_json(&legacy.to_string()).unwrap();
     assert!(migrated.drawings[0].parts_list.is_none() && migrated.drawings[0].balloons.is_empty());
+}
+
+#[test]
+fn nested_lists_follow_sub_assembly_frames_with_hierarchical_numbers() {
+    let family = block_family();
+    let mut graph = assembly(&family);
+    graph
+        .add_frame("left", None, Placement::identity(), "test")
+        .unwrap();
+    graph
+        .add_frame("inner", Some("left"), Placement::identity(), "test")
+        .unwrap();
+    graph.set_instance_frame("plate", Some("left")).unwrap();
+    graph.set_instance_frame("wide", Some("inner")).unwrap();
+    let members = member_ids(&graph);
+    let mut page = page(&members);
+    let list = page.parts_list.as_mut().unwrap();
+    list.nested = true;
+    list.part_numbers.insert("left".into(), "ASM-10".into());
+    let items = page.parts_list_items(&graph).unwrap();
+    let rows: Vec<_> = items
+        .iter()
+        .map(|i| {
+            (
+                i.label.as_str(),
+                i.depth,
+                i.quantity,
+                i.part.as_str(),
+                i.frame.as_deref(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        rows,
+        [
+            ("1", 0, 1, "ASM-10", Some("left")),
+            ("1.1", 1, 1, "BlockFamily / variant 1", None),
+            ("1.2", 1, 1, "inner", Some("inner")),
+            ("1.2.1", 2, 1, "BlockFamily / variant 2", None),
+            // The pattern copies sit at the top level, apart from the plate.
+            ("2", 0, 2, "BlockFamily / variant 1", None),
+            ("3", 0, 1, "BlockFamily / variant 1", None),
+        ]
+    );
+    assert_eq!(
+        items.iter().map(|i| i.item).collect::<Vec<_>>(),
+        [1, 2, 3, 4, 5, 6]
+    );
+    let session = Session::new().unwrap();
+    let generated = page
+        .generate(&graph, &session, DrawingRenderOptions::default())
+        .unwrap();
+    // Balloons show hierarchical numbers; parts are indented under their frames.
+    let numbers: Vec<&str> = generated
+        .gdt_labels
+        .iter()
+        .map(|l| l.text.as_str())
+        .collect();
+    assert_eq!(numbers, ["1.1", "3"]);
+    let cells: Vec<&str> = generated
+        .sheet_labels
+        .iter()
+        .map(|l| l.text.as_str())
+        .collect();
+    assert!(cells.contains(&"1.2.1"), "{cells:?}");
+    if let Some(directory) = std::env::var_os("OCCB_PARTS_QA_DIR") {
+        std::fs::write(
+            std::path::Path::new(&directory).join("nested.svg"),
+            generated.to_svg(),
+        )
+        .unwrap();
+    }
+    // The depth-2 part is indented 6 mm in the PART column (x 250 + 24 + 1.5).
+    let deep = generated
+        .sheet_labels
+        .iter()
+        .filter(|l| l.text == "BlockFamily / variant 2")
+        .map(|l| l.position_mm[0])
+        .next()
+        .unwrap();
+    assert!((deep - (250.0 + 24.0 + 1.5 + 6.0)).abs() < 1e-9, "{deep}");
+    let table: usize = generated
+        .sheet_lines
+        .iter()
+        .map(|l| l.points_mm.len())
+        .sum();
+    assert_eq!(table, 5 + 2 * 6 + 2 * 3);
+    // Flat lists ignore frames and keep plain numbers.
+    page.parts_list.as_mut().unwrap().nested = false;
+    let flat = page.parts_list_items(&graph).unwrap();
+    assert_eq!(
+        flat.iter().map(|i| i.label.as_str()).collect::<Vec<_>>(),
+        ["1", "2", "3"]
+    );
+    let mut document = ModelDocument::from_graph(&graph);
+    let mut nested_page = page.clone();
+    nested_page.parts_list.as_mut().unwrap().nested = true;
+    document.drawings.push(nested_page);
+    let json = document.to_json_pretty().unwrap();
+    assert!(json.contains("\"nested\": true"));
+    assert_eq!(ModelDocument::from_json(&json).unwrap(), document);
+    assert_eq!(session.shape_count().unwrap(), 0);
 }

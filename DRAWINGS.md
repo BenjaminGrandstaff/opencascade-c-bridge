@@ -994,11 +994,22 @@ shown, unsuppressed, in the balloon's view. Balloons are annotation linework
 (`gdt_lines`/`gdt_labels`) and both table and balloons count exactly in the
 vertex budget.
 
-Grouping is O(shown instances × parameters); validation indexes each view's
-shown instances once. A scale case groups 10,000 shown pattern members into
-one item and validates 100 balloons. Not yet included: revision tables,
-approval and release records, nested (indented) assembly lists, custom
-columns, and automatic balloon placement.
+**Nested lists (schema 91).** With `"nested": true`, the list follows the
+assembly frames that hold the shown instances. Each frame becomes a
+sub-assembly row (quantity 1, its part number from `part_numbers` keyed by
+frame ID, or the frame ID), with the parts and sub-frames inside it beneath
+it, indented 3 mm per level in the PART column and numbered hierarchically:
+`1`, `1.1`, `1.2`, `1.2.1`. Identical parts still group within each level;
+the same part in two frames appears under each. Balloons show the
+hierarchical number. `PartsListItem` reports each row's `label`, `depth` and,
+for sub-assembly rows, `frame`; `item` stays the row number. Flat lists keep
+plain numbers and ignore frames.
+
+Grouping is O(shown instances × (parameters + frame depth)); validation
+indexes each view's shown instances once. Scale cases group 10,000 shown
+pattern members, flat and inside a sub-assembly, and validate 100 balloons.
+Not yet included: merging identical sub-assemblies into one row with a
+quantity, custom columns, and automatic balloon placement.
 
 ## Releases and revision tables (schema 90)
 

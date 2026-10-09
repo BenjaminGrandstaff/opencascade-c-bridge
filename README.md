@@ -700,7 +700,8 @@ Schema 90 adds them.
 
 Drawings can carry [parts lists and item balloons](DRAWINGS.md#parts-lists-and-balloons-schema-87):
 shown instances group into numbered items by family, parameter values, output
-and material, with optional part numbers. Schema 87 adds them.
+and material, with optional part numbers. Schema 87 adds them; schema 91 adds
+nested lists that follow sub-assembly frames with hierarchical item numbers.
 
 [Modeled threads](THREADS.md) cut ISO 68-1 basic-profile 60° threads into rods
 and holes, external or internal, either hand, with parameter-driven diameter,
