@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define OCCT_BRIDGE_ABI_VERSION 49u
+#define OCCT_BRIDGE_ABI_VERSION 50u
 #define OCCT_BRIDGE_INVALID_SHAPE_ID UINT64_C(0)
 
 #if defined(_WIN32) && defined(OCCT_BRIDGE_BUILD_SHARED)
@@ -795,6 +795,18 @@ OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_shape_subshape_count(
     size_t* out_count
 );
 OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_shape_subshape_at(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t shape,
+    occt_bridge_shape_type_t subshape_type,
+    size_t index,
+    occt_bridge_shape_id_t* out_subshape
+);
+
+/* ABI 50: same descendant ordering as subshape_at, retaining parent history
+ * filtered to targets in the selected topology. Located histories are expanded
+ * on this explicit path. Missing parent history produces a normal subshape.
+ * Shares geometry; O(parent topology + history records and targets). */
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_shape_subshape_with_history(
     occt_bridge_session_t* session,
     occt_bridge_shape_id_t shape,
     occt_bridge_shape_type_t subshape_type,

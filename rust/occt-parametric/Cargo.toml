@@ -87,3 +87,7 @@ harness = false
 [[bench]]
 name = "planar_regions"
 harness = false
+
+[[bench]]
+name = "hollow_sweeps"
+harness = false

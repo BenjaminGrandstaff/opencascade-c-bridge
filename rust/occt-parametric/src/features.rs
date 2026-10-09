@@ -9,6 +9,7 @@ pub(crate) use loft::collect_parameters as collect_loft_parameters;
 mod primitives;
 mod regions;
 mod ribs;
+mod sweeps;
 mod variable_fillet;
 
 pub(crate) fn execute_profile_sweep<'session>(
@@ -142,22 +143,27 @@ pub(crate) fn execute_feature<'session>(
             profile,
             path,
             orientation,
-        } => session.sweep(
-            shape(shapes, profile)?,
-            shape(shapes, path)?,
-            match orientation {
-                SweepOrientation::CorrectedFrenet => occt_bridge::SweepOrientation::CorrectedFrenet,
-                SweepOrientation::Frenet => occt_bridge::SweepOrientation::Frenet,
-                SweepOrientation::Binormal { direction } => {
-                    occt_bridge::SweepOrientation::Binormal(vector(
-                        direction,
-                        parameters,
-                        Dimension::Scalar,
-                    )?)
-                }
-                SweepOrientation::Fixed => occt_bridge::SweepOrientation::Fixed,
-            },
-        ),
+        } => {
+            return sweeps::execute(
+                session,
+                shape(shapes, profile)?,
+                shape(shapes, path)?,
+                match orientation {
+                    SweepOrientation::CorrectedFrenet => {
+                        occt_bridge::SweepOrientation::CorrectedFrenet
+                    }
+                    SweepOrientation::Frenet => occt_bridge::SweepOrientation::Frenet,
+                    SweepOrientation::Binormal { direction } => {
+                        occt_bridge::SweepOrientation::Binormal(vector(
+                            direction,
+                            parameters,
+                            Dimension::Scalar,
+                        )?)
+                    }
+                    SweepOrientation::Fixed => occt_bridge::SweepOrientation::Fixed,
+                },
+            );
+        }
         FeatureOperation::Cylinder {
             origin,
             axis,

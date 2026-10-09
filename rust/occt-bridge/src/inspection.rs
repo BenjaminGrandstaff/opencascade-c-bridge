@@ -112,6 +112,30 @@ impl Session {
         Ok(self.shape(subshape))
     }
 
+    /// Extract topology while retaining parent ancestry filtered to the subset.
+    /// Shares geometry; explicitly expands any located history. Ordinary
+    /// `subshape` remains available when ancestry is unnecessary.
+    pub fn subshape_with_history<'a>(
+        &'a self,
+        shape: &Shape<'_>,
+        subshape_type: ShapeType,
+        index: usize,
+    ) -> Result<Shape<'a>, BridgeError> {
+        self.validate_shape(shape)?;
+        let mut subshape = 0;
+        // SAFETY: Valid session-owned input and output pointer; C checks type/index.
+        self.check(unsafe {
+            occt_bridge_shape_subshape_with_history(
+                self.raw.as_ptr(),
+                shape.id,
+                subshape_type as c_int,
+                index,
+                &mut subshape,
+            )
+        })?;
+        Ok(self.shape(subshape))
+    }
+
     /// Unique independently owned subshapes, in the same order as `subshape`.
     /// Indexes topology once per ABI pass, O(topology + returned handles).
     pub fn subshapes<'a>(

@@ -26,7 +26,7 @@ fn face<'a>(session: &'a Session, input: &Shape<'_>) -> Result<Shape<'a>, ModelE
     Ok(result)
 }
 
-fn boxes_separated(a: &Bounds, b: &Bounds) -> bool {
+pub(super) fn boxes_separated(a: &Bounds, b: &Bounds) -> bool {
     (a.max.x < b.min.x - CLEARANCE || b.max.x < a.min.x - CLEARANCE)
         || (a.max.y < b.min.y - CLEARANCE || b.max.y < a.min.y - CLEARANCE)
         || (a.max.z < b.min.z - CLEARANCE || b.max.z < a.min.z - CLEARANCE)
@@ -93,7 +93,7 @@ pub(super) fn execute<'a>(
             "planar region must produce exactly one connected face",
         ));
     }
-    let region = session.subshape(&cut, ShapeType::Face, 0)?;
+    let region = session.subshape_with_history(&cut, ShapeType::Face, 0)?;
     let area = session.surface_area(&region)?;
     if !session.face_is_planar(&region)?
         || !session.is_valid(&region)?

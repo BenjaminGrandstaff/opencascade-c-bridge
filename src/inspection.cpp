@@ -792,3 +792,29 @@ occt_bridge_status_t occt_bridge_shape_is_valid(
 }
 
 }  // extern "C"
+
+occt_bridge_status_t occt_bridge_shape_subshape_with_history(
+    occt_bridge_session_t* session, occt_bridge_shape_id_t shape,
+    occt_bridge_shape_type_t subshape_type, size_t index,
+    occt_bridge_shape_id_t* out_subshape) {
+    return guarded(session, [&] {
+        if (out_subshape == nullptr) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_subshape is null");
+        }
+        *out_subshape = OCCT_BRIDGE_INVALID_SHAPE_ID;
+        TopAbs_ShapeEnum topology_type = TopAbs_SHAPE;
+        if (!bridge_shape_type(subshape_type, topology_type)) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "unknown subshape type");
+        }
+        const TopoDS_Shape* value = find_shape(session, shape);
+        if (value == nullptr) {
+            return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "shape was not found");
+        }
+        const auto descendants = descendant_shapes(*value, topology_type);
+        if (index >= static_cast<size_t>(descendants.Extent())) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "subshape index is out of range");
+        }
+        const auto& selected = descendants.FindKey(static_cast<Standard_Integer>(index + 1));
+        return store_subshape_with_history(session, shape, selected, out_subshape);
+    });
+}

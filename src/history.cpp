@@ -188,3 +188,39 @@ occt_bridge_status_t occt_bridge_shape_compose_history(
             compose_entries(composer, next, materialize(previous_history->second)));
     });
 }
+
+namespace {
+std::vector<occt_bridge_history_entry> subset_history(
+    const occt_bridge_operation_history& parent, const TopoDS_Shape& selected) {
+    TopTools_IndexedMapOfShape output;
+    TopExp::MapShapes(selected, output);
+    std::vector<occt_bridge_history_entry> filtered;
+    for (const auto& previous : materialize(parent)) {
+        Targets targets;
+        for (const auto& value : previous.generated) {
+            if (output.Contains(value)) {
+                targets.generated.Add(value);
+            }
+        }
+        for (const auto& value : previous.modified) {
+            if (output.Contains(value)) {
+                targets.modified.Add(value);
+            }
+        }
+        filtered.push_back(targets.entry(previous.source, output));
+    }
+    return filtered;
+}
+}
+
+namespace occt_bridge_internal {
+occt_bridge_status_t store_subshape_with_history(
+    occt_bridge_session_t* session, occt_bridge_shape_id_t parent_id,
+    const TopoDS_Shape& selected, occt_bridge_shape_id_t* out_shape) {
+    const auto parent = session->histories.find(parent_id);
+    if (parent == session->histories.end()) {
+        return store_shape(session, selected, out_shape);
+    }
+    return store_shape_with_entries(session, selected, out_shape, subset_history(parent->second, selected));
+}
+}

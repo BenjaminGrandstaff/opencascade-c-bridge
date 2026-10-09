@@ -587,6 +587,13 @@ static void queries(occt_bridge_session_t* session) {
     EXPECT(occt_bridge_shape_subshape_at(session, box, 99, 0, &out), ARG);
     EXPECT(occt_bridge_shape_subshape_at(session, unknown, OCCT_BRIDGE_SHAPE_FACE, 0, &out), MISSING);
     EXPECT(occt_bridge_shape_subshape_at(session, box, OCCT_BRIDGE_SHAPE_FACE, 6, &out), ARG);
+    EXPECT(occt_bridge_shape_subshape_with_history(session, box, OCCT_BRIDGE_SHAPE_FACE, 0, NULL), ARG);
+    EXPECT(occt_bridge_shape_subshape_with_history(session, box, 99, 0, &out), ARG);
+    EXPECT(occt_bridge_shape_subshape_with_history(session, unknown, OCCT_BRIDGE_SHAPE_FACE, 0, &out), MISSING);
+    EXPECT(occt_bridge_shape_subshape_with_history(session, box, OCCT_BRIDGE_SHAPE_FACE, 6, &out), ARG);
+    EXPECT_TRUE(out == OCCT_BRIDGE_INVALID_SHAPE_ID, "failed history extraction clears output");
+    EXPECT(occt_bridge_shape_subshape_with_history(session, box, OCCT_BRIDGE_SHAPE_FACE, 0, &out), OK);
+    occt_bridge_shape_release(session, out);
 
     EXPECT(occt_bridge_shape_bounds(session, box, NULL), ARG);
     EXPECT(occt_bridge_shape_bounds(session, unknown, &bounds), MISSING);

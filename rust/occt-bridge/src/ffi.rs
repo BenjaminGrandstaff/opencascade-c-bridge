@@ -2,7 +2,7 @@
 
 use super::*;
 
-pub(crate) const ABI_VERSION: u32 = 49;
+pub(crate) const ABI_VERSION: u32 = 50;
 
 #[repr(C)]
 #[derive(Default)]
@@ -681,6 +681,13 @@ unsafe extern "C" {
         out: *mut usize,
     ) -> RawStatus;
     pub(crate) fn occt_bridge_shape_subshape_at(
+        session: *mut c_void,
+        shape: RawShapeId,
+        subshape_type: c_int,
+        index: usize,
+        out: *mut RawShapeId,
+    ) -> RawStatus;
+    pub(crate) fn occt_bridge_shape_subshape_with_history(
         session: *mut c_void,
         shape: RawShapeId,
         subshape_type: c_int,

@@ -61,7 +61,7 @@ LD_LIBRARY_PATH="$PWD/build" rust/occt-parametric/target/debug/occt-model \
   --schema request > /tmp/occt-request.schema.json
 ```
 
-`resources/list` advertises twelve `occt://schema/NAME` and sixteen
+`resources/list` advertises twelve `occt://schema/NAME` and seventeen
 `occt://example/NAME` resources. Accepted builds return specific
 `occt://build/BUILD_ID/ARTIFACT` URIs; a resource template advertises this form.
 JSON and SVG resources return text, while STEP and STL return base64 blobs.
@@ -331,7 +331,7 @@ length. Limit faces must terminate the complete profile strictly forward; see [e
 `curved-extrusions` demonstrates schema-74 inclined and spherical limits.
 Its view request uses the native centroid ray measurement and tracks both
 surfaces when `depth` changes. Crossing next-face limits require an explicit
-up-to-face selector. Native ABI 49 is required by the current build.
+up-to-face selector. Native ABI 50 is required by the current build.
 
 
 `drill-point` demonstrates schema-75 blind-hole bottoms. Its `point_angle`
@@ -377,3 +377,9 @@ to the solid; changing the hole radius rebuilds the inner sketch, region and
 body. Invalid containment and overlapping/touching holes are rejected. The
 feature schema exposes 1–100 inner profile references. See
 [planar region semantics](../../PLANAR_REGIONS.md).
+
+`hollow-sweep` uses the existing schema-79 `sweep` feature over a holed planar
+region and a tangent line/arc route. Inner/outer section controls and native
+route length link to the solid. ABI 50 retains composed wall ancestry when
+extracting the final solid. The current engineering layer handles up to 100
+inner boundaries; see [hollow sweeps](../../HOLLOW_SWEEPS.md).

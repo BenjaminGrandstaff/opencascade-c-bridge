@@ -24,6 +24,16 @@ fn native_annular_regions_extrude_exactly_and_retain_original_boundary_edges() {
     let region = generated.shape("region").unwrap();
     let body = generated.shape("body").unwrap();
     assert_eq!(session.shape_type(region).unwrap(), ShapeType::Face);
+    assert!(
+        session
+            .history_count(
+                region,
+                generated.shape("outer").unwrap(),
+                HistoryRelation::Modified
+            )
+            .unwrap()
+            > 0
+    );
     assert_eq!(session.subshape_count(region, ShapeType::Wire).unwrap(), 2);
     assert!((session.surface_area(region).unwrap() - 48.0 * std::f64::consts::PI).abs() < 1e-7);
     assert!((session.volume(body).unwrap() - 960.0 * std::f64::consts::PI).abs() < 1e-6);

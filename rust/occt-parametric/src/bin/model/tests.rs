@@ -1452,3 +1452,38 @@ fn hollow_profile_viewer_retains_both_sketches_and_inner_radius_controls() {
         }
     }
 }
+
+#[test]
+fn hollow_sweep_viewer_exposes_route_length_bore_controls_and_all_source_sketches() {
+    let dir = Directory::new();
+    view_request(&dir, view_example("hollow-sweep"), "hollow-sweep").unwrap();
+    let data: Value =
+        serde_json::from_str(&fs::read_to_string(dir.0.join("hollow-sweep/view.json")).unwrap())
+            .unwrap();
+    let scenes = data["scenes"].as_array().unwrap();
+    assert_eq!(scenes.len(), 4);
+    let solid = &scenes[0];
+    assert_eq!(solid["valid"], true);
+    assert!(
+        solid["parameters"]
+            .as_object()
+            .unwrap()
+            .contains_key("inner_radius")
+    );
+    let route = solid["annotations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["id"] == "sweep-route-length")
+        .unwrap();
+    assert!(
+        (route["detail"]["value_mm"].as_f64().unwrap() - (10.0 + 5.0 * std::f64::consts::PI)).abs()
+            < 1e-7
+    );
+    for feature in ["outer", "inner", "path"] {
+        assert_eq!(
+            scenes.iter().find(|s| s["feature"] == feature).unwrap()["solver"]["solved"],
+            true
+        );
+    }
+}

@@ -229,3 +229,120 @@ fn expected_generated_targets<'a>(
     }
     expected
 }
+
+#[test]
+fn subset_extraction_filters_ancestry_to_the_selected_solid_and_outlives_parents() {
+    let session = Session::new().unwrap();
+    let a = session
+        .create_circle_wire(Vec3::new(0.0, 0.0, 0.0), Vec3::new(0.0, 0.0, 1.0), 1.0)
+        .unwrap();
+    let b = session
+        .create_circle_wire(Vec3::new(5.0, 0.0, 0.0), Vec3::new(0.0, 0.0, 1.0), 1.0)
+        .unwrap();
+    let edge_a = session.subshape(&a, ShapeType::Edge, 0).unwrap();
+    let edge_b = session.subshape(&b, ShapeType::Edge, 0).unwrap();
+    let face_a = session.create_face_from_wire(&a).unwrap();
+    let face_b = session.create_face_from_wire(&b).unwrap();
+    let prism_a = session
+        .create_prism_from_face(&face_a, Vec3::new(0.0, 0.0, 2.0))
+        .unwrap();
+    let prism_b = session
+        .create_prism_from_face(&face_b, Vec3::new(0.0, 0.0, 2.0))
+        .unwrap();
+    let fused = session.fuse(&prism_a, &prism_b).unwrap();
+    let first = session.compose_history(&fused, &prism_a).unwrap();
+    let parent = session.compose_history(&first, &prism_b).unwrap();
+    assert_eq!(
+        session.subshape_count(&parent, ShapeType::Solid).unwrap(),
+        2
+    );
+    let mut extracted = Vec::new();
+    for i in 0..2 {
+        let selected = session
+            .subshape_with_history(&parent, ShapeType::Solid, i)
+            .unwrap();
+        let original = session.subshape(&parent, ShapeType::Solid, i).unwrap();
+        assert!(session.is_same(&selected, &original).unwrap());
+        let (own, other) = if session.exact_bounds(&selected).unwrap().min.x < 2.0 {
+            (&edge_a, &edge_b)
+        } else {
+            (&edge_b, &edge_a)
+        };
+        let count = session
+            .history_count(&selected, own, HistoryRelation::Generated)
+            .unwrap();
+        assert!(count > 0);
+        assert_eq!(
+            session
+                .history_count(&selected, other, HistoryRelation::Generated)
+                .unwrap(),
+            0
+        );
+        assert!(session.history_is_deleted(&selected, other).unwrap());
+        for n in 0..count {
+            let face = session
+                .history(&selected, own, HistoryRelation::Generated, n)
+                .unwrap();
+            assert_member(&session, &selected, &face);
+        }
+        extracted.push(selected);
+    }
+    drop((a, b, face_a, face_b, prism_a, prism_b, fused, first, parent));
+    assert!(extracted.iter().all(|s| session.is_valid(s).unwrap()));
+    assert!(
+        session
+            .history_count(&extracted[0], &edge_a, HistoryRelation::Generated)
+            .unwrap()
+            + session
+                .history_count(&extracted[0], &edge_b, HistoryRelation::Generated)
+                .unwrap()
+            > 0
+    );
+    drop((extracted, edge_a, edge_b));
+    assert_eq!(session.shape_count().unwrap(), 0);
+}
+
+#[test]
+fn subset_extraction_expands_located_history_and_checks_ownership_and_index() {
+    let session = Session::new().unwrap();
+    let source = unit_box(&session, 0.0);
+    let original = session.subshape(&source, ShapeType::Face, 0).unwrap();
+    let placed = session
+        .translate(&source, Vec3::new(10.0, 0.0, 0.0))
+        .unwrap();
+    let face = session
+        .subshape_with_history(&placed, ShapeType::Face, 0)
+        .unwrap();
+    assert_eq!(
+        session
+            .history_count(&face, &original, HistoryRelation::Modified)
+            .unwrap(),
+        1
+    );
+    let mapped = session
+        .history(&face, &original, HistoryRelation::Modified, 0)
+        .unwrap();
+    assert!(session.is_same(&face, &mapped).unwrap());
+    let plain = session
+        .subshape_with_history(&source, ShapeType::Face, 0)
+        .unwrap();
+    assert!(session.is_same(&plain, &original).unwrap());
+    assert_eq!(
+        session
+            .subshape_with_history(&source, ShapeType::Face, 99)
+            .unwrap_err()
+            .status,
+        1
+    );
+    let foreign_session = Session::new().unwrap();
+    let foreign = unit_box(&foreign_session, 0.0);
+    assert_eq!(
+        session
+            .subshape_with_history(&foreign, ShapeType::Face, 0)
+            .unwrap_err()
+            .status,
+        1
+    );
+    drop((source, original, placed, face, mapped, plain));
+    assert_eq!(session.shape_count().unwrap(), 0);
+}

@@ -8,22 +8,34 @@ tracks status and order.
 
 | Layer | Version | State |
 |---|---|---|
-| C ABI (`src/`, `include/`) | ABI 49 | Stable; exact version match required |
+| C ABI (`src/`, `include/`) | ABI 50 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
 | `occt-parametric` (engineering layer) | Schema 79 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 102 + first-use integration 1 (+1 doc test), recipes 3, parametric 416 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 18 + branch command 2 + model command 24, MCP Python 8, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 104 + first-use integration 1 (+1 doc test), recipes 3, parametric 419 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 18 + branch command 2 + model command 25, MCP Python 8, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
-| clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. New profile-loft code passes targeted lint. | `tools/cpp-lint/run.sh` |
+| clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection code pass targeted lint. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
 | Coverage | Last recorded: 93.61% lines overall, test code excluded; C++ 94.13% lines, 87.40% branches, 100% functions; Rust 93.42% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 120 Rust cases plus 5 model-command and 9 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Scale benchmarks | 122 Rust cases plus 5 model-command and 9 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
 
+- Hollow path sweeps and retained subset history (ABI 50; schema 79 unchanged):
+  holed planar faces sweep each native boundary under one transport rule, check
+  containment/separation and cut the inner volumes. One valid solid retains
+  inner/outer wall ancestry through composition and explicit history-preserving
+  extraction. Planar regions now retain their cut face history as well. Native
+  subset extraction filters targets, handles located ancestry and outlives parent
+  handles. Three library tests, two bridge tests, C argument checks and model/MCP
+  checks cover curved/straight modes, multiple bores, volume, source history,
+  edit reuse and failures. AI example `hollow-sweep` keeps three source sketches
+  and linked solid controls. Scale gates pass: 250 curved cases in 9.007 s and
+  a 100-bore case in 0.567 s (10 s budgets); region gates also pass with retained
+  history, and native handle counts return to zero. See [hollow sweeps](HOLLOW_SWEEPS.md).
 - Native hollow planar profiles (schema 79; ABI 49 unchanged):
   `PlanarRegion` combines an outer boundary with 1–100 strictly contained,
   disjoint inner boundaries. Native area/distance checks reject misplaced,

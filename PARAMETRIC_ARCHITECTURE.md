@@ -1656,7 +1656,22 @@ with the expected boundary count and area. The existing native ABI is reused.
 All profile IDs enter feature dependencies. Inner edits invalidate the region
 and downstream solid, with unaffected profiles reused. The extracted face
 feeds existing extrude/revolve operations, including symmetric revolutions.
-Native generated history from boundary edges remains available; the cut's
-operation-level face history is not copied to the extracted face. Scratch
+Native generated history from boundary edges remains available; ABI 50 also
+retains the cut's
+operation-level face history when extracting the face. Scratch
 handles are bounded by the hole count and released on failure and success.
 See [planar region semantics](PLANAR_REGIONS.md).
+
+## Hollow sweeps and explicit subset history (ABI 50)
+
+The engineering `Sweep` feature accepts valid holed planar faces without changing
+the model schema. Native boundary sweeps share the same orientation; containment
+and pair-separation checks precede one cut of the inner-sweep compound. History
+composition preserves generated inner/outer wall ancestry.
+
+`subshape_with_history` explicitly filters parent history targets to selected
+topology and materializes located ancestry when needed. It shares geometry,
+retains source ownership after parent release and marks omitted sources deleted
+relative to the subset. The final hollow sweep remains one solid, and planar
+regions retain native cut face history through the same extraction path.
+See [hollow sweep semantics](HOLLOW_SWEEPS.md) for scope and complexity.

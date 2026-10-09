@@ -1,6 +1,7 @@
 # Hollow sketch profiles
 
-Schema 79 adds a `planar_region` feature; native ABI 49 is unchanged.
+Schema 79 adds a `planar_region` feature. The current native ABI is 50,
+which also retains cut history when extracting the resulting face.
 
 ```json
 "planar_region": {
@@ -30,9 +31,10 @@ remaining area within tolerance. Curves stay in their native BREP representation
 there is no polygon conversion. Temporary native shape handles are released.
 
 Use the result directly as an `extrude` or `revolve` profile to make hollow
-solids. Symmetric revolution is supported. The current native sweep and
-saved-profile loft operations accept single-boundary profiles, so hollow sweep
-and loft transitions still use separate outer/inner constructions and a cut.
+solids. Symmetric revolution is supported. The engineering `sweep` feature also accepts holed faces; see
+[hollow path sweeps](HOLLOW_SWEEPS.md). Saved-profile lofts currently accept
+single-boundary sections, so hollow loft transitions still use separate
+outer/inner constructions and a cut.
 
 All boundary outputs enter dependencies. Hole edits rebuild the region and its
 downstream solid while reusing unaffected sketches. Invalid edits retain the
@@ -43,9 +45,10 @@ shared viewer, and their controls link to the solid.
 
 Extrusions and revolutions record native generated history from region boundary
 edges. Tests also verify original circular boundary-edge history for concentric
-and displaced holes. The face is extracted from a native cut; that cut's
-operation-level face history is not attached to the extracted face. Use region
-boundary-edge selectors for downstream generated-face references.
+and displaced holes. ABI 50 extracts the face with its native cut history
+filtered to that face.
+Modified outer-face ancestry is retained, alongside boundary-edge topology.
+Use region boundary-edge selectors for downstream generated-face references.
 
 Pair screening uses cached exact bounding boxes before native distance queries.
 Bookkeeping is O(H²) for H holes (at most 4,950 pairs), with O(H) retained scratch

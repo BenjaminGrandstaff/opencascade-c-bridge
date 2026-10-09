@@ -55,6 +55,10 @@ OCCT_BRIDGE_LIB_DIR="$build" LD_LIBRARY_PATH="$build" \
 OCCT_BRIDGE_LIB_DIR="$build" LD_LIBRARY_PATH="$build" \
     cargo bench --quiet --manifest-path "$root/rust/occt-parametric/Cargo.toml" --bench planar_regions
 
+# Holed-profile sweeps, subset history retention and the 100-bore bound.
+OCCT_BRIDGE_LIB_DIR="$build" LD_LIBRARY_PATH="$build" \
+    cargo bench --quiet --manifest-path "$root/rust/occt-parametric/Cargo.toml" --bench hollow_sweeps
+
 # Includes the bounded 10,000-face geometric matcher case.
 python3 -m unittest discover -s "$root/tools/mesh/tests"
 

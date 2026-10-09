@@ -590,9 +590,10 @@ pub enum FeatureOperation {
         origin: VectorExpr,
         size: VectorExpr,
     },
-    /// Sweeps the `profile` output (a wire, or a face with one boundary) along
+    /// Sweeps the `profile` output (a wire, or a planar face including holes) along
     /// the `path` output (an edge or wire). Place the profile at the path's
-    /// start, usually across it. A face or closed wire makes a solid.
+    /// start, usually across it. A face or closed wire makes a solid. Holed
+    /// faces sweep each boundary and subtract the contained inner volumes.
     Sweep {
         profile: String,
         path: String,

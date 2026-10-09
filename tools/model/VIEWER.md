@@ -182,3 +182,8 @@ The schema-79 `hollow-profile` example shows an annular native extrusion and
 both independent boundary sketches. Inner/outer controls enter the solid's
 linked parameters through region dependencies. Hole edits regenerate the
 region and solid while keeping unaffected source sketches.
+
+The `hollow-sweep` example shows a bent tube plus its outer, inner and route
+sketches. Native route length and the bore control remain linked to the solid.
+Holed profile sweeps use the same shared scene builder and annotations as simple
+sweeps; model schema remains 79 and the current native ABI is 50.

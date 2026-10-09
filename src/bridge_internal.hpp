@@ -117,6 +117,11 @@ occt_bridge_status_t store_shape_with_entries(
     occt_bridge_shape_id_t* out_shape,
     std::vector<occt_bridge_history_entry> entries);
 
+/* Explicit subset extraction, retaining only parent history targets in it. */
+occt_bridge_status_t store_subshape_with_history(
+    occt_bridge_session_t* session, occt_bridge_shape_id_t parent_id,
+    const TopoDS_Shape& selected, occt_bridge_shape_id_t* out_shape);
+
 /*
  * Appends `replacement`, or its subshapes of `type` when healing replaced a
  * shape with a container (a face split into a compound of faces), so history
