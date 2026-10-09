@@ -9,6 +9,7 @@ pub(super) fn linear<'a>(
     source: &Shape<'_>,
     step: Vec3,
     count: f64,
+    retain_source: bool,
 ) -> Result<Shape<'a>, ModelError> {
     if !count.is_finite() || count.fract() != 0.0 || !(1.0..=MAX_COPIES as f64).contains(&count) {
         return Err(ModelError::new(
@@ -29,7 +30,12 @@ pub(super) fn linear<'a>(
         if !offset.x.is_finite() || !offset.y.is_finite() || !offset.z.is_finite() {
             return Err(ModelError::new("linear pattern placement overflow"));
         }
-        copies.push(session.translate(source, offset)?);
+        let placed = session.translate(source, offset)?;
+        copies.push(if retain_source {
+            session.compose_history(&placed, source)?
+        } else {
+            placed
+        });
     }
     group(session, &copies)
 }
@@ -74,6 +80,7 @@ pub(super) fn circular<'a>(
     axis: Vec3,
     count: f64,
     angle_step: f64,
+    retain_source: bool,
 ) -> Result<Shape<'a>, ModelError> {
     if !count.is_finite() || count.fract() != 0.0 || !(1.0..=MAX_COPIES as f64).contains(&count) {
         return Err(ModelError::new(
@@ -92,7 +99,12 @@ pub(super) fn circular<'a>(
     check_topology(session, source, count)?;
     let mut copies = Vec::with_capacity(count);
     for i in 0..count {
-        copies.push(session.rotate(source, origin, axis, i as f64 * angle_step)?);
+        let placed = session.rotate(source, origin, axis, i as f64 * angle_step)?;
+        copies.push(if retain_source {
+            session.compose_history(&placed, source)?
+        } else {
+            placed
+        });
     }
     group(session, &copies)
 }

@@ -441,5 +441,16 @@ class McpTests(unittest.TestCase):
         self.assertEqual(self.client.process.returncode, 0)
         self.assertEqual(list((self.root / 'closed').iterdir()), [])
 
+    def test_pattern_source_history_inspection_resolves_all_bore_faces(self):
+        selector = {'history':dict(source_feature='cutter',source={'largest_area':dict(planar_only=False,allow_ties=False,relative_tolerance={'literal':dict(value=1e-9,dimension='scalar',unit=None)})},relation='modified')}
+        for name,count in [('patterned-plate',9),('bolt-circle',6)]:
+            example=self.client.tool('occt_get_example',dict(name=name))['structuredContent']
+            request=dict(schema='occb-model-request-v1',model=example['model'],outputs=example['outputs'],step=False,stl=False,preview=False)
+            built=self.client.tool('occt_build',request)
+            self.assertFalse(built['isError'])
+            inspected=self.client.tool('occt_inspect_build',dict(build_id=built['structuredContent']['build_id'],instance='plate',output='body',face_selector=selector,limit=100))
+            self.assertFalse(inspected['isError'])
+            self.assertEqual(inspected['structuredContent']['geometry']['faces']['total'],count)
+
 if __name__ == '__main__':
     unittest.main()

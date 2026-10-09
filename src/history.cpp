@@ -214,6 +214,58 @@ std::vector<occt_bridge_history_entry> subset_history(
 }
 
 namespace occt_bridge_internal {
+occt_bridge_status_t store_compound_with_history(
+    occt_bridge_session_t* session, const TopoDS_Shape& compound,
+    const occt_bridge_shape_id_t* children, size_t count,
+    occt_bridge_shape_id_t* out_shape) {
+    TopTools_IndexedMapOfShape output;
+    TopExp::MapShapes(compound, output);
+    TopTools_IndexedMapOfShape sources;
+    std::vector<Targets> targets;
+    const auto add_source = [&](const TopoDS_Shape& source) -> Targets& {
+        const int index = sources.Add(source);
+        if (static_cast<size_t>(index) > targets.size()) {
+            targets.emplace_back();
+        }
+        return targets[static_cast<size_t>(index - 1)];
+    };
+    // Scan each child once, then merge all branches with indexed identity sets.
+    // No repeated composition over a growing aggregate (which would be quadratic).
+    for (size_t child = 0; child < count; ++child) {
+        const TopoDS_Shape* shape = find_shape(session, children[child]);
+        TopTools_IndexedMapOfShape topology;
+        TopExp::MapShapes(*shape, topology);
+        for (int index = 1; index <= topology.Extent(); ++index) {
+            // Unchanged child topology stays selectable by identity without
+            // claiming a modification or allocating a singleton target set.
+            add_source(topology(index));
+        }
+        const auto history = session->histories.find(children[child]);
+        if (history == session->histories.end()) {
+            continue;
+        }
+        for (const auto& entry : materialize(history->second)) {
+            auto& merged = add_source(entry.source);
+            for (const auto& target : entry.generated) {
+                if (output.Contains(target)) {
+                    merged.generated.Add(target);
+                }
+            }
+            for (const auto& target : entry.modified) {
+                if (output.Contains(target)) {
+                    merged.modified.Add(target);
+                }
+            }
+        }
+    }
+    std::vector<occt_bridge_history_entry> entries;
+    entries.reserve(targets.size());
+    for (int index = 1; index <= sources.Extent(); ++index) {
+        entries.push_back(targets[static_cast<size_t>(index - 1)].entry(sources(index), output));
+    }
+    return store_shape_with_entries(session, compound, out_shape, std::move(entries));
+}
+
 occt_bridge_status_t store_subshape_with_history(
     occt_bridge_session_t* session, occt_bridge_shape_id_t parent_id,
     const TopoDS_Shape& selected, occt_bridge_shape_id_t* out_shape) {

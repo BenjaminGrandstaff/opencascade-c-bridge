@@ -608,7 +608,9 @@ OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_make_solid_from_shells(
     occt_bridge_shape_id_t* out_shape
 );
 
-/* Creates an assembly compound without consuming or modifying its children. */
+/* Creates a compound without consuming/modifying children, retaining their
+ * identity and unioned generated/modified ancestry. Targets are deduplicated.
+ * Expected O(child topology + child history records/relations) time and memory. */
 OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_create_compound(
     occt_bridge_session_t* session,
     const occt_bridge_shape_id_t* shapes,

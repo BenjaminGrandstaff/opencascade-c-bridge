@@ -1,6 +1,103 @@
 //! Composition follows generated/modified ancestry without mutating inputs.
 use super::*;
 
+#[test]
+fn compound_unions_located_history_deduplicates_targets_and_outlives_children() {
+    let session = Session::new().unwrap();
+    let source = unit_box(&session, 0.0);
+    let face = session.subshape(&source, ShapeType::Face, 0).unwrap();
+    let first = session
+        .translate(&source, Vec3::new(0.0, 0.0, 0.0))
+        .unwrap();
+    let second = session
+        .translate(&source, Vec3::new(3.0, 0.0, 0.0))
+        .unwrap();
+    let group = session
+        .create_compound(&[&first, &second, &second])
+        .unwrap();
+    assert_eq!(
+        session
+            .history_count(&group, &face, HistoryRelation::Modified)
+            .unwrap(),
+        2
+    );
+    assert!(!session.history_is_deleted(&group, &face).unwrap());
+    drop((source, first, second));
+    for i in 0..2 {
+        let target = session
+            .history(&group, &face, HistoryRelation::Modified, i)
+            .unwrap();
+        assert_member(&session, &group, &target);
+    }
+    assert_eq!(
+        session
+            .history_count(&group, &face, HistoryRelation::Modified)
+            .unwrap(),
+        2
+    );
+    drop((group, face));
+    assert_eq!(session.shape_count().unwrap(), 0);
+}
+
+#[test]
+fn compound_history_keeps_unchanged_children_and_excludes_deleted_branch_targets() {
+    let session = Session::new().unwrap();
+    let source = unit_box(&session, 0.0);
+    let tool = unit_box(&session, 0.5);
+    let cut = session.cut(&source, &tool).unwrap();
+    let group = session.create_compound(&[&cut, &source]).unwrap();
+    assert!(!session.history_is_deleted(&group, &source).unwrap());
+    let deleted = session
+        .subshapes(&source, ShapeType::Face)
+        .unwrap()
+        .into_iter()
+        .find(|face| session.history_is_deleted(&cut, face).unwrap())
+        .expect("cut removes a source face");
+    assert!(!session.history_is_deleted(&group, &deleted).unwrap());
+    assert_eq!(
+        session
+            .history_count(&group, &deleted, HistoryRelation::Modified)
+            .unwrap(),
+        0
+    );
+    for relation in [HistoryRelation::Generated, HistoryRelation::Modified] {
+        for i in 0..session.history_count(&group, &source, relation).unwrap() {
+            let target = session.history(&group, &source, relation, i).unwrap();
+            assert_member(&session, &group, &target);
+        }
+    }
+    drop((deleted, group, cut, source, tool));
+    assert_eq!(session.shape_count().unwrap(), 0);
+}
+
+#[test]
+fn compound_unions_generated_ancestry_from_original_and_moved_prisms() {
+    let session = Session::new().unwrap();
+    let source = unit_box(&session, 0.0);
+    let face = session.subshape(&source, ShapeType::Face, 0).unwrap();
+    let edge = session.subshape(&face, ShapeType::Edge, 0).unwrap();
+    let prism = session
+        .create_prism_from_face(&face, Vec3::new(-2.0, 0.0, 0.0))
+        .unwrap();
+    let placed = session.translate(&prism, Vec3::new(5.0, 0.0, 0.0)).unwrap();
+    let composed = session.compose_history(&placed, &prism).unwrap();
+    let group = session.create_compound(&[&prism, &composed]).unwrap();
+    assert_eq!(
+        session
+            .history_count(&group, &edge, HistoryRelation::Generated)
+            .unwrap(),
+        2
+    );
+    for i in 0..2 {
+        let target = session
+            .history(&group, &edge, HistoryRelation::Generated, i)
+            .unwrap();
+        assert_member(&session, &group, &target);
+    }
+    drop((group, composed, placed, prism, edge, face, source));
+    assert_eq!(session.shape_count().unwrap(), 0);
+}
+
 fn assert_member(session: &Session, result: &Shape<'_>, target: &Shape<'_>) {
     let kind = session.shape_type(target).unwrap();
     assert!(

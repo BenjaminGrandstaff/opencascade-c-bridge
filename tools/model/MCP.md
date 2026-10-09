@@ -440,3 +440,11 @@ cutter and one cut. Count and sweep derive angular spacing; an illustrative
 chord-distance constraint keeps holes apart. Selecting `tools` as an output
 shows linked count and angular-step labels with a native source-radius arc.
 See [circular patterns](../../PART_PATTERNS.md#circular-patterns-schema-89).
+
+
+History selectors now inspect all bores created from a repeated source cutter:
+`face_selector.history` can name `cutter`, select its largest nonplanar face,
+and request `modified` on `body`. The grid example returns nine faces and the
+bolt-circle example six. Native grouped history and Boolean composition retain
+those links; MCP wire tests build both examples and check actual selected counts.
+See [pattern ancestry](../../PART_PATTERNS.md#retained-pattern-ancestry).

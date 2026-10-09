@@ -1,4 +1,4 @@
-use occt_bridge::{Session, ShapeType};
+use occt_bridge::{HistoryRelation, Session, ShapeType};
 use occt_parametric::*;
 use std::{
     collections::HashMap,
@@ -80,6 +80,16 @@ fn main() {
     .regenerate(&session)
     .unwrap();
     let group = result.shape("pattern").unwrap();
+    let source_face = session
+        .subshape(result.shape("cutter").unwrap(), ShapeType::Face, 0)
+        .unwrap();
+    assert_eq!(
+        session
+            .history_count(group, &source_face, HistoryRelation::Modified)
+            .unwrap(),
+        10000
+    );
+    drop(source_face);
     assert_eq!(
         session.subshape_count(group, ShapeType::Solid).unwrap(),
         10000

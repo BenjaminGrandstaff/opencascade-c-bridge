@@ -652,6 +652,8 @@ impl Session {
         Ok(self.shape(solid))
     }
 
+    /// Groups children without consuming them, retaining their identity and
+    /// unioned operation histories. Indexed merge cost follows topology/relations.
     pub fn create_compound(&self, shapes: &[&Shape<'_>]) -> Result<Shape<'_>, BridgeError> {
         for shape in shapes {
             self.validate_shape(shape)?;

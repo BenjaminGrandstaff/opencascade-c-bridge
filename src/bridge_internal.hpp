@@ -117,6 +117,12 @@ occt_bridge_status_t store_shape_with_entries(
     occt_bridge_shape_id_t* out_shape,
     std::vector<occt_bridge_history_entry> entries);
 
+/* Group child identities and retained child ancestry in O(topology + relations). */
+occt_bridge_status_t store_compound_with_history(
+    occt_bridge_session_t* session, const TopoDS_Shape& compound,
+    const occt_bridge_shape_id_t* children, size_t count,
+    occt_bridge_shape_id_t* out_shape);
+
 /* Explicit subset extraction, retaining only parent history targets in it. */
 occt_bridge_status_t store_subshape_with_history(
     occt_bridge_session_t* session, occt_bridge_shape_id_t parent_id,

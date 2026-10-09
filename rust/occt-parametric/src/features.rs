@@ -314,14 +314,16 @@ pub(crate) fn execute_feature<'session>(
             left_handed: *left_handed,
         }),
         FeatureOperation::Fuse { left, right } => {
-            return session
+            let result = session
                 .fuse(shape(shapes, left)?, shape(shapes, right)?)
-                .map_err(|error| ModelError::from(error).locate_operands([left, right]));
+                .map_err(|error| ModelError::from(error).locate_operands([left, right]))?;
+            return retain_group_history(session, result, &[left, right], shapes, definitions);
         }
         FeatureOperation::Cut { object, tool } => {
-            return session
+            let result = session
                 .cut(shape(shapes, object)?, shape(shapes, tool)?)
-                .map_err(|error| ModelError::from(error).locate_operands([object, tool]));
+                .map_err(|error| ModelError::from(error).locate_operands([object, tool]))?;
+            return retain_group_history(session, result, &[object, tool], shapes, definitions);
         }
         FeatureOperation::Hole {
             input,
@@ -352,9 +354,10 @@ pub(crate) fn execute_feature<'session>(
             .map_err(|error| error.context(&format!("hole input '{input}'")));
         }
         FeatureOperation::Common { left, right } => {
-            return session
+            let result = session
                 .common(shape(shapes, left)?, shape(shapes, right)?)
-                .map_err(|error| ModelError::from(error).locate_operands([left, right]));
+                .map_err(|error| ModelError::from(error).locate_operands([left, right]))?;
+            return retain_group_history(session, result, &[left, right], shapes, definitions);
         }
         FeatureOperation::Unify {
             input,
@@ -379,6 +382,7 @@ pub(crate) fn execute_feature<'session>(
                 vector(axis, parameters, Dimension::Scalar)?,
                 scalar(count, parameters, Dimension::Scalar)?,
                 scalar(angle_step_radians, parameters, Dimension::Scalar)?,
+                is_group(input, definitions),
             );
         }
         FeatureOperation::LinearPattern { input, step, count } => {
@@ -387,6 +391,7 @@ pub(crate) fn execute_feature<'session>(
                 shape(shapes, input)?,
                 vector(step, parameters, Dimension::Length)?,
                 scalar(count, parameters, Dimension::Scalar)?,
+                is_group(input, definitions),
             );
         }
         FeatureOperation::Compound { inputs } => {
@@ -651,5 +656,33 @@ fn rib_closure(
             direction: vector(direction, parameters, Dimension::Scalar)?,
             maximum_length: scalar(maximum_length, parameters, Dimension::Length)?,
         },
+    })
+}
+
+/// Compose each directly grouped operand once. Native composition uses indexed
+/// topology/history sets; cost follows expanded relations, not repeated copies.
+fn retain_group_history<'a>(
+    session: &'a Session,
+    mut result: Shape<'a>,
+    inputs: &[&String],
+    shapes: &HashMap<String, Shape<'a>>,
+    definitions: &Features<'_>,
+) -> Result<Shape<'a>, ModelError> {
+    for input in inputs {
+        if is_group(input, definitions) {
+            result = session.compose_history(&result, shape(shapes, input)?)?;
+        }
+    }
+    Ok(result)
+}
+
+fn is_group(input: &str, definitions: &Features<'_>) -> bool {
+    definitions.by_id.get(input).is_some_and(|f| {
+        matches!(
+            f.operation,
+            FeatureOperation::Compound { .. }
+                | FeatureOperation::LinearPattern { .. }
+                | FeatureOperation::CircularPattern { .. }
+        )
     })
 }

@@ -1751,9 +1751,9 @@ intersections and joins. See [offset semantics](OFFSETS.md).
 the list, reject duplicate IDs and validate the grouped result. Native compound
 construction groups existing topology without fusing, sewing or geometry
 copies. Input changes invalidate the group and its dependents; unrelated
-features remain reusable. Grouping does not manufacture operation history;
-child topology retains identity, and downstream booleans record ancestry
-against the original child faces/edges contained in their compound tool.
+features remain reusable. Grouping retains child topology identity and unions existing child histories.
+Saved-model booleans compose direct group ancestry against original child faces
+and edges.
 
 Input lookup/uniqueness costs O(N) time and memory; native validation and
 inspection follow combined topology size. Located child copies can share one
@@ -1773,8 +1773,8 @@ in incremental signatures, so count-only edits can reuse source geometry.
 Bookkeeping costs O(N) memory/time; topology inspection/validation is O(NT).
 Eight source subshape counts form a conservative expansion estimate, checked
 against 1,000,000 topology entries before placing copies. Finite placement checks
-reject multiplication overflow. Per-copy history is not aggregated into the
-compound; use semantic selection on generated topology. Direct pattern labels
+reject multiplication overflow. Per-copy histories are aggregated in the compound; nested groups carry source
+history through each placement. Direct pattern labels
 show count, step and placement span in family coordinates.
 See [part pattern semantics](PART_PATTERNS.md).
 
@@ -1789,7 +1789,22 @@ avoid duplicate terminal placement. Full circles use 2π/count. Step/count/origi
 and axis expressions participate in regeneration; count-only changes reuse
 the source. Bookkeeping is O(N); validation follows O(NT) topology.
 
-Native copy history is not aggregated by the compound. The shared viewer
+Native copy histories are aggregated by the compound. The shared viewer
 projects the source mass centre to the axis, then samples a bounded angular
 arc in its perpendicular plane. Count and step labels link defining expressions.
 See [circular patterns](PART_PATTERNS.md#circular-patterns-schema-89).
+
+
+## Pattern ancestry through grouping and booleans
+
+Native compound creation merges child topology/operation histories with indexed
+source and target maps, in O(topology + input history records/relations) time and memory.
+Generated targets take precedence over modified targets; unchanged identity and
+deleted state are derived from the actual group. No repeated composition against
+an ever-growing group is performed. Rigid moves keep their lazy history form
+until grouping or explicit composition expands the required relations.
+
+Nested model patterns explicitly compose a placed group with its source, and
+Cut/Fuse/Common compose histories of directly grouped operands. Source-based
+selectors then resolve all repeated counterparts and post-Boolean faces. Both
+schema and ABI remain unchanged. Native/Rust builds must be refreshed together.

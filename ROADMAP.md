@@ -15,7 +15,7 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 109 + first-use integration 1 (+1 doc test), recipes 3, parametric 446 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 18 + branch command 2 + model command 35, MCP Python 8, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 112 + first-use integration 1 (+1 doc test), recipes 3, parametric 448 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 18 + branch command 2 + model command 35, MCP Python 9, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform code also passes. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -23,6 +23,18 @@ tracks status and order.
 | Scale benchmarks | 141 Rust cases plus 5 model-command and 11 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
+
+- Retained compound/pattern ancestry (schema 89 / ABI 52 unchanged): native
+  groups union child histories with indexed, deduplicated target sets, keeping
+  unchanged identity and branch deletion state. Nested patterns carry source
+  group history through placements; model Cut/Fuse/Common compose directly
+  grouped operands. Original cutter-face selectors resolve all nine grid bores
+  or six bolt-circle bores, including through the MCP inspection interface.
+  Bridge/core tests cover target membership, generated/modified ancestry,
+  surviving children, Boolean composition and cleanup. Updated 10,000-member
+  gates verify source-face counterpart counts: linear 8.124 s, radial 4.274 s,
+  explicit grouping 8.533 s (15 s budgets). Targeted native lint passes.
+  See [pattern ancestry](PART_PATTERNS.md#retained-pattern-ancestry).
 
 - Circular part patterns (schema 89; native ABI 52 unchanged): `CircularPattern`
   rotates shared source geometry at absolute signed angular steps into an

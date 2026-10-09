@@ -1,5 +1,5 @@
 //! Parameter-driven tool grids and 10,000 shared-geometry part copies.
-use occt_bridge::{Session, ShapeType};
+use occt_bridge::{HistoryRelation, Session, ShapeType};
 use occt_parametric::*;
 use std::{
     collections::HashMap,
@@ -91,6 +91,16 @@ fn main() {
     .regenerate(&session)
     .unwrap();
     let pattern = result.shape("pattern").unwrap();
+    let source_face = session
+        .subshape(result.shape("source").unwrap(), ShapeType::Face, 0)
+        .unwrap();
+    assert_eq!(
+        session
+            .history_count(pattern, &source_face, HistoryRelation::Modified)
+            .unwrap(),
+        10000
+    );
+    drop(source_face);
     assert_eq!(
         session.subshape_count(pattern, ShapeType::Solid).unwrap(),
         10000

@@ -886,7 +886,7 @@ occt_bridge_status_t occt_bridge_create_compound(
             }
             builder.Add(compound, *shape);
         }
-        return store_shape(session, compound, out_shape);
+        return store_compound_with_history(session, compound, shapes, shape_count, out_shape);
     });
 }
 

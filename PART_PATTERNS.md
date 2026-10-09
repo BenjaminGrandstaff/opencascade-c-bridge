@@ -28,10 +28,11 @@ edits reuse the cutter; changed patterns and downstream cuts rebuild. Failed
 edits retain accepted geometry, and temporary copy handles are released.
 Older saved documents migrate to schema 88 without changing existing features.
 
-Grouping retains the seed topology and located copied geometry, but does not
-aggregate each translation's operation history. Use semantic selectors on the
-pattern output to choose copied faces or edges. A history query against the
-original source alone does not identify every repeated member.
+Grouping retains the seed topology and located copies, and aggregates their
+operation histories. A source face can resolve to all its patterned counterparts.
+Nested patterns explicitly carry the input group's history through each copy.
+Saved-model cuts, unions and intersections compose directly grouped operands,
+so history selectors can resolve every repeated bore from the original cutter.
 
 Direct pattern outputs show linked copy count, step length and derived
 first-to-last placement span. Span uses source mass-centre positions and
@@ -67,8 +68,8 @@ first-to-last sweep, (count − 1) × step, must be below one full turn. This
 rejects wraparound and repeated end placement. A full bolt circle uses
 step = 2π/count, with no member duplicated at 2π. Negative steps reverse the
 winding. Partial groups use a smaller signed step. The result stays an unfused
-compound; overlapping geometry remains, and grouping does not aggregate
-per-copy operation history. Semantic selectors can select output topology.
+compound; overlapping geometry remains. Grouping aggregates per-copy histories,
+so source-based selectors can select repeated output topology.
 
 The [bolt-circle example](tools/model/bolt-circle.request.json) repeats a
 cylindrical cutter and removes the group from a disk in one cut. Count,
@@ -91,3 +92,26 @@ radial copies, each within 15 seconds.
 
 Circular release gates passed in 0.946 seconds for 100 bolt-circle cuts and
 2.267 seconds for 10,000 radial copies, with only source/output handles retained.
+
+
+## Retained pattern ancestry
+
+Compound construction merges child histories using indexed source/target
+identity sets. Generated ancestry takes precedence over modified ancestry for
+the same target; related targets are unique and belong to the actual group.
+Unchanged children keep identity without being falsely marked modified, and a
+source kept by any branch is not marked deleted. Histories outlive released
+child handles. The native group API retains existing child histories; callers
+can explicitly compose intermediate histories before grouping deeper chains.
+
+The saved-model layer does that composition for nested group patterns and for
+`Cut`, `Fuse` and `Common` with direct compound/pattern operands. An original
+cutter's cylindrical face now identifies all nine grid bores or all six
+bolt-circle bores via `FaceSelector::History`. Arbitrary transform chains still
+use their existing explicit composition semantics.
+
+This improvement leaves schema 89 and ABI 52 unchanged. Rebuild the native
+library and Rust binaries together. Merge cost is O(child topology + child history records/relations) with O(retained records/relations) memory. There is no per-copy
+composition against a growing aggregate. Queries necessarily store one
+relationship per retained counterpart. Updated 10,000-member gates verify all
+10,000 source-face counterparts and released handles within 15 seconds.

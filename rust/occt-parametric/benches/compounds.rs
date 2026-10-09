@@ -1,5 +1,5 @@
 //! A multi-tool cut and the bounded 10,000-member grouping case.
-use occt_bridge::{Session, ShapeType};
+use occt_bridge::{HistoryRelation, Session, ShapeType};
 use occt_parametric::*;
 use std::{
     collections::HashMap,
@@ -93,6 +93,16 @@ fn main() {
     .regenerate(&session)
     .unwrap();
     let group = generated.shape("group").unwrap();
+    let source_face = session
+        .subshape(generated.shape("source").unwrap(), ShapeType::Face, 0)
+        .unwrap();
+    assert_eq!(
+        session
+            .history_count(group, &source_face, HistoryRelation::Modified)
+            .unwrap(),
+        10000
+    );
+    drop(source_face);
     assert_eq!(
         session.subshape_count(group, ShapeType::Solid).unwrap(),
         10000

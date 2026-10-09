@@ -725,3 +725,10 @@ patterns, exposing row and column counts alongside hole radius and spacing.
 bolt circles and signed partial radial groups with editable count and angular
 step. Schema 89 adds `circular_pattern`; native ABI remains 52. The AI example
 `bolt-circle` derives spacing from count and sweep, then cuts the tool group.
+
+
+Pattern and compound groups now retain child ancestry. A source cutter face can
+select every repeated bore after a cut, including nested patterns. Union and
+intersection preserve directly grouped ancestry too. Schema 89 / ABI 52 remain
+unchanged; rebuild native and Rust binaries together. See
+[retained pattern ancestry](PART_PATTERNS.md#retained-pattern-ancestry).
