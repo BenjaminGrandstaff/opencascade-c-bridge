@@ -43,7 +43,7 @@ the same family-coordinate anchors and placement transforms.
 
 The [profile-loft example](tools/model/profile-loft.request.json) is available
 through MCP as `profile-loft`. Edit `lower_radius`, `upper_radius` or `height`
-to regenerate the transition. Authoring schemas expose all 29 feature types.
+to regenerate the transition. Authoring schemas expose all 30 feature types.
 
 Profile lookup and topology indexing are linear in the supplied sections;
 native compatibility and fitting depend on section count, edge correspondence

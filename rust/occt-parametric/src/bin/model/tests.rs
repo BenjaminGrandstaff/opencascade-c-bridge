@@ -1419,3 +1419,36 @@ fn symmetric_revolve_views_center_signed_arcs_on_the_source_plane() {
         );
     }
 }
+
+#[test]
+fn hollow_profile_viewer_retains_both_sketches_and_inner_radius_controls() {
+    let dir = Directory::new();
+    for radius in [4.0, 5.0] {
+        let mut request = view_example("hollow-profile");
+        request["model"]["family"]["parameters"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|p| p["id"] == "inner_radius")
+            .unwrap()["default"]["scalar"]["value"] = json!(radius);
+        let name = format!("hollow-{radius}");
+        view_request(&dir, request, &name).unwrap();
+        let data: Value =
+            serde_json::from_str(&fs::read_to_string(dir.0.join(name).join("view.json")).unwrap())
+                .unwrap();
+        let scenes = data["scenes"].as_array().unwrap();
+        assert_eq!(scenes.len(), 3);
+        assert_eq!(scenes[0]["valid"], true);
+        assert!(
+            scenes[0]["parameters"]
+                .as_object()
+                .unwrap()
+                .contains_key("inner_radius")
+        );
+        assert!((scenes[0]["bounds"][1][2].as_f64().unwrap() - 20.0).abs() < 1e-7);
+        for profile in ["outer", "inner"] {
+            let sketch = scenes.iter().find(|s| s["feature"] == profile).unwrap();
+            assert_eq!(sketch["solver"]["solved"], true);
+        }
+    }
+}

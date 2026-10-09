@@ -24,6 +24,7 @@ mod patterns;
 mod persistent;
 mod primitives;
 mod regeneration;
+mod regions;
 mod requirements;
 mod revolutions;
 mod ribs;

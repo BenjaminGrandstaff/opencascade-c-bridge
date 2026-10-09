@@ -89,7 +89,7 @@ Through MCP, get either example with `occt_get_example`, then pass it to
 ```json
 {
   "schema": "occb-model-view-v1",
-  "model": { "schema_version": 78, "...": "complete model" },
+  "model": { "schema_version": 79, "...": "complete model" },
   "outputs": [{ "instance": "block", "output": "body" }],
   "sketches": true,
   "options": {
@@ -177,3 +177,8 @@ Schema-78 symmetric revolutions display their arc from minus half the total
 angle to plus half, matching native geometry. The source sketch remains in its
 original plane. Annotation details record the mode and signed start/end angles.
 The `symmetric-revolve` example demonstrates this view.
+
+The schema-79 `hollow-profile` example shows an annular native extrusion and
+both independent boundary sketches. Inner/outer controls enter the solid's
+linked parameters through region dependencies. Hole edits regenerate the
+region and solid while keeping unaffected source sketches.

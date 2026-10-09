@@ -46,10 +46,10 @@ or remote service is started.
 | `occt_build` | The entire `occb-model-request-v1` object | Accepted report, build ID, local directory, and artifact resource URIs |
 
 `tools/list` provides the generated complete request schema as `occt_build`'s
-input schema. All 29 current feature operations and 136 nested request-schema
+input schema. All 30 current feature operations and 137 nested request-schema
 definitions are discoverable. Schemas derive from serde-compatible Rust types;
 new serialized variants require schema support at compilation. Authoring schemas
-target current model schema 78. The engine still migrates older documents.
+target current model schema 79. The engine still migrates older documents.
 Schemas describe serialization and basic request bounds; units, dependency
 references, dimensional constraints, selector resolution, and geometry validity
 are checked by the build engine.
@@ -61,7 +61,7 @@ LD_LIBRARY_PATH="$PWD/build" rust/occt-parametric/target/debug/occt-model \
   --schema request > /tmp/occt-request.schema.json
 ```
 
-`resources/list` advertises twelve `occt://schema/NAME` and fifteen
+`resources/list` advertises twelve `occt://schema/NAME` and sixteen
 `occt://example/NAME` resources. Accepted builds return specific
 `occt://build/BUILD_ID/ARTIFACT` URIs; a resource template advertises this form.
 JSON and SVG resources return text, while STEP and STL return base64 blobs.
@@ -370,3 +370,10 @@ a linked angular arc around the native axis.
 plane. Changing the signed angle regenerates geometry and the linked arc.
 The feature schema exposes `angle` and `symmetric` extent values; older missing
 extents default to `angle`. See [revolution semantics](../../REVOLUTIONS.md).
+
+`hollow-profile` demonstrates schema-79 `planar_region` between independent
+outer/inner sketch profiles, followed by extrusion. All three dimensions link
+to the solid; changing the hole radius rebuilds the inner sketch, region and
+body. Invalid containment and overlapping/touching holes are rejected. The
+feature schema exposes 1–100 inner profile references. See
+[planar region semantics](../../PLANAR_REGIONS.md).

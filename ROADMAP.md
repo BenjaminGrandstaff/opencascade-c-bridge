@@ -11,19 +11,31 @@ tracks status and order.
 | C ABI (`src/`, `include/`) | ABI 49 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 78 | Active development |
+| `occt-parametric` (engineering layer) | Schema 79 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 102 + first-use integration 1 (+1 doc test), recipes 3, parametric 412 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 18 + branch command 2 + model command 23, MCP Python 8, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 102 + first-use integration 1 (+1 doc test), recipes 3, parametric 416 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 18 + branch command 2 + model command 24, MCP Python 8, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. New profile-loft code passes targeted lint. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
 | Coverage | Last recorded: 93.61% lines overall, test code excluded; C++ 94.13% lines, 87.40% branches, 100% functions; Rust 93.42% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 118 Rust cases plus 5 model-command and 9 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Scale benchmarks | 120 Rust cases plus 5 model-command and 9 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
 
+- Native hollow planar profiles (schema 79; ABI 49 unchanged):
+  `PlanarRegion` combines an outer boundary with 1–100 strictly contained,
+  disjoint inner boundaries. Native area/distance checks reject misplaced,
+  noncoplanar, open, nested, crossing and touching inputs. One native face cut
+  retains curved boundaries; its result feeds extrusion and revolution,
+  including symmetric hollow toroidal parts. Independent sketch dependencies
+  support selective rebuilds and retained accepted results. AI example
+  `hollow-profile` keeps both sketch scenes and linked solid controls. Four
+  library tests plus model/MCP checks cover topology, volume, source edges,
+  failures and reuse. Scale gates pass: 500 hollow extrusions in 1.059 s and
+  a 100-hole region in 0.140 s (10 s budgets), with zero retained handles.
+  See [hollow profiles](PLANAR_REGIONS.md).
 - Symmetric sketch revolutions (schema 78; ABI 49 unchanged): optional
   `RevolveExtent::Symmetric` sweeps from minus half the signed angle to plus
   half about the source sketch plane. Location-based copies and composed native

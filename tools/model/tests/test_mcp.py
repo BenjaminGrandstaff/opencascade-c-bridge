@@ -45,7 +45,7 @@ class McpTests(unittest.TestCase):
         jsonschema.Draft202012Validator.check_schema(schema)
         self.assertEqual(schema['properties']['model']['$ref'], '#/$defs/ModelDocument')
         variants = schema['$defs']['FeatureOperation']['oneOf']
-        self.assertEqual(len(variants), 29)
+        self.assertEqual(len(variants), 30)
         for name in ['request', 'model', 'feature', 'parameter', 'sketch', 'requirement', 'inspection', 'face_selector', 'edge_selector', 'edit', 'change', 'view']:
             result = self.client.tool('occt_get_schema', dict(name=name))
             self.assertFalse(result['isError'])
@@ -58,7 +58,7 @@ class McpTests(unittest.TestCase):
         with self.assertRaises(jsonschema.ValidationError):
             jsonschema.validate(bad, schema)
         resources = self.client.call('resources/list')['result']['resources']
-        self.assertEqual(len(resources), 27)
+        self.assertEqual(len(resources), 28)
         self.assertEqual(len(self.client.call('resources/templates/list')['result']['resourceTemplates']), 1)
         read = self.client.call('resources/read', dict(uri='occt://schema/request'))['result']['contents'][0]
         self.assertEqual(json.loads(read['text']), schema)
@@ -284,6 +284,14 @@ class McpTests(unittest.TestCase):
         self.assertEqual(dimension['detail']['extent'],'symmetric')
         self.assertAlmostEqual(dimension['detail']['start_angle_radians'],-math.pi/4)
         self.assertAlmostEqual(dimension['detail']['end_angle_radians'],math.pi/4)
+        hollow = self.client.tool('occt_get_example',dict(name='hollow-profile'))['structuredContent']
+        jsonschema.validate(hollow,schema)
+        result = self.client.tool('occt_visualize_model',hollow)
+        self.assertFalse(result['isError'])
+        data = json.loads(self.client.call('resources/read',dict(uri=result['structuredContent']['resources']['view.json']))['result']['contents'][0]['text'])
+        self.assertTrue(data['scenes'][0]['valid'])
+        self.assertIn('inner_radius',data['scenes'][0]['parameters'])
+        self.assertEqual(len(data['scenes']),3)
         # Ordinary accepted builds also publish the annotated viewer when preview is on.
         build_request = dict(schema='occb-model-request-v1',model=request['model'],outputs=request['outputs'],preview=True,step=False,stl=False)
         built = self.client.tool('occt_build',build_request)['structuredContent']

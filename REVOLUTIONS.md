@@ -31,7 +31,7 @@ sketch stays unchanged, and temporary shape handles are released.
 Angle, axis, origin and extent edits invalidate the revolve and its downstream
 features. Unchanged source sketches are reused. Invalid edits leave previously
 accepted geometry usable. Saving preserves the mode; loading older documents
-migrates them to schema 78 with `angle` extent.
+migrates them to the current schema with `angle` extent.
 
 Both viewers and SVG snapshots show the complete signed angle around the actual
 axis. Symmetric arc endpoints agree with the placed start/end sections, using

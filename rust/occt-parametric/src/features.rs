@@ -7,6 +7,7 @@ mod holes;
 mod loft;
 pub(crate) use loft::collect_parameters as collect_loft_parameters;
 mod primitives;
+mod regions;
 mod ribs;
 mod variable_fillet;
 
@@ -201,6 +202,9 @@ pub(crate) fn execute_feature<'session>(
                 }
                 _ => sketch.face_on_plane(session, parameters, datum),
             };
+        }
+        FeatureOperation::PlanarRegion { outer, holes } => {
+            return regions::execute(session, outer, holes, shapes);
         }
         FeatureOperation::Translate { input, offset } => session.translate(
             shape(shapes, input)?,

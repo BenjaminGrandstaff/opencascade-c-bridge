@@ -131,3 +131,8 @@ data used for native regeneration.
 1,000 coupled advanced components, 1,000 point-on-spline components, and 1,000
 trim/extend/offset profile regenerations. Measured release times were 0.063 s,
 0.115 s and 0.088 s. The benchmark is included in `tools/bench/run.sh`.
+
+Separate saved closed sketch boundaries can now form a single holed face using
+schema-79 `planar_region`. That face feeds extrusion and revolution while the
+source sketches keep their own constraints and identities. See
+[hollow profiles](PLANAR_REGIONS.md).

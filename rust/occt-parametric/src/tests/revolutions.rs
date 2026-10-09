@@ -134,7 +134,7 @@ fn schema_78_persists_symmetric_revolves_and_old_documents_keep_one_sided_behavi
     let document = document();
     let loaded = ModelDocument::from_json(&document.to_json_pretty().unwrap()).unwrap();
     assert_eq!(loaded, document);
-    assert_eq!(loaded.schema_version, 78);
+    assert_eq!(loaded.schema_version, CURRENT_SCHEMA_VERSION);
     let mut old: serde_json::Value =
         serde_json::from_str(&document.to_json_pretty().unwrap()).unwrap();
     old["schema_version"] = serde_json::json!(77);
@@ -143,7 +143,7 @@ fn schema_78_persists_symmetric_revolves_and_old_documents_keep_one_sided_behavi
         .unwrap()
         .remove("extent");
     let migrated = ModelDocument::from_json(&old.to_string()).unwrap();
-    assert_eq!(migrated.schema_version, 78);
+    assert_eq!(migrated.schema_version, CURRENT_SCHEMA_VERSION);
     assert!(matches!(
         migrated.family.features[0].operation,
         FeatureOperation::Revolve {

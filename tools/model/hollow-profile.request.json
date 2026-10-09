@@ -3,22 +3,45 @@
   "model": {
     "schema_version": 79,
     "family": {
-      "id": "dimensioned-block",
+      "id": "hollow-profile",
       "version": 1,
       "parameters": [
         {
-          "id": "width",
+          "id": "outer_radius",
           "parameter_type": {
             "scalar": "length"
           },
           "default": {
             "scalar": {
-              "value": 40,
+              "value": 8,
               "dimension": "length",
               "unit": "millimeter"
             }
           },
-          "minimum": null,
+          "minimum": {
+            "value": 0.1,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": null
+        },
+        {
+          "id": "inner_radius",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 4,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 0.1,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
           "maximum": null
         },
         {
@@ -28,63 +51,35 @@
           },
           "default": {
             "scalar": {
-              "value": 25,
+              "value": 20,
               "dimension": "length",
               "unit": "millimeter"
             }
           },
-          "minimum": null,
-          "maximum": null
-        },
-        {
-          "id": "depth",
-          "parameter_type": {
-            "scalar": "length"
+          "minimum": {
+            "value": 0.1,
+            "dimension": "length",
+            "unit": "millimeter"
           },
-          "default": {
-            "scalar": {
-              "value": 10,
-              "dimension": "length",
-              "unit": "millimeter"
-            }
-          },
-          "minimum": null,
           "maximum": null
         }
       ],
       "derived_parameters": [],
       "derived_vector_parameters": [],
-      "constraints": [
-        {
-          "id": "minimum_depth",
-          "statement": "Extrusion depth at least 2 mm",
-          "left": {
-            "parameter": "depth"
-          },
-          "relation": "greater_or_equal",
-          "right": {
-            "literal": {
-              "value": 2,
-              "dimension": "length",
-              "unit": "millimeter"
-            }
-          },
-          "provenance": "demonstration assumption"
-        }
-      ],
+      "constraints": [],
       "requirements": [
         {
           "id": "valid",
           "version": 1,
           "kind": "validation",
           "priority": "required",
-          "statement": "valid",
+          "statement": "Hollow extrusion valid",
           "rule": {
             "shape_valid": {
               "output": "body"
             }
           },
-          "provenance": "example; demonstration assumptions",
+          "provenance": "Demonstration assumptions",
           "traces": [
             {
               "feature": "body"
@@ -95,11 +90,52 @@
       "datums": [],
       "features": [
         {
-          "id": "profile",
+          "id": "body",
+          "operation": {
+            "extrude": {
+              "input": "region",
+              "direction": {
+                "components": {
+                  "x": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "y": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "z": {
+                    "parameter": "height"
+                  }
+                }
+              },
+              "extent": "distance"
+            }
+          }
+        },
+        {
+          "id": "region",
+          "operation": {
+            "planar_region": {
+              "outer": "outer",
+              "holes": [
+                "inner"
+              ]
+            }
+          }
+        },
+        {
+          "id": "outer",
           "operation": {
             "sketch_face": {
               "sketch": {
-                "id": "rectangle",
+                "id": "outer",
                 "origin": {
                   "literal": {
                     "x": {
@@ -159,7 +195,7 @@
                 },
                 "points": [
                   {
-                    "id": "A",
+                    "id": "center",
                     "x": {
                       "literal": {
                         "value": 0,
@@ -177,53 +213,13 @@
                     "fixed": true
                   },
                   {
-                    "id": "B",
+                    "id": "edge",
                     "x": {
-                      "literal": {
-                        "value": 40,
-                        "dimension": "length",
-                        "unit": "millimeter"
-                      }
+                      "parameter": "outer_radius"
                     },
                     "y": {
                       "literal": {
                         "value": 0,
-                        "dimension": "length",
-                        "unit": "millimeter"
-                      }
-                    },
-                    "fixed": true
-                  },
-                  {
-                    "id": "C",
-                    "x": {
-                      "literal": {
-                        "value": 40,
-                        "dimension": "length",
-                        "unit": "millimeter"
-                      }
-                    },
-                    "y": {
-                      "literal": {
-                        "value": 25,
-                        "dimension": "length",
-                        "unit": "millimeter"
-                      }
-                    },
-                    "fixed": true
-                  },
-                  {
-                    "id": "D",
-                    "x": {
-                      "literal": {
-                        "value": 0,
-                        "dimension": "length",
-                        "unit": "millimeter"
-                      }
-                    },
-                    "y": {
-                      "literal": {
-                        "value": 25,
                         "dimension": "length",
                         "unit": "millimeter"
                       }
@@ -231,70 +227,23 @@
                     "fixed": true
                   }
                 ],
-                "lines": [
+                "lines": [],
+                "circles": [
                   {
-                    "id": "AB",
-                    "start": "A",
-                    "end": "B"
-                  },
-                  {
-                    "id": "BC",
-                    "start": "B",
-                    "end": "C"
-                  },
-                  {
-                    "id": "CD",
-                    "start": "C",
-                    "end": "D"
-                  },
-                  {
-                    "id": "DA",
-                    "start": "D",
-                    "end": "A"
+                    "id": "rim",
+                    "center": "center",
+                    "rim": "edge"
                   }
                 ],
                 "profile": [
-                  "AB",
-                  "BC",
-                  "CD",
-                  "DA"
+                  "rim"
                 ],
                 "constraints": [
                   {
-                    "horizontal": {
-                      "line": "AB"
-                    }
-                  },
-                  {
-                    "vertical": {
-                      "line": "BC"
-                    }
-                  },
-                  {
-                    "horizontal": {
-                      "line": "CD"
-                    }
-                  },
-                  {
-                    "vertical": {
-                      "line": "DA"
-                    }
-                  },
-                  {
-                    "distance": {
-                      "first": "A",
-                      "second": "B",
+                    "radius": {
+                      "curve": "rim",
                       "value": {
-                        "parameter": "width"
-                      }
-                    }
-                  },
-                  {
-                    "distance": {
-                      "first": "A",
-                      "second": "D",
-                      "value": {
-                        "parameter": "height"
+                        "parameter": "outer_radius"
                       }
                     }
                   }
@@ -304,30 +253,129 @@
           }
         },
         {
-          "id": "body",
+          "id": "inner",
           "operation": {
-            "extrude": {
-              "input": "profile",
-              "direction": {
-                "components": {
-                  "x": {
-                    "literal": {
-                      "value": 0,
-                      "dimension": "length",
-                      "unit": "millimeter"
+            "sketch_wire": {
+              "sketch": {
+                "id": "inner",
+                "origin": {
+                  "components": {
+                    "x": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "z": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
                     }
-                  },
-                  "y": {
-                    "literal": {
-                      "value": 0,
-                      "dimension": "length",
-                      "unit": "millimeter"
-                    }
-                  },
-                  "z": {
-                    "parameter": "depth"
                   }
-                }
+                },
+                "x_axis": {
+                  "literal": {
+                    "x": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "y_axis": {
+                  "literal": {
+                    "x": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "points": [
+                  {
+                    "id": "center",
+                    "x": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "edge",
+                    "x": {
+                      "parameter": "inner_radius"
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": true
+                  }
+                ],
+                "lines": [],
+                "circles": [
+                  {
+                    "id": "rim",
+                    "center": "center",
+                    "rim": "edge"
+                  }
+                ],
+                "profile": [
+                  "rim"
+                ],
+                "constraints": [
+                  {
+                    "radius": {
+                      "curve": "rim",
+                      "value": {
+                        "parameter": "inner_radius"
+                      }
+                    }
+                  }
+                ]
               }
             }
           }
@@ -337,16 +385,8 @@
     "instances": [
       {
         "base": {
-          "id": "block",
-          "overrides": {
-            "width": {
-              "scalar": {
-                "value": 60,
-                "dimension": "length",
-                "unit": "millimeter"
-              }
-            }
-          },
+          "id": "tube",
+          "overrides": {},
           "provenance": "dimensions are illustrative assumptions"
         }
       }
@@ -354,7 +394,7 @@
   },
   "outputs": [
     {
-      "instance": "block",
+      "instance": "tube",
       "output": "body"
     }
   ],

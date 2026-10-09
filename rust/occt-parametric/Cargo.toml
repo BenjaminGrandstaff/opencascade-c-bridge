@@ -83,3 +83,7 @@ harness = false
 [[bench]]
 name = "symmetric_revolves"
 harness = false
+
+[[bench]]
+name = "planar_regions"
+harness = false

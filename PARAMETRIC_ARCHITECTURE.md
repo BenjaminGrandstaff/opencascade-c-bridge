@@ -1644,3 +1644,19 @@ origin expression dependencies already participate in incremental regeneration.
 Older documents default to angle extent. Viewer arcs start/end at the same
 half-angle placements as geometry; source sketch scenes stay in their original
 plane. See [revolution semantics](REVOLUTIONS.md).
+
+## Schema 79 native planar regions
+
+`PlanarRegion` references one outer profile and 1–100 inner profiles. Each input
+is a single-boundary planar face or closed planar wire. Native common area,
+boundary distance and pair separation checks establish strict containment and
+disjoint holes. A single native face cut produces one connected planar face
+with the expected boundary count and area. The existing native ABI is reused.
+
+All profile IDs enter feature dependencies. Inner edits invalidate the region
+and downstream solid, with unaffected profiles reused. The extracted face
+feeds existing extrude/revolve operations, including symmetric revolutions.
+Native generated history from boundary edges remains available; the cut's
+operation-level face history is not copied to the extracted face. Scratch
+handles are bounded by the hole count and released on failure and success.
+See [planar region semantics](PLANAR_REGIONS.md).

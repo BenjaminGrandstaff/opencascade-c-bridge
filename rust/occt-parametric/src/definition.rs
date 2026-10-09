@@ -645,6 +645,13 @@ pub enum FeatureOperation {
     SketchOpenWire {
         sketch: Box<SketchDefinition>,
     },
+    /// One planar face with strictly contained, disjoint inner boundaries.
+    /// Inputs are closed planar wires or single-boundary planar faces.
+    PlanarRegion {
+        outer: String,
+        #[schemars(length(min = 1, max = 100))]
+        holes: Vec<String>,
+    },
     /// Sweeps a planar face or closed planar wire by a length-valued vector.
     Extrude {
         input: String,
@@ -821,6 +828,9 @@ impl FeatureOperation {
                 dependencies
             }
             Self::ProfileLoft { profiles, .. } => profiles.iter().map(String::as_str).collect(),
+            Self::PlanarRegion { outer, holes } => std::iter::once(outer.as_str())
+                .chain(holes.iter().map(String::as_str))
+                .collect(),
             Self::Sweep { profile, path, .. } => vec![profile, path],
             Self::SheetMetalFlat { input, .. }
             | Self::Translate { input, .. }

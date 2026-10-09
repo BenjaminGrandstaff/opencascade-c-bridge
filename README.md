@@ -635,13 +635,13 @@ profiles (ABI 47, model schema 72).
 up to a selected face, and up to the next complete face limit, including
 inclined and curved surfaces. Target
 geometry participates in regeneration; the viewer shows the actual length.
-The native ABI is 49; model schema is 78. Native surface-ray witnesses measure
+The native ABI is 49; model schema is 79. Native surface-ray witnesses measure
 viewer extents on nonuniform caps.
 
 
 [Blind drill-point holes](HOLES.md) add configurable conical bottoms, native tip
 containment checks, full-diameter depth callouts and linked viewer dimensions.
-The current model schema is 78 and native ABI is 49.
+The current model schema is 79 and native ABI is 49.
 
 
 [Geometry-driven holes](HOLES.md) stop at a selected or next covering input
@@ -659,3 +659,8 @@ This adds `profile_loft` in schema 77 and native wire lofts in ABI 49.
 equally about the source sketch plane, preserving native source-edge history
 and linked viewer angle arcs. Schema 78 adds the optional extent mode;
 native ABI 49 is unchanged.
+
+[Hollow sketch profiles](PLANAR_REGIONS.md) combine an outer profile and up to
+100 separate inner profiles into one native planar face for extrusion or
+revolution. Boundary checks reject crossing, touching and misplaced holes.
+Schema 79 adds `planar_region`; native ABI 49 is unchanged.
