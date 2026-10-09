@@ -771,6 +771,12 @@ pub enum FeatureOperation {
         left: String,
         right: String,
     },
+    /// Groups child shapes without fusing or sewing. Useful as a multi-tool
+    /// input to Cut. Children keep geometry and locations; overlaps remain.
+    Compound {
+        #[schemars(length(min = 1, max = 10000))]
+        inputs: Vec<String>,
+    },
     Sew {
         inputs: Vec<String>,
         tolerance: ScalarExpr,
@@ -927,7 +933,9 @@ impl FeatureOperation {
             Self::Fuse { left, right } | Self::Common { left, right } => vec![left, right],
             Self::Rib { input, profile, .. } => vec![input, profile],
             Self::Cut { object, tool } => vec![object, tool],
-            Self::Sew { inputs, .. } => inputs.iter().map(String::as_str).collect(),
+            Self::Compound { inputs } | Self::Sew { inputs, .. } => {
+                inputs.iter().map(String::as_str).collect()
+            }
             Self::MakeSolid { shells } => shells.iter().map(String::as_str).collect(),
             Self::SheetMetal { .. }
             | Self::Loft { .. }

@@ -1,7 +1,7 @@
 # Sweeping hollow sketch profiles
 
 The existing `sweep` feature now accepts a valid planar face with up to 100 inner
-boundaries. The current model schema is 85; the current native ABI is 52.
+boundaries. The current model schema is 86; the current native ABI is 52.
 
 ```json
 "sweep": {

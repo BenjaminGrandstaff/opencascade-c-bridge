@@ -464,6 +464,13 @@ fn solid_scene(
     // downstream booleans/transforms, controls stay in the linked side panel.
     if let Some(feature) = part.definition.features.iter().find(|f| f.id == output) {
         primitive_dimensions(feature, parameters, &mut annotations)?;
+        if let FeatureOperation::Compound { inputs } = &feature.operation {
+            annotations.push(annotation(
+                "compound-inputs".into(), format!("group · {} inputs", inputs.len()),
+                "group", "derived", vec![output.into()], vec![], json!([center]),
+                json!({"inputs":inputs,"input_count":inputs.len(),"description":"Child shapes grouped without fusion or sewing. Overlaps remain."})
+            ));
+        }
         if let FeatureOperation::Offset {
             input,
             distance,

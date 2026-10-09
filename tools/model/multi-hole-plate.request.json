@@ -1,0 +1,1175 @@
+{
+  "schema": "occb-model-view-v1",
+  "model": {
+    "schema_version": 86,
+    "family": {
+      "id": "multi-hole-plate",
+      "version": 1,
+      "parameters": [
+        {
+          "id": "spacing",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 10,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 8,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 20,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "hole_radius",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 2,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 0.5,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 3,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "thickness",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 4,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 1,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 10,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        }
+      ],
+      "derived_parameters": [],
+      "derived_vector_parameters": [],
+      "constraints": [],
+      "requirements": [
+        {
+          "id": "valid",
+          "version": 1,
+          "kind": "validation",
+          "priority": "required",
+          "statement": "Multi-hole plate valid",
+          "rule": {
+            "shape_valid": {
+              "output": "body"
+            }
+          },
+          "provenance": "Demonstration assumptions",
+          "traces": [
+            {
+              "feature": "body"
+            }
+          ]
+        }
+      ],
+      "datums": [],
+      "features": [
+        {
+          "id": "plate",
+          "operation": {
+            "box": {
+              "origin": {
+                "components": {
+                  "x": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "y": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "z": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                }
+              },
+              "size": {
+                "components": {
+                  "x": {
+                    "add": [
+                      {
+                        "multiply": [
+                          {
+                            "literal": {
+                              "value": 2,
+                              "dimension": "scalar",
+                              "unit": null
+                            }
+                          },
+                          {
+                            "parameter": "spacing"
+                          }
+                        ]
+                      },
+                      {
+                        "literal": {
+                          "value": 10,
+                          "dimension": "length",
+                          "unit": "millimeter"
+                        }
+                      }
+                    ]
+                  },
+                  "y": {
+                    "add": [
+                      {
+                        "multiply": [
+                          {
+                            "literal": {
+                              "value": 2,
+                              "dimension": "scalar",
+                              "unit": null
+                            }
+                          },
+                          {
+                            "parameter": "spacing"
+                          }
+                        ]
+                      },
+                      {
+                        "literal": {
+                          "value": 10,
+                          "dimension": "length",
+                          "unit": "millimeter"
+                        }
+                      }
+                    ]
+                  },
+                  "z": {
+                    "parameter": "thickness"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "tool-0-0",
+          "operation": {
+            "cylinder": {
+              "origin": {
+                "components": {
+                  "x": {
+                    "add": [
+                      {
+                        "literal": {
+                          "value": 5,
+                          "dimension": "length",
+                          "unit": "millimeter"
+                        }
+                      },
+                      {
+                        "multiply": [
+                          {
+                            "literal": {
+                              "value": 0,
+                              "dimension": "scalar",
+                              "unit": null
+                            }
+                          },
+                          {
+                            "parameter": "spacing"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  "y": {
+                    "add": [
+                      {
+                        "literal": {
+                          "value": 5,
+                          "dimension": "length",
+                          "unit": "millimeter"
+                        }
+                      },
+                      {
+                        "multiply": [
+                          {
+                            "literal": {
+                              "value": 0,
+                              "dimension": "scalar",
+                              "unit": null
+                            }
+                          },
+                          {
+                            "parameter": "spacing"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  "z": {
+                    "literal": {
+                      "value": -1,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                }
+              },
+              "axis": {
+                "literal": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "z": {
+                    "value": 1,
+                    "dimension": "scalar",
+                    "unit": null
+                  }
+                }
+              },
+              "radius": {
+                "parameter": "hole_radius"
+              },
+              "height": {
+                "add": [
+                  {
+                    "parameter": "thickness"
+                  },
+                  {
+                    "literal": {
+                      "value": 2,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "tool-1-0",
+          "operation": {
+            "cylinder": {
+              "origin": {
+                "components": {
+                  "x": {
+                    "add": [
+                      {
+                        "literal": {
+                          "value": 5,
+                          "dimension": "length",
+                          "unit": "millimeter"
+                        }
+                      },
+                      {
+                        "multiply": [
+                          {
+                            "literal": {
+                              "value": 1,
+                              "dimension": "scalar",
+                              "unit": null
+                            }
+                          },
+                          {
+                            "parameter": "spacing"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  "y": {
+                    "add": [
+                      {
+                        "literal": {
+                          "value": 5,
+                          "dimension": "length",
+                          "unit": "millimeter"
+                        }
+                      },
+                      {
+                        "multiply": [
+                          {
+                            "literal": {
+                              "value": 0,
+                              "dimension": "scalar",
+                              "unit": null
+                            }
+                          },
+                          {
+                            "parameter": "spacing"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  "z": {
+                    "literal": {
+                      "value": -1,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                }
+              },
+              "axis": {
+                "literal": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "z": {
+                    "value": 1,
+                    "dimension": "scalar",
+                    "unit": null
+                  }
+                }
+              },
+              "radius": {
+                "parameter": "hole_radius"
+              },
+              "height": {
+                "add": [
+                  {
+                    "parameter": "thickness"
+                  },
+                  {
+                    "literal": {
+                      "value": 2,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "tool-2-0",
+          "operation": {
+            "cylinder": {
+              "origin": {
+                "components": {
+                  "x": {
+                    "add": [
+                      {
+                        "literal": {
+                          "value": 5,
+                          "dimension": "length",
+                          "unit": "millimeter"
+                        }
+                      },
+                      {
+                        "multiply": [
+                          {
+                            "literal": {
+                              "value": 2,
+                              "dimension": "scalar",
+                              "unit": null
+                            }
+                          },
+                          {
+                            "parameter": "spacing"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  "y": {
+                    "add": [
+                      {
+                        "literal": {
+                          "value": 5,
+                          "dimension": "length",
+                          "unit": "millimeter"
+                        }
+                      },
+                      {
+                        "multiply": [
+                          {
+                            "literal": {
+                              "value": 0,
+                              "dimension": "scalar",
+                              "unit": null
+                            }
+                          },
+                          {
+                            "parameter": "spacing"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  "z": {
+                    "literal": {
+                      "value": -1,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                }
+              },
+              "axis": {
+                "literal": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "z": {
+                    "value": 1,
+                    "dimension": "scalar",
+                    "unit": null
+                  }
+                }
+              },
+              "radius": {
+                "parameter": "hole_radius"
+              },
+              "height": {
+                "add": [
+                  {
+                    "parameter": "thickness"
+                  },
+                  {
+                    "literal": {
+                      "value": 2,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "tool-0-1",
+          "operation": {
+            "cylinder": {
+              "origin": {
+                "components": {
+                  "x": {
+                    "add": [
+                      {
+                        "literal": {
+                          "value": 5,
+                          "dimension": "length",
+                          "unit": "millimeter"
+                        }
+                      },
+                      {
+                        "multiply": [
+                          {
+                            "literal": {
+                              "value": 0,
+                              "dimension": "scalar",
+                              "unit": null
+                            }
+                          },
+                          {
+                            "parameter": "spacing"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  "y": {
+                    "add": [
+                      {
+                        "literal": {
+                          "value": 5,
+                          "dimension": "length",
+                          "unit": "millimeter"
+                        }
+                      },
+                      {
+                        "multiply": [
+                          {
+                            "literal": {
+                              "value": 1,
+                              "dimension": "scalar",
+                              "unit": null
+                            }
+                          },
+                          {
+                            "parameter": "spacing"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  "z": {
+                    "literal": {
+                      "value": -1,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                }
+              },
+              "axis": {
+                "literal": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "z": {
+                    "value": 1,
+                    "dimension": "scalar",
+                    "unit": null
+                  }
+                }
+              },
+              "radius": {
+                "parameter": "hole_radius"
+              },
+              "height": {
+                "add": [
+                  {
+                    "parameter": "thickness"
+                  },
+                  {
+                    "literal": {
+                      "value": 2,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "tool-1-1",
+          "operation": {
+            "cylinder": {
+              "origin": {
+                "components": {
+                  "x": {
+                    "add": [
+                      {
+                        "literal": {
+                          "value": 5,
+                          "dimension": "length",
+                          "unit": "millimeter"
+                        }
+                      },
+                      {
+                        "multiply": [
+                          {
+                            "literal": {
+                              "value": 1,
+                              "dimension": "scalar",
+                              "unit": null
+                            }
+                          },
+                          {
+                            "parameter": "spacing"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  "y": {
+                    "add": [
+                      {
+                        "literal": {
+                          "value": 5,
+                          "dimension": "length",
+                          "unit": "millimeter"
+                        }
+                      },
+                      {
+                        "multiply": [
+                          {
+                            "literal": {
+                              "value": 1,
+                              "dimension": "scalar",
+                              "unit": null
+                            }
+                          },
+                          {
+                            "parameter": "spacing"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  "z": {
+                    "literal": {
+                      "value": -1,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                }
+              },
+              "axis": {
+                "literal": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "z": {
+                    "value": 1,
+                    "dimension": "scalar",
+                    "unit": null
+                  }
+                }
+              },
+              "radius": {
+                "parameter": "hole_radius"
+              },
+              "height": {
+                "add": [
+                  {
+                    "parameter": "thickness"
+                  },
+                  {
+                    "literal": {
+                      "value": 2,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "tool-2-1",
+          "operation": {
+            "cylinder": {
+              "origin": {
+                "components": {
+                  "x": {
+                    "add": [
+                      {
+                        "literal": {
+                          "value": 5,
+                          "dimension": "length",
+                          "unit": "millimeter"
+                        }
+                      },
+                      {
+                        "multiply": [
+                          {
+                            "literal": {
+                              "value": 2,
+                              "dimension": "scalar",
+                              "unit": null
+                            }
+                          },
+                          {
+                            "parameter": "spacing"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  "y": {
+                    "add": [
+                      {
+                        "literal": {
+                          "value": 5,
+                          "dimension": "length",
+                          "unit": "millimeter"
+                        }
+                      },
+                      {
+                        "multiply": [
+                          {
+                            "literal": {
+                              "value": 1,
+                              "dimension": "scalar",
+                              "unit": null
+                            }
+                          },
+                          {
+                            "parameter": "spacing"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  "z": {
+                    "literal": {
+                      "value": -1,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                }
+              },
+              "axis": {
+                "literal": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "z": {
+                    "value": 1,
+                    "dimension": "scalar",
+                    "unit": null
+                  }
+                }
+              },
+              "radius": {
+                "parameter": "hole_radius"
+              },
+              "height": {
+                "add": [
+                  {
+                    "parameter": "thickness"
+                  },
+                  {
+                    "literal": {
+                      "value": 2,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "tool-0-2",
+          "operation": {
+            "cylinder": {
+              "origin": {
+                "components": {
+                  "x": {
+                    "add": [
+                      {
+                        "literal": {
+                          "value": 5,
+                          "dimension": "length",
+                          "unit": "millimeter"
+                        }
+                      },
+                      {
+                        "multiply": [
+                          {
+                            "literal": {
+                              "value": 0,
+                              "dimension": "scalar",
+                              "unit": null
+                            }
+                          },
+                          {
+                            "parameter": "spacing"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  "y": {
+                    "add": [
+                      {
+                        "literal": {
+                          "value": 5,
+                          "dimension": "length",
+                          "unit": "millimeter"
+                        }
+                      },
+                      {
+                        "multiply": [
+                          {
+                            "literal": {
+                              "value": 2,
+                              "dimension": "scalar",
+                              "unit": null
+                            }
+                          },
+                          {
+                            "parameter": "spacing"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  "z": {
+                    "literal": {
+                      "value": -1,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                }
+              },
+              "axis": {
+                "literal": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "z": {
+                    "value": 1,
+                    "dimension": "scalar",
+                    "unit": null
+                  }
+                }
+              },
+              "radius": {
+                "parameter": "hole_radius"
+              },
+              "height": {
+                "add": [
+                  {
+                    "parameter": "thickness"
+                  },
+                  {
+                    "literal": {
+                      "value": 2,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "tool-1-2",
+          "operation": {
+            "cylinder": {
+              "origin": {
+                "components": {
+                  "x": {
+                    "add": [
+                      {
+                        "literal": {
+                          "value": 5,
+                          "dimension": "length",
+                          "unit": "millimeter"
+                        }
+                      },
+                      {
+                        "multiply": [
+                          {
+                            "literal": {
+                              "value": 1,
+                              "dimension": "scalar",
+                              "unit": null
+                            }
+                          },
+                          {
+                            "parameter": "spacing"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  "y": {
+                    "add": [
+                      {
+                        "literal": {
+                          "value": 5,
+                          "dimension": "length",
+                          "unit": "millimeter"
+                        }
+                      },
+                      {
+                        "multiply": [
+                          {
+                            "literal": {
+                              "value": 2,
+                              "dimension": "scalar",
+                              "unit": null
+                            }
+                          },
+                          {
+                            "parameter": "spacing"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  "z": {
+                    "literal": {
+                      "value": -1,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                }
+              },
+              "axis": {
+                "literal": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "z": {
+                    "value": 1,
+                    "dimension": "scalar",
+                    "unit": null
+                  }
+                }
+              },
+              "radius": {
+                "parameter": "hole_radius"
+              },
+              "height": {
+                "add": [
+                  {
+                    "parameter": "thickness"
+                  },
+                  {
+                    "literal": {
+                      "value": 2,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "tool-2-2",
+          "operation": {
+            "cylinder": {
+              "origin": {
+                "components": {
+                  "x": {
+                    "add": [
+                      {
+                        "literal": {
+                          "value": 5,
+                          "dimension": "length",
+                          "unit": "millimeter"
+                        }
+                      },
+                      {
+                        "multiply": [
+                          {
+                            "literal": {
+                              "value": 2,
+                              "dimension": "scalar",
+                              "unit": null
+                            }
+                          },
+                          {
+                            "parameter": "spacing"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  "y": {
+                    "add": [
+                      {
+                        "literal": {
+                          "value": 5,
+                          "dimension": "length",
+                          "unit": "millimeter"
+                        }
+                      },
+                      {
+                        "multiply": [
+                          {
+                            "literal": {
+                              "value": 2,
+                              "dimension": "scalar",
+                              "unit": null
+                            }
+                          },
+                          {
+                            "parameter": "spacing"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  "z": {
+                    "literal": {
+                      "value": -1,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                }
+              },
+              "axis": {
+                "literal": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "z": {
+                    "value": 1,
+                    "dimension": "scalar",
+                    "unit": null
+                  }
+                }
+              },
+              "radius": {
+                "parameter": "hole_radius"
+              },
+              "height": {
+                "add": [
+                  {
+                    "parameter": "thickness"
+                  },
+                  {
+                    "literal": {
+                      "value": 2,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "tools",
+          "operation": {
+            "compound": {
+              "inputs": [
+                "tool-0-0",
+                "tool-1-0",
+                "tool-2-0",
+                "tool-0-1",
+                "tool-1-1",
+                "tool-2-1",
+                "tool-0-2",
+                "tool-1-2",
+                "tool-2-2"
+              ]
+            }
+          }
+        },
+        {
+          "id": "body",
+          "operation": {
+            "cut": {
+              "object": "plate",
+              "tool": "tools"
+            }
+          }
+        }
+      ]
+    },
+    "instances": [
+      {
+        "base": {
+          "id": "plate",
+          "overrides": {},
+          "provenance": "dimensions are illustrative assumptions"
+        }
+      }
+    ]
+  },
+  "outputs": [
+    {
+      "instance": "plate",
+      "output": "body"
+    }
+  ],
+  "sketches": false
+}

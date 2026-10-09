@@ -75,6 +75,10 @@ OCCT_BRIDGE_LIB_DIR="$build" LD_LIBRARY_PATH="$build" \
 OCCT_BRIDGE_LIB_DIR="$build" LD_LIBRARY_PATH="$build" \
     cargo bench --quiet --manifest-path "$root/rust/occt-parametric/Cargo.toml" --bench offsets
 
+# Schema-86 compound tool cuts and bounded 10,000-child grouping.
+OCCT_BRIDGE_LIB_DIR="$build" LD_LIBRARY_PATH="$build" \
+    cargo bench --quiet --manifest-path "$root/rust/occt-parametric/Cargo.toml" --bench compounds
+
 # Includes the bounded 10,000-face geometric matcher case.
 python3 -m unittest discover -s "$root/tools/mesh/tests"
 

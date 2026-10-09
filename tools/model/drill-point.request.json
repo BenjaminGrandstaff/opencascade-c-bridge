@@ -1,7 +1,7 @@
 {
   "schema": "occb-model-view-v1",
   "model": {
-    "schema_version": 85,
+    "schema_version": 86,
     "family": {
       "id": "drilled-block",
       "version": 1,

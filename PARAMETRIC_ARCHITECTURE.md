@@ -1743,3 +1743,19 @@ edits reuse the source and rebuild its offset and dependents. Failed edits
 retain accepted geometry. Linked clones share generated variants. Bookkeeping
 follows topology/history size; native construction cost depends on surface
 intersections and joins. See [offset semantics](OFFSETS.md).
+
+
+## Schema 86 compound groups
+
+`Compound` depends on 1–10,000 distinct child feature IDs. Runtime checks bound
+the list, reject duplicate IDs and validate the grouped result. Native compound
+construction groups existing topology without fusing, sewing or geometry
+copies. Input changes invalidate the group and its dependents; unrelated
+features remain reusable. Grouping does not manufacture operation history;
+child topology retains identity, and downstream booleans record ancestry
+against the original child faces/edges contained in their compound tool.
+
+Input lookup/uniqueness costs O(N) time and memory; native validation and
+inspection follow combined topology size. Located child copies can share one
+source geometry. Group overlaps are not resolved and compound mass sums its
+solids. Use a union for net material volume. See [compounds](COMPOUNDS.md).

@@ -364,6 +364,24 @@ pub(crate) fn execute_feature<'session>(
             scalar(linear_tolerance, parameters, Dimension::Length)?,
             scalar(angular_tolerance, parameters, Dimension::Scalar)?,
         ),
+        FeatureOperation::Compound { inputs } => {
+            if inputs.is_empty() || inputs.len() > 10_000 {
+                return Err(ModelError::new("compound requires 1 to 10000 inputs"));
+            }
+            let unique: std::collections::HashSet<_> = inputs.iter().collect();
+            if unique.len() != inputs.len() {
+                return Err(ModelError::new("compound input IDs must be distinct"));
+            }
+            let children = inputs
+                .iter()
+                .map(|input| shape(shapes, input))
+                .collect::<Result<Vec<_>, _>>()?;
+            let grouped = session.create_compound(&children)?;
+            if !session.is_valid(&grouped)? {
+                return Err(ModelError::new("compound contains invalid geometry"));
+            }
+            Ok(grouped)
+        }
         FeatureOperation::Sew { inputs, tolerance } => {
             let inputs = inputs
                 .iter()

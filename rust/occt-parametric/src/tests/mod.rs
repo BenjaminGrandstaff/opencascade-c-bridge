@@ -155,3 +155,5 @@ fn pew_row(definition: &FamilyDefinition) -> InstanceGraph<'_> {
 }
 
 mod offsets;
+
+mod compounds;

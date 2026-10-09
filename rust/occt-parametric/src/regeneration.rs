@@ -718,7 +718,7 @@ pub(crate) fn collect_operation_parameters<'a>(
             collect_vector_parameters(pull_direction, names);
             collect_scalar_parameters(angle_radians, names);
         }
-        FeatureOperation::MakeSolid { .. } => {}
+        FeatureOperation::Compound { .. } | FeatureOperation::MakeSolid { .. } => {}
         FeatureOperation::Fuse { .. }
         | FeatureOperation::Cut { .. }
         | FeatureOperation::Common { .. } => {}

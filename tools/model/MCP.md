@@ -46,10 +46,10 @@ or remote service is started.
 | `occt_build` | The entire `occb-model-request-v1` object | Accepted report, build ID, local directory, and artifact resource URIs |
 
 `tools/list` provides the generated complete request schema as `occt_build`'s
-input schema. All 35 current feature operations and 137 nested request-schema
+input schema. All 36 current feature operations and 137 nested request-schema
 definitions are discoverable. Schemas derive from serde-compatible Rust types;
 new serialized variants require schema support at compilation. Authoring schemas
-target current model schema 85. The engine still migrates older documents.
+target current model schema 86. The engine still migrates older documents.
 Schemas describe serialization and basic request bounds; units, dependency
 references, dimensional constraints, selector resolution, and geometry validity
 are checked by the build engine.
@@ -402,8 +402,8 @@ See [mirrors](../../MIRRORS.md); current builds require native ABI 52.
 `scale_factor` is dimensionless and positive; `scale_center_x` moves the centre
 in millimetres. Native geometry, bounds, volume and source-face ancestry follow
 edits. The viewer links both controls to the scale label and displays measured
-result spans. See [scaling](../../SCALING.md). The catalog contains 22 examples
-and 12 generated schemas, exposed as 34 discovery resources.
+result spans. See [scaling](../../SCALING.md). The catalog contains 23 examples
+and 12 generated schemas, exposed as 35 discovery resources.
 
 
 `spring` combines the schema-82 helix operation with a parameter-driven circular
@@ -418,3 +418,10 @@ are illustrative assumptions. See [springs and coils](../../HELIX.md).
 `allowance` and `offset_tolerance` are lengths; distance must be nonzero and
 tolerance positive. Geometry, native ancestry and the signed driving annotation
 follow edits. See [offset semantics](../../OFFSETS.md).
+
+
+`multi-hole-plate` demonstrates schema-86 `compound`: nine independent
+cylindrical cutters are grouped and used in one `cut`. Edit `spacing`,
+`hole_radius` or `thickness`; geometry and linked controls regenerate. Selecting
+`tools` as an additional output shows the group and its source IDs. The schema
+allows 1–10,000 distinct input IDs. See [compound groups](../../COMPOUNDS.md).

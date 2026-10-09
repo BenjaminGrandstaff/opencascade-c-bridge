@@ -1705,3 +1705,35 @@ fn offset_viewer_exposes_signed_distance_tolerance_and_regenerated_bounds() {
         assert_eq!(a["anchors"].as_array().unwrap().len(), 1);
     }
 }
+
+#[test]
+fn grouped_cutter_view_exposes_membership_and_multi_hole_plate_controls() {
+    let dir = Directory::new();
+    let mut request = view_example("multi-hole-plate");
+    request["outputs"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"instance":"plate","output":"tools"}));
+    request["model"]["instances"][0]["base"]["overrides"] =
+        json!({"spacing":{"scalar":{"value":14,"dimension":"length","unit":"millimeter"}}});
+    view_request(&dir, request, "grouped").unwrap();
+    let data: Value =
+        serde_json::from_str(&fs::read_to_string(dir.0.join("grouped/view.json")).unwrap())
+            .unwrap();
+    assert_eq!(data["scenes"].as_array().unwrap().len(), 2);
+    let body = &data["scenes"][0];
+    assert_eq!(body["valid"], true);
+    assert!((body["bounds"][1][0].as_f64().unwrap() - 38.0).abs() < 1e-7);
+    assert!(body["parameters"].get("hole_radius").is_some());
+    let tools = &data["scenes"][1];
+    assert_eq!(tools["valid"], true);
+    let group = tools["annotations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["id"] == "compound-inputs")
+        .unwrap();
+    assert_eq!(group["detail"]["input_count"], 9);
+    assert_eq!(group["detail"]["inputs"].as_array().unwrap().len(), 9);
+    assert_eq!(group["kind"], "group");
+}

@@ -186,7 +186,7 @@ region and solid while keeping unaffected source sketches.
 The `hollow-sweep` example shows a bent tube plus its outer, inner and route
 sketches. Native route length and the bore control remain linked to the solid.
 Holed profile sweeps use the same shared scene builder and annotations as simple
-sweeps; current model schema is 85 and the current native ABI is 52.
+sweeps; current model schema is 86 and the current native ABI is 52.
 
 The schema-80 `hollow-loft` example adds all inner section sketches and bore
 controls to the solid's linked parameters. Existing section-spacing annotations
@@ -224,3 +224,9 @@ distance and tolerance parameters. The label is anchored at the result bounds
 centre; it does not claim a measured wall thickness or invent a face-normal
 arrow for arbitrary geometry. Metadata records signed distance, tolerance,
 source input and expressions. `offset-part` demonstrates outward/inward edits.
+
+
+Compound outputs display their child geometry and a grouping label with the
+input count and source IDs. This is structural metadata, not a geometric
+dimension. Overlapping children remain overlapping. The `multi-hole-plate`
+example can show the final cut body and grouped cutters as separate scenes.

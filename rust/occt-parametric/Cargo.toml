@@ -107,3 +107,7 @@ harness = false
 [[bench]]
 name = "offsets"
 harness = false
+
+[[bench]]
+name = "compounds"
+harness = false
