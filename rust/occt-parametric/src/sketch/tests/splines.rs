@@ -10,6 +10,7 @@ fn line(id: &str, start: &str, end: &str) -> SketchLine {
 
 fn spline(id: &str, points: &[&str]) -> SketchSpline {
     SketchSpline {
+        basis: None,
         id: id.into(),
         points: points.iter().map(|point| (*point).into()).collect(),
     }

@@ -41,6 +41,17 @@ impl SketchDefinition {
             }
         }
         for spline in &self.splines {
+            if spline.basis.is_some() {
+                let first = points[&spline.points[0]];
+                if !spline
+                    .points
+                    .iter()
+                    .any(|id| line_length((first, points[id])) > RESIDUAL_TOLERANCE)
+                {
+                    return Err(ModelError::new("explicit B-spline control poles coincide"));
+                }
+                continue;
+            }
             for pair in spline.points.windows(2) {
                 let distance = line_length((points[&pair[0]], points[&pair[1]]));
                 if !distance.is_finite() || distance <= RESIDUAL_TOLERANCE {
@@ -59,6 +70,11 @@ impl SketchDefinition {
         parameters: &HashMap<String, ParameterValue>,
     ) -> Result<(), ModelError> {
         self.validate_structure()?;
+        for spline in &self.splines {
+            if let Some(basis) = &spline.basis {
+                basis.weights(parameters)?;
+            }
+        }
         for constraint in &self.constraints {
             constraint.validate(parameters)?;
         }
@@ -466,6 +482,41 @@ fn validate_spline_points(
     spline: &SketchSpline,
     point_ids: &HashSet<&str>,
 ) -> Result<(), ModelError> {
+    if let Some(b) = &spline.basis {
+        let count = spline.points.len();
+        if !(1..=25).contains(&b.degree)
+            || count < (b.degree + 1) as usize
+            || count > 10000
+            || b.knots.len() < 2
+            || b.knots.len() > 10002
+            || b.knots.len() != b.multiplicities.len()
+            || (!b.weights.is_empty() && b.weights.len() != count)
+            || b.knots.iter().any(|k| !k.is_finite())
+            || b.knots.windows(2).any(|w| w[0] >= w[1])
+            || spline
+                .points
+                .iter()
+                .any(|id| !point_ids.contains(id.as_str()))
+        {
+            return Err(ModelError::new(
+                "invalid explicit B-spline degree, poles, knots or weights count",
+            ));
+        }
+        for (i, m) in b.multiplicities.iter().enumerate() {
+            let end = i == 0 || i + 1 == b.knots.len();
+            if *m <= 0 || *m > b.degree + i32::from(end) || (end && *m != b.degree + 1) {
+                return Err(ModelError::new("invalid clamped B-spline multiplicity"));
+            }
+        }
+        if b.multiplicities.iter().map(|m| *m as usize).sum::<usize>()
+            != count + b.degree as usize + 1
+        {
+            return Err(ModelError::new(
+                "B-spline multiplicity sum does not match poles and degree",
+            ));
+        }
+        return Ok(());
+    }
     // A closed spline repeats only its first point, at the end.
     let open = if spline.closed() {
         &spline.points[..spline.points.len() - 1]

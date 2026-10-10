@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define OCCT_BRIDGE_ABI_VERSION 52u
+#define OCCT_BRIDGE_ABI_VERSION 53u
 #define OCCT_BRIDGE_INVALID_SHAPE_ID UINT64_C(0)
 
 #if defined(_WIN32) && defined(OCCT_BRIDGE_BUILD_SHARED)
@@ -303,7 +303,8 @@ OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_create_segment_wire(
  * through its points in order (kind 2, 2 or more). Spline flags: bit 0 uses
  * start_tangent and bit 1 end_tangent as the curve's end directions (any
  * nonzero length); bit 2 makes it periodic, a smooth closed loop through its
- * points that ends where it starts, with no corner. Other kinds ignore flags. */
+ * points that ends where it starts, with no corner. Kind 3 supplies explicit
+ * clamped control poles and basis buffers below. Other kinds ignore flags. */
 typedef struct occt_bridge_curve_segment {
     int32_t kind;
     int32_t flags;
@@ -311,11 +312,22 @@ typedef struct occt_bridge_curve_segment {
     size_t point_count;
     occt_bridge_vec3_t start_tangent;
     occt_bridge_vec3_t end_tangent;
+    /* Kind 3: clamped non-periodic B-spline control poles in the point buffer.
+     * Degree 1..25, strictly increasing finite distinct knots, positive
+     * multiplicities (ends degree+1, interior <=degree), sum = poles+degree+1.
+     * Weights are optional (weight_count 0), or positive finite per-pole.
+     * Buffers are borrowed for the call. Other kinds ignore these fields. */
+    int32_t degree;
+    size_t knot_count;
+    const double* knots;
+    const int32_t* multiplicities;
+    size_t weight_count;
+    const double* weights;
 } occt_bridge_curve_segment_t;
 
 /* Like occt_bridge_create_segment_wire, with spline segments. Consecutive
  * segments must meet within kernel tolerance, and consecutive points within a
- * segment must be distinct. closed is 0 or 1; 1 requires the last segment to
+ * interpolated segment must be distinct; explicit poles may repeat. closed is 0 or 1; 1 requires the last segment to
  * end where the first starts. */
 OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_create_curve_wire(
     occt_bridge_session_t* session,

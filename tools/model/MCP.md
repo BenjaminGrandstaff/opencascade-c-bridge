@@ -46,10 +46,10 @@ or remote service is started.
 | `occt_build` | The entire `occb-model-request-v1` object | Accepted report, build ID, local directory, and artifact resource URIs |
 
 `tools/list` provides the generated complete request schema as `occt_build`'s
-input schema. All 38 current feature operations and 147 nested request-schema
+input schema. All 38 current feature operations and 148 nested request-schema
 definitions are discoverable. Schemas derive from serde-compatible Rust types;
 new serialized variants require schema support at compilation. Authoring schemas
-target current model schema 98. The engine still migrates older documents.
+target current model schema 99. The engine still migrates older documents.
 Schemas describe serialization and basic request bounds; units, dependency
 references, dimensional constraints, selector resolution, and geometry validity
 are checked by the build engine.
@@ -331,7 +331,7 @@ length. Limit faces must terminate the complete profile strictly forward; see [e
 `curved-extrusions` demonstrates schema-74 inclined and spherical limits.
 Its view request uses the native centroid ray measurement and tracks both
 surfaces when `depth` changes. Crossing next-face limits require an explicit
-up-to-face selector. Native ABI 52 is required by the current build.
+up-to-face selector. Native ABI 53 is required by the current build.
 
 
 `drill-point` demonstrates schema-75 blind-hole bottoms. Its `point_angle`
@@ -395,15 +395,15 @@ See [hollow lofts](../../docs/LOFTS.md#explicit-hollow-tracks-schema-80).
 `plane_x` moves the plane and `plane_tilt` changes its normal direction. Native
 geometry and source-face history remain valid after reflection, with correct
 outward normals. Viewer annotations expose plane data and related controls.
-See [mirrors](../../docs/MIRRORS.md); current builds require native ABI 52.
+See [mirrors](../../docs/MIRRORS.md); current builds require native ABI 53.
 
 
 `scaled-part` demonstrates schema-83 uniform scaling of an asymmetric bracket.
 `scale_factor` is dimensionless and positive; `scale_center_x` moves the centre
 in millimetres. Native geometry, bounds, volume and source-face ancestry follow
 edits. The viewer links both controls to the scale label and displays measured
-result spans. See [scaling](../../docs/SCALING.md). The catalog contains 34 examples
-and 12 generated schemas, exposed as 46 discovery resources.
+result spans. See [scaling](../../docs/SCALING.md). The catalog contains 35 examples
+and 12 generated schemas, exposed as 47 discovery resources.
 
 
 `spring` combines the schema-82 helix operation with a parameter-driven circular
@@ -454,7 +454,7 @@ See [pattern ancestry](../../docs/PART_PATTERNS.md#retained-pattern-ancestry).
 major diameter, pitch, run and derived turns. Its source radius and height
 follow diameter/run edits, with an illustrative unthreaded margin at both ends.
 Native validation and removed-volume checks cover the generated solid. The
-catalog targets schema 98; see [thread viewer semantics](../../docs/THREADS.md#ai-example-and-viewer-dimensions).
+catalog targets schema 99; see [thread viewer semantics](../../docs/THREADS.md#ai-example-and-viewer-dimensions).
 
 
 `edge-treatments` demonstrates constant-radius fillets and equal-distance
@@ -476,7 +476,7 @@ See [variable contour laws](../../docs/EDGE_TREATMENTS.md#variable-radius-contou
 Two hole-wire definitions retain the same explicit circle relationship and
 select different profile boundaries. A planar region and extrusion build the
 plate. Source sketches, real equality residuals and related controls are
-visible alongside the solid. Current catalog examples match schema 98.
+visible alongside the solid. Current catalog examples match schema 99.
 See [equal circular radii](../../docs/SKETCHES.md#equal-circular-radii-schema-92).
 
 
@@ -511,11 +511,17 @@ the boss location without shared point IDs, then a native profile is extruded.
 The viewer publishes calculated contact anchors, target entity IDs and real
 millimetre residuals. The request schema exposes `SketchLineSide` and
 `SketchCircleTangency`, bringing the request to 147 definitions; the discovery
-catalog has 34 examples plus 12 schemas (46 resources).
+catalog has 35 examples plus 12 schemas (47 resources).
 
 `arc-tangent-boss` demonstrates schema-98 directed arc contacts. The independent
 line/circular tangencies accept arcs in their circular roles and measure both
 supporting-circle tangency and directed-span membership. Its boss arc and
 closing chord generate an exact native segment face and solid. The viewer
 exposes span-inclusive millimetre residuals and calculated contacts. The catalog
-has 34 examples plus 12 schemas (46 resources); the request retains 147 definitions.
+has 35 examples plus 12 schemas (47 resources); the request retains 147 definitions.
+
+`rational-spline-cap` demonstrates schema-99 explicit B-spline bases with a
+parameter-driven rational weight. Native ABI 53 builds the supplied poles,
+knots, multiplicities and weights directly; the viewer publishes their basis
+metadata, linked controls and dashed control polygon. The request schema has
+148 definitions and the catalog has 35 examples plus 12 schemas (47 resources).

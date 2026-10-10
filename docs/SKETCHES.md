@@ -79,8 +79,8 @@ export are verified. A 1,000-pair solve and residual-diagnostic gate passes in
 0.009 s (10 s budget); 20 solids plus 60 source sketch scenes and matched-radius
 annotations pass through MCP in 0.316 s (10 s budget).
 
-Current authoring examples use schema 98. Older model documents migrate
-without adding constraints or changing their entities. Native ABI remains 52.
+Current authoring examples use schema 99. Older model documents migrate
+without adding constraints or changing their entities. Current native ABI is 53.
 
 ## Saved profile operations
 
@@ -345,3 +345,73 @@ radius, bounds, analytical volume and failed-span handle cleanup are tested.
 Model documents migrate to schema 98 and native ABI remains 52. These remain
 supporting-line/circular tangencies; ellipse and general spline contacts are
 future work. Named `tangent` endpoint relations keep their existing semantics.
+
+## Explicit B-spline bases (schema 99 / ABI 53)
+
+A spline entry may provide `basis`. Without it, `points` remain named
+interpolation points. With it, `points` are named **control poles**, and the
+supplied basis goes directly to `Geom_BSplineCurve`:
+
+```json
+{
+  "id": "curve",
+  "points": ["a", "b", "c"],
+  "basis": {
+    "degree": 2,
+    "knots": [0, 1],
+    "multiplicities": [3, 3],
+    "weights": [
+      {"literal": {"value": 1, "dimension": "scalar", "unit": null}},
+      {"parameter": "middle_weight"},
+      {"literal": {"value": 1, "dimension": "scalar", "unit": null}}
+    ]
+  }
+}
+```
+
+The current basis is clamped and non-periodic. Degree is 1..25, there must be
+at least degree+1 poles, and distinct knots are finite and strictly increasing.
+Knot and multiplicity arrays have matching lengths. Endpoint multiplicities
+are degree+1, interior multiplicities are 1..degree, and the sum is
+`pole_count + degree + 1`. At most 10,000 poles and 10,002 distinct knots are
+accepted. Interior knots are supported and retain their specified continuity.
+Repeated control poles are permitted; a wholly collapsed control polygon is
+rejected. Repeat the first named pole at the end for a closed clamped curve;
+this joins the ends without promising a smooth periodic seam.
+
+Weights may be omitted/empty for all ones, or supplied as positive finite
+**dimensionless** expressions, one per pole. Their parameter dependencies
+enter incremental regeneration. `SketchSolution.spline_weights` stores their
+evaluated values for previews and profile construction. Knot values, degree
+and multiplicities are explicit constants editable in the feature definition.
+Non-clamped and periodic explicit bases remain future work.
+
+Point-on-curve constraints project onto the exact native B-spline, including
+rational weights, rather than onto its control polygon. Control poles retain
+the usual point constraints and solver variables. A named endpoint `tangent`
+relation with a line or arc uses the adjacent control-pole direction as a
+measured angular residual; it moves free poles and preserves the supplied
+basis. Adjacent endpoint poles must define a nonzero direction for this
+relation. Existing interpolated splines still use constructed endpoint
+tangency. Spline-to-spline and independent general-curve tangency remain open.
+
+The viewer exposes the basis, pole IDs and evaluated weights, draws a dashed
+control polygon, and links a `B-spline degree …` annotation to coordinate and
+weight controls. Sampled display curves are previews of the native curve;
+profiles and solids use the supplied B-spline itself.
+
+The [rational spline cap](../tools/model/rational-spline-cap.request.json) uses
+poles `(R,0)`, `(R,R)`, `(0,R)`, degree 2, endpoint multiplicities 3 and weights
+`[1, sqrt(1/2), 1]`. This is a quarter-circle arc, closed with a chord and
+extruded. At R=10 mm and height=8 mm, volume is
+`(π/4 − 1/2) × 10² × 8 = 228.318531 mm³`. Setting the middle weight to 1 makes
+a polynomial quadratic cap with volume `10²/3 × 8 = 266.666667 mm³`.
+Weight edits rebuild profile and body; height edits reuse the profile. Native
+weights, knot spans, point membership, endpoint tangency, validity, volume,
+failed-edit handle retention and viewer controls are tested.
+
+The native segment ABI now accepts kind 3 with borrowed knot/multiplicity and
+optional weight buffers. Existing line, arc and interpolation kinds keep
+their behavior. ABI 53 changes the segment struct layout, so rebuild all
+native and Rust consumers together; model documents migrate to schema 99
+without changing existing interpolated spline definitions.

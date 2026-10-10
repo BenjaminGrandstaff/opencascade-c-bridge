@@ -42,9 +42,9 @@ pub use assembly::{
     JointSeedAxis, JointSolution, JointSolveOptions, JointVariable,
 };
 pub use sketch::{
-    ResolvedSketch, ResolvedSketches, SketchArc, SketchCircle, SketchCircleTangency,
-    SketchConstraint, SketchConstraintCheck, SketchDefinition, SketchEllipse, SketchFaceSupport,
-    SketchLine, SketchLineSide, SketchOffsetJoin, SketchPoint, SketchPoint2,
+    ResolvedSketch, ResolvedSketches, SketchArc, SketchBSplineBasis, SketchCircle,
+    SketchCircleTangency, SketchConstraint, SketchConstraintCheck, SketchDefinition, SketchEllipse,
+    SketchFaceSupport, SketchLine, SketchLineSide, SketchOffsetJoin, SketchPoint, SketchPoint2,
     SketchProfileOperation, SketchProjection, SketchProjectionKind, SketchSolution, SketchSpline,
     SketchSupportPlanes,
 };

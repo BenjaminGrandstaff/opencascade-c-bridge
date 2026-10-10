@@ -372,6 +372,20 @@ impl SketchDefinition {
                         end: transform(end_point),
                     }
                 }
+                Entity::Spline(spline) if spline.basis.is_some() => spline.explicit_segment(
+                    spline
+                        .points
+                        .iter()
+                        .map(|id| transform(solution.points[id]))
+                        .collect(),
+                    solution
+                        .spline_weights
+                        .get(&spline.id)
+                        .ok_or_else(|| {
+                            ModelError::new("explicit spline solution is missing weights")
+                        })?
+                        .clone(),
+                )?,
                 Entity::Spline(spline) => {
                     let periodic = spline.closed();
                     let through = if periodic {

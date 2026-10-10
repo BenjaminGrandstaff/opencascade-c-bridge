@@ -53,6 +53,7 @@ impl SketchDefinition {
                             | SketchConstraint::EqualRadius { .. }
                             | SketchConstraint::Midpoint { .. }
                             | SketchConstraint::PointLineDistance { .. }
+                            | SketchConstraint::Tangent { .. }
                             | SketchConstraint::LineCircleTangent { .. }
                             | SketchConstraint::CircleCircleTangent { .. }
                             | SketchConstraint::Concentric { .. }
@@ -105,6 +106,12 @@ impl SketchDefinition {
         self.validate_curve_geometry(&points)?;
         Ok(SketchSolution {
             points,
+            spline_weights: self
+                .splines
+                .iter()
+                .filter_map(|s| s.basis.as_ref().map(|b| (s, b)))
+                .map(|(s, b)| Ok((s.id.clone(), b.weights(parameters)?)))
+                .collect::<Result<HashMap<_, _>, ModelError>>()?,
             solved: max_abs(&residual) <= RESIDUAL_TOLERANCE,
             iterations,
             max_residual: max_abs(&residual),
@@ -202,7 +209,7 @@ impl SketchProblem<'_> {
         let entity = self.entities[id];
         let (first, second) = entity.tangent_points(contact);
         let (a, b) = (self.point(first, values), self.point(second, values));
-        let direction = if matches!(entity, Entity::Line(_)) {
+        let direction = if matches!(entity, Entity::Line(_) | Entity::Spline(_)) {
             SketchPoint2 {
                 x: b.x - a.x,
                 y: b.y - a.y,
@@ -239,6 +246,20 @@ impl SketchProblem<'_> {
         spline: &SketchSpline,
         values: &[f64],
     ) -> Result<Shape<'a>, ModelError> {
+        if let Some(basis) = &spline.basis {
+            let poles = spline
+                .points
+                .iter()
+                .map(|id| {
+                    let p = self.point(id, values);
+                    Vec3::new(p.x, p.y, 0.)
+                })
+                .collect();
+            return Ok(self.native.create_curve_wire(
+                &[spline.explicit_segment(poles, basis.weights(self.parameters)?)?],
+                spline.closed(),
+            )?);
+        }
         let away = |at: &str| -> Option<Vec3> {
             let neighbor = self.spline_tangents.get(&(spline.id.as_str(), at))?;
             let p = self.point(at, values);

@@ -54,6 +54,44 @@ fn gate(name: &str, budget: u64, run: impl FnOnce()) {
 }
 fn main() {
     gate(
+        "1000 explicit rational B-spline profiles with native weight edits",
+        10,
+        || {
+            let request: serde_json::Value = serde_json::from_str(include_str!(
+                "../../../tools/model/rational-spline-cap.request.json"
+            ))
+            .unwrap();
+            let document = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+            let session = Session::new().unwrap();
+            let mut part = PartInstance {
+                id: "part".into(),
+                definition: &document.family,
+                overrides: HashMap::new(),
+                provenance: "scale".into(),
+            };
+            for i in 0..1000 {
+                let weight = if i % 2 == 0 { 0.5_f64.sqrt() } else { 1. };
+                part.overrides.insert(
+                    "middle_weight".into(),
+                    ParameterValue::Scalar(Quantity::scalar(weight)),
+                );
+                let built = part.regenerate(&session).unwrap();
+                assert!(session.is_valid(built.shape("body").unwrap()).unwrap());
+                let area = if i % 2 == 0 {
+                    (std::f64::consts::PI / 4. - 0.5) * 100.
+                } else {
+                    100. / 3.
+                };
+                assert!(
+                    (session.volume(built.shape("body").unwrap()).unwrap() - area * 8.).abs()
+                        < 1e-5
+                );
+                drop(built);
+                assert_eq!(session.shape_count().unwrap(), 0);
+            }
+        },
+    );
+    gate(
         "1000 arc-span-aware line and circular tangent components",
         10,
         || {
@@ -582,6 +620,7 @@ fn main() {
                 s.points.push(point(id(p), x + dx, y, fixed));
             }
             s.splines.push(SketchSpline {
+                basis: None,
                 id: id("s"),
                 points: vec![id("a"), id("b"), id("c")],
             });

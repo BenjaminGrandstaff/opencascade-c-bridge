@@ -85,6 +85,17 @@ pub fn render(scene: &Value) -> String {
     let mut lines = Vec::new();
     if let Some(entities) = scene["entities"].as_array() {
         for entity in entities {
+            if let Some(ids) = entity["bspline"]["control_points"].as_array() {
+                let points = ids
+                    .iter()
+                    .map(|id| {
+                        let q = project(p(&scene["points"][id.as_str().unwrap()]));
+                        format!("{},{}", q[0], q[1])
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                write!(result, "<polyline points=\"{points}\" fill=\"none\" stroke=\"#8894a4\" stroke-dasharray=\"5 4\"/>").unwrap();
+            }
             lines.push((&entity["points"], entity["id"].as_str().unwrap_or("")));
         }
     }

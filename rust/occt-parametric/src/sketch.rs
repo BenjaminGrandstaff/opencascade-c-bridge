@@ -100,19 +100,67 @@ pub struct SketchArc {
     pub clockwise: bool,
 }
 
-/// A smooth curve interpolated through `points` in order. Its ends are the
-/// first and last points. Repeating the first point at the end makes a smooth
-/// closed loop with no corner, usable alone as a profile. A `Tangent`
-/// constraint at an end with a line or arc sets the spline's end direction so
-/// it continues smoothly from that entity; spline-to-spline tangency is not
-/// supported. Interior points move with the solver like any other point.
+/// A curve defined by named points. Without `basis`, it interpolates them;
+/// repeating the first at the end creates a smooth periodic loop, and an
+/// endpoint `Tangent` sets the interpolator's end direction. With `basis`,
+/// these points are control poles of a clamped non-periodic B-spline;
+/// endpoint tangency is measured through adjacent poles. Repeating the first
+/// pole closes the curve without promising a smooth periodic seam.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SketchSpline {
     pub id: String,
     pub points: Vec<String>,
+    /// When present, `points` are control poles, not interpolation points.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub basis: Option<SketchBSplineBasis>,
+}
+
+/// Explicit clamped non-periodic B-spline basis. Empty weights mean all ones.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SketchBSplineBasis {
+    #[schemars(range(min = 1, max = 25))]
+    pub degree: i32,
+    #[schemars(length(min = 2, max = 10002))]
+    pub knots: Vec<f64>,
+    pub multiplicities: Vec<i32>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub weights: Vec<ScalarExpr>,
+}
+
+impl SketchBSplineBasis {
+    fn weights(
+        &self,
+        parameters: &HashMap<String, ParameterValue>,
+    ) -> Result<Vec<f64>, ModelError> {
+        self.weights
+            .iter()
+            .map(|w| {
+                let value = scalar(w, parameters, Dimension::Scalar)?;
+                if value <= 0. {
+                    return Err(ModelError::new("B-spline weights must be positive"));
+                }
+                Ok(value)
+            })
+            .collect()
+    }
 }
 
 impl SketchSpline {
+    fn explicit_segment(
+        &self,
+        poles: Vec<Vec3>,
+        weights: Vec<f64>,
+    ) -> Result<CurveSegment, ModelError> {
+        let b = self.basis.as_ref().expect("explicit B-spline basis");
+        Ok(CurveSegment::BSpline {
+            poles,
+            degree: b.degree,
+            knots: b.knots.clone(),
+            multiplicities: b.multiplicities.clone(),
+            weights,
+        })
+    }
     fn closed(&self) -> bool {
         self.points.len() > 1 && self.points.first() == self.points.last()
     }
@@ -328,6 +376,8 @@ pub struct SketchPoint2 {
 #[derive(Clone, Debug, PartialEq)]
 pub struct SketchSolution {
     pub points: HashMap<String, SketchPoint2>,
+    /// Evaluated dimensionless weights for explicit spline previews and profiles.
+    pub spline_weights: HashMap<String, Vec<f64>>,
     pub solved: bool,
     pub iterations: usize,
     pub max_residual: f64,
@@ -371,7 +421,16 @@ impl<'a> Entity<'a> {
             Self::Ellipse(ellipse) => (&ellipse.center, contact),
             Self::Arc(arc) => (&arc.center, contact),
             // Spline tangency shapes the spline; it is never a solver equation.
-            Self::Spline(_) => unreachable!("spline tangency is applied geometrically"),
+            Self::Spline(s) if s.basis.is_some() => {
+                if s.points[0] == contact {
+                    (&s.points[0], &s.points[1])
+                } else {
+                    (&s.points[s.points.len() - 2], &s.points[s.points.len() - 1])
+                }
+            }
+            Self::Spline(_) => {
+                unreachable!("interpolated spline tangency is applied geometrically")
+            }
         }
     }
 }
@@ -404,17 +463,18 @@ impl SketchDefinition {
             .collect()
     }
 
-    /// True when a tangency involves a spline and so shapes it instead of
+    /// True when a tangency involves an interpolated spline and shapes it instead of
     /// adding a solver equation.
     fn spline_tangency(&self, constraint: &SketchConstraint) -> bool {
         matches!(constraint, SketchConstraint::Tangent { first, second, .. }
-            if self.splines.iter().any(|spline| spline.id == *first || spline.id == *second))
+            if self.splines.iter().any(|spline| spline.basis.is_none() && (spline.id == *first || spline.id == *second)))
     }
 
     fn spline_tangent_index(&self) -> Result<HashMap<(&str, &str), &str>, ModelError> {
         let splines = self
             .splines
             .iter()
+            .filter(|s| s.basis.is_none())
             .map(|s| s.id.as_str())
             .collect::<HashSet<_>>();
         let mut result = HashMap::new();
@@ -470,6 +530,13 @@ impl SketchDefinition {
                 }
                 SketchProfileOperation::Offset { distance, .. } => {
                     collect_scalar_parameters(distance, names)
+                }
+            }
+        }
+        for spline in &self.splines {
+            if let Some(basis) = &spline.basis {
+                for weight in &basis.weights {
+                    collect_scalar_parameters(weight, names);
                 }
             }
         }

@@ -124,7 +124,8 @@ impl Session {
         Ok(self.shape(shape))
     }
 
-    /// Builds a wire from lines, arcs, and interpolated splines. Consecutive
+    /// Builds a wire from lines, arcs, interpolated splines and explicit B-splines.
+    /// Consecutive
     /// segments must meet; `closed` requires the wire to end where it starts.
     pub fn create_curve_wire(
         &self,
@@ -136,6 +137,9 @@ impl Session {
         let mut raw = Vec::with_capacity(segments.len());
         for segment in segments {
             let first_point = points.len();
+            let (mut degree, mut knot_count, mut weight_count) = (0, 0, 0);
+            let (mut knots_ptr, mut weights_ptr) = (std::ptr::null(), std::ptr::null());
+            let mut mults_ptr = std::ptr::null();
             let (kind, flags, start_tangent, end_tangent) = match segment {
                 CurveSegment::Line { start, end } => {
                     points.extend([RawVec3::from(*start), RawVec3::from(*end)]);
@@ -144,6 +148,30 @@ impl Session {
                 CurveSegment::Arc { start, middle, end } => {
                     points.extend([*start, *middle, *end].map(RawVec3::from));
                     (1, 0, zero, zero)
+                }
+                CurveSegment::BSpline {
+                    poles,
+                    degree: d,
+                    knots,
+                    multiplicities,
+                    weights,
+                } => {
+                    if knots.len() != multiplicities.len() {
+                        return Err(BridgeError {
+                            status: 1,
+                            category: "invalid argument".into(),
+                            message: "B-spline knot/multiplicity counts differ".into(),
+                            diagnostics: Vec::new(),
+                        });
+                    }
+                    points.extend(poles.iter().map(|p| RawVec3::from(*p)));
+                    degree = *d;
+                    knot_count = knots.len();
+                    weight_count = weights.len();
+                    knots_ptr = knots.as_ptr();
+                    mults_ptr = multiplicities.as_ptr();
+                    weights_ptr = weights.as_ptr();
+                    (3, 0, zero, zero)
                 }
                 CurveSegment::Spline {
                     points: through,
@@ -170,6 +198,12 @@ impl Session {
                 point_count: points.len() - first_point,
                 start_tangent: start_tangent.into(),
                 end_tangent: end_tangent.into(),
+                degree,
+                knot_count,
+                knots: knots_ptr,
+                multiplicities: mults_ptr,
+                weight_count,
+                weights: weights_ptr,
             });
         }
         let mut shape = 0;

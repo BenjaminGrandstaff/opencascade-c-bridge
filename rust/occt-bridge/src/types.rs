@@ -412,6 +412,14 @@ pub enum CurveSegment {
         middle: Vec3,
         end: Vec3,
     },
+    /// Explicit clamped, non-periodic B-spline. Empty weights mean all ones.
+    BSpline {
+        poles: Vec<Vec3>,
+        degree: i32,
+        knots: Vec<f64>,
+        multiplicities: Vec<i32>,
+        weights: Vec<f64>,
+    },
     /// Passes through `points` in order (at least two). Optional end
     /// tangents fix the curve's direction at its ends; their length is
     /// ignored. A periodic spline is a smooth closed loop through at least

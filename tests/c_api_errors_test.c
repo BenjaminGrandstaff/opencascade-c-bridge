@@ -234,8 +234,8 @@ static void wires_and_faces(occt_bridge_session_t* session) {
     /* A spline arch from (1,0,0) over (0,1,0) to (-1,0,0), closed by a line. */
     const occt_bridge_vec3_t curve_points[] = {{1, 0, 0}, {0, 1, 0}, {-1, 0, 0}, {-1, 0, 0}, {1, 0, 0}};
     occt_bridge_curve_segment_t curves[] = {
-        {2, 0, 0, 3, {0, 0, 0}, {0, 0, 0}},
-        {0, 0, 3, 2, {0, 0, 0}, {0, 0, 0}}
+        {2, 0, 0, 3, {0, 0, 0}, {0, 0, 0}, 0, 0, NULL, NULL, 0, NULL},
+        {0, 0, 3, 2, {0, 0, 0}, {0, 0, 0}, 0, 0, NULL, NULL, 0, NULL}
     };
     EXPECT(occt_bridge_create_curve_wire(NULL, curve_points, 5, curves, 2, 1, &out), ARG);
     EXPECT(occt_bridge_create_curve_wire(session, curve_points, 5, curves, 2, 1, NULL), ARG);
@@ -246,6 +246,23 @@ static void wires_and_faces(occt_bridge_session_t* session) {
     EXPECT(occt_bridge_create_curve_wire(session, curve_points, 4, curves, 2, 1, &out), ARG);
     EXPECT(occt_bridge_create_curve_wire(session, curve_points, 5, curves, 1, 1, &out), ARG);
     EXPECT(occt_bridge_create_curve_wire(session, curve_points, 5, curves, 2, 1, &out), OK);
+    /* ABI 53 explicit basis buffers are checked before dereferencing. */
+    double basis_knots[] = {0., 1.};
+    int32_t basis_mults[] = {3, 3};
+    double basis_weights[] = {1., 1., 1.};
+    occt_bridge_curve_segment_t explicit_curves[] = {
+        {3, 0, 0, 3, {0, 0, 0}, {0, 0, 0}, 2, 2, basis_knots, basis_mults, 3, basis_weights},
+        {0, 0, 3, 2, {0, 0, 0}, {0, 0, 0}, 0, 0, NULL, NULL, 0, NULL}
+    };
+    EXPECT(occt_bridge_create_curve_wire(session, curve_points, 5, explicit_curves, 2, 1, &out), OK);
+    explicit_curves[0].knots = NULL;
+    EXPECT(occt_bridge_create_curve_wire(session, curve_points, 5, explicit_curves, 2, 1, &out), ARG);
+    explicit_curves[0].knots = basis_knots;
+    explicit_curves[0].knot_count = 10003;
+    EXPECT(occt_bridge_create_curve_wire(session, curve_points, 5, explicit_curves, 2, 1, &out), ARG);
+    explicit_curves[0].knot_count = 2;
+    basis_weights[1] = 0.;
+    EXPECT(occt_bridge_create_curve_wire(session, curve_points, 5, explicit_curves, 2, 1, &out), ARG);
     curves[0].flags = 8;
     EXPECT(occt_bridge_create_curve_wire(session, curve_points, 5, curves, 2, 1, &out), ARG);
     curves[0].flags = 1;

@@ -48,6 +48,16 @@ pub(super) fn sketch_scene(
             })
         })
         .collect::<Vec<_>>();
+    let explicit: HashMap<_, _> = sketch
+        .splines
+        .iter()
+        .filter_map(|s| s.basis.as_ref().map(|b| (s.id.as_str(), (s, b))))
+        .collect();
+    for entity in &mut entities {
+        if let Some((s, b)) = explicit.get(entity["id"].as_str().unwrap()) {
+            entity["bspline"] = json!({"basis":b,"control_points":s.points,"evaluated_weights":solution.spline_weights[&s.id]});
+        }
+    }
     let external_ids: BTreeSet<_> = projections
         .iter()
         .filter_map(|p| p["definition"]["id"].as_str())
@@ -150,6 +160,21 @@ pub(super) fn sketch_scene(
             }
             .into(),
         );
+    }
+    for spline in &sketch.splines {
+        if let Some(basis) = &spline.basis {
+            let mut parameters: BTreeSet<String> = names(&json!(basis)).into_iter().collect();
+            for id in &spline.points {
+                parameters.extend(point_controls[id.as_str()].iter().cloned());
+            }
+            annotations.push(Annotation {
+                id: format!("bspline-{}", spline.id), label: format!("B-spline degree {}", basis.degree),
+                kind: AnnotationKind::Group, status: AnnotationStatus::Constructed,
+                targets: vec![spline.id.clone()], parameters: parameters.into_iter().collect(),
+                anchors: json!([point_map[&spline.points[0]]]),
+                detail: json!({"basis":basis,"control_points":spline.points,"evaluated_weights":solution.spline_weights[&spline.id],"periodic":false}),
+            }.into());
+        }
     }
     for (index, constraint) in sketch.constraints.iter().enumerate() {
         let (symbol, targets, anchor_ids, value) = match constraint {
@@ -651,7 +676,12 @@ pub(super) fn sketch_scene(
     }
     let vertices = entities
         .iter()
-        .map(|e| e["points"].as_array().map_or(0, Vec::len))
+        .map(|e| {
+            e["points"].as_array().map_or(0, Vec::len)
+                + e["bspline"]["control_points"]
+                    .as_array()
+                    .map_or(0, Vec::len)
+        })
         .sum::<usize>()
         + annotations
             .iter()

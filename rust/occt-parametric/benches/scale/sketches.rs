@@ -549,6 +549,7 @@ fn spline_slot(crown: ScalarExpr) -> SketchDefinition {
         ellipses: Vec::new(),
         profile_operations: Vec::new(),
         splines: vec![SketchSpline {
+            basis: None,
             id: "top".into(),
             points: vec!["p2".into(), "crown".into(), "p3".into()],
         }],
@@ -675,6 +676,7 @@ pub(crate) fn large_spline_case() -> Outcome {
                 })
                 .collect();
             sketch.splines = vec![SketchSpline {
+                basis: None,
                 id: "ring".into(),
                 points: (0..=POINTS)
                     .map(|index| format!("q{}", index % POINTS))

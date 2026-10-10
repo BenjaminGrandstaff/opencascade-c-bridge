@@ -132,6 +132,7 @@ fn point_on_lines_circles_arcs_ellipses_and_native_splines() {
     s.lines.clear();
     s.points.insert(1, point("m", 5., 3., true));
     s.splines = vec![SketchSpline {
+        basis: None,
         id: "spline".into(),
         points: vec!["a".into(), "m".into(), "b".into()],
     }];
@@ -348,6 +349,7 @@ fn edited_splines_keep_native_curve_geometry_and_extend_to_tangent_targets() {
         point("b", 10., 0., true),
     ];
     s.splines = vec![SketchSpline {
+        basis: None,
         id: "s".into(),
         points: vec!["a".into(), "m".into(), "b".into()],
     }];
@@ -1216,4 +1218,141 @@ fn arc_tangency_sparse_derivatives_include_the_free_end_point() {
     let session = Session::new().unwrap();
     let wire = s.open_wire(&session, &params, None).unwrap();
     assert!(session.is_valid(&wire).unwrap());
+}
+
+fn explicit_quadratic() -> SketchDefinition {
+    let mut s = base();
+    s.points = vec![
+        point("a", 10., 0., true),
+        point("b", 10., 10., true),
+        point("c", 0., 10., true),
+    ];
+    s.splines.push(SketchSpline {
+        id: "curve".into(),
+        points: vec!["a".into(), "b".into(), "c".into()],
+        basis: Some(SketchBSplineBasis {
+            degree: 2,
+            knots: vec![0., 1.],
+            multiplicities: vec![3, 3],
+            weights: vec![number(1.), number(0.5_f64.sqrt()), number(1.)],
+        }),
+    });
+    s
+}
+
+#[test]
+fn explicit_bspline_point_membership_uses_native_rational_curve_not_control_polygon() {
+    let params = HashMap::new();
+    let mut s = explicit_quadratic();
+    s.points
+        .extend([point("p", 7., 7., false), point("axis", 7., 0., true)]);
+    s.lines.push(line("vertical", "axis", "p"));
+    s.constraints = vec![
+        SketchConstraint::PointOnCurve {
+            point: "p".into(),
+            curve: "curve".into(),
+        },
+        SketchConstraint::Vertical {
+            line: "vertical".into(),
+        },
+    ];
+    let solved = s.solve(&params).unwrap();
+    assert!(solved.solved, "{}", solved.max_residual);
+    assert!((solved.points["p"].y - 51_f64.sqrt()).abs() < 1e-7);
+    assert!(s.constraint_checks(&params, &solved).unwrap()[0].satisfied);
+    let session = Session::new().unwrap();
+    s.profile = vec!["curve".into()];
+    let wire = s.open_wire(&session, &params, None).unwrap();
+    let p = 10. / 2_f64.sqrt();
+    let near = session
+        .curve_closest_point(&wire, Vec3::new(p, p, 0.))
+        .unwrap();
+    assert!((near.x - p).hypot(near.y - p) < 1e-7);
+}
+
+#[test]
+fn explicit_bspline_endpoint_tangency_moves_control_pole_and_is_measured() {
+    let params = HashMap::new();
+    let mut s = explicit_quadratic();
+    s.points[1] = point("b", 8., 5., false);
+    s.points.push(point("neighbor", 10., -2., true));
+    s.lines.push(line("line", "neighbor", "a"));
+    s.constraints = vec![SketchConstraint::Tangent {
+        first: "line".into(),
+        second: "curve".into(),
+        point: "a".into(),
+    }];
+    let solved = s.solve(&params).unwrap();
+    assert!(solved.solved);
+    assert_eq!(solved.free_degrees, 1);
+    assert!((solved.points["b"].x - 10.).abs() < 1e-7);
+    let check = &s.constraint_checks(&params, &solved).unwrap()[0];
+    assert!(check.satisfied && !check.by_construction);
+    assert!(check.max_residual.unwrap() < 1e-7);
+    let session = Session::new().unwrap();
+    s.profile = vec!["curve".into()];
+    let wire = s.open_wire(&session, &params, None).unwrap();
+    let edge = session
+        .subshapes(&wire, occt_bridge::ShapeType::Edge)
+        .unwrap()
+        .pop()
+        .unwrap();
+    let spans = session.edge_bezier_spans(&edge, 10).unwrap();
+    assert_eq!(spans[0].poles.len(), 3);
+    assert!((spans[0].poles[1].x - 10.).abs() < 1e-7);
+}
+
+#[test]
+fn explicit_bspline_rejects_invalid_basis_weights_and_preserves_legacy_interpolation() {
+    let params = HashMap::new();
+    for case in 0..8 {
+        let mut s = explicit_quadratic();
+        let b = s.splines[0].basis.as_mut().unwrap();
+        match case {
+            0 => b.degree = 0,
+            1 => b.knots[1] = 0.,
+            2 => b.multiplicities[0] = 2,
+            3 => b.multiplicities.push(1),
+            4 => b.weights[1] = number(0.),
+            5 => b.weights[1] = length(1.),
+            6 => {
+                b.weights.pop();
+            }
+            _ => s.splines[0].points[1] = "missing".into(),
+        }
+        assert!(s.solve(&params).is_err());
+    }
+    let mut s = explicit_quadratic();
+    s.splines[0].basis = None;
+    let solution = s.solve(&params).unwrap();
+    let session = Session::new().unwrap();
+    s.profile = vec!["curve".into()];
+    let wire = s.open_wire(&session, &params, None).unwrap();
+    let near = session
+        .curve_closest_point(&wire, Vec3::new(10., 10., 0.))
+        .unwrap();
+    assert!((near.x - 10.).hypot(near.y - 10.) < 1e-7);
+    assert!(solution.spline_weights.is_empty());
+}
+
+#[test]
+fn explicit_bspline_accepts_repeated_control_poles_and_closed_clamped_profiles() {
+    let params = HashMap::new();
+    let session = Session::new().unwrap();
+    let mut s = explicit_quadratic();
+    s.points[1].y = length(0.); // Coincident adjacent poles are valid for an explicit basis.
+    s.splines[0].basis.as_mut().unwrap().weights.clear();
+    s.profile = vec!["curve".into()];
+    let wire = s.open_wire(&session, &params, None).unwrap();
+    assert!(session.is_valid(&wire).unwrap());
+    let mut s = explicit_quadratic();
+    s.splines[0].points.push("a".into());
+    let b = s.splines[0].basis.as_mut().unwrap();
+    b.knots = vec![0., 0.5, 1.];
+    b.multiplicities = vec![3, 1, 3];
+    b.weights.clear();
+    s.profile = vec!["curve".into()];
+    let face = s.face_on_plane(&session, &params, None).unwrap();
+    assert!(session.is_valid(&face).unwrap());
+    assert!(session.surface_area(&face).unwrap() > 1.);
 }

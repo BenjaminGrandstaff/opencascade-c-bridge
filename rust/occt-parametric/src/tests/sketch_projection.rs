@@ -342,6 +342,7 @@ fn ambiguous_collapsed_and_invalid_projection_definitions_fail_without_handle_gr
     let mut source = blank();
     source.points = vec![point("a", 0., 0.), point("b", 5., 3.), point("c", 10., 0.)];
     source.splines = vec![SketchSpline {
+        basis: None,
         id: "spline".into(),
         points: vec!["a".into(), "b".into(), "c".into()],
     }];

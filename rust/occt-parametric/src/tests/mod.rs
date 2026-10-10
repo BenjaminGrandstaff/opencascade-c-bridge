@@ -179,3 +179,5 @@ mod concentric_bushing;
 mod tangent_boss;
 
 mod arc_tangent_boss;
+
+mod rational_spline_cap;

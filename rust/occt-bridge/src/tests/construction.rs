@@ -763,3 +763,111 @@ fn spline_end_tangents_set_the_departure_direction() {
         assert!(session.create_curve_wire(&segments, closed).is_err());
     }
 }
+
+#[test]
+fn explicit_rational_bspline_preserves_quarter_circle_and_internal_knots() {
+    let session = Session::new().unwrap();
+    let wire = session
+        .create_curve_wire(
+            &[CurveSegment::BSpline {
+                poles: vec![
+                    Vec3::new(10., 0., 0.),
+                    Vec3::new(10., 10., 0.),
+                    Vec3::new(0., 10., 0.),
+                ],
+                degree: 2,
+                knots: vec![0., 1.],
+                multiplicities: vec![3, 3],
+                weights: vec![1., 0.5_f64.sqrt(), 1.],
+            }],
+            false,
+        )
+        .unwrap();
+    let p = 10. / 2_f64.sqrt();
+    let near = session
+        .curve_closest_point(&wire, Vec3::new(p, p, 0.))
+        .unwrap();
+    assert!((near.x - p).hypot(near.y - p) < 1e-7);
+    let edge = session
+        .subshapes(&wire, ShapeType::Edge)
+        .unwrap()
+        .pop()
+        .unwrap();
+    let measured = session.edge_length(&edge).unwrap();
+    assert!(
+        (measured - 5. * std::f64::consts::PI).abs() < 1e-5,
+        "length {measured}"
+    );
+    // BRepGProp integrates B-spline length numerically; native samples and
+    // rational poles verify the exact circular geometry independently.
+    for p in session.edge_sample_points(&edge, 17).unwrap() {
+        assert!((p.x.hypot(p.y) - 10.).abs() < 1e-8);
+    }
+    let spans = session.edge_bezier_spans(&edge, 10).unwrap();
+    assert_eq!(spans.len(), 1);
+    assert_eq!(spans[0].poles.len(), 3);
+    assert!((spans[0].weights[1] - 0.5_f64.sqrt()).abs() < 1e-12);
+    let wire = session
+        .create_curve_wire(
+            &[CurveSegment::BSpline {
+                poles: (0..7)
+                    .map(|i| Vec3::new(i as f64, (i % 2) as f64, 0.))
+                    .collect(),
+                degree: 3,
+                knots: vec![0., 0.4, 1.],
+                multiplicities: vec![4, 3, 4],
+                weights: vec![],
+            }],
+            false,
+        )
+        .unwrap();
+    let edge = session
+        .subshapes(&wire, ShapeType::Edge)
+        .unwrap()
+        .pop()
+        .unwrap();
+    let spans = session.edge_bezier_spans(&edge, 20).unwrap();
+    assert_eq!(spans.len(), 2);
+    assert!(spans.iter().all(|s| s.poles.len() == 4));
+}
+
+#[test]
+fn explicit_bspline_validation_is_bounded_and_failure_releases_handles() {
+    let session = Session::new().unwrap();
+    let valid = CurveSegment::BSpline {
+        poles: vec![
+            Vec3::new(0., 0., 0.),
+            Vec3::new(1., 2., 0.),
+            Vec3::new(2., 0., 0.),
+        ],
+        degree: 2,
+        knots: vec![0., 1.],
+        multiplicities: vec![3, 3],
+        weights: vec![1.; 3],
+    };
+    for case in 0..8 {
+        let mut segment = valid.clone();
+        let CurveSegment::BSpline {
+            degree,
+            knots,
+            multiplicities,
+            weights,
+            ..
+        } = &mut segment
+        else {
+            unreachable!()
+        };
+        match case {
+            0 => *degree = 0,
+            1 => *degree = 26,
+            2 => knots[1] = 0.,
+            3 => knots[1] = f64::NAN,
+            4 => multiplicities[0] = 2,
+            5 => multiplicities.pop().map(|_| ()).unwrap(),
+            6 => weights[1] = 0.,
+            _ => weights.pop().map(|_| ()).unwrap(),
+        }
+        assert!(session.create_curve_wire(&[segment], false).is_err());
+        assert_eq!(session.shape_count().unwrap(), 0);
+    }
+}

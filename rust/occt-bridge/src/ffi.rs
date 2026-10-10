@@ -2,7 +2,7 @@
 
 use super::*;
 
-pub(crate) const ABI_VERSION: u32 = 52;
+pub(crate) const ABI_VERSION: u32 = 53;
 
 #[repr(C)]
 #[derive(Default)]
@@ -66,6 +66,12 @@ pub(crate) struct RawCurveSegment {
     pub(crate) point_count: usize,
     pub(crate) start_tangent: RawVec3,
     pub(crate) end_tangent: RawVec3,
+    pub(crate) degree: i32,
+    pub(crate) knot_count: usize,
+    pub(crate) knots: *const f64,
+    pub(crate) multiplicities: *const i32,
+    pub(crate) weight_count: usize,
+    pub(crate) weights: *const f64,
 }
 
 #[repr(C)]

@@ -3,41 +3,11 @@
   "model": {
     "schema_version": 99,
     "family": {
-      "id": "dimensioned-block",
+      "id": "rational-spline-cap",
       "version": 1,
       "parameters": [
         {
-          "id": "width",
-          "parameter_type": {
-            "scalar": "length"
-          },
-          "default": {
-            "scalar": {
-              "value": 40,
-              "dimension": "length",
-              "unit": "millimeter"
-            }
-          },
-          "minimum": null,
-          "maximum": null
-        },
-        {
-          "id": "height",
-          "parameter_type": {
-            "scalar": "length"
-          },
-          "default": {
-            "scalar": {
-              "value": 25,
-              "dimension": "length",
-              "unit": "millimeter"
-            }
-          },
-          "minimum": null,
-          "maximum": null
-        },
-        {
-          "id": "depth",
+          "id": "radius",
           "parameter_type": {
             "scalar": "length"
           },
@@ -48,43 +18,80 @@
               "unit": "millimeter"
             }
           },
-          "minimum": null,
-          "maximum": null
-        }
-      ],
-      "derived_parameters": [],
-      "derived_vector_parameters": [],
-      "constraints": [
-        {
-          "id": "minimum_depth",
-          "statement": "Extrusion depth at least 2 mm",
-          "left": {
-            "parameter": "depth"
+          "minimum": {
+            "value": 5,
+            "dimension": "length",
+            "unit": "millimeter"
           },
-          "relation": "greater_or_equal",
-          "right": {
-            "literal": {
-              "value": 2,
+          "maximum": {
+            "value": 20,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "middle_weight",
+          "parameter_type": {
+            "scalar": "scalar"
+          },
+          "default": {
+            "scalar": {
+              "value": 0.7071067811865476,
+              "dimension": "scalar",
+              "unit": null
+            }
+          },
+          "minimum": {
+            "value": 0.2,
+            "dimension": "scalar",
+            "unit": null
+          },
+          "maximum": {
+            "value": 2,
+            "dimension": "scalar",
+            "unit": null
+          }
+        },
+        {
+          "id": "height",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 8,
               "dimension": "length",
               "unit": "millimeter"
             }
           },
-          "provenance": "demonstration assumption"
+          "minimum": {
+            "value": 2,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 30,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
         }
       ],
+      "derived_parameters": [],
+      "derived_vector_parameters": [],
+      "constraints": [],
       "requirements": [
         {
-          "id": "valid",
+          "id": "body-valid",
           "version": 1,
           "kind": "validation",
           "priority": "required",
-          "statement": "valid",
+          "statement": "equal-radius mounting plate is valid",
           "rule": {
             "shape_valid": {
               "output": "body"
             }
           },
-          "provenance": "example; demonstration assumptions",
+          "provenance": "Illustrative dimensions",
           "traces": [
             {
               "feature": "body"
@@ -99,7 +106,7 @@
           "operation": {
             "sketch_face": {
               "sketch": {
-                "id": "rectangle",
+                "id": "rational-spline-cap",
                 "origin": {
                   "literal": {
                     "x": {
@@ -159,13 +166,9 @@
                 },
                 "points": [
                   {
-                    "id": "A",
+                    "id": "a",
                     "x": {
-                      "literal": {
-                        "value": 0,
-                        "dimension": "length",
-                        "unit": "millimeter"
-                      }
+                      "parameter": "radius"
                     },
                     "y": {
                       "literal": {
@@ -177,43 +180,17 @@
                     "fixed": true
                   },
                   {
-                    "id": "B",
+                    "id": "b",
                     "x": {
-                      "literal": {
-                        "value": 40,
-                        "dimension": "length",
-                        "unit": "millimeter"
-                      }
+                      "parameter": "radius"
                     },
                     "y": {
-                      "literal": {
-                        "value": 0,
-                        "dimension": "length",
-                        "unit": "millimeter"
-                      }
+                      "parameter": "radius"
                     },
                     "fixed": true
                   },
                   {
-                    "id": "C",
-                    "x": {
-                      "literal": {
-                        "value": 40,
-                        "dimension": "length",
-                        "unit": "millimeter"
-                      }
-                    },
-                    "y": {
-                      "literal": {
-                        "value": 25,
-                        "dimension": "length",
-                        "unit": "millimeter"
-                      }
-                    },
-                    "fixed": true
-                  },
-                  {
-                    "id": "D",
+                    "id": "c",
                     "x": {
                       "literal": {
                         "value": 0,
@@ -222,80 +199,62 @@
                       }
                     },
                     "y": {
-                      "literal": {
-                        "value": 25,
-                        "dimension": "length",
-                        "unit": "millimeter"
-                      }
+                      "parameter": "radius"
                     },
                     "fixed": true
                   }
                 ],
                 "lines": [
                   {
-                    "id": "AB",
-                    "start": "A",
-                    "end": "B"
-                  },
-                  {
-                    "id": "BC",
-                    "start": "B",
-                    "end": "C"
-                  },
-                  {
-                    "id": "CD",
-                    "start": "C",
-                    "end": "D"
-                  },
-                  {
-                    "id": "DA",
-                    "start": "D",
-                    "end": "A"
+                    "id": "chord",
+                    "start": "c",
+                    "end": "a"
                   }
                 ],
+                "circles": [],
                 "profile": [
-                  "AB",
-                  "BC",
-                  "CD",
-                  "DA"
+                  "curve",
+                  "chord"
                 ],
-                "constraints": [
+                "constraints": [],
+                "arcs": [],
+                "splines": [
                   {
-                    "horizontal": {
-                      "line": "AB"
-                    }
-                  },
-                  {
-                    "vertical": {
-                      "line": "BC"
-                    }
-                  },
-                  {
-                    "horizontal": {
-                      "line": "CD"
-                    }
-                  },
-                  {
-                    "vertical": {
-                      "line": "DA"
-                    }
-                  },
-                  {
-                    "distance": {
-                      "first": "A",
-                      "second": "B",
-                      "value": {
-                        "parameter": "width"
-                      }
-                    }
-                  },
-                  {
-                    "distance": {
-                      "first": "A",
-                      "second": "D",
-                      "value": {
-                        "parameter": "height"
-                      }
+                    "id": "curve",
+                    "points": [
+                      "a",
+                      "b",
+                      "c"
+                    ],
+                    "basis": {
+                      "degree": 2,
+                      "knots": [
+                        0,
+                        1
+                      ],
+                      "multiplicities": [
+                        3,
+                        3
+                      ],
+                      "weights": [
+                        {
+                          "literal": {
+                            "value": 1,
+                            "dimension": "scalar",
+                            "unit": null
+                          }
+                        },
+                        {
+                          "parameter": "middle_weight"
+                        },
+                        {
+                          "literal": {
+                            "value": 1,
+                            "dimension": "scalar",
+                            "unit": null
+                          }
+                        }
+                      ]
                     }
                   }
                 ]
@@ -325,10 +284,11 @@
                     }
                   },
                   "z": {
-                    "parameter": "depth"
+                    "parameter": "height"
                   }
                 }
-              }
+              },
+              "extent": "distance"
             }
           }
         }
@@ -337,25 +297,21 @@
     "instances": [
       {
         "base": {
-          "id": "block",
-          "overrides": {
-            "width": {
-              "scalar": {
-                "value": 60,
-                "dimension": "length",
-                "unit": "millimeter"
-              }
-            }
-          },
-          "provenance": "dimensions are illustrative assumptions"
+          "id": "part",
+          "overrides": {},
+          "provenance": "Exact rational quadratic B-spline quarter-circle cap"
         }
       }
     ]
   },
   "outputs": [
     {
-      "instance": "block",
+      "instance": "part",
       "output": "body"
+    },
+    {
+      "instance": "part",
+      "output": "profile"
     }
   ],
   "sketches": true

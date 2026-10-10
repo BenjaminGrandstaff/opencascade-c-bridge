@@ -860,3 +860,57 @@ fn arc_tangency_viewer_reports_span_failure_even_when_supporting_circle_contacts
         );
     }
 }
+
+#[test]
+fn explicit_bspline_viewer_exposes_basis_control_polygon_and_weight_parameter() {
+    let dir = Directory::new();
+    for weight in [0.5_f64.sqrt(), 1.] {
+        let mut request = view_example("rational-spline-cap");
+        let p = request["model"]["family"]["parameters"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|p| p["id"] == "middle_weight")
+            .unwrap();
+        p["default"]["scalar"]["value"] = json!(weight);
+        let name = format!("basis-{weight}");
+        view_request(&dir, request, &name).unwrap();
+        let data: Value =
+            serde_json::from_str(&fs::read_to_string(dir.0.join(&name).join("view.json")).unwrap())
+                .unwrap();
+        let scene = data["scenes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["kind"] == "sketch")
+            .unwrap();
+        assert_eq!(scene["solver"]["solved"], true);
+        let curve = scene["entities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|e| e["id"] == "curve")
+            .unwrap();
+        assert_eq!(curve["bspline"]["basis"]["degree"], 2);
+        assert_eq!(curve["bspline"]["basis"]["knots"], json!([0., 1.]));
+        assert_eq!(curve["bspline"]["control_points"], json!(["a", "b", "c"]));
+        assert!(
+            (curve["bspline"]["evaluated_weights"][1].as_f64().unwrap() - weight).abs() < 1e-12
+        );
+        let annotation = scene["annotations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|a| a["id"] == "bspline-curve")
+            .unwrap();
+        assert!(
+            annotation["parameters"]
+                .as_array()
+                .unwrap()
+                .contains(&json!("middle_weight"))
+        );
+        assert_eq!(annotation["detail"]["periodic"], false);
+        let svg = fs::read_to_string(dir.0.join(name).join("view-0003.svg")).unwrap();
+        assert!(svg.contains("stroke-dasharray=\"5 4\""));
+    }
+}

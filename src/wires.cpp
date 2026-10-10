@@ -9,6 +9,10 @@
 #include <BRepBuilderAPI_MakeWire.hxx>
 #include <GC_MakeArcOfCircle.hxx>
 #include <GeomAPI_Interpolate.hxx>
+#include <Geom_BSplineCurve.hxx>
+#include <TColgp_Array1OfPnt.hxx>
+#include <TColStd_Array1OfReal.hxx>
+#include <TColStd_Array1OfInteger.hxx>
 #include <gp_Ax2.hxx>
 #include <gp_Circ.hxx>
 #include <gp_Dir.hxx>
@@ -92,7 +96,7 @@ const char* curve_segment_error(
     const occt_bridge_vec3_t* points,
     size_t point_count) {
     const size_t expected = segment.kind == 0 ? 2 : segment.kind == 1 ? 3 : 0;
-    if (segment.kind < 0 || segment.kind > 2
+    if (segment.kind < 0 || segment.kind > 3
         || (expected != 0 && segment.point_count != expected)
         || (segment.kind == 2 && (segment.point_count < 2 || (segment.flags & ~7) != 0))
         || segment.first_point > point_count
@@ -104,8 +108,32 @@ const char* curve_segment_error(
         return "curve segment point is not finite";
     }
     for (size_t index = 1; index < segment.point_count; ++index) {
-        if (to_point(first[index]).Distance(to_point(first[index - 1])) <= Precision::Confusion()) {
+        if (segment.kind != 3 && to_point(first[index]).Distance(to_point(first[index - 1])) <= Precision::Confusion()) {
             return "consecutive curve segment points coincide";
+        }
+    }
+    if (segment.kind == 3) {
+        if (segment.degree < 1 || segment.degree > Geom_BSplineCurve::MaxDegree()
+            || segment.point_count < static_cast<size_t>(segment.degree + 1) || segment.point_count > 10000
+            || segment.knot_count < 2 || segment.knot_count > 10002 || segment.knots == nullptr || segment.multiplicities == nullptr
+            || (segment.weight_count != 0 && (segment.weight_count != segment.point_count || segment.weights == nullptr))) {
+            return "invalid explicit B-spline sizes or degree";
+        }
+        size_t sum = 0;
+        for (size_t i = 0; i < segment.knot_count; ++i) {
+            const int maximum = (i == 0 || i + 1 == segment.knot_count) ? segment.degree + 1 : segment.degree;
+            if (!std::isfinite(segment.knots[i]) || (i != 0 && segment.knots[i] <= segment.knots[i-1])
+                || segment.multiplicities[i] < 1 || segment.multiplicities[i] > maximum
+                || ((i == 0 || i + 1 == segment.knot_count) && segment.multiplicities[i] != maximum)) {
+                return "invalid clamped B-spline knots or multiplicities";
+            }
+            sum += static_cast<size_t>(segment.multiplicities[i]);
+        }
+        if (sum != segment.point_count + static_cast<size_t>(segment.degree) + 1) {
+            return "B-spline multiplicity sum does not match poles and degree";
+        }
+        for (size_t i = 0; i < segment.weight_count; ++i) {
+            if (!std::isfinite(segment.weights[i]) || segment.weights[i] <= 0.) return "B-spline weights must be positive and finite";
         }
     }
     if (segment.kind == 2) {
@@ -173,11 +201,31 @@ const char* add_spline_segment(
     return wire.IsDone() ? nullptr : "spline edge does not connect";
 }
 
+const char* add_explicit_bspline(BRepBuilderAPI_MakeWire& wire,
+    const occt_bridge_curve_segment_t& segment, const occt_bridge_vec3_t* points) {
+    const int count = static_cast<int>(segment.point_count);
+    const int knot_count = static_cast<int>(segment.knot_count);
+    TColgp_Array1OfPnt poles(1, count);
+    TColStd_Array1OfReal weights(1, count), knots(1, knot_count);
+    TColStd_Array1OfInteger mults(1, knot_count);
+    for (int i = 1; i <= count; ++i) {
+        poles.SetValue(i, to_point(points[segment.first_point + static_cast<size_t>(i-1)]));
+        weights.SetValue(i, segment.weight_count == 0 ? 1. : segment.weights[i-1]);
+    }
+    for (int i = 1; i <= knot_count; ++i) { knots.SetValue(i, segment.knots[i-1]); mults.SetValue(i, segment.multiplicities[i-1]); }
+    Handle(Geom_BSplineCurve) curve = new Geom_BSplineCurve(poles, weights, knots, mults, segment.degree, Standard_False);
+    BRepBuilderAPI_MakeEdge edge(curve);
+    if (!edge.IsDone()) return "explicit B-spline edge construction failed";
+    wire.Add(edge.Edge());
+    return wire.IsDone() ? nullptr : "explicit B-spline edge does not connect";
+}
+
 // Appends a validated line, arc, or spline segment; null on success.
 const char* add_curve_segment(
     BRepBuilderAPI_MakeWire& wire,
     const occt_bridge_curve_segment_t& segment,
     const occt_bridge_vec3_t* points) {
+    if (segment.kind == 3) return add_explicit_bspline(wire, segment, points);
     if (segment.kind == 2) {
         return add_spline_segment(wire, segment, points);
     }
