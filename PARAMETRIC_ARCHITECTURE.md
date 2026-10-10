@@ -592,8 +592,11 @@ spine vertices, using ABI 29's `occt_bridge_variable_fillet` and safe
 Contour direction belongs to OCCT and does not
 follow the caller's selected edge orientation. Tangent neighbors can extend
 the contour; selecting several of its edges applies one shared law. Duplicate
-edges and closed contours are rejected. Multi-station laws, explicit direction
-control, and distinct radius pairs for different contours remain future work.
+edges and closed contours are rejected. Schema 39 subsequently adds smooth
+interior stations and kernel/reversed/from-point direction control using ABI 33.
+Distinct radius laws for different contours in one feature remain future work.
+The viewer exposes these laws and linked station controls; see
+[variable contour laws](EDGE_TREATMENTS.md#variable-radius-contour-laws).
 
 The input and result must contain one valid solid, and the result must have
 positive volume. Input geometry is preserved. Validation and optional healing,
@@ -1834,3 +1837,12 @@ count separately from displayed reference count. Source paths are explicitly
 marked references to pre-treatment edges, rather than final blend measurements.
 The AI example verifies analytical corner volumes, selective regeneration and
 failed-edit retention. See [edge treatments](EDGE_TREATMENTS.md).
+
+
+VariableFillet shares the treatment source-reference path. Its complete
+evaluated law takes O(stations) work/storage; per-station labels are limited to
+64 interior stations plus the endpoints. Direction expressions and all station
+controls participate in the main label's linked names. Law positions describe
+the native tangent contour and are not interpolated onto individual edge
+samples. Labels use the scene centre and explicitly mark stations nonspatial.
+See [variable contour laws](EDGE_TREATMENTS.md#variable-radius-contour-laws).

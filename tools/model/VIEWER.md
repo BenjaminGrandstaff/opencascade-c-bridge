@@ -261,3 +261,13 @@ references, not measurements of the final blend. Up to 64 references use eight
 points each, charged to the global vertex budget before sampling.
 `edge-treatments` compares two alternatives and supports live radius/distance
 edits through the shared viewer. See [edge treatments](../../EDGE_TREATMENTS.md).
+
+
+Direct VariableFillet outputs expose the complete evaluated contour radius law
+and spine-direction expression. The law label links all defining controls;
+endpoint and up to 64 interior labels link their respective radius/position
+expressions. These labels are centred in the scene, without inferred spatial
+station coordinates. Metadata sets `spatial_stations: false` and describes the
+nominal contour law. Original selected source-edge paths retain the bounded
+reference sampling and global budget. See
+[variable contour laws](../../EDGE_TREATMENTS.md#variable-radius-contour-laws).

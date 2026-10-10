@@ -402,8 +402,8 @@ See [mirrors](../../MIRRORS.md); current builds require native ABI 52.
 `scale_factor` is dimensionless and positive; `scale_center_x` moves the centre
 in millimetres. Native geometry, bounds, volume and source-face ancestry follow
 edits. The viewer links both controls to the scale label and displays measured
-result spans. See [scaling](../../SCALING.md). The catalog contains 27 examples
-and 12 generated schemas, exposed as 39 discovery resources.
+result spans. See [scaling](../../SCALING.md). The catalog contains 28 examples
+and 12 generated schemas, exposed as 40 discovery resources.
 
 
 `spring` combines the schema-82 helix operation with a parameter-driven circular
@@ -463,3 +463,10 @@ outputs compare independent rounded and beveled alternatives. Labels link the
 treatment value and selector controls; overlays reference the selected source
 edges. For a build/export request, select one output per instance.
 See [edge treatments](../../EDGE_TREATMENTS.md).
+
+
+`variable-fillet` exposes the existing endpoint/interior radius law and
+from-point spine direction. Its linked controls edit endpoint and middle
+radii plus normalized station position. Visualization returns the complete
+nominal law and source references, with explicit nonspatial station metadata.
+See [variable contour laws](../../EDGE_TREATMENTS.md#variable-radius-contour-laws).

@@ -252,5 +252,24 @@ with tempfile.TemporaryDirectory(prefix='occb-mcp-scale-') as root:
         elapsed=time.monotonic()-started
         assert elapsed<10
         print(f'PASS MCP 20 edge-treatment scenes, linked values and bounded source references: {elapsed:.3f}s / 10s')
+        variable=client.tool('occt_get_example',dict(name='variable-fillet'))['structuredContent']
+        for i in range(1,20):
+            variable['model']['instances'].append({'clone':dict(id=f'part-{i}',source='part',overrides={},provenance='scale')})
+            variable['outputs'].append(dict(instance=f'part-{i}',output='blend'))
+        started=time.monotonic()
+        result=client.tool('occt_visualize_model',variable)
+        assert not result['isError'],result
+        data=json.loads(client.call('resources/read',dict(uri=result['structuredContent']['resources']['view.json']))['result']['contents'][0]['text'])
+        assert len(data['scenes'])==20
+        for scene in data['scenes']:
+            assert scene['valid']
+            law=next(a for a in scene['annotations'] if a['id']=='driving-variable-fillet')
+            assert len(law['detail']['radius_law'])==3
+            assert not law['detail']['spatial_stations']
+            assert law['detail']['selected_edge_count']==1
+            assert 'station_position' in law['parameters']
+        elapsed=time.monotonic()-started
+        assert elapsed<10
+        print(f'PASS MCP 20 variable-fillet scenes, contour laws and linked station controls: {elapsed:.3f}s / 10s')
     finally:
         client.close()

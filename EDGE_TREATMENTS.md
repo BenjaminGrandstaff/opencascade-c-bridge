@@ -39,9 +39,9 @@ sampling. Semantic selection still has its existing native query cost.
 The radius/distance label is a driving value; it does not certify measured
 blend curvature, bevel width or manufacturing tolerance.
 
-This increment covers direct constant Fillet and Chamfer outputs. Variable
-radius station annotations and downstream treatment-specific labels remain
-future viewer work; existing variable-radius geometry operations are available.
+Direct VariableFillet outputs also show a linked contour-law label, endpoint
+radii and interior station labels. See the variable-radius section below.
+Treatment-specific labels after downstream operations remain future viewer work.
 
 ## Validation and exports
 
@@ -59,3 +59,38 @@ in one viewer. For STEP/STL export, use `occb-model-request-v1`, remove
 `sketches`, enable `step`/`stl`, and select one output per instance. Both
 alternatives have been exported separately. The MCP scale gate generates
 20 valid treatment scenes with bounded references in 0.209 s (10 s budget).
+
+
+## Variable-radius contour laws
+
+The [variable-fillet example](tools/model/variable-fillet.request.json) rounds
+one vertical corner with a 1 mm start radius, a 2.5 mm interior radius at
+normalized position 0.25, and a 2 mm end radius. Its `from_point` direction
+starts at the contour endpoint nearest the block origin. Edit `start_radius`,
+`end_radius`, `middle_radius` or `station_position` through their linked labels.
+Positions are dimensionless, strictly interior and ordered; radii are positive
+lengths. With no interior stations, the existing endpoint law is linear.
+
+Visualize it with the same command above, substituting
+`tools/model/variable-fillet.request.json` and a new output directory. Serve
+the saved model with `--output blend`. The standalone viewer and live viewer
+share the same annotation collector.
+
+`driving-variable-fillet` records the complete evaluated `radius_law`,
+`spine_direction`, selected source-edge references and related controls.
+Endpoint labels and up to 64 interior labels link their own driving expressions.
+The full law requires O(stations) work/storage; extra label generation is
+bounded, and source-edge sampling retains the 64-edge/eight-point limit.
+
+Normalized law positions belong to OCCT's tangent contour, which can include
+unselected tangent neighbours. They are not parameters of an individual
+selected edge. The viewer therefore places radius labels at the scene centre
+and sets `spatial_stations: false` on the law and `spatial_station: false` on
+each radius label. These are nominal law values, not measured curvature or
+spatial station markers. Native contour-coordinate visualization remains
+future work. Direction metadata supports kernel, reversed and from-point laws;
+this example uses a fixed from-point expression.
+
+Tests verify native validity and removed volume, station/radius edits, block
+reuse, rejected-edit retention, linked law data, live edit/revert and STEP/STL
+export. The example's default volume is approximately 5986.772779 mm³.

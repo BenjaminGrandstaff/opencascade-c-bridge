@@ -1,0 +1,358 @@
+{
+  "schema": "occb-model-view-v1",
+  "model": {
+    "schema_version": 91,
+    "family": {
+      "id": "variable-fillet",
+      "version": 1,
+      "parameters": [
+        {
+          "id": "width",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 30,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 20,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 100,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "depth",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 20,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 12,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 80,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "height",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 10,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 6,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 50,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "start_radius",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 1,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 0.5,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 3,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "end_radius",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 2,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 0.5,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 3,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "middle_radius",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 2.5,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 0.5,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 3,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "station_position",
+          "parameter_type": {
+            "scalar": "scalar"
+          },
+          "default": {
+            "scalar": {
+              "value": 0.25,
+              "dimension": "scalar",
+              "unit": null
+            }
+          },
+          "minimum": {
+            "value": 0.1,
+            "dimension": "scalar",
+            "unit": null
+          },
+          "maximum": {
+            "value": 0.9,
+            "dimension": "scalar",
+            "unit": null
+          }
+        }
+      ],
+      "derived_parameters": [],
+      "derived_vector_parameters": [],
+      "constraints": [],
+      "requirements": [
+        {
+          "id": "blend",
+          "version": 1,
+          "kind": "validation",
+          "priority": "required",
+          "statement": "variable blend valid",
+          "rule": {
+            "shape_valid": {
+              "output": "blend"
+            }
+          },
+          "provenance": "Demonstration assumptions",
+          "traces": [
+            {
+              "feature": "blend"
+            }
+          ]
+        }
+      ],
+      "datums": [],
+      "features": [
+        {
+          "id": "block",
+          "operation": {
+            "box": {
+              "origin": {
+                "components": {
+                  "x": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "y": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "z": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                }
+              },
+              "size": {
+                "components": {
+                  "x": {
+                    "parameter": "width"
+                  },
+                  "y": {
+                    "parameter": "depth"
+                  },
+                  "z": {
+                    "parameter": "height"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "blend",
+          "operation": {
+            "variable_fillet": {
+              "input": "block",
+              "edges": [
+                {
+                  "nearest_center": {
+                    "target": {
+                      "components": {
+                        "x": {
+                          "literal": {
+                            "value": 0,
+                            "dimension": "length",
+                            "unit": "millimeter"
+                          }
+                        },
+                        "y": {
+                          "literal": {
+                            "value": 0,
+                            "dimension": "length",
+                            "unit": "millimeter"
+                          }
+                        },
+                        "z": {
+                          "divide": [
+                            {
+                              "parameter": "height"
+                            },
+                            {
+                              "literal": {
+                                "value": 2,
+                                "dimension": "scalar",
+                                "unit": null
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    "maximum_distance": {
+                      "literal": {
+                        "value": 1e-06,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    }
+                  }
+                }
+              ],
+              "start_radius": {
+                "parameter": "start_radius"
+              },
+              "end_radius": {
+                "parameter": "end_radius"
+              },
+              "stations": [
+                {
+                  "position": {
+                    "parameter": "station_position"
+                  },
+                  "radius": {
+                    "parameter": "middle_radius"
+                  }
+                }
+              ],
+              "spine_direction": {
+                "from_point": {
+                  "point": {
+                    "components": {
+                      "x": {
+                        "literal": {
+                          "value": 0,
+                          "dimension": "length",
+                          "unit": "millimeter"
+                        }
+                      },
+                      "y": {
+                        "literal": {
+                          "value": 0,
+                          "dimension": "length",
+                          "unit": "millimeter"
+                        }
+                      },
+                      "z": {
+                        "literal": {
+                          "value": 0,
+                          "dimension": "length",
+                          "unit": "millimeter"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "instances": [
+      {
+        "base": {
+          "id": "part",
+          "overrides": {},
+          "provenance": "dimensions are illustrative assumptions"
+        }
+      }
+    ]
+  },
+  "outputs": [
+    {
+      "instance": "part",
+      "output": "blend"
+    }
+  ],
+  "sketches": false
+}

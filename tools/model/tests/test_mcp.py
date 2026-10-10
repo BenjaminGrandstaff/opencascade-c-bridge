@@ -58,7 +58,7 @@ class McpTests(unittest.TestCase):
         with self.assertRaises(jsonschema.ValidationError):
             jsonschema.validate(bad, schema)
         resources = self.client.call('resources/list')['result']['resources']
-        self.assertEqual(len(resources), 39)
+        self.assertEqual(len(resources), 40)
         self.assertEqual(len(self.client.call('resources/templates/list')['result']['resourceTemplates']), 1)
         read = self.client.call('resources/read', dict(uri='occt://schema/request'))['result']['contents'][0]
         self.assertEqual(json.loads(read['text']), schema)
@@ -399,6 +399,16 @@ class McpTests(unittest.TestCase):
             self.assertEqual(annotation['detail']['selected_edge_count'],4)
             self.assertEqual(len(annotation['detail']['dimension_paths']),4)
             self.assertTrue(annotation['detail']['source_reference'])
+        variable = self.client.tool('occt_get_example',dict(name='variable-fillet'))['structuredContent']
+        jsonschema.validate(variable,schema)
+        result = self.client.tool('occt_visualize_model',variable)
+        self.assertFalse(result['isError'])
+        data = json.loads(self.client.call('resources/read',dict(uri=result['structuredContent']['resources']['view.json']))['result']['contents'][0]['text'])
+        self.assertTrue(data['scenes'][0]['valid'])
+        law = next(a for a in data['scenes'][0]['annotations'] if a['id']=='driving-variable-fillet')
+        self.assertEqual(law['detail']['radius_law'],[dict(position=0,radius_mm=1),dict(position=.25,radius_mm=2.5),dict(position=1,radius_mm=2)])
+        self.assertFalse(law['detail']['spatial_stations'])
+        self.assertIn('station_position',law['parameters'])
         # Ordinary accepted builds also publish the annotated viewer when preview is on.
         build_request = dict(schema='occb-model-request-v1',model=request['model'],outputs=request['outputs'],preview=True,step=False,stl=False)
         built = self.client.tool('occt_build',build_request)['structuredContent']

@@ -1906,3 +1906,74 @@ fn fillet_and_chamfer_views_expose_values_selected_source_edges_and_linked_contr
         }
     }
 }
+
+#[test]
+fn variable_fillet_view_exposes_contour_law_without_inventing_spatial_station_positions() {
+    let dir = Directory::new();
+    let mut request = view_example("variable-fillet");
+    view_request(&dir, request.clone(), "first").unwrap();
+    let read = |name: &str| -> Value {
+        serde_json::from_str(&fs::read_to_string(dir.0.join(format!("{name}/view.json"))).unwrap())
+            .unwrap()
+    };
+    let data = read("first");
+    let scene = &data["scenes"][0];
+    assert_eq!(scene["valid"], true);
+    let annotations = scene["annotations"].as_array().unwrap();
+    let law = annotations
+        .iter()
+        .find(|a| a["id"] == "driving-variable-fillet")
+        .unwrap();
+    assert_eq!(law["detail"]["selected_edge_count"], 1);
+    assert_eq!(
+        law["detail"]["dimension_paths"][0]
+            .as_array()
+            .unwrap()
+            .len(),
+        8
+    );
+    assert_eq!(
+        law["detail"]["radius_law"],
+        json!([
+            {"position":0.0,"radius_mm":1.0}, {"position":0.25,"radius_mm":2.5}, {"position":1.0,"radius_mm":2.0}
+        ])
+    );
+    assert_eq!(law["detail"]["spatial_stations"], false);
+    for name in [
+        "start_radius",
+        "end_radius",
+        "middle_radius",
+        "station_position",
+    ] {
+        assert!(law["parameters"].as_array().unwrap().contains(&json!(name)));
+    }
+    let station = annotations
+        .iter()
+        .find(|a| a["id"] == "fillet-station-1")
+        .unwrap();
+    assert_eq!(station["detail"]["position"], 0.25);
+    assert_eq!(station["detail"]["value_mm"], 2.5);
+    assert_eq!(station["detail"]["spatial_station"], false);
+    assert!(
+        station["parameters"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("station_position"))
+    );
+    let overrides = &mut request["model"]["instances"][0]["base"]["overrides"];
+    overrides["middle_radius"] =
+        json!({"scalar":{"value":2.0,"dimension":"length","unit":"millimeter"}});
+    overrides["station_position"] =
+        json!({"scalar":{"value":0.5,"dimension":"scalar","unit":null}});
+    view_request(&dir, request, "edited").unwrap();
+    let edited = read("edited");
+    let station = edited["scenes"][0]["annotations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["id"] == "fillet-station-1")
+        .unwrap();
+    assert_eq!(station["detail"]["position"], 0.5);
+    assert_eq!(station["detail"]["value_mm"], 2.0);
+    assert_eq!(edited["scenes"][0]["valid"], true);
+}

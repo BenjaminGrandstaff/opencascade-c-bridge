@@ -475,6 +475,12 @@ fn solid_scene(
                 edges,
                 distance,
             } => Some(("chamfer", input, edges, distance)),
+            FeatureOperation::VariableFillet {
+                input,
+                edges,
+                start_radius,
+                ..
+            } => Some(("variable-fillet", input, edges, start_radius)),
             _ => None,
         };
         if let Some((kind, input, selectors, value)) = treatment {
@@ -510,11 +516,75 @@ fn solid_scene(
                 }
             }
             let anchor = anchors.first().copied().unwrap_or(center);
-            let expressions = json!([value, selectors]);
+            let expressions = if kind == "variable-fillet" {
+                json!(feature.operation)
+            } else {
+                json!([value, selectors])
+            };
+            let label = if kind == "variable-fillet" {
+                "variable fillet law".into()
+            } else {
+                format!(
+                    "{kind} {} {} mm",
+                    if kind == "fillet" {
+                        "radius"
+                    } else {
+                        "distance"
+                    },
+                    length_label(nominal)
+                )
+            };
             annotations.push(annotation(
-                format!("driving-{kind}"),format!("{kind} {} {} mm",if kind=="fillet"{"radius"}else{"distance"},length_label(nominal)),"dimension","driving",vec![output.into()],names(&expressions),json!([anchor]),
+                format!("driving-{kind}"),label,"dimension","driving",vec![output.into()],names(&expressions),json!([anchor]),
                 json!({"input":input,"value_mm":nominal,"selected_edge_count":selected_count,"displayed_reference_count":references.len(),"dimension_paths":references,"source_reference":true,"expressions":expressions,"driving":true,"measurement":false,"description":"Nominal treatment value; overlays mark selected source edges before treatment, not edges of the finished part."})
             ));
+        }
+        if let FeatureOperation::VariableFillet {
+            start_radius,
+            end_radius,
+            stations,
+            spine_direction,
+            ..
+        } = &feature.operation
+        {
+            // Law coordinates describe the native tangent contour, not an edge's
+            // curve parameter. Keep labels at the scene centre; do not fabricate
+            // spatial station positions from sampled source-edge points.
+            let evaluate = |e: &ScalarExpr| {
+                e.evaluate(parameters)
+                    .map(|q| q.value)
+                    .map_err(|e| model_failure("visualization", e))
+            };
+            let mut law = vec![json!({"position":0.0,"radius_mm":evaluate(start_radius)?})];
+            for station in stations {
+                law.push(json!({"position":evaluate(&station.position)?,"radius_mm":evaluate(&station.radius)?}));
+            }
+            law.push(json!({"position":1.0,"radius_mm":evaluate(end_radius)?}));
+            let reference = annotations
+                .iter_mut()
+                .find(|a| a["id"] == "driving-variable-fillet")
+                .unwrap();
+            reference["detail"]
+                .as_object_mut()
+                .unwrap()
+                .remove("value_mm");
+            reference["detail"]["radius_law"] = json!(law);
+            reference["detail"]["spine_direction"] = json!(spine_direction);
+            reference["detail"]["spatial_stations"] = json!(false);
+            reference["detail"]["displayed_interior_stations"] = json!(stations.len().min(64));
+            reference["detail"]["description"] = json!(
+                "Nominal radius law on the native tangent contour. Paths reference original selected edges; labels do not locate stations on the finished solid."
+            );
+            for (id, radius, position) in [("start", start_radius, 0.0), ("end", end_radius, 1.0)] {
+                annotations.push(annotation(format!("fillet-{id}-radius"),format!("{id} R {} mm",length_label(evaluate(radius)?)),"dimension","driving",vec![output.into()],names(&json!(radius)),json!([center]),
+                    json!({"value_mm":evaluate(radius)?,"position":position,"spine_direction":spine_direction,"expression":radius,"measurement":false,"spatial_station":false})));
+            }
+            for (index, station) in stations.iter().take(64).enumerate() {
+                let radius = evaluate(&station.radius)?;
+                let position = evaluate(&station.position)?;
+                annotations.push(annotation(format!("fillet-station-{}",index+1),format!("R {} mm @ {:.3}",length_label(radius),position),"dimension","driving",vec![output.into()],names(&json!(station)),json!([center]),
+                    json!({"value_mm":radius,"position":position,"station_index":index+1,"expression":station,"measurement":false,"spatial_station":false})));
+            }
         }
         if let FeatureOperation::Thread {
             input,

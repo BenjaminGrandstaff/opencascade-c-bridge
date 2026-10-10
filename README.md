@@ -751,3 +751,10 @@ The [edge-treatment AI example](tools/model/edge-treatments.request.json)
 compares rounded and chamfered blocks with linked radius/distance controls and
 selected source-edge overlays. Live edits update geometry and annotations.
 See [edge treatments](EDGE_TREATMENTS.md); schema 91 / ABI 52 are unchanged.
+
+
+The [variable-fillet AI example](tools/model/variable-fillet.request.json) adds
+linked endpoint radii, interior station controls, and the complete directed
+contour law. Labels show nominal law values; source-edge references are
+separate from spatial station locations. See
+[variable-radius viewer semantics](EDGE_TREATMENTS.md#variable-radius-contour-laws).
