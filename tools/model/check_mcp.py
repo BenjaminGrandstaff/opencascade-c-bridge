@@ -436,5 +436,25 @@ with tempfile.TemporaryDirectory(prefix='occb-mcp-scale-') as root:
         elapsed=time.monotonic()-started
         assert elapsed<10
         print(f'PASS MCP 20 non-clamped B-spline caps, solved native endpoints and exact profile connections: {elapsed:.3f}s / 10s')
+        ellipse=client.tool('occt_get_example',dict(name='ellipse-tangent-pad'))['structuredContent']
+        for i in range(1,20):
+            ellipse['model']['instances'].append({'clone':dict(id=f'part-{i}',source='part',overrides={},provenance='scale')})
+            ellipse['outputs'].extend(dict(instance=f'part-{i}',output=out) for out in ['body','profile'])
+        started=time.monotonic()
+        result=client.tool('occt_visualize_model',ellipse)
+        assert not result['isError'],result
+        data=json.loads(client.call('resources/read',dict(uri=result['structuredContent']['resources']['view.json']))['result']['contents'][0]['text'])
+        solids=[s for s in data['scenes'] if s['kind']=='solid'];sketches=[s for s in data['scenes'] if s['kind']=='sketch']
+        assert len(solids)==40 and all(s['valid'] for s in solids)
+        assert len(sketches)==20 and all(s['solver']['solved'] and s['solver']['free_degrees']==0 for s in sketches)
+        for scene in sketches:
+            relation=next(a for a in scene['annotations'] if 'line_ellipse_tangent' in a['detail'].get('constraint',{}))
+            assert relation['status']=='passed' and relation['detail']['max_residual']<1e-9
+            assert relation['parameters']==['semi_major','semi_minor','tilt']
+            assert abs(relation['anchors'][1][0])>1.
+            assert all(abs(relation['anchors'][0][axis]-relation['anchors'][1][axis])<1e-9 for axis in range(2))
+        elapsed=time.monotonic()-started
+        assert elapsed<10
+        print(f'PASS MCP 20 ellipse tangent pads, exact rotated contacts and linked axis controls: {elapsed:.3f}s / 10s')
     finally:
         client.close()

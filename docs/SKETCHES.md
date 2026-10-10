@@ -79,7 +79,7 @@ export are verified. A 1,000-pair solve and residual-diagnostic gate passes in
 0.009 s (10 s budget); 20 solids plus 60 source sketch scenes and matched-radius
 annotations pass through MCP in 0.316 s (10 s budget).
 
-Current authoring examples use schema 101. Older model documents migrate
+Current authoring examples use schema 102. Older model documents migrate
 without adding constraints or changing their entities. Current native ABI is 55.
 
 ## Saved profile operations
@@ -301,8 +301,8 @@ Existing `tangent: {first, second, point}` retains its shared endpoint/rim
 semantics, including constructed spline endpoint tangency. The independent
 relations require full circles; arcs, ellipses and splines retain that older
 relation. Schema 98 extends these relations to directed arcs, as described below.
-Ellipse tangency and general curve contact remain future work. Native ABI
-remains 52.
+Line–ellipse tangency follows in schema 102 below; other ellipse and general
+curve contacts remain future work. Native ABI at this increment remains 52.
 
 ## Directed arc tangency (schema 98)
 
@@ -529,3 +529,61 @@ in located world coordinates, following edge orientation. It stores no new
 shape handles. Rebuild the native bridge and Rust consumers together. Older
 model documents migrate to schema 101 with `non_clamped` false and no endpoint
 declaration, preserving existing interpolation and clamped/periodic behavior.
+
+
+## Line–ellipse tangency (schema 102)
+
+Use `line_ellipse_tangent` to constrain a full ellipse tangent to a line without
+requiring a shared point ID:
+
+```json
+{
+  "line_ellipse_tangent": {
+    "line": "baseline",
+    "ellipse": "ellipse",
+    "side": "left"
+  }
+}
+```
+
+The line is oriented from its start to end. `left` places the ellipse centre
+on its left side; `right` selects the opposite side. The contact is on the
+infinite supporting line and may lie outside the finite line segment. The
+constraint requires a known line and a full ellipse. Zero-length lines and
+zero axes fail. Existing ellipse axis orthogonality equations and native
+major/minor axis rules still apply.
+
+Let `n` be the line's unit left normal, `u` the ellipse's major-axis vector,
+and `v` its perpendicular minor-axis vector. Its exact support in that
+normal direction is `h = hypot(u·n, v·n)`. The signed millimetre residual is
+`n·(centre − line_start) − s h`, with `s=+1` for left and `s=−1` for right.
+This equation accounts for ellipse rotation and reduces to the existing
+circle/line distance equation when the two axes are equal.
+
+The ellipse contact is
+`centre − s (u (u·n) + v (v·n)) / h`. For a rotated ellipse this point generally
+has a different coordinate along the line from the centre's projection.
+The solver and diagnostic viewer share this analytic calculation. The sparse
+Jacobian includes both line endpoints and the ellipse's centre, major and
+minor defining points. This tangency is solved and measured; it is not imposed
+by curve construction.
+
+The viewer displays the contact and its projection onto the line as two
+anchors. They coincide when satisfied and separate in a conflicting sketch.
+The annotation reports millimetre residuals with passed/failed status and
+links coordinate controls plus distance/angle parameters directly driving
+its defining points. Contact queries index line and ellipse IDs once, keeping
+batch diagnostics linear in the number of entities and constraints.
+
+The [ellipse tangent pad](../tools/model/ellipse-tangent-pad.request.json)
+solves all six free coordinates of a rotated ellipse above a horizontal
+baseline. Its `semi_major`, `semi_minor` and `tilt` (radians) parameters control
+axes and angle. The default a=5 mm, b=3 mm, tilt=π/6 and height=8 mm yield
+centre Y=√13 mm, contact X=−4√3/√13 mm, minimum Y=0 and native volume=120π mm³.
+Axis or tilt edits rebuild the profile and solid; height-only edits reuse the
+profile. Fixed-geometry conflicts, signed sides, rotated lines, the circular
+limit, native validity/bounds/volume and failed-edit retention are tested.
+
+Older documents migrate to schema 102 without adding constraints. Native ABI
+remains 55. Independent spline tangency and ellipse–ellipse contact remain
+future work.

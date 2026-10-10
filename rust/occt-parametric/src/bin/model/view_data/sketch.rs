@@ -19,6 +19,9 @@ pub(super) fn sketch_scene(
     let checks = sketch
         .constraint_checks(parameters, &solution)
         .stage("sketch")?;
+    let ellipse_contacts = sketch
+        .line_ellipse_tangent_contacts(&solution)
+        .stage("sketch")?;
     let curves = sketch
         .preview_curves(session, &solution, 32)
         .stage("sketch")?;
@@ -130,11 +133,48 @@ pub(super) fn sketch_scene(
         )
         .collect();
     let lines: HashMap<_, _> = sketch.lines.iter().map(|l| (l.id.as_str(), l)).collect();
+    let ellipses: HashMap<_, _> = sketch.ellipses.iter().map(|e| (e.id.as_str(), e)).collect();
     let point_controls: HashMap<_, _> = sketch
         .points
         .iter()
         .map(|p| (p.id.as_str(), names(&json!([p.x, p.y]))))
         .collect();
+    // Free ellipse axes can be driven by distance and angle dimensions rather
+    // than coordinate expressions. Index those direct controls once.
+    let mut dimension_point_controls: HashMap<&str, BTreeSet<String>> = HashMap::new();
+    for constraint in &sketch.constraints {
+        let (ids, value) = match constraint {
+            SketchConstraint::Distance {
+                first,
+                second,
+                value,
+            } => (vec![first.as_str(), second.as_str()], value),
+            SketchConstraint::Angle {
+                first,
+                second,
+                value,
+            } => {
+                let a = lines[first.as_str()];
+                let b = lines[second.as_str()];
+                (
+                    vec![
+                        a.start.as_str(),
+                        a.end.as_str(),
+                        b.start.as_str(),
+                        b.end.as_str(),
+                    ],
+                    value,
+                )
+            }
+            _ => continue,
+        };
+        for id in ids {
+            dimension_point_controls
+                .entry(id)
+                .or_default()
+                .extend(value.parameter_names().into_iter().map(str::to_owned));
+        }
+    }
     let mut annotations: Vec<Value> = Vec::new();
     if let Some(support) = &support {
         annotations.push(
@@ -299,6 +339,19 @@ pub(super) fn sketch_scene(
                 vec![point.clone()],
                 Some(value),
             ),
+            SketchConstraint::LineEllipseTangent {
+                line,
+                ellipse,
+                side,
+            } => (
+                match side {
+                    SketchLineSide::Left => "T LEFT",
+                    SketchLineSide::Right => "T RIGHT",
+                },
+                vec![line.clone(), ellipse.clone()],
+                vec![centers[ellipse.as_str()].to_owned()],
+                None,
+            ),
             SketchConstraint::LineCircleTangent { line, circle, side } => (
                 match side {
                     SketchLineSide::Left => "T LEFT",
@@ -396,6 +449,12 @@ pub(super) fn sketch_scene(
             anchors = vec![[a[0] + t * ux, a[1] + t * uy, 0.0], p];
         }
         match constraint {
+            SketchConstraint::LineEllipseTangent { .. } => {
+                anchors = ellipse_contacts[&index]
+                    .into_iter()
+                    .map(|p| [p.x, p.y, 0.])
+                    .collect();
+            }
             SketchConstraint::LineCircleTangent { line, circle, side } => {
                 let l = lines[line.as_str()];
                 let a = point_map[&l.start];
@@ -534,6 +593,33 @@ pub(super) fn sketch_scene(
             _ => {}
         }
         match constraint {
+            SketchConstraint::LineEllipseTangent { line, ellipse, .. } => {
+                let l = lines[line.as_str()];
+                let e = ellipses[ellipse.as_str()];
+                control_names = [
+                    l.start.as_str(),
+                    l.end.as_str(),
+                    e.center.as_str(),
+                    e.major.as_str(),
+                    e.minor.as_str(),
+                ]
+                .into_iter()
+                .flat_map(|id| point_controls[id].iter().cloned())
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect();
+                for id in [
+                    l.start.as_str(),
+                    l.end.as_str(),
+                    e.center.as_str(),
+                    e.major.as_str(),
+                    e.minor.as_str(),
+                ] {
+                    if let Some(names) = dimension_point_controls.get(id) {
+                        control_names.extend(names.iter().cloned());
+                    }
+                }
+            }
             SketchConstraint::LineCircleTangent { line, circle, .. } => {
                 let l = lines[line.as_str()];
                 let (c, r) = circular_refs[circle.as_str()];

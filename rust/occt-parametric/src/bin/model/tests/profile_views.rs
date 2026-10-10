@@ -1039,3 +1039,61 @@ fn non_clamped_viewer_exposes_measured_endpoint_links_and_reports_fixed_conflict
         }
     }
 }
+
+#[test]
+fn ellipse_tangent_viewer_shows_actual_rotated_contact_linked_axes_and_fixed_conflicts() {
+    let dir = Directory::new();
+    for conflict in [false, true] {
+        let mut request = view_example("ellipse-tangent-pad");
+        if conflict {
+            for p in request["model"]["family"]["features"][0]["operation"]["sketch_face"]["sketch"]
+                ["points"]
+                .as_array_mut()
+                .unwrap()
+            {
+                p["fixed"] = json!(true);
+            }
+        }
+        let name = if conflict { "conflict" } else { "solved" };
+        view_request(&dir, request, name).unwrap();
+        let data: Value =
+            serde_json::from_str(&fs::read_to_string(dir.0.join(name).join("view.json")).unwrap())
+                .unwrap();
+        let scene = data["scenes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["kind"] == "sketch")
+            .unwrap();
+        assert_eq!(scene["solver"]["solved"], !conflict);
+        let relation = scene["annotations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|a| !a["detail"]["constraint"]["line_ellipse_tangent"].is_null())
+            .unwrap();
+        assert_eq!(
+            relation["status"],
+            if conflict { "failed" } else { "passed" }
+        );
+        assert_eq!(relation["detail"]["by_construction"], false);
+        assert_eq!(relation["detail"]["residual_unit"], "mm");
+        assert_eq!(relation["anchors"].as_array().unwrap().len(), 2);
+        let anchors = &relation["anchors"];
+        let gap = (anchors[0][1].as_f64().unwrap() - anchors[1][1].as_f64().unwrap()).abs();
+        if conflict {
+            assert!(gap > 0.2);
+        } else {
+            assert!(gap < 1e-9);
+            assert_eq!(scene["solver"]["free_degrees"], 0);
+            // The contact of this rotated ellipse is not below its centre.
+            assert!(anchors[1][0].as_f64().unwrap().abs() > 1.);
+            let parameters = relation["parameters"].as_array().unwrap();
+            for id in ["semi_major", "semi_minor", "tilt"] {
+                assert!(parameters.contains(&json!(id)), "{parameters:?}");
+            }
+        }
+        let snapshot = fs::read_to_string(dir.0.join(name).join("view-0003.svg")).unwrap();
+        assert!(snapshot.contains("T LEFT"));
+    }
+}

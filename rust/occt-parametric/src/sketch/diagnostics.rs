@@ -14,6 +14,50 @@ pub struct SketchConstraintCheck {
     pub by_construction: bool,
 }
 impl SketchDefinition {
+    /// Exact ellipse support contacts and their supporting-line projections,
+    /// indexed by constraint number. Distinct positions reveal a diagnostic
+    /// residual. Indexing the curves keeps this O(lines + ellipses + constraints).
+    pub fn line_ellipse_tangent_contacts(
+        &self,
+        solution: &SketchSolution,
+    ) -> Result<HashMap<usize, [SketchPoint2; 2]>, ModelError> {
+        let lines: HashMap<_, _> = self.lines.iter().map(|l| (l.id.as_str(), l)).collect();
+        let ellipses: HashMap<_, _> = self.ellipses.iter().map(|e| (e.id.as_str(), e)).collect();
+        let p = |id: &str| {
+            solution
+                .points
+                .get(id)
+                .copied()
+                .ok_or_else(|| ModelError::new("tangency solution is missing a point"))
+        };
+        let mut result = HashMap::new();
+        for (index, constraint) in self.constraints.iter().enumerate() {
+            let SketchConstraint::LineEllipseTangent {
+                line,
+                ellipse,
+                side,
+            } = constraint
+            else {
+                continue;
+            };
+            let l = lines
+                .get(line.as_str())
+                .ok_or_else(|| ModelError::new("unknown tangency line"))?;
+            let e = ellipses
+                .get(ellipse.as_str())
+                .ok_or_else(|| ModelError::new("unknown tangency ellipse"))?;
+            let (_, contacts) = super::geometry::line_ellipse_contact(
+                (p(&l.start)?, p(&l.end)?),
+                p(&e.center)?,
+                p(&e.major)?,
+                p(&e.minor)?,
+                *side,
+            )?;
+            result.insert(index, contacts);
+        }
+        Ok(result)
+    }
+
     pub fn constraint_checks(
         &self,
         parameters: &HashMap<String, ParameterValue>,

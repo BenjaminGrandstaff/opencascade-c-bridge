@@ -34,6 +34,15 @@ for(let i=0;i<data.scenes.length;i++){
   assert(!elements.overlay.children.some(e=>e.attributes['data-annotation']===endpoint.id),'constraint toggle hides native endpoint relation');
   elements.constraints.checked=true;elements.constraints.emit('change');
  }
+ for(const contact of viewer.scene.annotations.filter(a=>a.detail?.constraint?.line_ellipse_tangent)){
+  assert.equal(contact.detail.residual_unit,'mm');assert.equal(contact.detail.by_construction,false);assert.equal(contact.anchors.length,2);
+  const button=elements.annotations.children.find(e=>e.dataset.annotation===contact.id);assert(button);button.emit('click');
+  assert.equal(viewer.selected,contact.id);
+  assert(elements.overlay.children.some(e=>e.attributes['data-annotation']===contact.id),'ellipse contact is drawn');
+  elements.constraints.checked=false;elements.constraints.emit('change');
+  assert(!elements.overlay.children.some(e=>e.attributes['data-annotation']===contact.id),'constraint toggle hides ellipse contact');
+  elements.constraints.checked=true;elements.constraints.emit('change');
+ }
  for(const angle of viewer.scene.annotations.filter(a=>a.detail?.angular_arc?.length)){assert(elements.overlay.children.some(e=>e.attributes.class==='dimension-line angular-dimension'&&e.attributes.points.split(' ').length===angle.detail.angular_arc.length),'signed angular arc is rendered');}
  for(const route of viewer.scene.annotations.filter(a=>a.detail?.dimension_paths?.length)){assert.equal(elements.overlay.children.filter(e=>e.attributes['data-route']===route.id).length,route.detail.dimension_paths.length);elements.dimensions.checked=false;elements.dimensions.emit('change');assert(!elements.overlay.children.some(e=>e.attributes['data-route']===route.id));elements.dimensions.checked=true;elements.dimensions.emit('change');}
  const dimension=viewer.scene.annotations.find(a=>a.kind==='dimension')||viewer.scene.annotations.find(a=>a.kind==='profile_operation')||viewer.scene.annotations[0];

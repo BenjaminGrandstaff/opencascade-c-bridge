@@ -1621,3 +1621,156 @@ fn non_clamped_cubic_tangency_is_not_the_first_control_polygon_edge() {
     assert!((solved.points["start"].x - 25. / 3.).abs() < 1e-7);
     assert!((solved.points["start"].y - 5. / 3.).abs() < 1e-7);
 }
+
+#[test]
+fn independent_line_ellipse_tangency_solves_rotated_axes_sides_and_supporting_lines() {
+    let params = HashMap::new();
+    for (theta, phi, a, b, side) in [
+        (0_f64, 0_f64, 5_f64, 3_f64, SketchLineSide::Left),
+        (30., 0., 5., 3., SketchLineSide::Left),
+        (30., 45., 5., 3., SketchLineSide::Left),
+        (75., -30., 5., 3., SketchLineSide::Right),
+        (20., 180., 3., 3., SketchLineSide::Left),
+    ] {
+        let mut s = base();
+        let (st, ct) = theta.to_radians().sin_cos();
+        let (sp, cp) = phi.to_radians().sin_cos();
+        let world = |x, y| (2. + cp * x - sp * y, -3. + sp * x + cp * y);
+        let support =
+            (a * (theta - phi).to_radians().sin()).hypot(b * (theta - phi).to_radians().cos());
+        let sign = if side == SketchLineSide::Left {
+            1.
+        } else {
+            -1.
+        };
+        let (x0, y0) = world(-10., -sign * support + 0.7);
+        let (x1, y1) = world(-8., -sign * support + 0.7);
+        let (rx, ry) = world(1., 0.);
+        let (vx, vy) = world(0., 1.);
+        s.points = vec![
+            point("c", 2., -3., true),
+            point("major", 2. + a * ct, -3. + a * st, true),
+            point("minor", 2. - b * st, -3. + b * ct, true),
+            point("p", x0, y0, false),
+            point("q", x1, y1, false),
+            point("ref", rx, ry, true),
+            point("up", vx, vy, true),
+        ];
+        s.lines = vec![
+            line("line", "p", "q"),
+            line("ref", "c", "ref"),
+            line("vertical", "c", "up"),
+        ];
+        s.ellipses = vec![SketchEllipse {
+            id: "ellipse".into(),
+            center: "c".into(),
+            major: "major".into(),
+            minor: "minor".into(),
+        }];
+        s.constraints = vec![
+            SketchConstraint::Parallel {
+                first: "line".into(),
+                second: "ref".into(),
+            },
+            SketchConstraint::Distance {
+                first: "p".into(),
+                second: "q".into(),
+                value: length(2.),
+            },
+            SketchConstraint::PointLineDistance {
+                point: "p".into(),
+                line: "vertical".into(),
+                value: length(10.),
+            },
+            SketchConstraint::LineEllipseTangent {
+                line: "line".into(),
+                ellipse: "ellipse".into(),
+                side,
+            },
+        ];
+        let solved = s.solve(&params).unwrap();
+        assert!(
+            solved.solved,
+            "theta {theta}, phi {phi}, residual {}",
+            solved.max_residual
+        );
+        assert_eq!(solved.free_degrees, 0);
+        let expected = world(-10., -sign * support);
+        assert!(
+            (solved.points["p"].x - expected.0).hypot(solved.points["p"].y - expected.1) < 1e-7
+        );
+        let check = &s.constraint_checks(&params, &solved).unwrap()[3];
+        assert!(check.satisfied && !check.by_construction);
+        let [foot, contact] = s.line_ellipse_tangent_contacts(&solved).unwrap()[&3];
+        assert!((foot.x - contact.x).hypot(foot.y - contact.y) < 1e-7);
+        let local_x = (contact.x - 2.) * ct + (contact.y + 3.) * st;
+        let local_y = -(contact.x - 2.) * st + (contact.y + 3.) * ct;
+        assert!(((local_x / a).powi(2) + (local_y / b).powi(2) - 1.).abs() < 1e-10);
+        let tangent_dot =
+            local_x / a.powi(2) * (cp * ct + sp * st) + local_y / b.powi(2) * (-cp * st + sp * ct);
+        assert!(tangent_dot.abs() < 1e-10);
+        assert!((contact.x - 2.) * cp + (contact.y + 3.) * sp > -8.); // Contact outside the finite line segment.
+        s.points[3].fixed = true;
+        s.points[4].fixed = true;
+        let conflict = s.solve(&params).unwrap();
+        assert!(!conflict.solved);
+        let check = &s.constraint_checks(&params, &conflict).unwrap()[3];
+        assert!(!check.satisfied && check.max_residual.unwrap() > 0.6);
+        let [foot, contact] = s.line_ellipse_tangent_contacts(&conflict).unwrap()[&3];
+        assert!((foot.x - contact.x).hypot(foot.y - contact.y) > 0.6);
+    }
+}
+
+#[test]
+fn line_ellipse_tangency_rejects_wrong_entities_missing_lines_and_zero_axes() {
+    let mut s = base();
+    s.points = vec![
+        point("c", 0., 0., true),
+        point("a", 5., 0., true),
+        point("b", 0., 3., true),
+        point("p", -10., -3., true),
+        point("q", 10., -3., true),
+    ];
+    s.lines = vec![line("line", "p", "q")];
+    s.ellipses = vec![SketchEllipse {
+        id: "ellipse".into(),
+        center: "c".into(),
+        major: "a".into(),
+        minor: "b".into(),
+    }];
+    let relation = SketchConstraint::LineEllipseTangent {
+        line: "line".into(),
+        ellipse: "ellipse".into(),
+        side: SketchLineSide::Left,
+    };
+    s.constraints = vec![relation.clone()];
+    for case in 0..4 {
+        let mut bad = s.clone();
+        match case {
+            0 => {
+                let SketchConstraint::LineEllipseTangent { ellipse, .. } = &mut bad.constraints[0]
+                else {
+                    unreachable!()
+                };
+                *ellipse = "line".into();
+            }
+            1 => {
+                let SketchConstraint::LineEllipseTangent { line, .. } = &mut bad.constraints[0]
+                else {
+                    unreachable!()
+                };
+                *line = "missing".into();
+            }
+            2 => bad.points[2] = point("b", 0., 0., true),
+            _ => bad.points[4] = point("q", -10., -3., true),
+        }
+        assert!(bad.solve(&HashMap::new()).is_err());
+    }
+    assert!(s.solve(&HashMap::new()).unwrap().solved);
+    let json = serde_json::to_string(&relation).unwrap();
+    assert!(json.contains("line_ellipse_tangent"));
+    assert_eq!(
+        serde_json::from_str::<SketchConstraint>(&json).unwrap(),
+        relation
+    );
+}

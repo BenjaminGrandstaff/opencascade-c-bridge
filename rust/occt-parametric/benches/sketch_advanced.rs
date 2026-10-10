@@ -54,6 +54,46 @@ fn gate(name: &str, budget: u64, run: impl FnOnce()) {
 }
 fn main() {
     gate(
+        "1000 native ellipse tangent pads with axis edits",
+        10,
+        || {
+            let request: serde_json::Value = serde_json::from_str(include_str!(
+                "../../../tools/model/ellipse-tangent-pad.request.json"
+            ))
+            .unwrap();
+            let document = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+            let session = Session::new().unwrap();
+            let mut part = PartInstance {
+                id: "part".into(),
+                definition: &document.family,
+                overrides: HashMap::new(),
+                provenance: "scale".into(),
+            };
+            for i in 0..1000 {
+                part.overrides.insert(
+                    "semi_minor".into(),
+                    ParameterValue::Scalar(Quantity::length(
+                        if i % 2 == 0 { 3. } else { 4. },
+                        LengthUnit::Millimeter,
+                    )),
+                );
+                let built = part.regenerate(&session).unwrap();
+                assert!(session.is_valid(built.shape("body").unwrap()).unwrap());
+                if i % 2 == 0 {
+                    assert!(
+                        (session.volume(built.shape("body").unwrap()).unwrap()
+                            - std::f64::consts::PI * 5. * 3. * 8.)
+                            .abs()
+                            < 1e-5
+                    );
+                }
+                drop(built);
+                assert_eq!(session.shape_count().unwrap(), 0);
+            }
+        },
+    );
+
+    gate(
         "1000 native non-clamped B-spline caps with rational weight edits",
         10,
         || {

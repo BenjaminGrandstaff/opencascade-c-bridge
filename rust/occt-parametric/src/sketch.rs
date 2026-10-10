@@ -12,6 +12,7 @@ const DIFFERENCE_STEP: f64 = 1e-6;
 const PIVOT_TOLERANCE: f64 = 1e-10;
 
 mod diagnostics;
+mod geometry;
 mod profile;
 mod projections;
 mod solver;
@@ -241,6 +242,12 @@ pub enum SketchConstraint {
     LineCircleTangent {
         line: String,
         circle: String,
+        side: SketchLineSide,
+    },
+    /// Full ellipse tangency to the infinite supporting line, without a shared point.
+    LineEllipseTangent {
+        line: String,
+        ellipse: String,
         side: SketchLineSide,
     },
     /// Circle/arc tangency, requiring contacts inside any directed arc spans.

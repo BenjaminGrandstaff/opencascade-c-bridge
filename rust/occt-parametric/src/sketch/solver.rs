@@ -4,7 +4,7 @@ use super::*;
 
 impl SketchDefinition {
     /// Solves using the assembly solver's sparse normal-matrix algebra.
-    /// Analytic constraints touch at most eight coordinates. Point-on-spline
+    /// Analytic constraints touch only defining coordinates. Point-on-spline
     /// also touches its interpolation and tangent-neighbor points: native
     /// projection/interpolation and local finite differences scale with that
     /// curve, not the full sketch. Normal assembly is O(sum(row widths²));
@@ -55,6 +55,7 @@ impl SketchDefinition {
                             | SketchConstraint::PointLineDistance { .. }
                             | SketchConstraint::Tangent { .. }
                             | SketchConstraint::LineCircleTangent { .. }
+                            | SketchConstraint::LineEllipseTangent { .. }
                             | SketchConstraint::CircleCircleTangent { .. }
                             | SketchConstraint::Concentric { .. }
                             | SketchConstraint::Symmetric { .. }
@@ -566,6 +567,23 @@ impl SketchProblem<'_> {
                         - line_length((self.point(c, values), self.point(d, values))),
                 );
             }
+            SketchConstraint::LineEllipseTangent {
+                line,
+                ellipse,
+                side,
+            } => {
+                let Entity::Ellipse(e) = self.entities[ellipse.as_str()] else {
+                    unreachable!("validated ellipse tangency")
+                };
+                let (residual, _) = super::geometry::line_ellipse_contact(
+                    self.line(line, values),
+                    self.point(&e.center, values),
+                    self.point(&e.major, values),
+                    self.point(&e.minor, values),
+                    *side,
+                )?;
+                residuals.push(residual);
+            }
             SketchConstraint::LineCircleTangent { line, circle, side } => {
                 let (c, r) = self.radius_points(circle);
                 let center = self.point(c, values);
@@ -689,6 +707,19 @@ impl SketchProblem<'_> {
 
     fn columns(&self, constraint: &SketchConstraint) -> Vec<usize> {
         let points = match constraint {
+            SketchConstraint::LineEllipseTangent { line, ellipse, .. } => {
+                let l = self.lines[line.as_str()];
+                let Entity::Ellipse(e) = self.entities[ellipse.as_str()] else {
+                    unreachable!("validated ellipse tangency")
+                };
+                vec![
+                    l.start.as_str(),
+                    l.end.as_str(),
+                    &e.center,
+                    &e.major,
+                    &e.minor,
+                ]
+            }
             SketchConstraint::LineCircleTangent { line, circle, .. } => {
                 let l = self.lines[line.as_str()];
                 let mut points = vec![l.start.as_str(), l.end.as_str()];

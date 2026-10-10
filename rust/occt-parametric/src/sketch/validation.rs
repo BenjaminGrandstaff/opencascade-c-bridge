@@ -192,6 +192,13 @@ impl SketchDefinition {
                         ));
                     }
                 }
+                SketchConstraint::LineEllipseTangent { ellipse, .. } => {
+                    if !matches!(entities.get(ellipse.as_str()), Some(Entity::Ellipse(_))) {
+                        return Err(ModelError::new(
+                            "line-ellipse tangency requires a full ellipse",
+                        ));
+                    }
+                }
                 SketchConstraint::LineCircleTangent { circle, .. } => {
                     if !matches!(
                         entities.get(circle.as_str()),
@@ -369,7 +376,8 @@ impl SketchConstraint {
             | Self::EqualRadius { .. }
             | Self::Concentric { .. }
             | Self::CircleCircleTangent { .. } => Ok(()),
-            Self::LineCircleTangent { line: id, .. } => line(id),
+            Self::LineCircleTangent { line: id, .. }
+            | Self::LineEllipseTangent { line: id, .. } => line(id),
             Self::PointOnCurve { point: id, .. } | Self::Tangent { point: id, .. } => point(id),
             Self::PointLineDistance {
                 point: id,
