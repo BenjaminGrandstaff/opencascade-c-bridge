@@ -79,7 +79,7 @@ export are verified. A 1,000-pair solve and residual-diagnostic gate passes in
 0.009 s (10 s budget); 20 solids plus 60 source sketch scenes and matched-radius
 annotations pass through MCP in 0.316 s (10 s budget).
 
-Current authoring examples use schema 110. Older model documents migrate
+Current authoring examples use schema 111. Older model documents migrate
 without adding constraints or changing their entities. Current native ABI is 56.
 
 ## Saved profile operations
@@ -893,8 +893,8 @@ while dimensions and constraints remain attached to source points and entities.
 Concave corners and rotated sketch planes are supported. The native result must
 form a valid closed planar face. Too-large sizes, missing remaining vertices,
 unsupported neighbors and invalid results fail without mutating the source.
-Open-profile corner edits follow in schema 110 below. General spline/ellipse
-corner neighbors remain unsupported by this editor.
+Open-profile corner edits follow in schema 110 below; spline and ellipse
+neighbors follow in schema 111.
 
 Order operations as entity trims/extensions, corner edits, then offsets. Each
 named corner may be edited once; offsets cannot precede a named corner edit.
@@ -948,5 +948,53 @@ preserve accepted solids. Native tests also cover reversed traversal, circular
 arc neighbors, rotated planes and small/large profiles far from the origin.
 
 Rebuild native and Rust tools together for ABI 58. Older documents migrate to
-schema 110 without adding operations. Spline/ellipse neighbors remain future
-work.
+schema 110 without adding operations. Spline/ellipse neighbors follow in
+schema 111 below.
+
+## Spline and ellipse corner neighbors (schema 111 / ABI 59)
+
+The same `fillet` and `chamfer` operations accept corners where either
+neighbor is a spline or a trimmed ellipse, on open and closed profiles. No new
+operation tags are introduced. Corners with only line/arc neighbors keep the
+schema 109/110 algorithms and produce identical geometry.
+
+Curved fillets use OpenCascade's iterative planar fillet solver. Only its
+circular arc is kept; both neighbors are cut from their source curves at the
+arc's tangent points, so remote ends and curve definitions are unchanged.
+The solver chooses its own shared vertex and walks one edge while projecting
+onto the other. When the two neighbors also meet at their far ends (a two-edge
+loop such as a lens), only the halves nearest the selected corner are passed
+to it. Both edge orders and all native solutions are tried; a solution is
+accepted only if it:
+
+- is a minor arc (under π) of the requested radius,
+- meets both trimmed neighbors tangentially (within 1e-8 in cosine), and
+- shrinks each neighbor within its bounded source curve, keeping its remote end.
+
+Major arcs, wrong-tip solutions on lenses and mid-span inscribed circles are
+rejected. A radius that only fits as such a circle fails. Curved chamfers trim
+each neighbor by native arc length (1e-7 abscissa tolerance) and insert a
+straight chord. Tangent-continuous joins are rejected for both operations.
+Closed results must still form a valid planar face.
+
+The [spline corner pad](../tools/model/spline-corner-pad.request.json) extrudes
+a rectangle whose top is a three-point spline crown. It has a fillet at C
+(side into spline) and an asymmetric chamfer at D (3 mm along the spline, 4 mm
+down the side). Tests check:
+
+- exactly one fillet arc of the requested radius,
+- the chamfered side's exact remaining length,
+- chord bounds and prism volume against face area,
+- profile/body rebuilds for radius, crown and height edits,
+- the narrowest/flattest parameter extremes, and
+- an oversized fillet that fails without leaking handles while the accepted
+  result stays usable.
+
+Native tests cover open spline/line paths, closed spline lenses at both tips,
+ellipse/line half-discs, tangent joins, and 0.01×, 1× and 1000× paths on a
+distant XZ plane.
+
+The iterative solver is slower than the analytical one. 1,000 pad profile
+regenerations take 1.29 s and the MCP renders 20 annotated pads in 0.27 s
+(both within 10 s budgets). Rebuild native and Rust tools together for ABI 59.
+Older documents migrate to schema 111 without adding operations.

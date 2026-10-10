@@ -619,5 +619,23 @@ with tempfile.TemporaryDirectory(prefix='occb-mcp-scale-') as root:
         elapsed=time.monotonic()-started
         assert elapsed<10
         print(f'PASS MCP 20 open fillet/chamfer paths and swept pipe solids: {elapsed:.3f}s / 10s')
+        spline_corners=client.tool('occt_get_example',dict(name='spline-corner-pad'))['structuredContent']
+        for i in range(1,20):
+            spline_corners['model']['instances'].append({'clone':dict(id=f'part-{i}',source='part',overrides={},provenance='scale')})
+            spline_corners['outputs'].extend(dict(instance=f'part-{i}',output=out) for out in ['body','profile'])
+        started=time.monotonic()
+        result=client.tool('occt_visualize_model',spline_corners)
+        assert not result['isError'],result
+        data=json.loads(client.call('resources/read',dict(uri=result['structuredContent']['resources']['view.json']))['result']['contents'][0]['text'])
+        solids=[s for s in data['scenes'] if s['kind']=='solid'];profiles=[s for s in data['scenes'] if s['kind']=='sketch' and s['feature']=='profile']
+        assert len(solids)==40 and all(s['valid'] for s in solids)
+        assert len(profiles)==20 and all(s['solver']['solved'] and len(s['edited_profile'])==6 for s in profiles)
+        for scene in profiles:
+            edits=[a for a in scene['annotations'] if a['kind']=='profile_operation']
+            assert len(edits)==2 and all(a['status']=='driving' and a['detail']['error'] is None for a in edits)
+            assert edits[0]['targets']==['C'] and edits[1]['targets']==['D']
+        elapsed=time.monotonic()-started
+        assert elapsed<10
+        print(f'PASS MCP 20 spline-corner fillet/chamfer pads with linked sizes: {elapsed:.3f}s / 10s')
     finally:
         client.close()

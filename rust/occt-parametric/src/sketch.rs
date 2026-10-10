@@ -74,7 +74,8 @@ pub enum SketchProfileOperation {
         start: ScalarExpr,
         end: ScalarExpr,
     },
-    /// Native fillet at a named remaining internal corner of a line/arc profile.
+    /// Native fillet at a named remaining internal corner; neighbors may be
+    /// lines, arcs, splines or trimmed ellipses.
     Fillet { point: String, radius: ScalarExpr },
     /// Native chamfer distances along incoming/outgoing profile traversal.
     Chamfer {

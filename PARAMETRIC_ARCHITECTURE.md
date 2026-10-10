@@ -1483,8 +1483,9 @@ these are local solves rather than global containment checks. Closed line/arc sk
 profiles now support native fillets and chamfers at named corners (schema 109 /
 ABI 57), with source constraints preserved and parameter-linked derived
 boundaries. Open line/arc corner edits now preserve endpoints and bounded
-neighbors (schema 110 / ABI 58). Continued sketch work should extend fillets
-to spline neighbors through a broader native edge-pair constructor.
+neighbors (schema 110 / ABI 58), and spline/ellipse neighbors use the native
+iterative fillet solver with bounded, tangent, minor-arc checks (schema 111 /
+ABI 59).
 
 The next cross-layer work should prioritize manufacturing product definition:
 standards-verified material hatch presets and drawing conventions, followed by

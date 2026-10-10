@@ -1198,4 +1198,43 @@ fn main() {
             }
         },
     );
+    gate(
+        "1000 native spline-corner fillet/chamfer profile regenerations",
+        10,
+        || {
+            let request: serde_json::Value = serde_json::from_str(include_str!(
+                "../../../tools/model/spline-corner-pad.request.json"
+            ))
+            .unwrap();
+            let doc = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+            let mut family = doc.family.clone();
+            family.features.retain(|f| f.id == "profile");
+            family.requirements.clear();
+            let session = Session::new().unwrap();
+            let mut part = PartInstance {
+                id: "part".into(),
+                definition: &family,
+                overrides: HashMap::new(),
+                provenance: "scale".into(),
+            };
+            for i in 0..1000 {
+                let r = [2., 3., 4., 5.][i % 4];
+                part.overrides.insert(
+                    "fillet_radius".into(),
+                    ParameterValue::Scalar(Quantity::length(r, LengthUnit::Millimeter)),
+                );
+                let built = part.regenerate(&session).unwrap();
+                let face = built.shape("profile").unwrap();
+                let radii = session
+                    .subshapes(face, ShapeType::Edge)
+                    .unwrap()
+                    .iter()
+                    .filter_map(|e| session.edge_circle_radius(e).unwrap())
+                    .collect::<Vec<_>>();
+                assert!(radii.len() == 1 && (radii[0] - r).abs() < 1e-9);
+                drop(built);
+                assert_eq!(session.shape_count().unwrap(), 0);
+            }
+        },
+    );
 }

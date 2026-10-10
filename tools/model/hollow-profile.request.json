@@ -1,7 +1,7 @@
 {
   "schema": "occb-model-view-v1",
   "model": {
-    "schema_version": 110,
+    "schema_version": 111,
     "family": {
       "id": "hollow-profile",
       "version": 1,

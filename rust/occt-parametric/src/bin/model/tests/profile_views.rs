@@ -1703,3 +1703,55 @@ fn open_corner_viewer_shows_sizes_named_corners_derived_boundary_and_failures() 
         assert!(svg.contains("Fillet R") && svg.contains("Chamfer"));
     }
 }
+
+#[test]
+fn spline_corner_viewer_shows_native_edits_at_both_spline_ends_and_failures() {
+    let dir = Directory::new();
+    for oversized in [false, true] {
+        let mut request = view_example("spline-corner-pad");
+        if oversized {
+            request["model"]["family"]["features"][0]["operation"]["sketch_face"]["sketch"]["profile_operations"]
+                [0]["fillet"]["radius"] =
+                json!({"literal":{"value":100,"dimension":"length","unit":"millimeter"}});
+        }
+        let name = if oversized {
+            "spline-corners-oversized"
+        } else {
+            "spline-corners-valid"
+        };
+        view_request(&dir, request, name).unwrap();
+        let data: Value =
+            serde_json::from_str(&fs::read_to_string(dir.0.join(name).join("view.json")).unwrap())
+                .unwrap();
+        let scene = data["scenes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["kind"] == "sketch" && s["feature"] == "profile")
+            .unwrap();
+        assert_eq!(scene["solver"]["solved"], true);
+        let operations = scene["annotations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|a| a["kind"] == "profile_operation")
+            .collect::<Vec<_>>();
+        assert_eq!(operations.len(), 2);
+        assert_eq!(operations[0]["targets"], json!(["C"]));
+        assert_eq!(operations[1]["targets"], json!(["D"]));
+        for a in &operations {
+            assert_eq!(a["anchors"].as_array().unwrap().len(), 1);
+            assert_eq!(
+                a["status"],
+                if oversized { "unverified" } else { "driving" }
+            );
+            assert_eq!(a["detail"]["error"].is_null(), !oversized);
+        }
+        if !oversized {
+            // Four source edges plus one fillet arc and one chamfer chord.
+            assert_eq!(scene["edited_profile"].as_array().unwrap().len(), 6);
+        }
+        let svg = fs::read_to_string(dir.0.join(name).join("view-0003.svg")).unwrap();
+        assert!(svg.contains("Fillet R") && svg.contains("Chamfer"));
+    }
+}

@@ -1345,6 +1345,19 @@ static void corner_edits(occt_bridge_session_t* session) {
     EXPECT(occt_bridge_chamfer_wire_corner(session,open,vec(20,0,0),20,2,&out),GEOMETRY);
     EXPECT_TRUE(out==0,"failed open corner edit clears result");
     occt_bridge_shape_release(session,open);
+    occt_bridge_shape_id_t ellipse=0,upper=0,base=0,half=0;
+    const occt_bridge_vec3_t chord[]={vec(-10,0,0),vec(10,0,0)};
+    EXPECT(occt_bridge_create_ellipse_wire_axes(session,vec(0,0,0),vec(0,0,1),vec(1,0,0),10,5,&ellipse),OK);
+    EXPECT(occt_bridge_trim_curve(session,ellipse,0,0.5,&upper),OK);
+    EXPECT(occt_bridge_create_polyline_wire(session,chord,2,0,&base),OK);
+    const occt_bridge_shape_id_t halves[]={upper,base};
+    EXPECT(occt_bridge_join_wires(session,halves,2,1,&half),OK);
+    EXPECT(occt_bridge_fillet_wire_corner(session,half,vec(10,0,0),1,&out),OK);occt_bridge_shape_release(session,out);
+    EXPECT(occt_bridge_chamfer_wire_corner(session,half,vec(-10,0,0),1,2,&out),OK);occt_bridge_shape_release(session,out);
+    EXPECT(occt_bridge_fillet_wire_corner(session,half,vec(10,0,0),20,&out),GEOMETRY);
+    EXPECT_TRUE(out==0,"failed curved corner edit clears result");
+    occt_bridge_shape_release(session,half);occt_bridge_shape_release(session,base);
+    occt_bridge_shape_release(session,upper);occt_bridge_shape_release(session,ellipse);
     occt_bridge_shape_release(session,wire);
 }
 

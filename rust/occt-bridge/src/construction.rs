@@ -734,7 +734,8 @@ impl Session {
         })?;
         Ok(self.shape(shape))
     }
-    /// Round a remaining internal corner of an open or closed planar wire with line/arc neighbors.
+    /// Round a remaining internal corner of an open or closed planar wire whose
+    /// neighbors are lines, circular arcs, ellipses or splines.
     pub fn fillet_wire_corner<'a>(
         &'a self,
         shape: &Shape<'_>,

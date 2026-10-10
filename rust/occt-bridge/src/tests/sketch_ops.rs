@@ -132,7 +132,7 @@ fn native_corner_edits_preserve_area_order_inputs_and_handles() {
 }
 
 #[test]
-fn native_corner_edits_accept_rotated_planes_and_reject_nonplanar_and_spline_neighbors() {
+fn native_corner_edits_accept_rotated_planes_and_spline_neighbors_and_reject_nonplanar() {
     let s = Session::new().unwrap();
     let p = |x, y| Vec3::new(100. + x, 200., 300. + y);
     let wire = s
@@ -182,10 +182,19 @@ fn native_corner_edits_accept_rotated_planes_and_reject_nonplanar_and_spline_nei
             true,
         )
         .unwrap();
+    // The lens is under 2 mm tall near the tip: r=1 only fits as a mid-lens
+    // half circle, which is not a corner fillet.
     assert!(
         s.fillet_wire_corner(&curved, Vec3::new(10., 0., 0.), 1.)
             .is_err()
     );
+    let rounded = s
+        .fillet_wire_corner(&curved, Vec3::new(10., 0., 0.), 0.25)
+        .unwrap();
+    let face = s.create_face_from_wire(&rounded).unwrap();
+    assert!(s.is_valid(&face).unwrap());
+    let length = assert_tangent_fillet(&s, &rounded, 0.25);
+    assert!(length > 20. && length < 21., "{length}");
 }
 
 #[test]
@@ -374,4 +383,247 @@ fn native_open_corner_edits_preserve_small_large_and_distant_rotated_geometry() 
         )
         .unwrap();
     assert!(s.fillet_wire_corner(&wire, p(20., 0., 0.), 2.).is_err());
+}
+
+/// Asserts one circular edge of `radius` whose ends meet their neighbors
+/// tangentially, and returns the summed edge length.
+fn assert_tangent_fillet(s: &Session, wire: &Shape<'_>, radius: f64) -> f64 {
+    let edges = s.subshapes(wire, ShapeType::Edge).unwrap();
+    let ends = edges
+        .iter()
+        .map(|e| s.curve_end_data(e).unwrap())
+        .collect::<Vec<_>>();
+    let arcs = edges
+        .iter()
+        .enumerate()
+        .filter(|(_, e)| {
+            s.edge_circle_radius(e)
+                .unwrap()
+                .is_some_and(|r| (r - radius).abs() < 1e-9 * radius.max(1.))
+        })
+        .map(|(i, _)| i)
+        .collect::<Vec<_>>();
+    assert!(!arcs.is_empty(), "no fillet arc of radius {radius}");
+    let unit = |v: Vec3| {
+        let n = (v.x * v.x + v.y * v.y + v.z * v.z).sqrt();
+        Vec3::new(v.x / n, v.y / n, v.z / n)
+    };
+    let close =
+        |a: Vec3, b: Vec3| (a.x - b.x).hypot(a.y - b.y).hypot(a.z - b.z) < 1e-7 * radius.max(1.);
+    let tangent = arcs.iter().any(|&i| {
+        let (a, b, u, v) = ends[i];
+        [(a, u), (b, v)].into_iter().all(|(point, direction)| {
+            ends.iter().enumerate().any(|(j, &(c, d, w, x))| {
+                j != i
+                    && [(c, w), (d, x)].into_iter().any(|(q, t)| {
+                        let (m, n) = (unit(direction), unit(t));
+                        close(point, q) && (m.x * n.x + m.y * n.y + m.z * n.z).abs() > 1. - 1e-7
+                    })
+            })
+        })
+    });
+    assert!(tangent, "fillet arc is not tangent to both neighbors");
+    edges.iter().map(|e| s.edge_length(e).unwrap()).sum()
+}
+
+fn has_vertex(s: &Session, wire: &Shape<'_>, point: Vec3, tolerance: f64) -> bool {
+    s.subshapes(wire, ShapeType::Vertex)
+        .unwrap()
+        .iter()
+        .any(|v| {
+            let q = s.exact_bounds(v).unwrap().min;
+            (q.x - point.x).hypot(q.y - point.y).hypot(q.z - point.z) < tolerance
+        })
+}
+
+#[test]
+fn native_open_corner_edits_round_and_cut_spline_neighbors() {
+    let s = Session::new().unwrap();
+    let p = |x, y| Vec3::new(x, y, 0.);
+    {
+        let wire = s
+            .create_curve_wire(
+                &[
+                    CurveSegment::Spline {
+                        points: vec![p(0., 0.), p(10., 4.), p(20., 0.)],
+                        start_tangent: None,
+                        end_tangent: None,
+                        periodic: false,
+                    },
+                    CurveSegment::Line {
+                        start: p(20., 0.),
+                        end: p(20., 15.),
+                    },
+                ],
+                false,
+            )
+            .unwrap();
+        let source = s
+            .subshapes(&wire, ShapeType::Edge)
+            .unwrap()
+            .iter()
+            .map(|e| s.edge_length(e).unwrap())
+            .collect::<Vec<_>>();
+        let rounded = s.fillet_wire_corner(&wire, p(20., 0.), 2.).unwrap();
+        assert!(s.is_valid(&rounded).unwrap());
+        assert!(!s.wire_is_closed(&rounded).unwrap());
+        assert_eq!(s.subshapes(&rounded, ShapeType::Edge).unwrap().len(), 3);
+        let length = assert_tangent_fillet(&s, &rounded, 2.);
+        assert!(length < source.iter().sum::<f64>());
+        for point in [p(0., 0.), p(20., 15.)] {
+            assert!(has_vertex(&s, &rounded, point, 1e-9));
+        }
+        let cut = s.chamfer_wire_corner(&wire, p(20., 0.), 3., 4.).unwrap();
+        let lengths = s
+            .subshapes(&cut, ShapeType::Edge)
+            .unwrap()
+            .iter()
+            .map(|e| s.edge_length(e).unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(lengths.len(), 3);
+        let spline = source.iter().copied().fold(0., f64::max);
+        for expected in [spline - 3., 11.] {
+            // Spline length queries are adaptive; trims use 1e-7 abscissa tolerance.
+            assert!(
+                lengths.iter().any(|l| (l - expected).abs() < 1e-4),
+                "{lengths:?}"
+            );
+        }
+        assert!(has_vertex(&s, &cut, p(20., 4.), 1e-9));
+        let count = s.shape_count().unwrap();
+        assert!(s.fillet_wire_corner(&wire, p(20., 0.), 50.).is_err());
+        assert!(s.chamfer_wire_corner(&wire, p(20., 0.), 30., 1.).is_err());
+        assert_eq!(s.shape_count().unwrap(), count);
+    }
+    assert_eq!(s.shape_count().unwrap(), 0);
+}
+
+#[test]
+fn native_closed_corner_edits_round_spline_and_ellipse_neighbors() {
+    let s = Session::new().unwrap();
+    let p = |x, y| Vec3::new(x, y, 0.);
+    let ellipse = s
+        .create_ellipse_wire_axes(
+            p(0., 0.),
+            Vec3::new(0., 0., 1.),
+            Vec3::new(1., 0., 0.),
+            10.,
+            5.,
+        )
+        .unwrap();
+    let upper = s.trim_curve(&ellipse, 0., 0.5).unwrap();
+    let base = s
+        .create_polyline_wire(&[p(-10., 0.), p(10., 0.)], false)
+        .unwrap();
+    let half = s.join_wires(&[&upper, &base], true).unwrap();
+    let area = |w: &Shape<'_>| {
+        s.surface_area(&s.create_face_from_wire(w).unwrap())
+            .unwrap()
+    };
+    let full = area(&half);
+    assert!((full - 25. * std::f64::consts::PI).abs() < 1e-6);
+    let rounded = s.fillet_wire_corner(&half, p(10., 0.), 1.).unwrap();
+    assert!(s.wire_is_closed(&rounded).unwrap());
+    assert_tangent_fillet(&s, &rounded, 1.);
+    let treated = s
+        .chamfer_wire_corner(&rounded, p(-10., 0.), 1., 2.)
+        .unwrap();
+    assert_eq!(s.subshapes(&treated, ShapeType::Edge).unwrap().len(), 4);
+    let (a, b) = (area(&rounded), area(&treated));
+    assert!(a < full && a > full - 1. && b < a && b > a - 2.);
+    assert!(has_vertex(&s, &treated, p(-8., 0.), 1e-9));
+
+    let lens = s
+        .create_curve_wire(
+            &[
+                CurveSegment::Spline {
+                    points: vec![p(0., 0.), p(10., 5.), p(20., 0.)],
+                    start_tangent: None,
+                    end_tangent: None,
+                    periodic: false,
+                },
+                CurveSegment::Spline {
+                    points: vec![p(20., 0.), p(10., -5.), p(0., 0.)],
+                    start_tangent: None,
+                    end_tangent: None,
+                    periodic: false,
+                },
+            ],
+            true,
+        )
+        .unwrap();
+    let once = s.fillet_wire_corner(&lens, p(20., 0.), 1.).unwrap();
+    let twice = s.fillet_wire_corner(&once, p(0., 0.), 1.).unwrap();
+    // Each spline shares both lens vertices; the fillet must stay at the
+    // selected tip instead of collapsing the lens around the other one.
+    let source = s.subshapes(&lens, ShapeType::Edge).unwrap();
+    let total = source
+        .iter()
+        .map(|e| s.edge_length(e).unwrap())
+        .sum::<f64>();
+    for (wire, tips) in [(&once, 1.), (&twice, 2.)] {
+        let length = assert_tangent_fillet(&s, wire, 1.);
+        assert!(
+            length < total && length > total - 2.5 * tips,
+            "{length} of {total}"
+        );
+    }
+    assert_eq!(s.subshapes(&twice, ShapeType::Edge).unwrap().len(), 4);
+    let (lens_area, once_area, twice_area) = (area(&lens), area(&once), area(&twice));
+    assert!(twice_area < once_area && once_area < lens_area && twice_area > 0.95 * lens_area);
+}
+
+#[test]
+fn native_spline_corner_edits_reject_tangent_joins_and_scale_with_distant_planes() {
+    let s = Session::new().unwrap();
+    let p = |x, y| Vec3::new(x, y, 0.);
+    let smooth = s
+        .create_curve_wire(
+            &[
+                CurveSegment::Spline {
+                    points: vec![p(0., 0.), p(10., 4.), p(20., 0.)],
+                    start_tangent: None,
+                    end_tangent: Some(Vec3::new(1., 0., 0.)),
+                    periodic: false,
+                },
+                CurveSegment::Line {
+                    start: p(20., 0.),
+                    end: p(30., 0.),
+                },
+            ],
+            false,
+        )
+        .unwrap();
+    assert!(s.fillet_wire_corner(&smooth, p(20., 0.), 1.).is_err());
+    assert!(s.chamfer_wire_corner(&smooth, p(20., 0.), 1., 1.).is_err());
+    for scale in [0.01, 1., 1000.] {
+        // Sketch plane XZ, far from the origin.
+        let q = |x: f64, y: f64| Vec3::new(5000. + scale * x, -2000., 300. + scale * y);
+        let wire = s
+            .create_curve_wire(
+                &[
+                    CurveSegment::Line {
+                        start: q(0., 15.),
+                        end: q(0., 0.),
+                    },
+                    CurveSegment::Spline {
+                        points: vec![q(0., 0.), q(10., 3.), q(20., -1.)],
+                        start_tangent: None,
+                        end_tangent: None,
+                        periodic: false,
+                    },
+                ],
+                false,
+            )
+            .unwrap();
+        let rounded = s.fillet_wire_corner(&wire, q(0., 0.), 2. * scale).unwrap();
+        assert!(s.is_valid(&rounded).unwrap(), "scale {scale}");
+        assert_tangent_fillet(&s, &rounded, 2. * scale);
+        for point in [q(0., 15.), q(20., -1.)] {
+            assert!(
+                has_vertex(&s, &rounded, point, 1e-9 * scale.max(1.)),
+                "scale {scale}"
+            );
+        }
+    }
 }
