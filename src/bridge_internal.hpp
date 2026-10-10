@@ -20,6 +20,7 @@
 #include <TopoDS_Shell.hxx>
 #include <TopoDS_Face.hxx>
 #include <GProp_GProps.hxx>
+#include <gp_Pnt.hxx>
 #include <gp_Vec.hxx>
 
 #include <cstdint>
@@ -86,6 +87,10 @@ occt_bridge_status_t build_open_profile_face(
 bool finite(double value);
 
 bool finite(const occt_bridge_vec3_t& value);
+
+inline gp_Pnt to_point(const occt_bridge_vec3_t& value) {
+    return {value.x, value.y, value.z};
+}
 
 occt_bridge_status_t fail(
     occt_bridge_session_t* session,
@@ -247,6 +252,17 @@ occt_bridge_status_t guarded(
     } catch (...) {
         return fail(session, OCCT_BRIDGE_INTERNAL_ERROR, "unknown internal error");
     }
+}
+
+/* Runs a kernel step, returning the OCCT exception's type name or "". */
+template <typename Step>
+std::string perform_reporting_exception(Step&& step) {
+    try {
+        step();
+    } catch (const Standard_Failure& error) {
+        return error.DynamicType()->Name();
+    }
+    return {};
 }
 
 template <typename Operation>

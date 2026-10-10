@@ -21,6 +21,8 @@ add_library(
     occt_bridge SHARED
     src/core.cpp
     src/session.cpp
+    src/primitives.cpp
+    src/wires.cpp
     src/construction.cpp
     src/profile_loft.cpp
     src/extrusion_limits.cpp
@@ -28,8 +30,12 @@ add_library(
     src/recipes.cpp
     src/solids.cpp
     src/operations.cpp
+    src/edge_treatments.cpp
+    src/draft.cpp
+    src/offsets.cpp
     src/mirror.cpp
     src/inspection.cpp
+    src/geometry_queries.cpp
     src/measurements.cpp
     src/surface_radius.cpp
     src/face_pull.cpp

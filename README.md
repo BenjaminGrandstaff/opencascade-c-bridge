@@ -137,16 +137,25 @@ failures while keeping model acceptance separate.
 - [`src/`](src): the C ABI implementation, one file per area:
   - [`session.cpp`](src/session.cpp): sessions, last error, warnings,
     diagnostics, options, and handle removal.
-  - [`construction.cpp`](src/construction.cpp): primitives, wires, faces,
-    prisms, revolutions, tubes, lofts, and compounds.
+  - [`primitives.cpp`](src/primitives.cpp): boxes, cylinders, cones, and spheres.
+  - [`wires.cpp`](src/wires.cpp): polyline, segment, curve, circle, and
+    ellipse wires.
+  - [`construction.cpp`](src/construction.cpp): faces, prisms, revolutions,
+    tubes, lofts, and compounds.
   - [`open_profile.cpp`](src/open_profile.cpp): translated open-chain closure.
   - [`rib_support.cpp`](src/rib_support.cpp): bounded uniform first-contact closure.
   - [`recipes.cpp`](src/recipes.cpp): the faceted stone and wall torch.
   - [`solids.cpp`](src/solids.cpp): sewing and solid construction.
-  - [`operations.cpp`](src/operations.cpp): booleans, fillets, chamfers,
-    offsets, hollowing, draft, and transforms, with failure diagnostics.
-  - [`inspection.cpp`](src/inspection.cpp): topology, measurements,
-    adjacency, tangency, operation history, and validity.
+  - [`operations.cpp`](src/operations.cpp): booleans, same-domain
+    unification, and transforms, with failure diagnostics.
+  - [`edge_treatments.cpp`](src/edge_treatments.cpp): fillets, variable
+    fillets, and chamfers, with per-contour failure isolation.
+  - [`draft.cpp`](src/draft.cpp) and [`offsets.cpp`](src/offsets.cpp): draft
+    angles, skin offsets, and hollowing.
+  - [`inspection.cpp`](src/inspection.cpp): topology, adjacency, identity,
+    operation history, and validity.
+  - [`geometry_queries.cpp`](src/geometry_queries.cpp): bounds, areas,
+    volumes, centroids, face normals, edge lengths and radii, and tangency.
   - [`mesh.cpp`](src/mesh.cpp): source-preserving surface tessellation and
     indexed topology matching for tagged mesh exports.
   - [`curvature.cpp`](src/curvature.cpp): curvature sampling and exact or
