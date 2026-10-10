@@ -1,7 +1,7 @@
 {
   "schema": "occb-model-view-v1",
   "model": {
-    "schema_version": 103,
+    "schema_version": 104,
     "family": {
       "id": "scaled-bracket",
       "version": 1,

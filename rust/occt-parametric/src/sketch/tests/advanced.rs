@@ -1952,3 +1952,231 @@ fn independent_spline_contact_rejects_missing_roles_and_contacts_outside_bounded
             > 10.
     );
 }
+
+fn spline_circle_contact_sketch() -> (SketchDefinition, HashMap<String, ParameterValue>) {
+    let r: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../tools/model/spline-tangent-boss.request.json"
+    ))
+    .unwrap();
+    let doc = ModelDocument::from_json(&r["model"].to_string()).unwrap();
+    let part = PartInstance {
+        id: "part".into(),
+        definition: &doc.family,
+        overrides: HashMap::new(),
+        provenance: "test".into(),
+    };
+    let params = part.resolved_parameters().unwrap();
+    let FeatureOperation::SketchFace { sketch } = &doc.family.features[0].operation else {
+        unreachable!()
+    };
+    ((**sketch).clone(), params)
+}
+
+#[test]
+fn spline_circle_contact_solves_rational_weights_and_both_local_contact_branches() {
+    for below in [false, true] {
+        let (mut s, mut params) = spline_circle_contact_sketch();
+        if below {
+            for id in ["boss-center", "boss-rim"] {
+                s.points.iter_mut().find(|p| p.id == id).unwrap().y = length(2.);
+            }
+        }
+        for weight in [1., 2.] {
+            params.insert(
+                "middle_weight".into(),
+                ParameterValue::Scalar(Quantity::scalar(weight)),
+            );
+            let solved = s.solve(&params).unwrap();
+            assert!(solved.solved, "{}", solved.max_residual);
+            assert_eq!(solved.free_degrees, 0);
+            let peak = 10. * weight / (1. + weight);
+            assert!(
+                solved.points["contact"].x.abs() < 1e-7
+                    && (solved.points["contact"].y - peak).abs() < 1e-7
+            );
+            let cy = peak + if below { -3. } else { 3. };
+            assert!((solved.points["boss-center"].y - cy).abs() < 1e-7);
+            let check = &s.constraint_checks(&params, &solved).unwrap()[3];
+            assert!(check.satisfied && !check.by_construction);
+            let c = s.spline_circle_tangent_contacts(&params, &solved).unwrap()[&3];
+            assert!(c.tangent_sine.abs() < 1e-9 && c.arc_span_residual_mm.is_none());
+            for p in c.points {
+                assert!(p.x.abs() < 1e-7 && (p.y - peak).abs() < 1e-7);
+            }
+        }
+    }
+    let (mut s, params) = spline_circle_contact_sketch();
+    // The circle is fixed; a free spline pole must move to create the contact.
+    for p in &mut s.points {
+        if p.id == "boss-center" || p.id == "boss-rim" {
+            p.fixed = true;
+        }
+        if p.id == "b" {
+            p.fixed = false;
+            p.y = length(8.);
+        }
+    }
+    s.constraints = vec![
+        SketchConstraint::PointLineDistance {
+            point: "b".into(),
+            line: "vertical-axis".into(),
+            value: length(0.),
+        },
+        SketchConstraint::SplineCircleTangent {
+            spline: "curve".into(),
+            circle: "boss".into(),
+            point: "contact".into(),
+        },
+    ];
+    let solved = s.solve(&params).unwrap();
+    assert!(
+        solved.solved && solved.free_degrees == 0,
+        "{}",
+        solved.max_residual
+    );
+    assert!((solved.points["b"].y - 10.).abs() < 1e-7);
+    for mode in 0..3 {
+        let (mut s, params) = spline_circle_contact_sketch();
+        let peak = match mode {
+            0 => {
+                s.splines[0].basis = None;
+                10.
+            }
+            1 => {
+                let b = s.splines[0].basis.as_mut().unwrap();
+                b.non_clamped = true;
+                b.knots = (0..6).map(f64::from).collect();
+                b.multiplicities = vec![1; 6];
+                s.points
+                    .extend([point("start", -5., 5., true), point("end", 5., 5., true)]);
+                s.splines[0].endpoints = Some(SketchSplineEndpoints {
+                    start: "start".into(),
+                    end: "end".into(),
+                });
+                7.5
+            }
+            _ => {
+                s.points[0] = point("a", 10., 8., true);
+                s.points[1] = point("b", -10., 8., true);
+                s.points[2] = point("c", -10., -8., true);
+                s.points.push(point("d", 10., -8., true));
+                s.splines[0].points.push("d".into());
+                let b = s.splines[0].basis.as_mut().unwrap();
+                b.periodic = true;
+                b.degree = 3;
+                b.knots = (0..5).map(f64::from).collect();
+                b.multiplicities = vec![1; 5];
+                b.weights.clear();
+                22. / 3.
+            }
+        };
+        s.points.iter_mut().find(|p| p.id == "contact").unwrap().y = length(peak - 0.2);
+        for id in ["boss-center", "boss-rim"] {
+            s.points.iter_mut().find(|p| p.id == id).unwrap().y = length(peak + 3.);
+        }
+        let solved = s.solve(&params).unwrap();
+        assert!(
+            solved.solved && solved.free_degrees == 0,
+            "mode {mode}: {}",
+            solved.max_residual
+        );
+        assert!((solved.points["contact"].y - peak).abs() < 1e-7);
+        let session = Session::new().unwrap();
+        let face = s.face_on_plane(&session, &params, None).unwrap();
+        assert!(session.is_valid(&face).unwrap());
+    }
+}
+
+#[test]
+fn spline_circle_contact_checks_directed_arc_spans_and_reports_excluded_contacts() {
+    let (mut s, params) = spline_circle_contact_sketch();
+    let solved = s.solve(&params).unwrap();
+    for p in &mut s.points {
+        let q = solved.points[&p.id];
+        p.x = length(q.x);
+        p.y = length(q.y);
+        p.fixed = true;
+    }
+    s.points.push(point("left-rim", -3., 8., true));
+    s.circles.clear();
+    s.arcs = vec![SketchArc {
+        id: "boss".into(),
+        center: "boss-center".into(),
+        start: "boss-rim".into(),
+        end: "left-rim".into(),
+        clockwise: true,
+    }];
+    s.profile.clear();
+    for clockwise in [true, false] {
+        s.arcs[0].clockwise = clockwise;
+        let solved = s.solve(&params).unwrap();
+        assert_eq!(solved.solved, clockwise);
+        let c = s.spline_circle_tangent_contacts(&params, &solved).unwrap()[&3];
+        assert!(c.tangent_sine.abs() < 1e-9);
+        if clockwise {
+            assert!(c.arc_span_residual_mm.unwrap() < 1e-9);
+        } else {
+            assert!(
+                (c.arc_span_residual_mm.unwrap() - 3. * std::f64::consts::FRAC_PI_2).abs() < 1e-7
+            );
+        }
+        assert_eq!(
+            s.constraint_checks(&params, &solved).unwrap()[3].satisfied,
+            clockwise
+        );
+    }
+    // Wrap through zero degrees, with the contact exactly at the start endpoint.
+    s.arcs[0].start = "contact".into();
+    s.arcs[0].end = "boss-rim".into();
+    s.arcs[0].clockwise = false;
+    assert!(s.solve(&params).unwrap().solved);
+}
+
+#[test]
+fn spline_circle_contact_rejects_wrong_roles_degenerate_contacts_and_fixed_conflicts() {
+    let (s, params) = spline_circle_contact_sketch();
+    for role in 0..3 {
+        let mut bad = s.clone();
+        let SketchConstraint::SplineCircleTangent {
+            spline,
+            circle,
+            point,
+        } = &mut bad.constraints[3]
+        else {
+            unreachable!()
+        };
+        match role {
+            0 => *spline = "boss".into(),
+            1 => *circle = "curve".into(),
+            _ => *point = "missing".into(),
+        };
+        assert!(bad.solve(&params).is_err());
+    }
+    let mut zero = s.clone();
+    zero.points
+        .iter_mut()
+        .find(|p| p.id == "contact")
+        .unwrap()
+        .x = length(0.);
+    zero.points
+        .iter_mut()
+        .find(|p| p.id == "contact")
+        .unwrap()
+        .y = length(8.);
+    assert!(zero.solve(&params).is_err());
+    let mut conflict = s;
+    for p in &mut conflict.points {
+        p.fixed = true;
+    }
+    let solved = conflict.solve(&params).unwrap();
+    assert!(!solved.solved);
+    let check = &conflict.constraint_checks(&params, &solved).unwrap()[3];
+    assert!(!check.satisfied && !check.by_construction);
+    let mut invalid = solved;
+    invalid.points.get_mut("boss-center").unwrap().x = f64::NAN;
+    assert!(
+        conflict
+            .spline_circle_tangent_contacts(&params, &invalid)
+            .is_err()
+    );
+}

@@ -11,18 +11,34 @@ tracks status and order.
 | C ABI (`src/`, `include/`) | ABI 56 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 103 | Active development |
+| `occt-parametric` (engineering layer) | Schema 104 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 120 + first-use integration 1 (+1 doc test), recipes 3, parametric 510 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 19 + branch command 2 + model command 51, MCP Python 9, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 120 + first-use integration 1 (+1 doc test), recipes 3, parametric 514 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 19 + branch command 2 + model command 52, MCP Python 9, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform code also passes. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
 | Coverage | Last recorded: 93.61% lines overall, test code excluded; C++ 94.13% lines, 87.40% branches, 100% functions; Rust 93.42% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 155 Rust cases plus 5 model-command and 25 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Scale benchmarks | 156 Rust cases plus 5 model-command and 26 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
+
+- Independent spline–circle/arc tangency (schema 104; native ABI 56 unchanged):
+  a seeded contact slides along the bounded native spline and satisfies the
+  supporting circular radius and tangent alignment. Directed arcs add a
+  separate domain residual. Sparse dependencies include poles/interpolation
+  points, tangent neighbours, circular defining points and the contact point.
+  All spline modes, both local contact branches, free-pole movement, excluded
+  arc contacts, wrapped spans, endpoint contacts and fixed conflicts are tested.
+  Viewer anchors and separate position/tangent/span residuals expose failures,
+  with indexed links to radius, coordinate and weight controls. The
+  spline-tangent-boss example verifies native volume and placement, radius,
+  rise and rational-weight edits, height-only profile reuse and failed-edit
+  retention. The catalog has 40 examples, 12 schemas and 52 resources, with
+  149 request definitions. Native and MCP gates pass 1,000 bosses in 1.235 s
+  and 20 annotated bosses in 0.180 s (10 s budgets). Independent spline–ellipse and
+  spline–spline tangency remain open.
 
 - Independent line–spline tangency (schema 103 / ABI 56): a seeded contact
   point slides along the bounded native spline and lies on the supporting
@@ -39,7 +55,8 @@ tracks status and order.
   has 39 examples, 12 schemas and 51 resources, with 149 request definitions.
   Native and MCP performance gates pass 1,000 caps in 1.795 s and 20 annotated
   caps in 0.179 s (10 s budgets). Rebuild native and Rust consumers together.
-  Independent spline–circle/ellipse/spline contact remains open.
+  Spline–circle contacts follow in schema 104; spline–ellipse and spline–spline
+  contact remain open.
 
 - Independent line–ellipse tangency (schema 102; native ABI 55 unchanged):
   signed side selection uses the exact support of the rotated native ellipse.

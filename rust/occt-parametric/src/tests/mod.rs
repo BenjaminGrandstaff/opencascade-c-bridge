@@ -189,3 +189,5 @@ mod non_clamped_spline_cap;
 mod ellipse_tangent_pad;
 
 mod spline_tangent_cap;
+
+mod spline_tangent_boss;

@@ -57,6 +57,7 @@ impl SketchDefinition {
                             | SketchConstraint::LineCircleTangent { .. }
                             | SketchConstraint::LineEllipseTangent { .. }
                             | SketchConstraint::LineSplineTangent { .. }
+                            | SketchConstraint::SplineCircleTangent { .. }
                             | SketchConstraint::CircleCircleTangent { .. }
                             | SketchConstraint::Concentric { .. }
                             | SketchConstraint::Symmetric { .. }
@@ -340,13 +341,12 @@ impl SketchProblem<'_> {
         Ok(self.native.create_curve_wire(&[segment], periodic)?)
     }
 
-    pub(super) fn line_spline_contact(
+    fn spline_contact_data(
         &self,
-        line: &str,
         spline: &str,
         point: &str,
         values: &[f64],
-    ) -> Result<([SketchPoint2; 3], f64), ModelError> {
+    ) -> Result<(SketchPoint2, SketchPoint2, SketchPoint2), ModelError> {
         let Entity::Spline(s) = self.entities[spline] else {
             unreachable!("validated spline contact")
         };
@@ -359,6 +359,29 @@ impl SketchProblem<'_> {
             x: native.x,
             y: native.y,
         };
+        // Direction is independent of knot parameter scaling.
+        let tangent_scale = tangent.x.abs().max(tangent.y.abs());
+        if tangent_scale == 0. {
+            return Err(ModelError::new("spline contact has a zero planar tangent"));
+        }
+        Ok((
+            p,
+            q,
+            SketchPoint2 {
+                x: tangent.x / tangent_scale,
+                y: tangent.y / tangent_scale,
+            },
+        ))
+    }
+
+    pub(super) fn line_spline_contact(
+        &self,
+        line: &str,
+        spline: &str,
+        point: &str,
+        values: &[f64],
+    ) -> Result<([SketchPoint2; 3], f64), ModelError> {
+        let (p, q, tangent) = self.spline_contact_data(spline, point, values)?;
         let (a, b) = self.line(line, values);
         let length = line_length((a, b));
         if length <= f64::EPSILON {
@@ -371,22 +394,57 @@ impl SketchProblem<'_> {
             x: p.x + distance * dy,
             y: p.y - distance * dx,
         };
-        // Direction is independent of knot parameter scaling.
-        let tangent_scale = tangent.x.abs().max(tangent.y.abs());
-        if tangent_scale == 0. {
-            return Err(ModelError::new("spline contact has a zero planar tangent"));
-        }
         let sine = normalized_cross(
             (a, b),
             (
                 SketchPoint2 { x: 0., y: 0. },
                 SketchPoint2 {
-                    x: tangent.x / tangent_scale,
-                    y: tangent.y / tangent_scale,
+                    x: tangent.x,
+                    y: tangent.y,
                 },
             ),
         )?;
         Ok(([p, q, foot], sine))
+    }
+
+    pub(super) fn spline_circle_contact(
+        &self,
+        spline: &str,
+        circle: &str,
+        point: &str,
+        values: &[f64],
+    ) -> Result<SketchSplineCircleContact, ModelError> {
+        let (p, q, tangent) = self.spline_contact_data(spline, point, values)?;
+        let (center, rim) = self.radius_points(circle);
+        let c = self.point(center, values);
+        let radius = line_length((c, self.point(rim, values)));
+        let (rx, ry) = (p.x - c.x, p.y - c.y);
+        let distance = rx.hypot(ry);
+        if radius <= f64::EPSILON || distance <= f64::EPSILON {
+            return Err(ModelError::new(
+                "spline-circle tangency needs a positive radius and a contact away from the centre",
+            ));
+        }
+        let on_circle = SketchPoint2 {
+            x: c.x + radius * rx / distance,
+            y: c.y + radius * ry / distance,
+        };
+        let zero = SketchPoint2 { x: 0., y: 0. };
+        let sine = normalized_cross(
+            (zero, tangent),
+            (
+                zero,
+                SketchPoint2 {
+                    x: -ry / distance,
+                    y: rx / distance,
+                },
+            ),
+        )?;
+        Ok(SketchSplineCircleContact {
+            points: [p, q, on_circle],
+            tangent_sine: sine,
+            arc_span_residual_mm: self.arc_contact_residual(circle, (rx, ry), values),
+        })
     }
 
     fn center_point(&self, id: &str) -> &str {
@@ -617,6 +675,25 @@ impl SketchProblem<'_> {
                         - line_length((self.point(c, values), self.point(d, values))),
                 );
             }
+            SketchConstraint::SplineCircleTangent {
+                spline,
+                circle,
+                point,
+            } => {
+                let contact = self.spline_circle_contact(spline, circle, point, values)?;
+                let [p, q, _] = contact.points;
+                let (center, rim) = self.radius_points(circle);
+                let c = self.point(center, values);
+                residuals.extend([
+                    p.x - q.x,
+                    p.y - q.y,
+                    line_length((c, p)) - line_length((c, self.point(rim, values))),
+                    contact.tangent_sine,
+                ]);
+                if let Some(span) = contact.arc_span_residual_mm {
+                    residuals.push(span);
+                }
+            }
             SketchConstraint::LineSplineTangent {
                 line,
                 spline,
@@ -772,6 +849,19 @@ impl SketchProblem<'_> {
 
     fn columns(&self, constraint: &SketchConstraint) -> Vec<usize> {
         let points = match constraint {
+            SketchConstraint::SplineCircleTangent {
+                spline,
+                circle,
+                point,
+            } => {
+                let Entity::Spline(s) = self.entities[spline.as_str()] else {
+                    unreachable!("validated spline contact")
+                };
+                let mut refs = vec![point.as_str()];
+                refs.extend(self.circular_points(circle));
+                refs.extend(self.spline_neighbor_refs(s));
+                refs
+            }
             SketchConstraint::LineSplineTangent {
                 line,
                 spline,

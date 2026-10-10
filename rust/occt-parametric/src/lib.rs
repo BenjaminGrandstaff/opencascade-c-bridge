@@ -46,7 +46,7 @@ pub use sketch::{
     SketchCircleTangency, SketchConstraint, SketchConstraintCheck, SketchDefinition, SketchEllipse,
     SketchFaceSupport, SketchLine, SketchLineSide, SketchOffsetJoin, SketchPoint, SketchPoint2,
     SketchProfileOperation, SketchProjection, SketchProjectionKind, SketchSolution, SketchSpline,
-    SketchSplineEndpoints, SketchSupportPlanes,
+    SketchSplineCircleContact, SketchSplineEndpoints, SketchSupportPlanes,
 };
 pub use solve::PlacementSolution;
 

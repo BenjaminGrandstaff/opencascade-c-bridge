@@ -13,6 +13,15 @@ pub struct SketchConstraintCheck {
     /// by a residual equation. It must not be reported as a measured zero.
     pub by_construction: bool,
 }
+/// Measured seed, native spline contact and circular contact, with any arc
+/// domain violation kept separate from tangent alignment.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SketchSplineCircleContact {
+    pub points: [SketchPoint2; 3],
+    pub tangent_sine: f64,
+    pub arc_span_residual_mm: Option<f64>,
+}
+
 impl SketchDefinition {
     /// Exact ellipse support contacts and their supporting-line projections,
     /// indexed by constraint number. Distinct positions reveal a diagnostic
@@ -111,6 +120,65 @@ impl SketchDefinition {
                 result.insert(
                     index,
                     problem.line_spline_contact(line, spline, point, &[])?,
+                );
+            }
+        }
+        Ok(result)
+    }
+
+    /// Seed point, bounded native spline contact, circular contact,
+    /// and measured tangent sine, indexed by spline-circle constraint number.
+    pub fn spline_circle_tangent_contacts(
+        &self,
+        parameters: &HashMap<String, ParameterValue>,
+        solution: &SketchSolution,
+    ) -> Result<HashMap<usize, SketchSplineCircleContact>, ModelError> {
+        if !self
+            .constraints
+            .iter()
+            .any(|c| matches!(c, SketchConstraint::SplineCircleTangent { .. }))
+        {
+            return Ok(HashMap::new());
+        }
+        if !self.projections.is_empty() {
+            return Err(ModelError::new(
+                "projected sketch requires source-geometry resolution before contact diagnostics",
+            ));
+        }
+        if solution
+            .points
+            .values()
+            .any(|p| !p.x.is_finite() || !p.y.is_finite())
+        {
+            return Err(ModelError::new(
+                "spline contact diagnostic point is not finite",
+            ));
+        }
+        self.validate(parameters)?;
+        let fixed = self
+            .points
+            .iter()
+            .map(|p| {
+                solution
+                    .points
+                    .get(&p.id)
+                    .copied()
+                    .map(|v| (p.id.as_str(), v))
+                    .ok_or_else(|| ModelError::new("contact solution is missing a point"))
+            })
+            .collect::<Result<HashMap<_, _>, _>>()?;
+        let problem = SketchProblem::new(self, parameters, HashMap::new(), fixed)?;
+        let mut result = HashMap::new();
+        for (index, c) in self.constraints.iter().enumerate() {
+            if let SketchConstraint::SplineCircleTangent {
+                spline,
+                circle,
+                point,
+            } = c
+            {
+                result.insert(
+                    index,
+                    problem.spline_circle_contact(spline, circle, point, &[])?,
                 );
             }
         }

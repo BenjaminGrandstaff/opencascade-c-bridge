@@ -79,7 +79,7 @@ export are verified. A 1,000-pair solve and residual-diagnostic gate passes in
 0.009 s (10 s budget); 20 solids plus 60 source sketch scenes and matched-radius
 annotations pass through MCP in 0.316 s (10 s budget).
 
-Current authoring examples use schema 103. Older model documents migrate
+Current authoring examples use schema 104. Older model documents migrate
 without adding constraints or changing their entities. Current native ABI is 56.
 
 ## Saved profile operations
@@ -651,5 +651,72 @@ and unnormalized oriented derivative in located world coordinates. Equal
 nearest-distance ties choose the first candidate deterministically. It stores
 no shape handles and rejects multi-edge inputs, zero tangents and C0 knot
 contacts. Rebuild the native bridge and Rust consumers together. Older model
-documents migrate to schema 103 without adding relations. Independent
-spline–circle, spline–ellipse and spline–spline contact remain future work.
+documents migrate to schema 103 without adding relations. Spline–circle
+contact follows below; spline–ellipse and spline–spline contact remain future work.
+
+
+## Spline-circle tangency (schema 104)
+
+Use `spline_circle_tangent` to solve a contact between a bounded native spline
+and a full circle or directed circular arc, without shared endpoint IDs:
+
+```json
+{
+  "spline_circle_tangent": {
+    "spline": "curve",
+    "circle": "boss",
+    "point": "contact"
+  }
+}
+```
+
+The point must exist. A free point slides during solving; fixed points impose
+an exact location and can conflict. Its initial coordinates and the initial
+circular geometry select the local branch. This relation has no external or
+internal containment mode for the spline. It solves a local tangent contact
+rather than searching for all contacts or proving whole-profile containment.
+The circle role accepts full circles and arcs. Unknown roles, zero radius and
+a contact at the circular centre fail.
+
+Four residuals enforce bounded native spline membership in X/Y (millimetres),
+`distance(contact, centre) − radius` (millimetres), and tangent alignment
+(dimensionless). The spline derivative comes from the native bounded closest
+point query. The circular tangent is perpendicular to the contact's radial
+direction. Arc roles add a fifth millimetre residual measuring the distance
+along the supporting circle to the nearest allowed directed endpoint when
+the contact lies outside the span. Clockwise, counterclockwise, wrapped spans
+and included endpoints use the same domain rules as existing circular tangency.
+A zero tangent or C0 spline knot still fails the native contact query.
+
+The sparse Jacobian includes the contact point, all spline poles/interpolation
+points, existing endpoint tangent neighbours, and the circle's centre/rim or
+arc's centre/start/end. All four spline modes are supported: clamped rational,
+non-clamped, periodic and interpolated. The new relation is solved and measured,
+including when an interpolated spline is used; it does not impose the contact
+by curve construction. Free poles can move to satisfy a fixed circular target.
+
+Viewer anchors show the solved seeded point, bounded native spline point and
+radial projection onto the supporting circle. Details report
+`position_residual_mm`, `tangent_sine` and `arc_span_residual_mm` (null for full
+circles). Residual units are `["mm", "mm", "mm", "dimensionless"]`, with a final
+`"mm"` entry for arc domains. The overall residual summary is `mixed`. A
+contact may have zero position/tangent residuals and still fail because its
+arc-domain residual is positive. Radius/diameter, direct distance/angle and
+coordinate parameters, plus rational weights, are linked through indexed
+references to the defining points.
+
+The [spline tangent boss](../tools/model/spline-tangent-boss.request.json)
+places a circular boss above the rational quadratic spline from the previous
+example. At weight w, the contact is `(0, rise × w / (1+w))`, and the boss's
+centre Y is contact Y plus `boss_radius`. With default rise=10 mm, w=1,
+radius=3 mm and height=8 mm, its minimum Y is 5 mm and native volume is
+`72π = 226.194671 mm³`. Weight/rise edits move the boss; radius edits change
+its size while retaining contact. These edits rebuild profile and solid;
+height-only edits reuse the profile. Native validity, volume/bounds, incremental
+reuse and failed-edit retention are tested.
+
+`SketchDefinition::spline_circle_tangent_contacts` exposes the measured
+`SketchSplineCircleContact` records indexed by constraint number. Older
+documents migrate to schema 104 without adding constraints. The implementation
+uses the existing ABI 56 closest-point/derivative query; native ABI is unchanged.
+Independent spline–ellipse and spline–spline tangency remain future work.

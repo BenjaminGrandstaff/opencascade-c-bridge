@@ -1175,3 +1175,91 @@ fn independent_spline_contact_viewer_exposes_position_tangent_units_controls_and
         assert!(snapshot.contains("T SPLINE"));
     }
 }
+
+#[test]
+fn spline_circle_viewer_reports_native_contacts_arc_domains_and_linked_controls() {
+    let dir = Directory::new();
+    for mode in 0..3 {
+        let mut request = view_example("spline-tangent-boss");
+        let sketch =
+            &mut request["model"]["family"]["features"][0]["operation"]["sketch_face"]["sketch"];
+        if mode > 0 {
+            // Fix an exact contact, then exclude it with the directed arc domain.
+            let lit = |v| json!({"literal":{"value":v,"dimension":"length","unit":"millimeter"}});
+            for p in sketch["points"].as_array_mut().unwrap() {
+                p["fixed"] = json!(true);
+                if p["id"] == "contact" {
+                    p["x"] = lit(0.);
+                    p["y"] = lit(5.);
+                }
+            }
+            if mode == 2 {
+                sketch["points"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(json!({"id":"left-rim","x":lit(-3.),"y":lit(8.),"fixed":true}));
+                sketch["circles"] = json!([]);
+                sketch["arcs"] = json!([{"id":"boss","center":"boss-center","start":"boss-rim","end":"left-rim","clockwise":false}]);
+                sketch["profile"] = json!([]);
+                request["outputs"] = json!([]);
+            } else {
+                // Move the fixed circle while preserving its radius.
+                for p in sketch["points"].as_array_mut().unwrap() {
+                    if p["id"] == "boss-center" || p["id"] == "boss-rim" {
+                        p["y"] = lit(9.);
+                    }
+                }
+            }
+        }
+        let name = format!("spline-circle-{mode}");
+        view_request(&dir, request, &name).unwrap();
+        let data: Value =
+            serde_json::from_str(&fs::read_to_string(dir.0.join(&name).join("view.json")).unwrap())
+                .unwrap();
+        let scene = data["scenes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["kind"] == "sketch")
+            .unwrap();
+        assert_eq!(scene["solver"]["solved"], mode == 0);
+        let relation = scene["annotations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|a| !a["detail"]["constraint"]["spline_circle_tangent"].is_null())
+            .unwrap();
+        assert_eq!(
+            relation["status"],
+            if mode == 0 { "passed" } else { "failed" }
+        );
+        assert_eq!(relation["detail"]["by_construction"], false);
+        assert_eq!(relation["detail"]["residual_unit"], "mixed");
+        let residuals = &relation["detail"]["contact_residuals"];
+        if mode == 2 {
+            assert!(residuals["position_residual_mm"].as_f64().unwrap() < 1e-9);
+            assert!(residuals["tangent_sine"].as_f64().unwrap().abs() < 1e-9);
+            assert!(residuals["arc_span_residual_mm"].as_f64().unwrap() > 4.);
+            assert_eq!(
+                residuals["residual_units"],
+                json!(["mm", "mm", "mm", "dimensionless", "mm"])
+            );
+        } else if mode == 1 {
+            assert!(residuals["position_residual_mm"].as_f64().unwrap() > 0.9);
+        } else {
+            assert_eq!(scene["solver"]["free_degrees"], 0);
+            assert_eq!(
+                relation["parameters"],
+                json!(["boss_radius", "middle_weight", "rise", "span"])
+            );
+            assert!(residuals["position_residual_mm"].as_f64().unwrap() < 1e-9);
+            assert!(residuals["arc_span_residual_mm"].is_null());
+            for p in relation["anchors"].as_array().unwrap() {
+                assert!(
+                    p[0].as_f64().unwrap().abs() < 1e-7
+                        && (p[1].as_f64().unwrap() - 5.).abs() < 1e-7
+                );
+            }
+        }
+    }
+}

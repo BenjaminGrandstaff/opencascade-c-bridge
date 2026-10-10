@@ -18,7 +18,7 @@ mod projections;
 mod solver;
 mod validation;
 
-pub use diagnostics::SketchConstraintCheck;
+pub use diagnostics::{SketchConstraintCheck, SketchSplineCircleContact};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SketchPoint {
@@ -248,6 +248,12 @@ pub enum SketchConstraint {
     LineSplineTangent {
         line: String,
         spline: String,
+        point: String,
+    },
+    /// Independent spline/circle tangency, with contact inside any directed arc span.
+    SplineCircleTangent {
+        spline: String,
+        circle: String,
         point: String,
     },
     /// Full ellipse tangency to the infinite supporting line, without a shared point.
