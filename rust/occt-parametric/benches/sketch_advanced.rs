@@ -54,6 +54,62 @@ fn gate(name: &str, budget: u64, run: impl FnOnce()) {
 }
 fn main() {
     gate(
+        "1000 midpoint and concentric components with sparse equations",
+        10,
+        || {
+            let mut s = sketch();
+            for i in 0..1000 {
+                let id = |name: &str| format!("{name}-{i}");
+                let x = i as f64 * 20.;
+                s.points.extend([
+                    point(id("a"), x, 2., true),
+                    point(id("b"), x + 8., 6., true),
+                    point(id("mid"), x + 1., 1., false),
+                    point(id("c"), x + 2., 3., false),
+                    point(id("r"), x + 10., 3., true),
+                    point(id("fixed-rim"), x + 10., 4., true),
+                ]);
+                s.lines.push(SketchLine {
+                    id: id("line"),
+                    start: id("a"),
+                    end: id("b"),
+                });
+                s.circles.extend([
+                    SketchCircle {
+                        id: id("first"),
+                        center: id("mid"),
+                        rim: id("fixed-rim"),
+                    },
+                    SketchCircle {
+                        id: id("second"),
+                        center: id("c"),
+                        rim: id("r"),
+                    },
+                ]);
+                s.constraints.extend([
+                    SketchConstraint::Midpoint {
+                        point: id("mid"),
+                        line: id("line"),
+                    },
+                    SketchConstraint::Concentric {
+                        first: id("first"),
+                        second: id("second"),
+                    },
+                ]);
+            }
+            let params = HashMap::new();
+            let solved = s.solve(&params).unwrap();
+            assert!(solved.solved);
+            assert_eq!(solved.free_degrees, 0);
+            assert!(
+                s.constraint_checks(&params, &solved)
+                    .unwrap()
+                    .iter()
+                    .all(|c| c.satisfied)
+            );
+        },
+    );
+    gate(
         "1000 linked edge-projection sketches, runtime snapshots and source-depth edits",
         10,
         || {

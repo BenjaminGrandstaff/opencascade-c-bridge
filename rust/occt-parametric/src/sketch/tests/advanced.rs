@@ -550,3 +550,158 @@ fn equal_radius_rejects_wrong_references_and_reports_fixed_radius_conflicts() {
         assert!(s.solve(&parameters).is_err());
     }
 }
+
+#[test]
+fn midpoint_solves_both_coordinates_and_reports_conflicting_fixed_points() {
+    let mut s = base();
+    s.points = vec![
+        point("a", -4., 2., true),
+        point("b", 8., 6., true),
+        point("mid", 7., -3., false),
+    ];
+    s.lines = vec![line("ab", "a", "b")];
+    s.constraints = vec![SketchConstraint::Midpoint {
+        point: "mid".into(),
+        line: "ab".into(),
+    }];
+    let params = HashMap::new();
+    let solved = s.solve(&params).unwrap();
+    assert!(solved.solved);
+    assert_eq!(solved.free_degrees, 0);
+    assert!((solved.points["mid"].x - 2.).abs() < 1e-7);
+    assert!((solved.points["mid"].y - 4.).abs() < 1e-7);
+    let checks = s.constraint_checks(&params, &solved).unwrap();
+    assert!(checks[0].satisfied && !checks[0].by_construction);
+    s.points[2].fixed = true;
+    let failed = s.solve(&params).unwrap();
+    assert!(!failed.solved);
+    assert!(!s.constraint_checks(&params, &failed).unwrap()[0].satisfied);
+    s.constraints[0] = SketchConstraint::Midpoint {
+        point: "missing".into(),
+        line: "ab".into(),
+    };
+    assert!(s.solve(&params).is_err());
+    s.constraints[0] = SketchConstraint::Midpoint {
+        point: "mid".into(),
+        line: "missing".into(),
+    };
+    assert!(s.solve(&params).is_err());
+}
+
+#[test]
+fn concentric_supports_circles_arcs_and_ellipses_without_equalizing_radii() {
+    let params = HashMap::new();
+    for kind in 0..3 {
+        let mut s = circle();
+        s.points[1].fixed = true;
+        s.points.extend([
+            point("other-center", 1., 1., false),
+            point("a", 7., 0., true),
+            point("b", 0., 3., true),
+        ]);
+        match kind {
+            0 => s.circles.push(SketchCircle {
+                id: "other".into(),
+                center: "other-center".into(),
+                rim: "a".into(),
+            }),
+            1 => {
+                s.points.last_mut().unwrap().y = length(7.);
+                s.arcs.push(SketchArc {
+                    id: "other".into(),
+                    center: "other-center".into(),
+                    start: "a".into(),
+                    end: "b".into(),
+                    clockwise: false,
+                });
+            }
+            _ => s.ellipses.push(SketchEllipse {
+                id: "other".into(),
+                center: "other-center".into(),
+                major: "a".into(),
+                minor: "b".into(),
+            }),
+        }
+        s.constraints = vec![SketchConstraint::Concentric {
+            first: "circle".into(),
+            second: "other".into(),
+        }];
+        let solved = s.solve(&params).unwrap();
+        assert!(solved.solved);
+        assert_eq!(solved.free_degrees, 0);
+        assert!(solved.points["other-center"].x.abs() < 1e-7);
+        assert!(solved.points["other-center"].y.abs() < 1e-7);
+        assert_eq!(solved.points["a"].x, 7.);
+        assert!(s.constraint_checks(&params, &solved).unwrap()[0].satisfied);
+    }
+}
+
+#[test]
+fn concentric_rejects_missing_self_and_line_references_and_reports_conflicts() {
+    let mut s = circle();
+    s.points.extend([
+        point("other-center", 1., 2., true),
+        point("other-rim", 8., 2., true),
+    ]);
+    s.circles.push(SketchCircle {
+        id: "other".into(),
+        center: "other-center".into(),
+        rim: "other-rim".into(),
+    });
+    s.lines.push(line("axis", "other-center", "other-rim"));
+    let params = HashMap::new();
+    for second in ["missing", "circle", "axis"] {
+        s.constraints = vec![SketchConstraint::Concentric {
+            first: "circle".into(),
+            second: second.into(),
+        }];
+        assert!(s.solve(&params).is_err());
+    }
+    s.constraints = vec![SketchConstraint::Concentric {
+        first: "circle".into(),
+        second: "other".into(),
+    }];
+    let failed = s.solve(&params).unwrap();
+    assert!(!failed.solved);
+    assert!(!s.constraint_checks(&params, &failed).unwrap()[0].satisfied);
+}
+
+#[test]
+fn midpoint_and_concentric_solve_when_all_referenced_centers_are_free() {
+    let params = HashMap::new();
+    let mut s = base();
+    s.points = vec![
+        point("a", -4., 2., false),
+        point("b", 8., 6., false),
+        point("mid", 7., -3., false),
+    ];
+    s.lines = vec![line("ab", "a", "b")];
+    s.constraints = vec![SketchConstraint::Midpoint {
+        point: "mid".into(),
+        line: "ab".into(),
+    }];
+    let solved = s.solve(&params).unwrap();
+    assert!(solved.solved);
+    assert_eq!(solved.free_degrees, 4);
+    assert!(s.constraint_checks(&params, &solved).unwrap()[0].satisfied);
+    let mut s = circle();
+    s.points[0].fixed = false;
+    s.points[1].fixed = true;
+    s.points.extend([
+        point("other-center", 2., 2., false),
+        point("other-rim", 8., 2., true),
+    ]);
+    s.circles.push(SketchCircle {
+        id: "other".into(),
+        center: "other-center".into(),
+        rim: "other-rim".into(),
+    });
+    s.constraints = vec![SketchConstraint::Concentric {
+        first: "circle".into(),
+        second: "other".into(),
+    }];
+    let solved = s.solve(&params).unwrap();
+    assert!(solved.solved);
+    assert_eq!(solved.free_degrees, 2);
+    assert!(s.constraint_checks(&params, &solved).unwrap()[0].satisfied);
+}

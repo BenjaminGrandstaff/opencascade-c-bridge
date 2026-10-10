@@ -1,7 +1,7 @@
 {
   "schema": "occb-model-view-v1",
   "model": {
-    "schema_version": 94,
+    "schema_version": 95,
     "family": {
       "id": "projected-pocket",
       "version": 1,
@@ -494,11 +494,6 @@
                     "id": "guide-mid",
                     "start": "guide",
                     "end": "mid"
-                  },
-                  {
-                    "id": "mid-d",
-                    "start": "mid",
-                    "end": "d"
                   }
                 ],
                 "circles": [],
@@ -574,28 +569,9 @@
                     }
                   },
                   {
-                    "horizontal": {
-                      "line": "mid-d"
-                    }
-                  },
-                  {
-                    "distance": {
-                      "first": "mid",
-                      "second": "d",
-                      "value": {
-                        "divide": [
-                          {
-                            "parameter": "pocket_width"
-                          },
-                          {
-                            "literal": {
-                              "value": 2,
-                              "dimension": "scalar",
-                              "unit": null
-                            }
-                          }
-                        ]
-                      }
+                    "midpoint": {
+                      "point": "mid",
+                      "line": "cd"
                     }
                   }
                 ],

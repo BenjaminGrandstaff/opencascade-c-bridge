@@ -75,6 +75,24 @@ pub(super) fn sketch_scene(
                 .map(|a| (a.id.as_str(), (a.center.as_str(), a.start.as_str()))),
         )
         .collect();
+    let centers: HashMap<_, _> = sketch
+        .circles
+        .iter()
+        .map(|c| (c.id.as_str(), c.center.as_str()))
+        .chain(
+            sketch
+                .arcs
+                .iter()
+                .map(|a| (a.id.as_str(), a.center.as_str())),
+        )
+        .chain(
+            sketch
+                .ellipses
+                .iter()
+                .map(|e| (e.id.as_str(), e.center.as_str())),
+        )
+        .collect();
+    let lines: HashMap<_, _> = sketch.lines.iter().map(|l| (l.id.as_str(), l)).collect();
     let point_controls: HashMap<_, _> = sketch
         .points
         .iter()
@@ -188,6 +206,21 @@ pub(super) fn sketch_scene(
                 ],
                 None,
             ),
+            SketchConstraint::Concentric { first, second } => (
+                "CONC",
+                vec![first.clone(), second.clone()],
+                vec![
+                    centers[first.as_str()].to_owned(),
+                    centers[second.as_str()].to_owned(),
+                ],
+                None,
+            ),
+            SketchConstraint::Midpoint { point, line } => (
+                "MID",
+                vec![point.clone(), line.clone()],
+                vec![point.clone()],
+                None,
+            ),
             SketchConstraint::EqualLength { first, second } => {
                 ("=", vec![first.clone(), second.clone()], vec![], None)
             }
@@ -234,6 +267,12 @@ pub(super) fn sketch_scene(
                 })
                 .collect()
         };
+        if let SketchConstraint::Midpoint { line, .. } = constraint {
+            let l = lines[line.as_str()];
+            let a = point_map[&l.start];
+            let b = point_map[&l.end];
+            anchors.push([a[0] * 0.5 + b[0] * 0.5, a[1] * 0.5 + b[1] * 0.5, 0.0]);
+        }
         if matches!(constraint, SketchConstraint::Diameter { .. }) && anchors.len() == 2 {
             let c = anchors[0];
             let r = anchors[1];
@@ -302,6 +341,26 @@ pub(super) fn sketch_scene(
                 linked.extend(point_controls[rim].iter().cloned());
             }
             control_names = linked.into_iter().collect();
+        }
+        match constraint {
+            SketchConstraint::Concentric { first, second } => {
+                control_names = [first, second]
+                    .into_iter()
+                    .flat_map(|id| point_controls[centers[id.as_str()]].iter().cloned())
+                    .collect::<BTreeSet<_>>()
+                    .into_iter()
+                    .collect();
+            }
+            SketchConstraint::Midpoint { point, line } => {
+                let l = lines[line.as_str()];
+                control_names = [point.as_str(), l.start.as_str(), l.end.as_str()]
+                    .into_iter()
+                    .flat_map(|id| point_controls[id].iter().cloned())
+                    .collect::<BTreeSet<_>>()
+                    .into_iter()
+                    .collect();
+            }
+            _ => {}
         }
         let kind = if value.is_some() {
             AnnotationKind::Dimension

@@ -321,5 +321,22 @@ with tempfile.TemporaryDirectory(prefix='occb-mcp-scale-') as root:
         elapsed=time.monotonic()-started
         assert elapsed<10
         print(f'PASS MCP 20 projected-edge pockets, linked reference geometry and source controls: {elapsed:.3f}s / 10s')
+        bushing=client.tool('occt_get_example',dict(name='concentric-bushing'))['structuredContent']
+        for i in range(1,20):
+            bushing['model']['instances'].append({'clone':dict(id=f'part-{i}',source='part',overrides={},provenance='scale')})
+            bushing['outputs'].extend(dict(instance=f'part-{i}',output=out) for out in ['body','inner'])
+        started=time.monotonic()
+        result=client.tool('occt_visualize_model',bushing)
+        assert not result['isError'],result
+        data=json.loads(client.call('resources/read',dict(uri=result['structuredContent']['resources']['view.json']))['result']['contents'][0]['text'])
+        solids=[s for s in data['scenes'] if s['kind']=='solid'];sketches=[s for s in data['scenes'] if s['kind']=='sketch']
+        assert len(solids)==40 and all(s['valid'] for s in solids)
+        assert len(sketches)==40 and all(s['solver']['solved'] for s in sketches)
+        for scene in sketches:
+            relation=next(a for a in scene['annotations'] if 'concentric' in a['detail'].get('constraint',{}))
+            assert relation['status']=='passed' and relation['detail']['max_residual']<1e-7
+        elapsed=time.monotonic()-started
+        assert elapsed<10
+        print(f'PASS MCP 20 concentric bushings, 40 solved source sketches and centre relations: {elapsed:.3f}s / 10s')
     finally:
         client.close()

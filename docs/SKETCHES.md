@@ -79,7 +79,7 @@ export are verified. A 1,000-pair solve and residual-diagnostic gate passes in
 0.009 s (10 s budget); 20 solids plus 60 source sketch scenes and matched-radius
 annotations pass through MCP in 0.316 s (10 s budget).
 
-Current authoring examples use schema 94. Older model documents migrate
+Current authoring examples use schema 95. Older model documents migrate
 without adding constraints or changing their entities. Native ABI remains 52.
 
 ## Saved profile operations
@@ -186,3 +186,36 @@ edits rebuild dependent sketches and solids. See
 Schema 94 adds named linked projections of source lines and conics into the
 sketch frame. Fixed imported points/curves can participate in ordinary
 constraints or profile boundaries. See [linked projections](SKETCH_PROJECTIONS.md).
+
+## Midpoint and concentric relations (schema 95)
+
+`midpoint: {point, line}` puts a named point at the arithmetic midpoint of a
+named line segment. Its two equations compare X and Y in millimetres and
+reference only the point and line endpoints. Endpoints may move; the point
+follows their solved coordinates. All references are checked before solving.
+
+`concentric: {first, second}` gives two distinct circles, arcs, or ellipses a
+shared centre. Its two millimetre equations reference only their centre
+points. It preserves separate radii, ellipse axes and arc spans. Missing
+curves, lines, splines and self-relations are rejected. Arc and ellipse
+geometry still obeys its existing implicit equations.
+
+Both relations use the sparse solver, rank diagnostics and measured residuals.
+Conflicting fixed coordinates leave a sketch unsolved. The viewer labels them
+`MID` and `CONC`, highlights their targets, shows solved point/midpoint or centre
+anchors, and links parameters in the relevant coordinate expressions. These
+are constraint annotations with actual millimetre residuals.
+
+The [projected pocket](../tools/model/projected-pocket.request.json) now uses
+midpoint to place its top edge relative to the projected source edge. The
+[concentric bushing](../tools/model/concentric-bushing.request.json) solves an
+initially offset inner centre and bore rim against a fixed parameter-driven
+outer circle. Two explicit copies of the sketch select the outer and inner
+wires; `planar_region` and `extrude` make the annular body. Its default volume
+is `π × (12² − 5²) × 8 = 2990.796206 mm³`. Centre or bore edits rebuild both
+wires and the solid; height edits reuse both wires and the region. Native
+validity, bore radius, moved bounds and analytical volume are tested.
+
+Older documents migrate to schema 95 without adding relations. Native ABI
+remains 52. General point-to-line distance and tangency beyond the existing
+shared endpoint/rim convention remain future work.

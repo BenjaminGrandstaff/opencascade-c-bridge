@@ -584,3 +584,52 @@ fn projected_pocket_view_identifies_external_geometry_and_links_source_controls(
             .contains("exactly one edge")
     );
 }
+
+#[test]
+fn midpoint_and_concentric_viewer_annotations_use_solved_anchors_and_real_residuals() {
+    let dir = Directory::new();
+    for (name, relation) in [
+        ("concentric-bushing", "concentric"),
+        ("projected-pocket", "midpoint"),
+    ] {
+        view_request(&dir, view_example(name), name).unwrap();
+        let data: Value =
+            serde_json::from_str(&fs::read_to_string(dir.0.join(name).join("view.json")).unwrap())
+                .unwrap();
+        let scene = data["scenes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["kind"] == "sketch")
+            .unwrap();
+        assert_eq!(scene["solver"]["solved"], true);
+        let annotation = scene["annotations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|a| !a["detail"]["constraint"][relation].is_null())
+            .unwrap();
+        assert_eq!(annotation["kind"], "constraint");
+        assert_eq!(annotation["status"], "passed");
+        assert_eq!(annotation["detail"]["residual_unit"], "mm");
+        assert_eq!(annotation["detail"]["by_construction"], false);
+        assert!(annotation["detail"]["max_residual"].as_f64().unwrap() < 1e-7);
+        assert_eq!(annotation["anchors"].as_array().unwrap().len(), 2);
+        for axis in 0..2 {
+            assert!(
+                (annotation["anchors"][0][axis].as_f64().unwrap()
+                    - annotation["anchors"][1][axis].as_f64().unwrap())
+                .abs()
+                    < 1e-7
+            );
+        }
+        if relation == "concentric" {
+            assert!(
+                annotation["parameters"]
+                    .as_array()
+                    .unwrap()
+                    .contains(&json!("center_x"))
+            );
+        }
+    }
+}

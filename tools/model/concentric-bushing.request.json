@@ -3,11 +3,103 @@
   "model": {
     "schema_version": 95,
     "family": {
-      "id": "tapered-duct",
+      "id": "concentric-bushing",
       "version": 1,
       "parameters": [
         {
-          "id": "lower_radius",
+          "id": "center_x",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 0,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": -50,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 50,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "center_y",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 0,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": -50,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 50,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "outer_radius",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 12,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 10,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 20,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "inner_radius",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 5,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 2,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 8,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "height",
           "parameter_type": {
             "scalar": "length"
           },
@@ -19,87 +111,15 @@
             }
           },
           "minimum": {
-            "value": 0.1,
+            "value": 2,
             "dimension": "length",
             "unit": "millimeter"
           },
-          "maximum": null
-        },
-        {
-          "id": "upper_radius",
-          "parameter_type": {
-            "scalar": "length"
-          },
-          "default": {
-            "scalar": {
-              "value": 4,
-              "dimension": "length",
-              "unit": "millimeter"
-            }
-          },
-          "minimum": {
-            "value": 0.1,
+          "maximum": {
+            "value": 30,
             "dimension": "length",
             "unit": "millimeter"
-          },
-          "maximum": null
-        },
-        {
-          "id": "height",
-          "parameter_type": {
-            "scalar": "length"
-          },
-          "default": {
-            "scalar": {
-              "value": 20,
-              "dimension": "length",
-              "unit": "millimeter"
-            }
-          },
-          "minimum": {
-            "value": 0.1,
-            "dimension": "length",
-            "unit": "millimeter"
-          },
-          "maximum": null
-        },
-        {
-          "id": "lower_bore_radius",
-          "parameter_type": {
-            "scalar": "length"
-          },
-          "default": {
-            "scalar": {
-              "value": 4,
-              "dimension": "length",
-              "unit": "millimeter"
-            }
-          },
-          "minimum": {
-            "value": 0.1,
-            "dimension": "length",
-            "unit": "millimeter"
-          },
-          "maximum": null
-        },
-        {
-          "id": "upper_bore_radius",
-          "parameter_type": {
-            "scalar": "length"
-          },
-          "default": {
-            "scalar": {
-              "value": 2,
-              "dimension": "length",
-              "unit": "millimeter"
-            }
-          },
-          "minimum": {
-            "value": 0.1,
-            "dimension": "length",
-            "unit": "millimeter"
-          },
-          "maximum": null
+          }
         }
       ],
       "derived_parameters": [],
@@ -107,17 +127,17 @@
       "constraints": [],
       "requirements": [
         {
-          "id": "valid",
+          "id": "body-valid",
           "version": 1,
           "kind": "validation",
           "priority": "required",
-          "statement": "Hollow loft valid",
+          "statement": "equal-radius mounting plate is valid",
           "rule": {
             "shape_valid": {
               "output": "body"
             }
           },
-          "provenance": "Demonstration assumptions",
+          "provenance": "Illustrative dimensions",
           "traces": [
             {
               "feature": "body"
@@ -128,512 +148,393 @@
       "datums": [],
       "features": [
         {
-          "id": "body",
+          "id": "outer",
           "operation": {
-            "profile_loft": {
-              "profiles": [
-                "lower",
-                "upper"
-              ],
-              "ruled": true,
-              "holes": [
-                [
-                  "lower-bore",
-                  "upper-bore"
+            "sketch_wire": {
+              "sketch": {
+                "id": "outer",
+                "origin": {
+                  "literal": {
+                    "x": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    },
+                    "y": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                },
+                "x_axis": {
+                  "literal": {
+                    "x": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "y_axis": {
+                  "literal": {
+                    "x": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "points": [
+                  {
+                    "id": "outer-center",
+                    "x": {
+                      "parameter": "center_x"
+                    },
+                    "y": {
+                      "parameter": "center_y"
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "outer-rim",
+                    "x": {
+                      "add": [
+                        {
+                          "parameter": "center_x"
+                        },
+                        {
+                          "parameter": "outer_radius"
+                        }
+                      ]
+                    },
+                    "y": {
+                      "parameter": "center_y"
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "inner-center",
+                    "x": {
+                      "literal": {
+                        "value": 1,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 1,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": false
+                  },
+                  {
+                    "id": "inner-rim",
+                    "x": {
+                      "literal": {
+                        "value": 7,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 1,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": false
+                  }
+                ],
+                "lines": [
+                  {
+                    "id": "inner-axis",
+                    "start": "inner-center",
+                    "end": "inner-rim"
+                  }
+                ],
+                "circles": [
+                  {
+                    "id": "outer-circle",
+                    "center": "outer-center",
+                    "rim": "outer-rim"
+                  },
+                  {
+                    "id": "inner-circle",
+                    "center": "inner-center",
+                    "rim": "inner-rim"
+                  }
+                ],
+                "profile": [
+                  "outer-circle"
+                ],
+                "constraints": [
+                  {
+                    "concentric": {
+                      "first": "outer-circle",
+                      "second": "inner-circle"
+                    }
+                  },
+                  {
+                    "radius": {
+                      "curve": "inner-circle",
+                      "value": {
+                        "parameter": "inner_radius"
+                      }
+                    }
+                  },
+                  {
+                    "horizontal": {
+                      "line": "inner-axis"
+                    }
+                  }
                 ]
+              }
+            }
+          }
+        },
+        {
+          "id": "inner",
+          "operation": {
+            "sketch_wire": {
+              "sketch": {
+                "id": "inner",
+                "origin": {
+                  "literal": {
+                    "x": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    },
+                    "y": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                },
+                "x_axis": {
+                  "literal": {
+                    "x": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "y_axis": {
+                  "literal": {
+                    "x": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "points": [
+                  {
+                    "id": "outer-center",
+                    "x": {
+                      "parameter": "center_x"
+                    },
+                    "y": {
+                      "parameter": "center_y"
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "outer-rim",
+                    "x": {
+                      "add": [
+                        {
+                          "parameter": "center_x"
+                        },
+                        {
+                          "parameter": "outer_radius"
+                        }
+                      ]
+                    },
+                    "y": {
+                      "parameter": "center_y"
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "inner-center",
+                    "x": {
+                      "literal": {
+                        "value": 1,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 1,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": false
+                  },
+                  {
+                    "id": "inner-rim",
+                    "x": {
+                      "literal": {
+                        "value": 7,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 1,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": false
+                  }
+                ],
+                "lines": [
+                  {
+                    "id": "inner-axis",
+                    "start": "inner-center",
+                    "end": "inner-rim"
+                  }
+                ],
+                "circles": [
+                  {
+                    "id": "outer-circle",
+                    "center": "outer-center",
+                    "rim": "outer-rim"
+                  },
+                  {
+                    "id": "inner-circle",
+                    "center": "inner-center",
+                    "rim": "inner-rim"
+                  }
+                ],
+                "profile": [
+                  "inner-circle"
+                ],
+                "constraints": [
+                  {
+                    "concentric": {
+                      "first": "outer-circle",
+                      "second": "inner-circle"
+                    }
+                  },
+                  {
+                    "radius": {
+                      "curve": "inner-circle",
+                      "value": {
+                        "parameter": "inner_radius"
+                      }
+                    }
+                  },
+                  {
+                    "horizontal": {
+                      "line": "inner-axis"
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "region",
+          "operation": {
+            "planar_region": {
+              "outer": "outer",
+              "holes": [
+                "inner"
               ]
             }
           }
         },
         {
-          "id": "lower",
+          "id": "body",
           "operation": {
-            "sketch_face": {
-              "sketch": {
-                "id": "lower",
-                "origin": {
-                  "literal": {
-                    "x": {
-                      "value": 0,
-                      "dimension": "length",
-                      "unit": "millimeter"
-                    },
-                    "y": {
-                      "value": 0,
-                      "dimension": "length",
-                      "unit": "millimeter"
-                    },
-                    "z": {
+            "extrude": {
+              "input": "region",
+              "direction": {
+                "components": {
+                  "x": {
+                    "literal": {
                       "value": 0,
                       "dimension": "length",
                       "unit": "millimeter"
                     }
-                  }
-                },
-                "x_axis": {
-                  "literal": {
-                    "x": {
-                      "value": 1,
-                      "dimension": "scalar",
-                      "unit": null
-                    },
-                    "y": {
-                      "value": 0,
-                      "dimension": "scalar",
-                      "unit": null
-                    },
-                    "z": {
-                      "value": 0,
-                      "dimension": "scalar",
-                      "unit": null
-                    }
-                  }
-                },
-                "y_axis": {
-                  "literal": {
-                    "x": {
-                      "value": 0,
-                      "dimension": "scalar",
-                      "unit": null
-                    },
-                    "y": {
-                      "value": 1,
-                      "dimension": "scalar",
-                      "unit": null
-                    },
-                    "z": {
-                      "value": 0,
-                      "dimension": "scalar",
-                      "unit": null
-                    }
-                  }
-                },
-                "points": [
-                  {
-                    "id": "center",
-                    "x": {
-                      "literal": {
-                        "value": 0,
-                        "dimension": "length",
-                        "unit": "millimeter"
-                      }
-                    },
-                    "y": {
-                      "literal": {
-                        "value": 0,
-                        "dimension": "length",
-                        "unit": "millimeter"
-                      }
-                    },
-                    "fixed": true
                   },
-                  {
-                    "id": "edge",
-                    "x": {
-                      "parameter": "lower_radius"
-                    },
-                    "y": {
-                      "literal": {
-                        "value": 0,
-                        "dimension": "length",
-                        "unit": "millimeter"
-                      }
-                    },
-                    "fixed": true
-                  }
-                ],
-                "lines": [],
-                "circles": [
-                  {
-                    "id": "rim",
-                    "center": "center",
-                    "rim": "edge"
-                  }
-                ],
-                "profile": [
-                  "rim"
-                ],
-                "constraints": [
-                  {
-                    "radius": {
-                      "curve": "rim",
-                      "value": {
-                        "parameter": "lower_radius"
-                      }
-                    }
-                  }
-                ]
-              }
-            }
-          }
-        },
-        {
-          "id": "upper",
-          "operation": {
-            "sketch_wire": {
-              "sketch": {
-                "id": "upper",
-                "origin": {
-                  "components": {
-                    "x": {
-                      "literal": {
-                        "value": 0,
-                        "dimension": "length",
-                        "unit": "millimeter"
-                      }
-                    },
-                    "y": {
-                      "literal": {
-                        "value": 0,
-                        "dimension": "length",
-                        "unit": "millimeter"
-                      }
-                    },
-                    "z": {
-                      "parameter": "height"
-                    }
-                  }
-                },
-                "x_axis": {
-                  "literal": {
-                    "x": {
-                      "value": 1,
-                      "dimension": "scalar",
-                      "unit": null
-                    },
-                    "y": {
-                      "value": 0,
-                      "dimension": "scalar",
-                      "unit": null
-                    },
-                    "z": {
-                      "value": 0,
-                      "dimension": "scalar",
-                      "unit": null
-                    }
-                  }
-                },
-                "y_axis": {
-                  "literal": {
-                    "x": {
-                      "value": 0,
-                      "dimension": "scalar",
-                      "unit": null
-                    },
-                    "y": {
-                      "value": 1,
-                      "dimension": "scalar",
-                      "unit": null
-                    },
-                    "z": {
-                      "value": 0,
-                      "dimension": "scalar",
-                      "unit": null
-                    }
-                  }
-                },
-                "points": [
-                  {
-                    "id": "center",
-                    "x": {
-                      "literal": {
-                        "value": 0,
-                        "dimension": "length",
-                        "unit": "millimeter"
-                      }
-                    },
-                    "y": {
-                      "literal": {
-                        "value": 0,
-                        "dimension": "length",
-                        "unit": "millimeter"
-                      }
-                    },
-                    "fixed": true
-                  },
-                  {
-                    "id": "edge",
-                    "x": {
-                      "parameter": "upper_radius"
-                    },
-                    "y": {
-                      "literal": {
-                        "value": 0,
-                        "dimension": "length",
-                        "unit": "millimeter"
-                      }
-                    },
-                    "fixed": true
-                  }
-                ],
-                "lines": [],
-                "circles": [
-                  {
-                    "id": "rim",
-                    "center": "center",
-                    "rim": "edge"
-                  }
-                ],
-                "profile": [
-                  "rim"
-                ],
-                "constraints": [
-                  {
-                    "radius": {
-                      "curve": "rim",
-                      "value": {
-                        "parameter": "upper_radius"
-                      }
-                    }
-                  }
-                ]
-              }
-            }
-          }
-        },
-        {
-          "id": "lower-bore",
-          "operation": {
-            "sketch_wire": {
-              "sketch": {
-                "id": "lower-bore",
-                "origin": {
-                  "literal": {
-                    "x": {
-                      "value": 0,
-                      "dimension": "length",
-                      "unit": "millimeter"
-                    },
-                    "y": {
-                      "value": 0,
-                      "dimension": "length",
-                      "unit": "millimeter"
-                    },
-                    "z": {
+                  "y": {
+                    "literal": {
                       "value": 0,
                       "dimension": "length",
                       "unit": "millimeter"
                     }
-                  }
-                },
-                "x_axis": {
-                  "literal": {
-                    "x": {
-                      "value": 1,
-                      "dimension": "scalar",
-                      "unit": null
-                    },
-                    "y": {
-                      "value": 0,
-                      "dimension": "scalar",
-                      "unit": null
-                    },
-                    "z": {
-                      "value": 0,
-                      "dimension": "scalar",
-                      "unit": null
-                    }
-                  }
-                },
-                "y_axis": {
-                  "literal": {
-                    "x": {
-                      "value": 0,
-                      "dimension": "scalar",
-                      "unit": null
-                    },
-                    "y": {
-                      "value": 1,
-                      "dimension": "scalar",
-                      "unit": null
-                    },
-                    "z": {
-                      "value": 0,
-                      "dimension": "scalar",
-                      "unit": null
-                    }
-                  }
-                },
-                "points": [
-                  {
-                    "id": "center",
-                    "x": {
-                      "literal": {
-                        "value": 0,
-                        "dimension": "length",
-                        "unit": "millimeter"
-                      }
-                    },
-                    "y": {
-                      "literal": {
-                        "value": 0,
-                        "dimension": "length",
-                        "unit": "millimeter"
-                      }
-                    },
-                    "fixed": true
                   },
-                  {
-                    "id": "edge",
-                    "x": {
-                      "parameter": "lower_bore_radius"
-                    },
-                    "y": {
-                      "literal": {
-                        "value": 0,
-                        "dimension": "length",
-                        "unit": "millimeter"
-                      }
-                    },
-                    "fixed": true
+                  "z": {
+                    "parameter": "height"
                   }
-                ],
-                "lines": [],
-                "circles": [
-                  {
-                    "id": "rim",
-                    "center": "center",
-                    "rim": "edge"
-                  }
-                ],
-                "profile": [
-                  "rim"
-                ],
-                "constraints": [
-                  {
-                    "radius": {
-                      "curve": "rim",
-                      "value": {
-                        "parameter": "lower_bore_radius"
-                      }
-                    }
-                  }
-                ]
-              }
-            }
-          }
-        },
-        {
-          "id": "upper-bore",
-          "operation": {
-            "sketch_wire": {
-              "sketch": {
-                "id": "upper-bore",
-                "origin": {
-                  "components": {
-                    "x": {
-                      "literal": {
-                        "value": 0,
-                        "dimension": "length",
-                        "unit": "millimeter"
-                      }
-                    },
-                    "y": {
-                      "literal": {
-                        "value": 0,
-                        "dimension": "length",
-                        "unit": "millimeter"
-                      }
-                    },
-                    "z": {
-                      "parameter": "height"
-                    }
-                  }
-                },
-                "x_axis": {
-                  "literal": {
-                    "x": {
-                      "value": 1,
-                      "dimension": "scalar",
-                      "unit": null
-                    },
-                    "y": {
-                      "value": 0,
-                      "dimension": "scalar",
-                      "unit": null
-                    },
-                    "z": {
-                      "value": 0,
-                      "dimension": "scalar",
-                      "unit": null
-                    }
-                  }
-                },
-                "y_axis": {
-                  "literal": {
-                    "x": {
-                      "value": 0,
-                      "dimension": "scalar",
-                      "unit": null
-                    },
-                    "y": {
-                      "value": 1,
-                      "dimension": "scalar",
-                      "unit": null
-                    },
-                    "z": {
-                      "value": 0,
-                      "dimension": "scalar",
-                      "unit": null
-                    }
-                  }
-                },
-                "points": [
-                  {
-                    "id": "center",
-                    "x": {
-                      "literal": {
-                        "value": 0,
-                        "dimension": "length",
-                        "unit": "millimeter"
-                      }
-                    },
-                    "y": {
-                      "literal": {
-                        "value": 0,
-                        "dimension": "length",
-                        "unit": "millimeter"
-                      }
-                    },
-                    "fixed": true
-                  },
-                  {
-                    "id": "edge",
-                    "x": {
-                      "parameter": "upper_bore_radius"
-                    },
-                    "y": {
-                      "literal": {
-                        "value": 0,
-                        "dimension": "length",
-                        "unit": "millimeter"
-                      }
-                    },
-                    "fixed": true
-                  }
-                ],
-                "lines": [],
-                "circles": [
-                  {
-                    "id": "rim",
-                    "center": "center",
-                    "rim": "edge"
-                  }
-                ],
-                "profile": [
-                  "rim"
-                ],
-                "constraints": [
-                  {
-                    "radius": {
-                      "curve": "rim",
-                      "value": {
-                        "parameter": "upper_bore_radius"
-                      }
-                    }
-                  }
-                ]
-              }
+                }
+              },
+              "extent": "distance"
             }
           }
         }
@@ -642,17 +543,21 @@
     "instances": [
       {
         "base": {
-          "id": "duct",
+          "id": "part",
           "overrides": {},
-          "provenance": "dimensions are illustrative assumptions"
+          "provenance": "Concentric annular bushing"
         }
       }
     ]
   },
   "outputs": [
     {
-      "instance": "duct",
+      "instance": "part",
       "output": "body"
+    },
+    {
+      "instance": "part",
+      "output": "inner"
     }
   ],
   "sketches": true

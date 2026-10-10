@@ -175,6 +175,16 @@ pub enum SketchConstraint {
         first: String,
         second: String,
     },
+    /// Shared centre of two distinct circles, arcs, or ellipses.
+    Concentric {
+        first: String,
+        second: String,
+    },
+    /// Point at the arithmetic midpoint of a named line segment.
+    Midpoint {
+        point: String,
+        line: String,
+    },
     EqualLength {
         first: String,
         second: String,

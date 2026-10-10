@@ -51,6 +51,8 @@ impl SketchDefinition {
                             | SketchConstraint::Radius { .. }
                             | SketchConstraint::Diameter { .. }
                             | SketchConstraint::EqualRadius { .. }
+                            | SketchConstraint::Midpoint { .. }
+                            | SketchConstraint::Concentric { .. }
                             | SketchConstraint::Symmetric { .. }
                             | SketchConstraint::PointOnCurve { .. }
                     )
@@ -279,6 +281,15 @@ impl SketchProblem<'_> {
         Ok(self.native.create_curve_wire(&[segment], periodic)?)
     }
 
+    fn center_point(&self, id: &str) -> &str {
+        match self.entities[id] {
+            Entity::Circle(c) => &c.center,
+            Entity::Arc(a) => &a.center,
+            Entity::Ellipse(e) => &e.center,
+            _ => unreachable!("validated concentric curve"),
+        }
+    }
+
     fn radius_points<'a>(&'a self, id: &str) -> (&'a str, &'a str) {
         match self.entities[id] {
             Entity::Circle(c) => (&c.center, &c.rim),
@@ -466,6 +477,16 @@ impl SketchProblem<'_> {
                         - line_length((self.point(c, values), self.point(d, values))),
                 );
             }
+            SketchConstraint::Concentric { first, second } => {
+                let a = self.point(self.center_point(first), values);
+                let b = self.point(self.center_point(second), values);
+                residuals.extend([a.x - b.x, a.y - b.y]);
+            }
+            SketchConstraint::Midpoint { point, line } => {
+                let p = self.point(point, values);
+                let (a, b) = self.line(line, values);
+                residuals.extend([p.x - (a.x * 0.5 + b.x * 0.5), p.y - (a.y * 0.5 + b.y * 0.5)]);
+            }
             SketchConstraint::EqualLength { first, second } => {
                 residuals.push(
                     line_length(self.line(first, values)) - line_length(self.line(second, values)),
@@ -489,6 +510,13 @@ impl SketchProblem<'_> {
 
     fn columns(&self, constraint: &SketchConstraint) -> Vec<usize> {
         let points = match constraint {
+            SketchConstraint::Concentric { first, second } => {
+                vec![self.center_point(first), self.center_point(second)]
+            }
+            SketchConstraint::Midpoint { point, line } => {
+                let l = self.lines[line.as_str()];
+                vec![point.as_str(), &l.start, &l.end]
+            }
             SketchConstraint::EqualRadius { first, second } => {
                 let (a, b) = self.radius_points(first);
                 let (c, d) = self.radius_points(second);

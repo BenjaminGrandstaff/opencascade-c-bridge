@@ -176,6 +176,20 @@ impl SketchDefinition {
                         ));
                     }
                 }
+                SketchConstraint::Concentric { first, second } => {
+                    if first == second
+                        || [first, second].iter().any(|id| {
+                            !matches!(
+                                entities.get(id.as_str()),
+                                Some(Entity::Circle(_) | Entity::Arc(_) | Entity::Ellipse(_))
+                            )
+                        })
+                    {
+                        return Err(ModelError::new(
+                            "concentric constraints require two distinct circles, arcs, or ellipses",
+                        ));
+                    }
+                }
                 SketchConstraint::PointOnCurve { curve, .. }
                     if !entities.contains_key(curve.as_str()) =>
                 {
@@ -310,8 +324,18 @@ impl SketchConstraint {
                 .ok_or_else(|| ModelError::new(format!("unknown sketch line '{id}'")))
         };
         match self {
-            Self::Radius { .. } | Self::Diameter { .. } | Self::EqualRadius { .. } => Ok(()),
+            Self::Radius { .. }
+            | Self::Diameter { .. }
+            | Self::EqualRadius { .. }
+            | Self::Concentric { .. } => Ok(()),
             Self::PointOnCurve { point: id, .. } | Self::Tangent { point: id, .. } => point(id),
+            Self::Midpoint {
+                point: id,
+                line: axis,
+            } => {
+                point(id)?;
+                line(axis)
+            }
             Self::Symmetric {
                 first,
                 second,

@@ -58,7 +58,7 @@ class McpTests(unittest.TestCase):
         with self.assertRaises(jsonschema.ValidationError):
             jsonschema.validate(bad, schema)
         resources = self.client.call('resources/list')['result']['resources']
-        self.assertEqual(len(resources), 43)
+        self.assertEqual(len(resources), 44)
         self.assertEqual(len(self.client.call('resources/templates/list')['result']['resourceTemplates']), 1)
         read = self.client.call('resources/read', dict(uri='occt://schema/request'))['result']['contents'][0]
         self.assertEqual(json.loads(read['text']), schema)
@@ -440,6 +440,20 @@ class McpTests(unittest.TestCase):
         self.assertTrue(next(e for e in source['entities'] if e['id']=='front-edge')['external'])
         self.assertAlmostEqual(source['points']['guide'][1],20)
         self.assertIn('depth',next(a for a in source['annotations'] if a['id']=='projection-front-edge')['parameters'])
+        midpoint = next(a for a in source['annotations'] if 'midpoint' in a['detail'].get('constraint', {}))
+        self.assertEqual(midpoint['status'], 'passed')
+        self.assertEqual(midpoint['detail']['residual_unit'], 'mm')
+        bushing = self.client.tool('occt_get_example', dict(name='concentric-bushing'))['structuredContent']
+        jsonschema.validate(bushing, schema)
+        result = self.client.tool('occt_visualize_model', bushing)
+        self.assertFalse(result['isError'])
+        data = json.loads(self.client.call('resources/read', dict(uri=result['structuredContent']['resources']['view.json']))['result']['contents'][0]['text'])
+        for scene in [s for s in data['scenes'] if s['kind']=='sketch']:
+            self.assertTrue(scene['solver']['solved'])
+            relation = next(a for a in scene['annotations'] if 'concentric' in a['detail'].get('constraint', {}))
+            self.assertEqual(relation['status'], 'passed')
+            self.assertLess(relation['detail']['max_residual'], 1e-7)
+            self.assertIn('center_x', relation['parameters'])
         # Ordinary accepted builds also publish the annotated viewer when preview is on.
         build_request = dict(schema='occb-model-request-v1',model=request['model'],outputs=request['outputs'],preview=True,step=False,stl=False)
         built = self.client.tool('occt_build',build_request)['structuredContent']
