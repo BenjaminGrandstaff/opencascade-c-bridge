@@ -9,7 +9,7 @@ mod preview;
 mod report;
 #[path = "model/schema.rs"]
 mod schema;
-#[path = "model/view_data.rs"]
+#[path = "model/view_data/mod.rs"]
 mod view_data;
 #[path = "model/view_svg.rs"]
 mod view_svg;
@@ -334,5 +334,5 @@ fn publish(
     Ok(())
 }
 #[cfg(test)]
-#[path = "model/tests.rs"]
+#[path = "model/tests/mod.rs"]
 mod tests;

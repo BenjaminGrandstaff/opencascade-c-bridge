@@ -1,0 +1,247 @@
+//! Shared native dimension and constraint scenes for live and standalone viewers.
+use occt_bridge::{MeshOptions, Session, Shape, ShapeType, Vec3};
+use occt_parametric::*;
+use serde::Deserialize;
+use serde_json::{Value, json};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+
+mod dimensions;
+mod features;
+mod sketch;
+mod solid;
+
+use dimensions::helix_route;
+pub(crate) use dimensions::helix_samples;
+use sketch::sketch_scene;
+use solid::solid_scene;
+
+#[derive(Debug)]
+pub struct Failure {
+    pub stage: &'static str,
+    pub message: String,
+    pub diagnostics: Value,
+}
+impl std::fmt::Display for Failure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: {}", self.stage, self.message)?;
+        if self
+            .diagnostics
+            .as_array()
+            .is_some_and(|items| !items.is_empty())
+        {
+            write!(f, "; feature diagnostics: {}", self.diagnostics)?;
+        }
+        Ok(())
+    }
+}
+impl std::error::Error for Failure {}
+fn failure(stage: &'static str, error: impl std::fmt::Display) -> Failure {
+    Failure {
+        stage,
+        message: error.to_string(),
+        diagnostics: json!([]),
+    }
+}
+fn model_failure(stage: &'static str, error: ModelError) -> Failure {
+    // Retain the public feature diagnostics for command clients.
+    let diagnostics = error.diagnostics.iter().map(|d| json!({"feature":d.feature,"kind":format!("{:?}",d.kind),"code":d.code,"name":d.name,"selection":d.selection,"selector":d.selector,"input":d.input})).collect::<Vec<_>>();
+    Failure {
+        stage,
+        message: error.message,
+        diagnostics: json!(diagnostics),
+    }
+}
+#[derive(Clone, Deserialize, schemars::JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+pub struct ViewOptions {
+    maximum_triangles: usize,
+    maximum_vertices: usize,
+    maximum_annotations: usize,
+    maximum_scenes: usize,
+}
+impl Default for ViewOptions {
+    fn default() -> Self {
+        Self {
+            maximum_triangles: 100_000,
+            maximum_vertices: 1_000_000,
+            maximum_annotations: 10_000,
+            maximum_scenes: 1000,
+        }
+    }
+}
+struct Budget {
+    triangles: usize,
+    vertices: usize,
+    annotations: usize,
+}
+fn point(v: Vec3) -> [f64; 3] {
+    [v.x, v.y, v.z]
+}
+fn names(value: &Value) -> Vec<String> {
+    let mut found = BTreeSet::new();
+    let mut pending = vec![value];
+    while let Some(v) = pending.pop() {
+        match v {
+            Value::Object(map) => {
+                if let Some(Value::String(name)) = map.get("parameter") {
+                    found.insert(name.clone());
+                }
+                pending.extend(map.values());
+            }
+            Value::Array(items) => pending.extend(items),
+            _ => {}
+        }
+    }
+    found.into_iter().collect()
+}
+#[allow(clippy::too_many_arguments)]
+fn annotation(
+    id: String,
+    label: String,
+    kind: &str,
+    status: &str,
+    targets: Vec<String>,
+    parameters: Vec<String>,
+    anchors: Value,
+    detail: Value,
+) -> Value {
+    json!({"id":id,"label":label,"kind":kind,"status":status,"targets":targets,"parameters":parameters,"anchors":anchors,"detail":detail})
+}
+fn length_label(value: f64) -> String {
+    if value != 0.0 && (value.abs() < 1e-3 || value.abs() >= 1e6) {
+        format!("{value:.4e}")
+    } else {
+        format!("{value:.3}")
+    }
+}
+fn check_budget(budget: &mut usize, count: usize, kind: &str) -> Result<(), Failure> {
+    *budget = budget
+        .checked_sub(count)
+        .ok_or_else(|| failure("visualization", format!("{kind} budget exceeded")))?;
+    Ok(())
+}
+pub fn collect(
+    model: &ModelDocument,
+    outputs: &[InstanceOutputRef],
+    sketches: bool,
+    options: &ViewOptions,
+) -> Result<Value, Failure> {
+    if options.maximum_triangles == 0
+        || options.maximum_triangles > 1_000_000
+        || options.maximum_vertices == 0
+        || options.maximum_vertices > 1_000_000
+        || options.maximum_annotations == 0
+        || options.maximum_annotations > 100_000
+        || options.maximum_scenes == 0
+        || options.maximum_scenes > 10_000
+        || outputs.len() > 10_000
+    {
+        return Err(failure(
+            "request",
+            "visualization options exceed supported limits",
+        ));
+    }
+    let graph = model
+        .instance_graph()
+        .map_err(|e| model_failure("validation", e))?;
+    let ids = if outputs.is_empty() {
+        model
+            .instances
+            .iter()
+            .map(|n| n.id().to_owned())
+            .collect::<BTreeSet<_>>()
+    } else {
+        outputs.iter().map(|o| o.instance.clone()).collect()
+    };
+    if ids.len() > options.maximum_scenes {
+        return Err(failure("visualization", "scene budget exceeded"));
+    }
+    let session = Session::new().map_err(|e| failure("kernel", e))?;
+    let mut budget = Budget {
+        triangles: options.maximum_triangles,
+        vertices: options.maximum_vertices,
+        annotations: options.maximum_annotations,
+    };
+    let mut scenes = Vec::new();
+    let mut scene_ids = BTreeSet::new();
+    for id in &ids {
+        let part = graph
+            .resolve(id)
+            .map_err(|e| model_failure("resolution", e))?;
+        let parameters = part
+            .resolved_parameters()
+            .map_err(|e| model_failure("resolution", e))?;
+        let controls=parameters.iter().map(|(name,value)|(name.clone(),json!({"value":value,"definition":part.definition.parameters.iter().find(|p|p.id==*name)}))).collect::<BTreeMap<_,_>>();
+        let selected = outputs
+            .iter()
+            .filter(|o| o.instance == *id)
+            .collect::<Vec<_>>();
+        if !selected.is_empty() {
+            match part.diagnostic_geometry(&session) {
+                Ok(diagnostic) => {
+                    for output in selected {
+                        if !scene_ids.insert((id.clone(), output.output.clone())) {
+                            return Err(failure("request", "duplicate visualization output"));
+                        }
+                        let scene = solid_scene(
+                            &session,
+                            &part,
+                            &diagnostic,
+                            &output.output,
+                            &controls,
+                            &parameters,
+                            &mut budget,
+                        )?;
+                        scenes.push(scene);
+                    }
+                }
+                Err(error) => {
+                    for output in selected {
+                        scenes.push(json!({"kind":"solid","instance":id,"feature":output.output,"title":format!("{id}/{}",output.output),"error":error.message,"annotations":[],"parameters":controls}));
+                    }
+                }
+            }
+        }
+        if sketches {
+            for feature in &part.definition.features {
+                let sketch = match &feature.operation {
+                    FeatureOperation::SketchFace { sketch }
+                    | FeatureOperation::SketchWire { sketch }
+                    | FeatureOperation::SketchOpenWire { sketch } => sketch,
+                    _ => continue,
+                };
+                match sketch_scene(&session,id,&feature.id,sketch,!matches!(feature.operation,FeatureOperation::SketchOpenWire {..}),&parameters,&controls,&mut budget) {
+                    Ok(scene)=>scenes.push(scene),
+                    Err(error) if error.stage=="sketch"=>scenes.push(json!({"kind":"sketch","instance":id,"feature":feature.id,"title":format!("{id}/{}",feature.id),"error":error.message,"annotations":[],"parameters":controls})),
+                    Err(error)=>return Err(error),
+                }
+            }
+        }
+        if scenes.len() > options.maximum_scenes {
+            return Err(failure("visualization", "scene budget exceeded"));
+        }
+    }
+    if scenes.is_empty() {
+        return Err(failure(
+            "visualization",
+            "select a shape output or provide a sketch feature",
+        ));
+    }
+    Ok(
+        json!({"schema":"occb-annotated-view-v1","diagnostic":true,"coordinate_system":"family-local millimeters","scenes":scenes}),
+    )
+}
+pub fn verification_result(scope: &str, r: &VerificationResult) -> Value {
+    let measured = r.measured.map(|m| json!({"value":m.value,"unit":format!("{:?}",m.unit),"minimum":m.minimum,"maximum":m.maximum}));
+    let evidence = match r.evidence {
+        Evidence::Exact => json!({"kind":"exact"}),
+        Evidence::Sampled {
+            samples,
+            unresolved,
+        } => json!({"kind":"sampled","samples":samples,"unresolved":unresolved}),
+    };
+    let witness = r.witness.as_ref().map(|w| json!({"subjects":w.subjects,"points_mm":w.points_mm.iter().map(|p| [p.x,p.y,p.z]).collect::<Vec<_>>()}));
+    json!({"scope":scope,"requirement":r.requirement_id,
+        "status":if r.status == VerificationStatus::Passed {"passed"} else {"failed"},
+        "message":r.message,"measured":measured,"evidence":evidence,"witness":witness})
+}
