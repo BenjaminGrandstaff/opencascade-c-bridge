@@ -38,6 +38,8 @@ fn sketch() -> SketchDefinition {
         arcs: vec![],
         splines: vec![],
         profile: vec![],
+        holes: Vec::new(),
+        patterns: Vec::new(),
         constraints: vec![],
         profile_operations: vec![],
     }
@@ -1235,6 +1237,109 @@ fn main() {
                 drop(built);
                 assert_eq!(session.shape_count().unwrap(), 0);
             }
+        },
+    );
+    gate(
+        "1000 mirrored-flange profiles with circular bolt patterns and sketch holes",
+        10,
+        || {
+            let request: serde_json::Value = serde_json::from_str(include_str!(
+                "../../../tools/model/mirrored-flange.request.json"
+            ))
+            .unwrap();
+            let doc = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+            let mut family = doc.family.clone();
+            family.features.retain(|f| f.id == "profile");
+            family.requirements.clear();
+            let session = Session::new().unwrap();
+            let mut part = PartInstance {
+                id: "part".into(),
+                definition: &family,
+                overrides: HashMap::new(),
+                provenance: "scale".into(),
+            };
+            for i in 0..1000 {
+                let width = [60., 70., 80., 90.][i % 4];
+                part.overrides.insert(
+                    "width".into(),
+                    ParameterValue::Scalar(Quantity::length(width, LengthUnit::Millimeter)),
+                );
+                let built = part.regenerate(&session).unwrap();
+                let face = built.shape("profile").unwrap();
+                let area = width * 30. + std::f64::consts::PI * (width * width / 8. - 64. - 54.);
+                assert!((session.surface_area(face).unwrap() - area).abs() < 1e-6 * area);
+                drop(built);
+                assert_eq!(session.shape_count().unwrap(), 0);
+            }
+        },
+    );
+    gate(
+        "one 1000-instance circular sketch pattern solved and cut as holes",
+        10,
+        || {
+            let pattern = serde_json::json!({"circular": {"id": "ring", "entities": ["hole"],
+                "center": "O", "count": 1000}});
+            let point = |id: &str, x: f64, y: f64| {
+                serde_json::json!({"id": id,
+                "x": {"literal": {"value": x, "dimension": "length", "unit": "millimeter"}},
+                "y": {"literal": {"value": y, "dimension": "length", "unit": "millimeter"}},
+                "fixed": id == "O" || id == "R"})
+            };
+            let holes = std::iter::once(serde_json::json!(["hole"]))
+                .chain((1..1000).map(|k| serde_json::json!([format!("ring:{k}:hole")])))
+                .collect::<Vec<_>>();
+            let sketch: SketchDefinition = serde_json::from_value(serde_json::json!({
+                "id": "ring",
+                "origin": {"literal": {"x": {"value": 0, "dimension": "length", "unit": "millimeter"},
+                    "y": {"value": 0, "dimension": "length", "unit": "millimeter"},
+                    "z": {"value": 0, "dimension": "length", "unit": "millimeter"}}},
+                "x_axis": {"literal": {"x": {"value": 1, "dimension": "scalar", "unit": null},
+                    "y": {"value": 0, "dimension": "scalar", "unit": null},
+                    "z": {"value": 0, "dimension": "scalar", "unit": null}}},
+                "y_axis": {"literal": {"x": {"value": 0, "dimension": "scalar", "unit": null},
+                    "y": {"value": 1, "dimension": "scalar", "unit": null},
+                    "z": {"value": 0, "dimension": "scalar", "unit": null}}},
+                "points": [point("O", 0., 0.), point("R", 1100., 0.), point("h", 1000., 0.),
+                    point("r", 1001., 0.)],
+                "lines": [{"id": "ray", "start": "h", "end": "r"}],
+                "circles": [{"id": "rim", "center": "O", "rim": "R"},
+                    {"id": "hole", "center": "h", "rim": "r"}],
+                "profile": ["rim"],
+                "holes": holes,
+                "patterns": [pattern],
+                "constraints": [{"horizontal": {"line": "ray"}},
+                    {"radius": {"curve": "hole", "value": {"literal": {"value": 1.5,
+                        "dimension": "length", "unit": "millimeter"}}}}],
+            }))
+            .unwrap();
+            let mut family = ModelDocument::from_json(
+                &serde_json::from_str::<serde_json::Value>(include_str!(
+                    "../../../tools/model/mirrored-flange.request.json"
+                ))
+                .unwrap()["model"]
+                    .to_string(),
+            )
+            .unwrap()
+            .family;
+            family.requirements.clear();
+            family.features = vec![FeatureDefinition {
+                id: "profile".into(),
+                operation: FeatureOperation::SketchFace {
+                    sketch: Box::new(sketch),
+                },
+            }];
+            let session = Session::new().unwrap();
+            let part = PartInstance {
+                id: "part".into(),
+                definition: &family,
+                overrides: HashMap::new(),
+                provenance: "scale".into(),
+            };
+            let built = part.regenerate(&session).unwrap();
+            let face = built.shape("profile").unwrap();
+            assert_eq!(session.subshape_count(face, ShapeType::Wire).unwrap(), 1001);
+            let area = std::f64::consts::PI * (1100. * 1100. - 1000. * 1.5 * 1.5);
+            assert!((session.surface_area(face).unwrap() - area).abs() < 1e-6 * area);
         },
     );
 }

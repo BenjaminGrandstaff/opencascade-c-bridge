@@ -372,6 +372,33 @@ impl Session {
         })
     }
 
+    /// Planar face from a closed outer wire and closed coplanar inner wires,
+    /// without booleans. Holes must lie strictly inside, apart from each other
+    /// and the boundary by more than 1e-7 mm, and must not nest.
+    pub fn create_face_with_holes<'a>(
+        &'a self,
+        outer: &Shape<'_>,
+        inner: &[&Shape<'_>],
+    ) -> Result<Shape<'a>, BridgeError> {
+        self.validate_shape(outer)?;
+        for wire in inner {
+            self.validate_shape(wire)?;
+        }
+        let ids = inner.iter().map(|s| s.id).collect::<Vec<_>>();
+        let mut shape = 0;
+        // SAFETY: Validated handles; the ID buffer outlives the call.
+        self.check(unsafe {
+            occt_bridge_create_face_with_holes(
+                self.raw.as_ptr(),
+                outer.id,
+                ids.as_ptr(),
+                ids.len(),
+                &mut shape,
+            )
+        })?;
+        Ok(self.shape(shape))
+    }
+
     pub fn create_prism_from_face<'a>(
         &'a self,
         face: &Shape<'_>,

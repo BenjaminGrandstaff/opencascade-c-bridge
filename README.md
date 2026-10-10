@@ -3,7 +3,7 @@
 A small, stable C ABI over Open Cascade (OCCT), designed to be wrapped safely
 from Rust and other languages. Open Cascade C++ objects never cross the ABI.
 
-The current C ABI version is **59**.
+The current C ABI version is **60**.
 
 ## Current API
 
@@ -647,13 +647,13 @@ profiles (ABI 47, model schema 72).
 up to a selected face, and up to the next complete face limit, including
 inclined and curved surfaces. Target
 geometry participates in regeneration; the viewer shows the actual length.
-The native ABI is 59; model schema is 111. Native surface-ray witnesses measure
+The native ABI is 60; model schema is 112. Native surface-ray witnesses measure
 viewer extents on nonuniform caps.
 
 
 [Blind drill-point holes](docs/HOLES.md) add configurable conical bottoms, native tip
 containment checks, full-diameter depth callouts and linked viewer dimensions.
-The current model schema is 111 and native ABI is 59.
+The current model schema is 112 and native ABI is 60.
 
 
 [Geometry-driven holes](docs/HOLES.md) stop at a selected or next covering input
@@ -679,7 +679,7 @@ Schema 79 adds `planar_region`; ABI 50 also retains its extracted face history.
 [Hollow path sweeps](docs/HOLLOW_SWEEPS.md) transport holed planar sections into
 bent tubes and multiple-bore parts, preserving wall ancestry and linked route
 controls. ABI 50 adds explicit history-preserving topology extraction; the
-current model schema is 111. Rebuild the native library and Rust executables together.
+current model schema is 112. Rebuild the native library and Rust executables together.
 
 [Hollow profile lofts](docs/LOFTS.md#explicit-hollow-tracks-schema-80) use explicit
 inner section tracks to make tapered ducts and multiple-bore transitions.
@@ -756,7 +756,7 @@ The [threaded-rod AI example](tools/model/threaded-rod.request.json) exposes
 modeled threads with linked major diameter, pitch, run and derived turn labels.
 Its source rod follows diameter/run edits. See
 [thread dimensions](docs/THREADS.md#ai-example-and-viewer-dimensions). Current AI
-examples use schema 111; native ABI is 59.
+examples use schema 112; native ABI is 60.
 
 
 The [edge-treatment AI example](tools/model/edge-treatments.request.json)
@@ -921,3 +921,9 @@ bounded, tangent, minor-arc solutions. The
 [spline corner pad](tools/model/spline-corner-pad.request.json) rounds and
 chamfers both ends of a spline crown with linked sizes. See
 [spline and ellipse corners](docs/SKETCHES.md#spline-and-ellipse-corner-neighbors-schema-111--abi-59).
+
+Schema 112 / ABI 60 adds linked sketch patterns (mirror, linear, circular) and
+sketch holes built natively without booleans. The
+[mirrored flange](tools/model/mirrored-flange.request.json) mirrors a half
+outline and cuts a bore and a six-hole bolt circle in one sketch. See
+[sketch patterns and holes](docs/SKETCHES.md#sketch-patterns-and-holes-schema-112--abi-60).

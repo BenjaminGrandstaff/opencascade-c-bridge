@@ -637,5 +637,23 @@ with tempfile.TemporaryDirectory(prefix='occb-mcp-scale-') as root:
         elapsed=time.monotonic()-started
         assert elapsed<10
         print(f'PASS MCP 20 spline-corner fillet/chamfer pads with linked sizes: {elapsed:.3f}s / 10s')
+        flanges=client.tool('occt_get_example',dict(name='mirrored-flange'))['structuredContent']
+        for i in range(1,20):
+            flanges['model']['instances'].append({'clone':dict(id=f'part-{i}',source='part',overrides={},provenance='scale')})
+            flanges['outputs'].extend(dict(instance=f'part-{i}',output=out) for out in ['body','profile'])
+        started=time.monotonic()
+        result=client.tool('occt_visualize_model',flanges)
+        assert not result['isError'],result
+        data=json.loads(client.call('resources/read',dict(uri=result['structuredContent']['resources']['view.json']))['result']['contents'][0]['text'])
+        solids=[s for s in data['scenes'] if s['kind']=='solid'];profiles=[s for s in data['scenes'] if s['kind']=='sketch' and s['feature']=='profile']
+        assert len(solids)==40 and all(s['valid'] for s in solids)
+        assert len(profiles)==20 and all(s['solver']['solved'] and len(s['holes'])==7 for s in profiles)
+        for scene in profiles:
+            groups=[a for a in scene['annotations'] if a['id'].startswith('pattern-')]
+            assert [g['label'] for g in groups]==['Mirror m about axis','Circular bolts × 6 @ 60.000°']
+            assert len(groups[1]['detail']['copies'])==5
+        elapsed=time.monotonic()-started
+        assert elapsed<10
+        print(f'PASS MCP 20 mirrored flanges with circular bolt patterns and sketch holes: {elapsed:.3f}s / 10s')
     finally:
         client.close()

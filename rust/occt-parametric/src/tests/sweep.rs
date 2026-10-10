@@ -37,6 +37,8 @@ fn plane_sketch(id: &str, x_axis: (f64, f64, f64), y_axis: (f64, f64, f64)) -> S
         profile_operations: Vec::new(),
         splines: Vec::new(),
         profile: Vec::new(),
+        holes: Vec::new(),
+        patterns: Vec::new(),
         constraints: Vec::new(),
     }
 }

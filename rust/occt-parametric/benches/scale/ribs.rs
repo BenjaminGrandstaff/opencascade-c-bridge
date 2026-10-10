@@ -93,6 +93,8 @@ fn rib_case(centered: bool, mode: RibCase) -> Outcome {
                 profile_operations: Vec::new(),
                 splines: Vec::new(),
                 profile: Vec::new(),
+                holes: Vec::new(),
+                patterns: Vec::new(),
                 constraints: Vec::new(),
             }),
         },

@@ -1755,3 +1755,60 @@ fn spline_corner_viewer_shows_native_edits_at_both_spline_ends_and_failures() {
         assert!(svg.contains("Fillet R") && svg.contains("Chamfer"));
     }
 }
+
+#[test]
+fn pattern_viewer_draws_linked_copies_holes_and_pattern_groups() {
+    let dir = Directory::new();
+    view_request(&dir, view_example("mirrored-flange"), "flange").unwrap();
+    let data: Value =
+        serde_json::from_str(&fs::read_to_string(dir.0.join("flange").join("view.json")).unwrap())
+            .unwrap();
+    let scene = data["scenes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["kind"] == "sketch" && s["feature"] == "profile")
+        .unwrap();
+    assert_eq!(scene["solver"]["solved"], true);
+    let ids = scene["entities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e["id"].as_str().unwrap())
+        .collect::<Vec<_>>();
+    for id in [
+        "m:1:AB",
+        "m:1:BC",
+        "m:1:crown",
+        "bolts:1:bolt",
+        "bolts:5:bolt",
+    ] {
+        assert!(ids.contains(&id), "{id} missing from {ids:?}");
+    }
+    assert_eq!(scene["holes"].as_array().unwrap().len(), 7);
+    let groups = scene["annotations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|a| a["id"].as_str().unwrap().starts_with("pattern-"))
+        .collect::<Vec<_>>();
+    assert_eq!(groups.len(), 2);
+    assert_eq!(groups[0]["label"], "Mirror m about axis");
+    assert_eq!(groups[1]["label"], "Circular bolts × 6 @ 60.000°");
+    assert_eq!(groups[1]["detail"]["copies"].as_array().unwrap().len(), 5);
+    assert!(
+        groups
+            .iter()
+            .all(|g| g["anchors"].as_array().unwrap().len() == 1)
+    );
+    // Mirrored points sit at the reflection of their sources.
+    let points = &scene["points"];
+    assert!((points["m:1:B"][0].as_f64().unwrap() + points["B"][0].as_f64().unwrap()).abs() < 1e-8);
+    let solid = data["scenes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["kind"] == "solid")
+        .unwrap();
+    assert_eq!(solid["valid"], true);
+}

@@ -576,6 +576,8 @@ fn invalid_holes_fail_with_feature_context_and_release_all_handles() {
             profile_operations: Vec::new(),
             splines: Vec::new(),
             profile: Vec::new(),
+            holes: Vec::new(),
+            patterns: Vec::new(),
             constraints: Vec::new(),
         }),
     };

@@ -67,18 +67,71 @@ impl SketchDefinition {
         )?)
     }
 
+    /// The profile face, with any `holes` added natively as inner boundaries:
+    /// each strictly inside the outer loop, clear of the others and not nested.
     pub(crate) fn face_on_plane<'session>(
         &self,
         session: &'session Session,
         parameters: &HashMap<String, ParameterValue>,
         datum: Option<ResolvedDatum>,
     ) -> Result<Shape<'session>, ModelError> {
-        let wire = self.wire(session, parameters, datum)?;
-        let face = session.create_face_from_wire(&wire)?;
-        if !session.is_valid(&face)? {
-            return Err(ModelError::new("sketch profile produced an invalid face"));
+        if let std::borrow::Cow::Owned(expanded) = self.with_patterns(Some(parameters))? {
+            return expanded.face_on_plane(session, parameters, datum);
         }
-        Ok(face)
+        let solution = self.solved(parameters)?;
+        let wire = self.solved_profile_wire(session, parameters, datum, true, &solution)?;
+        if self.holes.is_empty() {
+            let face = session.create_face_from_wire(&wire)?;
+            if !session.is_valid(&face)? {
+                return Err(ModelError::new("sketch profile produced an invalid face"));
+            }
+            return Ok(face);
+        }
+        let (origin, x_axis, y_axis) = self.resolved_frame(parameters, datum)?;
+        let transform =
+            |point: SketchPoint2| add(origin, add(scale(x_axis, point.x), scale(y_axis, point.y)));
+        let direction = |d: SketchPoint2| add(scale(x_axis, d.x), scale(y_axis, d.y));
+        let entities = self.entities();
+        let loops = self
+            .holes
+            .iter()
+            .map(|ids| {
+                let members = ids
+                    .iter()
+                    .map(|id| entities[id.as_str()])
+                    .collect::<Vec<_>>();
+                match members.as_slice() {
+                    // Exact circles, as in outer profiles: an equal-radius
+                    // ellipse would force numeric extrema in hole checks.
+                    [Entity::Circle(circle)] => {
+                        let center = solution.points[&circle.center];
+                        let radius = line_length((center, solution.points[&circle.rim]));
+                        Ok(session.create_circle_wire(
+                            transform(center),
+                            cross(x_axis, y_axis),
+                            radius,
+                        )?)
+                    }
+                    [entity @ Entity::Ellipse(_)] => self.entity_wire(
+                        session,
+                        *entity,
+                        &solution,
+                        &transform,
+                        &direction,
+                        cross(x_axis, y_axis),
+                    ),
+                    _ => {
+                        let segments = self
+                            .profile_segments(&members, &solution, &transform, &direction, true)?;
+                        Ok(session.create_curve_wire(&segments, true)?)
+                    }
+                }
+            })
+            .collect::<Result<Vec<_>, ModelError>>()?;
+        let inner = loops.iter().collect::<Vec<_>>();
+        session
+            .create_face_with_holes(&wire, &inner)
+            .map_err(|e| ModelError::from(e).context(&format!("sketch '{}' holes", self.id)))
     }
 
     pub(crate) fn wire<'session>(
@@ -99,13 +152,10 @@ impl SketchDefinition {
         self.profile_wire(session, parameters, datum, false)
     }
 
-    fn profile_wire<'session>(
+    fn solved(
         &self,
-        session: &'session Session,
         parameters: &HashMap<String, ParameterValue>,
-        datum: Option<ResolvedDatum>,
-        closed: bool,
-    ) -> Result<Shape<'session>, ModelError> {
+    ) -> Result<SketchSolution, ModelError> {
         let solution = self.solve(parameters)?;
         if !solution.solved {
             return Err(ModelError::new(format!(
@@ -113,6 +163,36 @@ impl SketchDefinition {
                 self.id, solution.max_residual
             )));
         }
+        Ok(solution)
+    }
+
+    fn profile_wire<'session>(
+        &self,
+        session: &'session Session,
+        parameters: &HashMap<String, ParameterValue>,
+        datum: Option<ResolvedDatum>,
+        closed: bool,
+    ) -> Result<Shape<'session>, ModelError> {
+        if let std::borrow::Cow::Owned(expanded) = self.with_patterns(Some(parameters))? {
+            return expanded.profile_wire(session, parameters, datum, closed);
+        }
+        if !self.holes.is_empty() {
+            return Err(ModelError::new(
+                "sketch holes apply only to face outputs, not wires",
+            ));
+        }
+        let solution = self.solved(parameters)?;
+        self.solved_profile_wire(session, parameters, datum, closed, &solution)
+    }
+
+    fn solved_profile_wire<'session>(
+        &self,
+        session: &'session Session,
+        parameters: &HashMap<String, ParameterValue>,
+        datum: Option<ResolvedDatum>,
+        closed: bool,
+        solution: &SketchSolution,
+    ) -> Result<Shape<'session>, ModelError> {
         let (origin, x_axis, y_axis) = self.resolved_frame(parameters, datum)?;
         let transform =
             |point: SketchPoint2| add(origin, add(scale(x_axis, point.x), scale(y_axis, point.y)));

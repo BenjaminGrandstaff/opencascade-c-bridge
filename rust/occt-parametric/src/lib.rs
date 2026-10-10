@@ -44,9 +44,9 @@ pub use assembly::{
 pub use sketch::{
     ResolvedSketch, ResolvedSketches, SketchArc, SketchBSplineBasis, SketchCircle,
     SketchCircleTangency, SketchConstraint, SketchConstraintCheck, SketchDefinition, SketchEllipse,
-    SketchFaceSupport, SketchLine, SketchLineSide, SketchOffsetJoin, SketchPoint, SketchPoint2,
-    SketchProfileOperation, SketchProjection, SketchProjectionKind, SketchSolution, SketchSpline,
-    SketchSplineCircleContact, SketchSplineEndpoints, SketchSupportPlanes,
+    SketchFaceSupport, SketchLine, SketchLineSide, SketchOffsetJoin, SketchPattern, SketchPoint,
+    SketchPoint2, SketchProfileOperation, SketchProjection, SketchProjectionKind, SketchSolution,
+    SketchSpline, SketchSplineCircleContact, SketchSplineEndpoints, SketchSupportPlanes,
 };
 pub use solve::PlacementSolution;
 

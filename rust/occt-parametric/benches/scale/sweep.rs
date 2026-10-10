@@ -34,6 +34,8 @@ fn sketch(id: &str, x_axis: (f64, f64, f64), y_axis: (f64, f64, f64)) -> SketchD
         profile_operations: Vec::new(),
         splines: Vec::new(),
         profile: Vec::new(),
+        holes: Vec::new(),
+        patterns: Vec::new(),
         constraints: Vec::new(),
     }
 }

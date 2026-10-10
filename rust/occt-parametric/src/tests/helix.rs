@@ -55,6 +55,8 @@ fn wire_section() -> SketchDefinition {
         arcs: Vec::new(),
         splines: Vec::new(),
         profile: Vec::new(),
+        holes: Vec::new(),
+        patterns: Vec::new(),
         constraints: Vec::new(),
     }
 }

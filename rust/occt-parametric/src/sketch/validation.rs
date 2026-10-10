@@ -70,6 +70,7 @@ impl SketchDefinition {
         parameters: &HashMap<String, ParameterValue>,
     ) -> Result<(), ModelError> {
         self.validate_structure()?;
+        self.validate_pattern_values(parameters)?;
         for spline in &self.splines {
             if let Some(basis) = &spline.basis {
                 basis.weights(parameters)?;
@@ -129,6 +130,9 @@ impl SketchDefinition {
     pub(crate) fn validate_structure(&self) -> Result<(), ModelError> {
         if !self.projections.is_empty() {
             return self.projection_seed()?.validate_structure();
+        }
+        if let std::borrow::Cow::Owned(expanded) = self.with_patterns(None)? {
+            return expanded.validate_structure();
         }
         if self.id.is_empty() {
             return Err(ModelError::new("sketch id must be nonempty"));
@@ -449,6 +453,24 @@ impl SketchDefinition {
                 return Err(ModelError::new(
                     "sketch profile has unknown or repeated entities",
                 ));
+            }
+        }
+        if !self.holes.is_empty() && self.profile.is_empty() {
+            return Err(ModelError::new("sketch holes require an explicit profile"));
+        }
+        if self.holes.len() > 1000 {
+            return Err(ModelError::new("sketch holes exceed 1000 loops"));
+        }
+        for hole in &self.holes {
+            if hole.is_empty() {
+                return Err(ModelError::new("sketch hole loops must be nonempty"));
+            }
+            for id in hole {
+                if !entity_ids.contains(id.as_str()) || !profile_ids.insert(id.as_str()) {
+                    return Err(ModelError::new(
+                        "sketch holes have unknown entities or reuse profile/hole entities",
+                    ));
+                }
             }
         }
         Ok(())

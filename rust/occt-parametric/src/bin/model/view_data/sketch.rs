@@ -15,6 +15,8 @@ pub(super) fn sketch_scene(
     projections: Vec<Value>,
     budget: &mut Budget,
 ) -> Result<Value, Failure> {
+    let expanded = sketch.with_pattern_copies(parameters).stage("sketch")?;
+    let sketch = expanded.as_ref();
     let solution = sketch.solve(parameters).stage("sketch")?;
     let checks = sketch
         .constraint_checks(parameters, &solution)
@@ -1103,6 +1105,74 @@ pub(super) fn sketch_scene(
             .into(),
         );
     }
+    for pattern in &sketch.patterns {
+        let detail = serde_json::to_value(pattern).stage("sketch")?;
+        let instances = pattern.instances();
+        let copies = (1..=instances)
+            .flat_map(|k| {
+                pattern
+                    .entities()
+                    .iter()
+                    .map(move |e| pattern.copy_id(k, e))
+            })
+            .collect::<Vec<_>>();
+        let mid = |line: &str| {
+            let l = sketch.lines.iter().find(|l| l.id == line)?;
+            let (a, b) = (point_map[l.start.as_str()], point_map[l.end.as_str()]);
+            Some([(a[0] + b[0]) * 0.5, (a[1] + b[1]) * 0.5, 0.0])
+        };
+        let (label, anchor) = match pattern {
+            SketchPattern::Mirror { id, axis, .. } => {
+                (format!("Mirror {id} about {axis}"), mid(axis))
+            }
+            SketchPattern::Linear {
+                id,
+                direction,
+                spacing,
+                count,
+                ..
+            } => (
+                format!(
+                    "Linear {id} × {count} @ {} mm",
+                    length_label(spacing.evaluate(parameters).stage("sketch")?.value)
+                ),
+                mid(direction),
+            ),
+            SketchPattern::Circular {
+                id, center, count, ..
+            } => (
+                format!(
+                    "Circular {id} × {count} @ {:.3}°",
+                    pattern
+                        .circular_step(parameters)
+                        .stage("sketch")?
+                        .to_degrees()
+                ),
+                Some(point_map[center.as_str()]),
+            ),
+        };
+        let mut targets = pattern.entities().to_vec();
+        targets.extend(copies.iter().cloned());
+        annotations.push(
+            Annotation {
+                id: format!("pattern-{}", pattern.id()),
+                label,
+                kind: AnnotationKind::Group,
+                status: AnnotationStatus::Driving,
+                targets,
+                parameters: names(&detail),
+                anchors: json!(anchor.into_iter().collect::<Vec<_>>()),
+                detail: json!({
+                    "pattern": detail,
+                    "instances": instances + 1,
+                    "copies": copies,
+                    "description": "Linked copies: source edits move every \
+                        instance; copies carry no constraints of their own",
+                }),
+            }
+            .into(),
+        );
+    }
     let vertices = entities
         .iter()
         .map(|e| {
@@ -1158,6 +1228,8 @@ pub(super) fn sketch_scene(
         "edited_profile": edited_profile,
         "profile_error": profile_error,
         "profile_operations": sketch.profile_operations,
+        "holes": sketch.holes,
+        "patterns": sketch.patterns,
         "points": point_map,
         "parameters": controls,
         "annotations": annotations,

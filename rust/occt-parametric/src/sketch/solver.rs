@@ -19,6 +19,9 @@ impl SketchDefinition {
                 "projected sketch requires source-geometry resolution before solving",
             ));
         }
+        if let std::borrow::Cow::Owned(expanded) = self.with_patterns(Some(parameters))? {
+            return expanded.solve(parameters);
+        }
         self.validate(parameters)?;
         let mut values = Vec::new();
         let mut variables = HashMap::new();
@@ -67,7 +70,8 @@ impl SketchDefinition {
                             | SketchConstraint::Symmetric { .. }
                             | SketchConstraint::PointOnCurve { .. }
                     )
-                }) || self.splines.iter().any(|s| s.endpoints.is_some()),
+                }) || self.splines.iter().any(|s| s.endpoints.is_some())
+                    || !self.patterns.is_empty(),
             ) else {
                 break;
             };
@@ -137,11 +141,13 @@ pub(super) struct SketchProblem<'a> {
     entities: HashMap<&'a str, Entity<'a>>,
     native: Session,
     spline_tangents: HashMap<(&'a str, &'a str), &'a str>,
+    pattern_links: Vec<patterns::PatternLink<'a>>,
 }
 
 #[derive(Clone, Copy)]
 enum Equation<'a> {
     Constraint(&'a SketchConstraint),
+    Pattern(patterns::PatternLink<'a>),
     Arc(&'a SketchArc),
     Ellipse(&'a SketchEllipse),
     SplineEndpoints(&'a SketchSpline),
@@ -167,6 +173,7 @@ impl<'a> SketchProblem<'a> {
             entities: sketch.entities(),
             native: Session::new()?,
             spline_tangents: sketch.spline_tangent_index()?,
+            pattern_links: sketch.pattern_links()?,
         })
     }
 }
@@ -187,6 +194,7 @@ impl SketchProblem<'_> {
                     .filter(|s| s.endpoints.is_some())
                     .map(Equation::SplineEndpoints),
             )
+            .chain(self.pattern_links.iter().copied().map(Equation::Pattern))
     }
 
     fn equation_residuals(
@@ -199,6 +207,7 @@ impl SketchProblem<'_> {
             Equation::Constraint(constraint) => {
                 self.constraint_residuals(constraint, values, residuals)
             }
+            Equation::Pattern(link) => self.pattern_residuals(link, values, residuals),
             Equation::SplineEndpoints(s) => {
                 let wire = self.spline_curve(s, values)?;
                 let (a, b, _, _) = self.native.curve_end_data(&wire)?;
@@ -227,6 +236,68 @@ impl SketchProblem<'_> {
                 Ok(())
             }
         }
+    }
+
+    /// Mirror: midpoint on the axis and chord along its normal (a shared
+    /// point only lies on it). Linear: copy = source + k·spacing·unit
+    /// direction. Circular: copy = source rotated k steps about the center.
+    fn pattern_residuals(
+        &self,
+        link: patterns::PatternLink<'_>,
+        values: &[f64],
+        residuals: &mut Vec<f64>,
+    ) -> Result<(), ModelError> {
+        let s = self.point(link.source, values);
+        let start = residuals.len();
+        match link.pattern {
+            SketchPattern::Mirror { axis: line, .. }
+            | SketchPattern::Linear {
+                direction: line, ..
+            } => {
+                let (u, v) = self.line(line, values);
+                let (dx, dy) = (v.x - u.x, v.y - u.y);
+                let length = dx.hypot(dy);
+                if length <= f64::EPSILON {
+                    return Err(ModelError::new(
+                        "sketch pattern reference line has zero length",
+                    ));
+                }
+                let (tx, ty) = (dx / length, dy / length);
+                match (link.pattern, link.copy) {
+                    (SketchPattern::Mirror { .. }, None) => {
+                        residuals.push((s.x - u.x) * ty - (s.y - u.y) * tx);
+                    }
+                    (SketchPattern::Mirror { .. }, Some(copy)) => {
+                        let c = self.point(copy, values);
+                        residuals
+                            .push(((s.x + c.x) * 0.5 - u.x) * ty - ((s.y + c.y) * 0.5 - u.y) * tx);
+                        residuals.push((c.x - s.x) * tx + (c.y - s.y) * ty);
+                    }
+                    (SketchPattern::Linear { spacing, .. }, Some(copy)) => {
+                        let c = self.point(copy, values);
+                        let d = scalar(spacing, self.parameters, Dimension::Length)?
+                            * f64::from(link.instance);
+                        residuals.extend([c.x - s.x - d * tx, c.y - s.y - d * ty]);
+                    }
+                    _ => unreachable!("linear patterns copy every point"),
+                }
+            }
+            SketchPattern::Circular { center, .. } => {
+                let o = self.point(center, values);
+                let c = self.point(link.copy.expect("circular copies"), values);
+                let angle = link.pattern.circular_step(self.parameters)? * f64::from(link.instance);
+                let (sin, cos) = angle.sin_cos();
+                let (x, y) = (s.x - o.x, s.y - o.y);
+                residuals.extend([
+                    c.x - (o.x + cos * x - sin * y),
+                    c.y - (o.y + sin * x + cos * y),
+                ]);
+            }
+        }
+        if residuals[start..].iter().any(|value| !value.is_finite()) {
+            return Err(ModelError::new("sketch pattern residual is not finite"));
+        }
+        Ok(())
     }
 
     fn tangent(
@@ -1237,6 +1308,21 @@ impl SketchProblem<'_> {
                     self.point_columns(refs)
                 }
                 Equation::Ellipse(e) => self.point_columns(vec![&e.center, &e.major, &e.minor]),
+                Equation::Pattern(link) => {
+                    let mut refs = vec![link.source];
+                    refs.extend(link.copy);
+                    match link.pattern {
+                        SketchPattern::Mirror { axis: line, .. }
+                        | SketchPattern::Linear {
+                            direction: line, ..
+                        } => {
+                            let l = self.lines[line.as_str()];
+                            refs.extend([l.start.as_str(), l.end.as_str()]);
+                        }
+                        SketchPattern::Circular { center, .. } => refs.push(center),
+                    }
+                    self.point_columns(refs)
+                }
             };
             for column in columns {
                 let step = DIFFERENCE_STEP * values[column].abs().max(1.0);

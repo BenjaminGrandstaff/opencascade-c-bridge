@@ -1,6 +1,7 @@
 use super::*;
 
 mod advanced;
+mod patterns;
 mod profiles;
 mod solving;
 mod splines;
@@ -68,6 +69,8 @@ fn rectangle() -> SketchDefinition {
                 end: "p0".into(),
             },
         ],
+        holes: Vec::new(),
+        patterns: Vec::new(),
         constraints: vec![
             SketchConstraint::Coincident {
                 first: "anchor".into(),

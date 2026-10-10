@@ -79,7 +79,7 @@ export are verified. A 1,000-pair solve and residual-diagnostic gate passes in
 0.009 s (10 s budget); 20 solids plus 60 source sketch scenes and matched-radius
 annotations pass through MCP in 0.316 s (10 s budget).
 
-Current authoring examples use schema 111. Older model documents migrate
+Current authoring examples use schema 112. Older model documents migrate
 without adding constraints or changing their entities. Current native ABI is 56.
 
 ## Saved profile operations
@@ -998,3 +998,100 @@ The iterative solver is slower than the analytical one. 1,000 pad profile
 regenerations take 1.29 s and the MCP renders 20 annotated pads in 0.27 s
 (both within 10 s budgets). Rebuild native and Rust tools together for ABI 59.
 Older documents migrate to schema 111 without adding operations.
+
+## Sketch patterns and holes (schema 112 / ABI 60)
+
+`patterns` makes linked copies of sketch entities; `holes` cuts inner loops
+from a sketch's face output. Together they draw a symmetric outline once and
+pattern features such as bolt circles inside one sketch.
+
+```json
+"patterns": [
+  {"mirror": {"id": "m", "entities": ["AB", "BC", "crown"], "axis": "axis",
+              "on_axis": ["A", "K", "T"]}},
+  {"linear": {"id": "row", "entities": ["slot"], "direction": "base",
+              "spacing": {"parameter": "pitch"}, "count": 4}},
+  {"circular": {"id": "bolts", "entities": ["bolt"], "center": "K", "count": 6}}
+],
+"holes": [["bore"], ["bolt"], ["bolts:1:bolt"], ["bolts:2:bolt"]]
+```
+
+**Copies.** Instance k of pattern `p` copies entity `e` as `p:k:e`, and each of
+its points as `p:k:point` (a mirror has one instance, k = 1). Patterns expand
+in order, so later patterns, the profile, holes and profile operations can name
+earlier copies. Copy points are solver unknowns linked to their sources:
+
+- **Mirror:** reflection across the infinite line `axis`. Points listed in
+  `on_axis` are shared instead of copied and held on the axis. Axis endpoints
+  used by the mirrored entities must be listed there.
+- **Linear:** `count` instances (source included), offset by `spacing` along the
+  start-to-end direction of `direction`. Negative spacing reverses it.
+- **Circular:** `count` instances rotated counterclockwise about `center` by
+  `angle` radians per step. Without `angle` they divide a full turn equally.
+  Steps that bring an instance back onto an earlier one are rejected.
+
+Each copied point adds two unknowns and two link equations (one for a shared
+mirror point). Copies are rigid images: they carry no constraints of their own,
+and free degrees are unchanged. Dimensions and constraints stay on the source;
+editing a source, the reference line, the center, the spacing or the angle
+moves every copy. Pattern spacing and angle parameters are sketch dependencies
+for incremental rebuilds.
+
+A reflection reverses traversal. Mirrored lines and arcs swap their ends (arcs
+keep their turning flag). Mirrored splines reverse their points; explicit bases
+also reverse weights and multiplicities and reflect knots. A half profile
+followed by its mirrored copies in reverse order therefore closes into one
+loop through the shared on-axis points.
+
+**Holes.** Each hole is an ordered closed loop like `profile`: a single circle,
+ellipse or closed spline, or connected lines, arcs and splines. Hole entities
+cannot repeat across the profile or other holes. Holes need an explicit
+profile and apply only to face outputs; wire outputs reject them.
+
+The native `occt_bridge_create_face_with_holes` builds the face directly,
+without booleans, and reorients inner wires as holes. It requires each hole to
+be coplanar, strictly inside the outer loop, not nested, and more than 1e-7 mm
+from the boundary and the other holes. Pairwise checks are bounding-box
+filtered. The face must be valid, with area equal to the outer area minus the
+hole areas (relative 1e-7). Circle holes use exact circles; equal-radius
+ellipses would force slow numeric extrema in these checks.
+
+**Validation and limits.** Pattern IDs must be nonempty, unique and free of
+`:`. Each pattern copies 1–1000 distinct entities, counts are 2–1000, and a
+sketch allows 100 patterns, 20,000 copied points, 10,000 copied entities and
+1,000 holes. A pattern may not copy its own reference line or center. Copy IDs
+that partly collide with existing geometry are rejected. Linear spacing must
+be nonzero.
+
+The viewer draws copies as ordinary sketch geometry. It adds one group
+annotation per pattern, anchored at the axis or direction midpoint or at the
+center, targeting sources and copies, and linked to spacing or angle controls.
+Sketch scenes list `holes` and `patterns`.
+
+The [mirrored flange](../tools/model/mirrored-flange.request.json) mirrors a
+base, side and crown arc about a vertical axis, with a central bore and a
+six-hole circular bolt pattern cut as holes. Tests check:
+
+- the face area against
+  `width*height + π*width²/8 - π*(bore² + 6*bolt²)`, and the prism volume,
+- symmetric bounds and rebuilds for width, bolt and bore edits,
+- the tightest in-range layout, and
+- a bolt circle outside the outline, which fails natively without leaking
+  handles while the accepted result stays usable.
+
+Unit tests also cover:
+
+- a mirrored spline half outline whose face is exactly twice the half,
+- mirrored arcs and weighted splines,
+- linear rows that follow spacing and source radius,
+- circular patterns with equal and explicit steps,
+- chained patterns,
+- every validation error, and
+- native hole layouts: outside, crossing, touching, overlapping, nested,
+  off-plane and open.
+
+1,000 flange profile regenerations take 2.17 s. One sketch with a
+1,000-instance circular pattern solves and cuts its 1,000 holes in 2.07 s.
+The MCP renders 20 annotated flanges in 0.90 s (all within 10 s budgets).
+Rebuild native and Rust tools together for ABI 60. Older documents migrate to
+schema 112 without patterns or holes.

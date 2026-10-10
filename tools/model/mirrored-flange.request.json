@@ -1,0 +1,671 @@
+{
+  "schema": "occb-model-view-v1",
+  "model": {
+    "schema_version": 112,
+    "family": {
+      "id": "mirrored-flange",
+      "version": 1,
+      "parameters": [
+        {
+          "id": "width",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 60,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 50,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 100,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "height",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 30,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 24,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 60,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "bore_radius",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 8,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 4,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 10,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "bolt_circle",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 18,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 15,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 19,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "bolt_radius",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 3,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 2,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 4,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "depth",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 8,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 3,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 20,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        }
+      ],
+      "derived_parameters": [],
+      "derived_vector_parameters": [],
+      "constraints": [
+        {
+          "id": "minimum_depth",
+          "statement": "Extrusion depth at least 2 mm",
+          "left": {
+            "parameter": "depth"
+          },
+          "relation": "greater_or_equal",
+          "right": {
+            "literal": {
+              "value": 2,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "provenance": "demonstration assumption"
+        }
+      ],
+      "requirements": [
+        {
+          "id": "valid",
+          "version": 1,
+          "kind": "validation",
+          "priority": "required",
+          "statement": "valid",
+          "rule": {
+            "shape_valid": {
+              "output": "body"
+            }
+          },
+          "provenance": "example; demonstration assumptions",
+          "traces": [
+            {
+              "feature": "body"
+            }
+          ]
+        }
+      ],
+      "datums": [],
+      "features": [
+        {
+          "id": "profile",
+          "operation": {
+            "sketch_face": {
+              "sketch": {
+                "id": "mirrored-flange",
+                "origin": {
+                  "literal": {
+                    "x": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    },
+                    "y": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                },
+                "x_axis": {
+                  "literal": {
+                    "x": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "y_axis": {
+                  "literal": {
+                    "x": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "points": [
+                  {
+                    "id": "A",
+                    "x": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "K",
+                    "x": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "parameter": "height"
+                    },
+                    "fixed": false
+                  },
+                  {
+                    "id": "B",
+                    "x": {
+                      "multiply": [
+                        {
+                          "parameter": "width"
+                        },
+                        {
+                          "literal": {
+                            "value": 0.5,
+                            "dimension": "scalar",
+                            "unit": null
+                          }
+                        }
+                      ]
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": false
+                  },
+                  {
+                    "id": "C",
+                    "x": {
+                      "multiply": [
+                        {
+                          "parameter": "width"
+                        },
+                        {
+                          "literal": {
+                            "value": 0.5,
+                            "dimension": "scalar",
+                            "unit": null
+                          }
+                        }
+                      ]
+                    },
+                    "y": {
+                      "parameter": "height"
+                    },
+                    "fixed": false
+                  },
+                  {
+                    "id": "T",
+                    "x": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "add": [
+                        {
+                          "parameter": "height"
+                        },
+                        {
+                          "multiply": [
+                            {
+                              "parameter": "width"
+                            },
+                            {
+                              "literal": {
+                                "value": 0.5,
+                                "dimension": "scalar",
+                                "unit": null
+                              }
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    "fixed": false
+                  },
+                  {
+                    "id": "Q",
+                    "x": {
+                      "parameter": "bore_radius"
+                    },
+                    "y": {
+                      "parameter": "height"
+                    },
+                    "fixed": false
+                  },
+                  {
+                    "id": "H",
+                    "x": {
+                      "parameter": "bolt_circle"
+                    },
+                    "y": {
+                      "parameter": "height"
+                    },
+                    "fixed": false
+                  },
+                  {
+                    "id": "R",
+                    "x": {
+                      "add": [
+                        {
+                          "parameter": "bolt_circle"
+                        },
+                        {
+                          "parameter": "bolt_radius"
+                        }
+                      ]
+                    },
+                    "y": {
+                      "parameter": "height"
+                    },
+                    "fixed": false
+                  }
+                ],
+                "lines": [
+                  {
+                    "id": "axis",
+                    "start": "A",
+                    "end": "K"
+                  },
+                  {
+                    "id": "AB",
+                    "start": "A",
+                    "end": "B"
+                  },
+                  {
+                    "id": "BC",
+                    "start": "B",
+                    "end": "C"
+                  },
+                  {
+                    "id": "spoke",
+                    "start": "K",
+                    "end": "H"
+                  },
+                  {
+                    "id": "bore-ray",
+                    "start": "K",
+                    "end": "Q"
+                  },
+                  {
+                    "id": "bolt-ray",
+                    "start": "H",
+                    "end": "R"
+                  }
+                ],
+                "profile": [
+                  "AB",
+                  "BC",
+                  "crown",
+                  "m:1:crown",
+                  "m:1:BC",
+                  "m:1:AB"
+                ],
+                "constraints": [
+                  {
+                    "vertical": {
+                      "line": "axis"
+                    }
+                  },
+                  {
+                    "distance": {
+                      "first": "A",
+                      "second": "K",
+                      "value": {
+                        "parameter": "height"
+                      }
+                    }
+                  },
+                  {
+                    "horizontal": {
+                      "line": "AB"
+                    }
+                  },
+                  {
+                    "distance": {
+                      "first": "A",
+                      "second": "B",
+                      "value": {
+                        "multiply": [
+                          {
+                            "parameter": "width"
+                          },
+                          {
+                            "literal": {
+                              "value": 0.5,
+                              "dimension": "scalar",
+                              "unit": null
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  },
+                  {
+                    "vertical": {
+                      "line": "BC"
+                    }
+                  },
+                  {
+                    "distance": {
+                      "first": "B",
+                      "second": "C",
+                      "value": {
+                        "parameter": "height"
+                      }
+                    }
+                  },
+                  {
+                    "point_on_curve": {
+                      "point": "T",
+                      "curve": "axis"
+                    }
+                  },
+                  {
+                    "horizontal": {
+                      "line": "spoke"
+                    }
+                  },
+                  {
+                    "distance": {
+                      "first": "K",
+                      "second": "H",
+                      "value": {
+                        "parameter": "bolt_circle"
+                      }
+                    }
+                  },
+                  {
+                    "horizontal": {
+                      "line": "bore-ray"
+                    }
+                  },
+                  {
+                    "radius": {
+                      "curve": "bore",
+                      "value": {
+                        "parameter": "bore_radius"
+                      }
+                    }
+                  },
+                  {
+                    "horizontal": {
+                      "line": "bolt-ray"
+                    }
+                  },
+                  {
+                    "radius": {
+                      "curve": "bolt",
+                      "value": {
+                        "parameter": "bolt_radius"
+                      }
+                    }
+                  }
+                ],
+                "arcs": [
+                  {
+                    "id": "crown",
+                    "center": "K",
+                    "start": "C",
+                    "end": "T",
+                    "clockwise": false
+                  }
+                ],
+                "circles": [
+                  {
+                    "id": "bore",
+                    "center": "K",
+                    "rim": "Q"
+                  },
+                  {
+                    "id": "bolt",
+                    "center": "H",
+                    "rim": "R"
+                  }
+                ],
+                "holes": [
+                  [
+                    "bore"
+                  ],
+                  [
+                    "bolt"
+                  ],
+                  [
+                    "bolts:1:bolt"
+                  ],
+                  [
+                    "bolts:2:bolt"
+                  ],
+                  [
+                    "bolts:3:bolt"
+                  ],
+                  [
+                    "bolts:4:bolt"
+                  ],
+                  [
+                    "bolts:5:bolt"
+                  ]
+                ],
+                "patterns": [
+                  {
+                    "mirror": {
+                      "id": "m",
+                      "entities": [
+                        "AB",
+                        "BC",
+                        "crown"
+                      ],
+                      "axis": "axis",
+                      "on_axis": [
+                        "A",
+                        "K",
+                        "T"
+                      ]
+                    }
+                  },
+                  {
+                    "circular": {
+                      "id": "bolts",
+                      "entities": [
+                        "bolt"
+                      ],
+                      "center": "K",
+                      "count": 6
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "body",
+          "operation": {
+            "extrude": {
+              "input": "profile",
+              "direction": {
+                "components": {
+                  "x": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "y": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "z": {
+                    "parameter": "depth"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "instances": [
+      {
+        "base": {
+          "id": "part",
+          "overrides": {},
+          "provenance": "Mirrored half outline with a circular bolt pattern cut as sketch holes"
+        }
+      }
+    ]
+  },
+  "outputs": [
+    {
+      "instance": "part",
+      "output": "body"
+    },
+    {
+      "instance": "part",
+      "output": "profile"
+    }
+  ],
+  "sketches": true
+}

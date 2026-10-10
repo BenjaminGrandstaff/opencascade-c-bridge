@@ -13,6 +13,7 @@ const PIVOT_TOLERANCE: f64 = 1e-10;
 
 mod diagnostics;
 mod geometry;
+mod patterns;
 mod profile;
 mod projections;
 mod solver;
@@ -354,6 +355,50 @@ pub enum SketchConstraint {
     },
 }
 
+/// Linked copies of sketch entities, generated before solving. Copy IDs are
+/// `{pattern}:{k}:{source}` for instance k (mirror uses k = 1); later patterns
+/// and the profile may name them. Copy points are solver unknowns tied to
+/// their sources by transform equations, so source edits move every copy.
+/// Source constraints are not duplicated; copies are rigid images.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum SketchPattern {
+    /// Reflection across the infinite line `axis`. Copies are reversed so a
+    /// half profile followed by its mirror, listed in reverse, forms one loop.
+    /// `on_axis` points are shared rather than copied and held on the axis.
+    Mirror {
+        id: String,
+        #[schemars(length(min = 1, max = 1000))]
+        entities: Vec<String>,
+        axis: String,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        on_axis: Vec<String>,
+    },
+    /// `count` instances (source included) spaced along the start-to-end
+    /// direction of `direction`. Negative spacing reverses the direction.
+    Linear {
+        id: String,
+        #[schemars(length(min = 1, max = 1000))]
+        entities: Vec<String>,
+        direction: String,
+        spacing: ScalarExpr,
+        #[schemars(range(min = 2, max = 1000))]
+        count: u32,
+    },
+    /// `count` instances (source included) rotated about `center` by `angle`
+    /// radians per step, counterclockwise; omitted means a full equal turn.
+    Circular {
+        id: String,
+        #[schemars(length(min = 1, max = 1000))]
+        entities: Vec<String>,
+        center: String,
+        #[schemars(range(min = 2, max = 1000))]
+        count: u32,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        angle: Option<ScalarExpr>,
+    },
+}
+
 /// Attached sketch planes or resolution errors, keyed by sketch feature ID.
 pub type SketchSupportPlanes = HashMap<String, Result<ResolvedDatum, ModelError>>;
 
@@ -438,6 +483,15 @@ pub struct SketchDefinition {
     pub splines: Vec<SketchSpline>,
     #[serde(default)]
     pub profile: Vec<String>,
+    /// Inner loops cut from the face output, each an ordered closed boundary
+    /// like `profile`. Face outputs only; wire outputs reject holes.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[schemars(length(max = 1000))]
+    pub holes: Vec<Vec<String>>,
+    /// Linked entity copies, expanded in order before solving.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[schemars(length(max = 100))]
+    pub patterns: Vec<SketchPattern>,
     #[serde(default)]
     pub constraints: Vec<SketchConstraint>,
 }
@@ -623,6 +677,15 @@ impl SketchDefinition {
                 SketchProfileOperation::Offset { distance, .. } => {
                     collect_scalar_parameters(distance, names)
                 }
+            }
+        }
+        for pattern in &self.patterns {
+            match pattern {
+                SketchPattern::Linear { spacing, .. } => collect_scalar_parameters(spacing, names),
+                SketchPattern::Circular {
+                    angle: Some(angle), ..
+                } => collect_scalar_parameters(angle, names),
+                _ => {}
             }
         }
         for spline in &self.splines {

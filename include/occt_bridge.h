@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define OCCT_BRIDGE_ABI_VERSION 59u
+#define OCCT_BRIDGE_ABI_VERSION 60u
 #define OCCT_BRIDGE_INVALID_SHAPE_ID UINT64_C(0)
 
 #if defined(_WIN32) && defined(OCCT_BRIDGE_BUILD_SHARED)
@@ -374,6 +374,21 @@ OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_create_ellipse_wire(
 OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_create_face_from_wire(
     occt_bridge_session_t* session,
     occt_bridge_shape_id_t wire,
+    occt_bridge_shape_id_t* out_shape
+);
+
+/* Planar face from a closed outer wire and inner_count closed inner wires on
+ * its plane (ABI 60), without booleans. Inner wires are reoriented as holes.
+ * Each must lie strictly inside the outer boundary, and holes must neither
+ * nest nor come within 1e-7 mm of the boundary or each other. Pairwise checks
+ * are bounding-box filtered. The result must be valid with area equal to the
+ * outer area minus the hole areas (relative 1e-7). Inputs are unchanged;
+ * inner may be NULL when inner_count is 0. At most 10000 inner wires. */
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_create_face_with_holes(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t outer,
+    const occt_bridge_shape_id_t* inner,
+    size_t inner_count,
     occt_bridge_shape_id_t* out_shape
 );
 

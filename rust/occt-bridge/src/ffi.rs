@@ -2,7 +2,7 @@
 
 use super::*;
 
-pub(crate) const ABI_VERSION: u32 = 59;
+pub(crate) const ABI_VERSION: u32 = 60;
 
 #[repr(C)]
 #[derive(Default)]
@@ -480,6 +480,13 @@ unsafe extern "C" {
     pub(crate) fn occt_bridge_create_face_from_wire(
         session: *mut c_void,
         wire: RawShapeId,
+        out: *mut RawShapeId,
+    ) -> RawStatus;
+    pub(crate) fn occt_bridge_create_face_with_holes(
+        session: *mut c_void,
+        outer: RawShapeId,
+        inner: *const RawShapeId,
+        inner_count: usize,
         out: *mut RawShapeId,
     ) -> RawStatus;
     pub(crate) fn occt_bridge_create_prism_from_face(

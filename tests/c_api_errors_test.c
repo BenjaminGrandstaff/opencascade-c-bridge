@@ -1315,6 +1315,25 @@ static void profile_lofts(occt_bridge_session_t* session) {
     occt_bridge_shape_release(session,box);
 }
 
+static void face_with_holes(occt_bridge_session_t* session) {
+    occt_bridge_shape_id_t outer=0,hole=0,open=0,out=99;
+    const occt_bridge_vec3_t points[]={vec(0,0,0),vec(20,0,0),vec(20,10,0),vec(0,10,0)};
+    EXPECT(occt_bridge_create_polyline_wire(session,points,4,1,&outer),OK);
+    EXPECT(occt_bridge_create_polyline_wire(session,points,2,0,&open),OK);
+    EXPECT(occt_bridge_create_circle_wire(session,vec(5,5,0),vec(0,0,1),2,&hole),OK);
+    EXPECT(occt_bridge_create_face_with_holes(session,outer,&hole,1,NULL),ARG);
+    EXPECT(occt_bridge_create_face_with_holes(NULL,outer,&hole,1,&out),ARG);
+    EXPECT(occt_bridge_create_face_with_holes(session,outer,NULL,1,&out),ARG);
+    EXPECT_TRUE(out==0,"failed face with holes clears result");
+    EXPECT(occt_bridge_create_face_with_holes(session,unknown,&hole,1,&out),MISSING);
+    EXPECT(occt_bridge_create_face_with_holes(session,outer,&unknown,1,&out),MISSING);
+    EXPECT(occt_bridge_create_face_with_holes(session,open,NULL,0,&out),GEOMETRY);
+    EXPECT(occt_bridge_create_face_with_holes(session,outer,&open,1,&out),GEOMETRY);
+    EXPECT(occt_bridge_create_face_with_holes(session,outer,NULL,0,&out),OK);occt_bridge_shape_release(session,out);
+    EXPECT(occt_bridge_create_face_with_holes(session,outer,&hole,1,&out),OK);occt_bridge_shape_release(session,out);
+    occt_bridge_shape_release(session,hole);occt_bridge_shape_release(session,open);occt_bridge_shape_release(session,outer);
+}
+
 static void corner_edits(occt_bridge_session_t* session) {
     occt_bridge_shape_id_t wire=0,out=99;
     const occt_bridge_vec3_t points[]={vec(0,0,0),vec(20,0,0),vec(20,10,0),vec(0,10,0)};
@@ -1371,6 +1390,7 @@ int main(void) {
     primitives(session);
     sketch_edits(session);
     corner_edits(session);
+    face_with_holes(session);
     extrusion_limits(session);
     profile_lofts(session);
     non_clamped_endpoints(session);

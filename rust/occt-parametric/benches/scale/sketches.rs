@@ -51,6 +51,8 @@ pub(crate) fn profile_sweep_case(revolve: bool) -> Outcome {
         profile_operations: Vec::new(),
         splines: Vec::new(),
         profile: Vec::new(),
+        holes: Vec::new(),
+        patterns: Vec::new(),
         constraints: Vec::new(),
     };
     if revolve {
@@ -193,6 +195,8 @@ pub(crate) fn datum_sketch_wire_case() -> Outcome {
         profile_operations: Vec::new(),
         splines: Vec::new(),
         profile: Vec::new(),
+        holes: Vec::new(),
+        patterns: Vec::new(),
         constraints: Vec::new(),
     };
     let mut definition = block();
@@ -302,6 +306,8 @@ pub(crate) fn curved_sketch_solver_case() -> Outcome {
         splines: Vec::new(),
         circles: Vec::new(),
         profile: Vec::new(),
+        holes: Vec::new(),
+        patterns: Vec::new(),
         constraints: vec![
             SketchConstraint::Tangent {
                 first: "arc".into(),
@@ -381,6 +387,8 @@ pub(crate) fn sketch_solver_case() -> Outcome {
             start: "fixed".into(),
             end: "free".into(),
         }],
+        holes: Vec::new(),
+        patterns: Vec::new(),
         constraints: vec![
             SketchConstraint::Horizontal {
                 line: "line".into(),
@@ -434,6 +442,8 @@ pub(crate) fn large_sketch_case(chain: bool) -> Outcome {
         y_axis: VectorExpr::Literal(VectorQuantity::scalars(0.0, 1.0, 0.0)),
         points: Vec::new(),
         lines: Vec::new(),
+        holes: Vec::new(),
+        patterns: Vec::new(),
         constraints: Vec::new(),
     };
     sketch.points.push(SketchPoint {
@@ -555,6 +565,8 @@ fn spline_slot(crown: ScalarExpr) -> SketchDefinition {
             points: vec!["p2".into(), "crown".into(), "p3".into()],
         }],
         profile: vec!["bottom".into(), "right".into(), "top".into(), "left".into()],
+        holes: Vec::new(),
+        patterns: Vec::new(),
         constraints: vec![tangent("right", "top", "p2"), tangent("top", "left", "p3")],
     }
 }
