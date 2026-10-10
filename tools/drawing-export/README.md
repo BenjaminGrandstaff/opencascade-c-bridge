@@ -28,7 +28,7 @@ directory; existing destinations are rejected. It preserves the source model.
 Disk write failures can leave a partial destination. Outputs are `0001.svg`,
 `0001.dxf`, etc. `manifest.json` maps numbers to drawing IDs and records empty
 views, polyline and exact curve counts, and shared variant counts. `drawings.model.json` retains
-existing definitions and adds supplied definitions, ready to reload as schema 93.
+existing definitions and adds supplied definitions, ready to reload as schema 94.
 All drawings share generation and a cumulative vertex budget.
 Views can use `material_hatching` maps for material-ID overrides, paired line
 families, crosshatching or suppression. See [material hatch families](../../docs/DRAWINGS.md#material-hatch-families-schema-68) for defaults and validation.

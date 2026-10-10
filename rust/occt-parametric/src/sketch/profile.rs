@@ -4,6 +4,36 @@ use super::validation::{validate_curve_entities, validate_open_endpoints};
 use super::*;
 
 impl SketchDefinition {
+    /// O(expression size); resolves the same orthonormal frame for projection
+    /// and native profile construction. Attachment/datum planes are caller-resolved.
+    pub(crate) fn resolved_frame(
+        &self,
+        parameters: &HashMap<String, ParameterValue>,
+        datum: Option<ResolvedDatum>,
+    ) -> Result<(Vec3, Vec3, Vec3), ModelError> {
+        let x_axis = unit(vector(&self.x_axis, parameters, Dimension::Scalar)?)?;
+        let (origin, y_axis) = match (
+            self.datum_plane.is_some() || self.face_support.is_some(),
+            datum,
+        ) {
+            (true, Some(ResolvedDatum::Plane { origin, normal })) => {
+                if dot(x_axis, normal).abs() > 1e-9 {
+                    return Err(ModelError::new("sketch x axis must lie in its datum plane"));
+                }
+                (origin, unit(cross(normal, x_axis))?)
+            }
+            (true, _) => return Err(ModelError::new("sketch requires a resolved plane datum")),
+            (false, _) => (
+                vector(&self.origin, parameters, Dimension::Length)?,
+                unit(vector(&self.y_axis, parameters, Dimension::Scalar)?)?,
+            ),
+        };
+        if dot(x_axis, y_axis).abs() > 1e-9 {
+            return Err(ModelError::new("sketch plane axes must be perpendicular"));
+        }
+        Ok((origin, x_axis, y_axis))
+    }
+
     #[cfg(test)]
     pub(crate) fn face<'session>(
         &self,
@@ -83,26 +113,7 @@ impl SketchDefinition {
                 self.id, solution.max_residual
             )));
         }
-        let x_axis = unit(vector(&self.x_axis, parameters, Dimension::Scalar)?)?;
-        let (origin, y_axis) = match (
-            self.datum_plane.is_some() || self.face_support.is_some(),
-            datum,
-        ) {
-            (true, Some(ResolvedDatum::Plane { origin, normal })) => {
-                if dot(x_axis, normal).abs() > 1e-9 {
-                    return Err(ModelError::new("sketch x axis must lie in its datum plane"));
-                }
-                (origin, unit(cross(normal, x_axis))?)
-            }
-            (true, _) => return Err(ModelError::new("sketch requires a resolved plane datum")),
-            (false, _) => (
-                vector(&self.origin, parameters, Dimension::Length)?,
-                unit(vector(&self.y_axis, parameters, Dimension::Scalar)?)?,
-            ),
-        };
-        if dot(x_axis, y_axis).abs() > 1e-9 {
-            return Err(ModelError::new("sketch plane axes must be perpendicular"));
-        }
+        let (origin, x_axis, y_axis) = self.resolved_frame(parameters, datum)?;
         let transform =
             |point: SketchPoint2| add(origin, add(scale(x_axis, point.x), scale(y_axis, point.y)));
         let profile = self.profile_entities()?;
@@ -276,6 +287,11 @@ impl SketchDefinition {
         samples: usize,
         closed: bool,
     ) -> Result<Vec<Vec<SketchPoint2>>, ModelError> {
+        if !self.projections.is_empty() {
+            return Err(ModelError::new(
+                "projected sketch requires source-geometry resolution before preview",
+            ));
+        }
         if !(2..=256).contains(&samples) {
             return Err(ModelError::new("profile preview samples must be in 2..256"));
         }

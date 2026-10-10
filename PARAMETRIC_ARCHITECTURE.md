@@ -1889,3 +1889,20 @@ diagnostic generation per instance across its 3D outputs and support metadata.
 Costs follow parameter resolution and semantic/native queries; no per-sketch
 full feature-index rebuilds or retained face handles are introduced.
 See [face attachments](docs/FACE_SKETCHES.md).
+
+
+## Linked analytic sketch references
+
+Schema 94 declares a source feature, semantic edge selector and expected kind
+for each named projection. Structure checking expands declared IDs/types with
+private seeds; source solve/preview calls reject unresolved projection data.
+Execution resolves the sketch frame and source edges, projects native analytic
+coefficients into fixed local points, then solves the resulting sketch.
+Source declarations remain in saved documents; runtime snapshots are inspection
+values. Expansion/indexing are O(sketch size + projections), each analytic
+projection is O(1), and native queries follow existing selector costs. Scaled
+principal-axis extraction and floating-point type thresholds preserve conic
+geometry without sampled replacements. Source/named/history dependencies enter
+ordering and signatures. Bulk snapshot inspection builds all indexes once,
+and the viewer shares that snapshot for attachment metadata and linked imports.
+See [sketch projections](docs/SKETCH_PROJECTIONS.md).

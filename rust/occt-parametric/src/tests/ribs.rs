@@ -15,6 +15,7 @@ fn rib_family(wire: bool) -> FamilyDefinition {
         id: "brace".into(),
         datum_plane: None,
         face_support: None,
+        projections: Vec::new(),
         origin: point(2.0, 4.0, 1.0),
         x_axis: VectorExpr::Literal(VectorQuantity::scalars(1.0, 0.0, 0.0)),
         y_axis: VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, 1.0)),

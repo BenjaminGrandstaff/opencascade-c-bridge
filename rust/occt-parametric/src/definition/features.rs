@@ -457,6 +457,9 @@ impl FeatureOperation {
                 if let Some(support) = &sketch.face_support {
                     support.face.names(&mut names);
                 }
+                for projection in &sketch.projections {
+                    projection.edge.names(&mut names);
+                }
             }
             Self::Hollow { faces, .. } | Self::Draft { faces, .. } => {
                 for selector in faces {
@@ -543,6 +546,10 @@ impl FeatureOperation {
                 if let Some(support) = &sketch.face_support {
                     inputs.push(support.input.as_str());
                     support.face.dependencies(&mut inputs);
+                }
+                for projection in &sketch.projections {
+                    inputs.push(projection.input.as_str());
+                    projection.edge.dependencies(&mut inputs);
                 }
                 inputs
             }

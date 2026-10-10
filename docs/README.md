@@ -9,6 +9,7 @@ examples. Project-wide status lives in [the roadmap](../ROADMAP.md) and
 - [Sketch geometry, constraints and profile edits](SKETCHES.md)
 - [Hollow sketch profiles](PLANAR_REGIONS.md)
 - [Sketches attached to planar faces](FACE_SKETCHES.md)
+- [Linked edge projections into sketches](SKETCH_PROJECTIONS.md)
 
 ## Features
 

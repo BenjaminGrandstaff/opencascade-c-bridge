@@ -258,17 +258,17 @@ pub fn collect(
             .iter()
             .filter(|o| o.instance == *id)
             .collect::<Vec<_>>();
-        let needs_supports = sketches && part.definition.features.iter().any(|f| matches!(
+        let needs_linked_sketches = sketches && part.definition.features.iter().any(|f| matches!(
             &f.operation, FeatureOperation::SketchFace { sketch } | FeatureOperation::SketchWire { sketch }
-                | FeatureOperation::SketchOpenWire { sketch } if sketch.face_support.is_some()));
-        let diagnostic = if !selected.is_empty() || needs_supports {
+                | FeatureOperation::SketchOpenWire { sketch } if sketch.face_support.is_some() || !sketch.projections.is_empty()));
+        let diagnostic = if !selected.is_empty() || needs_linked_sketches {
             Some(part.diagnostic_geometry(&session))
         } else {
             None
         };
-        let supports = match diagnostic.as_ref() {
-            Some(Ok(diagnostic)) if needs_supports => part
-                .sketch_support_planes(&session, &diagnostic.generated)
+        let resolved_sketches = match diagnostic.as_ref() {
+            Some(Ok(diagnostic)) if needs_linked_sketches => part
+                .resolved_sketches(&session, &diagnostic.generated)
                 .stage("visualization")?,
             _ => HashMap::new(),
         };
@@ -307,6 +307,15 @@ pub fn collect(
             }
         }
         if sketches {
+            let source_controls: HashMap<_, _> = if needs_linked_sketches {
+                part.definition
+                    .features
+                    .iter()
+                    .map(|f| (f.id.as_str(), names(&json!(f.operation))))
+                    .collect()
+            } else {
+                HashMap::new()
+            };
             for feature in &part.definition.features {
                 let sketch = match &feature.operation {
                     FeatureOperation::SketchFace { sketch }
@@ -314,20 +323,47 @@ pub fn collect(
                     | FeatureOperation::SketchOpenWire { sketch } => sketch,
                     _ => continue,
                 };
-                let support = sketch.face_support.as_ref().map(|definition| match supports.get(&feature.id) {
-                    Some(Ok(ResolvedDatum::Plane { origin, normal })) => json!({"definition":definition,"origin_mm":point(*origin),"normal":point(*normal),"status":"resolved","coordinate_system":"family-local millimeters"}),
+                let support = sketch.face_support.as_ref().map(|definition| match resolved_sketches.get(&feature.id) {
+                    Some(Ok(ResolvedSketch { plane:Some(ResolvedDatum::Plane { origin, normal }), .. })) => json!({"definition":definition,"origin_mm":point(*origin),"normal":point(*normal),"status":"resolved","coordinate_system":"family-local millimeters"}),
                     Some(Err(error)) => json!({"definition":definition,"status":"failed","error":error.message}),
                     _ => json!({"definition":definition,"status":"unavailable","error":diagnostic.as_ref().and_then(|d| d.as_ref().err()).map(|e| e.message.as_str())}),
                 });
+                let projected=sketch.projections.iter().map(|projection| {
+                    let mut linked:BTreeSet<String>=names(&json!(projection)).into_iter().collect();
+                    linked.extend(source_controls.get(projection.input.as_str()).into_iter().flatten().cloned());
+                    json!({"definition":projection,"source_parameters":linked,"status":"resolved"})
+                }).collect();
+                let resolved = if sketch.projections.is_empty() {
+                    sketch.as_ref()
+                } else {
+                    match resolved_sketches.get(&feature.id) {
+                        Some(Ok(resolved)) => &resolved.sketch,
+                        resolution => {
+                            let error = match resolution {
+                                Some(Err(error)) => error.message.clone(),
+                                _ => diagnostic
+                                    .as_ref()
+                                    .and_then(|d| d.as_ref().err())
+                                    .map(|e| e.message.clone())
+                                    .unwrap_or_else(|| {
+                                        "projected source geometry unavailable".into()
+                                    }),
+                            };
+                            scenes.push(json!({"kind":"sketch","instance":id,"feature":feature.id,"title":format!("{id}/{}",feature.id),"error":error,"projections":sketch.projections,"face_support":support,"annotations":[],"parameters":controls}));
+                            continue;
+                        }
+                    }
+                };
                 match sketch_scene(
                     &session,
                     id,
                     &feature.id,
-                    sketch,
+                    resolved,
                     !matches!(feature.operation, FeatureOperation::SketchOpenWire { .. }),
                     &parameters,
                     &controls,
                     support,
+                    projected,
                     &mut budget,
                 ) {
                     Ok(scene) => scenes.push(scene),

@@ -14,6 +14,11 @@ impl SketchDefinition {
         &self,
         parameters: &HashMap<String, ParameterValue>,
     ) -> Result<SketchSolution, ModelError> {
+        if !self.projections.is_empty() {
+            return Err(ModelError::new(
+                "projected sketch requires source-geometry resolution before solving",
+            ));
+        }
         self.validate(parameters)?;
         let mut values = Vec::new();
         let mut variables = HashMap::new();

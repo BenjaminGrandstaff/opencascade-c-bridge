@@ -27,6 +27,7 @@ fn sketch() -> SketchDefinition {
         id: "scale".into(),
         datum_plane: None,
         face_support: None,
+        projections: Vec::new(),
         origin: VectorExpr::Literal(VectorQuantity::lengths(0., 0., 0., LengthUnit::Millimeter)),
         x_axis: VectorExpr::Literal(VectorQuantity::scalars(1., 0., 0.)),
         y_axis: VectorExpr::Literal(VectorQuantity::scalars(0., 1., 0.)),
@@ -52,6 +53,63 @@ fn gate(name: &str, budget: u64, run: impl FnOnce()) {
     println!("PASS {name}: {:.3}s / {budget}s", elapsed.as_secs_f64());
 }
 fn main() {
+    gate(
+        "1000 linked edge-projection sketches, runtime snapshots and source-depth edits",
+        10,
+        || {
+            let request: serde_json::Value = serde_json::from_str(include_str!(
+                "../../../tools/model/projected-pocket.request.json"
+            ))
+            .unwrap();
+            let mut document = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+            let family = &mut document.family;
+            family.requirements.clear();
+            let profile = family
+                .features
+                .iter()
+                .find(|f| f.id == "profile")
+                .unwrap()
+                .clone();
+            family.features.retain(|f| f.id == "block");
+            for i in 0..1000 {
+                let mut f = profile.clone();
+                f.id = format!("profile-{i}");
+                family.features.push(f);
+            }
+            let session = Session::new().unwrap();
+            let mut part = PartInstance {
+                id: "part".into(),
+                definition: family,
+                overrides: HashMap::new(),
+                provenance: "bench".into(),
+            };
+            let first = part.regenerate(&session).unwrap();
+            let count = session.shape_count().unwrap();
+            let snapshots = part.resolved_sketches(&session, &first).unwrap();
+            assert_eq!(snapshots.len(), 1000);
+            for snapshot in snapshots.values() {
+                let sketch = &snapshot.as_ref().unwrap().sketch;
+                assert!(sketch.projections.is_empty());
+                assert_eq!(sketch.points.len(), 10);
+            }
+            assert_eq!(session.shape_count().unwrap(), count);
+            drop(snapshots);
+            part.overrides.insert(
+                "depth".into(),
+                ParameterValue::Scalar(Quantity::length(50.0, LengthUnit::Millimeter)),
+            );
+            let edited = part.regenerate_incremental(&session, &first).unwrap();
+            assert_eq!(edited.regeneration.rebuilt.len(), 1001);
+            for i in 0..1000 {
+                let bounds = session
+                    .exact_bounds(edited.shape(&format!("profile-{i}")).unwrap())
+                    .unwrap();
+                assert!((bounds.min.y - 34.0).abs() < 1e-7 && (bounds.max.y - 46.0).abs() < 1e-7);
+            }
+            drop((first, edited));
+            assert_eq!(session.shape_count().unwrap(), 0);
+        },
+    );
     gate(
         "1000 face-attached sketch profiles, plane queries and height edits",
         10,

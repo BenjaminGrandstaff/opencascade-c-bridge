@@ -17,6 +17,7 @@ fn sketch(id: &str, x_axis: (f64, f64, f64), y_axis: (f64, f64, f64)) -> SketchD
         id: id.into(),
         datum_plane: None,
         face_support: None,
+        projections: Vec::new(),
         origin: VectorExpr::Literal(VectorQuantity::lengths(
             0.0,
             0.0,

@@ -11,6 +11,7 @@ mod patterns;
 mod primitives;
 mod regions;
 mod ribs;
+mod sketch_projection;
 mod sketch_support;
 mod sweeps;
 pub(crate) mod threads;
@@ -212,6 +213,20 @@ pub(crate) fn execute_feature<'session>(
                 sketch_datum(datums, &feature.operation)?
                     .map(|datum| datum.kind.evaluate(parameters))
                     .transpose()?
+            };
+            let resolved;
+            let sketch = if sketch.projections.is_empty() {
+                sketch.as_ref()
+            } else {
+                resolved = sketch_projection::materialize(
+                    session,
+                    sketch,
+                    parameters,
+                    shapes,
+                    definitions,
+                    datum,
+                )?;
+                &resolved
             };
             return match feature.operation {
                 FeatureOperation::SketchWire { .. } => sketch.wire(session, parameters, datum),

@@ -24,6 +24,7 @@ fn rectangle() -> SketchDefinition {
         id: "rectangle".into(),
         datum_plane: None,
         face_support: None,
+        projections: Vec::new(),
         circles: Vec::new(),
         arcs: Vec::new(),
         ellipses: Vec::new(),

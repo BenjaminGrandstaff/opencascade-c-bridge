@@ -13,6 +13,7 @@ const PIVOT_TOLERANCE: f64 = 1e-10;
 
 mod diagnostics;
 mod profile;
+mod projections;
 mod solver;
 mod validation;
 
@@ -203,6 +204,39 @@ fn zero_support_offset() -> ScalarExpr {
     ScalarExpr::Literal(Quantity::length(0.0, LengthUnit::Millimeter))
 }
 
+/// Expected analytic type of a projected source edge. Ellipse requires a full
+/// conic; Arc requires a circular projection. General splines are not imported.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SketchProjectionKind {
+    Line,
+    Circle,
+    Arc,
+    Ellipse,
+}
+
+/// A linked orthogonal projection of exactly one semantic source edge.
+/// Generated point IDs are `id:start/end` for lines, `id:center/rim` for circles,
+/// `id:center/start/end` for arcs and `id:center/major/minor` for ellipses.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SketchProjection {
+    pub id: String,
+    pub input: String,
+    pub edge: EdgeSelector,
+    pub kind: SketchProjectionKind,
+}
+
+/// Runtime sketch snapshot, with fixed projected geometry and its native plane.
+/// The saved source definition retains the links; this is inspection/build data.
+#[derive(Clone, Debug)]
+pub struct ResolvedSketch {
+    pub sketch: SketchDefinition,
+    pub plane: Option<ResolvedDatum>,
+}
+/// Resolved sketch snapshots or per-feature resolution errors.
+pub type ResolvedSketches = HashMap<String, Result<ResolvedSketch, ModelError>>;
+
 /// A sketch in a typed 3D plane. `profile` names an ordered, closed boundary;
 /// omitted entities are construction geometry. An empty profile uses all lines
 /// in their original order, or a sole circle when there are no lines/arcs.
@@ -216,6 +250,9 @@ pub struct SketchDefinition {
     /// Optional face attachment, mutually exclusive with `datum_plane`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub face_support: Option<SketchFaceSupport>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[schemars(length(max = 1000))]
+    pub projections: Vec<SketchProjection>,
     pub origin: VectorExpr,
     pub x_axis: VectorExpr,
     pub y_axis: VectorExpr,
@@ -360,6 +397,9 @@ impl SketchDefinition {
     }
 
     pub(crate) fn collect_parameters<'a>(&'a self, names: &mut HashSet<&'a str>) {
+        for projection in &self.projections {
+            collect_edge_selector_parameters(&projection.edge, names);
+        }
         collect_vector_parameters(&self.x_axis, names);
         if self.datum_plane.is_none() {
             if let Some(support) = &self.face_support {

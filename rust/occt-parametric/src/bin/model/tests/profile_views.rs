@@ -518,3 +518,69 @@ fn face_attached_sketch_view_reports_the_native_plane_and_keeps_local_coordinate
             .contains("exactly one face")
     );
 }
+
+#[test]
+fn projected_pocket_view_identifies_external_geometry_and_links_source_controls() {
+    let dir = Directory::new();
+    let mut request = view_example("projected-pocket");
+    request["model"]["instances"][0]["base"]["overrides"]["depth"] =
+        json!({"scalar":{"value":50,"dimension":"length","unit":"millimeter"}});
+    view_request(&dir, request.clone(), "projected").unwrap();
+    let data: Value =
+        serde_json::from_str(&fs::read_to_string(dir.0.join("projected/view.json")).unwrap())
+            .unwrap();
+    let scene = data["scenes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["kind"] == "sketch")
+        .unwrap();
+    assert!(scene["solver"]["solved"].as_bool().unwrap());
+    assert_eq!(scene["solver"]["free_degrees"], 0);
+    assert_eq!(scene["projections"][0]["definition"]["input"], "block");
+    let edge = scene["entities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["id"] == "front-edge")
+        .unwrap();
+    assert_eq!(edge["external"], true);
+    assert!((scene["points"]["guide"][1].as_f64().unwrap() - 25.0).abs() < 1e-7);
+    let a = scene["annotations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["id"] == "projection-front-edge")
+        .unwrap();
+    assert_eq!(a["status"], "constructed");
+    assert_eq!(a["targets"], json!(["front-edge"]));
+    assert!(
+        a["parameters"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("depth"))
+    );
+    assert!(
+        fs::read_to_string(dir.0.join("projected/view-0003.svg"))
+            .unwrap()
+            .contains("#16857a")
+    );
+    request["model"]["family"]["features"][1]["operation"]["sketch_face"]["sketch"]["projections"]
+        [0]["edge"] = json!({"at_extreme":{"axis":"z","extremum":"maximum","tolerance":{"literal":{"value":0.000001,"dimension":"length","unit":"millimeter"}}}});
+    view_request(&dir, request, "ambiguous").unwrap();
+    let data: Value =
+        serde_json::from_str(&fs::read_to_string(dir.0.join("ambiguous/view.json")).unwrap())
+            .unwrap();
+    let scene = data["scenes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["kind"] == "sketch")
+        .unwrap();
+    assert!(
+        scene["error"]
+            .as_str()
+            .unwrap()
+            .contains("exactly one edge")
+    );
+}

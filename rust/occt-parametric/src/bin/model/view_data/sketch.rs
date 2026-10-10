@@ -12,6 +12,7 @@ pub(super) fn sketch_scene(
     parameters: &HashMap<String, ParameterValue>,
     controls: &BTreeMap<String, Value>,
     support: Option<Value>,
+    projections: Vec<Value>,
     budget: &mut Budget,
 ) -> Result<Value, Failure> {
     let solution = sketch.solve(parameters).stage("sketch")?;
@@ -21,7 +22,7 @@ pub(super) fn sketch_scene(
     let curves = sketch
         .preview_curves(session, &solution, 32)
         .stage("sketch")?;
-    let entities = curves
+    let mut entities = curves
         .into_iter()
         .map(|(id, points)| {
             let point_ids = if let Some(e) = sketch.lines.iter().find(|e| e.id == id) {
@@ -47,6 +48,15 @@ pub(super) fn sketch_scene(
             })
         })
         .collect::<Vec<_>>();
+    let external_ids: BTreeSet<_> = projections
+        .iter()
+        .filter_map(|p| p["definition"]["id"].as_str())
+        .collect();
+    for entity in &mut entities {
+        if external_ids.contains(entity["id"].as_str().unwrap_or("")) {
+            entity["external"] = json!(true);
+        }
+    }
     let point_map = solution
         .points
         .iter()
@@ -86,6 +96,34 @@ pub(super) fn sketch_scene(
                 parameters: names(&support["definition"]),
                 anchors: json!([]),
                 detail: support.clone(),
+            }
+            .into(),
+        );
+    }
+    for projection in &projections {
+        let id = projection["definition"]["id"]
+            .as_str()
+            .expect("projection ID");
+        let anchor = point_map.get(&format!("{id}:center")).copied().or_else(|| {
+            let a = point_map.get(&format!("{id}:start"))?;
+            let b = point_map.get(&format!("{id}:end"))?;
+            Some([(a[0] + b[0]) * 0.5, (a[1] + b[1]) * 0.5, 0.0])
+        });
+        annotations.push(
+            Annotation {
+                id: format!("projection-{id}"),
+                label: format!("Projected {id}"),
+                kind: AnnotationKind::Group,
+                status: AnnotationStatus::Constructed,
+                targets: vec![id.into()],
+                parameters: projection["source_parameters"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|n| n.as_str().map(str::to_owned))
+                    .collect(),
+                anchors: json!(anchor.into_iter().collect::<Vec<_>>()),
+                detail: projection.clone(),
             }
             .into(),
         );
@@ -455,6 +493,7 @@ pub(super) fn sketch_scene(
         "title": format!("{instance}/{feature} — {}",sketch.id),
         "sketch": sketch.id,
         "face_support": support,
+        "projections": projections,
         "bounds": [min,max],
         "entities": entities,
         "edited_profile": edited_profile,

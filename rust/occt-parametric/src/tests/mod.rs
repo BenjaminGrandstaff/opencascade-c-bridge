@@ -171,3 +171,5 @@ mod edge_treatment_example;
 mod equal_radius_plate;
 
 mod face_sketch;
+
+mod sketch_projection;

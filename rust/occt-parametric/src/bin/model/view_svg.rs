@@ -75,6 +75,13 @@ pub fn render(scene: &Value) -> String {
             write!(result,"<polygon points=\"{points}\" fill=\"#bccddd\" stroke=\"#a7bbcf\" stroke-width=\"0.4\"/>").unwrap();
         }
     }
+    let external_ids: std::collections::HashSet<_> = scene["entities"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|e| e["external"] == true)
+        .filter_map(|e| e["id"].as_str())
+        .collect();
     let mut lines = Vec::new();
     if let Some(entities) = scene["entities"].as_array() {
         for entity in entities {
@@ -119,6 +126,8 @@ pub fn render(scene: &Value) -> String {
             .join(" ");
         let stroke = if id == "edited-profile" {
             "#8254bc"
+        } else if external_ids.contains(id) {
+            "#16857a"
         } else {
             "#365472"
         };

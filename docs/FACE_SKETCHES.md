@@ -96,5 +96,6 @@ and handle cleanup. The 1,000-profile generation/plane-query/height-edit gate
 passes in 0.694 s (10 s budget). MCP generates 20 pocket bodies, 20 attached
 profile faces and 20 local sketch scenes in 0.231 s (10 s budget).
 
-Projected external geometry, face-local UV/corner anchors and automatic
-normal-relative extrusion definitions remain future work.
+Linked analytic external geometry is now available in schema 94; see
+[sketch projections](SKETCH_PROJECTIONS.md). Face-local UV/corner anchors and
+automatic normal-relative extrusion definitions remain future work.

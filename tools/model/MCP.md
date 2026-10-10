@@ -46,10 +46,10 @@ or remote service is started.
 | `occt_build` | The entire `occb-model-request-v1` object | Accepted report, build ID, local directory, and artifact resource URIs |
 
 `tools/list` provides the generated complete request schema as `occt_build`'s
-input schema. All 38 current feature operations and 143 nested request-schema
+input schema. All 38 current feature operations and 145 nested request-schema
 definitions are discoverable. Schemas derive from serde-compatible Rust types;
 new serialized variants require schema support at compilation. Authoring schemas
-target current model schema 93. The engine still migrates older documents.
+target current model schema 94. The engine still migrates older documents.
 Schemas describe serialization and basic request bounds; units, dependency
 references, dimensional constraints, selector resolution, and geometry validity
 are checked by the build engine.
@@ -402,8 +402,8 @@ See [mirrors](../../docs/MIRRORS.md); current builds require native ABI 52.
 `scale_factor` is dimensionless and positive; `scale_center_x` moves the centre
 in millimetres. Native geometry, bounds, volume and source-face ancestry follow
 edits. The viewer links both controls to the scale label and displays measured
-result spans. See [scaling](../../docs/SCALING.md). The catalog contains 30 examples
-and 12 generated schemas, exposed as 42 discovery resources.
+result spans. See [scaling](../../docs/SCALING.md). The catalog contains 31 examples
+and 12 generated schemas, exposed as 43 discovery resources.
 
 
 `spring` combines the schema-82 helix operation with a parameter-driven circular
@@ -454,7 +454,7 @@ See [pattern ancestry](../../docs/PART_PATTERNS.md#retained-pattern-ancestry).
 major diameter, pitch, run and derived turns. Its source radius and height
 follow diameter/run edits, with an illustrative unthreaded margin at both ends.
 Native validation and removed-volume checks cover the generated solid. The
-catalog targets schema 93; see [thread viewer semantics](../../docs/THREADS.md#ai-example-and-viewer-dimensions).
+catalog targets schema 94; see [thread viewer semantics](../../docs/THREADS.md#ai-example-and-viewer-dimensions).
 
 
 `edge-treatments` demonstrates constant-radius fillets and equal-distance
@@ -476,7 +476,7 @@ See [variable contour laws](../../docs/EDGE_TREATMENTS.md#variable-radius-contou
 Two hole-wire definitions retain the same explicit circle relationship and
 select different profile boundaries. A planar region and extrusion build the
 plate. Source sketches, real equality residuals and related controls are
-visible alongside the solid. Current catalog examples match schema 93.
+visible alongside the solid. Current catalog examples match schema 94.
 See [equal circular radii](../../docs/SKETCHES.md#equal-circular-radii-schema-92).
 
 
@@ -485,3 +485,11 @@ selector places the sketch at the block face centre; height edits propagate
 through the cutter and final pocketed solid. The example visualizes both the
 body and native profile face, alongside the local sketch's support metadata.
 For build/export select only `body`. See [face-attached sketches](../../docs/FACE_SKETCHES.md).
+
+
+`projected-pocket` demonstrates schema-94 linked edge projections. A named
+imported line drives point-on-curve and distance constraints, positioning a
+pocket from the block's actual boundary. Source-depth edits move both reference
+and pocket without a copied depth expression in the sketch. The viewer colours
+external geometry and exposes linked source controls. See
+[sketch projections](../../docs/SKETCH_PROJECTIONS.md).

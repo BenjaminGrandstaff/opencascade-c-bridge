@@ -58,9 +58,9 @@ impl SketchDefinition {
         &self,
         parameters: &HashMap<String, ParameterValue>,
     ) -> Result<(), ModelError> {
-        let (point_ids, line_ids) = self.validate_structure()?;
+        self.validate_structure()?;
         for constraint in &self.constraints {
-            constraint.validate(&point_ids, &line_ids, parameters)?;
+            constraint.validate(parameters)?;
         }
         for op in &self.profile_operations {
             match op {
@@ -93,7 +93,10 @@ impl SketchDefinition {
         Ok(())
     }
 
-    pub(crate) fn validate_structure(&self) -> Result<(HashSet<&str>, HashSet<&str>), ModelError> {
+    pub(crate) fn validate_structure(&self) -> Result<(), ModelError> {
+        if !self.projections.is_empty() {
+            return self.projection_seed()?.validate_structure();
+        }
         if self.id.is_empty() {
             return Err(ModelError::new("sketch id must be nonempty"));
         }
@@ -181,7 +184,7 @@ impl SketchDefinition {
                 _ => {}
             }
         }
-        Ok((point_ids, line_ids))
+        Ok(())
     }
     fn validate_points(&self) -> Result<HashSet<&str>, ModelError> {
         let mut point_ids = HashSet::new();
@@ -333,13 +336,7 @@ impl SketchConstraint {
         }
     }
 
-    fn validate(
-        &self,
-        points: &HashSet<&str>,
-        lines: &HashSet<&str>,
-        parameters: &HashMap<String, ParameterValue>,
-    ) -> Result<(), ModelError> {
-        self.validate_references(points, lines)?;
+    fn validate(&self, parameters: &HashMap<String, ParameterValue>) -> Result<(), ModelError> {
         match self {
             Self::Angle { value, .. } => {
                 let angle = scalar(value, parameters, Dimension::Scalar)?;

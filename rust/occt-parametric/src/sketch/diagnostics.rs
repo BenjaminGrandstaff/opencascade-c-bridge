@@ -19,6 +19,11 @@ impl SketchDefinition {
         parameters: &HashMap<String, ParameterValue>,
         solution: &SketchSolution,
     ) -> Result<Vec<SketchConstraintCheck>, ModelError> {
+        if !self.projections.is_empty() {
+            return Err(ModelError::new(
+                "projected sketch requires source-geometry resolution before diagnostics",
+            ));
+        }
         self.validate(parameters)?;
         let mut fixed = HashMap::new();
         for point in &self.points {
@@ -65,6 +70,11 @@ impl SketchDefinition {
         solution: &SketchSolution,
         samples: usize,
     ) -> Result<Vec<(String, Vec<SketchPoint2>)>, ModelError> {
+        if !self.projections.is_empty() {
+            return Err(ModelError::new(
+                "projected sketch requires source-geometry resolution before preview",
+            ));
+        }
         if !(2..=256).contains(&samples) {
             return Err(ModelError::new("sketch preview samples must be in 2..256"));
         }

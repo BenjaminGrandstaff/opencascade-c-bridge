@@ -13,6 +13,7 @@ pub(crate) fn profile_sweep_case(revolve: bool) -> Outcome {
         id: "circle".into(),
         datum_plane: None,
         face_support: None,
+        projections: Vec::new(),
         origin: VectorExpr::Literal(VectorQuantity::lengths(
             0.0,
             0.0,
@@ -158,6 +159,7 @@ pub(crate) fn datum_sketch_wire_case() -> Outcome {
         id: "circle".into(),
         datum_plane: None,
         face_support: None,
+        projections: Vec::new(),
         origin: VectorExpr::Literal(VectorQuantity::lengths(
             0.0,
             0.0,
@@ -268,6 +270,7 @@ pub(crate) fn curved_sketch_solver_case() -> Outcome {
         id: "curved".into(),
         datum_plane: None,
         face_support: None,
+        projections: Vec::new(),
         origin: VectorExpr::Literal(VectorQuantity::lengths(
             0.0,
             0.0,
@@ -344,6 +347,7 @@ pub(crate) fn sketch_solver_case() -> Outcome {
         id: "bench-line".into(),
         datum_plane: None,
         face_support: None,
+        projections: Vec::new(),
         circles: Vec::new(),
         arcs: Vec::new(),
         ellipses: Vec::new(),
@@ -413,6 +417,7 @@ pub(crate) fn large_sketch_case(chain: bool) -> Outcome {
         id: "large".into(),
         datum_plane: None,
         face_support: None,
+        projections: Vec::new(),
         circles: Vec::new(),
         arcs: Vec::new(),
         ellipses: Vec::new(),
@@ -518,6 +523,7 @@ fn spline_slot(crown: ScalarExpr) -> SketchDefinition {
         id: "slot".into(),
         datum_plane: None,
         face_support: None,
+        projections: Vec::new(),
         origin: VectorExpr::Literal(VectorQuantity::lengths(
             0.0,
             0.0,

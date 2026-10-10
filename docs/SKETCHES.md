@@ -79,7 +79,7 @@ export are verified. A 1,000-pair solve and residual-diagnostic gate passes in
 0.009 s (10 s budget); 20 solids plus 60 source sketch scenes and matched-radius
 annotations pass through MCP in 0.316 s (10 s budget).
 
-Current authoring examples use schema 93. Older model documents migrate
+Current authoring examples use schema 94. Older model documents migrate
 without adding constraints or changing their entities. Native ABI remains 52.
 
 ## Saved profile operations
@@ -181,3 +181,8 @@ Schema 93 adds semantic attachment to a selected planar solid face for all
 three sketch output kinds. The face centre/normal define the plane, and source
 edits rebuild dependent sketches and solids. See
 [face-attached sketches](FACE_SKETCHES.md) for frame rules and the pocket example.
+
+
+Schema 94 adds named linked projections of source lines and conics into the
+sketch frame. Fixed imported points/curves can participate in ordinary
+constraints or profile boundaries. See [linked projections](SKETCH_PROJECTIONS.md).

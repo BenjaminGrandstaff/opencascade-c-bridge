@@ -302,5 +302,24 @@ with tempfile.TemporaryDirectory(prefix='occb-mcp-scale-') as root:
         elapsed=time.monotonic()-started
         assert elapsed<10
         print(f'PASS MCP 20 face-attached pockets, native profile faces and support metadata: {elapsed:.3f}s / 10s')
+        projected=client.tool('occt_get_example',dict(name='projected-pocket'))['structuredContent']
+        for i in range(1,20):
+            projected['model']['instances'].append({'clone':dict(id=f'part-{i}',source='part',overrides={},provenance='scale')})
+            projected['outputs'].extend(dict(instance=f'part-{i}',output=out) for out in ['body','profile'])
+        started=time.monotonic()
+        result=client.tool('occt_visualize_model',projected)
+        assert not result['isError'],result
+        data=json.loads(client.call('resources/read',dict(uri=result['structuredContent']['resources']['view.json']))['result']['contents'][0]['text'])
+        solids=[s for s in data['scenes'] if s['kind']=='solid'];sketches=[s for s in data['scenes'] if s['kind']=='sketch']
+        assert len(solids)==40 and all(s['valid'] for s in solids)
+        assert len(sketches)==20
+        for scene in sketches:
+            assert scene['solver']['solved']
+            assert next(e for e in scene['entities'] if e['id']=='front-edge')['external']
+            assert abs(scene['points']['guide'][1]-20)<1e-7
+            assert 'depth' in next(a for a in scene['annotations'] if a['id']=='projection-front-edge')['parameters']
+        elapsed=time.monotonic()-started
+        assert elapsed<10
+        print(f'PASS MCP 20 projected-edge pockets, linked reference geometry and source controls: {elapsed:.3f}s / 10s')
     finally:
         client.close()

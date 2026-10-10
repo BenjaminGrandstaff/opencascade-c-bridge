@@ -186,7 +186,7 @@ region and solid while keeping unaffected source sketches.
 The `hollow-sweep` example shows a bent tube plus its outer, inner and route
 sketches. Native route length and the bore control remain linked to the solid.
 Holed profile sweeps use the same shared scene builder and annotations as simple
-sweeps; current model schema is 93 and the current native ABI is 52.
+sweeps; current model schema is 94 and the current native ABI is 52.
 
 The schema-80 `hollow-loft` example adds all inner section sketches and bore
 controls to the solid's linked parameters. Existing section-spacing annotations
@@ -287,3 +287,13 @@ source definition. Support annotations link selector/offset controls.
 Unavailable supports carry their native/model error and remain unverified.
 The collector reuses one diagnostic generation per instance and resolves
 attachment planes with shared indexes. See [face attachments](../../docs/FACE_SKETCHES.md).
+
+
+Linked source projections appear as teal curves with `external: true` and
+projection annotations naming the source definition and its direct controls.
+Resolved fixed points participate in ordinary constraint diagnostics; local
+sketch coordinates remain distinct from the native 3D profile placement.
+The collector reuses the generated geometry and a bulk resolved-sketch index
+for support planes and imports. Unavailable projections produce a source error
+instead of displaying placeholder geometry. See
+[sketch projections](../../docs/SKETCH_PROJECTIONS.md).

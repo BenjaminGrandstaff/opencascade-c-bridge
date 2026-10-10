@@ -24,7 +24,7 @@ explicitly selected.
 ```json
 {
   "schema": "occb-model-request-v1",
-  "model": { "schema_version": 93, "...": "complete ModelDocument" },
+  "model": { "schema_version": 94, "...": "complete ModelDocument" },
   "outputs": [{ "instance": "bracket", "output": "body" }],
   "edits": [{
     "instance": "bracket",

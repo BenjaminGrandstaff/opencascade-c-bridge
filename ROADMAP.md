@@ -11,18 +11,33 @@ tracks status and order.
 | C ABI (`src/`, `include/`) | ABI 52 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 93 | Active development |
+| `occt-parametric` (engineering layer) | Schema 94 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 112 + first-use integration 1 (+1 doc test), recipes 3, parametric 464 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 18 + branch command 2 + model command 40, MCP Python 9, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 112 + first-use integration 1 (+1 doc test), recipes 3, parametric 471 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 18 + branch command 2 + model command 41, MCP Python 9, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform code also passes. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
 | Coverage | Last recorded: 93.61% lines overall, test code excluded; C++ 94.13% lines, 87.40% branches, 100% functions; Rust 93.42% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 145 Rust cases plus 5 model-command and 16 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Scale benchmarks | 146 Rust cases plus 5 model-command and 17 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
+
+- Linked sketch edge projections (schema 94; native ABI 52 unchanged): named
+  semantic source edges project into fixed line/circle/arc/ellipse references.
+  Imported points can drive constraints or form profile boundaries. Native
+  analytic coefficients and scaled conic axes preserve geometry without
+  sampled replacements; ambiguous, degenerate or unsupported imports fail.
+  Source/named/history dependencies rebuild sketches and solids. The pocket
+  example follows block-depth edits without copying depth into sketch-point
+  expressions. Teal references and source-control annotations are shared by
+  live and standalone viewers. Native geometry, area/volume, named placed
+  references, conflicts, large-scale precision, migration, handle cleanup,
+  live edits and STEP/STL exports pass. A 1,000-sketch generation/snapshot/edit
+  gate passes in 0.936 s; MCP renders 20 bodies, 20 profiles and 20 source
+  sketches in 0.242 s (both 10 s budgets). Catalog examples now use schema 94.
+  See [sketch projections](docs/SKETCH_PROJECTIONS.md).
 
 - Face-attached sketch definitions (schema 93; native ABI 52 unchanged):
   semantic selection requires one planar face, whose area centre and oriented
