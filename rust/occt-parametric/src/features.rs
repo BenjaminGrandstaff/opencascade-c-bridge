@@ -11,6 +11,7 @@ mod patterns;
 mod primitives;
 mod regions;
 mod ribs;
+mod sketch_support;
 mod sweeps;
 pub(crate) mod threads;
 mod variable_fillet;
@@ -205,9 +206,13 @@ pub(crate) fn execute_feature<'session>(
         FeatureOperation::SketchFace { sketch }
         | FeatureOperation::SketchWire { sketch }
         | FeatureOperation::SketchOpenWire { sketch } => {
-            let datum = sketch_datum(datums, &feature.operation)?
-                .map(|datum| datum.kind.evaluate(parameters))
-                .transpose()?;
+            let datum = if sketch.face_support.is_some() {
+                sketch_support::resolve(session, sketch, parameters, shapes, definitions)?
+            } else {
+                sketch_datum(datums, &feature.operation)?
+                    .map(|datum| datum.kind.evaluate(parameters))
+                    .transpose()?
+            };
             return match feature.operation {
                 FeatureOperation::SketchWire { .. } => sketch.wire(session, parameters, datum),
                 FeatureOperation::SketchOpenWire { .. } => {

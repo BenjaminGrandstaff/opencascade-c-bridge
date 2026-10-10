@@ -11,6 +11,7 @@ pub(super) fn sketch_scene(
     closed: bool,
     parameters: &HashMap<String, ParameterValue>,
     controls: &BTreeMap<String, Value>,
+    support: Option<Value>,
     budget: &mut Budget,
 ) -> Result<Value, Failure> {
     let solution = sketch.solve(parameters).stage("sketch")?;
@@ -70,6 +71,25 @@ pub(super) fn sketch_scene(
         .map(|p| (p.id.as_str(), names(&json!([p.x, p.y]))))
         .collect();
     let mut annotations: Vec<Value> = Vec::new();
+    if let Some(support) = &support {
+        annotations.push(
+            Annotation {
+                id: "sketch-face-support".into(),
+                label: "Face-attached sketch".into(),
+                kind: AnnotationKind::Group,
+                status: if support["status"] == "resolved" {
+                    AnnotationStatus::Constructed
+                } else {
+                    AnnotationStatus::Unverified
+                },
+                targets: vec![],
+                parameters: names(&support["definition"]),
+                anchors: json!([]),
+                detail: support.clone(),
+            }
+            .into(),
+        );
+    }
     for (index, constraint) in sketch.constraints.iter().enumerate() {
         let (symbol, targets, anchor_ids, value) = match constraint {
             SketchConstraint::Angle {
@@ -434,6 +454,7 @@ pub(super) fn sketch_scene(
         "feature": feature,
         "title": format!("{instance}/{feature} — {}",sketch.id),
         "sketch": sketch.id,
+        "face_support": support,
         "bounds": [min,max],
         "entities": entities,
         "edited_profile": edited_profile,

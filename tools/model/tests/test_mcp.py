@@ -58,7 +58,7 @@ class McpTests(unittest.TestCase):
         with self.assertRaises(jsonschema.ValidationError):
             jsonschema.validate(bad, schema)
         resources = self.client.call('resources/list')['result']['resources']
-        self.assertEqual(len(resources), 41)
+        self.assertEqual(len(resources), 42)
         self.assertEqual(len(self.client.call('resources/templates/list')['result']['resourceTemplates']), 1)
         read = self.client.call('resources/read', dict(uri='occt://schema/request'))['result']['contents'][0]
         self.assertEqual(json.loads(read['text']), schema)
@@ -419,6 +419,17 @@ class McpTests(unittest.TestCase):
         matched = [a for scene in data['scenes'] for a in scene['annotations'] if a['label']=='=R']
         self.assertEqual(len(matched),2)
         self.assertTrue(all(a['status']=='passed' and 'hole_radius' in a['parameters'] for a in matched))
+        pocket = self.client.tool('occt_get_example',dict(name='face-pocket'))['structuredContent']
+        jsonschema.validate(pocket,schema)
+        result = self.client.tool('occt_visualize_model',pocket)
+        self.assertFalse(result['isError'])
+        data = json.loads(self.client.call('resources/read',dict(uri=result['structuredContent']['resources']['view.json']))['result']['contents'][0]['text'])
+        self.assertEqual(len(data['scenes']),3)
+        source = next(s for s in data['scenes'] if s['kind']=='sketch')
+        self.assertEqual(source['face_support']['status'],'resolved')
+        self.assertEqual(source['face_support']['origin_mm'],[30,20,20])
+        self.assertEqual(source['face_support']['normal'],[0,0,1])
+        self.assertIsNone(source['profile_error'])
         # Ordinary accepted builds also publish the annotated viewer when preview is on.
         build_request = dict(schema='occb-model-request-v1',model=request['model'],outputs=request['outputs'],preview=True,step=False,stl=False)
         built = self.client.tool('occt_build',build_request)['structuredContent']

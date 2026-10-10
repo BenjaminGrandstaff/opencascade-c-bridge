@@ -33,6 +33,7 @@ fn wire_section() -> SketchDefinition {
     SketchDefinition {
         id: "section".into(),
         datum_plane: None,
+        face_support: None,
         origin: VectorExpr::Literal(VectorQuantity::lengths(
             COIL_RADIUS,
             0.0,

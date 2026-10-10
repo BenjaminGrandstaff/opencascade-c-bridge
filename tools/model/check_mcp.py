@@ -286,5 +286,21 @@ with tempfile.TemporaryDirectory(prefix='occb-mcp-scale-') as root:
         elapsed=time.monotonic()-started
         assert elapsed<10
         print(f'PASS MCP 20 equal-radius plates, 60 source sketches and matched-radius annotations: {elapsed:.3f}s / 10s')
+        pocket=client.tool('occt_get_example',dict(name='face-pocket'))['structuredContent']
+        for i in range(1,20):
+            pocket['model']['instances'].append({'clone':dict(id=f'part-{i}',source='part',overrides={},provenance='scale')})
+            pocket['outputs'].extend(dict(instance=f'part-{i}',output=out) for out in ['body','profile'])
+        started=time.monotonic()
+        result=client.tool('occt_visualize_model',pocket)
+        assert not result['isError'],result
+        data=json.loads(client.call('resources/read',dict(uri=result['structuredContent']['resources']['view.json']))['result']['contents'][0]['text'])
+        solids=[scene for scene in data['scenes'] if scene['kind']=='solid']
+        sketches=[scene for scene in data['scenes'] if scene['kind']=='sketch']
+        assert len(solids)==40 and all(s['valid'] for s in solids)
+        assert len(sketches)==20
+        assert all(s['face_support']['status']=='resolved' and s['face_support']['origin_mm']==[30,20,20] for s in sketches)
+        elapsed=time.monotonic()-started
+        assert elapsed<10
+        print(f'PASS MCP 20 face-attached pockets, native profile faces and support metadata: {elapsed:.3f}s / 10s')
     finally:
         client.close()

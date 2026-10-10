@@ -14,6 +14,7 @@ fn rib_family(wire: bool) -> FamilyDefinition {
     let sketch = SketchDefinition {
         id: "brace".into(),
         datum_plane: None,
+        face_support: None,
         origin: point(2.0, 4.0, 1.0),
         x_axis: VectorExpr::Literal(VectorQuantity::scalars(1.0, 0.0, 0.0)),
         y_axis: VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, 1.0)),

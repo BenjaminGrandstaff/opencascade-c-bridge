@@ -546,6 +546,7 @@ fn invalid_holes_fail_with_feature_context_and_release_all_handles() {
         sketch: Box::new(SketchDefinition {
             id: "circle".into(),
             datum_plane: None,
+            face_support: None,
             origin: position(0.0, 0.0, 0.0),
             x_axis: direction(1.0, 0.0, 0.0),
             y_axis: direction(0.0, 1.0, 0.0),

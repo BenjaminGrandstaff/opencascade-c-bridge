@@ -1,0 +1,570 @@
+{
+  "schema": "occb-model-view-v1",
+  "model": {
+    "schema_version": 93,
+    "family": {
+      "id": "face-pocket",
+      "version": 1,
+      "parameters": [
+        {
+          "id": "width",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 60,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 40,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 100,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "depth",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 40,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 30,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 80,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "height",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 20,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 12,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 50,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "pocket_width",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 20,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 10,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 25,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "pocket_depth",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 12,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 6,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 20,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "cut_depth",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 5,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 2,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 8,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "support_offset",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 0,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 0,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 1,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        }
+      ],
+      "derived_parameters": [],
+      "derived_vector_parameters": [],
+      "constraints": [],
+      "requirements": [
+        {
+          "id": "body-valid",
+          "version": 1,
+          "kind": "validation",
+          "priority": "required",
+          "statement": "face-attached pocket is valid",
+          "rule": {
+            "shape_valid": {
+              "output": "body"
+            }
+          },
+          "provenance": "Illustrative dimensions",
+          "traces": [
+            {
+              "feature": "body"
+            }
+          ]
+        }
+      ],
+      "datums": [],
+      "features": [
+        {
+          "id": "block",
+          "operation": {
+            "box": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 0,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "size": {
+                "components": {
+                  "x": {
+                    "parameter": "width"
+                  },
+                  "y": {
+                    "parameter": "depth"
+                  },
+                  "z": {
+                    "parameter": "height"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "profile",
+          "operation": {
+            "sketch_face": {
+              "sketch": {
+                "id": "pocket",
+                "origin": {
+                  "literal": {
+                    "x": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    },
+                    "y": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                },
+                "x_axis": {
+                  "literal": {
+                    "x": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "y_axis": {
+                  "literal": {
+                    "x": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "points": [
+                  {
+                    "id": "a",
+                    "x": {
+                      "negate": {
+                        "divide": [
+                          {
+                            "parameter": "pocket_width"
+                          },
+                          {
+                            "literal": {
+                              "value": 2,
+                              "dimension": "scalar",
+                              "unit": null
+                            }
+                          }
+                        ]
+                      }
+                    },
+                    "y": {
+                      "negate": {
+                        "divide": [
+                          {
+                            "parameter": "pocket_depth"
+                          },
+                          {
+                            "literal": {
+                              "value": 2,
+                              "dimension": "scalar",
+                              "unit": null
+                            }
+                          }
+                        ]
+                      }
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "b",
+                    "x": {
+                      "divide": [
+                        {
+                          "parameter": "pocket_width"
+                        },
+                        {
+                          "literal": {
+                            "value": 2,
+                            "dimension": "scalar",
+                            "unit": null
+                          }
+                        }
+                      ]
+                    },
+                    "y": {
+                      "negate": {
+                        "divide": [
+                          {
+                            "parameter": "pocket_depth"
+                          },
+                          {
+                            "literal": {
+                              "value": 2,
+                              "dimension": "scalar",
+                              "unit": null
+                            }
+                          }
+                        ]
+                      }
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "c",
+                    "x": {
+                      "divide": [
+                        {
+                          "parameter": "pocket_width"
+                        },
+                        {
+                          "literal": {
+                            "value": 2,
+                            "dimension": "scalar",
+                            "unit": null
+                          }
+                        }
+                      ]
+                    },
+                    "y": {
+                      "divide": [
+                        {
+                          "parameter": "pocket_depth"
+                        },
+                        {
+                          "literal": {
+                            "value": 2,
+                            "dimension": "scalar",
+                            "unit": null
+                          }
+                        }
+                      ]
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "d",
+                    "x": {
+                      "negate": {
+                        "divide": [
+                          {
+                            "parameter": "pocket_width"
+                          },
+                          {
+                            "literal": {
+                              "value": 2,
+                              "dimension": "scalar",
+                              "unit": null
+                            }
+                          }
+                        ]
+                      }
+                    },
+                    "y": {
+                      "divide": [
+                        {
+                          "parameter": "pocket_depth"
+                        },
+                        {
+                          "literal": {
+                            "value": 2,
+                            "dimension": "scalar",
+                            "unit": null
+                          }
+                        }
+                      ]
+                    },
+                    "fixed": true
+                  }
+                ],
+                "lines": [
+                  {
+                    "id": "ab",
+                    "start": "a",
+                    "end": "b"
+                  },
+                  {
+                    "id": "bc",
+                    "start": "b",
+                    "end": "c"
+                  },
+                  {
+                    "id": "cd",
+                    "start": "c",
+                    "end": "d"
+                  },
+                  {
+                    "id": "da",
+                    "start": "d",
+                    "end": "a"
+                  }
+                ],
+                "circles": [],
+                "profile": [
+                  "ab",
+                  "bc",
+                  "cd",
+                  "da"
+                ],
+                "constraints": [],
+                "face_support": {
+                  "input": "block",
+                  "face": {
+                    "normal_aligned": {
+                      "direction": {
+                        "literal": {
+                          "x": {
+                            "value": 0,
+                            "dimension": "scalar",
+                            "unit": null
+                          },
+                          "y": {
+                            "value": 0,
+                            "dimension": "scalar",
+                            "unit": null
+                          },
+                          "z": {
+                            "value": 1,
+                            "dimension": "scalar",
+                            "unit": null
+                          }
+                        }
+                      },
+                      "minimum_dot": {
+                        "literal": {
+                          "value": 0.999999,
+                          "dimension": "scalar",
+                          "unit": null
+                        }
+                      }
+                    }
+                  },
+                  "offset": {
+                    "parameter": "support_offset"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "tool",
+          "operation": {
+            "extrude": {
+              "input": "profile",
+              "direction": {
+                "components": {
+                  "x": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "y": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "z": {
+                    "negate": {
+                      "parameter": "cut_depth"
+                    }
+                  }
+                }
+              },
+              "extent": "distance"
+            }
+          }
+        },
+        {
+          "id": "body",
+          "operation": {
+            "cut": {
+              "object": "block",
+              "tool": "tool"
+            }
+          }
+        }
+      ]
+    },
+    "instances": [
+      {
+        "base": {
+          "id": "part",
+          "overrides": {},
+          "provenance": "Illustrative mounting plate"
+        }
+      }
+    ]
+  },
+  "outputs": [
+    {
+      "instance": "part",
+      "output": "body"
+    },
+    {
+      "instance": "part",
+      "output": "profile"
+    }
+  ],
+  "sketches": true
+}

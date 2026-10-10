@@ -1874,3 +1874,18 @@ Existing radius/diameter annotations also use that reference index. Solved
 sketch wires continue through PlanarRegion and Extrude, with parameter-based
 incremental signatures and transactional rejected-edit retention. No new
 native ABI operation is needed. See [equal radii](docs/SKETCHES.md#equal-circular-radii-schema-92).
+
+
+## Face-attached sketch frames
+
+Schema 93 connects sketch definitions to solid topology through an optional
+source feature, semantic face selector and signed normal offset. It requires
+one planar face and uses its area centre/oriented normal. Explicit X axes
+remain tangent to the support; Y is derived by the right-hand cross product.
+Support source, selector histories and named references enter dependency and
+signature collection. Native selection uses existing feature indexes, and
+bulk plane inspection builds those indexes once. The viewer retains one
+diagnostic generation per instance across its 3D outputs and support metadata.
+Costs follow parameter resolution and semantic/native queries; no per-sketch
+full feature-index rebuilds or retained face handles are introduced.
+See [face attachments](docs/FACE_SKETCHES.md).

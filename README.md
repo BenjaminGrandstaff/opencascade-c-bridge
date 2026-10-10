@@ -97,7 +97,7 @@ volume, solid connectivity, minimum convex or concave radius, and sampled wall
 thickness, draft, and overhang, all with required, preferred, or advisory
 priority. Results carry measured values, evidence quality, and collision
 witnesses; see [Requirement rules](docs/REQUIREMENTS.md). Schema v1 through
-v91 documents migrate to v92 during load; unsupported
+v92 documents migrate to v93 during load; unsupported
 future versions are rejected.
 Managed regeneration incrementally reuses unchanged outputs and
 rebuilds dirty features plus their downstream dependents. Graph regeneration
@@ -647,13 +647,13 @@ profiles (ABI 47, model schema 72).
 up to a selected face, and up to the next complete face limit, including
 inclined and curved surfaces. Target
 geometry participates in regeneration; the viewer shows the actual length.
-The native ABI is 52; model schema is 92. Native surface-ray witnesses measure
+The native ABI is 52; model schema is 93. Native surface-ray witnesses measure
 viewer extents on nonuniform caps.
 
 
 [Blind drill-point holes](docs/HOLES.md) add configurable conical bottoms, native tip
 containment checks, full-diameter depth callouts and linked viewer dimensions.
-The current model schema is 92 and native ABI is 52.
+The current model schema is 93 and native ABI is 52.
 
 
 [Geometry-driven holes](docs/HOLES.md) stop at a selected or next covering input
@@ -679,7 +679,7 @@ Schema 79 adds `planar_region`; ABI 50 also retains its extracted face history.
 [Hollow path sweeps](docs/HOLLOW_SWEEPS.md) transport holed planar sections into
 bent tubes and multiple-bore parts, preserving wall ancestry and linked route
 controls. ABI 50 adds explicit history-preserving topology extraction; the
-current model schema is 92. Rebuild the native library and Rust executables together.
+current model schema is 93. Rebuild the native library and Rust executables together.
 
 [Hollow profile lofts](docs/LOFTS.md#explicit-hollow-tracks-schema-80) use explicit
 inner section tracks to make tapered ducts and multiple-bore transitions.
@@ -756,7 +756,7 @@ The [threaded-rod AI example](tools/model/threaded-rod.request.json) exposes
 modeled threads with linked major diameter, pitch, run and derived turn labels.
 Its source rod follows diameter/run edits. See
 [thread dimensions](docs/THREADS.md#ai-example-and-viewer-dimensions). Current AI
-examples use schema 92; native ABI remains 52.
+examples use schema 93; native ABI remains 52.
 
 
 The [edge-treatment AI example](tools/model/edge-treatments.request.json)
@@ -784,3 +784,10 @@ Schema 92 adds equal-radius sketch constraints between circles and arcs. The
 matched holes, assembles their sketch boundaries into a holed face, and extrudes
 the solid. Geometry, constraints and linked controls follow radius edits.
 See [equal circular radii](docs/SKETCHES.md#equal-circular-radii-schema-92).
+
+
+Schema 93 adds [face-attached sketch definitions](docs/FACE_SKETCHES.md): a
+semantic selector chooses one planar face, and its centre/oriented normal
+locate the sketch. The [pocket example](tools/model/face-pocket.request.json)
+follows block-height edits through its sketch, cutter and final solid. Named
+persistent supports, dependency ordering and rejected-edit retention are tested.

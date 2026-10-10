@@ -258,8 +258,22 @@ pub fn collect(
             .iter()
             .filter(|o| o.instance == *id)
             .collect::<Vec<_>>();
+        let needs_supports = sketches && part.definition.features.iter().any(|f| matches!(
+            &f.operation, FeatureOperation::SketchFace { sketch } | FeatureOperation::SketchWire { sketch }
+                | FeatureOperation::SketchOpenWire { sketch } if sketch.face_support.is_some()));
+        let diagnostic = if !selected.is_empty() || needs_supports {
+            Some(part.diagnostic_geometry(&session))
+        } else {
+            None
+        };
+        let supports = match diagnostic.as_ref() {
+            Some(Ok(diagnostic)) if needs_supports => part
+                .sketch_support_planes(&session, &diagnostic.generated)
+                .stage("visualization")?,
+            _ => HashMap::new(),
+        };
         if !selected.is_empty() {
-            match part.diagnostic_geometry(&session) {
+            match diagnostic.as_ref().expect("selected outputs need geometry") {
                 Ok(diagnostic) => {
                     for output in selected {
                         if !scene_ids.insert((id.clone(), output.output.clone())) {
@@ -268,7 +282,7 @@ pub fn collect(
                         let scene = solid_scene(
                             &session,
                             &part,
-                            &diagnostic,
+                            diagnostic,
                             &output.output,
                             &controls,
                             &parameters,
@@ -300,6 +314,11 @@ pub fn collect(
                     | FeatureOperation::SketchOpenWire { sketch } => sketch,
                     _ => continue,
                 };
+                let support = sketch.face_support.as_ref().map(|definition| match supports.get(&feature.id) {
+                    Some(Ok(ResolvedDatum::Plane { origin, normal })) => json!({"definition":definition,"origin_mm":point(*origin),"normal":point(*normal),"status":"resolved","coordinate_system":"family-local millimeters"}),
+                    Some(Err(error)) => json!({"definition":definition,"status":"failed","error":error.message}),
+                    _ => json!({"definition":definition,"status":"unavailable","error":diagnostic.as_ref().and_then(|d| d.as_ref().err()).map(|e| e.message.as_str())}),
+                });
                 match sketch_scene(
                     &session,
                     id,
@@ -308,6 +327,7 @@ pub fn collect(
                     !matches!(feature.operation, FeatureOperation::SketchOpenWire { .. }),
                     &parameters,
                     &controls,
+                    support,
                     &mut budget,
                 ) {
                     Ok(scene) => scenes.push(scene),

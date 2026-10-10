@@ -186,7 +186,7 @@ region and solid while keeping unaffected source sketches.
 The `hollow-sweep` example shows a bent tube plus its outer, inner and route
 sketches. Native route length and the bore control remain linked to the solid.
 Holed profile sweeps use the same shared scene builder and annotations as simple
-sweeps; current model schema is 92 and the current native ABI is 52.
+sweeps; current model schema is 93 and the current native ABI is 52.
 
 The schema-80 `hollow-loft` example adds all inner section sketches and bore
 controls to the solid's linked parameters. Existing section-spacing annotations
@@ -278,3 +278,12 @@ centre anchors, satisfied/failed status and an actual radius-difference
 residual in millimetres. Related centre/rim expression controls are linked.
 `equal-radius-plate` shows these source constraints beside the holed extrusion.
 See [equal circular radii](../../docs/SKETCHES.md#equal-circular-radii-schema-92).
+
+
+Face-attached source sketch scenes retain local XY coordinates, with
+`face_support` metadata recording the resolved family-space origin/normal and
+source definition. Support annotations link selector/offset controls.
+`face-pocket` also displays the actual native profile face as a 3D scene.
+Unavailable supports carry their native/model error and remain unverified.
+The collector reuses one diagnostic generation per instance and resolves
+attachment planes with shared indexes. See [face attachments](../../docs/FACE_SKETCHES.md).

@@ -460,3 +460,61 @@ fn equal_radius_plate_view_links_matched_circle_controls_and_real_residuals() {
         assert!(a["detail"]["max_residual"].as_f64().unwrap() < 1e-7);
     }
 }
+
+#[test]
+fn face_attached_sketch_view_reports_the_native_plane_and_keeps_local_coordinates() {
+    let dir = Directory::new();
+    let mut request = view_example("face-pocket");
+    request["model"]["instances"][0]["base"]["overrides"]["height"] =
+        json!({"scalar":{"value":30.0,"dimension":"length","unit":"millimeter"}});
+    view_request(&dir, request.clone(), "pocket").unwrap();
+    let data: Value =
+        serde_json::from_str(&fs::read_to_string(dir.0.join("pocket/view.json")).unwrap()).unwrap();
+    let scenes = data["scenes"].as_array().unwrap();
+    let sketch = scenes.iter().find(|s| s["kind"] == "sketch").unwrap();
+    assert_eq!(
+        sketch["face_support"]["origin_mm"],
+        json!([30.0, 20.0, 30.0])
+    );
+    assert_eq!(sketch["face_support"]["normal"], json!([0.0, 0.0, 1.0]));
+    assert_eq!(sketch["points"]["a"], json!([-10.0, -6.0, 0.0]));
+    assert!(sketch["profile_error"].is_null());
+    let annotation = sketch["annotations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["id"] == "sketch-face-support")
+        .unwrap();
+    assert_eq!(annotation["status"], "constructed");
+    assert!(
+        annotation["parameters"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("support_offset"))
+    );
+    let profile = scenes
+        .iter()
+        .find(|s| s["kind"] == "solid" && s["feature"] == "profile")
+        .unwrap();
+    assert!((profile["bounds"][0][2].as_f64().unwrap() - 30.0).abs() < 1e-7);
+    let support = &mut request["model"]["family"]["features"][1]["operation"]["sketch_face"]["sketch"]
+        ["face_support"];
+    support["face"] = json!({"union":[support["face"].clone(),{"normal_aligned":{"direction":{"literal":{"x":{"value":0,"dimension":"scalar","unit":null},"y":{"value":0,"dimension":"scalar","unit":null},"z":{"value":-1,"dimension":"scalar","unit":null}}},"minimum_dot":{"literal":{"value":0.999999,"dimension":"scalar","unit":null}}}}]});
+    view_request(&dir, request, "ambiguous").unwrap();
+    let data: Value =
+        serde_json::from_str(&fs::read_to_string(dir.0.join("ambiguous/view.json")).unwrap())
+            .unwrap();
+    let sketch = data["scenes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["kind"] == "sketch")
+        .unwrap();
+    assert_eq!(sketch["face_support"]["status"], "unavailable");
+    assert!(
+        sketch["face_support"]["error"]
+            .as_str()
+            .unwrap()
+            .contains("exactly one face")
+    );
+}

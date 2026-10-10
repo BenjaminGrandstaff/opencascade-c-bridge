@@ -185,6 +185,24 @@ pub enum SketchConstraint {
     },
 }
 
+/// Attached sketch planes or resolution errors, keyed by sketch feature ID.
+pub type SketchSupportPlanes = HashMap<String, Result<ResolvedDatum, ModelError>>;
+
+/// A semantic planar-face attachment. Local sketch zero is the selected face's
+/// area centre plus `offset` along its oriented normal. The sketch's explicit
+/// X axis must lie in this plane; its origin/Y axis are replaced by the support.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SketchFaceSupport {
+    pub input: String,
+    pub face: FaceSelector,
+    #[serde(default = "zero_support_offset")]
+    pub offset: ScalarExpr,
+}
+fn zero_support_offset() -> ScalarExpr {
+    ScalarExpr::Literal(Quantity::length(0.0, LengthUnit::Millimeter))
+}
+
 /// A sketch in a typed 3D plane. `profile` names an ordered, closed boundary;
 /// omitted entities are construction geometry. An empty profile uses all lines
 /// in their original order, or a sole circle when there are no lines/arcs.
@@ -195,6 +213,9 @@ pub struct SketchDefinition {
     /// `origin`/`y_axis`; `x_axis` must be perpendicular to the datum normal.
     #[serde(default)]
     pub datum_plane: Option<String>,
+    /// Optional face attachment, mutually exclusive with `datum_plane`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub face_support: Option<SketchFaceSupport>,
     pub origin: VectorExpr,
     pub x_axis: VectorExpr,
     pub y_axis: VectorExpr,
@@ -341,6 +362,10 @@ impl SketchDefinition {
     pub(crate) fn collect_parameters<'a>(&'a self, names: &mut HashSet<&'a str>) {
         collect_vector_parameters(&self.x_axis, names);
         if self.datum_plane.is_none() {
+            if let Some(support) = &self.face_support {
+                collect_scalar_parameters(&support.offset, names);
+                collect_face_selector_parameters(&support.face, names);
+            }
             collect_vector_parameters(&self.origin, names);
             collect_vector_parameters(&self.y_axis, names);
         }

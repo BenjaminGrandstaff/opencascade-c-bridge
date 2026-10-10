@@ -79,7 +79,7 @@ export are verified. A 1,000-pair solve and residual-diagnostic gate passes in
 0.009 s (10 s budget); 20 solids plus 60 source sketch scenes and matched-radius
 annotations pass through MCP in 0.316 s (10 s budget).
 
-Current authoring examples use schema 92. Older model documents migrate
+Current authoring examples use schema 93. Older model documents migrate
 without adding constraints or changing their entities. Native ABI remains 52.
 
 ## Saved profile operations
@@ -175,3 +175,9 @@ Separate saved closed sketch boundaries can now form a single holed face using
 schema-79 `planar_region`. That face feeds extrusion and revolution while the
 source sketches keep their own constraints and identities. See
 [hollow profiles](PLANAR_REGIONS.md).
+
+
+Schema 93 adds semantic attachment to a selected planar solid face for all
+three sketch output kinds. The face centre/normal define the plane, and source
+edits rebuild dependent sketches and solids. See
+[face-attached sketches](FACE_SKETCHES.md) for frame rules and the pocket example.

@@ -451,6 +451,13 @@ impl FeatureOperation {
                     selector.names(&mut names);
                 }
             }
+            Self::SketchFace { sketch }
+            | Self::SketchWire { sketch }
+            | Self::SketchOpenWire { sketch } => {
+                if let Some(support) = &sketch.face_support {
+                    support.face.names(&mut names);
+                }
+            }
             Self::Hollow { faces, .. } | Self::Draft { faces, .. } => {
                 for selector in faces {
                     selector.names(&mut names);
@@ -529,16 +536,23 @@ impl FeatureOperation {
                 inputs.iter().map(String::as_str).collect()
             }
             Self::MakeSolid { shells } => shells.iter().map(String::as_str).collect(),
+            Self::SketchFace { sketch }
+            | Self::SketchWire { sketch }
+            | Self::SketchOpenWire { sketch } => {
+                let mut inputs = Vec::new();
+                if let Some(support) = &sketch.face_support {
+                    inputs.push(support.input.as_str());
+                    support.face.dependencies(&mut inputs);
+                }
+                inputs
+            }
             Self::SheetMetal { .. }
             | Self::Loft { .. }
             | Self::Box { .. }
             | Self::Helix { .. }
             | Self::Cylinder { .. }
             | Self::Cone { .. }
-            | Self::Sphere { .. }
-            | Self::SketchFace { .. }
-            | Self::SketchWire { .. }
-            | Self::SketchOpenWire { .. } => Vec::new(),
+            | Self::Sphere { .. } => Vec::new(),
         }
     }
 }

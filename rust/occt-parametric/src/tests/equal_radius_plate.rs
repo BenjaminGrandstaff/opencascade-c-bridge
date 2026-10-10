@@ -7,7 +7,7 @@ fn equal_radius_sketches_drive_both_holes_and_incrementally_rebuild_the_plate() 
     ))
     .unwrap();
     let document = ModelDocument::from_json(&request["model"].to_string()).unwrap();
-    assert_eq!(document.schema_version, 92);
+    assert_eq!(document.schema_version, CURRENT_SCHEMA_VERSION);
     let session = Session::new().unwrap();
     let mut part = PartInstance {
         id: "part".into(),
@@ -56,7 +56,7 @@ fn equal_radius_sketches_drive_both_holes_and_incrementally_rebuild_the_plate() 
     .unwrap();
     old["model"]["schema_version"] = serde_json::json!(91);
     let migrated = ModelDocument::from_json(&old["model"].to_string()).unwrap();
-    assert_eq!(migrated.schema_version, 92);
+    assert_eq!(migrated.schema_version, CURRENT_SCHEMA_VERSION);
     let original: Vec<FeatureDefinition> =
         serde_json::from_value(old["model"]["family"]["features"].clone()).unwrap();
     assert_eq!(migrated.family.features, original);

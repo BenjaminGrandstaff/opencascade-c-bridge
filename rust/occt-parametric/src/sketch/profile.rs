@@ -84,15 +84,18 @@ impl SketchDefinition {
             )));
         }
         let x_axis = unit(vector(&self.x_axis, parameters, Dimension::Scalar)?)?;
-        let (origin, y_axis) = match (self.datum_plane.as_ref(), datum) {
-            (Some(_), Some(ResolvedDatum::Plane { origin, normal })) => {
+        let (origin, y_axis) = match (
+            self.datum_plane.is_some() || self.face_support.is_some(),
+            datum,
+        ) {
+            (true, Some(ResolvedDatum::Plane { origin, normal })) => {
                 if dot(x_axis, normal).abs() > 1e-9 {
                     return Err(ModelError::new("sketch x axis must lie in its datum plane"));
                 }
                 (origin, unit(cross(normal, x_axis))?)
             }
-            (Some(_), _) => return Err(ModelError::new("sketch requires a resolved plane datum")),
-            (None, _) => (
+            (true, _) => return Err(ModelError::new("sketch requires a resolved plane datum")),
+            (false, _) => (
                 vector(&self.origin, parameters, Dimension::Length)?,
                 unit(vector(&self.y_axis, parameters, Dimension::Scalar)?)?,
             ),

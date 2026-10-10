@@ -97,6 +97,20 @@ impl SketchDefinition {
         if self.id.is_empty() {
             return Err(ModelError::new("sketch id must be nonempty"));
         }
+        if self.datum_plane.is_some() && self.face_support.is_some() {
+            return Err(ModelError::new(
+                "sketch face support and datum plane are mutually exclusive",
+            ));
+        }
+        if self
+            .face_support
+            .as_ref()
+            .is_some_and(|s| s.input.is_empty())
+        {
+            return Err(ModelError::new(
+                "sketch face support requires a source feature",
+            ));
+        }
         let point_ids = self.validate_points()?;
         let line_ids = self.validate_lines(&point_ids)?;
         let entity_ids = self.validate_curves(&point_ids, &line_ids)?;

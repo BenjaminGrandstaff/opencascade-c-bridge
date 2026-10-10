@@ -43,8 +43,8 @@ pub use assembly::{
 };
 pub use sketch::{
     SketchArc, SketchCircle, SketchConstraint, SketchConstraintCheck, SketchDefinition,
-    SketchEllipse, SketchLine, SketchOffsetJoin, SketchPoint, SketchPoint2, SketchProfileOperation,
-    SketchSolution, SketchSpline,
+    SketchEllipse, SketchFaceSupport, SketchLine, SketchOffsetJoin, SketchPoint, SketchPoint2,
+    SketchProfileOperation, SketchSolution, SketchSpline, SketchSupportPlanes,
 };
 pub use solve::PlacementSolution;
 

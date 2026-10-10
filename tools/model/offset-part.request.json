@@ -1,7 +1,7 @@
 {
   "schema": "occb-model-view-v1",
   "model": {
-    "schema_version": 92,
+    "schema_version": 93,
     "family": {
       "id": "offset-part",
       "version": 1,
