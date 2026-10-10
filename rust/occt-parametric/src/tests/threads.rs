@@ -106,6 +106,52 @@ fn removed(internal: bool, pitch: f64) -> f64 {
 }
 
 #[test]
+fn ai_threaded_rod_example_follows_diameter_pitch_run_and_retains_failed_edits() {
+    let r: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../tools/model/threaded-rod.request.json"
+    ))
+    .unwrap();
+    let d = ModelDocument::from_json(&r["model"].to_string()).unwrap();
+    let session = Session::new().unwrap();
+    let mut p = part(&d.family);
+    let first = p.regenerate(&session).unwrap();
+    p.overrides.insert(
+        "major_diameter".into(),
+        ParameterValue::Scalar(Quantity::length(12.0, LengthUnit::Millimeter)),
+    );
+    p.overrides.insert(
+        "pitch".into(),
+        ParameterValue::Scalar(Quantity::length(2.0, LengthUnit::Millimeter)),
+    );
+    p.overrides.insert(
+        "thread_length".into(),
+        ParameterValue::Scalar(Quantity::length(12.0, LengthUnit::Millimeter)),
+    );
+    let edited = p.regenerate_incremental(&session, &first).unwrap();
+    let body = edited.shape("body").unwrap();
+    assert!(session.is_valid(body).unwrap());
+    let (_, area, centroid) = groove(6.0, 2.0, false);
+    let expected = std::f64::consts::PI * 36.0 * 18.0 - area * TAU * centroid * 6.0;
+    assert!((session.volume(body).unwrap() - expected).abs() < expected * 1e-4);
+    let b = session.exact_bounds(body).unwrap();
+    assert!((b.max.x - 6.0).abs() < 1e-5 && (b.max.z - 18.0).abs() < 1e-5);
+    assert_eq!(
+        ModelDocument::from_json(&d.to_json_pretty().unwrap()).unwrap(),
+        d
+    );
+    let count = session.shape_count().unwrap();
+    p.overrides.insert(
+        "pitch".into(),
+        ParameterValue::Scalar(Quantity::length(0.0, LengthUnit::Millimeter)),
+    );
+    assert!(p.regenerate_incremental(&session, &edited).is_err());
+    assert_eq!(session.shape_count().unwrap(), count);
+    assert!(session.is_valid(body).unwrap());
+    drop((first, edited));
+    assert_eq!(session.shape_count().unwrap(), 0);
+}
+
+#[test]
 fn basic_profile_grooves_match_iso_68_1_proportions() {
     let h = 3f64.sqrt() / 2.0 * PITCH;
     assert!((basic_depth(PITCH) - 5.0 * h / 8.0).abs() < 1e-12);

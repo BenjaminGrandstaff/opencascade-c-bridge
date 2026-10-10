@@ -84,7 +84,7 @@ and the loft while reusing unaffected sections. Invalid edits retain accepted
 geometry. The [hollow-loft AI example](tools/model/hollow-loft.request.json)
 shows a tapered duct, all four boundary sketches, linked bore controls and
 outer-section centroid spacing. The current native ABI is 52; the current model schema
-is 89. The low-level wire-loft API still constructs one boundary track at a time.
+is 91. The low-level wire-loft API still constructs one boundary track at a time.
 
 For N stations and H holes, station bookkeeping and pair screening are
 O(NH²), with cached bounds before native pair distances. Complete inner-solid

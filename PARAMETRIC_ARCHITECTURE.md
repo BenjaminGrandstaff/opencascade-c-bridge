@@ -1808,3 +1808,15 @@ Nested model patterns explicitly compose a placed group with its source, and
 Cut/Fuse/Common compose histories of directly grouped operands. Source-based
 selectors then resolve all repeated counterparts and post-Boolean faces. Both
 schema and ABI remain unchanged. Native/Rust builds must be refreshed together.
+
+
+## Modeled thread visualization and AI example
+
+The shared view collector evaluates a direct Thread feature's nominal major
+diameter, pitch, run, origin and axis. It normalizes the frame robustly and
+anchors the run to the thread origin/end. The diameter glyph is a nominal
+reference in the perpendicular plane. A derived label records run/pitch turns,
+mode and hand; expression names link editable controls. Annotation work is O(1)
+per feature, independent of turn count; existing geometry/mesh budgets remain.
+The threaded-rod example derives source size from the same driving parameters.
+See [threads](THREADS.md#ai-example-and-viewer-dimensions).

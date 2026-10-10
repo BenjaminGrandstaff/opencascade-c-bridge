@@ -1820,3 +1820,47 @@ fn circular_pattern_viewer_links_count_sweep_and_an_arc_at_the_source_radius() {
     assert!((arc[32][0].as_f64().unwrap() - 6.0).abs() < 1e-6);
     assert!((arc[32][1].as_f64().unwrap() - 6.0 * 3.0_f64.sqrt()).abs() < 1e-6);
 }
+
+#[test]
+fn thread_viewer_follows_nominal_dimensions_run_anchors_and_derived_turns() {
+    let dir = Directory::new();
+    for (name, diameter, pitch, run) in [
+        ("thread", 10.0, 1.5, 8.0),
+        ("edited-thread", 12.0, 2.0, 12.0),
+    ] {
+        let mut request = view_example("threaded-rod");
+        request["model"]["instances"][0]["base"]["overrides"] = json!({"major_diameter":{"scalar":{"value":diameter,"dimension":"length","unit":"millimeter"}},"pitch":{"scalar":{"value":pitch,"dimension":"length","unit":"millimeter"}},"thread_length":{"scalar":{"value":run,"dimension":"length","unit":"millimeter"}}});
+        view_request(&dir, request, name).unwrap();
+        let data: Value =
+            serde_json::from_str(&fs::read_to_string(dir.0.join(name).join("view.json")).unwrap())
+                .unwrap();
+        let scene = &data["scenes"][0];
+        assert_eq!(scene["valid"], true);
+        let get = |id| {
+            scene["annotations"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|a| a["id"] == id)
+                .unwrap()
+        };
+        assert_eq!(get("thread-major-diameter")["detail"]["value_mm"], diameter);
+        assert_eq!(
+            get("thread-major-diameter")["parameters"],
+            json!(["major_diameter"])
+        );
+        assert_eq!(get("thread-pitch")["detail"]["value_mm"], pitch);
+        assert_eq!(get("thread-pitch")["parameters"], json!(["pitch"]));
+        assert_eq!(get("thread-turns")["detail"]["turns"], run / pitch);
+        assert_eq!(get("thread-turns")["detail"]["internal"], false);
+        assert_eq!(get("thread-turns")["detail"]["left_handed"], false);
+        let anchors = get("thread-run")["anchors"].as_array().unwrap();
+        assert_eq!(anchors[0][2], 3.0);
+        assert_eq!(anchors[1][2], 3.0 + run);
+        assert_eq!(
+            get("thread-run")["parameters"],
+            json!(["start_margin", "thread_length"])
+        );
+        assert!((scene["bounds"][1][0].as_f64().unwrap() - diameter / 2.0).abs() < 1e-5);
+    }
+}

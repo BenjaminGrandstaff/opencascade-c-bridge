@@ -464,6 +464,88 @@ fn solid_scene(
     // downstream booleans/transforms, controls stay in the linked side panel.
     if let Some(feature) = part.definition.features.iter().find(|f| f.id == output) {
         primitive_dimensions(feature, parameters, &mut annotations)?;
+        if let FeatureOperation::Thread {
+            input,
+            origin,
+            axis,
+            major_diameter,
+            pitch,
+            length,
+            internal,
+            left_handed,
+        } = &feature.operation
+        {
+            let vector = |e: &VectorExpr| {
+                e.evaluate(parameters)
+                    .map(|v| [v.x.value, v.y.value, v.z.value])
+                    .map_err(|e| model_failure("visualization", e))
+            };
+            let scalar = |e: &ScalarExpr| {
+                e.evaluate(parameters)
+                    .map(|v| v.value)
+                    .map_err(|e| model_failure("visualization", e))
+            };
+            let o = vector(origin)?;
+            let raw = vector(axis)?;
+            let scale = raw.into_iter().map(f64::abs).fold(0.0, f64::max);
+            let n = raw.map(|v| v / scale);
+            let magnitude = n[0].hypot(n[1].hypot(n[2]));
+            let n = n.map(|v| v / magnitude);
+            let seed = if n[0].abs() < 0.9 {
+                [1.0, 0.0, 0.0]
+            } else {
+                [0.0, 1.0, 0.0]
+            };
+            let dot = (0..3).map(|i| seed[i] * n[i]).sum::<f64>();
+            let radial = std::array::from_fn::<_, 3, _>(|i| seed[i] - dot * n[i]);
+            let norm = radial[0].hypot(radial[1].hypot(radial[2]));
+            let radial = radial.map(|v| v / norm);
+            let (diameter, p, run) = (scalar(major_diameter)?, scalar(pitch)?, scalar(length)?);
+            let ends = [
+                std::array::from_fn::<_, 3, _>(|i| o[i] - diameter * 0.5 * radial[i]),
+                std::array::from_fn::<_, 3, _>(|i| o[i] + diameter * 0.5 * radial[i]),
+            ];
+            let end = std::array::from_fn::<_, 3, _>(|i| o[i] + run * n[i]);
+            let common = json!({"input":input,"axis_origin":o,"axis":n,"internal":internal,"left_handed":left_handed,"driving":true,"measurement":false});
+            for (id, label, value, expressions, anchors) in [
+                (
+                    "major-diameter",
+                    format!("thread major ⌀ {} mm", length_label(diameter)),
+                    diameter,
+                    json!([major_diameter]),
+                    json!(ends),
+                ),
+                (
+                    "pitch",
+                    format!("thread pitch {} mm", length_label(p)),
+                    p,
+                    json!([pitch]),
+                    json!([center]),
+                ),
+                (
+                    "run",
+                    format!("thread run {} mm", length_label(run)),
+                    run,
+                    json!([origin, axis, length]),
+                    json!([o, end]),
+                ),
+            ] {
+                let mut detail = common.clone();
+                detail["value_mm"] = json!(value);
+                detail["expressions"] = expressions.clone();
+                annotations.push(annotation(
+                    format!("thread-{id}"),
+                    label,
+                    "dimension",
+                    "driving",
+                    vec![output.into()],
+                    names(&expressions),
+                    anchors,
+                    detail,
+                ));
+            }
+            annotations.push(annotation("thread-turns".into(),format!("{} {} thread · {:.3} turns",if *internal{"internal"}else{"external"},if *left_handed{"LH"}else{"RH"},run/p),"dimension","derived",vec![output.into()],names(&json!([pitch,length])),json!([center]),json!({"input":input,"turns":run/p,"internal":internal,"left_handed":left_handed,"driving":false,"description":"Derived turns; nominal thread dimensions do not measure tolerance class or fit."})));
+        }
         if let FeatureOperation::CircularPattern {
             input,
             origin,

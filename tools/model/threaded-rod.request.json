@@ -3,99 +3,100 @@
   "model": {
     "schema_version": 91,
     "family": {
-      "id": "scaled-bracket",
+      "id": "threaded-rod",
       "version": 1,
       "parameters": [
         {
-          "id": "width",
+          "id": "major_diameter",
           "parameter_type": {
             "scalar": "length"
           },
           "default": {
             "scalar": {
-              "value": 20,
+              "value": 10,
               "dimension": "length",
               "unit": "millimeter"
             }
           },
           "minimum": {
-            "value": 0.1,
+            "value": 8,
             "dimension": "length",
             "unit": "millimeter"
           },
-          "maximum": null
+          "maximum": {
+            "value": 20,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
         },
         {
-          "id": "depth",
+          "id": "pitch",
           "parameter_type": {
             "scalar": "length"
           },
           "default": {
             "scalar": {
-              "value": 12,
+              "value": 1.5,
               "dimension": "length",
               "unit": "millimeter"
             }
           },
           "minimum": {
-            "value": 0.1,
+            "value": 0.5,
             "dimension": "length",
             "unit": "millimeter"
           },
-          "maximum": null
+          "maximum": {
+            "value": 2.5,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
         },
         {
-          "id": "height",
+          "id": "thread_length",
           "parameter_type": {
             "scalar": "length"
           },
           "default": {
             "scalar": {
-              "value": 6,
+              "value": 8,
               "dimension": "length",
               "unit": "millimeter"
             }
           },
           "minimum": {
-            "value": 0.1,
+            "value": 2,
             "dimension": "length",
             "unit": "millimeter"
           },
-          "maximum": null
+          "maximum": {
+            "value": 20,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
         },
         {
-          "id": "scale_factor",
-          "parameter_type": {
-            "scalar": "scalar"
-          },
-          "default": {
-            "scalar": {
-              "value": 1.2,
-              "dimension": "scalar",
-              "unit": null
-            }
-          },
-          "minimum": {
-            "value": 0.001,
-            "dimension": "scalar",
-            "unit": null
-          },
-          "maximum": null
-        },
-        {
-          "id": "scale_center_x",
+          "id": "start_margin",
           "parameter_type": {
             "scalar": "length"
           },
           "default": {
             "scalar": {
-              "value": 0,
+              "value": 3,
               "dimension": "length",
               "unit": "millimeter"
             }
           },
-          "minimum": null,
-          "maximum": null
+          "minimum": {
+            "value": 2,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 10,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
         }
       ],
       "derived_parameters": [],
@@ -107,7 +108,7 @@
           "version": 1,
           "kind": "validation",
           "priority": "required",
-          "statement": "Scaled bracket valid",
+          "statement": "Modeled threaded rod valid",
           "rule": {
             "shape_valid": {
               "output": "body"
@@ -124,55 +125,101 @@
       "datums": [],
       "features": [
         {
+          "id": "rod",
+          "operation": {
+            "cylinder": {
+              "origin": {
+                "components": {
+                  "x": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "y": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "z": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                }
+              },
+              "axis": {
+                "literal": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "z": {
+                    "value": 1,
+                    "dimension": "scalar",
+                    "unit": null
+                  }
+                }
+              },
+              "radius": {
+                "divide": [
+                  {
+                    "parameter": "major_diameter"
+                  },
+                  {
+                    "literal": {
+                      "value": 2,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                ]
+              },
+              "height": {
+                "add": [
+                  {
+                    "parameter": "thread_length"
+                  },
+                  {
+                    "multiply": [
+                      {
+                        "literal": {
+                          "value": 2,
+                          "dimension": "scalar",
+                          "unit": null
+                        }
+                      },
+                      {
+                        "parameter": "start_margin"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
           "id": "body",
           "operation": {
-            "scale": {
-              "input": "source",
-              "center": {
-                "components": {
-                  "x": {
-                    "parameter": "scale_center_x"
-                  },
-                  "y": {
-                    "literal": {
-                      "value": 0,
-                      "dimension": "length",
-                      "unit": "millimeter"
-                    }
-                  },
-                  "z": {
-                    "literal": {
-                      "value": 0,
-                      "dimension": "length",
-                      "unit": "millimeter"
-                    }
-                  }
-                }
-              },
-              "factor": {
-                "parameter": "scale_factor"
-              }
-            }
-          }
-        },
-        {
-          "id": "source",
-          "operation": {
-            "fuse": {
-              "left": "base",
-              "right": "tab"
-            }
-          }
-        },
-        {
-          "id": "base",
-          "operation": {
-            "box": {
+            "thread": {
+              "input": "rod",
               "origin": {
                 "components": {
                   "x": {
                     "literal": {
-                      "value": 5,
+                      "value": 0,
                       "dimension": "length",
                       "unit": "millimeter"
                     }
@@ -185,76 +232,40 @@
                     }
                   },
                   "z": {
-                    "literal": {
-                      "value": 0,
-                      "dimension": "length",
-                      "unit": "millimeter"
-                    }
+                    "parameter": "start_margin"
                   }
                 }
               },
-              "size": {
-                "components": {
+              "axis": {
+                "literal": {
                   "x": {
-                    "parameter": "width"
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
                   },
                   "y": {
-                    "parameter": "depth"
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
                   },
                   "z": {
-                    "parameter": "height"
-                  }
-                }
-              }
-            }
-          }
-        },
-        {
-          "id": "tab",
-          "operation": {
-            "box": {
-              "origin": {
-                "components": {
-                  "x": {
-                    "literal": {
-                      "value": 5,
-                      "dimension": "length",
-                      "unit": "millimeter"
-                    }
-                  },
-                  "y": {
-                    "literal": {
-                      "value": 0,
-                      "dimension": "length",
-                      "unit": "millimeter"
-                    }
-                  },
-                  "z": {
-                    "parameter": "height"
+                    "value": 1,
+                    "dimension": "scalar",
+                    "unit": null
                   }
                 }
               },
-              "size": {
-                "components": {
-                  "x": {
-                    "literal": {
-                      "value": 5,
-                      "dimension": "length",
-                      "unit": "millimeter"
-                    }
-                  },
-                  "y": {
-                    "parameter": "depth"
-                  },
-                  "z": {
-                    "literal": {
-                      "value": 8,
-                      "dimension": "length",
-                      "unit": "millimeter"
-                    }
-                  }
-                }
-              }
+              "major_diameter": {
+                "parameter": "major_diameter"
+              },
+              "pitch": {
+                "parameter": "pitch"
+              },
+              "length": {
+                "parameter": "thread_length"
+              },
+              "internal": false,
+              "left_handed": false
             }
           }
         }
@@ -263,7 +274,7 @@
     "instances": [
       {
         "base": {
-          "id": "bracket",
+          "id": "rod",
           "overrides": {},
           "provenance": "dimensions are illustrative assumptions"
         }
@@ -272,7 +283,7 @@
   },
   "outputs": [
     {
-      "instance": "bracket",
+      "instance": "rod",
       "output": "body"
     }
   ],

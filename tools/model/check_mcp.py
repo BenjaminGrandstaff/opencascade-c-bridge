@@ -213,5 +213,25 @@ with tempfile.TemporaryDirectory(prefix='occb-mcp-scale-') as root:
         elapsed=time.monotonic()-started
         assert elapsed<10
         print(f'PASS MCP 100 helix wire scenes, axial dimensions and bounded route samples: {elapsed:.3f}s / 10s')
+        threaded=client.tool('occt_get_example',dict(name='threaded-rod'))['structuredContent']
+        threaded['sketches']=False
+        for i in range(1,10):threaded['model']['instances'].append({'clone':dict(id=f'rod-{i}',source='rod',overrides={},provenance='scale')})
+        threaded['outputs']=[dict(instance='rod' if i==0 else f'rod-{i}',output='body')for i in range(10)]
+        started=time.monotonic()
+        result=client.tool('occt_visualize_model',threaded)
+        assert not result['isError'],result
+        resource=client.call('resources/read',dict(uri=result['structuredContent']['resources']['view.json']))
+        data=json.loads(resource['result']['contents'][0]['text'])
+        assert len(data['scenes'])==10
+        for scene in data['scenes']:
+            assert scene['valid']
+            annotations={a['id']:a for a in scene['annotations']}
+            assert annotations['thread-major-diameter']['detail']['value_mm']==10
+            assert annotations['thread-pitch']['parameters']==['pitch']
+            assert abs(annotations['thread-turns']['detail']['turns']-8/1.5)<1e-12
+            assert annotations['thread-run']['anchors'][1][2]==11
+        elapsed=time.monotonic()-started
+        assert elapsed<30
+        print(f'PASS MCP 10 modeled-thread scenes, linked dimensions and native geometry: {elapsed:.3f}s / 30s')
     finally:
         client.close()

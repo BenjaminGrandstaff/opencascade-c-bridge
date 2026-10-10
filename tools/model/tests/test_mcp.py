@@ -58,7 +58,7 @@ class McpTests(unittest.TestCase):
         with self.assertRaises(jsonschema.ValidationError):
             jsonschema.validate(bad, schema)
         resources = self.client.call('resources/list')['result']['resources']
-        self.assertEqual(len(resources), 37)
+        self.assertEqual(len(resources), 38)
         self.assertEqual(len(self.client.call('resources/templates/list')['result']['resourceTemplates']), 1)
         read = self.client.call('resources/read', dict(uri='occt://schema/request'))['result']['contents'][0]
         self.assertEqual(json.loads(read['text']), schema)
@@ -377,6 +377,16 @@ class McpTests(unittest.TestCase):
         angle = next(a for a in data['scenes'][1]['annotations'] if a['id']=='circular-pattern-angle')
         self.assertEqual(angle['parameters'],['count','sweep_angle'])
         self.assertEqual(len(angle['detail']['angular_arc']),33)
+        threaded = self.client.tool('occt_get_example',dict(name='threaded-rod'))['structuredContent']
+        jsonschema.validate(threaded,schema)
+        result = self.client.tool('occt_visualize_model',threaded)
+        self.assertFalse(result['isError'])
+        data = json.loads(self.client.call('resources/read',dict(uri=result['structuredContent']['resources']['view.json']))['result']['contents'][0]['text'])
+        self.assertTrue(data['scenes'][0]['valid'])
+        annotations={a['id']:a for a in data['scenes'][0]['annotations']}
+        self.assertEqual(annotations['thread-major-diameter']['detail']['value_mm'],10)
+        self.assertEqual(annotations['thread-pitch']['parameters'],['pitch'])
+        self.assertAlmostEqual(annotations['thread-turns']['detail']['turns'],8/1.5)
         # Ordinary accepted builds also publish the annotated viewer when preview is on.
         build_request = dict(schema='occb-model-request-v1',model=request['model'],outputs=request['outputs'],preview=True,step=False,stl=False)
         built = self.client.tool('occt_build',build_request)['structuredContent']

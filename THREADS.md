@@ -51,3 +51,29 @@ and boolean cut. Schema 84 adds it.
   buttress).
 - Generating geometry from a hole's thread callout; holes still record thread
   intent only.
+
+
+## AI example and viewer dimensions
+
+The [threaded-rod example](tools/model/threaded-rod.request.json) exposes major
+diameter, pitch, thread length and start margin. The rod radius follows half
+the major diameter, and its height follows thread length plus two margins.
+Changing those parameters rebuilds compatible source geometry and the modeled
+thread. The example uses an external right-hand thread with unthreaded ends;
+its dimensions are illustrative and do not specify tolerance class or fit.
+
+Direct thread outputs show linked nominal major diameter, axial pitch and run
+length. The run starts at the evaluated thread origin and follows its axis.
+Derived turns are run/pitch; metadata records internal/external mode and hand.
+These labels describe driving geometry, not measured thread fit or compliance.
+The feature's major-diameter glyph is a nominal diameter reference at the
+starting plane. The shared collector uses bounded annotations independent of
+turn count; native geometry/mesh budgets still apply.
+
+Core/model/MCP checks cover parameter edits, native validity, analytical removed
+volume, exact bounds, anchors, linked controls, failed-edit retention and
+cleanup. A release-scale MCP gate checks 10 threaded-rod scenes within 30
+seconds. No geometry schema or ABI change is required; the current catalog
+uses model schema 91 and native ABI 52.
+
+The modeled-thread scene gate passed in 2.451 seconds for 10 native views.

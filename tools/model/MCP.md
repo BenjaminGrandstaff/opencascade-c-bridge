@@ -46,10 +46,10 @@ or remote service is started.
 | `occt_build` | The entire `occb-model-request-v1` object | Accepted report, build ID, local directory, and artifact resource URIs |
 
 `tools/list` provides the generated complete request schema as `occt_build`'s
-input schema. All 38 current feature operations and 139 nested request-schema
+input schema. All 38 current feature operations and 142 nested request-schema
 definitions are discoverable. Schemas derive from serde-compatible Rust types;
 new serialized variants require schema support at compilation. Authoring schemas
-target current model schema 89. The engine still migrates older documents.
+target current model schema 91. The engine still migrates older documents.
 Schemas describe serialization and basic request bounds; units, dependency
 references, dimensional constraints, selector resolution, and geometry validity
 are checked by the build engine.
@@ -402,8 +402,8 @@ See [mirrors](../../MIRRORS.md); current builds require native ABI 52.
 `scale_factor` is dimensionless and positive; `scale_center_x` moves the centre
 in millimetres. Native geometry, bounds, volume and source-face ancestry follow
 edits. The viewer links both controls to the scale label and displays measured
-result spans. See [scaling](../../SCALING.md). The catalog contains 25 examples
-and 12 generated schemas, exposed as 37 discovery resources.
+result spans. See [scaling](../../SCALING.md). The catalog contains 26 examples
+and 12 generated schemas, exposed as 38 discovery resources.
 
 
 `spring` combines the schema-82 helix operation with a parameter-driven circular
@@ -448,3 +448,10 @@ and request `modified` on `body`. The grid example returns nine faces and the
 bolt-circle example six. Native grouped history and Boolean composition retain
 those links; MCP wire tests build both examples and check actual selected counts.
 See [pattern ancestry](../../PART_PATTERNS.md#retained-pattern-ancestry).
+
+
+`threaded-rod` demonstrates the existing modeled-thread operation with linked
+major diameter, pitch, run and derived turns. Its source radius and height
+follow diameter/run edits, with an illustrative unthreaded margin at both ends.
+Native validation and removed-volume checks cover the generated solid. The
+catalog targets schema 91; see [thread viewer semantics](../../THREADS.md#ai-example-and-viewer-dimensions).
