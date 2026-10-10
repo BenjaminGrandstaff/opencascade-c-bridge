@@ -113,12 +113,25 @@ pub struct SketchSpline {
     /// When present, `points` are control poles, not interpolation points.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub basis: Option<SketchBSplineBasis>,
+    /// Named geometric endpoints for a non-clamped basis; solver ties them
+    /// to the native active-domain endpoints, independently of control poles.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub endpoints: Option<SketchSplineEndpoints>,
 }
 
-/// Explicit clamped or periodic B-spline basis. Empty weights mean all ones.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SketchSplineEndpoints {
+    pub start: String,
+    pub end: String,
+}
+
+/// Explicit clamped, non-clamped, or periodic B-spline basis. Empty weights mean all ones.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SketchBSplineBasis {
+    #[serde(default)]
+    pub non_clamped: bool,
     #[serde(default)]
     pub periodic: bool,
     #[schemars(range(min = 1, max = 25))]
@@ -156,6 +169,7 @@ impl SketchSpline {
     ) -> Result<CurveSegment, ModelError> {
         let b = self.basis.as_ref().expect("explicit B-spline basis");
         Ok(CurveSegment::BSpline {
+            non_clamped: b.non_clamped,
             periodic: b.periodic,
             poles,
             degree: b.degree,
@@ -166,7 +180,10 @@ impl SketchSpline {
     }
     fn closed(&self) -> bool {
         self.basis.as_ref().is_some_and(|b| b.periodic)
-            || (self.points.len() > 1 && self.points.first() == self.points.last())
+            || self.endpoints.as_ref().map_or_else(
+                || self.points.len() > 1 && self.points.first() == self.points.last(),
+                |e| e.start == e.end,
+            )
     }
 }
 
@@ -419,7 +436,10 @@ impl<'a> Entity<'a> {
             Self::Spline(s) if s.basis.as_ref().is_some_and(|b| b.periodic) => {
                 (&s.points[0], &s.points[0])
             }
-            Self::Spline(spline) => (&spline.points[0], &spline.points[spline.points.len() - 1]),
+            Self::Spline(s) => match &s.endpoints {
+                Some(e) => (&e.start, &e.end),
+                None => (&s.points[0], &s.points[s.points.len() - 1]),
+            },
         }
     }
 

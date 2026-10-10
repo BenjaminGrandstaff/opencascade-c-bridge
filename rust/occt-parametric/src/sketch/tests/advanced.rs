@@ -132,6 +132,7 @@ fn point_on_lines_circles_arcs_ellipses_and_native_splines() {
     s.lines.clear();
     s.points.insert(1, point("m", 5., 3., true));
     s.splines = vec![SketchSpline {
+        endpoints: None,
         basis: None,
         id: "spline".into(),
         points: vec!["a".into(), "m".into(), "b".into()],
@@ -349,6 +350,7 @@ fn edited_splines_keep_native_curve_geometry_and_extend_to_tangent_targets() {
         point("b", 10., 0., true),
     ];
     s.splines = vec![SketchSpline {
+        endpoints: None,
         basis: None,
         id: "s".into(),
         points: vec!["a".into(), "m".into(), "b".into()],
@@ -1228,9 +1230,11 @@ fn explicit_quadratic() -> SketchDefinition {
         point("c", 0., 10., true),
     ];
     s.splines.push(SketchSpline {
+        endpoints: None,
         id: "curve".into(),
         points: vec!["a".into(), "b".into(), "c".into()],
         basis: Some(SketchBSplineBasis {
+            non_clamped: false,
             periodic: false,
             degree: 2,
             knots: vec![0., 1.],
@@ -1367,9 +1371,11 @@ fn periodic_square() -> SketchDefinition {
         point("d", 10., -10., true),
     ];
     s.splines.push(SketchSpline {
+        endpoints: None,
         id: "curve".into(),
         points: vec!["a".into(), "b".into(), "c".into(), "d".into()],
         basis: Some(SketchBSplineBasis {
+            non_clamped: false,
             periodic: true,
             degree: 3,
             knots: vec![0., 1., 2., 3., 4.],
@@ -1438,4 +1444,180 @@ fn periodic_explicit_sketch_rejects_invalid_basis_mixed_profiles_and_endpoint_ta
     s.profile.push("line".into());
     let session = Session::new().unwrap();
     assert!(s.face_on_plane(&session, &params, None).is_err());
+}
+
+fn non_clamped_cap() -> SketchDefinition {
+    let mut s = explicit_quadratic();
+    s.points = vec![
+        point("a", 0., 0., true),
+        point("b", 10., 10., true),
+        point("c", 20., 0., true),
+        point("start", 4., 4., false),
+        point("end", 16., 4., false),
+    ];
+    let b = s.splines[0].basis.as_mut().unwrap();
+    b.non_clamped = true;
+    b.knots = vec![0., 1., 2., 3., 4., 5.];
+    b.multiplicities = vec![1; 6];
+    b.weights.clear();
+    s.splines[0].endpoints = Some(SketchSplineEndpoints {
+        start: "start".into(),
+        end: "end".into(),
+    });
+    s.lines = vec![line("chord", "end", "start")];
+    s.profile = vec!["curve".into(), "chord".into()];
+    s
+}
+
+#[test]
+fn non_clamped_spline_endpoint_equations_drive_real_native_profile_connections() {
+    let params = HashMap::new();
+    let s = non_clamped_cap();
+    let solved = s.solve(&params).unwrap();
+    assert!(solved.solved, "{}", solved.max_residual);
+    assert_eq!(solved.free_degrees, 0);
+    assert!(
+        (solved.points["start"].x - 5.).abs() < 1e-7
+            && (solved.points["start"].y - 5.).abs() < 1e-7
+    );
+    assert!(
+        (solved.points["end"].x - 15.).abs() < 1e-7 && (solved.points["end"].y - 5.).abs() < 1e-7
+    );
+    let session = Session::new().unwrap();
+    let face = s.face_on_plane(&session, &params, None).unwrap();
+    assert!(session.is_valid(&face).unwrap());
+    assert!((session.surface_area(&face).unwrap() - 100. / 6.).abs() < 1e-5);
+    let mut arc_cap = s.clone();
+    arc_cap.points.push(point("center", 10., 5., true));
+    arc_cap.lines.clear();
+    arc_cap.arcs.push(SketchArc {
+        id: "arc".into(),
+        center: "center".into(),
+        start: "end".into(),
+        end: "start".into(),
+        clockwise: true,
+    });
+    arc_cap.profile = vec!["curve".into(), "arc".into()];
+    let curved_face = arc_cap.face_on_plane(&session, &params, None).unwrap();
+    assert!(session.is_valid(&curved_face).unwrap());
+    assert!(
+        (session.surface_area(&curved_face).unwrap()
+            - (100. / 6. + 25. * std::f64::consts::PI / 2.))
+            .abs()
+            < 1e-5
+    );
+    let mut conflict = s.clone();
+    conflict.points[3].fixed = true;
+    let solved = conflict.solve(&params).unwrap();
+    assert!(!solved.solved);
+    assert!(solved.max_residual > 0.5);
+    // A non-periodic native loop can share one named endpoint without using
+    // the first/last poles as the closure point.
+    let mut loop_sketch = s.clone();
+    loop_sketch.points = vec![
+        point("a", -1., 0., true),
+        point("b", 1., 0., true),
+        point("c", 3., 3., true),
+        point("d", -3., 3., true),
+        point("e", -1., 0., true),
+        point("f", 1., 0., true),
+        point("start", 0.1, 0.1, false),
+    ];
+    loop_sketch.splines[0].points = ["a", "b", "c", "d", "e", "f"].map(String::from).to_vec();
+    loop_sketch.splines[0].endpoints.as_mut().unwrap().end = "start".into();
+    let basis = loop_sketch.splines[0].basis.as_mut().unwrap();
+    basis.knots = (0..9).map(f64::from).collect();
+    basis.multiplicities = vec![1; 9];
+    loop_sketch.lines.clear();
+    loop_sketch.profile = vec!["curve".into()];
+    let solution = loop_sketch.solve(&params).unwrap();
+    assert!(solution.solved);
+    let face = loop_sketch.face_on_plane(&session, &params, None).unwrap();
+    assert!(session.is_valid(&face).unwrap());
+    assert!(session.surface_area(&face).unwrap() > 1.);
+    loop_sketch.points.last_mut().unwrap().fixed = true;
+    let conflict = loop_sketch.solve(&params).unwrap();
+    assert!(!conflict.solved);
+    assert!(
+        !loop_sketch
+            .preview_curves(&session, &conflict, 32)
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
+fn non_clamped_endpoint_tangency_uses_native_derivative_and_moves_free_poles() {
+    let params = HashMap::new();
+    let mut s = non_clamped_cap();
+    s.points[1] = point("b", 9., 10., false);
+    s.points.push(point("neighbor", -5., -5., true));
+    s.lines.push(line("line", "neighbor", "start"));
+    s.constraints = vec![
+        SketchConstraint::Tangent {
+            first: "line".into(),
+            second: "curve".into(),
+            point: "start".into(),
+        },
+        SketchConstraint::Distance {
+            first: "a".into(),
+            second: "b".into(),
+            value: length(200_f64.sqrt()),
+        },
+    ];
+    let solved = s.solve(&params).unwrap();
+    assert!(solved.solved, "{}", solved.max_residual);
+    assert_eq!(solved.free_degrees, 0);
+    assert!((solved.points["b"].x - 10.).abs() < 1e-7 && (solved.points["b"].y - 10.).abs() < 1e-7);
+    let check = &s.constraint_checks(&params, &solved).unwrap()[0];
+    assert!(check.satisfied && !check.by_construction);
+    assert!(check.max_residual.unwrap() < 1e-7);
+}
+
+#[test]
+fn non_clamped_endpoint_definitions_are_checked_and_old_splines_stay_unchanged() {
+    let params = HashMap::new();
+    for case in 0..5 {
+        let mut s = non_clamped_cap();
+        match case {
+            0 => s.splines[0].endpoints = None,
+            1 => s.splines[0].endpoints.as_mut().unwrap().start = "missing".into(),
+            2 => s.splines[0].endpoints.as_mut().unwrap().start = "a".into(),
+            3 => s.splines[0].basis.as_mut().unwrap().periodic = true,
+            _ => s.splines[0].basis.as_mut().unwrap().non_clamped = false,
+        }
+        assert!(s.solve(&params).is_err());
+    }
+}
+
+#[test]
+fn non_clamped_cubic_tangency_is_not_the_first_control_polygon_edge() {
+    let params = HashMap::new();
+    let mut s = non_clamped_cap();
+    s.points = vec![
+        point("a", 0., 0., true),
+        point("b", 10., 0., true),
+        point("c", 10., 10., true),
+        point("d", 20., 10., true),
+        point("start", 8., 1., false),
+        point("end", 12., 9., false),
+        point("neighbor", 10. / 3., -10. / 3., true),
+    ];
+    s.splines[0].points = vec!["a".into(), "b".into(), "c".into(), "d".into()];
+    let b = s.splines[0].basis.as_mut().unwrap();
+    b.degree = 3;
+    b.knots = (0..8).map(|i| i as f64).collect();
+    b.multiplicities = vec![1; 8];
+    s.lines = vec![line("line", "neighbor", "start")];
+    s.profile = vec!["curve".into()];
+    s.constraints = vec![SketchConstraint::Tangent {
+        first: "line".into(),
+        second: "curve".into(),
+        point: "start".into(),
+    }];
+    let solved = s.solve(&params).unwrap();
+    assert!(solved.solved, "{}", solved.max_residual);
+    assert!(s.constraint_checks(&params, &solved).unwrap()[0].satisfied);
+    assert!((solved.points["start"].x - 25. / 3.).abs() < 1e-7);
+    assert!((solved.points["start"].y - 5. / 3.).abs() < 1e-7);
 }

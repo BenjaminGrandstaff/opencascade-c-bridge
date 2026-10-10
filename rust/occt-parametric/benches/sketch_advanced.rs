@@ -54,6 +54,43 @@ fn gate(name: &str, budget: u64, run: impl FnOnce()) {
 }
 fn main() {
     gate(
+        "1000 native non-clamped B-spline caps with rational weight edits",
+        10,
+        || {
+            let request: serde_json::Value = serde_json::from_str(include_str!(
+                "../../../tools/model/non-clamped-spline-cap.request.json"
+            ))
+            .unwrap();
+            let document = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+            let session = Session::new().unwrap();
+            let mut part = PartInstance {
+                id: "part".into(),
+                definition: &document.family,
+                overrides: HashMap::new(),
+                provenance: "scale".into(),
+            };
+            for i in 0..1000 {
+                part.overrides.insert(
+                    "middle_weight".into(),
+                    ParameterValue::Scalar(Quantity::scalar(if i % 2 == 0 { 1. } else { 2. })),
+                );
+                let built = part.regenerate(&session).unwrap();
+                assert!(session.is_valid(built.shape("body").unwrap()).unwrap());
+                if i % 2 == 0 {
+                    assert!(
+                        (session.volume(built.shape("body").unwrap()).unwrap()
+                            - 20. * 10. / 12. * 8.)
+                            .abs()
+                            < 1e-5
+                    );
+                }
+                drop(built);
+                assert_eq!(session.shape_count().unwrap(), 0);
+            }
+        },
+    );
+
+    gate(
         "1000 native periodic B-spline pads with rational weight edits",
         10,
         || {
@@ -656,6 +693,7 @@ fn main() {
                 s.points.push(point(id(p), x + dx, y, fixed));
             }
             s.splines.push(SketchSpline {
+                endpoints: None,
                 basis: None,
                 id: id("s"),
                 points: vec![id("a"), id("b"), id("c")],

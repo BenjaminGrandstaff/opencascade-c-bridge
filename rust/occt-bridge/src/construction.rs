@@ -150,6 +150,7 @@ impl Session {
                     (1, 0, zero, zero)
                 }
                 CurveSegment::BSpline {
+                    non_clamped,
                     periodic,
                     poles,
                     degree: d,
@@ -172,7 +173,12 @@ impl Session {
                     knots_ptr = knots.as_ptr();
                     mults_ptr = multiplicities.as_ptr();
                     weights_ptr = weights.as_ptr();
-                    (3, i32::from(*periodic) << 2, zero, zero)
+                    (
+                        3,
+                        (i32::from(*periodic) << 2) | (i32::from(*non_clamped) << 3),
+                        zero,
+                        zero,
+                    )
                 }
                 CurveSegment::Spline {
                     points: through,
@@ -796,6 +802,25 @@ impl Session {
             occt_bridge_curve_closest_point(self.raw.as_ptr(), shape.id, point.into(), &mut out)
         })?;
         Ok(out.into())
+    }
+    /// Located native active endpoints and unnormalized first derivatives,
+    /// following edge orientation. Requires one edge or a one-edge wire.
+    pub fn curve_end_data(
+        &self,
+        shape: &Shape<'_>,
+    ) -> Result<(Vec3, Vec3, Vec3, Vec3), BridgeError> {
+        self.validate_shape(shape)?;
+        let (mut a, mut b, mut u, mut v) = (
+            RawVec3::default(),
+            RawVec3::default(),
+            RawVec3::default(),
+            RawVec3::default(),
+        );
+        // SAFETY: Validated session/handle and four writable output vectors.
+        self.check(unsafe {
+            occt_bridge_curve_end_data(self.raw.as_ptr(), shape.id, &mut a, &mut b, &mut u, &mut v)
+        })?;
+        Ok((a.into(), b.into(), u.into(), v.into()))
     }
     pub fn wire_is_closed(&self, shape: &Shape<'_>) -> Result<bool, BridgeError> {
         self.validate_shape(shape)?;

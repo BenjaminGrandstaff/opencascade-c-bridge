@@ -482,9 +482,25 @@ fn validate_spline_points(
     spline: &SketchSpline,
     point_ids: &HashSet<&str>,
 ) -> Result<(), ModelError> {
+    let non_clamped = spline.basis.as_ref().is_some_and(|b| b.non_clamped);
+    if non_clamped != spline.endpoints.is_some() {
+        return Err(ModelError::new(
+            "non-clamped splines require named endpoints; other spline modes must omit them",
+        ));
+    }
+    if let Some(e) = &spline.endpoints
+        && [&e.start, &e.end]
+            .iter()
+            .any(|id| !point_ids.contains(id.as_str()) || spline.points.contains(id))
+    {
+        return Err(ModelError::new(
+            "spline endpoints must name known points distinct from control poles",
+        ));
+    }
     if let Some(b) = &spline.basis {
         let count = spline.points.len();
-        if !(1..=25).contains(&b.degree)
+        if (b.periodic && b.non_clamped)
+            || !(1..=25).contains(&b.degree)
             || count < (b.degree + 1) as usize
             || count > 10000
             || b.knots.len() < 2
@@ -503,8 +519,11 @@ fn validate_spline_points(
             ));
         }
         for (i, m) in b.multiplicities.iter().enumerate() {
-            let end = !b.periodic && (i == 0 || i + 1 == b.knots.len());
-            if *m <= 0 || *m > b.degree + i32::from(end) || (end && *m != b.degree + 1) {
+            let boundary = !b.periodic && (i == 0 || i + 1 == b.knots.len());
+            if *m <= 0
+                || *m > b.degree + i32::from(boundary)
+                || (boundary && !b.non_clamped && *m != b.degree + 1)
+            {
                 return Err(ModelError::new("invalid B-spline multiplicity"));
             }
         }

@@ -25,6 +25,11 @@
 #include <TColgp_HArray1OfPnt.hxx>
 #include <TColStd_HArray1OfBoolean.hxx>
 #include <TopoDS_Wire.hxx>
+#include <TopoDS_Vertex.hxx>
+#include <TopoDS.hxx>
+#include <TopExp.hxx>
+#include <TopExp_Explorer.hxx>
+#include <Geom_Curve.hxx>
 
 #include <algorithm>
 #include <cmath>
@@ -90,6 +95,7 @@ const char* polyline_point_error(const occt_bridge_vec3_t* points, size_t point_
 constexpr int32_t kStartTangent = 1;
 constexpr int32_t kEndTangent = 2;
 constexpr int32_t kPeriodic = 4;
+constexpr int32_t kNonClamped = 8;
 
 // Validates one curve segment against the point buffer; null when valid.
 const char* curve_segment_error(
@@ -115,7 +121,8 @@ const char* curve_segment_error(
     }
     if (segment.kind == 3) {
         const bool periodic = (segment.flags & kPeriodic) != 0;
-        if ((segment.flags & ~kPeriodic) != 0 || segment.degree < 1 || segment.degree > Geom_BSplineCurve::MaxDegree()
+        const bool non_clamped = (segment.flags & kNonClamped) != 0;
+        if ((periodic && non_clamped) || (segment.flags & ~(kPeriodic | kNonClamped)) != 0 || segment.degree < 1 || segment.degree > Geom_BSplineCurve::MaxDegree()
             || segment.point_count < static_cast<size_t>(segment.degree + 1) || segment.point_count > 10000
             || segment.knot_count < 2 || segment.knot_count > 10002 || segment.knots == nullptr || segment.multiplicities == nullptr
             || (segment.weight_count != 0 && (segment.weight_count != segment.point_count || segment.weights == nullptr))) {
@@ -123,8 +130,9 @@ const char* curve_segment_error(
         }
         size_t sum = 0;
         for (size_t i = 0; i < segment.knot_count; ++i) {
-            const bool clamped_end = !periodic && (i == 0 || i + 1 == segment.knot_count);
-            const int maximum = clamped_end ? segment.degree + 1 : segment.degree;
+            const bool boundary = (i == 0 || i + 1 == segment.knot_count);
+            const bool clamped_end = !periodic && !non_clamped && (i == 0 || i + 1 == segment.knot_count);
+            const int maximum = !periodic && boundary ? segment.degree + 1 : segment.degree;
             if (!std::isfinite(segment.knots[i]) || (i != 0 && segment.knots[i] <= segment.knots[i-1])
                 || segment.multiplicities[i] < 1 || segment.multiplicities[i] > maximum
                 || (clamped_end && segment.multiplicities[i] != maximum)) {
@@ -156,15 +164,6 @@ const char* curve_segment_error(
         }
     }
     return nullptr;
-}
-
-gp_Pnt segment_start(const occt_bridge_curve_segment_t& segment, const occt_bridge_vec3_t* points) {
-    return to_point(points[segment.first_point]);
-}
-
-gp_Pnt segment_end(const occt_bridge_curve_segment_t& segment, const occt_bridge_vec3_t* points) {
-    const bool periodic = segment.kind == 2 && (segment.flags & kPeriodic) != 0;
-    return to_point(points[segment.first_point + (periodic ? 0 : segment.point_count - 1)]);
 }
 
 const char* add_spline_segment(
@@ -331,6 +330,7 @@ occt_bridge_status_t occt_bridge_create_curve_wire(
             return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "invalid curve-wire parameters");
         }
         BRepBuilderAPI_MakeWire wire;
+        gp_Pnt first_point, previous_end;
         for (size_t index = 0; index < segment_count; ++index) {
             const auto& segment = segments[index];
             if (const char* error = curve_segment_error(segment, points, point_count)) {
@@ -339,25 +339,62 @@ occt_bridge_status_t occt_bridge_create_curve_wire(
             if (segment.kind == 3 && (segment.flags & kPeriodic) != 0 && (segment_count != 1 || closed != 1)) {
                 return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "periodic explicit B-spline requires a standalone closed wire");
             }
-            if (index > 0
-                && segment_start(segment, points).Distance(segment_end(segments[index - 1], points))
-                    > Precision::Confusion()) {
-                return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "curve segments are disconnected");
-            }
-            if (const char* error = add_curve_segment(wire, segment, points)) {
+            BRepBuilderAPI_MakeWire piece;
+            if (const char* error = add_curve_segment(piece, segment, points)) {
                 return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, error);
             }
+            TopoDS_Vertex a, b;
+            TopExp::Vertices(piece.Wire(), a, b);
+            if (a.IsNull() || b.IsNull()) return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "curve segment has no native endpoints");
+            const gp_Pnt start = BRep_Tool::Pnt(a), end = BRep_Tool::Pnt(b);
+            if (index == 0) first_point = start;
+            else if (start.Distance(previous_end) > Precision::Confusion()) {
+                return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "curve segments are disconnected");
+            }
+            previous_end = end;
+            wire.Add(piece.Wire());
+            if (!wire.IsDone()) return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "curve wire construction failed");
         }
-        const bool explicit_periodic = segments[0].kind == 3 && (segments[0].flags & kPeriodic) != 0;
-        if (closed == 1 && !explicit_periodic
-            && segment_start(segments[0], points).Distance(segment_end(segments[segment_count - 1], points))
-                > Precision::Confusion()) {
+        if (closed == 1 && first_point.Distance(previous_end) > Precision::Confusion()) {
             return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "curve wire is not closed");
         }
-        if (explicit_periodic && !BRep_Tool::IsClosed(wire.Wire())) {
-            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "periodic B-spline did not form a closed native wire");
+        if (closed == 1 && !BRep_Tool::IsClosed(wire.Wire())) {
+            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "curve wire did not form a closed native boundary");
         }
         return store_shape(session, wire.Wire(), out_shape);
+    });
+}
+
+occt_bridge_status_t occt_bridge_curve_end_data(
+    occt_bridge_session_t* session, occt_bridge_shape_id_t shape,
+    occt_bridge_vec3_t* start, occt_bridge_vec3_t* end,
+    occt_bridge_vec3_t* start_tangent, occt_bridge_vec3_t* end_tangent) {
+    return guarded(session, [&] {
+        if (!start || !end || !start_tangent || !end_tangent) return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "curve endpoint outputs are null");
+        *start = *end = *start_tangent = *end_tangent = {0.,0.,0.};
+        const auto* value = find_shape(session, shape);
+        if (!value) return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "curve shape was not found");
+        TopoDS_Edge edge;
+        if (value->ShapeType() == TopAbs_EDGE) edge = TopoDS::Edge(*value);
+        else if (value->ShapeType() == TopAbs_WIRE) {
+            TopExp_Explorer it(*value, TopAbs_EDGE);
+            if (!it.More()) return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "curve wire has no edge");
+            edge = TopoDS::Edge(it.Current()); it.Next();
+            if (it.More()) return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "curve endpoint query requires one edge");
+        } else return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "curve endpoint query requires an edge or wire");
+        Standard_Real first, last;
+        TopLoc_Location location;
+        Handle(Geom_Curve) curve = BRep_Tool::Curve(edge, location, first, last);
+        if (curve.IsNull()) return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "edge has no native curve");
+        gp_Pnt a, b; gp_Vec u, v;
+        curve->D1(first, a, u); curve->D1(last, b, v);
+        a.Transform(location.Transformation()); b.Transform(location.Transformation());
+        u.Transform(location.Transformation()); v.Transform(location.Transformation());
+        if (edge.Orientation() == TopAbs_REVERSED) { std::swap(a,b); std::swap(u,v); u.Reverse(); v.Reverse(); }
+        *start = {a.X(),a.Y(),a.Z()}; *end = {b.X(),b.Y(),b.Z()};
+        *start_tangent = {u.X(),u.Y(),u.Z()}; *end_tangent = {v.X(),v.Y(),v.Z()};
+        if (!finite(*start) || !finite(*end) || !finite(*start_tangent) || !finite(*end_tangent)) return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "curve endpoint data is not finite");
+        return succeed(session);
     });
 }
 

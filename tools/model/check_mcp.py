@@ -416,5 +416,25 @@ with tempfile.TemporaryDirectory(prefix='occb-mcp-scale-') as root:
         elapsed=time.monotonic()-started
         assert elapsed<10
         print(f'PASS MCP 20 periodic B-spline pads, native seams and closed control polygons: {elapsed:.3f}s / 10s')
+        non_clamped=client.tool('occt_get_example',dict(name='non-clamped-spline-cap'))['structuredContent']
+        for i in range(1,20):
+            non_clamped['model']['instances'].append({'clone':dict(id=f'part-{i}',source='part',overrides={},provenance='scale')})
+            non_clamped['outputs'].extend(dict(instance=f'part-{i}',output=out) for out in ['body','profile'])
+        started=time.monotonic()
+        result=client.tool('occt_visualize_model',non_clamped)
+        assert not result['isError'],result
+        data=json.loads(client.call('resources/read',dict(uri=result['structuredContent']['resources']['view.json']))['result']['contents'][0]['text'])
+        solids=[s for s in data['scenes'] if s['kind']=='solid'];sketches=[s for s in data['scenes'] if s['kind']=='sketch']
+        assert len(solids)==40 and all(s['valid'] for s in solids)
+        assert len(sketches)==20 and all(s['solver']['solved'] for s in sketches)
+        for scene in sketches:
+            curve=next(e for e in scene['entities'] if e['id']=='curve')
+            assert curve['bspline']['basis']['non_clamped'] and len(curve['bspline']['control_points'])==3
+            endpoints=next(a for a in scene['annotations'] if a['id']=='bspline-endpoints-curve')
+            assert endpoints['status']=='passed' and endpoints['detail']['max_residual']<1e-9
+            assert abs(curve['points'][0][0]-5.)<1e-7 and abs(curve['points'][-1][0]-15.)<1e-7
+        elapsed=time.monotonic()-started
+        assert elapsed<10
+        print(f'PASS MCP 20 non-clamped B-spline caps, solved native endpoints and exact profile connections: {elapsed:.3f}s / 10s')
     finally:
         client.close()

@@ -79,8 +79,8 @@ export are verified. A 1,000-pair solve and residual-diagnostic gate passes in
 0.009 s (10 s budget); 20 solids plus 60 source sketch scenes and matched-radius
 annotations pass through MCP in 0.316 s (10 s budget).
 
-Current authoring examples use schema 100. Older model documents migrate
-without adding constraints or changing their entities. Current native ABI is 54.
+Current authoring examples use schema 101. Older model documents migrate
+without adding constraints or changing their entities. Current native ABI is 55.
 
 ## Saved profile operations
 
@@ -384,7 +384,7 @@ Weights may be omitted/empty for all ones, or supplied as positive finite
 enter incremental regeneration. `SketchSolution.spline_weights` stores their
 evaluated values for previews and profile construction. Knot values, degree
 and multiplicities are explicit constants editable in the feature definition.
-Periodic bases are added in schema 100 below; non-clamped non-periodic bases remain future work.
+Periodic bases are added in schema 100 below; non-clamped bases follow in schema 101.
 
 Point-on-curve constraints project onto the exact native B-spline, including
 rational weights, rather than onto its control polygon. Control poles retain
@@ -458,5 +458,74 @@ edits, failed-edit retention and closed viewer polygons are tested.
 ABI 54 interprets the existing explicit-segment flag bit 2 as periodic. Rebuild
 the native bridge and Rust consumers together so older libraries cannot ignore
 the new semantics. Documents migrate to schema 100; omitted periodic flags
-remain false. Non-clamped non-periodic bases and independent general-curve
-contact remain future work.
+remain false. Non-clamped bases follow below; independent general-curve
+contact remains future work.
+
+
+## Non-clamped B-spline bases (schema 101 / ABI 55)
+
+Set `basis.non_clamped: true` for an explicit non-periodic basis whose outer
+knot multiplicities need not equal degree+1. Supply `endpoints` beside `basis`
+to name the sketch points at the actual ends of the native active curve domain:
+
+```json
+{
+  "id": "curve",
+  "points": ["a", "b", "c"],
+  "endpoints": {"start": "start", "end": "end"},
+  "basis": {
+    "non_clamped": true,
+    "degree": 2,
+    "knots": [0, 1, 2, 3, 4, 5],
+    "multiplicities": [1, 1, 1, 1, 1, 1]
+  }
+}
+```
+
+The named endpoints must be existing sketch points distinct from all control
+pole IDs. Use free points to let the solver place them; fixed points impose
+additional geometry requirements and can conflict. Four implicit millimetre
+residuals tie their X/Y coordinates to the native endpoints. A closed
+non-periodic spline may name the same point for both ends. Its poles must
+produce a native closed curve after solving. Non-clamped and periodic modes
+are mutually exclusive; other spline modes must omit `endpoints`.
+
+Degree remains 1..25, with at most 10,000 poles and 10,002 distinct knots.
+Knots must be finite and strictly increasing. Outer multiplicities are
+1..degree+1, interior multiplicities 1..degree, and their sum is
+pole count+degree+1. Weights remain positive finite dimensionless expressions,
+or omitted for all ones. OCCT determines the active interval; it can lie
+inside the supplied knot range. Neither outer knots nor first/last poles are
+assumed to be the geometric endpoints.
+
+The [non-clamped cap](../tools/model/non-clamped-spline-cap.request.json)
+uses poles `(0,0)`, `(span/2,rise)`, `(span,0)` with the basis above. At unit
+weights, the active interval is `[2,3]`, its ends are `(span/4,rise/2)` and
+`(3 span/4,rise/2)`, and its maximum Y is `3 rise/4`. A chord joining those
+endpoints encloses area `span × rise / 12`. At default dimensions its valid
+extruded solid has volume `133.333333 mm³`. Changing span, rise or weight
+rebuilds the profile and solid; changing only height reuses the profile.
+
+Shared-endpoint `tangent` equations use the native first derivative for this
+mode, including rational weights and interior knot structure. Their sparse
+Jacobian depends on all defining poles; endpoint equations also include the
+named endpoint coordinates. Zero tangents fail tangent constraints. Point
+membership continues to project onto the native curve. Independent tangency
+between curves without a shared named endpoint remains future work.
+
+Mixed native wires check actual segment vertices, so these curves can connect
+to lines and arcs without confusing poles with endpoints. Accepted profiles
+still enforce closure. The viewer preserves dashed control polygons, adds
+endpoint IDs to curve selection, and exposes the endpoint declaration. A
+“Native spline endpoints” constraint annotation shows measured millimetre
+residuals and passed/failed status. Unsolved previews retain the native curve
+so fixed endpoint conflicts can be inspected.
+
+ABI 55 assigns explicit-segment flag bit 3 (8) to non-clamped bases, mutually
+exclusive with periodic bit 2 (4), and adds `occt_bridge_curve_end_data` /
+`Session::curve_end_data`. The query accepts an edge or one-edge wire and
+returns active-domain start/end positions and unnormalized first derivatives
+in located world coordinates, following edge orientation. It stores no new
+shape handles. Rebuild the native bridge and Rust consumers together. Older
+model documents migrate to schema 101 with `non_clamped` false and no endpoint
+declaration, preserving existing interpolation and clamped/periodic behavior.

@@ -1247,6 +1247,37 @@ static void extrusion_limits(occt_bridge_session_t* session) {
     occt_bridge_shape_release(session,box);
 }
 
+static void non_clamped_endpoints(occt_bridge_session_t* session) {
+    occt_bridge_shape_id_t wire=0, closed=0;
+    occt_bridge_vec3_t a,b,u,v;
+    const occt_bridge_vec3_t points[]={{0,0,0},{10,10,0},{20,0,0},{15,5,0},{5,5,0}};
+    const double knots[]={0,1,2,3,4,5};
+    const int32_t mults[]={1,1,1,1,1,1};
+    occt_bridge_curve_segment_t segments[]={
+        {3,8,0,3,{0,0,0},{0,0,0},2,6,knots,mults,0,NULL},
+        {0,0,3,2,{0,0,0},{0,0,0},0,0,NULL,NULL,0,NULL}
+    };
+    EXPECT(occt_bridge_create_curve_wire(session,points,5,segments,1,0,&wire),OK);
+    EXPECT(occt_bridge_curve_end_data(NULL,wire,&a,&b,&u,&v),ARG);
+    EXPECT(occt_bridge_curve_end_data(session,wire,NULL,&b,&u,&v),ARG);
+    EXPECT(occt_bridge_curve_end_data(session,wire,&a,NULL,&u,&v),ARG);
+    EXPECT(occt_bridge_curve_end_data(session,wire,&a,&b,NULL,&v),ARG);
+    EXPECT(occt_bridge_curve_end_data(session,wire,&a,&b,&u,NULL),ARG);
+    EXPECT(occt_bridge_curve_end_data(session,unknown,&a,&b,&u,&v),MISSING);
+    EXPECT_TRUE(a.x==0 && b.x==0 && u.x==0 && v.x==0,"failed endpoints clear outputs");
+    EXPECT(occt_bridge_curve_end_data(session,wire,&a,&b,&u,&v),OK);
+    EXPECT_TRUE(fabs(a.x-5)<1e-9 && fabs(a.y-5)<1e-9 && fabs(b.x-15)<1e-9,"active curve endpoints");
+    EXPECT_TRUE(fabs(u.x-10)<1e-9 && fabs(u.y-10)<1e-9 && fabs(v.y+10)<1e-9,"active native derivatives");
+    EXPECT(occt_bridge_create_curve_wire(session,points,5,segments,2,1,&closed),OK);
+    EXPECT(occt_bridge_curve_end_data(session,closed,&a,&b,&u,&v),GEOMETRY);
+    occt_bridge_shape_release(session,closed);
+    segments[0].flags=12;
+    EXPECT(occt_bridge_create_curve_wire(session,points,5,segments,1,0,&closed),ARG);
+    segments[0].flags=0;
+    EXPECT(occt_bridge_create_curve_wire(session,points,5,segments,1,0,&closed),ARG);
+    occt_bridge_shape_release(session,wire);
+}
+
 static void profile_lofts(occt_bridge_session_t* session) {
     occt_bridge_shape_id_t a=0,b=0,open=0,box=0,out=0;
     const occt_bridge_vec3_t points[]={vec(0,0,10),vec(2,0,10)};
@@ -1285,6 +1316,7 @@ int main(void) {
     sketch_edits(session);
     extrusion_limits(session);
     profile_lofts(session);
+    non_clamped_endpoints(session);
     wires_and_faces(session);
     recipes_sweeps_and_lofts(session);
     combinations_and_features(session);

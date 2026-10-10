@@ -126,7 +126,11 @@ impl SketchDefinition {
                         &transform,
                         closed,
                     )?;
-                    session.create_curve_wire(&segments, closed)?
+                    // Render unsolved endpoint conflicts too; the accepted profile
+                    // still enforces native closure during construction.
+                    let native_closed =
+                        closed && !matches!(entity, Entity::Spline(s) if s.endpoints.is_some());
+                    session.create_curve_wire(&segments, native_closed)?
                 }
             };
             let mut points = Vec::new();

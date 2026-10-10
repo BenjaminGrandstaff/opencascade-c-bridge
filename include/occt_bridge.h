@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define OCCT_BRIDGE_ABI_VERSION 54u
+#define OCCT_BRIDGE_ABI_VERSION 55u
 #define OCCT_BRIDGE_INVALID_SHAPE_ID UINT64_C(0)
 
 #if defined(_WIN32) && defined(OCCT_BRIDGE_BUILD_SHARED)
@@ -318,6 +318,8 @@ typedef struct occt_bridge_curve_segment {
      * Flag bit 2 (4) selects a periodic basis: multiplicities <=degree,
      * first and last equal, sum minus last multiplicity = pole count.
      * Periodic kind 3 must be the sole segment of a closed wire.
+     * Flag bit 3 (8) permits non-clamped non-periodic endpoint multiplicities
+     * 1..degree+1. Flags 4 and 8 are mutually exclusive.
      * Weights are optional (weight_count 0), or positive finite per-pole.
      * Buffers are borrowed for the call. Other kinds ignore these fields. */
     int32_t degree;
@@ -327,6 +329,14 @@ typedef struct occt_bridge_curve_segment {
     size_t weight_count;
     const double* weights;
 } occt_bridge_curve_segment_t;
+
+/* Actual active-domain endpoints and first derivatives of one edge or a
+ * one-edge wire, following edge orientation, in located world coordinates.
+ * Endpoint derivatives may be zero; no normalization is performed. */
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_curve_end_data(
+    occt_bridge_session_t* session, occt_bridge_shape_id_t shape,
+    occt_bridge_vec3_t* start, occt_bridge_vec3_t* end,
+    occt_bridge_vec3_t* start_tangent, occt_bridge_vec3_t* end_tangent);
 
 /* Like occt_bridge_create_segment_wire, with spline segments. Consecutive
  * segments must meet within kernel tolerance, and consecutive points within a

@@ -183,3 +183,5 @@ mod arc_tangent_boss;
 mod rational_spline_cap;
 
 mod periodic_spline_pad;
+
+mod non_clamped_spline_cap;

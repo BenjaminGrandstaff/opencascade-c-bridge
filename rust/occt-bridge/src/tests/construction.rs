@@ -770,6 +770,7 @@ fn explicit_rational_bspline_preserves_quarter_circle_and_internal_knots() {
     let wire = session
         .create_curve_wire(
             &[CurveSegment::BSpline {
+                non_clamped: false,
                 periodic: false,
                 poles: vec![
                     Vec3::new(10., 0., 0.),
@@ -811,6 +812,7 @@ fn explicit_rational_bspline_preserves_quarter_circle_and_internal_knots() {
     let wire = session
         .create_curve_wire(
             &[CurveSegment::BSpline {
+                non_clamped: false,
                 periodic: false,
                 poles: (0..7)
                     .map(|i| Vec3::new(i as f64, (i % 2) as f64, 0.))
@@ -837,6 +839,7 @@ fn explicit_rational_bspline_preserves_quarter_circle_and_internal_knots() {
 fn explicit_bspline_validation_is_bounded_and_failure_releases_handles() {
     let session = Session::new().unwrap();
     let valid = CurveSegment::BSpline {
+        non_clamped: false,
         periodic: false,
         poles: vec![
             Vec3::new(0., 0., 0.),
@@ -882,6 +885,7 @@ fn periodic_explicit_bspline_closes_at_native_seam_and_preserves_tangency() {
         let wire = session
             .create_curve_wire(
                 &[CurveSegment::BSpline {
+                    non_clamped: false,
                     periodic: true,
                     poles: vec![
                         Vec3::new(10., 10., 0.),
@@ -932,6 +936,7 @@ fn periodic_explicit_bspline_closes_at_native_seam_and_preserves_tangency() {
 fn periodic_explicit_bspline_rejects_bad_multiplicities_open_and_mixed_wires_without_leaks() {
     let session = Session::new().unwrap();
     let valid = CurveSegment::BSpline {
+        non_clamped: false,
         periodic: true,
         poles: vec![
             Vec3::new(1., 1., 0.),
@@ -944,7 +949,11 @@ fn periodic_explicit_bspline_rejects_bad_multiplicities_open_and_mixed_wires_wit
         multiplicities: vec![1; 5],
         weights: vec![],
     };
-    assert!(session.create_curve_wire(&[valid.clone()], false).is_err());
+    assert!(
+        session
+            .create_curve_wire(std::slice::from_ref(&valid), false)
+            .is_err()
+    );
     let line = CurveSegment::Line {
         start: Vec3::new(1., 1., 0.),
         end: Vec3::new(-1., 1., 0.),
@@ -965,6 +974,103 @@ fn periodic_explicit_bspline_rejects_bad_multiplicities_open_and_mixed_wires_wit
             _ => multiplicities[0] = 4,
         }
         assert!(session.create_curve_wire(&[s], true).is_err());
+        assert_eq!(session.shape_count().unwrap(), 0);
+    }
+}
+
+#[test]
+fn non_clamped_bspline_mixes_with_chord_at_actual_endpoints_and_queries_native_derivatives() {
+    let session = Session::new().unwrap();
+    let curve = CurveSegment::BSpline {
+        non_clamped: true,
+        periodic: false,
+        poles: vec![
+            Vec3::new(0., 0., 0.),
+            Vec3::new(10., 10., 0.),
+            Vec3::new(20., 0., 0.),
+        ],
+        degree: 2,
+        knots: vec![0., 1., 2., 3., 4., 5.],
+        multiplicities: vec![1; 6],
+        weights: vec![],
+    };
+    let wire = session
+        .create_curve_wire(std::slice::from_ref(&curve), false)
+        .unwrap();
+    let (start, end, u, v) = session.curve_end_data(&wire).unwrap();
+    assert!((start.x - 5.).abs() < 1e-7 && (start.y - 5.).abs() < 1e-7);
+    assert!((end.x - 15.).abs() < 1e-7 && (end.y - 5.).abs() < 1e-7);
+    assert!((u.x - 10.).abs() < 1e-7 && (u.y - 10.).abs() < 1e-7);
+    assert!((v.x - 10.).abs() < 1e-7 && (v.y + 10.).abs() < 1e-7);
+    let shifted = session.translate(&wire, Vec3::new(2., 3., 4.)).unwrap();
+    let (a, _, a_tangent, _) = session.curve_end_data(&shifted).unwrap();
+    assert!((a.x - 7.).abs() < 1e-7 && (a.y - 8.).abs() < 1e-7 && (a.z - 4.).abs() < 1e-7);
+    assert_eq!(a_tangent, u);
+    let closed = session
+        .create_curve_wire(
+            &[
+                curve.clone(),
+                CurveSegment::Line {
+                    start: end,
+                    end: start,
+                },
+            ],
+            true,
+        )
+        .unwrap();
+    assert!(session.wire_is_closed(&closed).unwrap());
+    let face = session.create_face_from_wire(&closed).unwrap();
+    assert!((session.surface_area(&face).unwrap() - 100. / 6.).abs() < 1e-5);
+    assert!(session.curve_end_data(&closed).is_err()); // Multiple edges are not a single curve query.
+    assert!(
+        session
+            .create_curve_wire(
+                &[
+                    curve,
+                    CurveSegment::Line {
+                        start: Vec3::new(20., 0., 0.),
+                        end: Vec3::new(0., 0., 0.)
+                    }
+                ],
+                true
+            )
+            .is_err()
+    );
+}
+
+#[test]
+fn non_clamped_bspline_rejects_conflicting_modes_and_bad_knot_cardinality_without_leaks() {
+    let session = Session::new().unwrap();
+    let valid = CurveSegment::BSpline {
+        non_clamped: true,
+        periodic: false,
+        poles: vec![
+            Vec3::new(0., 0., 0.),
+            Vec3::new(10., 10., 0.),
+            Vec3::new(20., 0., 0.),
+        ],
+        degree: 2,
+        knots: vec![0., 1., 2., 3., 4., 5.],
+        multiplicities: vec![1; 6],
+        weights: vec![],
+    };
+    for case in 0..3 {
+        let mut c = valid.clone();
+        let CurveSegment::BSpline {
+            periodic,
+            multiplicities,
+            non_clamped,
+            ..
+        } = &mut c
+        else {
+            unreachable!()
+        };
+        match case {
+            0 => *periodic = true,
+            1 => multiplicities[2] = 2,
+            _ => *non_clamped = false,
+        }
+        assert!(session.create_curve_wire(&[c], false).is_err());
         assert_eq!(session.shape_count().unwrap(), 0);
     }
 }

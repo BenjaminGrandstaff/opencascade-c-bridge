@@ -55,9 +55,31 @@ pub(super) fn sketch_scene(
         .collect();
     for entity in &mut entities {
         if let Some((s, b)) = explicit.get(entity["id"].as_str().unwrap()) {
-            entity["bspline"] = json!({"basis":b,"control_points":s.points,"evaluated_weights":solution.spline_weights[&s.id]});
+            entity["bspline"] = json!({"basis":b,"control_points":s.points,"endpoints":s.endpoints,"evaluated_weights":solution.spline_weights[&s.id]});
         }
     }
+    for entity in &mut entities {
+        if let Some((s, _)) = explicit.get(entity["id"].as_str().unwrap())
+            && let Some(e) = &s.endpoints
+        {
+            entity["point_ids"]
+                .as_array_mut()
+                .unwrap()
+                .extend([json!(e.start), json!(e.end)]);
+        }
+    }
+    let native_spline_ends: HashMap<_, _> = entities
+        .iter()
+        .filter(|e| !e["bspline"].is_null())
+        .map(|e| {
+            let samples = e["points"].as_array().unwrap();
+            let point = |p: &Value| [p[0].as_f64().unwrap(), p[1].as_f64().unwrap(), 0.];
+            (
+                e["id"].as_str().unwrap().to_owned(),
+                [point(&samples[0]), point(samples.last().unwrap())],
+            )
+        })
+        .collect();
     let external_ids: BTreeSet<_> = projections
         .iter()
         .filter_map(|p| p["definition"]["id"].as_str())
@@ -168,11 +190,31 @@ pub(super) fn sketch_scene(
                 parameters.extend(point_controls[id.as_str()].iter().cloned());
             }
             annotations.push(Annotation {
-                id: format!("bspline-{}", spline.id), label: format!("{}B-spline degree {}", if basis.periodic { "Periodic " } else { "" }, basis.degree),
+                id: format!("bspline-{}", spline.id), label: format!("{}B-spline degree {}", if basis.periodic { "Periodic " } else if basis.non_clamped { "Non-clamped " } else { "" }, basis.degree),
                 kind: AnnotationKind::Group, status: AnnotationStatus::Constructed,
                 targets: vec![spline.id.clone()], parameters: parameters.into_iter().collect(),
                 anchors: json!([point_map[&spline.points[0]]]),
                 detail: json!({"basis":basis,"control_points":spline.points,"evaluated_weights":solution.spline_weights[&spline.id],"periodic":basis.periodic}),
+            }.into());
+        }
+    }
+    for spline in &sketch.splines {
+        if let Some(e) = &spline.endpoints {
+            let samples = native_spline_ends[spline.id.as_str()];
+            let mut residual = 0_f64;
+            let mut anchors = Vec::new();
+            for (id, actual) in [(&e.start, &samples[0]), (&e.end, &samples[1])] {
+                let p = point_map[id];
+                let q = *actual;
+                residual = residual.max((p[0] - q[0]).abs()).max((p[1] - q[1]).abs());
+                anchors.extend([p, q]);
+            }
+            annotations.push(Annotation {
+                id: format!("bspline-endpoints-{}",spline.id), label:"Native spline endpoints".into(),
+                kind:AnnotationKind::Constraint, status:if residual<=1e-9 {AnnotationStatus::Passed} else {AnnotationStatus::Failed},
+                targets:vec![spline.id.clone(),e.start.clone(),e.end.clone()],
+                parameters:vec![], anchors:json!(anchors),
+                detail:json!({"endpoints":e,"max_residual":residual,"residual_unit":"mm","by_construction":false,"tolerance":1e-9}),
             }.into());
         }
     }

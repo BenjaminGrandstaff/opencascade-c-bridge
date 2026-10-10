@@ -60,7 +60,7 @@ impl SketchDefinition {
                             | SketchConstraint::Symmetric { .. }
                             | SketchConstraint::PointOnCurve { .. }
                     )
-                }),
+                }) || self.splines.iter().any(|s| s.endpoints.is_some()),
             ) else {
                 break;
             };
@@ -137,6 +137,7 @@ enum Equation<'a> {
     Constraint(&'a SketchConstraint),
     Arc(&'a SketchArc),
     Ellipse(&'a SketchEllipse),
+    SplineEndpoints(&'a SketchSpline),
 }
 
 impl<'a> SketchProblem<'a> {
@@ -172,6 +173,13 @@ impl SketchProblem<'_> {
             .map(Equation::Constraint)
             .chain(self.sketch.arcs.iter().map(Equation::Arc))
             .chain(self.sketch.ellipses.iter().map(Equation::Ellipse))
+            .chain(
+                self.sketch
+                    .splines
+                    .iter()
+                    .filter(|s| s.endpoints.is_some())
+                    .map(Equation::SplineEndpoints),
+            )
     }
 
     fn equation_residuals(
@@ -183,6 +191,15 @@ impl SketchProblem<'_> {
         match equation {
             Equation::Constraint(constraint) => {
                 self.constraint_residuals(constraint, values, residuals)
+            }
+            Equation::SplineEndpoints(s) => {
+                let wire = self.spline_curve(s, values)?;
+                let (a, b, _, _) = self.native.curve_end_data(&wire)?;
+                let e = s.endpoints.as_ref().unwrap();
+                let start = self.point(&e.start, values);
+                let end = self.point(&e.end, values);
+                residuals.extend([start.x - a.x, start.y - a.y, end.x - b.x, end.y - b.y]);
+                Ok(())
             }
             Equation::Ellipse(e) => {
                 let c = self.point(&e.center, values);
@@ -205,8 +222,24 @@ impl SketchProblem<'_> {
         }
     }
 
-    fn tangent(&self, id: &str, contact: &str, values: &[f64]) -> (SketchPoint2, SketchPoint2) {
+    fn tangent(
+        &self,
+        id: &str,
+        contact: &str,
+        values: &[f64],
+    ) -> Result<(SketchPoint2, SketchPoint2), ModelError> {
         let entity = self.entities[id];
+        if let Entity::Spline(s) = entity
+            && let Some(e) = &s.endpoints
+        {
+            let wire = self.spline_curve(s, values)?;
+            let (_, _, u, v) = self.native.curve_end_data(&wire)?;
+            let d = if e.start == contact { u } else { v };
+            return Ok((
+                SketchPoint2 { x: 0., y: 0. },
+                SketchPoint2 { x: d.x, y: d.y },
+            ));
+        }
         let (first, second) = entity.tangent_points(contact);
         let (a, b) = (self.point(first, values), self.point(second, values));
         let direction = if matches!(entity, Entity::Line(_) | Entity::Spline(_)) {
@@ -220,7 +253,7 @@ impl SketchProblem<'_> {
                 y: b.x - a.x,
             }
         };
-        (SketchPoint2 { x: 0.0, y: 0.0 }, direction)
+        Ok((SketchPoint2 { x: 0.0, y: 0.0 }, direction))
     }
 
     fn spline_neighbor_refs<'a>(&'a self, spline: &'a SketchSpline) -> Vec<&'a str> {
@@ -257,7 +290,7 @@ impl SketchProblem<'_> {
                 .collect();
             return Ok(self.native.create_curve_wire(
                 &[spline.explicit_segment(poles, basis.weights(self.parameters)?)?],
-                spline.closed(),
+                basis.periodic,
             )?);
         }
         let away = |at: &str| -> Option<Vec3> {
@@ -497,8 +530,8 @@ impl SketchProblem<'_> {
                 point,
             } => {
                 residuals.push(normalized_cross(
-                    self.tangent(first, point, values),
-                    self.tangent(second, point, values),
+                    self.tangent(first, point, values)?,
+                    self.tangent(second, point, values)?,
                 )?);
             }
             SketchConstraint::Coincident { first, second } => {
@@ -712,9 +745,19 @@ impl SketchProblem<'_> {
                 second,
                 point,
             } => {
-                let (a, b) = self.entities[first.as_str()].tangent_points(point);
-                let (c, d) = self.entities[second.as_str()].tangent_points(point);
-                vec![a, b, c, d]
+                let mut refs = Vec::new();
+                for id in [first, second] {
+                    match self.entities[id.as_str()] {
+                        Entity::Spline(s) if s.endpoints.is_some() => {
+                            refs.extend(s.points.iter().map(String::as_str))
+                        }
+                        entity => {
+                            let (a, b) = entity.tangent_points(point);
+                            refs.extend([a, b]);
+                        }
+                    }
+                }
+                refs
             }
             SketchConstraint::Coincident { first, second }
             | SketchConstraint::Distance { first, second, .. } => {
@@ -763,6 +806,12 @@ impl SketchProblem<'_> {
             let columns = match equation {
                 Equation::Constraint(constraint) => self.columns(constraint),
                 Equation::Arc(arc) => self.point_columns(vec![&arc.center, &arc.start, &arc.end]),
+                Equation::SplineEndpoints(s) => {
+                    let e = s.endpoints.as_ref().unwrap();
+                    let mut refs = s.points.iter().map(String::as_str).collect::<Vec<_>>();
+                    refs.extend([e.start.as_str(), e.end.as_str()]);
+                    self.point_columns(refs)
+                }
                 Equation::Ellipse(e) => self.point_columns(vec![&e.center, &e.major, &e.minor]),
             };
             for column in columns {

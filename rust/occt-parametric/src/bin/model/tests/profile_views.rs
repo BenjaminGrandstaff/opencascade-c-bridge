@@ -977,3 +977,65 @@ fn periodic_bspline_viewer_exposes_closed_control_polygon_and_live_weight_metada
         assert!(svg.contains("stroke-dasharray=\"5 4\""));
     }
 }
+
+#[test]
+fn non_clamped_viewer_exposes_measured_endpoint_links_and_reports_fixed_conflicts() {
+    let dir = Directory::new();
+    for conflict in [false, true] {
+        let mut request = view_example("non-clamped-spline-cap");
+        if conflict {
+            request["model"]["family"]["features"][0]["operation"]["sketch_face"]["sketch"]["points"]
+                [3]["fixed"] = json!(true);
+        }
+        let name = if conflict {
+            "endpoint-conflict"
+        } else {
+            "non-clamped"
+        };
+        view_request(&dir, request, name).unwrap();
+        let data: Value =
+            serde_json::from_str(&fs::read_to_string(dir.0.join(name).join("view.json")).unwrap())
+                .unwrap();
+        let scene = data["scenes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["kind"] == "sketch")
+            .unwrap();
+        assert_eq!(scene["solver"]["solved"], !conflict);
+        let curve = scene["entities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|e| e["id"] == "curve")
+            .unwrap();
+        assert_eq!(curve["bspline"]["basis"]["non_clamped"], true);
+        assert_eq!(
+            curve["bspline"]["endpoints"],
+            json!({"start":"start","end":"end"})
+        );
+        assert!(
+            curve["point_ids"]
+                .as_array()
+                .unwrap()
+                .contains(&json!("start"))
+        );
+        let link = scene["annotations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|a| a["id"] == "bspline-endpoints-curve")
+            .unwrap();
+        assert_eq!(link["status"], if conflict { "failed" } else { "passed" });
+        assert_eq!(link["detail"]["by_construction"], false);
+        assert_eq!(link["detail"]["residual_unit"], "mm");
+        assert_eq!(link["anchors"].as_array().unwrap().len(), 4);
+        if !conflict {
+            assert!(link["detail"]["max_residual"].as_f64().unwrap() < 1e-9);
+            assert!((scene["points"]["start"][0].as_f64().unwrap() - 5.).abs() < 1e-7);
+            assert!((scene["points"]["end"][0].as_f64().unwrap() - 15.).abs() < 1e-7);
+        } else {
+            assert!(link["detail"]["max_residual"].as_f64().unwrap() > 0.5);
+        }
+    }
+}

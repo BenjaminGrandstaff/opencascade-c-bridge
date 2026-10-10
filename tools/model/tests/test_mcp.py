@@ -58,7 +58,7 @@ class McpTests(unittest.TestCase):
         with self.assertRaises(jsonschema.ValidationError):
             jsonschema.validate(bad, schema)
         resources = self.client.call('resources/list')['result']['resources']
-        self.assertEqual(len(resources), 48)
+        self.assertEqual(len(resources), 49)
         self.assertEqual(len(self.client.call('resources/templates/list')['result']['resourceTemplates']), 1)
         read = self.client.call('resources/read', dict(uri='occt://schema/request'))['result']['contents'][0]
         self.assertEqual(json.loads(read['text']), schema)
@@ -512,6 +512,23 @@ class McpTests(unittest.TestCase):
         self.assertIn('corner_weight', next(a for a in scene['annotations'] if a['id']=='bspline-curve')['parameters'])
         for axis in range(3):
             self.assertAlmostEqual(curve['points'][0][axis], curve['points'][-1][axis])
+        non_clamped = self.client.tool('occt_get_example', dict(name='non-clamped-spline-cap'))['structuredContent']
+        jsonschema.validate(non_clamped, schema)
+        result = self.client.tool('occt_visualize_model', non_clamped)
+        self.assertFalse(result['isError'])
+        data = json.loads(self.client.call('resources/read', dict(uri=result['structuredContent']['resources']['view.json']))['result']['contents'][0]['text'])
+        scene = next(s for s in data['scenes'] if s['kind']=='sketch')
+        self.assertTrue(scene['solver']['solved'])
+        self.assertEqual(scene['solver']['free_degrees'], 0)
+        curve = next(e for e in scene['entities'] if e['id']=='curve')
+        self.assertTrue(curve['bspline']['basis']['non_clamped'])
+        self.assertEqual(curve['bspline']['endpoints'], dict(start='start', end='end'))
+        endpoints = next(a for a in scene['annotations'] if a['id']=='bspline-endpoints-curve')
+        self.assertEqual(endpoints['status'], 'passed')
+        self.assertLess(endpoints['detail']['max_residual'], 1e-9)
+        self.assertFalse(endpoints['detail']['by_construction'])
+        self.assertAlmostEqual(curve['points'][0][0], 5.)
+        self.assertAlmostEqual(curve['points'][-1][0], 15.)
         # Ordinary accepted builds also publish the annotated viewer when preview is on.
         build_request = dict(schema='occb-model-request-v1',model=request['model'],outputs=request['outputs'],preview=True,step=False,stl=False)
         built = self.client.tool('occt_build',build_request)['structuredContent']
