@@ -22,6 +22,9 @@ pub(super) fn sketch_scene(
     let spline_pair_contacts = sketch
         .spline_spline_tangent_contacts(parameters, &solution)
         .stage("sketch")?;
+    let spline_ellipse_contacts = sketch
+        .spline_ellipse_tangent_contacts(parameters, &solution)
+        .stage("sketch")?;
     let spline_circle_contacts = sketch
         .spline_circle_tangent_contacts(parameters, &solution)
         .stage("sketch")?;
@@ -371,6 +374,16 @@ pub(super) fn sketch_scene(
                 vec![point.clone()],
                 None,
             ),
+            SketchConstraint::SplineEllipseTangent {
+                spline,
+                ellipse,
+                point,
+            } => (
+                "T SPLINE ELLIPSE",
+                vec![spline.clone(), ellipse.clone(), point.clone()],
+                vec![point.clone()],
+                None,
+            ),
             SketchConstraint::SplineCircleTangent {
                 spline,
                 circle,
@@ -503,6 +516,13 @@ pub(super) fn sketch_scene(
         match constraint {
             SketchConstraint::SplineSplineTangent { .. } => {
                 anchors = spline_pair_contacts[&index]
+                    .0
+                    .into_iter()
+                    .map(|p| [p.x, p.y, 0.])
+                    .collect();
+            }
+            SketchConstraint::SplineEllipseTangent { .. } => {
+                anchors = spline_ellipse_contacts[&index]
                     .0
                     .into_iter()
                     .map(|p| [p.x, p.y, 0.])
@@ -684,6 +704,28 @@ pub(super) fn sketch_scene(
                     }
                 }
             }
+            SketchConstraint::SplineEllipseTangent {
+                spline,
+                ellipse,
+                point,
+            } => {
+                let s = spline_defs[spline.as_str()];
+                let e = ellipses[ellipse.as_str()];
+                let mut ids = vec![
+                    point.as_str(),
+                    e.center.as_str(),
+                    e.major.as_str(),
+                    e.minor.as_str(),
+                ];
+                ids.extend(s.points.iter().map(String::as_str));
+                control_names.extend(names(&json!(s.basis)));
+                for id in ids {
+                    control_names.extend(point_controls[id].iter().cloned());
+                    if let Some(names) = dimension_point_controls.get(id) {
+                        control_names.extend(names.iter().cloned());
+                    }
+                }
+            }
             SketchConstraint::SplineCircleTangent {
                 spline,
                 circle,
@@ -795,7 +837,8 @@ pub(super) fn sketch_scene(
             SketchConstraint::Angle { .. } => "rad",
             SketchConstraint::LineSplineTangent { .. }
             | SketchConstraint::SplineCircleTangent { .. }
-            | SketchConstraint::SplineSplineTangent { .. } => "mixed",
+            | SketchConstraint::SplineSplineTangent { .. }
+            | SketchConstraint::SplineEllipseTangent { .. } => "mixed",
             SketchConstraint::Parallel { .. }
             | SketchConstraint::Perpendicular { .. }
             | SketchConstraint::Tangent { .. } => "dimensionless",
@@ -818,7 +861,7 @@ pub(super) fn sketch_scene(
                     "by_construction": check.by_construction,
                     "tolerance": 1e-9,
                     "residual_unit": residual_unit,
-                    "contact_residuals": spline_pair_contacts.get(&index).map(|(p,sine)|json!({
+                    "contact_residuals": spline_pair_contacts.get(&index).or_else(||spline_ellipse_contacts.get(&index)).map(|(p,sine)|json!({
                         "position_residual_mm":(p[0].x-p[1].x).abs().max((p[0].y-p[1].y).abs()).max((p[0].x-p[2].x).abs()).max((p[0].y-p[2].y).abs()),
                         "tangent_sine":sine,"residual_units":["mm","mm","mm","mm","dimensionless"]
                     })).or_else(||spline_circle_contacts.get(&index).map(|c|json!({

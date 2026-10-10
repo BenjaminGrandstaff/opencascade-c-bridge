@@ -256,6 +256,12 @@ pub enum SketchConstraint {
         second: String,
         point: String,
     },
+    /// Tangency at a seeded contact on a bounded native spline and full ellipse.
+    SplineEllipseTangent {
+        spline: String,
+        ellipse: String,
+        point: String,
+    },
     /// Independent spline/circle tangency, with contact inside any directed arc span.
     SplineCircleTangent {
         spline: String,

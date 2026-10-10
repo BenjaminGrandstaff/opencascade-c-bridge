@@ -59,6 +59,7 @@ impl SketchDefinition {
                             | SketchConstraint::LineSplineTangent { .. }
                             | SketchConstraint::SplineCircleTangent { .. }
                             | SketchConstraint::SplineSplineTangent { .. }
+                            | SketchConstraint::SplineEllipseTangent { .. }
                             | SketchConstraint::CircleCircleTangent { .. }
                             | SketchConstraint::Concentric { .. }
                             | SketchConstraint::Symmetric { .. }
@@ -421,6 +422,65 @@ impl SketchProblem<'_> {
         Ok(([p, a, b], normalized_cross((zero, u), (zero, v))?))
     }
 
+    pub(super) fn spline_ellipse_contact(
+        &self,
+        spline: &str,
+        ellipse: &str,
+        point: &str,
+        values: &[f64],
+    ) -> Result<([SketchPoint2; 3], f64), ModelError> {
+        let (p, a, u) = self.spline_contact_data(spline, point, values)?;
+        let Entity::Ellipse(e) = self.entities[ellipse] else {
+            unreachable!("validated ellipse contact")
+        };
+        let c = self.point(&e.center, values);
+        let major = self.point(&e.major, values);
+        let minor = self.point(&e.minor, values);
+        let ra = line_length((c, major));
+        let rb = line_length((c, minor));
+        if ra <= f64::EPSILON || rb <= f64::EPSILON {
+            return Err(ModelError::new(
+                "spline-ellipse tangency needs positive axes",
+            ));
+        }
+        let axis = Vec3::new((major.x - c.x) / ra, (major.y - c.y) / ra, 0.);
+        // Trial coordinates can temporarily swap axis lengths. Preserve the locus
+        // while satisfying OCCT's major >= minor constructor requirement.
+        let (axis, ra, rb) = if ra >= rb {
+            (axis, ra, rb)
+        } else {
+            (Vec3::new(-axis.y, axis.x, 0.), rb, ra)
+        };
+        let wire = self.native.create_ellipse_wire_axes(
+            Vec3::new(c.x, c.y, 0.),
+            Vec3::new(0., 0., 1.),
+            axis,
+            ra,
+            rb,
+        )?;
+        let (b, v) = self
+            .native
+            .curve_closest_data(&wire, Vec3::new(p.x, p.y, 0.))?;
+        let scale = v.x.abs().max(v.y.abs());
+        if scale == 0. {
+            return Err(ModelError::new("ellipse contact has a zero planar tangent"));
+        }
+        let zero = SketchPoint2 { x: 0., y: 0. };
+        Ok((
+            [p, a, SketchPoint2 { x: b.x, y: b.y }],
+            normalized_cross(
+                (zero, u),
+                (
+                    zero,
+                    SketchPoint2 {
+                        x: v.x / scale,
+                        y: v.y / scale,
+                    },
+                ),
+            )?,
+        ))
+    }
+
     pub(super) fn spline_circle_contact(
         &self,
         spline: &str,
@@ -697,6 +757,15 @@ impl SketchProblem<'_> {
                 let ([p, a, b], sine) = self.spline_spline_contact(first, second, point, values)?;
                 residuals.extend([p.x - a.x, p.y - a.y, p.x - b.x, p.y - b.y, sine]);
             }
+            SketchConstraint::SplineEllipseTangent {
+                spline,
+                ellipse,
+                point,
+            } => {
+                let ([p, a, b], sine) =
+                    self.spline_ellipse_contact(spline, ellipse, point, values)?;
+                residuals.extend([p.x - a.x, p.y - a.y, p.x - b.x, p.y - b.y, sine]);
+            }
             SketchConstraint::SplineCircleTangent {
                 spline,
                 circle,
@@ -883,6 +952,26 @@ impl SketchProblem<'_> {
                     };
                     refs.extend(self.spline_neighbor_refs(s));
                 }
+                refs
+            }
+            SketchConstraint::SplineEllipseTangent {
+                spline,
+                ellipse,
+                point,
+            } => {
+                let Entity::Spline(s) = self.entities[spline.as_str()] else {
+                    unreachable!("validated spline")
+                };
+                let Entity::Ellipse(e) = self.entities[ellipse.as_str()] else {
+                    unreachable!("validated ellipse")
+                };
+                let mut refs = vec![
+                    point.as_str(),
+                    e.center.as_str(),
+                    e.major.as_str(),
+                    e.minor.as_str(),
+                ];
+                refs.extend(self.spline_neighbor_refs(s));
                 refs
             }
             SketchConstraint::SplineCircleTangent {

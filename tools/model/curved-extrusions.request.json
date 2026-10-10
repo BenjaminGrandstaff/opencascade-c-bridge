@@ -1,7 +1,7 @@
 {
   "schema": "occb-model-view-v1",
   "model": {
-    "schema_version": 105,
+    "schema_version": 106,
     "family": {
       "id": "curved-extrusions",
       "version": 1,

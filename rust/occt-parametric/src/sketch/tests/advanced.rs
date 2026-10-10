@@ -2368,3 +2368,89 @@ fn spline_pair_contact_accepts_interpolated_non_clamped_and_periodic_first_curve
         assert!(session.is_valid(&face).unwrap());
     }
 }
+
+fn spline_ellipse_contact_sketch() -> (SketchDefinition, HashMap<String, ParameterValue>) {
+    let r: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../tools/model/spline-tangent-ellipse.request.json"
+    ))
+    .unwrap();
+    let doc = ModelDocument::from_json(&r["model"].to_string()).unwrap();
+    let part = PartInstance {
+        id: "part".into(),
+        definition: &doc.family,
+        overrides: HashMap::new(),
+        provenance: "test".into(),
+    };
+    let FeatureOperation::SketchFace { sketch } = &doc.family.features[0].operation else {
+        unreachable!()
+    };
+    ((**sketch).clone(), part.resolved_parameters().unwrap())
+}
+
+#[test]
+fn spline_ellipse_contact_solves_native_positions_rotation_and_rational_weight() {
+    let (s, mut params) = spline_ellipse_contact_sketch();
+    for (weight, tilt) in [(1., 0.), (2., 0.), (0.5, 0.4), (2., 1.0471975511965976)] {
+        params.insert(
+            "middle_weight".into(),
+            ParameterValue::Scalar(Quantity::scalar(weight)),
+        );
+        params.insert(
+            "tilt".into(),
+            ParameterValue::Scalar(Quantity::scalar(tilt)),
+        );
+        let solved = s.solve(&params).unwrap();
+        assert!(solved.solved, "{}", solved.max_residual);
+        assert_eq!(solved.free_degrees, 0);
+        let (p, sine) = s.spline_ellipse_tangent_contacts(&params, &solved).unwrap()[&4];
+        assert!(sine.abs() < 1e-9);
+        for q in &p[1..] {
+            assert!((q.x - p[0].x).abs() < 1e-9 && (q.y - p[0].y).abs() < 1e-9);
+        }
+        let check = &s.constraint_checks(&params, &solved).unwrap()[4];
+        assert!(check.satisfied && !check.by_construction);
+        if tilt == 0. {
+            assert!(p[0].x.abs() < 1e-7 && (p[0].y - 10. * weight / (1. + weight)).abs() < 1e-7);
+        }
+    }
+}
+
+#[test]
+fn spline_ellipse_contact_rejects_bad_roles_and_reports_fixed_conflicts() {
+    let (s, params) = spline_ellipse_contact_sketch();
+    for role in 0..3 {
+        let mut bad = s.clone();
+        let SketchConstraint::SplineEllipseTangent {
+            spline,
+            ellipse,
+            point,
+        } = &mut bad.constraints[4]
+        else {
+            unreachable!()
+        };
+        match role {
+            0 => *spline = "baseline".into(),
+            1 => *ellipse = "curve".into(),
+            _ => *point = "missing".into(),
+        }
+        assert!(bad.solve(&params).is_err());
+    }
+    let mut fixed = s.clone();
+    for p in &mut fixed.points {
+        p.fixed = true;
+    }
+    let solved = fixed.solve(&params).unwrap();
+    assert!(!solved.solved);
+    assert!(!fixed.constraint_checks(&params, &solved).unwrap()[4].satisfied);
+    let (p, _) = fixed
+        .spline_ellipse_tangent_contacts(&params, &solved)
+        .unwrap()[&4];
+    assert!((p[0].x - p[1].x).hypot(p[0].y - p[1].y) > 0.1);
+    let mut invalid = solved.clone();
+    invalid.points.remove("contact");
+    assert!(
+        fixed
+            .spline_ellipse_tangent_contacts(&params, &invalid)
+            .is_err()
+    );
+}

@@ -79,7 +79,7 @@ export are verified. A 1,000-pair solve and residual-diagnostic gate passes in
 0.009 s (10 s budget); 20 solids plus 60 source sketch scenes and matched-radius
 annotations pass through MCP in 0.316 s (10 s budget).
 
-Current authoring examples use schema 105. Older model documents migrate
+Current authoring examples use schema 106. Older model documents migrate
 without adding constraints or changing their entities. Current native ABI is 56.
 
 ## Saved profile operations
@@ -778,3 +778,31 @@ parameter edits and failed-edit retention are tested.
 indexed by constraint number. Older documents migrate to schema 105 without
 adding relations; native ABI remains 56. Independent spline–ellipse and other
 ellipse contacts remain future work.
+
+## Spline-ellipse tangency (schema 106)
+
+`spline_ellipse_tangent` names a `spline`, a full `ellipse`, and a seeded
+contact `point`. It measures bounded native spline and full native ellipse
+closest points and derivatives through OpenCascade. All existing spline modes
+use the same contact query. Tangency is unoriented: opposite derivatives are
+allowed. The seed selects a local contact; this is not a global search for
+all possible tangencies. Native zero derivatives and ambiguous C0 contacts
+remain rejected.
+
+The solver adds four positional residuals in millimeters (seed minus each
+native contact's x/y coordinates) and a normalized tangent cross product.
+The ellipse retains its intrinsic perpendicular-axis equation and positive,
+ordered axis validation. Temporary axis swaps during nonlinear iterations
+preserve the ellipse locus for native queries. A contact outside the spline's
+bounded domain cannot pass merely by lying on its supporting extension.
+
+The viewer shows the seed and both measured contacts, tangent sine, separate
+residual units, and linked spline weight, point and ellipse dimension controls.
+Fixed conflicts remain visible. `spline_ellipse_tangent_contacts` returns the
+three contact positions and sine, indexed by constraint number.
+
+The [spline tangent ellipse](../tools/model/spline-tangent-ellipse.request.json)
+example extrudes the ellipse into a solid. Editing `middle_weight` changes its
+placement; `semi_major`, `semi_minor`, and `tilt` change its shape and contact.
+Editing `height` reuses the profile. Older documents migrate to schema 106
+without adding constraints; native ABI remains 56.

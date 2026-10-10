@@ -203,6 +203,17 @@ impl SketchDefinition {
                         ));
                     }
                 }
+                SketchConstraint::SplineEllipseTangent {
+                    spline, ellipse, ..
+                } => {
+                    if !matches!(entities.get(spline.as_str()), Some(Entity::Spline(_)))
+                        || !matches!(entities.get(ellipse.as_str()), Some(Entity::Ellipse(_)))
+                    {
+                        return Err(ModelError::new(
+                            "spline-ellipse tangency requires a spline and full ellipse",
+                        ));
+                    }
+                }
                 SketchConstraint::SplineCircleTangent { spline, circle, .. } => {
                     if !matches!(entities.get(spline.as_str()), Some(Entity::Spline(_)))
                         || !matches!(
@@ -417,7 +428,8 @@ impl SketchConstraint {
             Self::PointOnCurve { point: id, .. }
             | Self::Tangent { point: id, .. }
             | Self::SplineCircleTangent { point: id, .. }
-            | Self::SplineSplineTangent { point: id, .. } => point(id),
+            | Self::SplineSplineTangent { point: id, .. }
+            | Self::SplineEllipseTangent { point: id, .. } => point(id),
             Self::PointLineDistance {
                 point: id,
                 line: axis,

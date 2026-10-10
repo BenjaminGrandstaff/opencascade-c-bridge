@@ -1,0 +1,735 @@
+{
+  "schema": "occb-model-view-v1",
+  "model": {
+    "schema_version": 106,
+    "family": {
+      "id": "spline-tangent-ellipse",
+      "version": 1,
+      "parameters": [
+        {
+          "id": "span",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 20,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 10,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 40,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "rise",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 10,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 5,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 20,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "middle_weight",
+          "parameter_type": {
+            "scalar": "scalar"
+          },
+          "default": {
+            "scalar": {
+              "value": 1,
+              "dimension": "scalar",
+              "unit": null
+            }
+          },
+          "minimum": {
+            "value": 0.5,
+            "dimension": "scalar",
+            "unit": null
+          },
+          "maximum": {
+            "value": 2,
+            "dimension": "scalar",
+            "unit": null
+          }
+        },
+        {
+          "id": "height",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 8,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 2,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 30,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "semi_major",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 5,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 5,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 12,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "semi_minor",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 3,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 2,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 4,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "tilt",
+          "parameter_type": {
+            "scalar": "scalar"
+          },
+          "default": {
+            "scalar": {
+              "value": 0,
+              "dimension": "scalar",
+              "unit": null
+            }
+          },
+          "minimum": {
+            "value": 0,
+            "dimension": "scalar",
+            "unit": null
+          },
+          "maximum": {
+            "value": 1.0471975511965976,
+            "dimension": "scalar",
+            "unit": null
+          }
+        }
+      ],
+      "derived_parameters": [],
+      "derived_vector_parameters": [],
+      "constraints": [],
+      "requirements": [
+        {
+          "id": "body-valid",
+          "version": 1,
+          "kind": "validation",
+          "priority": "required",
+          "statement": "Spline tangent ellipse is a valid solid",
+          "rule": {
+            "shape_valid": {
+              "output": "body"
+            }
+          },
+          "provenance": "Illustrative dimensions",
+          "traces": [
+            {
+              "feature": "body"
+            }
+          ]
+        }
+      ],
+      "datums": [],
+      "features": [
+        {
+          "id": "profile",
+          "operation": {
+            "sketch_face": {
+              "sketch": {
+                "id": "spline-tangent-ellipse",
+                "origin": {
+                  "literal": {
+                    "x": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    },
+                    "y": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                },
+                "x_axis": {
+                  "literal": {
+                    "x": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "y_axis": {
+                  "literal": {
+                    "x": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "points": [
+                  {
+                    "id": "a",
+                    "x": {
+                      "negate": {
+                        "multiply": [
+                          {
+                            "parameter": "span"
+                          },
+                          {
+                            "literal": {
+                              "value": 0.5,
+                              "dimension": "scalar",
+                              "unit": null
+                            }
+                          }
+                        ]
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "b",
+                    "x": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "parameter": "rise"
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "c",
+                    "x": {
+                      "multiply": [
+                        {
+                          "parameter": "span"
+                        },
+                        {
+                          "literal": {
+                            "value": 0.5,
+                            "dimension": "scalar",
+                            "unit": null
+                          }
+                        }
+                      ]
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "origin",
+                    "x": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "up",
+                    "x": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 10,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "contact",
+                    "x": {
+                      "literal": {
+                        "value": 1,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "add": [
+                        {
+                          "divide": [
+                            {
+                              "multiply": [
+                                {
+                                  "parameter": "rise"
+                                },
+                                {
+                                  "parameter": "middle_weight"
+                                }
+                              ]
+                            },
+                            {
+                              "add": [
+                                {
+                                  "literal": {
+                                    "value": 1,
+                                    "dimension": "scalar",
+                                    "unit": null
+                                  }
+                                },
+                                {
+                                  "parameter": "middle_weight"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "literal": {
+                            "value": 0.2,
+                            "dimension": "length",
+                            "unit": "millimeter"
+                          }
+                        }
+                      ]
+                    },
+                    "fixed": false
+                  },
+                  {
+                    "id": "center",
+                    "x": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "add": [
+                        {
+                          "divide": [
+                            {
+                              "multiply": [
+                                {
+                                  "parameter": "rise"
+                                },
+                                {
+                                  "parameter": "middle_weight"
+                                }
+                              ]
+                            },
+                            {
+                              "add": [
+                                {
+                                  "literal": {
+                                    "value": 1,
+                                    "dimension": "scalar",
+                                    "unit": null
+                                  }
+                                },
+                                {
+                                  "parameter": "middle_weight"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "parameter": "semi_minor"
+                        }
+                      ]
+                    },
+                    "fixed": false
+                  },
+                  {
+                    "id": "major",
+                    "x": {
+                      "parameter": "semi_major"
+                    },
+                    "y": {
+                      "add": [
+                        {
+                          "divide": [
+                            {
+                              "multiply": [
+                                {
+                                  "parameter": "rise"
+                                },
+                                {
+                                  "parameter": "middle_weight"
+                                }
+                              ]
+                            },
+                            {
+                              "add": [
+                                {
+                                  "literal": {
+                                    "value": 1,
+                                    "dimension": "scalar",
+                                    "unit": null
+                                  }
+                                },
+                                {
+                                  "parameter": "middle_weight"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "parameter": "semi_minor"
+                        }
+                      ]
+                    },
+                    "fixed": false
+                  },
+                  {
+                    "id": "minor",
+                    "x": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "add": [
+                        {
+                          "add": [
+                            {
+                              "divide": [
+                                {
+                                  "multiply": [
+                                    {
+                                      "parameter": "rise"
+                                    },
+                                    {
+                                      "parameter": "middle_weight"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "add": [
+                                    {
+                                      "literal": {
+                                        "value": 1,
+                                        "dimension": "scalar",
+                                        "unit": null
+                                      }
+                                    },
+                                    {
+                                      "parameter": "middle_weight"
+                                    }
+                                  ]
+                                }
+                              ]
+                            },
+                            {
+                              "parameter": "semi_minor"
+                            }
+                          ]
+                        },
+                        {
+                          "parameter": "semi_minor"
+                        }
+                      ]
+                    },
+                    "fixed": false
+                  }
+                ],
+                "lines": [
+                  {
+                    "id": "chord",
+                    "start": "c",
+                    "end": "a"
+                  },
+                  {
+                    "id": "vertical-axis",
+                    "start": "origin",
+                    "end": "up"
+                  },
+                  {
+                    "id": "baseline",
+                    "start": "a",
+                    "end": "c"
+                  },
+                  {
+                    "id": "major-axis",
+                    "start": "center",
+                    "end": "major"
+                  }
+                ],
+                "circles": [],
+                "profile": [
+                  "ellipse"
+                ],
+                "constraints": [
+                  {
+                    "distance": {
+                      "first": "center",
+                      "second": "major",
+                      "value": {
+                        "parameter": "semi_major"
+                      }
+                    }
+                  },
+                  {
+                    "distance": {
+                      "first": "center",
+                      "second": "minor",
+                      "value": {
+                        "parameter": "semi_minor"
+                      }
+                    }
+                  },
+                  {
+                    "angle": {
+                      "first": "baseline",
+                      "second": "major-axis",
+                      "value": {
+                        "parameter": "tilt"
+                      }
+                    }
+                  },
+                  {
+                    "point_line_distance": {
+                      "point": "center",
+                      "line": "vertical-axis",
+                      "value": {
+                        "literal": {
+                          "value": 0,
+                          "dimension": "length",
+                          "unit": "millimeter"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "spline_ellipse_tangent": {
+                      "spline": "curve",
+                      "ellipse": "ellipse",
+                      "point": "contact"
+                    }
+                  }
+                ],
+                "arcs": [],
+                "splines": [
+                  {
+                    "id": "curve",
+                    "points": [
+                      "a",
+                      "b",
+                      "c"
+                    ],
+                    "basis": {
+                      "degree": 2,
+                      "knots": [
+                        0,
+                        1
+                      ],
+                      "multiplicities": [
+                        3,
+                        3
+                      ],
+                      "weights": [
+                        {
+                          "literal": {
+                            "value": 1,
+                            "dimension": "scalar",
+                            "unit": null
+                          }
+                        },
+                        {
+                          "parameter": "middle_weight"
+                        },
+                        {
+                          "literal": {
+                            "value": 1,
+                            "dimension": "scalar",
+                            "unit": null
+                          }
+                        }
+                      ]
+                    }
+                  }
+                ],
+                "ellipses": [
+                  {
+                    "id": "ellipse",
+                    "center": "center",
+                    "major": "major",
+                    "minor": "minor"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "body",
+          "operation": {
+            "extrude": {
+              "input": "profile",
+              "direction": {
+                "components": {
+                  "x": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "y": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "z": {
+                    "parameter": "height"
+                  }
+                }
+              },
+              "extent": "distance"
+            }
+          }
+        }
+      ]
+    },
+    "instances": [
+      {
+        "base": {
+          "id": "part",
+          "overrides": {},
+          "provenance": "Full ellipse positioned by native spline tangent contact"
+        }
+      }
+    ]
+  },
+  "outputs": [
+    {
+      "instance": "part",
+      "output": "body"
+    },
+    {
+      "instance": "part",
+      "output": "profile"
+    }
+  ],
+  "sketches": true
+}
