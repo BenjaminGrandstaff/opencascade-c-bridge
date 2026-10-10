@@ -357,3 +357,149 @@ fn radial_and_angular_dimensions_preserve_far_rotated_placement_and_detail_coord
     assert!((arc.points_mm[0][1] - 130.0).abs() < 1e-7);
     assert_eq!(session.shape_count().unwrap(), 0);
 }
+
+#[test]
+fn linear_dimension_layout_centres_stacks_and_keeps_basic_frames_clear_on_both_sides() {
+    let definition = annotated_family();
+    let mut graph = InstanceGraph::new(&definition);
+    graph.add_base("part", HashMap::new(), "test").unwrap();
+    let session = Session::new().unwrap();
+    for offset in [-10.0, 10.0] {
+        let mut page = drawing();
+        page.notes.clear();
+        let mut horizontal = manufactured_dimension(
+            DimensionDirection::Horizontal,
+            DimensionTolerance::Deviations {
+                lower: Quantity::length(-0.05, LengthUnit::Millimeter),
+                upper: Quantity::length(0.1, LengthUnit::Millimeter),
+            },
+        );
+        horizontal.offset_mm = offset;
+        page.dimensions = vec![horizontal];
+        let generated = page
+            .generate(&graph, &session, DrawingRenderOptions::default())
+            .unwrap();
+        let label = &generated.labels[0];
+        let stack = label.stack.as_ref().unwrap();
+        // Exported lower/upper tolerance rows must both stay off the horizontal line.
+        let lower_baseline = label.position_mm[1] - 1.8;
+        let upper_top = label.position_mm[1] + 1.8 + 2.2;
+        if offset > 0.0 {
+            assert!((lower_baseline - (100.0 + offset) - 2.0).abs() < 1e-8);
+        } else {
+            assert!(((100.0 + offset) - upper_top - 2.0).abs() < 1e-8);
+        }
+        assert!(
+            label.position_mm[0] < 42.5 && label.position_mm[0] > 17.5,
+            "stack was placed from its midpoint as a left-aligned string"
+        );
+        assert!(!stack.suffix.is_empty());
+        assert!(
+            generated
+                .to_svg()
+                .contains(&format!("x=\"{}\"", label.position_mm[0]))
+        );
+        assert!(generated.to_dxf().contains(&format!(
+            "10\n{}\n20\n{}\n",
+            label.position_mm[0], label.position_mm[1]
+        )));
+        for (direction, first, second, midpoint, normal) in [
+            (
+                DimensionDirection::Vertical,
+                "origin",
+                "y",
+                [40.0, 107.5],
+                [-1.0, 0.0],
+            ),
+            (
+                DimensionDirection::Aligned,
+                "x",
+                "y",
+                [47.5, 107.5],
+                [
+                    -std::f64::consts::FRAC_1_SQRT_2,
+                    -std::f64::consts::FRAC_1_SQRT_2,
+                ],
+            ),
+        ] {
+            let mut d = manufactured_dimension(direction, DimensionTolerance::Basic);
+            d.first = DatumRef::new("part", first);
+            d.second = DatumRef::new("part", second);
+            d.offset_mm = offset;
+            page.dimensions = vec![d];
+            let generated = page
+                .generate(&graph, &session, DrawingRenderOptions::default())
+                .unwrap();
+            let frame = generated
+                .polylines
+                .iter()
+                .find(|p| p.points_mm.len() == 5 && p.points_mm[0] == p.points_mm[4])
+                .unwrap();
+            let side = offset.signum();
+            let mut nearest = f64::INFINITY;
+            for p in &frame.points_mm {
+                let distance = side
+                    * ((p[0] - midpoint[0]) * normal[0] + (p[1] - midpoint[1]) * normal[1]
+                        - offset);
+                nearest = nearest.min(distance);
+            }
+            assert!(
+                (nearest - 2.0).abs() < 1e-8,
+                "basic frame crosses or crowds its dimension line: {nearest}"
+            );
+        }
+    }
+    assert_eq!(session.shape_count().unwrap(), 0);
+}
+
+#[test]
+fn angular_dimension_stack_clears_the_arc_and_linear_clearance_is_in_paper_units() {
+    let definition = annotated_family();
+    let mut graph = InstanceGraph::new(&definition);
+    graph.add_base("part", HashMap::new(), "test").unwrap();
+    let session = Session::new().unwrap();
+    let mut page = drawing();
+    page.notes.clear();
+    let mut angle = manufactured_dimension(
+        DimensionDirection::Angular {
+            vertex: DatumRef::new("part", "origin"),
+        },
+        DimensionTolerance::Deviations {
+            lower: Quantity::scalar(-0.01),
+            upper: Quantity::scalar(0.02),
+        },
+    );
+    angle.first = DatumRef::new("part", "x");
+    angle.second = DatumRef::new("part", "y");
+    page.dimensions = vec![angle];
+    let generated = page
+        .generate(&graph, &session, DrawingRenderOptions::default())
+        .unwrap();
+    let label = &generated.labels[0];
+    // The lower-left corner of the stack is its closest point to the 45° tangent.
+    let distance = ((label.position_mm[0] - 40.0) + (label.position_mm[1] - 1.8 - 100.0))
+        * std::f64::consts::FRAC_1_SQRT_2
+        - 10.0;
+    assert!((distance - 2.0).abs() < 1e-8);
+    for scale in [0.1, 1.0, 100.0] {
+        page.views[0].scale = scale;
+        let mut d = manufactured_dimension(DimensionDirection::Vertical, DimensionTolerance::Basic);
+        d.second = DatumRef::new("part", "y");
+        page.dimensions = vec![d];
+        let generated = page
+            .generate(&graph, &session, DrawingRenderOptions::default())
+            .unwrap();
+        let frame = generated
+            .polylines
+            .iter()
+            .find(|p| p.points_mm.len() == 5 && p.points_mm[0] == p.points_mm[4])
+            .unwrap();
+        let right = frame
+            .points_mm
+            .iter()
+            .map(|p| p[0])
+            .fold(f64::NEG_INFINITY, f64::max);
+        assert!((right - 28.0).abs() < 1e-8);
+    }
+    assert_eq!(session.shape_count().unwrap(), 0);
+}

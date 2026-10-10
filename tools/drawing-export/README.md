@@ -48,3 +48,21 @@ uniformly in parameter space; sample count does not certify chordal error.
 Section hatching is optional in drawing definitions. There is no automatic kerf
 compensation or toolpath generation.
 The example is illustrative wing geometry, not verified historical dimensions.
+
+
+## Dimension layout example
+
+Export the reproducible linear and angular layout sheets:
+
+```sh
+LD_LIBRARY_PATH="$PWD/build" \
+  rust/occt-parametric/target/release/occt-drawing-export \
+  tools/drawing-export/dimension-layout.model.json \
+  tools/drawing-export/dimension-layout-example.json /tmp/dimension-layout
+```
+
+The first sheet shows positive/negative offsets, basic/reference dimensions,
+stacked deviations and limits. The second shows an angular tolerance stack.
+Labels remain upright, with estimated paper-space extents shared by SVG and
+DXF. This layout example uses illustrative dimensions and font advances;
+see [placement limits](../../docs/DRAWINGS.md#upright-dimension-label-layout).

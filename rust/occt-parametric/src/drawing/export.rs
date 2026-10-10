@@ -54,7 +54,7 @@ impl GeneratedDrawing {
             .chain(&self.gdt_labels)
         {
             writeln!(out, "<g aria-label=\"{}\">", xml(&label.text)).unwrap();
-            for (point, text, size) in label_parts(label) {
+            for (point, text, size) in text_layout::parts(label) {
                 writeln!(out,"<text x=\"{}\" y=\"{}\" font-family=\"sans-serif\" font-size=\"{size}\">{}</text>",point[0],height-point[1],xml(&text)).unwrap();
             }
             out.push_str("</g>\n");
@@ -189,26 +189,11 @@ fn append_dxf_tables(out: &mut String) {
     out.push_str("0\nENDTAB\n0\nENDSEC\n");
 }
 
-fn label_parts(label: &DrawingLabel) -> Vec<([f64; 2], String, f64)> {
-    let [x, y] = label.position_mm;
-    let Some(stack) = &label.stack else {
-        return vec![(label.position_mm, label.text.clone(), 3.0)];
-    };
-    let column = x + stack.prefix.chars().count() as f64 * 1.8 + 1.0;
-    let suffix_x =
-        column + stack.upper.chars().count().max(stack.lower.chars().count()) as f64 * 1.4 + 1.0;
-    vec![
-        ([x, y], stack.prefix.clone(), 3.0),
-        ([column, y + 1.8], stack.upper.clone(), 2.2),
-        ([column, y - 1.8], stack.lower.clone(), 2.2),
-        ([suffix_x, y], stack.suffix.clone(), 3.0),
-    ]
-}
 fn append_dxf_label(out: &mut String, label: &DrawingLabel) {
     if label.stack.is_some() {
         writeln!(out, "999\n{}", dxf_text(&label.text)).unwrap();
     }
-    for (point, text, size) in label_parts(label) {
+    for (point, text, size) in text_layout::parts(label) {
         if text.is_empty() {
             continue;
         }

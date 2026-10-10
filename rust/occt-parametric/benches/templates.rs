@@ -177,6 +177,29 @@ fn main() {
         )
         .unwrap();
     assert_eq!(generated.labels.len(), 10_000);
+    // The vertical basic frames are clear of x = 10 mm, independent of
+    // annotation count. No pairwise label or graph scans are introduced.
+    let frames: Vec<_> = generated
+        .polylines
+        .iter()
+        .filter(|p| p.points_mm.len() == 5 && p.points_mm[0] == p.points_mm[4])
+        .collect();
+    assert_eq!(frames.len(), 2000);
+    for frame in frames {
+        let right = frame
+            .points_mm
+            .iter()
+            .map(|p| p[0])
+            .fold(f64::NEG_INFINITY, f64::max);
+        assert!((right - 8.0).abs() < 1e-8);
+    }
+    assert!(
+        generated
+            .labels
+            .iter()
+            .all(|label| label.position_mm.iter().all(|v| v.is_finite()))
+    );
+
     assert_eq!(generated.generated_variants, 1);
     assert!(
         generated

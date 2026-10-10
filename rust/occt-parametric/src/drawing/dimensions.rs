@@ -416,6 +416,29 @@ pub(super) fn append_special(
     }
     drawing.labels.last_mut().expect("dimension label").text = label(d, value, context)?;
     stack_label(d, drawing);
+    let (anchor, normal) = if matches!(d.direction, DimensionDirection::Angular { .. }) {
+        let mid = a[1].atan2(a[0]) + value / 2.0;
+        let normal = [mid.cos(), mid.sin()];
+        (
+            [
+                center[0] + d.offset_mm * normal[0],
+                center[1] + d.offset_mm * normal[1],
+            ],
+            normal,
+        )
+    } else {
+        // Radial geometry returns rim point `a` and unit direction `b`.
+        (
+            [a[0] + b[0] * d.offset_mm, a[1] + b[1] * d.offset_mm],
+            [-b[1], b[0]],
+        )
+    };
+    text_layout::place(
+        drawing.labels.last_mut().expect("dimension label"),
+        anchor,
+        normal,
+        matches!(d.presentation.tolerance, DimensionTolerance::Basic),
+    )?;
     decorate_basic(d, drawing)
 }
 
@@ -484,15 +507,15 @@ pub(super) fn decorate_basic(
     if matches!(d.presentation.tolerance, DimensionTolerance::Basic) {
         let label = drawing.labels.last().expect("dimension label");
         let [x, y] = label.position_mm;
-        let width = label.text.chars().count() as f64 * 2.0 + 2.0;
+        let (min, max) = text_layout::bounds(label, true);
         line(
             drawing,
             vec![
-                [x - 1.0, y - 1.0],
-                [x + width, y - 1.0],
-                [x + width, y + 4.0],
-                [x - 1.0, y + 4.0],
-                [x - 1.0, y - 1.0],
+                [x + min[0], y + min[1]],
+                [x + max[0], y + min[1]],
+                [x + max[0], y + max[1]],
+                [x + min[0], y + max[1]],
+                [x + min[0], y + min[1]],
             ],
         )?;
     }

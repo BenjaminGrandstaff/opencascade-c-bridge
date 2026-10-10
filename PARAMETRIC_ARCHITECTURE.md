@@ -1846,3 +1846,17 @@ controls participate in the main label's linked names. Law positions describe
 the native tangent contour and are not interpolated onto individual edge
 samples. Labels use the scene centre and explicitly mark stations nonspatial.
 See [variable contour laws](docs/EDGE_TREATMENTS.md#variable-radius-contour-laws).
+
+
+## Drawing dimension text extents
+
+The shared `drawing/text_layout` module defines the paper-space components of
+plain and stacked labels. SVG and DXF consume the same components; dimension
+placement uses their estimated rectangle, including basic-frame padding.
+Rectangle support along the dimension normal provides 2 mm paper clearance,
+with offset-selected sides for linear dimensions and an outward midpoint
+tangent for angular arcs. Work/storage are O(total label characters); no
+pairwise label or graph scans and no extra line vertices are introduced.
+Character advances are deterministic estimates, rather than installed-font
+metrics. Other annotation/geometry collisions and page fitting remain future
+work. See [drawing layout](docs/DRAWINGS.md#upright-dimension-label-layout).

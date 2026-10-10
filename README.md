@@ -770,3 +770,10 @@ linked endpoint radii, interior station controls, and the complete directed
 contour law. Labels show nominal law values; source-edge references are
 separate from spatial station locations. See
 [variable-radius viewer semantics](docs/EDGE_TREATMENTS.md#variable-radius-contour-laws).
+
+
+Drawing dimension labels now use shared SVG/DXF text extents for upright,
+centred placement and clearance from dimension lines, including stacked
+tolerances and basic frames. See
+[drawing label layout](docs/DRAWINGS.md#upright-dimension-label-layout) and the
+[reproducible sheets](tools/drawing-export/README.md#dimension-layout-example).

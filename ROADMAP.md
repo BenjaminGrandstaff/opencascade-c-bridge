@@ -15,7 +15,7 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 112 + first-use integration 1 (+1 doc test), recipes 3, parametric 455 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 18 + branch command 2 + model command 38, MCP Python 9, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 112 + first-use integration 1 (+1 doc test), recipes 3, parametric 457 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 18 + branch command 2 + model command 38, MCP Python 9, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform code also passes. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -23,6 +23,18 @@ tracks status and order.
 | Scale benchmarks | 143 Rust cases plus 5 model-command and 14 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
+
+- Upright drawing dimension layout (schema 91 / ABI 52 unchanged): shared
+  SVG/DXF text components and estimated extents centre labels and keep them
+  clear of linear dimension lines, radial leader extensions and angular arc
+  tangents. Both tolerance rows, unit suffixes and basic frames participate;
+  linear offset signs choose the label side and spacing stays in paper mm.
+  Character-aware advances account for wide unit letters. Tests cover stacked
+  tolerances, both offset sides, oblique/basic frames, angular clearance, view
+  scales and exports. The 10,000 mixed-dimension gate passes in 0.111 s
+  (10 s budget), checking basic-frame clearance and released handles.
+  Font metrics, other annotation/geometry collisions and standards verification
+  remain separate work. See [drawing layout](docs/DRAWINGS.md#upright-dimension-label-layout).
 
 - Variable-fillet contour-law controls (schema 91 / ABI 52 unchanged): direct
   outputs show complete evaluated endpoint/interior radii and spine direction,

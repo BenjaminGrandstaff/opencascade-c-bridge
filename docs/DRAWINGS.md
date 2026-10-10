@@ -236,6 +236,32 @@ nominal/prefix and unit suffix. SVG includes the complete accessible label and
 DXF preserves it as a comment alongside the separate TEXT entities. Basic/reference dimensions cannot
 simultaneously carry direct tolerances in this enum.
 
+### Upright dimension label layout
+
+Dimension labels use shared paper-space text layout for both SVG and DXF.
+Linear labels centre their estimated text rectangle along the dimension span,
+then place it on the side selected by the signed offset. Vertical and oblique
+placement accounts for text width; stacked deviations/limits include both
+rows and the unit suffix. A basic dimension's frame is included in the extent.
+The estimated rectangle has 2 mm clearance from the dimension line, radial
+leader extension, or angular arc's midpoint tangent, independent of view scale.
+Text stays upright. Measurement values, datum references, arrowheads, and
+extension-line geometry are unchanged.
+
+The width model uses deterministic character advances, including wider `m`/`w`
+unit letters; it does not measure the installed font. The renderer does not
+automatically avoid other labels, model outlines, or sheet borders, or move
+arrows outside short spans. Those remain layout work. This is a readability
+improvement, not a standards-conformity claim. No persisted fields changed:
+schema 91 / ABI 52 remain unchanged. Layout work/storage are O(total label
+characters), with no pairwise annotation scans and no additional vertices.
+
+The [linear/angular example](../tools/drawing-export/dimension-layout-example.json)
+and its [source model](../tools/drawing-export/dimension-layout.model.json)
+exercise both offset sides, stacked tolerances and limits, basic/reference
+dimensions, and angular labels. See the
+[export command](../tools/drawing-export/README.md#dimension-layout-example).
+
 ```rust
 let dimension = DrawingDimension {
     id: "bore-size".into(),

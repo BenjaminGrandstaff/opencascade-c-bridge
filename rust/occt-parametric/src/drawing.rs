@@ -8,6 +8,7 @@ mod curves;
 pub use curves::{DrawingCurve, DrawingCurveGeometry};
 mod detail;
 mod dimensions;
+mod text_layout;
 pub use dimensions::{
     DimensionMeasurementDisposition, DimensionMeasurementEvaluation, DimensionMeasurementLimits,
     DimensionPresentation, DimensionTolerance, DrawingDimensionMeasurement,
@@ -980,6 +981,16 @@ fn append_dimension(
         stack: None,
     });
     dimensions::stack_label(dimension, drawing);
+    let side = if dimension.offset_mm < 0.0 { -1.0 } else { 1.0 };
+    text_layout::place(
+        drawing.labels.last_mut().expect("dimension label"),
+        [
+            0.5 * first_end[0] + 0.5 * second_end[0],
+            0.5 * first_end[1] + 0.5 * second_end[1],
+        ],
+        [side * normal[0], side * normal[1]],
+        matches!(dimension.presentation.tolerance, DimensionTolerance::Basic),
+    )?;
     dimensions::decorate_basic(dimension, drawing)?;
     Ok(())
 }
