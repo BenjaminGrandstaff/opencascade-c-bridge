@@ -98,6 +98,23 @@ impl SketchDefinition {
                         ));
                     }
                 }
+                SketchProfileOperation::Fillet { radius, .. } => {
+                    if scalar(radius, parameters, Dimension::Length)? <= RESIDUAL_TOLERANCE {
+                        return Err(ModelError::new("profile fillet radius must be positive"));
+                    }
+                }
+                SketchProfileOperation::Chamfer {
+                    incoming, outgoing, ..
+                } => {
+                    if [incoming, outgoing].iter().any(|v| {
+                        scalar(v, parameters, Dimension::Length)
+                            .map_or(true, |v| v <= RESIDUAL_TOLERANCE)
+                    }) {
+                        return Err(ModelError::new(
+                            "profile chamfer distances must be positive lengths",
+                        ));
+                    }
+                }
                 SketchProfileOperation::Offset { distance, .. } => {
                     if scalar(distance, parameters, Dimension::Length)?.abs() <= RESIDUAL_TOLERANCE
                     {
@@ -137,14 +154,36 @@ impl SketchDefinition {
         if self.profile_operations.len() > 1024 {
             return Err(ModelError::new("sketch profile operations exceed 1024"));
         }
+        let mut whole = false;
         let mut offset = false;
+        let mut corners = HashSet::new();
         for op in &self.profile_operations {
             match op {
-                SketchProfileOperation::Offset { .. } => offset = true,
-                _ if offset => {
+                SketchProfileOperation::Trim { .. } | SketchProfileOperation::Extend { .. }
+                    if whole =>
+                {
                     return Err(ModelError::new(
-                        "entity trim/extend operations must precede whole-profile offsets",
+                        "entity trim/extend operations must precede whole-profile offsets and corner edits",
                     ));
+                }
+                SketchProfileOperation::Fillet { point, .. }
+                | SketchProfileOperation::Chamfer { point, .. } => {
+                    if offset {
+                        return Err(ModelError::new(
+                            "corner edits must precede whole-profile offsets",
+                        ));
+                    }
+                    if !point_ids.contains(point.as_str()) {
+                        return Err(ModelError::new("profile corner refers to an unknown point"));
+                    }
+                    if !corners.insert(point.as_str()) {
+                        return Err(ModelError::new("profile corner may be edited only once"));
+                    }
+                    whole = true;
+                }
+                SketchProfileOperation::Offset { .. } => {
+                    whole = true;
+                    offset = true;
                 }
                 _ => {}
             }

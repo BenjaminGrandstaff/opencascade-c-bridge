@@ -734,6 +734,36 @@ impl Session {
         })?;
         Ok(self.shape(shape))
     }
+    /// Round a remaining corner of a closed planar wire with line/arc neighbors.
+    pub fn fillet_wire_corner<'a>(
+        &'a self,
+        shape: &Shape<'_>,
+        corner: Vec3,
+        radius: f64,
+    ) -> Result<Shape<'a>, BridgeError> {
+        self.derived_shape(shape, |out| unsafe {
+            occt_bridge_fillet_wire_corner(self.raw.as_ptr(), shape.id, corner.into(), radius, out)
+        })
+    }
+    /// Chamfer a remaining corner; distances follow incoming/outgoing wire traversal.
+    pub fn chamfer_wire_corner<'a>(
+        &'a self,
+        shape: &Shape<'_>,
+        corner: Vec3,
+        incoming: f64,
+        outgoing: f64,
+    ) -> Result<Shape<'a>, BridgeError> {
+        self.derived_shape(shape, |out| unsafe {
+            occt_bridge_chamfer_wire_corner(
+                self.raw.as_ptr(),
+                shape.id,
+                corner.into(),
+                incoming,
+                outgoing,
+                out,
+            )
+        })
+    }
     pub fn trim_curve<'a>(
         &'a self,
         shape: &Shape<'_>,

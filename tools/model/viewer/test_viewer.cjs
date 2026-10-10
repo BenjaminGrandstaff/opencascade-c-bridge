@@ -73,6 +73,12 @@ for(let i=0;i<data.scenes.length;i++){
   assert(!elements.overlay.children.some(e=>e.attributes['data-annotation']===contact.id),'constraint toggle hides spline-pair contact');
   elements.constraints.checked=true;elements.constraints.emit('change');
  }
+ for(const edit of viewer.scene.annotations.filter(a=>a.detail?.operation?.fillet||a.detail?.operation?.chamfer)){
+  assert.equal(edit.anchors.length,1);assert.equal(edit.targets.length,1);
+  const button=elements.annotations.children.find(e=>e.dataset.annotation===edit.id);assert(button);button.emit('click');assert.equal(viewer.selected,edit.id);
+  assert(elements.overlay.children.some(e=>e.attributes['data-annotation']===edit.id),'named corner edit label is drawn');
+  if(!edit.detail.error)assert(viewer.scene.edited_profile.length>0,'native edited boundary is present');
+ }
  for(const angle of viewer.scene.annotations.filter(a=>a.detail?.angular_arc?.length)){assert(elements.overlay.children.some(e=>e.attributes.class==='dimension-line angular-dimension'&&e.attributes.points.split(' ').length===angle.detail.angular_arc.length),'signed angular arc is rendered');}
  for(const route of viewer.scene.annotations.filter(a=>a.detail?.dimension_paths?.length)){assert.equal(elements.overlay.children.filter(e=>e.attributes['data-route']===route.id).length,route.detail.dimension_paths.length);elements.dimensions.checked=false;elements.dimensions.emit('change');assert(!elements.overlay.children.some(e=>e.attributes['data-route']===route.id));elements.dimensions.checked=true;elements.dimensions.emit('change');}
  const dimension=viewer.scene.annotations.find(a=>a.kind==='dimension')||viewer.scene.annotations.find(a=>a.kind==='profile_operation')||viewer.scene.annotations[0];

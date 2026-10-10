@@ -2814,3 +2814,185 @@ fn ellipse_pair_contact_validates_distinct_roles_axes_and_fixed_conflicts() {
     p.y = length(0.);
     assert!(fixed.solve(&params).is_err());
 }
+
+fn corner_profile_sketch() -> (SketchDefinition, HashMap<String, ParameterValue>) {
+    let r: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../tools/model/corner-treated-plate.request.json"
+    ))
+    .unwrap();
+    let doc = ModelDocument::from_json(&r["model"].to_string()).unwrap();
+    let part = PartInstance {
+        id: "part".into(),
+        definition: &doc.family,
+        overrides: HashMap::new(),
+        provenance: "test".into(),
+    };
+    let FeatureOperation::SketchFace { sketch } = &doc.family.features[0].operation else {
+        unreachable!()
+    };
+    ((**sketch).clone(), part.resolved_parameters().unwrap())
+}
+
+#[test]
+fn sketch_corner_edits_preserve_solved_sources_and_native_profile_area() {
+    let (s, params) = corner_profile_sketch();
+    let solved = s.solve(&params).unwrap();
+    assert!(solved.solved && solved.free_degrees == 0);
+    let session = Session::new().unwrap();
+    let face = s.face(&session, &params).unwrap();
+    assert!(
+        (session.surface_area(&face).unwrap() - (1000. - 16. + 4. * std::f64::consts::PI - 7.5))
+            .abs()
+            < 1e-6
+    );
+    assert!((solved.points["C"].x - 40.).abs() < 1e-8 && (solved.points["C"].y - 25.).abs() < 1e-8);
+    let preview = s
+        .preview_edited_profile(&session, &params, &solved, 32, true)
+        .unwrap();
+    assert_eq!(preview.len(), 6);
+    let mut offset = s.clone();
+    offset
+        .profile_operations
+        .push(SketchProfileOperation::Offset {
+            distance: length(1.),
+            join: SketchOffsetJoin::Arc,
+        });
+    assert!(
+        session
+            .is_valid(&offset.face(&session, &params).unwrap())
+            .unwrap()
+    );
+    let mut rotated = s.clone();
+    rotated.origin = VectorExpr::Literal(VectorQuantity::lengths(
+        10.,
+        20.,
+        30.,
+        LengthUnit::Millimeter,
+    ));
+    rotated.y_axis = VectorExpr::Literal(VectorQuantity::scalars(0., 0., 1.));
+    let tilted = rotated.face(&session, &params).unwrap();
+    assert!(
+        (session.surface_area(&tilted).unwrap() - session.surface_area(&face).unwrap()).abs()
+            < 1e-6
+    );
+}
+
+#[test]
+fn sketch_corner_edits_validate_sizes_references_order_and_closed_profiles() {
+    let (s, params) = corner_profile_sketch();
+    let session = Session::new().unwrap();
+    for op in [
+        SketchProfileOperation::Fillet {
+            point: "missing".into(),
+            radius: length(2.),
+        },
+        SketchProfileOperation::Fillet {
+            point: "C".into(),
+            radius: length(0.),
+        },
+        SketchProfileOperation::Chamfer {
+            point: "A".into(),
+            incoming: length(-1.),
+            outgoing: length(2.),
+        },
+        SketchProfileOperation::Chamfer {
+            point: "A".into(),
+            incoming: number(1.),
+            outgoing: length(2.),
+        },
+    ] {
+        let mut bad = s.clone();
+        bad.profile_operations = vec![op];
+        assert!(bad.solve(&params).is_err());
+    }
+    let mut duplicate = s.clone();
+    duplicate
+        .profile_operations
+        .push(duplicate.profile_operations[0].clone());
+    assert!(duplicate.solve(&params).is_err());
+    let mut late = s.clone();
+    late.profile_operations.insert(
+        0,
+        SketchProfileOperation::Offset {
+            distance: length(1.),
+            join: SketchOffsetJoin::Arc,
+        },
+    );
+    assert!(late.solve(&params).is_err());
+    let mut late = s.clone();
+    late.profile_operations.push(SketchProfileOperation::Trim {
+        entity: "AB".into(),
+        first: number(0.),
+        last: number(0.8),
+    });
+    assert!(late.solve(&params).is_err());
+    assert!(s.open_wire(&session, &params, None).is_err());
+    let count = session.shape_count().unwrap();
+    let mut bad = s.clone();
+    bad.profile_operations[0] = SketchProfileOperation::Fillet {
+        point: "C".into(),
+        radius: length(100.),
+    };
+    assert!(bad.face(&session, &params).is_err());
+    assert_eq!(session.shape_count().unwrap(), count);
+}
+
+#[test]
+fn sketch_corner_edits_handle_concave_corners_and_reverse_chamfer_order() {
+    let session = Session::new().unwrap();
+    let mut s = base();
+    s.points = vec![
+        point("a", 0., 0., true),
+        point("b", 10., 0., true),
+        point("c", 10., 4., true),
+        point("d", 4., 4., true),
+        point("e", 4., 10., true),
+        point("f", 0., 10., true),
+    ];
+    s.lines = vec![
+        line("ab", "a", "b"),
+        line("bc", "b", "c"),
+        line("cd", "c", "d"),
+        line("de", "d", "e"),
+        line("ef", "e", "f"),
+        line("fa", "f", "a"),
+    ];
+    s.profile_operations = vec![SketchProfileOperation::Fillet {
+        point: "d".into(),
+        radius: length(1.),
+    }];
+    let params = HashMap::new();
+    let face = s.face(&session, &params).unwrap();
+    assert!(
+        (session.surface_area(&face).unwrap() - (64. + 1. - std::f64::consts::FRAC_PI_4)).abs()
+            < 1e-6
+    );
+    s.profile_operations = vec![SketchProfileOperation::Chamfer {
+        point: "a".into(),
+        incoming: length(2.),
+        outgoing: length(3.),
+    }];
+    let solved = s.solve(&params).unwrap();
+    let forward = s
+        .preview_edited_profile(&session, &params, &solved, 2, true)
+        .unwrap();
+    assert!(
+        forward
+            .iter()
+            .flatten()
+            .any(|p| p.x.abs() < 1e-8 && (p.y - 2.).abs() < 1e-8)
+    );
+    s.lines.reverse();
+    for l in &mut s.lines {
+        std::mem::swap(&mut l.start, &mut l.end);
+    }
+    let reversed = s
+        .preview_edited_profile(&session, &params, &solved, 2, true)
+        .unwrap();
+    assert!(
+        reversed
+            .iter()
+            .flatten()
+            .any(|p| p.x.abs() < 1e-8 && (p.y - 3.).abs() < 1e-8)
+    );
+}

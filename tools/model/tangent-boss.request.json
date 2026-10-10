@@ -1,7 +1,7 @@
 {
   "schema": "occb-model-view-v1",
   "model": {
-    "schema_version": 108,
+    "schema_version": 109,
     "family": {
       "id": "tangent-boss",
       "version": 1,

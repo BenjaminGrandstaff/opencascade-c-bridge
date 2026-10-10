@@ -1032,7 +1032,7 @@ pub(super) fn sketch_scene(
         };
     for (i, operation) in sketch.profile_operations.iter().enumerate() {
         let detail = serde_json::to_value(operation).stage("sketch")?;
-        let control_names = names(&detail);
+        let mut control_names = names(&detail);
         let (label, targets) = match operation {
             SketchProfileOperation::Trim { entity, .. } => {
                 (format!("Trim {entity}"), vec![entity.clone()])
@@ -1040,6 +1040,25 @@ pub(super) fn sketch_scene(
             SketchProfileOperation::Extend { entity, .. } => {
                 (format!("Extend {entity}"), vec![entity.clone()])
             }
+            SketchProfileOperation::Fillet { point, radius } => (
+                format!(
+                    "Fillet R {} mm",
+                    length_label(radius.evaluate(parameters).stage("sketch")?.value)
+                ),
+                vec![point.clone()],
+            ),
+            SketchProfileOperation::Chamfer {
+                point,
+                incoming,
+                outgoing,
+            } => (
+                format!(
+                    "Chamfer {} × {} mm",
+                    length_label(incoming.evaluate(parameters).stage("sketch")?.value),
+                    length_label(outgoing.evaluate(parameters).stage("sketch")?.value)
+                ),
+                vec![point.clone()],
+            ),
             SketchProfileOperation::Offset { distance, .. } => (
                 format!(
                     "Offset {} mm",
@@ -1048,6 +1067,19 @@ pub(super) fn sketch_scene(
                 vec![],
             ),
         };
+        let anchors = match operation {
+            SketchProfileOperation::Fillet { point, .. }
+            | SketchProfileOperation::Chamfer { point, .. } => {
+                control_names.extend(point_controls[point.as_str()].iter().cloned());
+                if let Some(names) = dimension_point_controls.get(point.as_str()) {
+                    control_names.extend(names.iter().cloned());
+                }
+                vec![point_map[point.as_str()]]
+            }
+            _ => Vec::new(),
+        };
+        control_names.sort();
+        control_names.dedup();
         annotations.push(
             Annotation {
                 id: format!("profile-operation-{i}"),
@@ -1060,7 +1092,7 @@ pub(super) fn sketch_scene(
                 },
                 targets,
                 parameters: control_names,
-                anchors: json!([]),
+                anchors: json!(anchors),
                 detail: json!({
                     "operation": detail,
                     "error": profile_error,

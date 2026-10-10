@@ -79,7 +79,7 @@ export are verified. A 1,000-pair solve and residual-diagnostic gate passes in
 0.009 s (10 s budget); 20 solids plus 60 source sketch scenes and matched-radius
 annotations pass through MCP in 0.316 s (10 s budget).
 
-Current authoring examples use schema 108. Older model documents migrate
+Current authoring examples use schema 109. Older model documents migrate
 without adding constraints or changing their entities. Current native ABI is 56.
 
 ## Saved profile operations
@@ -123,7 +123,7 @@ use and what the viewer draws in purple alongside faded source curves.
   native joining/offset algorithms. A split or disconnected result fails
   explicitly rather than selecting a region arbitrarily.
 
-Entity trim/extend operations must precede whole-profile offsets; multiple
+Entity trim/extend operations must precede corner edits and whole-profile offsets; multiple
 successive offsets are allowed. Entities must belong to the selected profile.
 At most 1,024 operations are accepted. Edited segments must connect; closed
 features require closure, and `SketchOpenWire` requires distinct ends. Native
@@ -865,3 +865,52 @@ example extrudes the upper ellipse. `semi_major`, `semi_minor`, and `tilt` edit
 the reference; `upper_major`, `upper_minor`, and `upper_tilt` edit the solid's
 profile. `height` reuses the profile. Older documents migrate to schema 108
 without adding constraints; native ABI remains 56.
+
+## Profile fillets and chamfers (schema 109 / ABI 57)
+
+Saved `profile_operations` now support `fillet` and `chamfer` at a named
+remaining profile corner:
+
+```json
+[
+  {"fillet": {"point": "C", "radius": {"parameter": "fillet_radius"}}},
+  {"chamfer": {
+    "point": "A",
+    "incoming": {"parameter": "chamfer_incoming"},
+    "outgoing": {"parameter": "chamfer_outgoing"}
+  }}
+]
+```
+
+These are native OpenCascade planar edits on a closed profile. The two adjacent
+edges must be straight lines or circular arcs. Radius and both chamfer distances
+are positive lengths above native linear tolerance. Chamfer distances follow
+incoming/outgoing profile traversal; distances on arcs use curvilinear abscissa.
+Reversing traversal swaps which neighbor receives each distance.
+
+The source sketch is solved first. A corner edit changes its derived boundary,
+while dimensions and constraints remain attached to source points and entities.
+Concave corners and rotated sketch planes are supported. The native result must
+form a valid closed planar face. Too-large sizes, missing remaining vertices,
+unsupported neighbors and invalid results fail without mutating the source.
+Open profiles and general spline/ellipse corner neighbors are not supported
+by this editor.
+
+Order operations as entity trims/extensions, corner edits, then offsets. Each
+named corner may be edited once; offsets cannot precede a named corner edit.
+A trim/extension that removes the selected corner fails when the native vertex
+lookup runs. Each operation traverses the current boundary; work scales with
+its edge count, and the existing 1,024-operation limit applies. Native handles
+are released after a failed edit or completed regeneration.
+
+The viewer draws the native derived boundary and fades the source geometry.
+Fillet/chamfer labels anchor to their named source corners, link size controls,
+and expose native errors when an edit cannot be built. The
+[corner treated plate](../tools/model/corner-treated-plate.request.json)
+extrudes a constrained rectangle with a fillet at C and an asymmetric chamfer
+at A. Its area is `width*height - radius²*(1-π/4) - incoming*outgoing/2`.
+Size edits rebuild the profile and solid; a depth-only edit reuses the profile.
+
+The bridge adds immutable `fillet_wire_corner` and `chamfer_wire_corner`
+wrappers. Rebuild the native library and Rust tools together for ABI 57.
+Older documents migrate to schema 109 without adding profile operations.

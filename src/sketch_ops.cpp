@@ -1,6 +1,12 @@
 /* Native planar sketch editing. Inputs are immutable; every result is a new
- * session handle. Work is linear in wire edges except native offset/projection. */
+ * session handle. Lookup/join traverse edges; native construction and
+ * validity checks depend on the current boundary. */
 #include "bridge_internal.hpp"
+#include <BRepAdaptor_Curve.hxx>
+#include <BRepCheck_Analyzer.hxx>
+#include <BRepFilletAPI_MakeFillet2d.hxx>
+#include <BRepTools.hxx>
+#include <TopExp.hxx>
 #include <BRepBuilderAPI_MakeEdge.hxx>
 #include <BRepBuilderAPI_MakeFace.hxx>
 #include <BRepBuilderAPI_MakeWire.hxx>
@@ -47,8 +53,68 @@ namespace {
         BRepBuilderAPI_MakeWire wire(edge);
         return store_shape(session,wire.Wire(),out);
     }
+    occt_bridge_status_t edit_corner(occt_bridge_session_t* s, occt_bridge_shape_id_t id,
+                                     occt_bridge_vec3_t corner, double first, double second,
+                                     bool chamfer, occt_bridge_shape_id_t* out) {
+        if (!out) return fail(s, OCCT_BRIDGE_INVALID_ARGUMENT, "out_shape is null");
+        *out=OCCT_BRIDGE_INVALID_SHAPE_ID;
+        if (!finite(corner) || !std::isfinite(first) || first<=Precision::Confusion()
+            || (chamfer && (!std::isfinite(second) || second<=Precision::Confusion())))
+            return fail(s, OCCT_BRIDGE_INVALID_ARGUMENT, "corner edit needs finite positive sizes and a finite point");
+        const auto* shape=find_shape(s,id);
+        if (!shape) return fail(s, OCCT_BRIDGE_SHAPE_NOT_FOUND, "corner profile was not found");
+        if (shape->ShapeType()!=TopAbs_WIRE || !BRep_Tool::IsClosed(*shape))
+            return fail(s, OCCT_BRIDGE_INVALID_ARGUMENT, "corner edit requires a closed planar wire");
+        const auto wire=TopoDS::Wire(*shape);
+        TopTools_IndexedMapOfShape vertices;
+        TopExp::MapShapes(wire,TopAbs_VERTEX,vertices);
+        TopoDS_Vertex vertex;
+        for(int i=1;i<=vertices.Extent();++i) {
+            const auto v=TopoDS::Vertex(vertices(i));
+            if(BRep_Tool::Pnt(v).Distance(to_point(corner))<=std::max(Precision::Confusion(),BRep_Tool::Tolerance(v))) {
+                if(!vertex.IsNull()) return fail(s,OCCT_BRIDGE_INVALID_ARGUMENT,"corner point matches more than one vertex");
+                vertex=v;
+            }
+        }
+        if(vertex.IsNull()) return fail(s,OCCT_BRIDGE_INVALID_ARGUMENT,"corner point is not a remaining profile vertex");
+        TopoDS_Edge incoming,outgoing;
+        for(BRepTools_WireExplorer it(wire);it.More();it.Next()) {
+            const auto edge=it.Current();
+            if(TopExp::LastVertex(edge,true).IsSame(vertex)) incoming=edge;
+            if(TopExp::FirstVertex(edge,true).IsSame(vertex)) outgoing=edge;
+        }
+        if(incoming.IsNull() || outgoing.IsNull() || incoming.IsSame(outgoing))
+            return fail(s,OCCT_BRIDGE_INVALID_ARGUMENT,"corner needs two distinct adjacent edges");
+        for(const auto& edge:{incoming,outgoing}) {
+            const auto type=BRepAdaptor_Curve(edge).GetType();
+            if(type!=GeomAbs_Line && type!=GeomAbs_Circle)
+                return fail(s,OCCT_BRIDGE_INVALID_ARGUMENT,"corner neighbors must be straight lines or circular arcs");
+        }
+        BRepBuilderAPI_MakeFace face(wire,true);
+        if(!face.IsDone() || !BRepCheck_Analyzer(face.Face()).IsValid())
+            return fail(s,OCCT_BRIDGE_INVALID_GEOMETRY,"corner profile must make a valid planar face");
+        BRepFilletAPI_MakeFillet2d edit(face.Face());
+        if(chamfer) edit.AddChamfer(incoming,outgoing,first,second);
+        else edit.AddFillet(vertex,first);
+        if(edit.Status()!=ChFi2d_IsDone)
+            return fail(s,OCCT_BRIDGE_INVALID_GEOMETRY,"corner size does not fit the adjacent edges");
+        edit.Build();
+        if(!edit.IsDone() || edit.Shape().ShapeType()!=TopAbs_FACE || !BRepCheck_Analyzer(edit.Shape()).IsValid())
+            return fail(s,OCCT_BRIDGE_INVALID_GEOMETRY,"corner edit produced an invalid face");
+        const auto result=BRepTools::OuterWire(TopoDS::Face(edit.Shape()));
+        if(result.IsNull() || !BRep_Tool::IsClosed(result) || !BRepCheck_Analyzer(result).IsValid())
+            return fail(s,OCCT_BRIDGE_INVALID_GEOMETRY,"corner edit produced an invalid closed wire");
+        return store_shape(s,result,out);
+    }
+
 }
 extern "C" {
+    occt_bridge_status_t occt_bridge_fillet_wire_corner(occt_bridge_session_t* s, occt_bridge_shape_id_t id, occt_bridge_vec3_t point, double radius, occt_bridge_shape_id_t* out) {
+        return guarded(s,[&] { return edit_corner(s,id,point,radius,0.,false,out); });
+    }
+    occt_bridge_status_t occt_bridge_chamfer_wire_corner(occt_bridge_session_t* s, occt_bridge_shape_id_t id, occt_bridge_vec3_t point, double incoming, double outgoing, occt_bridge_shape_id_t* out) {
+        return guarded(s,[&] { return edit_corner(s,id,point,incoming,outgoing,true,out); });
+    }
     occt_bridge_status_t occt_bridge_create_ellipse_wire_axes(occt_bridge_session_t* s, occt_bridge_vec3_t center, occt_bridge_vec3_t normal, occt_bridge_vec3_t major_axis, double major, double minor, occt_bridge_shape_id_t* out) {
         return guarded(s,[&] {
             if(out==nullptr) {

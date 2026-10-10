@@ -1565,3 +1565,72 @@ fn ellipse_pair_viewer_exposes_both_native_contacts_tangent_units_and_controls()
         );
     }
 }
+
+#[test]
+fn corner_profile_viewer_shows_sizes_named_corners_derived_boundary_and_failures() {
+    let dir = Directory::new();
+    for oversized in [false, true] {
+        let mut request = view_example("corner-treated-plate");
+        if oversized {
+            request["model"]["family"]["features"][0]["operation"]["sketch_face"]["sketch"]["profile_operations"]
+                [0]["fillet"]["radius"] =
+                json!({"literal":{"value":100,"dimension":"length","unit":"millimeter"}});
+        }
+        let name = if oversized {
+            "corners-oversized"
+        } else {
+            "corners-valid"
+        };
+        view_request(&dir, request, name).unwrap();
+        let data: Value =
+            serde_json::from_str(&fs::read_to_string(dir.0.join(name).join("view.json")).unwrap())
+                .unwrap();
+        let scene = data["scenes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["kind"] == "sketch")
+            .unwrap();
+        assert_eq!(scene["solver"]["solved"], true);
+        let operations = scene["annotations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|a| a["kind"] == "profile_operation")
+            .collect::<Vec<_>>();
+        assert_eq!(operations.len(), 2);
+        for a in &operations {
+            assert_eq!(a["anchors"].as_array().unwrap().len(), 1);
+            assert_eq!(
+                a["status"],
+                if oversized { "unverified" } else { "driving" }
+            );
+            assert_eq!(a["detail"]["error"].is_null(), !oversized);
+        }
+        if !oversized {
+            assert!(
+                operations[0]["parameters"]
+                    .as_array()
+                    .unwrap()
+                    .contains(&json!("fillet_radius"))
+            );
+            assert!(
+                operations[1]["parameters"]
+                    .as_array()
+                    .unwrap()
+                    .contains(&json!("chamfer_incoming"))
+            );
+            assert!(
+                operations[1]["parameters"]
+                    .as_array()
+                    .unwrap()
+                    .contains(&json!("chamfer_outgoing"))
+            );
+            assert_eq!(scene["edited_profile"].as_array().unwrap().len(), 6);
+            assert_eq!(operations[0]["targets"], json!(["C"]));
+            assert_eq!(operations[1]["targets"], json!(["A"]));
+        }
+        let svg = fs::read_to_string(dir.0.join(name).join("view-0003.svg")).unwrap();
+        assert!(svg.contains("Fillet R") && svg.contains("Chamfer"));
+    }
+}

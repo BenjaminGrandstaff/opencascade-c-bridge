@@ -1315,6 +1315,28 @@ static void profile_lofts(occt_bridge_session_t* session) {
     occt_bridge_shape_release(session,box);
 }
 
+static void corner_edits(occt_bridge_session_t* session) {
+    occt_bridge_shape_id_t wire=0,out=99;
+    const occt_bridge_vec3_t points[]={vec(0,0,0),vec(20,0,0),vec(20,10,0),vec(0,10,0)};
+    const occt_bridge_vec3_t corner=vec(0,0,0);
+    EXPECT(occt_bridge_create_polyline_wire(session,points,4,1,&wire),OK);
+    EXPECT(occt_bridge_fillet_wire_corner(NULL,wire,corner,2,&out),ARG);
+    EXPECT(occt_bridge_fillet_wire_corner(session,wire,corner,2,NULL),ARG);
+    EXPECT(occt_bridge_fillet_wire_corner(session,unknown,corner,2,&out),MISSING);
+    EXPECT_TRUE(out==0,"failed corner edit clears result");
+    EXPECT(occt_bridge_fillet_wire_corner(session,wire,vec(NAN,0,0),2,&out),ARG);
+    EXPECT(occt_bridge_fillet_wire_corner(session,wire,corner,0,&out),ARG);
+    EXPECT(occt_bridge_fillet_wire_corner(session,wire,corner,100,&out),GEOMETRY);
+    EXPECT(occt_bridge_chamfer_wire_corner(NULL,wire,corner,2,3,&out),ARG);
+    EXPECT(occt_bridge_chamfer_wire_corner(session,wire,corner,2,3,NULL),ARG);
+    EXPECT(occt_bridge_chamfer_wire_corner(session,unknown,corner,2,3,&out),MISSING);
+    EXPECT(occt_bridge_chamfer_wire_corner(session,wire,corner,2,NAN,&out),ARG);
+    EXPECT(occt_bridge_chamfer_wire_corner(session,wire,corner,-1,3,&out),ARG);
+    EXPECT(occt_bridge_chamfer_wire_corner(session,wire,corner,2,3,&out),OK);
+    occt_bridge_shape_release(session,out);
+    occt_bridge_shape_release(session,wire);
+}
+
 int main(void) {
     occt_bridge_session_t* session = NULL;
     if (occt_bridge_session_create(OCCT_BRIDGE_ABI_VERSION, &session) != OK) {
@@ -1324,6 +1346,7 @@ int main(void) {
     session_and_diagnostics(session);
     primitives(session);
     sketch_edits(session);
+    corner_edits(session);
     extrusion_limits(session);
     profile_lofts(session);
     non_clamped_endpoints(session);

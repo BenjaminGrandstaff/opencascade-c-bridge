@@ -199,3 +199,5 @@ mod spline_tangent_ellipse;
 mod ellipse_tangent_boss;
 
 mod ellipse_tangent_pair;
+
+mod corner_treated_plate;

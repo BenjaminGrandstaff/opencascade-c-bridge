@@ -74,6 +74,14 @@ pub enum SketchProfileOperation {
         start: ScalarExpr,
         end: ScalarExpr,
     },
+    /// Native fillet at a named remaining corner of a closed line/arc profile.
+    Fillet { point: String, radius: ScalarExpr },
+    /// Native chamfer distances along incoming/outgoing profile traversal.
+    Chamfer {
+        point: String,
+        incoming: ScalarExpr,
+        outgoing: ScalarExpr,
+    },
     /// Signed planar profile offset: positive expands a closed profile;
     /// for an open profile positive is to the right of traversal.
     Offset {
@@ -601,6 +609,15 @@ impl SketchDefinition {
                 SketchProfileOperation::Extend { start, end, .. } => {
                     collect_scalar_parameters(start, names);
                     collect_scalar_parameters(end, names);
+                }
+                SketchProfileOperation::Fillet { radius, .. } => {
+                    collect_scalar_parameters(radius, names)
+                }
+                SketchProfileOperation::Chamfer {
+                    incoming, outgoing, ..
+                } => {
+                    collect_scalar_parameters(incoming, names);
+                    collect_scalar_parameters(outgoing, names);
                 }
                 SketchProfileOperation::Offset { distance, .. } => {
                     collect_scalar_parameters(distance, names)

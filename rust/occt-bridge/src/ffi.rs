@@ -2,7 +2,7 @@
 
 use super::*;
 
-pub(crate) const ABI_VERSION: u32 = 56;
+pub(crate) const ABI_VERSION: u32 = 57;
 
 #[repr(C)]
 #[derive(Default)]
@@ -173,6 +173,21 @@ unsafe extern "C" {
         major_axis: RawVec3,
         major: f64,
         minor: f64,
+        out: *mut u64,
+    ) -> i32;
+    pub fn occt_bridge_fillet_wire_corner(
+        s: *mut c_void,
+        shape: u64,
+        corner: RawVec3,
+        radius: f64,
+        out: *mut u64,
+    ) -> i32;
+    pub fn occt_bridge_chamfer_wire_corner(
+        s: *mut c_void,
+        shape: u64,
+        corner: RawVec3,
+        incoming: f64,
+        outgoing: f64,
         out: *mut u64,
     ) -> i32;
     pub fn occt_bridge_trim_curve(

@@ -248,6 +248,39 @@ impl SketchDefinition {
                         scalar(end, parameters, Dimension::Length)?,
                     )?;
                 }
+                SketchProfileOperation::Fillet { point, radius } => {
+                    if !closed {
+                        return Err(ModelError::new("profile fillets require a closed profile"));
+                    }
+                    let source = match joined.take() {
+                        Some(s) => s,
+                        None => session.join_wires(&wires.iter().collect::<Vec<_>>(), true)?,
+                    };
+                    joined = Some(session.fillet_wire_corner(
+                        &source,
+                        transform(solution.points[point]),
+                        scalar(radius, parameters, Dimension::Length)?,
+                    )?);
+                }
+                SketchProfileOperation::Chamfer {
+                    point,
+                    incoming,
+                    outgoing,
+                } => {
+                    if !closed {
+                        return Err(ModelError::new("profile chamfers require a closed profile"));
+                    }
+                    let source = match joined.take() {
+                        Some(s) => s,
+                        None => session.join_wires(&wires.iter().collect::<Vec<_>>(), true)?,
+                    };
+                    joined = Some(session.chamfer_wire_corner(
+                        &source,
+                        transform(solution.points[point]),
+                        scalar(incoming, parameters, Dimension::Length)?,
+                        scalar(outgoing, parameters, Dimension::Length)?,
+                    )?);
+                }
                 SketchProfileOperation::Offset { distance, join } => {
                     let source = match joined.take() {
                         Some(shape) => shape,

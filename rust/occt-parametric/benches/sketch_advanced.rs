@@ -54,6 +54,42 @@ fn gate(name: &str, budget: u64, run: impl FnOnce()) {
 }
 fn main() {
     gate(
+        "1000 native fillet/chamfer plates with radius edits",
+        10,
+        || {
+            let request: serde_json::Value = serde_json::from_str(include_str!(
+                "../../../tools/model/corner-treated-plate.request.json"
+            ))
+            .unwrap();
+            let doc = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+            let session = Session::new().unwrap();
+            let mut part = PartInstance {
+                id: "part".into(),
+                definition: &doc.family,
+                overrides: HashMap::new(),
+                provenance: "scale".into(),
+            };
+            for i in 0..1000 {
+                let r = if i % 2 == 0 { 4. } else { 6. };
+                part.overrides.insert(
+                    "fillet_radius".into(),
+                    ParameterValue::Scalar(Quantity::length(r, LengthUnit::Millimeter)),
+                );
+                let built = part.regenerate(&session).unwrap();
+                let body = built.shape("body").unwrap();
+                assert!(session.is_valid(body).unwrap());
+                assert!(
+                    (session.volume(body).unwrap()
+                        - (1000. - r * r * (1. - std::f64::consts::FRAC_PI_4) - 7.5) * 10.)
+                        .abs()
+                        < 1e-5
+                );
+                drop(built);
+                assert_eq!(session.shape_count().unwrap(), 0);
+            }
+        },
+    );
+    gate(
         "1000 native ellipse tangent pairs with axis edits",
         10,
         || {
