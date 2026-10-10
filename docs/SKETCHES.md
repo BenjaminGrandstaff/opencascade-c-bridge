@@ -79,7 +79,7 @@ export are verified. A 1,000-pair solve and residual-diagnostic gate passes in
 0.009 s (10 s budget); 20 solids plus 60 source sketch scenes and matched-radius
 annotations pass through MCP in 0.316 s (10 s budget).
 
-Current authoring examples use schema 95. Older model documents migrate
+Current authoring examples use schema 96. Older model documents migrate
 without adding constraints or changing their entities. Native ABI remains 52.
 
 ## Saved profile operations
@@ -217,5 +217,36 @@ wires and the solid; height edits reuse both wires and the region. Native
 validity, bore radius, moved bounds and analytical volume are tested.
 
 Older documents migrate to schema 95 without adding relations. Native ABI
-remains 52. General point-to-line distance and tangency beyond the existing
-shared endpoint/rim convention remain future work.
+remains 52. Tangency beyond the existing shared endpoint/rim convention remains future work.
+
+## Signed point-to-line distance (schema 96)
+
+`point_line_distance: {point, line, value}` measures perpendicular distance to
+the infinite supporting line of a named segment. `value` is a length expression:
+positive is left of the segment's start-to-end direction, negative is right,
+and zero puts the point on the line. Reversing the endpoints reverses the sign.
+The perpendicular foot may lie beyond the segment endpoints. This relation
+constrains one degree of freedom; other relations can set position along the
+line. It also works when the line endpoints move.
+
+For line endpoints A and B, unit direction U = (B − A)/|B − A| and point P,
+the millimetre residual is `U.x × (P.y − A.y) − U.y × (P.x − A.x) − value`.
+The sparse Jacobian touches only P, A and B. Rank and residual diagnostics
+use this actual equation. Wrong units, unknown point/line references and
+collapsed line coordinates are rejected; conflicting fixed geometry remains
+unsolved. Negative targets and zero targets are valid.
+
+The viewer shows a driving `⊥` dimension with a signed millimetre label,
+anchors from the perpendicular foot to the solved point, highlights the point
+and reference line, and links the target expression's parameters. The
+[projected pocket](../tools/model/projected-pocket.request.json) uses `mid`
+and the projected `front-edge` with `value: {negate: {parameter: margin}}`.
+For this example the edge runs left to right, so the negative value puts the
+pocket below it. Increasing margin from 4 to 6 mm moves the profile from
+family-space Y=24..36 to Y=22..34. Incremental regeneration reuses the source
+block and rebuilds the profile, cut tool and body. Native volume stays
+46800 mm³; changing block depth still moves the projected reference and cut.
+
+Model documents migrate to schema 96; native ABI remains 52. This is an
+oriented supporting-line dimension, rather than shortest distance to a bounded
+segment. General tangency remains the next sketch relation gap.

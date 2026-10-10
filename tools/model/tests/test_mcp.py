@@ -443,6 +443,12 @@ class McpTests(unittest.TestCase):
         midpoint = next(a for a in source['annotations'] if 'midpoint' in a['detail'].get('constraint', {}))
         self.assertEqual(midpoint['status'], 'passed')
         self.assertEqual(midpoint['detail']['residual_unit'], 'mm')
+        distance = next(a for a in source['annotations'] if 'point_line_distance' in a['detail'].get('constraint', {}))
+        self.assertEqual(distance['kind'], 'dimension')
+        self.assertEqual(distance['status'], 'passed')
+        self.assertIn('margin', distance['parameters'])
+        self.assertAlmostEqual(distance['anchors'][0][1], 20)
+        self.assertAlmostEqual(distance['anchors'][1][1], 16)
         bushing = self.client.tool('occt_get_example', dict(name='concentric-bushing'))['structuredContent']
         jsonschema.validate(bushing, schema)
         result = self.client.tool('occt_visualize_model', bushing)

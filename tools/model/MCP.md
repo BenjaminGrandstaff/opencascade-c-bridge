@@ -49,7 +49,7 @@ or remote service is started.
 input schema. All 38 current feature operations and 145 nested request-schema
 definitions are discoverable. Schemas derive from serde-compatible Rust types;
 new serialized variants require schema support at compilation. Authoring schemas
-target current model schema 95. The engine still migrates older documents.
+target current model schema 96. The engine still migrates older documents.
 Schemas describe serialization and basic request bounds; units, dependency
 references, dimensional constraints, selector resolution, and geometry validity
 are checked by the build engine.
@@ -454,7 +454,7 @@ See [pattern ancestry](../../docs/PART_PATTERNS.md#retained-pattern-ancestry).
 major diameter, pitch, run and derived turns. Its source radius and height
 follow diameter/run edits, with an illustrative unthreaded margin at both ends.
 Native validation and removed-volume checks cover the generated solid. The
-catalog targets schema 95; see [thread viewer semantics](../../docs/THREADS.md#ai-example-and-viewer-dimensions).
+catalog targets schema 96; see [thread viewer semantics](../../docs/THREADS.md#ai-example-and-viewer-dimensions).
 
 
 `edge-treatments` demonstrates constant-radius fillets and equal-distance
@@ -476,7 +476,7 @@ See [variable contour laws](../../docs/EDGE_TREATMENTS.md#variable-radius-contou
 Two hole-wire definitions retain the same explicit circle relationship and
 select different profile boundaries. A planar region and extrusion build the
 plate. Source sketches, real equality residuals and related controls are
-visible alongside the solid. Current catalog examples match schema 95.
+visible alongside the solid. Current catalog examples match schema 96.
 See [equal circular radii](../../docs/SKETCHES.md#equal-circular-radii-schema-92).
 
 
@@ -498,3 +498,9 @@ external geometry and exposes linked source controls. See
 an annular solid. Both source sketches expose `CONC` annotations with actual
 millimetre residuals and links to centre controls. `projected-pocket` also
 uses the new midpoint relation to position its cut from linked geometry.
+
+The current `projected-pocket` example also demonstrates schema-96
+`point_line_distance`: a signed margin from a solved midpoint to a linked
+source edge. Its dimension has perpendicular foot/point anchors, measured
+millimetre residuals and a linked `margin` control. Editing that control
+rebuilds the native pocket while reusing the source block.

@@ -329,6 +329,14 @@ impl SketchConstraint {
             | Self::EqualRadius { .. }
             | Self::Concentric { .. } => Ok(()),
             Self::PointOnCurve { point: id, .. } | Self::Tangent { point: id, .. } => point(id),
+            Self::PointLineDistance {
+                point: id,
+                line: axis,
+                ..
+            } => {
+                point(id)?;
+                line(axis)
+            }
             Self::Midpoint {
                 point: id,
                 line: axis,
@@ -373,6 +381,10 @@ impl SketchConstraint {
                 if scalar(value, parameters, Dimension::Length)? <= 0.0 {
                     return Err(ModelError::new("sketch radius/diameter must be positive"));
                 }
+                Ok(())
+            }
+            Self::PointLineDistance { value, .. } => {
+                scalar(value, parameters, Dimension::Length)?;
                 Ok(())
             }
             Self::Distance { value, .. } => {

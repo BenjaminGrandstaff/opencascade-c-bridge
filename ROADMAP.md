@@ -11,18 +11,31 @@ tracks status and order.
 | C ABI (`src/`, `include/`) | ABI 52 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 95 | Active development |
+| `occt-parametric` (engineering layer) | Schema 96 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 112 + first-use integration 1 (+1 doc test), recipes 3, parametric 476 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 18 + branch command 2 + model command 42, MCP Python 9, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 112 + first-use integration 1 (+1 doc test), recipes 3, parametric 480 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 18 + branch command 2 + model command 43, MCP Python 9, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform code also passes. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
 | Coverage | Last recorded: 93.61% lines overall, test code excluded; C++ 94.13% lines, 87.40% branches, 100% functions; Rust 93.42% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 147 Rust cases plus 5 model-command and 18 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Scale benchmarks | 148 Rust cases plus 5 model-command and 18 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
+
+- Signed point-to-line sketch dimensions (schema 96; native ABI 52 unchanged):
+  one perpendicular millimetre equation over a point and the named line's
+  endpoints, with positive-left/negative-right orientation and zero support.
+  Sparse solving, units/reference/degeneracy validation, rank/residual
+  diagnostics, target parameter dependencies and perpendicular viewer anchors
+  are implemented. The projected-pocket AI example drives its cut clearance
+  directly from the imported edge; margin edits rebuild the profile and cut
+  while reusing the source block. Tilted, reversed, zero, negative, extension,
+  underconstrained and fixed-conflict cases pass. A 1,000-dimension tilted-line
+  solve/diagnostics gate passes in 0.008 s; MCP renders 20 projected pockets
+  with signed dimensions in 0.239 s (both 10 s budgets). Catalog examples
+  target schema 96.
 
 - Midpoint and concentric sketch relations (schema 95; native ABI 52 unchanged):
   midpoint contributes two coordinate equations over a point and line endpoints;

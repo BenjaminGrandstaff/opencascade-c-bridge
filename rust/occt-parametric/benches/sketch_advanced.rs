@@ -54,6 +54,55 @@ fn gate(name: &str, budget: u64, run: impl FnOnce()) {
 }
 fn main() {
     gate(
+        "1000 signed point-line dimensions on tilted references",
+        10,
+        || {
+            let mut s = sketch();
+            for i in 0..1000 {
+                let id = |name: &str| format!("{name}-{i}");
+                let x = i as f64 * 20.;
+                s.points.extend([
+                    point(id("a"), x, 0., true),
+                    point(id("b"), x + 3., 4., true),
+                    point(id("p"), x + 2., 0., false),
+                    point(id("axis"), x + 2., -20., true),
+                ]);
+                s.lines.extend([
+                    SketchLine {
+                        id: id("line"),
+                        start: id("a"),
+                        end: id("b"),
+                    },
+                    SketchLine {
+                        id: id("vertical"),
+                        start: id("axis"),
+                        end: id("p"),
+                    },
+                ]);
+                s.constraints.extend([
+                    SketchConstraint::Vertical {
+                        line: id("vertical"),
+                    },
+                    SketchConstraint::PointLineDistance {
+                        point: id("p"),
+                        line: id("line"),
+                        value: mm(if i % 2 == 0 { 3. } else { -3. }),
+                    },
+                ]);
+            }
+            let params = HashMap::new();
+            let solved = s.solve(&params).unwrap();
+            assert!(solved.solved);
+            assert_eq!(solved.free_degrees, 0);
+            assert!(
+                s.constraint_checks(&params, &solved)
+                    .unwrap()
+                    .iter()
+                    .all(|c| c.satisfied)
+            );
+        },
+    );
+    gate(
         "1000 midpoint and concentric components with sparse equations",
         10,
         || {

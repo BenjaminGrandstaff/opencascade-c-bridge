@@ -318,6 +318,9 @@ with tempfile.TemporaryDirectory(prefix='occb-mcp-scale-') as root:
             assert next(e for e in scene['entities'] if e['id']=='front-edge')['external']
             assert abs(scene['points']['guide'][1]-20)<1e-7
             assert 'depth' in next(a for a in scene['annotations'] if a['id']=='projection-front-edge')['parameters']
+            distance=next(a for a in scene['annotations'] if 'point_line_distance' in a['detail'].get('constraint',{}))
+            assert distance['status']=='passed' and 'margin' in distance['parameters']
+            assert abs(distance['anchors'][0][1]-20)<1e-7 and abs(distance['anchors'][1][1]-16)<1e-7
         elapsed=time.monotonic()-started
         assert elapsed<10
         print(f'PASS MCP 20 projected-edge pockets, linked reference geometry and source controls: {elapsed:.3f}s / 10s')

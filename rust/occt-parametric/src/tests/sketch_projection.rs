@@ -486,3 +486,25 @@ fn near_circular_conics_keep_their_actual_projected_type_at_large_scale() {
     drop(ellipse);
     assert_eq!(session.shape_count().unwrap(), 0);
 }
+
+#[test]
+fn point_line_margin_edits_reposition_native_pocket_and_reuse_source_block() {
+    let d = document();
+    let session = Session::new().unwrap();
+    let mut p = part(&d.family);
+    let first = p.regenerate(&session).unwrap();
+    p.overrides.insert(
+        "margin".into(),
+        ParameterValue::Scalar(Quantity::length(6., LengthUnit::Millimeter)),
+    );
+    let edited = p.regenerate_incremental(&session, &first).unwrap();
+    assert_eq!(edited.regeneration.reused, vec!["block"]);
+    assert_eq!(edited.regeneration.rebuilt, vec!["profile", "tool", "body"]);
+    let bounds = session
+        .exact_bounds(edited.shape("profile").unwrap())
+        .unwrap();
+    assert!((bounds.min.y - 22.).abs() < 1e-7);
+    assert!((bounds.max.y - 34.).abs() < 1e-7);
+    assert!(session.is_valid(edited.shape("body").unwrap()).unwrap());
+    assert!((session.volume(edited.shape("body").unwrap()).unwrap() - 46800.).abs() < 1e-5);
+}

@@ -705,3 +705,118 @@ fn midpoint_and_concentric_solve_when_all_referenced_centers_are_free() {
     assert_eq!(solved.free_degrees, 2);
     assert!(s.constraint_checks(&params, &solved).unwrap()[0].satisfied);
 }
+
+#[test]
+fn signed_point_line_distance_solves_tilted_lines_both_sides_zero_and_line_extensions() {
+    let params = HashMap::new();
+    for x in [3.8, 20.] {
+        for target in [-3., 0., 3.] {
+            for reversed in [false, true] {
+                let mut s = base();
+                s.points = vec![
+                    point("a", 2., -1., true),
+                    point("b", 5., 3., true),
+                    point("p", x, 2., false),
+                    point("axis", x, -20., true),
+                ];
+                s.lines = vec![
+                    if reversed {
+                        line("reference", "b", "a")
+                    } else {
+                        line("reference", "a", "b")
+                    },
+                    line("vertical", "axis", "p"),
+                ];
+                s.constraints = vec![
+                    SketchConstraint::Vertical {
+                        line: "vertical".into(),
+                    },
+                    SketchConstraint::PointLineDistance {
+                        point: "p".into(),
+                        line: "reference".into(),
+                        value: length(target),
+                    },
+                ];
+                let solution = s.solve(&params).unwrap();
+                assert!(solution.solved);
+                assert_eq!(solution.free_degrees, 0);
+                let distance = if reversed { -target } else { target };
+                let expected = -1. + (distance + (x - 2.) * 0.8) / 0.6;
+                assert!((solution.points["p"].y - expected).abs() < 1e-7);
+                let check = &s.constraint_checks(&params, &solution).unwrap()[1];
+                assert!(check.satisfied && !check.by_construction);
+                assert!(check.max_residual.unwrap() < 1e-7);
+            }
+        }
+    }
+}
+
+#[test]
+fn point_line_distance_rejects_bad_references_units_and_collapsed_lines() {
+    let params = HashMap::new();
+    let mut s = base();
+    s.points = vec![
+        point("a", 0., 0., true),
+        point("b", 10., 0., true),
+        point("p", 2., 2., false),
+    ];
+    s.lines = vec![line("reference", "a", "b")];
+    for (point_id, line_id, value) in [
+        ("missing", "reference", length(2.)),
+        ("p", "missing", length(2.)),
+        ("p", "reference", number(2.)),
+    ] {
+        s.constraints = vec![SketchConstraint::PointLineDistance {
+            point: point_id.into(),
+            line: line_id.into(),
+            value,
+        }];
+        assert!(s.solve(&params).is_err());
+    }
+    s.constraints = vec![SketchConstraint::PointLineDistance {
+        point: "p".into(),
+        line: "reference".into(),
+        value: length(2.),
+    }];
+    s.points[1].x = length(0.);
+    assert!(
+        s.solve(&params)
+            .unwrap_err()
+            .message
+            .contains("zero length")
+    );
+}
+
+#[test]
+fn point_line_distance_solves_free_line_endpoints_and_reports_fixed_conflicts() {
+    let params = HashMap::new();
+    let mut s = base();
+    s.points = vec![
+        point("a", 0., 0., true),
+        point("b", 10., 0., true),
+        point("p", 2., 0., false),
+    ];
+    s.lines = vec![line("reference", "a", "b")];
+    s.constraints = vec![SketchConstraint::PointLineDistance {
+        point: "p".into(),
+        line: "reference".into(),
+        value: length(3.),
+    }];
+    let solution = s.solve(&params).unwrap();
+    assert!(solution.solved);
+    assert_eq!(solution.free_degrees, 1);
+    assert!((solution.points["p"].y - 3.).abs() < 1e-7);
+    s.points[2].fixed = true;
+    let solution = s.solve(&params).unwrap();
+    assert!(!solution.solved);
+    assert_eq!(
+        s.constraint_checks(&params, &solution).unwrap()[0].max_residual,
+        Some(3.)
+    );
+    s.points[0].fixed = false;
+    s.points[1].fixed = false;
+    let solution = s.solve(&params).unwrap();
+    assert!(solution.solved);
+    assert_eq!(solution.free_degrees, 3);
+    assert!(s.constraint_checks(&params, &solution).unwrap()[0].satisfied);
+}

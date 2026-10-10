@@ -92,8 +92,9 @@ widths and elimination fill.
 The example attaches a sketch to the block's top face and projects its
 maximum-Y edge as `front-edge`. A guide point lies on the projected line and
 a fixed construction axis. A midpoint relation puts `mid` at the centre of
-the top profile edge; a vertical construction line and distance constraint
-place that edge 4 mm below the projected reference, with a 20 × 12 mm rectangular profile. The initial point
+the top profile edge. A signed point-to-line distance of `-margin` puts
+that midpoint 4 mm below `front-edge`; the construction axis sets its position
+along the reference. The profile is 20 × 12 mm. The initial point
 coordinates are solver guesses; they contain no block-depth expression.
 
 Changing block depth from 40 to 50 mm moves the projected reference from

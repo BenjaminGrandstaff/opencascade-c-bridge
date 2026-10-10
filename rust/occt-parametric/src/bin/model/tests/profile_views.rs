@@ -633,3 +633,51 @@ fn midpoint_and_concentric_viewer_annotations_use_solved_anchors_and_real_residu
         }
     }
 }
+
+#[test]
+fn point_line_dimension_anchors_follow_the_perpendicular_foot_and_link_margin() {
+    let dir = Directory::new();
+    for margin in [4., 6.] {
+        let mut request = view_example("projected-pocket");
+        let parameter = request["model"]["family"]["parameters"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|p| p["id"] == "margin")
+            .unwrap();
+        parameter["default"]["scalar"]["value"] = json!(margin);
+        let name = format!("point-line-{margin}");
+        view_request(&dir, request, &name).unwrap();
+        let data: Value =
+            serde_json::from_str(&fs::read_to_string(dir.0.join(name).join("view.json")).unwrap())
+                .unwrap();
+        let sketch = data["scenes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["kind"] == "sketch")
+            .unwrap();
+        assert_eq!(sketch["solver"]["solved"], true);
+        let dimension = sketch["annotations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|a| !a["detail"]["constraint"]["point_line_distance"].is_null())
+            .unwrap();
+        assert_eq!(dimension["kind"], "dimension");
+        assert_eq!(dimension["status"], "passed");
+        assert!(
+            dimension["parameters"]
+                .as_array()
+                .unwrap()
+                .contains(&json!("margin"))
+        );
+        assert_eq!(dimension["detail"]["residual_unit"], "mm");
+        assert!(dimension["detail"]["max_residual"].as_f64().unwrap() < 1e-7);
+        let anchors = &dimension["anchors"];
+        assert!((anchors[0][0].as_f64().unwrap()).abs() < 1e-7);
+        assert!((anchors[0][1].as_f64().unwrap() - 20.).abs() < 1e-7);
+        assert!((anchors[1][0].as_f64().unwrap()).abs() < 1e-7);
+        assert!((anchors[1][1].as_f64().unwrap() - (20. - margin)).abs() < 1e-7);
+    }
+}

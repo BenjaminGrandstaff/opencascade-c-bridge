@@ -52,6 +52,7 @@ impl SketchDefinition {
                             | SketchConstraint::Diameter { .. }
                             | SketchConstraint::EqualRadius { .. }
                             | SketchConstraint::Midpoint { .. }
+                            | SketchConstraint::PointLineDistance { .. }
                             | SketchConstraint::Concentric { .. }
                             | SketchConstraint::Symmetric { .. }
                             | SketchConstraint::PointOnCurve { .. }
@@ -487,6 +488,23 @@ impl SketchProblem<'_> {
                 let (a, b) = self.line(line, values);
                 residuals.extend([p.x - (a.x * 0.5 + b.x * 0.5), p.y - (a.y * 0.5 + b.y * 0.5)]);
             }
+            SketchConstraint::PointLineDistance { point, line, value } => {
+                let p = self.point(point, values);
+                let (a, b) = self.line(line, values);
+                let dx = b.x - a.x;
+                let dy = b.y - a.y;
+                let length = dx.hypot(dy);
+                if length <= f64::EPSILON {
+                    return Err(ModelError::new(
+                        "point-line distance has a zero length line",
+                    ));
+                }
+                residuals.push(
+                    (p.y - a.y) * (dx / length)
+                        - (p.x - a.x) * (dy / length)
+                        - scalar(value, self.parameters, Dimension::Length)?,
+                );
+            }
             SketchConstraint::EqualLength { first, second } => {
                 residuals.push(
                     line_length(self.line(first, values)) - line_length(self.line(second, values)),
@@ -513,7 +531,8 @@ impl SketchProblem<'_> {
             SketchConstraint::Concentric { first, second } => {
                 vec![self.center_point(first), self.center_point(second)]
             }
-            SketchConstraint::Midpoint { point, line } => {
+            SketchConstraint::Midpoint { point, line }
+            | SketchConstraint::PointLineDistance { point, line, .. } => {
                 let l = self.lines[line.as_str()];
                 vec![point.as_str(), &l.start, &l.end]
             }

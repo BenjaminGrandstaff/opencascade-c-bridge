@@ -221,6 +221,12 @@ pub(super) fn sketch_scene(
                 vec![point.clone()],
                 None,
             ),
+            SketchConstraint::PointLineDistance { point, line, value } => (
+                "⊥",
+                vec![point.clone(), line.clone()],
+                vec![point.clone()],
+                Some(value),
+            ),
             SketchConstraint::EqualLength { first, second } => {
                 ("=", vec![first.clone(), second.clone()], vec![], None)
             }
@@ -272,6 +278,25 @@ pub(super) fn sketch_scene(
             let a = point_map[&l.start];
             let b = point_map[&l.end];
             anchors.push([a[0] * 0.5 + b[0] * 0.5, a[1] * 0.5 + b[1] * 0.5, 0.0]);
+        }
+        if let SketchConstraint::PointLineDistance { line, .. } = constraint {
+            let l = lines[line.as_str()];
+            let a = point_map[&l.start];
+            let b = point_map[&l.end];
+            let p = anchors[0];
+            let dx = b[0] - a[0];
+            let dy = b[1] - a[1];
+            let length = dx.hypot(dy);
+            if length <= f64::EPSILON {
+                return Err(failure(
+                    "sketch",
+                    "point-line distance has a zero length line",
+                ));
+            }
+            let ux = dx / length;
+            let uy = dy / length;
+            let t = (p[0] - a[0]) * ux + (p[1] - a[1]) * uy;
+            anchors = vec![[a[0] + t * ux, a[1] + t * uy, 0.0], p];
         }
         if matches!(constraint, SketchConstraint::Diameter { .. }) && anchors.len() == 2 {
             let c = anchors[0];

@@ -185,6 +185,13 @@ pub enum SketchConstraint {
         point: String,
         line: String,
     },
+    /// Signed perpendicular distance to the infinite supporting line.
+    /// Positive is left of its start-to-end direction; zero lies on the line.
+    PointLineDistance {
+        point: String,
+        line: String,
+        value: ScalarExpr,
+    },
     EqualLength {
         first: String,
         second: String,
@@ -440,6 +447,7 @@ impl SketchDefinition {
         }
         for constraint in &self.constraints {
             if let SketchConstraint::Distance { value, .. }
+            | SketchConstraint::PointLineDistance { value, .. }
             | SketchConstraint::Angle { value, .. }
             | SketchConstraint::Radius { value, .. }
             | SketchConstraint::Diameter { value, .. } = constraint
