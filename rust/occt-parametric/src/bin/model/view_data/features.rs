@@ -54,7 +54,7 @@ fn scalar(
     expression
         .evaluate(parameters)
         .map(|q| q.value)
-        .map_err(|e| model_failure("visualization", e))
+        .stage("visualization")
 }
 
 fn vector(
@@ -64,7 +64,7 @@ fn vector(
     expression
         .evaluate(parameters)
         .map(|v| [v.x.value, v.y.value, v.z.value])
-        .map_err(|e| model_failure("visualization", e))
+        .stage("visualization")
 }
 
 /// Unit direction, divided by the largest component first so very small or
@@ -79,15 +79,11 @@ fn unit_direction(raw: [f64; 3]) -> [f64; 3] {
 /// Area centroid of a profile. Wire centroids weight boundary length while
 /// generated solids weight profile area, so wires are filled first.
 fn area_centroid(session: &Session, profile: &Shape<'_>) -> Result<[f64; 3], Failure> {
-    let face = if session
-        .shape_type(profile)
-        .map_err(|e| failure("visualization", e))?
-        == ShapeType::Wire
-    {
+    let face = if session.shape_type(profile).stage("visualization")? == ShapeType::Wire {
         Some(
             session
                 .create_face_from_wire(profile)
-                .map_err(|e| failure("visualization", e))?,
+                .stage("visualization")?,
         )
     } else {
         None
@@ -95,7 +91,7 @@ fn area_centroid(session: &Session, profile: &Shape<'_>) -> Result<[f64; 3], Fai
     Ok(point(
         session
             .center_of_mass(face.as_ref().unwrap_or(profile))
-            .map_err(|e| failure("visualization", e))?,
+            .stage("visualization")?,
     ))
 }
 
@@ -117,8 +113,7 @@ fn upstream_controls(scene: &SolidScene<'_, '_>, start: &str) -> Result<BTreeSet
         }
         if let Some(feature) = definitions.get(id) {
             controls.extend(names(
-                &serde_json::to_value(&feature.operation)
-                    .map_err(|e| failure("visualization", e))?,
+                &serde_json::to_value(&feature.operation).stage("visualization")?,
             ));
         }
         if let Some(inputs) = scene.input_map.get(id) {
@@ -175,19 +170,15 @@ fn edge_treatment(
             input,
             &EdgeSelector::Union(selectors.clone()),
         )
-        .map_err(|e| model_failure("visualization", e))?;
+        .stage("visualization")?;
     let selected_count = edges.len();
     for edge in edges {
         if references.len() < 64 {
             check_budget(&mut budget.vertices, 8, "vertex")?;
             let points = session
                 .edge_sample_points(&edge, 8)
-                .map_err(|e| failure("visualization", e))?;
-            anchors.push(point(
-                session
-                    .center_of_mass(&edge)
-                    .map_err(|e| failure("visualization", e))?,
-            ));
+                .stage("visualization")?;
+            anchors.push(point(session.center_of_mass(&edge).stage("visualization")?));
             references.push(points.into_iter().map(point).collect::<Vec<_>>());
         }
     }
@@ -210,10 +201,32 @@ fn edge_treatment(
             length_label(nominal)
         )
     };
-    annotations.push(annotation(
-        format!("driving-{kind}"),label,"dimension","driving",vec![output.into()],names(&expressions),json!([anchor]),
-        json!({"input":input,"value_mm":nominal,"selected_edge_count":selected_count,"displayed_reference_count":references.len(),"dimension_paths":references,"source_reference":true,"expressions":expressions,"driving":true,"measurement":false,"description":"Nominal treatment value; overlays mark selected source edges before treatment, not edges of the finished part."})
-    ));
+    annotations.push(
+        Annotation {
+            id: format!("driving-{kind}"),
+            label,
+            kind: AnnotationKind::Dimension,
+            status: AnnotationStatus::Driving,
+            targets: vec![output.into()],
+            parameters: names(&expressions),
+            anchors: json!([anchor]),
+            detail: json!({
+                "input": input,
+                "value_mm": nominal,
+                "selected_edge_count": selected_count,
+                "displayed_reference_count": references.len(),
+                "dimension_paths": references,
+                "source_reference": true,
+                "expressions": expressions,
+                "driving": true,
+                "measurement": false,
+                "description": "Nominal treatment value; overlays mark \
+                    selected source edges before treatment, not edges of \
+                    the finished part.",
+            }),
+        }
+        .into(),
+    );
     Ok(())
 }
 
@@ -243,13 +256,20 @@ fn variable_fillet_law(
     // curve parameter. Keep labels at the scene centre; do not fabricate
     // spatial station positions from sampled source-edge points.
     let evaluate = |e: &ScalarExpr| scalar(e, parameters);
-    let mut law = vec![json!({"position":0.0,"radius_mm":evaluate(start_radius)?})];
+    let mut law = vec![json!({
+        "position": 0.0,
+        "radius_mm": evaluate(start_radius)?,
+    })];
     for station in stations {
-        law.push(
-            json!({"position":evaluate(&station.position)?,"radius_mm":evaluate(&station.radius)?}),
-        );
+        law.push(json!({
+            "position": evaluate(&station.position)?,
+            "radius_mm": evaluate(&station.radius)?,
+        }));
     }
-    law.push(json!({"position":1.0,"radius_mm":evaluate(end_radius)?}));
+    law.push(json!({
+        "position": 1.0,
+        "radius_mm": evaluate(end_radius)?,
+    }));
     let reference = annotations
         .iter_mut()
         .find(|a| a["id"] == "driving-variable-fillet")
@@ -263,17 +283,55 @@ fn variable_fillet_law(
     reference["detail"]["spatial_stations"] = json!(false);
     reference["detail"]["displayed_interior_stations"] = json!(stations.len().min(64));
     reference["detail"]["description"] = json!(
-        "Nominal radius law on the native tangent contour. Paths reference original selected edges; labels do not locate stations on the finished solid."
+        "Nominal radius law on the native tangent contour. Paths reference \
+            original selected edges; labels do not locate stations on the \
+            finished solid."
     );
     for (id, radius, position) in [("start", start_radius, 0.0), ("end", end_radius, 1.0)] {
-        annotations.push(annotation(format!("fillet-{id}-radius"),format!("{id} R {} mm",length_label(evaluate(radius)?)),"dimension","driving",vec![output.into()],names(&json!(radius)),json!([center]),
-            json!({"value_mm":evaluate(radius)?,"position":position,"spine_direction":spine_direction,"expression":radius,"measurement":false,"spatial_station":false})));
+        annotations.push(
+            Annotation {
+                id: format!("fillet-{id}-radius"),
+                label: format!("{id} R {} mm", length_label(evaluate(radius)?)),
+                kind: AnnotationKind::Dimension,
+                status: AnnotationStatus::Driving,
+                targets: vec![output.into()],
+                parameters: names(&json!(radius)),
+                anchors: json!([center]),
+                detail: json!({
+                    "value_mm": evaluate(radius)?,
+                    "position": position,
+                    "spine_direction": spine_direction,
+                    "expression": radius,
+                    "measurement": false,
+                    "spatial_station": false,
+                }),
+            }
+            .into(),
+        );
     }
     for (index, station) in stations.iter().take(64).enumerate() {
         let radius = evaluate(&station.radius)?;
         let position = evaluate(&station.position)?;
-        annotations.push(annotation(format!("fillet-station-{}",index+1),format!("R {} mm @ {:.3}",length_label(radius),position),"dimension","driving",vec![output.into()],names(&json!(station)),json!([center]),
-            json!({"value_mm":radius,"position":position,"station_index":index+1,"expression":station,"measurement":false,"spatial_station":false})));
+        annotations.push(
+            Annotation {
+                id: format!("fillet-station-{}", index + 1),
+                label: format!("R {} mm @ {:.3}", length_label(radius), position),
+                kind: AnnotationKind::Dimension,
+                status: AnnotationStatus::Driving,
+                targets: vec![output.into()],
+                parameters: names(&json!(station)),
+                anchors: json!([center]),
+                detail: json!({
+                    "value_mm": radius,
+                    "position": position,
+                    "station_index": index+1,
+                    "expression": station,
+                    "measurement": false,
+                    "spatial_station": false,
+                }),
+            }
+            .into(),
+        );
     }
     Ok(())
 }
@@ -324,7 +382,15 @@ fn thread_dimensions(
         std::array::from_fn::<_, 3, _>(|i| o[i] + diameter * 0.5 * radial[i]),
     ];
     let end = std::array::from_fn::<_, 3, _>(|i| o[i] + run * n[i]);
-    let common = json!({"input":input,"axis_origin":o,"axis":n,"internal":internal,"left_handed":left_handed,"driving":true,"measurement":false});
+    let common = json!({
+        "input": input,
+        "axis_origin": o,
+        "axis": n,
+        "internal": internal,
+        "left_handed": left_handed,
+        "driving": true,
+        "measurement": false,
+    });
     for (id, label, value, expressions, anchors) in [
         (
             "major-diameter",
@@ -351,18 +417,46 @@ fn thread_dimensions(
         let mut detail = common.clone();
         detail["value_mm"] = json!(value);
         detail["expressions"] = expressions.clone();
-        annotations.push(annotation(
-            format!("thread-{id}"),
-            label,
-            "dimension",
-            "driving",
-            vec![output.into()],
-            names(&expressions),
-            anchors,
-            detail,
-        ));
+        annotations.push(
+            Annotation {
+                id: format!("thread-{id}"),
+                label,
+                kind: AnnotationKind::Dimension,
+                status: AnnotationStatus::Driving,
+                targets: vec![output.into()],
+                parameters: names(&expressions),
+                anchors,
+                detail,
+            }
+            .into(),
+        );
     }
-    annotations.push(annotation("thread-turns".into(),format!("{} {} thread · {:.3} turns",if *internal{"internal"}else{"external"},if *left_handed{"LH"}else{"RH"},run/p),"dimension","derived",vec![output.into()],names(&json!([pitch,length])),json!([center]),json!({"input":input,"turns":run/p,"internal":internal,"left_handed":left_handed,"driving":false,"description":"Derived turns; nominal thread dimensions do not measure tolerance class or fit."})));
+    annotations.push(
+        Annotation {
+            id: "thread-turns".into(),
+            label: format!(
+                "{} {} thread · {:.3} turns",
+                if *internal { "internal" } else { "external" },
+                if *left_handed { "LH" } else { "RH" },
+                run / p
+            ),
+            kind: AnnotationKind::Dimension,
+            status: AnnotationStatus::Derived,
+            targets: vec![output.into()],
+            parameters: names(&json!([pitch, length])),
+            anchors: json!([center]),
+            detail: json!({
+                "input": input,
+                "turns": run/p,
+                "internal": internal,
+                "left_handed": left_handed,
+                "driving": false,
+                "description": "Derived turns; nominal thread dimensions \
+                    do not measure tolerance class or fit.",
+            }),
+        }
+        .into(),
+    );
     Ok(())
 }
 
@@ -398,11 +492,7 @@ fn circular_pattern_dimensions(
     let source = generated
         .shape(input)
         .ok_or_else(|| failure("visualization", "circular pattern source unavailable"))?;
-    let start = point(
-        session
-            .center_of_mass(source)
-            .map_err(|e| failure("visualization", e))?,
-    );
+    let start = point(session.center_of_mass(source).stage("visualization")?);
     let v = std::array::from_fn::<_, 3, _>(|i| start[i] - o[i]);
     let height = (0..3).map(|i| v[i] * n[i]).sum::<f64>();
     let pivot = std::array::from_fn::<_, 3, _>(|i| o[i] + height * n[i]);
@@ -422,17 +512,50 @@ fn circular_pattern_dimensions(
         .collect::<Vec<_>>();
     check_budget(&mut budget.vertices, arc.len(), "vertex")?;
     let expressions = json!([origin, axis, count, angle_step_radians]);
-    annotations.push(annotation(
-        "circular-pattern-count".into(),
-        format!("circular pattern · {c:.0} copies"),
-        "dimension",
-        "driving",
-        vec![output.into()],
-        names(&json!([count])),
-        json!([center]),
-        json!({"input":input,"count":c,"axis_origin":o,"axis":n,"driving":true}),
-    ));
-    annotations.push(annotation("circular-pattern-angle".into(),format!("angular step {:.3}°",angle.to_degrees()),"dimension","driving",vec![output.into()],names(&expressions),json!([start]),json!({"input":input,"count":c,"value_radians":angle,"angular_arc":arc,"axis_origin":o,"axis":n,"expressions":expressions,"driving":true,"description":"Signed angular spacing between source placements. An on-axis source has no radial arc extent."})));
+    annotations.push(
+        Annotation {
+            id: "circular-pattern-count".into(),
+            label: format!("circular pattern · {c:.0} copies"),
+            kind: AnnotationKind::Dimension,
+            status: AnnotationStatus::Driving,
+            targets: vec![output.into()],
+            parameters: names(&json!([count])),
+            anchors: json!([center]),
+            detail: json!({
+                "input": input,
+                "count": c,
+                "axis_origin": o,
+                "axis": n,
+                "driving": true,
+            }),
+        }
+        .into(),
+    );
+    annotations.push(
+        Annotation {
+            id: "circular-pattern-angle".into(),
+            label: format!("angular step {:.3}°", angle.to_degrees()),
+            kind: AnnotationKind::Dimension,
+            status: AnnotationStatus::Driving,
+            targets: vec![output.into()],
+            parameters: names(&expressions),
+            anchors: json!([start]),
+            detail: json!({
+                "input": input,
+                "count": c,
+                "value_radians": angle,
+                "angular_arc": arc,
+                "axis_origin": o,
+                "axis": n,
+                "expressions": expressions,
+                "driving": true,
+                "description": "Signed angular spacing between source \
+                    placements. An on-axis source has no radial arc \
+                    extent.",
+            }),
+        }
+        .into(),
+    );
     Ok(())
 }
 
@@ -458,34 +581,74 @@ fn linear_pattern_dimensions(
     let source = generated
         .shape(input)
         .ok_or_else(|| failure("visualization", "pattern source unavailable"))?;
-    let anchor = point(
-        session
-            .center_of_mass(source)
-            .map_err(|e| failure("visualization", e))?,
-    );
+    let anchor = point(session.center_of_mass(source).stage("visualization")?);
     let end = std::array::from_fn::<_, 3, _>(|i| anchor[i] + (count_value - 1.0) * step_mm[i]);
     let expressions = json!([step, count]);
-    annotations.push(annotation(
-        "linear-pattern-count".into(),format!("pattern · {count_value:.0} copies"),"dimension","driving",vec![output.into()],names(&json!([count])),json!([center]),
-        json!({"input":input,"count":count_value,"step_mm":step_mm,"expressions":expressions,"driving":true,"description":"Unfused copies including the original placement."})
-    ));
-    annotations.push(annotation(
-        "linear-pattern-spacing".into(),
-        format!(
-            "step {} mm",
-            length_label(step_mm[0].hypot(step_mm[1].hypot(step_mm[2])))
-        ),
-        "dimension",
-        "driving",
-        vec![output.into()],
-        names(&json!([step])),
-        json!([anchor]),
-        json!({"input":input,"step_mm":step_mm,"expressions":step,"driving":true}),
-    ));
-    annotations.push(annotation(
-        "linear-pattern-span".into(),format!("pattern span {} mm",length_label((count_value-1.0)*step_mm[0].hypot(step_mm[1].hypot(step_mm[2])))),"dimension","derived",vec![output.into()],names(&expressions),json!([anchor,end]),
-        json!({"input":input,"count":count_value,"step_mm":step_mm,"driving":false,"description":"Displacement from first to last source placement; excludes source size."})
-    ));
+    annotations.push(
+        Annotation {
+            id: "linear-pattern-count".into(),
+            label: format!("pattern · {count_value:.0} copies"),
+            kind: AnnotationKind::Dimension,
+            status: AnnotationStatus::Driving,
+            targets: vec![output.into()],
+            parameters: names(&json!([count])),
+            anchors: json!([center]),
+            detail: json!({
+                "input": input,
+                "count": count_value,
+                "step_mm": step_mm,
+                "expressions": expressions,
+                "driving": true,
+                "description": "Unfused copies including the original \
+                    placement.",
+            }),
+        }
+        .into(),
+    );
+    annotations.push(
+        Annotation {
+            id: "linear-pattern-spacing".into(),
+            label: format!(
+                "step {} mm",
+                length_label(step_mm[0].hypot(step_mm[1].hypot(step_mm[2])))
+            ),
+            kind: AnnotationKind::Dimension,
+            status: AnnotationStatus::Driving,
+            targets: vec![output.into()],
+            parameters: names(&json!([step])),
+            anchors: json!([anchor]),
+            detail: json!({
+                "input": input,
+                "step_mm": step_mm,
+                "expressions": step,
+                "driving": true,
+            }),
+        }
+        .into(),
+    );
+    annotations.push(
+        Annotation {
+            id: "linear-pattern-span".into(),
+            label: format!(
+                "pattern span {} mm",
+                length_label((count_value - 1.0) * step_mm[0].hypot(step_mm[1].hypot(step_mm[2])))
+            ),
+            kind: AnnotationKind::Dimension,
+            status: AnnotationStatus::Derived,
+            targets: vec![output.into()],
+            parameters: names(&expressions),
+            anchors: json!([anchor, end]),
+            detail: json!({
+                "input": input,
+                "count": count_value,
+                "step_mm": step_mm,
+                "driving": false,
+                "description": "Displacement from first to last source \
+                    placement; excludes source size.",
+            }),
+        }
+        .into(),
+    );
     Ok(())
 }
 
@@ -499,11 +662,24 @@ fn compound_inputs(
     let FeatureOperation::Compound { inputs } = &feature.operation else {
         return Ok(());
     };
-    annotations.push(annotation(
-        "compound-inputs".into(), format!("group · {} inputs", inputs.len()),
-        "group", "derived", vec![output.into()], vec![], json!([center]),
-        json!({"inputs":inputs,"input_count":inputs.len(),"description":"Child shapes grouped without fusion or sewing. Overlaps remain."})
-    ));
+    annotations.push(
+        Annotation {
+            id: "compound-inputs".into(),
+            label: format!("group · {} inputs", inputs.len()),
+            kind: AnnotationKind::Group,
+            status: AnnotationStatus::Derived,
+            targets: vec![output.into()],
+            parameters: vec![],
+            anchors: json!([center]),
+            detail: json!({
+                "inputs": inputs,
+                "input_count": inputs.len(),
+                "description": "Child shapes grouped without fusion or \
+                    sewing. Overlaps remain.",
+            }),
+        }
+        .into(),
+    );
     Ok(())
 }
 
@@ -530,11 +706,28 @@ fn offset_dimension(
     let value = scalar(distance, parameters)?;
     let tolerance_mm = scalar(tolerance, parameters)?;
     let expressions = json!([distance, tolerance]);
-    annotations.push(annotation(
-        "driving-skin-offset".into(), format!("skin offset {value:+.3} mm"),
-        "dimension", "driving", vec![output.into()], names(&expressions), json!([center]),
-        json!({"input":input,"value_mm":value,"tolerance_mm":tolerance_mm,"expressions":expressions,"driving":true,"description":"Signed native skin offset. Label anchored at result bounds; this is not a wall-thickness measurement."})
-    ));
+    annotations.push(
+        Annotation {
+            id: "driving-skin-offset".into(),
+            label: format!("skin offset {value:+.3} mm"),
+            kind: AnnotationKind::Dimension,
+            status: AnnotationStatus::Driving,
+            targets: vec![output.into()],
+            parameters: names(&expressions),
+            anchors: json!([center]),
+            detail: json!({
+                "input": input,
+                "value_mm": value,
+                "tolerance_mm": tolerance_mm,
+                "expressions": expressions,
+                "driving": true,
+                "description": "Signed native skin offset. Label anchored \
+                    at result bounds; this is not a wall-thickness \
+                    measurement.",
+            }),
+        }
+        .into(),
+    );
     Ok(())
 }
 
@@ -561,7 +754,28 @@ fn scale_dimension(
     let c = vector(scale_center, parameters)?;
     let value = scalar(factor, parameters)?;
     let expressions = json!([scale_center, factor]);
-    annotations.push(annotation("driving-scale-factor".into(),format!("scale × {value:.4}"),"dimension","driving",vec![output.into()],names(&expressions),json!([center]),json!({"input":input,"scale_center":c,"factor":value,"expressions":expressions,"driving":true,"description":"Dimensionless uniform geometry scale about the specified centre. Label anchored at result bounds."})));
+    annotations.push(
+        Annotation {
+            id: "driving-scale-factor".into(),
+            label: format!("scale × {value:.4}"),
+            kind: AnnotationKind::Dimension,
+            status: AnnotationStatus::Driving,
+            targets: vec![output.into()],
+            parameters: names(&expressions),
+            anchors: json!([center]),
+            detail: json!({
+                "input": input,
+                "scale_center": c,
+                "factor": value,
+                "expressions": expressions,
+                "driving": true,
+                "description": "Dimensionless uniform geometry scale about \
+                    the specified centre. Label anchored at result \
+                    bounds.",
+            }),
+        }
+        .into(),
+    );
     Ok(())
 }
 
@@ -588,7 +802,28 @@ fn mirror_plane(
     let o = vector(origin, parameters)?;
     let unit = unit_direction(vector(normal, parameters)?);
     let expressions = json!([origin, normal]);
-    annotations.push(annotation("driving-mirror-plane".into(),"mirror plane".into(),"constraint","driving",vec![output.into()],names(&expressions),json!([center]),json!({"input":input,"plane_origin":o,"plane_normal":unit,"expressions":expressions,"driving":true,"description":"Plane controls define native reflection. The label is anchored at the result's bounding centre."})));
+    annotations.push(
+        Annotation {
+            id: "driving-mirror-plane".into(),
+            label: "mirror plane".into(),
+            kind: AnnotationKind::Constraint,
+            status: AnnotationStatus::Driving,
+            targets: vec![output.into()],
+            parameters: names(&expressions),
+            anchors: json!([center]),
+            detail: json!({
+                "input": input,
+                "plane_origin": o,
+                "plane_normal": unit,
+                "expressions": expressions,
+                "driving": true,
+                "description": "Plane controls define native reflection. \
+                    The label is anchored at the result's bounding \
+                    centre.",
+            }),
+        }
+        .into(),
+    );
     Ok(())
 }
 
@@ -642,24 +877,40 @@ fn sweep_route_length(
     let mut paths = Vec::new();
     for edge in session
         .subshapes(route, ShapeType::Edge)
-        .map_err(|e| failure("visualization", e))?
+        .stage("visualization")?
     {
-        distance += session
-            .edge_length(&edge)
-            .map_err(|e| failure("visualization", e))?;
+        distance += session.edge_length(&edge).stage("visualization")?;
         check_budget(&mut budget.vertices, route_samples, "vertex")?;
         let samples = session
             .edge_sample_points(&edge, route_samples)
-            .map_err(|e| failure("visualization", e))?;
+            .stage("visualization")?;
         paths.push(samples.into_iter().map(point).collect::<Vec<_>>());
     }
     let controls = upstream_controls(scene, path)?;
-    let anchor = point(
-        session
-            .center_of_mass(route)
-            .map_err(|e| failure("visualization", e))?,
+    let anchor = point(session.center_of_mass(route).stage("visualization")?);
+    annotations.push(
+        Annotation {
+            id: "sweep-route-length".into(),
+            label: format!("route length {} mm", length_label(distance)),
+            kind: AnnotationKind::Dimension,
+            status: AnnotationStatus::Measured,
+            targets: vec![output.into()],
+            parameters: controls.into_iter().collect(),
+            anchors: json!([anchor]),
+            detail: json!({
+                "path": path,
+                "orientation": orientation,
+                "value_mm": distance,
+                "measurement": "native_edge_length_sum",
+                "dimension_paths": paths,
+                "driving": false,
+                "description": "Native route length; the displayed curve \
+                    is sampled for visualization. This is not the \
+                    endpoint distance or material cut length.",
+            }),
+        }
+        .into(),
     );
-    annotations.push(annotation("sweep-route-length".into(),format!("route length {} mm",length_label(distance)),"dimension","measured",vec![output.into()],controls.into_iter().collect(),json!([anchor]),json!({"path":path,"orientation":orientation,"value_mm":distance,"measurement":"native_edge_length_sum","dimension_paths":paths,"driving":false,"description":"Native route length; the displayed curve is sampled for visualization. This is not the endpoint distance or material cut length."})));
     Ok(())
 }
 
@@ -699,12 +950,28 @@ fn loft_section_spacing(
         for id in &profiles[index..index + 2] {
             if let Some(section) = section_definitions.get(id.as_str()) {
                 control_names.extend(names(
-                    &serde_json::to_value(&section.operation)
-                        .map_err(|e| failure("visualization", e))?,
+                    &serde_json::to_value(&section.operation).stage("visualization")?,
                 ));
             }
         }
-        annotations.push(annotation(format!("loft-spacing-{index}"),format!("section spacing {} mm",length_label(distance)),"dimension","measured",vec![output.into()],control_names.into_iter().collect(),json!(pair),json!({"profiles":&profiles[index..index+2],"value_mm":distance,"measurement":"section_area_centroid_spacing","driving":false})));
+        annotations.push(
+            Annotation {
+                id: format!("loft-spacing-{index}"),
+                label: format!("section spacing {} mm", length_label(distance)),
+                kind: AnnotationKind::Dimension,
+                status: AnnotationStatus::Measured,
+                targets: vec![output.into()],
+                parameters: control_names.into_iter().collect(),
+                anchors: json!(pair),
+                detail: json!({
+                    "profiles": &profiles[index..index+2],
+                    "value_mm": distance,
+                    "measurement": "section_area_centroid_spacing",
+                    "driving": false,
+                }),
+            }
+            .into(),
+        );
     }
     Ok(())
 }
@@ -732,7 +999,7 @@ fn hole_limit(
     };
     let witness = part
         .hole_limit_measurement(session, generated, output)
-        .map_err(|e| model_failure("visualization", e))?
+        .stage("visualization")?
         .ok_or_else(|| failure("visualization", "hole limit has no measurement"))?;
     let controls = upstream_controls(scene, output)?
         .into_iter()
@@ -742,7 +1009,25 @@ fn hole_limit(
     } else {
         "selected face"
     };
-    annotations.push(annotation("measured-hole-limit".into(),format!("hole to {mode}: {} mm",length_label(witness.distance)),"dimension","measured",vec![output.into()],controls,json!([point(witness.first),point(witness.second)]),json!({"extent":extent,"value_mm":witness.distance,"measurement":"bore_centre_ray","input":input,"driving":false})));
+    annotations.push(
+        Annotation {
+            id: "measured-hole-limit".into(),
+            label: format!("hole to {mode}: {} mm", length_label(witness.distance)),
+            kind: AnnotationKind::Dimension,
+            status: AnnotationStatus::Measured,
+            targets: vec![output.into()],
+            parameters: controls,
+            anchors: json!([point(witness.first), point(witness.second)]),
+            detail: json!({
+                "extent": extent,
+                "value_mm": witness.distance,
+                "measurement": "bore_centre_ray",
+                "input": input,
+                "driving": false,
+            }),
+        }
+        .into(),
+    );
     Ok(())
 }
 
@@ -790,7 +1075,7 @@ fn extrusion_dimension(
                 Vec3::new(d[0], d[1], d[2]),
                 search_length,
             )
-            .map_err(|e| failure("visualization", e))?;
+            .stage("visualization")?;
         if let Some((end, _)) = hit {
             let end = point(end);
             d = std::array::from_fn(|i| end[i] - a[i]);
@@ -810,15 +1095,40 @@ fn extrusion_dimension(
         ExtrudeExtent::UpToFace { .. } => "up-to-face",
         ExtrudeExtent::UpToNext { .. } => "up-to-next",
     };
-    annotations.push(annotation(
-        "driving-extrusion".into(),
-        if has_measurement {format!("{mode}{} {} mm",if geometry_driven {": centroid"} else {""},length_label(length))} else {format!("{mode}: no centroid-ray intersection")},
-        "dimension",
-        if geometry_driven { "measured" } else { "driving" },
-        vec![output.into()],
-        names(&serde_json::to_value(direction).map_err(|e| failure("visualization", e))?),
-        if has_measurement {json!([a, std::array::from_fn::<_, 3, _>(|i| a[i] + d[i])])} else {json!([])},
-        json!({"feature":output,"expression":direction,"extent":extent,"value_mm":if has_measurement {Some(length)} else {None},"measurement":if geometry_driven {"profile_centroid_ray"} else {"direction_length"},"driving":!geometry_driven}),
-    ));
+    let (label, anchors) = if has_measurement {
+        let source = if geometry_driven { ": centroid" } else { "" };
+        let end = std::array::from_fn::<_, 3, _>(|i| a[i] + d[i]);
+        (
+            format!("{mode}{source} {} mm", length_label(length)),
+            json!([a, end]),
+        )
+    } else {
+        (format!("{mode}: no centroid-ray intersection"), json!([]))
+    };
+    let (status, measurement) = if geometry_driven {
+        (AnnotationStatus::Measured, "profile_centroid_ray")
+    } else {
+        (AnnotationStatus::Driving, "direction_length")
+    };
+    annotations.push(
+        Annotation {
+            id: "driving-extrusion".into(),
+            label,
+            kind: AnnotationKind::Dimension,
+            status,
+            targets: vec![output.into()],
+            parameters: names(&serde_json::to_value(direction).stage("visualization")?),
+            anchors,
+            detail: json!({
+                "feature": output,
+                "expression": direction,
+                "extent": extent,
+                "value_mm": has_measurement.then_some(length),
+                "measurement": measurement,
+                "driving": !geometry_driven,
+            }),
+        }
+        .into(),
+    );
     Ok(())
 }

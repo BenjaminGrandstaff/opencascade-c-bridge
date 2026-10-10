@@ -1,7 +1,7 @@
 //! Shared native dimension and constraint scenes for live and standalone viewers.
-use occt_bridge::{MeshOptions, Session, Shape, ShapeType, Vec3};
+use occt_bridge::{BridgeError, MeshOptions, Session, Shape, ShapeType, Vec3};
 use occt_parametric::*;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
@@ -44,7 +44,21 @@ fn failure(stage: &'static str, error: impl std::fmt::Display) -> Failure {
 }
 fn model_failure(stage: &'static str, error: ModelError) -> Failure {
     // Retain the public feature diagnostics for command clients.
-    let diagnostics = error.diagnostics.iter().map(|d| json!({"feature":d.feature,"kind":format!("{:?}",d.kind),"code":d.code,"name":d.name,"selection":d.selection,"selector":d.selector,"input":d.input})).collect::<Vec<_>>();
+    let diagnostics = error
+        .diagnostics
+        .iter()
+        .map(|d| {
+            json!({
+                "feature": d.feature,
+                "kind": format!("{:?}",d.kind),
+                "code": d.code,
+                "name": d.name,
+                "selection": d.selection,
+                "selector": d.selector,
+                "input": d.input,
+            })
+        })
+        .collect::<Vec<_>>();
     Failure {
         stage,
         message: error.message,
@@ -94,19 +108,82 @@ fn names(value: &Value) -> Vec<String> {
     }
     found.into_iter().collect()
 }
-#[allow(clippy::too_many_arguments)]
-fn annotation(
+/// One annotation shown on a scene: a dimension, constraint, control, or
+/// check, with the geometry it targets and the parameters that drive it.
+#[derive(Serialize)]
+struct Annotation {
     id: String,
     label: String,
-    kind: &str,
-    status: &str,
+    kind: AnnotationKind,
+    status: AnnotationStatus,
+    /// Output or sketch entity ids the annotation highlights.
     targets: Vec<String>,
+    /// Parameter names whose controls are linked to the annotation.
     parameters: Vec<String>,
+    /// Points in scene coordinates: a leader anchor, a measured segment, or
+    /// an angular arc's ends.
     anchors: Value,
     detail: Value,
-) -> Value {
-    json!({"id":id,"label":label,"kind":kind,"status":status,"targets":targets,"parameters":parameters,"anchors":anchors,"detail":detail})
 }
+
+#[derive(Clone, Copy, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum AnnotationKind {
+    Dimension,
+    Constraint,
+    Parameter,
+    Requirement,
+    Group,
+    ProfileOperation,
+}
+
+#[derive(Clone, Copy, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum AnnotationStatus {
+    /// Set by a parameter or definition value.
+    Driving,
+    /// Measured on generated geometry.
+    Measured,
+    /// Computed from other driving values.
+    Derived,
+    Fixed,
+    Initial,
+    Constructed,
+    Passed,
+    Failed,
+    Unverified,
+}
+
+impl From<Annotation> for Value {
+    fn from(annotation: Annotation) -> Self {
+        serde_json::to_value(annotation).expect("annotations serialize to JSON")
+    }
+}
+
+/// Converts a kernel, model, or JSON error into a [`Failure`] at a stage.
+/// Model errors keep their feature diagnostics.
+trait StageResult<T> {
+    fn stage(self, stage: &'static str) -> Result<T, Failure>;
+}
+
+impl<T> StageResult<T> for Result<T, BridgeError> {
+    fn stage(self, stage: &'static str) -> Result<T, Failure> {
+        self.map_err(|e| failure(stage, e))
+    }
+}
+
+impl<T> StageResult<T> for Result<T, serde_json::Error> {
+    fn stage(self, stage: &'static str) -> Result<T, Failure> {
+        self.map_err(|e| failure(stage, e))
+    }
+}
+
+impl<T> StageResult<T> for Result<T, ModelError> {
+    fn stage(self, stage: &'static str) -> Result<T, Failure> {
+        self.map_err(|e| model_failure(stage, e))
+    }
+}
+
 fn length_label(value: f64) -> String {
     if value != 0.0 && (value.abs() < 1e-3 || value.abs() >= 1e6) {
         format!("{value:.4e}")
@@ -141,9 +218,7 @@ pub fn collect(
             "visualization options exceed supported limits",
         ));
     }
-    let graph = model
-        .instance_graph()
-        .map_err(|e| model_failure("validation", e))?;
+    let graph = model.instance_graph().stage("validation")?;
     let ids = if outputs.is_empty() {
         model
             .instances
@@ -156,7 +231,7 @@ pub fn collect(
     if ids.len() > options.maximum_scenes {
         return Err(failure("visualization", "scene budget exceeded"));
     }
-    let session = Session::new().map_err(|e| failure("kernel", e))?;
+    let session = Session::new().stage("kernel")?;
     let mut budget = Budget {
         triangles: options.maximum_triangles,
         vertices: options.maximum_vertices,
@@ -165,13 +240,20 @@ pub fn collect(
     let mut scenes = Vec::new();
     let mut scene_ids = BTreeSet::new();
     for id in &ids {
-        let part = graph
-            .resolve(id)
-            .map_err(|e| model_failure("resolution", e))?;
-        let parameters = part
-            .resolved_parameters()
-            .map_err(|e| model_failure("resolution", e))?;
-        let controls=parameters.iter().map(|(name,value)|(name.clone(),json!({"value":value,"definition":part.definition.parameters.iter().find(|p|p.id==*name)}))).collect::<BTreeMap<_,_>>();
+        let part = graph.resolve(id).stage("resolution")?;
+        let parameters = part.resolved_parameters().stage("resolution")?;
+        let controls = parameters
+            .iter()
+            .map(|(name, value)| {
+                (
+                    name.clone(),
+                    json!({
+                        "value": value,
+                        "definition": part.definition.parameters.iter().find(|p|p.id==*name),
+                    }),
+                )
+            })
+            .collect::<BTreeMap<_, _>>();
         let selected = outputs
             .iter()
             .filter(|o| o.instance == *id)
@@ -197,7 +279,15 @@ pub fn collect(
                 }
                 Err(error) => {
                     for output in selected {
-                        scenes.push(json!({"kind":"solid","instance":id,"feature":output.output,"title":format!("{id}/{}",output.output),"error":error.message,"annotations":[],"parameters":controls}));
+                        scenes.push(json!({
+                            "kind": "solid",
+                            "instance": id,
+                            "feature": output.output,
+                            "title": format!("{id}/{}",output.output),
+                            "error": error.message,
+                            "annotations": [],
+                            "parameters": controls,
+                        }));
                     }
                 }
             }
@@ -210,10 +300,27 @@ pub fn collect(
                     | FeatureOperation::SketchOpenWire { sketch } => sketch,
                     _ => continue,
                 };
-                match sketch_scene(&session,id,&feature.id,sketch,!matches!(feature.operation,FeatureOperation::SketchOpenWire {..}),&parameters,&controls,&mut budget) {
-                    Ok(scene)=>scenes.push(scene),
-                    Err(error) if error.stage=="sketch"=>scenes.push(json!({"kind":"sketch","instance":id,"feature":feature.id,"title":format!("{id}/{}",feature.id),"error":error.message,"annotations":[],"parameters":controls})),
-                    Err(error)=>return Err(error),
+                match sketch_scene(
+                    &session,
+                    id,
+                    &feature.id,
+                    sketch,
+                    !matches!(feature.operation, FeatureOperation::SketchOpenWire { .. }),
+                    &parameters,
+                    &controls,
+                    &mut budget,
+                ) {
+                    Ok(scene) => scenes.push(scene),
+                    Err(error) if error.stage == "sketch" => scenes.push(json!({
+                        "kind": "sketch",
+                        "instance": id,
+                        "feature": feature.id,
+                        "title": format!("{id}/{}",feature.id),
+                        "error": error.message,
+                        "annotations": [],
+                        "parameters": controls,
+                    })),
+                    Err(error) => return Err(error),
                 }
             }
         }
@@ -227,21 +334,46 @@ pub fn collect(
             "select a shape output or provide a sketch feature",
         ));
     }
-    Ok(
-        json!({"schema":"occb-annotated-view-v1","diagnostic":true,"coordinate_system":"family-local millimeters","scenes":scenes}),
-    )
+    Ok(json!({
+        "schema": "occb-annotated-view-v1",
+        "diagnostic": true,
+        "coordinate_system": "family-local millimeters",
+        "scenes": scenes,
+    }))
 }
 pub fn verification_result(scope: &str, r: &VerificationResult) -> Value {
-    let measured = r.measured.map(|m| json!({"value":m.value,"unit":format!("{:?}",m.unit),"minimum":m.minimum,"maximum":m.maximum}));
+    let measured = r.measured.map(|m| {
+        json!({
+            "value": m.value,
+            "unit": format!("{:?}",m.unit),
+            "minimum": m.minimum,
+            "maximum": m.maximum,
+        })
+    });
     let evidence = match r.evidence {
         Evidence::Exact => json!({"kind":"exact"}),
         Evidence::Sampled {
             samples,
             unresolved,
-        } => json!({"kind":"sampled","samples":samples,"unresolved":unresolved}),
+        } => json!({
+            "kind": "sampled",
+            "samples": samples,
+            "unresolved": unresolved,
+        }),
     };
-    let witness = r.witness.as_ref().map(|w| json!({"subjects":w.subjects,"points_mm":w.points_mm.iter().map(|p| [p.x,p.y,p.z]).collect::<Vec<_>>()}));
-    json!({"scope":scope,"requirement":r.requirement_id,
-        "status":if r.status == VerificationStatus::Passed {"passed"} else {"failed"},
-        "message":r.message,"measured":measured,"evidence":evidence,"witness":witness})
+    let witness = r.witness.as_ref().map(|w| {
+        json!({
+            "subjects": w.subjects,
+            "points_mm": w.points_mm.iter().map(|p| [p.x,p.y,p.z]).collect::<Vec<_>>(),
+        })
+    });
+    json!({
+        "scope": scope,
+        "requirement": r.requirement_id,
+        "status": if r.status == VerificationStatus::Passed {"passed"} else {"failed"},
+        "message": r.message,
+        "measured": measured,
+        "evidence": evidence,
+        "witness": witness,
+    })
 }

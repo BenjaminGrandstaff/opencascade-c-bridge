@@ -1,4 +1,5 @@
-//! Annotated solid scenes: native mesh, outlines, extents, and linked parameter, constraint, and requirement annotations.
+//! Annotated solid scenes: native mesh, outlines, extents, and linked
+//! parameter, constraint, and requirement annotations.
 
 use super::dimensions::helix_dimensions;
 use super::features::{SolidScene, feature_dimensions};
@@ -26,9 +27,7 @@ pub(super) fn solid_scene(
             format!("unknown visualization output '{output}'"),
         )
     })?;
-    let bounds = session
-        .exact_bounds(shape)
-        .map_err(|e| failure("visualization", e))?;
+    let bounds = session.exact_bounds(shape).stage("visualization")?;
     let min = point(bounds.min);
     let max = point(bounds.max);
     let span = (0..3).map(|i| max[i] - min[i]).fold(0.0, f64::max);
@@ -41,7 +40,7 @@ pub(super) fn solid_scene(
     // Wires and edges have no faces to triangulate, but retain native outlines.
     let mesh = if session
         .subshape_count(shape, ShapeType::Face)
-        .map_err(|e| failure("visualization", e))?
+        .stage("visualization")?
         == 0
     {
         Vec::new()
@@ -55,40 +54,64 @@ pub(super) fn solid_scene(
                     maximum_triangles: budget.triangles.max(1),
                 },
             )
-            .map_err(|e| failure("visualization", e))?
+            .stage("visualization")?
     };
     check_budget(&mut budget.triangles, mesh.len(), "triangle")?;
     check_budget(&mut budget.vertices, mesh.len() * 3, "vertex")?;
     let mesh = mesh
         .iter()
-        .map(|triangle| json!({"face":triangle.face_index,"points":triangle.points.map(point)}))
+        .map(|triangle| {
+            json!({
+                "face": triangle.face_index,
+                "points": triangle.points.map(point),
+            })
+        })
         .collect::<Vec<_>>();
     let mut lines = Vec::new();
     for edge in session
         .subshapes(shape, ShapeType::Edge)
-        .map_err(|e| failure("visualization", e))?
+        .stage("visualization")?
     {
         check_budget(&mut budget.vertices, edge_samples, "vertex")?;
         let points = session
             .edge_sample_points(&edge, edge_samples)
-            .map_err(|e| failure("visualization", e))?;
+            .stage("visualization")?;
         lines.push(points.into_iter().map(point).collect::<Vec<_>>());
     }
     let mut annotations = Vec::new();
     for axis in 0..3 {
         let mut end = min;
         end[axis] = max[axis];
-        annotations.push(annotation(format!("extent-{axis}"),format!("{} span {} mm",["X","Y","Z"][axis],length_label(max[axis]-min[axis])),"dimension","measured",vec![output.into()],vec![],json!([min,end]),json!({"measured_mm":max[axis]-min[axis],"axis":(["X","Y","Z"][axis]),"driving":false,"description":"Exact geometry bounding extent along the family axis; independent of view rotation"})));
+        annotations.push(
+            Annotation {
+                id: format!("extent-{axis}"),
+                label: format!(
+                    "{} span {} mm",
+                    ["X", "Y", "Z"][axis],
+                    length_label(max[axis] - min[axis])
+                ),
+                kind: AnnotationKind::Dimension,
+                status: AnnotationStatus::Measured,
+                targets: vec![output.into()],
+                parameters: vec![],
+                anchors: json!([min, end]),
+                detail: json!({
+                    "measured_mm": max[axis]-min[axis],
+                    "axis": (["X","Y","Z"][axis]),
+                    "driving": false,
+                    "description": "Exact geometry bounding extent along \
+                        the family axis; independent of view rotation",
+                }),
+            }
+            .into(),
+        );
     }
     let center = [
         min[0] * 0.5 + max[0] * 0.5,
         min[1] * 0.5 + max[1] * 0.5,
         min[2] * 0.5 + max[2] * 0.5,
     ];
-    let input_map = part
-        .definition
-        .feature_inputs()
-        .map_err(|e| model_failure("validation", e))?;
+    let input_map = part.definition.feature_inputs().stage("validation")?;
     let mut ancestors = BTreeSet::new();
     let mut pending = vec![output];
     while let Some(id) = pending.pop() {
@@ -102,8 +125,7 @@ pub(super) fn solid_scene(
     let mut bindings = BTreeMap::<String, Vec<String>>::new();
     for feature in &part.definition.features {
         if ancestors.contains(feature.id.as_str()) {
-            let expression = serde_json::to_value(&feature.operation)
-                .map_err(|e| failure("visualization", e))?;
+            let expression = serde_json::to_value(&feature.operation).stage("visualization")?;
             for name in names(&expression) {
                 used.insert(name.clone());
                 bindings.entry(name).or_default().push(feature.id.clone());
@@ -112,7 +134,26 @@ pub(super) fn solid_scene(
     }
     for name in used {
         if let Some(control) = controls.get(&name) {
-            annotations.push(annotation(format!("parameter-{name}"),name.clone(),"parameter","driving",vec![output.into()],vec![name.clone()],json!([center]),json!({"parameter":name,"control":control,"features":bindings[&name],"description":"Driving parameter used by this output's feature inputs; highlight indicates the related output, not a fitted dimension"})));
+            annotations.push(
+                Annotation {
+                    id: format!("parameter-{name}"),
+                    label: name.clone(),
+                    kind: AnnotationKind::Parameter,
+                    status: AnnotationStatus::Driving,
+                    targets: vec![output.into()],
+                    parameters: vec![name.clone()],
+                    anchors: json!([center]),
+                    detail: json!({
+                        "parameter": name,
+                        "control": control,
+                        "features": bindings[&name],
+                        "description": "Driving parameter used by this \
+                            output's feature inputs; highlight indicates \
+                            the related output, not a fitted dimension",
+                    }),
+                }
+                .into(),
+            );
         }
     }
     for constraint in &part.definition.constraints {
@@ -125,7 +166,23 @@ pub(super) fn solid_scene(
             .collect::<Vec<_>>();
         control_names.sort();
         control_names.dedup();
-        annotations.push(annotation(format!("constraint-{}",constraint.id),constraint.id.clone(),"constraint","passed",vec![output.into()],control_names,json!([center]),json!({"constraint":constraint,"left":constraint.left.evaluate(parameters).map_err(|e|model_failure("visualization",e))?,"right":constraint.right.evaluate(parameters).map_err(|e|model_failure("visualization",e))?})));
+        annotations.push(
+            Annotation {
+                id: format!("constraint-{}", constraint.id),
+                label: constraint.id.clone(),
+                kind: AnnotationKind::Constraint,
+                status: AnnotationStatus::Passed,
+                targets: vec![output.into()],
+                parameters: control_names,
+                anchors: json!([center]),
+                detail: json!({
+                    "constraint": constraint,
+                    "left": constraint.left.evaluate(parameters).stage("visualization")?,
+                    "right": constraint.right.evaluate(parameters).stage("visualization")?,
+                }),
+            }
+            .into(),
+        );
     }
     for requirement in part
         .definition
@@ -140,9 +197,9 @@ pub(super) fn solid_scene(
         {
             Some(result) => {
                 let status = if result.status == VerificationStatus::Passed {
-                    "passed"
+                    AnnotationStatus::Passed
                 } else {
-                    "failed"
+                    AnnotationStatus::Failed
                 };
                 let anchors = result
                     .witness
@@ -162,19 +219,29 @@ pub(super) fn solid_scene(
                     .iter()
                     .find(|(id, _)| id == &requirement.id)
                     .map(|(_, e)| e.message.clone());
-                ("unverified", json!({"message":message}), json!([center]))
+                (
+                    AnnotationStatus::Unverified,
+                    json!({ "message": message }),
+                    json!([center]),
+                )
             }
         };
-        annotations.push(annotation(
-            format!("requirement-{}", requirement.id),
-            requirement.statement.clone(),
-            "requirement",
-            status,
-            vec![output.into()],
-            vec![],
-            anchors,
-            json!({"requirement":requirement,"verification":verification}),
-        ));
+        annotations.push(
+            Annotation {
+                id: format!("requirement-{}", requirement.id),
+                label: requirement.statement.clone(),
+                kind: AnnotationKind::Requirement,
+                status,
+                targets: vec![output.into()],
+                parameters: vec![],
+                anchors,
+                detail: json!({
+                    "requirement": requirement,
+                    "verification": verification,
+                }),
+            }
+            .into(),
+        );
     }
     if let Some((path, operation)) = helix {
         let route = generated
@@ -207,7 +274,17 @@ pub(super) fn solid_scene(
         feature_dimensions(&scene, feature, budget, &mut annotations)?;
     }
     check_budget(&mut budget.annotations, annotations.len(), "annotation")?;
-    Ok(
-        json!({"kind":"solid","instance":part.id,"feature":output,"title":format!("{}/{}",part.id,output),"bounds":[min,max],"mesh":mesh,"lines":lines,"parameters":controls,"annotations":annotations,"coordinate_system":"family-local mm","valid":session.is_valid(shape).map_err(|e|failure("visualization",e))?}),
-    )
+    Ok(json!({
+        "kind": "solid",
+        "instance": part.id,
+        "feature": output,
+        "title": format!("{}/{}",part.id,output),
+        "bounds": [min,max],
+        "mesh": mesh,
+        "lines": lines,
+        "parameters": controls,
+        "annotations": annotations,
+        "coordinate_system": "family-local mm",
+        "valid": session.is_valid(shape).stage("visualization")?,
+    }))
 }

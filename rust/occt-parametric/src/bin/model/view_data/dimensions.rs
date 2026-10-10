@@ -27,15 +27,13 @@ pub(crate) fn helix_samples(
     let FeatureOperation::Helix { turns, .. } = operation else {
         return Ok(32);
     };
-    let turns = turns
-        .evaluate(parameters)
-        .map_err(|e| model_failure("visualization", e))?
-        .value;
+    let turns = turns.evaluate(parameters).stage("visualization")?.value;
     let count = (turns * 32.0).ceil().max(32.0) as usize + 1;
     if count > 100_000 {
         return Err(failure(
             "visualization",
-            "helix display needs more than the native 100000-point edge sampling limit",
+            "helix display needs more than the native 100000-point edge \
+                sampling limit",
         ));
     }
     Ok(count)
@@ -63,7 +61,7 @@ pub(super) fn revolve_dimension(
         expression
             .evaluate(parameters)
             .map(|v| [v.x.value, v.y.value, v.z.value])
-            .map_err(|e| model_failure("visualization", e))
+            .stage("visualization")
     };
     let origin_value = evaluate(origin)?;
     let direction = evaluate(axis)?;
@@ -74,17 +72,13 @@ pub(super) fn revolve_dimension(
     let n = n.map(|v| v / magnitude);
     let angle = angle_radians
         .evaluate(parameters)
-        .map_err(|e| model_failure("visualization", e))?
+        .stage("visualization")?
         .value;
-    let face = if session
-        .shape_type(profile)
-        .map_err(|e| failure("visualization", e))?
-        == ShapeType::Wire
-    {
+    let face = if session.shape_type(profile).stage("visualization")? == ShapeType::Wire {
         Some(
             session
                 .create_face_from_wire(profile)
-                .map_err(|e| failure("visualization", e))?,
+                .stage("visualization")?,
         )
     } else {
         None
@@ -92,7 +86,7 @@ pub(super) fn revolve_dimension(
     let start = point(
         session
             .center_of_mass(face.as_ref().unwrap_or(profile))
-            .map_err(|e| failure("visualization", e))?,
+            .stage("visualization")?,
     );
     let along = (0..3)
         .map(|i| (start[i] - origin_value[i]) * n[i])
@@ -126,7 +120,43 @@ pub(super) fn revolve_dimension(
     } else {
         json!([center])
     };
-    annotations.push(annotation("driving-revolve-angle".into(),format!("{}revolve ∠ {angle:.3} rad",if matches!(extent,RevolveExtent::Symmetric){"symmetric "}else{""}),"dimension","driving",vec![feature.id.clone()],names(&serde_json::to_value(angle_radians).map_err(|e|failure("visualization",e))?),anchors,json!({"input":input,"expression":angle_radians,"extent":extent,"start_angle_radians":start_angle,"end_angle_radians":start_angle+angle,"value_radians":angle,"axis_origin":origin_value,"axis_direction":n,"arc_center":center,"arc_radius_mm":radius,"angular_arc":arc,"driving":true,"description":"Signed right-hand sweep around the native axis. The display arc uses the source profile's centroid radius; its radius is not a part size dimension."})));
+    annotations.push(
+        Annotation {
+            id: "driving-revolve-angle".into(),
+            label: format!(
+                "{}revolve ∠ {angle:.3} rad",
+                if matches!(extent, RevolveExtent::Symmetric) {
+                    "symmetric "
+                } else {
+                    ""
+                }
+            ),
+            kind: AnnotationKind::Dimension,
+            status: AnnotationStatus::Driving,
+            targets: vec![feature.id.clone()],
+            parameters: names(&serde_json::to_value(angle_radians).stage("visualization")?),
+            anchors,
+            detail: json!({
+                "input": input,
+                "expression": angle_radians,
+                "extent": extent,
+                "start_angle_radians": start_angle,
+                "end_angle_radians": start_angle+angle,
+                "value_radians": angle,
+                "axis_origin": origin_value,
+                "axis_direction": n,
+                "arc_center": center,
+                "arc_radius_mm": radius,
+                "angular_arc": arc,
+                "driving": true,
+                "description": "Signed right-hand sweep around the native \
+                    axis. The display arc uses the source profile's \
+                    centroid radius; its radius is not a part size \
+                    dimension.",
+            }),
+        }
+        .into(),
+    );
     Ok(())
 }
 
@@ -155,12 +185,12 @@ pub(super) fn helix_dimensions(
     let vector = |expr: &VectorExpr| {
         expr.evaluate(parameters)
             .map(|v| [v.x.value, v.y.value, v.z.value])
-            .map_err(|e| model_failure("visualization", e))
+            .stage("visualization")
     };
     let scalar = |expr: &ScalarExpr| {
         expr.evaluate(parameters)
             .map(|v| v.value)
-            .map_err(|e| model_failure("visualization", e))
+            .stage("visualization")
     };
     let o = vector(origin)?;
     let direction = vector(axis)?;
@@ -171,14 +201,19 @@ pub(super) fn helix_dimensions(
     let (r, p, t) = (scalar(radius)?, scalar(pitch)?, scalar(turns)?);
     let edge = session
         .subshape(route, ShapeType::Edge, 0)
-        .map_err(|e| failure("visualization", e))?;
+        .stage("visualization")?;
     let endpoints = session
         .edge_sample_points(&edge, 2)
-        .map_err(|e| failure("visualization", e))?;
+        .stage("visualization")?;
     let start = point(endpoints[0]);
     let end_axis = std::array::from_fn::<_, 3, _>(|i| o[i] + p * t * n[i]);
     let next_turn = std::array::from_fn::<_, 3, _>(|i| start[i] + p * n[i]);
-    let common = json!({"path":path,"axis":n,"left_handed":left_handed,"driving":true});
+    let common = json!({
+        "path": path,
+        "axis": n,
+        "left_handed": left_handed,
+        "driving": true,
+    });
     for (id, label, value, expressions, anchors) in [
         (
             "radius",
@@ -216,20 +251,24 @@ pub(super) fn helix_dimensions(
         detail["description"] = json!(if id == "rise" {
             "Helix axis rise; excludes wire thickness and end treatments."
         } else if id == "pitch" {
-            "Reference axial advance per complete turn, including fractional-turn helices."
+            "Reference axial advance per complete turn, including \
+                fractional-turn helices."
         } else {
             "Driving helix geometry."
         });
-        annotations.push(annotation(
-            format!("helix-{id}"),
-            label,
-            "dimension",
-            "driving",
-            vec![output.into()],
-            names(&expressions),
-            anchors,
-            detail,
-        ));
+        annotations.push(
+            Annotation {
+                id: format!("helix-{id}"),
+                label,
+                kind: AnnotationKind::Dimension,
+                status: AnnotationStatus::Driving,
+                targets: vec![output.into()],
+                parameters: names(&expressions),
+                anchors,
+                detail,
+            }
+            .into(),
+        );
     }
     Ok(())
 }
@@ -243,27 +282,33 @@ pub(super) fn primitive_dimensions(
         expression
             .evaluate(parameters)
             .map(|v| [v.x.value, v.y.value, v.z.value])
-            .map_err(|e| model_failure("visualization", e))
+            .stage("visualization")
     };
     let mut add =
         |label: &str, expression: &ScalarExpr, a: [f64; 3], b: [f64; 3]| -> Result<(), Failure> {
-            let q = expression
-                .evaluate(parameters)
-                .map_err(|e| model_failure("visualization", e))?;
-            annotations.push(annotation(
-                format!("driving-{label}"),
-                format!("{label} {} mm", length_label(q.value)),
-                "dimension",
-                "driving",
-                vec![feature.id.clone()],
-                expression
-                    .parameter_names()
-                    .into_iter()
-                    .map(str::to_owned)
-                    .collect(),
-                json!([a, b]),
-                json!({"feature":feature.id,"expression":expression,"value":q,"driving":true}),
-            ));
+            let q = expression.evaluate(parameters).stage("visualization")?;
+            annotations.push(
+                Annotation {
+                    id: format!("driving-{label}"),
+                    label: format!("{label} {} mm", length_label(q.value)),
+                    kind: AnnotationKind::Dimension,
+                    status: AnnotationStatus::Driving,
+                    targets: vec![feature.id.clone()],
+                    parameters: expression
+                        .parameter_names()
+                        .into_iter()
+                        .map(str::to_owned)
+                        .collect(),
+                    anchors: json!([a, b]),
+                    detail: json!({
+                        "feature": feature.id,
+                        "expression": expression,
+                        "value": q,
+                        "driving": true,
+                    }),
+                }
+                .into(),
+            );
             Ok(())
         };
     match &feature.operation {
@@ -271,20 +316,38 @@ pub(super) fn primitive_dimensions(
         FeatureOperation::Box { origin, size } => {
             let a = vec(origin)?;
             let lengths = vec(size)?;
-            let parameter_names =
-                names(&serde_json::to_value(size).map_err(|e| failure("visualization", e))?);
+            let parameter_names = names(&serde_json::to_value(size).stage("visualization")?);
             for axis in 0..3 {
                 let mut b = a;
                 b[axis] += lengths[axis];
-                annotations.push(annotation(format!("driving-box-{axis}"),format!("{} {} mm",["width","depth","height"][axis],lengths[axis]),"dimension","driving",vec![feature.id.clone()],parameter_names.clone(),json!([a,b]),json!({"feature":feature.id,"expression":size,"component":axis,"value_mm":lengths[axis],"driving":true})));
+                annotations.push(
+                    Annotation {
+                        id: format!("driving-box-{axis}"),
+                        label: format!(
+                            "{} {} mm",
+                            ["width", "depth", "height"][axis],
+                            lengths[axis]
+                        ),
+                        kind: AnnotationKind::Dimension,
+                        status: AnnotationStatus::Driving,
+                        targets: vec![feature.id.clone()],
+                        parameters: parameter_names.clone(),
+                        anchors: json!([a, b]),
+                        detail: json!({
+                            "feature": feature.id,
+                            "expression": size,
+                            "component": axis,
+                            "value_mm": lengths[axis],
+                            "driving": true,
+                        }),
+                    }
+                    .into(),
+                );
             }
         }
         FeatureOperation::Sphere { center, radius } => {
             let a = vec(center)?;
-            let r = radius
-                .evaluate(parameters)
-                .map_err(|e| model_failure("visualization", e))?
-                .value;
+            let r = radius.evaluate(parameters).stage("visualization")?.value;
             add("R", radius, a, [a[0] + r, a[1], a[2]])?;
         }
         FeatureOperation::Cylinder {
@@ -306,14 +369,8 @@ pub(super) fn primitive_dimensions(
             let n = axis.map(|x| x / scale);
             let length = n[0].hypot(n[1].hypot(n[2]));
             let n = n.map(|x| x / length);
-            let h = height
-                .evaluate(parameters)
-                .map_err(|e| model_failure("visualization", e))?
-                .value;
-            let r = radius
-                .evaluate(parameters)
-                .map_err(|e| model_failure("visualization", e))?
-                .value;
+            let h = height.evaluate(parameters).stage("visualization")?.value;
+            let r = radius.evaluate(parameters).stage("visualization")?.value;
             let u = if n[0].abs() < 0.9 {
                 [0.0, -n[2], n[1]]
             } else {
@@ -355,12 +412,12 @@ fn hole_dimensions(
     let vector = |expr: &VectorExpr| {
         expr.evaluate(parameters)
             .map(|q| [q.x.value, q.y.value, q.z.value])
-            .map_err(|e| model_failure("visualization", e))
+            .stage("visualization")
     };
     let scalar = |expr: &ScalarExpr| {
         expr.evaluate(parameters)
             .map(|q| q.value)
-            .map_err(|e| model_failure("visualization", e))
+            .stage("visualization")
     };
     let a = vector(position)?;
     let axis = vector(axis)?;
@@ -379,20 +436,44 @@ fn hole_dimensions(
     let offset = |p: [f64; 3], v: [f64; 3], scale: f64| {
         std::array::from_fn::<_, 3, _>(|i| p[i] + v[i] * scale)
     };
-    annotations.push(annotation(
-        "driving-hole-diameter".into(),
-        format!("bore Ø {} mm", length_label(d)),
-        "dimension",
-        "driving",
-        vec![feature.id.clone()],
-        names(&serde_json::to_value(diameter).map_err(|e| failure("visualization", e))?),
-        json!([offset(a, u, -d / 2.0), offset(a, u, d / 2.0)]),
-        json!({"expression":diameter,"value_mm":d,"driving":true}),
-    ));
+    annotations.push(
+        Annotation {
+            id: "driving-hole-diameter".into(),
+            label: format!("bore Ø {} mm", length_label(d)),
+            kind: AnnotationKind::Dimension,
+            status: AnnotationStatus::Driving,
+            targets: vec![feature.id.clone()],
+            parameters: names(&serde_json::to_value(diameter).stage("visualization")?),
+            anchors: json!([offset(a, u, -d / 2.0), offset(a, u, d / 2.0)]),
+            detail: json!({
+                "expression": diameter,
+                "value_mm": d,
+                "driving": true,
+            }),
+        }
+        .into(),
+    );
     if let HoleExtent::Blind { depth } = extent {
         let full_depth = scalar(depth)?;
         let end = offset(a, n, full_depth);
-        annotations.push(annotation("driving-hole-depth".into(),format!("full diameter depth {} mm",length_label(full_depth)),"dimension","driving",vec![feature.id.clone()],names(&serde_json::to_value(depth).map_err(|e|failure("visualization",e))?),json!([a,end]),json!({"expression":depth,"value_mm":full_depth,"depth_reference":"full_diameter","driving":true})));
+        annotations.push(
+            Annotation {
+                id: "driving-hole-depth".into(),
+                label: format!("full diameter depth {} mm", length_label(full_depth)),
+                kind: AnnotationKind::Dimension,
+                status: AnnotationStatus::Driving,
+                targets: vec![feature.id.clone()],
+                parameters: names(&serde_json::to_value(depth).stage("visualization")?),
+                anchors: json!([a, end]),
+                detail: json!({
+                    "expression": depth,
+                    "value_mm": full_depth,
+                    "depth_reference": "full_diameter",
+                    "driving": true,
+                }),
+            }
+            .into(),
+        );
         if let HoleBottom::DrillPoint { angle_radians } = bottom {
             let angle = scalar(angle_radians)?;
             let tip_depth = d / (2.0 * (angle / 2.0).tan());
@@ -406,9 +487,46 @@ fn hole_dimensions(
                     })
                 })
                 .collect::<Vec<_>>();
-            let controls = names(&json!({"diameter":diameter,"bottom":bottom}));
-            annotations.push(annotation("driving-drill-angle".into(),format!("drill point ∠ {angle:.3} rad"),"dimension","driving",vec![feature.id.clone()],names(&serde_json::to_value(angle_radians).map_err(|e|failure("visualization",e))?),json!([offset(end,u,-d/2.0),apex,offset(end,u,d/2.0)]),json!({"expression":angle_radians,"value_radians":angle,"angular_arc":arc,"driving":true})));
-            annotations.push(annotation("measured-drill-tip".into(),format!("tip depth {} mm",length_label(tip_depth)),"dimension","measured",vec![feature.id.clone()],controls,json!([end,apex]),json!({"value_mm":tip_depth,"total_depth_mm":full_depth+tip_depth,"bottom":bottom,"driving":false})));
+            let controls = names(&json!({
+                "diameter": diameter,
+                "bottom": bottom,
+            }));
+            annotations.push(
+                Annotation {
+                    id: "driving-drill-angle".into(),
+                    label: format!("drill point ∠ {angle:.3} rad"),
+                    kind: AnnotationKind::Dimension,
+                    status: AnnotationStatus::Driving,
+                    targets: vec![feature.id.clone()],
+                    parameters: names(&serde_json::to_value(angle_radians).stage("visualization")?),
+                    anchors: json!([offset(end, u, -d / 2.0), apex, offset(end, u, d / 2.0)]),
+                    detail: json!({
+                        "expression": angle_radians,
+                        "value_radians": angle,
+                        "angular_arc": arc,
+                        "driving": true,
+                    }),
+                }
+                .into(),
+            );
+            annotations.push(
+                Annotation {
+                    id: "measured-drill-tip".into(),
+                    label: format!("tip depth {} mm", length_label(tip_depth)),
+                    kind: AnnotationKind::Dimension,
+                    status: AnnotationStatus::Measured,
+                    targets: vec![feature.id.clone()],
+                    parameters: controls,
+                    anchors: json!([end, apex]),
+                    detail: json!({
+                        "value_mm": tip_depth,
+                        "total_depth_mm": full_depth+tip_depth,
+                        "bottom": bottom,
+                        "driving": false,
+                    }),
+                }
+                .into(),
+            );
         }
     }
     Ok(())

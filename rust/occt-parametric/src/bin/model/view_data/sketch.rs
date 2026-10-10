@@ -13,25 +13,45 @@ pub(super) fn sketch_scene(
     controls: &BTreeMap<String, Value>,
     budget: &mut Budget,
 ) -> Result<Value, Failure> {
-    let solution = sketch
-        .solve(parameters)
-        .map_err(|e| model_failure("sketch", e))?;
+    let solution = sketch.solve(parameters).stage("sketch")?;
     let checks = sketch
         .constraint_checks(parameters, &solution)
-        .map_err(|e| model_failure("sketch", e))?;
+        .stage("sketch")?;
     let curves = sketch
         .preview_curves(session, &solution, 32)
-        .map_err(|e| model_failure("sketch", e))?;
-    let entities=curves.into_iter().map(|(id,points)|{
-        let point_ids=if let Some(e)=sketch.lines.iter().find(|e|e.id==id){vec![e.start.clone(),e.end.clone()]}else if let Some(e)=sketch.arcs.iter().find(|e|e.id==id){vec![e.center.clone(),e.start.clone(),e.end.clone()]}else if let Some(e)=sketch.circles.iter().find(|e|e.id==id){vec![e.center.clone(),e.rim.clone()]}else if let Some(e)=sketch.ellipses.iter().find(|e|e.id==id){vec![e.center.clone(),e.major.clone(),e.minor.clone()]}else{sketch.splines.iter().find(|e|e.id==id).map(|e|e.points.clone()).unwrap_or_default()};
-        json!({"id":id,"points":points.iter().map(|p|[p.x,p.y,0.0]).collect::<Vec<_>>(),"point_ids":point_ids})
-    }).collect::<Vec<_>>();
+        .stage("sketch")?;
+    let entities = curves
+        .into_iter()
+        .map(|(id, points)| {
+            let point_ids = if let Some(e) = sketch.lines.iter().find(|e| e.id == id) {
+                vec![e.start.clone(), e.end.clone()]
+            } else if let Some(e) = sketch.arcs.iter().find(|e| e.id == id) {
+                vec![e.center.clone(), e.start.clone(), e.end.clone()]
+            } else if let Some(e) = sketch.circles.iter().find(|e| e.id == id) {
+                vec![e.center.clone(), e.rim.clone()]
+            } else if let Some(e) = sketch.ellipses.iter().find(|e| e.id == id) {
+                vec![e.center.clone(), e.major.clone(), e.minor.clone()]
+            } else {
+                sketch
+                    .splines
+                    .iter()
+                    .find(|e| e.id == id)
+                    .map(|e| e.points.clone())
+                    .unwrap_or_default()
+            };
+            json!({
+                "id": id,
+                "points": points.iter().map(|p|[p.x,p.y,0.0]).collect::<Vec<_>>(),
+                "point_ids": point_ids,
+            })
+        })
+        .collect::<Vec<_>>();
     let point_map = solution
         .points
         .iter()
         .map(|(id, p)| (id.clone(), [p.x, p.y, 0.0]))
         .collect::<BTreeMap<_, _>>();
-    let mut annotations = Vec::new();
+    let mut annotations: Vec<Value> = Vec::new();
     for (index, constraint) in sketch.constraints.iter().enumerate() {
         let (symbol, targets, anchor_ids, value) = match constraint {
             SketchConstraint::Angle {
@@ -179,17 +199,14 @@ pub(super) fn sketch_scene(
         };
         let check = &checks[index];
         let status = if check.by_construction {
-            "constructed"
+            AnnotationStatus::Constructed
         } else if check.satisfied {
-            "passed"
+            AnnotationStatus::Passed
         } else {
-            "failed"
+            AnnotationStatus::Failed
         };
         let label = if let Some(expression) = value {
-            let target = expression
-                .evaluate(parameters)
-                .map_err(|e| model_failure("sketch", e))?
-                .value;
+            let target = expression.evaluate(parameters).stage("sketch")?.value;
             if matches!(constraint, SketchConstraint::Angle { .. }) {
                 format!("∠ {} rad", length_label(target))
             } else if symbol == "distance" {
@@ -203,7 +220,39 @@ pub(super) fn sketch_scene(
         let control_names = value
             .map(|v| v.parameter_names().into_iter().map(str::to_owned).collect())
             .unwrap_or_default();
-        annotations.push(annotation(format!("constraint-{index}"),label,if value.is_some(){"dimension"}else{"constraint"},status,targets,control_names,json!(anchors),json!({"constraint_index":index,"constraint":constraint,"angular_arc":angular_arc,"max_residual":check.max_residual,"by_construction":check.by_construction,"tolerance":1e-9,"residual_unit":if matches!(constraint,SketchConstraint::Angle {..}){"rad"}else if matches!(constraint,SketchConstraint::Parallel {..}|SketchConstraint::Perpendicular {..}|SketchConstraint::Tangent {..}){"dimensionless"}else{"mm"}})));
+        let kind = if value.is_some() {
+            AnnotationKind::Dimension
+        } else {
+            AnnotationKind::Constraint
+        };
+        let residual_unit = match constraint {
+            SketchConstraint::Angle { .. } => "rad",
+            SketchConstraint::Parallel { .. }
+            | SketchConstraint::Perpendicular { .. }
+            | SketchConstraint::Tangent { .. } => "dimensionless",
+            _ => "mm",
+        };
+        annotations.push(
+            Annotation {
+                id: format!("constraint-{index}"),
+                label,
+                kind,
+                status,
+                targets,
+                parameters: control_names,
+                anchors: json!(anchors),
+                detail: json!({
+                    "constraint_index": index,
+                    "constraint": constraint,
+                    "angular_arc": angular_arc,
+                    "max_residual": check.max_residual,
+                    "by_construction": check.by_construction,
+                    "tolerance": 1e-9,
+                    "residual_unit": residual_unit,
+                }),
+            }
+            .into(),
+        );
     }
     for p in &sketch.points {
         let control_names =
@@ -215,28 +264,50 @@ pub(super) fn sketch_scene(
                 .into_iter()
                 .collect::<Vec<_>>();
         if p.fixed {
-            annotations.push(annotation(
-                format!("fixed-{}", p.id),
-                format!("fixed {}", p.id),
-                "constraint",
-                "fixed",
-                vec![p.id.clone()],
-                control_names.clone(),
-                json!([point_map[&p.id]]),
-                json!({"point":p.id,"fixed":true}),
-            ));
+            annotations.push(
+                Annotation {
+                    id: format!("fixed-{}", p.id),
+                    label: format!("fixed {}", p.id),
+                    kind: AnnotationKind::Constraint,
+                    status: AnnotationStatus::Fixed,
+                    targets: vec![p.id.clone()],
+                    parameters: control_names.clone(),
+                    anchors: json!([point_map[&p.id]]),
+                    detail: json!({
+                        "point": p.id,
+                        "fixed": true,
+                    }),
+                }
+                .into(),
+            );
         }
+        let (status, coordinate_role) = if p.fixed {
+            (AnnotationStatus::Driving, "fixed driving coordinate")
+        } else {
+            (
+                AnnotationStatus::Initial,
+                "initial guess; constraints may move this point",
+            )
+        };
         for name in control_names {
-            annotations.push(annotation(
-                format!("parameter-{}-{name}", p.id),
-                name.clone(),
-                "parameter",
-                if p.fixed { "driving" } else { "initial" },
-                vec![p.id.clone()],
-                vec![name.clone()],
-                json!([point_map[&p.id]]),
-                json!({"point":p.id,"parameter":name,"control":controls.get(&name),"coordinate_role":if p.fixed {"fixed driving coordinate"}else{"initial guess; constraints may move this point"}}),
-            ));
+            annotations.push(
+                Annotation {
+                    id: format!("parameter-{}-{name}", p.id),
+                    label: name.clone(),
+                    kind: AnnotationKind::Parameter,
+                    status,
+                    targets: vec![p.id.clone()],
+                    parameters: vec![name.clone()],
+                    anchors: json!([point_map[&p.id]]),
+                    detail: json!({
+                        "point": p.id,
+                        "parameter": name,
+                        "control": controls.get(&name),
+                        "coordinate_role": coordinate_role,
+                    }),
+                }
+                .into(),
+            );
         }
     }
     let (edited_profile, profile_error) =
@@ -255,7 +326,7 @@ pub(super) fn sketch_scene(
             Err(error) => (Vec::new(), Some(error.message)),
         };
     for (i, operation) in sketch.profile_operations.iter().enumerate() {
-        let detail = serde_json::to_value(operation).map_err(|e| failure("sketch", e))?;
+        let detail = serde_json::to_value(operation).stage("sketch")?;
         let control_names = names(&detail);
         let (label, targets) = match operation {
             SketchProfileOperation::Trim { entity, .. } => {
@@ -267,17 +338,33 @@ pub(super) fn sketch_scene(
             SketchProfileOperation::Offset { distance, .. } => (
                 format!(
                     "Offset {} mm",
-                    length_label(
-                        distance
-                            .evaluate(parameters)
-                            .map_err(|e| model_failure("sketch", e))?
-                            .value
-                    )
+                    length_label(distance.evaluate(parameters).stage("sketch")?.value)
                 ),
                 vec![],
             ),
         };
-        annotations.push(annotation(format!("profile-operation-{i}"),label,"profile_operation",if profile_error.is_some(){"unverified"}else{"driving"},targets,control_names,json!([]),json!({"operation":detail,"error":profile_error,"description":"Derived profile edit; source constraints remain on their original entities"})));
+        annotations.push(
+            Annotation {
+                id: format!("profile-operation-{i}"),
+                label,
+                kind: AnnotationKind::ProfileOperation,
+                status: if profile_error.is_some() {
+                    AnnotationStatus::Unverified
+                } else {
+                    AnnotationStatus::Driving
+                },
+                targets,
+                parameters: control_names,
+                anchors: json!([]),
+                detail: json!({
+                    "operation": detail,
+                    "error": profile_error,
+                    "description": "Derived profile edit; source \
+                        constraints remain on their original entities",
+                }),
+            }
+            .into(),
+        );
     }
     let vertices = entities
         .iter()
@@ -316,7 +403,27 @@ pub(super) fn sketch_scene(
             }
         }
     }
-    Ok(
-        json!({"kind":"sketch","instance":instance,"feature":feature,"title":format!("{instance}/{feature} — {}",sketch.id),"sketch":sketch.id,"bounds":[min,max],"entities":entities,"edited_profile":edited_profile,"profile_error":profile_error,"profile_operations":sketch.profile_operations,"points":point_map,"parameters":controls,"annotations":annotations,"solver":{"solved":solution.solved,"iterations":solution.iterations,"max_residual":solution.max_residual,"free_degrees":solution.free_degrees,"redundant_equations":solution.redundant_equations},"coordinate_system":"sketch-local XY millimeters"}),
-    )
+    Ok(json!({
+        "kind": "sketch",
+        "instance": instance,
+        "feature": feature,
+        "title": format!("{instance}/{feature} — {}",sketch.id),
+        "sketch": sketch.id,
+        "bounds": [min,max],
+        "entities": entities,
+        "edited_profile": edited_profile,
+        "profile_error": profile_error,
+        "profile_operations": sketch.profile_operations,
+        "points": point_map,
+        "parameters": controls,
+        "annotations": annotations,
+        "solver": {
+            "solved": solution.solved,
+            "iterations": solution.iterations,
+            "max_residual": solution.max_residual,
+            "free_degrees": solution.free_degrees,
+            "redundant_equations": solution.redundant_equations,
+        },
+        "coordinate_system": "sketch-local XY millimeters",
+    }))
 }
