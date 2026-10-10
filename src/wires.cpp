@@ -319,7 +319,7 @@ occt_bridge_status_t occt_bridge_create_circle_wire(
         }
         BRepBuilderAPI_MakeEdge edge(
             gp_Circ(
-                gp_Ax2(gp_Pnt(center.x, center.y, center.z), gp_Dir(direction)),
+                gp_Ax2(to_point(center), gp_Dir(direction)),
                 radius));
         if (!edge.IsDone()) {
             return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "circle edge construction failed");
@@ -354,7 +354,7 @@ occt_bridge_status_t occt_bridge_create_ellipse_wire(
             return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "ellipse normal must be nonzero");
         }
         BRepBuilderAPI_MakeEdge edge(gp_Elips(
-            gp_Ax2(gp_Pnt(center.x, center.y, center.z), gp_Dir(direction)),
+            gp_Ax2(to_point(center), gp_Dir(direction)),
             major_radius,
             minor_radius));
         if (!edge.IsDone()) {

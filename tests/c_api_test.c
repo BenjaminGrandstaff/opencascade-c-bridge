@@ -522,20 +522,15 @@ static void test_inferred_tangency(occt_bridge_session_t* session) {
     require_ok(session, occt_bridge_shape_remove(session, cylinder));
 }
 
-int main(void) {
-    require_true(occt_bridge_abi_version() == OCCT_BRIDGE_ABI_VERSION, "ABI version");
+/* A box with its first face and edge, shared by the box sections. */
+struct box_fixture {
+    occt_bridge_shape_id_t box;
+    occt_bridge_shape_id_t face;
+    occt_bridge_shape_id_t edge;
+};
 
-    occt_bridge_session_t* rejected = NULL;
-    require_true(
-        occt_bridge_session_create(OCCT_BRIDGE_ABI_VERSION + 1, &rejected)
-            == OCCT_BRIDGE_UNSUPPORTED_ABI,
-        "unsupported ABI rejection");
-    require_true(rejected == NULL, "unsupported ABI returns no session");
-
-    occt_bridge_session_t* session = NULL;
-    require_ok(session, occt_bridge_session_create(OCCT_BRIDGE_ABI_VERSION, &session));
-    require_true(session != NULL, "session created");
-
+/* Creation, rejection, and topology and geometry queries on one box. */
+static struct box_fixture test_box_queries(occt_bridge_session_t* session) {
     occt_bridge_shape_id_t box = OCCT_BRIDGE_INVALID_SHAPE_ID;
     require_ok(session, occt_bridge_create_box(
         session,
@@ -568,8 +563,6 @@ int main(void) {
     require_true(close_enough(bounds.max.y, 22.0), "maximum y bound");
     require_true(close_enough(bounds.max.z, 33.0), "maximum z bound");
 
-    int is_valid = 0;
-    int history_deleted = 0;
     occt_bridge_shape_type_t shape_type = 0;
     require_ok(session, occt_bridge_shape_type(session, box, &shape_type));
     require_true(shape_type == OCCT_BRIDGE_SHAPE_SOLID, "box topology type");
@@ -656,6 +649,18 @@ int main(void) {
         session, first_face, second_face, &shapes_are_same));
     require_true(shapes_are_same == 0, "shape identity distinguishes faces");
     require_ok(session, occt_bridge_shape_remove(session, second_face));
+    return (struct box_fixture){box, first_face, first_edge};
+}
+
+/* Fillet, chamfer, offset, hollow, and boolean history on the box. */
+static void test_box_operations(occt_bridge_session_t* session, struct box_fixture fixture) {
+    const occt_bridge_shape_id_t box = fixture.box;
+    occt_bridge_shape_id_t first_face = fixture.face;
+    occt_bridge_shape_id_t first_edge = fixture.edge;
+    int is_valid = 0;
+    int history_deleted = 0;
+    occt_bridge_bounds_t bounds;
+    double volume = 0.0;
     occt_bridge_shape_id_t filleted = OCCT_BRIDGE_INVALID_SHAPE_ID;
     require_ok(session, occt_bridge_fillet(session, box, &first_edge, 1, 1.0, &filleted));
     require_ok(session, occt_bridge_shape_is_valid(session, filleted, &is_valid));
@@ -701,7 +706,13 @@ int main(void) {
     require_ok(session, occt_bridge_common(session, box, overlap_box, &common));
     require_ok(session, occt_bridge_shape_volume(session, common, &volume));
     require_true(close_enough(volume, 750.0), "boolean common volume");
+}
 
+/* Cylinders, cones, and spheres, and a degenerate axis rejection. */
+static void test_primitives(occt_bridge_session_t* session) {
+    occt_bridge_shape_id_t invalid = OCCT_BRIDGE_INVALID_SHAPE_ID;
+    int is_valid = 0;
+    occt_bridge_bounds_t bounds;
     occt_bridge_shape_id_t cylinder = OCCT_BRIDGE_INVALID_SHAPE_ID;
     require_ok(session, occt_bridge_create_cylinder(
         session,
@@ -732,6 +743,23 @@ int main(void) {
     require_true(close_enough(bounds.min.x, 1.0), "sphere minimum x bound");
     require_true(close_enough(bounds.max.z, 11.0), "sphere maximum z bound");
 
+    require_true(
+        occt_bridge_create_cylinder(
+            session,
+            (occt_bridge_vec3_t){0.0, 0.0, 0.0},
+            (occt_bridge_vec3_t){0.0, 0.0, 0.0},
+            1.0,
+            1.0,
+            &invalid) == OCCT_BRIDGE_INVALID_ARGUMENT,
+        "zero cylinder axis rejection");
+}
+
+/* Rigid and scaling transforms, with located face history. */
+static void test_transforms(occt_bridge_session_t* session, struct box_fixture fixture) {
+    const occt_bridge_shape_id_t box = fixture.box;
+    const occt_bridge_shape_id_t first_face = fixture.face;
+    int history_deleted = 0;
+    occt_bridge_bounds_t bounds;
     occt_bridge_shape_id_t translated = OCCT_BRIDGE_INVALID_SHAPE_ID;
     require_ok(session, occt_bridge_translate(
         session, box, (occt_bridge_vec3_t){100.0, -2.0, 7.0}, &translated));
@@ -792,17 +820,13 @@ int main(void) {
     require_ok(session, occt_bridge_shape_bounds(session, scaled, &bounds));
     require_true(close_enough(bounds.min.x, 2.0), "scaled minimum x bound");
     require_true(close_enough(bounds.max.z, 66.0), "scaled maximum z bound");
+}
 
-    require_true(
-        occt_bridge_create_cylinder(
-            session,
-            (occt_bridge_vec3_t){0.0, 0.0, 0.0},
-            (occt_bridge_vec3_t){0.0, 0.0, 0.0},
-            1.0,
-            1.0,
-            &invalid) == OCCT_BRIDGE_INVALID_ARGUMENT,
-        "zero cylinder axis rejection");
-
+/* Wires, faces, prisms with generated history, and curve curvature. */
+static void test_profiles(occt_bridge_session_t* session) {
+    int is_valid = 0;
+    occt_bridge_shape_type_t shape_type = 0;
+    occt_bridge_bounds_t bounds;
     const occt_bridge_vec3_t rectangle[] = {
         {0.0, 0.0, 0.0},
         {6.0, 0.0, 0.0},
@@ -911,7 +935,11 @@ int main(void) {
         "curvature extrema reject null output");
     require_ok(session, occt_bridge_shape_remove(session, ellipse_edge));
     require_ok(session, occt_bridge_shape_remove(session, ellipse_wire));
+}
 
+/* Polygon prisms with boolean cut and fuse; returns the cut for persistence. */
+static occt_bridge_shape_id_t test_booleans(occt_bridge_session_t* session) {
+    int is_valid = 0;
     const occt_bridge_vec3_t outline[] = {
         {0.0, 0.0, 0.0},
         {8.0, -1.0, 0.0},
@@ -942,7 +970,12 @@ int main(void) {
     require_ok(session, occt_bridge_fuse(session, prism, cutter, &fused));
     require_ok(session, occt_bridge_shape_is_valid(session, fused, &is_valid));
     require_true(is_valid == 1, "fuse result validity");
+    return cut;
+}
 
+/* Faceted stone, loft, compound, wall torch, and polyline tube. */
+static void test_recipes_and_lofts(occt_bridge_session_t* session) {
+    int is_valid = 0;
     const occt_bridge_vec3_t stone_bottom[] = {
         {-20.0, -14.0, 0.0}, {-7.0, -21.0, 0.0}, {17.0, -18.0, 0.0},
         {23.0, -2.0, 0.0}, {17.0, 17.0, 0.0}, {-3.0, 22.0, 0.0}, {-24.0, 9.0, 0.0},
@@ -1006,6 +1039,29 @@ int main(void) {
         session, tube_path, sizeof(tube_path) / sizeof(tube_path[0]), 2.0, &tube));
     require_ok(session, occt_bridge_shape_is_valid(session, tube, &is_valid));
     require_true(is_valid == 1, "polyline tube validity");
+}
+
+int main(void) {
+    require_true(occt_bridge_abi_version() == OCCT_BRIDGE_ABI_VERSION, "ABI version");
+
+    occt_bridge_session_t* rejected = NULL;
+    require_true(
+        occt_bridge_session_create(OCCT_BRIDGE_ABI_VERSION + 1, &rejected)
+            == OCCT_BRIDGE_UNSUPPORTED_ABI,
+        "unsupported ABI rejection");
+    require_true(rejected == NULL, "unsupported ABI returns no session");
+
+    occt_bridge_session_t* session = NULL;
+    require_ok(session, occt_bridge_session_create(OCCT_BRIDGE_ABI_VERSION, &session));
+    require_true(session != NULL, "session created");
+
+    const struct box_fixture box = test_box_queries(session);
+    test_box_operations(session, box);
+    test_primitives(session);
+    test_transforms(session, box);
+    test_profiles(session);
+    const occt_bridge_shape_id_t cut = test_booleans(session);
+    test_recipes_and_lofts(session);
 
     require_ok(session, occt_bridge_brep_save(session, cut, "c-api-test-output.brep"));
     occt_bridge_shape_id_t loaded = OCCT_BRIDGE_INVALID_SHAPE_ID;

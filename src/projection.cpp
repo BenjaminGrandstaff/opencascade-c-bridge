@@ -77,7 +77,7 @@ occt_bridge_status_t occt_bridge_orthographic_projection(
         BRepBuilderAPI_Copy copy(*value, Standard_True, Standard_False);
         Handle(HLRBRep_Algo) algorithm = new HLRBRep_Algo;
         algorithm->Add(copy.Shape());
-        algorithm->Projector(HLRAlgo_Projector(gp_Ax2(gp_Pnt(origin.x, origin.y, origin.z), normal, right)));
+        algorithm->Projector(HLRAlgo_Projector(gp_Ax2(to_point(origin), normal, right)));
         algorithm->Update();
         algorithm->Hide();
         HLRBRep_HLRToShape filter(algorithm);

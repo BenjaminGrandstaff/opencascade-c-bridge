@@ -41,7 +41,7 @@ occt_bridge_status_t occt_bridge_mirror(
             return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "mirror input was not found");
         }
         gp_Trsf transform;
-        transform.SetMirror(gp_Ax2(gp_Pnt(origin.x, origin.y, origin.z),
+        transform.SetMirror(gp_Ax2(to_point(origin),
             gp_Dir(normal.x / scale, normal.y / scale, normal.z / scale)));
         // Reflection has negative determinant; OCCT copies transformed geometry
         // rather than using a rigid location. Existing source topology stays intact.

@@ -34,7 +34,7 @@ occt_bridge_status_t occt_bridge_create_box(
             return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "box size must be finite and positive");
         }
         BRepPrimAPI_MakeBox builder(
-            gp_Pnt(origin.x, origin.y, origin.z), size.x, size.y, size.z);
+            to_point(origin), size.x, size.y, size.z);
         builder.Build();
         if (!builder.IsDone()) {
             return fail(session, OCCT_BRIDGE_KERNEL_ERROR, "box construction failed");
@@ -64,7 +64,7 @@ occt_bridge_status_t occt_bridge_create_cylinder(
             return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "cylinder axis must be nonzero");
         }
         BRepPrimAPI_MakeCylinder builder(
-            gp_Ax2(gp_Pnt(origin.x, origin.y, origin.z), gp_Dir(direction)), radius, height);
+            gp_Ax2(to_point(origin), gp_Dir(direction)), radius, height);
         builder.Build();
         if (!builder.IsDone()) {
             return fail(session, OCCT_BRIDGE_KERNEL_ERROR, "cylinder construction failed");
@@ -97,7 +97,7 @@ occt_bridge_status_t occt_bridge_create_cone(
             return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "cone axis must be nonzero");
         }
         BRepPrimAPI_MakeCone builder(
-            gp_Ax2(gp_Pnt(origin.x, origin.y, origin.z), gp_Dir(direction)),
+            gp_Ax2(to_point(origin), gp_Dir(direction)),
             base_radius,
             top_radius,
             height);
@@ -122,7 +122,7 @@ occt_bridge_status_t occt_bridge_create_sphere(
         if (!finite(center) || !std::isfinite(radius) || radius <= 0.0) {
             return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "invalid sphere parameters");
         }
-        BRepPrimAPI_MakeSphere builder(gp_Pnt(center.x, center.y, center.z), radius);
+        BRepPrimAPI_MakeSphere builder(to_point(center), radius);
         builder.Build();
         if (!builder.IsDone()) {
             return fail(session, OCCT_BRIDGE_KERNEL_ERROR, "sphere construction failed");

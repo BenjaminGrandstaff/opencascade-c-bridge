@@ -250,7 +250,7 @@ occt_bridge_status_t occt_bridge_create_faceted_stone(
         TopoDS_Shape shape = build_faceted_solid(
             bottom,
             top,
-            gp_Pnt(top_center.x, top_center.y, top_center.z),
+            to_point(top_center),
             bottom_chamfer,
             top_fillet);
         if (shape.IsNull()) {

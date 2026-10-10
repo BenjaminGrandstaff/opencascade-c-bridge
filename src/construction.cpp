@@ -38,7 +38,7 @@ namespace {
 TopoDS_Wire polygon_wire(const occt_bridge_vec3_t* points, size_t point_count) {
     BRepBuilderAPI_MakePolygon wire;
     for (size_t index = 0; index < point_count; ++index) {
-        wire.Add(gp_Pnt(points[index].x, points[index].y, points[index].z));
+        wire.Add(to_point(points[index]));
     }
     wire.Close();
     return wire.IsDone() ? wire.Wire() : TopoDS_Wire{};
@@ -51,7 +51,7 @@ TopoDS_Wire spline_wire(const occt_bridge_vec3_t* points, size_t point_count) {
     Handle(TColgp_HArray1OfPnt) poles = new TColgp_HArray1OfPnt(1, static_cast<int>(point_count) + 1);
     for (size_t index = 0; index <= point_count; ++index) {
         const auto& point = points[index % point_count];
-        poles->SetValue(static_cast<int>(index) + 1, gp_Pnt(point.x, point.y, point.z));
+        poles->SetValue(static_cast<int>(index) + 1, to_point(point));
     }
     for (int index = 1; index <= poles->Length() - 1; ++index) {
         if (poles->Value(index).Distance(poles->Value(index + 1)) <= Precision::Confusion()) {
@@ -305,7 +305,7 @@ occt_bridge_status_t occt_bridge_create_polygon_prism(
             if (!finite(points[index])) {
                 return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "polygon point is not finite");
             }
-            polygon.Add(gp_Pnt(points[index].x, points[index].y, points[index].z));
+            polygon.Add(to_point(points[index]));
         }
         polygon.Close();
         if (!polygon.IsDone()) {

@@ -118,7 +118,7 @@ occt_bridge_status_t occt_bridge_draft(
             return selection_status;
         }
         BRepOffsetAPI_DraftAngle builder(*value);
-        const gp_Pln plane(gp_Pnt(neutral_origin.x, neutral_origin.y, neutral_origin.z),
+        const gp_Pln plane(to_point(neutral_origin),
                            gp_Dir(neutral_normal.x, neutral_normal.y, neutral_normal.z));
         const gp_Dir direction(pull_direction.x, pull_direction.y, pull_direction.z);
         for (size_t index = 0; index < selected.size(); ++index) {

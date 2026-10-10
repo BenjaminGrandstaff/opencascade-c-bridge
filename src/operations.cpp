@@ -287,7 +287,7 @@ occt_bridge_status_t occt_bridge_rotate(
         gp_Trsf transform;
         transform.SetRotation(
             gp_Ax1(
-                gp_Pnt(axis_origin.x, axis_origin.y, axis_origin.z),
+                to_point(axis_origin),
                 gp_Dir(direction)),
             angle_radians);
         return transformed_shape(session, shape, transform, out_shape);
@@ -305,7 +305,7 @@ occt_bridge_status_t occt_bridge_scale(
             return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "scale factor must be finite and positive");
         }
         gp_Trsf transform;
-        transform.SetScale(gp_Pnt(center.x, center.y, center.z), factor);
+        transform.SetScale(to_point(center), factor);
         return transformed_shape(session, shape, transform, out_shape);
     });
 }

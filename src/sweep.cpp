@@ -253,7 +253,7 @@ occt_bridge_status_t occt_bridge_create_helix_wire(
         // starts at origin + radius * that direction.
         const gp_Dir normal(along);
         const gp_Dir x_direction(start - normal.XYZ() * start.Dot(gp_Vec(normal)));
-        const gp_Ax3 frame(gp_Pnt(origin.x, origin.y, origin.z), normal, x_direction);
+        const gp_Ax3 frame(to_point(origin), normal, x_direction);
         const Handle(Geom_CylindricalSurface) cylinder =
             new Geom_CylindricalSurface(frame, radius);
         const double sweep = (left_handed != 0 ? -2.0 : 2.0) * M_PI;

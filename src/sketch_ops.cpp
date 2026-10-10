@@ -58,7 +58,7 @@ extern "C" {
             if(!finite(center)||!finite(normal)||!finite(major_axis)||!std::isfinite(major)||!std::isfinite(minor)||minor<=Precision::Confusion()||major<minor)return fail(s,OCCT_BRIDGE_INVALID_ARGUMENT,"invalid ellipse axes/radii");
             gp_Vec n(normal.x,normal.y,normal.z),a(major_axis.x,major_axis.y,major_axis.z);
             if(n.Magnitude()<=Precision::Confusion()||a.Magnitude()<=Precision::Confusion()||std::abs(n.Normalized().Dot(a.Normalized()))>1e-9)return fail(s,OCCT_BRIDGE_INVALID_ARGUMENT,"ellipse axes must be nonzero and perpendicular");
-            gp_Elips ellipse(gp_Ax2(gp_Pnt(center.x,center.y,center.z),gp_Dir(n),gp_Dir(a)),major,minor);
+            gp_Elips ellipse(gp_Ax2(to_point(center),gp_Dir(n),gp_Dir(a)),major,minor);
             BRepBuilderAPI_MakeEdge edge(ellipse);
             BRepBuilderAPI_MakeWire wire(edge.Edge());
             return store_shape(s,wire.Wire(),out);

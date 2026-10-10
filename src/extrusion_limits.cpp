@@ -212,7 +212,7 @@ occt_bridge_status_t occt_bridge_shape_ray_first_hit(
         }
         IntCurvesFace_ShapeIntersector intersector;
         intersector.Load(*value, Precision::Confusion());
-        intersector.Perform(gp_Lin(gp_Pnt(origin.x, origin.y, origin.z), gp_Dir(direction.x/axis_scale,direction.y/axis_scale,direction.z/axis_scale)),
+        intersector.Perform(gp_Lin(to_point(origin), gp_Dir(direction.x/axis_scale,direction.y/axis_scale,direction.z/axis_scale)),
                             2.0 * Precision::Confusion(), maximum_length);
         if (!intersector.IsDone()) {
             return fail(session, OCCT_BRIDGE_KERNEL_ERROR, "ray intersection failed");
