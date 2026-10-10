@@ -251,3 +251,13 @@ controls, plus derived turns and thread mode/hand metadata. The run glyph uses
 the thread's evaluated origin and axis. These are driving dimensions rather
 than measured fit or tolerance-class inspection. `threaded-rod` demonstrates
 linked edits of diameter, pitch, run and source margins.
+
+
+Direct constant Fillet and Chamfer outputs display the nominal radius or
+equal chamfer distance, unique selected-edge count, and linked expression
+controls. Overlays sample the original selected source edges before treatment;
+they can lie outside the finished surface. Metadata marks these as source
+references, not measurements of the final blend. Up to 64 references use eight
+points each, charged to the global vertex budget before sampling.
+`edge-treatments` compares two alternatives and supports live radius/distance
+edits through the shared viewer. See [edge treatments](../../EDGE_TREATMENTS.md).

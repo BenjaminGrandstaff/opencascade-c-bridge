@@ -402,8 +402,8 @@ See [mirrors](../../MIRRORS.md); current builds require native ABI 52.
 `scale_factor` is dimensionless and positive; `scale_center_x` moves the centre
 in millimetres. Native geometry, bounds, volume and source-face ancestry follow
 edits. The viewer links both controls to the scale label and displays measured
-result spans. See [scaling](../../SCALING.md). The catalog contains 26 examples
-and 12 generated schemas, exposed as 38 discovery resources.
+result spans. See [scaling](../../SCALING.md). The catalog contains 27 examples
+and 12 generated schemas, exposed as 39 discovery resources.
 
 
 `spring` combines the schema-82 helix operation with a parameter-driven circular
@@ -455,3 +455,11 @@ major diameter, pitch, run and derived turns. Its source radius and height
 follow diameter/run edits, with an illustrative unthreaded margin at both ends.
 Native validation and removed-volume checks cover the generated solid. The
 catalog targets schema 91; see [thread viewer semantics](../../THREADS.md#ai-example-and-viewer-dimensions).
+
+
+`edge-treatments` demonstrates constant-radius fillets and equal-distance
+chamfers of four semantically selected vertical block edges. Its two view
+outputs compare independent rounded and beveled alternatives. Labels link the
+treatment value and selector controls; overlays reference the selected source
+edges. For a build/export request, select one output per instance.
+See [edge treatments](../../EDGE_TREATMENTS.md).

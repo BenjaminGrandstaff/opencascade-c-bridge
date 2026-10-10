@@ -464,6 +464,58 @@ fn solid_scene(
     // downstream booleans/transforms, controls stay in the linked side panel.
     if let Some(feature) = part.definition.features.iter().find(|f| f.id == output) {
         primitive_dimensions(feature, parameters, &mut annotations)?;
+        let treatment = match &feature.operation {
+            FeatureOperation::Fillet {
+                input,
+                edges,
+                radius,
+            } => Some(("fillet", input, edges, radius)),
+            FeatureOperation::Chamfer {
+                input,
+                edges,
+                distance,
+            } => Some(("chamfer", input, edges, distance)),
+            _ => None,
+        };
+        if let Some((kind, input, selectors, value)) = treatment {
+            let nominal = value
+                .evaluate(parameters)
+                .map_err(|e| model_failure("visualization", e))?
+                .value;
+            let mut references = Vec::new();
+            let mut anchors = Vec::new();
+            // Resolve parameters once; query cost follows semantic selection.
+            // Additional measurement/display work is bounded to 64 references.
+            let edges = part
+                .select_edges(
+                    session,
+                    generated,
+                    input,
+                    &EdgeSelector::Union(selectors.clone()),
+                )
+                .map_err(|e| model_failure("visualization", e))?;
+            let selected_count = edges.len();
+            for edge in edges {
+                if references.len() < 64 {
+                    check_budget(&mut budget.vertices, 8, "vertex")?;
+                    let points = session
+                        .edge_sample_points(&edge, 8)
+                        .map_err(|e| failure("visualization", e))?;
+                    anchors.push(point(
+                        session
+                            .center_of_mass(&edge)
+                            .map_err(|e| failure("visualization", e))?,
+                    ));
+                    references.push(points.into_iter().map(point).collect::<Vec<_>>());
+                }
+            }
+            let anchor = anchors.first().copied().unwrap_or(center);
+            let expressions = json!([value, selectors]);
+            annotations.push(annotation(
+                format!("driving-{kind}"),format!("{kind} {} {} mm",if kind=="fillet"{"radius"}else{"distance"},length_label(nominal)),"dimension","driving",vec![output.into()],names(&expressions),json!([anchor]),
+                json!({"input":input,"value_mm":nominal,"selected_edge_count":selected_count,"displayed_reference_count":references.len(),"dimension_paths":references,"source_reference":true,"expressions":expressions,"driving":true,"measurement":false,"description":"Nominal treatment value; overlays mark selected source edges before treatment, not edges of the finished part."})
+            ));
+        }
         if let FeatureOperation::Thread {
             input,
             origin,

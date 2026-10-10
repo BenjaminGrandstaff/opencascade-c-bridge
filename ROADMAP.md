@@ -15,14 +15,23 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 112 + first-use integration 1 (+1 doc test), recipes 3, parametric 453 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 18 + branch command 2 + model command 36, MCP Python 9, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 112 + first-use integration 1 (+1 doc test), recipes 3, parametric 454 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 18 + branch command 2 + model command 37, MCP Python 9, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform code also passes. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
 | Coverage | Last recorded: 93.61% lines overall, test code excluded; C++ 94.13% lines, 87.40% branches, 100% functions; Rust 93.42% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 143 Rust cases plus 5 model-command and 12 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Scale benchmarks | 143 Rust cases plus 5 model-command and 13 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
+
+- Linked constant fillet/chamfer dimensions (schema 91 / ABI 52 unchanged):
+  direct outputs show nominal radius/distance, unique selected-edge count and
+  linked controls. Bounded overlays identify original source edges, explicitly
+  distinguished from final blend measurements. The AI example compares rounded
+  and beveled blocks; analytical volumes, selective rebuilds, failed-edit
+  retention, MCP discovery, live edit/revert and STEP/STL exports pass. The MCP
+  scale gate passes 20 scenes in 0.209 s (10 s budget).
+  See [edge treatments](EDGE_TREATMENTS.md).
 
 - AI threaded-rod example and thread dimensions (current schema 91 / ABI 52
   unchanged): the catalog exposes modeled threads with linked major diameter,

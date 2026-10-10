@@ -1820,3 +1820,17 @@ mode and hand; expression names link editable controls. Annotation work is O(1)
 per feature, independent of turn count; existing geometry/mesh budgets remain.
 The threaded-rod example derives source size from the same driving parameters.
 See [threads](THREADS.md#ai-example-and-viewer-dimensions).
+
+
+## Constant edge-treatment visualization
+
+Direct Fillet/Chamfer outputs resolve the union of semantic edge selectors on
+the source shape, evaluating parameters once for that selection. Native query
+cost follows the existing selector implementation. Additional reference
+sampling and centre acquisition are bounded to 64 edges, eight points each;
+points consume the shared vertex budget before native sampling. The annotation
+links both nominal-value and selector expressions, and records total selected
+count separately from displayed reference count. Source paths are explicitly
+marked references to pre-treatment edges, rather than final blend measurements.
+The AI example verifies analytical corner volumes, selective regeneration and
+failed-edit retention. See [edge treatments](EDGE_TREATMENTS.md).

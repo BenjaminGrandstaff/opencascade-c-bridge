@@ -745,3 +745,9 @@ modeled threads with linked major diameter, pitch, run and derived turn labels.
 Its source rod follows diameter/run edits. See
 [thread dimensions](THREADS.md#ai-example-and-viewer-dimensions). Current AI
 examples use schema 91; native ABI remains 52.
+
+
+The [edge-treatment AI example](tools/model/edge-treatments.request.json)
+compares rounded and chamfered blocks with linked radius/distance controls and
+selected source-edge overlays. Live edits update geometry and annotations.
+See [edge treatments](EDGE_TREATMENTS.md); schema 91 / ABI 52 are unchanged.

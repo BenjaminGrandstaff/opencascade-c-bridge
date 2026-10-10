@@ -1864,3 +1864,45 @@ fn thread_viewer_follows_nominal_dimensions_run_anchors_and_derived_turns() {
         assert!((scene["bounds"][1][0].as_f64().unwrap() - diameter / 2.0).abs() < 1e-5);
     }
 }
+
+#[test]
+fn fillet_and_chamfer_views_expose_values_selected_source_edges_and_linked_controls() {
+    let dir = Directory::new();
+    let request = view_example("edge-treatments");
+    view_request(&dir, request, "treatments").unwrap();
+    let data: Value =
+        serde_json::from_str(&fs::read_to_string(dir.0.join("treatments/view.json")).unwrap())
+            .unwrap();
+    for (index, kind, value, parameter) in [
+        (0, "fillet", 2.0, "fillet_radius"),
+        (1, "chamfer", 1.5, "chamfer_distance"),
+    ] {
+        let scene = &data["scenes"][index];
+        assert_eq!(scene["valid"], true);
+        let a = scene["annotations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|a| a["id"] == format!("driving-{kind}"))
+            .unwrap();
+        assert_eq!(a["detail"]["value_mm"], value);
+        assert_eq!(a["detail"]["selected_edge_count"], 4);
+        assert_eq!(a["detail"]["source_reference"], true);
+        assert_eq!(a["detail"]["measurement"], false);
+        assert!(
+            a["parameters"]
+                .as_array()
+                .unwrap()
+                .contains(&json!(parameter))
+        );
+        let paths = a["detail"]["dimension_paths"].as_array().unwrap();
+        assert_eq!(paths.len(), 4);
+        for path in paths {
+            assert_eq!(path.as_array().unwrap().len(), 8);
+            let start_z = path[0][2].as_f64().unwrap();
+            let end_z = path[7][2].as_f64().unwrap();
+            assert_eq!(start_z.min(end_z), 0.0);
+            assert_eq!(start_z.max(end_z), 10.0);
+        }
+    }
+}

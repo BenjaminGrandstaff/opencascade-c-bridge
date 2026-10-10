@@ -233,5 +233,24 @@ with tempfile.TemporaryDirectory(prefix='occb-mcp-scale-') as root:
         elapsed=time.monotonic()-started
         assert elapsed<30
         print(f'PASS MCP 10 modeled-thread scenes, linked dimensions and native geometry: {elapsed:.3f}s / 30s')
+        treatments=client.tool('occt_get_example',dict(name='edge-treatments'))['structuredContent']
+        treatments['sketches']=False
+        for i in range(1,10):treatments['model']['instances'].append({'clone':dict(id=f'part-{i}',source='part',overrides={},provenance='scale')})
+        treatments['outputs']=[dict(instance='part' if i==0 else f'part-{i}',output=output)for i in range(10)for output in ['rounded','beveled']]
+        started=time.monotonic()
+        result=client.tool('occt_visualize_model',treatments)
+        assert not result['isError'],result
+        data=json.loads(client.call('resources/read',dict(uri=result['structuredContent']['resources']['view.json']))['result']['contents'][0]['text'])
+        assert len(data['scenes'])==20
+        for scene in data['scenes']:
+            assert scene['valid']
+            kind='fillet' if scene['feature']=='rounded' else 'chamfer'
+            a=next(a for a in scene['annotations'] if a['id']==f'driving-{kind}')
+            assert a['detail']['selected_edge_count']==4
+            assert a['detail']['source_reference']
+            assert sum(len(p) for p in a['detail']['dimension_paths'])==32
+        elapsed=time.monotonic()-started
+        assert elapsed<10
+        print(f'PASS MCP 20 edge-treatment scenes, linked values and bounded source references: {elapsed:.3f}s / 10s')
     finally:
         client.close()

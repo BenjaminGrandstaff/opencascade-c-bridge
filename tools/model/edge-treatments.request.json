@@ -1,0 +1,574 @@
+{
+  "schema": "occb-model-view-v1",
+  "model": {
+    "schema_version": 91,
+    "family": {
+      "id": "edge-treatments",
+      "version": 1,
+      "parameters": [
+        {
+          "id": "width",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 30,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 20,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 100,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "depth",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 20,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 12,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 80,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "height",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 10,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 6,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 50,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "fillet_radius",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 2,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 0.5,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 4,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "chamfer_distance",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 1.5,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 0.5,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 4,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        }
+      ],
+      "derived_parameters": [],
+      "derived_vector_parameters": [],
+      "constraints": [],
+      "requirements": [
+        {
+          "id": "rounded",
+          "version": 1,
+          "kind": "validation",
+          "priority": "required",
+          "statement": "rounded block valid",
+          "rule": {
+            "shape_valid": {
+              "output": "rounded"
+            }
+          },
+          "provenance": "Demonstration assumptions",
+          "traces": [
+            {
+              "feature": "rounded"
+            }
+          ]
+        },
+        {
+          "id": "beveled",
+          "version": 1,
+          "kind": "validation",
+          "priority": "required",
+          "statement": "beveled block valid",
+          "rule": {
+            "shape_valid": {
+              "output": "beveled"
+            }
+          },
+          "provenance": "Demonstration assumptions",
+          "traces": [
+            {
+              "feature": "beveled"
+            }
+          ]
+        }
+      ],
+      "datums": [],
+      "features": [
+        {
+          "id": "block",
+          "operation": {
+            "box": {
+              "origin": {
+                "components": {
+                  "x": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "y": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "z": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                }
+              },
+              "size": {
+                "components": {
+                  "x": {
+                    "parameter": "width"
+                  },
+                  "y": {
+                    "parameter": "depth"
+                  },
+                  "z": {
+                    "parameter": "height"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "rounded",
+          "operation": {
+            "fillet": {
+              "input": "block",
+              "edges": [
+                {
+                  "nearest_center": {
+                    "target": {
+                      "components": {
+                        "x": {
+                          "literal": {
+                            "value": 0,
+                            "dimension": "length",
+                            "unit": "millimeter"
+                          }
+                        },
+                        "y": {
+                          "literal": {
+                            "value": 0,
+                            "dimension": "length",
+                            "unit": "millimeter"
+                          }
+                        },
+                        "z": {
+                          "divide": [
+                            {
+                              "parameter": "height"
+                            },
+                            {
+                              "literal": {
+                                "value": 2,
+                                "dimension": "scalar",
+                                "unit": null
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    "maximum_distance": {
+                      "literal": {
+                        "value": 1e-06,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    }
+                  }
+                },
+                {
+                  "nearest_center": {
+                    "target": {
+                      "components": {
+                        "x": {
+                          "parameter": "width"
+                        },
+                        "y": {
+                          "literal": {
+                            "value": 0,
+                            "dimension": "length",
+                            "unit": "millimeter"
+                          }
+                        },
+                        "z": {
+                          "divide": [
+                            {
+                              "parameter": "height"
+                            },
+                            {
+                              "literal": {
+                                "value": 2,
+                                "dimension": "scalar",
+                                "unit": null
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    "maximum_distance": {
+                      "literal": {
+                        "value": 1e-06,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    }
+                  }
+                },
+                {
+                  "nearest_center": {
+                    "target": {
+                      "components": {
+                        "x": {
+                          "parameter": "width"
+                        },
+                        "y": {
+                          "parameter": "depth"
+                        },
+                        "z": {
+                          "divide": [
+                            {
+                              "parameter": "height"
+                            },
+                            {
+                              "literal": {
+                                "value": 2,
+                                "dimension": "scalar",
+                                "unit": null
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    "maximum_distance": {
+                      "literal": {
+                        "value": 1e-06,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    }
+                  }
+                },
+                {
+                  "nearest_center": {
+                    "target": {
+                      "components": {
+                        "x": {
+                          "literal": {
+                            "value": 0,
+                            "dimension": "length",
+                            "unit": "millimeter"
+                          }
+                        },
+                        "y": {
+                          "parameter": "depth"
+                        },
+                        "z": {
+                          "divide": [
+                            {
+                              "parameter": "height"
+                            },
+                            {
+                              "literal": {
+                                "value": 2,
+                                "dimension": "scalar",
+                                "unit": null
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    "maximum_distance": {
+                      "literal": {
+                        "value": 1e-06,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    }
+                  }
+                }
+              ],
+              "radius": {
+                "parameter": "fillet_radius"
+              }
+            }
+          }
+        },
+        {
+          "id": "beveled",
+          "operation": {
+            "chamfer": {
+              "input": "block",
+              "edges": [
+                {
+                  "nearest_center": {
+                    "target": {
+                      "components": {
+                        "x": {
+                          "literal": {
+                            "value": 0,
+                            "dimension": "length",
+                            "unit": "millimeter"
+                          }
+                        },
+                        "y": {
+                          "literal": {
+                            "value": 0,
+                            "dimension": "length",
+                            "unit": "millimeter"
+                          }
+                        },
+                        "z": {
+                          "divide": [
+                            {
+                              "parameter": "height"
+                            },
+                            {
+                              "literal": {
+                                "value": 2,
+                                "dimension": "scalar",
+                                "unit": null
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    "maximum_distance": {
+                      "literal": {
+                        "value": 1e-06,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    }
+                  }
+                },
+                {
+                  "nearest_center": {
+                    "target": {
+                      "components": {
+                        "x": {
+                          "parameter": "width"
+                        },
+                        "y": {
+                          "literal": {
+                            "value": 0,
+                            "dimension": "length",
+                            "unit": "millimeter"
+                          }
+                        },
+                        "z": {
+                          "divide": [
+                            {
+                              "parameter": "height"
+                            },
+                            {
+                              "literal": {
+                                "value": 2,
+                                "dimension": "scalar",
+                                "unit": null
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    "maximum_distance": {
+                      "literal": {
+                        "value": 1e-06,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    }
+                  }
+                },
+                {
+                  "nearest_center": {
+                    "target": {
+                      "components": {
+                        "x": {
+                          "parameter": "width"
+                        },
+                        "y": {
+                          "parameter": "depth"
+                        },
+                        "z": {
+                          "divide": [
+                            {
+                              "parameter": "height"
+                            },
+                            {
+                              "literal": {
+                                "value": 2,
+                                "dimension": "scalar",
+                                "unit": null
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    "maximum_distance": {
+                      "literal": {
+                        "value": 1e-06,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    }
+                  }
+                },
+                {
+                  "nearest_center": {
+                    "target": {
+                      "components": {
+                        "x": {
+                          "literal": {
+                            "value": 0,
+                            "dimension": "length",
+                            "unit": "millimeter"
+                          }
+                        },
+                        "y": {
+                          "parameter": "depth"
+                        },
+                        "z": {
+                          "divide": [
+                            {
+                              "parameter": "height"
+                            },
+                            {
+                              "literal": {
+                                "value": 2,
+                                "dimension": "scalar",
+                                "unit": null
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    "maximum_distance": {
+                      "literal": {
+                        "value": 1e-06,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    }
+                  }
+                }
+              ],
+              "distance": {
+                "parameter": "chamfer_distance"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "instances": [
+      {
+        "base": {
+          "id": "part",
+          "overrides": {},
+          "provenance": "dimensions are illustrative assumptions"
+        }
+      }
+    ]
+  },
+  "outputs": [
+    {
+      "instance": "part",
+      "output": "rounded"
+    },
+    {
+      "instance": "part",
+      "output": "beveled"
+    }
+  ],
+  "sketches": false
+}
