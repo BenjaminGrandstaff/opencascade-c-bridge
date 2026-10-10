@@ -168,11 +168,11 @@ pub(super) fn sketch_scene(
                 parameters.extend(point_controls[id.as_str()].iter().cloned());
             }
             annotations.push(Annotation {
-                id: format!("bspline-{}", spline.id), label: format!("B-spline degree {}", basis.degree),
+                id: format!("bspline-{}", spline.id), label: format!("{}B-spline degree {}", if basis.periodic { "Periodic " } else { "" }, basis.degree),
                 kind: AnnotationKind::Group, status: AnnotationStatus::Constructed,
                 targets: vec![spline.id.clone()], parameters: parameters.into_iter().collect(),
                 anchors: json!([point_map[&spline.points[0]]]),
-                detail: json!({"basis":basis,"control_points":spline.points,"evaluated_weights":solution.spline_weights[&spline.id],"periodic":false}),
+                detail: json!({"basis":basis,"control_points":spline.points,"evaluated_weights":solution.spline_weights[&spline.id],"periodic":basis.periodic}),
             }.into());
         }
     }

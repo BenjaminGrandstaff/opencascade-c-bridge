@@ -8,21 +8,35 @@ tracks status and order.
 
 | Layer | Version | State |
 |---|---|---|
-| C ABI (`src/`, `include/`) | ABI 53 | Stable; exact version match required |
+| C ABI (`src/`, `include/`) | ABI 54 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 99 | Active development |
+| `occt-parametric` (engineering layer) | Schema 100 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 114 + first-use integration 1 (+1 doc test), recipes 3, parametric 495 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 19 + branch command 2 + model command 47, MCP Python 9, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 116 + first-use integration 1 (+1 doc test), recipes 3, parametric 498 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 19 + branch command 2 + model command 48, MCP Python 9, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform code also passes. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
 | Coverage | Last recorded: 93.61% lines overall, test code excluded; C++ 94.13% lines, 87.40% branches, 100% functions; Rust 93.42% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 151 Rust cases plus 5 model-command and 21 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Scale benchmarks | 152 Rust cases plus 5 model-command and 22 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
+
+- Periodic explicit B-spline bases (schema 100 / ABI 54): periodic knot/pole
+  count rules, positive weights and native closure are checked. Curves are
+  standalone closed profiles; their seams use native geometry instead of
+  control-pole endpoints. Viewer control polygons close and expose periodic
+  basis/weight metadata. The periodic-spline-pad AI example verifies a rounded
+  cubic rectangle, native area/volume/bounds, seam tangent continuity, size and
+  rational weight edits, and profile reuse on height edits. Closed loops reject
+  free-end tangency and mixed/open profiles. Clamped/interpolated defaults
+  remain. The catalog has 36 examples, 12 schemas and 48 resources, with 148
+  request definitions. Rebuild native and Rust consumers together; non-clamped
+  non-periodic bases and general contact remain open. A 1,000-profile native
+  build/rational-edit gate passes in 1.921 s; MCP renders 20 periodic pads
+  and closed control polygons in 0.253 s (10 s budgets).
 
 - Explicit clamped B-spline bases (schema 99 / ABI 53): spline entries may
   provide degree, distinct knots, multiplicities and positive dimensionless

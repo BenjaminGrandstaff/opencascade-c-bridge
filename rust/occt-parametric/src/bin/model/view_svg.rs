@@ -86,7 +86,11 @@ pub fn render(scene: &Value) -> String {
     if let Some(entities) = scene["entities"].as_array() {
         for entity in entities {
             if let Some(ids) = entity["bspline"]["control_points"].as_array() {
-                let points = ids
+                let mut control_ids = ids.iter().collect::<Vec<_>>();
+                if entity["bspline"]["basis"]["periodic"] == true {
+                    control_ids.push(&ids[0]);
+                }
+                let points = control_ids
                     .iter()
                     .map(|id| {
                         let q = project(p(&scene["points"][id.as_str().unwrap()]));

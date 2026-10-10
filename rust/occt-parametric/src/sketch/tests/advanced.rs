@@ -1231,6 +1231,7 @@ fn explicit_quadratic() -> SketchDefinition {
         id: "curve".into(),
         points: vec!["a".into(), "b".into(), "c".into()],
         basis: Some(SketchBSplineBasis {
+            periodic: false,
             degree: 2,
             knots: vec![0., 1.],
             multiplicities: vec![3, 3],
@@ -1355,4 +1356,86 @@ fn explicit_bspline_accepts_repeated_control_poles_and_closed_clamped_profiles()
     let face = s.face_on_plane(&session, &params, None).unwrap();
     assert!(session.is_valid(&face).unwrap());
     assert!(session.surface_area(&face).unwrap() > 1.);
+}
+
+fn periodic_square() -> SketchDefinition {
+    let mut s = base();
+    s.points = vec![
+        point("a", 10., 10., true),
+        point("b", -10., 10., true),
+        point("c", -10., -10., true),
+        point("d", 10., -10., true),
+    ];
+    s.splines.push(SketchSpline {
+        id: "curve".into(),
+        points: vec!["a".into(), "b".into(), "c".into(), "d".into()],
+        basis: Some(SketchBSplineBasis {
+            periodic: true,
+            degree: 3,
+            knots: vec![0., 1., 2., 3., 4.],
+            multiplicities: vec![1; 5],
+            weights: vec![],
+        }),
+    });
+    s.profile = vec!["curve".into()];
+    s
+}
+
+#[test]
+fn periodic_explicit_sketch_point_membership_uses_the_closed_curve_not_the_poles() {
+    let params = HashMap::new();
+    let mut s = periodic_square();
+    s.points
+        .extend([point("p", 0., 10., false), point("axis", 0., 0., true)]);
+    s.lines.push(line("vertical", "axis", "p"));
+    s.constraints = vec![
+        SketchConstraint::PointOnCurve {
+            point: "p".into(),
+            curve: "curve".into(),
+        },
+        SketchConstraint::Vertical {
+            line: "vertical".into(),
+        },
+    ];
+    let solved = s.solve(&params).unwrap();
+    assert!(solved.solved, "{}", solved.max_residual);
+    assert_eq!(solved.free_degrees, 0);
+    assert!((solved.points["p"].y - 110. / 12.).abs() < 1e-7);
+    let session = Session::new().unwrap();
+    let face = s.face_on_plane(&session, &params, None).unwrap();
+    assert!(session.is_valid(&face).unwrap());
+    assert!((session.surface_area(&face).unwrap() - 122. / 45. * 100.).abs() < 1e-5);
+    assert!(s.open_wire(&session, &params, None).is_err());
+}
+
+#[test]
+fn periodic_explicit_sketch_rejects_invalid_basis_mixed_profiles_and_endpoint_tangency() {
+    let params = HashMap::new();
+    for case in 0..3 {
+        let mut s = periodic_square();
+        let b = s.splines[0].basis.as_mut().unwrap();
+        match case {
+            0 => b.multiplicities[4] = 2,
+            1 => b.multiplicities[1] = 2,
+            _ => b.multiplicities[0] = 4,
+        }
+        assert!(s.solve(&params).is_err());
+    }
+    let mut s = periodic_square();
+    s.lines.push(line("line", "a", "b"));
+    s.constraints = vec![SketchConstraint::Tangent {
+        first: "curve".into(),
+        second: "line".into(),
+        point: "a".into(),
+    }];
+    assert!(
+        s.solve(&params)
+            .unwrap_err()
+            .message
+            .contains("no free ends")
+    );
+    s.constraints.clear();
+    s.profile.push("line".into());
+    let session = Session::new().unwrap();
+    assert!(s.face_on_plane(&session, &params, None).is_err());
 }

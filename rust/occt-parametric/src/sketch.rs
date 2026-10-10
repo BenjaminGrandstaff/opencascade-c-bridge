@@ -103,7 +103,7 @@ pub struct SketchArc {
 /// A curve defined by named points. Without `basis`, it interpolates them;
 /// repeating the first at the end creates a smooth periodic loop, and an
 /// endpoint `Tangent` sets the interpolator's end direction. With `basis`,
-/// these points are control poles of a clamped non-periodic B-spline;
+/// these points are control poles of a clamped or periodic B-spline;
 /// endpoint tangency is measured through adjacent poles. Repeating the first
 /// pole closes the curve without promising a smooth periodic seam.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
@@ -115,10 +115,12 @@ pub struct SketchSpline {
     pub basis: Option<SketchBSplineBasis>,
 }
 
-/// Explicit clamped non-periodic B-spline basis. Empty weights mean all ones.
+/// Explicit clamped or periodic B-spline basis. Empty weights mean all ones.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SketchBSplineBasis {
+    #[serde(default)]
+    pub periodic: bool,
     #[schemars(range(min = 1, max = 25))]
     pub degree: i32,
     #[schemars(length(min = 2, max = 10002))]
@@ -154,6 +156,7 @@ impl SketchSpline {
     ) -> Result<CurveSegment, ModelError> {
         let b = self.basis.as_ref().expect("explicit B-spline basis");
         Ok(CurveSegment::BSpline {
+            periodic: b.periodic,
             poles,
             degree: b.degree,
             knots: b.knots.clone(),
@@ -162,7 +165,8 @@ impl SketchSpline {
         })
     }
     fn closed(&self) -> bool {
-        self.points.len() > 1 && self.points.first() == self.points.last()
+        self.basis.as_ref().is_some_and(|b| b.periodic)
+            || (self.points.len() > 1 && self.points.first() == self.points.last())
     }
 }
 
@@ -410,6 +414,11 @@ impl<'a> Entity<'a> {
             Self::Circle(circle) => (&circle.rim, &circle.rim),
             Self::Ellipse(ellipse) => (&ellipse.major, &ellipse.major),
             Self::Arc(arc) => (&arc.start, &arc.end),
+            // Closed periodic profiles have no named geometric seam endpoint.
+            // This private identity is used only for standalone cycle checks.
+            Self::Spline(s) if s.basis.as_ref().is_some_and(|b| b.periodic) => {
+                (&s.points[0], &s.points[0])
+            }
             Self::Spline(spline) => (&spline.points[0], &spline.points[spline.points.len() - 1]),
         }
     }

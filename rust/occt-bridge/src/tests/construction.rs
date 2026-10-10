@@ -770,6 +770,7 @@ fn explicit_rational_bspline_preserves_quarter_circle_and_internal_knots() {
     let wire = session
         .create_curve_wire(
             &[CurveSegment::BSpline {
+                periodic: false,
                 poles: vec![
                     Vec3::new(10., 0., 0.),
                     Vec3::new(10., 10., 0.),
@@ -810,6 +811,7 @@ fn explicit_rational_bspline_preserves_quarter_circle_and_internal_knots() {
     let wire = session
         .create_curve_wire(
             &[CurveSegment::BSpline {
+                periodic: false,
                 poles: (0..7)
                     .map(|i| Vec3::new(i as f64, (i % 2) as f64, 0.))
                     .collect(),
@@ -835,6 +837,7 @@ fn explicit_rational_bspline_preserves_quarter_circle_and_internal_knots() {
 fn explicit_bspline_validation_is_bounded_and_failure_releases_handles() {
     let session = Session::new().unwrap();
     let valid = CurveSegment::BSpline {
+        periodic: false,
         poles: vec![
             Vec3::new(0., 0., 0.),
             Vec3::new(1., 2., 0.),
@@ -868,6 +871,100 @@ fn explicit_bspline_validation_is_bounded_and_failure_releases_handles() {
             _ => weights.pop().map(|_| ()).unwrap(),
         }
         assert!(session.create_curve_wire(&[segment], false).is_err());
+        assert_eq!(session.shape_count().unwrap(), 0);
+    }
+}
+
+#[test]
+fn periodic_explicit_bspline_closes_at_native_seam_and_preserves_tangency() {
+    let session = Session::new().unwrap();
+    for weight in [1., 2.] {
+        let wire = session
+            .create_curve_wire(
+                &[CurveSegment::BSpline {
+                    periodic: true,
+                    poles: vec![
+                        Vec3::new(10., 10., 0.),
+                        Vec3::new(-10., 10., 0.),
+                        Vec3::new(-10., -10., 0.),
+                        Vec3::new(10., -10., 0.),
+                    ],
+                    degree: 3,
+                    knots: vec![0., 1., 2., 3., 4.],
+                    multiplicities: vec![1; 5],
+                    weights: vec![weight, 1., 1., 1.],
+                }],
+                true,
+            )
+            .unwrap();
+        assert!(session.wire_is_closed(&wire).unwrap());
+        let face = session.create_face_from_wire(&wire).unwrap();
+        assert!(session.is_valid(&face).unwrap());
+        if weight == 1. {
+            assert!((session.surface_area(&face).unwrap() - 122. / 45. * 100.).abs() < 1e-5);
+        }
+        let edge = session
+            .subshapes(&wire, ShapeType::Edge)
+            .unwrap()
+            .pop()
+            .unwrap();
+        let spans = session.edge_bezier_spans(&edge, 50).unwrap();
+        assert_eq!(spans.len(), 4);
+        let first = &spans[0];
+        let last = spans.last().unwrap();
+        let n = last.poles.len() - 1;
+        assert!(
+            (first.poles[0].x - last.poles[n].x).hypot(first.poles[0].y - last.poles[n].y) < 1e-7
+        );
+        assert!((first.poles[0].x - 10.).hypot(first.poles[0].y - 10.) > 1.); // Seam is not a control pole.
+        for axis in 0..2 {
+            let coord = |p: Vec3| if axis == 0 { p.x } else { p.y };
+            let a = 3. * first.weights[1] / first.weights[0]
+                * (coord(first.poles[1]) - coord(first.poles[0]));
+            let b = 3. * last.weights[n - 1] / last.weights[n]
+                * (coord(last.poles[n]) - coord(last.poles[n - 1]));
+            assert!((a - b).abs() < 1e-7, "seam derivatives {a} {b}");
+        }
+    }
+}
+
+#[test]
+fn periodic_explicit_bspline_rejects_bad_multiplicities_open_and_mixed_wires_without_leaks() {
+    let session = Session::new().unwrap();
+    let valid = CurveSegment::BSpline {
+        periodic: true,
+        poles: vec![
+            Vec3::new(1., 1., 0.),
+            Vec3::new(-1., 1., 0.),
+            Vec3::new(-1., -1., 0.),
+            Vec3::new(1., -1., 0.),
+        ],
+        degree: 3,
+        knots: vec![0., 1., 2., 3., 4.],
+        multiplicities: vec![1; 5],
+        weights: vec![],
+    };
+    assert!(session.create_curve_wire(&[valid.clone()], false).is_err());
+    let line = CurveSegment::Line {
+        start: Vec3::new(1., 1., 0.),
+        end: Vec3::new(-1., 1., 0.),
+    };
+    assert!(
+        session
+            .create_curve_wire(&[valid.clone(), line], true)
+            .is_err()
+    );
+    for case in 0..3 {
+        let mut s = valid.clone();
+        let CurveSegment::BSpline { multiplicities, .. } = &mut s else {
+            unreachable!()
+        };
+        match case {
+            0 => multiplicities[4] = 2,
+            1 => multiplicities[1] = 2,
+            _ => multiplicities[0] = 4,
+        }
+        assert!(session.create_curve_wire(&[s], true).is_err());
         assert_eq!(session.shape_count().unwrap(), 0);
     }
 }

@@ -412,8 +412,9 @@ pub enum CurveSegment {
         middle: Vec3,
         end: Vec3,
     },
-    /// Explicit clamped, non-periodic B-spline. Empty weights mean all ones.
+    /// Explicit clamped or periodic B-spline. Empty weights mean all ones.
     BSpline {
+        periodic: bool,
         poles: Vec<Vec3>,
         degree: i32,
         knots: Vec<f64>,

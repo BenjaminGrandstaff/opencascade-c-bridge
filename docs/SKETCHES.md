@@ -79,8 +79,8 @@ export are verified. A 1,000-pair solve and residual-diagnostic gate passes in
 0.009 s (10 s budget); 20 solids plus 60 source sketch scenes and matched-radius
 annotations pass through MCP in 0.316 s (10 s budget).
 
-Current authoring examples use schema 99. Older model documents migrate
-without adding constraints or changing their entities. Current native ABI is 53.
+Current authoring examples use schema 100. Older model documents migrate
+without adding constraints or changing their entities. Current native ABI is 54.
 
 ## Saved profile operations
 
@@ -384,7 +384,7 @@ Weights may be omitted/empty for all ones, or supplied as positive finite
 enter incremental regeneration. `SketchSolution.spline_weights` stores their
 evaluated values for previews and profile construction. Knot values, degree
 and multiplicities are explicit constants editable in the feature definition.
-Non-clamped and periodic explicit bases remain future work.
+Periodic bases are added in schema 100 below; non-clamped non-periodic bases remain future work.
 
 Point-on-curve constraints project onto the exact native B-spline, including
 rational weights, rather than onto its control polygon. Control poles retain
@@ -415,3 +415,48 @@ optional weight buffers. Existing line, arc and interpolation kinds keep
 their behavior. ABI 53 changes the segment struct layout, so rebuild all
 native and Rust consumers together; model documents migrate to schema 99
 without changing existing interpolated spline definitions.
+
+## Periodic B-spline bases (schema 100 / ABI 54)
+
+Set `basis.periodic: true` to build a periodic native B-spline from its supplied
+control poles, knots, multiplicities and positive weights. The field defaults
+to false, preserving clamped schema-99 curves and older interpolation defaults.
+List the periodic control poles directly; the engine does not append a duplicate
+seam pole. Repeated poles remain legal, but adding the first again adds a real
+control pole and changes the basis rather than simply closing it.
+
+A periodic basis requires first and last knot multiplicities to match, with
+all multiplicities between 1 and degree. Its pole-count equation is
+`pole_count = sum(multiplicities) − last_multiplicity`. Degree and size limits,
+finite increasing knots, known poles and positive dimensionless weight rules
+are unchanged. Continuity at a knot, including the seam, follows degree minus
+multiplicity; uniform cubic multiplicity-one bases have C² continuity. Higher
+multiplicities may deliberately reduce continuity.
+
+Periodic curves are standalone closed profiles. They cannot be concatenated
+with lines/arcs or used as an untrimmed open profile, and named endpoint
+`tangent` constraints are rejected because the loop has no free ends. Ordinary
+point constraints on control poles and point-on-curve constraints still work;
+point membership projects onto the native periodic curve, not its polygon.
+
+The curve's actual seam generally lies between poles. Native wire construction
+therefore verifies kernel closure instead of comparing the first and last
+control-pole coordinates. The renderer closes the dashed control polygon,
+charges its extra vertex to the shared display budget, and marks the basis
+annotation as periodic. Source pole IDs remain distinct from the curve seam.
+
+The [periodic spline pad](../tools/model/periodic-spline-pad.request.json) uses
+four poles at `(±a, ±b)`, degree 3, knots `[0,1,2,3,4]` and multiplicities all 1.
+Unit weights produce a rounded rectangle with area `122/45 × a × b`, and bounds
+`±11/12 × a` in X and `±11/12 × b` in Y. For a=10, b=8 and height=8 mm, native
+volume is `1735.111111 mm³`. A positive `corner_weight` parameter changes one
+pole's rational weight while maintaining seam continuity. Size/weight edits
+rebuild the profile and solid; height edits reuse the profile. Native validity,
+analytical area/volume, exact bounds, shared seam position and tangent, weight
+edits, failed-edit retention and closed viewer polygons are tested.
+
+ABI 54 interprets the existing explicit-segment flag bit 2 as periodic. Rebuild
+the native bridge and Rust consumers together so older libraries cannot ignore
+the new semantics. Documents migrate to schema 100; omitted periodic flags
+remain false. Non-clamped non-periodic bases and independent general-curve
+contact remain future work.

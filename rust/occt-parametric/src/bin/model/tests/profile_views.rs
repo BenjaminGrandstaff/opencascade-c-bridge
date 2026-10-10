@@ -914,3 +914,66 @@ fn explicit_bspline_viewer_exposes_basis_control_polygon_and_weight_parameter() 
         assert!(svg.contains("stroke-dasharray=\"5 4\""));
     }
 }
+
+#[test]
+fn periodic_bspline_viewer_exposes_closed_control_polygon_and_live_weight_metadata() {
+    let dir = Directory::new();
+    for weight in [1., 2.] {
+        let mut request = view_example("periodic-spline-pad");
+        let p = request["model"]["family"]["parameters"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|p| p["id"] == "corner_weight")
+            .unwrap();
+        p["default"]["scalar"]["value"] = json!(weight);
+        let name = format!("periodic-{weight}");
+        view_request(&dir, request, &name).unwrap();
+        let data: Value =
+            serde_json::from_str(&fs::read_to_string(dir.0.join(&name).join("view.json")).unwrap())
+                .unwrap();
+        let scene = data["scenes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["kind"] == "sketch")
+            .unwrap();
+        assert_eq!(scene["solver"]["solved"], true);
+        let curve = scene["entities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|e| e["id"] == "curve")
+            .unwrap();
+        assert_eq!(curve["bspline"]["basis"]["periodic"], true);
+        assert_eq!(
+            curve["bspline"]["control_points"],
+            json!(["a", "b", "c", "d"])
+        );
+        assert_eq!(curve["bspline"]["evaluated_weights"][0], weight);
+        let annotation = scene["annotations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|a| a["id"] == "bspline-curve")
+            .unwrap();
+        assert_eq!(annotation["detail"]["periodic"], true);
+        assert!(
+            annotation["parameters"]
+                .as_array()
+                .unwrap()
+                .contains(&json!("corner_weight"))
+        );
+        let points = curve["points"].as_array().unwrap();
+        for i in 0..3 {
+            assert!(
+                (points[0][i].as_f64().unwrap() - points.last().unwrap()[i].as_f64().unwrap())
+                    .abs()
+                    < 1e-7
+            );
+        }
+        assert!(scene["profile_error"].is_null());
+        let svg = fs::read_to_string(dir.0.join(name).join("view-0003.svg")).unwrap();
+        assert!(svg.contains("stroke-dasharray=\"5 4\""));
+    }
+}

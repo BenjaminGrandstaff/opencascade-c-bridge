@@ -150,6 +150,7 @@ impl Session {
                     (1, 0, zero, zero)
                 }
                 CurveSegment::BSpline {
+                    periodic,
                     poles,
                     degree: d,
                     knots,
@@ -171,7 +172,7 @@ impl Session {
                     knots_ptr = knots.as_ptr();
                     mults_ptr = multiplicities.as_ptr();
                     weights_ptr = weights.as_ptr();
-                    (3, 0, zero, zero)
+                    (3, i32::from(*periodic) << 2, zero, zero)
                 }
                 CurveSegment::Spline {
                     points: through,

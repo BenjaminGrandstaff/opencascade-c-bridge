@@ -2,7 +2,7 @@
 
 use super::*;
 
-pub(crate) const ABI_VERSION: u32 = 53;
+pub(crate) const ABI_VERSION: u32 = 54;
 
 #[repr(C)]
 #[derive(Default)]

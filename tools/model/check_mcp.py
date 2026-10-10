@@ -398,5 +398,23 @@ with tempfile.TemporaryDirectory(prefix='occb-mcp-scale-') as root:
         elapsed=time.monotonic()-started
         assert elapsed<10
         print(f'PASS MCP 20 rational B-spline caps, explicit basis controls and exact native profiles: {elapsed:.3f}s / 10s')
+        periodic=client.tool('occt_get_example',dict(name='periodic-spline-pad'))['structuredContent']
+        for i in range(1,20):
+            periodic['model']['instances'].append({'clone':dict(id=f'part-{i}',source='part',overrides={},provenance='scale')})
+            periodic['outputs'].extend(dict(instance=f'part-{i}',output=out) for out in ['body','profile'])
+        started=time.monotonic()
+        result=client.tool('occt_visualize_model',periodic)
+        assert not result['isError'],result
+        data=json.loads(client.call('resources/read',dict(uri=result['structuredContent']['resources']['view.json']))['result']['contents'][0]['text'])
+        solids=[s for s in data['scenes'] if s['kind']=='solid'];sketches=[s for s in data['scenes'] if s['kind']=='sketch']
+        assert len(solids)==40 and all(s['valid'] for s in solids)
+        assert len(sketches)==20 and all(s['solver']['solved'] for s in sketches)
+        for scene in sketches:
+            curve=next(e for e in scene['entities'] if e['id']=='curve')
+            assert curve['bspline']['basis']['periodic'] and len(curve['bspline']['control_points'])==4
+            assert all(abs(curve['points'][0][axis]-curve['points'][-1][axis])<1e-7 for axis in range(3))
+        elapsed=time.monotonic()-started
+        assert elapsed<10
+        print(f'PASS MCP 20 periodic B-spline pads, native seams and closed control polygons: {elapsed:.3f}s / 10s')
     finally:
         client.close()

@@ -7,6 +7,7 @@
 #include <BRepBuilderAPI_MakeEdge.hxx>
 #include <BRepBuilderAPI_MakePolygon.hxx>
 #include <BRepBuilderAPI_MakeWire.hxx>
+#include <BRep_Tool.hxx>
 #include <GC_MakeArcOfCircle.hxx>
 #include <GeomAPI_Interpolate.hxx>
 #include <Geom_BSplineCurve.hxx>
@@ -113,7 +114,8 @@ const char* curve_segment_error(
         }
     }
     if (segment.kind == 3) {
-        if (segment.degree < 1 || segment.degree > Geom_BSplineCurve::MaxDegree()
+        const bool periodic = (segment.flags & kPeriodic) != 0;
+        if ((segment.flags & ~kPeriodic) != 0 || segment.degree < 1 || segment.degree > Geom_BSplineCurve::MaxDegree()
             || segment.point_count < static_cast<size_t>(segment.degree + 1) || segment.point_count > 10000
             || segment.knot_count < 2 || segment.knot_count > 10002 || segment.knots == nullptr || segment.multiplicities == nullptr
             || (segment.weight_count != 0 && (segment.weight_count != segment.point_count || segment.weights == nullptr))) {
@@ -121,15 +123,20 @@ const char* curve_segment_error(
         }
         size_t sum = 0;
         for (size_t i = 0; i < segment.knot_count; ++i) {
-            const int maximum = (i == 0 || i + 1 == segment.knot_count) ? segment.degree + 1 : segment.degree;
+            const bool clamped_end = !periodic && (i == 0 || i + 1 == segment.knot_count);
+            const int maximum = clamped_end ? segment.degree + 1 : segment.degree;
             if (!std::isfinite(segment.knots[i]) || (i != 0 && segment.knots[i] <= segment.knots[i-1])
                 || segment.multiplicities[i] < 1 || segment.multiplicities[i] > maximum
-                || ((i == 0 || i + 1 == segment.knot_count) && segment.multiplicities[i] != maximum)) {
+                || (clamped_end && segment.multiplicities[i] != maximum)) {
                 return "invalid clamped B-spline knots or multiplicities";
             }
             sum += static_cast<size_t>(segment.multiplicities[i]);
         }
-        if (sum != segment.point_count + static_cast<size_t>(segment.degree) + 1) {
+        if (periodic && segment.multiplicities[0] != segment.multiplicities[segment.knot_count-1]) {
+            return "periodic B-spline endpoint multiplicities must match";
+        }
+        const size_t expected_sum = segment.point_count + (periodic ? static_cast<size_t>(segment.multiplicities[segment.knot_count-1]) : static_cast<size_t>(segment.degree) + 1);
+        if (sum != expected_sum) {
             return "B-spline multiplicity sum does not match poles and degree";
         }
         for (size_t i = 0; i < segment.weight_count; ++i) {
@@ -213,7 +220,7 @@ const char* add_explicit_bspline(BRepBuilderAPI_MakeWire& wire,
         weights.SetValue(i, segment.weight_count == 0 ? 1. : segment.weights[i-1]);
     }
     for (int i = 1; i <= knot_count; ++i) { knots.SetValue(i, segment.knots[i-1]); mults.SetValue(i, segment.multiplicities[i-1]); }
-    Handle(Geom_BSplineCurve) curve = new Geom_BSplineCurve(poles, weights, knots, mults, segment.degree, Standard_False);
+    Handle(Geom_BSplineCurve) curve = new Geom_BSplineCurve(poles, weights, knots, mults, segment.degree, (segment.flags & kPeriodic) != 0 ? Standard_True : Standard_False);
     BRepBuilderAPI_MakeEdge edge(curve);
     if (!edge.IsDone()) return "explicit B-spline edge construction failed";
     wire.Add(edge.Edge());
@@ -329,6 +336,9 @@ occt_bridge_status_t occt_bridge_create_curve_wire(
             if (const char* error = curve_segment_error(segment, points, point_count)) {
                 return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, error);
             }
+            if (segment.kind == 3 && (segment.flags & kPeriodic) != 0 && (segment_count != 1 || closed != 1)) {
+                return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "periodic explicit B-spline requires a standalone closed wire");
+            }
             if (index > 0
                 && segment_start(segment, points).Distance(segment_end(segments[index - 1], points))
                     > Precision::Confusion()) {
@@ -338,10 +348,14 @@ occt_bridge_status_t occt_bridge_create_curve_wire(
                 return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, error);
             }
         }
-        if (closed == 1
+        const bool explicit_periodic = segments[0].kind == 3 && (segments[0].flags & kPeriodic) != 0;
+        if (closed == 1 && !explicit_periodic
             && segment_start(segments[0], points).Distance(segment_end(segments[segment_count - 1], points))
                 > Precision::Confusion()) {
             return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "curve wire is not closed");
+        }
+        if (explicit_periodic && !BRep_Tool::IsClosed(wire.Wire())) {
+            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "periodic B-spline did not form a closed native wire");
         }
         return store_shape(session, wire.Wire(), out_shape);
     });

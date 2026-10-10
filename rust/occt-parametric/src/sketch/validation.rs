@@ -503,14 +503,22 @@ fn validate_spline_points(
             ));
         }
         for (i, m) in b.multiplicities.iter().enumerate() {
-            let end = i == 0 || i + 1 == b.knots.len();
+            let end = !b.periodic && (i == 0 || i + 1 == b.knots.len());
             if *m <= 0 || *m > b.degree + i32::from(end) || (end && *m != b.degree + 1) {
-                return Err(ModelError::new("invalid clamped B-spline multiplicity"));
+                return Err(ModelError::new("invalid B-spline multiplicity"));
             }
         }
-        if b.multiplicities.iter().map(|m| *m as usize).sum::<usize>()
-            != count + b.degree as usize + 1
-        {
+        if b.periodic && b.multiplicities.first() != b.multiplicities.last() {
+            return Err(ModelError::new(
+                "periodic B-spline endpoint multiplicities must match",
+            ));
+        }
+        let expected = if b.periodic {
+            count + *b.multiplicities.last().unwrap() as usize
+        } else {
+            count + b.degree as usize + 1
+        };
+        if b.multiplicities.iter().map(|m| *m as usize).sum::<usize>() != expected {
             return Err(ModelError::new(
                 "B-spline multiplicity sum does not match poles and degree",
             ));

@@ -263,6 +263,15 @@ static void wires_and_faces(occt_bridge_session_t* session) {
     explicit_curves[0].knot_count = 2;
     basis_weights[1] = 0.;
     EXPECT(occt_bridge_create_curve_wire(session, curve_points, 5, explicit_curves, 2, 1, &out), ARG);
+    /* Periodic closure uses the native seam, not the unequal first/last poles. */
+    double periodic_knots[] = {0., 1., 2., 3.};
+    int32_t periodic_mults[] = {1, 1, 1, 1};
+    basis_weights[1] = 1.;
+    occt_bridge_curve_segment_t periodic_curve = {
+        3, 4, 0, 3, {0, 0, 0}, {0, 0, 0}, 2, 4, periodic_knots, periodic_mults, 3, basis_weights
+    };
+    EXPECT(occt_bridge_create_curve_wire(session, curve_points, 5, &periodic_curve, 1, 1, &out), OK);
+    EXPECT(occt_bridge_create_curve_wire(session, curve_points, 5, &periodic_curve, 1, 0, &out), ARG);
     curves[0].flags = 8;
     EXPECT(occt_bridge_create_curve_wire(session, curve_points, 5, curves, 2, 1, &out), ARG);
     curves[0].flags = 1;

@@ -3,17 +3,40 @@
   "model": {
     "schema_version": 100,
     "family": {
-      "id": "tangent-boss",
+      "id": "periodic-spline-pad",
       "version": 1,
       "parameters": [
         {
-          "id": "reference_radius",
+          "id": "half_width",
           "parameter_type": {
             "scalar": "length"
           },
           "default": {
             "scalar": {
-              "value": 5,
+              "value": 10,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 5,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 20,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "half_depth",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 8,
               "dimension": "length",
               "unit": "millimeter"
             }
@@ -24,32 +47,32 @@
             "unit": "millimeter"
           },
           "maximum": {
-            "value": 10,
+            "value": 20,
             "dimension": "length",
             "unit": "millimeter"
           }
         },
         {
-          "id": "boss_radius",
+          "id": "corner_weight",
           "parameter_type": {
-            "scalar": "length"
+            "scalar": "scalar"
           },
           "default": {
             "scalar": {
-              "value": 3,
-              "dimension": "length",
-              "unit": "millimeter"
+              "value": 1,
+              "dimension": "scalar",
+              "unit": null
             }
           },
           "minimum": {
-            "value": 2,
-            "dimension": "length",
-            "unit": "millimeter"
+            "value": 0.5,
+            "dimension": "scalar",
+            "unit": null
           },
           "maximum": {
-            "value": 8,
-            "dimension": "length",
-            "unit": "millimeter"
+            "value": 2,
+            "dimension": "scalar",
+            "unit": null
           }
         },
         {
@@ -106,7 +129,7 @@
           "operation": {
             "sketch_face": {
               "sketch": {
-                "id": "tangent-boss",
+                "id": "periodic-spline-pad",
                 "origin": {
                   "literal": {
                     "x": {
@@ -166,159 +189,113 @@
                 },
                 "points": [
                   {
-                    "id": "reference-center",
+                    "id": "a",
                     "x": {
-                      "literal": {
-                        "value": 0,
-                        "dimension": "length",
-                        "unit": "millimeter"
-                      }
+                      "parameter": "half_width"
                     },
                     "y": {
-                      "literal": {
-                        "value": 0,
-                        "dimension": "length",
-                        "unit": "millimeter"
-                      }
+                      "parameter": "half_depth"
                     },
                     "fixed": true
                   },
                   {
-                    "id": "reference-rim",
+                    "id": "b",
                     "x": {
-                      "parameter": "reference_radius"
+                      "negate": {
+                        "parameter": "half_width"
+                      }
                     },
                     "y": {
-                      "literal": {
-                        "value": 0,
-                        "dimension": "length",
-                        "unit": "millimeter"
-                      }
+                      "parameter": "half_depth"
                     },
                     "fixed": true
                   },
                   {
-                    "id": "line-start",
+                    "id": "c",
                     "x": {
-                      "literal": {
-                        "value": -20,
-                        "dimension": "length",
-                        "unit": "millimeter"
+                      "negate": {
+                        "parameter": "half_width"
                       }
                     },
                     "y": {
                       "negate": {
-                        "parameter": "reference_radius"
+                        "parameter": "half_depth"
                       }
                     },
                     "fixed": true
                   },
                   {
-                    "id": "line-end",
+                    "id": "d",
                     "x": {
-                      "literal": {
-                        "value": 30,
-                        "dimension": "length",
-                        "unit": "millimeter"
-                      }
+                      "parameter": "half_width"
                     },
                     "y": {
                       "negate": {
-                        "parameter": "reference_radius"
+                        "parameter": "half_depth"
                       }
                     },
                     "fixed": true
-                  },
-                  {
-                    "id": "boss-center",
-                    "x": {
-                      "literal": {
-                        "value": 8,
-                        "dimension": "length",
-                        "unit": "millimeter"
-                      }
-                    },
-                    "y": {
-                      "literal": {
-                        "value": -1,
-                        "dimension": "length",
-                        "unit": "millimeter"
-                      }
-                    },
-                    "fixed": false
-                  },
-                  {
-                    "id": "boss-rim",
-                    "x": {
-                      "literal": {
-                        "value": 11,
-                        "dimension": "length",
-                        "unit": "millimeter"
-                      }
-                    },
-                    "y": {
-                      "literal": {
-                        "value": -1,
-                        "dimension": "length",
-                        "unit": "millimeter"
-                      }
-                    },
-                    "fixed": false
                   }
                 ],
-                "lines": [
-                  {
-                    "id": "reference-line",
-                    "start": "line-start",
-                    "end": "line-end"
-                  },
-                  {
-                    "id": "boss-axis",
-                    "start": "boss-center",
-                    "end": "boss-rim"
-                  }
-                ],
-                "circles": [
-                  {
-                    "id": "reference-circle",
-                    "center": "reference-center",
-                    "rim": "reference-rim"
-                  },
-                  {
-                    "id": "boss-circle",
-                    "center": "boss-center",
-                    "rim": "boss-rim"
-                  }
-                ],
+                "lines": [],
+                "circles": [],
                 "profile": [
-                  "boss-circle"
+                  "curve"
                 ],
-                "constraints": [
+                "constraints": [],
+                "arcs": [],
+                "splines": [
                   {
-                    "line_circle_tangent": {
-                      "line": "reference-line",
-                      "circle": "boss-circle",
-                      "side": "left"
-                    }
-                  },
-                  {
-                    "circle_circle_tangent": {
-                      "first": "reference-circle",
-                      "second": "boss-circle",
-                      "mode": "external"
-                    }
-                  },
-                  {
-                    "radius": {
-                      "curve": "boss-circle",
-                      "value": {
-                        "parameter": "boss_radius"
-                      }
-                    }
-                  },
-                  {
-                    "horizontal": {
-                      "line": "boss-axis"
+                    "id": "curve",
+                    "points": [
+                      "a",
+                      "b",
+                      "c",
+                      "d"
+                    ],
+                    "basis": {
+                      "periodic": true,
+                      "degree": 3,
+                      "knots": [
+                        0,
+                        1,
+                        2,
+                        3,
+                        4
+                      ],
+                      "multiplicities": [
+                        1,
+                        1,
+                        1,
+                        1,
+                        1
+                      ],
+                      "weights": [
+                        {
+                          "parameter": "corner_weight"
+                        },
+                        {
+                          "literal": {
+                            "value": 1,
+                            "dimension": "scalar",
+                            "unit": null
+                          }
+                        },
+                        {
+                          "literal": {
+                            "value": 1,
+                            "dimension": "scalar",
+                            "unit": null
+                          }
+                        },
+                        {
+                          "literal": {
+                            "value": 1,
+                            "dimension": "scalar",
+                            "unit": null
+                          }
+                        }
+                      ]
                     }
                   }
                 ]
@@ -363,7 +340,7 @@
         "base": {
           "id": "part",
           "overrides": {},
-          "provenance": "A boss positioned by independent line and circle tangencies"
+          "provenance": "A native periodic cubic B-spline pad with a rational corner control"
         }
       }
     ]
