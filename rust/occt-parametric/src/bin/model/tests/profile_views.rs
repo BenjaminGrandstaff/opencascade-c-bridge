@@ -787,3 +787,76 @@ fn internal_circle_tangency_viewer_contacts_agree_and_native_profile_uses_solved
             .all(|s| s["valid"] == true)
     );
 }
+
+#[test]
+fn arc_tangency_viewer_reports_span_failure_even_when_supporting_circle_contacts_coincide() {
+    let dir = Directory::new();
+    for excluded in [false, true] {
+        let mut request = view_example("arc-tangent-boss");
+        let sketch =
+            &mut request["model"]["family"]["features"][0]["operation"]["sketch_face"]["sketch"];
+        let x = 60_f64.sqrt();
+        for p in sketch["points"].as_array_mut().unwrap() {
+            let coords = match p["id"].as_str().unwrap() {
+                "boss-center" => Some((x, -2.)),
+                "boss-start" => Some((x, 1.)),
+                "boss-end" => Some((x + 3., -2.)),
+                _ => None,
+            };
+            if let Some((px, py)) = coords {
+                p["x"]["literal"]["value"] = json!(px);
+                p["y"]["literal"]["value"] = json!(py);
+                p["fixed"] = json!(true);
+            }
+        }
+        sketch["arcs"][0]["clockwise"] = json!(!excluded);
+        let name = if excluded {
+            "excluded-arc"
+        } else {
+            "valid-arc"
+        };
+        view_request(&dir, request, name).unwrap();
+        let data: Value =
+            serde_json::from_str(&fs::read_to_string(dir.0.join(name).join("view.json")).unwrap())
+                .unwrap();
+        let scene = data["scenes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["kind"] == "sketch")
+            .unwrap();
+        assert_eq!(scene["solver"]["solved"], !excluded);
+        let relation = scene["annotations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|a| !a["detail"]["constraint"]["circle_circle_tangent"].is_null())
+            .unwrap();
+        assert_eq!(
+            relation["status"],
+            if excluded { "failed" } else { "passed" }
+        );
+        assert_eq!(relation["detail"]["residual_unit"], "mm");
+        let residual = relation["detail"]["max_residual"].as_f64().unwrap();
+        assert!(if excluded {
+            residual > 1.
+        } else {
+            residual < 1e-7
+        });
+        for axis in 0..2 {
+            assert!(
+                (relation["anchors"][0][axis].as_f64().unwrap()
+                    - relation["anchors"][1][axis].as_f64().unwrap())
+                .abs()
+                    < 1e-7
+            );
+        }
+        assert!(
+            scene["entities"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|e| e["id"] == "boss-arc")
+        );
+    }
+}

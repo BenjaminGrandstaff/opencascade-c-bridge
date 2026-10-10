@@ -126,7 +126,7 @@ pub enum SketchLineSide {
     Right,
 }
 
-/// Internal tangency means the first circle contains the second.
+/// Internal tangency means the first supporting circle contains the second.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SketchCircleTangency {
@@ -168,13 +168,13 @@ pub enum SketchConstraint {
         second: String,
         point: String,
     },
-    /// Tangency to the infinite supporting line, without a shared point.
+    /// Circle/arc tangency to the infinite supporting line, without a shared point.
     LineCircleTangent {
         line: String,
         circle: String,
         side: SketchLineSide,
     },
-    /// Tangency of two full circles, without a shared rim point.
+    /// Circle/arc tangency, requiring contacts inside any directed arc spans.
     CircleCircleTangent {
         first: String,
         second: String,

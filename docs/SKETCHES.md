@@ -79,7 +79,7 @@ export are verified. A 1,000-pair solve and residual-diagnostic gate passes in
 0.009 s (10 s budget); 20 solids plus 60 source sketch scenes and matched-radius
 annotations pass through MCP in 0.316 s (10 s budget).
 
-Current authoring examples use schema 97. Older model documents migrate
+Current authoring examples use schema 98. Older model documents migrate
 without adding constraints or changing their entities. Native ABI remains 52.
 
 ## Saved profile operations
@@ -300,6 +300,48 @@ retention are tested, along with external and internal contact markers.
 Existing `tangent: {first, second, point}` retains its shared endpoint/rim
 semantics, including constructed spline endpoint tangency. The independent
 relations require full circles; arcs, ellipses and splines retain that older
-relation. Arc-span-aware independent contacts, ellipse tangency and general
-curve contact remain future work. Documents migrate to schema 97; native ABI
+relation. Schema 98 extends these relations to directed arcs, as described below.
+Ellipse tangency and general curve contact remain future work. Native ABI
 remains 52.
+
+## Directed arc tangency (schema 98)
+
+`line_circle_tangent` now accepts a circle or arc in its `circle` role;
+`circle_circle_tangent` accepts circles or arcs in either circular role. The
+saved field names, required side/mode choices and full-circle behavior remain
+the same. Arc contacts are checked against their start/end points and
+`clockwise` direction, including span endpoints and angle wraparound.
+
+The supporting-circle tangency residual is accompanied by one span residual
+for each arc. A contact inside its directed span contributes zero. An excluded
+contact contributes the shortest angular distance to a span endpoint times
+the arc radius, in millimetres. Line/arc contact points follow the selected
+line side. External circular contacts face each other; ordered internal
+contacts point from the containing centre toward the contained centre.
+Both arcs must contain their respective contacts. Supporting circles that
+touch outside an arc's span do not satisfy the relation.
+
+The sparse Jacobian includes the arc's end point as well as its centre and
+start point, allowing free endpoints to move their span into contact. Each
+line/arc relation touches at most five points/ten coordinates; an arc/arc
+relation touches at most six points/twelve coordinates. Existing implicit arc
+radius equality still applies. Inactive span rows are zero and do not reduce
+free degrees; the existing redundancy count can include these zero rows.
+The viewer keeps calculated supporting-circle contact markers and reports
+actual span-inclusive residuals. Markers can coincide on supporting circles
+while the relation is failed because an arc excludes the contact.
+
+The [arc tangent boss](../tools/model/arc-tangent-boss.request.json) uses a
+clockwise reference semicircle and a solved 270-degree boss arc. Its line
+and circular tangencies position the boss without shared point identities.
+The boss arc and its closing chord form an exact native face, then extrusion
+makes a circular-segment solid. The selected reference arc and boss arc both
+contain their circular contact; the boss arc also contains its line contact.
+At reference radius 5 mm, boss radius 3 mm and height 8 mm, volume is
+`(3π/4 + 1/2) × 3² × 8 = 205.646003 mm³`. Radius/reference edits rebuild the
+profile and body; height edits reuse the profile. Native validity, exact arc
+radius, bounds, analytical volume and failed-span handle cleanup are tested.
+
+Model documents migrate to schema 98 and native ABI remains 52. These remain
+supporting-line/circular tangencies; ellipse and general spline contacts are
+future work. Named `tangent` endpoint relations keep their existing semantics.

@@ -75,6 +75,11 @@ pub(super) fn sketch_scene(
                 .map(|a| (a.id.as_str(), (a.center.as_str(), a.start.as_str()))),
         )
         .collect();
+    let arc_ends: HashMap<_, _> = sketch
+        .arcs
+        .iter()
+        .map(|a| (a.id.as_str(), a.end.as_str()))
+        .collect();
     let centers: HashMap<_, _> = sketch
         .circles
         .iter()
@@ -484,6 +489,20 @@ pub(super) fn sketch_scene(
             }
             _ => {}
         }
+        let arc_targets: Vec<&str> = match constraint {
+            SketchConstraint::LineCircleTangent { circle, .. } => vec![circle.as_str()],
+            SketchConstraint::CircleCircleTangent { first, second, .. } => {
+                vec![first.as_str(), second.as_str()]
+            }
+            _ => vec![],
+        };
+        for id in arc_targets {
+            if let Some(end) = arc_ends.get(id) {
+                control_names.extend(point_controls[end].iter().cloned());
+            }
+        }
+        control_names.sort();
+        control_names.dedup();
         let kind = if value.is_some() {
             AnnotationKind::Dimension
         } else {

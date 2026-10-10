@@ -58,7 +58,7 @@ class McpTests(unittest.TestCase):
         with self.assertRaises(jsonschema.ValidationError):
             jsonschema.validate(bad, schema)
         resources = self.client.call('resources/list')['result']['resources']
-        self.assertEqual(len(resources), 45)
+        self.assertEqual(len(resources), 46)
         self.assertEqual(len(self.client.call('resources/templates/list')['result']['resourceTemplates']), 1)
         read = self.client.call('resources/read', dict(uri='occt://schema/request'))['result']['contents'][0]
         self.assertEqual(json.loads(read['text']), schema)
@@ -474,6 +474,19 @@ class McpTests(unittest.TestCase):
             self.assertFalse(relation['detail']['by_construction'])
             for axis in range(2):
                 self.assertAlmostEqual(relation['anchors'][0][axis], relation['anchors'][1][axis])
+        arc_boss = self.client.tool('occt_get_example', dict(name='arc-tangent-boss'))['structuredContent']
+        jsonschema.validate(arc_boss, schema)
+        result = self.client.tool('occt_visualize_model', arc_boss)
+        self.assertFalse(result['isError'])
+        data = json.loads(self.client.call('resources/read', dict(uri=result['structuredContent']['resources']['view.json']))['result']['contents'][0]['text'])
+        scene = next(s for s in data['scenes'] if s['kind']=='sketch')
+        self.assertTrue(scene['solver']['solved'])
+        self.assertEqual(scene['solver']['free_degrees'], 0)
+        self.assertTrue(any(e['id']=='boss-arc' for e in scene['entities']))
+        for kind in ['line_circle_tangent', 'circle_circle_tangent']:
+            relation = next(a for a in scene['annotations'] if kind in a['detail'].get('constraint', {}))
+            self.assertEqual(relation['status'], 'passed')
+            self.assertLess(relation['detail']['max_residual'], 1e-7)
         # Ordinary accepted builds also publish the annotated viewer when preview is on.
         build_request = dict(schema='occb-model-request-v1',model=request['model'],outputs=request['outputs'],preview=True,step=False,stl=False)
         built = self.client.tool('occt_build',build_request)['structuredContent']

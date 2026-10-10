@@ -1043,3 +1043,177 @@ fn independent_tangency_solves_underconstrained_centres_and_rejects_equal_intern
     assert!(solution.solved);
     assert_eq!(solution.free_degrees, 1);
 }
+
+fn fixed_contact_arc(start: f64, end: f64, clockwise: bool) -> SketchDefinition {
+    let mut s = base();
+    s.points = vec![
+        point("c", 0., 0., true),
+        point("a", 4. * start.cos(), 4. * start.sin(), true),
+        point("b", 4. * end.cos(), 4. * end.sin(), true),
+    ];
+    s.arcs.push(SketchArc {
+        id: "arc".into(),
+        center: "c".into(),
+        start: "a".into(),
+        end: "b".into(),
+        clockwise,
+    });
+    s
+}
+
+#[test]
+fn independent_line_arc_tangency_enforces_direction_and_includes_span_endpoints() {
+    let params = HashMap::new();
+    let half_pi = std::f64::consts::FRAC_PI_2;
+    let mut s = fixed_contact_arc(0., half_pi, false);
+    s.points
+        .extend([point("u", -10., -4., true), point("v", 10., -4., true)]);
+    s.lines.push(line("reference", "u", "v"));
+    s.constraints = vec![SketchConstraint::LineCircleTangent {
+        line: "reference".into(),
+        circle: "arc".into(),
+        side: SketchLineSide::Left,
+    }];
+    let failed = s.solve(&params).unwrap();
+    assert!(!failed.solved); // Supporting-circle distance is correct; arc excludes bottom.
+    assert!(
+        (s.constraint_checks(&params, &failed).unwrap()[0]
+            .max_residual
+            .unwrap()
+            - 4. * half_pi)
+            .abs()
+            < 1e-7
+    );
+    s.arcs[0].clockwise = true;
+    assert!(s.solve(&params).unwrap().solved);
+    s.arcs[0].clockwise = false;
+    s.points[3] = point("u", -10., 4., true);
+    s.points[4] = point("v", 10., 4., true);
+    s.constraints[0] = SketchConstraint::LineCircleTangent {
+        line: "reference".into(),
+        circle: "arc".into(),
+        side: SketchLineSide::Right,
+    };
+    assert!(s.solve(&params).unwrap().solved); // Contact at end.
+    s.points[3] = point("u", 4., -10., true);
+    s.points[4] = point("v", 4., 10., true);
+    s.constraints[0] = SketchConstraint::LineCircleTangent {
+        line: "reference".into(),
+        circle: "arc".into(),
+        side: SketchLineSide::Left,
+    };
+    assert!(s.solve(&params).unwrap().solved); // Contact at start.
+}
+
+#[test]
+fn independent_arc_contacts_handle_angle_wraparound_and_reversed_line_direction() {
+    let params = HashMap::new();
+    let q = std::f64::consts::FRAC_PI_4;
+    let mut s = fixed_contact_arc(-q, q, false);
+    s.points
+        .extend([point("u", 4., -10., true), point("v", 4., 10., true)]);
+    s.lines.push(line("reference", "u", "v"));
+    s.constraints = vec![SketchConstraint::LineCircleTangent {
+        line: "reference".into(),
+        circle: "arc".into(),
+        side: SketchLineSide::Left,
+    }];
+    assert!(s.solve(&params).unwrap().solved);
+    s.lines[0] = line("reference", "v", "u");
+    s.constraints[0] = SketchConstraint::LineCircleTangent {
+        line: "reference".into(),
+        circle: "arc".into(),
+        side: SketchLineSide::Right,
+    };
+    assert!(s.solve(&params).unwrap().solved);
+    s.arcs[0].clockwise = true;
+    let failed = s.solve(&params).unwrap();
+    assert!(!failed.solved);
+    assert!(
+        s.constraint_checks(&params, &failed).unwrap()[0]
+            .max_residual
+            .unwrap()
+            > 3.
+    );
+}
+
+#[test]
+fn independent_arc_arc_tangency_checks_both_spans_in_external_and_internal_modes() {
+    let params = HashMap::new();
+    let half_pi = std::f64::consts::FRAC_PI_2;
+    for mode in [
+        SketchCircleTangency::External,
+        SketchCircleTangency::Internal,
+    ] {
+        let mut s = fixed_contact_arc(0., half_pi, false);
+        let d = if mode == SketchCircleTangency::External {
+            6.
+        } else {
+            2.
+        };
+        let c = d / 2_f64.sqrt();
+        let angle = if mode == SketchCircleTangency::External {
+            std::f64::consts::PI
+        } else {
+            0.
+        };
+        s.points.extend([
+            point("c2", c, c, true),
+            point("a2", c + 2. * angle.cos(), c + 2. * angle.sin(), true),
+            point(
+                "b2",
+                c + 2. * (angle + half_pi).cos(),
+                c + 2. * (angle + half_pi).sin(),
+                true,
+            ),
+        ]);
+        s.arcs.push(SketchArc {
+            id: "second".into(),
+            center: "c2".into(),
+            start: "a2".into(),
+            end: "b2".into(),
+            clockwise: false,
+        });
+        s.constraints = vec![SketchConstraint::CircleCircleTangent {
+            first: "arc".into(),
+            second: "second".into(),
+            mode,
+        }];
+        assert!(s.solve(&params).unwrap().solved);
+        for index in 0..2 {
+            s.arcs[index].clockwise = true;
+            let failed = s.solve(&params).unwrap();
+            assert!(!failed.solved);
+            assert!(
+                s.constraint_checks(&params, &failed).unwrap()[0]
+                    .max_residual
+                    .unwrap()
+                    > 1.
+            );
+            s.arcs[index].clockwise = false;
+        }
+    }
+}
+
+#[test]
+fn arc_tangency_sparse_derivatives_include_the_free_end_point() {
+    let params = HashMap::new();
+    let mut s = fixed_contact_arc(0., std::f64::consts::FRAC_PI_2, false);
+    s.points[2].fixed = false;
+    s.points
+        .extend([point("u", -4., -10., true), point("v", -4., 10., true)]);
+    s.lines.push(line("reference", "u", "v"));
+    s.constraints = vec![SketchConstraint::LineCircleTangent {
+        line: "reference".into(),
+        circle: "arc".into(),
+        side: SketchLineSide::Right,
+    }];
+    let solved = s.solve(&params).unwrap();
+    assert!(solved.solved, "residual {}", solved.max_residual);
+    assert!(s.constraint_checks(&params, &solved).unwrap()[0].satisfied);
+    assert!((solved.points["b"].x.hypot(solved.points["b"].y) - 4.).abs() < 1e-7);
+    s.profile = vec!["arc".into()];
+    let session = Session::new().unwrap();
+    let wire = s.open_wire(&session, &params, None).unwrap();
+    assert!(session.is_valid(&wire).unwrap());
+}

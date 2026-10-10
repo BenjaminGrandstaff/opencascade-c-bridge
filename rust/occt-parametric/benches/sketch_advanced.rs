@@ -54,6 +54,92 @@ fn gate(name: &str, budget: u64, run: impl FnOnce()) {
 }
 fn main() {
     gate(
+        "1000 arc-span-aware line and circular tangent components",
+        10,
+        || {
+            let mut s = sketch();
+            for i in 0..1000 {
+                let id = |name: &str| format!("{name}-{i}");
+                let x = i as f64 * 30.;
+                s.points.extend([
+                    point(id("c"), x, 0., true),
+                    point(id("start"), x, 4., true),
+                    point(id("end"), x, -4., true),
+                    point(id("a"), x - 10., -4., true),
+                    point(id("b"), x + 10., -4., true),
+                    point(id("c2"), x + 6., -1., false),
+                    point(id("start2"), x + 6., 1., false),
+                    point(id("end2"), x + 8., -1., false),
+                ]);
+                s.lines.extend([
+                    SketchLine {
+                        id: id("line"),
+                        start: id("a"),
+                        end: id("b"),
+                    },
+                    SketchLine {
+                        id: id("end-axis"),
+                        start: id("c2"),
+                        end: id("end2"),
+                    },
+                    SketchLine {
+                        id: id("start-axis"),
+                        start: id("c2"),
+                        end: id("start2"),
+                    },
+                ]);
+                s.arcs.extend([
+                    SketchArc {
+                        id: id("first"),
+                        center: id("c"),
+                        start: id("start"),
+                        end: id("end"),
+                        clockwise: true,
+                    },
+                    SketchArc {
+                        id: id("second"),
+                        center: id("c2"),
+                        start: id("start2"),
+                        end: id("end2"),
+                        clockwise: false,
+                    },
+                ]);
+                s.constraints.extend([
+                    SketchConstraint::LineCircleTangent {
+                        line: id("line"),
+                        circle: id("second"),
+                        side: SketchLineSide::Left,
+                    },
+                    SketchConstraint::CircleCircleTangent {
+                        first: id("first"),
+                        second: id("second"),
+                        mode: SketchCircleTangency::External,
+                    },
+                    SketchConstraint::Radius {
+                        curve: id("second"),
+                        value: mm(2.),
+                    },
+                    SketchConstraint::Horizontal {
+                        line: id("end-axis"),
+                    },
+                    SketchConstraint::Vertical {
+                        line: id("start-axis"),
+                    },
+                ]);
+            }
+            let params = HashMap::new();
+            let solved = s.solve(&params).unwrap();
+            assert!(solved.solved);
+            assert_eq!(solved.free_degrees, 0);
+            assert!(
+                s.constraint_checks(&params, &solved)
+                    .unwrap()
+                    .iter()
+                    .all(|c| c.satisfied)
+            );
+        },
+    );
+    gate(
         "1000 independent line-circle and circle-circle tangent components",
         10,
         || {

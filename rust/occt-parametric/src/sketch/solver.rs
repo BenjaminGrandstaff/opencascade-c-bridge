@@ -293,6 +293,38 @@ impl SketchProblem<'_> {
         }
     }
 
+    fn circular_points(&self, id: &str) -> Vec<&str> {
+        match self.entities[id] {
+            Entity::Circle(c) => vec![&c.center, &c.rim],
+            Entity::Arc(a) => vec![&a.center, &a.start, &a.end],
+            _ => unreachable!("validated circular tangency curve"),
+        }
+    }
+
+    /// Distance along the supporting circle from an excluded contact to the
+    /// nearest directed arc endpoint. Zero in the span, including endpoints.
+    fn arc_contact_residual(&self, id: &str, direction: (f64, f64), values: &[f64]) -> Option<f64> {
+        let Entity::Arc(arc) = self.entities[id] else {
+            return None;
+        };
+        let c = self.point(&arc.center, values);
+        let a = self.point(&arc.start, values);
+        let b = self.point(&arc.end, values);
+        let sign = if arc.clockwise { -1. } else { 1. };
+        let start = (a.y - c.y).atan2(a.x - c.x);
+        let end = (b.y - c.y).atan2(b.x - c.x);
+        let at = direction.1.atan2(direction.0);
+        let tau = std::f64::consts::TAU;
+        let span = (sign * (end - start)).rem_euclid(tau);
+        let along = (sign * (at - start)).rem_euclid(tau);
+        let violation = if along <= span {
+            0.
+        } else {
+            (along - span).min(tau - along)
+        };
+        Some(violation * line_length((c, a)))
+    }
+
     fn radius_points<'a>(&'a self, id: &str) -> (&'a str, &'a str) {
         match self.entities[id] {
             Entity::Circle(c) => (&c.center, &c.rim),
@@ -502,6 +534,13 @@ impl SketchProblem<'_> {
                         - (center.x - a.x) * (dy / length)
                         - sign * radius,
                 );
+                if let Some(span) = self.arc_contact_residual(
+                    circle,
+                    (sign * dy / length, -sign * dx / length),
+                    values,
+                ) {
+                    residuals.push(span);
+                }
             }
             SketchConstraint::CircleCircleTangent {
                 first,
@@ -530,6 +569,21 @@ impl SketchProblem<'_> {
                     ));
                 }
                 residuals.push(distance - target);
+                let direction = ((b.x - a.x) / distance, (b.y - a.y) / distance);
+                if let Some(span) = self.arc_contact_residual(first, direction, values) {
+                    residuals.push(span);
+                }
+                let sign = match mode {
+                    SketchCircleTangency::External => -1.,
+                    SketchCircleTangency::Internal => 1.,
+                };
+                if let Some(span) = self.arc_contact_residual(
+                    second,
+                    (sign * direction.0, sign * direction.1),
+                    values,
+                ) {
+                    residuals.push(span);
+                }
             }
             SketchConstraint::Concentric { first, second } => {
                 let a = self.point(self.center_point(first), values);
@@ -583,13 +637,14 @@ impl SketchProblem<'_> {
         let points = match constraint {
             SketchConstraint::LineCircleTangent { line, circle, .. } => {
                 let l = self.lines[line.as_str()];
-                let (c, r) = self.radius_points(circle);
-                vec![&l.start, &l.end, c, r]
+                let mut points = vec![l.start.as_str(), l.end.as_str()];
+                points.extend(self.circular_points(circle));
+                points
             }
             SketchConstraint::CircleCircleTangent { first, second, .. } => {
-                let (a, b) = self.radius_points(first);
-                let (c, d) = self.radius_points(second);
-                vec![a, b, c, d]
+                let mut points = self.circular_points(first);
+                points.extend(self.circular_points(second));
+                points
             }
             SketchConstraint::Concentric { first, second } => {
                 vec![self.center_point(first), self.center_point(second)]

@@ -177,20 +177,26 @@ impl SketchDefinition {
                     }
                 }
                 SketchConstraint::LineCircleTangent { circle, .. } => {
-                    if !matches!(entities.get(circle.as_str()), Some(Entity::Circle(_))) {
+                    if !matches!(
+                        entities.get(circle.as_str()),
+                        Some(Entity::Circle(_) | Entity::Arc(_))
+                    ) {
                         return Err(ModelError::new(
-                            "line-circle tangency requires a full circle",
+                            "line-circle tangency requires a circle or arc",
                         ));
                     }
                 }
                 SketchConstraint::CircleCircleTangent { first, second, .. } => {
                     if first == second
-                        || [first, second]
-                            .iter()
-                            .any(|id| !matches!(entities.get(id.as_str()), Some(Entity::Circle(_))))
+                        || [first, second].iter().any(|id| {
+                            !matches!(
+                                entities.get(id.as_str()),
+                                Some(Entity::Circle(_) | Entity::Arc(_))
+                            )
+                        })
                     {
                         return Err(ModelError::new(
-                            "circle-circle tangency requires two distinct full circles",
+                            "circle-circle tangency requires two distinct circles or arcs",
                         ));
                     }
                 }
