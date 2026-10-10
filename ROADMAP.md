@@ -11,18 +11,30 @@ tracks status and order.
 | C ABI (`src/`, `include/`) | ABI 56 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 107 | Active development |
+| `occt-parametric` (engineering layer) | Schema 108 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 120 + first-use integration 1 (+1 doc test), recipes 3, parametric 525 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 19 + branch command 2 + model command 55, MCP Python 9, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 120 + first-use integration 1 (+1 doc test), recipes 3, parametric 529 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 19 + branch command 2 + model command 56, MCP Python 9, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform code also passes. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
 | Coverage | Last recorded: 93.61% lines overall, test code excluded; C++ 94.13% lines, 87.40% branches, 100% functions; Rust 93.42% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 159 Rust cases plus 5 model-command and 29 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Scale benchmarks | 160 Rust cases plus 5 model-command and 30 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
+
+- Independent ellipse–ellipse tangency (schema 108; native ABI 56 unchanged):
+  two distinct full ellipses share a seeded native contact and tangent alignment.
+  Sparse dependencies include both sets of defining points. External/internal
+  contacts, independent rotations, equal axes, seams, reversed role order,
+  fixed conflicts and non-tangent shared positions are verified. The viewer
+  exposes both measured contacts and related dimension controls. The solid
+  example verifies native volume/bounds, axes/rotation edits, height-only
+  profile reuse and failed-edit retention. Catalog: 44 examples, 12 schemas,
+  56 resources; request schema: 149 `$defs`. A 1,000-solid native axis-edit
+  gate passes in 1.837 s; MCP renders 20 annotated pairs in 0.252 s
+  (10 s budgets).
 
 - Independent ellipse–circle/arc tangency (schema 107; native ABI 56 unchanged):
   measured native ellipse contacts and derivatives share circular contact and
@@ -59,7 +71,7 @@ tracks status and order.
   failed-edit retention. The catalog has 41 examples, 12 schemas and 53
   resources, with 149 request definitions. A 1,000-pair native build/edit gate
   passes in 2.380 s; MCP renders 20 annotated pairs in 0.199 s (10 s budgets).
-  Spline–ellipse contacts follow in schema 106; ellipse–circle contacts follow in schema 107; ellipse–ellipse contact remains open.
+  Spline–ellipse contacts follow in schema 106; ellipse–circle contacts follow in schema 107; ellipse–ellipse contacts follow in schema 108.
 
 - Independent spline–circle/arc tangency (schema 104; native ABI 56 unchanged):
   a seeded contact slides along the bounded native spline and satisfies the
@@ -108,7 +120,7 @@ tracks status and order.
   1,000 native pad builds in 0.739 s and 20 annotated pads in 0.181 s
   (10 s budgets).
   Line–spline contacts follow in schema 103; independent curve–curve contacts
-  follow in schemas 104–107.
+  follow in schemas 104–108.
 
 - Non-clamped explicit B-spline bases (schema 101 / ABI 55): named geometric
   endpoints are separate from control poles and constrained by four native
@@ -179,7 +191,7 @@ tracks status and order.
   a native profile/solid, and verifies radius, reference and height edits.
   The catalog has 33 examples and 12 schemas (45 resources); request schemas
   have 147 definitions. At that increment, catalog examples target schema 97;
-  arc-span and ellipse tangencies follow in schemas 98 and 102–107. A 1,000-component sparse
+  arc-span and ellipse tangencies follow in schemas 98 and 102–108. A 1,000-component sparse
   solve/diagnostics gate passes in 0.027 s; MCP renders 20 tangent bosses and
   contact annotations in 0.152 s (both 10 s budgets).
 
@@ -1750,6 +1762,11 @@ documents and the API, and verified in tests. The local viewer
 (`occt-view --serve`) edits those documents but adds no capability of its own.
 
 ### Capabilities
+
+For continued sketch authoring, the next feature is radius-controlled profile
+fillets and chamfers, with explicit corner selection, native output validation,
+parameter-linked annotations and predictable failures when a corner cannot
+accept the requested size.
 
 The earlier geometry and assembly milestones are complete. Manufacturing
 product definition is the next general CAD priority; additional rib variants

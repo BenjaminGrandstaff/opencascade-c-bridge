@@ -203,6 +203,17 @@ impl SketchDefinition {
                         ));
                     }
                 }
+                SketchConstraint::EllipseEllipseTangent { first, second, .. } => {
+                    if first == second
+                        || [first, second].iter().any(|id| {
+                            !matches!(entities.get(id.as_str()), Some(Entity::Ellipse(_)))
+                        })
+                    {
+                        return Err(ModelError::new(
+                            "ellipse-ellipse tangency requires two distinct full ellipses",
+                        ));
+                    }
+                }
                 SketchConstraint::SplineEllipseTangent {
                     spline, ellipse, ..
                 } => {
@@ -443,6 +454,7 @@ impl SketchConstraint {
             | Self::Tangent { point: id, .. }
             | Self::SplineCircleTangent { point: id, .. }
             | Self::SplineSplineTangent { point: id, .. }
+            | Self::EllipseEllipseTangent { point: id, .. }
             | Self::SplineEllipseTangent { point: id, .. }
             | Self::EllipseCircleTangent { point: id, .. } => point(id),
             Self::PointLineDistance {

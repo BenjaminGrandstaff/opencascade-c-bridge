@@ -97,7 +97,7 @@ volume, solid connectivity, minimum convex or concave radius, and sampled wall
 thickness, draft, and overhang, all with required, preferred, or advisory
 priority. Results carry measured values, evidence quality, and collision
 witnesses; see [Requirement rules](docs/REQUIREMENTS.md). Schema v1 through
-v106 documents migrate to v107 during load; unsupported
+v107 documents migrate to v108 during load; unsupported
 future versions are rejected.
 Managed regeneration incrementally reuses unchanged outputs and
 rebuilds dirty features plus their downstream dependents. Graph regeneration
@@ -647,13 +647,13 @@ profiles (ABI 47, model schema 72).
 up to a selected face, and up to the next complete face limit, including
 inclined and curved surfaces. Target
 geometry participates in regeneration; the viewer shows the actual length.
-The native ABI is 56; model schema is 107. Native surface-ray witnesses measure
+The native ABI is 56; model schema is 108. Native surface-ray witnesses measure
 viewer extents on nonuniform caps.
 
 
 [Blind drill-point holes](docs/HOLES.md) add configurable conical bottoms, native tip
 containment checks, full-diameter depth callouts and linked viewer dimensions.
-The current model schema is 107 and native ABI is 56.
+The current model schema is 108 and native ABI is 56.
 
 
 [Geometry-driven holes](docs/HOLES.md) stop at a selected or next covering input
@@ -679,7 +679,7 @@ Schema 79 adds `planar_region`; ABI 50 also retains its extracted face history.
 [Hollow path sweeps](docs/HOLLOW_SWEEPS.md) transport holed planar sections into
 bent tubes and multiple-bore parts, preserving wall ancestry and linked route
 controls. ABI 50 adds explicit history-preserving topology extraction; the
-current model schema is 107. Rebuild the native library and Rust executables together.
+current model schema is 108. Rebuild the native library and Rust executables together.
 
 [Hollow profile lofts](docs/LOFTS.md#explicit-hollow-tracks-schema-80) use explicit
 inner section tracks to make tapered ducts and multiple-bore transitions.
@@ -756,7 +756,7 @@ The [threaded-rod AI example](tools/model/threaded-rod.request.json) exposes
 modeled threads with linked major diameter, pitch, run and derived turn labels.
 Its source rod follows diameter/run edits. See
 [thread dimensions](docs/THREADS.md#ai-example-and-viewer-dimensions). Current AI
-examples use schema 107; native ABI is 56.
+examples use schema 108; native ABI is 56.
 
 
 The [edge-treatment AI example](tools/model/edge-treatments.request.json)
@@ -891,4 +891,12 @@ circular arcs, with measured contacts and separate arc-domain diagnostics.
 The [ellipse tangent boss](tools/model/ellipse-tangent-boss.request.json)
 provides editable ellipse axes, rotation, circle radius and extrusion height.
 See [ellipse–circle tangency](docs/SKETCHES.md#ellipse-circle-tangency-schema-107).
+Native ABI remains 56.
+
+Schema 108 adds `ellipse_ellipse_tangent` with measured native contacts and
+derivatives on two full ellipses. The
+[ellipse tangent pair](tools/model/ellipse-tangent-pair.request.json) offers
+independent axis dimensions and rotation for both curves, linked contact
+annotations and an extruded solid. See
+[ellipse–ellipse tangency](docs/SKETCHES.md#ellipse-ellipse-tangency-schema-108).
 Native ABI remains 56.

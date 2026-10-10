@@ -2634,3 +2634,183 @@ fn ellipse_circle_contact_validates_roles_degenerate_geometry_and_diagnostics() 
         assert!(bad.solve(&params).is_err());
     }
 }
+
+fn ellipse_pair_contact_sketch() -> (SketchDefinition, HashMap<String, ParameterValue>) {
+    let r: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../tools/model/ellipse-tangent-pair.request.json"
+    ))
+    .unwrap();
+    let doc = ModelDocument::from_json(&r["model"].to_string()).unwrap();
+    let part = PartInstance {
+        id: "part".into(),
+        definition: &doc.family,
+        overrides: HashMap::new(),
+        provenance: "test".into(),
+    };
+    let FeatureOperation::SketchFace { sketch } = &doc.family.features[0].operation else {
+        unreachable!()
+    };
+    ((**sketch).clone(), part.resolved_parameters().unwrap())
+}
+
+#[test]
+fn ellipse_pair_contact_solves_free_axes_and_independent_rotations() {
+    let (s, mut params) = ellipse_pair_contact_sketch();
+    for (a, b, u, v, tilt, upper_tilt) in [
+        (5., 3., 4., 2., 0., 0.),
+        (8., 4., 5., 2., 0.7, 0.3),
+        (
+            12.,
+            2.,
+            4.,
+            1.,
+            std::f64::consts::FRAC_PI_3,
+            std::f64::consts::FRAC_PI_6,
+        ),
+    ] {
+        for (id, value) in [
+            ("semi_major", a),
+            ("semi_minor", b),
+            ("upper_major", u),
+            ("upper_minor", v),
+        ] {
+            params.insert(
+                id.into(),
+                ParameterValue::Scalar(Quantity::length(value, LengthUnit::Millimeter)),
+            );
+        }
+        for (id, value) in [("tilt", tilt), ("upper_tilt", upper_tilt)] {
+            params.insert(id.into(), ParameterValue::Scalar(Quantity::scalar(value)));
+        }
+        let solved = s.solve(&params).unwrap();
+        assert!(solved.solved, "{}", solved.max_residual);
+        assert_eq!(solved.free_degrees, 0);
+        let (p, sine) = s
+            .ellipse_ellipse_tangent_contacts(&params, &solved)
+            .unwrap()[&7];
+        assert!(sine.abs() < 1e-9);
+        for q in &p[1..] {
+            assert!((q.x - p[0].x).abs() < 1e-9 && (q.y - p[0].y).abs() < 1e-9);
+        }
+        let check = &s.constraint_checks(&params, &solved).unwrap()[7];
+        assert!(check.satisfied && !check.by_construction);
+        if tilt == 0. && upper_tilt == 0. {
+            assert!(p[0].x.abs() < 1e-7 && (p[0].y - b).abs() < 1e-7);
+            assert!((solved.points["upper-center"].y - b - v).abs() < 1e-7);
+        }
+        let mut swapped = s.clone();
+        let SketchConstraint::EllipseEllipseTangent { first, second, .. } =
+            &mut swapped.constraints[7]
+        else {
+            unreachable!()
+        };
+        std::mem::swap(first, second);
+        assert!(swapped.solve(&params).unwrap().solved);
+    }
+}
+
+#[test]
+fn ellipse_pair_contact_checks_external_internal_seam_and_non_tangent_crossings() {
+    let mut s = base();
+    s.points = vec![
+        point("c", 0., 0., true),
+        point("a", 5., 0., true),
+        point("b", 0., 3., true),
+        point("d", 0., 4., true),
+        point("e", 2., 4., true),
+        point("f", 0., 5., true),
+        point("p", 0., 3., true),
+    ];
+    s.ellipses = vec![
+        SketchEllipse {
+            id: "first".into(),
+            center: "c".into(),
+            major: "a".into(),
+            minor: "b".into(),
+        },
+        SketchEllipse {
+            id: "second".into(),
+            center: "d".into(),
+            major: "e".into(),
+            minor: "f".into(),
+        },
+    ];
+    s.constraints = vec![SketchConstraint::EllipseEllipseTangent {
+        first: "first".into(),
+        second: "second".into(),
+        point: "p".into(),
+    }];
+    let params = HashMap::new();
+    assert!(s.solve(&params).unwrap().solved);
+    s.points[3] = point("d", 0., 2., true);
+    s.points[4] = point("e", 2., 2., true);
+    s.points[5] = point("f", 0., 3., true);
+    assert!(s.solve(&params).unwrap().solved); // Internal tangency.
+    s.points[3] = point("d", 7., 0., true);
+    s.points[4] = point("e", 9., 0., true);
+    s.points[5] = point("f", 7., 1., true);
+    s.points[6] = point("p", 5., 0., true);
+    assert!(s.solve(&params).unwrap().solved); // First ellipse's native seam.
+    s.points[2] = point("b", 0., 5., true);
+    assert!(s.solve(&params).unwrap().solved); // Equal axes remain a valid native ellipse.
+    s.points[2] = point("b", 0., 3., true);
+    s.points[3] = point("d", 2., 3., true);
+    s.points[4] = point("e", 4., 3., true);
+    s.points[5] = point("f", 2., 4., true);
+    s.points[6] = point("p", 0., 3., true);
+    let crossing = s.solve(&params).unwrap();
+    assert!(!crossing.solved);
+    let (p, sine) = s
+        .ellipse_ellipse_tangent_contacts(&params, &crossing)
+        .unwrap()[&0];
+    for q in &p[1..] {
+        assert!((q.x - p[0].x).abs() < 1e-9 && (q.y - p[0].y).abs() < 1e-9);
+    }
+    assert!(sine.abs() > 0.9); // Coincident positions with perpendicular derivatives fail.
+}
+
+#[test]
+fn ellipse_pair_contact_validates_distinct_roles_axes_and_fixed_conflicts() {
+    let (s, params) = ellipse_pair_contact_sketch();
+    for role in 0..3 {
+        let mut bad = s.clone();
+        let SketchConstraint::EllipseEllipseTangent {
+            first,
+            second,
+            point,
+        } = &mut bad.constraints[7]
+        else {
+            unreachable!()
+        };
+        match role {
+            0 => *second = first.clone(),
+            1 => *first = "baseline".into(),
+            _ => *point = "missing".into(),
+        };
+        assert!(bad.solve(&params).is_err());
+    }
+    let mut fixed = s.clone();
+    for p in &mut fixed.points {
+        p.fixed = true;
+    }
+    let solved = fixed.solve(&params).unwrap();
+    assert!(!solved.solved && !fixed.constraint_checks(&params, &solved).unwrap()[7].satisfied);
+    let mut missing = solved.clone();
+    missing.points.remove("contact");
+    assert!(
+        fixed
+            .ellipse_ellipse_tangent_contacts(&params, &missing)
+            .is_err()
+    );
+    let mut invalid = solved;
+    invalid.points.get_mut("contact").unwrap().x = f64::NAN;
+    assert!(
+        fixed
+            .ellipse_ellipse_tangent_contacts(&params, &invalid)
+            .is_err()
+    );
+    let p = fixed.points.iter_mut().find(|p| p.id == "major").unwrap();
+    p.x = length(0.);
+    p.y = length(0.);
+    assert!(fixed.solve(&params).is_err());
+}

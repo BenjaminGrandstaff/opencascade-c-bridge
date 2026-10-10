@@ -258,6 +258,12 @@ pub enum SketchConstraint {
         second: String,
         point: String,
     },
+    /// Tangency at a seeded contact on two distinct full native ellipses.
+    EllipseEllipseTangent {
+        first: String,
+        second: String,
+        point: String,
+    },
     /// Tangency at a seeded contact on a bounded native spline and full ellipse.
     SplineEllipseTangent {
         spline: String,

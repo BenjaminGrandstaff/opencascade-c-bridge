@@ -189,6 +189,65 @@ impl SketchDefinition {
         Ok(result)
     }
 
+    /// Seed point, native full ellipse contact, second native full ellipse contact,
+    /// and measured tangent sine, indexed by ellipse-ellipse constraint number.
+    pub fn ellipse_ellipse_tangent_contacts(
+        &self,
+        parameters: &HashMap<String, ParameterValue>,
+        solution: &SketchSolution,
+    ) -> Result<HashMap<usize, ([SketchPoint2; 3], f64)>, ModelError> {
+        if !self
+            .constraints
+            .iter()
+            .any(|c| matches!(c, SketchConstraint::EllipseEllipseTangent { .. }))
+        {
+            return Ok(HashMap::new());
+        }
+        if !self.projections.is_empty() {
+            return Err(ModelError::new(
+                "projected sketch requires source-geometry resolution before contact diagnostics",
+            ));
+        }
+        if solution
+            .points
+            .values()
+            .any(|p| !p.x.is_finite() || !p.y.is_finite())
+        {
+            return Err(ModelError::new(
+                "ellipse contact diagnostic point is not finite",
+            ));
+        }
+        self.validate(parameters)?;
+        let fixed = self
+            .points
+            .iter()
+            .map(|p| {
+                solution
+                    .points
+                    .get(&p.id)
+                    .copied()
+                    .map(|v| (p.id.as_str(), v))
+                    .ok_or_else(|| ModelError::new("contact solution is missing a point"))
+            })
+            .collect::<Result<HashMap<_, _>, _>>()?;
+        let problem = SketchProblem::new(self, parameters, HashMap::new(), fixed)?;
+        let mut result = HashMap::new();
+        for (index, c) in self.constraints.iter().enumerate() {
+            if let SketchConstraint::EllipseEllipseTangent {
+                first,
+                second,
+                point,
+            } = c
+            {
+                result.insert(
+                    index,
+                    problem.ellipse_ellipse_contact(first, second, point, &[])?,
+                );
+            }
+        }
+        Ok(result)
+    }
+
     /// Seed point, bounded native spline contact, native ellipse contact,
     /// and measured tangent sine, indexed by spline-ellipse constraint number.
     pub fn spline_ellipse_tangent_contacts(

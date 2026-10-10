@@ -63,12 +63,12 @@ for(let i=0;i<data.scenes.length;i++){
   assert(!elements.overlay.children.some(e=>e.attributes['data-annotation']===contact.id),'constraint toggle hides spline-circle contact');
   elements.constraints.checked=true;elements.constraints.emit('change');
  }
- for(const contact of viewer.scene.annotations.filter(a=>(a.detail?.constraint?.spline_spline_tangent||a.detail?.constraint?.spline_ellipse_tangent))){
+ for(const contact of viewer.scene.annotations.filter(a=>(a.detail?.constraint?.spline_spline_tangent||a.detail?.constraint?.spline_ellipse_tangent||a.detail?.constraint?.ellipse_ellipse_tangent))){
   assert.equal(contact.detail.residual_unit,'mixed');assert.equal(contact.detail.by_construction,false);assert.equal(contact.anchors.length,3);
   assert.deepEqual(JSON.parse(JSON.stringify(contact.detail.contact_residuals.residual_units)),['mm','mm','mm','mm','dimensionless']);
   const button=elements.annotations.children.find(e=>e.dataset.annotation===contact.id);assert(button);button.emit('click');
   assert.equal(viewer.selected,contact.id);
-  assert(elements.overlay.children.some(e=>e.attributes['data-annotation']===contact.id),'both native spline contacts are drawn');
+  assert(elements.overlay.children.some(e=>e.attributes['data-annotation']===contact.id),'both native curve contacts are drawn');
   elements.constraints.checked=false;elements.constraints.emit('change');
   assert(!elements.overlay.children.some(e=>e.attributes['data-annotation']===contact.id),'constraint toggle hides spline-pair contact');
   elements.constraints.checked=true;elements.constraints.emit('change');

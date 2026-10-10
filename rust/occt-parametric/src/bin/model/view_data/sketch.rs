@@ -19,6 +19,9 @@ pub(super) fn sketch_scene(
     let checks = sketch
         .constraint_checks(parameters, &solution)
         .stage("sketch")?;
+    let ellipse_pair_contacts = sketch
+        .ellipse_ellipse_tangent_contacts(parameters, &solution)
+        .stage("sketch")?;
     let spline_pair_contacts = sketch
         .spline_spline_tangent_contacts(parameters, &solution)
         .stage("sketch")?;
@@ -377,6 +380,16 @@ pub(super) fn sketch_scene(
                 vec![point.clone()],
                 None,
             ),
+            SketchConstraint::EllipseEllipseTangent {
+                first,
+                second,
+                point,
+            } => (
+                "T ELLIPSES",
+                vec![first.clone(), second.clone(), point.clone()],
+                vec![point.clone()],
+                None,
+            ),
             SketchConstraint::SplineEllipseTangent {
                 spline,
                 ellipse,
@@ -529,6 +542,13 @@ pub(super) fn sketch_scene(
         match constraint {
             SketchConstraint::SplineSplineTangent { .. } => {
                 anchors = spline_pair_contacts[&index]
+                    .0
+                    .into_iter()
+                    .map(|p| [p.x, p.y, 0.])
+                    .collect();
+            }
+            SketchConstraint::EllipseEllipseTangent { .. } => {
+                anchors = ellipse_pair_contacts[&index]
                     .0
                     .into_iter()
                     .map(|p| [p.x, p.y, 0.])
@@ -724,6 +744,23 @@ pub(super) fn sketch_scene(
                     }
                 }
             }
+            SketchConstraint::EllipseEllipseTangent {
+                first,
+                second,
+                point,
+            } => {
+                let mut ids = vec![point.as_str()];
+                for id in [first, second] {
+                    let e = ellipses[id.as_str()];
+                    ids.extend([e.center.as_str(), e.major.as_str(), e.minor.as_str()]);
+                }
+                for id in ids {
+                    control_names.extend(point_controls[id].iter().cloned());
+                    if let Some(names) = dimension_point_controls.get(id) {
+                        control_names.extend(names.iter().cloned());
+                    }
+                }
+            }
             SketchConstraint::SplineEllipseTangent {
                 spline,
                 ellipse,
@@ -880,6 +917,7 @@ pub(super) fn sketch_scene(
             SketchConstraint::LineSplineTangent { .. }
             | SketchConstraint::SplineCircleTangent { .. }
             | SketchConstraint::SplineSplineTangent { .. }
+            | SketchConstraint::EllipseEllipseTangent { .. }
             | SketchConstraint::SplineEllipseTangent { .. }
             | SketchConstraint::EllipseCircleTangent { .. } => "mixed",
             SketchConstraint::Parallel { .. }
@@ -904,7 +942,7 @@ pub(super) fn sketch_scene(
                     "by_construction": check.by_construction,
                     "tolerance": 1e-9,
                     "residual_unit": residual_unit,
-                    "contact_residuals": spline_pair_contacts.get(&index).or_else(||spline_ellipse_contacts.get(&index)).map(|(p,sine)|json!({
+                    "contact_residuals": spline_pair_contacts.get(&index).or_else(||ellipse_pair_contacts.get(&index)).or_else(||spline_ellipse_contacts.get(&index)).map(|(p,sine)|json!({
                         "position_residual_mm":(p[0].x-p[1].x).abs().max((p[0].y-p[1].y).abs()).max((p[0].x-p[2].x).abs()).max((p[0].y-p[2].y).abs()),
                         "tangent_sine":sine,"residual_units":["mm","mm","mm","mm","dimensionless"]
                     })).or_else(||spline_circle_contacts.get(&index).or_else(||ellipse_circle_contacts.get(&index)).map(|c|json!({

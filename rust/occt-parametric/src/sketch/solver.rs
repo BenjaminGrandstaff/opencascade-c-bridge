@@ -60,6 +60,7 @@ impl SketchDefinition {
                             | SketchConstraint::SplineCircleTangent { .. }
                             | SketchConstraint::SplineSplineTangent { .. }
                             | SketchConstraint::SplineEllipseTangent { .. }
+                            | SketchConstraint::EllipseEllipseTangent { .. }
                             | SketchConstraint::EllipseCircleTangent { .. }
                             | SketchConstraint::CircleCircleTangent { .. }
                             | SketchConstraint::Concentric { .. }
@@ -419,6 +420,19 @@ impl SketchProblem<'_> {
     ) -> Result<([SketchPoint2; 3], f64), ModelError> {
         let (p, a, u) = self.spline_contact_data(first, point, values)?;
         let (_, b, v) = self.spline_contact_data(second, point, values)?;
+        let zero = SketchPoint2 { x: 0., y: 0. };
+        Ok(([p, a, b], normalized_cross((zero, u), (zero, v))?))
+    }
+
+    pub(super) fn ellipse_ellipse_contact(
+        &self,
+        first: &str,
+        second: &str,
+        point: &str,
+        values: &[f64],
+    ) -> Result<([SketchPoint2; 3], f64), ModelError> {
+        let (p, a, u) = self.ellipse_contact_data(first, point, values)?;
+        let (_, b, v) = self.ellipse_contact_data(second, point, values)?;
         let zero = SketchPoint2 { x: 0., y: 0. };
         Ok(([p, a, b], normalized_cross((zero, u), (zero, v))?))
     }
@@ -784,6 +798,15 @@ impl SketchProblem<'_> {
                 let ([p, a, b], sine) = self.spline_spline_contact(first, second, point, values)?;
                 residuals.extend([p.x - a.x, p.y - a.y, p.x - b.x, p.y - b.y, sine]);
             }
+            SketchConstraint::EllipseEllipseTangent {
+                first,
+                second,
+                point,
+            } => {
+                let ([p, a, b], sine) =
+                    self.ellipse_ellipse_contact(first, second, point, values)?;
+                residuals.extend([p.x - a.x, p.y - a.y, p.x - b.x, p.y - b.y, sine]);
+            }
             SketchConstraint::SplineEllipseTangent {
                 spline,
                 ellipse,
@@ -997,6 +1020,20 @@ impl SketchProblem<'_> {
                         unreachable!("validated spline pair")
                     };
                     refs.extend(self.spline_neighbor_refs(s));
+                }
+                refs
+            }
+            SketchConstraint::EllipseEllipseTangent {
+                first,
+                second,
+                point,
+            } => {
+                let mut refs = vec![point.as_str()];
+                for id in [first, second] {
+                    let Entity::Ellipse(e) = self.entities[id.as_str()] else {
+                        unreachable!("validated ellipse pair")
+                    };
+                    refs.extend([e.center.as_str(), e.major.as_str(), e.minor.as_str()]);
                 }
                 refs
             }

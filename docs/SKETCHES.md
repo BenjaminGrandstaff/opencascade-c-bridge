@@ -79,7 +79,7 @@ export are verified. A 1,000-pair solve and residual-diagnostic gate passes in
 0.009 s (10 s budget); 20 solids plus 60 source sketch scenes and matched-radius
 annotations pass through MCP in 0.316 s (10 s budget).
 
-Current authoring examples use schema 107. Older model documents migrate
+Current authoring examples use schema 108. Older model documents migrate
 without adding constraints or changing their entities. Current native ABI is 56.
 
 ## Saved profile operations
@@ -395,7 +395,7 @@ basis. Adjacent endpoint poles must define a nonzero direction for this
 relation. Existing interpolated splines still use constructed endpoint
 tangency. Independent spline contacts follow in schemas 103–106;
 ellipse-circle/arc contacts follow in schema 107. Ellipse-to-ellipse tangency
-remains open.
+follows in schema 108.
 
 The viewer exposes the basis, pole IDs and evaluated weights, draws a dashed
 control polygon, and links a `B-spline degree …` annotation to coordinate and
@@ -836,4 +836,32 @@ The [ellipse tangent boss](../tools/model/ellipse-tangent-boss.request.json)
 example extrudes the positioned circle. Editing `semi_major`, `semi_minor` and
 `tilt` changes its contact and placement. `boss_radius` changes the profile and
 solid; `height` reuses the profile. Older documents migrate to schema 107
+without adding constraints; native ABI remains 56.
+
+## Ellipse-ellipse tangency (schema 108)
+
+`ellipse_ellipse_tangent` names two distinct full ellipses (`first`, `second`)
+and a seeded contact `point`. OpenCascade measures the closest point and
+native derivative on each ellipse. The residuals are seed minus each contact's
+x/y coordinates in millimeters and normalized tangent cross product. Opposite
+native derivative directions are allowed.
+
+External and internal contacts use the same local relation; initial coordinates
+and seed select a branch. A passing constraint establishes contact and tangent
+alignment, not global containment or nonintersection. Separate named curves
+may occupy the same geometry. Native seams and equal-axis ellipses are supported.
+Each ellipse retains its intrinsic perpendicular-axis equation and positive,
+ordered axis validation. Unknown curves, repeated IDs and nonfinite diagnostic
+coordinates are rejected.
+
+The viewer shows the seed and both measured contacts, four positional units
+and one dimensionless tangent unit, plus links to dimensions and coordinates
+of both ellipses. Fixed conflicts remain inspectable. The public
+`ellipse_ellipse_tangent_contacts` method returns the three contact positions
+and measured tangent sine, indexed by constraint number.
+
+The [ellipse tangent pair](../tools/model/ellipse-tangent-pair.request.json)
+example extrudes the upper ellipse. `semi_major`, `semi_minor`, and `tilt` edit
+the reference; `upper_major`, `upper_minor`, and `upper_tilt` edit the solid's
+profile. `height` reuses the profile. Older documents migrate to schema 108
 without adding constraints; native ABI remains 56.
