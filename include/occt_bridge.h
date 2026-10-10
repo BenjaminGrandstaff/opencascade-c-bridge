@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define OCCT_BRIDGE_ABI_VERSION 57u
+#define OCCT_BRIDGE_ABI_VERSION 58u
 #define OCCT_BRIDGE_INVALID_SHAPE_ID UINT64_C(0)
 
 #if defined(_WIN32) && defined(OCCT_BRIDGE_BUILD_SHARED)
@@ -825,8 +825,9 @@ OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_scale(
  * profile or fails explicitly; join 0=round arcs, 1=intersections.
  */
 OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_create_ellipse_wire_axes(occt_bridge_session_t*, occt_bridge_vec3_t center, occt_bridge_vec3_t normal, occt_bridge_vec3_t major_axis, double major, double minor, occt_bridge_shape_id_t*);
-/* Immutable corner edits on closed planar wires. Corner must match a remaining
- * vertex with two line/circular-arc neighbors. Positive sizes; oversize edits
+/* Immutable corner edits on open or closed planar wires. Corner must match a remaining
+ * internal vertex with two line/circular-arc neighbors. Open endpoints stay fixed.
+ * Positive sizes; oversize edits
  * fail without allocating a result. Chamfer distances follow incoming/outgoing
  * wire traversal and use curvilinear abscissa for arcs. */
 OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_fillet_wire_corner(occt_bridge_session_t*, occt_bridge_shape_id_t, occt_bridge_vec3_t corner, double radius, occt_bridge_shape_id_t*);

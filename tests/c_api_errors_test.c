@@ -1334,6 +1334,17 @@ static void corner_edits(occt_bridge_session_t* session) {
     EXPECT(occt_bridge_chamfer_wire_corner(session,wire,corner,-1,3,&out),ARG);
     EXPECT(occt_bridge_chamfer_wire_corner(session,wire,corner,2,3,&out),OK);
     occt_bridge_shape_release(session,out);
+    occt_bridge_shape_id_t open=0;
+    EXPECT(occt_bridge_create_polyline_wire(session,points,3,0,&open),OK);
+    EXPECT(occt_bridge_fillet_wire_corner(session,open,vec(20,0,0),2,&out),OK);
+    int closed=1;EXPECT(occt_bridge_wire_is_closed(session,out,&closed),OK);
+    EXPECT_TRUE(closed==0,"fillet preserves open path");occt_bridge_shape_release(session,out);
+    EXPECT(occt_bridge_chamfer_wire_corner(session,open,vec(20,0,0),2,3,&out),OK);occt_bridge_shape_release(session,out);
+    EXPECT(occt_bridge_fillet_wire_corner(session,open,vec(0,0,0),2,&out),ARG);
+    EXPECT(occt_bridge_fillet_wire_corner(session,open,vec(20,0,0),100,&out),GEOMETRY);
+    EXPECT(occt_bridge_chamfer_wire_corner(session,open,vec(20,0,0),20,2,&out),GEOMETRY);
+    EXPECT_TRUE(out==0,"failed open corner edit clears result");
+    occt_bridge_shape_release(session,open);
     occt_bridge_shape_release(session,wire);
 }
 

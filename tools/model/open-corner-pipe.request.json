@@ -1,0 +1,566 @@
+{
+  "schema": "occb-model-view-v1",
+  "model": {
+    "schema_version": 110,
+    "family": {
+      "id": "open-corner-pipe",
+      "version": 1,
+      "parameters": [
+        {
+          "id": "width",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 40,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 20,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 80,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "height",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 25,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 15,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 50,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "fillet_radius",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 4,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 3,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 8,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "chamfer_incoming",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 3,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 1,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 8,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "chamfer_outgoing",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 5,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 1,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 8,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "end_run",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 30,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 15,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 60,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "radius",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 1,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 0.2,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 1.5,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        }
+      ],
+      "derived_parameters": [],
+      "derived_vector_parameters": [],
+      "constraints": [],
+      "requirements": [
+        {
+          "id": "valid",
+          "version": 1,
+          "kind": "validation",
+          "priority": "required",
+          "statement": "Sweep valid",
+          "rule": {
+            "shape_valid": {
+              "output": "body"
+            }
+          },
+          "provenance": "Demonstration assumptions",
+          "traces": [
+            {
+              "feature": "body"
+            }
+          ]
+        }
+      ],
+      "datums": [],
+      "features": [
+        {
+          "id": "body",
+          "operation": {
+            "sweep": {
+              "profile": "profile",
+              "path": "path",
+              "orientation": "corrected_frenet"
+            }
+          }
+        },
+        {
+          "id": "profile",
+          "operation": {
+            "sketch_face": {
+              "sketch": {
+                "id": "disc",
+                "origin": {
+                  "literal": {
+                    "x": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    },
+                    "y": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                },
+                "x_axis": {
+                  "literal": {
+                    "x": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "y_axis": {
+                  "literal": {
+                    "x": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "points": [
+                  {
+                    "id": "center",
+                    "x": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "edge",
+                    "x": {
+                      "parameter": "radius"
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": true
+                  }
+                ],
+                "lines": [],
+                "circles": [
+                  {
+                    "id": "rim",
+                    "center": "center",
+                    "rim": "edge"
+                  }
+                ],
+                "profile": [
+                  "rim"
+                ],
+                "constraints": [
+                  {
+                    "radius": {
+                      "curve": "rim",
+                      "value": {
+                        "parameter": "radius"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "path",
+          "operation": {
+            "sketch_open_wire": {
+              "sketch": {
+                "id": "open-corner-path",
+                "origin": {
+                  "literal": {
+                    "x": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    },
+                    "y": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                },
+                "x_axis": {
+                  "literal": {
+                    "x": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "y_axis": {
+                  "literal": {
+                    "x": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "points": [
+                  {
+                    "id": "A",
+                    "x": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "B",
+                    "x": {
+                      "parameter": "width"
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": false
+                  },
+                  {
+                    "id": "C",
+                    "x": {
+                      "parameter": "width"
+                    },
+                    "y": {
+                      "parameter": "height"
+                    },
+                    "fixed": false
+                  },
+                  {
+                    "id": "D",
+                    "x": {
+                      "add": [
+                        {
+                          "parameter": "width"
+                        },
+                        {
+                          "parameter": "end_run"
+                        }
+                      ]
+                    },
+                    "y": {
+                      "parameter": "height"
+                    },
+                    "fixed": false
+                  }
+                ],
+                "lines": [
+                  {
+                    "id": "AB",
+                    "start": "A",
+                    "end": "B"
+                  },
+                  {
+                    "id": "BC",
+                    "start": "B",
+                    "end": "C"
+                  },
+                  {
+                    "id": "CD",
+                    "start": "C",
+                    "end": "D"
+                  }
+                ],
+                "profile": [
+                  "AB",
+                  "BC",
+                  "CD"
+                ],
+                "constraints": [
+                  {
+                    "horizontal": {
+                      "line": "AB"
+                    }
+                  },
+                  {
+                    "vertical": {
+                      "line": "BC"
+                    }
+                  },
+                  {
+                    "horizontal": {
+                      "line": "CD"
+                    }
+                  },
+                  {
+                    "distance": {
+                      "first": "A",
+                      "second": "B",
+                      "value": {
+                        "parameter": "width"
+                      }
+                    }
+                  },
+                  {
+                    "distance": {
+                      "first": "B",
+                      "second": "C",
+                      "value": {
+                        "parameter": "height"
+                      }
+                    }
+                  },
+                  {
+                    "distance": {
+                      "first": "C",
+                      "second": "D",
+                      "value": {
+                        "parameter": "end_run"
+                      }
+                    }
+                  }
+                ],
+                "profile_operations": [
+                  {
+                    "fillet": {
+                      "point": "B",
+                      "radius": {
+                        "parameter": "fillet_radius"
+                      }
+                    }
+                  },
+                  {
+                    "chamfer": {
+                      "point": "C",
+                      "incoming": {
+                        "parameter": "chamfer_incoming"
+                      },
+                      "outgoing": {
+                        "parameter": "chamfer_outgoing"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "instances": [
+      {
+        "base": {
+          "id": "part",
+          "overrides": {},
+          "provenance": "Swept circular section along an open line/arc path with native corner edits"
+        }
+      }
+    ]
+  },
+  "outputs": [
+    {
+      "instance": "part",
+      "output": "body"
+    },
+    {
+      "instance": "part",
+      "output": "path"
+    }
+  ],
+  "sketches": true
+}

@@ -600,5 +600,24 @@ with tempfile.TemporaryDirectory(prefix='occb-mcp-scale-') as root:
         elapsed=time.monotonic()-started
         assert elapsed<10
         print(f'PASS MCP 20 native fillet/chamfer plates with derived profiles and linked sizes: {elapsed:.3f}s / 10s')
+        open_corners=client.tool('occt_get_example',dict(name='open-corner-pipe'))['structuredContent']
+        for i in range(1,20):
+            open_corners['model']['instances'].append({'clone':dict(id=f'part-{i}',source='part',overrides={},provenance='scale')})
+            open_corners['outputs'].extend(dict(instance=f'part-{i}',output=out) for out in ['body','path'])
+        started=time.monotonic()
+        result=client.tool('occt_visualize_model',open_corners)
+        assert not result['isError'],result
+        data=json.loads(client.call('resources/read',dict(uri=result['structuredContent']['resources']['view.json']))['result']['contents'][0]['text'])
+        solids=[s for s in data['scenes'] if s['kind']=='solid'];paths=[s for s in data['scenes'] if s['kind']=='sketch' and s['feature']=='path']
+        assert len(solids)==40 and all(s['valid'] for s in solids)
+        assert len(paths)==20 and all(s['solver']['solved'] and len(s['edited_profile'])==5 for s in paths)
+        for scene in paths:
+            edits=[a for a in scene['annotations'] if a['kind']=='profile_operation']
+            assert len(edits)==2 and all(a['status']=='driving' and a['detail']['error'] is None for a in edits)
+            assert edits[0]['targets']==['B'] and edits[1]['targets']==['C']
+            assert 'fillet_radius' in edits[0]['parameters'] and 'chamfer_incoming' in edits[1]['parameters']
+        elapsed=time.monotonic()-started
+        assert elapsed<10
+        print(f'PASS MCP 20 open fillet/chamfer paths and swept pipe solids: {elapsed:.3f}s / 10s')
     finally:
         client.close()

@@ -2,7 +2,7 @@
 //! Independent components keep sparse storage/fill local. A point-on-spline
 //! touches its defining points; interpolation/projection cost scales with that
 //! curve rather than all sketch points. Native handles are released each loop.
-use occt_bridge::Session;
+use occt_bridge::{Session, ShapeType};
 use occt_parametric::*;
 use std::{
     collections::HashMap,
@@ -53,6 +53,89 @@ fn gate(name: &str, budget: u64, run: impl FnOnce()) {
     println!("PASS {name}: {:.3}s / {budget}s", elapsed.as_secs_f64());
 }
 fn main() {
+    gate(
+        "1000 native open fillet/chamfer path regenerations",
+        10,
+        || {
+            let request: serde_json::Value = serde_json::from_str(include_str!(
+                "../../../tools/model/open-corner-pipe.request.json"
+            ))
+            .unwrap();
+            let doc = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+            let mut family = doc.family.clone();
+            family.features.retain(|f| f.id == "path");
+            family.requirements.clear();
+            let session = Session::new().unwrap();
+            let mut part = PartInstance {
+                id: "part".into(),
+                definition: &family,
+                overrides: HashMap::new(),
+                provenance: "scale".into(),
+            };
+            for i in 0..1000 {
+                let r = if i % 2 == 0 { 4. } else { 6. };
+                part.overrides.insert(
+                    "fillet_radius".into(),
+                    ParameterValue::Scalar(Quantity::length(r, LengthUnit::Millimeter)),
+                );
+                let built = part.regenerate(&session).unwrap();
+                let path = built.shape("path").unwrap();
+                assert!(session.is_valid(path).unwrap() && !session.wire_is_closed(path).unwrap());
+                let length = session
+                    .subshapes(path, ShapeType::Edge)
+                    .unwrap()
+                    .iter()
+                    .map(|e| session.edge_length(e).unwrap())
+                    .sum::<f64>();
+                assert!(
+                    (length - (95. - 2. * r + std::f64::consts::FRAC_PI_2 * r - 8. + 34f64.sqrt()))
+                        .abs()
+                        < 1e-6
+                );
+                drop(built);
+                assert_eq!(session.shape_count().unwrap(), 0);
+            }
+        },
+    );
+    gate(
+        "250 open fillet/chamfer paths and swept pipes with radius edits",
+        10,
+        || {
+            let request: serde_json::Value = serde_json::from_str(include_str!(
+                "../../../tools/model/open-corner-pipe.request.json"
+            ))
+            .unwrap();
+            let doc = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+            let session = Session::new().unwrap();
+            let mut part = PartInstance {
+                id: "part".into(),
+                definition: &doc.family,
+                overrides: HashMap::new(),
+                provenance: "scale".into(),
+            };
+            for i in 0..250 {
+                let r = if i % 2 == 0 { 4. } else { 6. };
+                part.overrides.insert(
+                    "fillet_radius".into(),
+                    ParameterValue::Scalar(Quantity::length(r, LengthUnit::Millimeter)),
+                );
+                let built = part.regenerate(&session).unwrap();
+                let body = built.shape("body").unwrap();
+                assert!(session.is_valid(body).unwrap());
+                let expected = 95. - 2. * r + std::f64::consts::FRAC_PI_2 * r - 8. + 34f64.sqrt();
+                assert!(
+                    (session.volume(body).unwrap() - std::f64::consts::PI * expected).abs() < 1e-4
+                );
+                assert!(
+                    !session
+                        .wire_is_closed(built.shape("path").unwrap())
+                        .unwrap()
+                );
+                drop(built);
+                assert_eq!(session.shape_count().unwrap(), 0);
+            }
+        },
+    );
     gate(
         "1000 native fillet/chamfer plates with radius edits",
         10,

@@ -58,7 +58,7 @@ class McpTests(unittest.TestCase):
         with self.assertRaises(jsonschema.ValidationError):
             jsonschema.validate(bad, schema)
         resources = self.client.call('resources/list')['result']['resources']
-        self.assertEqual(len(resources), 57)
+        self.assertEqual(len(resources), 58)
         self.assertEqual(len(self.client.call('resources/templates/list')['result']['resourceTemplates']), 1)
         read = self.client.call('resources/read', dict(uri='occt://schema/request'))['result']['contents'][0]
         self.assertEqual(json.loads(read['text']), schema)
@@ -676,6 +676,22 @@ class McpTests(unittest.TestCase):
         self.assertIn('fillet_radius', edits[0]['parameters'])
         self.assertIn('chamfer_incoming', edits[1]['parameters'])
         self.assertIn('chamfer_outgoing', edits[1]['parameters'])
+        open_corners = self.client.tool('occt_get_example', dict(name='open-corner-pipe'))['structuredContent']
+        jsonschema.validate(open_corners, schema)
+        result = self.client.tool('occt_visualize_model', open_corners)
+        self.assertFalse(result['isError'])
+        data = json.loads(self.client.call('resources/read', dict(uri=result['structuredContent']['resources']['view.json']))['result']['contents'][0]['text'])
+        scene = next(s for s in data['scenes'] if s['kind']=='sketch' and s['feature']=='path')
+        self.assertTrue(scene['solver']['solved'])
+        self.assertEqual(len(scene['edited_profile']), 5)
+        edits = [a for a in scene['annotations'] if a['kind']=='profile_operation']
+        self.assertEqual(len(edits), 2)
+        self.assertTrue(all(a['status']=='driving' and a['detail']['error'] is None and len(a['anchors'])==1 for a in edits))
+        self.assertEqual(edits[0]['targets'], ['B'])
+        self.assertEqual(edits[1]['targets'], ['C'])
+        self.assertIn('fillet_radius', edits[0]['parameters'])
+        self.assertIn('chamfer_incoming', edits[1]['parameters'])
+        self.assertTrue(all(s['valid'] for s in data['scenes'] if s['kind']=='solid'))
         # Ordinary accepted builds also publish the annotated viewer when preview is on.
         build_request = dict(schema='occb-model-request-v1',model=request['model'],outputs=request['outputs'],preview=True,step=False,stl=False)
         built = self.client.tool('occt_build',build_request)['structuredContent']

@@ -2996,3 +2996,113 @@ fn sketch_corner_edits_handle_concave_corners_and_reverse_chamfer_order() {
             .any(|p| p.x.abs() < 1e-8 && (p.y - 3.).abs() < 1e-8)
     );
 }
+
+fn open_corner_sketch() -> (SketchDefinition, HashMap<String, ParameterValue>) {
+    let r: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../tools/model/open-corner-pipe.request.json"
+    ))
+    .unwrap();
+    let doc = ModelDocument::from_json(&r["model"].to_string()).unwrap();
+    let part = PartInstance {
+        id: "part".into(),
+        definition: &doc.family,
+        overrides: HashMap::new(),
+        provenance: "test".into(),
+    };
+    let FeatureOperation::SketchOpenWire { sketch } = &doc.family.features[2].operation else {
+        unreachable!()
+    };
+    ((**sketch).clone(), part.resolved_parameters().unwrap())
+}
+
+#[test]
+fn sketch_open_corner_edits_keep_solved_sources_endpoints_and_native_length() {
+    let (s, params) = open_corner_sketch();
+    let solved = s.solve(&params).unwrap();
+    assert!(solved.solved && solved.free_degrees == 0);
+    assert_eq!(solved.points["B"], SketchPoint2 { x: 40., y: 0. });
+    let session = Session::new().unwrap();
+    let wire = s.open_wire(&session, &params, None).unwrap();
+    assert!(session.is_valid(&wire).unwrap() && !session.wire_is_closed(&wire).unwrap());
+    let path_length = session
+        .subshapes(&wire, ShapeType::Edge)
+        .unwrap()
+        .iter()
+        .map(|e| session.edge_length(e).unwrap())
+        .sum::<f64>();
+    assert!((path_length - (79. + 2. * std::f64::consts::PI + 34f64.sqrt())).abs() < 1e-6);
+    let preview = s
+        .preview_edited_profile(&session, &params, &solved, 32, false)
+        .unwrap();
+    assert_eq!(preview.len(), 5);
+    for (x, y) in [(0., 0.), (70., 25.)] {
+        assert!(
+            preview
+                .iter()
+                .flatten()
+                .any(|p| (p.x - x).hypot(p.y - y) < 1e-8)
+        );
+    }
+    let mut offset = s.clone();
+    offset
+        .profile_operations
+        .push(SketchProfileOperation::Offset {
+            distance: length(0.5),
+            join: SketchOffsetJoin::Intersection,
+        });
+    let wire = offset.open_wire(&session, &params, None).unwrap();
+    assert!(session.is_valid(&wire).unwrap() && !session.wire_is_closed(&wire).unwrap());
+}
+
+#[test]
+fn sketch_open_corner_edits_reject_endpoints_oversizes_and_preserve_handles() {
+    let (s, params) = open_corner_sketch();
+    let session = Session::new().unwrap();
+    let count = session.shape_count().unwrap();
+    for point in ["A", "D"] {
+        let mut bad = s.clone();
+        bad.profile_operations = vec![SketchProfileOperation::Fillet {
+            point: point.into(),
+            radius: length(4.),
+        }];
+        assert!(bad.open_wire(&session, &params, None).is_err());
+    }
+    let mut bad = s.clone();
+    bad.profile_operations[0] = SketchProfileOperation::Fillet {
+        point: "B".into(),
+        radius: length(100.),
+    };
+    assert!(bad.open_wire(&session, &params, None).is_err());
+    assert_eq!(session.shape_count().unwrap(), count);
+    assert!(s.face(&session, &params).is_err()); // An open edited boundary cannot become a sketch face.
+}
+
+#[test]
+fn sketch_open_corner_edits_preserve_parameterized_rotated_planes() {
+    let (mut s, mut params) = open_corner_sketch();
+    params.insert(
+        "width".into(),
+        ParameterValue::Scalar(Quantity::length(60., LengthUnit::Millimeter)),
+    );
+    params.insert(
+        "fillet_radius".into(),
+        ParameterValue::Scalar(Quantity::length(6., LengthUnit::Millimeter)),
+    );
+    s.origin = VectorExpr::Literal(VectorQuantity::lengths(
+        10.,
+        20.,
+        30.,
+        LengthUnit::Millimeter,
+    ));
+    s.y_axis = VectorExpr::Literal(VectorQuantity::scalars(0., 0., 1.));
+    let session = Session::new().unwrap();
+    let wire = s.open_wire(&session, &params, None).unwrap();
+    let bounds = session.exact_bounds(&wire).unwrap();
+    assert!(
+        (bounds.min.x - 10.).abs() < 1e-7
+            && (bounds.max.x - 100.).abs() < 1e-7
+            && (bounds.min.z - 30.).abs() < 1e-7
+            && (bounds.max.z - 55.).abs() < 1e-7
+    );
+    assert!(session.is_valid(&wire).unwrap());
+}

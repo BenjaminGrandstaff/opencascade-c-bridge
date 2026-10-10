@@ -8,21 +8,36 @@ tracks status and order.
 
 | Layer | Version | State |
 |---|---|---|
-| C ABI (`src/`, `include/`) | ABI 57 | Stable; exact version match required |
+| C ABI (`src/`, `include/`) | ABI 58 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 109 | Active development |
+| `occt-parametric` (engineering layer) | Schema 110 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 123 + first-use integration 1 (+1 doc test), recipes 3, parametric 533 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 19 + branch command 2 + model command 57, MCP Python 9, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 126 + first-use integration 1 (+1 doc test), recipes 3, parametric 537 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 19 + branch command 2 + model command 58, MCP Python 9, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform code also passes. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
 | Coverage | Last recorded: 93.61% lines overall, test code excluded; C++ 94.13% lines, 87.40% branches, 100% functions; Rust 93.42% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 161 Rust cases plus 5 model-command and 31 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Scale benchmarks | 163 Rust cases plus 5 model-command and 32 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
+
+- Open-profile sketch fillets and chamfers (schema 110 / ABI 58): internal
+  line/arc corners use analytical native fillets or arc-length trims and a
+  chamfer edge. Remote and open endpoints stay fixed, trimmed neighbors stay
+  within source bounds, and the result remains a valid connected open wire.
+  Native tests verify orientation, circular arcs, excluded endpoint selections,
+  consumed/oversized edges, handle cleanup, rotated planes and small/large
+  distant geometry. The viewer preserves source constraints and linked corner
+  labels. The pipe example verifies path length, swept volume, section/path
+  reuse and failed-edit retention. Catalog: 46 examples, 12 schemas,
+  58 resources; request schema: 149 `$defs`. A 1,000-path native edit
+  gate passes in 0.207 s; 250 complete pipe builds pass in 2.929 s
+  (10 s budgets). MCP renders 20 annotated pipes in 1.657 s / 10 s.
+  An exploratory 1,000-pipe run took 11.776 s; the solid gate uses the
+  established 250-sweep size, with path editing measured independently.
 
 - Native sketch profile fillets and chamfers (schema 109 / ABI 57): named
   remaining corners on closed line/arc profiles use OpenCascade's planar
@@ -35,8 +50,7 @@ tracks status and order.
   verifies area/volume, size edits, depth-only profile reuse and failed-edit
   retention. Catalog: 45 examples, 12 schemas, 57 resources; request schema:
   149 `$defs`. A 1,000-plate native radius-edit gate passes in 3.425 s;
-  MCP renders 20 annotated plates in 0.236 s (10 s budgets). Open-profile
-  and general-curve corner edits remain future work.
+  MCP renders 20 annotated plates in 0.236 s (10 s budgets). Open-profile edits follow in schema 110; general-curve corner edits remain future work.
 
 - Independent ellipse–ellipse tangency (schema 108; native ABI 56 unchanged):
   two distinct full ellipses share a seeded native contact and tangent alignment.
@@ -1777,9 +1791,9 @@ documents and the API, and verified in tests. The local viewer
 
 ### Capabilities
 
-For continued sketch authoring, the next feature is open-profile corner
-fillets and chamfers. Closed line/arc profile corner edits are implemented;
-general spline/ellipse neighbors remain beyond the native planar editor.
+For continued sketch authoring, the next feature is fillets at corners with
+spline neighbors. Open and closed line/arc corner edits are implemented;
+general curves require a broader native edge-pair constructor.
 
 The earlier geometry and assembly milestones are complete. Manufacturing
 product definition is the next general CAD priority; additional rib variants

@@ -79,7 +79,7 @@ export are verified. A 1,000-pair solve and residual-diagnostic gate passes in
 0.009 s (10 s budget); 20 solids plus 60 source sketch scenes and matched-radius
 annotations pass through MCP in 0.316 s (10 s budget).
 
-Current authoring examples use schema 109. Older model documents migrate
+Current authoring examples use schema 110. Older model documents migrate
 without adding constraints or changing their entities. Current native ABI is 56.
 
 ## Saved profile operations
@@ -893,8 +893,8 @@ while dimensions and constraints remain attached to source points and entities.
 Concave corners and rotated sketch planes are supported. The native result must
 form a valid closed planar face. Too-large sizes, missing remaining vertices,
 unsupported neighbors and invalid results fail without mutating the source.
-Open profiles and general spline/ellipse corner neighbors are not supported
-by this editor.
+Open-profile corner edits follow in schema 110 below. General spline/ellipse
+corner neighbors remain unsupported by this editor.
 
 Order operations as entity trims/extensions, corner edits, then offsets. Each
 named corner may be edited once; offsets cannot precede a named corner edit.
@@ -914,3 +914,39 @@ Size edits rebuild the profile and solid; a depth-only edit reuses the profile.
 The bridge adds immutable `fillet_wire_corner` and `chamfer_wire_corner`
 wrappers. Rebuild the native library and Rust tools together for ABI 57.
 Older documents migrate to schema 109 without adding profile operations.
+
+## Open-profile corner edits (schema 110 / ABI 58)
+
+The existing `fillet` and `chamfer` profile operations now also edit internal
+corners on open line/arc profiles. No new operation tags are introduced.
+Named end points cannot be corner selections because two adjacent edges are
+required. Open endpoints and remote neighbor endpoints remain fixed.
+
+Open fillets use OpenCascade's analytical planar edge-pair constructor. Native
+result edges are reoriented to the source traversal and checked for shrinkage
+within their original bounded curves. Supporting-curve extensions and consumed
+neighbors are rejected. Open chamfers trim each neighbor by native arc length
+and insert a straight connecting edge. Incoming/outgoing distances retain their
+traversal meaning, including on circular arcs. Straight/tangent joins are
+rejected for chamfers. The entire source must be a valid planar wire, and the
+result must remain a connected valid open wire with one added edge per edit.
+
+Size and operation-order validation matches closed profiles: trims/extensions,
+then corner edits, then offsets. The viewer retains source constraints, anchors
+edit labels at named corners and draws the native edited path. Errors remain
+inspectable without converting the open profile into a closed face.
+
+The [open corner pipe](../tools/model/open-corner-pipe.request.json) sweeps a
+circular section along a path with a fillet at B and asymmetric chamfer at C.
+For its right-angle corners, path length is
+`width + height + end_run - 2*fillet_radius + π*fillet_radius/2
+ - chamfer_incoming - chamfer_outgoing
+ + sqrt(chamfer_incoming² + chamfer_outgoing²)`.
+Tests compare native pipe volume to `π*radius²*path_length`. Path size edits
+reuse the section; section radius edits reuse the path. Failed corner edits
+preserve accepted solids. Native tests also cover reversed traversal, circular
+arc neighbors, rotated planes and small/large profiles far from the origin.
+
+Rebuild native and Rust tools together for ABI 58. Older documents migrate to
+schema 110 without adding operations. Spline/ellipse neighbors remain future
+work.

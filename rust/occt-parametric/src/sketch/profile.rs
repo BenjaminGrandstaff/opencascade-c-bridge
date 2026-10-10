@@ -249,12 +249,9 @@ impl SketchDefinition {
                     )?;
                 }
                 SketchProfileOperation::Fillet { point, radius } => {
-                    if !closed {
-                        return Err(ModelError::new("profile fillets require a closed profile"));
-                    }
                     let source = match joined.take() {
                         Some(s) => s,
-                        None => session.join_wires(&wires.iter().collect::<Vec<_>>(), true)?,
+                        None => session.join_wires(&wires.iter().collect::<Vec<_>>(), closed)?,
                     };
                     joined = Some(session.fillet_wire_corner(
                         &source,
@@ -267,12 +264,9 @@ impl SketchDefinition {
                     incoming,
                     outgoing,
                 } => {
-                    if !closed {
-                        return Err(ModelError::new("profile chamfers require a closed profile"));
-                    }
                     let source = match joined.take() {
                         Some(s) => s,
-                        None => session.join_wires(&wires.iter().collect::<Vec<_>>(), true)?,
+                        None => session.join_wires(&wires.iter().collect::<Vec<_>>(), closed)?,
                     };
                     joined = Some(session.chamfer_wire_corner(
                         &source,

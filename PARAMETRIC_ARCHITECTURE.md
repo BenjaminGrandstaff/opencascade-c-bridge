@@ -7,7 +7,7 @@ so they can generate and regenerate families of related parts.
 ## Implementation status
 
 The architecture in this document is both a description of implemented
-boundaries and a roadmap. As of ABI version 57, the repository contains three
+boundaries and a roadmap. As of ABI version 58, the repository contains three
 Rust layers:
 
 1. **`occt-bridge`** safely wraps session-owned OCCT handles. It includes
@@ -1482,8 +1482,9 @@ curve contacts expose measured positions and derivatives in the viewer;
 these are local solves rather than global containment checks. Closed line/arc sketch
 profiles now support native fillets and chamfers at named corners (schema 109 /
 ABI 57), with source constraints preserved and parameter-linked derived
-boundaries. Continued sketch work should extend these corner treatments to
-open profiles; spline/ellipse neighbors need a broader geometric editor.
+boundaries. Open line/arc corner edits now preserve endpoints and bounded
+neighbors (schema 110 / ABI 58). Continued sketch work should extend fillets
+to spline neighbors through a broader native edge-pair constructor.
 
 The next cross-layer work should prioritize manufacturing product definition:
 standards-verified material hatch presets and drawing conventions, followed by

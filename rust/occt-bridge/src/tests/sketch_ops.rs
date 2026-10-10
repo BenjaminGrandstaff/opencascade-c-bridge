@@ -132,7 +132,7 @@ fn native_corner_edits_preserve_area_order_inputs_and_handles() {
 }
 
 #[test]
-fn native_corner_edits_accept_rotated_planes_and_reject_open_nonplanar_and_spline_neighbors() {
+fn native_corner_edits_accept_rotated_planes_and_reject_nonplanar_and_spline_neighbors() {
     let s = Session::new().unwrap();
     let p = |x, y| Vec3::new(100. + x, 200., 300. + y);
     let wire = s
@@ -144,7 +144,8 @@ fn native_corner_edits_accept_rotated_planes_and_reject_open_nonplanar_and_splin
     let open = s
         .create_polyline_wire(&[p(0., 0.), p(20., 0.), p(20., 10.)], false)
         .unwrap();
-    assert!(s.fillet_wire_corner(&open, p(20., 0.), 2.).is_err());
+    let rounded_open = s.fillet_wire_corner(&open, p(20., 0.), 2.).unwrap();
+    assert!(!s.wire_is_closed(&rounded_open).unwrap());
     let crooked = s
         .create_polyline_wire(
             &[
@@ -226,4 +227,151 @@ fn native_corner_edits_support_circular_arc_neighbors_and_curvilinear_chamfer_si
             "{point:?}"
         );
     }
+}
+
+#[test]
+fn native_open_corner_edits_keep_endpoints_order_length_and_handles() {
+    let s = Session::new().unwrap();
+    let p = |x, y| Vec3::new(x, y, 0.);
+    {
+        let wire = s
+            .create_polyline_wire(&[p(0., 0.), p(20., 0.), p(20., 10.), p(40., 10.)], false)
+            .unwrap();
+        let rounded = s.fillet_wire_corner(&wire, p(20., 0.), 2.).unwrap();
+        let treated = s
+            .chamfer_wire_corner(&rounded, p(20., 10.), 3., 5.)
+            .unwrap();
+        assert!(s.is_valid(&treated).unwrap());
+        assert!(!s.wire_is_closed(&treated).unwrap());
+        let edges = s.subshapes(&treated, ShapeType::Edge).unwrap();
+        assert_eq!(edges.len(), 5);
+        let length = edges.iter().map(|e| s.edge_length(e).unwrap()).sum::<f64>();
+        assert!((length - (50. - 4. + std::f64::consts::PI - 8. + 34f64.sqrt())).abs() < 1e-7);
+        let vertices = s.subshapes(&treated, ShapeType::Vertex).unwrap();
+        for point in [p(0., 0.), p(40., 10.), p(20., 7.), p(25., 10.)] {
+            assert!(vertices.iter().any(|v| {
+                let q = s.exact_bounds(v).unwrap().min;
+                (q.x - point.x).hypot(q.y - point.y) < 1e-7
+            }));
+        }
+        let count = s.shape_count().unwrap();
+        for point in [p(0., 0.), p(40., 10.)] {
+            assert!(s.fillet_wire_corner(&wire, point, 2.).is_err());
+        }
+        assert!(s.fillet_wire_corner(&wire, p(20., 0.), 100.).is_err());
+        assert!(s.chamfer_wire_corner(&wire, p(20., 0.), 20., 2.).is_err());
+        assert_eq!(s.shape_count().unwrap(), count);
+        let other = Session::new().unwrap();
+        assert_wrong_session(
+            other
+                .chamfer_wire_corner(&wire, p(20., 0.), 2., 3.)
+                .unwrap_err(),
+        );
+    }
+    assert_eq!(s.shape_count().unwrap(), 0);
+}
+
+#[test]
+fn native_open_corner_edits_support_arcs_and_reversed_distance_roles() {
+    let s = Session::new().unwrap();
+    let p = |x, y| Vec3::new(x, y, 0.);
+    let wire = s
+        .create_curve_wire(
+            &[
+                CurveSegment::Line {
+                    start: p(0., 0.),
+                    end: p(10., 0.),
+                },
+                CurveSegment::Arc {
+                    start: p(10., 0.),
+                    middle: p(10. / 2f64.sqrt(), 10. / 2f64.sqrt()),
+                    end: p(0., 10.),
+                },
+            ],
+            false,
+        )
+        .unwrap();
+    let rounded = s.fillet_wire_corner(&wire, p(10., 0.), 1.).unwrap();
+    assert!(s.is_valid(&rounded).unwrap() && !s.wire_is_closed(&rounded).unwrap());
+    let cut = s.chamfer_wire_corner(&wire, p(10., 0.), 2., 3.).unwrap();
+    let vertices = s.subshapes(&cut, ShapeType::Vertex).unwrap();
+    for point in [
+        p(8., 0.),
+        p(10. * 0.3f64.cos(), 10. * 0.3f64.sin()),
+        p(0., 0.),
+        p(0., 10.),
+    ] {
+        assert!(
+            vertices.iter().any(|v| {
+                let q = s.exact_bounds(v).unwrap().min;
+                (q.x - point.x).hypot(q.y - point.y) < 1e-6
+            }),
+            "{point:?}"
+        );
+    }
+    let reverse_arc = s
+        .create_curve_wire(
+            &[
+                CurveSegment::Arc {
+                    start: p(0., 10.),
+                    middle: p(10. / 2f64.sqrt(), 10. / 2f64.sqrt()),
+                    end: p(10., 0.),
+                },
+                CurveSegment::Line {
+                    start: p(10., 0.),
+                    end: p(0., 0.),
+                },
+            ],
+            false,
+        )
+        .unwrap();
+    let reverse_fillet = s.fillet_wire_corner(&reverse_arc, p(10., 0.), 1.).unwrap();
+    assert!(s.is_valid(&reverse_fillet).unwrap() && !s.wire_is_closed(&reverse_fillet).unwrap());
+    let reverse = s
+        .create_polyline_wire(&[p(20., 10.), p(20., 0.), p(0., 0.)], false)
+        .unwrap();
+    let cut = s.chamfer_wire_corner(&reverse, p(20., 0.), 2., 3.).unwrap();
+    let vertices = s.subshapes(&cut, ShapeType::Vertex).unwrap();
+    for point in [p(20., 2.), p(17., 0.)] {
+        assert!(vertices.iter().any(|v| {
+            let q = s.exact_bounds(v).unwrap().min;
+            (q.x - point.x).hypot(q.y - point.y) < 1e-7
+        }));
+    }
+}
+
+#[test]
+fn native_open_corner_edits_preserve_small_large_and_distant_rotated_geometry() {
+    let s = Session::new().unwrap();
+    for scale in [0.01, 1., 1000.] {
+        let p = |x, y| Vec3::new(1e6 + x * scale, 2e6, 3e6 + y * scale);
+        let wire = s
+            .create_polyline_wire(&[p(0., 0.), p(20., 0.), p(20., 10.)], false)
+            .unwrap();
+        let rounded = s.fillet_wire_corner(&wire, p(20., 0.), 2. * scale).unwrap();
+        assert!(s.is_valid(&rounded).unwrap());
+        let length = s
+            .subshapes(&rounded, ShapeType::Edge)
+            .unwrap()
+            .iter()
+            .map(|e| s.edge_length(e).unwrap())
+            .sum::<f64>();
+        assert!(
+            (length - (26. + std::f64::consts::PI) * scale).abs() < scale * 1e-5,
+            "{scale}: {length}"
+        );
+    }
+    let p = |x, y, z| Vec3::new(x, y, z);
+    let wire = s
+        .create_polyline_wire(
+            &[
+                p(0., 0., 0.),
+                p(20., 0., 0.),
+                p(20., 10., 0.),
+                p(40., 10., 1.),
+            ],
+            false,
+        )
+        .unwrap();
+    assert!(s.fillet_wire_corner(&wire, p(20., 0., 0.), 2.).is_err());
 }

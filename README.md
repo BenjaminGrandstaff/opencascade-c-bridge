@@ -3,7 +3,7 @@
 A small, stable C ABI over Open Cascade (OCCT), designed to be wrapped safely
 from Rust and other languages. Open Cascade C++ objects never cross the ABI.
 
-The current C ABI version is **57**.
+The current C ABI version is **58**.
 
 ## Current API
 
@@ -97,7 +97,7 @@ volume, solid connectivity, minimum convex or concave radius, and sampled wall
 thickness, draft, and overhang, all with required, preferred, or advisory
 priority. Results carry measured values, evidence quality, and collision
 witnesses; see [Requirement rules](docs/REQUIREMENTS.md). Schema v1 through
-v108 documents migrate to v109 during load; unsupported
+v109 documents migrate to v110 during load; unsupported
 future versions are rejected.
 Managed regeneration incrementally reuses unchanged outputs and
 rebuilds dirty features plus their downstream dependents. Graph regeneration
@@ -647,13 +647,13 @@ profiles (ABI 47, model schema 72).
 up to a selected face, and up to the next complete face limit, including
 inclined and curved surfaces. Target
 geometry participates in regeneration; the viewer shows the actual length.
-The native ABI is 57; model schema is 109. Native surface-ray witnesses measure
+The native ABI is 58; model schema is 110. Native surface-ray witnesses measure
 viewer extents on nonuniform caps.
 
 
 [Blind drill-point holes](docs/HOLES.md) add configurable conical bottoms, native tip
 containment checks, full-diameter depth callouts and linked viewer dimensions.
-The current model schema is 109 and native ABI is 57.
+The current model schema is 110 and native ABI is 58.
 
 
 [Geometry-driven holes](docs/HOLES.md) stop at a selected or next covering input
@@ -679,7 +679,7 @@ Schema 79 adds `planar_region`; ABI 50 also retains its extracted face history.
 [Hollow path sweeps](docs/HOLLOW_SWEEPS.md) transport holed planar sections into
 bent tubes and multiple-bore parts, preserving wall ancestry and linked route
 controls. ABI 50 adds explicit history-preserving topology extraction; the
-current model schema is 109. Rebuild the native library and Rust executables together.
+current model schema is 110. Rebuild the native library and Rust executables together.
 
 [Hollow profile lofts](docs/LOFTS.md#explicit-hollow-tracks-schema-80) use explicit
 inner section tracks to make tapered ducts and multiple-bore transitions.
@@ -756,7 +756,7 @@ The [threaded-rod AI example](tools/model/threaded-rod.request.json) exposes
 modeled threads with linked major diameter, pitch, run and derived turn labels.
 Its source rod follows diameter/run edits. See
 [thread dimensions](docs/THREADS.md#ai-example-and-viewer-dimensions). Current AI
-examples use schema 109; native ABI is 57.
+examples use schema 110; native ABI is 58.
 
 
 The [edge-treatment AI example](tools/model/edge-treatments.request.json)
@@ -906,4 +906,11 @@ at named corners of closed line/arc profiles. The
 [corner treated plate](tools/model/corner-treated-plate.request.json)
 shows editable sizes, the derived boundary and an extruded solid. Failed sizes
 preserve accepted geometry. See [profile corner edits](docs/SKETCHES.md#profile-fillets-and-chamfers-schema-109--abi-57).
+Rebuild native and Rust tools together.
+
+Schema 110 / ABI 58 extends native fillets and chamfers to internal corners of
+open line/arc profiles, preserving endpoints and bounded neighbors. The
+[open corner pipe](tools/model/open-corner-pipe.request.json) edits its path and
+sweeps it into a valid solid with linked corner controls. See
+[open profile edits](docs/SKETCHES.md#open-profile-corner-edits-schema-110--abi-58).
 Rebuild native and Rust tools together.
