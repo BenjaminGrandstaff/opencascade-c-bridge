@@ -244,6 +244,12 @@ pub enum SketchConstraint {
         circle: String,
         side: SketchLineSide,
     },
+    /// Independent line tangency at a seeded point on the bounded native spline.
+    LineSplineTangent {
+        line: String,
+        spline: String,
+        point: String,
+    },
     /// Full ellipse tangency to the infinite supporting line, without a shared point.
     LineEllipseTangent {
         line: String,

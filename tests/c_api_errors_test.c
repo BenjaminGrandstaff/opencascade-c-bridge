@@ -1201,6 +1201,16 @@ static void sketch_edits(occt_bridge_session_t* session) {
     EXPECT(occt_bridge_curve_closest_point(session,wire,vec(NAN,0,0),&nearest),ARG);
     EXPECT(occt_bridge_curve_closest_point(session,wire,vec(5,3,0),&nearest),OK);
     EXPECT_TRUE(fabs(nearest.x-5)<1e-9 && fabs(nearest.y)<1e-9,"curve projection point");
+    occt_bridge_vec3_t direction;
+    EXPECT(occt_bridge_curve_closest_data(NULL,wire,z,&nearest,&direction),ARG);
+    EXPECT(occt_bridge_curve_closest_data(session,wire,z,NULL,&direction),ARG);
+    EXPECT(occt_bridge_curve_closest_data(session,wire,z,&nearest,NULL),ARG);
+    EXPECT(occt_bridge_curve_closest_data(session,unknown,z,&nearest,&direction),MISSING);
+    EXPECT(occt_bridge_curve_closest_data(session,wire,vec(NAN,0,0),&nearest,&direction),ARG);
+    EXPECT(occt_bridge_curve_closest_data(session,box,z,&nearest,&direction),GEOMETRY);
+    EXPECT_TRUE(nearest.x==0 && direction.x==0,"failed curve contact clears outputs");
+    EXPECT(occt_bridge_curve_closest_data(session,wire,vec(5,3,0),&nearest,&direction),OK);
+    EXPECT_TRUE(fabs(nearest.x-5)<1e-9 && fabs(nearest.y)<1e-9 && fabs(direction.x)>0,"native contact position and tangent");
     int closed=0;
     EXPECT(occt_bridge_wire_is_closed(session,wire,NULL),ARG);
     EXPECT(occt_bridge_wire_is_closed(session,unknown,&closed),MISSING);

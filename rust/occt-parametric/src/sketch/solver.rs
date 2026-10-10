@@ -56,6 +56,7 @@ impl SketchDefinition {
                             | SketchConstraint::Tangent { .. }
                             | SketchConstraint::LineCircleTangent { .. }
                             | SketchConstraint::LineEllipseTangent { .. }
+                            | SketchConstraint::LineSplineTangent { .. }
                             | SketchConstraint::CircleCircleTangent { .. }
                             | SketchConstraint::Concentric { .. }
                             | SketchConstraint::Symmetric { .. }
@@ -339,6 +340,55 @@ impl SketchProblem<'_> {
         Ok(self.native.create_curve_wire(&[segment], periodic)?)
     }
 
+    pub(super) fn line_spline_contact(
+        &self,
+        line: &str,
+        spline: &str,
+        point: &str,
+        values: &[f64],
+    ) -> Result<([SketchPoint2; 3], f64), ModelError> {
+        let Entity::Spline(s) = self.entities[spline] else {
+            unreachable!("validated spline contact")
+        };
+        let p = self.point(point, values);
+        let wire = self.spline_curve(s, values)?;
+        let (native, tangent) = self
+            .native
+            .curve_closest_data(&wire, Vec3::new(p.x, p.y, 0.))?;
+        let q = SketchPoint2 {
+            x: native.x,
+            y: native.y,
+        };
+        let (a, b) = self.line(line, values);
+        let length = line_length((a, b));
+        if length <= f64::EPSILON {
+            return Err(ModelError::new("line-spline tangency has a zero line"));
+        }
+        let dx = (b.x - a.x) / length;
+        let dy = (b.y - a.y) / length;
+        let distance = (p.y - a.y) * dx - (p.x - a.x) * dy;
+        let foot = SketchPoint2 {
+            x: p.x + distance * dy,
+            y: p.y - distance * dx,
+        };
+        // Direction is independent of knot parameter scaling.
+        let tangent_scale = tangent.x.abs().max(tangent.y.abs());
+        if tangent_scale == 0. {
+            return Err(ModelError::new("spline contact has a zero planar tangent"));
+        }
+        let sine = normalized_cross(
+            (a, b),
+            (
+                SketchPoint2 { x: 0., y: 0. },
+                SketchPoint2 {
+                    x: tangent.x / tangent_scale,
+                    y: tangent.y / tangent_scale,
+                },
+            ),
+        )?;
+        Ok(([p, q, foot], sine))
+    }
+
     fn center_point(&self, id: &str) -> &str {
         match self.entities[id] {
             Entity::Circle(c) => &c.center,
@@ -567,6 +617,21 @@ impl SketchProblem<'_> {
                         - line_length((self.point(c, values), self.point(d, values))),
                 );
             }
+            SketchConstraint::LineSplineTangent {
+                line,
+                spline,
+                point,
+            } => {
+                let ([p, q, foot], sine) = self.line_spline_contact(line, spline, point, values)?;
+                let (a, b) = self.line(line, values);
+                let length = line_length((a, b));
+                residuals.extend([
+                    p.x - q.x,
+                    p.y - q.y,
+                    ((p.y - foot.y) * (b.x - a.x) - (p.x - foot.x) * (b.y - a.y)) / length,
+                    sine,
+                ]);
+            }
             SketchConstraint::LineEllipseTangent {
                 line,
                 ellipse,
@@ -707,6 +772,19 @@ impl SketchProblem<'_> {
 
     fn columns(&self, constraint: &SketchConstraint) -> Vec<usize> {
         let points = match constraint {
+            SketchConstraint::LineSplineTangent {
+                line,
+                spline,
+                point,
+            } => {
+                let l = self.lines[line.as_str()];
+                let Entity::Spline(s) = self.entities[spline.as_str()] else {
+                    unreachable!("validated spline contact")
+                };
+                let mut refs = vec![l.start.as_str(), l.end.as_str(), point.as_str()];
+                refs.extend(self.spline_neighbor_refs(s));
+                refs
+            }
             SketchConstraint::LineEllipseTangent { line, ellipse, .. } => {
                 let l = self.lines[line.as_str()];
                 let Entity::Ellipse(e) = self.entities[ellipse.as_str()] else {

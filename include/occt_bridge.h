@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define OCCT_BRIDGE_ABI_VERSION 55u
+#define OCCT_BRIDGE_ABI_VERSION 56u
 #define OCCT_BRIDGE_INVALID_SHAPE_ID UINT64_C(0)
 
 #if defined(_WIN32) && defined(OCCT_BRIDGE_BUILD_SHARED)
@@ -829,6 +829,14 @@ OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_trim_curve(occt_bridge_session_
 OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_extend_curve(occt_bridge_session_t*, occt_bridge_shape_id_t, double start, double end, occt_bridge_shape_id_t*);
 OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_join_wires(occt_bridge_session_t*, const occt_bridge_shape_id_t*, size_t, int closed, occt_bridge_shape_id_t*);
 OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_offset_wire(occt_bridge_session_t*, occt_bridge_shape_id_t, occt_bridge_vec3_t normal, double distance, int join, occt_bridge_shape_id_t*);
+/* Nearest point on one bounded edge (or a one-edge wire) and its oriented
+ * first derivative, in located world coordinates. Endpoints are candidates;
+ * equal-distance ties choose the first candidate deterministically. Rejects
+ * zero derivatives and contacts at internal C0 B-spline knots (including a
+ * C0 periodic seam). No new shape handles are stored. */
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_curve_closest_data(
+    occt_bridge_session_t*, occt_bridge_shape_id_t, occt_bridge_vec3_t point,
+    occt_bridge_vec3_t* closest, occt_bridge_vec3_t* tangent);
 OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_curve_closest_point(occt_bridge_session_t*, occt_bridge_shape_id_t, occt_bridge_vec3_t point, occt_bridge_vec3_t*);
 OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_wire_is_closed(occt_bridge_session_t*, occt_bridge_shape_id_t, int*);
 

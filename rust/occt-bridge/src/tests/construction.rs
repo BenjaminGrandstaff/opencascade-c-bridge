@@ -1074,3 +1074,176 @@ fn non_clamped_bspline_rejects_conflicting_modes_and_bad_knot_cardinality_withou
         assert_eq!(session.shape_count().unwrap(), 0);
     }
 }
+
+#[test]
+fn curve_contact_data_tracks_native_interior_derivatives_bounds_and_locations() {
+    let session = Session::new().unwrap();
+    let segment = CurveSegment::BSpline {
+        non_clamped: false,
+        periodic: false,
+        poles: vec![
+            Vec3::new(-10., 0., 0.),
+            Vec3::new(0., 10., 0.),
+            Vec3::new(10., 0., 0.),
+        ],
+        degree: 2,
+        knots: vec![0., 1.],
+        multiplicities: vec![3, 3],
+        weights: vec![],
+    };
+    let wire = session
+        .create_curve_wire(std::slice::from_ref(&segment), false)
+        .unwrap();
+    let (p, d) = session
+        .curve_closest_data(&wire, Vec3::new(0., 6., 0.))
+        .unwrap();
+    assert!(p.x.abs() < 1e-9 && (p.y - 5.).abs() < 1e-9);
+    assert!((d.x - 20.).abs() < 1e-9 && d.y.abs() < 1e-9);
+    let (p, d) = session
+        .curve_closest_data(&wire, Vec3::new(-30., -30., 0.))
+        .unwrap();
+    assert!((p.x + 10.).abs() < 1e-9 && p.y.abs() < 1e-9 && (d.y - 20.).abs() < 1e-9);
+    let moved = session.translate(&wire, Vec3::new(2., 3., 4.)).unwrap();
+    let (p, d) = session
+        .curve_closest_data(&moved, Vec3::new(2., 9., 4.))
+        .unwrap();
+    assert!((p.x - 2.).abs() < 1e-9 && (p.y - 8.).abs() < 1e-9 && (p.z - 4.).abs() < 1e-9);
+    assert!((d.x - 20.).abs() < 1e-9 && d.y.abs() < 1e-9);
+    let edge = session
+        .subshapes(&wire, ShapeType::Edge)
+        .unwrap()
+        .pop()
+        .unwrap();
+    assert_eq!(
+        session
+            .curve_closest_data(&edge, Vec3::new(0., 6., 0.))
+            .unwrap()
+            .0,
+        Vec3::new(0., 5., 0.)
+    );
+    let mut stretched = segment;
+    let CurveSegment::BSpline { knots, .. } = &mut stretched else {
+        unreachable!()
+    };
+    knots[1] = 1e12;
+    let rescaled = session.create_curve_wire(&[stretched], false).unwrap();
+    let (p, d) = session
+        .curve_closest_data(&rescaled, Vec3::new(0., 6., 0.))
+        .unwrap();
+    assert!((p.y - 5.).abs() < 1e-9 && (d.x / 2e-11 - 1.).abs() < 1e-9);
+}
+
+#[test]
+fn curve_contact_data_rejects_c0_knots_multiple_edges_and_bad_handles_without_leaks() {
+    let session = Session::new().unwrap();
+    let wire = session
+        .create_curve_wire(
+            &[CurveSegment::BSpline {
+                non_clamped: false,
+                periodic: false,
+                degree: 2,
+                knots: vec![0., 1., 2.],
+                multiplicities: vec![3, 2, 3],
+                weights: vec![],
+                poles: vec![
+                    Vec3::new(0., 0., 0.),
+                    Vec3::new(0., 1., 0.),
+                    Vec3::new(1., 1., 0.),
+                    Vec3::new(1., 2., 0.),
+                    Vec3::new(2., 2., 0.),
+                ],
+            }],
+            false,
+        )
+        .unwrap();
+    assert!(
+        session
+            .curve_closest_data(&wire, Vec3::new(1., 1., 0.))
+            .is_err()
+    );
+    assert!(
+        session
+            .curve_closest_data(&wire, Vec3::new(0.25, 0.75, 0.))
+            .is_ok()
+    ); // A smooth span on a globally C0 curve.
+    let box_shape = session
+        .create_box(Vec3::new(0., 0., 0.), Vec3::new(1., 1., 1.))
+        .unwrap();
+    assert!(
+        session
+            .curve_closest_data(&box_shape, Vec3::new(0., 0., 0.))
+            .is_err()
+    );
+    let multi = session
+        .create_polyline_wire(
+            &[
+                Vec3::new(0., 0., 0.),
+                Vec3::new(1., 0., 0.),
+                Vec3::new(1., 1., 0.),
+            ],
+            false,
+        )
+        .unwrap();
+    assert!(
+        session
+            .curve_closest_data(&multi, Vec3::new(0., 0., 0.))
+            .is_err()
+    );
+    assert!(
+        session
+            .curve_closest_data(&wire, Vec3::new(f64::NAN, 0., 0.))
+            .is_err()
+    );
+    let other = Session::new().unwrap();
+    assert!(
+        other
+            .curve_closest_data(&wire, Vec3::new(0., 0., 0.))
+            .is_err()
+    );
+    let zero = session
+        .create_curve_wire(
+            &[CurveSegment::BSpline {
+                non_clamped: false,
+                periodic: false,
+                degree: 3,
+                knots: vec![0., 1.],
+                multiplicities: vec![4, 4],
+                weights: vec![],
+                poles: vec![
+                    Vec3::new(0., 0., 0.),
+                    Vec3::new(0., 0., 0.),
+                    Vec3::new(1., 1., 0.),
+                    Vec3::new(2., 2., 0.),
+                ],
+            }],
+            false,
+        )
+        .unwrap();
+    assert!(
+        session
+            .curve_closest_data(&zero, Vec3::new(-1., -1., 0.))
+            .is_err()
+    );
+    let periodic = session
+        .create_curve_wire(
+            &[CurveSegment::BSpline {
+                non_clamped: false,
+                periodic: true,
+                degree: 1,
+                knots: vec![0., 1., 2., 3.],
+                multiplicities: vec![1; 4],
+                weights: vec![],
+                poles: vec![
+                    Vec3::new(0., 0., 0.),
+                    Vec3::new(1., 0., 0.),
+                    Vec3::new(0., 1., 0.),
+                ],
+            }],
+            true,
+        )
+        .unwrap();
+    let seam = session.curve_end_data(&periodic).unwrap().0;
+    assert!(session.curve_closest_data(&periodic, seam).is_err());
+    drop((wire, box_shape, multi, zero, periodic));
+    assert_eq!(session.shape_count().unwrap(), 0);
+}

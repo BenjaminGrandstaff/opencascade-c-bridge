@@ -456,5 +456,26 @@ with tempfile.TemporaryDirectory(prefix='occb-mcp-scale-') as root:
         elapsed=time.monotonic()-started
         assert elapsed<10
         print(f'PASS MCP 20 ellipse tangent pads, exact rotated contacts and linked axis controls: {elapsed:.3f}s / 10s')
+        contact=client.tool('occt_get_example',dict(name='spline-tangent-cap'))['structuredContent']
+        for i in range(1,20):
+            contact['model']['instances'].append({'clone':dict(id=f'part-{i}',source='part',overrides={},provenance='scale')})
+            contact['outputs'].extend(dict(instance=f'part-{i}',output=out) for out in ['body','profile'])
+        started=time.monotonic()
+        result=client.tool('occt_visualize_model',contact)
+        assert not result['isError'],result
+        data=json.loads(client.call('resources/read',dict(uri=result['structuredContent']['resources']['view.json']))['result']['contents'][0]['text'])
+        solids=[s for s in data['scenes'] if s['kind']=='solid'];sketches=[s for s in data['scenes'] if s['kind']=='sketch']
+        assert len(solids)==40 and all(s['valid'] for s in solids)
+        assert len(sketches)==20 and all(s['solver']['solved'] and s['solver']['free_degrees']==0 for s in sketches)
+        for scene in sketches:
+            relation=next(a for a in scene['annotations'] if 'line_spline_tangent' in a['detail'].get('constraint',{}))
+            residuals=relation['detail']['contact_residuals']
+            assert relation['status']=='passed' and not relation['detail']['by_construction']
+            assert residuals['position_residual_mm']<1e-9 and abs(residuals['tangent_sine'])<1e-9
+            assert relation['parameters']==['middle_weight','rise','span']
+            assert all(abs(p[0])<1e-7 and abs(p[1]-5.)<1e-7 for p in relation['anchors'])
+        elapsed=time.monotonic()-started
+        assert elapsed<10
+        print(f'PASS MCP 20 spline tangent caps, sliding native contacts and measured tangents: {elapsed:.3f}s / 10s')
     finally:
         client.close()

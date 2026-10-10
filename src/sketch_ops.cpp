@@ -253,6 +253,53 @@ extern "C" {
             return store_shape(s, result, out);
         });
     }
+    occt_bridge_status_t occt_bridge_curve_closest_data(
+        occt_bridge_session_t* s, occt_bridge_shape_id_t id, occt_bridge_vec3_t point,
+        occt_bridge_vec3_t* closest, occt_bridge_vec3_t* tangent) {
+        return guarded(s, [&] {
+            if (closest == nullptr || tangent == nullptr) return fail(s, OCCT_BRIDGE_INVALID_ARGUMENT, "curve contact outputs are null");
+            *closest = *tangent = {0.,0.,0.};
+            if (!finite(point)) return fail(s, OCCT_BRIDGE_INVALID_ARGUMENT, "curve contact point is not finite");
+            const auto* shape = find_shape(s, id);
+            if (!shape) return fail(s, OCCT_BRIDGE_SHAPE_NOT_FOUND, "contact curve was not found");
+            if (shape->ShapeType() != TopAbs_EDGE && shape->ShapeType() != TopAbs_WIRE) return fail(s, OCCT_BRIDGE_INVALID_GEOMETRY, "contact query requires an edge or wire");
+            const auto edge = single_edge(*shape);
+            if (edge.IsNull()) return fail(s, OCCT_BRIDGE_INVALID_GEOMETRY, "contact query requires one edge");
+            double first, last;
+            const auto curve = BRep_Tool::Curve(edge, first, last);
+            if (curve.IsNull()) return fail(s, OCCT_BRIDGE_INVALID_GEOMETRY, "contact edge has no curve");
+            const gp_Pnt query(point.x, point.y, point.z);
+            double distance = std::numeric_limits<double>::infinity(), at = first;
+            auto choose = [&](double u) {
+                const double d = curve->Value(u).SquareDistance(query);
+                if (d < distance) { distance = d; at = u; }
+            };
+            choose(first); choose(last);
+            GeomAPI_ProjectPointOnCurve projection(query, curve, first, last);
+            for (int i = 1; i <= projection.NbPoints(); ++i) choose(projection.Parameter(i));
+            if (!std::isfinite(distance)) return fail(s, OCCT_BRIDGE_INVALID_GEOMETRY, "curve contact projection failed");
+            auto basis = curve;
+            while (const auto trimmed = Handle(Geom_TrimmedCurve)::DownCast(basis)) basis = trimmed->BasisCurve();
+            const auto spline = Handle(Geom_BSplineCurve)::DownCast(basis);
+            if (!spline.IsNull() && !spline->IsCN(1)) {
+                const double tolerance = 1e-12 * std::max(1., std::abs(last-first));
+                for (int i = spline->FirstUKnotIndex(); i <= spline->LastUKnotIndex(); ++i) {
+                    const double knot = spline->Knot(i);
+                    if (spline->Multiplicity(i) >= spline->Degree() && std::abs(at-knot) <= tolerance
+                        && (spline->IsPeriodic() || (knot > first && knot < last))) {
+                        return fail(s, OCCT_BRIDGE_INVALID_GEOMETRY, "curve contact at a C0 knot has no unique smooth tangent");
+                    }
+                }
+            }
+            gp_Pnt p; gp_Vec d;
+            curve->D1(at, p, d);
+            if (edge.Orientation() == TopAbs_REVERSED) d.Reverse();
+            const occt_bridge_vec3_t position = {p.X(),p.Y(),p.Z()}, derivative = {d.X(),d.Y(),d.Z()};
+            if (!finite(position) || !finite(derivative) || (derivative.x == 0. && derivative.y == 0. && derivative.z == 0.)) return fail(s, OCCT_BRIDGE_INVALID_GEOMETRY, "curve contact tangent is zero or not finite");
+            *closest = position; *tangent = derivative;
+            return succeed(s);
+        });
+    }
     occt_bridge_status_t occt_bridge_curve_closest_point(occt_bridge_session_t* s,occt_bridge_shape_id_t id,occt_bridge_vec3_t point,occt_bridge_vec3_t* out) {
         return guarded(s,[&] {
             if(out==nullptr||!finite(point))return fail(s,OCCT_BRIDGE_INVALID_ARGUMENT,"invalid curve projection inputs");

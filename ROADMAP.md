@@ -8,21 +8,38 @@ tracks status and order.
 
 | Layer | Version | State |
 |---|---|---|
-| C ABI (`src/`, `include/`) | ABI 55 | Stable; exact version match required |
+| C ABI (`src/`, `include/`) | ABI 56 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 102 | Active development |
+| `occt-parametric` (engineering layer) | Schema 103 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 118 + first-use integration 1 (+1 doc test), recipes 3, parametric 506 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 19 + branch command 2 + model command 50, MCP Python 9, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 120 + first-use integration 1 (+1 doc test), recipes 3, parametric 510 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 19 + branch command 2 + model command 51, MCP Python 9, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform code also passes. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
 | Coverage | Last recorded: 93.61% lines overall, test code excluded; C++ 94.13% lines, 87.40% branches, 100% functions; Rust 93.42% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 154 Rust cases plus 5 model-command and 24 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Scale benchmarks | 155 Rust cases plus 5 model-command and 25 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
+
+- Independent line–spline tangency (schema 103 / ABI 56): a seeded contact
+  point slides along the bounded native spline and lies on the supporting
+  line, with measured tangent alignment. The native closest-point/derivative
+  query includes endpoints, location and orientation; zero tangents and C0
+  knot contacts are rejected without storing shape handles. Sparse equations
+  include line endpoints, the contact point, poles/interpolation points and
+  existing tangent neighbours. Clamped rational, non-clamped, periodic and
+  interpolated curves, moving free poles, conflicts and bounded exclusions
+  are tested. Viewer anchors show the seed, native contact and line projection,
+  with separate millimetre position and dimensionless tangent residuals.
+  The spline-tangent-cap example verifies native volume/bounds, weight and
+  size edits, height-only profile reuse and failed-edit retention. The catalog
+  has 39 examples, 12 schemas and 51 resources, with 149 request definitions.
+  Native and MCP performance gates pass 1,000 caps in 1.795 s and 20 annotated
+  caps in 0.179 s (10 s budgets). Rebuild native and Rust consumers together.
+  Independent spline–circle/ellipse/spline contact remains open.
 
 - Independent line–ellipse tangency (schema 102; native ABI 55 unchanged):
   signed side selection uses the exact support of the rotated native ellipse.
@@ -36,7 +53,7 @@ tracks status and order.
   with 149 request definitions. Native and MCP performance gates exercise
   1,000 native pad builds in 0.739 s and 20 annotated pads in 0.181 s
   (10 s budgets).
-  Independent spline and ellipse–ellipse contact remain open.
+  Line–spline contacts follow in schema 103; curve–curve contacts remain open.
 
 - Non-clamped explicit B-spline bases (schema 101 / ABI 55): named geometric
   endpoints are separate from control poles and constrained by four native

@@ -58,6 +58,65 @@ impl SketchDefinition {
         Ok(result)
     }
 
+    /// Seed point, bounded native spline contact, supporting-line projection,
+    /// and measured tangent sine, indexed by line-spline constraint number.
+    pub fn line_spline_tangent_contacts(
+        &self,
+        parameters: &HashMap<String, ParameterValue>,
+        solution: &SketchSolution,
+    ) -> Result<HashMap<usize, ([SketchPoint2; 3], f64)>, ModelError> {
+        if !self
+            .constraints
+            .iter()
+            .any(|c| matches!(c, SketchConstraint::LineSplineTangent { .. }))
+        {
+            return Ok(HashMap::new());
+        }
+        if !self.projections.is_empty() {
+            return Err(ModelError::new(
+                "projected sketch requires source-geometry resolution before contact diagnostics",
+            ));
+        }
+        if solution
+            .points
+            .values()
+            .any(|p| !p.x.is_finite() || !p.y.is_finite())
+        {
+            return Err(ModelError::new(
+                "spline contact diagnostic point is not finite",
+            ));
+        }
+        self.validate(parameters)?;
+        let fixed = self
+            .points
+            .iter()
+            .map(|p| {
+                solution
+                    .points
+                    .get(&p.id)
+                    .copied()
+                    .map(|v| (p.id.as_str(), v))
+                    .ok_or_else(|| ModelError::new("contact solution is missing a point"))
+            })
+            .collect::<Result<HashMap<_, _>, _>>()?;
+        let problem = SketchProblem::new(self, parameters, HashMap::new(), fixed)?;
+        let mut result = HashMap::new();
+        for (index, c) in self.constraints.iter().enumerate() {
+            if let SketchConstraint::LineSplineTangent {
+                line,
+                spline,
+                point,
+            } = c
+            {
+                result.insert(
+                    index,
+                    problem.line_spline_contact(line, spline, point, &[])?,
+                );
+            }
+        }
+        Ok(result)
+    }
+
     pub fn constraint_checks(
         &self,
         parameters: &HashMap<String, ParameterValue>,

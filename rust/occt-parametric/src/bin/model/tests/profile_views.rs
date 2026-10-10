@@ -1097,3 +1097,81 @@ fn ellipse_tangent_viewer_shows_actual_rotated_contact_linked_axes_and_fixed_con
         assert!(snapshot.contains("T LEFT"));
     }
 }
+
+#[test]
+fn independent_spline_contact_viewer_exposes_position_tangent_units_controls_and_conflicts() {
+    let dir = Directory::new();
+    for conflict in [false, true] {
+        let mut request = view_example("spline-tangent-cap");
+        if conflict {
+            for p in request["model"]["family"]["features"][0]["operation"]["sketch_face"]["sketch"]
+                ["points"]
+                .as_array_mut()
+                .unwrap()
+            {
+                p["fixed"] = json!(true);
+            }
+        }
+        let name = if conflict {
+            "spline-conflict"
+        } else {
+            "spline-solved"
+        };
+        view_request(&dir, request, name).unwrap();
+        let data: Value =
+            serde_json::from_str(&fs::read_to_string(dir.0.join(name).join("view.json")).unwrap())
+                .unwrap();
+        let scene = data["scenes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["kind"] == "sketch")
+            .unwrap();
+        assert_eq!(scene["solver"]["solved"], !conflict);
+        let relation = scene["annotations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|a| !a["detail"]["constraint"]["line_spline_tangent"].is_null())
+            .unwrap();
+        assert_eq!(
+            relation["status"],
+            if conflict { "failed" } else { "passed" }
+        );
+        assert_eq!(relation["detail"]["by_construction"], false);
+        assert_eq!(relation["detail"]["residual_unit"], "mixed");
+        assert_eq!(
+            relation["detail"]["contact_residuals"]["residual_units"],
+            json!(["mm", "mm", "mm", "dimensionless"])
+        );
+        assert_eq!(relation["anchors"].as_array().unwrap().len(), 3);
+        let residual = relation["detail"]["contact_residuals"]["position_residual_mm"]
+            .as_f64()
+            .unwrap();
+        if conflict {
+            assert!(residual > 0.1);
+        } else {
+            assert!(residual < 1e-9);
+            assert_eq!(scene["solver"]["free_degrees"], 0);
+            assert!(
+                relation["detail"]["contact_residuals"]["tangent_sine"]
+                    .as_f64()
+                    .unwrap()
+                    .abs()
+                    < 1e-9
+            );
+            assert_eq!(
+                relation["parameters"],
+                json!(["middle_weight", "rise", "span"])
+            );
+            for p in relation["anchors"].as_array().unwrap() {
+                assert!(
+                    p[0].as_f64().unwrap().abs() < 1e-7
+                        && (p[1].as_f64().unwrap() - 5.).abs() < 1e-7
+                );
+            }
+        }
+        let snapshot = fs::read_to_string(dir.0.join(name).join("view-0003.svg")).unwrap();
+        assert!(snapshot.contains("T SPLINE"));
+    }
+}

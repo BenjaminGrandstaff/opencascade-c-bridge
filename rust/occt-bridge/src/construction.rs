@@ -794,6 +794,27 @@ impl Session {
         })?;
         Ok(self.shape(shape))
     }
+    /// Bounded native closest point and oriented first derivative. Requires
+    /// one edge or a one-edge wire; zero tangents and C0 knot contacts fail.
+    pub fn curve_closest_data(
+        &self,
+        shape: &Shape<'_>,
+        point: Vec3,
+    ) -> Result<(Vec3, Vec3), BridgeError> {
+        self.validate_shape(shape)?;
+        let (mut closest, mut tangent) = (RawVec3::default(), RawVec3::default());
+        // SAFETY: Validated session/handle, by-value query and writable outputs.
+        self.check(unsafe {
+            occt_bridge_curve_closest_data(
+                self.raw.as_ptr(),
+                shape.id,
+                point.into(),
+                &mut closest,
+                &mut tangent,
+            )
+        })?;
+        Ok((closest.into(), tangent.into()))
+    }
     pub fn curve_closest_point(&self, shape: &Shape<'_>, point: Vec3) -> Result<Vec3, BridgeError> {
         self.validate_shape(shape)?;
         let mut out = RawVec3::default();

@@ -79,8 +79,8 @@ export are verified. A 1,000-pair solve and residual-diagnostic gate passes in
 0.009 s (10 s budget); 20 solids plus 60 source sketch scenes and matched-radius
 annotations pass through MCP in 0.316 s (10 s budget).
 
-Current authoring examples use schema 102. Older model documents migrate
-without adding constraints or changing their entities. Current native ABI is 55.
+Current authoring examples use schema 103. Older model documents migrate
+without adding constraints or changing their entities. Current native ABI is 56.
 
 ## Saved profile operations
 
@@ -585,5 +585,71 @@ profile. Fixed-geometry conflicts, signed sides, rotated lines, the circular
 limit, native validity/bounds/volume and failed-edit retention are tested.
 
 Older documents migrate to schema 102 without adding constraints. Native ABI
-remains 55. Independent spline tangency and ellipse–ellipse contact remain
+remains 55. Independent line–spline tangency follows below; curve–curve contact remains
 future work.
+
+
+## Line-spline tangency (schema 103 / ABI 56)
+
+Use a seeded sketch point to locate an independent tangent contact between a
+line and any native spline mode:
+
+```json
+{
+  "line_spline_tangent": {
+    "line": "tangent-line",
+    "spline": "curve",
+    "point": "contact"
+  }
+}
+```
+
+The contact point must exist but need not be a shared endpoint or control pole.
+A free point slides during solving; its initial coordinates select the local
+contact branch. A fixed point imposes a specific location and may conflict.
+The line is its infinite supporting line; the spline is its bounded native
+active interval. Endpoints can be contacts if their one-sided tangents align.
+This is a local nonlinear solve, not an exhaustive search for every contact.
+
+Four residuals enforce contact membership in X/Y (millimetres), signed
+point-to-line distance (millimetres), and normalized tangent cross product
+(dimensionless). Native projection considers both interval endpoints and all
+projection candidates. Its first derivative supplies the tangent direction,
+including rational weights and the actual active domain. Direction is scaled
+before normalization so knot parameter units do not change the alignment
+condition. Zero tangents and internal C0 B-spline knots, including C0 periodic
+seams, fail instead of choosing an ambiguous tangent. Smooth spans elsewhere
+on a globally C0 spline remain usable.
+
+The sparse Jacobian includes both line endpoints, the contact point and all
+control/interpolation points. Interpolated splines also include any line/arc
+neighbours already imposing endpoint tangency. This new relation never changes
+how the curve is constructed and is reported as a measured constraint.
+Existing shared-endpoint `tangent` and point-membership behavior are preserved.
+Explicit rational, non-clamped, periodic and interpolated modes are tested,
+as are free control-pole movement and contacts excluded by the bounded domain.
+
+Viewer anchors show the seeded point, nearest native spline contact and the seeded point’s
+supporting-line projection. They coincide when satisfied and separate during
+ordinary fixed-geometry conflicts. The detail reports `position_residual_mm`
+and `tangent_sine`, with residual units
+`["mm", "mm", "mm", "dimensionless"]`; the overall residual summary is marked
+`mixed`. Coordinate and rational-weight controls are linked to the relation.
+
+The [spline tangent cap](../tools/model/spline-tangent-cap.request.json)
+uses a degree-2 clamped rational curve with poles `(-span/2,0)`, `(0,rise)` and
+`(span/2,0)`, and weights `[1,w,1]`. The horizontal tangent touches at
+`(0, rise × w / (1+w))`. At unit weights, the chord-bounded profile has area
+`span × rise / 3`, giving default volume `533.333333 mm³` at height=8 mm.
+Weight and size edits regenerate the profile and solid while moving the
+contact; height-only edits reuse the profile. Native validity, analytical
+volume, active bounds, incremental reuse and failed-edit retention are tested.
+
+ABI 56 adds `occt_bridge_curve_closest_data` / `Session::curve_closest_data`.
+The query accepts an edge or one-edge wire, returning a bounded closest point
+and unnormalized oriented derivative in located world coordinates. Equal
+nearest-distance ties choose the first candidate deterministically. It stores
+no shape handles and rejects multi-edge inputs, zero tangents and C0 knot
+contacts. Rebuild the native bridge and Rust consumers together. Older model
+documents migrate to schema 103 without adding relations. Independent
+spline–circle, spline–ellipse and spline–spline contact remain future work.
