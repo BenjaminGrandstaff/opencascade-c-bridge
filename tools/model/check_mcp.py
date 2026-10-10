@@ -655,5 +655,22 @@ with tempfile.TemporaryDirectory(prefix='occb-mcp-scale-') as root:
         elapsed=time.monotonic()-started
         assert elapsed<10
         print(f'PASS MCP 20 mirrored flanges with circular bolt patterns and sketch holes: {elapsed:.3f}s / 10s')
+        tapped=client.tool('occt_get_example',dict(name='tapped-block'))['structuredContent']
+        for i in range(1,10):
+            tapped['model']['instances'].append({'clone':dict(id=f'block-{i}',source='block',overrides={},provenance='scale')})
+            tapped['outputs'].append(dict(instance=f'block-{i}',output='body'))
+        started=time.monotonic()
+        result=client.tool('occt_visualize_model',tapped)
+        assert not result['isError'],result
+        data=json.loads(client.call('resources/read',dict(uri=result['structuredContent']['resources']['view.json']))['result']['contents'][0]['text'])
+        solids=[s for s in data['scenes'] if s['kind']=='solid']
+        assert len(solids)==10 and all(s['valid'] for s in solids)
+        for scene in solids:
+            taps=[a for a in scene['annotations'] if a['id']=='tapped-body']
+            assert len(taps)==1 and taps[0]['label']=='M6x1 RH tapped · 9.000 mm · 9.000 turns',taps
+            assert taps[0]['parameters']==['blind_thread'] and len(taps[0]['anchors'])==2
+        elapsed=time.monotonic()-started
+        assert elapsed<30
+        print(f'PASS MCP 10 tapped blocks with modeled through and blind threads: {elapsed:.3f}s / 30s')
     finally:
         client.close()

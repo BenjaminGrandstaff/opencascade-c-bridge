@@ -49,8 +49,8 @@ and boolean cut. Schema 84 adds it.
   and fit checks; the profile is the basic profile.
 - Tapered (pipe) threads, multi-start threads and non-60° forms (ACME,
   buttress).
-- Generating geometry from a hole's thread callout; holes still record thread
-  intent only.
+- Thread runout on tapped holes. Holes now model their thread callouts
+  (schema 113); see [modeled tapped holes](HOLES.md#modeled-tapped-holes-schema-113).
 
 
 ## AI example and viewer dimensions

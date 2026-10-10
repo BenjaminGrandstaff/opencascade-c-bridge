@@ -205,3 +205,4 @@ mod corner_treated_plate;
 mod mirrored_flange;
 mod open_corner_pipe;
 mod spline_corner_pad;
+mod tapped_holes;

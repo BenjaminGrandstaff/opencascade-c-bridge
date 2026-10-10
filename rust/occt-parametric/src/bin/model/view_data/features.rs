@@ -34,6 +34,7 @@ pub(super) fn feature_dimensions(
     edge_treatment(scene, feature, budget, annotations)?;
     variable_fillet_law(scene, feature, annotations)?;
     thread_dimensions(scene, feature, annotations)?;
+    tapped_thread(scene, feature, annotations)?;
     circular_pattern_dimensions(scene, feature, budget, annotations)?;
     linear_pattern_dimensions(scene, feature, annotations)?;
     compound_inputs(scene, feature, annotations)?;
@@ -453,6 +454,86 @@ fn thread_dimensions(
                 "driving": false,
                 "description": "Derived turns; nominal thread dimensions \
                     do not measure tolerance class or fit.",
+            }),
+        }
+        .into(),
+    );
+    Ok(())
+}
+
+/// Callout, length and turns of a hole's modeled internal thread. The length
+/// runs from the hole entry along its axis; an omitted length threads the
+/// whole usable bore, which is labelled rather than re-measured.
+fn tapped_thread(
+    scene: &SolidScene<'_, '_>,
+    feature: &FeatureDefinition,
+    annotations: &mut Vec<Value>,
+) -> Result<(), Failure> {
+    let SolidScene {
+        output, parameters, ..
+    } = *scene;
+    let FeatureOperation::Hole {
+        position,
+        axis,
+        thread: Some(thread),
+        ..
+    } = &feature.operation
+    else {
+        return Ok(());
+    };
+    let Some(modeled) = &thread.modeled else {
+        return Ok(());
+    };
+    let entry = vector(position, parameters)?;
+    let n = unit_direction(vector(axis, parameters)?);
+    let pitch = scalar(&thread.pitch, parameters)?;
+    let nominal = scalar(&thread.nominal_diameter, parameters)?;
+    let length = modeled
+        .length
+        .as_ref()
+        .map(|l| scalar(l, parameters))
+        .transpose()?;
+    let hand = match thread.handedness {
+        ThreadHandedness::Right => "RH",
+        ThreadHandedness::Left => "LH",
+    };
+    let label = match length {
+        Some(run) => format!(
+            "{} {hand} tapped · {} mm · {:.3} turns",
+            thread.designation,
+            length_label(run),
+            run / pitch
+        ),
+        None => format!("{} {hand} tapped · full bore", thread.designation),
+    };
+    let anchors = match length {
+        Some(run) => json!([
+            entry,
+            std::array::from_fn::<_, 3, _>(|i| entry[i] + run * n[i])
+        ]),
+        None => json!([entry]),
+    };
+    let expressions = json!([thread.nominal_diameter, thread.pitch, modeled.length]);
+    annotations.push(
+        Annotation {
+            id: format!("tapped-{}", feature.id),
+            label,
+            kind: AnnotationKind::Dimension,
+            status: AnnotationStatus::Driving,
+            targets: vec![output.into()],
+            parameters: names(&expressions),
+            anchors,
+            detail: json!({
+                "designation": thread.designation,
+                "nominal_diameter_mm": nominal,
+                "pitch_mm": pitch,
+                "length_mm": length,
+                "turns": length.map(|run| run / pitch),
+                "handedness": thread.handedness,
+                "internal": true,
+                "driving": true,
+                "description": "Modeled ISO 68-1 basic-profile internal thread \
+                    cut from the hole entry; not a tolerance class or fit check.",
             }),
         }
         .into(),

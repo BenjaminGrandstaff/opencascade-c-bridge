@@ -467,9 +467,11 @@ Schema 31 adds optional `Hole.thread` metadata
 (`Option<Box<ThreadSpecification>>` in Rust). A thread record stores a nonblank
 caller-supplied designation, length-valued nominal diameter and positive pitch,
 and right/left handedness. Nominal diameter must exceed the explicit bore
-diameter. This records internal-thread intent only: no helix is generated,
-no tap drill is inferred, and no standard, tolerance class, engagement length,
-or machinability is verified. Thread parameter and record edits invalidate the
+diameter. Without `modeled` this records internal-thread intent only: no
+helix is generated, no tap drill is inferred, and no standard, tolerance
+class, engagement length, or machinability is verified. Schema 113 adds
+`modeled`, which also cuts the thread; see
+[tapped holes](docs/HOLES.md#modeled-tapped-holes-schema-113). Thread parameter and record edits invalidate the
 hole and downstream features, even though the cylindrical geometry is unchanged.
 Older documents default to no thread record; that schema addition did not change the ABI.
 Schema 30 adds the optional `Hole.finish`, defaulting
@@ -647,13 +649,13 @@ profiles (ABI 47, model schema 72).
 up to a selected face, and up to the next complete face limit, including
 inclined and curved surfaces. Target
 geometry participates in regeneration; the viewer shows the actual length.
-The native ABI is 60; model schema is 112. Native surface-ray witnesses measure
+The native ABI is 60; model schema is 113. Native surface-ray witnesses measure
 viewer extents on nonuniform caps.
 
 
 [Blind drill-point holes](docs/HOLES.md) add configurable conical bottoms, native tip
 containment checks, full-diameter depth callouts and linked viewer dimensions.
-The current model schema is 112 and native ABI is 60.
+The current model schema is 113 and native ABI is 60.
 
 
 [Geometry-driven holes](docs/HOLES.md) stop at a selected or next covering input
@@ -679,7 +681,7 @@ Schema 79 adds `planar_region`; ABI 50 also retains its extracted face history.
 [Hollow path sweeps](docs/HOLLOW_SWEEPS.md) transport holed planar sections into
 bent tubes and multiple-bore parts, preserving wall ancestry and linked route
 controls. ABI 50 adds explicit history-preserving topology extraction; the
-current model schema is 112. Rebuild the native library and Rust executables together.
+current model schema is 113. Rebuild the native library and Rust executables together.
 
 [Hollow profile lofts](docs/LOFTS.md#explicit-hollow-tracks-schema-80) use explicit
 inner section tracks to make tapered ducts and multiple-bore transitions.
@@ -756,7 +758,7 @@ The [threaded-rod AI example](tools/model/threaded-rod.request.json) exposes
 modeled threads with linked major diameter, pitch, run and derived turn labels.
 Its source rod follows diameter/run edits. See
 [thread dimensions](docs/THREADS.md#ai-example-and-viewer-dimensions). Current AI
-examples use schema 112; native ABI is 60.
+examples use schema 113; native ABI is 60.
 
 
 The [edge-treatment AI example](tools/model/edge-treatments.request.json)
@@ -927,3 +929,9 @@ sketch holes built natively without booleans. The
 [mirrored flange](tools/model/mirrored-flange.request.json) mirrors a half
 outline and cuts a bore and a six-hole bolt circle in one sketch. See
 [sketch patterns and holes](docs/SKETCHES.md#sketch-patterns-and-holes-schema-112--abi-60).
+
+Schema 113 models tapped holes: a hole's thread callout with `modeled` cuts an
+ISO 68-1 basic internal thread from the hole entry in the same boolean cut.
+The [tapped block](tools/model/tapped-block.request.json) has an M10×1.5
+through tap and a countersunk M6×1 blind tap. See
+[tapped holes](docs/HOLES.md#modeled-tapped-holes-schema-113).

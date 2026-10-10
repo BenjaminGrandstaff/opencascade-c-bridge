@@ -1,5 +1,5 @@
-//! Modeled threads at scale: a 100-turn thread, and 10,000 pattern members
-//! of a threaded rod sharing one generated variant.
+//! Modeled threads at scale: a 100-turn thread, a 100-turn tapped hole, and
+//! 10,000 pattern members of a threaded rod sharing one generated variant.
 
 use super::*;
 
@@ -98,6 +98,73 @@ pub(crate) fn thread_pattern_case(definition: &FamilyDefinition) -> Outcome {
                 )));
             }
             Ok("10001 instances, one threaded variant, no retained handles".into())
+        },
+    )
+}
+
+/// A 100-turn M10x1.5 tapped through hole in a 160 mm block: the groove is
+/// fused into the hole cutter and removed by one boolean cut.
+pub(crate) fn tapped_hole_case(definition: &FamilyDefinition) -> Outcome {
+    timed(
+        "threads: 100-turn M10x1.5 tapped through hole".into(),
+        Duration::from_secs(12),
+        Expectation::Required,
+        || {
+            let mm = |x: f64, y: f64, z: f64| {
+                VectorExpr::Literal(VectorQuantity::lengths(x, y, z, LengthUnit::Millimeter))
+            };
+            let length =
+                |value: f64| ScalarExpr::Literal(Quantity::length(value, LengthUnit::Millimeter));
+            let mut definition = definition.clone();
+            definition.features = vec![
+                FeatureDefinition {
+                    id: "block".into(),
+                    operation: FeatureOperation::Box {
+                        origin: mm(-10.0, -10.0, 0.0),
+                        size: mm(20.0, 20.0, 150.0),
+                    },
+                },
+                FeatureDefinition {
+                    id: "body".into(),
+                    operation: FeatureOperation::Hole {
+                        input: "block".into(),
+                        position: mm(0.0, 0.0, 150.0),
+                        axis: VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, -1.0)),
+                        diameter: length(8.5),
+                        extent: HoleExtent::ThroughAll,
+                        bottom: HoleBottom::Flat,
+                        finish: HoleFinish::Plain,
+                        thread: Some(Box::new(ThreadSpecification {
+                            designation: "M10x1.5".into(),
+                            nominal_diameter: length(10.0),
+                            pitch: length(1.5),
+                            handedness: ThreadHandedness::Right,
+                            modeled: Some(ModeledThread::default()),
+                        })),
+                    },
+                },
+            ];
+            let session = Session::new().map_err(|error| failure(error.to_string()))?;
+            let mut graph = InstanceGraph::new(&definition);
+            graph.add_base("part", HashMap::new(), "bench")?;
+            let generation = graph.regenerate_all(&session)?;
+            let body = generation
+                .result("part")
+                .and_then(|result| result.shape("body"))
+                .ok_or_else(|| failure("tapped output missing".into()))?;
+            let valid = session
+                .is_valid(body)
+                .map_err(|error| failure(error.to_string()))?;
+            drop(generation);
+            let retained = session
+                .shape_count()
+                .map_err(|error| failure(error.to_string()))?;
+            if !valid || retained != 0 {
+                return Err(failure(format!(
+                    "valid {valid}, {retained} retained handles"
+                )));
+            }
+            Ok("valid 100-turn tapped hole, no retained handles".into())
         },
     )
 }

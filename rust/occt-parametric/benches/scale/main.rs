@@ -17,8 +17,8 @@ use occt_parametric::{
     ClearanceSeries, CoordinateAxis, DatumDefinition, DatumKind, DatumRef, Dimension, Extremum,
     FaceSelector, FamilyDefinition, FeatureDefinition, FeatureOperation, HoleBottom,
     HoleCatalogSystem, HoleExtent, HoleFinish, InstanceGraph, LengthUnit, ModelDocument,
-    ModelError, ParameterDefinition, ParameterType, ParameterValue, PartInstance, PatternRule,
-    Placement, Quantity, RelationKind, RelationshipTolerances, RequirementKind,
+    ModelError, ModeledThread, ParameterDefinition, ParameterType, ParameterValue, PartInstance,
+    PatternRule, Placement, Quantity, RelationKind, RelationshipTolerances, RequirementKind,
     RequirementPriority, ScalarExpr, SketchArc, SketchCircle, SketchConstraint, SketchDefinition,
     SketchLine, SketchPoint, ThreadHandedness, ThreadSpecification, VectorExpr, VectorQuantity,
     carr_lane_socket_head_v1, carr_lane_tap_drill_v1, iso273_clearance_v1,
@@ -167,6 +167,7 @@ fn main() -> ExitCode {
     outcomes.push(helix::helix_case());
     outcomes.push(helix::helix_pattern_case(definition));
     outcomes.push(threads::thread_case(definition));
+    outcomes.push(threads::tapped_hole_case(definition));
     outcomes.push(threads::thread_pattern_case(definition));
     outcomes.push(parts_list::parts_list_case(definition, false));
     outcomes.push(parts_list::parts_list_case(definition, true));

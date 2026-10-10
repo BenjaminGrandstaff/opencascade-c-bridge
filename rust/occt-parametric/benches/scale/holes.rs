@@ -69,6 +69,7 @@ pub(super) fn threaded_hole_features_case() -> Outcome {
             nominal_diameter: ScalarExpr::Literal(Quantity::length(1.5, LengthUnit::Millimeter)),
             pitch: ScalarExpr::Parameter("thread_pitch".into()),
             handedness: ThreadHandedness::Right,
+            modeled: None,
         })),
     )
 }

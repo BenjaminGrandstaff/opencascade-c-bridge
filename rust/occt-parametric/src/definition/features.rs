@@ -55,14 +55,29 @@ pub enum ThreadHandedness {
     Left,
 }
 
-/// Caller-supplied internal-thread intent, not a standards lookup or modeled
-/// helix. The hole diameter remains the explicit cylindrical bore diameter.
+/// Caller-supplied internal-thread intent, not a standards lookup. The hole
+/// diameter remains the explicit cylindrical bore (tap drill) diameter.
+/// With `modeled`, the hole also cuts the thread geometry.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ThreadSpecification {
     pub designation: String,
     pub nominal_diameter: ScalarExpr,
     pub pitch: ScalarExpr,
     pub handedness: ThreadHandedness,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub modeled: Option<ModeledThread>,
+}
+
+/// Cuts an ISO 68-1 basic-profile internal thread of the callout's nominal
+/// diameter, pitch and handedness into the bore, from the hole entry along
+/// its axis. The bore must lie between the basic minor and nominal
+/// diameters. Blind holes keep the groove at least half a pitch above the
+/// bore bottom; omitted `length` threads the whole usable bore.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ModeledThread {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub length: Option<ScalarExpr>,
 }
 
 /// How a rib's total thickness is placed relative to its profile plane.

@@ -204,6 +204,7 @@ fn callout_family(finish: HoleFinish, extent: HoleExtent) -> FamilyDefinition {
                 )),
                 pitch: ScalarExpr::Literal(Quantity::length(0.8, LengthUnit::Millimeter)),
                 handedness: ThreadHandedness::Left,
+                modeled: None,
             })),
         },
     });

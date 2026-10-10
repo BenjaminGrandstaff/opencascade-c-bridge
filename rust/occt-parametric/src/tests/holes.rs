@@ -626,6 +626,7 @@ fn thread_spec() -> ThreadSpecification {
         nominal_diameter: length_expr(3.0),
         pitch: length_expr(0.5),
         handedness: ThreadHandedness::Right,
+        modeled: None,
     }
 }
 

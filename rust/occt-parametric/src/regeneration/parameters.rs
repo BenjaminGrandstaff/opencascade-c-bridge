@@ -501,6 +501,9 @@ fn collect_hole_parameters<'a>(
     if let Some(thread) = thread {
         collect_scalar_parameters(&thread.nominal_diameter, names);
         collect_scalar_parameters(&thread.pitch, names);
+        if let Some(length) = thread.modeled.as_ref().and_then(|m| m.length.as_ref()) {
+            collect_scalar_parameters(length, names);
+        }
     }
     match extent {
         HoleExtent::Blind { depth } => collect_scalar_parameters(depth, names),

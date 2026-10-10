@@ -62,6 +62,14 @@ pub(super) fn execute_hole<'session>(
     if limit.is_none() && (!depth.is_finite() || depth <= 0.0) {
         return Err(ModelError::new("hole depth must be finite and positive"));
     }
+    // Plan any modeled thread before building tools, so invalid sizes fail
+    // without native work.
+    let modeled = match thread {
+        Some(t) if t.modeled.is_some() => Some(modeled_thread(
+            t, extent, start, axis, depth, diameter, parameters,
+        )?),
+        _ => None,
+    };
     let (tool, limiting_face) = if let Some(limit) = limit {
         (limit.solid, Some(limit.limiting_face))
     } else {
@@ -143,6 +151,14 @@ pub(super) fn execute_hole<'session>(
             }
         }
         session.fuse(&tool, &recess)?
+    } else {
+        tool
+    };
+    // The thread groove joins the cutter so a single cut keeps face history
+    // from the original input.
+    let tool = if let Some(geometry) = modeled {
+        let groove = super::threads::thread_groove(session, geometry)?;
+        session.fuse(&tool, &groove)?
     } else {
         tool
     };
@@ -308,6 +324,57 @@ fn through_span(
         add(position, scale(axis, minimum - padding)),
         maximum - minimum + 2.0 * padding,
     ))
+}
+
+/// Geometry of a modeled internal thread from the hole entry. Through holes
+/// may thread their whole span; blind holes stop half a pitch above the bore
+/// bottom so the groove (at most ~0.41 P either side of its helix) never cuts
+/// below it. A drill point lies beyond the bore depth and is unaffected.
+#[allow(clippy::too_many_arguments)]
+fn modeled_thread(
+    thread: &ThreadSpecification,
+    extent: &HoleExtent,
+    start: Vec3,
+    axis: Vec3,
+    depth: f64,
+    diameter: f64,
+    parameters: &HashMap<String, ParameterValue>,
+) -> Result<super::threads::ThreadGeometry, ModelError> {
+    let usable = |pitch: f64| match extent {
+        HoleExtent::Blind { .. } => Ok(depth - pitch / 2.0),
+        HoleExtent::ThroughAll => Ok(depth),
+        _ => Err(ModelError::new(
+            "a modeled thread needs a blind or through-all hole",
+        )),
+    };
+    let nominal = scalar(&thread.nominal_diameter, parameters, Dimension::Length)?;
+    let pitch = scalar(&thread.pitch, parameters, Dimension::Length)?;
+    let usable = usable(pitch)?;
+    let minor = nominal - 2.0 * super::threads::basic_depth(pitch);
+    if diameter < minor - 1e-9 {
+        return Err(ModelError::new(format!(
+            "a modeled internal thread needs a bore of at least the basic minor diameter ({minor:.3} mm)"
+        )));
+    }
+    let length = match thread.modeled.as_ref().and_then(|m| m.length.as_ref()) {
+        Some(length) => scalar(length, parameters, Dimension::Length)?,
+        None => usable,
+    };
+    if !length.is_finite() || length <= 0.0 || length > usable + 1e-9 {
+        return Err(ModelError::new(format!(
+            "modeled thread length must be positive and at most {usable:.3} mm \
+             (the bore, less half a pitch above a blind bottom)"
+        )));
+    }
+    Ok(super::threads::ThreadGeometry {
+        origin: start,
+        axis,
+        major_diameter: nominal,
+        pitch,
+        length,
+        internal: true,
+        left_handed: thread.handedness == ThreadHandedness::Left,
+    })
 }
 
 fn validate_thread(

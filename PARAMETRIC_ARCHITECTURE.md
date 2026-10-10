@@ -1487,7 +1487,9 @@ neighbors (schema 110 / ABI 58), and spline/ellipse neighbors use the native
 iterative fillet solver with bounded, tangent, minor-arc checks (schema 111 /
 ABI 59). Sketch patterns expand linked copies before solving, with rigid link
 equations per copied point, and sketch faces cut inner holes natively without
-booleans (schema 112 / ABI 60).
+booleans (schema 112 / ABI 60). Hole thread callouts can be modeled: the
+internal thread groove is fused into the hole cutter so one cut keeps input
+history (schema 113).
 
 The next cross-layer work should prioritize manufacturing product definition:
 standards-verified material hatch presets and drawing conventions, followed by

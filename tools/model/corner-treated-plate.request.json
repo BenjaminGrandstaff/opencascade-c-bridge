@@ -1,7 +1,7 @@
 {
   "schema": "occb-model-view-v1",
   "model": {
-    "schema_version": 112,
+    "schema_version": 113,
     "family": {
       "id": "corner-treated-plate",
       "version": 1,

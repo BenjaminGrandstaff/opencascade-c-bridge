@@ -11,18 +11,27 @@ tracks status and order.
 | C ABI (`src/`, `include/`) | ABI 60 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 112 | Active development |
+| `occt-parametric` (engineering layer) | Schema 113 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 130 + first-use integration 1 (+1 doc test), recipes 3, parametric 545 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 19 + branch command 2 + model command 60, MCP Python 9, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 130 + first-use integration 1 (+1 doc test), recipes 3, parametric 549 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 19 + branch command 2 + model command 60, MCP Python 9, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform code also passes. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
 | Coverage | Last recorded: 93.61% lines overall, test code excluded; C++ 94.13% lines, 87.40% branches, 100% functions; Rust 93.42% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 166 Rust cases plus 5 model-command and 34 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Scale benchmarks | 167 Rust cases plus 5 model-command and 35 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
+
+- Modeled tapped holes (schema 113, no ABI change): a hole's thread callout
+  with `modeled` cuts an ISO 68-1 basic internal thread from the hole entry,
+  fused into the hole cutter so one cut keeps input history. Tap drills must
+  be at least the basic minor diameter; blind threads stop half a pitch
+  above the bore floor; countersinks act as entry chamfers. Example:
+  `tapped-block`. Catalog: 49 examples, 61 resources. A 100-turn M10×1.5 tap
+  cuts in 3.644 s (12 s budget); the MCP renders 10 tapped blocks in 14.3 s
+  (30 s budget). Thread runout remains future work.
 
 - Sketch patterns and holes (schema 112 / ABI 60): linked mirror, linear and
   circular copies of sketch entities as solver unknowns with rigid link

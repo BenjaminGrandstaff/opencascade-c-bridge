@@ -23,8 +23,8 @@ complete conical tip lies in the original input material within Boolean
 tolerance; a tip that breaks through a face or enters an existing void is
 rejected. This is containment, not a specified minimum tip clearance or a
 manufacturing-strength check. Counterbores and countersinks remain entry
-recesses and combine with the tip. Thread metadata retains its existing intent
-semantics and does not create a helix.
+recesses and combine with the tip. Thread metadata only records intent unless
+it is modeled; see [modeled tapped holes](#modeled-tapped-holes-schema-113).
 
 The cone, barrel and optional entry recess are fused before one cut from the
 original body. Native cut history remains attached to that original input.
@@ -94,3 +94,65 @@ candidate. A single-output witness query also indexes the family definition.
 The `hole_limits` gate checks 100 two-hole curved-cap regenerations, analytical
 volume within body-scale integration tolerance, exact ray witnesses, validity
 and handle cleanup against a 10-second budget.
+
+## Modeled tapped holes (schema 113)
+
+A hole's `thread` callout can cut its thread. Add `modeled`, optionally with a
+`length`:
+
+```json
+"thread": {"designation": "M6x1", "nominal_diameter": {"literal": {"value": 6, "dimension": "length", "unit": "millimeter"}},
+           "pitch": {"literal": {"value": 1, "dimension": "length", "unit": "millimeter"}},
+           "handedness": "right", "modeled": {"length": {"parameter": "thread_length"}}}
+```
+
+The hole cuts an ISO 68-1 basic-profile internal thread of the callout's
+nominal diameter, pitch and handedness, from the hole entry along its axis.
+The groove and helix are those of the [thread feature](THREADS.md) with
+`internal: true`. The groove is fused into the hole cutter (bore, tip and
+entry recess), so one boolean cut removes everything and face history stays
+attached to the original input.
+
+- **Bore.** The hole diameter is the tap drill. It must be at least the basic
+  minor diameter (`nominal − 2·5H/8`, 8.376 mm for M10×1.5) and less than the
+  nominal diameter. A larger tap drill leaves a wider crest flat.
+- **Extent.** Blind and through-all holes only; up-to-face and up-to-next
+  limits are rejected. Through holes thread their whole span by default.
+  Blind holes stop at least half a pitch above the full-diameter bore depth,
+  so the groove (at most about 0.41 P each side of its helix) never cuts below
+  the bore floor. Omitted `length` threads that whole usable span. A drill
+  point lies beyond the bore depth and is unaffected.
+- **Entry.** The thread starts at the hole position. A countersink finish acts
+  as an entry chamfer; a counterbore wider than the nominal diameter leaves
+  the groove in free space over its depth.
+- **Not included.** Thread runout (a fading last turn), tolerance classes and
+  fit checks. The groove ends abruptly at the thread length.
+
+The viewer labels the hole that produces the output with its callout, thread
+length and turns (for example `M6x1 RH tapped · 9.000 mm · 9.000 turns`),
+linked to the length and size controls, or `full bore` when the length is
+omitted. Thread length, nominal diameter and pitch parameters invalidate the
+hole and its dependents.
+
+The [tapped block](../tools/model/tapped-block.request.json) has an M10×1.5
+through tap (8.5 mm tap drill) and an M6×1 blind tap 9 mm long in a 14 mm
+bore, with a 90° countersink and a 118° drill point. Tests check:
+
+- the cut against drilling plain holes and cutting the same threads with the
+  thread feature (equal to 1e-7 relative),
+- removed volume against the screw-motion (Pappus) volume of the in-material
+  groove, within the partial turns at the entry and exit,
+- that blind grooves stay between the entry and the bore floor, within the
+  nominal radius, across depth and length edits that rebuild the hole,
+- that left- and right-handed threads remove equal volume, and their entry
+  vertices mirror each other across the block's symmetry plane, and
+- that a bore below the basic minor diameter, an overlong or zero length, an
+  up-to-next limit, and a nominal size at or below the bore all fail without
+  leaking handles.
+
+Tapped holes cost about 52 ms per turn (1.15 s for this block's 22 turns);
+fusing the groove into the cutter roughly doubles the boolean work of a
+separate thread cut, in exchange for keeping input history. A 100-turn
+M10×1.5 tap through a 150 mm block is a required scale case (12 s budget).
+The MCP renders 10 tapped blocks in 14.3 s (30 s budget). Older documents
+migrate to schema 113 without modeled threads; there is no ABI change.

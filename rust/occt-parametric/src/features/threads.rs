@@ -85,6 +85,15 @@ pub(crate) fn execute_thread<'session>(
     input: &Shape<'session>,
     thread: ThreadGeometry,
 ) -> Result<Shape<'session>, ModelError> {
+    let groove = thread_groove(session, thread)?;
+    Ok(session.cut(input, &groove)?)
+}
+
+/// The swept groove solid of a thread, before it is cut from a part.
+pub(crate) fn thread_groove(
+    session: &Session,
+    thread: ThreadGeometry,
+) -> Result<Shape<'_>, ModelError> {
     let ThreadGeometry {
         origin,
         axis,
@@ -136,6 +145,5 @@ pub(crate) fn execute_thread<'session>(
         turns,
         left_handed,
     })?;
-    let groove = session.sweep(&face, &path, occt_bridge::SweepOrientation::Binormal(axis))?;
-    Ok(session.cut(input, &groove)?)
+    Ok(session.sweep(&face, &path, occt_bridge::SweepOrientation::Binormal(axis))?)
 }
