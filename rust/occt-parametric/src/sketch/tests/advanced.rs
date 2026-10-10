@@ -2454,3 +2454,183 @@ fn spline_ellipse_contact_rejects_bad_roles_and_reports_fixed_conflicts() {
             .is_err()
     );
 }
+
+fn ellipse_circle_contact_sketch() -> (SketchDefinition, HashMap<String, ParameterValue>) {
+    let r: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../tools/model/ellipse-tangent-boss.request.json"
+    ))
+    .unwrap();
+    let doc = ModelDocument::from_json(&r["model"].to_string()).unwrap();
+    let part = PartInstance {
+        id: "part".into(),
+        definition: &doc.family,
+        overrides: HashMap::new(),
+        provenance: "test".into(),
+    };
+    let FeatureOperation::SketchFace { sketch } = &doc.family.features[0].operation else {
+        unreachable!()
+    };
+    ((**sketch).clone(), part.resolved_parameters().unwrap())
+}
+
+#[test]
+fn ellipse_circle_contact_solves_free_axes_radius_and_rotated_placement() {
+    let (s, mut params) = ellipse_circle_contact_sketch();
+    for (a, b, r, tilt) in [
+        (5., 3., 2., 0.),
+        (8., 4., 3., 0.7),
+        (12., 2., 1., std::f64::consts::FRAC_PI_3),
+    ] {
+        for (id, value) in [("semi_major", a), ("semi_minor", b), ("boss_radius", r)] {
+            params.insert(
+                id.into(),
+                ParameterValue::Scalar(Quantity::length(value, LengthUnit::Millimeter)),
+            );
+        }
+        params.insert(
+            "tilt".into(),
+            ParameterValue::Scalar(Quantity::scalar(tilt)),
+        );
+        let solved = s.solve(&params).unwrap();
+        assert!(solved.solved, "{}", solved.max_residual);
+        assert_eq!(solved.free_degrees, 0);
+        let contact = s.ellipse_circle_tangent_contacts(&params, &solved).unwrap()[&6];
+        assert!(contact.tangent_sine.abs() < 1e-9);
+        assert!(contact.arc_span_residual_mm.is_none());
+        for q in &contact.points[1..] {
+            assert!(
+                (q.x - contact.points[0].x).abs() < 1e-9
+                    && (q.y - contact.points[0].y).abs() < 1e-9
+            );
+        }
+        let check = &s.constraint_checks(&params, &solved).unwrap()[6];
+        assert!(check.satisfied && !check.by_construction);
+        if tilt == 0. {
+            assert!((solved.points["boss-center"].y - b - r).abs() < 1e-7);
+        }
+    }
+}
+
+#[test]
+fn ellipse_circle_contact_handles_internal_external_arcs_and_non_tangent_crossings() {
+    let mut s = base();
+    s.points = vec![
+        point("c", 0., 0., true),
+        point("a", 5., 0., true),
+        point("b", 0., 3., true),
+        point("cc", 0., 5., true),
+        point("r", 2., 5., true),
+        point("p", 0., 3., true),
+        point("left", -2., 5., true),
+    ];
+    s.ellipses = vec![SketchEllipse {
+        id: "ellipse".into(),
+        center: "c".into(),
+        major: "a".into(),
+        minor: "b".into(),
+    }];
+    s.circles = vec![SketchCircle {
+        id: "circle".into(),
+        center: "cc".into(),
+        rim: "r".into(),
+    }];
+    s.constraints = vec![SketchConstraint::EllipseCircleTangent {
+        ellipse: "ellipse".into(),
+        circle: "circle".into(),
+        point: "p".into(),
+    }];
+    let params = HashMap::new();
+    assert!(s.solve(&params).unwrap().solved);
+    s.points[3] = point("cc", 0., 2., true);
+    s.points[4] = point("r", 1., 2., true);
+    assert!(s.solve(&params).unwrap().solved); // Internal tangency uses the opposite normal branch.
+    s.points[3] = point("cc", 1., 3., true);
+    s.points[4] = point("r", 2., 3., true);
+    let crossing = s.solve(&params).unwrap();
+    assert!(!crossing.solved);
+    let c = s
+        .ellipse_circle_tangent_contacts(&params, &crossing)
+        .unwrap()[&0];
+    assert!(
+        (c.points[0].y - c.points[1].y).abs() < 1e-9
+            && (c.points[0].x - c.points[2].x).abs() < 1e-9
+    );
+    assert!(c.tangent_sine.abs() > 0.9); // Coincident contacts alone do not prove tangency.
+    s.points[3] = point("cc", 0., 5., true);
+    s.points[4] = point("r", 2., 5., true);
+    s.circles.clear();
+    s.arcs = vec![SketchArc {
+        id: "circle".into(),
+        center: "cc".into(),
+        start: "r".into(),
+        end: "left".into(),
+        clockwise: true,
+    }];
+    for clockwise in [true, false] {
+        s.arcs[0].clockwise = clockwise;
+        let solved = s.solve(&params).unwrap();
+        assert_eq!(solved.solved, clockwise);
+        let c = s.ellipse_circle_tangent_contacts(&params, &solved).unwrap()[&0];
+        assert!(c.tangent_sine.abs() < 1e-9);
+        assert!(
+            (c.arc_span_residual_mm.unwrap() - if clockwise { 0. } else { std::f64::consts::PI })
+                .abs()
+                < 1e-7
+        );
+    }
+    s.arcs[0].start = "p".into();
+    s.arcs[0].end = "r".into();
+    s.arcs[0].clockwise = false;
+    assert!(s.solve(&params).unwrap().solved); // Contact exactly on an arc endpoint.
+}
+
+#[test]
+fn ellipse_circle_contact_validates_roles_degenerate_geometry_and_diagnostics() {
+    let (s, params) = ellipse_circle_contact_sketch();
+    for role in 0..3 {
+        let mut bad = s.clone();
+        let SketchConstraint::EllipseCircleTangent {
+            ellipse,
+            circle,
+            point,
+        } = &mut bad.constraints[6]
+        else {
+            unreachable!()
+        };
+        match role {
+            0 => *ellipse = "boss".into(),
+            1 => *circle = "baseline".into(),
+            _ => *point = "missing".into(),
+        };
+        assert!(bad.solve(&params).is_err());
+    }
+    let mut fixed = s.clone();
+    for p in &mut fixed.points {
+        p.fixed = true;
+    }
+    let solved = fixed.solve(&params).unwrap();
+    assert!(!solved.solved);
+    assert!(!fixed.constraint_checks(&params, &solved).unwrap()[6].satisfied);
+    let mut missing = solved.clone();
+    missing.points.remove("contact");
+    assert!(
+        fixed
+            .ellipse_circle_tangent_contacts(&params, &missing)
+            .is_err()
+    );
+    let mut invalid = solved;
+    invalid.points.get_mut("contact").unwrap().x = f64::NAN;
+    assert!(
+        fixed
+            .ellipse_circle_tangent_contacts(&params, &invalid)
+            .is_err()
+    );
+    for id in ["major", "boss-rim", "contact"] {
+        let mut bad = fixed.clone();
+        let q = if id == "major" { (0., 0.) } else { (0., 5.) };
+        let p = bad.points.iter_mut().find(|p| p.id == id).unwrap();
+        p.x = length(q.0);
+        p.y = length(q.1);
+        assert!(bad.solve(&params).is_err());
+    }
+}

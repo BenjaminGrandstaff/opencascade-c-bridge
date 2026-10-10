@@ -53,7 +53,7 @@ for(let i=0;i<data.scenes.length;i++){
   assert(!elements.overlay.children.some(e=>e.attributes['data-annotation']===contact.id),'constraint toggle hides spline contact');
   elements.constraints.checked=true;elements.constraints.emit('change');
  }
- for(const contact of viewer.scene.annotations.filter(a=>a.detail?.constraint?.spline_circle_tangent)){
+ for(const contact of viewer.scene.annotations.filter(a=>(a.detail?.constraint?.spline_circle_tangent||a.detail?.constraint?.ellipse_circle_tangent))){
   assert.equal(contact.detail.residual_unit,'mixed');assert.equal(contact.detail.by_construction,false);assert.equal(contact.anchors.length,3);
   const r=contact.detail.contact_residuals;assert.equal(r.residual_units.length,r.arc_span_residual_mm===null?4:5);
   const button=elements.annotations.children.find(e=>e.dataset.annotation===contact.id);assert(button);button.emit('click');

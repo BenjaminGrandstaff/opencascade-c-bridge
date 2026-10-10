@@ -1414,3 +1414,75 @@ fn spline_ellipse_viewer_exposes_both_native_contacts_tangent_units_and_controls
         );
     }
 }
+
+#[test]
+fn ellipse_circle_viewer_exposes_both_native_contacts_tangent_units_and_controls() {
+    let dir = Directory::new();
+    for conflict in [false, true] {
+        let mut request = view_example("ellipse-tangent-boss");
+        if conflict {
+            for p in request["model"]["family"]["features"][0]["operation"]["sketch_face"]["sketch"]
+                ["points"]
+                .as_array_mut()
+                .unwrap()
+            {
+                p["fixed"] = json!(true);
+            }
+        }
+        let name = if conflict {
+            "ellipse-contact-conflict"
+        } else {
+            "ellipse-contact-solved"
+        };
+        view_request(&dir, request, name).unwrap();
+        let data: Value =
+            serde_json::from_str(&fs::read_to_string(dir.0.join(name).join("view.json")).unwrap())
+                .unwrap();
+        let scene = data["scenes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["kind"] == "sketch")
+            .unwrap();
+        assert_eq!(scene["solver"]["solved"], !conflict);
+        let a = scene["annotations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|a| !a["detail"]["constraint"]["ellipse_circle_tangent"].is_null())
+            .unwrap();
+        assert_eq!(a["status"], if conflict { "failed" } else { "passed" });
+        assert_eq!(a["detail"]["by_construction"], false);
+        assert_eq!(a["detail"]["residual_unit"], "mixed");
+        assert_eq!(
+            a["detail"]["contact_residuals"]["residual_units"],
+            json!(["mm", "mm", "mm", "dimensionless"])
+        );
+        assert_eq!(a["anchors"].as_array().unwrap().len(), 3);
+        let r = &a["detail"]["contact_residuals"];
+        if conflict {
+            assert!(r["position_residual_mm"].as_f64().unwrap() > 0.1);
+        } else {
+            assert_eq!(scene["solver"]["free_degrees"], 0);
+            assert!(
+                r["position_residual_mm"].as_f64().unwrap() < 1e-9
+                    && r["tangent_sine"].as_f64().unwrap().abs() < 1e-9
+            );
+            assert_eq!(
+                a["parameters"],
+                json!(["boss_radius", "semi_major", "semi_minor", "tilt"])
+            );
+            for p in a["anchors"].as_array().unwrap() {
+                assert!(
+                    p[0].as_f64().unwrap().abs() < 1e-7
+                        && (p[1].as_f64().unwrap() - 3.).abs() < 1e-7
+                );
+            }
+        }
+        assert!(
+            fs::read_to_string(dir.0.join(name).join("view-0003.svg"))
+                .unwrap()
+                .contains("T ELLIPSE CIRCLE")
+        );
+    }
+}

@@ -58,7 +58,7 @@ class McpTests(unittest.TestCase):
         with self.assertRaises(jsonschema.ValidationError):
             jsonschema.validate(bad, schema)
         resources = self.client.call('resources/list')['result']['resources']
-        self.assertEqual(len(resources), 54)
+        self.assertEqual(len(resources), 55)
         self.assertEqual(len(self.client.call('resources/templates/list')['result']['resourceTemplates']), 1)
         read = self.client.call('resources/read', dict(uri='occt://schema/request'))['result']['contents'][0]
         self.assertEqual(json.loads(read['text']), schema)
@@ -623,6 +623,26 @@ class McpTests(unittest.TestCase):
         for point in relation['anchors']:
             self.assertAlmostEqual(point[0], 0.)
             self.assertAlmostEqual(point[1], 5.)
+        ellipse_boss = self.client.tool('occt_get_example', dict(name='ellipse-tangent-boss'))['structuredContent']
+        jsonschema.validate(ellipse_boss, schema)
+        result = self.client.tool('occt_visualize_model', ellipse_boss)
+        self.assertFalse(result['isError'])
+        data = json.loads(self.client.call('resources/read', dict(uri=result['structuredContent']['resources']['view.json']))['result']['contents'][0]['text'])
+        scene = next(s for s in data['scenes'] if s['kind']=='sketch')
+        self.assertTrue(scene['solver']['solved'])
+        self.assertEqual(scene['solver']['free_degrees'], 0)
+        relation = next(a for a in scene['annotations'] if 'ellipse_circle_tangent' in a['detail'].get('constraint', {}))
+        self.assertEqual(relation['status'], 'passed')
+        self.assertFalse(relation['detail']['by_construction'])
+        self.assertEqual(relation['parameters'], ['boss_radius', 'semi_major', 'semi_minor', 'tilt'])
+        self.assertEqual(relation['detail']['residual_unit'], 'mixed')
+        residuals = relation['detail']['contact_residuals']
+        self.assertIsNone(residuals['arc_span_residual_mm'])
+        self.assertLess(residuals['position_residual_mm'], 1e-9)
+        self.assertLess(abs(residuals['tangent_sine']), 1e-9)
+        for point in relation['anchors']:
+            self.assertAlmostEqual(point[0], 0.)
+            self.assertAlmostEqual(point[1], 3.)
         # Ordinary accepted builds also publish the annotated viewer when preview is on.
         build_request = dict(schema='occb-model-request-v1',model=request['model'],outputs=request['outputs'],preview=True,step=False,stl=False)
         built = self.client.tool('occt_build',build_request)['structuredContent']

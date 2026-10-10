@@ -79,7 +79,7 @@ export are verified. A 1,000-pair solve and residual-diagnostic gate passes in
 0.009 s (10 s budget); 20 solids plus 60 source sketch scenes and matched-radius
 annotations pass through MCP in 0.316 s (10 s budget).
 
-Current authoring examples use schema 106. Older model documents migrate
+Current authoring examples use schema 107. Older model documents migrate
 without adding constraints or changing their entities. Current native ABI is 56.
 
 ## Saved profile operations
@@ -393,7 +393,9 @@ relation with a line or arc uses the adjacent control-pole direction as a
 measured angular residual; it moves free poles and preserves the supplied
 basis. Adjacent endpoint poles must define a nonzero direction for this
 relation. Existing interpolated splines still use constructed endpoint
-tangency. Spline-to-spline and independent general-curve tangency remain open.
+tangency. Independent spline contacts follow in schemas 103–106;
+ellipse-circle/arc contacts follow in schema 107. Ellipse-to-ellipse tangency
+remains open.
 
 The viewer exposes the basis, pole IDs and evaluated weights, draws a dashed
 control polygon, and links a `B-spline degree …` annotation to coordinate and
@@ -805,4 +807,33 @@ The [spline tangent ellipse](../tools/model/spline-tangent-ellipse.request.json)
 example extrudes the ellipse into a solid. Editing `middle_weight` changes its
 placement; `semi_major`, `semi_minor`, and `tilt` change its shape and contact.
 Editing `height` reuses the profile. Older documents migrate to schema 106
+without adding constraints; native ABI remains 56.
+
+## Ellipse-circle tangency (schema 107)
+
+`ellipse_circle_tangent` names a full `ellipse`, a `circle` (or directed circular
+arc), and a seeded contact `point`. OpenCascade measures the nearest native
+ellipse point and derivative. A radial circle projection supplies the circular
+contact and tangent. The residuals are seed minus ellipse contact x/y in
+millimeters, radial circle gap in millimeters, and normalized tangent cross
+product. An arc adds its directed span violation in millimeters.
+
+Tangency permits parallel or opposite directions. External and internal
+contacts use the same relation; the initial point and coordinates select a
+local branch. This is a local contact solve, not a containment test or global
+search for all tangencies. The ellipse keeps its intrinsic perpendicular-axis
+constraint and positive, ordered axis validation. A zero circular radius or
+contact at the circle center is rejected. Contacts outside an arc span fail
+independently of supporting-circle tangency; endpoints are allowed.
+
+The viewer shows the seed and both measured contacts, separate positional,
+tangent and arc-span diagnostics, and linked ellipse dimension, circle radius
+and coordinate controls. Fixed conflicts remain visible. The public
+`ellipse_circle_tangent_contacts` method returns `SketchEllipseCircleContact`,
+sharing the measured contact representation with spline-circle tangency.
+
+The [ellipse tangent boss](../tools/model/ellipse-tangent-boss.request.json)
+example extrudes the positioned circle. Editing `semi_major`, `semi_minor` and
+`tilt` changes its contact and placement. `boss_radius` changes the profile and
+solid; `height` reuses the profile. Older documents migrate to schema 107
 without adding constraints; native ABI remains 56.

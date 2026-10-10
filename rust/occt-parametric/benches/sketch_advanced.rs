@@ -54,6 +54,57 @@ fn gate(name: &str, budget: u64, run: impl FnOnce()) {
 }
 fn main() {
     gate(
+        "1000 native ellipse tangent circle bosses with axis edits",
+        10,
+        || {
+            let request: serde_json::Value = serde_json::from_str(include_str!(
+                "../../../tools/model/ellipse-tangent-boss.request.json"
+            ))
+            .unwrap();
+            let document = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+            let session = Session::new().unwrap();
+            let mut part = PartInstance {
+                id: "part".into(),
+                definition: &document.family,
+                overrides: HashMap::new(),
+                provenance: "scale".into(),
+            };
+            for i in 0..1000 {
+                part.overrides.insert(
+                    "semi_minor".into(),
+                    ParameterValue::Scalar(Quantity::length(
+                        if i % 2 == 0 { 3. } else { 4. },
+                        LengthUnit::Millimeter,
+                    )),
+                );
+                let built = part.regenerate(&session).unwrap();
+                assert!(session.is_valid(built.shape("body").unwrap()).unwrap());
+                if i % 2 == 0 {
+                    assert!(
+                        (session.volume(built.shape("body").unwrap()).unwrap()
+                            - std::f64::consts::PI * 2. * 2. * 8.)
+                            .abs()
+                            < 1e-5
+                    );
+                }
+                let peak = if i % 2 == 0 { 3. } else { 4. };
+                assert!(
+                    (session
+                        .exact_bounds(built.shape("body").unwrap())
+                        .unwrap()
+                        .min
+                        .y
+                        - peak)
+                        .abs()
+                        < 2e-7
+                );
+                drop(built);
+                assert_eq!(session.shape_count().unwrap(), 0);
+            }
+        },
+    );
+
+    gate(
         "1000 native spline tangent ellipses with rational weight edits",
         10,
         || {

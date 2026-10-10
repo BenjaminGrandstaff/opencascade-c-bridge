@@ -60,6 +60,7 @@ impl SketchDefinition {
                             | SketchConstraint::SplineCircleTangent { .. }
                             | SketchConstraint::SplineSplineTangent { .. }
                             | SketchConstraint::SplineEllipseTangent { .. }
+                            | SketchConstraint::EllipseCircleTangent { .. }
                             | SketchConstraint::CircleCircleTangent { .. }
                             | SketchConstraint::Concentric { .. }
                             | SketchConstraint::Symmetric { .. }
@@ -422,14 +423,13 @@ impl SketchProblem<'_> {
         Ok(([p, a, b], normalized_cross((zero, u), (zero, v))?))
     }
 
-    pub(super) fn spline_ellipse_contact(
+    fn ellipse_contact_data(
         &self,
-        spline: &str,
         ellipse: &str,
         point: &str,
         values: &[f64],
-    ) -> Result<([SketchPoint2; 3], f64), ModelError> {
-        let (p, a, u) = self.spline_contact_data(spline, point, values)?;
+    ) -> Result<(SketchPoint2, SketchPoint2, SketchPoint2), ModelError> {
+        let p = self.point(point, values);
         let Entity::Ellipse(e) = self.entities[ellipse] else {
             unreachable!("validated ellipse contact")
         };
@@ -439,9 +439,7 @@ impl SketchProblem<'_> {
         let ra = line_length((c, major));
         let rb = line_length((c, minor));
         if ra <= f64::EPSILON || rb <= f64::EPSILON {
-            return Err(ModelError::new(
-                "spline-ellipse tangency needs positive axes",
-            ));
+            return Err(ModelError::new("ellipse tangency needs positive axes"));
         }
         let axis = Vec3::new((major.x - c.x) / ra, (major.y - c.y) / ra, 0.);
         // Trial coordinates can temporarily swap axis lengths. Preserve the locus
@@ -465,20 +463,27 @@ impl SketchProblem<'_> {
         if scale == 0. {
             return Err(ModelError::new("ellipse contact has a zero planar tangent"));
         }
-        let zero = SketchPoint2 { x: 0., y: 0. };
         Ok((
-            [p, a, SketchPoint2 { x: b.x, y: b.y }],
-            normalized_cross(
-                (zero, u),
-                (
-                    zero,
-                    SketchPoint2 {
-                        x: v.x / scale,
-                        y: v.y / scale,
-                    },
-                ),
-            )?,
+            p,
+            SketchPoint2 { x: b.x, y: b.y },
+            SketchPoint2 {
+                x: v.x / scale,
+                y: v.y / scale,
+            },
         ))
+    }
+
+    pub(super) fn spline_ellipse_contact(
+        &self,
+        spline: &str,
+        ellipse: &str,
+        point: &str,
+        values: &[f64],
+    ) -> Result<([SketchPoint2; 3], f64), ModelError> {
+        let (p, a, u) = self.spline_contact_data(spline, point, values)?;
+        let (_, b, v) = self.ellipse_contact_data(ellipse, point, values)?;
+        let zero = SketchPoint2 { x: 0., y: 0. };
+        Ok(([p, a, b], normalized_cross((zero, u), (zero, v))?))
     }
 
     pub(super) fn spline_circle_contact(
@@ -489,6 +494,28 @@ impl SketchProblem<'_> {
         values: &[f64],
     ) -> Result<SketchSplineCircleContact, ModelError> {
         let (p, q, tangent) = self.spline_contact_data(spline, point, values)?;
+        self.curve_circle_contact(p, q, tangent, circle, values)
+    }
+
+    pub(super) fn ellipse_circle_contact(
+        &self,
+        ellipse: &str,
+        circle: &str,
+        point: &str,
+        values: &[f64],
+    ) -> Result<SketchEllipseCircleContact, ModelError> {
+        let (p, q, tangent) = self.ellipse_contact_data(ellipse, point, values)?;
+        self.curve_circle_contact(p, q, tangent, circle, values)
+    }
+
+    fn curve_circle_contact(
+        &self,
+        p: SketchPoint2,
+        q: SketchPoint2,
+        tangent: SketchPoint2,
+        circle: &str,
+        values: &[f64],
+    ) -> Result<SketchSplineCircleContact, ModelError> {
         let (center, rim) = self.radius_points(circle);
         let c = self.point(center, values);
         let radius = line_length((c, self.point(rim, values)));
@@ -496,7 +523,7 @@ impl SketchProblem<'_> {
         let distance = rx.hypot(ry);
         if radius <= f64::EPSILON || distance <= f64::EPSILON {
             return Err(ModelError::new(
-                "spline-circle tangency needs a positive radius and a contact away from the centre",
+                "circular tangency needs a positive radius and a contact away from the centre",
             ));
         }
         let on_circle = SketchPoint2 {
@@ -785,6 +812,25 @@ impl SketchProblem<'_> {
                     residuals.push(span);
                 }
             }
+            SketchConstraint::EllipseCircleTangent {
+                ellipse,
+                circle,
+                point,
+            } => {
+                let contact = self.ellipse_circle_contact(ellipse, circle, point, values)?;
+                let [p, q, _] = contact.points;
+                let (center, rim) = self.radius_points(circle);
+                let c = self.point(center, values);
+                residuals.extend([
+                    p.x - q.x,
+                    p.y - q.y,
+                    line_length((c, p)) - line_length((c, self.point(rim, values))),
+                    contact.tangent_sine,
+                ]);
+                if let Some(span) = contact.arc_span_residual_mm {
+                    residuals.push(span);
+                }
+            }
             SketchConstraint::LineSplineTangent {
                 line,
                 spline,
@@ -972,6 +1018,23 @@ impl SketchProblem<'_> {
                     e.minor.as_str(),
                 ];
                 refs.extend(self.spline_neighbor_refs(s));
+                refs
+            }
+            SketchConstraint::EllipseCircleTangent {
+                ellipse,
+                circle,
+                point,
+            } => {
+                let Entity::Ellipse(e) = self.entities[ellipse.as_str()] else {
+                    unreachable!("validated ellipse")
+                };
+                let mut refs = vec![
+                    point.as_str(),
+                    e.center.as_str(),
+                    e.major.as_str(),
+                    e.minor.as_str(),
+                ];
+                refs.extend(self.circular_points(circle));
                 refs
             }
             SketchConstraint::SplineCircleTangent {

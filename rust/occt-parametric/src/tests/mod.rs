@@ -195,3 +195,5 @@ mod spline_tangent_boss;
 mod spline_tangent_pair;
 
 mod spline_tangent_ellipse;
+
+mod ellipse_tangent_boss;
