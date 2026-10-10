@@ -79,7 +79,7 @@ export are verified. A 1,000-pair solve and residual-diagnostic gate passes in
 0.009 s (10 s budget); 20 solids plus 60 source sketch scenes and matched-radius
 annotations pass through MCP in 0.316 s (10 s budget).
 
-Current authoring examples use schema 104. Older model documents migrate
+Current authoring examples use schema 105. Older model documents migrate
 without adding constraints or changing their entities. Current native ABI is 56.
 
 ## Saved profile operations
@@ -719,4 +719,62 @@ reuse and failed-edit retention are tested.
 `SketchSplineCircleContact` records indexed by constraint number. Older
 documents migrate to schema 104 without adding constraints. The implementation
 uses the existing ABI 56 closest-point/derivative query; native ABI is unchanged.
-Independent spline–ellipse and spline–spline tangency remain future work.
+Spline–spline tangency follows below; independent spline–ellipse tangency remains future work.
+
+
+## Spline-spline tangency (schema 105)
+
+Use a named contact point to constrain two distinct bounded native splines:
+
+```json
+{
+  "spline_spline_tangent": {
+    "first": "curve",
+    "second": "upper-curve",
+    "point": "contact"
+  }
+}
+```
+
+Both entity roles must name splines and must have different IDs. The point
+must exist but need not be a shared endpoint or pole. Free points slide;
+fixed points specify a location and may conflict. Initial point and pole
+positions select the local contact branch. This is a local nonlinear solve;
+coincident curves may leave the contact underconstrained. The relation does
+not join wires or change their endpoint IDs or profile connectivity rules.
+
+Five residuals enforce X/Y membership on each bounded native curve
+(millimetres) and normalized tangent cross product (dimensionless). Tangency
+is unoriented: parallel and opposite derivatives satisfy it. Both curves use
+the native closest-point/derivative query, including interval endpoints,
+rational weights and actual active domains. Zero tangents and C0 knot
+contacts retain the native query's rejection policy. A shared position with
+nonparallel derivatives fails rather than being mistaken for tangency.
+
+The sparse Jacobian includes the contact point, both pole/interpolation sets,
+and any line/arc neighbours already imposing interpolated endpoint tangency.
+Clamped rational, interpolated, non-clamped and periodic splines are supported.
+The relation is solved and measured rather than imposed by construction.
+Viewer anchors show the solved point and both native closest points; details
+separate `position_residual_mm` and `tangent_sine`, with units
+`["mm", "mm", "mm", "mm", "dimensionless"]` and an overall `mixed` summary.
+Coordinate, direct dimension and weight controls are linked to both curves.
+
+The [spline tangent pair](../tools/model/spline-tangent-pair.request.json)
+uses a lower rational quadratic with contact peak
+`lower_rise × w / (1+w)`. A second polynomial quadratic has span `span` and
+pole depth `upper_rise`, while all three poles are free. Tangency determines
+its vertical position: its minimum Y equals the lower peak and its chord Y
+is peak + upper_rise/2. Its chord-bounded native cap has area
+`span × upper_rise / 3`, yielding default volume `426.666667 mm³` at height=8 mm.
+Parameter-dependent initial guesses stay near the intended contact over the
+example's size ranges; the native residuals still determine the solution.
+
+Reference-weight and size edits rebuild the profile and solid. Height-only
+edits reuse the profile. Native validity, analytical volume, active bounds,
+reversed directions, endpoint contacts, rejected intersections, narrow/steep
+parameter edits and failed-edit retention are tested.
+`SketchDefinition::spline_spline_tangent_contacts` returns measured contacts
+indexed by constraint number. Older documents migrate to schema 105 without
+adding relations; native ABI remains 56. Independent spline–ellipse and other
+ellipse contacts remain future work.

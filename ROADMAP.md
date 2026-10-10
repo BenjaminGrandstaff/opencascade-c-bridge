@@ -11,18 +11,33 @@ tracks status and order.
 | C ABI (`src/`, `include/`) | ABI 56 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 104 | Active development |
+| `occt-parametric` (engineering layer) | Schema 105 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 120 + first-use integration 1 (+1 doc test), recipes 3, parametric 514 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 19 + branch command 2 + model command 52, MCP Python 9, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 120 + first-use integration 1 (+1 doc test), recipes 3, parametric 518 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 19 + branch command 2 + model command 53, MCP Python 9, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform code also passes. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
 | Coverage | Last recorded: 93.61% lines overall, test code excluded; C++ 94.13% lines, 87.40% branches, 100% functions; Rust 93.42% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 156 Rust cases plus 5 model-command and 26 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Scale benchmarks | 157 Rust cases plus 5 model-command and 27 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
+
+- Independent spline–spline tangency (schema 105; native ABI 56 unchanged):
+  a seeded point belongs to two distinct bounded native splines and their
+  native tangent directions align. Sparse equations touch both sets of
+  poles/interpolation points and existing tangent neighbours. Rational weight
+  edits, all spline modes, opposite directions, bounded endpoints, free-pole
+  movement, fixed conflicts and non-tangent shared positions are tested.
+  Viewer anchors show both native contacts, with separate positional and
+  tangent residuals and indexed links to coordinate, dimension and weight
+  controls. The spline-tangent-pair example verifies native cap volume/bounds,
+  weight/size edits, narrow/steep geometry, height-only profile reuse and
+  failed-edit retention. The catalog has 41 examples, 12 schemas and 53
+  resources, with 149 request definitions. A 1,000-pair native build/edit gate
+  passes in 2.380 s; MCP renders 20 annotated pairs in 0.199 s (10 s budgets).
+  Spline–ellipse and other independent ellipse contacts remain open.
 
 - Independent spline–circle/arc tangency (schema 104; native ABI 56 unchanged):
   a seeded contact slides along the bounded native spline and satisfies the
@@ -37,8 +52,8 @@ tracks status and order.
   rise and rational-weight edits, height-only profile reuse and failed-edit
   retention. The catalog has 40 examples, 12 schemas and 52 resources, with
   149 request definitions. Native and MCP gates pass 1,000 bosses in 1.235 s
-  and 20 annotated bosses in 0.180 s (10 s budgets). Independent spline–ellipse and
-  spline–spline tangency remain open.
+  and 20 annotated bosses in 0.180 s (10 s budgets). Spline–spline tangency
+  follows in schema 105; spline–ellipse contact remains open.
 
 - Independent line–spline tangency (schema 103 / ABI 56): a seeded contact
   point slides along the bounded native spline and lies on the supporting

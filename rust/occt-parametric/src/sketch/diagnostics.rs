@@ -126,6 +126,65 @@ impl SketchDefinition {
         Ok(result)
     }
 
+    /// Seed point, bounded native spline contact, second bounded native spline contact,
+    /// and measured tangent sine, indexed by spline-spline constraint number.
+    pub fn spline_spline_tangent_contacts(
+        &self,
+        parameters: &HashMap<String, ParameterValue>,
+        solution: &SketchSolution,
+    ) -> Result<HashMap<usize, ([SketchPoint2; 3], f64)>, ModelError> {
+        if !self
+            .constraints
+            .iter()
+            .any(|c| matches!(c, SketchConstraint::SplineSplineTangent { .. }))
+        {
+            return Ok(HashMap::new());
+        }
+        if !self.projections.is_empty() {
+            return Err(ModelError::new(
+                "projected sketch requires source-geometry resolution before contact diagnostics",
+            ));
+        }
+        if solution
+            .points
+            .values()
+            .any(|p| !p.x.is_finite() || !p.y.is_finite())
+        {
+            return Err(ModelError::new(
+                "spline contact diagnostic point is not finite",
+            ));
+        }
+        self.validate(parameters)?;
+        let fixed = self
+            .points
+            .iter()
+            .map(|p| {
+                solution
+                    .points
+                    .get(&p.id)
+                    .copied()
+                    .map(|v| (p.id.as_str(), v))
+                    .ok_or_else(|| ModelError::new("contact solution is missing a point"))
+            })
+            .collect::<Result<HashMap<_, _>, _>>()?;
+        let problem = SketchProblem::new(self, parameters, HashMap::new(), fixed)?;
+        let mut result = HashMap::new();
+        for (index, c) in self.constraints.iter().enumerate() {
+            if let SketchConstraint::SplineSplineTangent {
+                first,
+                second,
+                point,
+            } = c
+            {
+                result.insert(
+                    index,
+                    problem.spline_spline_contact(first, second, point, &[])?,
+                );
+            }
+        }
+        Ok(result)
+    }
+
     /// Seed point, bounded native spline contact, circular contact,
     /// and measured tangent sine, indexed by spline-circle constraint number.
     pub fn spline_circle_tangent_contacts(

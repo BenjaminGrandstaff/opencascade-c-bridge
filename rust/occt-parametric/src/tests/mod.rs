@@ -191,3 +191,5 @@ mod ellipse_tangent_pad;
 mod spline_tangent_cap;
 
 mod spline_tangent_boss;
+
+mod spline_tangent_pair;

@@ -1,0 +1,798 @@
+{
+  "schema": "occb-model-view-v1",
+  "model": {
+    "schema_version": 105,
+    "family": {
+      "id": "spline-tangent-pair",
+      "version": 1,
+      "parameters": [
+        {
+          "id": "span",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 20,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 10,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 40,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "lower_rise",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 10,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 5,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 20,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "middle_weight",
+          "parameter_type": {
+            "scalar": "scalar"
+          },
+          "default": {
+            "scalar": {
+              "value": 1,
+              "dimension": "scalar",
+              "unit": null
+            }
+          },
+          "minimum": {
+            "value": 0.5,
+            "dimension": "scalar",
+            "unit": null
+          },
+          "maximum": {
+            "value": 2,
+            "dimension": "scalar",
+            "unit": null
+          }
+        },
+        {
+          "id": "height",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 8,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 2,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 30,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "upper_rise",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 8,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 5,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 20,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        }
+      ],
+      "derived_parameters": [],
+      "derived_vector_parameters": [],
+      "constraints": [],
+      "requirements": [
+        {
+          "id": "body-valid",
+          "version": 1,
+          "kind": "validation",
+          "priority": "required",
+          "statement": "spline tangent pair upper cap is a valid solid",
+          "rule": {
+            "shape_valid": {
+              "output": "body"
+            }
+          },
+          "provenance": "Illustrative dimensions",
+          "traces": [
+            {
+              "feature": "body"
+            }
+          ]
+        }
+      ],
+      "datums": [],
+      "features": [
+        {
+          "id": "profile",
+          "operation": {
+            "sketch_face": {
+              "sketch": {
+                "id": "spline-tangent-pair",
+                "origin": {
+                  "literal": {
+                    "x": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    },
+                    "y": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                },
+                "x_axis": {
+                  "literal": {
+                    "x": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "y_axis": {
+                  "literal": {
+                    "x": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "points": [
+                  {
+                    "id": "a",
+                    "x": {
+                      "negate": {
+                        "multiply": [
+                          {
+                            "parameter": "span"
+                          },
+                          {
+                            "literal": {
+                              "value": 0.5,
+                              "dimension": "scalar",
+                              "unit": null
+                            }
+                          }
+                        ]
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "b",
+                    "x": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "parameter": "lower_rise"
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "c",
+                    "x": {
+                      "multiply": [
+                        {
+                          "parameter": "span"
+                        },
+                        {
+                          "literal": {
+                            "value": 0.5,
+                            "dimension": "scalar",
+                            "unit": null
+                          }
+                        }
+                      ]
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "origin",
+                    "x": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "up",
+                    "x": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 10,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "contact",
+                    "x": {
+                      "literal": {
+                        "value": 1,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "add": [
+                        {
+                          "divide": [
+                            {
+                              "multiply": [
+                                {
+                                  "parameter": "lower_rise"
+                                },
+                                {
+                                  "parameter": "middle_weight"
+                                }
+                              ]
+                            },
+                            {
+                              "add": [
+                                {
+                                  "literal": {
+                                    "value": 1,
+                                    "dimension": "scalar",
+                                    "unit": null
+                                  }
+                                },
+                                {
+                                  "parameter": "middle_weight"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "literal": {
+                            "value": 0.2,
+                            "dimension": "length",
+                            "unit": "millimeter"
+                          }
+                        }
+                      ]
+                    },
+                    "fixed": false
+                  },
+                  {
+                    "id": "upper-left",
+                    "x": {
+                      "negate": {
+                        "multiply": [
+                          {
+                            "parameter": "span"
+                          },
+                          {
+                            "literal": {
+                              "value": 0.5,
+                              "dimension": "scalar",
+                              "unit": null
+                            }
+                          }
+                        ]
+                      }
+                    },
+                    "y": {
+                      "add": [
+                        {
+                          "add": [
+                            {
+                              "divide": [
+                                {
+                                  "multiply": [
+                                    {
+                                      "parameter": "lower_rise"
+                                    },
+                                    {
+                                      "parameter": "middle_weight"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "add": [
+                                    {
+                                      "literal": {
+                                        "value": 1,
+                                        "dimension": "scalar",
+                                        "unit": null
+                                      }
+                                    },
+                                    {
+                                      "parameter": "middle_weight"
+                                    }
+                                  ]
+                                }
+                              ]
+                            },
+                            {
+                              "multiply": [
+                                {
+                                  "parameter": "upper_rise"
+                                },
+                                {
+                                  "literal": {
+                                    "value": 0.5,
+                                    "dimension": "scalar",
+                                    "unit": null
+                                  }
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "literal": {
+                            "value": 0.5,
+                            "dimension": "length",
+                            "unit": "millimeter"
+                          }
+                        }
+                      ]
+                    },
+                    "fixed": false
+                  },
+                  {
+                    "id": "upper-pole",
+                    "x": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "add": [
+                        {
+                          "subtract": [
+                            {
+                              "divide": [
+                                {
+                                  "multiply": [
+                                    {
+                                      "parameter": "lower_rise"
+                                    },
+                                    {
+                                      "parameter": "middle_weight"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "add": [
+                                    {
+                                      "literal": {
+                                        "value": 1,
+                                        "dimension": "scalar",
+                                        "unit": null
+                                      }
+                                    },
+                                    {
+                                      "parameter": "middle_weight"
+                                    }
+                                  ]
+                                }
+                              ]
+                            },
+                            {
+                              "multiply": [
+                                {
+                                  "parameter": "upper_rise"
+                                },
+                                {
+                                  "literal": {
+                                    "value": 0.5,
+                                    "dimension": "scalar",
+                                    "unit": null
+                                  }
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "literal": {
+                            "value": 0.5,
+                            "dimension": "length",
+                            "unit": "millimeter"
+                          }
+                        }
+                      ]
+                    },
+                    "fixed": false
+                  },
+                  {
+                    "id": "upper-right",
+                    "x": {
+                      "multiply": [
+                        {
+                          "parameter": "span"
+                        },
+                        {
+                          "literal": {
+                            "value": 0.5,
+                            "dimension": "scalar",
+                            "unit": null
+                          }
+                        }
+                      ]
+                    },
+                    "y": {
+                      "add": [
+                        {
+                          "add": [
+                            {
+                              "divide": [
+                                {
+                                  "multiply": [
+                                    {
+                                      "parameter": "lower_rise"
+                                    },
+                                    {
+                                      "parameter": "middle_weight"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "add": [
+                                    {
+                                      "literal": {
+                                        "value": 1,
+                                        "dimension": "scalar",
+                                        "unit": null
+                                      }
+                                    },
+                                    {
+                                      "parameter": "middle_weight"
+                                    }
+                                  ]
+                                }
+                              ]
+                            },
+                            {
+                              "multiply": [
+                                {
+                                  "parameter": "upper_rise"
+                                },
+                                {
+                                  "literal": {
+                                    "value": 0.5,
+                                    "dimension": "scalar",
+                                    "unit": null
+                                  }
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "literal": {
+                            "value": 0.5,
+                            "dimension": "length",
+                            "unit": "millimeter"
+                          }
+                        }
+                      ]
+                    },
+                    "fixed": false
+                  }
+                ],
+                "lines": [
+                  {
+                    "id": "chord",
+                    "start": "c",
+                    "end": "a"
+                  },
+                  {
+                    "id": "vertical-axis",
+                    "start": "origin",
+                    "end": "up"
+                  },
+                  {
+                    "id": "upper-axis",
+                    "start": "upper-left",
+                    "end": "upper-right"
+                  },
+                  {
+                    "id": "upper-chord",
+                    "start": "upper-right",
+                    "end": "upper-left"
+                  }
+                ],
+                "circles": [],
+                "profile": [
+                  "upper-curve",
+                  "upper-chord"
+                ],
+                "constraints": [
+                  {
+                    "horizontal": {
+                      "line": "upper-axis"
+                    }
+                  },
+                  {
+                    "distance": {
+                      "first": "upper-left",
+                      "second": "upper-right",
+                      "value": {
+                        "parameter": "span"
+                      }
+                    }
+                  },
+                  {
+                    "point_line_distance": {
+                      "point": "upper-left",
+                      "line": "vertical-axis",
+                      "value": {
+                        "multiply": [
+                          {
+                            "parameter": "span"
+                          },
+                          {
+                            "literal": {
+                              "value": 0.5,
+                              "dimension": "scalar",
+                              "unit": null
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  },
+                  {
+                    "point_line_distance": {
+                      "point": "upper-pole",
+                      "line": "vertical-axis",
+                      "value": {
+                        "literal": {
+                          "value": 0,
+                          "dimension": "length",
+                          "unit": "millimeter"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "point_line_distance": {
+                      "point": "upper-pole",
+                      "line": "upper-axis",
+                      "value": {
+                        "negate": {
+                          "parameter": "upper_rise"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "spline_spline_tangent": {
+                      "first": "curve",
+                      "second": "upper-curve",
+                      "point": "contact"
+                    }
+                  }
+                ],
+                "arcs": [],
+                "splines": [
+                  {
+                    "id": "curve",
+                    "points": [
+                      "a",
+                      "b",
+                      "c"
+                    ],
+                    "basis": {
+                      "degree": 2,
+                      "knots": [
+                        0,
+                        1
+                      ],
+                      "multiplicities": [
+                        3,
+                        3
+                      ],
+                      "weights": [
+                        {
+                          "literal": {
+                            "value": 1,
+                            "dimension": "scalar",
+                            "unit": null
+                          }
+                        },
+                        {
+                          "parameter": "middle_weight"
+                        },
+                        {
+                          "literal": {
+                            "value": 1,
+                            "dimension": "scalar",
+                            "unit": null
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "id": "upper-curve",
+                    "points": [
+                      "upper-left",
+                      "upper-pole",
+                      "upper-right"
+                    ],
+                    "basis": {
+                      "degree": 2,
+                      "knots": [
+                        0,
+                        1
+                      ],
+                      "multiplicities": [
+                        3,
+                        3
+                      ]
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "body",
+          "operation": {
+            "extrude": {
+              "input": "profile",
+              "direction": {
+                "components": {
+                  "x": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "y": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "z": {
+                    "parameter": "height"
+                  }
+                }
+              },
+              "extent": "distance"
+            }
+          }
+        }
+      ]
+    },
+    "instances": [
+      {
+        "base": {
+          "id": "part",
+          "overrides": {},
+          "provenance": "Two distinct native spline caps meet at a seeded sliding tangent contact"
+        }
+      }
+    ]
+  },
+  "outputs": [
+    {
+      "instance": "part",
+      "output": "body"
+    },
+    {
+      "instance": "part",
+      "output": "profile"
+    }
+  ],
+  "sketches": true
+}

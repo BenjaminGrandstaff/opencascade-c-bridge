@@ -1,7 +1,7 @@
 {
   "schema": "occb-model-request-v1",
   "model": {
-    "schema_version": 104,
+    "schema_version": 105,
     "family": {
       "id": "enclosure",
       "version": 1,

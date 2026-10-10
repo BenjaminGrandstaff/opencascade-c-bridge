@@ -58,7 +58,7 @@ class McpTests(unittest.TestCase):
         with self.assertRaises(jsonschema.ValidationError):
             jsonschema.validate(bad, schema)
         resources = self.client.call('resources/list')['result']['resources']
-        self.assertEqual(len(resources), 52)
+        self.assertEqual(len(resources), 53)
         self.assertEqual(len(self.client.call('resources/templates/list')['result']['resourceTemplates']), 1)
         read = self.client.call('resources/read', dict(uri='occt://schema/request'))['result']['contents'][0]
         self.assertEqual(json.loads(read['text']), schema)
@@ -580,6 +580,25 @@ class McpTests(unittest.TestCase):
         self.assertEqual(relation['detail']['residual_unit'], 'mixed')
         residuals = relation['detail']['contact_residuals']
         self.assertIsNone(residuals['arc_span_residual_mm'])
+        self.assertLess(residuals['position_residual_mm'], 1e-9)
+        self.assertLess(abs(residuals['tangent_sine']), 1e-9)
+        for point in relation['anchors']:
+            self.assertAlmostEqual(point[0], 0.)
+            self.assertAlmostEqual(point[1], 5.)
+        pair = self.client.tool('occt_get_example', dict(name='spline-tangent-pair'))['structuredContent']
+        jsonschema.validate(pair, schema)
+        result = self.client.tool('occt_visualize_model', pair)
+        self.assertFalse(result['isError'])
+        data = json.loads(self.client.call('resources/read', dict(uri=result['structuredContent']['resources']['view.json']))['result']['contents'][0]['text'])
+        scene = next(s for s in data['scenes'] if s['kind']=='sketch')
+        self.assertTrue(scene['solver']['solved'])
+        self.assertEqual(scene['solver']['free_degrees'], 0)
+        relation = next(a for a in scene['annotations'] if 'spline_spline_tangent' in a['detail'].get('constraint', {}))
+        self.assertEqual(relation['status'], 'passed')
+        self.assertFalse(relation['detail']['by_construction'])
+        self.assertEqual(relation['parameters'], ['lower_rise', 'middle_weight', 'span', 'upper_rise'])
+        residuals = relation['detail']['contact_residuals']
+        self.assertEqual(residuals['residual_units'], ['mm', 'mm', 'mm', 'mm', 'dimensionless'])
         self.assertLess(residuals['position_residual_mm'], 1e-9)
         self.assertLess(abs(residuals['tangent_sine']), 1e-9)
         for point in relation['anchors']:

@@ -2180,3 +2180,191 @@ fn spline_circle_contact_rejects_wrong_roles_degenerate_contacts_and_fixed_confl
             .is_err()
     );
 }
+
+fn spline_pair_contact_sketch() -> (SketchDefinition, HashMap<String, ParameterValue>) {
+    let r: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../tools/model/spline-tangent-pair.request.json"
+    ))
+    .unwrap();
+    let doc = ModelDocument::from_json(&r["model"].to_string()).unwrap();
+    let part = PartInstance {
+        id: "part".into(),
+        definition: &doc.family,
+        overrides: HashMap::new(),
+        provenance: "test".into(),
+    };
+    let params = part.resolved_parameters().unwrap();
+    let FeatureOperation::SketchFace { sketch } = &doc.family.features[0].operation else {
+        unreachable!()
+    };
+    ((**sketch).clone(), params)
+}
+
+#[test]
+fn spline_pair_contact_positions_free_poles_and_tracks_rational_weight_edits() {
+    let (s, mut params) = spline_pair_contact_sketch();
+    for weight in [1., 2.] {
+        params.insert(
+            "middle_weight".into(),
+            ParameterValue::Scalar(Quantity::scalar(weight)),
+        );
+        let solved = s.solve(&params).unwrap();
+        assert!(solved.solved, "{}", solved.max_residual);
+        assert_eq!(solved.free_degrees, 0);
+        let peak = 10. * weight / (1. + weight);
+        assert!(
+            solved.points["contact"].x.abs() < 1e-7
+                && (solved.points["contact"].y - peak).abs() < 1e-7
+        );
+        assert!(
+            (solved.points["upper-left"].y - peak - 4.).abs() < 1e-7
+                && (solved.points["upper-pole"].y - peak + 4.).abs() < 1e-7
+        );
+        let check = &s.constraint_checks(&params, &solved).unwrap()[5];
+        assert!(check.satisfied && !check.by_construction);
+        let (points, sine) = s.spline_spline_tangent_contacts(&params, &solved).unwrap()[&5];
+        assert!(sine.abs() < 1e-9);
+        for p in points {
+            assert!(p.x.abs() < 1e-7 && (p.y - peak).abs() < 1e-7);
+        }
+    }
+    let mut reversed = s.clone();
+    reversed.splines[1].points.reverse();
+    reversed.profile.clear();
+    assert!(reversed.solve(&params).unwrap().solved); // Unoriented tangency permits opposite native derivatives.
+}
+
+#[test]
+fn spline_pair_contact_checks_bounded_endpoints_non_tangent_crossings_and_bad_roles() {
+    let (s, params) = spline_pair_contact_sketch();
+    for role in 0..3 {
+        let mut bad = s.clone();
+        let SketchConstraint::SplineSplineTangent {
+            first,
+            second,
+            point,
+        } = &mut bad.constraints[5]
+        else {
+            unreachable!()
+        };
+        match role {
+            0 => *second = first.clone(),
+            1 => *second = "chord".into(),
+            _ => *point = "missing".into(),
+        };
+        assert!(bad.solve(&params).is_err());
+    }
+    let mut fixed = s.clone();
+    for p in &mut fixed.points {
+        p.fixed = true;
+    }
+    let solved = fixed.solve(&params).unwrap();
+    assert!(!solved.solved && !fixed.constraint_checks(&params, &solved).unwrap()[5].satisfied);
+    let mut invalid = solved;
+    invalid.points.get_mut("contact").unwrap().x = f64::NAN;
+    assert!(
+        fixed
+            .spline_spline_tangent_contacts(&params, &invalid)
+            .is_err()
+    );
+    let mut s = base();
+    s.points = vec![
+        point("a", 0., 0., true),
+        point("b", 1., 1., true),
+        point("c", 2., 1., true),
+        point("d", 2., 1., true),
+        point("e", 3., 1., true),
+        point("f", 4., 2., true),
+        point("p", 2., 1., true),
+    ];
+    let basis = SketchBSplineBasis {
+        non_clamped: false,
+        periodic: false,
+        degree: 2,
+        knots: vec![0., 1.],
+        multiplicities: vec![3, 3],
+        weights: vec![],
+    };
+    s.splines = vec![
+        SketchSpline {
+            id: "first".into(),
+            points: vec!["a".into(), "b".into(), "c".into()],
+            basis: Some(basis.clone()),
+            endpoints: None,
+        },
+        SketchSpline {
+            id: "second".into(),
+            points: vec!["d".into(), "e".into(), "f".into()],
+            basis: Some(basis),
+            endpoints: None,
+        },
+    ];
+    s.constraints = vec![SketchConstraint::SplineSplineTangent {
+        first: "first".into(),
+        second: "second".into(),
+        point: "p".into(),
+    }];
+    assert!(s.solve(&HashMap::new()).unwrap().solved); // Separate IDs, shared geometric endpoint, equal tangent.
+    s.points[4] = point("e", 2., 2., true);
+    let solved = s.solve(&HashMap::new()).unwrap();
+    assert!(!solved.solved);
+    let (points, sine) = s
+        .spline_spline_tangent_contacts(&HashMap::new(), &solved)
+        .unwrap()[&0];
+    assert_eq!(points[0], points[1]);
+    assert_eq!(points[0], points[2]);
+    assert!(sine.abs() > 0.9); // Position alone cannot prove tangency.
+    s.points[6] = point("p", 30., 1., true);
+    assert!(s.solve(&HashMap::new()).unwrap().max_residual > 20.);
+}
+
+#[test]
+fn spline_pair_contact_accepts_interpolated_non_clamped_and_periodic_first_curves() {
+    for mode in 0..3 {
+        let (mut s, params) = spline_pair_contact_sketch();
+        let peak = match mode {
+            0 => {
+                s.splines[0].basis = None;
+                10.
+            }
+            1 => {
+                let b = s.splines[0].basis.as_mut().unwrap();
+                b.non_clamped = true;
+                b.knots = (0..6).map(f64::from).collect();
+                b.multiplicities = vec![1; 6];
+                s.points
+                    .extend([point("start", -5., 5., true), point("end", 5., 5., true)]);
+                s.splines[0].endpoints = Some(SketchSplineEndpoints {
+                    start: "start".into(),
+                    end: "end".into(),
+                });
+                7.5
+            }
+            _ => {
+                s.points[0] = point("a", 10., 8., true);
+                s.points[1] = point("b", -10., 8., true);
+                s.points[2] = point("c", -10., -8., true);
+                s.points.push(point("d", 10., -8., true));
+                s.splines[0].points.push("d".into());
+                let b = s.splines[0].basis.as_mut().unwrap();
+                b.periodic = true;
+                b.degree = 3;
+                b.knots = (0..5).map(f64::from).collect();
+                b.multiplicities = vec![1; 5];
+                b.weights.clear();
+                22. / 3.
+            }
+        };
+        s.points.iter_mut().find(|p| p.id == "contact").unwrap().y = length(peak - 0.2);
+        let solved = s.solve(&params).unwrap();
+        assert!(
+            solved.solved && solved.free_degrees == 0,
+            "mode {mode}: {}",
+            solved.max_residual
+        );
+        assert!((solved.points["contact"].y - peak).abs() < 1e-7);
+        let session = Session::new().unwrap();
+        let face = s.face_on_plane(&session, &params, None).unwrap();
+        assert!(session.is_valid(&face).unwrap());
+    }
+}

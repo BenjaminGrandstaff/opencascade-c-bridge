@@ -58,6 +58,7 @@ impl SketchDefinition {
                             | SketchConstraint::LineEllipseTangent { .. }
                             | SketchConstraint::LineSplineTangent { .. }
                             | SketchConstraint::SplineCircleTangent { .. }
+                            | SketchConstraint::SplineSplineTangent { .. }
                             | SketchConstraint::CircleCircleTangent { .. }
                             | SketchConstraint::Concentric { .. }
                             | SketchConstraint::Symmetric { .. }
@@ -407,6 +408,19 @@ impl SketchProblem<'_> {
         Ok(([p, q, foot], sine))
     }
 
+    pub(super) fn spline_spline_contact(
+        &self,
+        first: &str,
+        second: &str,
+        point: &str,
+        values: &[f64],
+    ) -> Result<([SketchPoint2; 3], f64), ModelError> {
+        let (p, a, u) = self.spline_contact_data(first, point, values)?;
+        let (_, b, v) = self.spline_contact_data(second, point, values)?;
+        let zero = SketchPoint2 { x: 0., y: 0. };
+        Ok(([p, a, b], normalized_cross((zero, u), (zero, v))?))
+    }
+
     pub(super) fn spline_circle_contact(
         &self,
         spline: &str,
@@ -675,6 +689,14 @@ impl SketchProblem<'_> {
                         - line_length((self.point(c, values), self.point(d, values))),
                 );
             }
+            SketchConstraint::SplineSplineTangent {
+                first,
+                second,
+                point,
+            } => {
+                let ([p, a, b], sine) = self.spline_spline_contact(first, second, point, values)?;
+                residuals.extend([p.x - a.x, p.y - a.y, p.x - b.x, p.y - b.y, sine]);
+            }
             SketchConstraint::SplineCircleTangent {
                 spline,
                 circle,
@@ -849,6 +871,20 @@ impl SketchProblem<'_> {
 
     fn columns(&self, constraint: &SketchConstraint) -> Vec<usize> {
         let points = match constraint {
+            SketchConstraint::SplineSplineTangent {
+                first,
+                second,
+                point,
+            } => {
+                let mut refs = vec![point.as_str()];
+                for id in [first, second] {
+                    let Entity::Spline(s) = self.entities[id.as_str()] else {
+                        unreachable!("validated spline pair")
+                    };
+                    refs.extend(self.spline_neighbor_refs(s));
+                }
+                refs
+            }
             SketchConstraint::SplineCircleTangent {
                 spline,
                 circle,

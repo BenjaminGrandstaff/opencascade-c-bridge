@@ -192,6 +192,17 @@ impl SketchDefinition {
                         ));
                     }
                 }
+                SketchConstraint::SplineSplineTangent { first, second, .. } => {
+                    if first == second
+                        || [first, second]
+                            .iter()
+                            .any(|id| !matches!(entities.get(id.as_str()), Some(Entity::Spline(_))))
+                    {
+                        return Err(ModelError::new(
+                            "spline-spline tangency requires two distinct splines",
+                        ));
+                    }
+                }
                 SketchConstraint::SplineCircleTangent { spline, circle, .. } => {
                     if !matches!(entities.get(spline.as_str()), Some(Entity::Spline(_)))
                         || !matches!(
@@ -405,7 +416,8 @@ impl SketchConstraint {
             | Self::LineEllipseTangent { line: id, .. } => line(id),
             Self::PointOnCurve { point: id, .. }
             | Self::Tangent { point: id, .. }
-            | Self::SplineCircleTangent { point: id, .. } => point(id),
+            | Self::SplineCircleTangent { point: id, .. }
+            | Self::SplineSplineTangent { point: id, .. } => point(id),
             Self::PointLineDistance {
                 point: id,
                 line: axis,
