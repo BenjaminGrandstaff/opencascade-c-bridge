@@ -42,15 +42,42 @@ as one valid solid; crest flats keep the original diameter.
 No ABI change: the feature combines the helix, polyline face, binormal sweep
 and boolean cut. Schema 84 adds it.
 
+## Runout (schema 114)
+
+An optional `runout` (a length, at most ten pitches) ends the thread with a
+fading groove instead of an abrupt step:
+
+```json
+"thread": { "...": "...", "length": {"parameter": "thread_length"},
+            "runout": {"literal": {"value": 3, "dimension": "length", "unit": "millimeter"}} }
+```
+
+After the full-depth `length`, the groove continues for `runout` along the
+axis while its path moves radially by the basic depth plus the P/16
+overshoot: outward for external threads, inward into the bore for internal
+ones. The groove therefore leaves the material and its depth fades linearly
+to zero. The path is the helix joined to an interpolated spiral (16 points
+per turn, at least 4) that starts at the helix's native end point and
+tangent; a mismatch between the analytic and native helix end is rejected.
+One binormal sweep follows both, so there is no seam in the groove.
+
+Tests use the M10 fixture at both hands and sides. A two-pitch runout removes
+37% (external) or 34% (internal) of what two more full-depth turns would, with
+left- and right-handed runouts equal to 1e-4. In the last of three runout
+pitches the fade removes under a quarter of what it removes in the first (8%
+measured), and nothing beyond the runout. Negative and over-ten-pitch runouts
+fail without leaking handles. A 100-turn M10×1.5 thread with a ten-pitch
+runout is a required scale case (12 s budget). Modeled tapped holes take the
+same `runout`; see [modeled tapped holes](HOLES.md#modeled-tapped-holes-schema-113).
+
 ## Not yet included
 
-- Thread runout or chamfered starts: grooves begin and end abruptly.
+- Chamfered thread starts on external threads (holes can use a countersink).
 - Tolerance classes, truncated or rounded roots (ISO 965, ASME B1.1 classes)
   and fit checks; the profile is the basic profile.
 - Tapered (pipe) threads, multi-start threads and non-60° forms (ACME,
   buttress).
-- Thread runout on tapped holes. Holes now model their thread callouts
-  (schema 113); see [modeled tapped holes](HOLES.md#modeled-tapped-holes-schema-113).
+- Runout at the thread start; runout only fades the end.
 
 
 ## AI example and viewer dimensions

@@ -360,10 +360,24 @@ fn modeled_thread(
         Some(length) => scalar(length, parameters, Dimension::Length)?,
         None => usable,
     };
-    if !length.is_finite() || length <= 0.0 || length > usable + 1e-9 {
+    let runout = match thread.modeled.as_ref().and_then(|m| m.runout.as_ref()) {
+        Some(runout) => scalar(runout, parameters, Dimension::Length)?,
+        None => 0.0,
+    };
+    if !runout.is_finite() || runout < 0.0 {
+        return Err(ModelError::new(
+            "modeled thread runout must not be negative",
+        ));
+    }
+    // A through hole's runout may continue past the exit into free space.
+    let fits = match extent {
+        HoleExtent::Blind { .. } => length + runout <= usable + 1e-9,
+        _ => length <= usable + 1e-9,
+    };
+    if !length.is_finite() || length <= 0.0 || !fits {
         return Err(ModelError::new(format!(
-            "modeled thread length must be positive and at most {usable:.3} mm \
-             (the bore, less half a pitch above a blind bottom)"
+            "modeled thread length must be positive and, with any runout, at most \
+             {usable:.3} mm (the bore, less half a pitch above a blind bottom)"
         )));
     }
     Ok(super::threads::ThreadGeometry {
@@ -374,6 +388,7 @@ fn modeled_thread(
         length,
         internal: true,
         left_handed: thread.handedness == ThreadHandedness::Left,
+        runout,
     })
 }
 

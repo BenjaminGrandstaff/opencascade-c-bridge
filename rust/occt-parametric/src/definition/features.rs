@@ -78,6 +78,10 @@ pub struct ThreadSpecification {
 pub struct ModeledThread {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub length: Option<ScalarExpr>,
+    /// Axial length after `length` over which the groove fades out into the
+    /// bore (schema 114). Blind holes fit length plus runout above the floor.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runout: Option<ScalarExpr>,
 }
 
 /// How a rib's total thickness is placed relative to its profile plane.
@@ -303,7 +307,9 @@ pub enum FeatureOperation {
     /// `length` along the dimensionless `axis`. External threads cut a rod of
     /// `major_diameter`; internal threads cut a hole of the minor diameter
     /// (`major_diameter` − 2 · 5H/8, H = √3/2 · `pitch`) out to the major
-    /// diameter. Right-handed unless `left_handed` (schema 84).
+    /// diameter. Right-handed unless `left_handed` (schema 84). An optional
+    /// `runout` adds that axial length after `length` over which the groove
+    /// leaves the material, fading to zero depth (schema 114).
     Thread {
         input: String,
         origin: VectorExpr,
@@ -315,6 +321,8 @@ pub enum FeatureOperation {
         internal: bool,
         #[serde(default)]
         left_handed: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        runout: Option<ScalarExpr>,
     },
     /// An open helical wire about the axis through the length-valued `origin`
     /// along the dimensionless `axis`, starting at `origin + radius * start`

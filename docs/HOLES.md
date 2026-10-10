@@ -125,8 +125,12 @@ attached to the original input.
 - **Entry.** The thread starts at the hole position. A countersink finish acts
   as an entry chamfer; a counterbore wider than the nominal diameter leaves
   the groove in free space over its depth.
-- **Not included.** Thread runout (a fading last turn), tolerance classes and
-  fit checks. The groove ends abruptly at the thread length.
+- **Runout.** `modeled.runout` (schema 114) fades the groove out over that
+  axial length after the thread length, into the bore (see
+  [thread runout](THREADS.md#runout-schema-114)). Blind holes must fit length
+  plus runout in the usable bore; a through hole's runout may pass its exit.
+  Without runout the groove ends abruptly.
+- **Not included.** Tolerance classes and fit checks.
 
 The viewer labels the hole that produces the output with its callout, thread
 length and turns (for example `M6x1 RH tapped · 9.000 mm · 9.000 turns`),
@@ -135,8 +139,8 @@ omitted. Thread length, nominal diameter and pitch parameters invalidate the
 hole and its dependents.
 
 The [tapped block](../tools/model/tapped-block.request.json) has an M10×1.5
-through tap (8.5 mm tap drill) and an M6×1 blind tap 9 mm long in a 14 mm
-bore, with a 90° countersink and a 118° drill point. Tests check:
+through tap (8.5 mm tap drill) and an M6×1 blind tap 9 mm long with a 2 mm
+runout in a 14 mm bore, with a 90° countersink and a 118° drill point. Tests check:
 
 - the cut against drilling plain holes and cutting the same threads with the
   thread feature (equal to 1e-7 relative),

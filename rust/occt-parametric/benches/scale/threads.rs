@@ -4,6 +4,14 @@
 use super::*;
 
 fn threaded_rod(definition: &FamilyDefinition, turns: f64) -> FamilyDefinition {
+    threaded_rod_with_runout(definition, turns, None)
+}
+
+fn threaded_rod_with_runout(
+    definition: &FamilyDefinition,
+    turns: f64,
+    runout: Option<f64>,
+) -> FamilyDefinition {
     let mm = |x: f64, y: f64, z: f64| {
         VectorExpr::Literal(VectorQuantity::lengths(x, y, z, LengthUnit::Millimeter))
     };
@@ -30,6 +38,7 @@ fn threaded_rod(definition: &FamilyDefinition, turns: f64) -> FamilyDefinition {
                 length: length(turns * 1.5),
                 internal: false,
                 left_handed: false,
+                runout: runout.map(length),
             },
         },
     ];
@@ -165,6 +174,40 @@ pub(crate) fn tapped_hole_case(definition: &FamilyDefinition) -> Outcome {
                 )));
             }
             Ok("valid 100-turn tapped hole, no retained handles".into())
+        },
+    )
+}
+
+/// The 100-turn rod thread ending in the longest allowed runout (10 pitches),
+/// whose spiral path adds at most 161 interpolation points.
+pub(crate) fn thread_runout_case(definition: &FamilyDefinition) -> Outcome {
+    timed(
+        "threads: 100-turn M10x1.5 thread with a 10-pitch runout".into(),
+        Duration::from_secs(12),
+        Expectation::Required,
+        || {
+            let definition = threaded_rod_with_runout(definition, 100.0, Some(15.0));
+            let session = Session::new().map_err(|error| failure(error.to_string()))?;
+            let mut graph = InstanceGraph::new(&definition);
+            graph.add_base("part", HashMap::new(), "bench")?;
+            let generation = graph.regenerate_all(&session)?;
+            let body = generation
+                .result("part")
+                .and_then(|result| result.shape("body"))
+                .ok_or_else(|| failure("runout output missing".into()))?;
+            let valid = session
+                .is_valid(body)
+                .map_err(|error| failure(error.to_string()))?;
+            drop(generation);
+            let retained = session
+                .shape_count()
+                .map_err(|error| failure(error.to_string()))?;
+            if !valid || retained != 0 {
+                return Err(failure(format!(
+                    "valid {valid}, {retained} retained handles"
+                )));
+            }
+            Ok("valid 100-turn thread with runout, no retained handles".into())
         },
     )
 }

@@ -358,6 +358,7 @@ fn thread_dimensions(
         length,
         internal,
         left_handed,
+        runout,
     } = &feature.operation
     else {
         return Ok(());
@@ -432,6 +433,30 @@ fn thread_dimensions(
             .into(),
         );
     }
+    if let Some(runout) = runout {
+        let r = scalar(runout, parameters)?;
+        let tail = std::array::from_fn::<_, 3, _>(|i| end[i] + r * n[i]);
+        let mut detail = common.clone();
+        detail["value_mm"] = json!(r);
+        detail["expressions"] = json!([runout]);
+        detail["description"] = json!(
+            "Axial length after the full-depth run over which the groove \
+             leaves the material, fading to zero depth."
+        );
+        annotations.push(
+            Annotation {
+                id: "thread-runout".into(),
+                label: format!("thread runout {} mm", length_label(r)),
+                kind: AnnotationKind::Dimension,
+                status: AnnotationStatus::Driving,
+                targets: vec![output.into()],
+                parameters: names(&json!([runout])),
+                anchors: json!([end, tail]),
+                detail,
+            }
+            .into(),
+        );
+    }
     annotations.push(
         Annotation {
             id: "thread-turns".into(),
@@ -497,14 +522,22 @@ fn tapped_thread(
         ThreadHandedness::Right => "RH",
         ThreadHandedness::Left => "LH",
     };
+    let runout = modeled
+        .runout
+        .as_ref()
+        .map(|r| scalar(r, parameters))
+        .transpose()?;
+    let fade = runout.map_or(String::new(), |r| {
+        format!(" + {} mm runout", length_label(r))
+    });
     let label = match length {
         Some(run) => format!(
-            "{} {hand} tapped · {} mm · {:.3} turns",
+            "{} {hand} tapped · {} mm · {:.3} turns{fade}",
             thread.designation,
             length_label(run),
             run / pitch
         ),
-        None => format!("{} {hand} tapped · full bore", thread.designation),
+        None => format!("{} {hand} tapped · full bore{fade}", thread.designation),
     };
     let anchors = match length {
         Some(run) => json!([
@@ -513,7 +546,12 @@ fn tapped_thread(
         ]),
         None => json!([entry]),
     };
-    let expressions = json!([thread.nominal_diameter, thread.pitch, modeled.length]);
+    let expressions = json!([
+        thread.nominal_diameter,
+        thread.pitch,
+        modeled.length,
+        modeled.runout
+    ]);
     annotations.push(
         Annotation {
             id: format!("tapped-{}", feature.id),
@@ -528,6 +566,7 @@ fn tapped_thread(
                 "nominal_diameter_mm": nominal,
                 "pitch_mm": pitch,
                 "length_mm": length,
+                "runout_mm": runout,
                 "turns": length.map(|run| run / pitch),
                 "handedness": thread.handedness,
                 "internal": true,

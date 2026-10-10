@@ -1,7 +1,7 @@
 {
   "schema": "occb-model-view-v1",
   "model": {
-    "schema_version": 113,
+    "schema_version": 114,
     "family": {
       "id": "tapped-block",
       "version": 1,
@@ -70,7 +70,30 @@
             "unit": "millimeter"
           },
           "maximum": {
-            "value": 11.5,
+            "value": 9.5,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "blind_runout",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 2,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 0,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 2,
             "dimension": "length",
             "unit": "millimeter"
           }
@@ -323,6 +346,9 @@
                 "modeled": {
                   "length": {
                     "parameter": "blind_thread"
+                  },
+                  "runout": {
+                    "parameter": "blind_runout"
                   }
                 }
               }

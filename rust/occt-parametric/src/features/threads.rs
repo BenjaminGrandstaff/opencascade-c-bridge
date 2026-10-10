@@ -1,7 +1,8 @@
 //! Modeled screw threads: an ISO 68-1 basic-profile groove swept along a
 //! helix and cut from the input.
 use super::*;
-use crate::assembly::{cross, unit};
+use crate::assembly::{add, cross, scale, unit};
+use occt_bridge::CurveSegment;
 
 /// Basic profile dimensions for a 60° thread of `pitch` and major diameter.
 /// The fundamental triangle height is H = √3/2 · P; the basic thread depth
@@ -74,6 +75,9 @@ pub(crate) struct ThreadGeometry {
     pub length: f64,
     pub internal: bool,
     pub left_handed: bool,
+    /// Axial length after `length` over which the groove fades out; 0 ends
+    /// the groove abruptly. At most 10 pitches.
+    pub runout: f64,
 }
 
 /// Sweeps the groove along a helix at its centroid radius in binormal mode
@@ -102,15 +106,21 @@ pub(crate) fn thread_groove(
         length: run,
         internal,
         left_handed,
+        runout,
     } = thread;
     let finite = [major_diameter, pitch, run].iter().all(|v| v.is_finite());
+    if !runout.is_finite() || runout < 0.0 || runout > 10.0 * pitch {
+        return Err(ModelError::new(
+            "thread runout must be between zero and ten pitches",
+        ));
+    }
     if !finite || major_diameter <= 0.0 || pitch <= 0.0 || run <= 0.0 {
         return Err(ModelError::new(
             "thread needs a positive finite major diameter, pitch and length",
         ));
     }
     let turns = run / pitch;
-    if turns > 10_000.0 {
+    if turns + runout / pitch > 10_000.0 {
         return Err(ModelError::new("thread is limited to 10,000 turns"));
     }
     let major_radius = major_diameter / 2.0;
@@ -136,7 +146,7 @@ pub(crate) fn thread_groove(
     };
     let section = session.create_polyline_wire(&points.map(place), true)?;
     let face = session.create_face_from_wire(&section)?;
-    let path = session.create_helix_wire(occt_bridge::HelixOptions {
+    let helix = session.create_helix_wire(occt_bridge::HelixOptions {
         origin,
         axis,
         start_direction: radial,
@@ -145,5 +155,110 @@ pub(crate) fn thread_groove(
         turns,
         left_handed,
     })?;
+    let path = if runout > 0.0 {
+        let spiral = runout_spiral(
+            session,
+            &helix,
+            Spiral {
+                origin,
+                axis,
+                radial,
+                centroid,
+                pitch,
+                turns,
+                left_handed,
+                runout,
+                // The groove's material-side edge travels the basic depth to
+                // reach free space, plus its P/16 overshoot to clear it.
+                shift: if internal { -1.0 } else { 1.0 } * (basic_depth(pitch) + pitch / 16.0),
+            },
+        )?;
+        session.join_wires(&[&helix, &spiral], false)?
+    } else {
+        helix
+    };
     Ok(session.sweep(&face, &path, occt_bridge::SweepOrientation::Binormal(axis))?)
+}
+
+struct Spiral {
+    origin: Vec3,
+    axis: Vec3,
+    radial: Vec3,
+    centroid: f64,
+    pitch: f64,
+    turns: f64,
+    left_handed: bool,
+    runout: f64,
+    shift: f64,
+}
+
+/// Continues the helix for `runout` along the axis while its radius moves
+/// linearly by `shift`, so the swept groove leaves the material and its
+/// depth fades to zero. Interpolated through 16 points per turn (at least
+/// 4), tangent to the helix at its end. O(runout turns).
+fn runout_spiral<'a>(
+    session: &'a Session,
+    helix: &Shape<'_>,
+    spiral: Spiral,
+) -> Result<Shape<'a>, ModelError> {
+    let Spiral {
+        origin,
+        axis,
+        radial,
+        centroid,
+        pitch,
+        turns,
+        left_handed,
+        runout,
+        shift,
+    } = spiral;
+    let side = cross(axis, radial);
+    let hand = if left_handed { -1.0 } else { 1.0 };
+    let at = |turn: f64, radius: f64| {
+        let angle = std::f64::consts::TAU * turn * hand;
+        add(
+            add(origin, scale(axis, pitch * turn)),
+            add(
+                scale(radial, radius * angle.cos()),
+                scale(side, radius * angle.sin()),
+            ),
+        )
+    };
+    // The helix has one edge per turn: continue from the edge that ends at
+    // the analytic end point, with its native end point and tangent.
+    let start = at(turns, centroid);
+    let distance = |p: Vec3| {
+        ((p.x - start.x).powi(2) + (p.y - start.y).powi(2) + (p.z - start.z).powi(2)).sqrt()
+    };
+    let (end, tangent) = session
+        .subshapes(helix, ShapeType::Edge)?
+        .iter()
+        .map(|edge| session.curve_end_data(edge).map(|(_, b, _, v)| (b, v)))
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .min_by(|a, b| distance(a.0).total_cmp(&distance(b.0)))
+        .ok_or_else(|| ModelError::new("thread helix has no edges"))?;
+    let gap = distance(end);
+    if gap > 1e-6 * centroid.max(1.0) {
+        return Err(ModelError::new(format!(
+            "thread runout does not continue the helix ({gap:e} mm apart)"
+        )));
+    }
+    let runout_turns = runout / pitch;
+    let samples = ((16.0 * runout_turns).ceil() as usize).max(4);
+    let points = std::iter::once(end)
+        .chain((1..=samples).map(|k| {
+            let t = k as f64 / samples as f64;
+            at(turns + runout_turns * t, centroid + shift * t)
+        }))
+        .collect::<Vec<_>>();
+    Ok(session.create_curve_wire(
+        &[CurveSegment::Spline {
+            points,
+            start_tangent: Some(tangent),
+            end_tangent: None,
+            periodic: false,
+        }],
+        false,
+    )?)
 }

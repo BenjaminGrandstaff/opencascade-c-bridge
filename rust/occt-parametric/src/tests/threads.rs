@@ -32,6 +32,7 @@ fn thread(input: &str, internal: bool, left_handed: bool) -> FeatureDefinition {
             length: length(RUN),
             internal,
             left_handed,
+            runout: None,
         },
     }
 }
@@ -266,4 +267,119 @@ fn invalid_threads_fail_without_handles_and_threads_persist() {
     let json = document.to_json_pretty().unwrap();
     assert!(json.contains("\"thread\"") && json.contains("\"internal\": true"));
     assert_eq!(ModelDocument::from_json(&json).unwrap(), document);
+}
+
+fn with_runout(family: &FamilyDefinition, runout: f64) -> FamilyDefinition {
+    let mut family = family.clone();
+    let last = family.features.len() - 1;
+    if let FeatureOperation::Thread { runout: r, .. } = &mut family.features[last].operation {
+        *r = Some(length(runout));
+    }
+    family
+}
+
+#[test]
+fn runout_removes_a_fading_fraction_of_the_extra_turns_for_every_hand_and_side() {
+    let session = Session::new().unwrap();
+    for internal in [false, true] {
+        let mut extras = Vec::new();
+        for left_handed in [false, true] {
+            let base = threaded(internal, left_handed);
+            let faded = with_runout(&base, 2.0 * PITCH);
+            let (a, b) = (
+                part(&base).regenerate(&session).unwrap(),
+                part(&faded).regenerate(&session).unwrap(),
+            );
+            let body = b.shape("body").unwrap();
+            assert!(session.is_valid(body).unwrap());
+            let extra =
+                session.volume(a.shape("body").unwrap()).unwrap() - session.volume(body).unwrap();
+            // Two more full-depth turns would remove this much.
+            let two_turns = removed(internal, PITCH) * 2.0 * PITCH / RUN;
+            assert!(
+                extra > 0.1 * two_turns && extra < 0.7 * two_turns,
+                "internal {internal}, LH {left_handed}: {extra} of {two_turns}"
+            );
+            extras.push(extra);
+        }
+        // Mirror images: left- and right-handed runouts remove equal volume.
+        assert!(
+            (extras[0] - extras[1]).abs() < 1e-4 * extras[0],
+            "{extras:?}"
+        );
+    }
+}
+
+#[test]
+fn runout_groove_fades_to_nothing_by_its_end() {
+    let session = Session::new().unwrap();
+    // A 3 mm pitch halves the turns (and boolean work) of the default fixture.
+    let pitch = 3.0;
+    let base = threaded(false, false);
+    let runout = 3.0 * pitch;
+    let faded = with_runout(&base, runout);
+    let coarse = |family| {
+        let mut p = part(family);
+        p.overrides.insert(
+            "pitch".into(),
+            ParameterValue::Scalar(Quantity::length(pitch, LengthUnit::Millimeter)),
+        );
+        p.regenerate(&session).unwrap()
+    };
+    let (a, b) = (coarse(&base), coarse(&faded));
+    // Material removed only by the runout, beyond the abrupt groove's end.
+    let fade = session
+        .cut(a.shape("body").unwrap(), b.shape("body").unwrap())
+        .unwrap();
+    let end = 5.0 + RUN;
+    let slab = |from: f64, to: f64| {
+        let block = session
+            .create_box(
+                occt_bridge::Vec3::new(-10.0, -10.0, from),
+                occt_bridge::Vec3::new(20.0, 20.0, to - from),
+            )
+            .unwrap();
+        session.overlap_volume(&fade, &block).unwrap()
+    };
+    let (near, far) = (
+        slab(end, end + pitch),
+        slab(end + 2.0 * pitch, end + 3.0 * pitch),
+    );
+    assert!(near > 0.0 && far < 0.25 * near, "near {near}, far {far}");
+    // Nothing is cut once the groove has left the rod.
+    let bounds = session.exact_bounds(&fade).unwrap();
+    assert!(bounds.max.z < end + runout + pitch / 2.0, "{bounds:?}");
+}
+
+#[test]
+fn invalid_runouts_and_blind_taps_without_room_fail_cleanly() {
+    let session = Session::new().unwrap();
+    for runout in [-1.0, 10.5 * PITCH] {
+        let family = with_runout(&threaded(false, false), runout);
+        assert!(part(&family).regenerate(&session).is_err(), "{runout}");
+        assert_eq!(session.shape_count().unwrap(), 0);
+    }
+    let request: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../tools/model/tapped-block.request.json"
+    ))
+    .unwrap();
+    for (runout, ok) in [(4.0, true), (4.6, false)] {
+        let mut r = request.clone();
+        // Through tap left plain; the blind M6 tap is 9 mm of a 13.5 mm usable bore.
+        r["model"]["family"]["features"][1]["operation"]["hole"]["thread"]["modeled"] =
+            serde_json::Value::Null;
+        r["model"]["family"]["features"][2]["operation"]["hole"]["thread"]["modeled"]["runout"] = serde_json::json!({"literal": {"value": runout, "dimension": "length", "unit": "millimeter"}});
+        let doc = ModelDocument::from_json(&r["model"].to_string()).unwrap();
+        let block = PartInstance {
+            id: "block".into(),
+            definition: &doc.family,
+            overrides: HashMap::new(),
+            provenance: "test".into(),
+        };
+        let result = block.regenerate(&session);
+        assert_eq!(result.is_ok(), ok, "runout {runout}");
+        if let Ok(built) = &result {
+            assert!(session.is_valid(built.shape("body").unwrap()).unwrap());
+        }
+    }
 }

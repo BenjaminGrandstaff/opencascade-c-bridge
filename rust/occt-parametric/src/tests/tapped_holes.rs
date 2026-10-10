@@ -82,7 +82,9 @@ fn tapped_holes_match_drilling_then_threading_and_pappus_volume() {
             "internal": true}}})
     };
     features.push(thread("through-thread", "body", 20., 12., 10., 1.5, 20.));
-    features.push(thread("threaded", "through-thread", 20., 30., 6., 1., 9.));
+    let mut blind = thread("threaded", "through-thread", 20., 30., 6., 1., 9.);
+    blind["operation"]["thread"]["runout"] = mm(2.);
+    features.push(blind);
     let plain = family(&plain);
     let reference = part(&plain).regenerate(&session).unwrap();
     let expected = session
@@ -102,9 +104,10 @@ fn tapped_holes_match_drilling_then_threading_and_pappus_volume() {
         groove_turn_volume(4.25, 5., 1.5),
         groove_turn_volume(2.5, 3., 1.),
     );
+    // The 2 mm runout adds less than two more full turns of the blind groove.
     let full = through * 20. / 1.5 + blind * 9.;
     assert!(
-        removed < full && removed > full - through - blind,
+        removed < full + 2. * blind && removed > full - through - blind,
         "{removed} of {full}"
     );
 }
@@ -122,7 +125,7 @@ fn blind_threads_stay_above_the_bore_floor_and_edits_rebuild() {
     unthreaded["model"]["family"]["features"][2]["operation"]["hole"]["thread"]["modeled"] =
         Value::Null;
     let unthreaded = family(&unthreaded);
-    for (depth, run) in [(14., 9.), (12., 11.5), (18., 4.)] {
+    for (depth, run) in [(14., 9.), (12., 9.5), (18., 4.)] {
         block.overrides.insert(
             "blind_depth".into(),
             ParameterValue::Scalar(Quantity::length(depth, LengthUnit::Millimeter)),

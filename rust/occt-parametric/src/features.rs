@@ -301,6 +301,7 @@ pub(crate) fn execute_feature<'session>(
             length,
             internal,
             left_handed,
+            runout,
         } => {
             return threads::execute_thread(
                 session,
@@ -313,6 +314,11 @@ pub(crate) fn execute_feature<'session>(
                     length: scalar(length, parameters, Dimension::Length)?,
                     internal: *internal,
                     left_handed: *left_handed,
+                    runout: runout
+                        .as_ref()
+                        .map(|r| scalar(r, parameters, Dimension::Length))
+                        .transpose()?
+                        .unwrap_or(0.0),
                 },
             );
         }

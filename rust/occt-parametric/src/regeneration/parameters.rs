@@ -104,6 +104,7 @@ pub(crate) fn collect_operation_parameters<'a>(
             major_diameter,
             pitch,
             length,
+            runout,
             ..
         } => {
             collect_vector_parameters(origin, names);
@@ -111,6 +112,9 @@ pub(crate) fn collect_operation_parameters<'a>(
             collect_scalar_parameters(major_diameter, names);
             collect_scalar_parameters(pitch, names);
             collect_scalar_parameters(length, names);
+            if let Some(runout) = runout {
+                collect_scalar_parameters(runout, names);
+            }
         }
         FeatureOperation::Helix {
             origin,
@@ -501,8 +505,10 @@ fn collect_hole_parameters<'a>(
     if let Some(thread) = thread {
         collect_scalar_parameters(&thread.nominal_diameter, names);
         collect_scalar_parameters(&thread.pitch, names);
-        if let Some(length) = thread.modeled.as_ref().and_then(|m| m.length.as_ref()) {
-            collect_scalar_parameters(length, names);
+        if let Some(modeled) = &thread.modeled {
+            for value in [&modeled.length, &modeled.runout].into_iter().flatten() {
+                collect_scalar_parameters(value, names);
+            }
         }
     }
     match extent {

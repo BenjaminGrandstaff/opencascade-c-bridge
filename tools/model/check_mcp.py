@@ -667,8 +667,8 @@ with tempfile.TemporaryDirectory(prefix='occb-mcp-scale-') as root:
         assert len(solids)==10 and all(s['valid'] for s in solids)
         for scene in solids:
             taps=[a for a in scene['annotations'] if a['id']=='tapped-body']
-            assert len(taps)==1 and taps[0]['label']=='M6x1 RH tapped · 9.000 mm · 9.000 turns',taps
-            assert taps[0]['parameters']==['blind_thread'] and len(taps[0]['anchors'])==2
+            assert len(taps)==1 and taps[0]['label']=='M6x1 RH tapped · 9.000 mm · 9.000 turns + 2.000 mm runout',taps
+            assert sorted(taps[0]['parameters'])==['blind_runout','blind_thread'] and len(taps[0]['anchors'])==2
         elapsed=time.monotonic()-started
         assert elapsed<30
         print(f'PASS MCP 10 tapped blocks with modeled through and blind threads: {elapsed:.3f}s / 30s')
