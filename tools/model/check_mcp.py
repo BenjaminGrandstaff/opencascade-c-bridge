@@ -341,5 +341,24 @@ with tempfile.TemporaryDirectory(prefix='occb-mcp-scale-') as root:
         elapsed=time.monotonic()-started
         assert elapsed<10
         print(f'PASS MCP 20 concentric bushings, 40 solved source sketches and centre relations: {elapsed:.3f}s / 10s')
+        boss=client.tool('occt_get_example',dict(name='tangent-boss'))['structuredContent']
+        for i in range(1,20):
+            boss['model']['instances'].append({'clone':dict(id=f'part-{i}',source='part',overrides={},provenance='scale')})
+            boss['outputs'].extend(dict(instance=f'part-{i}',output=out) for out in ['body','profile'])
+        started=time.monotonic()
+        result=client.tool('occt_visualize_model',boss)
+        assert not result['isError'],result
+        data=json.loads(client.call('resources/read',dict(uri=result['structuredContent']['resources']['view.json']))['result']['contents'][0]['text'])
+        solids=[s for s in data['scenes'] if s['kind']=='solid'];sketches=[s for s in data['scenes'] if s['kind']=='sketch']
+        assert len(solids)==40 and all(s['valid'] for s in solids)
+        assert len(sketches)==20 and all(s['solver']['solved'] for s in sketches)
+        for scene in sketches:
+            for kind in ['line_circle_tangent','circle_circle_tangent']:
+                relation=next(a for a in scene['annotations'] if kind in a['detail'].get('constraint',{}))
+                assert relation['status']=='passed' and relation['detail']['max_residual']<1e-7
+                assert all(abs(relation['anchors'][0][axis]-relation['anchors'][1][axis])<1e-7 for axis in range(2))
+        elapsed=time.monotonic()-started
+        assert elapsed<10
+        print(f'PASS MCP 20 tangent bosses, solved line/circle contacts and native solids: {elapsed:.3f}s / 10s')
     finally:
         client.close()

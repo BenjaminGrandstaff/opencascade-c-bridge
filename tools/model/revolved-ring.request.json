@@ -1,7 +1,7 @@
 {
   "schema": "occb-model-view-v1",
   "model": {
-    "schema_version": 96,
+    "schema_version": 97,
     "family": {
       "id": "turned-ring",
       "version": 1,

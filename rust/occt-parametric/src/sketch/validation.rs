@@ -176,6 +176,24 @@ impl SketchDefinition {
                         ));
                     }
                 }
+                SketchConstraint::LineCircleTangent { circle, .. } => {
+                    if !matches!(entities.get(circle.as_str()), Some(Entity::Circle(_))) {
+                        return Err(ModelError::new(
+                            "line-circle tangency requires a full circle",
+                        ));
+                    }
+                }
+                SketchConstraint::CircleCircleTangent { first, second, .. } => {
+                    if first == second
+                        || [first, second]
+                            .iter()
+                            .any(|id| !matches!(entities.get(id.as_str()), Some(Entity::Circle(_))))
+                    {
+                        return Err(ModelError::new(
+                            "circle-circle tangency requires two distinct full circles",
+                        ));
+                    }
+                }
                 SketchConstraint::Concentric { first, second } => {
                     if first == second
                         || [first, second].iter().any(|id| {
@@ -327,7 +345,9 @@ impl SketchConstraint {
             Self::Radius { .. }
             | Self::Diameter { .. }
             | Self::EqualRadius { .. }
-            | Self::Concentric { .. } => Ok(()),
+            | Self::Concentric { .. }
+            | Self::CircleCircleTangent { .. } => Ok(()),
+            Self::LineCircleTangent { line: id, .. } => line(id),
             Self::PointOnCurve { point: id, .. } | Self::Tangent { point: id, .. } => point(id),
             Self::PointLineDistance {
                 point: id,

@@ -53,6 +53,8 @@ impl SketchDefinition {
                             | SketchConstraint::EqualRadius { .. }
                             | SketchConstraint::Midpoint { .. }
                             | SketchConstraint::PointLineDistance { .. }
+                            | SketchConstraint::LineCircleTangent { .. }
+                            | SketchConstraint::CircleCircleTangent { .. }
                             | SketchConstraint::Concentric { .. }
                             | SketchConstraint::Symmetric { .. }
                             | SketchConstraint::PointOnCurve { .. }
@@ -478,6 +480,57 @@ impl SketchProblem<'_> {
                         - line_length((self.point(c, values), self.point(d, values))),
                 );
             }
+            SketchConstraint::LineCircleTangent { line, circle, side } => {
+                let (c, r) = self.radius_points(circle);
+                let center = self.point(c, values);
+                let radius = line_length((center, self.point(r, values)));
+                let (a, b) = self.line(line, values);
+                let dx = b.x - a.x;
+                let dy = b.y - a.y;
+                let length = dx.hypot(dy);
+                if length <= f64::EPSILON || radius <= f64::EPSILON {
+                    return Err(ModelError::new(
+                        "line-circle tangency requires a nonzero line and radius",
+                    ));
+                }
+                let sign = match side {
+                    SketchLineSide::Left => 1.,
+                    SketchLineSide::Right => -1.,
+                };
+                residuals.push(
+                    (center.y - a.y) * (dx / length)
+                        - (center.x - a.x) * (dy / length)
+                        - sign * radius,
+                );
+            }
+            SketchConstraint::CircleCircleTangent {
+                first,
+                second,
+                mode,
+            } => {
+                let (c1, r1) = self.radius_points(first);
+                let (c2, r2) = self.radius_points(second);
+                let a = self.point(c1, values);
+                let b = self.point(c2, values);
+                let ra = line_length((a, self.point(r1, values)));
+                let rb = line_length((b, self.point(r2, values)));
+                let distance = line_length((a, b));
+                if ra <= f64::EPSILON || rb <= f64::EPSILON || distance <= f64::EPSILON {
+                    return Err(ModelError::new(
+                        "circle-circle tangency requires positive radii and distinct centres",
+                    ));
+                }
+                let target = match mode {
+                    SketchCircleTangency::External => ra + rb,
+                    SketchCircleTangency::Internal => ra - rb,
+                };
+                if matches!(mode, SketchCircleTangency::Internal) && target <= f64::EPSILON {
+                    return Err(ModelError::new(
+                        "internal tangency requires the first circle to have a larger radius",
+                    ));
+                }
+                residuals.push(distance - target);
+            }
             SketchConstraint::Concentric { first, second } => {
                 let a = self.point(self.center_point(first), values);
                 let b = self.point(self.center_point(second), values);
@@ -528,6 +581,16 @@ impl SketchProblem<'_> {
 
     fn columns(&self, constraint: &SketchConstraint) -> Vec<usize> {
         let points = match constraint {
+            SketchConstraint::LineCircleTangent { line, circle, .. } => {
+                let l = self.lines[line.as_str()];
+                let (c, r) = self.radius_points(circle);
+                vec![&l.start, &l.end, c, r]
+            }
+            SketchConstraint::CircleCircleTangent { first, second, .. } => {
+                let (a, b) = self.radius_points(first);
+                let (c, d) = self.radius_points(second);
+                vec![a, b, c, d]
+            }
             SketchConstraint::Concentric { first, second } => {
                 vec![self.center_point(first), self.center_point(second)]
             }

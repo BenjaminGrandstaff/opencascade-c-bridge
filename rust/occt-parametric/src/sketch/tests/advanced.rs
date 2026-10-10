@@ -820,3 +820,226 @@ fn point_line_distance_solves_free_line_endpoints_and_reports_fixed_conflicts() 
     assert_eq!(solution.free_degrees, 3);
     assert!(s.constraint_checks(&params, &solution).unwrap()[0].satisfied);
 }
+
+#[test]
+fn independent_line_circle_tangency_solves_both_sides_of_a_tilted_supporting_line() {
+    let params = HashMap::new();
+    for side in [SketchLineSide::Left, SketchLineSide::Right] {
+        let mut s = base();
+        s.points = vec![
+            point("a", 0., 0., true),
+            point("b", 3., 4., true),
+            point("c", 20., 0., false),
+            point("r", 22., 0., false),
+            point("axis", 20., -20., true),
+        ];
+        s.lines = vec![
+            line("reference", "a", "b"),
+            line("vertical", "axis", "c"),
+            line("radius", "c", "r"),
+        ];
+        s.circles.push(SketchCircle {
+            id: "circle".into(),
+            center: "c".into(),
+            rim: "r".into(),
+        });
+        s.constraints = vec![
+            SketchConstraint::LineCircleTangent {
+                line: "reference".into(),
+                circle: "circle".into(),
+                side,
+            },
+            SketchConstraint::Vertical {
+                line: "vertical".into(),
+            },
+            SketchConstraint::Radius {
+                curve: "circle".into(),
+                value: length(2.),
+            },
+            SketchConstraint::Horizontal {
+                line: "radius".into(),
+            },
+        ];
+        let solution = s.solve(&params).unwrap();
+        assert!(solution.solved);
+        assert_eq!(solution.free_degrees, 0);
+        let sign = if side == SketchLineSide::Left {
+            1.
+        } else {
+            -1.
+        };
+        assert!((solution.points["c"].y - (16. + sign * 2.) / 0.6).abs() < 1e-7);
+        let check = &s.constraint_checks(&params, &solution).unwrap()[0];
+        assert!(check.satisfied && !check.by_construction);
+        assert!(check.max_residual.unwrap() < 1e-7);
+    }
+}
+
+#[test]
+fn independent_circle_tangency_solves_external_and_ordered_internal_contacts() {
+    let params = HashMap::new();
+    for mode in [
+        SketchCircleTangency::External,
+        SketchCircleTangency::Internal,
+    ] {
+        let mut s = circle();
+        s.points[1].fixed = true;
+        s.points
+            .extend([point("c2", 5., 0., false), point("r2", 7., 0., false)]);
+        s.circles.push(SketchCircle {
+            id: "second".into(),
+            center: "c2".into(),
+            rim: "r2".into(),
+        });
+        s.lines = vec![line("centers", "c", "c2"), line("radius", "c2", "r2")];
+        s.constraints = vec![
+            SketchConstraint::CircleCircleTangent {
+                first: "circle".into(),
+                second: "second".into(),
+                mode,
+            },
+            SketchConstraint::Horizontal {
+                line: "centers".into(),
+            },
+            SketchConstraint::Horizontal {
+                line: "radius".into(),
+            },
+            SketchConstraint::Radius {
+                curve: "second".into(),
+                value: length(2.),
+            },
+        ];
+        let solution = s.solve(&params).unwrap();
+        assert!(solution.solved);
+        assert_eq!(solution.free_degrees, 0);
+        let target = if mode == SketchCircleTangency::External {
+            6.
+        } else {
+            2.
+        };
+        assert!((solution.points["c2"].x - target).abs() < 1e-7);
+        assert!(s.constraint_checks(&params, &solution).unwrap()[0].satisfied);
+    }
+}
+
+#[test]
+fn independent_tangency_rejects_wrong_types_and_degenerate_geometry_and_reports_fixed_conflicts() {
+    let params = HashMap::new();
+    let mut s = circle();
+    s.points[1].fixed = true;
+    s.points.extend([
+        point("a", -10., -6., true),
+        point("b", 10., -6., true),
+        point("c2", 10., 0., true),
+        point("r2", 12., 0., true),
+    ]);
+    s.lines.push(line("reference", "a", "b"));
+    s.circles.push(SketchCircle {
+        id: "second".into(),
+        center: "c2".into(),
+        rim: "r2".into(),
+    });
+    for circle in ["missing", "reference"] {
+        s.constraints = vec![SketchConstraint::LineCircleTangent {
+            line: "reference".into(),
+            circle: circle.into(),
+            side: SketchLineSide::Left,
+        }];
+        assert!(s.solve(&params).is_err());
+    }
+    for second in ["missing", "reference", "circle"] {
+        s.constraints = vec![SketchConstraint::CircleCircleTangent {
+            first: "circle".into(),
+            second: second.into(),
+            mode: SketchCircleTangency::External,
+        }];
+        assert!(s.solve(&params).is_err());
+    }
+    s.constraints = vec![SketchConstraint::LineCircleTangent {
+        line: "reference".into(),
+        circle: "circle".into(),
+        side: SketchLineSide::Left,
+    }];
+    let solution = s.solve(&params).unwrap();
+    assert!(!solution.solved);
+    assert_eq!(
+        s.constraint_checks(&params, &solution).unwrap()[0].max_residual,
+        Some(2.)
+    );
+    s.points[3].x = s.points[2].x.clone();
+    assert!(s.solve(&params).is_err());
+    s.constraints = vec![SketchConstraint::CircleCircleTangent {
+        first: "second".into(),
+        second: "circle".into(),
+        mode: SketchCircleTangency::Internal,
+    }];
+    assert!(
+        s.solve(&params)
+            .unwrap_err()
+            .message
+            .contains("larger radius")
+    );
+    s.constraints = vec![SketchConstraint::CircleCircleTangent {
+        first: "circle".into(),
+        second: "second".into(),
+        mode: SketchCircleTangency::External,
+    }];
+    let solution = s.solve(&params).unwrap();
+    assert!(!solution.solved);
+    s.points[4].x = length(0.);
+    assert!(
+        s.solve(&params)
+            .unwrap_err()
+            .message
+            .contains("distinct centres")
+    );
+}
+
+#[test]
+fn independent_tangency_solves_underconstrained_centres_and_rejects_equal_internal_radii() {
+    let params = HashMap::new();
+    let mut s = circle();
+    s.points[1].fixed = true;
+    s.points
+        .extend([point("c2", 8., 2., false), point("r2", 10., 2., true)]);
+    s.circles.push(SketchCircle {
+        id: "second".into(),
+        center: "c2".into(),
+        rim: "r2".into(),
+    });
+    s.constraints = vec![SketchConstraint::CircleCircleTangent {
+        first: "circle".into(),
+        second: "second".into(),
+        mode: SketchCircleTangency::External,
+    }];
+    let solution = s.solve(&params).unwrap();
+    assert!(solution.solved);
+    assert_eq!(solution.free_degrees, 1);
+    assert!(s.constraint_checks(&params, &solution).unwrap()[0].satisfied);
+    s.points[2] = point("c2", 10., 0., true);
+    s.points[3] = point("r2", 14., 0., true);
+    s.constraints = vec![SketchConstraint::CircleCircleTangent {
+        first: "circle".into(),
+        second: "second".into(),
+        mode: SketchCircleTangency::Internal,
+    }];
+    assert!(
+        s.solve(&params)
+            .unwrap_err()
+            .message
+            .contains("larger radius")
+    );
+    s.points[2] = point("c2", 8., 2., false);
+    s.points[3] = point("r2", 10., 2., true);
+    s.points
+        .extend([point("a", -20., 0., true), point("b", 20., 0., true)]);
+    s.lines.push(line("reference", "a", "b"));
+    s.constraints = vec![SketchConstraint::LineCircleTangent {
+        line: "reference".into(),
+        circle: "second".into(),
+        side: SketchLineSide::Left,
+    }];
+    let solution = s.solve(&params).unwrap();
+    assert!(solution.solved);
+    assert_eq!(solution.free_degrees, 1);
+}

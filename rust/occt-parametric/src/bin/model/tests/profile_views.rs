@@ -681,3 +681,109 @@ fn point_line_dimension_anchors_follow_the_perpendicular_foot_and_link_margin() 
         assert!((anchors[1][1].as_f64().unwrap() - (20. - margin)).abs() < 1e-7);
     }
 }
+
+#[test]
+fn independent_tangency_viewer_shows_native_contacts_and_real_millimetre_residuals() {
+    let dir = Directory::new();
+    for radius in [3., 4.] {
+        let mut request = view_example("tangent-boss");
+        let parameter = request["model"]["family"]["parameters"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|p| p["id"] == "boss_radius")
+            .unwrap();
+        parameter["default"]["scalar"]["value"] = json!(radius);
+        let name = format!("tangent-{radius}");
+        view_request(&dir, request, &name).unwrap();
+        let data: Value =
+            serde_json::from_str(&fs::read_to_string(dir.0.join(name).join("view.json")).unwrap())
+                .unwrap();
+        let sketch = data["scenes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["kind"] == "sketch")
+            .unwrap();
+        assert_eq!(sketch["solver"]["solved"], true);
+        for kind in ["line_circle_tangent", "circle_circle_tangent"] {
+            let relation = sketch["annotations"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|a| !a["detail"]["constraint"][kind].is_null())
+                .unwrap();
+            assert_eq!(relation["kind"], "constraint");
+            assert_eq!(relation["status"], "passed");
+            assert_eq!(relation["detail"]["residual_unit"], "mm");
+            assert_eq!(relation["detail"]["by_construction"], false);
+            assert!(relation["detail"]["max_residual"].as_f64().unwrap() < 1e-7);
+            for axis in 0..2 {
+                assert!(
+                    (relation["anchors"][0][axis].as_f64().unwrap()
+                        - relation["anchors"][1][axis].as_f64().unwrap())
+                    .abs()
+                        < 1e-7
+                );
+            }
+            assert!(
+                relation["parameters"]
+                    .as_array()
+                    .unwrap()
+                    .contains(&json!("reference_radius"))
+            );
+        }
+        let c = &sketch["points"]["boss-center"];
+        assert!((c[0].as_f64().unwrap() - (20_f64 * radius).sqrt()).abs() < 1e-7);
+        assert!((c[1].as_f64().unwrap() - (radius - 5.)).abs() < 1e-7);
+    }
+}
+
+#[test]
+fn internal_circle_tangency_viewer_contacts_agree_and_native_profile_uses_solved_center() {
+    let dir = Directory::new();
+    let mut request = view_example("tangent-boss");
+    let s = &mut request["model"]["family"]["features"][0]["operation"]["sketch_face"]["sketch"];
+    s["lines"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"id":"centers","start":"reference-center","end":"boss-center"}));
+    s["constraints"][0] = json!({"horizontal":{"line":"centers"}});
+    s["constraints"][1]["circle_circle_tangent"]["mode"] = json!("internal");
+    s["points"][4]["x"]["literal"]["value"] = json!(2.);
+    s["points"][4]["y"]["literal"]["value"] = json!(0.);
+    s["points"][5]["x"]["literal"]["value"] = json!(5.);
+    s["points"][5]["y"]["literal"]["value"] = json!(0.);
+    view_request(&dir, request, "internal").unwrap();
+    let data: Value =
+        serde_json::from_str(&fs::read_to_string(dir.0.join("internal/view.json")).unwrap())
+            .unwrap();
+    let sketch = data["scenes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["kind"] == "sketch")
+        .unwrap();
+    assert_eq!(sketch["solver"]["solved"], true);
+    assert!((sketch["points"]["boss-center"][0].as_f64().unwrap() - 2.).abs() < 1e-7);
+    let relation = sketch["annotations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| !a["detail"]["constraint"]["circle_circle_tangent"].is_null())
+        .unwrap();
+    assert_eq!(relation["label"], "T INT");
+    assert_eq!(relation["status"], "passed");
+    for point in relation["anchors"].as_array().unwrap() {
+        assert!((point[0].as_f64().unwrap() - 5.).abs() < 1e-7);
+        assert!(point[1].as_f64().unwrap().abs() < 1e-7);
+    }
+    assert!(
+        data["scenes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|s| s["kind"] == "solid")
+            .all(|s| s["valid"] == true)
+    );
+}

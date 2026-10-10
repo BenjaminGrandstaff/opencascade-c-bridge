@@ -54,6 +54,76 @@ fn gate(name: &str, budget: u64, run: impl FnOnce()) {
 }
 fn main() {
     gate(
+        "1000 independent line-circle and circle-circle tangent components",
+        10,
+        || {
+            let mut s = sketch();
+            for i in 0..1000 {
+                let id = |name: &str| format!("{name}-{i}");
+                let x = i as f64 * 20.;
+                s.points.extend([
+                    point(id("c"), x, 0., true),
+                    point(id("r"), x + 4., 0., true),
+                    point(id("a"), x - 10., -4., true),
+                    point(id("b"), x + 10., -4., true),
+                    point(id("c2"), x + 6., -1., false),
+                    point(id("r2"), x + 8., -1., false),
+                ]);
+                s.lines.extend([
+                    SketchLine {
+                        id: id("line"),
+                        start: id("a"),
+                        end: id("b"),
+                    },
+                    SketchLine {
+                        id: id("radius"),
+                        start: id("c2"),
+                        end: id("r2"),
+                    },
+                ]);
+                s.circles.extend([
+                    SketchCircle {
+                        id: id("first"),
+                        center: id("c"),
+                        rim: id("r"),
+                    },
+                    SketchCircle {
+                        id: id("second"),
+                        center: id("c2"),
+                        rim: id("r2"),
+                    },
+                ]);
+                s.constraints.extend([
+                    SketchConstraint::LineCircleTangent {
+                        line: id("line"),
+                        circle: id("second"),
+                        side: SketchLineSide::Left,
+                    },
+                    SketchConstraint::CircleCircleTangent {
+                        first: id("first"),
+                        second: id("second"),
+                        mode: SketchCircleTangency::External,
+                    },
+                    SketchConstraint::Radius {
+                        curve: id("second"),
+                        value: mm(2.),
+                    },
+                    SketchConstraint::Horizontal { line: id("radius") },
+                ]);
+            }
+            let params = HashMap::new();
+            let solved = s.solve(&params).unwrap();
+            assert!(solved.solved);
+            assert_eq!(solved.free_degrees, 0);
+            assert!(
+                s.constraint_checks(&params, &solved)
+                    .unwrap()
+                    .iter()
+                    .all(|c| c.satisfied)
+            );
+        },
+    );
+    gate(
         "1000 signed point-line dimensions on tilted references",
         10,
         || {

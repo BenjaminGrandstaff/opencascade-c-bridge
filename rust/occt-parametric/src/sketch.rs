@@ -118,6 +118,22 @@ impl SketchSpline {
     }
 }
 
+/// Side of the supporting line, oriented from start to end.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SketchLineSide {
+    Left,
+    Right,
+}
+
+/// Internal tangency means the first circle contains the second.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SketchCircleTangency {
+    External,
+    Internal,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SketchConstraint {
@@ -151,6 +167,18 @@ pub enum SketchConstraint {
         first: String,
         second: String,
         point: String,
+    },
+    /// Tangency to the infinite supporting line, without a shared point.
+    LineCircleTangent {
+        line: String,
+        circle: String,
+        side: SketchLineSide,
+    },
+    /// Tangency of two full circles, without a shared rim point.
+    CircleCircleTangent {
+        first: String,
+        second: String,
+        mode: SketchCircleTangency,
     },
     Coincident {
         first: String,

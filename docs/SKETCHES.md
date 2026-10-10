@@ -79,7 +79,7 @@ export are verified. A 1,000-pair solve and residual-diagnostic gate passes in
 0.009 s (10 s budget); 20 solids plus 60 source sketch scenes and matched-radius
 annotations pass through MCP in 0.316 s (10 s budget).
 
-Current authoring examples use schema 96. Older model documents migrate
+Current authoring examples use schema 97. Older model documents migrate
 without adding constraints or changing their entities. Native ABI remains 52.
 
 ## Saved profile operations
@@ -217,7 +217,7 @@ wires and the solid; height edits reuse both wires and the region. Native
 validity, bore radius, moved bounds and analytical volume are tested.
 
 Older documents migrate to schema 95 without adding relations. Native ABI
-remains 52. Tangency beyond the existing shared endpoint/rim convention remains future work.
+remains 52. Independent full-circle tangencies are described below; arbitrary curve tangency remains future work.
 
 ## Signed point-to-line distance (schema 96)
 
@@ -249,4 +249,57 @@ block and rebuilds the profile, cut tool and body. Native volume stays
 
 Model documents migrate to schema 96; native ABI remains 52. This is an
 oriented supporting-line dimension, rather than shortest distance to a bounded
-segment. General tangency remains the next sketch relation gap.
+segment. Tangency to general curves remains a sketch relation gap.
+
+## Independent line and circle tangency (schema 97)
+
+`line_circle_tangent: {line, circle, side}` constrains a full circle tangent to
+the infinite supporting line of a named segment. `side` is required: `left`
+or `right` of the line's start-to-end direction. The contact may be beyond
+the segment endpoints. No shared point or circle-rim identity is required.
+Reversing the line direction reverses the meaning of the side.
+
+`circle_circle_tangent: {first, second, mode}` constrains two distinct full
+circles. Required `mode` is `external` or `internal`. External tangency makes
+centre distance equal the sum of radii. Internal tangency makes it equal the
+first radius minus the second radius: the first circle contains the second
+and must have a strictly larger radius. Reorder the circle references when
+the intended containing circle is second.
+
+Each relation contributes one measured millimetre residual, touching at most
+four points/eight coordinates. Line tangency uses signed centre-to-line
+distance minus the chosen signed radius. Circle tangency uses centre distance
+minus the sum or ordered difference of radii. Sparse finite differences,
+rank diagnostics and underconstrained solving use these equations. Conflicting
+fixed geometry remains unsolved, with a real residual. Missing references,
+wrong entity types and self-circle relations are rejected. Initialize with
+positive radii, a nonzero line and distinct circle centres; internal tangency
+also requires the first circle to be larger during solving. Coincident equal
+circles are not treated as an internal tangent pair.
+
+The viewer labels these `T LEFT`, `T RIGHT`, `T EXT` and `T INT`. Calculated
+contact anchors coincide when the relation is satisfied and separate for
+conflicting geometry. Targets highlight both entities; controls link source
+coordinate expressions, and radius dimensions retain their driving controls.
+These annotations carry measured millimetre residuals, rather than constructed
+status or the dimensionless angular residual of endpoint tangency.
+
+The [tangent boss](../tools/model/tangent-boss.request.json) has a fixed reference
+circle of radius R, a horizontal reference line at Y=−R, and a solved boss
+circle of radius r. Left-side line tangency and external circle tangency place
+the boss at `(sqrt(4 × R × r), r − R)` on the positive-X solution branch. The
+source centre and rim coordinates are initial guesses; they do not contain
+this position formula. A radius equation and horizontal radius axis complete
+the four equations over four free coordinates. `sketch_face` and `extrude`
+produce the boss alone; reference geometry remains visible in the sketch.
+For R=5, r=3 and height=8 mm, native volume is `π × 3² × 8 = 226.194671 mm³`.
+Changing either radius rebuilds the profile and body; height edits reuse the
+profile. Native validity, moved bounds, analytical volume and rejected-edit
+retention are tested, along with external and internal contact markers.
+
+Existing `tangent: {first, second, point}` retains its shared endpoint/rim
+semantics, including constructed spline endpoint tangency. The independent
+relations require full circles; arcs, ellipses and splines retain that older
+relation. Arc-span-aware independent contacts, ellipse tangency and general
+curve contact remain future work. Documents migrate to schema 97; native ABI
+remains 52.

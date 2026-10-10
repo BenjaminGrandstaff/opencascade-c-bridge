@@ -11,18 +11,32 @@ tracks status and order.
 | C ABI (`src/`, `include/`) | ABI 52 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 96 | Active development |
+| `occt-parametric` (engineering layer) | Schema 97 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 112 + first-use integration 1 (+1 doc test), recipes 3, parametric 480 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 18 + branch command 2 + model command 43, MCP Python 9, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 112 + first-use integration 1 (+1 doc test), recipes 3, parametric 485 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 18 + branch command 2 + model command 45, MCP Python 9, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform code also passes. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
 | Coverage | Last recorded: 93.61% lines overall, test code excluded; C++ 94.13% lines, 87.40% branches, 100% functions; Rust 93.42% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 148 Rust cases plus 5 model-command and 18 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Scale benchmarks | 149 Rust cases plus 5 model-command and 19 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
+
+- Independent sketch tangency (schema 97; native ABI 52 unchanged): full circles
+  can be tangent to supporting lines on an explicit left/right side, or to
+  other circles in external/ordered-internal mode, without shared point IDs.
+  Sparse millimetre equations, rank/residual diagnostics, checked references
+  and degeneracy rejection are implemented. Viewer contact anchors show
+  `T LEFT`, `T RIGHT`, `T EXT` and `T INT`; endpoint/spline tangency is preserved.
+  The AI tangent-boss example derives its position from two relations, builds
+  a native profile/solid, and verifies radius, reference and height edits.
+  The catalog has 33 examples and 12 schemas (45 resources); request schemas
+  have 147 definitions. Catalog examples target schema 97. Arc-span-aware,
+  ellipse and general-curve tangencies remain open. A 1,000-component sparse
+  solve/diagnostics gate passes in 0.027 s; MCP renders 20 tangent bosses and
+  contact annotations in 0.152 s (both 10 s budgets).
 
 - Signed point-to-line sketch dimensions (schema 96; native ABI 52 unchanged):
   one perpendicular millimetre equation over a point and the named line's

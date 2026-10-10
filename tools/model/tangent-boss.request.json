@@ -3,11 +3,57 @@
   "model": {
     "schema_version": 97,
     "family": {
-      "id": "profile-transition",
+      "id": "tangent-boss",
       "version": 1,
       "parameters": [
         {
-          "id": "lower_radius",
+          "id": "reference_radius",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 5,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 4,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 10,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "boss_radius",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 3,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 2,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 8,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "height",
           "parameter_type": {
             "scalar": "length"
           },
@@ -19,49 +65,15 @@
             }
           },
           "minimum": {
-            "value": 0.1,
+            "value": 2,
             "dimension": "length",
             "unit": "millimeter"
           },
-          "maximum": null
-        },
-        {
-          "id": "upper_radius",
-          "parameter_type": {
-            "scalar": "length"
-          },
-          "default": {
-            "scalar": {
-              "value": 4,
-              "dimension": "length",
-              "unit": "millimeter"
-            }
-          },
-          "minimum": {
-            "value": 0.1,
+          "maximum": {
+            "value": 30,
             "dimension": "length",
             "unit": "millimeter"
-          },
-          "maximum": null
-        },
-        {
-          "id": "height",
-          "parameter_type": {
-            "scalar": "length"
-          },
-          "default": {
-            "scalar": {
-              "value": 20,
-              "dimension": "length",
-              "unit": "millimeter"
-            }
-          },
-          "minimum": {
-            "value": 0.1,
-            "dimension": "length",
-            "unit": "millimeter"
-          },
-          "maximum": null
+          }
         }
       ],
       "derived_parameters": [],
@@ -69,17 +81,17 @@
       "constraints": [],
       "requirements": [
         {
-          "id": "valid",
+          "id": "body-valid",
           "version": 1,
           "kind": "validation",
           "priority": "required",
-          "statement": "Loft valid",
+          "statement": "equal-radius mounting plate is valid",
           "rule": {
             "shape_valid": {
               "output": "body"
             }
           },
-          "provenance": "Demonstration assumptions",
+          "provenance": "Illustrative dimensions",
           "traces": [
             {
               "feature": "body"
@@ -90,23 +102,11 @@
       "datums": [],
       "features": [
         {
-          "id": "body",
-          "operation": {
-            "profile_loft": {
-              "profiles": [
-                "lower",
-                "upper"
-              ],
-              "ruled": true
-            }
-          }
-        },
-        {
-          "id": "lower",
+          "id": "profile",
           "operation": {
             "sketch_face": {
               "sketch": {
-                "id": "lower",
+                "id": "tangent-boss",
                 "origin": {
                   "literal": {
                     "x": {
@@ -166,7 +166,7 @@
                 },
                 "points": [
                   {
-                    "id": "center",
+                    "id": "reference-center",
                     "x": {
                       "literal": {
                         "value": 0,
@@ -184,9 +184,9 @@
                     "fixed": true
                   },
                   {
-                    "id": "edge",
+                    "id": "reference-rim",
                     "x": {
-                      "parameter": "lower_radius"
+                      "parameter": "reference_radius"
                     },
                     "y": {
                       "literal": {
@@ -196,26 +196,129 @@
                       }
                     },
                     "fixed": true
+                  },
+                  {
+                    "id": "line-start",
+                    "x": {
+                      "literal": {
+                        "value": -20,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "negate": {
+                        "parameter": "reference_radius"
+                      }
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "line-end",
+                    "x": {
+                      "literal": {
+                        "value": 30,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "negate": {
+                        "parameter": "reference_radius"
+                      }
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "boss-center",
+                    "x": {
+                      "literal": {
+                        "value": 8,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": -1,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": false
+                  },
+                  {
+                    "id": "boss-rim",
+                    "x": {
+                      "literal": {
+                        "value": 11,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": -1,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": false
                   }
                 ],
-                "lines": [],
+                "lines": [
+                  {
+                    "id": "reference-line",
+                    "start": "line-start",
+                    "end": "line-end"
+                  },
+                  {
+                    "id": "boss-axis",
+                    "start": "boss-center",
+                    "end": "boss-rim"
+                  }
+                ],
                 "circles": [
                   {
-                    "id": "rim",
-                    "center": "center",
-                    "rim": "edge"
+                    "id": "reference-circle",
+                    "center": "reference-center",
+                    "rim": "reference-rim"
+                  },
+                  {
+                    "id": "boss-circle",
+                    "center": "boss-center",
+                    "rim": "boss-rim"
                   }
                 ],
                 "profile": [
-                  "rim"
+                  "boss-circle"
                 ],
                 "constraints": [
                   {
+                    "line_circle_tangent": {
+                      "line": "reference-line",
+                      "circle": "boss-circle",
+                      "side": "left"
+                    }
+                  },
+                  {
+                    "circle_circle_tangent": {
+                      "first": "reference-circle",
+                      "second": "boss-circle",
+                      "mode": "external"
+                    }
+                  },
+                  {
                     "radius": {
-                      "curve": "rim",
+                      "curve": "boss-circle",
                       "value": {
-                        "parameter": "lower_radius"
+                        "parameter": "boss_radius"
                       }
+                    }
+                  },
+                  {
+                    "horizontal": {
+                      "line": "boss-axis"
                     }
                   }
                 ]
@@ -224,126 +327,32 @@
           }
         },
         {
-          "id": "upper",
+          "id": "body",
           "operation": {
-            "sketch_wire": {
-              "sketch": {
-                "id": "upper",
-                "origin": {
-                  "components": {
-                    "x": {
-                      "literal": {
-                        "value": 0,
-                        "dimension": "length",
-                        "unit": "millimeter"
-                      }
-                    },
-                    "y": {
-                      "literal": {
-                        "value": 0,
-                        "dimension": "length",
-                        "unit": "millimeter"
-                      }
-                    },
-                    "z": {
-                      "parameter": "height"
+            "extrude": {
+              "input": "profile",
+              "direction": {
+                "components": {
+                  "x": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
                     }
-                  }
-                },
-                "x_axis": {
-                  "literal": {
-                    "x": {
-                      "value": 1,
-                      "dimension": "scalar",
-                      "unit": null
-                    },
-                    "y": {
-                      "value": 0,
-                      "dimension": "scalar",
-                      "unit": null
-                    },
-                    "z": {
-                      "value": 0,
-                      "dimension": "scalar",
-                      "unit": null
-                    }
-                  }
-                },
-                "y_axis": {
-                  "literal": {
-                    "x": {
-                      "value": 0,
-                      "dimension": "scalar",
-                      "unit": null
-                    },
-                    "y": {
-                      "value": 1,
-                      "dimension": "scalar",
-                      "unit": null
-                    },
-                    "z": {
-                      "value": 0,
-                      "dimension": "scalar",
-                      "unit": null
-                    }
-                  }
-                },
-                "points": [
-                  {
-                    "id": "center",
-                    "x": {
-                      "literal": {
-                        "value": 0,
-                        "dimension": "length",
-                        "unit": "millimeter"
-                      }
-                    },
-                    "y": {
-                      "literal": {
-                        "value": 0,
-                        "dimension": "length",
-                        "unit": "millimeter"
-                      }
-                    },
-                    "fixed": true
                   },
-                  {
-                    "id": "edge",
-                    "x": {
-                      "parameter": "upper_radius"
-                    },
-                    "y": {
-                      "literal": {
-                        "value": 0,
-                        "dimension": "length",
-                        "unit": "millimeter"
-                      }
-                    },
-                    "fixed": true
-                  }
-                ],
-                "lines": [],
-                "circles": [
-                  {
-                    "id": "rim",
-                    "center": "center",
-                    "rim": "edge"
-                  }
-                ],
-                "profile": [
-                  "rim"
-                ],
-                "constraints": [
-                  {
-                    "radius": {
-                      "curve": "rim",
-                      "value": {
-                        "parameter": "upper_radius"
-                      }
+                  "y": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
                     }
+                  },
+                  "z": {
+                    "parameter": "height"
                   }
-                ]
-              }
+                }
+              },
+              "extent": "distance"
             }
           }
         }
@@ -352,17 +361,21 @@
     "instances": [
       {
         "base": {
-          "id": "block",
+          "id": "part",
           "overrides": {},
-          "provenance": "dimensions are illustrative assumptions"
+          "provenance": "A boss positioned by independent line and circle tangencies"
         }
       }
     ]
   },
   "outputs": [
     {
-      "instance": "block",
+      "instance": "part",
       "output": "body"
+    },
+    {
+      "instance": "part",
+      "output": "profile"
     }
   ],
   "sketches": true

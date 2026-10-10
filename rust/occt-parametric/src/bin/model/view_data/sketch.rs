@@ -227,6 +227,31 @@ pub(super) fn sketch_scene(
                 vec![point.clone()],
                 Some(value),
             ),
+            SketchConstraint::LineCircleTangent { line, circle, side } => (
+                match side {
+                    SketchLineSide::Left => "T LEFT",
+                    SketchLineSide::Right => "T RIGHT",
+                },
+                vec![line.clone(), circle.clone()],
+                vec![circular_refs[circle.as_str()].0.to_owned()],
+                None,
+            ),
+            SketchConstraint::CircleCircleTangent {
+                first,
+                second,
+                mode,
+            } => (
+                match mode {
+                    SketchCircleTangency::External => "T EXT",
+                    SketchCircleTangency::Internal => "T INT",
+                },
+                vec![first.clone(), second.clone()],
+                vec![
+                    circular_refs[first.as_str()].0.to_owned(),
+                    circular_refs[second.as_str()].0.to_owned(),
+                ],
+                None,
+            ),
             SketchConstraint::EqualLength { first, second } => {
                 ("=", vec![first.clone(), second.clone()], vec![], None)
             }
@@ -297,6 +322,55 @@ pub(super) fn sketch_scene(
             let uy = dy / length;
             let t = (p[0] - a[0]) * ux + (p[1] - a[1]) * uy;
             anchors = vec![[a[0] + t * ux, a[1] + t * uy, 0.0], p];
+        }
+        match constraint {
+            SketchConstraint::LineCircleTangent { line, circle, side } => {
+                let l = lines[line.as_str()];
+                let a = point_map[&l.start];
+                let b = point_map[&l.end];
+                let (c, r) = circular_refs[circle.as_str()];
+                let c = point_map[c];
+                let r = point_map[r];
+                let radius = (r[0] - c[0]).hypot(r[1] - c[1]);
+                let length = (b[0] - a[0]).hypot(b[1] - a[1]);
+                let ux = (b[0] - a[0]) / length;
+                let uy = (b[1] - a[1]) / length;
+                let t = (c[0] - a[0]) * ux + (c[1] - a[1]) * uy;
+                let sign = match side {
+                    SketchLineSide::Left => 1.,
+                    SketchLineSide::Right => -1.,
+                };
+                anchors = vec![
+                    [a[0] + t * ux, a[1] + t * uy, 0.0],
+                    [c[0] + sign * radius * uy, c[1] - sign * radius * ux, 0.0],
+                ];
+            }
+            SketchConstraint::CircleCircleTangent {
+                first,
+                second,
+                mode,
+            } => {
+                let (a, ar) = circular_refs[first.as_str()];
+                let (b, br) = circular_refs[second.as_str()];
+                let a = point_map[a];
+                let ar = point_map[ar];
+                let b = point_map[b];
+                let br = point_map[br];
+                let ra = (ar[0] - a[0]).hypot(ar[1] - a[1]);
+                let rb = (br[0] - b[0]).hypot(br[1] - b[1]);
+                let distance = (b[0] - a[0]).hypot(b[1] - a[1]);
+                let ux = (b[0] - a[0]) / distance;
+                let uy = (b[1] - a[1]) / distance;
+                let sign = match mode {
+                    SketchCircleTangency::External => -1.,
+                    SketchCircleTangency::Internal => 1.,
+                };
+                anchors = vec![
+                    [a[0] + ra * ux, a[1] + ra * uy, 0.0],
+                    [b[0] + sign * rb * ux, b[1] + sign * rb * uy, 0.0],
+                ];
+            }
+            _ => {}
         }
         if matches!(constraint, SketchConstraint::Diameter { .. }) && anchors.len() == 2 {
             let c = anchors[0];
@@ -379,6 +453,29 @@ pub(super) fn sketch_scene(
             SketchConstraint::Midpoint { point, line } => {
                 let l = lines[line.as_str()];
                 control_names = [point.as_str(), l.start.as_str(), l.end.as_str()]
+                    .into_iter()
+                    .flat_map(|id| point_controls[id].iter().cloned())
+                    .collect::<BTreeSet<_>>()
+                    .into_iter()
+                    .collect();
+            }
+            _ => {}
+        }
+        match constraint {
+            SketchConstraint::LineCircleTangent { line, circle, .. } => {
+                let l = lines[line.as_str()];
+                let (c, r) = circular_refs[circle.as_str()];
+                control_names = [l.start.as_str(), l.end.as_str(), c, r]
+                    .into_iter()
+                    .flat_map(|id| point_controls[id].iter().cloned())
+                    .collect::<BTreeSet<_>>()
+                    .into_iter()
+                    .collect();
+            }
+            SketchConstraint::CircleCircleTangent { first, second, .. } => {
+                let (a, b) = circular_refs[first.as_str()];
+                let (c, d) = circular_refs[second.as_str()];
+                control_names = [a, b, c, d]
                     .into_iter()
                     .flat_map(|id| point_controls[id].iter().cloned())
                     .collect::<BTreeSet<_>>()
