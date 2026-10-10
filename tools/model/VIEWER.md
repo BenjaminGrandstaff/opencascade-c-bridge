@@ -186,7 +186,7 @@ region and solid while keeping unaffected source sketches.
 The `hollow-sweep` example shows a bent tube plus its outer, inner and route
 sketches. Native route length and the bore control remain linked to the solid.
 Holed profile sweeps use the same shared scene builder and annotations as simple
-sweeps; current model schema is 91 and the current native ABI is 52.
+sweeps; current model schema is 92 and the current native ABI is 52.
 
 The schema-80 `hollow-loft` example adds all inner section sketches and bore
 controls to the solid's linked parameters. Existing section-spacing annotations
@@ -271,3 +271,10 @@ station coordinates. Metadata sets `spatial_stations: false` and describes the
 nominal contour law. Original selected source-edge paths retain the bounded
 reference sampling and global budget. See
 [variable contour laws](../../docs/EDGE_TREATMENTS.md#variable-radius-contour-laws).
+
+
+Equal-radius sketch relationships show `=R` with both circles/arcs highlighted,
+centre anchors, satisfied/failed status and an actual radius-difference
+residual in millimetres. Related centre/rim expression controls are linked.
+`equal-radius-plate` shows these source constraints beside the holed extrusion.
+See [equal circular radii](../../docs/SKETCHES.md#equal-circular-radii-schema-92).

@@ -51,6 +51,24 @@ pub(super) fn sketch_scene(
         .iter()
         .map(|(id, p)| (id.clone(), [p.x, p.y, 0.0]))
         .collect::<BTreeMap<_, _>>();
+    // Index circular references once: O(points + curves), plus referenced
+    // expression names. Equal-radius annotations do not scan all entities.
+    let circular_refs: HashMap<_, _> = sketch
+        .circles
+        .iter()
+        .map(|c| (c.id.as_str(), (c.center.as_str(), c.rim.as_str())))
+        .chain(
+            sketch
+                .arcs
+                .iter()
+                .map(|a| (a.id.as_str(), (a.center.as_str(), a.start.as_str()))),
+        )
+        .collect();
+    let point_controls: HashMap<_, _> = sketch
+        .points
+        .iter()
+        .map(|p| (p.id.as_str(), names(&json!([p.x, p.y]))))
+        .collect();
     let mut annotations: Vec<Value> = Vec::new();
     for (index, constraint) in sketch.constraints.iter().enumerate() {
         let (symbol, targets, anchor_ids, value) = match constraint {
@@ -66,19 +84,8 @@ pub(super) fn sketch_scene(
             ),
             SketchConstraint::Radius { curve, value }
             | SketchConstraint::Diameter { curve, value } => {
-                let refs = sketch
-                    .circles
-                    .iter()
-                    .find(|c| c.id == *curve)
-                    .map(|c| vec![c.center.clone(), c.rim.clone()])
-                    .or_else(|| {
-                        sketch
-                            .arcs
-                            .iter()
-                            .find(|a| a.id == *curve)
-                            .map(|a| vec![a.center.clone(), a.start.clone()])
-                    })
-                    .unwrap_or_default();
+                let (center, rim) = circular_refs[curve.as_str()];
+                let refs = vec![center.to_owned(), rim.to_owned()];
                 (
                     if matches!(constraint, SketchConstraint::Radius { .. }) {
                         "R"
@@ -114,6 +121,15 @@ pub(super) fn sketch_scene(
             SketchConstraint::Perpendicular { first, second } => {
                 ("⊥", vec![first.clone(), second.clone()], vec![], None)
             }
+            SketchConstraint::EqualRadius { first, second } => (
+                "=R",
+                vec![first.clone(), second.clone()],
+                vec![
+                    circular_refs[first.as_str()].0.to_owned(),
+                    circular_refs[second.as_str()].0.to_owned(),
+                ],
+                None,
+            ),
             SketchConstraint::EqualLength { first, second } => {
                 ("=", vec![first.clone(), second.clone()], vec![], None)
             }
@@ -217,9 +233,18 @@ pub(super) fn sketch_scene(
         } else {
             symbol.to_owned()
         };
-        let control_names = value
+        let mut control_names: Vec<String> = value
             .map(|v| v.parameter_names().into_iter().map(str::to_owned).collect())
             .unwrap_or_default();
+        if let SketchConstraint::EqualRadius { first, second } = constraint {
+            let mut linked = BTreeSet::new();
+            for curve in [first, second] {
+                let (center, rim) = circular_refs[curve.as_str()];
+                linked.extend(point_controls[center].iter().cloned());
+                linked.extend(point_controls[rim].iter().cloned());
+            }
+            control_names = linked.into_iter().collect();
+        }
         let kind = if value.is_some() {
             AnnotationKind::Dimension
         } else {

@@ -49,7 +49,7 @@ or remote service is started.
 input schema. All 38 current feature operations and 142 nested request-schema
 definitions are discoverable. Schemas derive from serde-compatible Rust types;
 new serialized variants require schema support at compilation. Authoring schemas
-target current model schema 91. The engine still migrates older documents.
+target current model schema 92. The engine still migrates older documents.
 Schemas describe serialization and basic request bounds; units, dependency
 references, dimensional constraints, selector resolution, and geometry validity
 are checked by the build engine.
@@ -402,8 +402,8 @@ See [mirrors](../../docs/MIRRORS.md); current builds require native ABI 52.
 `scale_factor` is dimensionless and positive; `scale_center_x` moves the centre
 in millimetres. Native geometry, bounds, volume and source-face ancestry follow
 edits. The viewer links both controls to the scale label and displays measured
-result spans. See [scaling](../../docs/SCALING.md). The catalog contains 28 examples
-and 12 generated schemas, exposed as 40 discovery resources.
+result spans. See [scaling](../../docs/SCALING.md). The catalog contains 29 examples
+and 12 generated schemas, exposed as 41 discovery resources.
 
 
 `spring` combines the schema-82 helix operation with a parameter-driven circular
@@ -454,7 +454,7 @@ See [pattern ancestry](../../docs/PART_PATTERNS.md#retained-pattern-ancestry).
 major diameter, pitch, run and derived turns. Its source radius and height
 follow diameter/run edits, with an illustrative unthreaded margin at both ends.
 Native validation and removed-volume checks cover the generated solid. The
-catalog targets schema 91; see [thread viewer semantics](../../docs/THREADS.md#ai-example-and-viewer-dimensions).
+catalog targets schema 92; see [thread viewer semantics](../../docs/THREADS.md#ai-example-and-viewer-dimensions).
 
 
 `edge-treatments` demonstrates constant-radius fillets and equal-distance
@@ -470,3 +470,11 @@ from-point spine direction. Its linked controls edit endpoint and middle
 radii plus normalized station position. Visualization returns the complete
 nominal law and source references, with explicit nonspatial station metadata.
 See [variable contour laws](../../docs/EDGE_TREATMENTS.md#variable-radius-contour-laws).
+
+
+`equal-radius-plate` demonstrates schema-92 `equal_radius` sketch constraints.
+Two hole-wire definitions retain the same explicit circle relationship and
+select different profile boundaries. A planar region and extrusion build the
+plate. Source sketches, real equality residuals and related controls are
+visible alongside the solid. Current catalog examples match schema 92.
+See [equal circular radii](../../docs/SKETCHES.md#equal-circular-radii-schema-92).

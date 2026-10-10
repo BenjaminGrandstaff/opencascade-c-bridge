@@ -1,7 +1,7 @@
 {
   "schema": "occb-model-view-v1",
   "model": {
-    "schema_version": 91,
+    "schema_version": 92,
     "family": {
       "id": "patterned-plate",
       "version": 1,

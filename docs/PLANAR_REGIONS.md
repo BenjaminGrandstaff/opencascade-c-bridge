@@ -56,3 +56,9 @@ intersection cost. The scale gates check 500 annular extrusions and one 100-hole
 region, each with a 10-second budget, exact area/volume and zero retained handles.
 Tests cover malformed inputs, multiple holes, dependencies, failed edits,
 source edges and hollow toroidal revolutions.
+
+
+The [equal-radius mounting plate](../tools/model/equal-radius-plate.request.json)
+demonstrates schema-92 sketch relationships driving two inner boundaries and
+one extrusion. Radius edits propagate from the solved sketches through the
+region to both native bores. See [equal circular radii](SKETCHES.md#equal-circular-radii-schema-92).

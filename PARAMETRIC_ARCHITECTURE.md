@@ -1860,3 +1860,17 @@ pairwise label or graph scans and no extra line vertices are introduced.
 Character advances are deterministic estimates, rather than installed-font
 metrics. Other annotation/geometry collisions and page fitting remain future
 work. See [drawing layout](docs/DRAWINGS.md#upright-dimension-label-layout).
+
+
+## Equal-radius sketches driving solid boundaries
+
+Schema 92 adds a radius-difference row between distinct circles/arcs. The
+solver and diagnostic paths share indexed centre/rim references and at most
+eight local coordinates. Normal assembly follows existing sparse row widths
+and elimination depends on fill. Viewer circular-reference and source-control
+indexes are built once in O(points + curves + expression names); each new
+annotation looks up its two curves and combines their referenced names.
+Existing radius/diameter annotations also use that reference index. Solved
+sketch wires continue through PlanarRegion and Extrude, with parameter-based
+incremental signatures and transactional rejected-edit retention. No new
+native ABI operation is needed. See [equal radii](docs/SKETCHES.md#equal-circular-radii-schema-92).

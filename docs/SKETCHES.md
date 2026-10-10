@@ -1,6 +1,6 @@
 # Sketch geometry, constraints and profile edits
 
-Schema **72** completes the listed sketch additions: ellipses, signed line
+Schema **72** adds the initial advanced sketch capabilities: ellipses, signed line
 angles, circular radius/diameter dimensions, point symmetry, point-on-curve
 constraints, and saved trim/extend/offset operations. Native editing and curve
 projection use C ABI **47**. Older documents migrate with empty `ellipses` and
@@ -42,6 +42,45 @@ coordinates. Radius/diameter constraints describe circular geometry, rather
 than an ellipse's varying curvature radius. Tangency retains the existing
 shared-endpoint/rim convention; spline endpoint tangency is imposed during
 native construction and shown as constructed, rather than a measured zero.
+
+## Equal circular radii (schema 92)
+
+`equal_radius: {first, second}` relates two distinct named circles or arcs.
+For arcs it compares supporting-circle radii; arc span and orientation do not
+change the equality. Lines, ellipses, splines, missing IDs and self-relations
+are rejected. The constraint has no target value: drive one radius with a
+parameter or other constraints, then solve the other. Conflicting fixed radii
+produce an unsolved sketch with a real millimetre residual. It does not equate
+arc lengths, spans or centres.
+
+The solver contributes one radius-difference equation, touching at most four
+points/eight coordinates. Each lookup uses the existing entity index; sparse
+finite differences and normal-matrix fill stay local to those references.
+Arc endpoints retain their implicit equal-distance equation. Diagnostics use
+the same residual, rather than reporting a constructed equality. The shared
+viewer shows `=R`, highlights both curves, anchors the label at their centres
+and links parameters referenced by their centre/rim source expressions.
+
+The [equal-radius plate example](../tools/model/equal-radius-plate.request.json)
+uses fixed parameter-driven geometry for the left circle and a solved right
+rim with horizontal/equal-radius constraints. Two saved sketch definitions
+select the left and right boundaries independently; their shared constraint
+definition is copied explicitly in JSON. A rectangular outer sketch and both
+hole wires feed `planar_region`, then `extrude` creates the solid. The sketches
+keep their points, equations and identities, and remain inspectable beside
+the solid.
+
+Changing `hole_radius` rebuilds both hole sketches, the holed face and the
+extrusion while reusing the outer sketch. For the default 60 × 30 × 8 mm plate
+with two 3 mm radius holes, volume is
+`(60 × 30 − 2 × π × 3²) × 8 = 13947.610658 mm³`. Native validity, both bore
+radii, analytical volume, rejected-edit retention, live edits and STEP/STL
+export are verified. A 1,000-pair solve and residual-diagnostic gate passes in
+0.009 s (10 s budget); 20 solids plus 60 source sketch scenes and matched-radius
+annotations pass through MCP in 0.316 s (10 s budget).
+
+Current authoring examples use schema 92. Older model documents migrate
+without adding constraints or changing their entities. Native ABI remains 52.
 
 ## Saved profile operations
 

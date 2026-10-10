@@ -145,6 +145,20 @@ impl SketchDefinition {
                         "radius/diameter constraints require a circle or arc",
                     ));
                 }
+                SketchConstraint::EqualRadius { first, second } => {
+                    if first == second
+                        || [first, second].iter().any(|id| {
+                            !matches!(
+                                entities.get(id.as_str()),
+                                Some(Entity::Circle(_) | Entity::Arc(_))
+                            )
+                        })
+                    {
+                        return Err(ModelError::new(
+                            "equal-radius constraints require two distinct circles or arcs",
+                        ));
+                    }
+                }
                 SketchConstraint::PointOnCurve { curve, .. }
                     if !entities.contains_key(curve.as_str()) =>
                 {
@@ -279,7 +293,7 @@ impl SketchConstraint {
                 .ok_or_else(|| ModelError::new(format!("unknown sketch line '{id}'")))
         };
         match self {
-            Self::Radius { .. } | Self::Diameter { .. } => Ok(()),
+            Self::Radius { .. } | Self::Diameter { .. } | Self::EqualRadius { .. } => Ok(()),
             Self::PointOnCurve { point: id, .. } | Self::Tangent { point: id, .. } => point(id),
             Self::Symmetric {
                 first,

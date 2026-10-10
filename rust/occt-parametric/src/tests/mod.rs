@@ -167,3 +167,5 @@ mod circular_part_patterns;
 mod pattern_history;
 
 mod edge_treatment_example;
+
+mod equal_radius_plate;

@@ -271,5 +271,20 @@ with tempfile.TemporaryDirectory(prefix='occb-mcp-scale-') as root:
         elapsed=time.monotonic()-started
         assert elapsed<10
         print(f'PASS MCP 20 variable-fillet scenes, contour laws and linked station controls: {elapsed:.3f}s / 10s')
+        plate=client.tool('occt_get_example',dict(name='equal-radius-plate'))['structuredContent']
+        for i in range(1,20):
+            plate['model']['instances'].append({'clone':dict(id=f'part-{i}',source='part',overrides={},provenance='scale')})
+            plate['outputs'].append(dict(instance=f'part-{i}',output='body'))
+        started=time.monotonic()
+        result=client.tool('occt_visualize_model',plate)
+        assert not result['isError'],result
+        data=json.loads(client.call('resources/read',dict(uri=result['structuredContent']['resources']['view.json']))['result']['contents'][0]['text'])
+        solids=[scene for scene in data['scenes'] if scene['kind']=='solid']
+        equal=[a for scene in data['scenes'] for a in scene['annotations'] if a['label']=='=R']
+        assert len(solids)==20 and all(s['valid'] for s in solids)
+        assert len(equal)==40 and all(a['status']=='passed' and 'hole_radius' in a['parameters'] for a in equal)
+        elapsed=time.monotonic()-started
+        assert elapsed<10
+        print(f'PASS MCP 20 equal-radius plates, 60 source sketches and matched-radius annotations: {elapsed:.3f}s / 10s')
     finally:
         client.close()

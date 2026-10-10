@@ -45,6 +45,7 @@ impl SketchDefinition {
                         SketchConstraint::Angle { .. }
                             | SketchConstraint::Radius { .. }
                             | SketchConstraint::Diameter { .. }
+                            | SketchConstraint::EqualRadius { .. }
                             | SketchConstraint::Symmetric { .. }
                             | SketchConstraint::PointOnCurve { .. }
                     )
@@ -452,6 +453,14 @@ impl SketchProblem<'_> {
                     self.line(second, values),
                 )?);
             }
+            SketchConstraint::EqualRadius { first, second } => {
+                let (a, b) = self.radius_points(first);
+                let (c, d) = self.radius_points(second);
+                residuals.push(
+                    line_length((self.point(a, values), self.point(b, values)))
+                        - line_length((self.point(c, values), self.point(d, values))),
+                );
+            }
             SketchConstraint::EqualLength { first, second } => {
                 residuals.push(
                     line_length(self.line(first, values)) - line_length(self.line(second, values)),
@@ -475,6 +484,11 @@ impl SketchProblem<'_> {
 
     fn columns(&self, constraint: &SketchConstraint) -> Vec<usize> {
         let points = match constraint {
+            SketchConstraint::EqualRadius { first, second } => {
+                let (a, b) = self.radius_points(first);
+                let (c, d) = self.radius_points(second);
+                vec![a, b, c, d]
+            }
             SketchConstraint::Radius { curve, .. } | SketchConstraint::Diameter { curve, .. } => {
                 let (a, b) = self.radius_points(curve);
                 vec![a, b]

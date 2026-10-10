@@ -11,18 +11,31 @@ tracks status and order.
 | C ABI (`src/`, `include/`) | ABI 52 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 91 | Active development |
+| `occt-parametric` (engineering layer) | Schema 92 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 112 + first-use integration 1 (+1 doc test), recipes 3, parametric 457 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 18 + branch command 2 + model command 38, MCP Python 9, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 112 + first-use integration 1 (+1 doc test), recipes 3, parametric 460 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 18 + branch command 2 + model command 39, MCP Python 9, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform code also passes. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
 | Coverage | Last recorded: 93.61% lines overall, test code excluded; C++ 94.13% lines, 87.40% branches, 100% functions; Rust 93.42% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 143 Rust cases plus 5 model-command and 14 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Scale benchmarks | 144 Rust cases plus 5 model-command and 15 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
+
+- Equal-radius sketch/solid definitions (schema 92; native ABI 52 unchanged):
+  circle/circle, circle/arc and arc/arc constraints compare supporting radii
+  through one sparse residual equation. Reference validation, native arc
+  geometry, conflict diagnostics and `=R` viewer labels are covered. The AI
+  plate example retains source equations and boundary IDs through a holed
+  planar region and extrusion; edits update both bores and reuse the outer
+  sketch. Analytical volume, selective rebuilds, failed edits, migration,
+  live edit/revert and STEP/STL exports pass. A 1,000-pair solver/diagnostic
+  gate passes in 0.009 s; MCP generates 20 solids and 60 source sketches with
+  matched-radius annotations in 0.316 s (both 10 s budgets). Catalog examples
+  now use schema 92, with 29 examples and 12 generated schemas.
+  See [equal circular radii](docs/SKETCHES.md#equal-circular-radii-schema-92).
 
 - Upright drawing dimension layout (schema 91 / ABI 52 unchanged): shared
   SVG/DXF text components and estimated extents centre labels and keep them

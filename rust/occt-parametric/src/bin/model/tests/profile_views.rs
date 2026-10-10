@@ -425,3 +425,38 @@ fn hollow_loft_viewer_keeps_hole_sketches_spacing_and_linked_bore_controls() {
         );
     }
 }
+
+#[test]
+fn equal_radius_plate_view_links_matched_circle_controls_and_real_residuals() {
+    let dir = Directory::new();
+    view_request(&dir, view_example("equal-radius-plate"), "plate").unwrap();
+    let data: Value =
+        serde_json::from_str(&fs::read_to_string(dir.0.join("plate/view.json")).unwrap()).unwrap();
+    assert_eq!(data["scenes"].as_array().unwrap().len(), 4);
+    assert_eq!(data["scenes"][0]["valid"], true);
+    for scene in data["scenes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|s| s["kind"] == "sketch" && s["feature"] != "outer")
+    {
+        let a = scene["annotations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|a| a["label"] == "=R")
+            .unwrap();
+        assert_eq!(a["status"], "passed");
+        assert_eq!(a["kind"], "constraint");
+        assert!(
+            a["parameters"]
+                .as_array()
+                .unwrap()
+                .contains(&json!("hole_radius"))
+        );
+        assert_eq!(a["targets"], json!(["left-circle", "right-circle"]));
+        assert_eq!(a["anchors"].as_array().unwrap().len(), 2);
+        assert_eq!(a["detail"]["residual_unit"], "mm");
+        assert!(a["detail"]["max_residual"].as_f64().unwrap() < 1e-7);
+    }
+}

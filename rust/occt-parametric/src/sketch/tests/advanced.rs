@@ -422,3 +422,131 @@ fn advanced_references_units_degenerate_axes_and_bad_operation_order_are_rejecte
     }];
     assert!(s.solve(&params).is_err());
 }
+
+#[test]
+fn equal_radius_solves_circle_and_arc_pairs_with_real_millimetre_diagnostics() {
+    let parameters = HashMap::new();
+    let mut s = circle();
+    s.points[1].fixed = true; // The first circle drives the common 4 mm radius.
+    s.points.extend([
+        point("other-center", 10., 0., true),
+        point("other-rim", 16., 0., false),
+    ]);
+    s.circles.push(SketchCircle {
+        id: "other".into(),
+        center: "other-center".into(),
+        rim: "other-rim".into(),
+    });
+    s.lines.push(line("axis", "other-center", "other-rim"));
+    s.constraints = vec![
+        SketchConstraint::Horizontal {
+            line: "axis".into(),
+        },
+        SketchConstraint::EqualRadius {
+            first: "circle".into(),
+            second: "other".into(),
+        },
+    ];
+    let solution = s.solve(&parameters).unwrap();
+    assert!(solution.solved);
+    assert_eq!(solution.free_degrees, 0);
+    assert!((solution.points["other-rim"].x - 14.).abs() < 1e-7);
+    let checks = s.constraint_checks(&parameters, &solution).unwrap();
+    assert!(checks[1].satisfied && !checks[1].by_construction);
+    assert!(checks[1].max_residual.unwrap() < 1e-7);
+    s.circles.pop();
+    s.lines.clear();
+    s.points.pop();
+    s.points.extend([
+        point("arc-start", 16., 0., false),
+        point("arc-end", 10., 6., false),
+    ]);
+    s.arcs.push(SketchArc {
+        id: "arc".into(),
+        center: "other-center".into(),
+        start: "arc-start".into(),
+        end: "arc-end".into(),
+        clockwise: false,
+    });
+    s.constraints = vec![SketchConstraint::EqualRadius {
+        first: "circle".into(),
+        second: "arc".into(),
+    }];
+    let solution = s.solve(&parameters).unwrap();
+    assert!(solution.solved);
+    for id in ["arc-start", "arc-end"] {
+        let p = solution.points[id];
+        assert!(((p.x - 10.).hypot(p.y) - 4.).abs() < 1e-7);
+    }
+    let session = Session::new().unwrap();
+    s.profile = vec!["arc".into()];
+    let wire = s.open_wire(&session, &parameters, None).unwrap();
+    let edge = session
+        .subshapes(&wire, occt_bridge::ShapeType::Edge)
+        .unwrap()
+        .pop()
+        .unwrap();
+    assert!((session.edge_circle_radius(&edge).unwrap().unwrap() - 4.).abs() < 1e-7);
+    drop((edge, wire));
+    assert_eq!(session.shape_count().unwrap(), 0);
+    // The same supporting-radius equation also works between two arcs.
+    s.circles.clear();
+    s.points.push(point("first-end", 0.0, 4.0, true));
+    s.arcs.push(SketchArc {
+        id: "first-arc".into(),
+        center: "c".into(),
+        start: "r".into(),
+        end: "first-end".into(),
+        clockwise: false,
+    });
+    s.constraints = vec![SketchConstraint::EqualRadius {
+        first: "first-arc".into(),
+        second: "arc".into(),
+    }];
+    let solution = s.solve(&parameters).unwrap();
+    assert!(solution.solved);
+    assert!(s.constraint_checks(&parameters, &solution).unwrap()[0].satisfied);
+}
+
+#[test]
+fn equal_radius_rejects_wrong_references_and_reports_fixed_radius_conflicts() {
+    let mut s = circle();
+    s.points[1].fixed = true;
+    s.points.extend([
+        point("other-center", 10., 0., true),
+        point("other-rim", 16., 0., true),
+    ]);
+    s.circles.push(SketchCircle {
+        id: "other".into(),
+        center: "other-center".into(),
+        rim: "other-rim".into(),
+    });
+    s.lines.push(line("axis", "other-center", "other-rim"));
+    s.constraints = vec![SketchConstraint::EqualRadius {
+        first: "circle".into(),
+        second: "other".into(),
+    }];
+    let parameters = HashMap::new();
+    let solution = s.solve(&parameters).unwrap();
+    assert!(!solution.solved);
+    let check = &s.constraint_checks(&parameters, &solution).unwrap()[0];
+    assert_eq!(check.max_residual, Some(2.0));
+    assert!(!check.satisfied && !check.by_construction);
+    s.points.extend([
+        point("major", 5.0, 0.0, true),
+        point("minor", 0.0, 3.0, true),
+    ]);
+    s.ellipses.push(SketchEllipse {
+        id: "ellipse".into(),
+        center: "c".into(),
+        major: "major".into(),
+        minor: "minor".into(),
+    });
+    for second in ["missing", "axis", "circle", "ellipse"] {
+        s.constraints = vec![SketchConstraint::EqualRadius {
+            first: "circle".into(),
+            second: second.into(),
+        }];
+        assert!(s.solve(&parameters).is_err());
+    }
+}

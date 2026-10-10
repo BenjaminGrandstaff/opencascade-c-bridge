@@ -51,6 +51,56 @@ fn gate(name: &str, budget: u64, run: impl FnOnce()) {
     println!("PASS {name}: {:.3}s / {budget}s", elapsed.as_secs_f64());
 }
 fn main() {
+    gate(
+        "1000 equal-radius circle pairs with residual diagnostics",
+        10,
+        || {
+            let mut s = sketch();
+            for i in 0..1000 {
+                let x = i as f64 * 30.0;
+                let id = |p: &str| format!("{p}-{i}");
+                for (name, dx, fixed) in [
+                    ("a", 0.0, true),
+                    ("ar", 3.0, true),
+                    ("b", 10.0, true),
+                    ("br", 14.0, false),
+                ] {
+                    s.points.push(point(id(name), x + dx, 0.0, fixed));
+                }
+                for (name, c, r) in [("first", "a", "ar"), ("second", "b", "br")] {
+                    s.circles.push(SketchCircle {
+                        id: id(name),
+                        center: id(c),
+                        rim: id(r),
+                    });
+                }
+                s.lines.push(SketchLine {
+                    id: id("axis"),
+                    start: id("b"),
+                    end: id("br"),
+                });
+                s.constraints
+                    .push(SketchConstraint::Horizontal { line: id("axis") });
+                s.constraints.push(SketchConstraint::EqualRadius {
+                    first: id("first"),
+                    second: id("second"),
+                });
+            }
+            s.profile = vec!["first-0".into()];
+            let parameters = HashMap::new();
+            let solution = s.solve(&parameters).unwrap();
+            assert!(solution.solved);
+            assert_eq!(solution.free_degrees, 0);
+            for i in 0..1000 {
+                assert!(
+                    (solution.points[&format!("br-{i}")].x - (i as f64 * 30.0 + 13.0)).abs() < 1e-7
+                );
+            }
+            let checks = s.constraint_checks(&parameters, &solution).unwrap();
+            assert_eq!(checks.len(), 2000);
+            assert!(checks.iter().all(|c| c.satisfied && !c.by_construction));
+        },
+    );
     gate("1000 coupled advanced sketch components", 10, || {
         let mut s = sketch();
         for i in 0..1000 {

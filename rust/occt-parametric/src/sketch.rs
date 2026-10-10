@@ -169,6 +169,11 @@ pub enum SketchConstraint {
         first: String,
         second: String,
     },
+    /// Equal supporting-circle radii of two distinct circles or arcs.
+    EqualRadius {
+        first: String,
+        second: String,
+    },
     EqualLength {
         first: String,
         second: String,
