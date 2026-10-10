@@ -17,7 +17,7 @@ Compound volume can double-count overlapping solids. Use a Boolean union for
 net material geometry. A nested pattern repeats the whole input group, allowing
 row/column grids. Patterns do not generate per-copy feature or assembly IDs.
 
-The [patterned-plate example](tools/model/patterned-plate.request.json) repeats
+The [patterned-plate example](../tools/model/patterned-plate.request.json) repeats
 one cylindrical cutter into columns, then repeats that column group into rows.
 One Boolean cut removes the grid from a plate. Row/column counts, spacing, hole
 radius and plate thickness are editable; count changes also resize the plate.
@@ -71,7 +71,7 @@ winding. Partial groups use a smaller signed step. The result stays an unfused
 compound; overlapping geometry remains. Grouping aggregates per-copy histories,
 so source-based selectors can select repeated output topology.
 
-The [bolt-circle example](tools/model/bolt-circle.request.json) repeats a
+The [bolt-circle example](../tools/model/bolt-circle.request.json) repeats a
 cylindrical cutter and removes the group from a disk in one cut. Count,
 `sweep_angle`, bolt radius, hole radius and thickness are editable. Spacing is
 sweep_angle/count, so partial sweeps exclude the terminal sweep angle. An

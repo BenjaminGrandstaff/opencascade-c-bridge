@@ -33,7 +33,7 @@ This keeps history-returned face normals consistent with the reflected solid.
 The safe Rust `Session::mirror` wraps `occt_bridge_mirror`. Tests cover axial and
 oblique planes, normal sign/magnitude invariance, remote plane origins, mass and
 bounds, double-mirror recovery, outward normals, history, source immutability,
-invalid input units and native handle cleanup. The [mirrored-part AI example](tools/model/mirrored-part.request.json)
+invalid input units and native handle cleanup. The [mirrored-part AI example](../tools/model/mirrored-part.request.json)
 builds a handed bracket with editable plane position and tilt. The viewer exposes
 normalized plane data and linked controls; its label sits at the result's bounding
 centre rather than pretending to draw the plane itself.

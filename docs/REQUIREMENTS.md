@@ -207,4 +207,4 @@ Sampled rules cannot prove the absence of violations between samples, and the
 draft rule does not find undercuts. Interference, minimum-clearance, and
 manufacturing rules evaluate one configuration and pose: the active
 configuration at `regenerate_all`, not every motion sample. See the
-[Roadmap](ROADMAP.md) for later extensions.
+[Roadmap](../ROADMAP.md) for later extensions.

@@ -55,7 +55,7 @@ and boolean cut. Schema 84 adds it.
 
 ## AI example and viewer dimensions
 
-The [threaded-rod example](tools/model/threaded-rod.request.json) exposes major
+The [threaded-rod example](../tools/model/threaded-rod.request.json) exposes major
 diameter, pitch, thread length and start margin. The rod radius follows half
 the major diameter, and its height follows thread length plus two margins.
 Changing those parameters rebuilds compatible source geometry and the modeled

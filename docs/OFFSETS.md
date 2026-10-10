@@ -2,7 +2,7 @@
 
 Schema 85 adds `Offset { input, distance, tolerance }` using the existing
 `Session::offset` API. Native ABI remains 52. The
-[offset-part example](tools/model/offset-part.request.json) exposes a spherical
+[offset-part example](../tools/model/offset-part.request.json) exposes a spherical
 source, signed `allowance`, and `offset_tolerance` through MCP and the viewer.
 
 Distance is a finite, nonzero length. Tolerance is a finite, positive length.

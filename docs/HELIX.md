@@ -62,7 +62,7 @@ callouts still record intent without geometry.
 
 ## AI example and linked viewer dimensions
 
-The [spring example](tools/model/spring.request.json) is available through MCP
+The [spring example](../tools/model/spring.request.json) is available through MCP
 as `spring`. It uses schema 83 / native ABI 52 and exposes `coil_radius`,
 `pitch`, `turns` and `wire_radius`. Derived expressions orient the section
 perpendicular to the helix starting tangent, including after radius/pitch

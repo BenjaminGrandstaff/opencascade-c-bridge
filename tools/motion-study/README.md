@@ -120,7 +120,7 @@ empty list when all pairs were checked. A passing report applies to this scope.
 No force, aerodynamic or constrained-linkage
 simulation is performed. Continuous checks use bounded floating-point BREP
 queries; inspect unresolved intervals as described in
-[Assembly motion](../../ASSEMBLY_MOTION.md).
+[Assembly motion](../../docs/ASSEMBLY_MOTION.md).
 
 Limits are 2–10,000 samples, 1–10,000 components and one million sampled joint
 coordinates. Joint insertion is batched; preparing 10,000 hinges or a mixed set of hinges and sliders is

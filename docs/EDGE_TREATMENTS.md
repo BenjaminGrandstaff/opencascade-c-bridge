@@ -2,7 +2,7 @@
 
 Constant `fillet` and equal-distance `chamfer` features use native OpenCascade
 geometry with semantic edge selectors. The
-[AI example](tools/model/edge-treatments.request.json) defines a 30 × 20 × 10 mm
+[AI example](../tools/model/edge-treatments.request.json) defines a 30 × 20 × 10 mm
 block and selects its four vertical corner edges by their nearest centres.
 `rounded` applies a 2 mm fillet; `beveled` applies a 1.5 mm chamfer to the same
 source block. These are independent alternatives. Schema 91 and ABI 52 remain
@@ -63,7 +63,7 @@ alternatives have been exported separately. The MCP scale gate generates
 
 ## Variable-radius contour laws
 
-The [variable-fillet example](tools/model/variable-fillet.request.json) rounds
+The [variable-fillet example](../tools/model/variable-fillet.request.json) rounds
 one vertical corner with a 1 mm start radius, a 2.5 mm interior radius at
 normalized position 0.25, and a 2 mm end radius. Its `from_point` direction
 starts at the contour endpoint nearest the block origin. Edit `start_radius`,

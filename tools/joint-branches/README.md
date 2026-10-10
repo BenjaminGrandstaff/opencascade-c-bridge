@@ -44,4 +44,4 @@ Branch discovery does not certify continuous motion connectivity, interference
 freedom or a force equilibrium. Reload a selected branch for geometry/collision
 checks and use its pose as the seed for a closed motion study.
 
-See [the API and resource limits](../../ASSEMBLY_MOTION.md#alternative-linkage-poses).
+See [the API and resource limits](../../docs/ASSEMBLY_MOTION.md#alternative-linkage-poses).

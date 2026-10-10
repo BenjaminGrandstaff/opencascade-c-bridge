@@ -40,7 +40,7 @@ section parameters. This is a centroid-to-centroid distance, not a wall
 thickness or a guarantee of parallel section planes. Assembly annotations use
 the same family-coordinate anchors and placement transforms.
 
-The [profile-loft example](tools/model/profile-loft.request.json) is available
+The [profile-loft example](../tools/model/profile-loft.request.json) is available
 through MCP as `profile-loft`. Edit `lower_radius`, `upper_radius` or `height`
 to regenerate the transition. Authoring schemas expose all 30 feature types.
 
@@ -81,7 +81,7 @@ including generated outer/inner wall ancestry. Source profiles stay unchanged.
 
 Hole profiles enter feature dependencies. Bore edits rebuild affected sections
 and the loft while reusing unaffected sections. Invalid edits retain accepted
-geometry. The [hollow-loft AI example](tools/model/hollow-loft.request.json)
+geometry. The [hollow-loft AI example](../tools/model/hollow-loft.request.json)
 shows a tapered duct, all four boundary sketches, linked bore controls and
 outer-section centroid spacing. The current native ABI is 52; the current model schema
 is 91. The low-level wire-loft API still constructs one boundary track at a time.

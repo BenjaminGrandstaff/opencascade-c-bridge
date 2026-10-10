@@ -37,7 +37,7 @@ Both viewers and SVG snapshots show the complete signed angle around the actual
 axis. Symmetric arc endpoints agree with the placed start/end sections, using
 the source face's area-centroid radius for display. This display radius is not
 a part-size dimension. Arc samples consume the global vertex budget. The
-[symmetric-revolve AI example](tools/model/symmetric-revolve.request.json) builds
+[symmetric-revolve AI example](../tools/model/symmetric-revolve.request.json) builds
 a quarter-ring centered about its radial sketch plane and exposes linked controls.
 
 Placement/history bookkeeping scales with source topology; the native revolution

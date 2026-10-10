@@ -39,7 +39,7 @@ an included-angle arc, computed tip depth and total depth metadata. Labels link
 to diameter, bore-depth and point-angle controls. Family-coordinate anchors also
 follow placed parts in the assembly viewer.
 
-The [example request](tools/model/drill-point.request.json) is available through
+The [example request](../tools/model/drill-point.request.json) is available through
 MCP as `drill-point`. Change `point_angle`, `diameter` or `depth` to regenerate
 the hole. Increasing depth far enough to expose the point rejects the edit.
 
@@ -82,7 +82,7 @@ centre, not a statement that all radial positions have the same depth.
 retaining temporary handles; it expects family-local geometry generated from
 that instance's current definition and parameters.
 
-The [hole-limits example](tools/model/hole-limits.request.json), also available
+The [hole-limits example](../tools/model/hole-limits.request.json), also available
 as `hole-limits` in MCP, cuts through a spherical cap with both limit modes.
 Changing `depth` moves the cap and updates both holes and their measured depths.
 Its selected-face rule follows a parameterized location instead of relying on

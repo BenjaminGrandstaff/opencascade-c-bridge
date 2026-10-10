@@ -12,7 +12,7 @@ one connected solid. Compound volume sums its solids and can double-count
 overlapping material. Use `Fuse` when a material union is required, or `Sew`
 and `MakeSolid` for closed shell construction.
 
-The [multi-hole plate example](tools/model/multi-hole-plate.request.json)
+The [multi-hole plate example](../tools/model/multi-hole-plate.request.json)
 groups nine independent cylindrical tools, then cuts them from a plate in one
 Boolean operation. Spacing, hole radius and plate thickness are editable.
 The example uses a fixed 3×3 layout; this feature does not create patterned

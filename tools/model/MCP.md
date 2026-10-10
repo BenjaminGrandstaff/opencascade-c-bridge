@@ -319,13 +319,13 @@ are additional diagnostic examples.
 
 `sketch-advanced` demonstrates the schema-72 sketch additions. Its view request
 contains all new constraints, an ellipse solid, and native trim/extend/offset
-profile operations. See [Sketches](../../SKETCHES.md).
+profile operations. See [Sketches](../../docs/SKETCHES.md).
 
 
 `extrusion-limits` demonstrates symmetric, up-to-face and up-to-next extrusion.
 Change `depth` to move the target body: `body` follows its nearest face and
 `selected` follows its far face. `symmetric` uses `depth` as total centered
-length. Limit faces must terminate the complete profile strictly forward; see [extrusion semantics](../../EXTRUSIONS.md).
+length. Limit faces must terminate the complete profile strictly forward; see [extrusion semantics](../../docs/EXTRUSIONS.md).
 
 
 `curved-extrusions` demonstrates schema-74 inclined and spherical limits.
@@ -337,21 +337,21 @@ up-to-face selector. Native ABI 52 is required by the current build.
 `drill-point` demonstrates schema-75 blind-hole bottoms. Its `point_angle`
 parameter is the included angle in radians; `depth` remains the full-diameter
 bore depth. The engine verifies tip containment before cutting, and the viewer
-links angle, diameter and depth dimensions to edits. See [hole semantics](../../HOLES.md).
+links angle, diameter and depth dimensions to edits. See [hole semantics](../../docs/HOLES.md).
 
 
 `hole-limits` demonstrates schema-76 holes up to a selected or next input face,
 including spherical exits. Change `depth` to move the cap; native bore-centre
 measurements follow it. Named/persistent selectors use the normal reference and
 dependency rules. Entry recesses must remain before the selected face, and drill
-points require numeric blind depth. See [geometry-driven holes](../../HOLES.md).
+points require numeric blind depth. See [geometry-driven holes](../../docs/HOLES.md).
 
 
 `profile-loft` demonstrates schema-77 lofts directly between saved sketch
 profiles. Edit section radii or `height`; dependencies regenerate the native
 solid and viewer spacing. Profiles must be closed planar single boundaries.
 The authoring schema includes `profile_loft` with 2–1,000 section IDs and a
-`ruled` flag. See [saved-profile loft semantics](../../LOFTS.md).
+`ruled` flag. See [saved-profile loft semantics](../../docs/LOFTS.md).
 
 `curved-pipe` demonstrates a native circular sketch swept along a tangent line
 and quarter-circle route. The solid view measures native route length, exposes
@@ -369,40 +369,40 @@ a linked angular arc around the native axis.
 90-degree total angle runs from -45 to +45 degrees about the source sketch
 plane. Changing the signed angle regenerates geometry and the linked arc.
 The feature schema exposes `angle` and `symmetric` extent values; older missing
-extents default to `angle`. See [revolution semantics](../../REVOLUTIONS.md).
+extents default to `angle`. See [revolution semantics](../../docs/REVOLUTIONS.md).
 
 `hollow-profile` demonstrates schema-79 `planar_region` between independent
 outer/inner sketch profiles, followed by extrusion. All three dimensions link
 to the solid; changing the hole radius rebuilds the inner sketch, region and
 body. Invalid containment and overlapping/touching holes are rejected. The
 feature schema exposes 1–100 inner profile references. See
-[planar region semantics](../../PLANAR_REGIONS.md).
+[planar region semantics](../../docs/PLANAR_REGIONS.md).
 
 `hollow-sweep` uses the existing schema-79 `sweep` feature over a holed planar
 region and a tangent line/arc route. Inner/outer section controls and native
 route length link to the solid. ABI 50 retains composed wall ancestry when
 extracting the final solid. The current engineering layer handles up to 100
-inner boundaries; see [hollow sweeps](../../HOLLOW_SWEEPS.md).
+inner boundaries; see [hollow sweeps](../../docs/HOLLOW_SWEEPS.md).
 
 `hollow-loft` demonstrates schema-80 optional `profile_loft.holes` arrays of
 inner section tracks. Each track has the same section count as the outer track.
 The example exposes two bore radii and all four section sketches, with linked
 solid controls and measured spacing. Station containment and whole-loft crossing
 checks reject invalid tracks; older missing hole arrays remain solid lofts.
-See [hollow lofts](../../LOFTS.md#explicit-hollow-tracks-schema-80).
+See [hollow lofts](../../docs/LOFTS.md#explicit-hollow-tracks-schema-80).
 
 `mirrored-part` demonstrates schema-81 plane reflection of an asymmetric bracket.
 `plane_x` moves the plane and `plane_tilt` changes its normal direction. Native
 geometry and source-face history remain valid after reflection, with correct
 outward normals. Viewer annotations expose plane data and related controls.
-See [mirrors](../../MIRRORS.md); current builds require native ABI 52.
+See [mirrors](../../docs/MIRRORS.md); current builds require native ABI 52.
 
 
 `scaled-part` demonstrates schema-83 uniform scaling of an asymmetric bracket.
 `scale_factor` is dimensionless and positive; `scale_center_x` moves the centre
 in millimetres. Native geometry, bounds, volume and source-face ancestry follow
 edits. The viewer links both controls to the scale label and displays measured
-result spans. See [scaling](../../SCALING.md). The catalog contains 28 examples
+result spans. See [scaling](../../docs/SCALING.md). The catalog contains 28 examples
 and 12 generated schemas, exposed as 40 discovery resources.
 
 
@@ -410,21 +410,21 @@ and 12 generated schemas, exposed as 40 discovery resources.
 section and native binormal sweep. Radius, pitch, fractional turns and wire
 radius are editable. The section plane follows radius and pitch edits; the
 viewer links helix dimensions and samples the route per turn. Geometric guards
-are illustrative assumptions. See [springs and coils](../../HELIX.md).
+are illustrative assumptions. See [springs and coils](../../docs/HELIX.md).
 
 
 `offset-part` demonstrates schema-85 native joined skin offsets. Positive
 `allowance` expands the spherical example; negative values contract it. Both
 `allowance` and `offset_tolerance` are lengths; distance must be nonzero and
 tolerance positive. Geometry, native ancestry and the signed driving annotation
-follow edits. See [offset semantics](../../OFFSETS.md).
+follow edits. See [offset semantics](../../docs/OFFSETS.md).
 
 
 `multi-hole-plate` demonstrates schema-86 `compound`: nine independent
 cylindrical cutters are grouped and used in one `cut`. Edit `spacing`,
 `hole_radius` or `thickness`; geometry and linked controls regenerate. Selecting
 `tools` as an additional output shows the group and its source IDs. The schema
-allows 1–10,000 distinct input IDs. See [compound groups](../../COMPOUNDS.md).
+allows 1–10,000 distinct input IDs. See [compound groups](../../docs/COMPOUNDS.md).
 
 
 `patterned-plate` demonstrates schema-88 `linear_pattern`. One cutter is
@@ -432,14 +432,14 @@ repeated into columns, then the column group into rows; one cut removes the
 grid. `columns` and `rows` are integer-valued scalar parameters, and `spacing`
 is a length. Count changes resize the plate and tool grid. Pattern outputs
 show linked count, step and first-to-last placement span.
-See [linear part patterns](../../PART_PATTERNS.md).
+See [linear part patterns](../../docs/PART_PATTERNS.md).
 
 
 `bolt-circle` demonstrates schema-89 circular part patterns with one repeated
 cutter and one cut. Count and sweep derive angular spacing; an illustrative
 chord-distance constraint keeps holes apart. Selecting `tools` as an output
 shows linked count and angular-step labels with a native source-radius arc.
-See [circular patterns](../../PART_PATTERNS.md#circular-patterns-schema-89).
+See [circular patterns](../../docs/PART_PATTERNS.md#circular-patterns-schema-89).
 
 
 History selectors now inspect all bores created from a repeated source cutter:
@@ -447,14 +447,14 @@ History selectors now inspect all bores created from a repeated source cutter:
 and request `modified` on `body`. The grid example returns nine faces and the
 bolt-circle example six. Native grouped history and Boolean composition retain
 those links; MCP wire tests build both examples and check actual selected counts.
-See [pattern ancestry](../../PART_PATTERNS.md#retained-pattern-ancestry).
+See [pattern ancestry](../../docs/PART_PATTERNS.md#retained-pattern-ancestry).
 
 
 `threaded-rod` demonstrates the existing modeled-thread operation with linked
 major diameter, pitch, run and derived turns. Its source radius and height
 follow diameter/run edits, with an illustrative unthreaded margin at both ends.
 Native validation and removed-volume checks cover the generated solid. The
-catalog targets schema 91; see [thread viewer semantics](../../THREADS.md#ai-example-and-viewer-dimensions).
+catalog targets schema 91; see [thread viewer semantics](../../docs/THREADS.md#ai-example-and-viewer-dimensions).
 
 
 `edge-treatments` demonstrates constant-radius fillets and equal-distance
@@ -462,11 +462,11 @@ chamfers of four semantically selected vertical block edges. Its two view
 outputs compare independent rounded and beveled alternatives. Labels link the
 treatment value and selector controls; overlays reference the selected source
 edges. For a build/export request, select one output per instance.
-See [edge treatments](../../EDGE_TREATMENTS.md).
+See [edge treatments](../../docs/EDGE_TREATMENTS.md).
 
 
 `variable-fillet` exposes the existing endpoint/interior radius law and
 from-point spine direction. Its linked controls edit endpoint and middle
 radii plus normalized station position. Visualization returns the complete
 nominal law and source references, with explicit nonspatial station metadata.
-See [variable contour laws](../../EDGE_TREATMENTS.md#variable-radius-contour-laws).
+See [variable contour laws](../../docs/EDGE_TREATMENTS.md#variable-radius-contour-laws).

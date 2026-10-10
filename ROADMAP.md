@@ -32,7 +32,7 @@ tracks status and order.
   example passes validity, changed-volume, selective rebuild, rejected-edit
   retention, MCP, live edit/revert and STEP/STL checks. The scale gate passes
   20 scenes in 0.847 s (10 s budget).
-  See [variable laws](EDGE_TREATMENTS.md#variable-radius-contour-laws).
+  See [variable laws](docs/EDGE_TREATMENTS.md#variable-radius-contour-laws).
 
 - Linked constant fillet/chamfer dimensions (schema 91 / ABI 52 unchanged):
   direct outputs show nominal radius/distance, unique selected-edge count and
@@ -41,7 +41,7 @@ tracks status and order.
   and beveled blocks; analytical volumes, selective rebuilds, failed-edit
   retention, MCP discovery, live edit/revert and STEP/STL exports pass. The MCP
   scale gate passes 20 scenes in 0.209 s (10 s budget).
-  See [edge treatments](EDGE_TREATMENTS.md).
+  See [edge treatments](docs/EDGE_TREATMENTS.md).
 
 - AI threaded-rod example and thread dimensions (current schema 91 / ABI 52
   unchanged): the catalog exposes modeled threads with linked major diameter,
@@ -51,7 +51,7 @@ tracks status and order.
   anchors, controls and failed-edit retention. Examples now match schema 91's
   authoring schemas, retaining drawing-release and nested-parts-list changes.
   The MCP scale gate passes: 10 thread scenes in 2.451 s (30 s budget).
-  See [threads](THREADS.md#ai-example-and-viewer-dimensions).
+  See [threads](docs/THREADS.md#ai-example-and-viewer-dimensions).
 
 - Retained compound/pattern ancestry (schema 89 / ABI 52 unchanged): native
   groups union child histories with indexed, deduplicated target sets, keeping
@@ -63,7 +63,7 @@ tracks status and order.
   surviving children, Boolean composition and cleanup. Updated 10,000-member
   gates verify source-face counterpart counts: linear 8.124 s, radial 4.274 s,
   explicit grouping 8.533 s (15 s budgets). Targeted native lint passes.
-  See [pattern ancestry](PART_PATTERNS.md#retained-pattern-ancestry).
+  See [pattern ancestry](docs/PART_PATTERNS.md#retained-pattern-ancestry).
 
 - Circular part patterns (schema 89; native ABI 52 unchanged): `CircularPattern`
   rotates shared source geometry at absolute signed angular steps into an
@@ -75,7 +75,7 @@ tracks status and order.
   turns, invalid inputs, duplicate wraparound, rollback and cleanup. Scale gates
   pass: 100 bolt-circle cuts in 0.946 s and 10,000 radial copies in 2.267 s
   (15 s budgets). The AI catalog exposes 38 operations and 25 examples.
-  See [part patterns](PART_PATTERNS.md#circular-patterns-schema-89).
+  See [part patterns](docs/PART_PATTERNS.md#circular-patterns-schema-89).
 
 - Linear part patterns (schema 88; native ABI 52 unchanged): `LinearPattern`
   repeats one source at absolute multiples of a length-valued step into an
@@ -87,7 +87,7 @@ tracks status and order.
   reuse, negative steps, invalid counts/units, overflow, rollback and cleanup.
   Scale gates pass: 100 grid cuts in 1.946 s and a 10,000-copy pattern
   in 7.241 s (15 s budgets). The AI catalog exposes 37 operations and 24 examples.
-  See [part patterns](PART_PATTERNS.md).
+  See [part patterns](docs/PART_PATTERNS.md).
 
 - Compound tool groups (schema 86; native ABI 52 unchanged): `Compound`
   groups 1–10,000 distinct input IDs without fusion or sewing. Child topology
@@ -98,7 +98,7 @@ tracks status and order.
   child identity, edits, invalid input sets, rollback and cleanup. Scale gates
   pass: 100 nine-tool cuts in 1.461 s and a 10,000-member group in 7.303 s
   (15 s budgets). The AI catalog exposes 36 operations and 23 examples.
-  See [compounds](COMPOUNDS.md).
+  See [compounds](docs/COMPOUNDS.md).
 
 - Signed skin offsets (schema 85; native ABI 52 unchanged): `Offset` exposes
   native joined offsets with length-valued signed nonzero distance and positive
@@ -109,7 +109,7 @@ tracks status and order.
   mass, bounds, source history, units, rollback and cleanup. Scale gates pass:
   500 signed offsets in 0.246 s and 10,000 linked parts in 0.086 s
   (10 s budgets). The AI catalog exposes 35 operations and 22 examples.
-  See [offsets](OFFSETS.md).
+  See [offsets](docs/OFFSETS.md).
 
 - AI spring example and helix visualization (schema 83 / ABI 52 unchanged):
   `spring` combines an expression-driven section with a native helix sweep.
@@ -122,7 +122,7 @@ tracks status and order.
   edits, overlays, guard rejection and revert. MCP scale gates pass: 10 spring
   scenes in 6.773 s (30 s budget), and 100 helix wire scenes in 0.278 s
   (10 s budget). The catalog now exposes 21 examples and 12 schemas.
-  See [helices](HELIX.md).
+  See [helices](docs/HELIX.md).
 
 - Uniform geometry scaling (schema 83; native ABI 52 unchanged): `Scale`
   references a source, length-valued centre and positive dimensionless factor.
@@ -134,7 +134,7 @@ tracks status and order.
   tests cover units, small/large factors, mass, bounds, edits, rollback and
   cleanup. Scale gates pass: 500 resized parts in 2.433 s and 10,000 linked
   copies sharing one geometry variant in 0.426 s (10 s budgets).
-  See [scaling](SCALING.md).
+  See [scaling](docs/SCALING.md).
 
 - Plane mirrors (ABI 51, schema 81): native negative-determinant reflection
   creates handed geometry from a length-valued origin and dimensionless normal.
@@ -146,7 +146,7 @@ tracks status and order.
   library tests, C argument checks and model/MCP checks cover geometry, mass,
   outward normals, ancestry, units, edits, inverse reflection and cleanup.
   Scale gates pass: 500 handed parts in 2.412 s and 10,000 linked parts with one
-  geometry variant in 0.361 s (10 s budgets). See [mirrors](MIRRORS.md).
+  geometry variant in 0.361 s (10 s budgets). See [mirrors](docs/MIRRORS.md).
 - Explicit hollow profile lofts (schema 80; ABI 50 unchanged): optional
   `ProfileLoft::holes` defines up to 100 ordered inner section tracks. Matching
   station counts, distinct output IDs, coplanarity, containment and pair
@@ -170,7 +170,7 @@ tracks status and order.
   edit reuse and failures. AI example `hollow-sweep` keeps three source sketches
   and linked solid controls. Scale gates pass: 250 curved cases in 9.007 s and
   a 100-bore case in 0.567 s (10 s budgets); region gates also pass with retained
-  history, and native handle counts return to zero. See [hollow sweeps](HOLLOW_SWEEPS.md).
+  history, and native handle counts return to zero. See [hollow sweeps](docs/HOLLOW_SWEEPS.md).
 - Native hollow planar profiles (schema 79; ABI 49 unchanged):
   `PlanarRegion` combines an outer boundary with 1–100 strictly contained,
   disjoint inner boundaries. Native area/distance checks reject misplaced,
@@ -182,7 +182,7 @@ tracks status and order.
   library tests plus model/MCP checks cover topology, volume, source edges,
   failures and reuse. Scale gates pass: 500 hollow extrusions in 1.059 s and
   a 100-hole region in 0.140 s (10 s budgets), with zero retained handles.
-  See [hollow profiles](PLANAR_REGIONS.md).
+  See [hollow profiles](docs/PLANAR_REGIONS.md).
 - Symmetric sketch revolutions (schema 78; ABI 49 unchanged): optional
   `RevolveExtent::Symmetric` sweeps from minus half the signed angle to plus
   half about the source sketch plane. Location-based copies and composed native
@@ -192,7 +192,7 @@ tracks status and order.
   `symmetric-revolve` exposes the mode. Three library tests plus model/MCP
   checks cover volume, centered bounds, history, reuse, failed edits and
   migration. The 1,000-case scale gate passes in 2.276 s (10 s budget),
-  with zero retained handles. See [revolutions](REVOLUTIONS.md).
+  with zero retained handles. See [revolutions](docs/REVOLUTIONS.md).
 - Revolve angle annotations (no ABI/schema change): direct revolved solid
   scenes expose signed right-hand sweep angles and linked controls, with arcs
   around the native axis through the profile area centroid. Face/wire inputs,
@@ -262,7 +262,7 @@ tracks status and order.
   profiles. Six library tests, a command integration test, bridge tests and C
   argument conformance cover geometry, conflicts, migration and cleanup.
   Three 1,000-case scale gates pass in 0.063/0.115/0.088 s (10 s budgets).
-  See [Sketches](SKETCHES.md).
+  See [Sketches](docs/SKETCHES.md).
 
 - Assembly dimension/check overlays: native anchors follow the selected part's
   placement and frames, using an explicit family-local glTF matrix independent
@@ -368,7 +368,7 @@ tracks status and order.
   30 s budget, with one generated variant and no retained handles. Older views
   keep empty maps and their existing shared pattern. Standards-verified material
   presets and automatic adjacent-component alternation remain future work.
-  See [Drawings](DRAWINGS.md#material-hatch-families-schema-69).
+  See [Drawings](docs/DRAWINGS.md#material-hatch-families-schema-69).
 
 - Exact section-hatch intersections (no ABI/schema change): `exact_curves`
   now trims bounded batches of hatch lines against native cut faces, preserving
@@ -378,7 +378,7 @@ tracks status and order.
   and parabola oracles. The 1,000-part/10,000-segment case takes 8.773 s; the
   1,000-cylinder/40,000-segment case with both exports takes 7.754 s (30 s budgets),
   with one shared variant and all handles released. Legacy setups stay sampled.
-  See [Drawings](DRAWINGS.md#kernel-trimmed-hatching).
+  See [Drawings](docs/DRAWINGS.md#kernel-trimmed-hatching).
 
 - Exact drawing geometry (ABI 46): optional `exact_curves` preserves lines,
   circles, ellipses, Bézier/B-spline curves, parabolas and hyperbolas, including
@@ -392,7 +392,7 @@ tracks status and order.
   in 15.364 s (30 s budgets), with one shared variant and no retained handles.
   Model schema stays 67. Native hatch intersections are described above;
   offset/other curves fail explicitly in exact mode.
-  See [Drawings](DRAWINGS.md#exact-drawing-geometry-abi-46).
+  See [Drawings](docs/DRAWINGS.md#exact-drawing-geometry-abi-46).
 
 - Scriptable inspection reports: `occt-inspection-report` reads saved model drawings
   and dimensional/position measurement JSON, writes ordered typed evaluations and
@@ -406,7 +406,7 @@ tracks status and order.
   measured GD&T inspection below and summarized as conforming, nonconforming
   or not evaluated. Composite freedoms, datum shift, uncertainty and
   standards-conformity certification remain future work.
-  See [Drawings](DRAWINGS.md).
+  See [Drawings](docs/DRAWINGS.md).
 
 - Dimensional measurement checks: symmetric, signed-deviation and explicit-limit
   comparisons with unit-normalized nominal/measured values, signed deviations,
@@ -417,7 +417,7 @@ tracks status and order.
   units, rejection, paper independence, angular values and edited hole parameters.
   A benchmark checks 100,000 measurements across 10,000 saved dimensions in
   0.036 s (10 s budget), without kernel handles. Measurement acquisition, uncertainty/guard bands and geometric
-  conformity remain future work. See [Drawings](DRAWINGS.md).
+  conformity remain future work. See [Drawings](docs/DRAWINGS.md).
 
 - Fixed cylindrical position sample checks: single-row diameter controls with
   three RFS datum references, arbitrary nominal axis direction and supplied
@@ -428,7 +428,7 @@ tracks status and order.
   a 100,000-sample benchmark runs in 0.003 s (10 s budget), using constant
   extra storage and no kernel handles.
   This entry point takes an already-established frame; fitted datums and
-  envelopes come from measured GD&T inspection. See [Drawings](DRAWINGS.md).
+  envelopes come from measured GD&T inspection. See [Drawings](docs/DRAWINGS.md).
 
 - Feature-size limits and bonus allowances (schema 68): persisted internal/external
   size limits, unit-aware MMC/LMC/RFS arithmetic, and independent total allowances
@@ -438,7 +438,7 @@ tracks status and order.
   independent merges; a 10,000-allowance benchmark runs in 0.005 s
   (10 s budget) and uses no kernel handles.
   Mating envelopes fitted from measured points use these limits (see measured
-  GD&T inspection below). See [Drawings](DRAWINGS.md).
+  GD&T inspection below). See [Drawings](docs/DRAWINGS.md).
 
 - Composite controls and named datum frames (schema 63): two-segment position/
   profile frames with a shared characteristic cell, a tighter lower tolerance and
@@ -450,7 +450,7 @@ tracks status and order.
   exact budgets, validation, migration, merges, scaled and far rotated frames.
   Benchmarks cover 10,000 composites with both exports in 0.714 s and 10,000
   named frames with nominal coordinates in 0.015 s (10 s budgets). Fitted simulators, datum shift
-  and actual tolerance-zone inspection remain future work. See [Drawings](DRAWINGS.md).
+  and actual tolerance-zone inspection remain future work. See [Drawings](docs/DRAWINGS.md).
 
 - Structured drawing GD&T intent (schema 62): datum-feature symbols and
   single-row feature-control frames for twelve form/profile/orientation/position/
@@ -465,7 +465,7 @@ tracks status and order.
   (10 s budget).
   These are persisted manufacturing declarations, not measured conformity results.
   Datum simulators, datum-shift calculations and tolerance-zone
-  inspection remain future work. See [Drawings](DRAWINGS.md).
+  inspection remain future work. See [Drawings](docs/DRAWINGS.md).
 
 - Standard paper presets and projection symbols (schema 61): ANSI A–E and ISO
   A0–A4 in portrait/landscape, a bounded lower-right title block with drawing
@@ -476,7 +476,7 @@ tracks status and order.
   A 1,000-sheet benchmark verifies shared regeneration and SVG/DXF exports in
   1.717 s (10 s budget). Views remain explicitly positioned; prescribed zones, approval and
   revision tables, lettering and a full standards-conformity audit remain future
-  work. API and references: [Drawings](DRAWINGS.md).
+  work. API and references: [Drawings](docs/DRAWINGS.md).
 
 - Automatic section hatching (schema 60): saved paper-space angle, spacing and
   phase for Slice/Section views; holes retain clear interiors, overlapping
@@ -487,7 +487,7 @@ tracks status and order.
   checks 10,000 hatch segments across 1,000 placed parts in 8.406 s (30 s budget).
   Sampled mode retains its earlier boundary approximation; exact intersections
   and explicit material maps are described above. Standards-verified presets
-  remain future work. See [Drawings](DRAWINGS.md).
+  remain future work. See [Drawings](docs/DRAWINGS.md).
 
 - Datum-linked drawing guides (schema 59): center marks with fixed paper sizes,
   projected centerlines with paper extensions, and straight cutting-plane
@@ -500,7 +500,7 @@ tracks status and order.
   Four tests cover edits, viewing direction, migration, merges, invalid guides,
   budgets, far rotated origins, scale and crop behavior; 10,000 mixed guides
   generate and export within a 10 s budget with one shared variant. This does
-  not certify ASME line weights or layouts. See [Drawings](DRAWINGS.md).
+  not certify ASME line weights or layouts. See [Drawings](docs/DRAWINGS.md).
 
 - Manufacturing dimensions and tolerances (schema 58): radial, diametric and
   minor-angle dimensions join aligned/horizontal/vertical dimensions. Display
@@ -515,7 +515,7 @@ tracks status and order.
   their existing untoleranced millimeter presentation. Six new tests cover
   exports, edits, migration, budgets and cleanup; benchmarks cover 10,000 mixed
   annotations and 10,000 live callouts. This implements dimension capabilities,
-  not a clause-by-clause ASME conformity claim. See [Drawings](DRAWINGS.md).
+  not a clause-by-clause ASME conformity claim. See [Drawings](docs/DRAWINGS.md).
 
 - Sliding components in the motion-study command: bounded prismatic joints,
   normalized local axes, millimeter start/end offsets, reverse travel, and
@@ -546,7 +546,7 @@ tracks status and order.
   Tests cover retained third-party crossings, native cleanup, round trips,
   closed-linkage propagation and command publication. A 10,000-part/5,000-pair
   benchmark completes sampled plus continuous checks in 0.302 s (10 s budget).
-  No ABI or model schema change. See [Assembly motion](ASSEMBLY_MOTION.md).
+  No ABI or model schema change. See [Assembly motion](docs/ASSEMBLY_MOTION.md).
 
 
 - Shared rigid carrier collision checks: group identical rigid motion paths,
@@ -568,7 +568,7 @@ tracks status and order.
   10,000-plate stack clears in about 0.19 s with one variant and zero pair queries
   (10 s budget). The 1,000 obstacle-crossing oracle uses 6,720 queries versus the
   preceding 7,490. Correlated dense/nested mechanisms can still be unresolved.
-  No ABI/model schema change. See [Assembly motion](ASSEMBLY_MOTION.md).
+  No ABI/model schema change. See [Assembly motion](docs/ASSEMBLY_MOTION.md).
 
 
 - Bounded linkage branch discovery: deterministic Cartesian starting poses,
@@ -592,7 +592,7 @@ tracks status and order.
   rejection, and oversized report rejection. The 10,000-coordinate benchmark
   takes 0.42 s and the coupled 64-frame chain takes about 0.93 s, each within a
   10 s budget. No ABI/schema change; local seeds
-  still select assembly branches. See [Assembly motion](ASSEMBLY_MOTION.md).
+  still select assembly branches. See [Assembly motion](docs/ASSEMBLY_MOTION.md).
 
 
 - General drawing batches and cutting templates (integrated schema 56): true planar slices
@@ -847,7 +847,7 @@ tracks status and order.
   tables (and parts lists) must fit on the paper. Three tests cover status,
   13 validation cases, exact budgets, shortened descriptions and persistence.
   10,000 releases with approvals validate in 0.003 s (50 ms budget). See
-  [Drawings](DRAWINGS.md#releases-and-revision-tables-schema-90).
+  [Drawings](docs/DRAWINGS.md#releases-and-revision-tables-schema-90).
 
 - Parts lists and balloons (schema 87): drawings group shown, unsuppressed
   instances into numbered items by family, effective parameters, output and
@@ -856,7 +856,7 @@ tracks status and order.
   their placed origin or a datum. Three tests cover grouping, exact vertex
   budgets, SVG/DXF output, leader placement, validation and persistence.
   10,000 shown instances group into items with 100 balloons validated in
-  0.394 s (2 s budget). See [Drawings](DRAWINGS.md#parts-lists-and-balloons-schema-87).
+  0.394 s (2 s budget). See [Drawings](docs/DRAWINGS.md#parts-lists-and-balloons-schema-87).
 
 - Modeled threads (schema 84):
   `FeatureOperation::Thread` sweeps an ISO 68-1 basic-profile groove along a
@@ -867,14 +867,14 @@ tracks status and order.
   A 100-turn thread cuts in 3.99 s (12 s budget) and 10,000 pattern members
   of a threaded rod regenerate as one variant in 0.838 s (4 s budget); the
   helix now has one edge per turn, which made the 100-turn cut linear (15.1 s
-  before). See [Modeled threads](THREADS.md).
+  before). See [Modeled threads](docs/THREADS.md).
 
 - Helix features (schema 82): `FeatureOperation::Helix` outputs a
   parameter-driven helical wire for `Sweep` paths, so springs and coils follow
   radius, pitch, turns and handedness edits. Two tests sweep springs, change
   turns with the section sketch reused, compare hands, persist, and reject
   zero turns. 10,000 pattern members of a helix family regenerate as one
-  variant in 0.374 s (2 s budget). See [Helices](HELIX.md).
+  variant in 0.374 s (2 s budget). See [Helices](docs/HELIX.md).
 
 - Surface texture (schema 71): drawing
   requirements with B46.1 roughness limits (Ra, Rq, Rz, Rmax in µm or µin),
@@ -883,7 +883,7 @@ tracks status and order.
   budgets; inspection records check readings by the maximum rule. Four tests
   cover rendering in SVG and DXF, validation, persistence and inspection.
   10,000 symbols generate with SVG and DXF exports in 0.102 s (1 s budget).
-  See [Drawings](DRAWINGS.md#surface-texture-schema-71).
+  See [Drawings](docs/DRAWINGS.md#surface-texture-schema-71).
 
 - Measured GD&T inspection (schema 68): `evaluate_inspection` checks an
   inspection record of measured points against a drawing. Planar datum
@@ -897,7 +897,7 @@ tracks status and order.
   removal, datum contact, free rotation, bonus/size failure, far rotated
   placements, validation and persistence. 10,000 position controls plus a
   100,000-point surface (821,200 points) evaluate in 0.200 s (1 s budget).
-  See [Drawings](DRAWINGS.md#measured-inspection-schema-68).
+  See [Drawings](docs/DRAWINGS.md#measured-inspection-schema-68).
 
 - Traceability (schema 67): family assumptions and requirement traces to
   features, parameters, and assumptions, validated and omitted when empty.
@@ -1074,7 +1074,7 @@ tracks status and order.
   overhang, validation, and persistence. 10,002 instances with all three rules
   regenerate in 0.477 s (3 s budget), screening the shared variant once. This
   completes the richer requirement rules. See
-  [Requirement rules](REQUIREMENTS.md).
+  [Requirement rules](docs/REQUIREMENTS.md).
 
 - Minimum-radius requirements (schema 47; ABI 36): `MinimumRadius` checks
   convex, concave, or both radii against a positive length, optionally treating
@@ -1083,7 +1083,7 @@ tracks status and order.
   and the face or edge with a witness point. Two parametric tests and three
   bridge tests cover bores, blind-hole floors, cylinders, cones, spheres, tori,
   inside-corner fillets, outside edges, sampled variable blends, validation,
-  and persistence. See [Requirement rules](REQUIREMENTS.md).
+  and persistence. See [Requirement rules](docs/REQUIREMENTS.md).
 
 - Exact connectivity and collision requirements (schema 46): part
   `Connectivity` counts solids, voids, and faces, edges, or vertices outside any
@@ -1097,7 +1097,7 @@ tracks status and order.
   connectivity, no-interference, and clearance rules regenerate and verify in
   0.574 s (3 s budget), checking the part rule once for the shared variant; a
   5,000 x 5,000 cross-set clearance with 500 violations takes 1.305 s (5 s
-  budget). See [Requirement rules](REQUIREMENTS.md).
+  budget). See [Requirement rules](docs/REQUIREMENTS.md).
 
 - Continuous translation paths (no schema or ABI change): exact BREP distance
   and a relative-motion bound check intervals between motion samples. Swept
@@ -1109,7 +1109,7 @@ tracks status and order.
   paths are covered below; first-time-of-contact computation remains open.
   The 10,000-body moving assembly passes in 0.285 s (10 s budget); 1,000 independent crossing
   checks pass in 11.808 s (30 s budget). See
-  [Assembly motion](ASSEMBLY_MOTION.md).
+  [Assembly motion](docs/ASSEMBLY_MOTION.md).
 
 - Sheet metal and expanded hole catalogs (schema 45): `SheetMetal` builds a
   constant-width strip of flanges joined by exact circular bends;
@@ -1123,7 +1123,7 @@ tracks status and order.
   blanks build and edit in 5.493 s (15 s budget); 100,000 worst-row catalog
   lookups take 2 ms (200 ms budget). Edge flanges, reliefs, hems, bend
   tables, and countersink relief are not supported. See
-  [Sheet metal](SHEET_METAL.md) and [Hole-size catalog](HOLE_SIZE_CATALOG.md).
+  [Sheet metal](docs/SHEET_METAL.md) and [Hole-size catalog](docs/HOLE_SIZE_CATALOG.md).
 
 - Analysis and manufacturing hand-off (schema 44): semantic face tags, source
   BREP and surface meshes for an isolated Gmsh tetrahedral runner, material-aware
@@ -1132,7 +1132,7 @@ tracks status and order.
   cover the exports. A 1,000-part glTF scene takes 1.393 s; 10,000 indexed wall
   rays on 100,518 triangles take 3.284 s (10 s budgets). Screening is sampled;
   external volume meshing validates tag matching and element quality.
-  See [Mesh hand-off](MESH_HANDOFF.md).
+  See [Mesh hand-off](docs/MESH_HANDOFF.md).
 
 - Model data management (schema 43): explicit linear revision records with
   nonrecursive semantic changes, resolved instance/feature change-impact
@@ -1142,8 +1142,8 @@ tracks status and order.
   history conflicts, and file preservation. Actual Git merges verify successful
   combination and conflict stages. Impact for 10,000 instances and 100 dependent
   features takes 0.144 s; appending after 10,000 revisions takes 0.185 s
-  (10 s budgets). See [Model history](MODEL_HISTORY.md) and
-  [Document comparisons](DOCUMENT_DIFF.md).
+  (10 s budgets). See [Model history](docs/MODEL_HISTORY.md) and
+  [Document comparisons](docs/DOCUMENT_DIFF.md).
 
 - Regenerated drawings (schema 42): orthographic, section, and cropped detail
   views with exact hidden-line removal, datum dimensions, parameter notes,
@@ -1152,7 +1152,7 @@ tracks status and order.
   semantic diff, export escaping, and cleanup. Independent DXF parsing reports
   zero errors or repairs. The 1,000-view case takes 1.235 s (10 s budget);
   a view of a 1,000-part assembly takes 0.903 s (20 s budget). Certified curve approximation remains a future extension.
-  API and limits: [Drawings](DRAWINGS.md).
+  API and limits: [Drawings](docs/DRAWINGS.md).
 
 - Closed-linkage sampled motion (no schema or ABI change): each driven pose
   seeds its free coordinates from the preceding successful solve. All poses
@@ -1164,7 +1164,7 @@ tracks status and order.
   10,000 closures take 0.445 s; 1,000 closed poses with collision checks take
   0.534 s (5 s budgets). This provides local continuation and sampled checks;
   it does not certify a continuously closed mechanism's path. See
-  [Assembly motion](ASSEMBLY_MOTION.md).
+  [Assembly motion](docs/ASSEMBLY_MOTION.md).
 
 - Continuous rotating joint paths (no schema or ABI change): unwrapped angle
   interpolation preserves full, reverse, and multiple turns. Enclosing swept
@@ -1176,7 +1176,7 @@ tracks status and order.
   paths, large-angle uncertainty, state preservation, and handle cleanup.
   10,000 sparse rotors take 0.180 s; 1,000 obstacle crossings checked against
   planar separating-axis geometry take 10.640 s (10 s and 30 s budgets).
-  See [Assembly motion](ASSEMBLY_MOTION.md).
+  See [Assembly motion](docs/ASSEMBLY_MOTION.md).
 
 - Bounded closed-linkage solving (no schema or ABI change): explicitly selected
   joint coordinates adjust while driven coordinates and rest placements stay
@@ -1189,7 +1189,7 @@ tracks status and order.
   up to 1,000 local iterations. Bounded alternative-pose search is available;
   complete enumeration and broader connected assembly scaling remain open. The 1,000-pose analytic
   crank-slider benchmark takes 0.040 s (10 s budget). SonarQube passes with
-  zero issues. API: [Assembly motion](ASSEMBLY_MOTION.md).
+  zero issues. API: [Assembly motion](docs/ASSEMBLY_MOTION.md).
 
 - Full per-component and assembly mass properties: inherited material density,
   current instance/frame/joint poses, center of mass, and central inertia in
@@ -1211,7 +1211,7 @@ tracks status and order.
   Scale cases cover 10,000 joints, 10,000 sparse bodies, and 1,000 motion samples.
   Translation path checks and bounded closed-linkage solving are available;
   continuous rotation checking supports nested frame paths.
-  API and limits: [Assembly motion](ASSEMBLY_MOTION.md).
+  API and limits: [Assembly motion](docs/ASSEMBLY_MOTION.md).
 - Three-way semantic document merge (no schema or ABI change):
   `base.three_way_merge(&left, &right)` combines independent field/entity edits
   and identical concurrent edits. Typed conflict records retain base/left/right
@@ -1223,7 +1223,7 @@ tracks status and order.
   round trips, and regenerated geometry with exact volume and bounded handles.
   Ten validated merges of 10,000 reordered instances take 2.463 s (8 s budget),
   with both independent overrides retained and no kernel handles allocated.
-  API and limits: [Semantic document comparisons and merges](DOCUMENT_DIFF.md).
+  API and limits: [Semantic document comparisons and merges](docs/DOCUMENT_DIFF.md).
 - Identity-based semantic document diffs (no schema or ABI change):
   `ModelDocument::semantic_diff` reports deterministic typed field/entity paths
   with before/after values. Declaration lists match by stable IDs; ordered
@@ -1235,7 +1235,7 @@ tracks status and order.
   reordered instances with one exact override edit take 1.265 s (5 s budget),
   without creating kernel handles. Revision history, impact
   reports, and a git merge driver remain planned. API and limits:
-  [Semantic document comparisons](DOCUMENT_DIFF.md).
+  [Semantic document comparisons](docs/DOCUMENT_DIFF.md).
 - Uniform extend-to-next ribs (schema 39; ABI 32):
   `RibProfileMode::OpenToNext { direction, maximum_length }` advances a straight
   open chain perpendicularly to its first contact with the input body. Exact
@@ -1331,7 +1331,7 @@ tracks status and order.
   volumes, edits, rollback, round trips, and unchanged schema 31 migration.
   The V1 snapshot is immutable; manufacturing tolerances, tap-drill catalogs,
   inch catalogs, and standard recess dimensions remain out of scope.
-  Source, API, and supported sizes: [Hole-size catalog](HOLE_SIZE_CATALOG.md).
+  Source, API, and supported sizes: [Hole-size catalog](docs/HOLE_SIZE_CATALOG.md).
   100,000 checked lookups take about 1 ms (200 ms budget).
 - Recorded internal-thread specifications (schema 31; no ABI change):
   caller-supplied designation, positive length-valued pitch, length-valued

@@ -96,7 +96,7 @@ clearance between instance outputs, and part regeneration verifies validity,
 volume, solid connectivity, minimum convex or concave radius, and sampled wall
 thickness, draft, and overhang, all with required, preferred, or advisory
 priority. Results carry measured values, evidence quality, and collision
-witnesses; see [Requirement rules](REQUIREMENTS.md). Schema v1 through
+witnesses; see [Requirement rules](docs/REQUIREMENTS.md). Schema v1 through
 v68 documents migrate to v69 during load; unsupported
 future versions are rejected.
 Managed regeneration incrementally reuses unchanged outputs and
@@ -134,6 +134,9 @@ failures while keeping model acceptance separate.
 ## Repository layout
 
 - [`include/occt_bridge.h`](include/occt_bridge.h): stable C ABI contract.
+- [`docs/`](docs/README.md): one page per modeling capability (API, schema,
+  limits, and examples); [`ROADMAP.md`](ROADMAP.md) and
+  [`PARAMETRIC_ARCHITECTURE.md`](PARAMETRIC_ARCHITECTURE.md) cover the whole project.
 - [`src/`](src): the C ABI implementation, one file per area:
   - [`session.cpp`](src/session.cpp): sessions, last error, warnings,
     diagnostics, options, and handle removal.
@@ -304,35 +307,35 @@ handles and retain the prior accepted generation.
 clone identities, sparse overrides, placements, assembly frames, pattern rules, provenance, and
 regeneration audit records. Schema 43 adds explicit revision history and the
 API reports resolved instance/feature change impact. The `occt-document-merge`
-binary supplies a semantic Git merge driver. See [Model history](MODEL_HISTORY.md)
-and [Document comparisons](DOCUMENT_DIFF.md). Schema 42 adds regenerated orthographic, section,
+binary supplies a semantic Git merge driver. See [Model history](docs/MODEL_HISTORY.md)
+and [Document comparisons](docs/DOCUMENT_DIFF.md). Schema 42 adds regenerated orthographic, section,
 and detail drawings, datum dimensions, parameter notes, and metadata title blocks
 exported as SVG or DXF. Optional exact geometry export preserves standard curves
 and detail trims in DXF, with exact SVG curves where representable and
-error-controlled SVG approximation otherwise. See [Drawings](DRAWINGS.md) for
+error-controlled SVG approximation otherwise. See [Drawings](docs/DRAWINGS.md) for
 the API and export limits. Schema 69 adds per-view material hatch families,
 including inherited assignments, paired lines, crosshatching and suppression.
 Schema 71 adds drawing surface texture requirements (ASME B46.1 roughness
 limits, sampling length, waviness, lay, material removal and method) drawn with
 the Y14.36 symbol, and checks measured roughness readings in inspection
-reports; see [Drawings](DRAWINGS.md#surface-texture-schema-71). Schema 68 evaluates measured points against drawing GD&T: fitted datum
+reports; see [Drawings](docs/DRAWINGS.md#surface-texture-schema-71). Schema 68 evaluates measured points against drawing GD&T: fitted datum
 simulators, flatness and orientation zones, and position with MMC/LMC bonus from
 stated size limits (`DrawingSizeLimits`, also used for bonus arithmetic and
 supplied-axis position checks). Dimensional measurements are checked against
 saved tolerances, and the `occt-inspection-report` command writes a JSON report
 covering dimensions, supplied-axis positions and measured points; see
-[Drawings](DRAWINGS.md). Schema 63 adds two-row composite controls, reusable named datum-reference frames
+[Drawings](docs/DRAWINGS.md). Schema 63 adds two-row composite controls, reusable named datum-reference frames
 and nominal planar 3-2-1 coordinates. Schema 62 adds datum-feature symbols and structured GD&T feature-control frames
 with ordered datum references and material modifiers. Schema 61 adds ANSI/ISO paper presets, structured title blocks, sheet numbering
 and first-/third-angle projection symbols. Schema 60 adds configurable automatic section hatching, preserving holes and
 disconnected material regions in SVG/DXF. Schema 59 adds datum-linked center marks, centerlines and section cutting-plane
 indicators in saved drawings and SVG/DXF exports. Schema 58 adds manufacturing dimension types, unit-aware tolerances, basic/reference
-notation and live hole callouts; see [Drawings](DRAWINGS.md). Schema 57 combines the newer geometry and reference features with planar slice
+notation and live hole callouts; see [Drawings](docs/DRAWINGS.md). Schema 57 combines the newer geometry and reference features with planar slice
 drawings and assembly motion workflows.
 
 Continuous joint path checks handle translations, unwrapped rotations, and
 nested frames, catching collisions between samples and reporting unresolved
-intervals explicitly. See [Assembly motion](ASSEMBLY_MOTION.md)
+intervals explicitly. See [Assembly motion](docs/ASSEMBLY_MOTION.md)
 for the supported joint paths and numeric limits. Closed-linkage solving adjusts
 selected joint coordinates while keeping driven coordinates fixed and enforcing
 travel limits; unsuccessful solves preserve the accepted pose. Closed motion
@@ -362,18 +365,18 @@ faces, and schema 49 adds parameter-placed `Loft` features. ABI 36 adds signed p
 minimum-radius requirements. ABI 35 adds bounded surface tessellation and
 indexed topology matching. Schema 44
 adds tagged FEA hand-off, material-aware glTF scenes, and wall, draft,
-and printing-overhang checks. See [Mesh hand-off](MESH_HANDOFF.md) for APIs,
+and printing-overhang checks. See [Mesh hand-off](docs/MESH_HANDOFF.md) for APIs,
 units, external tetrahedral meshing, and screening limits. Schema 45 adds
 folded sheet-metal strips with exact circular bends and linked flat patterns
 using an explicit neutral factor, with flat-pattern drawings for SVG and DXF;
-see [Sheet metal](SHEET_METAL.md). It also adds frozen Carr Lane V1 tap-drill
+see [Sheet metal](docs/SHEET_METAL.md). It also adds frozen Carr Lane V1 tap-drill
 and socket-head counterbore catalogs in metric and inch sizes; see
-[Hole-size catalog](HOLE_SIZE_CATALOG.md).
+[Hole-size catalog](docs/HOLE_SIZE_CATALOG.md).
 
 ABI 34 adds exact hidden-line projection, plane clipping, edge sampling, and
 bulk subshape traversal. Schema 41 adds driven frame joints with limits and
 the API supports exact interference/clearance checks and sampled motion with
-shared local geometry. See [Assembly motion](ASSEMBLY_MOTION.md) for coordinate
+shared local geometry. See [Assembly motion](docs/ASSEMBLY_MOTION.md) for coordinate
 conventions, complexity, and sampled-motion limits. ABI 33 exposes BREP
 distance/witness points, non-destructive overlap volume, and adaptive solid
 center/inertia measurements. Schema 40 adds interior variable-fillet radius
@@ -458,7 +461,7 @@ fastener diameter and `ClearanceSeries::{Fine, Medium, Coarse}`. It works
 directly in a hole's diameter or in derived parameters, preserves dependency
 tracking, and rejects unsupported sizes rather than rounding or interpolating.
 The public `iso273_clearance_v1` helper returns a millimeter `Quantity`.
-See [Hole-size catalog](HOLE_SIZE_CATALOG.md) for source data, supported sizes,
+See [Hole-size catalog](docs/HOLE_SIZE_CATALOG.md) for source data, supported sizes,
 an example, and limitations. Older documents retain their existing expressions.
 Schema 31 adds optional `Hole.thread` metadata
 (`Option<Box<ThreadSpecification>>` in Rust). A thread record stores a nonblank
@@ -635,12 +638,12 @@ The [editable model studio](tools/view/README.md) now includes selectable sketch
 and solid annotations, linked dimension editing, regenerated constraint results
 and rejected-edit diagnostic previews in the same workspace.
 
-[Sketch capabilities](SKETCHES.md) now include ellipses, angle/radius/diameter,
+[Sketch capabilities](docs/SKETCHES.md) now include ellipses, angle/radius/diameter,
 symmetry and point-on-curve constraints, with saved native trim/extend/offset
 profiles (ABI 47, model schema 72).
 
 
-[Extrusion end conditions](EXTRUSIONS.md) support symmetric total length,
+[Extrusion end conditions](docs/EXTRUSIONS.md) support symmetric total length,
 up to a selected face, and up to the next complete face limit, including
 inclined and curved surfaces. Target
 geometry participates in regeneration; the viewer shows the actual length.
@@ -648,50 +651,50 @@ The native ABI is 52; model schema is 91. Native surface-ray witnesses measure
 viewer extents on nonuniform caps.
 
 
-[Blind drill-point holes](HOLES.md) add configurable conical bottoms, native tip
+[Blind drill-point holes](docs/HOLES.md) add configurable conical bottoms, native tip
 containment checks, full-diameter depth callouts and linked viewer dimensions.
 The current model schema is 91 and native ABI is 52.
 
 
-[Geometry-driven holes](HOLES.md) stop at a selected or next covering input
+[Geometry-driven holes](docs/HOLES.md) stop at a selected or next covering input
 face, including inclined and curved exits. Native witnesses provide measured
 viewer depths; input and selector edits regenerate the cut. Schema 76 adds the
 end conditions without changing ABI 48.
 
 
-[Saved-profile lofts](LOFTS.md) build solid transitions directly from sketch
+[Saved-profile lofts](docs/LOFTS.md) build solid transitions directly from sketch
 faces and closed wires, including native circles, ellipses, arcs and splines.
 Section edits regenerate the part; viewer spacing links to section controls.
 This adds `profile_loft` in schema 77 and native wire lofts in ABI 49.
 
-[Symmetric sketch revolutions](REVOLUTIONS.md) split the total signed angle
+[Symmetric sketch revolutions](docs/REVOLUTIONS.md) split the total signed angle
 equally about the source sketch plane, preserving native source-edge history
 and linked viewer angle arcs. Schema 78 introduced the optional extent mode without a native API change.
 
-[Hollow sketch profiles](PLANAR_REGIONS.md) combine an outer profile and up to
+[Hollow sketch profiles](docs/PLANAR_REGIONS.md) combine an outer profile and up to
 100 separate inner profiles into one native planar face for extrusion or
 revolution. Boundary checks reject crossing, touching and misplaced holes.
 Schema 79 adds `planar_region`; ABI 50 also retains its extracted face history.
 
-[Hollow path sweeps](HOLLOW_SWEEPS.md) transport holed planar sections into
+[Hollow path sweeps](docs/HOLLOW_SWEEPS.md) transport holed planar sections into
 bent tubes and multiple-bore parts, preserving wall ancestry and linked route
 controls. ABI 50 adds explicit history-preserving topology extraction; the
 current model schema is 91. Rebuild the native library and Rust executables together.
 
-[Hollow profile lofts](LOFTS.md#explicit-hollow-tracks-schema-80) use explicit
+[Hollow profile lofts](docs/LOFTS.md#explicit-hollow-tracks-schema-80) use explicit
 inner section tracks to make tapered ducts and multiple-bore transitions.
 Schema 80 adds optional `profile_loft.holes`, with native containment, crossing
 checks and retained wall ancestry. Native ABI remains 50.
 
-[Plane mirrors](MIRRORS.md) create handed parts with native reflected geometry,
+[Plane mirrors](docs/MIRRORS.md) create handed parts with native reflected geometry,
 retained source-face ancestry and editable plane controls. Schema 81 adds
 `mirror`; ABI 51 adds the native reflection operation.
 
-[Helices](HELIX.md) are exact helical wires to sweep along for springs and
+[Helices](docs/HELIX.md) are exact helical wires to sweep along for springs and
 coils, with parameter-driven radius, pitch, turns and handedness. ABI 52 adds
 `occt_bridge_create_helix_wire`; schema 82 adds the `helix` feature.
 
-[Uniform scaling](SCALING.md) resizes feature geometry about a parameter-driven
+[Uniform scaling](docs/SCALING.md) resizes feature geometry about a parameter-driven
 centre with a positive dimensionless factor. Schema 83 adds `scale`, linked
 viewer controls and the AI example `scaled-part`. Native ABI remains 52; rebuild
 the native library for the correction to factors very close to one.
@@ -700,43 +703,43 @@ the native library for the correction to factors very close to one.
 The [spring AI example](tools/model/spring.request.json) combines helices with a
 parameter-driven circular sweep. Coil radius, pitch and fractional turn edits
 update the section orientation, native solid, linked viewer dimensions and
-route overlays. See [helix viewer semantics](HELIX.md#ai-example-and-linked-viewer-dimensions).
+route overlays. See [helix viewer semantics](docs/HELIX.md#ai-example-and-linked-viewer-dimensions).
 
-Drawings record [releases and revision tables](DRAWINGS.md#releases-and-revision-tables-schema-90):
+Drawings record [releases and revision tables](docs/DRAWINGS.md#releases-and-revision-tables-schema-90):
 dated revisions with approvals, links to the model's revision ledger, a status
 that flags model changes since the latest release, and a drawn revision table.
 Schema 90 adds them.
 
-Drawings can carry [parts lists and item balloons](DRAWINGS.md#parts-lists-and-balloons-schema-87):
+Drawings can carry [parts lists and item balloons](docs/DRAWINGS.md#parts-lists-and-balloons-schema-87):
 shown instances group into numbered items by family, parameter values, output
 and material, with optional part numbers. Schema 87 adds them; schema 91 adds
 nested lists that follow sub-assembly frames with hierarchical item numbers.
 
-[Modeled threads](THREADS.md) cut ISO 68-1 basic-profile 60° threads into rods
+[Modeled threads](docs/THREADS.md) cut ISO 68-1 basic-profile 60° threads into rods
 and holes, external or internal, either hand, with parameter-driven diameter,
 pitch and length. Schema 84 adds the `thread` feature; the native ABI is
 unchanged.
 
 
-[Signed skin offsets](OFFSETS.md) expand or contract a part using native joined
+[Signed skin offsets](docs/OFFSETS.md) expand or contract a part using native joined
 surface offsets, with linked distance/tolerance controls and retained source
 history. Schema 85 adds `offset`; the native ABI remains 52. The AI example
 `offset-part` demonstrates both signed distances.
 
 
-[Compound tool groups](COMPOUNDS.md) collect shapes without fusion or sewing.
+[Compound tool groups](docs/COMPOUNDS.md) collect shapes without fusion or sewing.
 Schema 86 adds `compound`, allowing one Boolean cut to use many cutters. The
 AI example `multi-hole-plate` groups nine cylinders and cuts a parameter-driven
 plate, with editable spacing, hole radius and thickness.
 
 
-[Linear part patterns](PART_PATTERNS.md) repeat a source shape with editable
+[Linear part patterns](docs/PART_PATTERNS.md) repeat a source shape with editable
 count and step. Schema 88 adds `linear_pattern`; the native ABI remains 52.
 The AI example `patterned-plate` creates its cutter grid with two chained
 patterns, exposing row and column counts alongside hole radius and spacing.
 
 
-[Circular part patterns](PART_PATTERNS.md#circular-patterns-schema-89) create
+[Circular part patterns](docs/PART_PATTERNS.md#circular-patterns-schema-89) create
 bolt circles and signed partial radial groups with editable count and angular
 step. Schema 89 adds `circular_pattern`; native ABI remains 52. The AI example
 `bolt-circle` derives spacing from count and sweep, then cuts the tool group.
@@ -746,24 +749,24 @@ Pattern and compound groups now retain child ancestry. A source cutter face can
 select every repeated bore after a cut, including nested patterns. Union and
 intersection preserve directly grouped ancestry too. Schema 89 / ABI 52 remain
 unchanged; rebuild native and Rust binaries together. See
-[retained pattern ancestry](PART_PATTERNS.md#retained-pattern-ancestry).
+[retained pattern ancestry](docs/PART_PATTERNS.md#retained-pattern-ancestry).
 
 
 The [threaded-rod AI example](tools/model/threaded-rod.request.json) exposes
 modeled threads with linked major diameter, pitch, run and derived turn labels.
 Its source rod follows diameter/run edits. See
-[thread dimensions](THREADS.md#ai-example-and-viewer-dimensions). Current AI
+[thread dimensions](docs/THREADS.md#ai-example-and-viewer-dimensions). Current AI
 examples use schema 91; native ABI remains 52.
 
 
 The [edge-treatment AI example](tools/model/edge-treatments.request.json)
 compares rounded and chamfered blocks with linked radius/distance controls and
 selected source-edge overlays. Live edits update geometry and annotations.
-See [edge treatments](EDGE_TREATMENTS.md); schema 91 / ABI 52 are unchanged.
+See [edge treatments](docs/EDGE_TREATMENTS.md); schema 91 / ABI 52 are unchanged.
 
 
 The [variable-fillet AI example](tools/model/variable-fillet.request.json) adds
 linked endpoint radii, interior station controls, and the complete directed
 contour law. Labels show nominal law values; source-edge references are
 separate from spatial station locations. See
-[variable-radius viewer semantics](EDGE_TREATMENTS.md#variable-radius-contour-laws).
+[variable-radius viewer semantics](docs/EDGE_TREATMENTS.md#variable-radius-contour-laws).

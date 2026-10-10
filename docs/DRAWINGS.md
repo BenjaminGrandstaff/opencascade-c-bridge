@@ -180,7 +180,7 @@ cleanup. Internal C++ conformance forces handle-space exhaustion between outputs
 to verify that projection and bulk traversal retract partial results. Scale cases
 cover 1,000 mixed views and a single view of 1,000 shared-geometry components.
 
-The [drawing-export command](tools/drawing-export/README.md) writes safe numbered
+The [drawing-export command](../tools/drawing-export/README.md) writes safe numbered
 SVG/DXF files, a manifest and a reloadable model with drawing definitions. Tests
 cover true swept cross-sections, holes, boundary planes, oblique mounted parts,
 batch budgets and publication errors. A 1,000-template benchmark verifies one

@@ -46,12 +46,12 @@ omits its distance glyph/value rather than estimating one. Symmetric anchors
 remain centered about the sketch. Edit target parameters to change geometric
 limits; distance and symmetric lengths remain driving dimensions.
 
-The [example request](tools/model/extrusion-limits.request.json) is available
+The [example request](../tools/model/extrusion-limits.request.json) is available
 through MCP `occt_get_example` as `extrusion-limits`. Its `depth` parameter moves
 the target box: `body` ends at its near face, `selected` at its far face, and
 `symmetric` splits the total depth about the sketch.
 
-The [curved example](tools/model/curved-extrusions.request.json), also named
+The [curved example](../tools/model/curved-extrusions.request.json), also named
 `curved-extrusions` in MCP, demonstrates a spherical next limit and an inclined
 selected limit. Changing `depth` moves both targets.
 

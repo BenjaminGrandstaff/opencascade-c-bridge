@@ -20,7 +20,7 @@ as native DXF geometry, and intersects hatch lines with native cut faces. SVG us
 subdivision for rational or higher-degree splines; `curve_tolerance_mm` controls
 that approximation. Unsupported curve types or exhausted budgets fail.
 An omitted or empty `drawings` list selects drawings already stored in the model.
-See [drawing definitions](../../DRAWINGS.md) for view frames and annotations.
+See [drawing definitions](../../docs/DRAWINGS.md) for view frames and annotations.
 Definitions with an existing ID must match the stored definition exactly.
 
 The command validates and generates everything before creating a new output
@@ -31,7 +31,7 @@ views, polyline and exact curve counts, and shared variant counts. `drawings.mod
 existing definitions and adds supplied definitions, ready to reload as schema 69.
 All drawings share generation and a cumulative vertex budget.
 Views can use `material_hatching` maps for material-ID overrides, paired line
-families, crosshatching or suppression. See [material hatch families](../../DRAWINGS.md#material-hatch-families-schema-68) for defaults and validation.
+families, crosshatching or suppression. See [material hatch families](../../docs/DRAWINGS.md#material-hatch-families-schema-68) for defaults and validation.
 
 `wing-example.json` selects `wing:right_body` and `wing:left_body` at the four
 stations of `tools/wing-layout/example.json`. It exports eight profiles with

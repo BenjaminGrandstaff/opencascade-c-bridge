@@ -79,13 +79,13 @@ The following major capabilities remain planned:
 Continuous translation paths can be checked between motion samples using exact
 BREP distances and conservative relative-displacement bounds. Query limits and
 uncertain intervals report unresolved results rather than a clear path. Joint
-angles must remain constant. See [Assembly motion](ASSEMBLY_MOTION.md) for
+angles must remain constant. See [Assembly motion](docs/ASSEMBLY_MOTION.md) for
 interpolation semantics, numeric guards, budgets, and limits.
 
 Tagged surface meshes, external tetrahedral hand-off, material-aware glTF, and
 sampled manufacturing checks are available in schema 44 with ABI 35. Mesh
 exports resolve semantic selectors against current geometry and release kernel
-handles after producing numeric data. See [Mesh hand-off](MESH_HANDOFF.md) for
+handles after producing numeric data. See [Mesh hand-off](docs/MESH_HANDOFF.md) for
 units, topology matching, scale budgets, and sampling limits.
 
 Identity-based semantic document comparisons are available through
@@ -94,7 +94,7 @@ and emit typed field/entity paths with exact serialized before/after values,
 while preserving ordered profile and expression arrays. Comparisons do not
 regenerate geometry or allocate kernel handles; the 10,000-instance repeated
 comparison benchmark runs within a five-second budget. See
-[Semantic document comparisons](DOCUMENT_DIFF.md) for the API, complexity,
+[Semantic document comparisons](docs/DOCUMENT_DIFF.md) for the API, complexity,
 change-record format, and remaining data-management work.
 
 `base.three_way_merge(&left, &right)` combines independent edits using the same
@@ -173,7 +173,7 @@ Exact BREP interference and clearance checks use an indexed broad phase.
 Sampled motion reuses each local parameter variant across independent poses,
 reporting collisions and datum relationships while preserving the source graph.
 The scale suite checks 10,000 joints, 10,000 sparse collision participants, and
-1,000 motion samples. See [Assembly motion](ASSEMBLY_MOTION.md) for frame
+1,000 motion samples. See [Assembly motion](docs/ASSEMBLY_MOTION.md) for frame
 conventions, resource bounds, and limits of sampled kinematics.
 
 Bounded joint-coordinate solving adjusts selected freedoms to satisfy all
@@ -235,7 +235,7 @@ discovered pose. Complete global enumeration remains unsupported.
   evaluated after full graph regeneration. The collision rules (schema 46) take
   explicit or all-instances output sets and reuse the exact indexed checks,
   including a cross-set query that never inspects pairs within one set; see
-  [Requirement rules](REQUIREMENTS.md).
+  [Requirement rules](docs/REQUIREMENTS.md).
   Required failures release every result; preferred and advisory failures stay
   visible in `GraphRegeneration::verification`. Rules validate instance,
   output, datum, relationship, material, unit, and range references before
@@ -309,7 +309,7 @@ native interpolated spline projection. Saved `profile_operations` derive
 trimmed/extended/offset boundaries after the source sketch solves. They retain
 source identities and reject disconnected or invalid boundaries. ABI 47
 provides native editing, oriented ellipse creation and curve projection.
-See [Sketches](SKETCHES.md) for semantics, limits, viewer/AI support and scale.
+See [Sketches](docs/SKETCHES.md) for semantics, limits, viewer/AI support and scale.
 
 Schema 26 extends the schema 25 line sketches with exact circles, arcs, and
 tangency. A `SketchDefinition` places parameter-driven 2D points and named
@@ -521,7 +521,7 @@ so future table corrections/expansions require another explicitly versioned
 catalog, preserving saved-model regeneration. Four tests check every catalog
 value, unit conversion, invalid quantities, derived evaluation, geometry,
 incremental edits/rollback, round trips, and migration. See
-[Hole-size catalog](HOLE_SIZE_CATALOG.md) for source, API, and limitations.
+[Hole-size catalog](docs/HOLE_SIZE_CATALOG.md) for source, API, and limitations.
 100,000 checked lookups take about 1 ms (200 ms budget).
 Schema 45 adds `ScalarExpr::CarrLaneTapDrillV1 { nominal_diameter, pitch, system }`
 and `ScalarExpr::CarrLaneSocketHeadV1 { nominal_diameter, system, dimension }`,
@@ -546,7 +546,7 @@ allowances, and bend lines without kernel work, and they export as a drawing.
 Evaluation is linear in flanges, and overflowing dimensions fail before kernel
 calls. Five tests cover analytic volumes for bends of each sign, incremental
 reuse when only K changes, distant and very small or large sheets,
-self-intersecting outlines, and drawing export. See [Sheet metal](SHEET_METAL.md).
+self-intersecting outlines, and drawing export. See [Sheet metal](docs/SHEET_METAL.md).
 
 ## Draft features
 
@@ -596,7 +596,7 @@ edges and closed contours are rejected. Schema 39 subsequently adds smooth
 interior stations and kernel/reversed/from-point direction control using ABI 33.
 Distinct radius laws for different contours in one feature remain future work.
 The viewer exposes these laws and linked station controls; see
-[variable contour laws](EDGE_TREATMENTS.md#variable-radius-contour-laws).
+[variable contour laws](docs/EDGE_TREATMENTS.md#variable-radius-contour-laws).
 
 The input and result must contain one valid solid, and the result must have
 positive volume. Input geometry is preserved. Validation and optional healing,
@@ -1517,12 +1517,12 @@ higher-degree spans. Exact mode also trims hatch lines against native cut faces
 in bounded batches; default exports and hatching retain sampled boundaries.
 Schema 69 adds per-view material-ID hatch-family maps, inherited assignments,
 fallback/suppression and cached grouping with shared work/vertex limits. See
-[Drawings](DRAWINGS.md) for coordinates, budgets, examples, and export contracts.
+[Drawings](docs/DRAWINGS.md) for coordinates, budgets, examples, and export contracts.
 Schema 68 keeps measurement out of the model document: an inspection record of
 measured points is evaluated against a drawing's GD&T by fitting datum
 simulators and minimax zones with small linear programs, reporting each control
 as evaluated, unmeasured or unsupported (see
-[Measured inspection](DRAWINGS.md#measured-inspection-schema-68)).
+[Measured inspection](docs/DRAWINGS.md#measured-inspection-schema-68)).
 
 ## Model revisions and change impact
 
@@ -1534,10 +1534,10 @@ Placement and material changes have separate flags from local feature rebuilds.
 Schema 67's assumptions and requirement traces add, per instance, the
 requirements to re-verify: changed ones and those whose rule output, traced
 features or parameters, or traced assumptions changed (see
-[Requirement rules](REQUIREMENTS.md#traceability)).
+[Requirement rules](docs/REQUIREMENTS.md#traceability)).
 A Git merge driver validates merged intent before atomically replacing its
-current file. See [Model history](MODEL_HISTORY.md) and
-[Document comparisons](DOCUMENT_DIFF.md) for persistence and conflict contracts.
+current file. See [Model history](docs/MODEL_HISTORY.md) and
+[Document comparisons](docs/DOCUMENT_DIFF.md) for persistence and conflict contracts.
 
 
 ## Schema 73 extrusion end conditions
@@ -1553,7 +1553,7 @@ A translated profile face is intersected with each candidate using native OCCT
 Booleans; area equality verifies complete coverage, including holes. Selected
 limits must resolve to one face. Next limits enumerate only the supplied target
 and choose its nearest fully covering forward face. No sampled ray inference or
-assembly-wide scan is used. See [semantics and limits](EXTRUSIONS.md).
+assembly-wide scan is used. See [semantics and limits](docs/EXTRUSIONS.md).
 
 The shared viewer derives geometric travel from the prism and profile area
 centroids, constructing a temporary face for wire profiles because boundary
@@ -1580,7 +1580,7 @@ The shared viewer replaces the uniform-prism centroid identity with ABI 48
 `ray_first_hit`, starting at the profile area centroid. Nonuniform caps display
 that ray's actual surface witness; a missing centroid-ray hit has no length or
 glyph. This ray is for measurement only; coverage decisions use native topology
-and Boolean intersections. See [full semantics](EXTRUSIONS.md).
+and Boolean intersections. See [full semantics](docs/EXTRUSIONS.md).
 
 
 ## Schema 75 blind drill-point holes
@@ -1594,7 +1594,7 @@ retained. Point-angle expressions enter incremental parameter signatures.
 
 Drawing callouts preserve full-diameter depth and record the point angle. The
 shared solid viewer adds bore diameter/depth, a 17-point angle arc and computed
-tip/total depth with linked controls. ABI 48 is unchanged; see [hole semantics](HOLES.md).
+tip/total depth with linked controls. ABI 48 is unchanged; see [hole semantics](docs/HOLES.md).
 
 
 ## Schema 76 geometry-driven hole extents
@@ -1614,7 +1614,7 @@ an unnecessary recess-radius restriction. Drill points still require blind depth
 single-output centre-ray query, using family-local generated input geometry.
 Scratch handles are released on return. The viewer traverses upstream inputs
 once with an ID index to link geometry and selector controls; drawings record
-which face-limit mode was supplied. See [semantics](HOLES.md).
+which face-limit mode was supplied. See [semantics](docs/HOLES.md).
 
 
 ## Schema 77 saved-profile lofts
@@ -1633,7 +1633,7 @@ solid. Dependency signatures reuse unaffected profiles after edits.
 The viewer measures area-centroid spacing between sections with a section-ID
 index, keeping source sketch views and linked controls. Native source geometry
 is preserved; smooth lateral fitting uses kernel approximation precision.
-See [loft semantics](LOFTS.md).
+See [loft semantics](docs/LOFTS.md).
 
 ## Schema 78 symmetric sketch revolutions
 
@@ -1646,7 +1646,7 @@ origin expression dependencies already participate in incremental regeneration.
 
 Older documents default to angle extent. Viewer arcs start/end at the same
 half-angle placements as geometry; source sketch scenes stay in their original
-plane. See [revolution semantics](REVOLUTIONS.md).
+plane. See [revolution semantics](docs/REVOLUTIONS.md).
 
 ## Schema 79 native planar regions
 
@@ -1663,7 +1663,7 @@ Native generated history from boundary edges remains available; ABI 50 also
 retains the cut's
 operation-level face history when extracting the face. Scratch
 handles are bounded by the hole count and released on failure and success.
-See [planar region semantics](PLANAR_REGIONS.md).
+See [planar region semantics](docs/PLANAR_REGIONS.md).
 
 ## Hollow sweeps and explicit subset history (ABI 50)
 
@@ -1677,7 +1677,7 @@ topology and materializes located ancestry when needed. It shares geometry,
 retains source ownership after parent release and marks omitted sources deleted
 relative to the subset. The final hollow sweep remains one solid, and planar
 regions retain native cut face history through the same extraction path.
-See [hollow sweep semantics](HOLLOW_SWEEPS.md) for scope and complexity.
+See [hollow sweep semantics](docs/HOLLOW_SWEEPS.md) for scope and complexity.
 
 ## Schema 80 explicit hollow loft tracks
 
@@ -1691,7 +1691,7 @@ Outer and inner native lofts share their fitting mode. Hollow sweeps and lofts
 use one common native containment/subtraction helper, composing all boundary
 histories before extracting the final solid with retained ancestry. Native ABI
 50 is reused. Viewer source sketches and linked parameters include hole sections.
-See [hollow loft semantics](LOFTS.md#explicit-hollow-tracks-schema-80).
+See [hollow loft semantics](docs/LOFTS.md#explicit-hollow-tracks-schema-80).
 
 ## Schema 81 plane mirrors (ABI 51)
 
@@ -1705,7 +1705,7 @@ correct reflected face normals for selectors and later operations.
 Source and plane expression dependencies enter incremental signatures. Geometry
 is reflected while family datums and assembly placements remain explicitly
 authored. Linked clones share the generated reflected variant. See
-[mirror semantics](MIRRORS.md).
+[mirror semantics](docs/MIRRORS.md).
 
 
 ## Schema 83 uniform scaling (native ABI 52 unchanged)
@@ -1717,7 +1717,7 @@ copy geometry and retain modification ancestry; only exactly unit positive
 transforms use rigid locations. Copied transforms follow session validation and
 healing policy. Linked instances share a regenerated variant. Family datums
 and assembly frames retain their separately authored definitions.
-See [scaling semantics](SCALING.md).
+See [scaling semantics](docs/SCALING.md).
 
 
 ## Helix visualization and spring example
@@ -1733,7 +1733,7 @@ O(turns) points per edge. Global vertex limits are charged before allocation,
 and the native 100,000-point edge limit rejects oversized displays. The AI
 spring example derives section position and tangent orientation from radius
 and pitch, so incremental edits rebuild affected geometry correctly. No ABI
-or document schema change is needed. See [helices](HELIX.md).
+or document schema change is needed. See [helices](docs/HELIX.md).
 
 
 ## Schema 85 joined skin offsets
@@ -1745,7 +1745,7 @@ Distance/tolerance expression dependencies enter incremental signatures, so
 edits reuse the source and rebuild its offset and dependents. Failed edits
 retain accepted geometry. Linked clones share generated variants. Bookkeeping
 follows topology/history size; native construction cost depends on surface
-intersections and joins. See [offset semantics](OFFSETS.md).
+intersections and joins. See [offset semantics](docs/OFFSETS.md).
 
 
 ## Schema 86 compound groups
@@ -1761,7 +1761,7 @@ and edges.
 Input lookup/uniqueness costs O(N) time and memory; native validation and
 inspection follow combined topology size. Located child copies can share one
 source geometry. Group overlaps are not resolved and compound mass sums its
-solids. Use a union for net material volume. See [compounds](COMPOUNDS.md).
+solids. Use a union for net material volume. See [compounds](docs/COMPOUNDS.md).
 
 
 ## Schema 88 linear part patterns
@@ -1779,7 +1779,7 @@ against 1,000,000 topology entries before placing copies. Finite placement check
 reject multiplication overflow. Per-copy histories are aggregated in the compound; nested groups carry source
 history through each placement. Direct pattern labels
 show count, step and placement span in family coordinates.
-See [part pattern semantics](PART_PATTERNS.md).
+See [part pattern semantics](docs/PART_PATTERNS.md).
 
 
 ## Schema 89 circular part patterns
@@ -1795,7 +1795,7 @@ the source. Bookkeeping is O(N); validation follows O(NT) topology.
 Native copy histories are aggregated by the compound. The shared viewer
 projects the source mass centre to the axis, then samples a bounded angular
 arc in its perpendicular plane. Count and step labels link defining expressions.
-See [circular patterns](PART_PATTERNS.md#circular-patterns-schema-89).
+See [circular patterns](docs/PART_PATTERNS.md#circular-patterns-schema-89).
 
 
 ## Pattern ancestry through grouping and booleans
@@ -1822,7 +1822,7 @@ reference in the perpendicular plane. A derived label records run/pitch turns,
 mode and hand; expression names link editable controls. Annotation work is O(1)
 per feature, independent of turn count; existing geometry/mesh budgets remain.
 The threaded-rod example derives source size from the same driving parameters.
-See [threads](THREADS.md#ai-example-and-viewer-dimensions).
+See [threads](docs/THREADS.md#ai-example-and-viewer-dimensions).
 
 
 ## Constant edge-treatment visualization
@@ -1836,7 +1836,7 @@ links both nominal-value and selector expressions, and records total selected
 count separately from displayed reference count. Source paths are explicitly
 marked references to pre-treatment edges, rather than final blend measurements.
 The AI example verifies analytical corner volumes, selective regeneration and
-failed-edit retention. See [edge treatments](EDGE_TREATMENTS.md).
+failed-edit retention. See [edge treatments](docs/EDGE_TREATMENTS.md).
 
 
 VariableFillet shares the treatment source-reference path. Its complete
@@ -1845,4 +1845,4 @@ evaluated law takes O(stations) work/storage; per-station labels are limited to
 controls participate in the main label's linked names. Law positions describe
 the native tangent contour and are not interpolated onto individual edge
 samples. Labels use the scene centre and explicitly mark stations nonspatial.
-See [variable contour laws](EDGE_TREATMENTS.md#variable-radius-contour-laws).
+See [variable contour laws](docs/EDGE_TREATMENTS.md#variable-radius-contour-laws).

@@ -1,7 +1,7 @@
 # Uniform geometry scaling
 
 Schema 83 adds `scale` using the existing native scale API. Native ABI remains
-52. The [scaled-part example](tools/model/scaled-part.request.json) scales an
+52. The [scaled-part example](../tools/model/scaled-part.request.json) scales an
 asymmetric fused bracket with parameter-driven `center` and `factor` expressions.
 
 `input` names an earlier feature. `center` is a length-valued vector in family

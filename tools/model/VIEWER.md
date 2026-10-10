@@ -142,7 +142,7 @@ Schema-72 views also include radial/full-diameter and angular dimensions,
 symmetry and point-on-curve markers, and native edited profiles in purple.
 Source curves remain visible, faded when a derived profile exists. Operation
 rows expose linked controls and native failure details. See
-[Sketches](../../SKETCHES.md) and the `sketch-advanced` example.
+[Sketches](../../docs/SKETCHES.md) and the `sketch-advanced` example.
 
 Swept solids show native route length (`sweep-route-length`) with linked route
 parameters and curve overlays in both viewers and SVG snapshots. The displayed
@@ -204,7 +204,7 @@ and factor parameters, and the measured result spans. The factor is
 dimensionless; the label uses the result bounding centre as its anchor rather
 than a length arrow. Metadata includes the evaluated scale centre, factor and
 source expressions. The `scaled-part` example demonstrates both controls.
-See [scaling](../../SCALING.md).
+See [scaling](../../docs/SCALING.md).
 
 
 Direct helices and solids swept directly along them show coil radius, pitch,
@@ -260,7 +260,7 @@ they can lie outside the finished surface. Metadata marks these as source
 references, not measurements of the final blend. Up to 64 references use eight
 points each, charged to the global vertex budget before sampling.
 `edge-treatments` compares two alternatives and supports live radius/distance
-edits through the shared viewer. See [edge treatments](../../EDGE_TREATMENTS.md).
+edits through the shared viewer. See [edge treatments](../../docs/EDGE_TREATMENTS.md).
 
 
 Direct VariableFillet outputs expose the complete evaluated contour radius law
@@ -270,4 +270,4 @@ expressions. These labels are centred in the scene, without inferred spatial
 station coordinates. Metadata sets `spatial_stations: false` and describes the
 nominal contour law. Original selected source-edge paths retain the bounded
 reference sampling and global budget. See
-[variable contour laws](../../EDGE_TREATMENTS.md#variable-radius-contour-laws).
+[variable contour laws](../../docs/EDGE_TREATMENTS.md#variable-radius-contour-laws).

@@ -69,7 +69,7 @@ For a runnable workflow, `occt-motion-study` reads a model document and a setup
 file selecting separate component outputs and bounded hinges. It writes a
 reloadable assembly, a coordinated study, and sampled plus continuous reports.
 It preserves the source model and supports general hinges as well as wing
-elevons. See the [command and wing examples](tools/motion-study/README.md).
+elevons. See the [command and wing examples](../tools/motion-study/README.md).
 
 ## Kernel measurements
 
@@ -88,7 +88,7 @@ and unrepresentable physical values are rejected.
 An existing mass report can group measurements with `material_totals()` and
 project its CG with `balance(ChordReference)`, without another kernel query.
 `SymmetricWingPlanform` supplies a MAC reference from exact linear-panel
-integrals. The [`occt-balance-report` command](tools/balance-report/README.md)
+integrals. The [`occt-balance-report` command](../tools/balance-report/README.md)
 writes component, material, inertia and geometric CG data from selected outputs.
 It supports an explicit world-space chord or a matching wing station layout.
 
@@ -304,7 +304,7 @@ This is deterministic bounded discovery, not a proof of exhaustive global branch
 enumeration or continuous branch connectivity. Tests compare both crank-slider
 solutions and both circle-intersection four-bar poses, including recovery from
 an initially singular collinear mechanism. See the
-[joint-branches command](tools/joint-branches/README.md) for reloadable model exports.
+[joint-branches command](../tools/joint-branches/README.md) for reloadable model exports.
 
 ## Continuous rotating joint paths
 

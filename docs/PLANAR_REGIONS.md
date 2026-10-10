@@ -37,7 +37,7 @@ transitions; see [hollow lofts](LOFTS.md#explicit-hollow-tracks-schema-80).
 
 All boundary outputs enter dependencies. Hole edits rebuild the region and its
 downstream solid while reusing unaffected sketches. Invalid edits retain the
-last accepted geometry. The [hollow-profile AI example](tools/model/hollow-profile.request.json)
+last accepted geometry. The [hollow-profile AI example](../tools/model/hollow-profile.request.json)
 builds an annular extrusion with `outer_radius`, `inner_radius` and `height`
 controls. Both source sketches and their constraints remain visible in the
 shared viewer, and their controls link to the solid.

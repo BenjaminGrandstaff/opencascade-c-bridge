@@ -13,7 +13,7 @@ boundaries. The current model schema is 91; the current native ABI is 52.
 
 Build `annular_region` with `planar_region` over independent outer/inner sketch
 profiles. Place the section across the route start, as with other sweeps. The
-[hollow-sweep AI example](tools/model/hollow-sweep.request.json) combines a line
+[hollow-sweep AI example](../tools/model/hollow-sweep.request.json) combines a line
 and tangent quarter arc, with outer radius, inner radius, run and bend-radius
 controls. Both boundary sketches and the route remain visible beside the solid;
 route length and all section controls stay linked to native geometry.
