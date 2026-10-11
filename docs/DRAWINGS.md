@@ -983,11 +983,27 @@ Datum simulators follow the precedence order:
   the primary normal.
 - **Tertiary plane:** fixed perpendicular to both and placed against its high
   point.
+- **Axis datum feature of size (schema 135):** a datum feature with
+  `feature_of_size: true`, an axis anchor and `size_kind` (`internal` or
+  `external`) is simulated by the axis of its actual mating envelope. That is
+  the largest inscribed cylinder of a hole or the smallest circumscribed
+  cylinder of a shaft, regardless of material boundary. As the primary datum
+  the axis is free to shift and tilt. After one primary plane it is held
+  perpendicular to that plane, and the envelope is a circle in the plane. Other
+  precedences with axis datums are not evaluated.
+
+```json
+{"id": "D", "label": "D", "feature_of_size": true, "size_kind": "internal",
+ "attachment": {"view": "top", "output": {"instance": "part", "output": "body"},
+                "anchor": {"instance": "part", "datum": "bore"}, "offset_mm": [20, 30]}}
+```
 
 The three simulators build the measured frame the same way
 `nominal_planar_321` builds the nominal one, so a feature's measured coordinates
 can be compared directly with its nominal (basic) coordinates. The report lists
-the measured frame of each named three-plane datum reference frame.
+the measured frame of each named three-plane datum reference frame. In
+`datum_axes`, it lists each named frame that ends in an axis datum, with the
+axis origin, direction and mating size.
 
 Supported controls:
 
@@ -998,6 +1014,8 @@ Supported controls:
 | Cylindricity | Radial width between the narrowest coaxial cylinders, axis free to shift and tilt from the anchor's nominal axis; at least six points |
 | Parallelism, perpendicularity, angularity (planar zone) | Zone width at the basic orientation to the measured datums; with a single datum, rotation about its normal stays free |
 | Position (diameter zone, axis normal to primary plane) | Twice the radial offset of the related actual mating envelope from true position, in the measured frame |
+| Circular runout (schema 135) | Full indicator movement about the datum axis, for the worst circular element. On a surface coaxial with the datum axis, the reading is radial and elements are points sharing an axial position. On a face perpendicular to it, the reading is axial and elements are points sharing a radius. Elements group within 1e-3 mm or 1e-6 of the span; each needs at least three points |
+| Total runout (schema 135) | The same readings over all points of the surface |
 
 For position, the mating envelope is the largest inscribed cylinder for
 internal features and the smallest circumscribed cylinder for external ones,
@@ -1022,9 +1040,12 @@ their center. Round-form zones linearize the radial distance the same way.
 - `Evaluated`: deviation, tolerance, bonus, actual size and conformance.
 - `NotMeasured`: the record has no points for the control.
 - `NotEvaluated`: a stated reason, for unsupported cases such as composite
-  frames, datum shift at a material boundary, profile, runout, straightness,
-  round form at a material condition or with a non-characteristic zone, or a
-  datum feature that was not measured.
+  frames, datum shift at a material boundary, profile, straightness, round
+  form at a material condition or with a non-characteristic zone, a datum
+  feature that was not measured, or an axis datum without a `size_kind`.
+  Runout also reports a frame without a datum axis, and a surface whose nominal
+  axis or normal is not along the datum feature's nominal axis. Orientation and
+  position controls report frames that contain an axis datum.
 
 The call fails outright for unknown or repeated IDs, non-finite points, a
 different drawing, or more than `MAX_INSPECTION_POINTS` (10 million) points.
@@ -1036,11 +1057,15 @@ shared across controls. Time is O(controls · datums) plus the fit costs, and ea
 fit is linear in its points per simplex pivot. The scale benchmark evaluates
 10,000 MMC position controls of 72 points each, plus a 100,000-point flatness
 surface, against one shared frame, in 0.19 s; and 1,000 cylindricity plus 1,000
-circularity controls (612,000 points) in 0.13 s (1 s budgets).
+circularity controls (612,000 points) in 0.13 s. It also evaluates 1,000
+circular plus 1,000 total runout controls (471,600 points), with each of 100
+bore datum axes fitted once, in 0.03 s. All three cases have 1 s budgets.
+Runout readings cost O(n log n) per control after the datum fit.
 
-**Not yet covered.** Datum features of size, datum shift, pattern and composite
-evaluation, measured datum targets, profile against nominal surfaces,
-straightness, and runout. Measurement uncertainty is not modeled.
+**Not yet covered.** Datum shift (material boundaries), planar datum features
+of size (width centre planes), common datums such as A-B, pattern and composite
+evaluation, measured datum targets, profile against nominal surfaces, conical
+runout surfaces, and straightness. Measurement uncertainty is not modeled.
 
 ## Surface texture (schema 71)
 

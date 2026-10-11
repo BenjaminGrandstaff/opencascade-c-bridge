@@ -118,6 +118,7 @@ pub(super) fn page() -> DrawingDefinition {
         label: label.into(),
         feature_of_size: false,
         attachment: attachment(anchor),
+        size_kind: None,
     };
     DrawingDefinition {
         datum_reference_frames: vec![DrawingDatumReferenceFrame {
@@ -690,5 +691,255 @@ fn cylindricity_frees_the_axis_and_keeps_taper() {
     assert!(
         matches!(&straight.result, ControlResult::NotEvaluated(r) if r.contains("determine")),
         "{straight:?}"
+    );
+}
+
+/// Plate drawing with a bore datum feature D (internal, on the hole axis) and
+/// circular/total runout controls on `anchor` relative to `datums`.
+fn runout_page(
+    anchor: &str,
+    datums: &[&str],
+    kind: Option<FeatureOfSizeKind>,
+) -> DrawingDefinition {
+    let mut page = page();
+    page.datum_features.push(DrawingDatumFeature {
+        id: "D".into(),
+        label: "D".into(),
+        feature_of_size: true,
+        attachment: attachment("hole"),
+        size_kind: kind,
+    });
+    page.datum_reference_frames
+        .push(DrawingDatumReferenceFrame {
+            id: "AD".into(),
+            datums: ["A", "D"]
+                .iter()
+                .map(|d| DrawingDatumReference {
+                    datum_feature: (*d).into(),
+                    boundary: DatumMaterialBoundary::Regardless,
+                })
+                .collect(),
+        });
+    page.feature_control_frames = vec![
+        control(
+            "circ",
+            anchor,
+            GeometricCharacteristic::CircularRunout,
+            0.05,
+            datums,
+        ),
+        control(
+            "total",
+            anchor,
+            GeometricCharacteristic::TotalRunout,
+            0.05,
+            datums,
+        ),
+    ];
+    page
+}
+
+fn runout_record(datum: Vec<[f64; 3]>, surface: Vec<[f64; 3]>) -> InspectionRecord {
+    InspectionRecord {
+        drawing: "plate".into(),
+        surface_textures: Vec::new(),
+        datum_features: vec![
+            measured("A", grid(|u, v| [60.0 * u, 40.0 * v, 0.0])),
+            measured("D", datum),
+        ],
+        controls: vec![
+            measured("circ", surface.clone()),
+            measured("total", surface),
+        ],
+    }
+}
+
+#[test]
+fn radial_runout_is_indicator_movement_about_the_fitted_bore_axis() {
+    let definition = plate();
+    let mut graph = InstanceGraph::new(&definition);
+    graph.add_base("part", HashMap::new(), "test").unwrap();
+    let page = runout_page("hole", &["D"], Some(FeatureOfSizeKind::Internal));
+    // The bore sits on a shifted, tilted axis; runout is measured about it.
+    let base = [30.05, 19.97, 0.0];
+    let axis = [0.002, -0.001, 1.0];
+    let bore = cylinder(base, axis, |_| 5.0);
+    // A coaxial boss has no runout.
+    let report = page
+        .evaluate_inspection(
+            &graph,
+            &runout_record(bore.clone(), cylinder(base, axis, |_| 8.0)),
+        )
+        .unwrap();
+    assert!(evaluated(&report, "circ").deviation_mm < 1e-6);
+    assert!(evaluated(&report, "total").deviation_mm < 1e-6);
+    // An eccentric boss (0.02 mm offset) reads twice its eccentricity; a
+    // 0.03 mm taper over its length adds to total but not circular runout.
+    let offset = [base[0] + 0.02, base[1], base[2]];
+    let report = page
+        .evaluate_inspection(
+            &graph,
+            &runout_record(bore.clone(), cylinder(offset, axis, |s| 8.0 + 0.003 * s)),
+        )
+        .unwrap();
+    let circular = evaluated(&report, "circ");
+    let total = evaluated(&report, "total");
+    assert!((circular.deviation_mm - 0.04).abs() < 1e-5, "{circular:?}");
+    assert!(circular.conforms);
+    assert!((total.deviation_mm - 0.07).abs() < 1e-5, "{total:?}");
+    assert!(!total.conforms);
+    assert_eq!(circular.bonus_mm, 0.0);
+    // The named A|D frame reports the secondary axis, held normal to A.
+    let axis = &report.datum_axes[0];
+    assert_eq!(axis.datum_features, ["A", "D"]);
+    assert!((axis.direction.z.abs() - 1.0).abs() < 1e-9);
+    assert!(
+        report
+            .datum_frames
+            .iter()
+            .all(|f| f.datum_features != ["A", "D"])
+    );
+}
+
+#[test]
+fn axis_datums_use_the_mating_envelope_for_holes_and_shafts() {
+    let definition = plate();
+    let mut graph = InstanceGraph::new(&definition);
+    graph.add_base("part", HashMap::new(), "test").unwrap();
+    // A three-lobed datum: the inscribed (hole) and circumscribed (shaft)
+    // envelopes have different sizes but the same centered axis.
+    let lobed: Vec<[f64; 3]> = (0..=10)
+        .flat_map(|k| section(HOLE, k as f64, |a| 0.01 * (3.0 * a).cos()))
+        .collect();
+    let surface = cylinder([HOLE[0], HOLE[1], 0.0], [0.0, 0.0, 1.0], |_| 8.0);
+    for (kind, size) in [
+        (FeatureOfSizeKind::Internal, 9.98),
+        (FeatureOfSizeKind::External, 10.02),
+    ] {
+        let mut page = runout_page("hole", &["D"], Some(kind));
+        page.datum_reference_frames
+            .push(DrawingDatumReferenceFrame {
+                id: "D-only".into(),
+                datums: vec![DrawingDatumReference {
+                    datum_feature: "D".into(),
+                    boundary: DatumMaterialBoundary::Regardless,
+                }],
+            });
+        let report = page
+            .evaluate_inspection(&graph, &runout_record(lobed.clone(), surface.clone()))
+            .unwrap();
+        let axis = report
+            .datum_axes
+            .iter()
+            .find(|a| a.datum_features == ["D"])
+            .unwrap();
+        assert!(
+            (axis.mating_size_mm - size).abs() < 1e-6,
+            "{kind:?} {axis:?}"
+        );
+        assert!((axis.origin_mm.x - HOLE[0]).abs() < 1e-6);
+        assert!(evaluated(&report, "total").deviation_mm < 1e-5);
+    }
+}
+
+#[test]
+fn axial_runout_reads_face_wobble_per_circle_and_over_the_face() {
+    let definition = plate();
+    let mut graph = InstanceGraph::new(&definition);
+    graph.add_base("part", HashMap::new(), "test").unwrap();
+    // Face "top" relative to A (bottom plane) then D (bore axis normal to A).
+    let page = runout_page("top", &["A", "D"], Some(FeatureOfSizeKind::Internal));
+    let bore = cylinder([HOLE[0], HOLE[1], 0.0], [0.0, 0.0, 1.0], |_| 5.0);
+    // Rings of radius 6-9 mm: a 0.001 tilt wobbles each circle by 2·0.001·ρ,
+    // and a 0.002 dish adds 0.002·ρ between circles.
+    let face: Vec<[f64; 3]> = [6.0, 7.0, 8.0, 9.0]
+        .into_iter()
+        .flat_map(|rho: f64| {
+            (0..36).map(move |i| {
+                let a = i as f64 * std::f64::consts::TAU / 36.0;
+                [
+                    HOLE[0] + rho * a.cos(),
+                    HOLE[1] + rho * a.sin(),
+                    10.0 + 0.001 * rho * a.cos() + 0.002 * rho,
+                ]
+            })
+        })
+        .collect();
+    let report = page
+        .evaluate_inspection(&graph, &runout_record(bore, face))
+        .unwrap();
+    let circular = evaluated(&report, "circ");
+    let total = evaluated(&report, "total");
+    assert!((circular.deviation_mm - 0.018).abs() < 1e-9, "{circular:?}");
+    assert!((total.deviation_mm - 0.021).abs() < 1e-9, "{total:?}");
+    assert!(circular.conforms && total.conforms);
+}
+
+#[test]
+fn runout_reports_unsupported_setups_and_size_kind_validates() {
+    let definition = plate();
+    let mut graph = InstanceGraph::new(&definition);
+    graph.add_base("part", HashMap::new(), "test").unwrap();
+    let bore = cylinder([HOLE[0], HOLE[1], 0.0], [0.0, 0.0, 1.0], |_| 5.0);
+    let surface = cylinder([HOLE[0], HOLE[1], 0.0], [0.0, 0.0, 1.0], |_| 8.0);
+    let side: Vec<[f64; 3]> = grid(|u, v| [0.0, 40.0 * u, 10.0 * v]);
+    for (page, points, reason) in [
+        (
+            runout_page("hole", &["A"], Some(FeatureOfSizeKind::Internal)),
+            surface.clone(),
+            "datum axis",
+        ),
+        (
+            runout_page("hole", &["D"], None),
+            surface.clone(),
+            "size kind",
+        ),
+        (
+            runout_page("left", &["D"], Some(FeatureOfSizeKind::Internal)),
+            side,
+            "not perpendicular",
+        ),
+    ] {
+        let report = page
+            .evaluate_inspection(&graph, &runout_record(bore.clone(), points))
+            .unwrap();
+        for control in &report.controls {
+            assert!(
+                matches!(&control.result, ControlResult::NotEvaluated(r) if r.contains(reason)),
+                "{control:?}"
+            );
+        }
+    }
+    // Orientation to an axis datum is reported, not misread as a plane.
+    let mut page = runout_page("top", &["D"], Some(FeatureOfSizeKind::Internal));
+    page.feature_control_frames[0].characteristic = GeometricCharacteristic::Perpendicularity;
+    let report = page
+        .evaluate_inspection(
+            &graph,
+            &runout_record(bore, grid(|u, v| [60.0 * u, 40.0 * v, 10.0])),
+        )
+        .unwrap();
+    assert!(matches!(
+        &report.controls[0].result,
+        ControlResult::NotEvaluated(_)
+    ));
+    // A size kind needs a declared feature of size; it persists in JSON.
+    let mut invalid = runout_page("hole", &["D"], Some(FeatureOfSizeKind::Internal));
+    invalid.datum_features.last_mut().unwrap().feature_of_size = false;
+    assert!(
+        invalid
+            .validate(&graph)
+            .unwrap_err()
+            .message
+            .contains("size kind")
+    );
+    let page = runout_page("hole", &["D"], Some(FeatureOfSizeKind::External));
+    let mut document = ModelDocument::from_graph(&graph);
+    document.drawings.push(page);
+    let json = document.to_json_pretty().unwrap();
+    assert!(json.contains("\"size_kind\": \"external\""));
+    assert_eq!(
+        ModelDocument::from_json(&json).unwrap().drawings,
+        document.drawings
     );
 }

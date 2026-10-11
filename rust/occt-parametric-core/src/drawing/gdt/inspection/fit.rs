@@ -521,3 +521,72 @@ pub fn cylinder_zone(points: &[Vec3], axis: Vec3) -> Result<f64, ModelError> {
     }
     Ok(best * size)
 }
+
+/// Axis (point, unit direction) and radius of the smallest circumscribed
+/// (`Fit::Circumscribed`) or largest inscribed (`Fit::Inscribed`) cylinder of
+/// the points, the axis free to shift and tilt from `axis`: the actual mating
+/// envelope of an external or internal cylindrical feature. The radius is
+/// exact for the returned axis. O(linearizations · pivots · n).
+pub fn fit_cylinder(
+    points: &[Vec3],
+    axis: Vec3,
+    fit: Fit,
+) -> Result<(Vec3, Vec3, f64), ModelError> {
+    if points.len() < 6 || fit == Fit::Zone {
+        return Err(ModelError::new(
+            "a measured cylinder needs at least six points",
+        ));
+    }
+    let (center, size) = normalization(points);
+    let q: Vec<Vec3> = points
+        .iter()
+        .map(|&p| scale(subtract(p, center), 1.0 / size))
+        .collect();
+    let radial = |p: Vec3, origin: Vec3, direction: Vec3| {
+        let d = subtract(p, origin);
+        let along = dot(d, direction);
+        let r = subtract(d, scale(direction, along));
+        (length(r), r, along)
+    };
+    let radius = |origin: Vec3, direction: Vec3| {
+        let distances = q.iter().map(|&p| radial(p, origin, direction).0);
+        if fit == Fit::Inscribed {
+            distances.fold(f64::INFINITY, f64::min)
+        } else {
+            distances.fold(0.0, f64::max)
+        }
+    };
+    let better = |a: f64, b: f64| if fit == Fit::Inscribed { a > b } else { a < b };
+    let mut origin = Vec3::new(0.0, 0.0, 0.0);
+    let mut direction = unit(axis)?;
+    let mut best = (radius(origin, direction), origin, direction);
+    for _ in 0..MAX_LINEARIZATIONS {
+        let (e1, e2) = basis(direction);
+        let mut t = Vec::with_capacity(q.len());
+        let mut phi = Vec::with_capacity(q.len() * 4);
+        for &p in &q {
+            let (rho, r, along) = radial(p, origin, direction);
+            if rho < 1e-12 {
+                return Err(ModelError::new("measured points lie on the cylinder axis"));
+            }
+            let (a, b) = (dot(r, e1) / rho, dot(r, e2) / rho);
+            t.push(rho);
+            phi.extend([a, b, a * along, b * along]);
+        }
+        let step = chebyshev(&t, &phi, 4, fit)?;
+        origin = add(origin, add(scale(e1, step[0]), scale(e2, step[1])));
+        direction = unit(add(direction, add(scale(e1, step[2]), scale(e2, step[3]))))?;
+        let r = radius(origin, direction);
+        if better(r, best.0) {
+            best = (r, origin, direction);
+        }
+        if step.iter().all(|s| s.abs() < 1e-13) {
+            break;
+        }
+    }
+    let (r, origin, direction) = best;
+    if !(r.is_finite() && r > 0.0) {
+        return Err(ModelError::new("measured cylinder has no positive radius"));
+    }
+    Ok((add(center, scale(origin, size)), direction, r * size))
+}

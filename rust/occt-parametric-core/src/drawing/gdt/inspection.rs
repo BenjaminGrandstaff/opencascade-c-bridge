@@ -10,7 +10,7 @@
 use super::*;
 use crate::assembly::{add, length, scale, unit};
 pub mod fit;
-use fit::{Fit, circle_zone, cylinder_zone, fit_circle, fit_plane};
+use fit::{Fit, circle_zone, cylinder_zone, fit_circle, fit_cylinder, fit_plane};
 
 /// Upper bound on measured points in one record, which bounds memory and time.
 pub const MAX_INSPECTION_POINTS: usize = 10_000_000;
@@ -111,6 +111,8 @@ pub struct MeasuredDatumFrame {
 pub struct InspectionReport {
     pub drawing: String,
     pub datum_frames: Vec<MeasuredDatumFrame>,
+    /// Named datum reference frames whose last datum is a measured axis.
+    pub datum_axes: Vec<MeasuredDatumAxis>,
     /// One entry per effective feature control frame, in drawing order.
     pub controls: Vec<ControlInspection>,
     /// One entry per surface texture requirement, in drawing order.
@@ -131,7 +133,32 @@ impl InspectionReport {
     }
 }
 
-type Simulators = Vec<(Vec3, Vec3)>;
+/// A datum simulator: a contacting plane (point, outward normal) or the axis
+/// of an actual mating envelope (point, unit direction, mating size).
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Simulator {
+    Plane(Vec3, Vec3),
+    Axis(Vec3, Vec3, f64),
+}
+type Simulators = Vec<Simulator>;
+impl Simulator {
+    fn plane_normal(self) -> Result<Vec3, String> {
+        match self {
+            Self::Plane(_, normal) => Ok(normal),
+            Self::Axis(..) => Err("orientation to an axis datum is not evaluated".into()),
+        }
+    }
+}
+
+/// A datum axis established from a measured cylindrical datum feature of size.
+#[derive(Clone, Debug, PartialEq)]
+pub struct MeasuredDatumAxis {
+    pub datum_features: Vec<String>,
+    pub origin_mm: Vec3,
+    pub direction: Vec3,
+    /// Actual mating size (diameter) of the axis datum feature.
+    pub mating_size_mm: f64,
+}
 
 struct Context<'a, 'g> {
     graph: &'a InstanceGraph<'g>,
@@ -194,6 +221,7 @@ impl DrawingDefinition {
             });
         }
         let mut datum_frames = Vec::new();
+        let mut datum_axes = Vec::new();
         for reference in &self.datum_reference_frames {
             let ids: Vec<String> = reference
                 .datums
@@ -205,12 +233,23 @@ impl DrawingDefinition {
                     datum_features: ids,
                     frame,
                 });
+            } else if let Ok(Some(Simulator::Axis(origin, direction, size))) = context
+                .simulators(&reference.datums)
+                .map(|s| s.last().copied())
+            {
+                datum_axes.push(MeasuredDatumAxis {
+                    datum_features: ids,
+                    origin_mm: origin,
+                    direction,
+                    mating_size_mm: size,
+                });
             }
         }
         let surface_textures = self.inspect_textures(&record.surface_textures, &mut total)?;
         Ok(InspectionReport {
             drawing: self.id.clone(),
             datum_frames,
+            datum_axes,
             controls,
             surface_textures,
         })
@@ -360,7 +399,7 @@ impl Context<'_, '_> {
         let Some((last, prefix)) = datums.split_last() else {
             return Ok(Vec::new());
         };
-        let mut planes = self.simulators(prefix)?;
+        let mut simulators = self.simulators(prefix)?;
         if last.boundary != DatumMaterialBoundary::Regardless {
             return Err("datum shift at a material boundary is not evaluated".into());
         }
@@ -369,18 +408,33 @@ impl Context<'_, '_> {
             .measured_datums
             .get(id)
             .ok_or_else(|| format!("datum feature '{id}' was not measured"))?;
+        let feature = self.features[id];
+        if let ResolvedDatum::Axis { direction, .. } = self.nominal(&feature.attachment.anchor)? {
+            simulators.push(self.axis_simulator(feature, points, direction, &simulators)?);
+            return Ok(simulators);
+        }
+        if simulators.iter().any(|s| matches!(s, Simulator::Axis(..))) {
+            return Err("plane datums after an axis datum are not evaluated".into());
+        }
+        let planes: Vec<Vec3> = simulators
+            .iter()
+            .map(|s| match s {
+                Simulator::Plane(_, n) => *n,
+                Simulator::Axis(_, d, _) => *d,
+            })
+            .collect();
         let (_, nominal) = self.nominal_datum(id)?;
         let (normal, axes) = match planes.as_slice() {
             [] => {
                 let (u, v) = perpendiculars(nominal);
                 (nominal, vec![u, v])
             }
-            [(_, primary)] => (
+            [primary] => (
                 unit(subtract(nominal, scale(*primary, dot(nominal, *primary))))
                     .map_err(|_| "secondary datum plane is parallel to the primary".to_string())?,
                 vec![*primary],
             ),
-            [(_, primary), (_, secondary), ..] => {
+            [primary, secondary, ..] => {
                 let n = cross(*primary, *secondary);
                 (
                     if dot(n, nominal) < 0.0 {
@@ -393,8 +447,69 @@ impl Context<'_, '_> {
             }
         };
         let fitted = fit_plane(points, normal, &axes).map_err(|e| e.to_string())?;
-        planes.push((scale(fitted.normal, fitted.contact), fitted.normal));
-        Ok(planes)
+        simulators.push(Simulator::Plane(
+            scale(fitted.normal, fitted.contact),
+            fitted.normal,
+        ));
+        Ok(simulators)
+    }
+
+    /// Axis of the actual mating envelope of a cylindrical datum feature of
+    /// size: the largest inscribed cylinder of a hole or the smallest
+    /// circumscribed cylinder of a shaft. As primary the axis is free; after
+    /// a primary plane it is held perpendicular to that plane.
+    fn axis_simulator(
+        &self,
+        feature: &DrawingDatumFeature,
+        points: &[Vec3],
+        nominal: Vec3,
+        prefix: &[Simulator],
+    ) -> Result<Simulator, String> {
+        let kind = feature.size_kind.ok_or_else(|| {
+            format!(
+                "axis datum feature '{}' needs a declared size kind (internal or external)",
+                feature.id
+            )
+        })?;
+        let fit = match kind {
+            FeatureOfSizeKind::Internal => Fit::Inscribed,
+            FeatureOfSizeKind::External => Fit::Circumscribed,
+        };
+        let nominal = unit(nominal).map_err(|e| e.to_string())?;
+        match prefix {
+            [] => {
+                let (origin, direction, radius) =
+                    fit_cylinder(points, nominal, fit).map_err(|e| e.to_string())?;
+                let direction = if dot(direction, nominal) < 0.0 {
+                    scale(direction, -1.0)
+                } else {
+                    direction
+                };
+                Ok(Simulator::Axis(origin, direction, 2.0 * radius))
+            }
+            [Simulator::Plane(point, normal)] => {
+                if length(cross(nominal, *normal)) > 1e-9 {
+                    return Err(
+                        "a secondary axis datum must be nominally perpendicular to the primary plane"
+                            .into(),
+                    );
+                }
+                let (u, v) = perpendiculars(*normal);
+                let projected: Vec<[f64; 2]> = points
+                    .iter()
+                    .map(|&p| {
+                        let d = subtract(p, *point);
+                        [dot(d, u), dot(d, v)]
+                    })
+                    .collect();
+                let (center, radius) = fit_circle(&projected, fit).map_err(|e| e.to_string())?;
+                let origin = add(*point, add(scale(u, center[0]), scale(v, center[1])));
+                Ok(Simulator::Axis(origin, *normal, 2.0 * radius))
+            }
+            _ => Err(
+                "axis datums are evaluated as the primary datum or after one primary plane".into(),
+            ),
+        }
     }
 
     fn measured_frame(
@@ -416,9 +531,11 @@ impl Context<'_, '_> {
             .enumerate()
             .map(|(i, r)| {
                 let geometry = match planes {
-                    Some(p) => ResolvedDatum::Plane {
-                        origin: p[i].0,
-                        normal: p[i].1,
+                    Some(p) => match p[i] {
+                        Simulator::Plane(origin, normal) => ResolvedDatum::Plane { origin, normal },
+                        Simulator::Axis(origin, direction, _) => {
+                            ResolvedDatum::Axis { origin, direction }
+                        }
                     },
                     None => {
                         self.nominal(&self.features[r.datum_feature.as_str()].attachment.anchor)?
@@ -461,6 +578,12 @@ impl Context<'_, '_> {
             GeometricCharacteristic::Circularity | GeometricCharacteristic::Cylindricity
         ) {
             return self.round_form(frame, points, tolerance);
+        }
+        if matches!(
+            c,
+            GeometricCharacteristic::CircularRunout | GeometricCharacteristic::TotalRunout
+        ) {
+            return self.runout(frame, points, tolerance);
         }
         if frame.material != ToleranceMaterialCondition::Regardless
             || frame.zone != GeometricToleranceZone::Characteristic
@@ -548,6 +671,95 @@ impl Context<'_, '_> {
         })
     }
 
+    /// Runout as full indicator movement about the datum axis established by
+    /// the control's datums (an axis datum feature of size, alone or after a
+    /// primary plane). Surfaces coaxial with the nominal axis are indicated
+    /// radially; faces perpendicular to it, axially. Circular runout is the
+    /// worst circular element (points sharing an axial position, or a radius
+    /// for faces, within 1e-3 mm or 1e-6 of the span); total runout spans all
+    /// points. O(n log n) after the datum fit.
+    fn runout(
+        &mut self,
+        frame: &DrawingFeatureControlFrame,
+        points: &[Vec3],
+        tolerance: f64,
+    ) -> Result<ControlMeasurement, String> {
+        let Some(Simulator::Axis(origin, axis, _)) =
+            self.simulators(&frame.datums)?.last().copied()
+        else {
+            return Err(
+                "runout needs a datum axis from a measured cylindrical datum feature".into(),
+            );
+        };
+        // The surface's relation to the datum axis is design intent: compare
+        // nominal directions, not the measured (tilted) axis.
+        let datum = frame
+            .datums
+            .last()
+            .map(|d| d.datum_feature.as_str())
+            .unwrap_or_default();
+        let ResolvedDatum::Axis {
+            direction: datum_axis,
+            ..
+        } = self.nominal(&self.features[datum].attachment.anchor)?
+        else {
+            return Err(
+                "runout needs a datum axis from a measured cylindrical datum feature".into(),
+            );
+        };
+        let datum_axis = unit(datum_axis).map_err(|e| e.to_string())?;
+        let radial = match self.nominal(&frame.attachment.anchor)? {
+            ResolvedDatum::Axis { direction, .. } => {
+                let direction = unit(direction).map_err(|e| e.to_string())?;
+                if length(cross(direction, datum_axis)) > 1e-6 {
+                    return Err("runout surface axis is not coaxial with the datum axis".into());
+                }
+                true
+            }
+            ResolvedDatum::Plane { normal, .. } => {
+                let normal = unit(normal).map_err(|e| e.to_string())?;
+                if length(cross(normal, datum_axis)) > 1e-6 {
+                    return Err("runout face is not perpendicular to the datum axis".into());
+                }
+                false
+            }
+            _ => {
+                return Err("runout needs an axis or plane anchor on the controlled surface".into());
+            }
+        };
+        // (element key, indicated value): radial readings are grouped by axial
+        // position, axial (face) readings by radius.
+        let mut readings: Vec<(f64, f64)> = points
+            .iter()
+            .map(|&p| {
+                let d = subtract(p, origin);
+                let along = dot(d, axis);
+                let rho = length(subtract(d, scale(axis, along)));
+                if radial { (along, rho) } else { (rho, along) }
+            })
+            .collect();
+        let deviation = if frame.characteristic == GeometricCharacteristic::TotalRunout {
+            spread(readings.iter().map(|r| r.1))
+        } else {
+            let mut worst: f64 = 0.0;
+            for element in elements(&mut readings) {
+                if element.len() < 3 {
+                    return Err("each circular runout element needs at least three points".into());
+                }
+                worst = worst.max(spread(element.iter().map(|r| r.1)));
+            }
+            worst
+        };
+        Ok(ControlMeasurement {
+            deviation_mm: deviation,
+            tolerance_mm: tolerance,
+            bonus_mm: 0.0,
+            actual_size_mm: None,
+            size_conforms: None,
+            conforms: deviation <= tolerance,
+        })
+    }
+
     /// Feature normal at its basic orientation to the measured datums, and the
     /// rotations those datums leave free.
     fn oriented(
@@ -558,7 +770,7 @@ impl Context<'_, '_> {
         let datums = &frame.datums[..frame.datums.len().min(2)];
         let planes = self.simulators(datums)?;
         let (_, a) = self.nominal_datum(&datums[0].datum_feature)?;
-        let measured_a = planes[0].1;
+        let measured_a = planes[0].plane_normal()?;
         let reference = match datums.get(1) {
             Some(d) => self.nominal_datum(&d.datum_feature)?.1,
             None => nominal,
@@ -566,7 +778,7 @@ impl Context<'_, '_> {
         let e = unit(subtract(reference, scale(a, dot(reference, a))))
             .unwrap_or_else(|_| perpendiculars(a).0);
         let measured_e = match planes.get(1) {
-            Some(&(_, n)) => n,
+            Some(simulator) => simulator.plane_normal()?,
             None => unit(subtract(e, scale(measured_a, dot(e, measured_a))))
                 .map_err(|e| e.to_string())?,
         };
@@ -666,6 +878,31 @@ impl Context<'_, '_> {
             conforms: size_conforms && deviation <= tolerance + bonus,
         })
     }
+}
+
+/// Largest minus smallest value; zero for an empty sequence.
+fn spread(values: impl Iterator<Item = f64>) -> f64 {
+    let (lo, hi) = values.fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), v| {
+        (lo.min(v), hi.max(v))
+    });
+    if lo.is_finite() { hi - lo } else { 0.0 }
+}
+
+/// Sorts readings by key and splits them where consecutive keys differ by
+/// more than 1e-3 mm or 1e-6 of the key span.
+fn elements(readings: &mut [(f64, f64)]) -> Vec<&[(f64, f64)]> {
+    readings.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let span = readings.last().map_or(0.0, |r| r.0) - readings.first().map_or(0.0, |r| r.0);
+    let gap = (1e-6 * span).max(1e-3);
+    let mut out = Vec::new();
+    let mut start = 0;
+    for end in 1..=readings.len() {
+        if end == readings.len() || readings[end].0 - readings[end - 1].0 > gap {
+            out.push(&readings[start..end]);
+            start = end;
+        }
+    }
+    out
 }
 
 /// Two unit vectors completing a right-handed basis with unit `n`.

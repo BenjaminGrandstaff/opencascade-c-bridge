@@ -127,6 +127,7 @@ fn fixture() -> ModelDocument {
             label: id.into(),
             feature_of_size: false,
             attachment: attachment.clone(),
+            size_kind: None,
         });
     }
     page.datum_reference_frames

@@ -22,6 +22,7 @@ fn gdt_page() -> DrawingDefinition {
                 anchor: DatumRef::new("part", anchor),
                 offset_mm: [20.0, 30.0],
             },
+            size_kind: None,
         });
     }
     page.feature_control_frames

@@ -43,6 +43,10 @@ pub struct DrawingDatumFeature {
     /// Explicit manufacturing declaration, not inferred from the anchor kind.
     pub feature_of_size: bool,
     pub attachment: DrawingGdtAttachment,
+    /// Internal (hole) or external (shaft) feature of size, which selects the
+    /// actual mating envelope that simulates a measured axis datum (schema 135).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size_kind: Option<FeatureOfSizeKind>,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -229,6 +233,11 @@ pub fn validate(
         {
             return Err(ModelError::new(
                 "datum features need unique IDs and unique one-to-three-letter uppercase labels excluding I/O/Q",
+            ));
+        }
+        if feature.size_kind.is_some() && !feature.feature_of_size {
+            return Err(ModelError::new(
+                "datum feature size kind requires a declared feature of size",
             ));
         }
         anchor(&feature.attachment, views, graph)?;
