@@ -149,6 +149,17 @@ impl Session {
                     points.extend([*start, *middle, *end].map(RawVec3::from));
                     (1, 0, zero, zero)
                 }
+                CurveSegment::EllipseArc {
+                    center,
+                    major,
+                    minor,
+                    start,
+                    end,
+                    clockwise,
+                } => {
+                    points.extend([*center, *major, *minor, *start, *end].map(RawVec3::from));
+                    (4, i32::from(*clockwise), zero, zero)
+                }
                 CurveSegment::BSpline {
                     non_clamped,
                     periodic,

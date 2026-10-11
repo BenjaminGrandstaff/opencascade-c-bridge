@@ -55,6 +55,22 @@ impl SketchDefinition {
         let c = solution.points[&ellipse.center];
         let a = solution.points[&ellipse.major];
         let b = solution.points[&ellipse.minor];
+        if let Some((start, end)) = ellipse.arc_ends() {
+            let at = |id: &str| transform(solution.points[id]);
+            return Ok(session.create_curve_wire(
+                &[ellipse.native_arc(
+                    [
+                        at(&ellipse.center),
+                        at(&ellipse.major),
+                        at(&ellipse.minor),
+                        at(start),
+                        at(end),
+                    ],
+                    normal,
+                )],
+                false,
+            )?);
+        }
         Ok(session.create_ellipse_wire_axes(
             transform(c),
             normal,
@@ -112,7 +128,7 @@ impl SketchDefinition {
                             radius,
                         )?)
                     }
-                    [entity @ Entity::Ellipse(_)] => self.entity_wire(
+                    [entity @ Entity::Ellipse(e)] if e.arc_ends().is_none() => self.entity_wire(
                         session,
                         *entity,
                         &solution,
@@ -229,7 +245,9 @@ impl SketchDefinition {
             let center = solution.points[&circle.center];
             let radius = line_length((center, solution.points[&circle.rim]));
             session.create_circle_wire(transform(center), cross(x_axis, y_axis), radius)?
-        } else if let [Entity::Ellipse(ellipse)] = profile.as_slice() {
+        } else if let [Entity::Ellipse(ellipse)] = profile.as_slice()
+            && ellipse.arc_ends().is_none()
+        {
             if !closed && self.profile_operations.is_empty() {
                 return Err(ModelError::new(
                     "open sketch profile cannot be a full ellipse",
@@ -526,6 +544,23 @@ impl SketchDefinition {
                         end_tangent: away(end)?.map(direction),
                         periodic,
                     }
+                }
+                Entity::Ellipse(e) if e.arc_ends().is_some() => {
+                    let at = |id: &str| transform(solution.points[id]);
+                    let normal = cross(
+                        direction(SketchPoint2 { x: 1.0, y: 0.0 }),
+                        direction(SketchPoint2 { x: 0.0, y: 1.0 }),
+                    );
+                    e.native_arc(
+                        [
+                            at(&e.center),
+                            at(&e.major),
+                            at(&e.minor),
+                            at(start),
+                            at(end),
+                        ],
+                        normal,
+                    )
                 }
                 Entity::Circle(_) | Entity::Ellipse(_) => {
                     unreachable!("closed conics handled above")

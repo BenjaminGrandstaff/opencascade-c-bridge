@@ -1247,3 +1247,69 @@ fn curve_contact_data_rejects_c0_knots_multiple_edges_and_bad_handles_without_le
     drop((wire, box_shape, multi, zero, periodic));
     assert_eq!(session.shape_count().unwrap(), 0);
 }
+
+#[test]
+fn elliptical_arc_segments_are_exact_in_either_sense_and_axis_order() {
+    let session = Session::new().unwrap();
+    let v = |x: f64, y: f64| Vec3::new(x, y, 0.0);
+    // Half ellipse (a = 10, b = 4) above the major axis, closed by a chord:
+    // counterclockwise from (10, 0) to (−10, 0) about +z.
+    for (major, minor) in [(v(10., 0.), v(0., 4.)), (v(0., 4.), v(10., 0.))] {
+        // Swapping the vertices flips the normal, so the same half needs
+        // the clockwise flag.
+        let clockwise = major.x == 0.0;
+        let wire = session
+            .create_curve_wire(
+                &[
+                    CurveSegment::EllipseArc {
+                        center: v(0., 0.),
+                        major,
+                        minor,
+                        start: v(10., 0.),
+                        end: v(-10., 0.),
+                        clockwise,
+                    },
+                    CurveSegment::Line {
+                        start: v(-10., 0.),
+                        end: v(10., 0.),
+                    },
+                ],
+                true,
+            )
+            .unwrap();
+        let face = session.create_face_from_wire(&wire).unwrap();
+        let area = session.surface_area(&face).unwrap();
+        assert!((area - std::f64::consts::PI * 20.).abs() < 1e-9, "{area}");
+        let bounds = session.exact_bounds(&face).unwrap();
+        assert!((bounds.max.y - 4.).abs() < 1e-9 && bounds.min.y.abs() < 1e-9);
+        let edge = session.subshape(&wire, ShapeType::Edge, 0).unwrap();
+        let half_perimeter = session.edge_length(&edge).unwrap();
+        assert!(
+            (half_perimeter - 23.013_112_595_664_847).abs() < 1e-9,
+            "{half_perimeter}"
+        );
+    }
+    // Rejected inputs fail without storing shapes.
+    let count = session.shape_count().unwrap();
+    for (minor, start, message) in [
+        (v(1., 4.), v(10., 0.), "not perpendicular"),
+        (v(0., 4.), v(10., 1.), "not on the ellipse"),
+        (v(0., 0.), v(10., 0.), "positive semi-axes"),
+    ] {
+        let error = session
+            .create_curve_wire(
+                &[CurveSegment::EllipseArc {
+                    center: v(0., 0.),
+                    major: v(10., 0.),
+                    minor,
+                    start,
+                    end: v(-10., 0.),
+                    clockwise: false,
+                }],
+                false,
+            )
+            .unwrap_err();
+        assert!(error.message.contains(message), "{}", error.message);
+    }
+    assert_eq!(session.shape_count().unwrap(), count);
+}

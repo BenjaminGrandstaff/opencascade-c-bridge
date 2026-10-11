@@ -61,6 +61,51 @@ pub struct SketchEllipse {
     pub center: String,
     pub major: String,
     pub minor: String,
+    /// Elliptical arc ends (schema 124): both or neither. The arc runs from
+    /// `start` to `end` counterclockwise in the sketch plane unless
+    /// `clockwise`; both points are held on the ellipse.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end: Option<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub clockwise: bool,
+}
+
+impl SketchEllipse {
+    /// Arc ends, or `None` for a full ellipse.
+    pub fn arc_ends(&self) -> Option<(&str, &str)> {
+        Some((self.start.as_deref()?, self.end.as_deref()?))
+    }
+
+    /// The native exact arc through placed `[center, major, minor, start,
+    /// end]`. Native arcs turn about (major − center) × (minor − center);
+    /// the sketch's sense is about the plane `normal`, so the flag flips when
+    /// the axis frame is left-handed in the plane.
+    pub(crate) fn native_arc(
+        &self,
+        [center, major, minor, start, end]: [Vec3; 5],
+        normal: Vec3,
+    ) -> CurveSegment {
+        let (u, v) = (
+            Vec3::new(major.x - center.x, major.y - center.y, major.z - center.z),
+            Vec3::new(minor.x - center.x, minor.y - center.y, minor.z - center.z),
+        );
+        let axes = Vec3::new(
+            u.y * v.z - u.z * v.y,
+            u.z * v.x - u.x * v.z,
+            u.x * v.y - u.y * v.x,
+        );
+        let flipped = axes.x * normal.x + axes.y * normal.y + axes.z * normal.z < 0.0;
+        CurveSegment::EllipseArc {
+            center,
+            major,
+            minor,
+            start,
+            end,
+            clockwise: self.clockwise != flipped,
+        }
+    }
 }
 
 /// Saved edits to the solved profile. Constraints refer to the source entities;
@@ -790,7 +835,9 @@ impl<'a> Entity<'a> {
         match self {
             Self::Line(line) => (&line.start, &line.end),
             Self::Circle(circle) => (&circle.rim, &circle.rim),
-            Self::Ellipse(ellipse) => (&ellipse.major, &ellipse.major),
+            Self::Ellipse(ellipse) => ellipse
+                .arc_ends()
+                .unwrap_or((&ellipse.major, &ellipse.major)),
             Self::Arc(arc) => (&arc.start, &arc.end),
             // Closed periodic profiles have no named geometric seam endpoint.
             // This private identity is used only for standalone cycle checks.

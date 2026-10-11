@@ -888,5 +888,20 @@ with tempfile.TemporaryDirectory(prefix='occb-mcp-scale-') as root:
         elapsed=time.monotonic()-started
         assert elapsed<10
         print(f'PASS MCP 20 slotted plates built from rectangle, slot and polygon shapes: {elapsed:.3f}s / 10s')
+        panels=client.tool('occt_get_example',dict(name='arched-panel'))['structuredContent']
+        for i in range(1,20):
+            panels['model']['instances'].append({'clone':dict(id=f'panel-{i}',source='panel',overrides={},provenance='scale')})
+            panels['outputs'].append(dict(instance=f'panel-{i}',output='body'))
+        started=time.monotonic()
+        result=client.tool('occt_visualize_model',panels)
+        assert not result['isError'],result
+        data=json.loads(client.call('resources/read',dict(uri=result['structuredContent']['resources']['view.json']))['result']['contents'][0]['text'])
+        solids=[s for s in data['scenes'] if s['kind']=='solid']
+        sketches=[s for s in data['scenes'] if s['kind']=='sketch']
+        assert len(solids)==20 and all(s['valid'] and abs(s['bounds'][1][1]-42)<1e-9 for s in solids)
+        assert all(s['solver']['free_degrees']==0 and s['solver']['redundant_equations']==0 for s in sketches)
+        elapsed=time.monotonic()-started
+        assert elapsed<10
+        print(f'PASS MCP 20 arched panels with authored elliptical arcs: {elapsed:.3f}s / 10s')
     finally:
         client.close()

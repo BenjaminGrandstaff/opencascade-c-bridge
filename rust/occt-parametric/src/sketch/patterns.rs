@@ -74,7 +74,13 @@ fn defining_points(entity: Entity<'_>) -> Vec<&str> {
         Entity::Line(l) => vec![&l.start, &l.end],
         Entity::Circle(c) => vec![&c.center, &c.rim],
         Entity::Arc(a) => vec![&a.center, &a.start, &a.end],
-        Entity::Ellipse(e) => vec![&e.center, &e.major, &e.minor],
+        Entity::Ellipse(e) => {
+            let mut points = vec![e.center.as_str(), &e.major, &e.minor];
+            if let Some((start, end)) = e.arc_ends() {
+                points.extend([start, end]);
+            }
+            points
+        }
         Entity::Spline(s) => {
             let mut points = s.points.iter().map(String::as_str).collect::<Vec<_>>();
             if let Some(e) = &s.endpoints {
@@ -397,12 +403,25 @@ impl SketchDefinition {
                             center: to(&c.center),
                             rim: to(&c.rim),
                         }),
-                        Entity::Ellipse(e) => result.ellipses.push(SketchEllipse {
-                            id: name,
-                            center: to(&e.center),
-                            major: to(&e.major),
-                            minor: to(&e.minor),
-                        }),
+                        // Mirrored arcs swap their ends, as circular arcs do.
+                        Entity::Ellipse(e) => {
+                            let ends = e.start.as_ref().zip(e.end.as_ref()).map(|(start, end)| {
+                                if mirror {
+                                    (to(end), to(start))
+                                } else {
+                                    (to(start), to(end))
+                                }
+                            });
+                            result.ellipses.push(SketchEllipse {
+                                id: name,
+                                center: to(&e.center),
+                                major: to(&e.major),
+                                minor: to(&e.minor),
+                                start: ends.as_ref().map(|(start, _)| start.clone()),
+                                end: ends.map(|(_, end)| end),
+                                clockwise: e.clockwise,
+                            });
+                        }
                         // A reflection reverses orientation; swapping the ends
                         // restores the arc's turning sense along the reversed copy.
                         Entity::Arc(a) => {

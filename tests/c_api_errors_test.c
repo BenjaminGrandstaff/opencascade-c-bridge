@@ -1369,6 +1369,34 @@ static void face_with_holes(occt_bridge_session_t* session) {
     occt_bridge_shape_release(session,hole);occt_bridge_shape_release(session,open);occt_bridge_shape_release(session,outer);
 }
 
+static void elliptical_arcs(occt_bridge_session_t* session) {
+    /* Kind 4: center, major vertex, minor vertex, start, end. */
+    const occt_bridge_vec3_t points[] = {
+        vec(0, 0, 0), vec(10, 0, 0), vec(0, 4, 0), vec(10, 0, 0), vec(-10, 0, 0)};
+    occt_bridge_curve_segment_t arc = {0};
+    arc.kind = 4;
+    arc.point_count = 5;
+    occt_bridge_shape_id_t out = 99;
+    EXPECT(occt_bridge_create_curve_wire(session, points, 5, &arc, 1, 0, &out), OK);
+    double length = 0.0;
+    occt_bridge_shape_id_t edge = 0;
+    EXPECT(occt_bridge_shape_subshape_at(session, out, OCCT_BRIDGE_SHAPE_EDGE, 0, &edge), OK);
+    EXPECT(occt_bridge_shape_edge_length(session, edge, &length), OK);
+    EXPECT_TRUE(fabs(length - 23.013112595664847) < 1e-9, "half elliptical arc length");
+    occt_bridge_shape_release(session, edge);
+    occt_bridge_shape_release(session, out);
+    arc.flags = 2;
+    EXPECT(occt_bridge_create_curve_wire(session, points, 5, &arc, 1, 0, &out), ARG);
+    arc.flags = 0;
+    arc.point_count = 4;
+    EXPECT(occt_bridge_create_curve_wire(session, points, 5, &arc, 1, 0, &out), ARG);
+    arc.point_count = 5;
+    const occt_bridge_vec3_t off[] = {
+        vec(0, 0, 0), vec(10, 0, 0), vec(0, 4, 0), vec(10, 1, 0), vec(-10, 0, 0)};
+    EXPECT(occt_bridge_create_curve_wire(session, off, 5, &arc, 1, 0, &out), GEOMETRY);
+    EXPECT_TRUE(out == OCCT_BRIDGE_INVALID_SHAPE_ID, "failed arc clears result");
+}
+
 static void corner_edits(occt_bridge_session_t* session) {
     occt_bridge_shape_id_t wire=0,out=99;
     const occt_bridge_vec3_t points[]={vec(0,0,0),vec(20,0,0),vec(20,10,0),vec(0,10,0)};
@@ -1426,6 +1454,7 @@ int main(void) {
     sketch_edits(session);
     planar_intersections(session);
     corner_edits(session);
+    elliptical_arcs(session);
     face_with_holes(session);
     extrusion_limits(session);
     profile_lofts(session);

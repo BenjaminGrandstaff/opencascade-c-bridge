@@ -77,6 +77,7 @@ impl SketchDefinition {
                             | SketchConstraint::Coradial { .. }
                     )
                 }) || self.splines.iter().any(|s| s.endpoints.is_some())
+                    || self.ellipses.iter().any(|e| e.arc_ends().is_some())
                     || !self.patterns.is_empty(),
             ) else {
                 break;
@@ -164,6 +165,12 @@ impl SketchDefinition {
             diagnosis,
         })
     }
+}
+
+struct EllipseLocal {
+    angle: f64,
+    membership: f64,
+    tangent: SketchPoint2,
 }
 
 pub(super) struct SketchProblem<'a> {
@@ -258,6 +265,16 @@ impl SketchProblem<'_> {
                     (c, self.point(&e.major, values)),
                     (c, self.point(&e.minor, values)),
                 )?);
+                // An end at an axis vertex is on the ellipse by definition;
+                // its membership equation would be identically zero.
+                if let Some((start, end)) = e.arc_ends() {
+                    for id in [start, end] {
+                        if id != e.major && id != e.minor {
+                            let local = self.ellipse_local(e, self.point(id, values), values)?;
+                            residuals.push(local.membership);
+                        }
+                    }
+                }
                 Ok(())
             }
             Equation::Arc(arc) => {
@@ -352,6 +369,10 @@ impl SketchProblem<'_> {
                 SketchPoint2 { x: 0., y: 0. },
                 SketchPoint2 { x: d.x, y: d.y },
             ));
+        }
+        if let Entity::Ellipse(e) = entity {
+            let local = self.ellipse_local(e, self.point(contact, values), values)?;
+            return Ok((SketchPoint2 { x: 0.0, y: 0.0 }, local.tangent));
         }
         let (first, second) = entity.tangent_points(contact);
         let (a, b) = (self.point(first, values), self.point(second, values));
@@ -723,9 +744,45 @@ impl SketchProblem<'_> {
             Entity::Line(l) => vec![l.start.as_str(), l.end.as_str()],
             Entity::Circle(c) => vec![c.center.as_str(), c.rim.as_str()],
             Entity::Arc(a) => vec![a.center.as_str(), a.start.as_str(), a.end.as_str()],
-            Entity::Ellipse(e) => vec![e.center.as_str(), e.major.as_str(), e.minor.as_str()],
+            Entity::Ellipse(e) => {
+                let mut refs = vec![e.center.as_str(), e.major.as_str(), e.minor.as_str()];
+                if let Some((start, end)) = e.arc_ends() {
+                    refs.extend([start, end]);
+                }
+                refs
+            }
             Entity::Spline(spline) => self.spline_neighbor_refs(spline),
         }
+    }
+
+    /// A point in an ellipse's frame: its sketch-plane eccentric angle
+    /// (counterclockwise from the major vertex), the scaled implicit
+    /// membership residual, and the curve tangent there.
+    fn ellipse_local(
+        &self,
+        e: &SketchEllipse,
+        p: SketchPoint2,
+        values: &[f64],
+    ) -> Result<EllipseLocal, ModelError> {
+        let c = self.point(&e.center, values);
+        let major = self.point(&e.major, values);
+        let a = line_length((c, major));
+        let b = line_length((c, self.point(&e.minor, values)));
+        if a <= f64::EPSILON || b <= f64::EPSILON {
+            return Err(ModelError::new("ellipse needs positive axes"));
+        }
+        let u = ((major.x - c.x) / a, (major.y - c.y) / a);
+        let (dx, dy) = (p.x - c.x, p.y - c.y);
+        let (x, y) = (dx * u.0 + dy * u.1, -dx * u.1 + dy * u.0);
+        let (tx, ty) = (-y / (b * b), x / (a * a));
+        Ok(EllipseLocal {
+            angle: (y / b).atan2(x / a),
+            membership: ((x / a).hypot(y / b) - 1.0) * b,
+            tangent: SketchPoint2 {
+                x: tx * u.0 - ty * u.1,
+                y: tx * u.1 + ty * u.0,
+            },
+        })
     }
 
     /// Directed sweep of an arc from start to end, in [0, 2π).
@@ -759,6 +816,26 @@ impl SketchProblem<'_> {
             Entity::Arc(a) => {
                 line_length((self.point(&a.center, values), self.point(&a.start, values)))
                     * self.arc_sweep(a, values)
+            }
+            Entity::Ellipse(e) if e.arc_ends().is_some() => {
+                let (start, end) = e.arc_ends().unwrap();
+                let at = |id: &str| {
+                    let p = self.point(id, values);
+                    Vec3::new(p.x, p.y, 0.)
+                };
+                native(self.native.create_curve_wire(
+                    &[e.native_arc(
+                        [
+                            at(&e.center),
+                            at(&e.major),
+                            at(&e.minor),
+                            at(start),
+                            at(end),
+                        ],
+                        Vec3::new(0., 0., 1.),
+                    )],
+                    false,
+                )?)?
             }
             Entity::Ellipse(e) => {
                 let c = self.point(&e.center, values);
@@ -913,6 +990,22 @@ impl SketchProblem<'_> {
                         let y =
                             (-(p.x - c.x) * (major.y - c.y) + (p.y - c.y) * (major.x - c.x)) / a;
                         residuals.push(((x / a).hypot(y / b) - 1.0) * b);
+                        if let Some((start, end)) = e.arc_ends() {
+                            let at = |id: &str| -> Result<f64, ModelError> {
+                                Ok(self.ellipse_local(e, self.point(id, values), values)?.angle)
+                            };
+                            let sign = if e.clockwise { -1.0 } else { 1.0 };
+                            let (s, t) = (at(start)?, at(end)?);
+                            let here = self.ellipse_local(e, p, values)?.angle;
+                            let span = (sign * (t - s)).rem_euclid(std::f64::consts::TAU);
+                            let along = (sign * (here - s)).rem_euclid(std::f64::consts::TAU);
+                            let violation = if along <= span {
+                                0.0
+                            } else {
+                                (along - span).min(std::f64::consts::TAU - along)
+                            };
+                            residuals.push(violation * b);
+                        }
                     }
                     Entity::Spline(spline) => {
                         let curve = self.spline_curve(spline, values)?;
@@ -1533,7 +1626,13 @@ impl SketchProblem<'_> {
                     refs.extend([e.start.as_str(), e.end.as_str()]);
                     self.point_columns(refs)
                 }
-                Equation::Ellipse(e) => self.point_columns(vec![&e.center, &e.major, &e.minor]),
+                Equation::Ellipse(e) => {
+                    let mut refs = vec![e.center.as_str(), &e.major, &e.minor];
+                    if let Some((start, end)) = e.arc_ends() {
+                        refs.extend([start, end]);
+                    }
+                    self.point_columns(refs)
+                }
                 Equation::Pattern(link) => {
                     let mut refs = vec![link.source];
                     refs.extend(link.copy);

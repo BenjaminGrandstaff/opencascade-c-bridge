@@ -2,6 +2,7 @@ use super::*;
 
 mod advanced;
 mod dimensions;
+mod elliptical_arcs;
 mod patterns;
 mod profiles;
 mod shapes;

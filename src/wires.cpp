@@ -8,7 +8,10 @@
 #include <BRepBuilderAPI_MakePolygon.hxx>
 #include <BRepBuilderAPI_MakeWire.hxx>
 #include <BRep_Tool.hxx>
+#include <ElCLib.hxx>
 #include <GC_MakeArcOfCircle.hxx>
+#include <Geom_Ellipse.hxx>
+#include <Geom_TrimmedCurve.hxx>
 #include <GeomAPI_Interpolate.hxx>
 #include <Geom_BSplineCurve.hxx>
 #include <TColgp_Array1OfPnt.hxx>
@@ -96,16 +99,73 @@ constexpr int32_t kStartTangent = 1;
 constexpr int32_t kEndTangent = 2;
 constexpr int32_t kPeriodic = 4;
 constexpr int32_t kNonClamped = 8;
+constexpr int32_t kClockwise = 1;
+
+/* Native ellipse through kind-4 points (center, major vertex, minor vertex),
+ * with its axes ordered so the major radius is not smaller; null on error.
+ * The normal is (major − center) × (minor − center) whichever axis is longer. */
+const char* segment_ellipse(const occt_bridge_vec3_t* p, gp_Elips& ellipse) {
+    const gp_Pnt center = to_point(p[0]);
+    const gp_Vec u(center, to_point(p[1])), v(center, to_point(p[2]));
+    const double a = u.Magnitude(), b = v.Magnitude();
+    if (a <= Precision::Confusion() || b <= Precision::Confusion()) {
+        return "elliptical arc needs positive semi-axes";
+    }
+    if (std::abs(u.Dot(v)) > 1e-9 * a * b) {
+        return "elliptical arc axes are not perpendicular";
+    }
+    const gp_Dir normal(u.Crossed(v));
+    ellipse = a >= b ? gp_Elips(gp_Ax2(center, normal, gp_Dir(u)), a, b)
+                     : gp_Elips(gp_Ax2(center, normal, gp_Dir(v)), b, a);
+    return nullptr;
+}
+
+/* Exact trimmed ellipse from start to end (kind 4), counterclockwise about
+ * the ellipse normal unless flagged clockwise. Ends must lie on the ellipse
+ * within 1e-7 of the minor radius. */
+const char* add_elliptical_arc(
+    BRepBuilderAPI_MakeWire& wire,
+    const occt_bridge_curve_segment_t& segment,
+    const occt_bridge_vec3_t* points) {
+    const auto* p = points + segment.first_point;
+    gp_Elips ellipse;
+    if (const char* error = segment_ellipse(p, ellipse)) return error;
+    const gp_Pnt start = to_point(p[3]), end = to_point(p[4]);
+    const auto off_curve = [&](const gp_Pnt& point) {
+        const gp_Vec d(ellipse.Location(), point);
+        const gp_Ax2& frame = ellipse.Position();
+        const double x = d.Dot(gp_Vec(frame.XDirection())) / ellipse.MajorRadius();
+        const double y = d.Dot(gp_Vec(frame.YDirection())) / ellipse.MinorRadius();
+        return std::abs(std::hypot(x, y) - 1.0) * ellipse.MinorRadius() > 1e-7
+            || std::abs(d.Dot(gp_Vec(frame.Direction()))) > 1e-7;
+    };
+    if (off_curve(start) || off_curve(end)) return "elliptical arc ends are not on the ellipse";
+    if (start.Distance(end) <= Precision::Confusion()) return "elliptical arc ends coincide";
+    const opencascade::handle<Geom_Ellipse> curve = new Geom_Ellipse(ellipse);
+    const double u1 = ElCLib::Parameter(ellipse, start), u2 = ElCLib::Parameter(ellipse, end);
+    opencascade::handle<Geom_TrimmedCurve> arc;
+    if ((segment.flags & kClockwise) == 0) {
+        arc = new Geom_TrimmedCurve(curve, u1, u2, Standard_True, Standard_True);
+    } else {
+        arc = new Geom_TrimmedCurve(curve, u2, u1, Standard_True, Standard_True);
+        arc->Reverse();
+    }
+    BRepBuilderAPI_MakeEdge edge(arc);
+    if (!edge.IsDone()) return "elliptical arc edge construction failed";
+    wire.Add(edge.Edge());
+    return wire.IsDone() ? nullptr : "elliptical arc does not connect";
+}
 
 // Validates one curve segment against the point buffer; null when valid.
 const char* curve_segment_error(
     const occt_bridge_curve_segment_t& segment,
     const occt_bridge_vec3_t* points,
     size_t point_count) {
-    const size_t expected = segment.kind == 0 ? 2 : segment.kind == 1 ? 3 : 0;
-    if (segment.kind < 0 || segment.kind > 3
+    const size_t expected = segment.kind == 0 ? 2 : segment.kind == 1 ? 3 : segment.kind == 4 ? 5 : 0;
+    if (segment.kind < 0 || segment.kind > 4
         || (expected != 0 && segment.point_count != expected)
         || (segment.kind == 2 && (segment.point_count < 2 || (segment.flags & ~7) != 0))
+        || (segment.kind == 4 && (segment.flags & ~kClockwise) != 0)
         || segment.first_point > point_count
         || segment.point_count > point_count - segment.first_point) {
         return "invalid curve segment";
@@ -115,7 +175,7 @@ const char* curve_segment_error(
         return "curve segment point is not finite";
     }
     for (size_t index = 1; index < segment.point_count; ++index) {
-        if (segment.kind != 3 && to_point(first[index]).Distance(to_point(first[index - 1])) <= Precision::Confusion()) {
+        if (segment.kind != 3 && segment.kind != 4 && to_point(first[index]).Distance(to_point(first[index - 1])) <= Precision::Confusion()) {
             return "consecutive curve segment points coincide";
         }
     }
@@ -232,6 +292,7 @@ const char* add_curve_segment(
     const occt_bridge_curve_segment_t& segment,
     const occt_bridge_vec3_t* points) {
     if (segment.kind == 3) return add_explicit_bspline(wire, segment, points);
+    if (segment.kind == 4) return add_elliptical_arc(wire, segment, points);
     if (segment.kind == 2) {
         return add_spline_segment(wire, segment, points);
     }

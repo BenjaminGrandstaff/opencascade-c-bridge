@@ -412,6 +412,18 @@ pub enum CurveSegment {
         middle: Vec3,
         end: Vec3,
     },
+    /// Exact elliptical arc (ABI 63): `major` and `minor` are axis vertices
+    /// (perpendicular semi-axes, either may be longer) and `start`/`end` lie
+    /// on the ellipse. Counterclockwise about `(major − center) × (minor −
+    /// center)` unless `clockwise`.
+    EllipseArc {
+        center: Vec3,
+        major: Vec3,
+        minor: Vec3,
+        start: Vec3,
+        end: Vec3,
+        clockwise: bool,
+    },
     /// Explicit clamped, non-clamped, or periodic B-spline. Empty weights mean all ones.
     BSpline {
         non_clamped: bool,

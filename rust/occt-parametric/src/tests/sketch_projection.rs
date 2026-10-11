@@ -574,6 +574,9 @@ fn exact_spline_projection_imports_closed_ellipses_and_trimmed_elliptic_arcs() {
         center: "c".into(),
         major: "a".into(),
         minor: "b".into(),
+        start: None,
+        end: None,
+        clockwise: false,
     }];
     source.profile = vec!["ellipse".into()];
     let session = Session::new().unwrap();

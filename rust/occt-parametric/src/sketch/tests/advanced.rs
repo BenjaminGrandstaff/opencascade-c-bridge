@@ -157,6 +157,9 @@ fn point_on_lines_circles_arcs_ellipses_and_native_splines() {
         center: "c".into(),
         major: "a".into(),
         minor: "b".into(),
+        start: None,
+        end: None,
+        clockwise: false,
     }];
     s.constraints = vec![SketchConstraint::PointOnCurve {
         point: "p".into(),
@@ -198,6 +201,9 @@ fn exact_ellipse_profiles_regenerate_on_rotated_planes_and_migrate() {
         center: "c".into(),
         major: "a".into(),
         minor: "b".into(),
+        start: None,
+        end: None,
+        clockwise: false,
     }];
     s.constraints = vec![SketchConstraint::Distance {
         first: "c".into(),
@@ -294,6 +300,9 @@ fn trim_extend_and_offset_profiles_are_native_and_leave_source_geometry_unchange
         center: "c".into(),
         major: "a".into(),
         minor: "b".into(),
+        start: None,
+        end: None,
+        clockwise: false,
     }];
     s.profile_operations = vec![SketchProfileOperation::Trim {
         entity: "ellipse".into(),
@@ -423,6 +432,9 @@ fn advanced_references_units_degenerate_axes_and_bad_operation_order_are_rejecte
         center: "c".into(),
         major: "a".into(),
         minor: "b".into(),
+        start: None,
+        end: None,
+        clockwise: false,
     }];
     assert!(s.solve(&params).is_err());
 }
@@ -545,6 +557,9 @@ fn equal_radius_rejects_wrong_references_and_reports_fixed_radius_conflicts() {
         center: "c".into(),
         major: "major".into(),
         minor: "minor".into(),
+        start: None,
+        end: None,
+        clockwise: false,
     });
     for second in ["missing", "axis", "circle", "ellipse"] {
         s.constraints = vec![SketchConstraint::EqualRadius {
@@ -624,6 +639,9 @@ fn concentric_supports_circles_arcs_and_ellipses_without_equalizing_radii() {
                 center: "other-center".into(),
                 major: "a".into(),
                 minor: "b".into(),
+                start: None,
+                end: None,
+                clockwise: false,
             }),
         }
         s.constraints = vec![SketchConstraint::Concentric {
@@ -1666,6 +1684,9 @@ fn independent_line_ellipse_tangency_solves_rotated_axes_sides_and_supporting_li
             center: "c".into(),
             major: "major".into(),
             minor: "minor".into(),
+            start: None,
+            end: None,
+            clockwise: false,
         }];
         s.constraints = vec![
             SketchConstraint::Parallel {
@@ -1737,6 +1758,9 @@ fn line_ellipse_tangency_rejects_wrong_entities_missing_lines_and_zero_axes() {
         center: "c".into(),
         major: "a".into(),
         minor: "b".into(),
+        start: None,
+        end: None,
+        clockwise: false,
     }];
     let relation = SketchConstraint::LineEllipseTangent {
         line: "line".into(),
@@ -2528,6 +2552,9 @@ fn ellipse_circle_contact_handles_internal_external_arcs_and_non_tangent_crossin
         center: "c".into(),
         major: "a".into(),
         minor: "b".into(),
+        start: None,
+        end: None,
+        clockwise: false,
     }];
     s.circles = vec![SketchCircle {
         id: "circle".into(),
@@ -2727,12 +2754,18 @@ fn ellipse_pair_contact_checks_external_internal_seam_and_non_tangent_crossings(
             center: "c".into(),
             major: "a".into(),
             minor: "b".into(),
+            start: None,
+            end: None,
+            clockwise: false,
         },
         SketchEllipse {
             id: "second".into(),
             center: "d".into(),
             major: "e".into(),
             minor: "f".into(),
+            start: None,
+            end: None,
+            clockwise: false,
         },
     ];
     s.constraints = vec![SketchConstraint::EllipseEllipseTangent {

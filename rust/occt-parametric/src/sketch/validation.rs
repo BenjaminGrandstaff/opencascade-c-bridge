@@ -297,7 +297,10 @@ impl SketchDefinition {
                 SketchConstraint::EllipseEllipseTangent { first, second, .. } => {
                     if first == second
                         || [first, second].iter().any(|id| {
-                            !matches!(entities.get(id.as_str()), Some(Entity::Ellipse(_)))
+                            !matches!(
+                                entities.get(id.as_str()),
+                                Some(Entity::Ellipse(SketchEllipse { start: None, .. }))
+                            )
                         })
                     {
                         return Err(ModelError::new(
@@ -309,7 +312,10 @@ impl SketchDefinition {
                     spline, ellipse, ..
                 } => {
                     if !matches!(entities.get(spline.as_str()), Some(Entity::Spline(_)))
-                        || !matches!(entities.get(ellipse.as_str()), Some(Entity::Ellipse(_)))
+                        || !matches!(
+                            entities.get(ellipse.as_str()),
+                            Some(Entity::Ellipse(SketchEllipse { start: None, .. }))
+                        )
                     {
                         return Err(ModelError::new(
                             "spline-ellipse tangency requires a spline and full ellipse",
@@ -331,12 +337,13 @@ impl SketchDefinition {
                 SketchConstraint::EllipseCircleTangent {
                     ellipse, circle, ..
                 } => {
-                    if !matches!(entities.get(ellipse.as_str()), Some(Entity::Ellipse(_)))
-                        || !matches!(
-                            entities.get(circle.as_str()),
-                            Some(Entity::Circle(_) | Entity::Arc(_))
-                        )
-                    {
+                    if !matches!(
+                        entities.get(ellipse.as_str()),
+                        Some(Entity::Ellipse(SketchEllipse { start: None, .. }))
+                    ) || !matches!(
+                        entities.get(circle.as_str()),
+                        Some(Entity::Circle(_) | Entity::Arc(_))
+                    ) {
                         return Err(ModelError::new(
                             "ellipse-circle tangency requires a full ellipse and circle or arc",
                         ));
@@ -348,7 +355,10 @@ impl SketchDefinition {
                     }
                 }
                 SketchConstraint::LineEllipseTangent { ellipse, .. } => {
-                    if !matches!(entities.get(ellipse.as_str()), Some(Entity::Ellipse(_))) {
+                    if !matches!(
+                        entities.get(ellipse.as_str()),
+                        Some(Entity::Ellipse(SketchEllipse { start: None, .. }))
+                    ) {
                         return Err(ModelError::new(
                             "line-ellipse tangency requires a full ellipse",
                         ));
@@ -482,6 +492,28 @@ impl SketchDefinition {
                 return Err(ModelError::new(
                     "ellipse needs three distinct known defining points",
                 ));
+            }
+            match (&ellipse.start, &ellipse.end) {
+                (None, None) => {}
+                (Some(start), Some(end)) => {
+                    if [start, end]
+                        .iter()
+                        .any(|id| !point_ids.contains(id.as_str()))
+                        || start == end
+                        || [start, end].contains(&&ellipse.center)
+                    {
+                        return Err(ModelError::new(format!(
+                            "elliptical arc '{}' needs distinct known ends other than its center",
+                            ellipse.id
+                        )));
+                    }
+                }
+                _ => {
+                    return Err(ModelError::new(format!(
+                        "elliptical arc '{}' needs both start and end",
+                        ellipse.id
+                    )));
+                }
             }
         }
         for spline in &self.splines {
@@ -692,9 +724,11 @@ pub(super) fn validate_open_endpoints(
 
 pub(super) fn validate_curve_entities(profile: &[Entity<'_>]) -> Result<(), ModelError> {
     if profile.is_empty()
-        || profile
-            .iter()
-            .any(|entity| matches!(entity, Entity::Circle(_) | Entity::Ellipse(_)))
+        || profile.iter().any(|entity| match entity {
+            Entity::Circle(_) => true,
+            Entity::Ellipse(e) => e.arc_ends().is_none(),
+            _ => false,
+        })
     {
         return Err(ModelError::new(
             "profile must contain connected lines, arcs, and splines, or one circle",

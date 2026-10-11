@@ -1574,3 +1574,46 @@ generated IDs and copied by a linear pattern; and rejected IDs, references,
 side counts and radii. 500 slot holes and a 1,000-sided polygon expand,
 solve and build one face in 1.13 s (10 s budget). The MCP renders 20 slotted
 plates in 0.49 s (10 s budget).
+
+## Authored elliptical arcs (schema 124 / ABI 63)
+
+An ellipse may name `start` and `end` points (both or neither) to become an
+elliptical arc. It runs from `start` to `end` counterclockwise in the sketch
+plane, or clockwise with `"clockwise": true`:
+
+```json
+{"id": "arch", "center": "c", "major": "tr", "minor": "m",
+ "start": "tr", "end": "tl"}
+```
+
+- The solver holds each end on the ellipse with its implicit equation,
+  scaled in millimetres. An end that is the major or minor vertex is on the
+  ellipse by definition and adds no equation.
+- Arcs connect into profiles and holes through their named ends like lines,
+  circular arcs and splines.
+- `tangent` at a shared end uses the ellipse's true tangent there, not the
+  circle approximation.
+- `point_on_curve` also enforces the arc's span, measured by eccentric
+  angle and scaled by the minor radius.
+- `curve_length` and reference dimensions measure the native arc.
+- Mirror patterns swap a copied arc's ends, as for circular arcs, and
+  native corner fillets and chamfers accept elliptical-arc neighbours.
+- Tangency constraints that solve independent contacts
+  (`line_ellipse_tangent`, `ellipse_ellipse_tangent`,
+  `spline_ellipse_tangent`, `ellipse_circle_tangent`) still require full
+  ellipses.
+
+ABI 63 adds curve-wire segment kind 4 (`CurveSegment::EllipseArc` in Rust):
+an exact trimmed `Geom_Ellipse` from the centre, both axis vertices (either
+may be the longer) and two ends on the ellipse within 1e-7 mm. It turns
+counterclockwise about (major − centre) × (minor − centre) unless flagged
+clockwise; the sketch maps its own sense onto that frame.
+
+The [arched panel](../tools/model/arched-panel.request.json) tops two
+vertical sides with an elliptical arch, fully constrained with no redundant
+equations, and measures the arch length. Tests check exact half-ellipse
+areas in both directions, a line tangent to an arc at the analytic tangent
+point with a native arc length matching numerical integration, the span
+check on a rotated ellipse, a mirrored quarter arc closing a half ellipse,
+native fillets at both arc corners, and rejected definitions. 500 rise
+edits of the panel regenerate with exact volumes in 0.62 s (10 s budget).

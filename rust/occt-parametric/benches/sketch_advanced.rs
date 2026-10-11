@@ -1749,6 +1749,9 @@ fn main() {
                 center: id("c"),
                 major: id("a"),
                 minor: id("b"),
+                start: None,
+                end: None,
+                clockwise: false,
             });
             s.constraints.extend([
                 SketchConstraint::Distance {
@@ -2219,6 +2222,39 @@ fn main() {
             let gear = 0.5 * 1000. * 200. * 200. * (std::f64::consts::TAU / 1000.).sin();
             let area = 1000. * 500. - 500. * slot - gear;
             assert!((session.surface_area(face).unwrap() - area).abs() < 1e-6 * area);
+        },
+    );
+    gate(
+        "500 arched-panel rise edits with exact elliptical-arc volumes",
+        10,
+        || {
+            let request: serde_json::Value = serde_json::from_str(include_str!(
+                "../../../tools/model/arched-panel.request.json"
+            ))
+            .unwrap();
+            let family = ModelDocument::from_json(&request["model"].to_string())
+                .unwrap()
+                .family;
+            let session = Session::new().unwrap();
+            let mut part = PartInstance {
+                id: "panel".into(),
+                definition: &family,
+                overrides: HashMap::new(),
+                provenance: "scale".into(),
+            };
+            let mut previous = part.regenerate(&session).unwrap();
+            for k in 0..500 {
+                let rise = 6. + (k % 10) as f64;
+                part.overrides.insert(
+                    "rise".into(),
+                    ParameterValue::Scalar(Quantity::length(rise, LengthUnit::Millimeter)),
+                );
+                let built = part.regenerate_incremental(&session, &previous).unwrap();
+                let body = built.shape("body").unwrap();
+                let area = 40. * 30. + std::f64::consts::PI * 20. * rise / 2.;
+                assert!((session.volume(body).unwrap() - 3. * area).abs() < 1e-7 * area);
+                previous = built;
+            }
         },
     );
 }

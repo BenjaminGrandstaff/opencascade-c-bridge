@@ -115,6 +115,9 @@ impl SketchDefinition {
                     clockwise: false,
                 }),
                 SketchProjectionKind::Ellipse => resolved.ellipses.push(SketchEllipse {
+                    start: None,
+                    end: None,
+                    clockwise: false,
                     id: id.clone(),
                     center: point("center", 0., 0.),
                     major: point("major", 2., 0.),

@@ -2378,3 +2378,50 @@ fn slotted_plate_groups_generated_shapes_and_follows_slot_edits() {
         assert_eq!(body["valid"], true);
     }
 }
+
+#[test]
+fn arched_panel_draws_its_elliptical_arc_and_follows_rise_edits() {
+    let dir = Directory::new();
+    for (name, rise) in [("default", 12.0), ("flatter", 7.0)] {
+        let mut request = view_example("arched-panel");
+        request["model"]["instances"][0]["base"]["overrides"] =
+            json!({"rise":{"scalar":{"value":rise,"dimension":"length","unit":"millimeter"}}});
+        view_request(&dir, request, name).unwrap();
+        let data: Value =
+            serde_json::from_str(&fs::read_to_string(dir.0.join(name).join("view.json")).unwrap())
+                .unwrap();
+        let body = &data["scenes"][0];
+        assert_eq!(body["valid"], true);
+        assert!((body["bounds"][1][1].as_f64().unwrap() - (30.0 + rise)).abs() < 1e-9);
+        let sketch = data["scenes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["kind"] == "sketch")
+            .unwrap();
+        assert_eq!(sketch["solver"]["free_degrees"], 0);
+        assert_eq!(sketch["solver"]["redundant_equations"], 0);
+        // The arch preview stays on the upper half of the ellipse.
+        let arch = sketch["entities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|e| e["id"] == "arch")
+            .unwrap();
+        for p in arch["points"].as_array().unwrap() {
+            let (x, y) = (p[0].as_f64().unwrap(), p[1].as_f64().unwrap());
+            assert!(y >= 30.0 - 1e-9, "{x} {y}");
+            let r = ((x - 20.0) / 20.0).hypot((y - 30.0) / rise);
+            assert!((r - 1.0).abs() < 1e-6, "{x} {y}");
+        }
+        let length = sketch["annotations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|a| a["id"] == "measurement-arch_length")
+            .unwrap()["detail"]["value"]
+            .as_f64()
+            .unwrap();
+        assert!(length > 40.0 && length < 20.0 * std::f64::consts::PI);
+    }
+}
