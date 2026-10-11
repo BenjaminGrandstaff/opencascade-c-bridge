@@ -15,6 +15,7 @@ fn rib_family(wire: bool) -> FamilyDefinition {
         measurements: Vec::new(),
         shapes: Vec::new(),
         regions: Vec::new(),
+        region_discovery: None,
         texts: Vec::new(),
         acceptance: Default::default(),
         id: "brace".into(),

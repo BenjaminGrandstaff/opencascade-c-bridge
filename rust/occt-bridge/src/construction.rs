@@ -377,6 +377,39 @@ impl Session {
         })
     }
 
+    /// Exact bounded cells of coplanar curves (ABI 67). Select all cells with
+    /// empty seeds, or cells strictly containing the given world-space seeds.
+    pub fn discover_planar_regions<'a>(
+        &'a self,
+        wires: &[&Shape<'_>],
+        origin: Vec3,
+        normal: Vec3,
+        x_axis: Vec3,
+        seeds: &[Vec3],
+    ) -> Result<Shape<'a>, BridgeError> {
+        for wire in wires {
+            self.validate_shape(wire)?;
+        }
+        let ids: Vec<_> = wires.iter().map(|wire| wire.id).collect();
+        let seeds: Vec<RawVec3> = seeds.iter().copied().map(Into::into).collect();
+        let mut shape = 0;
+        // SAFETY: Validated handles and live input/output buffers.
+        self.check(unsafe {
+            occt_bridge_discover_planar_regions(
+                self.raw.as_ptr(),
+                ids.as_ptr(),
+                ids.len(),
+                origin.into(),
+                normal.into(),
+                x_axis.into(),
+                seeds.as_ptr(),
+                seeds.len(),
+                &mut shape,
+            )
+        })?;
+        Ok(self.shape(shape))
+    }
+
     pub fn create_face_from_wire<'a>(&'a self, wire: &Shape<'_>) -> Result<Shape<'a>, BridgeError> {
         self.derived_shape(wire, |out| unsafe {
             occt_bridge_create_face_from_wire(self.raw.as_ptr(), wire.id, out)

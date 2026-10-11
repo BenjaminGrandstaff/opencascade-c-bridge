@@ -33,6 +33,7 @@ fn rectangle() -> SketchDefinition {
         measurements: Vec::new(),
         shapes: Vec::new(),
         regions: Vec::new(),
+        region_discovery: None,
         texts: Vec::new(),
         acceptance: Default::default(),
         id: "rectangle".into(),

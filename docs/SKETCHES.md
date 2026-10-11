@@ -1803,3 +1803,54 @@ heights, anchors and wire outputs; geometry tests use the first installed
 of several common sans families and skip when none is. A 1,000-character
 text builds, extrudes and validates in 5.1 s (10 s budget, checked alongside
 all 52 sketch scale gates).
+
+## Automatic region discovery (schema 130 / ABI 67)
+
+For a face output, use `region_discovery` instead of `profile`, `holes`,
+`regions` and `profile_operations`:
+
+```json
+"region_discovery": {
+  "entities": ["left-disc", "right-disc"],
+  "seeds": ["pick"]
+}
+```
+
+OCCT splits the native curves at crossings and discovers bounded planar
+cells. Each seed is a named solved sketch point strictly inside a selected
+cell. Repeated selections include that cell once. Empty `seeds` selects all
+bounded cells; empty `entities` includes all sketch curves. Shape shortcut
+IDs expand into their boundary curves before discovery, and generated pattern
+and projected curve IDs can be selected as usual. Use an explicit entity list
+to exclude auxiliary curves from the arrangement.
+
+Nested loops become distinct cells: a seed between two circles selects an
+annulus with a hole, while a seed inside the inner circle selects its disc.
+The [discovered lens](../tools/model/discovered-lens.request.json) selects the
+overlap of two circles and extrudes it. Its selection point tracks half the
+circle spacing, so edits follow the intended overlap without face indices.
+
+- Curves and output boundaries retain their exact native geometry, including
+  elliptical and spline segments. A temporary enclosing frame is discarded
+  with the exterior region; it adds no boundary to the returned faces.
+- Open curves that do not enclose a cell produce no region of their own.
+  Discovery fails when there are no bounded cells, or when a seed is outside
+  them or within 1e-7 mm of a boundary. Off-plane native inputs reject at
+  1e-6 mm. Input geometry is unchanged on success or failure.
+- Discovery applies only to face outputs. Additional text can join the
+  resulting compound under the existing non-overlap rule. Profile operations
+  require explicit profiles and cannot be mixed with discovery.
+- The result is a compound of selected face cells. Extrusion produces one
+  solid per cell, including adjacent cells; it does not merge those solids.
+- Limits are 1,000 expanded input curves, 10,000 native edges, 1,000 seeds
+  and 1,000 discovered cells. Native splitting cost depends on crossings;
+  seed classification uses bounding-box filtering before native distance and
+  face classification.
+
+The viewer shows the selected boundaries, seed anchors and linked parameter
+controls. ABI 67 adds `occt_bridge_discover_planar_regions`, exposed as
+`Session::discover_planar_regions`. Tests verify analytic circle/lens/ellipse
+areas, nested holes, splines, shape expansion, tilted planes, invalid requests,
+boundary seeds, unchanged inputs, and edited lens volumes and viewer data.
+The scale gates discover 1,000 circles, select 500 cells and extrude them in
+0.24 s, and regenerate 300 spacing edits in 0.66 s (10 s budgets).

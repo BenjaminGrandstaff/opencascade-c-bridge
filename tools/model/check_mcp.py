@@ -980,5 +980,23 @@ with tempfile.TemporaryDirectory(prefix='occb-mcp-scale-') as root:
         elapsed=time.monotonic()-started
         assert elapsed<10
         print(f'PASS MCP 20 engraved nameplates with glyph outlines: {elapsed:.3f}s / 10s')
+        lenses=client.tool('occt_get_example',dict(name='discovered-lens'))['structuredContent']
+        for i in range(1,20):
+            lenses['model']['instances'].append({'clone':dict(id=f'lens-{i}',source='lens',overrides={'spacing':{'scalar':{'value':8+i*0.25,'dimension':'length','unit':'millimeter'}}},provenance='scale')})
+            lenses['outputs'].append(dict(instance=f'lens-{i}',output='body'))
+        started=time.monotonic()
+        result=client.tool('occt_visualize_model',lenses)
+        assert not result['isError'],result
+        data=json.loads(client.call('resources/read',dict(uri=result['structuredContent']['resources']['view.json']))['result']['contents'][0]['text'])
+        solids=[s for s in data['scenes'] if s['kind']=='solid']
+        sketches=[s for s in data['scenes'] if s['kind']=='sketch']
+        assert len(solids)==20 and all(s['valid'] for s in solids)
+        assert len(sketches)==20 and all(s['profile_error'] is None and len(s['edited_profile'])>0 for s in sketches)
+        for s in sketches:
+            assert s['region_discovery']['seeds']==['pick']
+            assert any(a['id']=='region-discovery' and a['status']=='constructed' for a in s['annotations'])
+        elapsed=time.monotonic()-started
+        assert elapsed<10
+        print(f'PASS MCP 20 discovered lens regions with native boundaries and seed annotations: {elapsed:.3f}s / 10s')
     finally:
         client.close()

@@ -27,6 +27,7 @@ fn sketch() -> SketchDefinition {
         measurements: Vec::new(),
         shapes: Vec::new(),
         regions: Vec::new(),
+        region_discovery: None,
         texts: Vec::new(),
         acceptance: Default::default(),
         id: "scale".into(),
@@ -60,6 +61,95 @@ fn gate(name: &str, budget: u64, run: impl FnOnce()) {
     println!("PASS {name}: {:.3}s / {budget}s", elapsed.as_secs_f64());
 }
 fn main() {
+    gate(
+        "1000 disjoint circle cells discovered, selected by 500 seeds and extruded",
+        10,
+        || {
+            let session = Session::new().unwrap();
+            let origin = occt_bridge::Vec3::new(0., 0., 0.);
+            let normal = occt_bridge::Vec3::new(0., 0., 1.);
+            let x = occt_bridge::Vec3::new(1., 0., 0.);
+            let circles: Vec<_> = (0..1000)
+                .map(|i| {
+                    session
+                        .create_circle_wire(
+                            occt_bridge::Vec3::new(i as f64 * 3., 0., 0.),
+                            normal,
+                            1.,
+                        )
+                        .unwrap()
+                })
+                .collect();
+            let seeds: Vec<_> = (0..1000)
+                .step_by(2)
+                .map(|i| occt_bridge::Vec3::new(i as f64 * 3., 0., 0.))
+                .collect();
+            let faces = session
+                .discover_planar_regions(
+                    &circles.iter().collect::<Vec<_>>(),
+                    origin,
+                    normal,
+                    x,
+                    &seeds,
+                )
+                .unwrap();
+            assert_eq!(
+                session.subshape_count(&faces, ShapeType::Face).unwrap(),
+                500
+            );
+            let solids: Vec<_> = session
+                .subshapes(&faces, ShapeType::Face)
+                .unwrap()
+                .iter()
+                .map(|face| {
+                    session
+                        .create_prism_from_face(face, occt_bridge::Vec3::new(0., 0., 2.))
+                        .unwrap()
+                })
+                .collect();
+            let body = session
+                .create_compound(&solids.iter().collect::<Vec<_>>())
+                .unwrap();
+            assert!(session.is_valid(&body).unwrap());
+            assert!((session.volume(&body).unwrap() - 1000. * std::f64::consts::PI).abs() < 1e-6);
+        },
+    );
+    gate(
+        "300 automatically selected lens profiles regenerated after circle-spacing edits",
+        10,
+        || {
+            let request: serde_json::Value = serde_json::from_str(include_str!(
+                "../../../tools/model/discovered-lens.request.json"
+            ))
+            .unwrap();
+            let family = ModelDocument::from_json(&request["model"].to_string())
+                .unwrap()
+                .family;
+            let session = Session::new().unwrap();
+            let mut part = PartInstance {
+                id: "lens".into(),
+                definition: &family,
+                overrides: HashMap::new(),
+                provenance: "scale".into(),
+            };
+            let mut previous = part.regenerate(&session).unwrap();
+            for i in 0..300 {
+                let spacing: f64 = 8. + (i % 6) as f64;
+                part.overrides.insert(
+                    "spacing".into(),
+                    ParameterValue::Scalar(Quantity::length(spacing, LengthUnit::Millimeter)),
+                );
+                let built = part.regenerate_incremental(&session, &previous).unwrap();
+                let expected = 2.
+                    * (288. * (spacing / 24.).acos()
+                        - spacing * (576. - spacing * spacing).sqrt() / 2.);
+                assert!(
+                    (session.volume(built.shape("body").unwrap()).unwrap() - expected).abs() < 1e-6
+                );
+                previous = built;
+            }
+        },
+    );
     gate(
         "1000 cached line-spline touch aliases with a fully constrained pad",
         10,

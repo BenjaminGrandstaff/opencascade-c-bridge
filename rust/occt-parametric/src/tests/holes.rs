@@ -547,6 +547,7 @@ fn invalid_holes_fail_with_feature_context_and_release_all_handles() {
             measurements: Vec::new(),
             shapes: Vec::new(),
             regions: Vec::new(),
+            region_discovery: None,
             texts: Vec::new(),
             acceptance: Default::default(),
             id: "circle".into(),

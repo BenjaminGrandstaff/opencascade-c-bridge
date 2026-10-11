@@ -1,6 +1,98 @@
 //! Primitives, wires, faces, sweeps, lofts, sewing, solids, and recipes.
 
 use super::*;
+use std::f64::consts::PI;
+
+#[test]
+fn discovered_regions_split_crossings_and_select_cells() {
+    let session = Session::new().unwrap();
+    let origin = Vec3::new(0., 0., 0.);
+    let normal = Vec3::new(0., 0., 1.);
+    let x_axis = Vec3::new(1., 0., 0.);
+    let circle = session.create_circle_wire(origin, normal, 10.).unwrap();
+    let divider = session
+        .create_polyline_wire(&[Vec3::new(-12., 0., 0.), Vec3::new(12., 0., 0.)], false)
+        .unwrap();
+    let inputs = [&circle, &divider];
+    let all = session
+        .discover_planar_regions(&inputs, origin, normal, x_axis, &[])
+        .unwrap();
+    assert_eq!(session.subshape_count(&all, ShapeType::Face).unwrap(), 2);
+    assert!((session.surface_area(&all).unwrap() - 100. * PI).abs() < 1e-7);
+    let half = session
+        .discover_planar_regions(&inputs, origin, normal, x_axis, &[Vec3::new(0., 5., 0.)])
+        .unwrap();
+    assert_eq!(session.subshape_count(&half, ShapeType::Face).unwrap(), 1);
+    assert!((session.surface_area(&half).unwrap() - 50. * PI).abs() < 1e-7);
+    assert!(session.is_valid(&half).unwrap());
+    let edge = session.subshapes(&circle, ShapeType::Edge).unwrap();
+    assert!((session.edge_length(&edge[0]).unwrap() - 20. * PI).abs() < 1e-7);
+}
+
+#[test]
+fn discovered_regions_classify_holes_and_reject_bad_seeds() {
+    let session = Session::new().unwrap();
+    let origin = Vec3::new(0., 0., 0.);
+    let normal = Vec3::new(0., 0., 1.);
+    let x_axis = Vec3::new(1., 0., 0.);
+    let outer = session.create_circle_wire(origin, normal, 10.).unwrap();
+    let inner = session.create_circle_wire(origin, normal, 3.).unwrap();
+    let annulus = session
+        .discover_planar_regions(
+            &[&outer, &inner],
+            origin,
+            normal,
+            x_axis,
+            &[Vec3::new(5., 0., 0.), Vec3::new(6., 0., 0.)],
+        )
+        .unwrap();
+    assert_eq!(
+        session.subshape_count(&annulus, ShapeType::Face).unwrap(),
+        1
+    );
+    assert!((session.surface_area(&annulus).unwrap() - 91. * PI).abs() < 1e-7);
+    let before = session.shape_count().unwrap();
+    for (seed, message) in [
+        (Vec3::new(10., 0., 0.), "boundary"),
+        (Vec3::new(20., 0., 0.), "outside"),
+        (Vec3::new(5., 0., 1.), "plane"),
+    ] {
+        let error = session
+            .discover_planar_regions(&[&outer, &inner], origin, normal, x_axis, &[seed])
+            .unwrap_err();
+        assert!(error.message.contains(message), "{}", error.message);
+    }
+    assert_eq!(session.shape_count().unwrap(), before);
+}
+
+#[test]
+fn discovered_regions_respect_tilted_planes_and_reject_nonplanar_curves() {
+    let session = Session::new().unwrap();
+    let origin = Vec3::new(5., 0., 2.);
+    let normal = Vec3::new(0., 1., 0.);
+    let x_axis = Vec3::new(0., 0., 1.);
+    let circle = session.create_circle_wire(origin, normal, 4.).unwrap();
+    let cells = session
+        .discover_planar_regions(&[&circle], origin, normal, x_axis, &[origin])
+        .unwrap();
+    assert!((session.surface_area(&cells).unwrap() - 16. * PI).abs() < 1e-7);
+    assert!(session.is_valid(&cells).unwrap());
+    let out_of_plane = session
+        .create_polyline_wire(&[origin, Vec3::new(5., 1., 2.)], false)
+        .unwrap();
+    let before = session.shape_count().unwrap();
+    let error = session
+        .discover_planar_regions(&[&circle, &out_of_plane], origin, normal, x_axis, &[])
+        .unwrap_err();
+    assert!(error.message.contains("coplanar"));
+    assert_eq!(session.shape_count().unwrap(), before);
+    let other = Session::new().unwrap();
+    assert_wrong_session(
+        other
+            .discover_planar_regions(&[&circle], origin, normal, x_axis, &[])
+            .unwrap_err(),
+    );
+}
 
 #[test]
 fn sewing_independent_faces_builds_a_closed_solid() {

@@ -3,6 +3,60 @@
 use super::*;
 
 #[test]
+fn discovered_lens_viewer_tracks_seed_selection_and_native_volume_after_edits() {
+    let dir = Directory::new();
+    for spacing in [8., 12.] {
+        let mut request = view_example("discovered-lens");
+        let parameters = request["model"]["family"]["parameters"]
+            .as_array_mut()
+            .unwrap();
+        parameters
+            .iter_mut()
+            .find(|p| p["id"] == "spacing")
+            .unwrap()["default"]["scalar"]["value"] = json!(spacing);
+        let name = format!("lens-{spacing}");
+        view_request(&dir, request.clone(), &name).unwrap();
+        let data: Value =
+            serde_json::from_str(&fs::read_to_string(dir.0.join(&name).join("view.json")).unwrap())
+                .unwrap();
+        let sketch = data["scenes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["kind"] == "sketch")
+            .unwrap();
+        assert_eq!(sketch["region_discovery"]["seeds"], json!(["pick"]));
+        assert!(sketch["profile_error"].is_null());
+        assert!(!sketch["edited_profile"].as_array().unwrap().is_empty());
+        let annotation = sketch["annotations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|a| a["id"] == "region-discovery")
+            .unwrap();
+        assert_eq!(annotation["status"], "constructed");
+        assert!((annotation["anchors"][0][0].as_f64().unwrap() - spacing / 2.).abs() < 1e-7);
+        let family = ModelDocument::from_json(&request["model"].to_string())
+            .unwrap()
+            .family;
+        let session = Session::new().unwrap();
+        let part = PartInstance {
+            id: "lens".into(),
+            definition: &family,
+            overrides: HashMap::new(),
+            provenance: "test".into(),
+        };
+        let built = part.regenerate(&session).unwrap();
+        let body = built.shape("body").unwrap();
+        assert!(session.is_valid(body).unwrap());
+        let radius: f64 = 12.;
+        let area = 2. * radius.powi(2) * (spacing / (2. * radius)).acos()
+            - spacing * (4. * radius.powi(2) - spacing.powi(2)).sqrt() / 2.;
+        assert!((session.volume(body).unwrap() - area * 2.).abs() < 1e-6);
+    }
+}
+
+#[test]
 fn saved_profile_loft_viewer_keeps_sketches_and_measures_section_spacing() {
     let dir = Directory::new();
     for height in [20.0, 30.0] {

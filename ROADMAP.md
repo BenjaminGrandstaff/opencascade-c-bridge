@@ -8,22 +8,28 @@ tracks status and order.
 
 | Layer | Version | State |
 |---|---|---|
-| C ABI (`src/`, `include/`) | ABI 66 | Stable; exact version match required |
+| C ABI (`src/`, `include/`) | ABI 67 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 129 | Active development |
+| `occt-parametric` (engineering layer) | Schema 130 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 148 + first-use integration 1 (+1 doc test), recipes 3, parametric 624 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 19 + branch command 2 + model command 77, MCP Python 9, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 151 + first-use integration 1 (+1 doc test), recipes 3, parametric 628 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 19 + branch command 2 + model command 78, MCP Python 9, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
 | Coverage | Last recorded: 93.61% lines overall, test code excluded; C++ 94.13% lines, 87.40% branches, 100% functions; Rust 93.42% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | Last full suite: 189 Rust cases plus 5 model-command cases and a 10,000-face Python matcher. Sketch/text integration rechecked all 52 sketch cases and 54 MCP cases within budget. | `tools/bench/run.sh` |
+| Scale benchmarks | Last full suite: 189 Rust cases plus 5 model-command cases and a 10,000-face Python matcher. Region-discovery integration rechecks 54 sketch cases and 55 MCP cases within budget. | `tools/bench/run.sh` |
 
 ## Done
 
+- Automatic sketch regions (schema 130, ABI 67): native curves split at
+  crossings into bounded cells selected by named interior points, or all
+  cells without seeds. Native holes and exact curved boundaries feed face
+  outputs and solids; the viewer shows selected boundaries and seed anchors.
+  Example: `discovered-lens`. 1,000 circles discovered, 500 selected and
+  extruded in 0.24 s; 300 lens edits in 0.66 s (10 s budgets).
 - Sketch text (schema 129, ABI 66): `texts` turn single lines in strictly
   matched installed fonts into exact glyph faces (FreeType outlines,
   fontconfig lookup, nesting-based holes, kerning). Example:
@@ -2014,7 +2020,10 @@ project exactly into sketch planes, with stable endpoint references and source
 parameter links. Connected multi-edge selections now import as composite
 spline boundaries, with named junction references usable in constraints and
 dimensions. Separate junction edge topology and conic/spline tangential contact regions
-remain extensions to that workflow.
+remain extensions to that workflow. Automatic bounded-region discovery now
+selects native cells with named interior points. Merging adjacent selected
+cells into one solid and profile operations on discovered cells remain
+extensions; discovered faces currently extrude as separate solids.
 
 The earlier geometry and assembly milestones are complete. Manufacturing
 product definition is the next general CAD priority; additional rib variants

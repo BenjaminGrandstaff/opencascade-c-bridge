@@ -49,9 +49,9 @@ pub use sketch::{
     SketchFreeMotion, SketchLine, SketchLineSide, SketchMeasure, SketchMeasurement,
     SketchOffsetJoin, SketchPattern, SketchPoint, SketchPoint2, SketchPointMotion,
     SketchProfileOperation, SketchProjection, SketchProjectionIntersection,
-    SketchProjectionJunction, SketchProjectionKind, SketchRegion, SketchShape, SketchSolution,
-    SketchSpline, SketchSplineCircleContact, SketchSplineEndpoints, SketchSupportPlanes,
-    SketchText, SketchTextAlign, SketchTextOutlines, SketchTrimBound,
+    SketchProjectionJunction, SketchProjectionKind, SketchRegion, SketchRegionDiscovery,
+    SketchShape, SketchSolution, SketchSpline, SketchSplineCircleContact, SketchSplineEndpoints,
+    SketchSupportPlanes, SketchText, SketchTextAlign, SketchTextOutlines, SketchTrimBound,
 };
 pub use solve::PlacementSolution;
 

@@ -2,7 +2,7 @@
 
 use super::*;
 
-pub(crate) const ABI_VERSION: u32 = 66;
+pub(crate) const ABI_VERSION: u32 = 67;
 
 #[repr(C)]
 #[derive(Default)]
@@ -518,6 +518,17 @@ unsafe extern "C" {
         normal: RawVec3,
         major_radius: f64,
         minor_radius: f64,
+        out: *mut RawShapeId,
+    ) -> RawStatus;
+    pub(crate) fn occt_bridge_discover_planar_regions(
+        session: *mut c_void,
+        wires: *const RawShapeId,
+        wire_count: usize,
+        origin: RawVec3,
+        normal: RawVec3,
+        x_axis: RawVec3,
+        seeds: *const RawVec3,
+        seed_count: usize,
         out: *mut RawShapeId,
     ) -> RawStatus;
     pub(crate) fn occt_bridge_create_face_from_wire(

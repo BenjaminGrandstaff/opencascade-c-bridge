@@ -1445,6 +1445,26 @@ static void elliptical_arcs(occt_bridge_session_t* session) {
     EXPECT(occt_bridge_create_text(session, "Hi", 2, "/nonexistent.ttf", 5, vec(0, 0, 0), vec(1, 0, 0), vec(0, 1, 0), 0, &out), GEOMETRY);
 }
 
+static void planar_region_discovery(occt_bridge_session_t* session) {
+    occt_bridge_shape_id_t wire = 0, out = 99;
+    const occt_bridge_vec3_t points[] = {vec(0, 0, 0), vec(10, 0, 0)};
+    EXPECT(occt_bridge_create_polyline_wire(session, points, 2, 0, &wire), OK);
+    const occt_bridge_vec3_t origin = vec(0, 0, 0), normal = vec(0, 0, 1), x = vec(1, 0, 0);
+    EXPECT(occt_bridge_discover_planar_regions(NULL, &wire, 1, origin, normal, x, NULL, 0, &out), ARG);
+    EXPECT(occt_bridge_discover_planar_regions(session, &wire, 1, origin, normal, x, NULL, 0, NULL), ARG);
+    EXPECT(occt_bridge_discover_planar_regions(session, NULL, 1, origin, normal, x, NULL, 0, &out), ARG);
+    EXPECT(occt_bridge_discover_planar_regions(session, &wire, 0, origin, normal, x, NULL, 0, &out), ARG);
+    EXPECT(occt_bridge_discover_planar_regions(session, &wire, 1001, origin, normal, x, NULL, 0, &out), ARG);
+    EXPECT(occt_bridge_discover_planar_regions(session, &wire, 1, origin, normal, x, NULL, 1, &out), ARG);
+    EXPECT(occt_bridge_discover_planar_regions(session, &wire, 1, origin, normal, x, points, 1001, &out), ARG);
+    EXPECT(occt_bridge_discover_planar_regions(session, &wire, 1, origin, x, x, NULL, 0, &out), ARG);
+    const occt_bridge_shape_id_t missing = UINT64_C(999999);
+    EXPECT(occt_bridge_discover_planar_regions(session, &missing, 1, origin, normal, x, NULL, 0, &out), MISSING);
+    EXPECT(occt_bridge_discover_planar_regions(session, &wire, 1, origin, normal, x, NULL, 0, &out), GEOMETRY);
+    EXPECT_TRUE(out == OCCT_BRIDGE_INVALID_SHAPE_ID, "failed region discovery clears output");
+    occt_bridge_shape_release(session, wire);
+}
+
 static void corner_edits(occt_bridge_session_t* session) {
     occt_bridge_shape_id_t wire=0,out=99;
     const occt_bridge_vec3_t points[]={vec(0,0,0),vec(20,0,0),vec(20,10,0),vec(0,10,0)};
@@ -1503,6 +1523,7 @@ int main(void) {
     planar_intersections(session);
     corner_edits(session);
     elliptical_arcs(session);
+    planar_region_discovery(session);
     face_with_holes(session);
     extrusion_limits(session);
     profile_lofts(session);

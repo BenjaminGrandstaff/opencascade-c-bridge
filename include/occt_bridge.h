@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define OCCT_BRIDGE_ABI_VERSION 66u
+#define OCCT_BRIDGE_ABI_VERSION 67u
 #define OCCT_BRIDGE_INVALID_SHAPE_ID UINT64_C(0)
 
 #if defined(_WIN32) && defined(OCCT_BRIDGE_BUILD_SHARED)
@@ -378,6 +378,23 @@ OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_create_ellipse_wire(
 OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_create_face_from_wire(
     occt_bridge_session_t* session,
     occt_bridge_shape_id_t wire,
+    occt_bridge_shape_id_t* out_shape
+);
+
+/* Discover exact bounded cells from coplanar curve wires, splitting crossings.
+ * Returns a compound of faces. Empty seeds select all bounded cells; otherwise
+ * each seed must be strictly inside one cell; duplicate selections count once.
+ * Limits: 1000 wires, 10000 edges, 1000 seeds and 1000 discovered cells.
+ * Inputs are unchanged. Plane normal and x axis must be perpendicular. */
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_discover_planar_regions(
+    occt_bridge_session_t* session,
+    const occt_bridge_shape_id_t* wires,
+    size_t wire_count,
+    occt_bridge_vec3_t origin,
+    occt_bridge_vec3_t normal,
+    occt_bridge_vec3_t x_axis,
+    const occt_bridge_vec3_t* seeds,
+    size_t seed_count,
     occt_bridge_shape_id_t* out_shape
 );
 

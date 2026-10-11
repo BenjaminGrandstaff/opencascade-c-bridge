@@ -570,6 +570,46 @@ impl SketchDefinition {
         Ok(entity_ids)
     }
     fn validate_profile(&self, entity_ids: &HashSet<&str>) -> Result<(), ModelError> {
+        if let Some(discovery) = &self.region_discovery {
+            if !self.profile.is_empty()
+                || !self.holes.is_empty()
+                || !self.regions.is_empty()
+                || !self.profile_operations.is_empty()
+            {
+                return Err(ModelError::new(
+                    "region discovery is mutually exclusive with explicit profiles, holes, regions and profile operations",
+                ));
+            }
+            if discovery.entities.len() > 1000 || discovery.seeds.len() > 1000 {
+                return Err(ModelError::new(
+                    "region discovery exceeds 1000 entities or seeds",
+                ));
+            }
+            if discovery.entities.is_empty() && entity_ids.len() > 1000 {
+                return Err(ModelError::new(
+                    "region discovery includes more than 1000 expanded curve entities",
+                ));
+            }
+            if entity_ids.is_empty() {
+                return Err(ModelError::new("region discovery needs curve entities"));
+            }
+            let mut used = HashSet::new();
+            for id in &discovery.entities {
+                if !entity_ids.contains(id.as_str()) || !used.insert(id) {
+                    return Err(ModelError::new(
+                        "region discovery has unknown or repeated curve entities",
+                    ));
+                }
+            }
+            let points: HashSet<_> = self.points.iter().map(|p| p.id.as_str()).collect();
+            for id in &discovery.seeds {
+                if !points.contains(id.as_str()) {
+                    return Err(ModelError::new(format!(
+                        "region discovery has unknown seed point '{id}'"
+                    )));
+                }
+            }
+        }
         let mut profile_ids = HashSet::new();
         for id in &self.profile {
             if !entity_ids.contains(id.as_str()) || !profile_ids.insert(id.as_str()) {

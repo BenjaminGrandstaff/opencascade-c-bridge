@@ -1500,6 +1500,18 @@ pub(super) fn sketch_scene(
             ),
             Err(error) => (Vec::new(), Some(error.message)),
         };
+    if let Some(discovery) = &sketch.region_discovery {
+        annotations.push(Annotation {
+            id: "region-discovery".into(),
+            label: if discovery.seeds.is_empty() { "All bounded regions".into() } else { "Selected regions".into() },
+            kind: AnnotationKind::Group,
+            status: if profile_error.is_none() { AnnotationStatus::Constructed } else { AnnotationStatus::Failed },
+            targets: discovery.seeds.clone(),
+            parameters: names(&json!(sketch.points)),
+            anchors: json!(discovery.seeds.iter().map(|id| point_map[id]).collect::<Vec<_>>()),
+            detail: json!({"selection": discovery, "native_boundary_edges": edited_profile.len(), "error": profile_error}),
+        }.into());
+    }
     for (i, operation) in sketch.profile_operations.iter().enumerate() {
         let detail = serde_json::to_value(operation).stage("sketch")?;
         let mut control_names = names(&detail);
@@ -1711,6 +1723,7 @@ pub(super) fn sketch_scene(
         "acceptance": sketch.acceptance,
         "acceptance_error": acceptance_error,
         "profile_operations": sketch.profile_operations,
+        "region_discovery": sketch.region_discovery,
         "holes": sketch.holes,
         "patterns": sketch.patterns,
         "points": point_map,

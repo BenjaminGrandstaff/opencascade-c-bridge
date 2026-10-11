@@ -379,6 +379,9 @@ impl SketchDefinition {
                 .collect()
         };
         result.profile = expand(&self.profile);
+        if let Some(discovery) = &mut result.region_discovery {
+            discovery.entities = expand(&discovery.entities);
+        }
         result.holes = self.holes.iter().map(|hole| expand(hole)).collect();
         result.regions = self
             .regions

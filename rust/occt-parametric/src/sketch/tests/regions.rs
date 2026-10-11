@@ -58,6 +58,140 @@ fn faces(sketch: &SketchDefinition) -> Result<(usize, f64), ModelError> {
 }
 
 #[test]
+fn automatic_regions_split_intersections_and_select_named_seed_cells() {
+    let s = sketch(json!({
+        "points": [p("c", 0., 0.), p("r", 10., 0.), p("l", -12., 0.), p("h", 12., 0.), p("pick", 0., 5.)],
+        "circles": [{"id": "disc", "center": "c", "rim": "r"}],
+        "lines": [{"id": "divider", "start": "l", "end": "h"}],
+        "region_discovery": {"seeds": ["pick", "pick"]}
+    }));
+    let (count, area) = faces(&s).unwrap();
+    assert_eq!(count, 1);
+    assert!((area - 50. * PI).abs() < 1e-7);
+    let session = Session::new().unwrap();
+    let solution = s.solve(&HashMap::new()).unwrap();
+    let preview = s
+        .preview_edited_profile(&session, &HashMap::new(), &solution, 32, true)
+        .unwrap();
+    assert!(!preview.is_empty());
+    assert!(preview.iter().flatten().all(|p| p.y >= -1e-7));
+    let mut all = s;
+    all.region_discovery.as_mut().unwrap().seeds.clear();
+    let (count, area) = faces(&all).unwrap();
+    assert_eq!(count, 2);
+    assert!((area - 100. * PI).abs() < 1e-7);
+}
+
+#[test]
+fn automatic_regions_handle_nested_loops_and_overlapping_circles() {
+    let nested = sketch(json!({
+        "points": [p("c", 0., 0.), p("r", 10., 0.), p("b", 3., 0.), p("pick", 5., 0.)],
+        "circles": [{"id": "disc", "center": "c", "rim": "r"}, {"id": "hole", "center": "c", "rim": "b"}],
+        "region_discovery": {"seeds": ["pick"]}
+    }));
+    let (count, area) = faces(&nested).unwrap();
+    assert_eq!(count, 1);
+    assert!((area - 91. * PI).abs() < 1e-7);
+    let lens = sketch(json!({
+        "points": [p("c0", 0., 0.), p("r0", 0., 10.), p("c1", 10., 0.), p("r1", 10., 10.), p("pick", 5., 0.)],
+        "circles": [{"id": "left", "center": "c0", "rim": "r0"}, {"id": "right", "center": "c1", "rim": "r1"}],
+        "region_discovery": {"seeds": ["pick"]}
+    }));
+    let (_, area) = faces(&lens).unwrap();
+    assert!((area - (200. * PI / 3. - 50. * 3_f64.sqrt())).abs() < 1e-7);
+}
+
+#[test]
+fn automatic_regions_expand_shapes_and_use_native_ellipse_and_spline_edges() {
+    let rectangles = sketch(json!({
+        "points": [p("a", 0., 0.), p("b", 20., 10.), p("c", 30., 0.), p("d", 40., 10.)],
+        "shapes": [{"rectangle": {"id": "first", "first": "a", "opposite": "b"}},
+            {"rectangle": {"id": "second", "first": "c", "opposite": "d"}}],
+        "region_discovery": {"entities": ["first", "second"]}
+    }));
+    let (count, area) = faces(&rectangles).unwrap();
+    assert_eq!(count, 2);
+    assert!((area - 300.).abs() < 1e-7);
+    let ellipse = sketch(json!({
+        "points": [p("c", 0., 0.), p("a", 10., 0.), p("b", 0., 4.), p("l", -12., 0.), p("r", 12., 0.), p("pick", 0., 2.)],
+        "ellipses": [{"id": "e", "center": "c", "major": "a", "minor": "b"}],
+        "lines": [{"id": "line", "start": "l", "end": "r"}],
+        "region_discovery": {"seeds": ["pick"]}
+    }));
+    assert!((faces(&ellipse).unwrap().1 - 20. * PI).abs() < 1e-7);
+    let spline = sketch(json!({
+        "points": [p("a", 0., 0.), p("b", 5., 4.), p("c", 10., 0.), p("l", -2., 0.), p("r", 12., 0.)],
+        "splines": [{"id": "arch", "points": ["a", "b", "c"]}],
+        "lines": [{"id": "line", "start": "l", "end": "r"}],
+        "region_discovery": {}
+    }));
+    let (count, area) = faces(&spline).unwrap();
+    assert_eq!(count, 1);
+    assert!(area > 20. && area < 40.);
+}
+
+#[test]
+fn automatic_region_errors_reject_ambiguous_requests_and_bad_seeds() {
+    let base = |seed: (f64, f64)| {
+        sketch(json!({
+            "points": [p("c", 0., 0.), p("r", 10., 0.), p("pick", seed.0, seed.1)],
+            "circles": [{"id": "disc", "center": "c", "rim": "r"}],
+            "region_discovery": {"seeds": ["pick"]}
+        }))
+    };
+    assert!(
+        faces(&base((10., 0.)))
+            .unwrap_err()
+            .message
+            .contains("boundary")
+    );
+    assert!(
+        faces(&base((20., 0.)))
+            .unwrap_err()
+            .message
+            .contains("outside")
+    );
+    let mut s = base((0., 0.));
+    s.profile = vec!["disc".into()];
+    assert!(
+        faces(&s)
+            .unwrap_err()
+            .message
+            .contains("mutually exclusive")
+    );
+    s.profile.clear();
+    s.region_discovery.as_mut().unwrap().entities = vec!["missing".into()];
+    assert!(
+        faces(&s)
+            .unwrap_err()
+            .message
+            .contains("unknown or repeated")
+    );
+    s.region_discovery.as_mut().unwrap().entities.clear();
+    s.region_discovery.as_mut().unwrap().seeds = vec!["missing".into()];
+    assert!(faces(&s).unwrap_err().message.contains("unknown seed"));
+    s.region_discovery.as_mut().unwrap().seeds.clear();
+    s.region_discovery.as_mut().unwrap().seeds = vec!["pick".into(); 1001];
+    assert!(faces(&s).unwrap_err().message.contains("exceeds 1000"));
+    s.region_discovery.as_mut().unwrap().seeds.clear();
+    let session = Session::new().unwrap();
+    assert!(
+        s.wire(&session, &HashMap::new(), None)
+            .unwrap_err()
+            .message
+            .contains("only to face outputs")
+    );
+    let open = sketch(json!({"points": [p("a", 0., 0.), p("b", 10., 0.)],
+        "lines": [{"id": "line", "start": "a", "end": "b"}], "region_discovery": {}}));
+    assert!(
+        faces(&open)
+            .unwrap_err()
+            .message
+            .contains("no bounded cells")
+    );
+}
+
+#[test]
 fn disjoint_regions_build_one_compound_face_with_their_own_holes() {
     let (count, area) = faces(&three_regions(0.)).unwrap();
     assert_eq!(count, 3);

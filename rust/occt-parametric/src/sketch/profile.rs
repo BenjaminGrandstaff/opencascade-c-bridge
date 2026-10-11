@@ -133,7 +133,15 @@ impl SketchDefinition {
             && self.splines.is_empty();
         let mut faces = Vec::new();
         let mut names = Vec::new();
-        if !text_only {
+        if let Some(discovery) = &self.region_discovery {
+            faces.push(self.discovered_regions(
+                session,
+                &solution,
+                discovery,
+                (origin, x_axis, y_axis),
+            )?);
+            names.push("discovered regions".to_owned());
+        } else if !text_only {
             let wire = self.solved_profile_wire(session, parameters, datum, true, &solution)?;
             let main = face(&wire, &self.holes, "profile")?;
             if self.regions.is_empty() && self.texts.is_empty() {
@@ -337,6 +345,11 @@ impl SketchDefinition {
                 "sketch texts apply only to face outputs, not wires",
             ));
         }
+        if self.region_discovery.is_some() {
+            return Err(ModelError::new(
+                "sketch region discovery applies only to face outputs, not wires",
+            ));
+        }
         if !self.holes.is_empty() || !self.regions.is_empty() {
             return Err(ModelError::new(
                 "sketch holes and regions apply only to face outputs, not wires",
@@ -407,7 +420,7 @@ impl SketchDefinition {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn entity_wire<'a>(
+    pub(super) fn entity_wire<'a>(
         &self,
         session: &'a Session,
         entity: Entity<'_>,
@@ -609,6 +622,9 @@ impl SketchDefinition {
         samples: usize,
         closed: bool,
     ) -> Result<Vec<Vec<SketchPoint2>>, ModelError> {
+        if let std::borrow::Cow::Owned(expanded) = self.with_patterns(Some(parameters))? {
+            return expanded.preview_edited_profile(session, parameters, solution, samples, closed);
+        }
         if !self.projections.is_empty() {
             return Err(ModelError::new(
                 "projected sketch requires source-geometry resolution before preview",
@@ -617,7 +633,7 @@ impl SketchDefinition {
         if !(2..=256).contains(&samples) {
             return Err(ModelError::new("profile preview samples must be in 2..256"));
         }
-        if self.profile_operations.is_empty() {
+        if self.profile_operations.is_empty() && self.region_discovery.is_none() {
             return Ok(Vec::new());
         }
         self.validate(parameters)?;
@@ -632,16 +648,29 @@ impl SketchDefinition {
         }
         self.validate_curve_geometry(&solution.points)?;
         let transform = |p: SketchPoint2| Vec3::new(p.x, p.y, 0.0);
-        let wire = self.edited_profile(
-            session,
-            parameters,
-            solution,
-            &self.profile_entities()?,
-            &transform,
-            &transform,
-            Vec3::new(0.0, 0.0, 1.0),
-            closed,
-        )?;
+        let wire = if let Some(discovery) = &self.region_discovery {
+            self.discovered_regions(
+                session,
+                solution,
+                discovery,
+                (
+                    Vec3::new(0., 0., 0.),
+                    Vec3::new(1., 0., 0.),
+                    Vec3::new(0., 1., 0.),
+                ),
+            )?
+        } else {
+            self.edited_profile(
+                session,
+                parameters,
+                solution,
+                &self.profile_entities()?,
+                &transform,
+                &transform,
+                Vec3::new(0.0, 0.0, 1.0),
+                closed,
+            )?
+        };
         session
             .subshapes(&wire, ShapeType::Edge)?
             .iter()

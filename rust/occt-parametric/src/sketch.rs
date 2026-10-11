@@ -13,6 +13,7 @@ const PIVOT_TOLERANCE: f64 = 1e-10;
 
 mod diagnosis;
 mod diagnostics;
+mod discovery;
 mod geometry;
 mod patterns;
 mod profile;
@@ -607,6 +608,21 @@ pub struct SketchRegion {
     pub holes: Vec<Vec<String>>,
 }
 
+/// Native planar arrangement selection (schema 130). Named seed points
+/// select bounded cells without depending on their native enumeration order.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SketchRegionDiscovery {
+    /// Curves included in the arrangement; empty means all sketch curves.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[schemars(length(max = 1000))]
+    pub entities: Vec<String>,
+    /// Points strictly inside selected cells; empty selects all bounded cells.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[schemars(length(max = 1000))]
+    pub seeds: Vec<String>,
+}
+
 /// A driven (reference) dimension, measured on the solved sketch. It never
 /// constrains geometry and is reported beside the constraints (schema 122).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
@@ -902,6 +918,9 @@ pub struct SketchDefinition {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[schemars(length(max = 1000))]
     pub regions: Vec<SketchRegion>,
+    /// Discover bounded cells instead of enumerating profile/holes/regions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub region_discovery: Option<SketchRegionDiscovery>,
     /// Single-line text outlines added to face outputs (schema 129).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[schemars(length(max = 100))]

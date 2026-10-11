@@ -42,6 +42,7 @@ add_library(
     src/measurements.cpp
     src/surface_radius.cpp
     src/text.cpp
+    src/planar_regions.cpp
     src/face_pull.cpp
     src/sweep.cpp
     src/step_assembly.cpp
