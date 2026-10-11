@@ -157,13 +157,26 @@ impl SketchDefinition {
         parameters: &HashMap<String, ParameterValue>,
     ) -> Result<SketchSolution, ModelError> {
         let solution = self.solve(parameters)?;
+        self.check_acceptance(&solution)?;
+        Ok(solution)
+    }
+
+    /// Check a solution produced by this sketch against its acceptance policy.
+    /// This uses the solver's local numerical rank, not a global rigidity proof.
+    pub fn check_acceptance(&self, solution: &SketchSolution) -> Result<(), ModelError> {
         if !solution.solved {
             return Err(ModelError::new(format!(
                 "sketch '{}' constraints conflict; maximum residual {}",
                 self.id, solution.max_residual
             )));
         }
-        Ok(solution)
+        if self.acceptance == SketchAcceptance::FullyConstrained && solution.free_degrees > 0 {
+            return Err(ModelError::new(format!(
+                "sketch '{}' requires fully constrained geometry; {} free degrees remain",
+                self.id, solution.free_degrees
+            )));
+        }
+        Ok(())
     }
 
     fn profile_wire<'session>(

@@ -12,6 +12,7 @@ fn direction(y: f64) -> VectorExpr {
 
 fn rib_family(wire: bool) -> FamilyDefinition {
     let sketch = SketchDefinition {
+        acceptance: Default::default(),
         id: "brace".into(),
         datum_plane: None,
         face_support: None,

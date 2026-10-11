@@ -1496,7 +1496,11 @@ Local sketch diagnosis reuses the final Jacobian without changing authoring
 schema 114 or ABI 60. It links local dependencies and representative nullspace
 motion to viewer geometry; bounded work, partial traces and numerical rank
 agreement are visible. See [Sketches](docs/SKETCHES.md#local-solver-explanations).
-An explicit sketch acceptance policy is the next priority for AI authoring.
+Schema 115 adds an optional `fully_constrained` sketch acceptance policy,
+checked before native profile generation. It requires zero local free degrees
+across construction and profile points, while diagnostic solving stays
+available for rejected edits. General projection of spline and ellipse edges
+into sketch planes is the next sketch authoring priority.
 
 The next cross-layer work should prioritize manufacturing product definition:
 standards-verified material hatch presets and drawing conventions, followed by

@@ -135,7 +135,11 @@ Sketch solver explanations are available through `SketchSolution.diagnosis` and
 viewer/MCP annotations: local conflicting equation groups, redundant constraints,
 and coupled free-motion directions. Try
 [`sketch-diagnosis.request.json`](tools/model/sketch-diagnosis.request.json);
-see [the local-analysis limits](docs/SKETCHES.md#local-solver-explanations).
+see [the local-analysis limits](docs/SKETCHES.md#local-solver-explanations). Schema 115
+adds `acceptance: "fully_constrained"` to reject sketches with remaining local
+free degrees before generating geometry. Try
+[`strict-sketch-block`](tools/model/strict-sketch-block.request.json) and set
+`lift` to zero to inspect a solved sketch rejected by the policy.
 
 ## Repository layout
 

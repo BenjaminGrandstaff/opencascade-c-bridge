@@ -42,11 +42,11 @@ pub use assembly::{
     JointSeedAxis, JointSolution, JointSolveOptions, JointVariable,
 };
 pub use sketch::{
-    ResolvedSketch, ResolvedSketches, SketchArc, SketchBSplineBasis, SketchCircle,
-    SketchCircleTangency, SketchConflictGroup, SketchConstraint, SketchConstraintCheck,
-    SketchCoordinateAxis, SketchDefinition, SketchDiagnosis, SketchEllipse, SketchEquationSource,
-    SketchFaceSupport, SketchFreeCoordinate, SketchFreeMotion, SketchLine, SketchLineSide,
-    SketchOffsetJoin, SketchPattern, SketchPoint, SketchPoint2, SketchPointMotion,
+    ResolvedSketch, ResolvedSketches, SketchAcceptance, SketchArc, SketchBSplineBasis,
+    SketchCircle, SketchCircleTangency, SketchConflictGroup, SketchConstraint,
+    SketchConstraintCheck, SketchCoordinateAxis, SketchDefinition, SketchDiagnosis, SketchEllipse,
+    SketchEquationSource, SketchFaceSupport, SketchFreeCoordinate, SketchFreeMotion, SketchLine,
+    SketchLineSide, SketchOffsetJoin, SketchPattern, SketchPoint, SketchPoint2, SketchPointMotion,
     SketchProfileOperation, SketchProjection, SketchProjectionKind, SketchSolution, SketchSpline,
     SketchSplineCircleContact, SketchSplineEndpoints, SketchSupportPlanes,
 };

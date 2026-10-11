@@ -46,10 +46,10 @@ or remote service is started.
 | `occt_build` | The entire `occb-model-request-v1` object | Accepted report, build ID, local directory, and artifact resource URIs |
 
 `tools/list` provides the generated complete request schema as `occt_build`'s
-input schema. All 38 current feature operations and 148 nested request-schema
+input schema. All 38 current feature operations and 152 nested request-schema
 definitions are discoverable. Schemas derive from serde-compatible Rust types;
 new serialized variants require schema support at compilation. Authoring schemas
-target current model schema 100. The engine still migrates older documents.
+target current model schema 115. The engine still migrates older documents.
 Schemas describe serialization and basic request bounds; units, dependency
 references, dimensional constraints, selector resolution, and geometry validity
 are checked by the build engine.
@@ -530,3 +530,11 @@ metadata, linked controls and dashed control polygon. The request schema has
 seam closure, closed control polygons and a linked rational corner weight.
 The catalog has 36 examples plus 12 schemas (48 resources); request schemas
 retain 148 definitions. Native ABI 54 is required for the periodic flag semantics.
+
+The `strict-sketch-block` example demonstrates sketch `acceptance`:
+`fully_constrained` requires satisfied equations and zero local free degrees.
+Set the `lift` override to 0 mm to obtain diagnostic scenes with
+`solver.solved: true`, `solver.accepted: false`, and a failed policy annotation.
+`occt_build` rejects that model at regeneration; `occt_visualize_model` retains
+the source sketch and solver evidence. See
+[sketch acceptance](../../docs/SKETCHES.md#sketch-acceptance-policy-schema-115).

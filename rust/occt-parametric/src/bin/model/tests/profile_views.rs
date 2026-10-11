@@ -1877,3 +1877,64 @@ fn sketch_diagnosis_viewer_links_conflicts_redundancy_and_coupled_free_motion() 
         }
     }
 }
+
+#[test]
+fn strict_sketch_acceptance_rejects_geometry_without_hiding_solved_diagnostics() {
+    let dir = Directory::new();
+    for lift in [4, 0] {
+        let mut request = view_example("strict-sketch-block");
+        request["model"]["instances"][0]["base"]["overrides"]["lift"] =
+            json!({"scalar":{"value":lift,"dimension":"length","unit":"millimeter"}});
+        let name = format!("strict-view-{lift}");
+        view_request(&dir, request.clone(), &name).unwrap();
+        let data: Value =
+            serde_json::from_str(&fs::read_to_string(dir.0.join(name).join("view.json")).unwrap())
+                .unwrap();
+        let scene = data["scenes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["kind"] == "sketch")
+            .unwrap();
+        assert_eq!(scene["solver"]["solved"], true);
+        assert_eq!(scene["solver"]["accepted"], lift != 0);
+        assert_eq!(
+            scene["solver"]["free_degrees"],
+            if lift == 0 { 1 } else { 0 }
+        );
+        assert_eq!(scene["acceptance"], "fully_constrained");
+        let policy = scene["annotations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|a| a["id"] == "acceptance-policy")
+            .unwrap();
+        assert_eq!(
+            policy["status"],
+            if lift == 0 { "failed" } else { "passed" }
+        );
+        if lift == 0 {
+            assert!(
+                scene["acceptance_error"]
+                    .as_str()
+                    .unwrap()
+                    .contains("1 free degrees")
+            );
+        }
+        request["schema"] = json!("occb-model-request-v1");
+        request.as_object_mut().unwrap().remove("sketches");
+        request["step"] = json!(false);
+        request["stl"] = json!(false);
+        request["preview"] = json!(false);
+        let name = format!("strict-build-{lift}");
+        if lift == 0 {
+            assert_eq!(
+                invoke(&dir, request, &name).unwrap_err().stage,
+                "regeneration"
+            );
+            assert!(!dir.0.join(name).exists());
+        } else {
+            assert_eq!(invoke(&dir, request, &name).unwrap()["status"], "built");
+        }
+    }
+}

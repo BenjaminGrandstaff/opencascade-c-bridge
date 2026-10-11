@@ -30,7 +30,12 @@ for(let i=0;i<data.scenes.length;i++){
   assert(!elements.overlay.children.some(e=>e.attributes['data-annotation']===diagnosis.id));
   elements.constraints.checked=true;elements.constraints.emit('change');
  }
- if(viewer.scene.solver?.solved&&viewer.scene.solver.free_degrees>0)assert(elements.status.textContent.includes('free motion'));
+ if(viewer.scene.acceptance==='fully_constrained'){
+  const policy=viewer.scene.annotations.find(a=>a.id==='acceptance-policy');assert(policy);
+  assert.equal(policy.detail.accepted,viewer.scene.solver.accepted);
+  if(viewer.scene.acceptance_error){assert.equal(policy.status,'failed');assert(elements.status.textContent.includes('Sketch acceptance failed'));}
+ }
+ if(viewer.scene.solver?.solved&&!viewer.scene.acceptance_error&&viewer.scene.solver.free_degrees>0)assert(elements.status.textContent.includes('free motion'));
  for(const e of viewer.scene.entities||[]){if(e.external)assert(elements.overlay.children.some(n=>n.attributes['data-entity']===e.id&&n.attributes.class.includes('external-geometry')),'linked external curves are rendered distinctly');}
 
  for(const e of viewer.scene.entities||[]){if(e.bspline)assert(elements.overlay.children.some(n=>n.attributes['data-entity']===e.id&&n.attributes.class.includes('control-polygon')&&n.attributes.points.split(' ').length===e.bspline.control_points.length+(e.bspline.basis.periodic?1:0)),'explicit B-spline control polygon is rendered separately from its curve');}

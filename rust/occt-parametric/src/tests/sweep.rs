@@ -17,6 +17,7 @@ fn point(id: &str, x: ScalarExpr, y: ScalarExpr) -> SketchPoint {
 
 fn plane_sketch(id: &str, x_axis: (f64, f64, f64), y_axis: (f64, f64, f64)) -> SketchDefinition {
     SketchDefinition {
+        acceptance: Default::default(),
         id: id.into(),
         datum_plane: None,
         face_support: None,

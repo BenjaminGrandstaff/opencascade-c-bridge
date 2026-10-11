@@ -11,18 +11,31 @@ tracks status and order.
 | C ABI (`src/`, `include/`) | ABI 60 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 114 | Active development |
+| `occt-parametric` (engineering layer) | Schema 115 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 130 + first-use integration 1 (+1 doc test), recipes 3, parametric 557 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 19 + branch command 2 + model command 61, MCP Python 9, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 130 + first-use integration 1 (+1 doc test), recipes 3, parametric 559 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 19 + branch command 2 + model command 62, MCP Python 9, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform code also passes. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
 | Coverage | Last recorded: 93.61% lines overall, test code excluded; C++ 94.13% lines, 87.40% branches, 100% functions; Rust 93.42% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 171 Rust cases plus 5 model-command and 36 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Scale benchmarks | 172 Rust cases plus 5 model-command and 37 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
+
+- Sketch acceptance policy (schema 115, ABI 60 unchanged): optional
+  `fully_constrained` requires satisfied equations and zero local free degrees
+  before native face/closed-wire/open-wire creation. The compatible default
+  remains `solved`; diagnostic solves remain available. Viewer/MCP distinguish
+  solver convergence from policy acceptance and expose a linked policy
+  annotation. All points count, including construction geometry and linked
+  copies. Example: `strict-sketch-block`; `lift = 0` demonstrates a converged
+  singular sketch rejected by local rank. Catalog: 51 examples, 63 resources;
+  every request example is schema 115. Migration, export, rejected live-edit
+  retention and recovery are verified. Performance: 1,000 valid strict builds
+  plus 1,000 free-motion rejections take 1.815 s / 10 s; MCP renders 20 strict
+  sketches in 0.141 s / 10 s. All 30 advanced sketch gates pass.
 
 - Local sketch solver explanations (schema 114 / ABI 60 unchanged): final
   Jacobian analysis exposes locally redundant constraints, satisfied fixed
@@ -1848,8 +1861,8 @@ For continued sketch authoring, fillets and chamfers cover line, arc, spline
 and trimmed-ellipse corners, and sketches support linked mirror, linear and
 circular patterns with inner holes. Local solver explanations now identify
 conflicting equation groups, redundancy and representative free motion. The
-next sketch priority is an explicit acceptance policy for AI-authored parts
-(for example, requiring a fully constrained sketch), followed by general
+optional `fully_constrained` acceptance policy now supports AI-authored parts
+that require zero local free degrees. The next sketch priority is general
 projection of spline and ellipse edges into sketch planes.
 
 The earlier geometry and assembly milestones are complete. Manufacturing

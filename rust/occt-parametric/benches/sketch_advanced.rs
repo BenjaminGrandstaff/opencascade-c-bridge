@@ -24,6 +24,7 @@ fn point(id: String, x: f64, y: f64, fixed: bool) -> SketchPoint {
 }
 fn sketch() -> SketchDefinition {
     SketchDefinition {
+        acceptance: Default::default(),
         id: "scale".into(),
         datum_plane: None,
         face_support: None,
@@ -55,6 +56,48 @@ fn gate(name: &str, budget: u64, run: impl FnOnce()) {
     println!("PASS {name}: {:.3}s / {budget}s", elapsed.as_secs_f64());
 }
 fn main() {
+    gate(
+        "1000 strict sketch builds and 1000 free-motion rejections",
+        10,
+        || {
+            let request: serde_json::Value = serde_json::from_str(include_str!(
+                "../../../tools/model/strict-sketch-block.request.json"
+            ))
+            .unwrap();
+            let doc = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+            let session = Session::new().unwrap();
+            let mut part = PartInstance {
+                id: "part".into(),
+                definition: &doc.family,
+                overrides: HashMap::new(),
+                provenance: "scale".into(),
+            };
+            for _ in 0..1000 {
+                part.overrides.insert(
+                    "lift".into(),
+                    ParameterValue::Scalar(Quantity::length(4., LengthUnit::Millimeter)),
+                );
+                let built = part.regenerate(&session).unwrap();
+                assert!(session.is_valid(built.shape("body").unwrap()).unwrap());
+                assert!(
+                    (session.volume(built.shape("body").unwrap()).unwrap() - 10000.).abs() < 1e-6
+                );
+                drop(built);
+                part.overrides.insert(
+                    "lift".into(),
+                    ParameterValue::Scalar(Quantity::length(0., LengthUnit::Millimeter)),
+                );
+                assert!(
+                    part.regenerate(&session)
+                        .err()
+                        .unwrap()
+                        .to_string()
+                        .contains("requires fully constrained")
+                );
+                assert_eq!(session.shape_count().unwrap(), 0);
+            }
+        },
+    );
     gate("10000 independent duplicate-equation diagnoses", 10, || {
         let mut s = sketch();
         for i in 0..10000 {

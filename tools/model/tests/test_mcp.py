@@ -58,7 +58,7 @@ class McpTests(unittest.TestCase):
         with self.assertRaises(jsonschema.ValidationError):
             jsonschema.validate(bad, schema)
         resources = self.client.call('resources/list')['result']['resources']
-        self.assertEqual(len(resources), 62)
+        self.assertEqual(len(resources), 63)
         self.assertEqual(len(self.client.call('resources/templates/list')['result']['resourceTemplates']), 1)
         read = self.client.call('resources/read', dict(uri='occt://schema/request'))['result']['contents'][0]
         self.assertEqual(json.loads(read['text']), schema)
@@ -243,6 +243,24 @@ class McpTests(unittest.TestCase):
                 self.assertTrue(group['detail']['conflict_group']['trace_complete'])
             else:
                 self.assertEqual(d['locally_redundant_constraints'],[5,6])
+        strict = self.client.tool('occt_get_example',dict(name='strict-sketch-block'))['structuredContent']
+        jsonschema.validate(strict,schema)
+        for lift in [4,0]:
+            strict['model']['instances'][0]['base']['overrides']['lift'] = {'scalar':dict(value=lift,dimension='length',unit='millimeter')}
+            result = self.client.tool('occt_visualize_model',strict)
+            self.assertFalse(result['isError'])
+            data = json.loads(self.client.call('resources/read',dict(uri=result['structuredContent']['resources']['view.json']))['result']['contents'][0]['text'])
+            scene = next(s for s in data['scenes'] if s['kind']=='sketch')
+            self.assertTrue(scene['solver']['solved'])
+            self.assertEqual(scene['solver']['accepted'],lift!=0)
+            self.assertEqual(scene['solver']['free_degrees'],0 if lift else 1)
+            self.assertEqual(scene['acceptance'],'fully_constrained')
+            policy = next(a for a in scene['annotations'] if a['id']=='acceptance-policy')
+            self.assertEqual(policy['status'],'passed' if lift else 'failed')
+            build = dict(schema='occb-model-request-v1',model=strict['model'],outputs=strict['outputs'],preview=False,step=False,stl=False)
+            result = self.client.tool('occt_build',build)
+            self.assertEqual(result['isError'],lift==0)
+            if not lift:self.assertEqual(result['structuredContent']['stage'],'regeneration')
         curved = self.client.tool('occt_get_example',dict(name='curved-extrusions'))['structuredContent']
         jsonschema.validate(curved,schema)
         result = self.client.tool('occt_visualize_model',curved)

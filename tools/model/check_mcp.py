@@ -689,5 +689,21 @@ with tempfile.TemporaryDirectory(prefix='occb-mcp-scale-') as root:
         elapsed=time.monotonic()-started
         assert elapsed<10
         print(f'PASS MCP 20 sketches with local redundancy and coupled free-motion annotations: {elapsed:.3f}s / 10s')
+        strict=client.tool('occt_get_example',dict(name='strict-sketch-block'))['structuredContent']
+        for i in range(1,20):
+            strict['model']['instances'].append({'clone':dict(id=f'part-{i}',source='part',overrides={},provenance='scale')})
+            strict['outputs'].extend(dict(instance=f'part-{i}',output=out) for out in ['body','profile'])
+        started=time.monotonic()
+        result=client.tool('occt_visualize_model',strict)
+        assert not result['isError'],result
+        data=json.loads(client.call('resources/read',dict(uri=result['structuredContent']['resources']['view.json']))['result']['contents'][0]['text'])
+        profiles=[s for s in data['scenes'] if s['kind']=='sketch']
+        assert len(profiles)==20
+        for scene in profiles:
+            assert scene['solver']['accepted'] and scene['solver']['free_degrees']==0
+            assert next(a for a in scene['annotations'] if a['id']=='acceptance-policy')['status']=='passed'
+        elapsed=time.monotonic()-started
+        assert elapsed<10
+        print(f'PASS MCP 20 strictly accepted sketches with policy annotations: {elapsed:.3f}s / 10s')
     finally:
         client.close()

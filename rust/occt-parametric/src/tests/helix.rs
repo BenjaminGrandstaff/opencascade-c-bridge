@@ -31,6 +31,7 @@ fn wire_section() -> SketchDefinition {
     let lead = TAU * COIL_RADIUS;
     let norm = lead.hypot(PITCH);
     SketchDefinition {
+        acceptance: Default::default(),
         id: "section".into(),
         datum_plane: None,
         face_support: None,

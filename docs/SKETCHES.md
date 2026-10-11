@@ -79,7 +79,7 @@ export are verified. A 1,000-pair solve and residual-diagnostic gate passes in
 0.009 s (10 s budget); 20 solids plus 60 source sketch scenes and matched-radius
 annotations pass through MCP in 0.316 s (10 s budget).
 
-Current authoring examples use schema 114. Older model documents migrate
+Current authoring examples use schema 115. Older model documents migrate
 without adding constraints or changing their entities. Current native ABI is 60.
 
 ## Saved profile operations
@@ -1131,3 +1131,35 @@ with a dropped trace reports `trace_complete: false` and a partial source list.
 calculation leaves `local_rank` empty. Output includes at most 128 conflict
 groups, 16 motion directions, and 64 moving points per direction, with explicit
 omitted counts. All independent free-coordinate choices remain available.
+
+## Sketch acceptance policy (schema 115)
+
+Set `"acceptance": "fully_constrained"` on a sketch to require satisfied
+solver equations and zero local free degrees before constructing a face or
+closed/open wire. The default, `"solved"`, permits remaining free motion;
+older documents migrate to this default, and it is omitted when serialized.
+All points count, including construction points and linked pattern copies.
+Duplicate satisfied equations are permitted. The policy adds no native ABI
+change and no extra solver pass or geometry query.
+
+`SketchDefinition::solve` still returns the diagnostic solution. Call
+`check_acceptance` to check it explicitly; native profile creation applies
+that check automatically. Viewer scenes expose `acceptance`,
+`acceptance_error`, and `solver.accepted` separately from `solver.solved`.
+A failed policy annotation links to locally free points. Builds reject strict
+failures before publishing artifacts; a rejected live edit preserves the
+accepted geometry and previews the diagnostic sketch.
+
+This policy uses the existing solver's numerical Jacobian rank. It is a local
+criterion, not a proof of global rigidity or uniqueness. At singular positions,
+equations can converge yet retain a first-order free direction even when
+nonlinear constraints prevent finite motion. Such sketches fail this policy.
+The diagnosis rank and its agreement flag remain available for inspection.
+
+The `strict-sketch-block` example starts with a fully constrained rectangle
+and a construction point constrained by two distances. Set `lift` to zero:
+the two distances become tangent at the point, giving one local free degree.
+The equations still solve, but strict acceptance rejects the edit. Restore
+`lift` to 4 mm to recover. For AI part authoring, use this policy on each
+sketch that must pass the local full-constraint check, then verify the native
+shape and engineering requirements as usual.

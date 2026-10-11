@@ -3255,3 +3255,92 @@ fn sketch_diagnosis_keeps_long_chain_rank_when_conflict_trace_is_partial() {
     );
     assert!(!failed.diagnosis.complete);
 }
+
+#[test]
+fn sketch_acceptance_checks_all_points_and_preserves_diagnostic_solving() {
+    let mut s = rectangle();
+    let parameters = HashMap::new();
+    let session = Session::new().unwrap();
+    s.acceptance = SketchAcceptance::FullyConstrained;
+    let solved = s.solve(&parameters).unwrap();
+    assert_eq!(solved.free_degrees, 0);
+    s.check_acceptance(&solved).unwrap();
+    assert!(
+        session
+            .is_valid(&s.face(&session, &parameters).unwrap())
+            .unwrap()
+    );
+    s.points.push(point("construction", 3., 2., false));
+    let free = s.solve(&parameters).unwrap();
+    assert!(free.solved);
+    assert_eq!(free.free_degrees, 2);
+    assert!(
+        s.check_acceptance(&free)
+            .unwrap_err()
+            .to_string()
+            .contains("2 free degrees")
+    );
+    for result in [
+        s.face(&session, &parameters),
+        s.wire(&session, &parameters, None),
+        s.open_wire(&session, &parameters, None),
+    ] {
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("requires fully constrained")
+        );
+    }
+    assert_eq!(session.shape_count().unwrap(), 0);
+    s.acceptance = SketchAcceptance::Solved;
+    s.check_acceptance(&free).unwrap();
+    assert!(
+        session
+            .is_valid(&s.face(&session, &parameters).unwrap())
+            .unwrap()
+    );
+    s.points[1].fixed = true;
+    s.points[1].x = length(2.);
+    let conflicting = s.solve(&parameters).unwrap();
+    assert!(!conflicting.solved);
+    assert!(
+        s.check_acceptance(&conflicting)
+            .unwrap_err()
+            .to_string()
+            .contains("constraints conflict")
+    );
+}
+
+#[test]
+fn sketch_acceptance_schema115_migrates_with_compatible_default_and_roundtrips_policy() {
+    let mut value: serde_json::Value = serde_json::from_str::<serde_json::Value>(include_str!(
+        "../../../../../tools/model/strict-sketch-block.request.json"
+    ))
+    .unwrap()["model"]
+        .clone();
+    let current = ModelDocument::from_json(&value.to_string()).unwrap();
+    assert_eq!(current.schema_version, 115);
+    assert!(
+        current
+            .to_json_pretty()
+            .unwrap()
+            .contains("fully_constrained")
+    );
+    value["schema_version"] = serde_json::json!(114);
+    value["family"]["features"][0]["operation"]["sketch_face"]["sketch"]
+        .as_object_mut()
+        .unwrap()
+        .remove("acceptance");
+    let migrated = ModelDocument::from_json(&value.to_string()).unwrap();
+    assert_eq!(migrated.schema_version, 115);
+    assert!(
+        !migrated
+            .to_json_pretty()
+            .unwrap()
+            .contains("\"acceptance\"")
+    );
+    value["family"]["features"][0]["operation"]["sketch_face"]["sketch"]["acceptance"] =
+        serde_json::json!("unknown");
+    assert!(ModelDocument::from_json(&value.to_string()).is_err());
+}

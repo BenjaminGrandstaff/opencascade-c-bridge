@@ -18,6 +18,10 @@ pub(super) fn sketch_scene(
     let expanded = sketch.with_pattern_copies(parameters).stage("sketch")?;
     let sketch = expanded.as_ref();
     let solution = sketch.solve(parameters).stage("sketch")?;
+    let acceptance_error = sketch
+        .check_acceptance(&solution)
+        .err()
+        .map(|e| e.to_string());
     let checks = sketch
         .constraint_checks(parameters, &solution)
         .stage("sketch")?;
@@ -1078,6 +1082,28 @@ pub(super) fn sketch_scene(
             detail:json!({"conflict_group":group,"description":"Related equations disagree at the current iterate. Linearized groups are local evidence, not minimal conflict sets or a proof that the nonlinear sketch has no solution."}),
         }.into());
     }
+    if sketch.acceptance == SketchAcceptance::FullyConstrained {
+        let targets = solution
+            .diagnosis
+            .free_coordinates
+            .iter()
+            .map(|c| c.point.clone())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .take(128)
+            .collect::<Vec<_>>();
+        let anchor = targets
+            .first()
+            .and_then(|id| point_map.get(id))
+            .or_else(|| sketch.points.first().and_then(|p| point_map.get(&p.id)));
+        annotations.push(Annotation {
+            id: "acceptance-policy".into(), label: format!("Strict sketch · {} free", solution.free_degrees),
+            kind: AnnotationKind::Constraint,
+            status: if acceptance_error.is_some() { AnnotationStatus::Failed } else { AnnotationStatus::Passed },
+            targets, parameters: Vec::new(), anchors: json!(anchor.into_iter().collect::<Vec<_>>()),
+            detail: json!({"acceptance":sketch.acceptance,"accepted":acceptance_error.is_none(),"error":acceptance_error,"free_degrees":solution.free_degrees,"description":"Requires zero local free degrees across all sketch points, including construction geometry."}),
+        }.into());
+    }
     for p in &sketch.points {
         let control_names =
             p.x.parameter_names()
@@ -1344,6 +1370,8 @@ pub(super) fn sketch_scene(
         "entities": entities,
         "edited_profile": edited_profile,
         "profile_error": profile_error,
+        "acceptance": sketch.acceptance,
+        "acceptance_error": acceptance_error,
         "profile_operations": sketch.profile_operations,
         "holes": sketch.holes,
         "patterns": sketch.patterns,
@@ -1352,6 +1380,7 @@ pub(super) fn sketch_scene(
         "annotations": annotations,
         "solver": {
             "solved": solution.solved,
+            "accepted": acceptance_error.is_none(),
             "iterations": solution.iterations,
             "max_residual": solution.max_residual,
             "free_degrees": solution.free_degrees,

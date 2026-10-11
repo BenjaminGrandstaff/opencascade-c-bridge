@@ -455,12 +455,32 @@ pub struct ResolvedSketch {
 /// Resolved sketch snapshots or per-feature resolution errors.
 pub type ResolvedSketches = HashMap<String, Result<ResolvedSketch, ModelError>>;
 
+/// Acceptance of a converged sketch when constructing native geometry.
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum SketchAcceptance {
+    /// Require satisfied equations; remaining free motion is allowed.
+    #[default]
+    Solved,
+    /// Also require zero local free degrees, including construction points.
+    FullyConstrained,
+}
+impl SketchAcceptance {
+    fn is_default(&self) -> bool {
+        *self == Self::Solved
+    }
+}
+
 /// A sketch in a typed 3D plane. `profile` names an ordered, closed boundary;
 /// omitted entities are construction geometry. An empty profile uses all lines
 /// in their original order, or a sole circle when there are no lines/arcs.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SketchDefinition {
     pub id: String,
+    #[serde(default, skip_serializing_if = "SketchAcceptance::is_default")]
+    pub acceptance: SketchAcceptance,
     /// Optional plane datum in the owning family. Its origin/normal replace
     /// `origin`/`y_axis`; `x_axis` must be perpendicular to the datum normal.
     #[serde(default)]

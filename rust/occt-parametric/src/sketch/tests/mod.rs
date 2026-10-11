@@ -22,6 +22,7 @@ fn point(id: &str, x: f64, y: f64, fixed: bool) -> SketchPoint {
 
 fn rectangle() -> SketchDefinition {
     SketchDefinition {
+        acceptance: Default::default(),
         id: "rectangle".into(),
         datum_plane: None,
         face_support: None,
