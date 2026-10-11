@@ -1,0 +1,910 @@
+{
+  "schema": "occb-model-view-v1",
+  "model": {
+    "schema_version": 122,
+    "family": {
+      "id": "dimensioned-plate",
+      "version": 1,
+      "parameters": [
+        {
+          "id": "width",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 60,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 40,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 90,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "right_height",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 20,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 10,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 30,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "slope_angle",
+          "parameter_type": {
+            "scalar": "scalar"
+          },
+          "default": {
+            "scalar": {
+              "value": 2.6,
+              "dimension": "scalar",
+              "unit": null
+            }
+          },
+          "minimum": {
+            "value": 2.2,
+            "dimension": "scalar",
+            "unit": null
+          },
+          "maximum": {
+            "value": 3.0,
+            "dimension": "scalar",
+            "unit": null
+          }
+        },
+        {
+          "id": "slope_length",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 24,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 10,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 30,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "notch_start",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 18,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 8,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 24,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "notch_width",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 12,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 6,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 16,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "notch_depth",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 6,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 3,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 10,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "hole_x",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 12,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 8,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 16,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "hole_y",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 16,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 12,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 22,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "hole_radius",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 4,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 2,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 5,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "thickness",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 5,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 2,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 10,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        }
+      ],
+      "derived_parameters": [],
+      "derived_vector_parameters": [],
+      "constraints": [],
+      "requirements": [
+        {
+          "id": "valid",
+          "version": 1,
+          "kind": "validation",
+          "priority": "required",
+          "statement": "body valid",
+          "rule": {
+            "shape_valid": {
+              "output": "body"
+            }
+          },
+          "provenance": "example; demonstration assumptions",
+          "traces": [
+            {
+              "feature": "body"
+            }
+          ]
+        }
+      ],
+      "datums": [],
+      "features": [
+        {
+          "id": "profile",
+          "operation": {
+            "sketch_face": {
+              "sketch": {
+                "id": "plate",
+                "origin": {
+                  "literal": {
+                    "x": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    },
+                    "y": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                },
+                "x_axis": {
+                  "literal": {
+                    "x": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "y_axis": {
+                  "literal": {
+                    "x": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "points": [
+                  {
+                    "id": "o",
+                    "x": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "n1",
+                    "x": {
+                      "literal": {
+                        "value": 18,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 0.5,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": false
+                  },
+                  {
+                    "id": "n2",
+                    "x": {
+                      "literal": {
+                        "value": 19,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 6,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": false
+                  },
+                  {
+                    "id": "n3",
+                    "x": {
+                      "literal": {
+                        "value": 31,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 7,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": false
+                  },
+                  {
+                    "id": "n4",
+                    "x": {
+                      "literal": {
+                        "value": 33,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 0.3,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": false
+                  },
+                  {
+                    "id": "p1",
+                    "x": {
+                      "literal": {
+                        "value": 58,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 1,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": false
+                  },
+                  {
+                    "id": "p2",
+                    "x": {
+                      "literal": {
+                        "value": 59,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 21,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": false
+                  },
+                  {
+                    "id": "p3",
+                    "x": {
+                      "literal": {
+                        "value": 38,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 32,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": false
+                  },
+                  {
+                    "id": "p4",
+                    "x": {
+                      "literal": {
+                        "value": 1,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 31,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": false
+                  },
+                  {
+                    "id": "hc",
+                    "x": {
+                      "literal": {
+                        "value": 14,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 16,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": false
+                  },
+                  {
+                    "id": "hr",
+                    "x": {
+                      "literal": {
+                        "value": 19,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 16,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": false
+                  }
+                ],
+                "lines": [
+                  {
+                    "id": "bottom_left",
+                    "start": "o",
+                    "end": "n1"
+                  },
+                  {
+                    "id": "notch_left",
+                    "start": "n1",
+                    "end": "n2"
+                  },
+                  {
+                    "id": "notch_top",
+                    "start": "n2",
+                    "end": "n3"
+                  },
+                  {
+                    "id": "notch_right",
+                    "start": "n3",
+                    "end": "n4"
+                  },
+                  {
+                    "id": "bottom_right",
+                    "start": "n4",
+                    "end": "p1"
+                  },
+                  {
+                    "id": "right",
+                    "start": "p1",
+                    "end": "p2"
+                  },
+                  {
+                    "id": "slope",
+                    "start": "p2",
+                    "end": "p3"
+                  },
+                  {
+                    "id": "top",
+                    "start": "p3",
+                    "end": "p4"
+                  },
+                  {
+                    "id": "left",
+                    "start": "p4",
+                    "end": "o"
+                  }
+                ],
+                "circles": [
+                  {
+                    "id": "hole",
+                    "center": "hc",
+                    "rim": "hr"
+                  }
+                ],
+                "arcs": [],
+                "profile": [
+                  "bottom_left",
+                  "notch_left",
+                  "notch_top",
+                  "notch_right",
+                  "bottom_right",
+                  "right",
+                  "slope",
+                  "top",
+                  "left"
+                ],
+                "constraints": [
+                  {
+                    "vertical_distance": {
+                      "first": "o",
+                      "second": "n1",
+                      "value": {
+                        "literal": {
+                          "value": 0,
+                          "dimension": "length",
+                          "unit": "millimeter"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "horizontal_distance": {
+                      "first": "o",
+                      "second": "n1",
+                      "value": {
+                        "parameter": "notch_start"
+                      }
+                    }
+                  },
+                  {
+                    "horizontal_distance": {
+                      "first": "n1",
+                      "second": "n2",
+                      "value": {
+                        "literal": {
+                          "value": 0,
+                          "dimension": "length",
+                          "unit": "millimeter"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "vertical_distance": {
+                      "first": "n1",
+                      "second": "n2",
+                      "value": {
+                        "parameter": "notch_depth"
+                      }
+                    }
+                  },
+                  {
+                    "horizontal_distance": {
+                      "first": "n2",
+                      "second": "n3",
+                      "value": {
+                        "parameter": "notch_width"
+                      }
+                    }
+                  },
+                  {
+                    "vertical_distance": {
+                      "first": "n2",
+                      "second": "n3",
+                      "value": {
+                        "literal": {
+                          "value": 0,
+                          "dimension": "length",
+                          "unit": "millimeter"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "horizontal_distance": {
+                      "first": "n3",
+                      "second": "n4",
+                      "value": {
+                        "literal": {
+                          "value": 0,
+                          "dimension": "length",
+                          "unit": "millimeter"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "collinear": {
+                      "first": "bottom_left",
+                      "second": "bottom_right"
+                    }
+                  },
+                  {
+                    "horizontal_distance": {
+                      "first": "o",
+                      "second": "p1",
+                      "value": {
+                        "parameter": "width"
+                      }
+                    }
+                  },
+                  {
+                    "horizontal_distance": {
+                      "first": "p1",
+                      "second": "p2",
+                      "value": {
+                        "literal": {
+                          "value": 0,
+                          "dimension": "length",
+                          "unit": "millimeter"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "vertical_distance": {
+                      "first": "p1",
+                      "second": "p2",
+                      "value": {
+                        "parameter": "right_height"
+                      }
+                    }
+                  },
+                  {
+                    "line_angle": {
+                      "line": "slope",
+                      "value": {
+                        "parameter": "slope_angle"
+                      }
+                    }
+                  },
+                  {
+                    "curve_length": {
+                      "curve": "slope",
+                      "value": {
+                        "parameter": "slope_length"
+                      }
+                    }
+                  },
+                  {
+                    "horizontal": {
+                      "line": "top"
+                    }
+                  },
+                  {
+                    "horizontal_distance": {
+                      "first": "o",
+                      "second": "p4",
+                      "value": {
+                        "literal": {
+                          "value": 0,
+                          "dimension": "length",
+                          "unit": "millimeter"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "horizontal_distance": {
+                      "first": "o",
+                      "second": "hc",
+                      "value": {
+                        "parameter": "hole_x"
+                      }
+                    }
+                  },
+                  {
+                    "vertical_distance": {
+                      "first": "o",
+                      "second": "hc",
+                      "value": {
+                        "parameter": "hole_y"
+                      }
+                    }
+                  },
+                  {
+                    "vertical_distance": {
+                      "first": "hc",
+                      "second": "hr",
+                      "value": {
+                        "literal": {
+                          "value": 0,
+                          "dimension": "length",
+                          "unit": "millimeter"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "radius": {
+                      "curve": "hole",
+                      "value": {
+                        "parameter": "hole_radius"
+                      }
+                    }
+                  }
+                ],
+                "holes": [
+                  [
+                    "hole"
+                  ]
+                ],
+                "measurements": [
+                  {
+                    "id": "height",
+                    "measure": {
+                      "vertical_distance": {
+                        "first": "o",
+                        "second": "p4"
+                      }
+                    }
+                  },
+                  {
+                    "id": "slope_run",
+                    "measure": {
+                      "horizontal_distance": {
+                        "first": "p3",
+                        "second": "p2"
+                      }
+                    }
+                  },
+                  {
+                    "id": "top_length",
+                    "measure": {
+                      "curve_length": {
+                        "curve": "top"
+                      }
+                    }
+                  },
+                  {
+                    "id": "shoulder",
+                    "measure": {
+                      "angle": {
+                        "first": "right",
+                        "second": "slope"
+                      }
+                    }
+                  },
+                  {
+                    "id": "hole_perimeter",
+                    "measure": {
+                      "curve_length": {
+                        "curve": "hole"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "body",
+          "operation": {
+            "extrude": {
+              "input": "profile",
+              "direction": {
+                "components": {
+                  "x": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "y": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "z": {
+                    "parameter": "thickness"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "instances": [
+      {
+        "base": {
+          "id": "plate",
+          "overrides": {},
+          "provenance": "Plate dimensioned with axis distances, a line angle, a curve length, collinear edges and reference dimensions"
+        }
+      }
+    ]
+  },
+  "outputs": [
+    {
+      "instance": "plate",
+      "output": "body"
+    }
+  ],
+  "sketches": true
+}

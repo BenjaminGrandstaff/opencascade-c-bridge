@@ -544,6 +544,7 @@ fn invalid_holes_fail_with_feature_context_and_release_all_handles() {
     };
     definition.features[1].operation = FeatureOperation::SketchWire {
         sketch: Box::new(SketchDefinition {
+            measurements: Vec::new(),
             acceptance: Default::default(),
             id: "circle".into(),
             datum_plane: None,

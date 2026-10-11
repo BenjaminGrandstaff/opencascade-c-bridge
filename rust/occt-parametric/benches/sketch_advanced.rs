@@ -24,6 +24,7 @@ fn point(id: String, x: f64, y: f64, fixed: bool) -> SketchPoint {
 }
 fn sketch() -> SketchDefinition {
     SketchDefinition {
+        measurements: Vec::new(),
         acceptance: Default::default(),
         id: "scale".into(),
         datum_plane: None,
@@ -2033,4 +2034,115 @@ fn main() {
             assert!((session.surface_area(face).unwrap() - area).abs() < 1e-6 * area);
         },
     );
+    gate(
+        "1000-segment chain driven by axis distances, line angles and curve lengths, with 1000 reference dimensions",
+        10,
+        || {
+            // Even segments: axis distances. Odd segments: line angle plus
+            // curve length.
+            let mut s = sketch();
+            s.points = (0..=1000)
+                .map(|i| {
+                    point(
+                        format!("p{i}"),
+                        3.0 * i as f64,
+                        0.1 * (i % 7) as f64,
+                        i == 0,
+                    )
+                })
+                .collect();
+            s.lines = (0..1000)
+                .map(|i| SketchLine {
+                    id: format!("l{i}"),
+                    start: format!("p{i}"),
+                    end: format!("p{}", i + 1),
+                })
+                .collect();
+            for i in 0..1000 {
+                let (a, b) = (format!("p{i}"), format!("p{}", i + 1));
+                if i % 2 == 0 {
+                    s.constraints.push(SketchConstraint::HorizontalDistance {
+                        first: a.clone(),
+                        second: b.clone(),
+                        value: mm(3.0),
+                    });
+                    s.constraints.push(SketchConstraint::VerticalDistance {
+                        first: a,
+                        second: b,
+                        value: mm(1.0),
+                    });
+                } else {
+                    s.constraints.push(SketchConstraint::LineAngle {
+                        line: format!("l{i}"),
+                        value: scalar(0.25),
+                    });
+                    s.constraints.push(SketchConstraint::CurveLength {
+                        curve: format!("l{i}"),
+                        value: mm(2.0),
+                    });
+                }
+            }
+            s.measurements = (0..1000)
+                .map(|i| SketchMeasurement {
+                    id: format!("m{i}"),
+                    measure: SketchMeasure::Distance {
+                        first: "p0".into(),
+                        second: format!("p{}", i + 1),
+                    },
+                })
+                .collect();
+            let solution = s.solve(&HashMap::new()).unwrap();
+            assert!(solution.solved && solution.free_degrees == 0);
+            let end = solution.points["p1000"];
+            let (x, y) = (
+                500. * (3. + 2. * 0.25f64.cos()),
+                500. * (1. + 2. * 0.25f64.sin()),
+            );
+            assert!((end.x - x).abs() < 1e-7 && (end.y - y).abs() < 1e-7);
+            let measured = s.measure(&HashMap::new(), &solution).unwrap();
+            assert!((measured[999].1 - x.hypot(y)).abs() < 1e-7);
+        },
+    );
+    gate("200 splines driven by native curve lengths", 10, || {
+        let mut s = sketch();
+        for k in 0..200 {
+            let y = 20.0 * k as f64;
+            s.points.extend([
+                point(format!("a{k}"), 0., y, true),
+                point(format!("m{k}"), 25., y + 3., false),
+                point(format!("b{k}"), 50., y, true),
+            ]);
+            s.splines.push(SketchSpline {
+                id: format!("s{k}"),
+                points: vec![format!("a{k}"), format!("m{k}"), format!("b{k}")],
+                basis: None,
+                endpoints: None,
+            });
+            s.constraints.push(SketchConstraint::HorizontalDistance {
+                first: format!("a{k}"),
+                second: format!("m{k}"),
+                value: mm(25.),
+            });
+            s.constraints.push(SketchConstraint::CurveLength {
+                curve: format!("s{k}"),
+                value: mm(55. + 0.01 * k as f64),
+            });
+            s.measurements.push(SketchMeasurement {
+                id: format!("len{k}"),
+                measure: SketchMeasure::CurveLength {
+                    curve: format!("s{k}"),
+                },
+            });
+        }
+        let solution = s.solve(&HashMap::new()).unwrap();
+        assert!(solution.solved && solution.free_degrees == 0);
+        for (k, (_, length)) in s
+            .measure(&HashMap::new(), &solution)
+            .unwrap()
+            .iter()
+            .enumerate()
+        {
+            assert!((length - (55. + 0.01 * k as f64)).abs() < 1e-7);
+        }
+    });
 }

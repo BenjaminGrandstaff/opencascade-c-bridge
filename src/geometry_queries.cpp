@@ -14,8 +14,10 @@
 #include <BRepLib.hxx>
 #include <BRepLProp_SLProps.hxx>
 #include <BRepTools.hxx>
+#include <GCPnts_AbscissaPoint.hxx>
 #include <gp_Dir.hxx>
 #include <gp_Pnt.hxx>
+#include <GCPnts_AbscissaPoint.hxx>
 #include <GProp_GProps.hxx>
 #include <Precision.hxx>
 #include <TopExp.hxx>
@@ -302,9 +304,14 @@ occt_bridge_status_t occt_bridge_shape_edge_length(
         if (value->ShapeType() != TopAbs_EDGE) {
             return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "shape is not an edge");
         }
-        GProp_GProps properties;
-        BRepGProp::LinearProperties(*value, properties);
-        const double length = std::abs(properties.Mass());
+        // Adaptive arc length: fixed-order Gauss integration (BRepGProp) is
+        // off by up to percents on full ellipses and long spline spans.
+        const TopoDS_Edge& curve_edge = TopoDS::Edge(*value);
+        if (BRep_Tool::Degenerated(curve_edge)) {
+            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "edge has zero or invalid length");
+        }
+        BRepAdaptor_Curve curve(curve_edge);
+        const double length = std::abs(GCPnts_AbscissaPoint::Length(curve, 1e-12));
         if (!std::isfinite(length) || length <= std::numeric_limits<double>::epsilon()) {
             return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "edge has zero or invalid length");
         }

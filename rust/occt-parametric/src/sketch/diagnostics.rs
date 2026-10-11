@@ -473,6 +473,42 @@ impl SketchDefinition {
             .collect()
     }
 
+    /// Driven dimensions measured on a solution, in `measurements` order:
+    /// lengths in millimetres, angles in radians. Each is the matching
+    /// constraint's residual at a zero target, so it uses the solver's own
+    /// geometry, including native ellipse and spline lengths.
+    pub fn measure(
+        &self,
+        parameters: &HashMap<String, ParameterValue>,
+        solution: &SketchSolution,
+    ) -> Result<Vec<(String, f64)>, ModelError> {
+        if self.measurements.is_empty() {
+            return Ok(Vec::new());
+        }
+        self.validate_structure()?;
+        let mut fixed = HashMap::new();
+        for point in &self.points {
+            let value = solution
+                .points
+                .get(&point.id)
+                .ok_or_else(|| ModelError::new("sketch measurement solution is missing a point"))?;
+            fixed.insert(point.id.as_str(), *value);
+        }
+        let problem = SketchProblem::new(self, parameters, HashMap::new(), fixed)?;
+        self.measurements
+            .iter()
+            .map(|measurement| {
+                let mut residuals = Vec::new();
+                problem.constraint_residuals(
+                    &measurement.measure.constraint(),
+                    &[],
+                    &mut residuals,
+                )?;
+                Ok((measurement.id.clone(), residuals[0]))
+            })
+            .collect()
+    }
+
     /// Sample each entity in sketch-local XY using native curve construction,
     /// including spline end tangency. Available for unsolved diagnostic sketches.
     pub fn preview_curves(

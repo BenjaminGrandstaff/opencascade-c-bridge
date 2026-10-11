@@ -1,6 +1,7 @@
 use super::*;
 
 mod advanced;
+mod dimensions;
 mod patterns;
 mod profiles;
 mod solving;
@@ -22,6 +23,7 @@ fn point(id: &str, x: f64, y: f64, fixed: bool) -> SketchPoint {
 
 fn rectangle() -> SketchDefinition {
     SketchDefinition {
+        measurements: Vec::new(),
         acceptance: Default::default(),
         id: "rectangle".into(),
         datum_plane: None,

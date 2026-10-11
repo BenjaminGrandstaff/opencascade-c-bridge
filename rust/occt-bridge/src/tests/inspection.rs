@@ -633,3 +633,44 @@ fn exact_minimum_distance_distinguishes_separation_from_contact_and_containment(
     drop((first, edge, empty));
     assert_eq!(session.shape_count().unwrap(), 0);
 }
+
+#[test]
+fn edge_lengths_are_exact_on_full_ellipses_and_long_splines() {
+    let session = Session::new().unwrap();
+    // Reference perimeters by midpoint integration with 2,000,000 samples.
+    for (minor, perimeter) in [
+        (6.707_246_767_159_567_5, 59.952_651_937_432),
+        (1.0, 48.563_081_904_304),
+    ] {
+        let wire = session
+            .create_ellipse_wire_axes(
+                Vec3::new(0.0, 0.0, 0.0),
+                Vec3::new(0.0, 0.0, 1.0),
+                Vec3::new(1.0, 0.0, 0.0),
+                12.0,
+                minor,
+            )
+            .unwrap();
+        let edge = session.subshape(&wire, ShapeType::Edge, 0).unwrap();
+        let length = session.edge_length(&edge).unwrap();
+        assert!((length - perimeter).abs() < 1e-9, "{minor}: {length}");
+    }
+    // A 40-turn interpolated zigzag: its length is at least its polygon's.
+    let points = (0..=80)
+        .map(|i| Vec3::new(i as f64, if i % 2 == 0 { 0.0 } else { 5.0 }, 0.0))
+        .collect::<Vec<_>>();
+    let wire = session
+        .create_curve_wire(
+            &[CurveSegment::Spline {
+                points,
+                start_tangent: None,
+                end_tangent: None,
+                periodic: false,
+            }],
+            false,
+        )
+        .unwrap();
+    let edge = session.subshape(&wire, ShapeType::Edge, 0).unwrap();
+    let length = session.edge_length(&edge).unwrap();
+    assert!(length > 80.0 * 26f64.sqrt(), "{length}");
+}

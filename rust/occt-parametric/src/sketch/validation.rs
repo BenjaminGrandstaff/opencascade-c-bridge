@@ -206,10 +206,58 @@ impl SketchDefinition {
             }
         }
         let entities = self.entities();
-        for constraint in &self.constraints {
+        let mut measurement_ids = HashSet::new();
+        for measurement in &self.measurements {
+            if measurement.id.is_empty() || !measurement_ids.insert(measurement.id.as_str()) {
+                return Err(ModelError::new(
+                    "sketch measurement ids must be nonempty and unique",
+                ));
+            }
+        }
+        let measured = self
+            .measurements
+            .iter()
+            .map(|m| m.measure.constraint())
+            .collect::<Vec<_>>();
+        for constraint in self.constraints.iter().chain(&measured) {
             constraint.validate_references(&point_ids, &line_ids)?;
             validate_tangency(constraint, &entities)?;
             match constraint {
+                SketchConstraint::ArcAngle { arc, .. }
+                    if !matches!(entities.get(arc.as_str()), Some(Entity::Arc(_))) =>
+                {
+                    return Err(ModelError::new("arc angle requires an arc"));
+                }
+                SketchConstraint::CurveLength { curve, .. }
+                    if !entities.contains_key(curve.as_str()) =>
+                {
+                    return Err(ModelError::new(format!(
+                        "curve length refers to unknown curve '{curve}'"
+                    )));
+                }
+                SketchConstraint::EqualCurveLength { first, second }
+                    if first == second
+                        || [first, second]
+                            .iter()
+                            .any(|id| !entities.contains_key(id.as_str())) =>
+                {
+                    return Err(ModelError::new(
+                        "equal curve length requires two distinct known curves",
+                    ));
+                }
+                SketchConstraint::Coradial { first, second }
+                    if first == second
+                        || [first, second].iter().any(|id| {
+                            !matches!(
+                                entities.get(id.as_str()),
+                                Some(Entity::Circle(_) | Entity::Arc(_))
+                            )
+                        }) =>
+                {
+                    return Err(ModelError::new(
+                        "coradial constraints require two distinct circles or arcs",
+                    ));
+                }
                 SketchConstraint::Radius { curve, .. }
                 | SketchConstraint::Diameter { curve, .. }
                     if !matches!(
@@ -542,10 +590,28 @@ impl SketchConstraint {
                 point(second)?;
                 line(axis)
             }
-            Self::Coincident { first, second } | Self::Distance { first, second, .. } => {
+            Self::Coincident { first, second }
+            | Self::Distance { first, second, .. }
+            | Self::HorizontalDistance { first, second, .. }
+            | Self::VerticalDistance { first, second, .. } => {
                 point(first)?;
                 point(second)
             }
+            Self::LineAngle { line: id, .. } => line(id),
+            Self::Collinear { first, second } => {
+                line(first)?;
+                line(second)?;
+                if first == second {
+                    return Err(ModelError::new(
+                        "collinear constraints need two distinct lines",
+                    ));
+                }
+                Ok(())
+            }
+            Self::ArcAngle { .. }
+            | Self::CurveLength { .. }
+            | Self::EqualCurveLength { .. }
+            | Self::Coradial { .. } => Ok(()),
             Self::Horizontal { line: id } | Self::Vertical { line: id } => line(id),
             Self::Angle { first, second, .. }
             | Self::Parallel { first, second }
@@ -572,8 +638,29 @@ impl SketchConstraint {
                 }
                 Ok(())
             }
-            Self::PointLineDistance { value, .. } => {
+            Self::PointLineDistance { value, .. }
+            | Self::HorizontalDistance { value, .. }
+            | Self::VerticalDistance { value, .. } => {
                 scalar(value, parameters, Dimension::Length)?;
+                Ok(())
+            }
+            Self::LineAngle { value, .. } => {
+                if scalar(value, parameters, Dimension::Scalar)?.abs() > std::f64::consts::PI {
+                    return Err(ModelError::new("line angle must be in [-pi, pi] radians"));
+                }
+                Ok(())
+            }
+            Self::ArcAngle { value, .. } => {
+                let sweep = scalar(value, parameters, Dimension::Scalar)?;
+                if sweep <= 0.0 || sweep >= std::f64::consts::TAU {
+                    return Err(ModelError::new("arc angle must be in (0, 2pi) radians"));
+                }
+                Ok(())
+            }
+            Self::CurveLength { value, .. } => {
+                if scalar(value, parameters, Dimension::Length)? <= 0.0 {
+                    return Err(ModelError::new("curve length must be positive"));
+                }
                 Ok(())
             }
             Self::Distance { value, .. } => {

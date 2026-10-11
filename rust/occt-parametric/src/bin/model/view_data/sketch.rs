@@ -185,6 +185,16 @@ pub(super) fn sketch_scene(
                 first,
                 second,
                 value,
+            }
+            | SketchConstraint::HorizontalDistance {
+                first,
+                second,
+                value,
+            }
+            | SketchConstraint::VerticalDistance {
+                first,
+                second,
+                value,
             } => (vec![first.as_str(), second.as_str()], value),
             SketchConstraint::Angle {
                 first,
@@ -354,6 +364,14 @@ pub(super) fn sketch_scene(
             }.into());
         }
     }
+    // Label anchor for a curve dimension: the centre of a circle, arc or
+    // ellipse, a spline's first point; lines use their midpoint.
+    let curve_anchor = |id: &str| -> Option<String> {
+        centers
+            .get(id)
+            .map(|c| (*c).to_owned())
+            .or_else(|| spline_defs.get(id).map(|s| s.points[0].clone()))
+    };
     for (index, constraint) in sketch.constraints.iter().enumerate() {
         let (symbol, targets, anchor_ids, value) = match constraint {
             SketchConstraint::Angle {
@@ -562,6 +580,62 @@ pub(super) fn sketch_scene(
                 vec![first.clone(), second.clone()],
                 Some(value),
             ),
+            SketchConstraint::HorizontalDistance {
+                first,
+                second,
+                value,
+            } => (
+                "↔",
+                vec![first.clone(), second.clone()],
+                vec![first.clone(), second.clone()],
+                Some(value),
+            ),
+            SketchConstraint::VerticalDistance {
+                first,
+                second,
+                value,
+            } => (
+                "↕",
+                vec![first.clone(), second.clone()],
+                vec![first.clone(), second.clone()],
+                Some(value),
+            ),
+            SketchConstraint::LineAngle { line, value } => {
+                ("∠x", vec![line.clone()], vec![], Some(value))
+            }
+            SketchConstraint::ArcAngle { arc, value } => (
+                "∠arc",
+                vec![arc.clone()],
+                curve_anchor(arc).into_iter().collect(),
+                Some(value),
+            ),
+            SketchConstraint::CurveLength { curve, value } => (
+                "length",
+                vec![curve.clone()],
+                curve_anchor(curve).into_iter().collect(),
+                Some(value),
+            ),
+            SketchConstraint::EqualCurveLength { first, second } => (
+                "= length",
+                vec![first.clone(), second.clone()],
+                [first, second]
+                    .into_iter()
+                    .filter_map(|c| curve_anchor(c))
+                    .collect(),
+                None,
+            ),
+            SketchConstraint::Collinear { first, second } => (
+                "collinear",
+                vec![first.clone(), second.clone()],
+                vec![],
+                None,
+            ),
+            SketchConstraint::Coradial { first, second } => (
+                "◎=",
+                vec![first.clone(), second.clone()],
+                vec![centers[first.as_str()].to_owned()],
+                None,
+            ),
         };
         let mut anchors = if !anchor_ids.is_empty() {
             anchor_ids
@@ -750,6 +824,11 @@ pub(super) fn sketch_scene(
             let target = expression.evaluate(parameters).stage("sketch")?.value;
             if matches!(constraint, SketchConstraint::Angle { .. }) {
                 format!("∠ {} rad", length_label(target))
+            } else if matches!(
+                constraint,
+                SketchConstraint::LineAngle { .. } | SketchConstraint::ArcAngle { .. }
+            ) {
+                format!("{symbol} {} rad", length_label(target))
             } else if symbol == "distance" {
                 format!("{} mm", length_label(target))
             } else {
@@ -978,7 +1057,9 @@ pub(super) fn sketch_scene(
             AnnotationKind::Constraint
         };
         let residual_unit = match constraint {
-            SketchConstraint::Angle { .. } => "rad",
+            SketchConstraint::Angle { .. }
+            | SketchConstraint::LineAngle { .. }
+            | SketchConstraint::ArcAngle { .. } => "rad",
             SketchConstraint::LineSplineTangent { .. }
             | SketchConstraint::SplineCircleTangent { .. }
             | SketchConstraint::SplineSplineTangent { .. }
@@ -1019,6 +1100,69 @@ pub(super) fn sketch_scene(
                         "tangent_sine":sine,
                         "residual_units":["mm","mm","mm","dimensionless"]
                     })))),
+                }),
+            }
+            .into(),
+        );
+    }
+    // Driven (reference) dimensions: measured, never constraining.
+    for ((id, value), measurement) in sketch
+        .measure(parameters, &solution)
+        .stage("sketch")?
+        .into_iter()
+        .zip(&sketch.measurements)
+    {
+        let (targets, anchor_ids): (Vec<&str>, Vec<String>) = match &measurement.measure {
+            SketchMeasure::Distance { first, second }
+            | SketchMeasure::HorizontalDistance { first, second }
+            | SketchMeasure::VerticalDistance { first, second } => {
+                (vec![first, second], vec![first.clone(), second.clone()])
+            }
+            SketchMeasure::PointLineDistance { point, line } => {
+                (vec![point, line], vec![point.clone()])
+            }
+            SketchMeasure::Angle { first, second } => (vec![first, second], vec![]),
+            SketchMeasure::LineAngle { line } => (vec![line], vec![]),
+            SketchMeasure::ArcAngle { arc: curve }
+            | SketchMeasure::Radius { curve }
+            | SketchMeasure::Diameter { curve }
+            | SketchMeasure::CurveLength { curve } => {
+                (vec![curve], curve_anchor(curve).into_iter().collect())
+            }
+        };
+        let anchors = if anchor_ids.is_empty() {
+            targets
+                .iter()
+                .filter_map(|id| lines.get(id))
+                .map(|l| {
+                    let (a, b) = (point_map[&l.start], point_map[&l.end]);
+                    [(a[0] + b[0]) * 0.5, (a[1] + b[1]) * 0.5, 0.0]
+                })
+                .collect::<Vec<_>>()
+        } else {
+            anchor_ids.iter().map(|id| point_map[id]).collect()
+        };
+        let unit = if measurement.measure.is_angle() {
+            "rad"
+        } else {
+            "mm"
+        };
+        annotations.push(
+            Annotation {
+                id: format!("measurement-{id}"),
+                label: format!("({} {unit})", length_label(value)),
+                kind: AnnotationKind::Dimension,
+                status: AnnotationStatus::Measured,
+                targets: targets.into_iter().map(str::to_owned).collect(),
+                parameters: vec![],
+                anchors: json!(anchors),
+                detail: json!({
+                    "measurement": measurement,
+                    "value": value,
+                    "unit": unit,
+                    "driving": false,
+                    "description": "Reference dimension measured on the solved sketch; \
+                        it does not constrain geometry.",
                 }),
             }
             .into(),

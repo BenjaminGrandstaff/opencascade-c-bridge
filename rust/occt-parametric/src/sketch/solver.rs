@@ -69,6 +69,12 @@ impl SketchDefinition {
                             | SketchConstraint::Concentric { .. }
                             | SketchConstraint::Symmetric { .. }
                             | SketchConstraint::PointOnCurve { .. }
+                            | SketchConstraint::LineAngle { .. }
+                            | SketchConstraint::ArcAngle { .. }
+                            | SketchConstraint::CurveLength { .. }
+                            | SketchConstraint::EqualCurveLength { .. }
+                            | SketchConstraint::Collinear { .. }
+                            | SketchConstraint::Coradial { .. }
                     )
                 }) || self.splines.iter().any(|s| s.endpoints.is_some())
                     || !self.patterns.is_empty(),
@@ -711,6 +717,75 @@ impl SketchProblem<'_> {
         }
     }
 
+    /// Points whose coordinates move a curve's length or shape.
+    fn curve_refs<'a>(&'a self, id: &'a str) -> Vec<&'a str> {
+        match self.entities[id] {
+            Entity::Line(l) => vec![l.start.as_str(), l.end.as_str()],
+            Entity::Circle(c) => vec![c.center.as_str(), c.rim.as_str()],
+            Entity::Arc(a) => vec![a.center.as_str(), a.start.as_str(), a.end.as_str()],
+            Entity::Ellipse(e) => vec![e.center.as_str(), e.major.as_str(), e.minor.as_str()],
+            Entity::Spline(spline) => self.spline_neighbor_refs(spline),
+        }
+    }
+
+    /// Directed sweep of an arc from start to end, in [0, 2π).
+    fn arc_sweep(&self, arc: &SketchArc, values: &[f64]) -> f64 {
+        let c = self.point(&arc.center, values);
+        let (a, b) = (self.point(&arc.start, values), self.point(&arc.end, values));
+        let sign = if arc.clockwise { -1.0 } else { 1.0 };
+        let start = (a.y - c.y).atan2(a.x - c.x);
+        let end = (b.y - c.y).atan2(b.x - c.x);
+        (sign * (end - start)).rem_euclid(std::f64::consts::TAU)
+    }
+
+    /// Length of a line, arc or circle in closed form, or of a full ellipse
+    /// or spline measured on its native curve.
+    fn curve_length(&self, id: &str, values: &[f64]) -> Result<f64, ModelError> {
+        let native = |wire: Shape<'_>| -> Result<f64, ModelError> {
+            let mut total = 0.0;
+            for edge in self.native.subshapes(&wire, ShapeType::Edge)? {
+                total += self.native.edge_length(&edge)?;
+            }
+            Ok(total)
+        };
+        Ok(match self.entities[id] {
+            Entity::Line(l) => {
+                line_length((self.point(&l.start, values), self.point(&l.end, values)))
+            }
+            Entity::Circle(c) => {
+                std::f64::consts::TAU
+                    * line_length((self.point(&c.center, values), self.point(&c.rim, values)))
+            }
+            Entity::Arc(a) => {
+                line_length((self.point(&a.center, values), self.point(&a.start, values)))
+                    * self.arc_sweep(a, values)
+            }
+            Entity::Ellipse(e) => {
+                let c = self.point(&e.center, values);
+                let major = self.point(&e.major, values);
+                let minor = self.point(&e.minor, values);
+                let (ra, rb) = (line_length((c, major)), line_length((c, minor)));
+                if ra <= f64::EPSILON || rb <= f64::EPSILON {
+                    return Err(ModelError::new("ellipse length needs positive axes"));
+                }
+                let axis = Vec3::new((major.x - c.x) / ra, (major.y - c.y) / ra, 0.);
+                let (axis, ra, rb) = if ra >= rb {
+                    (axis, ra, rb)
+                } else {
+                    (Vec3::new(-axis.y, axis.x, 0.), rb, ra)
+                };
+                native(self.native.create_ellipse_wire_axes(
+                    Vec3::new(c.x, c.y, 0.),
+                    Vec3::new(0., 0., 1.),
+                    axis,
+                    ra,
+                    rb,
+                )?)?
+            }
+            Entity::Spline(spline) => native(self.spline_curve(spline, values)?)?,
+        })
+    }
+
     fn point(&self, id: &str, values: &[f64]) -> SketchPoint2 {
         self.variables.get(id).map_or_else(
             || self.fixed[id],
@@ -1100,6 +1175,79 @@ impl SketchProblem<'_> {
                 let target = scalar(value, self.parameters, Dimension::Length)?;
                 residuals.push((b.x - a.x).hypot(b.y - a.y) - target);
             }
+            SketchConstraint::HorizontalDistance {
+                first,
+                second,
+                value,
+            } => {
+                let (a, b) = (self.point(first, values), self.point(second, values));
+                residuals.push(b.x - a.x - scalar(value, self.parameters, Dimension::Length)?);
+            }
+            SketchConstraint::VerticalDistance {
+                first,
+                second,
+                value,
+            } => {
+                let (a, b) = (self.point(first, values), self.point(second, values));
+                residuals.push(b.y - a.y - scalar(value, self.parameters, Dimension::Length)?);
+            }
+            SketchConstraint::LineAngle { line, value } => {
+                let (a, b) = self.line(line, values);
+                if line_length((a, b)) <= f64::EPSILON {
+                    return Err(ModelError::new("sketch line has zero length"));
+                }
+                let delta = (b.y - a.y).atan2(b.x - a.x)
+                    - scalar(value, self.parameters, Dimension::Scalar)?;
+                residuals.push(delta.sin().atan2(delta.cos()));
+            }
+            SketchConstraint::ArcAngle { arc, value } => {
+                let Entity::Arc(arc) = self.entities[arc.as_str()] else {
+                    unreachable!("validated arc angle")
+                };
+                residuals.push(
+                    self.arc_sweep(arc, values)
+                        - scalar(value, self.parameters, Dimension::Scalar)?,
+                );
+            }
+            SketchConstraint::CurveLength { curve, value } => {
+                residuals.push(
+                    self.curve_length(curve, values)?
+                        - scalar(value, self.parameters, Dimension::Length)?,
+                );
+            }
+            SketchConstraint::EqualCurveLength { first, second } => {
+                residuals
+                    .push(self.curve_length(first, values)? - self.curve_length(second, values)?);
+            }
+            SketchConstraint::Collinear { first, second } => {
+                let (a, b) = self.line(first, values);
+                let length = line_length((a, b));
+                if length <= f64::EPSILON {
+                    return Err(ModelError::new(
+                        "collinear constraint has a zero length line",
+                    ));
+                }
+                let (c, d) = self.line(second, values);
+                for p in [c, d] {
+                    residuals
+                        .push(((p.x - a.x) * (b.y - a.y) - (p.y - a.y) * (b.x - a.x)) / length);
+                }
+            }
+            SketchConstraint::Coradial { first, second } => {
+                let (a, ar) = self.radius_points(first);
+                let (b, br) = self.radius_points(second);
+                let (a, ar, b, br) = (
+                    self.point(a, values),
+                    self.point(ar, values),
+                    self.point(b, values),
+                    self.point(br, values),
+                );
+                residuals.extend([
+                    a.x - b.x,
+                    a.y - b.y,
+                    line_length((a, ar)) - line_length((b, br)),
+                ]);
+            }
         }
         if residuals[start..].iter().any(|value| !value.is_finite()) {
             return Err(ModelError::new("sketch residual is not finite"));
@@ -1284,8 +1432,31 @@ impl SketchProblem<'_> {
                 refs
             }
             SketchConstraint::Coincident { first, second }
-            | SketchConstraint::Distance { first, second, .. } => {
+            | SketchConstraint::Distance { first, second, .. }
+            | SketchConstraint::HorizontalDistance { first, second, .. }
+            | SketchConstraint::VerticalDistance { first, second, .. } => {
                 vec![first.as_str(), second.as_str()]
+            }
+            SketchConstraint::LineAngle { line, .. } => {
+                let line = self.lines[line.as_str()];
+                vec![line.start.as_str(), line.end.as_str()]
+            }
+            SketchConstraint::ArcAngle { arc: curve, .. }
+            | SketchConstraint::CurveLength { curve, .. } => self.curve_refs(curve),
+            SketchConstraint::EqualCurveLength { first, second }
+            | SketchConstraint::Coradial { first, second } => {
+                let mut refs = self.curve_refs(first);
+                refs.extend(self.curve_refs(second));
+                refs
+            }
+            SketchConstraint::Collinear { first, second } => {
+                let (a, b) = (self.lines[first.as_str()], self.lines[second.as_str()]);
+                vec![
+                    a.start.as_str(),
+                    a.end.as_str(),
+                    b.start.as_str(),
+                    b.end.as_str(),
+                ]
             }
             SketchConstraint::Horizontal { line } | SketchConstraint::Vertical { line } => {
                 let line = self.lines[line.as_str()];

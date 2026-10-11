@@ -10,6 +10,7 @@ pub(crate) fn profile_sweep_case(revolve: bool) -> Outcome {
     definition.datums.clear();
     definition.features.clear();
     let sketch = SketchDefinition {
+        measurements: Vec::new(),
         acceptance: Default::default(),
         id: "circle".into(),
         datum_plane: None,
@@ -159,6 +160,7 @@ pub(crate) fn datum_sketch_wire_case() -> Outcome {
     const COUNT: usize = 10_000;
     let value = |x| ScalarExpr::Literal(Quantity::length(x, LengthUnit::Millimeter));
     let mut sketch = SketchDefinition {
+        measurements: Vec::new(),
         acceptance: Default::default(),
         id: "circle".into(),
         datum_plane: None,
@@ -273,6 +275,7 @@ pub(crate) fn curved_sketch_solver_case() -> Outcome {
         fixed,
     };
     let sketch = SketchDefinition {
+        measurements: Vec::new(),
         acceptance: Default::default(),
         id: "curved".into(),
         datum_plane: None,
@@ -353,6 +356,7 @@ pub(crate) fn sketch_solver_case() -> Outcome {
     let value =
         |millimeters| ScalarExpr::Literal(Quantity::length(millimeters, LengthUnit::Millimeter));
     let sketch = SketchDefinition {
+        measurements: Vec::new(),
         acceptance: Default::default(),
         id: "bench-line".into(),
         datum_plane: None,
@@ -426,6 +430,7 @@ pub(crate) fn large_sketch_case(chain: bool) -> Outcome {
     let count = if chain { 1_000 } else { 10_000 };
     let value = |x| ScalarExpr::Literal(Quantity::length(x, LengthUnit::Millimeter));
     let mut sketch = SketchDefinition {
+        measurements: Vec::new(),
         acceptance: Default::default(),
         id: "large".into(),
         datum_plane: None,
@@ -535,6 +540,7 @@ fn spline_slot(crown: ScalarExpr) -> SketchDefinition {
         point: at.into(),
     };
     SketchDefinition {
+        measurements: Vec::new(),
         acceptance: Default::default(),
         id: "slot".into(),
         datum_plane: None,

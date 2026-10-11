@@ -43,6 +43,7 @@ fn rib_case(centered: bool, mode: RibCase) -> Outcome {
         id: "profile".into(),
         operation: FeatureOperation::SketchWire {
             sketch: Box::new(SketchDefinition {
+                measurements: Vec::new(),
                 acceptance: Default::default(),
                 id: "brace".into(),
                 datum_plane: None,

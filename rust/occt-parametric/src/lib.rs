@@ -46,10 +46,10 @@ pub use sketch::{
     SketchCircle, SketchCircleTangency, SketchConflictGroup, SketchConstraint,
     SketchConstraintCheck, SketchCoordinateAxis, SketchDefinition, SketchDiagnosis, SketchEllipse,
     SketchEquationSource, SketchFaceSupport, SketchFreeCoordinate, SketchFreeMotion, SketchLine,
-    SketchLineSide, SketchOffsetJoin, SketchPattern, SketchPoint, SketchPoint2, SketchPointMotion,
-    SketchProfileOperation, SketchProjection, SketchProjectionIntersection,
-    SketchProjectionJunction, SketchProjectionKind, SketchSolution, SketchSpline,
-    SketchSplineCircleContact, SketchSplineEndpoints, SketchSupportPlanes,
+    SketchLineSide, SketchMeasure, SketchMeasurement, SketchOffsetJoin, SketchPattern, SketchPoint,
+    SketchPoint2, SketchPointMotion, SketchProfileOperation, SketchProjection,
+    SketchProjectionIntersection, SketchProjectionJunction, SketchProjectionKind, SketchSolution,
+    SketchSpline, SketchSplineCircleContact, SketchSplineEndpoints, SketchSupportPlanes,
 };
 pub use solve::PlacementSolution;
 

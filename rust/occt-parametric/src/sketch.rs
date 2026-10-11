@@ -358,6 +358,141 @@ pub enum SketchConstraint {
         second: String,
         value: ScalarExpr,
     },
+    /// Signed sketch-x offset `x(second) − x(first)` (schema 122).
+    HorizontalDistance {
+        first: String,
+        second: String,
+        value: ScalarExpr,
+    },
+    /// Signed sketch-y offset `y(second) − y(first)` (schema 122).
+    VerticalDistance {
+        first: String,
+        second: String,
+        value: ScalarExpr,
+    },
+    /// Signed angle of a directed line from the sketch +x axis, in radians
+    /// within [−π, π] (schema 122).
+    LineAngle {
+        line: String,
+        value: ScalarExpr,
+    },
+    /// Sweep of an arc along its direction, in radians within (0, 2π)
+    /// (schema 122).
+    ArcAngle {
+        arc: String,
+        value: ScalarExpr,
+    },
+    /// Length of a line, arc, circle, full ellipse or spline; ellipse and
+    /// spline lengths are measured on the native curve (schema 122).
+    CurveLength {
+        curve: String,
+        value: ScalarExpr,
+    },
+    /// Two such curves with equal lengths (schema 122).
+    EqualCurveLength {
+        first: String,
+        second: String,
+    },
+    /// The second line lies on the infinite supporting line of the first
+    /// (schema 122).
+    Collinear {
+        first: String,
+        second: String,
+    },
+    /// Two circles or arcs on the same circle: shared centre and radius
+    /// (schema 122).
+    Coradial {
+        first: String,
+        second: String,
+    },
+}
+
+/// A driven (reference) dimension, measured on the solved sketch. It never
+/// constrains geometry and is reported beside the constraints (schema 122).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SketchMeasurement {
+    pub id: String,
+    pub measure: SketchMeasure,
+}
+
+/// What a reference dimension measures; the same quantities, signs and units
+/// as the matching driving constraints.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SketchMeasure {
+    Distance { first: String, second: String },
+    HorizontalDistance { first: String, second: String },
+    VerticalDistance { first: String, second: String },
+    PointLineDistance { point: String, line: String },
+    Angle { first: String, second: String },
+    LineAngle { line: String },
+    ArcAngle { arc: String },
+    Radius { curve: String },
+    Diameter { curve: String },
+    CurveLength { curve: String },
+}
+
+impl SketchMeasure {
+    /// The driving constraint whose residual at a zero target is this measure.
+    pub(crate) fn constraint(&self) -> SketchConstraint {
+        let zero = |dimension: Dimension| {
+            ScalarExpr::Literal(match dimension {
+                Dimension::Length => Quantity::length(0.0, LengthUnit::Millimeter),
+                _ => Quantity::scalar(0.0),
+            })
+        };
+        let (length, angle) = (zero(Dimension::Length), zero(Dimension::Scalar));
+        match self.clone() {
+            Self::Distance { first, second } => SketchConstraint::Distance {
+                first,
+                second,
+                value: length,
+            },
+            Self::HorizontalDistance { first, second } => SketchConstraint::HorizontalDistance {
+                first,
+                second,
+                value: length,
+            },
+            Self::VerticalDistance { first, second } => SketchConstraint::VerticalDistance {
+                first,
+                second,
+                value: length,
+            },
+            Self::PointLineDistance { point, line } => SketchConstraint::PointLineDistance {
+                point,
+                line,
+                value: length,
+            },
+            Self::Angle { first, second } => SketchConstraint::Angle {
+                first,
+                second,
+                value: angle,
+            },
+            Self::LineAngle { line } => SketchConstraint::LineAngle { line, value: angle },
+            Self::ArcAngle { arc } => SketchConstraint::ArcAngle { arc, value: angle },
+            Self::Radius { curve } => SketchConstraint::Radius {
+                curve,
+                value: length,
+            },
+            Self::Diameter { curve } => SketchConstraint::Diameter {
+                curve,
+                value: length,
+            },
+            Self::CurveLength { curve } => SketchConstraint::CurveLength {
+                curve,
+                value: length,
+            },
+        }
+    }
+
+    /// Whether the measured value is an angle in radians rather than a length.
+    pub fn is_angle(&self) -> bool {
+        matches!(
+            self,
+            Self::Angle { .. } | Self::LineAngle { .. } | Self::ArcAngle { .. }
+        )
+    }
 }
 
 /// Linked copies of sketch entities, generated before solving. Copy IDs are
@@ -552,6 +687,10 @@ pub struct SketchDefinition {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[schemars(length(max = 1000))]
     pub holes: Vec<Vec<String>>,
+    /// Driven (reference) dimensions measured after solving (schema 122).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[schemars(length(max = 10000))]
+    pub measurements: Vec<SketchMeasurement>,
     /// Linked entity copies, expanded in order before solving.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[schemars(length(max = 100))]
@@ -770,6 +909,11 @@ impl SketchDefinition {
         }
         for constraint in &self.constraints {
             if let SketchConstraint::Distance { value, .. }
+            | SketchConstraint::HorizontalDistance { value, .. }
+            | SketchConstraint::VerticalDistance { value, .. }
+            | SketchConstraint::LineAngle { value, .. }
+            | SketchConstraint::ArcAngle { value, .. }
+            | SketchConstraint::CurveLength { value, .. }
             | SketchConstraint::PointLineDistance { value, .. }
             | SketchConstraint::Angle { value, .. }
             | SketchConstraint::Radius { value, .. }

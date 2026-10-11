@@ -1489,3 +1489,53 @@ Performance: 1,000 cached touch aliases build/solve in 0.006 s, and 1,000
 width/height profile edits take 0.297 s (10 s budgets). MCP renders 20 annotated
 touch pads in 0.183 s. All 43 advanced sketch and 44 MCP scale gates pass.
 Native STEP/STL export and live failed-edit preservation are verified.
+
+## Axis distances, curve lengths and reference dimensions (schema 122)
+
+Schema 122 adds eight constraints and driven (reference) dimensions:
+
+| JSON variant | Meaning |
+|---|---|
+| `horizontal_distance: {first, second, value}` | Signed sketch-x offset `x(second) − x(first)`, a length. |
+| `vertical_distance: {first, second, value}` | Signed sketch-y offset `y(second) − y(first)`, a length. |
+| `line_angle: {line, value}` | Signed angle of a directed line from the sketch +x axis, in `[−π, π]` radians. |
+| `arc_angle: {arc, value}` | Sweep of an arc along its direction, in `(0, 2π)` radians. |
+| `curve_length: {curve, value}` | Positive length of a line, arc, circle, full ellipse or spline. |
+| `equal_curve_length: {first, second}` | Two distinct curves of any of those kinds with equal lengths. |
+| `collinear: {first, second}` | Both ends of the second line on the infinite supporting line of the first. |
+| `coradial: {first, second}` | Two distinct circles or arcs with a shared centre and equal radii. |
+
+Line, arc and circle lengths are closed form. Ellipse and spline lengths are
+measured on the native curve with adaptive arc-length integration, so they
+include interpolation tangents, rational weights and non-clamped bases. A
+spline length constraint touches the spline's defining and tangent-neighbour
+points, like point membership.
+
+A sketch may list `measurements`, each `{"id": ..., "measure": {...}}`, where
+`measure` is one of `distance`, `horizontal_distance`, `vertical_distance`,
+`point_line_distance`, `angle`, `line_angle`, `arc_angle`, `radius`,
+`diameter` or `curve_length`, with the same fields as the matching
+constraint minus `value`. Measurements add no equations: the solution, free
+degrees and redundancy are unchanged. Each value is the matching
+constraint's residual at a zero target, so it uses the solver's own geometry
+and sign conventions. `SketchDefinition::measure` returns them in order
+(millimetres, or radians for angles), and the viewer shows them as
+parenthesised `measured` dimensions with `driving: false`. Ids must be
+unique; there are at most 10,000.
+
+The bridge's `occt_bridge_shape_edge_length` now integrates adaptively
+(`GCPnts_AbscissaPoint`, 1e-12) instead of with fixed-order Gauss points,
+which were off by up to 1.6% on full ellipses (48.563 mm read as 49.327 mm
+for semi-axes 12 and 1). The C signature and ABI number are unchanged.
+
+The [dimensioned plate](../tools/model/dimensioned-plate.request.json) is
+fully constrained by these relations: a notched bottom edge kept straight by
+`collinear`, a slope set by `line_angle` and `curve_length`, axis distances
+for every other point, and a hole. Five reference dimensions report the
+height, the slope's run, the top length, the shoulder angle and the hole
+perimeter. Tests check exact positions for every new constraint, driven
+native spline and ellipse lengths, unchanged solutions with measurements,
+and rejected references and values. A 1,000-segment chain driven only by
+the new dimensions solves with 1,000 reference dimensions in 0.016 s, and
+200 splines driven by native lengths solve in 0.046 s (10 s budgets). The
+MCP renders 20 dimensioned plates within a 10 s budget.

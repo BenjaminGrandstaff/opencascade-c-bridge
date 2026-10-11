@@ -2269,3 +2269,63 @@ fn projected_touch_viewer_exposes_a_single_fixed_contact_and_direct_dimension() 
             .contains(&json!("reference:intersection:touch"))
     );
 }
+
+#[test]
+fn dimensioned_plate_reports_driving_and_reference_dimensions_after_edits() {
+    let dir = Directory::new();
+    for (name, angle) in [("default", 2.6), ("steeper", 2.3)] {
+        let mut request = view_example("dimensioned-plate");
+        request["model"]["instances"][0]["base"]["overrides"] =
+            json!({"slope_angle":{"scalar":{"value":angle,"dimension":"scalar","unit":null}}});
+        view_request(&dir, request, name).unwrap();
+        let data: Value =
+            serde_json::from_str(&fs::read_to_string(dir.0.join(name).join("view.json")).unwrap())
+                .unwrap();
+        let sketch = data["scenes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["kind"] == "sketch")
+            .unwrap();
+        assert_eq!(sketch["solver"]["free_degrees"], 0);
+        assert_eq!(sketch["solver"]["redundant_equations"], 0);
+        let annotations = sketch["annotations"].as_array().unwrap();
+        let measured = |id: &str| {
+            annotations
+                .iter()
+                .find(|a| a["id"] == format!("measurement-{id}"))
+                .unwrap()
+        };
+        let height = measured("height");
+        assert_eq!(height["status"], "measured");
+        assert_eq!(height["detail"]["driving"], false);
+        let expected = 20.0 + 24.0 * f64::sin(angle);
+        assert!((height["detail"]["value"].as_f64().unwrap() - expected).abs() < 1e-8);
+        let run = measured("slope_run")["detail"]["value"].as_f64().unwrap();
+        assert!((run + 24.0 * f64::cos(angle)).abs() < 1e-8);
+        assert_eq!(measured("shoulder")["detail"]["unit"], "rad");
+        let perimeter = measured("hole_perimeter")["detail"]["value"]
+            .as_f64()
+            .unwrap();
+        assert!((perimeter - 8.0 * std::f64::consts::PI).abs() < 1e-9);
+        // Every driving constraint, including the new kinds, is satisfied.
+        let constraints = annotations
+            .iter()
+            .filter(|a| a["id"].as_str().unwrap().starts_with("constraint-"))
+            .collect::<Vec<_>>();
+        assert!(constraints.iter().all(|a| a["status"] == "passed"));
+        for label in ["collinear", "∠x 2", "length 24.000 mm"] {
+            assert!(
+                constraints
+                    .iter()
+                    .any(|a| a["label"].as_str().unwrap().starts_with(label)),
+                "{label}"
+            );
+        }
+        let slope = constraints
+            .iter()
+            .find(|a| a["label"].as_str().unwrap().starts_with("∠x"))
+            .unwrap();
+        assert_eq!(slope["parameters"], json!(["slope_angle"]));
+    }
+}

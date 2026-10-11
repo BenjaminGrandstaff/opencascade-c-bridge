@@ -851,5 +851,24 @@ with tempfile.TemporaryDirectory(prefix='occb-mcp-scale-') as root:
         elapsed=time.monotonic()-started
         assert elapsed<10
         print(f'PASS MCP 20 thickened clamp straps with measured walls and bolt holes: {elapsed:.3f}s / 10s')
+        plates=client.tool('occt_get_example',dict(name='dimensioned-plate'))['structuredContent']
+        for i in range(1,20):
+            plates['model']['instances'].append({'clone':dict(id=f'plate-{i}',source='plate',overrides={},provenance='scale')})
+            plates['outputs'].append(dict(instance=f'plate-{i}',output='body'))
+        started=time.monotonic()
+        result=client.tool('occt_visualize_model',plates)
+        assert not result['isError'],result
+        data=json.loads(client.call('resources/read',dict(uri=result['structuredContent']['resources']['view.json']))['result']['contents'][0]['text'])
+        sketches=[s for s in data['scenes'] if s['kind']=='sketch']
+        assert len(sketches)==20
+        for scene in sketches:
+            assert scene['solver']['accepted'] and scene['solver']['free_degrees']==0
+            refs=[a for a in scene['annotations'] if a['id'].startswith('measurement-')]
+            assert len(refs)==5 and all(a['status']=='measured' and not a['parameters'] for a in refs)
+            height=next(a for a in refs if a['id']=='measurement-height')
+            assert abs(height['detail']['value']-(20+24*math.sin(2.6)))<1e-8
+        elapsed=time.monotonic()-started
+        assert elapsed<10
+        print(f'PASS MCP 20 dimensioned plates with axis, angle and length constraints and reference dimensions: {elapsed:.3f}s / 10s')
     finally:
         client.close()
