@@ -75,6 +75,7 @@ impl SketchDefinition {
                             | SketchConstraint::EqualCurveLength { .. }
                             | SketchConstraint::Collinear { .. }
                             | SketchConstraint::Coradial { .. }
+                            | SketchConstraint::CurvatureContinuous { .. }
                     )
                 }) || self.splines.iter().any(|s| s.endpoints.is_some())
                     || self.ellipses.iter().any(|e| e.arc_ends().is_some())
@@ -785,6 +786,92 @@ impl SketchProblem<'_> {
         })
     }
 
+    /// Tangent direction (any length) and curvature vector of a curve at
+    /// one of its points: zero for lines, toward the centre for circles,
+    /// closed form for ellipses, and native for splines.
+    fn curve_frame(
+        &self,
+        id: &str,
+        at: &str,
+        values: &[f64],
+    ) -> Result<(SketchPoint2, SketchPoint2), ModelError> {
+        let p = self.point(at, values);
+        let zero = SketchPoint2 { x: 0.0, y: 0.0 };
+        Ok(match self.entities[id] {
+            Entity::Line(l) => {
+                let (a, b) = (self.point(&l.start, values), self.point(&l.end, values));
+                (
+                    SketchPoint2 {
+                        x: b.x - a.x,
+                        y: b.y - a.y,
+                    },
+                    zero,
+                )
+            }
+            Entity::Circle(_) | Entity::Arc(_) => {
+                let c = self.point(self.center_point(id), values);
+                let r2 = (p.x - c.x).powi(2) + (p.y - c.y).powi(2);
+                if r2 <= f64::EPSILON {
+                    return Err(ModelError::new("curvature needs a positive radius"));
+                }
+                (
+                    SketchPoint2 {
+                        x: c.y - p.y,
+                        y: p.x - c.x,
+                    },
+                    SketchPoint2 {
+                        x: (c.x - p.x) / r2,
+                        y: (c.y - p.y) / r2,
+                    },
+                )
+            }
+            Entity::Ellipse(e) => {
+                let c = self.point(&e.center, values);
+                let major = self.point(&e.major, values);
+                let a = line_length((c, major));
+                let b = line_length((c, self.point(&e.minor, values)));
+                let theta = self.ellipse_local(e, p, values)?.angle;
+                let u = ((major.x - c.x) / a, (major.y - c.y) / a);
+                let world = |x: f64, y: f64| SketchPoint2 {
+                    x: x * u.0 - y * u.1,
+                    y: x * u.1 + y * u.0,
+                };
+                let (d1, d2) = (
+                    (-a * theta.sin(), b * theta.cos()),
+                    (-a * theta.cos(), -b * theta.sin()),
+                );
+                let speed2 = d1.0 * d1.0 + d1.1 * d1.1;
+                let along = (d2.0 * d1.0 + d2.1 * d1.1) / speed2;
+                (
+                    world(d1.0, d1.1),
+                    world(
+                        (d2.0 - along * d1.0) / speed2,
+                        (d2.1 - along * d1.1) / speed2,
+                    ),
+                )
+            }
+            Entity::Spline(spline) => {
+                // The joint is one of the spline's ends (validated), so use
+                // the native end derivative there rather than a projection.
+                let wire = self.spline_curve(spline, values)?;
+                let (start, end, start_tangent, end_tangent) = self.native.curve_end_data(&wire)?;
+                let (point, tangent) = if self.entities[id].endpoints().0 == at {
+                    (start, start_tangent)
+                } else {
+                    (end, end_tangent)
+                };
+                let k = self.native.curve_curvature_at(&wire, point)?;
+                (
+                    SketchPoint2 {
+                        x: tangent.x,
+                        y: tangent.y,
+                    },
+                    SketchPoint2 { x: k.x, y: k.y },
+                )
+            }
+        })
+    }
+
     /// Directed sweep of an arc from start to end, in [0, 2π).
     fn arc_sweep(&self, arc: &SketchArc, values: &[f64]) -> f64 {
         let c = self.point(&arc.center, values);
@@ -1326,6 +1413,24 @@ impl SketchProblem<'_> {
                         .push(((p.x - a.x) * (b.y - a.y) - (p.y - a.y) * (b.x - a.x)) / length);
                 }
             }
+            SketchConstraint::CurvatureContinuous {
+                first,
+                second,
+                point,
+            } => {
+                let (ta, ka) = self.curve_frame(first, point, values)?;
+                let (tb, kb) = self.curve_frame(second, point, values)?;
+                let (la, lb) = (ta.x.hypot(ta.y), tb.x.hypot(tb.y));
+                if la <= f64::EPSILON || lb <= f64::EPSILON {
+                    return Err(ModelError::new(
+                        "curvature continuity needs defined tangents",
+                    ));
+                }
+                residuals.push((ta.x * tb.y - ta.y * tb.x) / (la * lb));
+                // Curvature vectors do not depend on direction; compare
+                // them along the shared normal.
+                residuals.push(((ka.x - kb.x) * -ta.y + (ka.y - kb.y) * ta.x) / la);
+            }
             SketchConstraint::Coradial { first, second } => {
                 let (a, ar) = self.radius_points(first);
                 let (b, br) = self.radius_points(second);
@@ -1540,6 +1645,16 @@ impl SketchProblem<'_> {
             | SketchConstraint::Coradial { first, second } => {
                 let mut refs = self.curve_refs(first);
                 refs.extend(self.curve_refs(second));
+                refs
+            }
+            SketchConstraint::CurvatureContinuous {
+                first,
+                second,
+                point,
+            } => {
+                let mut refs = self.curve_refs(first);
+                refs.extend(self.curve_refs(second));
+                refs.push(point);
                 refs
             }
             SketchConstraint::Collinear { first, second } => {

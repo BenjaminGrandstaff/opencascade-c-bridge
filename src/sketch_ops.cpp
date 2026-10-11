@@ -613,6 +613,38 @@ extern "C" {
             return succeed(s);
         });
     }
+    occt_bridge_status_t occt_bridge_curve_curvature_at(occt_bridge_session_t* s,occt_bridge_shape_id_t id,occt_bridge_vec3_t point,occt_bridge_vec3_t* out) {
+        return guarded(s,[&] {
+            if(out==nullptr||!finite(point))return fail(s,OCCT_BRIDGE_INVALID_ARGUMENT,"invalid curvature query inputs");
+            *out={0.,0.,0.};
+            const auto* shape=find_shape(s,id);
+            if(!shape)return fail(s,OCCT_BRIDGE_SHAPE_NOT_FOUND,"curvature curve was not found");
+            auto edge=single_edge(*shape);
+            if(edge.IsNull())return fail(s,OCCT_BRIDGE_INVALID_ARGUMENT,"curvature query requires exactly one edge");
+            double first,last;
+            auto curve=BRep_Tool::Curve(edge,first,last);
+            if(curve.IsNull())return fail(s,OCCT_BRIDGE_INVALID_GEOMETRY,"curve has no geometry");
+            // Nearest parameter, ends included.
+            const gp_Pnt query=to_point(point);
+            double u=first,best=curve->Value(first).SquareDistance(query);
+            if(curve->Value(last).SquareDistance(query)<best){u=last;best=curve->Value(last).SquareDistance(query);}
+            GeomAPI_ProjectPointOnCurve projection(query,curve,first,last);
+            for(int i=1;i<=projection.NbPoints();++i) {
+                const double d=projection.Point(i).SquareDistance(query);
+                if(d<best){best=d;u=projection.Parameter(i);}
+            }
+            // k = (C'' − (C''·T) T) / |C'|², T = C'/|C'|: zero where straight.
+            gp_Pnt at;
+            gp_Vec d1,d2;
+            curve->D2(u,at,d1,d2);
+            const double speed2=d1.SquareMagnitude();
+            if(!(speed2>Precision::SquareConfusion()))return fail(s,OCCT_BRIDGE_INVALID_GEOMETRY,"curve tangent is undefined at the query point");
+            const gp_Vec k=(d2-d1*(d2.Dot(d1)/speed2))/speed2;
+            if(!std::isfinite(k.X())||!std::isfinite(k.Y())||!std::isfinite(k.Z()))return fail(s,OCCT_BRIDGE_INVALID_GEOMETRY,"curvature is not finite");
+            *out={k.X(),k.Y(),k.Z()};
+            return succeed(s);
+        });
+    }
     occt_bridge_status_t occt_bridge_curve_closest_point(occt_bridge_session_t* s,occt_bridge_shape_id_t id,occt_bridge_vec3_t point,occt_bridge_vec3_t* out) {
         return guarded(s,[&] {
             if(out==nullptr||!finite(point))return fail(s,OCCT_BRIDGE_INVALID_ARGUMENT,"invalid curve projection inputs");

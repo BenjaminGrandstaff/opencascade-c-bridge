@@ -673,3 +673,60 @@ fn curves_trim_between_points_wrapping_closed_seams() {
     );
     assert_eq!(s.shape_count().unwrap(), count);
 }
+
+#[test]
+fn curvature_vectors_match_circles_lines_ellipses_and_bezier_ends() {
+    let s = Session::new().unwrap();
+    let v = |x: f64, y: f64| Vec3::new(x, y, 0.0);
+    let close = |a: Vec3, x: f64, y: f64| (a.x - x).hypot(a.y - y) < 1e-9 && a.z.abs() < 1e-12;
+    let circle = s
+        .create_circle_wire(v(0., 0.), Vec3::new(0., 0., 1.), 10.)
+        .unwrap();
+    assert!(close(
+        s.curve_curvature_at(&circle, v(10., 0.)).unwrap(),
+        -0.1,
+        0.
+    ));
+    assert!(close(
+        s.curve_curvature_at(&circle, v(0., 12.)).unwrap(),
+        0.,
+        -0.1
+    ));
+    let line = s
+        .create_polyline_wire(&[v(0., 0.), v(5., 5.)], false)
+        .unwrap();
+    assert!(close(
+        s.curve_curvature_at(&line, v(1., 1.)).unwrap(),
+        0.,
+        0.
+    ));
+    // Ellipse 12 × 5: at the major vertex the radius of curvature is b²/a.
+    let ellipse = s
+        .create_ellipse_wire_axes(v(0., 0.), Vec3::new(0., 0., 1.), v(1., 0.), 12., 5.)
+        .unwrap();
+    assert!(close(
+        s.curve_curvature_at(&ellipse, v(12., 0.)).unwrap(),
+        -12. / 25.,
+        0.
+    ));
+    // Cubic Bezier: κ(0) = (2/3) |Δ1 × Δ2| / |Δ1|³ toward the turn.
+    let bezier = s
+        .create_curve_wire(
+            &[CurveSegment::BSpline {
+                non_clamped: false,
+                periodic: false,
+                poles: vec![v(0., 0.), v(4., 0.), v(8., 3.), v(10., 8.)],
+                degree: 3,
+                knots: vec![0., 1.],
+                multiplicities: vec![4, 4],
+                weights: vec![],
+            }],
+            false,
+        )
+        .unwrap();
+    let k = s.curve_curvature_at(&bezier, v(0., 0.)).unwrap();
+    assert!(close(k, 0., 2. / 3. * (4. * 3.) / 64.), "{k:?}");
+    let count = s.shape_count().unwrap();
+    assert!(s.curve_curvature_at(&line, v(f64::NAN, 0.)).is_err());
+    assert_eq!(s.shape_count().unwrap(), count);
+}

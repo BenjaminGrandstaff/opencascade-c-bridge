@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define OCCT_BRIDGE_ABI_VERSION 64u
+#define OCCT_BRIDGE_ABI_VERSION 65u
 #define OCCT_BRIDGE_INVALID_SHAPE_ID UINT64_C(0)
 
 #if defined(_WIN32) && defined(OCCT_BRIDGE_BUILD_SHARED)
@@ -905,6 +905,10 @@ OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_curve_closest_data(
     occt_bridge_session_t*, occt_bridge_shape_id_t, occt_bridge_vec3_t point,
     occt_bridge_vec3_t* closest, occt_bridge_vec3_t* tangent);
 OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_curve_closest_point(occt_bridge_session_t*, occt_bridge_shape_id_t, occt_bridge_vec3_t point, occt_bridge_vec3_t*);
+/* ABI 65: curvature vector (curvature times principal normal, zero where
+ * straight) of a one-edge curve at its point nearest `point`, ends included.
+ * Independent of edge orientation. Undefined tangents are errors. */
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_curve_curvature_at(occt_bridge_session_t*, occt_bridge_shape_id_t, occt_bridge_vec3_t point, occt_bridge_vec3_t* curvature);
 OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_wire_is_closed(occt_bridge_session_t*, occt_bridge_shape_id_t, int*);
 
 /* Shape inspection and lifetime management. */

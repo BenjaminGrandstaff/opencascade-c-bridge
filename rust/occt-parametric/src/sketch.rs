@@ -468,6 +468,15 @@ pub enum SketchConstraint {
         first: String,
         second: String,
     },
+    /// Curvature (G2) continuity where two curves share the named end
+    /// (schema 128): tangent there, with equal curvature vectors. It
+    /// replaces a `tangent` at the same point. Lines have zero curvature;
+    /// spline curvature is native.
+    CurvatureContinuous {
+        first: String,
+        second: String,
+        point: String,
+    },
     /// Two circles or arcs on the same circle: shared centre and radius
     /// (schema 122).
     Coradial {

@@ -701,6 +701,7 @@ impl SketchConstraint {
             | Self::CurveLength { .. }
             | Self::EqualCurveLength { .. }
             | Self::Coradial { .. } => Ok(()),
+            Self::CurvatureContinuous { point: id, .. } => point(id),
             Self::Horizontal { line: id } | Self::Vertical { line: id } => line(id),
             Self::Angle { first, second, .. }
             | Self::Parallel { first, second }
@@ -914,6 +915,30 @@ fn validate_tangency(
     constraint: &SketchConstraint,
     entities: &HashMap<&str, Entity<'_>>,
 ) -> Result<(), ModelError> {
+    if let SketchConstraint::CurvatureContinuous {
+        first,
+        second,
+        point,
+    } = constraint
+    {
+        if first == second {
+            return Err(ModelError::new(
+                "curvature continuity requires two distinct entities",
+            ));
+        }
+        for id in [first, second] {
+            let entity = entities
+                .get(id.as_str())
+                .ok_or_else(|| ModelError::new(format!("unknown sketch entity '{id}'")))?;
+            let (start, end) = entity.endpoints();
+            if point != start && point != end {
+                return Err(ModelError::new(
+                    "curvature continuity point must be a shared endpoint",
+                ));
+            }
+        }
+        return Ok(());
+    }
     if let SketchConstraint::Tangent {
         first,
         second,

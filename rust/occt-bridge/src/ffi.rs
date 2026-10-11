@@ -2,7 +2,7 @@
 
 use super::*;
 
-pub(crate) const ABI_VERSION: u32 = 64;
+pub(crate) const ABI_VERSION: u32 = 65;
 
 #[repr(C)]
 #[derive(Default)]
@@ -204,6 +204,12 @@ unsafe extern "C" {
         to: RawVec3,
         out: *mut RawShapeId,
     ) -> RawStatus;
+    pub fn occt_bridge_curve_curvature_at(
+        s: *mut c_void,
+        shape: u64,
+        point: RawVec3,
+        out: *mut RawVec3,
+    ) -> i32;
     pub fn occt_bridge_extend_curve(
         s: *mut c_void,
         shape: u64,

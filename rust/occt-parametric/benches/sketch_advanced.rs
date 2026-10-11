@@ -2379,4 +2379,35 @@ fn main() {
             assert!((session.volume(body).unwrap() - 1001. * 16. * 2.).abs() < 1e-6);
         },
     );
+    gate(
+        "500 G2 paddle edits solving four curvature-continuous joints",
+        10,
+        || {
+            let request: serde_json::Value =
+                serde_json::from_str(include_str!("../../../tools/model/g2-paddle.request.json"))
+                    .unwrap();
+            let family = ModelDocument::from_json(&request["model"].to_string())
+                .unwrap()
+                .family;
+            let session = Session::new().unwrap();
+            let mut part = PartInstance {
+                id: "paddle".into(),
+                definition: &family,
+                overrides: HashMap::new(),
+                provenance: "scale".into(),
+            };
+            let mut previous = part.regenerate(&session).unwrap();
+            for k in 0..500 {
+                let rise = 6. + (k % 10) as f64;
+                part.overrides.insert(
+                    "rise".into(),
+                    ParameterValue::Scalar(Quantity::length(rise, LengthUnit::Millimeter)),
+                );
+                let built = part.regenerate_incremental(&session, &previous).unwrap();
+                let bounds = session.exact_bounds(built.shape("body").unwrap()).unwrap();
+                assert!((bounds.max.y - (30. + rise + 12.)).abs() < 1e-6);
+                previous = built;
+            }
+        },
+    );
 }

@@ -948,5 +948,22 @@ with tempfile.TemporaryDirectory(prefix='occb-mcp-scale-') as root:
         elapsed=time.monotonic()-started
         assert elapsed<10
         print(f'PASS MCP 20 three-region spacer sets extruded from one sketch: {elapsed:.3f}s / 10s')
+        paddles=client.tool('occt_get_example',dict(name='g2-paddle'))['structuredContent']
+        for i in range(1,20):
+            paddles['model']['instances'].append({'clone':dict(id=f'paddle-{i}',source='paddle',overrides={'rise':{'scalar':{'value':6+i*0.5,'dimension':'length','unit':'millimeter'}}},provenance='scale')})
+            paddles['outputs'].append(dict(instance=f'paddle-{i}',output='body'))
+        started=time.monotonic()
+        result=client.tool('occt_visualize_model',paddles)
+        assert not result['isError'],result
+        data=json.loads(client.call('resources/read',dict(uri=result['structuredContent']['resources']['view.json']))['result']['contents'][0]['text'])
+        solids=[s for s in data['scenes'] if s['kind']=='solid']
+        sketches=[s for s in data['scenes'] if s['kind']=='sketch']
+        assert len(solids)==20 and all(s['valid'] for s in solids)
+        for scene in sketches:
+            g2=[a for a in scene['annotations'] if a['label']=='G2']
+            assert len(g2)==4 and all(a['status']=='passed' for a in g2)
+        elapsed=time.monotonic()-started
+        assert elapsed<10
+        print(f'PASS MCP 20 G2 paddles with four curvature-continuous joints: {elapsed:.3f}s / 10s')
     finally:
         client.close()

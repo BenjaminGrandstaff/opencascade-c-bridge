@@ -1407,6 +1407,14 @@ static void elliptical_arcs(occt_bridge_session_t* session) {
     EXPECT(occt_bridge_trim_curve_between(session, circle, vec(0, 11, 0), vec(10, 0, 0), &out), GEOMETRY);
     EXPECT(occt_bridge_trim_curve_between(session, circle, vec(0, 10, 0), vec(10, 0, 0), &out), OK);
     occt_bridge_shape_release(session, out);
+    /* Curvature vectors (ABI 65). */
+    occt_bridge_vec3_t k = vec(1, 1, 1);
+    EXPECT(occt_bridge_curve_curvature_at(NULL, circle, vec(10, 0, 0), &k), ARG);
+    EXPECT(occt_bridge_curve_curvature_at(session, circle, vec(10, 0, 0), NULL), ARG);
+    EXPECT(occt_bridge_curve_curvature_at(session, circle, vec(NAN, 0, 0), &k), ARG);
+    EXPECT(occt_bridge_curve_curvature_at(session, unknown, vec(10, 0, 0), &k), MISSING);
+    EXPECT(occt_bridge_curve_curvature_at(session, circle, vec(10, 0, 0), &k), OK);
+    EXPECT_TRUE(fabs(k.x + 0.1) < 1e-12 && fabs(k.y) < 1e-12, "circle curvature points inward");
     occt_bridge_shape_release(session, circle);
 }
 

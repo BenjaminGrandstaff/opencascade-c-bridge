@@ -826,6 +826,21 @@ impl Session {
             occt_bridge_trim_curve_between(self.raw.as_ptr(), shape.id, from.into(), to.into(), out)
         })
     }
+    /// Curvature vector (curvature times principal normal; zero where
+    /// straight) of a one-edge curve at its point nearest `point` (ABI 65).
+    pub fn curve_curvature_at(&self, shape: &Shape<'_>, point: Vec3) -> Result<Vec3, BridgeError> {
+        self.validate_shape(shape)?;
+        let mut out = RawVec3 {
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+        };
+        // SAFETY: The session, validated shape and output pointer are valid.
+        self.check(unsafe {
+            occt_bridge_curve_curvature_at(self.raw.as_ptr(), shape.id, point.into(), &mut out)
+        })?;
+        Ok(out.into())
+    }
     pub fn extend_curve<'a>(
         &'a self,
         shape: &Shape<'_>,

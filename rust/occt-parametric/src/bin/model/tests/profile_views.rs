@@ -2611,3 +2611,69 @@ fn spacer_set_extrudes_three_regions_and_rejects_overlap_edits() {
         "{volume}"
     );
 }
+
+#[test]
+fn g2_paddle_joins_match_curvature_on_the_built_profile() {
+    let dir = Directory::new();
+    view_request(&dir, view_example("g2-paddle"), "paddle").unwrap();
+    let data: Value =
+        serde_json::from_str(&fs::read_to_string(dir.0.join("paddle/view.json")).unwrap()).unwrap();
+    let sketch = data["scenes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["kind"] == "sketch")
+        .unwrap();
+    assert_eq!(sketch["solver"]["free_degrees"], 0);
+    assert_eq!(sketch["solver"]["redundant_equations"], 0);
+    let g2 = sketch["annotations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|a| a["label"] == "G2")
+        .collect::<Vec<_>>();
+    assert_eq!(g2.len(), 4);
+    assert!(g2.iter().all(|a| a["status"] == "passed"));
+    // On the native face, the edges meeting at each joint have equal
+    // curvature vectors: 0 at the sides, 1/12 toward the crown centre.
+    let session = Session::new().unwrap();
+    let family = ModelDocument::from_json(&view_example("g2-paddle")["model"].to_string())
+        .unwrap()
+        .family;
+    let part = PartInstance {
+        id: "paddle".into(),
+        definition: &family,
+        overrides: HashMap::new(),
+        provenance: "test".into(),
+    };
+    let built = part.regenerate(&session).unwrap();
+    let edges = session
+        .subshapes(
+            built.shape("profile").unwrap(),
+            occt_bridge::ShapeType::Edge,
+        )
+        .unwrap();
+    for (x, y, curvature) in [
+        (40.0, 30.0, (0.0, 0.0)),
+        (32.0, 40.0, (-1.0 / 12.0, 0.0)),
+        (8.0, 40.0, (1.0 / 12.0, 0.0)),
+        (0.0, 30.0, (0.0, 0.0)),
+    ] {
+        let at = occt_bridge::Vec3::new(x, y, 0.0);
+        let meeting = edges
+            .iter()
+            .filter(|e| {
+                let (a, b, _, _) = session.curve_end_data(e).unwrap();
+                (a.x - x).hypot(a.y - y) < 1e-7 || (b.x - x).hypot(b.y - y) < 1e-7
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(meeting.len(), 2, "{x} {y}");
+        for edge in meeting {
+            let k = session.curve_curvature_at(edge, at).unwrap();
+            assert!(
+                (k.x - curvature.0).abs() < 1e-8 && (k.y - curvature.1).abs() < 1e-8,
+                "{x} {y}: {k:?}"
+            );
+        }
+    }
+}

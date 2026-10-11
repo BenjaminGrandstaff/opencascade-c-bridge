@@ -1724,3 +1724,36 @@ profile fillets beside regions, and the extruded volume. A negative gap
 that pushes the washer into the shim reports the overlap in the viewer.
 1,000 rectangle regions build and extrude into 1,001 solids in 0.79 s (10 s
 budget).
+
+## Curvature (G2) continuity (schema 128 / ABI 65)
+
+`curvature_continuous: {first, second, point}` makes two curves that share
+the end `point` tangent there with equal curvature vectors (curvature
+times principal normal). It adds two equations and replaces a `tangent` at
+the same point; adding both makes the tangency redundant.
+
+- Lines have zero curvature, circles and arcs `1/r` toward their centre,
+  ellipses and elliptical arcs their closed-form curvature, and splines
+  their native curvature at the end. Curvature vectors do not depend on
+  direction, so the curves may run either way through the joint.
+- A cubic spline can be G2 at one end only where its first three poles
+  allow it; independent G2 at both ends of one spline needs degree 5 or
+  more (six poles), since each end uses three poles.
+- Curvatures that cannot match, such as a line and an arc, leave the
+  sketch unsolved.
+- Seeds must not put a spline pole on its end point, where the tangent is
+  undefined.
+
+ABI 65 adds `occt_bridge_curve_curvature_at`
+(`Session::curve_curvature_at`): the curvature vector of a one-edge curve
+at its point nearest a query, from the native first and second derivatives
+(zero where straight).
+
+The [G2 paddle](../tools/model/g2-paddle.request.json) blends two straight
+sides into a circular crown with quintic splines that are curvature
+continuous at all four joints. Tests check arcs continuing onto the same
+circle, a line flattening a cubic's first poles, an arc bending a cubic to
+curvature 1/r (confirmed natively), a circle osculating an ellipse at its
+vertex (radius b²/a), infeasible and invalid joints, and equal native
+curvature on both sides of every joint of the built paddle face (1e-8). 500
+rise edits solve all four joints in 2.0 s (10 s budget).

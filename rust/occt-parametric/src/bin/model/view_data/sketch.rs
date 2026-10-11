@@ -625,6 +625,16 @@ pub(super) fn sketch_scene(
                     .collect(),
                 None,
             ),
+            SketchConstraint::CurvatureContinuous {
+                first,
+                second,
+                point,
+            } => (
+                "G2",
+                vec![first.clone(), second.clone(), point.clone()],
+                vec![point.clone()],
+                None,
+            ),
             SketchConstraint::Collinear { first, second } => (
                 "collinear",
                 vec![first.clone(), second.clone()],
@@ -1070,6 +1080,7 @@ pub(super) fn sketch_scene(
             SketchConstraint::Parallel { .. }
             | SketchConstraint::Perpendicular { .. }
             | SketchConstraint::Tangent { .. } => "dimensionless",
+            SketchConstraint::CurvatureContinuous { .. } => "mixed",
             _ => "mm",
         };
         annotations.push(
