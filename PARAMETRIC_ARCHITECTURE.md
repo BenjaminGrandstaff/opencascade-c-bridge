@@ -1492,6 +1492,12 @@ internal thread groove is fused into the hole cutter so one cut keeps input
 history (schema 113). Thread runout joins the helix to a tangent
 interpolated spiral that moves the groove out of the material (schema 114).
 
+Local sketch diagnosis reuses the final Jacobian without changing authoring
+schema 114 or ABI 60. It links local dependencies and representative nullspace
+motion to viewer geometry; bounded work, partial traces and numerical rank
+agreement are visible. See [Sketches](docs/SKETCHES.md#local-solver-explanations).
+An explicit sketch acceptance policy is the next priority for AI authoring.
+
 The next cross-layer work should prioritize manufacturing product definition:
 standards-verified material hatch presets and drawing conventions, followed by
 broader GD&T evaluation and structured PMI. Schema 57 integrates true planar slice drawings with

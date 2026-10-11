@@ -79,8 +79,8 @@ export are verified. A 1,000-pair solve and residual-diagnostic gate passes in
 0.009 s (10 s budget); 20 solids plus 60 source sketch scenes and matched-radius
 annotations pass through MCP in 0.316 s (10 s budget).
 
-Current authoring examples use schema 112. Older model documents migrate
-without adding constraints or changing their entities. Current native ABI is 56.
+Current authoring examples use schema 114. Older model documents migrate
+without adding constraints or changing their entities. Current native ABI is 60.
 
 ## Saved profile operations
 
@@ -1095,3 +1095,39 @@ Unit tests also cover:
 The MCP renders 20 annotated flanges in 0.90 s (all within 10 s budgets).
 Rebuild native and Rust tools together for ABI 60. Older documents migrate to
 schema 112 without patterns or holes.
+
+## Local solver explanations
+
+Every `SketchSolution` now includes `diagnosis`, also exposed in the annotated
+viewer and MCP visualization. This is runtime output; authoring schema 114 and
+native ABI 60 remain unchanged. The `sketch-diagnosis` example starts with one
+free motion and duplicate width/horizontal equations. Increase `extra_width`
+to reveal conflicting dimensions; change `lean` to inspect the coupled motion
+of the top-left corner.
+
+The final Jacobian supplies locally redundant constraint indices, satisfied
+constraints involving fixed geometry, related conflicting equation groups,
+and representative directions in its nullspace. Constraint annotations link
+to their groups; group selection highlights related geometry and parameter
+controls. Free-motion annotations identify affected points and relative `dx`
+and `dy` components. Independent coordinate choices parameterize these coupled
+directions; they cannot generally move alone. The viewer calls out solved
+sketches with remaining free motion.
+
+These are first-order explanations at the final iterate. Redundancy depends on
+equation order and numerical tolerance; a conflict group is neither a minimal
+conflict set nor proof of global nonlinear infeasibility. A zero derivative
+with structurally free points is reported as `stationary_linearization`, not
+fixed geometry. `local_rank` and `rank_agrees_with_solver` expose possible
+numerical differences from the existing solver's rank calculation. Sketch
+acceptance and solver iterations retain their existing behavior.
+
+Analysis reuses the final Jacobian without additional native geometry queries.
+Sparse elimination stops at 2,000,000 work units or 200,000 stored entries.
+Dependency traces retain at most 64 scalar equation rows; exceeding this drops
+only the trace, preserving rank and free-motion analysis. A conflicting row
+with a dropped trace reports `trace_complete: false` and a partial source list.
+`complete` and `limitation` identify interrupted analysis; an interrupted rank
+calculation leaves `local_rank` empty. Output includes at most 128 conflict
+groups, 16 motion directions, and 64 moving points per direction, with explicit
+omitted counts. All independent free-coordinate choices remain available.

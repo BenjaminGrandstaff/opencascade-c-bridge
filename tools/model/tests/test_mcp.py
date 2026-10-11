@@ -58,7 +58,7 @@ class McpTests(unittest.TestCase):
         with self.assertRaises(jsonschema.ValidationError):
             jsonschema.validate(bad, schema)
         resources = self.client.call('resources/list')['result']['resources']
-        self.assertEqual(len(resources), 61)
+        self.assertEqual(len(resources), 62)
         self.assertEqual(len(self.client.call('resources/templates/list')['result']['resourceTemplates']), 1)
         read = self.client.call('resources/read', dict(uri='occt://schema/request'))['result']['contents'][0]
         self.assertEqual(json.loads(read['text']), schema)
@@ -224,6 +224,25 @@ class McpTests(unittest.TestCase):
         data = json.loads(self.client.call('resources/read',dict(uri=failed['resources']['view.json']))['result']['contents'][0]['text'])
         self.assertFalse(data['scenes'][1]['solver']['solved'])
         self.assertTrue(any(a['status']=='failed' for a in data['scenes'][1]['annotations']))
+        diagnosis = self.client.tool('occt_get_example',dict(name='sketch-diagnosis'))['structuredContent']
+        jsonschema.validate(diagnosis,schema)
+        for conflict_value in [0,5]:
+            diagnosis['model']['instances'][0]['base']['overrides']['extra_width'] = {'scalar':dict(value=conflict_value,dimension='length',unit='millimeter')}
+            result = self.client.tool('occt_visualize_model',diagnosis)
+            self.assertFalse(result['isError'])
+            data = json.loads(self.client.call('resources/read',dict(uri=result['structuredContent']['resources']['view.json']))['result']['contents'][0]['text'])
+            scene = next(s for s in data['scenes'] if s['kind']=='sketch')
+            d = scene['solver']['diagnosis']
+            self.assertTrue(d['complete'])
+            self.assertEqual(scene['solver']['solved'],conflict_value==0)
+            self.assertEqual(len(d['free_coordinates']),1)
+            self.assertTrue(any(a['id']=='free-motion-0' and a['targets']==['D'] for a in scene['annotations']))
+            if conflict_value:
+                group = next(a for a in scene['annotations'] if a['id']=='conflict-group-0')
+                self.assertIn('extra_width',group['parameters'])
+                self.assertTrue(group['detail']['conflict_group']['trace_complete'])
+            else:
+                self.assertEqual(d['locally_redundant_constraints'],[5,6])
         curved = self.client.tool('occt_get_example',dict(name='curved-extrusions'))['structuredContent']
         jsonschema.validate(curved,schema)
         result = self.client.tool('occt_visualize_model',curved)

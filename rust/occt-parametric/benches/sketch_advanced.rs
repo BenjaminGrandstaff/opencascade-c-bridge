@@ -55,6 +55,72 @@ fn gate(name: &str, budget: u64, run: impl FnOnce()) {
     println!("PASS {name}: {:.3}s / {budget}s", elapsed.as_secs_f64());
 }
 fn main() {
+    gate("10000 independent duplicate-equation diagnoses", 10, || {
+        let mut s = sketch();
+        for i in 0..10000 {
+            let a = format!("a{i}");
+            let b = format!("b{i}");
+            s.points.extend([
+                point(a.clone(), 0., 0., true),
+                point(b.clone(), 0., 0., false),
+            ]);
+            let c = SketchConstraint::Coincident {
+                first: a,
+                second: b,
+            };
+            s.constraints.extend([c.clone(), c]);
+        }
+        let solved = s.solve(&HashMap::new()).unwrap();
+        assert!(
+            solved.solved && solved.diagnosis.complete && solved.diagnosis.rank_agrees_with_solver
+        );
+        assert_eq!(solved.diagnosis.locally_redundant_constraints.len(), 10000);
+        assert!(solved.diagnosis.free_coordinates.is_empty());
+    });
+    gate("5000-point coupled-chain free-motion diagnosis", 10, || {
+        let mut s = sketch();
+        for i in 0..5000 {
+            s.points.push(point(format!("p{i}"), 0., 0., false));
+            if i > 0 {
+                s.constraints.push(SketchConstraint::Coincident {
+                    first: format!("p{}", i - 1),
+                    second: format!("p{i}"),
+                });
+            }
+        }
+        let solved = s.solve(&HashMap::new()).unwrap();
+        assert!(
+            solved.solved && solved.diagnosis.complete && solved.diagnosis.rank_agrees_with_solver
+        );
+        assert_eq!(solved.diagnosis.free_coordinates.len(), 2);
+        for mode in &solved.diagnosis.free_motions {
+            assert_eq!(mode.points.len(), 64);
+            assert_eq!(mode.omitted_points, 4936);
+        }
+    });
+    gate(
+        "10000 fixed-conflict diagnoses with bounded group output",
+        10,
+        || {
+            let mut s = sketch();
+            s.points.extend([
+                point("a".into(), 0., 0., true),
+                point("b".into(), 1., 0., true),
+            ]);
+            s.constraints = (0..10000)
+                .map(|_| SketchConstraint::Distance {
+                    first: "a".into(),
+                    second: "b".into(),
+                    value: mm(2.),
+                })
+                .collect();
+            let solved = s.solve(&HashMap::new()).unwrap();
+            assert!(!solved.solved && solved.diagnosis.complete);
+            assert_eq!(solved.diagnosis.failed_constraints.len(), 10000);
+            assert_eq!(solved.diagnosis.conflict_groups.len(), 128);
+            assert_eq!(solved.diagnosis.omitted_conflict_groups, 9872);
+        },
+    );
     gate(
         "1000 native open fillet/chamfer path regenerations",
         10,
@@ -1312,6 +1378,16 @@ fn main() {
                         "dimension": "length", "unit": "millimeter"}}}}],
             }))
             .unwrap();
+            let diagnosed = sketch.solve(&HashMap::new()).unwrap();
+            assert!(diagnosed.solved && diagnosed.diagnosis.complete);
+            assert_eq!(diagnosed.diagnosis.free_coordinates.len(), 2);
+            assert!(
+                diagnosed
+                    .diagnosis
+                    .free_motions
+                    .iter()
+                    .all(|m| m.omitted_points > 1000)
+            );
             let mut family = ModelDocument::from_json(
                 &serde_json::from_str::<serde_json::Value>(include_str!(
                     "../../../tools/model/mirrored-flange.request.json"

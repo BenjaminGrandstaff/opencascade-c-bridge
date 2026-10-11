@@ -11,6 +11,7 @@ const RESIDUAL_TOLERANCE: f64 = 1e-9;
 const DIFFERENCE_STEP: f64 = 1e-6;
 const PIVOT_TOLERANCE: f64 = 1e-10;
 
+mod diagnosis;
 mod diagnostics;
 mod geometry;
 mod patterns;
@@ -19,6 +20,10 @@ mod projections;
 mod solver;
 mod validation;
 
+pub use diagnosis::{
+    SketchConflictGroup, SketchCoordinateAxis, SketchDiagnosis, SketchEquationSource,
+    SketchFreeCoordinate, SketchFreeMotion, SketchPointMotion,
+};
 pub use diagnostics::{
     SketchConstraintCheck, SketchEllipseCircleContact, SketchSplineCircleContact,
 };
@@ -512,6 +517,7 @@ pub struct SketchSolution {
     pub max_residual: f64,
     pub free_degrees: usize,
     pub redundant_equations: usize,
+    pub diagnosis: SketchDiagnosis,
 }
 
 #[derive(Clone, Copy)]

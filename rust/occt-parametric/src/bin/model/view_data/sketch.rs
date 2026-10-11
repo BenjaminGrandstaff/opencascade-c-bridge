@@ -961,6 +961,123 @@ pub(super) fn sketch_scene(
             .into(),
         );
     }
+    let diagnosis = &solution.diagnosis;
+    let mut memberships = HashMap::<usize, Vec<usize>>::new();
+    for (group_index, group) in diagnosis.conflict_groups.iter().enumerate() {
+        for source in &group.sources {
+            if let SketchEquationSource::Constraint { index } = source {
+                memberships.entry(*index).or_default().push(group_index);
+            }
+        }
+    }
+    let redundant = diagnosis
+        .locally_redundant_constraints
+        .iter()
+        .copied()
+        .collect::<BTreeSet<_>>();
+    let fixed = diagnosis
+        .fixed_satisfied_constraints
+        .iter()
+        .copied()
+        .collect::<BTreeSet<_>>();
+    for annotation in &mut annotations {
+        if let Some(index) = annotation["detail"]["constraint_index"]
+            .as_u64()
+            .map(|i| i as usize)
+        {
+            annotation["detail"]["diagnosis"] = json!({
+                "local_role":if annotation["detail"]["by_construction"]==true {"constructed"} else if redundant.contains(&index) {"locally_redundant"} else if fixed.contains(&index) {"fixed_geometry"} else {"measured_equation"},
+                "conflict_groups":memberships.get(&index).cloned().unwrap_or_default(),
+                "local_analysis_only":true,
+            });
+        }
+    }
+    for (index, motion) in diagnosis.free_motions.iter().enumerate() {
+        let origin = point_map[&motion.coordinate.point];
+        let direction = motion
+            .points
+            .iter()
+            .find(|p| p.point == motion.coordinate.point)
+            .unwrap();
+        let targets = motion
+            .points
+            .iter()
+            .map(|p| p.point.clone())
+            .collect::<Vec<_>>();
+        annotations.push(Annotation {
+            id:format!("free-motion-{index}"),label:format!("Free motion {} · {} {:?} (local)",index+1,motion.coordinate.point,motion.coordinate.axis),
+            kind:AnnotationKind::Constraint,status:AnnotationStatus::Unverified,targets,parameters:Vec::new(),
+            anchors:json!([origin,[origin[0]+direction.dx,origin[1]+direction.dy,0.]]),
+            detail:json!({"free_motion":motion,"description":"Representative direction in the final Jacobian nullspace. A local direction is not a finite edit or a global degree-of-freedom proof."}),
+        }.into());
+    }
+    let constraint_annotations = annotations
+        .iter()
+        .enumerate()
+        .filter_map(|(i, a)| {
+            a["detail"]["constraint_index"]
+                .as_u64()
+                .map(|c| (c as usize, i))
+        })
+        .collect::<HashMap<_, _>>();
+    for (index, group) in diagnosis.conflict_groups.iter().enumerate() {
+        let mut targets = BTreeSet::new();
+        let mut anchors = Vec::new();
+        let mut parameters = BTreeSet::new();
+        for source in &group.sources {
+            match source {
+                SketchEquationSource::Constraint { index } => {
+                    if let Some(annotation) = constraint_annotations
+                        .get(index)
+                        .and_then(|i| annotations.get(*i))
+                    {
+                        // Source constraint annotations precede diagnostics.
+                        targets.extend(
+                            annotation["targets"]
+                                .as_array()
+                                .into_iter()
+                                .flatten()
+                                .filter_map(Value::as_str)
+                                .map(str::to_owned),
+                        );
+                        parameters.extend(
+                            annotation["parameters"]
+                                .as_array()
+                                .into_iter()
+                                .flatten()
+                                .filter_map(Value::as_str)
+                                .map(str::to_owned),
+                        );
+                        anchors.extend(
+                            annotation["anchors"]
+                                .as_array()
+                                .into_iter()
+                                .flatten()
+                                .take(3)
+                                .cloned(),
+                        );
+                    }
+                }
+                SketchEquationSource::ArcRadii { entity }
+                | SketchEquationSource::EllipseAxes { entity }
+                | SketchEquationSource::SplineEndpoints { entity } => {
+                    targets.insert(entity.clone());
+                }
+                SketchEquationSource::PatternLink { point, .. } => {
+                    targets.insert(point.clone());
+                    if let Some(p) = point_map.get(point) {
+                        anchors.push(json!(p));
+                    }
+                }
+            }
+        }
+        anchors.truncate(8);
+        annotations.push(Annotation {
+            id:format!("conflict-group-{index}"),label:format!("Conflict group {} · {}",index+1,group.evidence.replace('_'," ")),
+            kind:AnnotationKind::Constraint,status:AnnotationStatus::Failed,targets:targets.into_iter().collect(),parameters:parameters.into_iter().collect(),anchors:json!(anchors),
+            detail:json!({"conflict_group":group,"description":"Related equations disagree at the current iterate. Linearized groups are local evidence, not minimal conflict sets or a proof that the nonlinear sketch has no solution."}),
+        }.into());
+    }
     for p in &sketch.points {
         let control_names =
             p.x.parameter_names()
@@ -1238,6 +1355,7 @@ pub(super) fn sketch_scene(
             "iterations": solution.iterations,
             "max_residual": solution.max_residual,
             "free_degrees": solution.free_degrees,
+            "diagnosis": solution.diagnosis,
             "redundant_equations": solution.redundant_equations,
         },
         "coordinate_system": "sketch-local XY millimeters",

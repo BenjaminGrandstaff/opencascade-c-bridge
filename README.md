@@ -131,6 +131,12 @@ verified revision records without overwriting previous builds. The
 on sketches and 3D shapes, links controls to geometry, and displays diagnostic
 failures while keeping model acceptance separate.
 
+Sketch solver explanations are available through `SketchSolution.diagnosis` and
+viewer/MCP annotations: local conflicting equation groups, redundant constraints,
+and coupled free-motion directions. Try
+[`sketch-diagnosis.request.json`](tools/model/sketch-diagnosis.request.json);
+see [the local-analysis limits](docs/SKETCHES.md#local-solver-explanations).
+
 ## Repository layout
 
 - [`include/occt_bridge.h`](include/occt_bridge.h): stable C ABI contract.

@@ -21,6 +21,16 @@ for(let i=0;i<data.scenes.length;i++){
  elements.scene.value=String(i);elements.scene.emit('change');
  assert.equal(viewer.scene.title,data.scenes[i].title);
  if(viewer.scene.error)continue;
+ for(const diagnosis of viewer.scene.annotations.filter(a=>a.detail?.free_motion||a.detail?.conflict_group)){
+  assert.equal(diagnosis.kind,'constraint');assert(diagnosis.targets.length>0);
+  const button=elements.annotations.children.find(e=>e.dataset.annotation===diagnosis.id);assert(button);button.emit('click');
+  assert.equal(viewer.selected,diagnosis.id);
+  assert(elements.overlay.children.some(e=>e.attributes['data-annotation']===diagnosis.id),'local diagnosis is drawn');
+  elements.constraints.checked=false;elements.constraints.emit('change');
+  assert(!elements.overlay.children.some(e=>e.attributes['data-annotation']===diagnosis.id));
+  elements.constraints.checked=true;elements.constraints.emit('change');
+ }
+ if(viewer.scene.solver?.solved&&viewer.scene.solver.free_degrees>0)assert(elements.status.textContent.includes('free motion'));
  for(const e of viewer.scene.entities||[]){if(e.external)assert(elements.overlay.children.some(n=>n.attributes['data-entity']===e.id&&n.attributes.class.includes('external-geometry')),'linked external curves are rendered distinctly');}
 
  for(const e of viewer.scene.entities||[]){if(e.bspline)assert(elements.overlay.children.some(n=>n.attributes['data-entity']===e.id&&n.attributes.class.includes('control-polygon')&&n.attributes.points.split(' ').length===e.bspline.control_points.length+(e.bspline.basis.periodic?1:0)),'explicit B-spline control polygon is rendered separately from its curve');}

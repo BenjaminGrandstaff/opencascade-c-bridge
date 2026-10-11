@@ -202,7 +202,7 @@ impl SketchDefinition {
             self.edited_profile(
                 session,
                 parameters,
-                &solution,
+                solution,
                 &profile,
                 &transform,
                 &direction,
@@ -226,7 +226,7 @@ impl SketchDefinition {
             self.ellipse_wire(
                 session,
                 ellipse,
-                &solution,
+                solution,
                 &transform,
                 &direction,
                 cross(x_axis, y_axis),
@@ -234,7 +234,7 @@ impl SketchDefinition {
         } else {
             let direction = |d: SketchPoint2| add(scale(x_axis, d.x), scale(y_axis, d.y));
             let segments =
-                self.profile_segments(&profile, &solution, &transform, &direction, closed)?;
+                self.profile_segments(&profile, solution, &transform, &direction, closed)?;
             session.create_curve_wire(&segments, closed)?
         };
         if !session.is_valid(&wire)? {

@@ -3106,3 +3106,152 @@ fn sketch_open_corner_edits_preserve_parameterized_rotated_planes() {
     );
     assert!(session.is_valid(&wire).unwrap());
 }
+
+#[test]
+fn sketch_diagnosis_identifies_local_conflicts_redundancy_and_fixed_geometry() {
+    let mut s = base();
+    s.points = vec![point("a", 0., 0., true), point("b", 4., 0., false)];
+    s.constraints = vec![
+        SketchConstraint::Distance {
+            first: "a".into(),
+            second: "b".into(),
+            value: length(5.),
+        },
+        SketchConstraint::Distance {
+            first: "a".into(),
+            second: "b".into(),
+            value: length(6.),
+        },
+    ];
+    let solution = s.solve(&HashMap::new()).unwrap();
+    assert!(!solution.solved);
+    let d = &solution.diagnosis;
+    assert!(d.complete && d.rank_agrees_with_solver);
+    assert_eq!(d.failed_constraints, vec![0, 1]);
+    assert!(
+        d.conflict_groups
+            .iter()
+            .any(|g| g.evidence == "linearized_dependency"
+                && g.sources
+                    == vec![
+                        SketchEquationSource::Constraint { index: 0 },
+                        SketchEquationSource::Constraint { index: 1 }
+                    ])
+    );
+    s.constraints[1] = s.constraints[0].clone();
+    let solved = s.solve(&HashMap::new()).unwrap();
+    assert!(solved.solved);
+    assert_eq!(solved.diagnosis.locally_redundant_constraints, vec![1]);
+    assert!(solved.diagnosis.conflict_groups.is_empty());
+    s.points[1].fixed = true;
+    let fixed = s.solve(&HashMap::new()).unwrap();
+    assert!(
+        !fixed.solved
+            && fixed
+                .diagnosis
+                .conflict_groups
+                .iter()
+                .all(|g| g.evidence == "fixed_geometry")
+    );
+    s.points[1].x = length(5.);
+    let fixed = s.solve(&HashMap::new()).unwrap();
+    assert_eq!(fixed.diagnosis.fixed_satisfied_constraints, vec![0, 1]);
+    assert!(fixed.diagnosis.locally_redundant_constraints.is_empty());
+}
+
+#[test]
+fn sketch_diagnosis_explains_coupled_free_motion_and_stationary_linearization() {
+    let mut s = base();
+    s.points = vec![point("a", 0., 0., true), point("b", 3., 4., false)];
+    s.constraints = vec![SketchConstraint::Distance {
+        first: "a".into(),
+        second: "b".into(),
+        value: length(5.),
+    }];
+    let solved = s.solve(&HashMap::new()).unwrap();
+    let d = &solved.diagnosis;
+    assert!(d.complete && d.rank_agrees_with_solver);
+    assert_eq!(d.free_coordinates.len(), 1);
+    let motion = &d.free_motions[0].points[0];
+    assert_eq!(motion.point, "b");
+    assert!((3. * motion.dx + 4. * motion.dy).abs() < 1e-6);
+    assert!(motion.dx.abs() > 0.1 && motion.dy.abs() > 0.1);
+    s.points[1].x = length(0.);
+    s.points[1].y = length(0.);
+    let stalled = s.solve(&HashMap::new()).unwrap();
+    assert!(!stalled.solved);
+    assert!(
+        stalled
+            .diagnosis
+            .conflict_groups
+            .iter()
+            .any(|g| g.evidence == "stationary_linearization")
+    );
+    assert!(stalled.diagnosis.fixed_satisfied_constraints.is_empty());
+}
+
+#[test]
+fn sketch_diagnosis_includes_implicit_curves_and_limits_large_motion_output() {
+    let mut s = base();
+    s.points = vec![
+        point("c", 0., 0., true),
+        point("a", 2., 0., true),
+        point("b", 0., 3., true),
+    ];
+    s.arcs = vec![SketchArc {
+        id: "arc".into(),
+        center: "c".into(),
+        start: "a".into(),
+        end: "b".into(),
+        clockwise: false,
+    }];
+    let solved = s.solve(&HashMap::new()).unwrap();
+    assert!(!solved.solved);
+    assert!(solved.diagnosis.conflict_groups.iter().any(|g| g.sources
+        == vec![SketchEquationSource::ArcRadii {
+            entity: "arc".into()
+        }]));
+    s.arcs.clear();
+    s.points = (0..100)
+        .map(|i| point(&format!("p-{i}"), i as f64, 0., false))
+        .collect();
+    let solved = s.solve(&HashMap::new()).unwrap();
+    assert_eq!(solved.diagnosis.free_coordinates.len(), 200);
+    assert_eq!(solved.diagnosis.free_motions.len(), 16);
+    assert_eq!(solved.diagnosis.omitted_free_motions, 184);
+}
+
+#[test]
+fn sketch_diagnosis_keeps_long_chain_rank_when_conflict_trace_is_partial() {
+    let mut s = base();
+    for i in 0..100 {
+        s.points.push(point(&format!("p{i}"), 0., 0., i == 0));
+        if i > 0 {
+            s.constraints.push(SketchConstraint::Coincident {
+                first: format!("p{}", i - 1),
+                second: format!("p{i}"),
+            });
+        }
+    }
+    let solved = s.solve(&HashMap::new()).unwrap();
+    assert!(solved.solved && solved.diagnosis.complete);
+    assert_eq!(solved.diagnosis.local_rank, Some(198));
+    assert!(solved.diagnosis.free_coordinates.is_empty());
+    s.points.push(point("far", 1., 0., true));
+    s.constraints.push(SketchConstraint::Coincident {
+        first: "p99".into(),
+        second: "far".into(),
+    });
+    let failed = s.solve(&HashMap::new()).unwrap();
+    assert!(!failed.solved);
+    // A capped dependency trace must not discard the completed rank estimate.
+    assert_eq!(failed.diagnosis.local_rank, Some(198));
+    assert!(
+        failed
+            .diagnosis
+            .conflict_groups
+            .iter()
+            .any(|g| !g.trace_complete)
+    );
+    assert!(!failed.diagnosis.complete);
+}

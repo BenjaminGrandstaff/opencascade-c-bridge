@@ -672,5 +672,22 @@ with tempfile.TemporaryDirectory(prefix='occb-mcp-scale-') as root:
         elapsed=time.monotonic()-started
         assert elapsed<30
         print(f'PASS MCP 10 tapped blocks with modeled through and blind threads: {elapsed:.3f}s / 30s')
+        diagnosis=client.tool('occt_get_example',dict(name='sketch-diagnosis'))['structuredContent']
+        for i in range(1,20):
+            diagnosis['model']['instances'].append({'clone':dict(id=f'part-{i}',source='part',overrides={},provenance='scale')})
+            diagnosis['outputs'].extend(dict(instance=f'part-{i}',output=out) for out in ['body','profile'])
+        started=time.monotonic()
+        result=client.tool('occt_visualize_model',diagnosis)
+        assert not result['isError'],result
+        data=json.loads(client.call('resources/read',dict(uri=result['structuredContent']['resources']['view.json']))['result']['contents'][0]['text'])
+        profiles=[s for s in data['scenes'] if s['kind']=='sketch']
+        assert len(profiles)==20
+        for scene in profiles:
+            d=scene['solver']['diagnosis']
+            assert scene['solver']['solved'] and d['complete'] and d['locally_redundant_constraints']==[5,6]
+            assert len(d['free_motions'])==1 and d['free_motions'][0]['points'][0]['point']=='D'
+        elapsed=time.monotonic()-started
+        assert elapsed<10
+        print(f'PASS MCP 20 sketches with local redundancy and coupled free-motion annotations: {elapsed:.3f}s / 10s')
     finally:
         client.close()

@@ -97,7 +97,9 @@ impl SketchDefinition {
             values = trial;
             residual = trial_residual;
         }
-        let jacobian = problem.jacobian(&values)?;
+        let mut sources = Vec::new();
+        let mut structural = Vec::new();
+        let jacobian = problem.jacobian_labeled(&values, Some((&mut sources, &mut structural)))?;
         let rank = jacobian.normal_matrix().rank(PIVOT_TOLERANCE);
         let mut points = self
             .points
@@ -115,6 +117,31 @@ impl SketchDefinition {
             );
         }
         self.validate_curve_geometry(&points)?;
+        let coordinates = self
+            .points
+            .iter()
+            .filter(|p| !p.fixed)
+            .flat_map(|p| {
+                [
+                    SketchFreeCoordinate {
+                        point: p.id.clone(),
+                        axis: SketchCoordinateAxis::X,
+                    },
+                    SketchFreeCoordinate {
+                        point: p.id.clone(),
+                        axis: SketchCoordinateAxis::Y,
+                    },
+                ]
+            })
+            .collect::<Vec<_>>();
+        let diagnosis = super::diagnosis::analyze(
+            &jacobian,
+            &residual,
+            &sources,
+            &structural,
+            &coordinates,
+            rank,
+        );
         Ok(SketchSolution {
             points,
             spline_weights: self
@@ -128,6 +155,7 @@ impl SketchDefinition {
             max_residual: max_abs(&residual),
             free_degrees: values.len().saturating_sub(rank),
             redundant_equations: residual.len().saturating_sub(rank),
+            diagnosis,
         })
     }
 }
@@ -146,7 +174,7 @@ pub(super) struct SketchProblem<'a> {
 
 #[derive(Clone, Copy)]
 enum Equation<'a> {
-    Constraint(&'a SketchConstraint),
+    Constraint(usize, &'a SketchConstraint),
     Pattern(patterns::PatternLink<'a>),
     Arc(&'a SketchArc),
     Ellipse(&'a SketchEllipse),
@@ -183,8 +211,9 @@ impl SketchProblem<'_> {
         self.sketch
             .constraints
             .iter()
-            .filter(|constraint| !self.sketch.spline_tangency(constraint))
-            .map(Equation::Constraint)
+            .enumerate()
+            .filter(|(_, constraint)| !self.sketch.spline_tangency(constraint))
+            .map(|(index, c)| Equation::Constraint(index, c))
             .chain(self.sketch.arcs.iter().map(Equation::Arc))
             .chain(self.sketch.ellipses.iter().map(Equation::Ellipse))
             .chain(
@@ -204,7 +233,7 @@ impl SketchProblem<'_> {
         residuals: &mut Vec<f64>,
     ) -> Result<(), ModelError> {
         match equation {
-            Equation::Constraint(constraint) => {
+            Equation::Constraint(_, constraint) => {
                 self.constraint_residuals(constraint, values, residuals)
             }
             Equation::Pattern(link) => self.pattern_residuals(link, values, residuals),
@@ -1292,14 +1321,40 @@ impl SketchProblem<'_> {
     /// Differentiate only the points named by each constraint, with one
     /// shared scratch vector. Duplicate endpoints contribute only once.
     fn jacobian(&self, values: &[f64]) -> Result<SparseJacobian, ModelError> {
+        self.jacobian_labeled(values, None)
+    }
+    fn jacobian_labeled(
+        &self,
+        values: &[f64],
+        mut labels: Option<(&mut Vec<SketchEquationSource>, &mut Vec<bool>)>,
+    ) -> Result<SparseJacobian, ModelError> {
         let mut rows = Vec::new();
         let mut shifted = values.to_vec();
         for equation in self.equations() {
             let mut base = Vec::new();
             self.equation_residuals(equation, values, &mut base)?;
+            if let Some((labels, _)) = labels.as_mut() {
+                let source = match equation {
+                    Equation::Constraint(index, _) => SketchEquationSource::Constraint { index },
+                    Equation::Arc(e) => SketchEquationSource::ArcRadii {
+                        entity: e.id.clone(),
+                    },
+                    Equation::Ellipse(e) => SketchEquationSource::EllipseAxes {
+                        entity: e.id.clone(),
+                    },
+                    Equation::SplineEndpoints(e) => SketchEquationSource::SplineEndpoints {
+                        entity: e.id.clone(),
+                    },
+                    Equation::Pattern(link) => SketchEquationSource::PatternLink {
+                        pattern: link.pattern.id().into(),
+                        point: link.copy.unwrap_or(link.source).into(),
+                    },
+                };
+                labels.extend(std::iter::repeat_n(source, base.len()));
+            }
             let mut term_rows = vec![Vec::new(); base.len()];
             let columns = match equation {
-                Equation::Constraint(constraint) => self.columns(constraint),
+                Equation::Constraint(_, constraint) => self.columns(constraint),
                 Equation::Arc(arc) => self.point_columns(vec![&arc.center, &arc.start, &arc.end]),
                 Equation::SplineEndpoints(s) => {
                     let e = s.endpoints.as_ref().unwrap();
@@ -1324,6 +1379,9 @@ impl SketchProblem<'_> {
                     self.point_columns(refs)
                 }
             };
+            if let Some((_, structural)) = labels.as_mut() {
+                structural.extend(std::iter::repeat_n(!columns.is_empty(), base.len()));
+            }
             for column in columns {
                 let step = DIFFERENCE_STEP * values[column].abs().max(1.0);
                 shifted[column] = values[column] + step;

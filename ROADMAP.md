@@ -15,14 +15,28 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 130 + first-use integration 1 (+1 doc test), recipes 3, parametric 552 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 19 + branch command 2 + model command 60, MCP Python 9, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 130 + first-use integration 1 (+1 doc test), recipes 3, parametric 557 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 19 + branch command 2 + model command 61, MCP Python 9, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform code also passes. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
 | Coverage | Last recorded: 93.61% lines overall, test code excluded; C++ 94.13% lines, 87.40% branches, 100% functions; Rust 93.42% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 168 Rust cases plus 5 model-command and 35 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Scale benchmarks | 171 Rust cases plus 5 model-command and 36 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
+
+- Local sketch solver explanations (schema 114 / ABI 60 unchanged): final
+  Jacobian analysis exposes locally redundant constraints, satisfied fixed
+  geometry, related conflicting equation groups and coupled free-motion
+  directions. Viewer/MCP annotations link evidence to geometry and controls.
+  Stationary derivatives, partial dependency traces, numerical rank differences
+  and bounded output are explicit; solver acceptance remains unchanged.
+  Example: `sketch-diagnosis`. Catalog: 50 examples, 62 resources.
+  10,000 independent duplicate-equation diagnoses take 0.034 s;
+  a 5,000-point coupled chain takes 0.008 s; 10,000 fixed conflicts take
+  0.013 s (10 s budgets). All 29 advanced sketch gates pass, including
+  the 1,000-copy circular pattern with coupled motion and native holes.
+  MCP renders 20 diagnosed sketches in 0.144 s / 10 s. Live conflict edits
+  preserve accepted geometry, and STEP/STL export remains valid.
 
 - Thread runout (schema 114, no ABI change): optional `runout` on threads
   and modeled tapped holes fades the groove out of the material over up to
@@ -1832,7 +1846,11 @@ documents and the API, and verified in tests. The local viewer
 
 For continued sketch authoring, fillets and chamfers cover line, arc, spline
 and trimmed-ellipse corners, and sketches support linked mirror, linear and
-circular patterns with inner holes.
+circular patterns with inner holes. Local solver explanations now identify
+conflicting equation groups, redundancy and representative free motion. The
+next sketch priority is an explicit acceptance policy for AI-authored parts
+(for example, requiring a fully constrained sketch), followed by general
+projection of spline and ellipse edges into sketch planes.
 
 The earlier geometry and assembly milestones are complete. Manufacturing
 product definition is the next general CAD priority; additional rib variants

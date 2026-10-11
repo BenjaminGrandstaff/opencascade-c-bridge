@@ -1812,3 +1812,68 @@ fn pattern_viewer_draws_linked_copies_holes_and_pattern_groups() {
         .unwrap();
     assert_eq!(solid["valid"], true);
 }
+
+#[test]
+fn sketch_diagnosis_viewer_links_conflicts_redundancy_and_coupled_free_motion() {
+    let dir = Directory::new();
+    for conflict in [false, true] {
+        let mut request = view_example("sketch-diagnosis");
+        if conflict {
+            request["model"]["instances"][0]["base"]["overrides"]["extra_width"] =
+                json!({"scalar":{"value":5,"dimension":"length","unit":"millimeter"}});
+        }
+        let name = if conflict {
+            "diagnosis-conflict"
+        } else {
+            "diagnosis-free"
+        };
+        view_request(&dir, request, name).unwrap();
+        let data: Value =
+            serde_json::from_str(&fs::read_to_string(dir.0.join(name).join("view.json")).unwrap())
+                .unwrap();
+        let scene = data["scenes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["kind"] == "sketch")
+            .unwrap();
+        let d = &scene["solver"]["diagnosis"];
+        assert_eq!(d["complete"], true);
+        assert_eq!(scene["solver"]["solved"], !conflict);
+        assert_eq!(d["free_coordinates"].as_array().unwrap().len(), 1);
+        let motion = scene["annotations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|a| a["id"] == "free-motion-0")
+            .unwrap();
+        assert_eq!(motion["kind"], "constraint");
+        assert_eq!(motion["anchors"].as_array().unwrap().len(), 2);
+        assert_eq!(motion["targets"], json!(["D"]));
+        assert!(
+            d["locally_redundant_constraints"]
+                .as_array()
+                .unwrap()
+                .contains(&json!(5))
+        );
+        if conflict {
+            let group = scene["annotations"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|a| a["id"] == "conflict-group-0")
+                .unwrap();
+            assert_eq!(group["status"], "failed");
+            assert!(group["targets"].as_array().unwrap().contains(&json!("B")));
+            assert!(
+                group["parameters"]
+                    .as_array()
+                    .unwrap()
+                    .contains(&json!("extra_width"))
+            );
+            assert!(group["anchors"].as_array().unwrap().len() >= 2);
+        } else {
+            assert!(d["conflict_groups"].as_array().unwrap().is_empty());
+        }
+    }
+}
