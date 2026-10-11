@@ -2329,3 +2329,52 @@ fn dimensioned_plate_reports_driving_and_reference_dimensions_after_edits() {
         assert_eq!(slope["parameters"], json!(["slope_angle"]));
     }
 }
+
+#[test]
+fn slotted_plate_groups_generated_shapes_and_follows_slot_edits() {
+    let dir = Directory::new();
+    for (name, travel, radius) in [("default", 30.0, 3.5), ("longer", 36.0, 4.5)] {
+        let mut request = view_example("slotted-plate");
+        request["model"]["instances"][0]["base"]["overrides"] = json!({
+            "slot_travel":{"scalar":{"value":travel,"dimension":"length","unit":"millimeter"}},
+            "slot_radius":{"scalar":{"value":radius,"dimension":"length","unit":"millimeter"}}});
+        view_request(&dir, request, name).unwrap();
+        let data: Value =
+            serde_json::from_str(&fs::read_to_string(dir.0.join(name).join("view.json")).unwrap())
+                .unwrap();
+        let sketch = data["scenes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["kind"] == "sketch")
+            .unwrap();
+        assert_eq!(sketch["solver"]["free_degrees"], 0);
+        let annotations = sketch["annotations"].as_array().unwrap();
+        let find = |id: &str| annotations.iter().find(|a| a["id"] == id).unwrap();
+        let slot = find("shape-lower_slot");
+        assert_eq!(slot["label"], format!("slot R {radius:.3} mm"));
+        assert_eq!(slot["parameters"], json!(["slot_radius"]));
+        assert_eq!(
+            slot["targets"],
+            json!([
+                "lower_slot:right",
+                "lower_slot:end_cap",
+                "lower_slot:left",
+                "lower_slot:start_cap"
+            ])
+        );
+        assert_eq!(find("shape-hex")["label"], "regular 6-gon");
+        assert_eq!(find("shape-hex")["targets"].as_array().unwrap().len(), 6);
+        let length = find("measurement-slot_length")["detail"]["value"]
+            .as_f64()
+            .unwrap();
+        assert!((length - travel).abs() < 1e-9);
+        let side = find("measurement-hex_side")["detail"]["value"]
+            .as_f64()
+            .unwrap();
+        assert!((side - 6.0).abs() < 1e-9);
+        // The solid is the plate minus two slots and the hexagon.
+        let body = &data["scenes"][0];
+        assert_eq!(body["valid"], true);
+    }
+}

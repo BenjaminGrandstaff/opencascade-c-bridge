@@ -1538,4 +1538,39 @@ native spline and ellipse lengths, unchanged solutions with measurements,
 and rejected references and values. A 1,000-segment chain driven only by
 the new dimensions solves with 1,000 reference dimensions in 0.016 s, and
 200 splines driven by native lengths solve in 0.046 s (10 s budgets). The
-MCP renders 20 dimensioned plates within a 10 s budget.
+MCP renders 20 dimensioned plates in 0.49 s (10 s budget).
+
+## Rectangles, slots and regular polygons (schema 123)
+
+A sketch may list `shapes`. Each expands, before patterns, into ordinary
+named points, lines, arcs and constraints; the solver, profile builder and
+viewer see nothing new. Generated IDs are `{id}:{part}`, so constraints,
+dimensions, measurements and patterns can refer to them. Listing a shape's
+`id` in `profile` or a `holes` loop stands for its boundary in traversal
+order. Shape IDs must be unique and free of `:`; all shapes together
+generate at most 20,000 points.
+
+| JSON variant | Generates |
+|---|---|
+| `rectangle: {id, first, opposite, angle?}` | Corners `{id}:corner1` and `{id}:corner3`, sides `{id}:side0`..`{id}:side3` from `first`. Sides follow the sketch axes, or `side0` has the signed `angle` (radians) from +x, with the others perpendicular and parallel. |
+| `slot: {id, start, end, radius}` | Side points `{id}:start_right`, `{id}:end_right`, `{id}:end_left`, `{id}:start_left`; sides `{id}:right`, `{id}:left`; caps `{id}:end_cap`, `{id}:start_cap` about the named end centres. Both caps have `radius` and are tangent to both sides. |
+| `polygon: {id, center, vertex, sides}` | Vertices `{id}:vertex1`.. after `vertex`, sides `{id}:side0`.. from `vertex`, and the construction circle `{id}:circle`. 3 to 1,000 sides. |
+
+Each generated point adds exactly two equations from existing constraint
+kinds, so a shape adds no free degrees or redundancy: a rectangle uses
+horizontal/vertical (or line-angle, perpendicular and parallel) sides; a
+slot uses two cap radii and four endpoint tangencies; a polygon puts every
+other vertex on its circle and makes every side equal to the first.
+Generated points are seeded at the exact shape for the current parameters.
+
+The [slotted plate](../tools/model/slotted-plate.request.json) is a
+rectangle with two slot holes and a hexagonal hole, all driven by
+parameters, with reference dimensions for the slot travel and hexagon side.
+The viewer groups each shape's boundary under a `shape-{id}` annotation that
+links its radius or angle control. Tests check corners, tangent points and
+exact face areas for axis and rotated rectangles, slots in any direction,
+and polygons of 3 to 200 sides; shapes used as holes, constrained through
+generated IDs and copied by a linear pattern; and rejected IDs, references,
+side counts and radii. 500 slot holes and a 1,000-sided polygon expand,
+solve and build one face in 1.13 s (10 s budget). The MCP renders 20 slotted
+plates in 0.49 s (10 s budget).

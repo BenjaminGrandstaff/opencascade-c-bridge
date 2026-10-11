@@ -32,6 +32,7 @@ fn wire_section() -> SketchDefinition {
     let norm = lead.hypot(PITCH);
     SketchDefinition {
         measurements: Vec::new(),
+        shapes: Vec::new(),
         acceptance: Default::default(),
         id: "section".into(),
         datum_plane: None,

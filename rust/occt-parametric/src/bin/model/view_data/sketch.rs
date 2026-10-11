@@ -15,6 +15,7 @@ pub(super) fn sketch_scene(
     projections: Vec<Value>,
     budget: &mut Budget,
 ) -> Result<Value, Failure> {
+    let shapes = sketch.shapes.clone();
     let expanded = sketch.with_pattern_copies(parameters).stage("sketch")?;
     let sketch = expanded.as_ref();
     let solution = sketch.solve(parameters).stage("sketch")?;
@@ -1101,6 +1102,53 @@ pub(super) fn sketch_scene(
                         "residual_units":["mm","mm","mm","dimensionless"]
                     })))),
                 }),
+            }
+            .into(),
+        );
+    }
+    // Authored shapes: one group per rectangle, slot or polygon.
+    for shape in &shapes {
+        let (label, anchor, expression) = match shape {
+            SketchShape::Rectangle {
+                first,
+                opposite,
+                angle,
+                ..
+            } => (
+                if angle.is_some() {
+                    "rotated rectangle".to_owned()
+                } else {
+                    "rectangle".to_owned()
+                },
+                vec![point_map[first], point_map[opposite]],
+                json!(angle),
+            ),
+            SketchShape::Slot {
+                start, end, radius, ..
+            } => (
+                format!(
+                    "slot R {} mm",
+                    length_label(radius.evaluate(parameters).stage("sketch")?.value)
+                ),
+                vec![point_map[start], point_map[end]],
+                json!(radius),
+            ),
+            SketchShape::Polygon { center, sides, .. } => (
+                format!("regular {sides}-gon"),
+                vec![point_map[center]],
+                json!(null),
+            ),
+        };
+        annotations.push(
+            Annotation {
+                id: format!("shape-{}", shape.id()),
+                label,
+                kind: AnnotationKind::Group,
+                status: AnnotationStatus::Constructed,
+                targets: shape.boundary(),
+                parameters: names(&expression),
+                anchors: json!(anchor),
+                detail: json!({"shape": shape, "boundary": shape.boundary()}),
             }
             .into(),
         );

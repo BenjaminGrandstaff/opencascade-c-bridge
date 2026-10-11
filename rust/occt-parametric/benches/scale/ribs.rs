@@ -44,6 +44,7 @@ fn rib_case(centered: bool, mode: RibCase) -> Outcome {
         operation: FeatureOperation::SketchWire {
             sketch: Box::new(SketchDefinition {
                 measurements: Vec::new(),
+                shapes: Vec::new(),
                 acceptance: Default::default(),
                 id: "brace".into(),
                 datum_plane: None,

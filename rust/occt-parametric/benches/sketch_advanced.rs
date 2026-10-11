@@ -25,6 +25,7 @@ fn point(id: String, x: f64, y: f64, fixed: bool) -> SketchPoint {
 fn sketch() -> SketchDefinition {
     SketchDefinition {
         measurements: Vec::new(),
+        shapes: Vec::new(),
         acceptance: Default::default(),
         id: "scale".into(),
         datum_plane: None,
@@ -2145,4 +2146,79 @@ fn main() {
             assert!((length - (55. + 0.01 * k as f64)).abs() < 1e-7);
         }
     });
+    gate(
+        "500 slot holes and a 1000-sided polygon expanded, solved and built as one face",
+        10,
+        || {
+            let mut s = sketch();
+            s.points = vec![
+                point("a".into(), 0., 0., true),
+                point("c".into(), 1000., 500., true),
+            ];
+            s.shapes.push(SketchShape::Rectangle {
+                id: "plate".into(),
+                first: "a".into(),
+                opposite: "c".into(),
+                angle: None,
+            });
+            s.profile = vec!["plate".into()];
+            for k in 0..500 {
+                let (x, y) = (10. + 20. * (k % 25) as f64, 10. + 20. * (k / 25) as f64);
+                s.points.extend([
+                    point(format!("s{k}a"), x, y, true),
+                    point(format!("s{k}b"), x + 8., y, true),
+                ]);
+                s.shapes.push(SketchShape::Slot {
+                    id: format!("slot{k}"),
+                    start: format!("s{k}a"),
+                    end: format!("s{k}b"),
+                    radius: mm(3.),
+                });
+                s.holes.push(vec![format!("slot{k}")]);
+            }
+            s.points.extend([
+                point("pc".into(), 750., 250., true),
+                point("pv".into(), 950., 250., true),
+            ]);
+            s.shapes.push(SketchShape::Polygon {
+                id: "gear".into(),
+                center: "pc".into(),
+                vertex: "pv".into(),
+                sides: 1000,
+            });
+            s.holes.push(vec!["gear".into()]);
+            let solution = s.solve(&HashMap::new()).unwrap();
+            assert!(solution.solved && solution.free_degrees == 0);
+            let mut family = ModelDocument::from_json(
+                &serde_json::from_str::<serde_json::Value>(include_str!(
+                    "../../../tools/model/slotted-plate.request.json"
+                ))
+                .unwrap()["model"]
+                    .to_string(),
+            )
+            .unwrap()
+            .family;
+            family.requirements.clear();
+            family.features = vec![FeatureDefinition {
+                id: "profile".into(),
+                operation: FeatureOperation::SketchFace {
+                    sketch: Box::new(s),
+                },
+            }];
+            let session = Session::new().unwrap();
+            let part = PartInstance {
+                id: "part".into(),
+                definition: &family,
+                overrides: HashMap::new(),
+                provenance: "scale".into(),
+            };
+            let built = part.regenerate(&session).unwrap();
+            let face = built.shape("profile").unwrap();
+            assert_eq!(session.subshape_count(face, ShapeType::Wire).unwrap(), 502);
+            let slot = 2. * 3. * 8. + std::f64::consts::PI * 9.;
+            let gear = 0.5 * 1000. * 200. * 200. * (std::f64::consts::TAU / 1000.).sin();
+            let area = 1000. * 500. - 500. * slot - gear;
+            assert!((session.surface_area(face).unwrap() - area).abs() < 1e-6 * area);
+        },
+    );
 }

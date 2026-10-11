@@ -870,5 +870,23 @@ with tempfile.TemporaryDirectory(prefix='occb-mcp-scale-') as root:
         elapsed=time.monotonic()-started
         assert elapsed<10
         print(f'PASS MCP 20 dimensioned plates with axis, angle and length constraints and reference dimensions: {elapsed:.3f}s / 10s')
+        slotted=client.tool('occt_get_example',dict(name='slotted-plate'))['structuredContent']
+        for i in range(1,20):
+            slotted['model']['instances'].append({'clone':dict(id=f'plate-{i}',source='plate',overrides={},provenance='scale')})
+            slotted['outputs'].append(dict(instance=f'plate-{i}',output='body'))
+        started=time.monotonic()
+        result=client.tool('occt_visualize_model',slotted)
+        assert not result['isError'],result
+        data=json.loads(client.call('resources/read',dict(uri=result['structuredContent']['resources']['view.json']))['result']['contents'][0]['text'])
+        sketches=[s for s in data['scenes'] if s['kind']=='sketch']
+        solids=[s for s in data['scenes'] if s['kind']=='solid']
+        assert len(sketches)==20 and len(solids)==20 and all(s['valid'] for s in solids)
+        for scene in sketches:
+            assert scene['solver']['accepted'] and scene['solver']['free_degrees']==0
+            groups=[a for a in scene['annotations'] if a['id'].startswith('shape-')]
+            assert sorted(a['label'] for a in groups)==['rectangle','regular 6-gon','slot R 3.500 mm','slot R 3.500 mm']
+        elapsed=time.monotonic()-started
+        assert elapsed<10
+        print(f'PASS MCP 20 slotted plates built from rectangle, slot and polygon shapes: {elapsed:.3f}s / 10s')
     finally:
         client.close()

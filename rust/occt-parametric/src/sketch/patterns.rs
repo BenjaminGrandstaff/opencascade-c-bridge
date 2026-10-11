@@ -252,6 +252,10 @@ impl SketchDefinition {
         &self,
         parameters: Option<&HashMap<String, ParameterValue>>,
     ) -> Result<Cow<'_, Self>, ModelError> {
+        if !self.shapes.is_empty() {
+            let expanded = self.with_shapes_expanded(parameters)?;
+            return Ok(Cow::Owned(expanded.with_patterns(parameters)?.into_owned()));
+        }
         if self.patterns.is_empty() {
             return Ok(Cow::Borrowed(self));
         }

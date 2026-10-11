@@ -17,6 +17,7 @@ mod geometry;
 mod patterns;
 mod profile;
 mod projections;
+mod shapes;
 mod solver;
 mod validation;
 
@@ -407,6 +408,49 @@ pub enum SketchConstraint {
     },
 }
 
+/// A common closed outline expanded into ordinary named points, lines, arcs
+/// and constraints before solving (schema 123). Generated IDs are
+/// `{id}:{part}`; listing the shape's `id` in `profile` or `holes` stands for
+/// its boundary entities in traversal order.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum SketchShape {
+    /// Rectangle with corner `first` and the opposite corner `opposite`.
+    /// Generates corners `{id}:corner1` (along side0 from `first`) and
+    /// `{id}:corner3`, and sides `{id}:side0`..`{id}:side3` from `first`.
+    /// Sides follow the sketch axes, or side0 has the signed `angle` from the
+    /// sketch +x axis (radians).
+    Rectangle {
+        id: String,
+        first: String,
+        opposite: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        angle: Option<ScalarExpr>,
+    },
+    /// Straight slot (obround) around the segment between the end-cap centres
+    /// `start` and `end`, with cap `radius`. Generates side points
+    /// `{id}:start_right`, `{id}:end_right`, `{id}:end_left`,
+    /// `{id}:start_left`, sides `{id}:right` and `{id}:left`, and caps
+    /// `{id}:end_cap` and `{id}:start_cap`, tangent at every join.
+    Slot {
+        id: String,
+        start: String,
+        end: String,
+        radius: ScalarExpr,
+    },
+    /// Regular polygon of `sides` vertices inscribed in the circle about
+    /// `center` through `vertex`. Generates vertices `{id}:vertex1`.. after
+    /// `vertex`, sides `{id}:side0`.. from `vertex`, and the construction
+    /// circle `{id}:circle`.
+    Polygon {
+        id: String,
+        center: String,
+        vertex: String,
+        #[schemars(range(min = 3, max = 1000))]
+        sides: u32,
+    },
+}
+
 /// A driven (reference) dimension, measured on the solved sketch. It never
 /// constrains geometry and is reported beside the constraints (schema 122).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
@@ -687,6 +731,11 @@ pub struct SketchDefinition {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[schemars(length(max = 1000))]
     pub holes: Vec<Vec<String>>,
+    /// Rectangles, slots and regular polygons, expanded before patterns
+    /// (schema 123).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[schemars(length(max = 1000))]
+    pub shapes: Vec<SketchShape>,
     /// Driven (reference) dimensions measured after solving (schema 122).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[schemars(length(max = 10000))]
@@ -897,6 +946,15 @@ impl SketchDefinition {
                 SketchPattern::Circular {
                     angle: Some(angle), ..
                 } => collect_scalar_parameters(angle, names),
+                _ => {}
+            }
+        }
+        for shape in &self.shapes {
+            match shape {
+                SketchShape::Rectangle {
+                    angle: Some(angle), ..
+                } => collect_scalar_parameters(angle, names),
+                SketchShape::Slot { radius, .. } => collect_scalar_parameters(radius, names),
                 _ => {}
             }
         }
