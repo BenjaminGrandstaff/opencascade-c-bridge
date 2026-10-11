@@ -11,7 +11,7 @@ tracks status and order.
 | C ABI (`src/`, `include/`) | ABI 61 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 119 | Active development |
+| `occt-parametric` (engineering layer) | Schema 120 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
@@ -24,6 +24,15 @@ tracks status and order.
 
 ## Done
 
+- Split bodies (schema 120, no ABI change): a `split` feature cuts a solid
+  with an editable plane and keeps the normal side, the other side, or both
+  as a compound. Each side is one cut by a plane-aligned prism beyond the
+  input's bounds, keeping input history; the plane must cross the input,
+  checked from tight bounds of a rotated copy instead of volume integration.
+  Example: `split-housing` (cap and base from two splits). A 400-hole plate
+  splits through a hole column in 1.076 s (5 s budget); split-height edits
+  cost about 31 ms each with the bored housing reused (500 edits, 30 s
+  budget); the MCP renders 20 housings (40 pieces) in 2.94 s (10 s).
 - Isolated line–spline touches (schema 119 / ABI 61 unchanged): rational
   Bernstein distance polynomials resolve stable repeated and endpoint roots,
   including a fourth-order flat contact. Derivative-chain partitions preserve

@@ -20,8 +20,8 @@ use occt_parametric::{
     ModelError, ModeledThread, ParameterDefinition, ParameterType, ParameterValue, PartInstance,
     PatternRule, Placement, Quantity, RelationKind, RelationshipTolerances, RequirementKind,
     RequirementPriority, ScalarExpr, SketchArc, SketchCircle, SketchConstraint, SketchDefinition,
-    SketchLine, SketchPoint, ThreadHandedness, ThreadSpecification, VectorExpr, VectorQuantity,
-    carr_lane_socket_head_v1, carr_lane_tap_drill_v1, iso273_clearance_v1,
+    SketchLine, SketchPoint, SplitKeep, ThreadHandedness, ThreadSpecification, VectorExpr,
+    VectorQuantity, carr_lane_socket_head_v1, carr_lane_tap_drill_v1, iso273_clearance_v1,
 };
 use std::collections::HashMap;
 use std::process::ExitCode;
@@ -48,6 +48,7 @@ mod ribs;
 mod sheet_metal;
 mod sketches;
 mod solver;
+mod split;
 mod step_export;
 mod sweep;
 mod tangency;
@@ -169,6 +170,8 @@ fn main() -> ExitCode {
     outcomes.push(threads::thread_case(definition));
     outcomes.push(threads::tapped_hole_case(definition));
     outcomes.push(threads::thread_runout_case(definition));
+    outcomes.push(split::split_plate_case(definition));
+    outcomes.push(split::split_edit_case());
     outcomes.push(threads::thread_pattern_case(definition));
     outcomes.push(parts_list::parts_list_case(definition, false));
     outcomes.push(parts_list::parts_list_case(definition, true));

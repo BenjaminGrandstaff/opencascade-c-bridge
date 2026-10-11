@@ -659,13 +659,13 @@ profiles (ABI 47, model schema 72).
 up to a selected face, and up to the next complete face limit, including
 inclined and curved surfaces. Target
 geometry participates in regeneration; the viewer shows the actual length.
-The native ABI is 61; model schema is 119. Native surface-ray witnesses measure
+The native ABI is 61; model schema is 120. Native surface-ray witnesses measure
 viewer extents on nonuniform caps.
 
 
 [Blind drill-point holes](docs/HOLES.md) add configurable conical bottoms, native tip
 containment checks, full-diameter depth callouts and linked viewer dimensions.
-The current model schema is 119 and native ABI is 61.
+The current model schema is 120 and native ABI is 61.
 
 
 [Geometry-driven holes](docs/HOLES.md) stop at a selected or next covering input
@@ -691,7 +691,7 @@ Schema 79 adds `planar_region`; ABI 50 also retains its extracted face history.
 [Hollow path sweeps](docs/HOLLOW_SWEEPS.md) transport holed planar sections into
 bent tubes and multiple-bore parts, preserving wall ancestry and linked route
 controls. ABI 50 adds explicit history-preserving topology extraction; the
-current model schema is 114. Rebuild the native library and Rust executables together.
+current model schema is 120. Rebuild the native library and Rust executables together.
 
 [Hollow profile lofts](docs/LOFTS.md#explicit-hollow-tracks-schema-80) use explicit
 inner section tracks to make tapered ducts and multiple-bore transitions.
@@ -701,6 +701,11 @@ checks and retained wall ancestry. Native ABI remains 50.
 [Plane mirrors](docs/MIRRORS.md) create handed parts with native reflected geometry,
 retained source-face ancestry and editable plane controls. Schema 81 adds
 `mirror`; ABI 51 adds the native reflection operation.
+
+[Split bodies](docs/SPLIT_BODY.md) cut a solid with an editable plane and keep
+one side, the other, or both. Schema 119 adds `split`; the
+[split housing](tools/model/split-housing.request.json) splits a bored block
+into a cap and a base. There is no ABI change.
 
 [Helices](docs/HELIX.md) are exact helical wires to sweep along for springs and
 coils, with parameter-driven radius, pitch, turns and handedness. ABI 52 adds
@@ -768,7 +773,7 @@ The [threaded-rod AI example](tools/model/threaded-rod.request.json) exposes
 modeled threads with linked major diameter, pitch, run and derived turn labels.
 Its source rod follows diameter/run edits. See
 [thread dimensions](docs/THREADS.md#ai-example-and-viewer-dimensions). Current AI
-examples use schema 114; native ABI is 60.
+examples use schema 120; native ABI is 61.
 
 
 The [edge-treatment AI example](tools/model/edge-treatments.request.json)

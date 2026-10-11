@@ -84,6 +84,20 @@ pub struct ModeledThread {
     pub runout: Option<ScalarExpr>,
 }
 
+/// Which side of a split plane a `Split` keeps.
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum SplitKeep {
+    /// The side the plane normal points to.
+    #[default]
+    Positive,
+    Negative,
+    /// Both sides, as one compound of their solids.
+    Both,
+}
+
 /// How a rib's total thickness is placed relative to its profile plane.
 #[derive(
     Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
@@ -431,6 +445,18 @@ pub enum FeatureOperation {
         linear_tolerance: ScalarExpr,
         angular_tolerance: ScalarExpr,
     },
+    /// Splits `input` by the infinite plane through the length-valued `origin`
+    /// with the dimensionless `normal` (schema 120). `keep` selects the side
+    /// the normal points to (`positive`, the default), the other side, or
+    /// `both` as one compound. The plane must cross the input: each kept side
+    /// has positive volume less than the input's, and `both` conserves volume.
+    Split {
+        input: String,
+        origin: VectorExpr,
+        normal: VectorExpr,
+        #[serde(default)]
+        keep: SplitKeep,
+    },
     /// Joined skin offset. Distance is a signed, nonzero length; tolerance is
     /// a positive length. Uses native join semantics and retained ancestry.
     Offset {
@@ -538,6 +564,7 @@ impl FeatureOperation {
             | Self::CircularPattern { input, .. }
             | Self::LinearPattern { input, .. }
             | Self::Offset { input, .. }
+            | Self::Split { input, .. }
             | Self::Unify { input, .. } => vec![input],
             Self::Fillet { input, edges, .. }
             | Self::VariableFillet { input, edges, .. }

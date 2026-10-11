@@ -41,6 +41,7 @@ pub(super) fn feature_dimensions(
     offset_dimension(scene, feature, annotations)?;
     scale_dimension(scene, feature, annotations)?;
     mirror_plane(scene, feature, annotations)?;
+    split_plane(scene, feature, annotations)?;
     revolve_annotation(scene, feature, budget, annotations)?;
     sweep_route_length(scene, feature, budget, annotations)?;
     loft_section_spacing(scene, feature, annotations)?;
@@ -940,6 +941,69 @@ fn mirror_plane(
                 "description": "Plane controls define native reflection. \
                     The label is anchored at the result's bounding \
                     centre.",
+            }),
+        }
+        .into(),
+    );
+    Ok(())
+}
+
+/// The driving split plane, which side it keeps and how many solid pieces
+/// resulted. Anchored at the plane origin.
+fn split_plane(
+    scene: &SolidScene<'_, '_>,
+    feature: &FeatureDefinition,
+    annotations: &mut Vec<Value>,
+) -> Result<(), Failure> {
+    let SolidScene {
+        session,
+        output,
+        parameters,
+        shape,
+        ..
+    } = *scene;
+    let FeatureOperation::Split {
+        input,
+        origin,
+        normal,
+        keep,
+    } = &feature.operation
+    else {
+        return Ok(());
+    };
+    let o = vector(origin, parameters)?;
+    let unit = unit_direction(vector(normal, parameters)?);
+    let pieces = session
+        .subshape_count(shape, ShapeType::Solid)
+        .stage("visualization")?;
+    let side = match keep {
+        SplitKeep::Positive => "keeps normal side",
+        SplitKeep::Negative => "keeps opposite side",
+        SplitKeep::Both => "keeps both sides",
+    };
+    let expressions = json!([origin, normal]);
+    annotations.push(
+        Annotation {
+            id: "driving-split-plane".into(),
+            label: format!(
+                "split plane · {side} · {pieces} solid{}",
+                if pieces == 1 { "" } else { "s" }
+            ),
+            kind: AnnotationKind::Constraint,
+            status: AnnotationStatus::Driving,
+            targets: vec![output.into()],
+            parameters: names(&expressions),
+            anchors: json!([o]),
+            detail: json!({
+                "input": input,
+                "plane_origin": o,
+                "plane_normal": unit,
+                "keep": keep,
+                "solids": pieces,
+                "expressions": expressions,
+                "driving": true,
+                "description": "Plane controls split the input; each kept \
+                    side must hold part, not all, of its volume.",
             }),
         }
         .into(),

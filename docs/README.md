@@ -25,6 +25,7 @@ examples. Project-wide status lives in [the roadmap](../ROADMAP.md) and
 - [Signed skin offsets](OFFSETS.md)
 - [Uniform geometry scaling](SCALING.md)
 - [Mirrored parts](MIRRORS.md)
+- [Split bodies](SPLIT_BODY.md)
 - [Compound tool groups](COMPOUNDS.md)
 - [Linear patterns inside a part](PART_PATTERNS.md)
 - [Sheet metal](SHEET_METAL.md)

@@ -1,0 +1,428 @@
+{
+  "schema": "occb-model-view-v1",
+  "model": {
+    "schema_version": 120,
+    "family": {
+      "id": "split-housing",
+      "version": 1,
+      "parameters": [
+        {
+          "id": "bore",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 16,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 10,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 22,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "split_height",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 15,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 6,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 24,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        }
+      ],
+      "derived_parameters": [],
+      "derived_vector_parameters": [],
+      "constraints": [],
+      "requirements": [
+        {
+          "id": "cap",
+          "version": 1,
+          "kind": "validation",
+          "priority": "required",
+          "statement": "cap valid",
+          "rule": {
+            "shape_valid": {
+              "output": "cap"
+            }
+          },
+          "provenance": "example; demonstration assumptions",
+          "traces": [
+            {
+              "feature": "cap"
+            }
+          ]
+        },
+        {
+          "id": "base",
+          "version": 1,
+          "kind": "validation",
+          "priority": "required",
+          "statement": "base valid",
+          "rule": {
+            "shape_valid": {
+              "output": "base"
+            }
+          },
+          "provenance": "example; demonstration assumptions",
+          "traces": [
+            {
+              "feature": "base"
+            }
+          ]
+        }
+      ],
+      "datums": [],
+      "features": [
+        {
+          "id": "blank",
+          "operation": {
+            "box": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 0,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "size": {
+                "literal": {
+                  "x": {
+                    "value": 60,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 40,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 30,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "bored",
+          "operation": {
+            "hole": {
+              "input": "blank",
+              "position": {
+                "literal": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 20,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 15,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "axis": {
+                "literal": {
+                  "x": {
+                    "value": 1,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "z": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  }
+                }
+              },
+              "diameter": {
+                "parameter": "bore"
+              },
+              "extent": "through_all",
+              "bottom": "flat",
+              "finish": "plain"
+            }
+          }
+        },
+        {
+          "id": "bolt-left",
+          "operation": {
+            "hole": {
+              "input": "bored",
+              "position": {
+                "literal": {
+                  "x": {
+                    "value": 8,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 20,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 30,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "axis": {
+                "literal": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "z": {
+                    "value": -1,
+                    "dimension": "scalar",
+                    "unit": null
+                  }
+                }
+              },
+              "diameter": {
+                "literal": {
+                  "value": 6,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                }
+              },
+              "extent": "through_all",
+              "bottom": "flat",
+              "finish": "plain"
+            }
+          }
+        },
+        {
+          "id": "housing",
+          "operation": {
+            "hole": {
+              "input": "bolt-left",
+              "position": {
+                "literal": {
+                  "x": {
+                    "value": 52,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 20,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 30,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "axis": {
+                "literal": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "z": {
+                    "value": -1,
+                    "dimension": "scalar",
+                    "unit": null
+                  }
+                }
+              },
+              "diameter": {
+                "literal": {
+                  "value": 6,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                }
+              },
+              "extent": "through_all",
+              "bottom": "flat",
+              "finish": "plain"
+            }
+          }
+        },
+        {
+          "id": "cap",
+          "operation": {
+            "split": {
+              "input": "housing",
+              "origin": {
+                "components": {
+                  "x": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "y": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "z": {
+                    "parameter": "split_height"
+                  }
+                }
+              },
+              "normal": {
+                "literal": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "z": {
+                    "value": 1,
+                    "dimension": "scalar",
+                    "unit": null
+                  }
+                }
+              },
+              "keep": "positive"
+            }
+          }
+        },
+        {
+          "id": "base",
+          "operation": {
+            "split": {
+              "input": "housing",
+              "origin": {
+                "components": {
+                  "x": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "y": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "z": {
+                    "parameter": "split_height"
+                  }
+                }
+              },
+              "normal": {
+                "literal": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "z": {
+                    "value": 1,
+                    "dimension": "scalar",
+                    "unit": null
+                  }
+                }
+              },
+              "keep": "negative"
+            }
+          }
+        }
+      ]
+    },
+    "instances": [
+      {
+        "base": {
+          "id": "housing",
+          "overrides": {},
+          "provenance": "Bored housing split at the bore centre into cap and base"
+        }
+      }
+    ]
+  },
+  "outputs": [
+    {
+      "instance": "housing",
+      "output": "cap"
+    },
+    {
+      "instance": "housing",
+      "output": "base"
+    }
+  ]
+}

@@ -45,7 +45,7 @@ class McpTests(unittest.TestCase):
         jsonschema.Draft202012Validator.check_schema(schema)
         self.assertEqual(schema['properties']['model']['$ref'], '#/$defs/ModelDocument')
         variants = schema['$defs']['FeatureOperation']['oneOf']
-        self.assertEqual(len(variants), 38)
+        self.assertEqual(len(variants), 39)
         for name in ['request', 'model', 'feature', 'parameter', 'sketch', 'requirement', 'inspection', 'face_selector', 'edge_selector', 'edit', 'change', 'view']:
             result = self.client.tool('occt_get_schema', dict(name=name))
             self.assertFalse(result['isError'])
@@ -58,7 +58,7 @@ class McpTests(unittest.TestCase):
         with self.assertRaises(jsonschema.ValidationError):
             jsonschema.validate(bad, schema)
         resources = self.client.call('resources/list')['result']['resources']
-        self.assertEqual(len(resources), 70)
+        self.assertEqual(len(resources), 71)
         self.assertEqual(len(self.client.call('resources/templates/list')['result']['resourceTemplates']), 1)
         read = self.client.call('resources/read', dict(uri='occt://schema/request'))['result']['contents'][0]
         self.assertEqual(json.loads(read['text']), schema)

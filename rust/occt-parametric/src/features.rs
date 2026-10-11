@@ -13,6 +13,7 @@ mod regions;
 mod ribs;
 mod sketch_projection;
 mod sketch_support;
+mod split;
 mod sweeps;
 pub(crate) mod threads;
 mod variable_fillet;
@@ -384,6 +385,20 @@ pub(crate) fn execute_feature<'session>(
                 .common(shape(shapes, left)?, shape(shapes, right)?)
                 .map_err(|error| ModelError::from(error).locate_operands([left, right]))?;
             return retain_group_history(session, result, &[left, right], shapes, definitions);
+        }
+        FeatureOperation::Split {
+            input,
+            origin,
+            normal,
+            keep,
+        } => {
+            return split::execute(
+                session,
+                shape(shapes, input)?,
+                vector(origin, parameters, Dimension::Length)?,
+                vector(normal, parameters, Dimension::Scalar)?,
+                *keep,
+            );
         }
         FeatureOperation::Unify {
             input,

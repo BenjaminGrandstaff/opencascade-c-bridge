@@ -1490,7 +1490,8 @@ equations per copied point, and sketch faces cut inner holes natively without
 booleans (schema 112 / ABI 60). Hole thread callouts can be modeled: the
 internal thread groove is fused into the hole cutter so one cut keeps input
 history (schema 113). Thread runout joins the helix to a tangent
-interpolated spiral that moves the groove out of the material (schema 114).
+interpolated spiral that moves the groove out of the material (schema 114). Planar `split`
+features cut a solid by a half-space prism per kept side (schema 120).
 
 Local sketch diagnosis reuses the final Jacobian without changing authoring
 schema 114 or ABI 60. It links local dependencies and representative nullspace

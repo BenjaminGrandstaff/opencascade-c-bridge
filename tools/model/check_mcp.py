@@ -818,5 +818,23 @@ with tempfile.TemporaryDirectory(prefix='occb-mcp-scale-') as root:
         elapsed=time.monotonic()-started
         assert elapsed<10
         print(f'PASS MCP 20 line-spline touch pads with isolated contacts, dimensions and source controls: {elapsed:.3f}s / 10s')
+        housings=client.tool('occt_get_example',dict(name='split-housing'))['structuredContent']
+        for i in range(1,20):
+            housings['model']['instances'].append({'clone':dict(id=f'housing-{i}',source='housing',overrides={},provenance='scale')})
+            housings['outputs'].extend(dict(instance=f'housing-{i}',output=out) for out in ['cap','base'])
+        started=time.monotonic()
+        result=client.tool('occt_visualize_model',housings)
+        assert not result['isError'],result
+        data=json.loads(client.call('resources/read',dict(uri=result['structuredContent']['resources']['view.json']))['result']['contents'][0]['text'])
+        solids=[s for s in data['scenes'] if s['kind']=='solid']
+        assert len(solids)==40 and all(s['valid'] for s in solids)
+        for scene in solids:
+            plane=[a for a in scene['annotations'] if a['id']=='driving-split-plane']
+            side='keeps normal side' if scene['feature']=='cap' else 'keeps opposite side'
+            assert len(plane)==1 and plane[0]['label']==f'split plane · {side} · 1 solid',plane
+            assert plane[0]['parameters']==['split_height']
+        elapsed=time.monotonic()-started
+        assert elapsed<10
+        print(f'PASS MCP 20 split housings with cap and base pieces: {elapsed:.3f}s / 10s')
     finally:
         client.close()
