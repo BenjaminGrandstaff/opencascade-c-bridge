@@ -852,14 +852,13 @@ OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_trim_curve(occt_bridge_session_
 OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_extend_curve(occt_bridge_session_t*, occt_bridge_shape_id_t, double start, double end, occt_bridge_shape_id_t*);
 OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_join_wires(occt_bridge_session_t*, const occt_bridge_shape_id_t*, size_t, int closed, occt_bridge_shape_id_t*);
 OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_offset_wire(occt_bridge_session_t*, occt_bridge_shape_id_t, occt_bridge_vec3_t normal, double distance, int join, occt_bridge_shape_id_t*);
-/* Nearest point on one bounded edge (or a one-edge wire) and its oriented
- * first derivative, in located world coordinates. Endpoints are candidates;
- * equal-distance ties choose the first candidate deterministically. Rejects
- * zero derivatives and contacts at internal C0 B-spline knots (including a
- * C0 periodic seam). No new shape handles are stored. */
 /* ABI 61: isolated crossings of two finite edges/one-edge wires in XY.
- * Native 2D intersection precision is 1e-9 mm. Overlaps, unresolved tangent
- * regions and failed native solves are errors. No shapes are stored/modified.
+ * Native 2D intersection precision is 1e-9 mm. Line/spline pairs use rational
+ * Bernstein roots, accepting stable isolated touches (including even roots).
+ * Collinear contacts/overlaps and coefficient/parameter uncertainty fail.
+ * Other unresolved native tangent regions/failed solves are errors.
+ * No shapes are stored/modified. Line/spline root work is capped at 1000000
+ * degree-squared evaluation units per query; no curve sampling is used.
  * Supported curves: lines, circles, ellipses, Bezier/B-spline (degree <=25,
  * <=10000 poles, <=10001 knots, <=10000 span pairs). maximum_points is 1-1000.
  * Query with NULL/0; out_count returns required capacity. A short buffer fails
@@ -870,6 +869,11 @@ OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_planar_curve_intersections(
     occt_bridge_session_t* session, occt_bridge_shape_id_t first_id, occt_bridge_shape_id_t second_id,
     size_t maximum_points, occt_bridge_vec3_t* out_points, size_t capacity, size_t* out_count);
 
+/* Nearest point on one bounded edge (or a one-edge wire) and its oriented
+ * first derivative, in located world coordinates. Endpoints are candidates;
+ * equal-distance ties choose the first candidate deterministically. Rejects
+ * zero derivatives and contacts at internal C0 B-spline knots (including a
+ * C0 periodic seam). No new shape handles are stored. */
 OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_curve_closest_data(
     occt_bridge_session_t*, occt_bridge_shape_id_t, occt_bridge_vec3_t point,
     occt_bridge_vec3_t* closest, occt_bridge_vec3_t* tangent);

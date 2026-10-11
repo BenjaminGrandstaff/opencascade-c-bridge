@@ -2218,3 +2218,54 @@ fn native_intersection_viewer_links_rational_and_ellipse_crossings_to_both_sourc
         );
     }
 }
+
+#[test]
+fn projected_touch_viewer_exposes_a_single_fixed_contact_and_direct_dimension() {
+    let dir = Directory::new();
+    view_request(
+        &dir,
+        view_example("projected-tangent-intersection-pad"),
+        "touch",
+    )
+    .unwrap();
+    let data: Value =
+        serde_json::from_str(&fs::read_to_string(dir.0.join("touch/view.json")).unwrap()).unwrap();
+    let sk = data["scenes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["kind"] == "sketch" && s["feature"] == "profile")
+        .unwrap();
+    assert_eq!(sk["solver"]["accepted"], true);
+    let refs = sk["annotations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|a| a["id"].as_str().unwrap().starts_with("intersection-"))
+        .collect::<Vec<_>>();
+    assert_eq!(refs.len(), 1);
+    let touch = refs[0];
+    assert_eq!(touch["detail"]["point"], "reference:intersection:touch");
+    assert_eq!(touch["anchors"][0], json!([20., 10., 0.]));
+    for name in ["width", "rise", "offset"] {
+        assert!(
+            touch["parameters"]
+                .as_array()
+                .unwrap()
+                .contains(&json!(name))
+        );
+    }
+    let dimension = sk["annotations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["detail"]["constraint_index"] == 2)
+        .unwrap();
+    assert_eq!(dimension["status"], "passed");
+    assert!(
+        dimension["targets"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("reference:intersection:touch"))
+    );
+}

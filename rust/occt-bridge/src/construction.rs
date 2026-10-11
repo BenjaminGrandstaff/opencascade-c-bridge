@@ -852,9 +852,11 @@ impl Session {
         })?;
         Ok(self.shape(shape))
     }
-    /// Isolated native XY-plane crossings of two finite edges/one-edge wires.
-    /// Rejects overlaps/unresolved tangent regions, degree>25, >10000 poles,
-    /// Over 10001 knots, over 10000 span pairs, and results over the 1–1000 point budget.
+    /// Isolated XY-plane crossings/touches of two finite edges/one-edge wires.
+    /// Line–spline pairs use rational Bernstein roots with 1000000 root-work units.
+    /// Rejects collinear contacts/overlaps, unresolved other tangent regions,
+    /// coefficient/parameter uncertainty, degree above 25, over 10000 poles,
+    /// over 10001 knots, over 10000 span pairs, and the 1–1000 point budget.
     /// Two bounded native queries; no stored shapes or source mutation.
     pub fn planar_curve_intersections(
         &self,

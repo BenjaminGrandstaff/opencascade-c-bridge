@@ -1398,9 +1398,10 @@ short buffer fails without partial writes. The Rust wrapper validates both
 sessions, queries the count, then fills the bounded buffer.
 
 OCCT can return intersection regions for overlapping or tangential curves.
-This query rejects any reported region, and rejects an incomplete native solve;
-it does not substitute an endpoint, midpoint, or approximate nearest contact.
-Thus some isolated tangencies involving splines can fail explicitly. Existing
+Outside line–spline pairs, this query rejects any reported region and an
+incomplete native solve; it does not substitute an endpoint, midpoint, or
+approximate nearest contact. The line–spline path below resolves stable isolated
+touches algebraically. Other isolated spline tangencies can still fail explicitly. Existing
 analytic pairs retain their isolated-tangency behavior. See
 [OCCT's intersection guide](https://github.com/Open-Cascade-SAS/OCCT/blob/master/dox/user_guides/modeling_algos/modeling_algos.md).
 
@@ -1431,3 +1432,60 @@ MCP renders 20 native spline pads in 0.184 s and 20 ellipse pads in 0.179 s.
 All 41 advanced sketch and 43 MCP scale gates pass. Both examples export valid
 STEP/STL solids, including a weight=1.25 rational spline source. Live source
 edits and ambiguity rejection retain the accepted viewer result on failure.
+
+
+## Isolated line-spline touches (schema 119 / ABI 61)
+
+Finite line–B-spline/Bézier pairs now use a rational Bernstein distance polynomial
+for each exact finite Bézier span. Positive weights allow the homogeneous signed
+line-distance numerator to identify the same roots as the rational curve. No
+sampled polyline or nearest-point approximation is used. This path handles both
+crossings and stable isolated touches, including even-multiplicity roots that
+do not change sign, fourth-order flat contacts, and non-collinear endpoint
+contacts. Connected-chain and projected rational spans use the same path.
+
+The root solver builds a bounded derivative chain and uses its critical roots
+to partition [0,1] into monotone intervals. Sign-changing intervals use at most
+80 bisection steps. Exact zero critical values retain repeated roots; nonzero
+critical values keep their signs, so nearby crossings are not silently merged
+into a single touch. Long-double coefficients/evaluation reduce cancellation.
+Coefficient uncertainty, roots indistinguishable at the native double parameter
+precision, or a final line-distance residual over 1e-9 mm reject explicitly.
+Ill-conditioned contacts are not claimed as exact real-arithmetic certificates.
+
+At most 1,000,000 degree-squared evaluation work units are allowed per native
+query, in addition to existing degree/pole/span/candidate budgets. Dense
+high-degree input is rejected when this work bound is exhausted. Geometry
+conversion and coefficient setup remain bounded by the existing input limits.
+The model's unordered-pair cache and alias limits remain unchanged. Degree-
+chain storage is bounded by degree <=25; there is no recursive call stack.
+
+Collinear or numerically flat spans whose projected control hull overlaps the
+finite guide are rejected as overlap/unresolved collinear contact. Completely
+disjoint finite collinear hulls are ignored. This deliberately leaves some
+collinear endpoint-only cases unresolved. Non-collinear contacts respect the
+actual finite line and spline ranges. Repeated point reports at adjacent span
+joins use the existing 1e-12 mm merge threshold; other nearby candidates remain
+subject to unique-hint matching. Conic–spline and spline–spline tangential regions
+still follow the native region-rejection rule.
+
+`projected-tangent-intersection-pad` uses a quadratic arch with unit weights
+and a horizontal guide at `rise/2 + offset`. With offset=0, its sole contact is
+`reference:intersection:touch`, at (width/2, rise/2) in sketch coordinates. The
+reference drives a fully constrained 2 mm radius pad and a direct dimension.
+Default centre: (20,10) mm; width=50 and rise=24 move it to (25,12) mm. The
+extruded solid retains volume=16π mm³. A positive offset of 0.000001 mm rejects
+a missing match, and a negative offset of -0.000001 mm rejects two crossings.
+Failed edits retain accepted geometry. Restore offset=0 to recover.
+
+No saved fields, C signatures, or output structures change: model schema remains
+119 and native ABI remains 61. The viewer/MCP uses the existing fixed reference
+annotation and links controls from both curves. Tests independently project the
+returned points onto both native inputs, check trimmed/short domains, rational
+and higher-order touches, near misses, nearby distinct crossings, overlap
+rejection, work-budget exhaustion, and handle cleanup.
+
+Performance: 1,000 cached touch aliases build/solve in 0.006 s, and 1,000
+width/height profile edits take 0.297 s (10 s budgets). MCP renders 20 annotated
+touch pads in 0.183 s. All 43 advanced sketch and 44 MCP scale gates pass.
+Native STEP/STL export and live failed-edit preservation are verified.

@@ -1387,3 +1387,75 @@ fn overlapping_native_projection_curves_reject_without_leaking_handles() {
     assert!(error.message.contains("overlap"), "{}", error.message);
     assert_eq!(session.shape_count().unwrap(), 0);
 }
+
+#[test]
+fn projected_line_spline_touch_drives_a_solid_and_rejects_missing_or_double_contacts() {
+    let request: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../tools/model/projected-tangent-intersection-pad.request.json"
+    ))
+    .unwrap();
+    let doc = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+    let session = Session::new().unwrap();
+    let mut instance = part(&doc.family);
+    let first = instance.regenerate(&session).unwrap();
+    let inspect = |instance: &PartInstance<'_>, built: &GeneratedResult<'_>| {
+        let snapshots = instance.resolved_sketches(&session, built).unwrap();
+        let sk = &snapshots["profile"].as_ref().unwrap().sketch;
+        let solution = sk.solve(&instance.resolved_parameters().unwrap()).unwrap();
+        assert!(solution.solved && solution.free_degrees == 0);
+        let p = solution.points["reference:intersection:touch"];
+        let c = solution.points["center"];
+        assert!((p.x - c.x).hypot(p.y - c.y) < 1e-8);
+        for id in ["source", "guide-source"] {
+            let q = session
+                .curve_closest_point(built.shape(id).unwrap(), Vec3::new(p.x, p.y, 0.))
+                .unwrap();
+            assert!((p.x - q.x).hypot(p.y - q.y) < 1e-7);
+        }
+        assert!(session.is_valid(built.shape("body").unwrap()).unwrap());
+        assert!(
+            (session.volume(built.shape("body").unwrap()).unwrap() - 16. * std::f64::consts::PI)
+                .abs()
+                < 1e-7
+        );
+        p
+    };
+    let p = inspect(&instance, &first);
+    assert!((p.x - 20.).abs() < 1e-8 && (p.y - 10.).abs() < 1e-8);
+    instance.overrides.insert(
+        "width".into(),
+        ParameterValue::Scalar(Quantity::length(50., LengthUnit::Millimeter)),
+    );
+    instance.overrides.insert(
+        "rise".into(),
+        ParameterValue::Scalar(Quantity::length(24., LengthUnit::Millimeter)),
+    );
+    let edited = instance.regenerate_incremental(&session, &first).unwrap();
+    let p = inspect(&instance, &edited);
+    assert!((p.x - 25.).abs() < 1e-8 && (p.y - 12.).abs() < 1e-8);
+    let before = session.shape_count().unwrap();
+    for gap in [1e-6, -1e-6] {
+        instance.overrides.insert(
+            "offset".into(),
+            ParameterValue::Scalar(Quantity::length(gap, LengthUnit::Millimeter)),
+        );
+        let error = instance
+            .regenerate_incremental(&session, &edited)
+            .err()
+            .unwrap();
+        assert!(
+            error.message.contains(if gap > 0. {
+                "found no crossing"
+            } else {
+                "multiple crossings"
+            }),
+            "{}",
+            error.message
+        );
+        assert_eq!(session.shape_count().unwrap(), before);
+        assert!(session.is_valid(edited.shape("body").unwrap()).unwrap());
+    }
+    drop(first);
+    drop(edited);
+    assert_eq!(session.shape_count().unwrap(), 0);
+}

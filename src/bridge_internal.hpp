@@ -32,6 +32,8 @@
 #include <utility>
 #include <vector>
 
+class TopoDS_Edge;
+
 struct occt_bridge_history_entry {
     TopoDS_Shape source;
     std::vector<TopoDS_Shape> generated;
@@ -75,6 +77,11 @@ struct occt_bridge_session {
 };
 
 namespace occt_bridge_internal {
+
+// Exact finite line/spline root path, called after planarity/input-budget checks.
+occt_bridge_status_t line_spline_intersections(occt_bridge_session_t* session,
+    const TopoDS_Edge& first, const TopoDS_Edge& second, size_t maximum_points,
+    std::vector<occt_bridge_vec3_t>& points, bool& handled);
 
 // Builds translated closure without storing a handle; callers hold the lock.
 occt_bridge_status_t build_open_profile_face(

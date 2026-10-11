@@ -800,5 +800,23 @@ with tempfile.TemporaryDirectory(prefix='occb-mcp-scale-') as root:
             elapsed=time.monotonic()-started
             assert elapsed<10
             print(f'PASS MCP 20 {name} native crossings, driven centres and both source controls: {elapsed:.3f}s / 10s')
+        touch=client.tool('occt_get_example',dict(name='projected-tangent-intersection-pad'))['structuredContent']
+        for i in range(1,20):
+            touch['model']['instances'].append({'clone':dict(id=f'part-{i}',source='part',overrides={},provenance='scale')})
+            touch['outputs'].extend(dict(instance=f'part-{i}',output=out) for out in ['body','profile'])
+        started=time.monotonic()
+        result=client.tool('occt_visualize_model',touch)
+        assert not result['isError'],result
+        data=json.loads(client.call('resources/read',dict(uri=result['structuredContent']['resources']['view.json']))['result']['contents'][0]['text'])
+        profiles=[s for s in data['scenes'] if s['kind']=='sketch' and s['feature']=='profile']
+        assert len(profiles)==20
+        for scene in profiles:
+            assert scene['solver']['accepted']
+            refs=[a for a in scene['annotations'] if a['id'].startswith('intersection-')]
+            assert len(refs)==1 and refs[0]['anchors']==[[20,10,0]]
+            assert {'width','rise','offset'}<=set(refs[0]['parameters'])
+        elapsed=time.monotonic()-started
+        assert elapsed<10
+        print(f'PASS MCP 20 line-spline touch pads with isolated contacts, dimensions and source controls: {elapsed:.3f}s / 10s')
     finally:
         client.close()

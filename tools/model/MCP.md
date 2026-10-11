@@ -576,3 +576,12 @@ fully constrained pads, direct crossing dimensions and both source controls.
 The catalog contains 57 examples and 12 schemas (69 resources), with 154 request
 definitions. All 59 saved model examples remain at schema 119. See
 [native crossings](../../docs/SKETCHES.md#native-projected-intersections-abi-61).
+
+
+`occt_get_example {"name":"projected-tangent-intersection-pad"}` returns the
+schema-119 isolated-touch demo. A projected line touches a quadratic spline,
+and its named contact drives a pad and its dimension. Change `width`/`rise` to
+move it; positive `offset` rejects no contact, negative `offset` rejects two
+contacts. The catalog now contains 58 examples and 12 schemas (70 resources),
+with 154 request definitions. All 60 saved model examples remain at schema 119;
+native ABI remains 61. See [touch rules](../../docs/SKETCHES.md#isolated-line-spline-touches-schema-119--abi-61).

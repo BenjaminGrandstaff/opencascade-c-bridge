@@ -111,6 +111,15 @@ occt_bridge_status_t collect_crossings(occt_bridge_session_t* session,
     if (a_spans == 0 || b_spans == 0 || a_spans > maximum_span_pairs / b_spans) {
         return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "intersection exceeds 10000 spline span pairs");
     }
+    bool handled = false;
+    status = line_spline_intersections(session, single_edge(first), single_edge(second), maximum_points, points, handled);
+    if (status != OCCT_BRIDGE_OK) { return status; }
+    if (handled) {
+        std::sort(points.begin(), points.end(), [](const auto& p, const auto& q) {
+            return p.x < q.x || (p.x == q.x && p.y < q.y);
+        });
+        return OCCT_BRIDGE_OK;
+    }
     const Geom2dAPI_InterCurveCurve intersection(a, b, tolerance);
     if (!intersection.Intersector().IsDone()) {
         return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "native curve intersection did not converge");

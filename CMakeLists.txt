@@ -44,6 +44,7 @@ add_library(
     src/projection.cpp
     src/curve_export.cpp
     src/curve_intersections.cpp
+    src/line_spline_intersections.cpp
     src/mesh.cpp
     src/history.cpp
     src/open_profile.cpp

@@ -15,15 +15,30 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 134 + first-use integration 1 (+1 doc test), recipes 3, parametric 581 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 19 + branch command 2 + model command 67, MCP Python 9, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 138 + first-use integration 1 (+1 doc test), recipes 3, parametric 582 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 19 + branch command 2 + model command 68, MCP Python 9, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
 | Coverage | Last recorded: 93.61% lines overall, test code excluded; C++ 94.13% lines, 87.40% branches, 100% functions; Rust 93.42% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 183 Rust cases plus 5 model-command and 43 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Scale benchmarks | 185 Rust cases plus 5 model-command and 44 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
 
+- Isolated line–spline touches (schema 119 / ABI 61 unchanged): rational
+  Bernstein distance polynomials resolve stable repeated and endpoint roots,
+  including a fourth-order flat contact. Derivative-chain partitions preserve
+  nearby crossing pairs; finite line/spline bounds remain enforced. No sampling.
+  Degree-squared evaluation work is capped at 1,000,000 units per query;
+  collinear/uncertain contacts and exhausted budgets fail without handle leaks.
+  Example: `projected-tangent-intersection-pad` drives a fully constrained pad
+  and direct dimension from `reference:intersection:touch`. Width/height edits
+  move the part; missing/ambiguous line offsets retain accepted geometry.
+  Catalog: 58 examples, 70 resources, 154 request definitions; all 60 saved
+  models remain at schema 119. Other conic/spline tangential regions remain
+  an explicit limitation. A 1,000-alias touch build takes 0.006 s; 1,000
+  width/height profile edits take 0.297 s; MCP renders 20 touch pads in 0.183 s
+  (10 s budgets). All 43 advanced sketch and 44 MCP scale gates pass. Native
+  exports and live failure preservation are verified.
 - Native projected intersections (schema 119 unchanged, ABI 61): rational
   spline/chain and remaining ellipse pairs resolve isolated finite crossings
   from exact native curves. Analytic fast paths remain. Cached unordered pairs,
@@ -1937,7 +1952,7 @@ that require zero local free degrees. Finite spline and trimmed-conic edges now
 project exactly into sketch planes, with stable endpoint references and source
 parameter links. Connected multi-edge selections now import as composite
 spline boundaries, with named junction references usable in constraints and
-dimensions. Separate junction edge topology and unresolved native tangential contact regions
+dimensions. Separate junction edge topology and conic/spline tangential contact regions
 remain extensions to that workflow.
 
 The earlier geometry and assembly milestones are complete. Manufacturing

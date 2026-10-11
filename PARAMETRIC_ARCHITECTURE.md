@@ -1959,3 +1959,11 @@ and bounded native results per unordered pair. Span-pair and candidate budgets
 apply before selection, while aliases and source/hint invalidation retain the
 same semantics. Native input handles are scoped to materialization, and overlap
 or unresolved tangential regions fail without replacing accepted geometry.
+
+
+Line–spline intersection pairs now use finite rational Bézier distance
+polynomials rather than rejecting a native tangent region. A bounded derivative
+chain isolates crossing and stable repeated roots; uncertainty/collinear regions
+remain explicit failures. Aliases, cache keys, model schema 119 and ABI 61 are
+unchanged. Native root-evaluation work is capped per query and all temporary
+geometry remains scoped to materialization.

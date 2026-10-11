@@ -220,3 +220,180 @@ fn native_intersection_span_product_budget_is_checked_before_kernel_work() {
     }
     assert_eq!(s.shape_count().unwrap(), 0);
 }
+
+#[test]
+fn native_line_spline_touches_find_repeated_roots_and_preserve_nearby_crossings() {
+    let s = Session::new().unwrap();
+    {
+        let curve = parabola(&s, 1.);
+        let tangent = line(&s, Vec3::new(-10., 10., 0.), Vec3::new(50., 10., 0.));
+        let p = verify(&s, &curve, &tangent, 1);
+        assert!((p[0].x - 20.).abs() < 1e-9 && (p[0].y - 10.).abs() < 1e-9);
+        assert_eq!(
+            s.planar_curve_intersections(&tangent, &curve, 1000)
+                .unwrap(),
+            p
+        );
+        let miss = line(
+            &s,
+            Vec3::new(-10., 10. + 1e-6, 0.),
+            Vec3::new(50., 10. + 1e-6, 0.),
+        );
+        verify(&s, &curve, &miss, 0);
+        let crossing = line(
+            &s,
+            Vec3::new(-10., 10. - 1e-10, 0.),
+            Vec3::new(50., 10. - 1e-10, 0.),
+        );
+        let two = verify(&s, &curve, &crossing, 2);
+        assert!(two[1].x - two[0].x > 1e-4);
+        assert!(s.planar_curve_intersections(&curve, &crossing, 1).is_err());
+        let trimmed = s.trim_curve(&curve, 0.6, 1.).unwrap();
+        verify(&s, &trimmed, &tangent, 0);
+        let short = line(&s, Vec3::new(-10., 10., 0.), Vec3::new(19., 10., 0.));
+        verify(&s, &curve, &short, 0);
+    }
+    assert_eq!(s.shape_count().unwrap(), 0);
+}
+#[test]
+fn rational_high_order_and_endpoint_line_spline_touches_are_isolated() {
+    let s = Session::new().unwrap();
+    {
+        let rational = s
+            .create_curve_wire(
+                &[CurveSegment::BSpline {
+                    non_clamped: false,
+                    periodic: false,
+                    degree: 2,
+                    knots: vec![0., 1.],
+                    multiplicities: vec![3, 3],
+                    weights: vec![1., 2., 1.],
+                    poles: vec![
+                        Vec3::new(0., 0., 0.),
+                        Vec3::new(1., 3., 0.),
+                        Vec3::new(2., 0., 0.),
+                    ],
+                }],
+                false,
+            )
+            .unwrap();
+        let upper = line(&s, Vec3::new(-1., 2., 0.), Vec3::new(3., 2., 0.));
+        let p = verify(&s, &rational, &upper, 1);
+        assert!((p[0].x - 1.).abs() < 1e-9);
+        let quartic = s
+            .create_curve_wire(
+                &[CurveSegment::BSpline {
+                    non_clamped: false,
+                    periodic: false,
+                    degree: 4,
+                    knots: vec![0., 1.],
+                    multiplicities: vec![5, 5],
+                    weights: vec![],
+                    poles: [1., -1., 1., -1., 1.]
+                        .iter()
+                        .enumerate()
+                        .map(|(i, y)| Vec3::new(i as f64 / 4., *y, 0.))
+                        .collect(),
+                }],
+                false,
+            )
+            .unwrap();
+        let zero = line(&s, Vec3::new(-1., 0., 0.), Vec3::new(3., 0., 0.));
+        let p = verify(&s, &quartic, &zero, 1);
+        assert!((p[0].x - 0.5).abs() < 1e-9);
+        let endpoint = s
+            .create_curve_wire(
+                &[CurveSegment::BSpline {
+                    non_clamped: false,
+                    periodic: false,
+                    degree: 2,
+                    knots: vec![0., 1.],
+                    multiplicities: vec![3, 3],
+                    weights: vec![],
+                    poles: vec![
+                        Vec3::new(0., 0., 0.),
+                        Vec3::new(1., 0., 0.),
+                        Vec3::new(2., 1., 0.),
+                    ],
+                }],
+                false,
+            )
+            .unwrap();
+        let p = verify(&s, &endpoint, &zero, 1);
+        assert!(p[0].x.abs() < 1e-9);
+    }
+    assert_eq!(s.shape_count().unwrap(), 0);
+}
+#[test]
+fn collinear_line_spline_spans_reject_overlap_but_ignore_disjoint_finite_ranges() {
+    let s = Session::new().unwrap();
+    {
+        let curve = s
+            .create_curve_wire(
+                &[CurveSegment::BSpline {
+                    non_clamped: false,
+                    periodic: false,
+                    degree: 2,
+                    knots: vec![0., 1.],
+                    multiplicities: vec![3, 3],
+                    weights: vec![],
+                    poles: vec![
+                        Vec3::new(0., 0., 0.),
+                        Vec3::new(1., 0., 0.),
+                        Vec3::new(2., 0., 0.),
+                    ],
+                }],
+                false,
+            )
+            .unwrap();
+        let guide = line(&s, Vec3::new(-1., 0., 0.), Vec3::new(3., 0., 0.));
+        let before = s.shape_count().unwrap();
+        assert!(
+            s.planar_curve_intersections(&curve, &guide, 1000)
+                .unwrap_err()
+                .message
+                .contains("overlap")
+        );
+        assert_eq!(s.shape_count().unwrap(), before);
+        let disjoint = line(&s, Vec3::new(-3., 0., 0.), Vec3::new(-1., 0., 0.));
+        verify(&s, &curve, &disjoint, 0);
+    }
+    assert_eq!(s.shape_count().unwrap(), 0);
+}
+
+#[test]
+fn line_spline_root_work_budget_rejects_dense_high_degree_inputs_without_handles() {
+    let s = Session::new().unwrap();
+    let choose = |n: usize, k: usize| (0..k).fold(1., |v, i| v * (n - i) as f64 / (i + 1) as f64);
+    let coefficients = (0..=10)
+        .map(|k| (if k % 2 == 0 { 1. } else { -1. }) * choose(20, 2 * k) / choose(10, k))
+        .collect::<Vec<_>>();
+    {
+        let curve = s
+            .create_curve_wire(
+                &[CurveSegment::BSpline {
+                    non_clamped: false,
+                    periodic: false,
+                    degree: 10,
+                    weights: vec![],
+                    poles: (0..=600)
+                        .map(|i| Vec3::new(i as f64 / 10., coefficients[i % 10], 0.))
+                        .collect(),
+                    knots: (0..=60).map(|i| i as f64).collect(),
+                    multiplicities: (0..=60)
+                        .map(|i| if i == 0 || i == 60 { 11 } else { 10 })
+                        .collect(),
+                }],
+                false,
+            )
+            .unwrap();
+        let guide = line(&s, Vec3::new(-1., 0., 0.), Vec3::new(61., 0., 0.));
+        let before = s.shape_count().unwrap();
+        let error = s
+            .planar_curve_intersections(&curve, &guide, 1000)
+            .unwrap_err();
+        assert!(error.message.contains("root-work"), "{}", error.message);
+        assert_eq!(s.shape_count().unwrap(), before);
+    }
+    assert_eq!(s.shape_count().unwrap(), 0);
+}

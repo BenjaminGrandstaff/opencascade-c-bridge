@@ -982,3 +982,11 @@ retained; native crossings have bounded input/output budgets and reject overlaps
 or unresolved tangent regions. Rebuild the native library and Rust tools together.
 Examples: `projected-spline-intersection-pad` and `projected-ellipse-intersection-pad`.
 See [native intersections](docs/SKETCHES.md#native-projected-intersections-abi-61).
+
+
+Schema 119 / ABI 61 now accepts stable isolated line–spline touches, including
+rational, repeated-root, and endpoint cases, through exact Bézier-span distance
+polynomials. Try `projected-tangent-intersection-pad`: width/height edits move a
+fully constrained pad from its touch reference; a line offset rejects missing
+or multiple contacts. No format/version bump is needed. See
+[line–spline touches](docs/SKETCHES.md#isolated-line-spline-touches-schema-119--abi-61).

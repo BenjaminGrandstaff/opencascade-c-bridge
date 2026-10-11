@@ -57,6 +57,96 @@ fn gate(name: &str, budget: u64, run: impl FnOnce()) {
 }
 fn main() {
     gate(
+        "1000 cached line-spline touch aliases with a fully constrained pad",
+        10,
+        || {
+            let request: serde_json::Value = serde_json::from_str(include_str!(
+                "../../../tools/model/projected-tangent-intersection-pad.request.json"
+            ))
+            .unwrap();
+            let mut family = ModelDocument::from_json(&request["model"].to_string())
+                .unwrap()
+                .family;
+            let FeatureOperation::SketchFace { sketch } = &mut family.features[2].operation else {
+                panic!()
+            };
+            let template = sketch.projections[0].intersections[0].clone();
+            sketch.projections[0].intersections = (0..1000)
+                .map(|i| SketchProjectionIntersection {
+                    id: if i == 0 {
+                        "touch".into()
+                    } else {
+                        format!("touch-{i}")
+                    },
+                    ..template.clone()
+                })
+                .collect();
+            let session = Session::new().unwrap();
+            let part = PartInstance {
+                id: "part".into(),
+                definition: &family,
+                overrides: HashMap::new(),
+                provenance: "scale".into(),
+            };
+            let built = part.regenerate(&session).unwrap();
+            let snapshots = part.resolved_sketches(&session, &built).unwrap();
+            let sk = &snapshots["profile"].as_ref().unwrap().sketch;
+            let solution = sk.solve(&part.resolved_parameters().unwrap()).unwrap();
+            assert!(solution.solved && solution.free_degrees == 0);
+            assert_eq!(
+                sk.points
+                    .iter()
+                    .filter(|p| p.id.contains(":intersection:"))
+                    .count(),
+                1000
+            );
+            assert!((solution.points["reference:intersection:touch-999"].x - 20.).abs() < 1e-8);
+            drop(built);
+            assert_eq!(session.shape_count().unwrap(), 0);
+        },
+    );
+    gate(
+        "1000 line-spline tangent profile edits with width and height controls",
+        10,
+        || {
+            let request: serde_json::Value = serde_json::from_str(include_str!(
+                "../../../tools/model/projected-tangent-intersection-pad.request.json"
+            ))
+            .unwrap();
+            let mut family = ModelDocument::from_json(&request["model"].to_string())
+                .unwrap()
+                .family;
+            family.features.retain(|f| f.id != "body");
+            let session = Session::new().unwrap();
+            let mut part = PartInstance {
+                id: "part".into(),
+                definition: &family,
+                overrides: HashMap::new(),
+                provenance: "scale".into(),
+            };
+            for i in 0..1000 {
+                part.overrides.insert(
+                    "width".into(),
+                    ParameterValue::Scalar(Quantity::length(
+                        [40., 45., 50.][i % 3],
+                        LengthUnit::Millimeter,
+                    )),
+                );
+                part.overrides.insert(
+                    "rise".into(),
+                    ParameterValue::Scalar(Quantity::length(
+                        [20., 22., 24.][i % 3],
+                        LengthUnit::Millimeter,
+                    )),
+                );
+                let built = part.regenerate(&session).unwrap();
+                assert!(session.is_valid(built.shape("profile").unwrap()).unwrap());
+                drop(built);
+                assert_eq!(session.shape_count().unwrap(), 0);
+            }
+        },
+    );
+    gate(
         "1000 cached native spline intersection aliases with solved pad",
         10,
         || {
