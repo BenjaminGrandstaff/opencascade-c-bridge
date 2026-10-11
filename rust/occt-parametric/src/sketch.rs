@@ -313,7 +313,7 @@ pub enum SketchConstraint {
         second: String,
         axis: String,
     },
-    /// Point on the supporting line, circle, arc span, or ellipse.
+    /// Point on the supporting line, circle, arc span, ellipse, or native spline.
     PointOnCurve {
         point: String,
         curve: String,
@@ -538,6 +538,62 @@ pub enum SketchShape {
         #[schemars(range(min = 3, max = 1000))]
         sides: u32,
     },
+}
+
+/// One line of text whose glyph outlines become faces of the sketch's face
+/// output (schema 129). Fonts are installed families matched strictly, so a
+/// missing family or style is an error rather than a substitute.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SketchText {
+    pub id: String,
+    /// Printable UTF-8 on one line, at most 1,000 characters.
+    pub text: String,
+    /// Installed font family, for example "Liberation Sans".
+    pub font: String,
+    #[serde(default)]
+    pub style: SketchFontStyle,
+    /// Em size, a positive length.
+    pub height: ScalarExpr,
+    /// Sketch point at the baseline's start, centre or end (see `align`).
+    pub anchor: String,
+    /// Baseline angle from the sketch +x axis in radians; 0 when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub angle: Option<ScalarExpr>,
+    #[serde(default)]
+    pub align: SketchTextAlign,
+}
+
+/// Sampled glyph edges in sketch-local XY with their installed font source.
+#[derive(Clone, Debug)]
+pub struct SketchTextOutlines {
+    pub id: String,
+    pub font_file: String,
+    pub outlines: Vec<Vec<SketchPoint2>>,
+}
+
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum SketchFontStyle {
+    #[default]
+    Regular,
+    Bold,
+    Italic,
+    BoldItalic,
+}
+
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum SketchTextAlign {
+    /// The baseline starts at the anchor.
+    #[default]
+    Start,
+    Center,
+    End,
 }
 
 /// An additional face region of a sketch: an ordered closed boundary and
@@ -846,6 +902,10 @@ pub struct SketchDefinition {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[schemars(length(max = 1000))]
     pub regions: Vec<SketchRegion>,
+    /// Single-line text outlines added to face outputs (schema 129).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[schemars(length(max = 100))]
+    pub texts: Vec<SketchText>,
     /// Linked entity copies, expanded in order before solving.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[schemars(length(max = 100))]
@@ -1056,6 +1116,12 @@ impl SketchDefinition {
                     angle: Some(angle), ..
                 } => collect_scalar_parameters(angle, names),
                 _ => {}
+            }
+        }
+        for text in &self.texts {
+            collect_scalar_parameters(&text.height, names);
+            if let Some(angle) = &text.angle {
+                collect_scalar_parameters(angle, names);
             }
         }
         for shape in &self.shapes {

@@ -841,6 +841,81 @@ impl Session {
         })?;
         Ok(out.into())
     }
+    /// Path of the installed scalable font `family` in `style`, matched
+    /// strictly through fontconfig (ABI 66).
+    pub fn font_file(&self, family: &str, style: FontStyle) -> Result<String, BridgeError> {
+        let family = std::ffi::CString::new(family).map_err(|_| BridgeError {
+            status: 1,
+            category: "invalid argument".into(),
+            message: "font family contains NUL".into(),
+            diagnostics: Vec::new(),
+        })?;
+        let mut length = 0;
+        // SAFETY: Valid NUL-terminated family; a null buffer queries the length.
+        self.check(unsafe {
+            occt_bridge_font_file(
+                self.raw.as_ptr(),
+                family.as_ptr(),
+                style as c_int,
+                std::ptr::null_mut(),
+                0,
+                &mut length,
+            )
+        })?;
+        let mut buffer = vec![0u8; length + 1];
+        // SAFETY: The buffer holds the path and its NUL terminator.
+        self.check(unsafe {
+            occt_bridge_font_file(
+                self.raw.as_ptr(),
+                family.as_ptr(),
+                style as c_int,
+                buffer.as_mut_ptr().cast(),
+                buffer.len(),
+                &mut length,
+            )
+        })?;
+        buffer.truncate(length);
+        Ok(String::from_utf8_lossy(&buffer).into_owned())
+    }
+
+    /// One line of text as a compound of planar glyph faces (ABI 66):
+    /// exact outlines from `font_file` with em size `height`, the baseline
+    /// along `x_axis` from `origin` with `y_axis` up.
+    #[allow(clippy::too_many_arguments)]
+    pub fn create_text(
+        &self,
+        text: &str,
+        font_file: &str,
+        height: f64,
+        origin: Vec3,
+        x_axis: Vec3,
+        y_axis: Vec3,
+        align: TextAlign,
+    ) -> Result<Shape<'_>, BridgeError> {
+        let path = std::ffi::CString::new(font_file).map_err(|_| BridgeError {
+            status: 1,
+            category: "invalid argument".into(),
+            message: "font path contains NUL".into(),
+            diagnostics: Vec::new(),
+        })?;
+        let mut shape = 0;
+        // SAFETY: The text slice and path outlive the call; output is writable.
+        self.check(unsafe {
+            occt_bridge_create_text(
+                self.raw.as_ptr(),
+                text.as_ptr().cast(),
+                text.len(),
+                path.as_ptr(),
+                height,
+                origin.into(),
+                x_axis.into(),
+                y_axis.into(),
+                align as c_int,
+                &mut shape,
+            )
+        })?;
+        Ok(self.shape(shape))
+    }
     pub fn extend_curve<'a>(
         &'a self,
         shape: &Shape<'_>,

@@ -12,6 +12,7 @@ mod shapes;
 mod solving;
 mod splines;
 mod sweeps;
+mod text;
 mod trim_between;
 
 fn length(value: f64) -> ScalarExpr {
@@ -32,6 +33,7 @@ fn rectangle() -> SketchDefinition {
         measurements: Vec::new(),
         shapes: Vec::new(),
         regions: Vec::new(),
+        texts: Vec::new(),
         acceptance: Default::default(),
         id: "rectangle".into(),
         datum_plane: None,

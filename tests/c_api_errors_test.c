@@ -8,6 +8,7 @@
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 #include <stdlib.h>
 
 static int failures = 0;
@@ -1416,6 +1417,32 @@ static void elliptical_arcs(occt_bridge_session_t* session) {
     EXPECT(occt_bridge_curve_curvature_at(session, circle, vec(10, 0, 0), &k), OK);
     EXPECT_TRUE(fabs(k.x + 0.1) < 1e-12 && fabs(k.y) < 1e-12, "circle curvature points inward");
     occt_bridge_shape_release(session, circle);
+
+    /* Fonts and text (ABI 66). */
+    size_t path_length = 0;
+    char path[16];
+    EXPECT(occt_bridge_font_file(NULL, "Liberation Sans", 0, NULL, 0, &path_length), ARG);
+    EXPECT(occt_bridge_font_file(session, NULL, 0, NULL, 0, &path_length), ARG);
+    EXPECT(occt_bridge_font_file(session, "Liberation Sans", 4, NULL, 0, &path_length), ARG);
+    EXPECT(occt_bridge_font_file(session, "", 0, NULL, 0, &path_length), ARG);
+    EXPECT(occt_bridge_font_file(session, "No Such Family 4711", 0, NULL, 0, &path_length), GEOMETRY);
+    if (occt_bridge_font_file(session, "Liberation Sans", 0, NULL, 0, &path_length) == OCCT_BRIDGE_OK) {
+        EXPECT_TRUE(path_length > 0, "font path path_length");
+        EXPECT(occt_bridge_font_file(session, "Liberation Sans", 0, path, sizeof path, &path_length), ARG);
+    }
+    EXPECT(occt_bridge_create_text(session, "Hi", 2, "/nonexistent.ttf", 5, vec(0, 0, 0), vec(1, 0, 0), vec(0, 1, 0), 0, NULL), ARG);
+    EXPECT(occt_bridge_create_text(session, "Hi", 2, "/nonexistent.ttf", 0, vec(0, 0, 0), vec(1, 0, 0), vec(0, 1, 0), 0, &out), ARG);
+    EXPECT(occt_bridge_create_text(session, "Hi", 2, "/nonexistent.ttf", 5, vec(0, 0, 0), vec(1, 0, 0), vec(1, 1, 0), 0, &out), ARG);
+    EXPECT(occt_bridge_create_text(session, "Hi", 2, "/nonexistent.ttf", 5, vec(0, 0, 0), vec(1, 0, 0), vec(0, 1, 0), 3, &out), ARG);
+    EXPECT(occt_bridge_create_text(session, "\xff", 1, "/nonexistent.ttf", 5, vec(0, 0, 0), vec(1, 0, 0), vec(0, 1, 0), 0, &out), ARG);
+    /* Reject noncanonical encodings, surrogate values and C1 controls
+       before trying to load a font. */
+    const char* invalid_texts[] = {"\xc1\xa1", "\xe0\x81\xa1", "\xf0\x80\x81\xa1", "\xed\xa0\x80", "\xc2\x85", "\xe2\x82", "\xe2\x41\xac", "\xf4\x90\x80\x80"};
+    for (size_t i = 0; i < sizeof invalid_texts / sizeof invalid_texts[0]; ++i) {
+        EXPECT(occt_bridge_create_text(session, invalid_texts[i], strlen(invalid_texts[i]), "/nonexistent.ttf", 5, vec(0, 0, 0), vec(1, 0, 0), vec(0, 1, 0), 0, &out), ARG);
+        EXPECT_TRUE(out == OCCT_BRIDGE_INVALID_SHAPE_ID, "invalid text clears output");
+    }
+    EXPECT(occt_bridge_create_text(session, "Hi", 2, "/nonexistent.ttf", 5, vec(0, 0, 0), vec(1, 0, 0), vec(0, 1, 0), 0, &out), GEOMETRY);
 }
 
 static void corner_edits(occt_bridge_session_t* session) {

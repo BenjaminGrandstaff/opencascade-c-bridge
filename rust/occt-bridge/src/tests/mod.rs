@@ -21,6 +21,7 @@ mod session;
 mod sketch_ops;
 mod surface_radius;
 mod sweep;
+mod text;
 mod variable_fillet;
 
 fn unit_box(session: &Session, x: f64) -> Shape<'_> {

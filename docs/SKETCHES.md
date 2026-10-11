@@ -1757,3 +1757,49 @@ curvature 1/r (confirmed natively), a circle osculating an ellipse at its
 vertex (radius b²/a), infeasible and invalid joints, and equal native
 curvature on both sides of every joint of the built paddle face (1e-8). 500
 rise edits solve all four joints in 2.0 s (10 s budget).
+
+## Text (schema 129 / ABI 66)
+
+A sketch may list `texts`, single lines whose glyph outlines become faces of
+the face output:
+
+```json
+{"id": "marking", "text": "PART 42", "font": "Liberation Sans",
+ "style": "bold", "height": {"parameter": "text_height"},
+ "anchor": "anchor", "align": "center"}
+```
+
+- `text` is printable UTF-8 on one line, 1 to 1,000 characters; a sketch
+  has at most 100 texts.
+- `font` is an installed family, resolved strictly through fontconfig in
+  `style` (`regular`, `bold`, `italic` or `bold_italic`). A missing family
+  or style is an error, never a substitute. Reproducing identical outlines
+  across machines also requires the same font file and version. The viewer
+  reports the resolved font file.
+- `height` is the em size; `anchor` is the sketch point at the baseline's
+  start, centre or end (`align`: `start`, `center`, `end`); `angle` turns
+  the baseline from the sketch +x axis.
+- Glyph outlines are exact: lines and quadratic or cubic Béziers straight
+  from the font, with kerning. Contours are sorted into outer boundaries
+  and holes by nesting, so TrueType and CFF fonts both work. Missing glyphs
+  are errors.
+- A sketch of only texts (no other curves) has just the glyph faces. With a
+  profile or regions, each text joins the face compound and must not
+  overlap them; engrave or emboss with a separate text sketch.
+- Wire outputs reject texts.
+
+ABI 66 adds `occt_bridge_font_file` and `occt_bridge_create_text`
+(`Session::font_file`, `Session::create_text`). The bridge now links
+FreeType and fontconfig directly; it does not use OCCT's visualization
+toolkit for text.
+
+The [engraved nameplate](../tools/model/engraved-nameplate.request.json)
+cuts bold "PART 42" 1 mm into a plate from a text-only sketch on its top
+face. It needs Liberation Sans installed. Tests check glyph topology
+(holes in `8`, separate dots and `%` rings), exact area scaling with height,
+alignment, rotation, overlap with a profile, the engraved volume against
+the letters' area, and errors for missing families and glyphs, bad text,
+heights, anchors and wire outputs; geometry tests use the first installed
+of several common sans families and skip when none is. A 1,000-character
+text builds, extrudes and validates in 5.1 s (10 s budget, checked alongside
+all 52 sketch scale gates).

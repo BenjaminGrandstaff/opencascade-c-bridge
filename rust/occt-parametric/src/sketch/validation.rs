@@ -79,6 +79,17 @@ impl SketchDefinition {
         for constraint in &self.constraints {
             constraint.validate(parameters)?;
         }
+        for text in &self.texts {
+            if scalar(&text.height, parameters, Dimension::Length)? <= 0.0 {
+                return Err(ModelError::new(format!(
+                    "sketch text '{}' height must be positive",
+                    text.id
+                )));
+            }
+            if let Some(angle) = &text.angle {
+                scalar(angle, parameters, Dimension::Scalar)?;
+            }
+        }
         for op in &self.profile_operations {
             match op {
                 SketchProfileOperation::Trim { first, last, .. } => {
@@ -583,6 +594,32 @@ impl SketchDefinition {
                         "sketch holes have unknown entities or reuse profile/hole entities",
                     ));
                 }
+            }
+        }
+        if self.texts.len() > 100 {
+            return Err(ModelError::new("sketch texts exceed 100"));
+        }
+        let mut text_ids = HashSet::new();
+        for text in &self.texts {
+            if text.id.is_empty() || !text_ids.insert(text.id.as_str()) {
+                return Err(ModelError::new(
+                    "sketch text ids must be nonempty and unique",
+                ));
+            }
+            if text.text.trim().is_empty()
+                || text.text.chars().count() > 1000
+                || text.font.is_empty()
+            {
+                return Err(ModelError::new(format!(
+                    "sketch text '{}' needs 1 to 1000 visible characters and a font family",
+                    text.id
+                )));
+            }
+            if !self.points.iter().any(|p| p.id == text.anchor) {
+                return Err(ModelError::new(format!(
+                    "sketch text '{}' anchors to unknown point '{}'",
+                    text.id, text.anchor
+                )));
             }
         }
         if !self.regions.is_empty() && self.profile.is_empty() {

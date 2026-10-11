@@ -2,7 +2,7 @@
 
 use super::*;
 
-pub(crate) const ABI_VERSION: u32 = 65;
+pub(crate) const ABI_VERSION: u32 = 66;
 
 #[repr(C)]
 #[derive(Default)]
@@ -209,6 +209,27 @@ unsafe extern "C" {
         shape: u64,
         point: RawVec3,
         out: *mut RawVec3,
+    ) -> i32;
+    pub fn occt_bridge_font_file(
+        s: *mut c_void,
+        family: *const std::ffi::c_char,
+        style: c_int,
+        buffer: *mut std::ffi::c_char,
+        capacity: usize,
+        out_length: *mut usize,
+    ) -> i32;
+    #[allow(clippy::too_many_arguments)]
+    pub fn occt_bridge_create_text(
+        s: *mut c_void,
+        utf8: *const std::ffi::c_char,
+        length: usize,
+        font_file: *const std::ffi::c_char,
+        height: f64,
+        origin: RawVec3,
+        x_axis: RawVec3,
+        y_axis: RawVec3,
+        align: c_int,
+        out: *mut u64,
     ) -> i32;
     pub fn occt_bridge_extend_curve(
         s: *mut c_void,

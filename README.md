@@ -212,7 +212,9 @@ LD_LIBRARY_PATH="$PWD/build" \
 ```
 
 The project currently requires OCCT 7.9 or newer. Fedora's Open Cascade CMake
-package is discovered automatically.
+package is discovered automatically. FreeType and fontconfig development
+packages are also required (`freetype-devel` and `fontconfig-devel` on Fedora).
+Install `liberation-sans-fonts` to build the engraved-nameplate example.
 
 C and C++ static analysis runs clang-tidy (configured by
 [`.clang-tidy`](.clang-tidy)) and cppcheck inside a podman container, so no
@@ -659,13 +661,13 @@ profiles (ABI 47, model schema 72).
 up to a selected face, and up to the next complete face limit, including
 inclined and curved surfaces. Target
 geometry participates in regeneration; the viewer shows the actual length.
-The native ABI is 65; model schema is 128. Native surface-ray witnesses measure
+The native ABI is 66; model schema is 129. Native surface-ray witnesses measure
 viewer extents on nonuniform caps.
 
 
 [Blind drill-point holes](docs/HOLES.md) add configurable conical bottoms, native tip
 containment checks, full-diameter depth callouts and linked viewer dimensions.
-The current model schema is 128 and native ABI is 65.
+The current model schema is 129 and native ABI is 66.
 
 
 [Geometry-driven holes](docs/HOLES.md) stop at a selected or next covering input
@@ -691,7 +693,7 @@ Schema 79 adds `planar_region`; ABI 50 also retains its extracted face history.
 [Hollow path sweeps](docs/HOLLOW_SWEEPS.md) transport holed planar sections into
 bent tubes and multiple-bore parts, preserving wall ancestry and linked route
 controls. ABI 50 adds explicit history-preserving topology extraction; the
-current model schema is 128. Rebuild the native library and Rust executables together.
+current model schema is 129. Rebuild the native library and Rust executables together.
 
 [Hollow profile lofts](docs/LOFTS.md#explicit-hollow-tracks-schema-80) use explicit
 inner section tracks to make tapered ducts and multiple-bore transitions.
@@ -747,6 +749,12 @@ face output becomes a compound that extrudes into separate solids (schema
 [Curvature continuity](docs/SKETCHES.md#curvature-g2-continuity-schema-128--abi-65)
 joins sketch curves with equal native curvature as well as tangency
 (schema 128, ABI 65); see the [G2 paddle](tools/model/g2-paddle.request.json).
+
+[Sketch text](docs/SKETCHES.md#text-schema-129--abi-66) turns single lines in
+installed fonts (matched strictly) into exact glyph faces for engraving or
+embossing (schema 129, ABI 66); see the
+[engraved nameplate](tools/model/engraved-nameplate.request.json). The
+library now links FreeType and fontconfig.
 
 [Helices](docs/HELIX.md) are exact helical wires to sweep along for springs and
 coils, with parameter-driven radius, pitch, turns and handedness. ABI 52 adds
@@ -814,7 +822,7 @@ The [threaded-rod AI example](tools/model/threaded-rod.request.json) exposes
 modeled threads with linked major diameter, pitch, run and derived turn labels.
 Its source rod follows diameter/run edits. See
 [thread dimensions](docs/THREADS.md#ai-example-and-viewer-dimensions). Current AI
-examples use schema 128; native ABI is 65.
+examples use schema 129; native ABI is 66.
 
 
 The [edge-treatment AI example](tools/model/edge-treatments.request.json)

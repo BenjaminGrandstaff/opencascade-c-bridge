@@ -9,6 +9,9 @@ find_package(
     OpenCASCADE REQUIRED
     COMPONENTS FoundationClasses ModelingData ModelingAlgorithms
 )
+# Text outlines: FreeType glyphs and fontconfig family lookup, both headless.
+find_package(Freetype REQUIRED)
+find_package(Fontconfig REQUIRED)
 set(
     OCCT_BRIDGE_OCCT_VERSION
     "${OpenCASCADE_MAJOR_VERSION}.${OpenCASCADE_MINOR_VERSION}.${OpenCASCADE_MAINTENANCE_VERSION}"
@@ -38,6 +41,7 @@ add_library(
     src/geometry_queries.cpp
     src/measurements.cpp
     src/surface_radius.cpp
+    src/text.cpp
     src/face_pull.cpp
     src/sweep.cpp
     src/step_assembly.cpp
@@ -94,7 +98,7 @@ set(
     TKDESTL
     TKShHealing
 )
-target_link_libraries(occt_bridge PRIVATE ${OCCT_BRIDGE_OCCT_LIBRARIES})
+target_link_libraries(occt_bridge PRIVATE ${OCCT_BRIDGE_OCCT_LIBRARIES} Freetype::Freetype Fontconfig::Fontconfig)
 set_target_properties(
     occt_bridge PROPERTIES
     CXX_VISIBILITY_PRESET hidden

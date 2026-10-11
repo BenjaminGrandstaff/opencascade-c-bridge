@@ -965,5 +965,20 @@ with tempfile.TemporaryDirectory(prefix='occb-mcp-scale-') as root:
         elapsed=time.monotonic()-started
         assert elapsed<10
         print(f'PASS MCP 20 G2 paddles with four curvature-continuous joints: {elapsed:.3f}s / 10s')
+        plates=client.tool('occt_get_example',dict(name='engraved-nameplate'))['structuredContent']
+        for i in range(1,20):
+            plates['model']['instances'].append({'clone':dict(id=f'plate-{i}',source='plate',overrides={},provenance='scale')})
+            plates['outputs'].append(dict(instance=f'plate-{i}',output='body'))
+        started=time.monotonic()
+        result=client.tool('occt_visualize_model',plates)
+        assert not result['isError'],result
+        data=json.loads(client.call('resources/read',dict(uri=result['structuredContent']['resources']['view.json']))['result']['contents'][0]['text'])
+        solids=[s for s in data['scenes'] if s['kind']=='solid']
+        labels=[s for s in data['scenes'] if s['kind']=='sketch' and s['feature']=='letters_profile']
+        assert len(solids)==20 and all(s['valid'] for s in solids)
+        assert len(labels)==20 and all(any(a['id']=='text-marking' for a in s['annotations']) for s in labels)
+        elapsed=time.monotonic()-started
+        assert elapsed<10
+        print(f'PASS MCP 20 engraved nameplates with glyph outlines: {elapsed:.3f}s / 10s')
     finally:
         client.close()

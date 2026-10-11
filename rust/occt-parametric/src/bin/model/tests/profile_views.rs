@@ -2677,3 +2677,67 @@ fn g2_paddle_joins_match_curvature_on_the_built_profile() {
         }
     }
 }
+
+#[test]
+fn engraved_nameplate_draws_glyphs_and_cuts_them_from_the_plate() {
+    let session = Session::new().unwrap();
+    if session
+        .font_file("Liberation Sans", occt_bridge::FontStyle::Bold)
+        .is_err()
+    {
+        eprintln!("Liberation Sans Bold is not installed; skipping");
+        return;
+    }
+    let dir = Directory::new();
+    view_request(&dir, view_example("engraved-nameplate"), "plate").unwrap();
+    let data: Value =
+        serde_json::from_str(&fs::read_to_string(dir.0.join("plate/view.json")).unwrap()).unwrap();
+    let body = &data["scenes"][0];
+    assert_eq!(body["valid"], true);
+    let label = data["scenes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["feature"] == "letters_profile")
+        .unwrap();
+    let glyphs = label["entities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|e| e["text"] == "marking")
+        .count();
+    let annotation = label["annotations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["id"] == "text-marking")
+        .unwrap();
+    assert_eq!(annotation["detail"]["glyph_edges"], glyphs);
+    assert!(glyphs > 20);
+    assert!(
+        annotation["detail"]["font_file"]
+            .as_str()
+            .unwrap()
+            .ends_with(".ttf")
+    );
+    assert_eq!(annotation["parameters"], json!(["text_height"]));
+    // Engraving removes exactly the letters' area times the depth.
+    let family = ModelDocument::from_json(&view_example("engraved-nameplate")["model"].to_string())
+        .unwrap()
+        .family;
+    let part = PartInstance {
+        id: "plate".into(),
+        definition: &family,
+        overrides: HashMap::new(),
+        provenance: "test".into(),
+    };
+    let built = part.regenerate(&session).unwrap();
+    let letters = session
+        .surface_area(built.shape("letters_profile").unwrap())
+        .unwrap();
+    let removed = 80.0 * 25.0 * 4.0 - session.volume(built.shape("body").unwrap()).unwrap();
+    assert!(
+        (removed - letters * 1.0).abs() < 1e-6 * removed,
+        "{removed} {letters}"
+    );
+}

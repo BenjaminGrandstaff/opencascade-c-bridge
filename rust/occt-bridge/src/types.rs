@@ -504,3 +504,22 @@ pub struct ProjectedEdges<'session> {
     pub visible: Shape<'session>,
     pub hidden: Shape<'session>,
 }
+
+/// Installed font style for [`Session::font_file`].
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum FontStyle {
+    #[default]
+    Regular = 0,
+    Bold = 1,
+    Italic = 2,
+    BoldItalic = 3,
+}
+
+/// Where a line of text sits relative to its origin along the baseline.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum TextAlign {
+    #[default]
+    Start = 0,
+    Center = 1,
+    End = 2,
+}

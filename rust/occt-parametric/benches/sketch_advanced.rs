@@ -27,6 +27,7 @@ fn sketch() -> SketchDefinition {
         measurements: Vec::new(),
         shapes: Vec::new(),
         regions: Vec::new(),
+        texts: Vec::new(),
         acceptance: Default::default(),
         id: "scale".into(),
         datum_plane: None,
@@ -2408,6 +2409,66 @@ fn main() {
                 assert!((bounds.max.y - (30. + rise + 12.)).abs() < 1e-6);
                 previous = built;
             }
+        },
+    );
+    gate(
+        "1000-character text sketch built as glyph faces and extruded",
+        10,
+        || {
+            let session = Session::new().unwrap();
+            let Some(font) = ["Liberation Sans", "DejaVu Sans", "Noto Sans", "FreeSans"]
+                .into_iter()
+                .find(|f| {
+                    session
+                        .font_file(f, occt_bridge::FontStyle::Regular)
+                        .is_ok()
+                })
+            else {
+                println!("SKIP text gate: no common sans font installed");
+                return;
+            };
+            let mut s = sketch();
+            s.points = vec![point("t".into(), 0., 0., true)];
+            s.texts = vec![SketchText {
+                id: "long".into(),
+                text: "The quick brown fox jumps over the lazy dog 0123456789. "
+                    .repeat(18)
+                    .chars()
+                    .take(1000)
+                    .collect(),
+                font: font.into(),
+                style: SketchFontStyle::Regular,
+                height: mm(5.),
+                anchor: "t".into(),
+                angle: None,
+                align: SketchTextAlign::Start,
+            }];
+            let mut family = ModelDocument::from_json(
+                &serde_json::from_str::<serde_json::Value>(include_str!(
+                    "../../../tools/model/spacer-set.request.json"
+                ))
+                .unwrap()["model"]
+                    .to_string(),
+            )
+            .unwrap()
+            .family;
+            family.requirements.clear();
+            let FeatureOperation::SketchFace { sketch: profile } =
+                &mut family.features[0].operation
+            else {
+                panic!("spacer-set starts with its sketch")
+            };
+            **profile = s;
+            let part = PartInstance {
+                id: "part".into(),
+                definition: &family,
+                overrides: HashMap::new(),
+                provenance: "scale".into(),
+            };
+            let built = part.regenerate(&session).unwrap();
+            let body = built.shape("body").unwrap();
+            assert!(session.subshape_count(body, ShapeType::Solid).unwrap() > 700);
+            assert!(session.is_valid(body).unwrap());
         },
     );
 }

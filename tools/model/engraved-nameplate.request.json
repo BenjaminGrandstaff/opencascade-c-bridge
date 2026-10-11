@@ -1,0 +1,490 @@
+{
+  "schema": "occb-model-view-v1",
+  "model": {
+    "schema_version": 129,
+    "family": {
+      "id": "engraved-nameplate",
+      "version": 1,
+      "parameters": [
+        {
+          "id": "width",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 80,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 50,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 120,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "plate_height",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 25,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 15,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 40,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "thickness",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 4,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 2,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 8,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "text_height",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 10,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 5,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 16,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "depth",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 1,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 0.3,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 2,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        }
+      ],
+      "derived_parameters": [],
+      "derived_vector_parameters": [],
+      "constraints": [],
+      "requirements": [
+        {
+          "id": "valid",
+          "version": 1,
+          "kind": "validation",
+          "priority": "required",
+          "statement": "nameplate valid",
+          "rule": {
+            "shape_valid": {
+              "output": "body"
+            }
+          },
+          "provenance": "example; demonstration assumptions",
+          "traces": [
+            {
+              "feature": "body"
+            }
+          ]
+        }
+      ],
+      "datums": [],
+      "features": [
+        {
+          "id": "profile",
+          "operation": {
+            "sketch_face": {
+              "sketch": {
+                "id": "plate",
+                "origin": {
+                  "literal": {
+                    "x": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    },
+                    "y": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                },
+                "x_axis": {
+                  "literal": {
+                    "x": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "y_axis": {
+                  "literal": {
+                    "x": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "points": [
+                  {
+                    "id": "a",
+                    "x": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "b",
+                    "x": {
+                      "parameter": "width"
+                    },
+                    "y": {
+                      "parameter": "plate_height"
+                    },
+                    "fixed": true
+                  }
+                ],
+                "lines": [],
+                "circles": [],
+                "arcs": [],
+                "profile": [
+                  "outline"
+                ],
+                "constraints": [],
+                "shapes": [
+                  {
+                    "rectangle": {
+                      "id": "outline",
+                      "first": "a",
+                      "opposite": "b"
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "blank",
+          "operation": {
+            "extrude": {
+              "input": "profile",
+              "direction": {
+                "components": {
+                  "x": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "y": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "z": {
+                    "parameter": "thickness"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "letters_profile",
+          "operation": {
+            "sketch_face": {
+              "sketch": {
+                "id": "label",
+                "origin": {
+                  "components": {
+                    "x": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "z": {
+                      "parameter": "thickness"
+                    }
+                  }
+                },
+                "x_axis": {
+                  "literal": {
+                    "x": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "y_axis": {
+                  "literal": {
+                    "x": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "points": [
+                  {
+                    "id": "anchor",
+                    "x": {
+                      "divide": [
+                        {
+                          "parameter": "width"
+                        },
+                        {
+                          "literal": {
+                            "value": 2,
+                            "dimension": "scalar",
+                            "unit": null
+                          }
+                        }
+                      ]
+                    },
+                    "y": {
+                      "subtract": [
+                        {
+                          "divide": [
+                            {
+                              "parameter": "plate_height"
+                            },
+                            {
+                              "literal": {
+                                "value": 2,
+                                "dimension": "scalar",
+                                "unit": null
+                              }
+                            }
+                          ]
+                        },
+                        {
+                          "divide": [
+                            {
+                              "parameter": "text_height"
+                            },
+                            {
+                              "literal": {
+                                "value": 2,
+                                "dimension": "scalar",
+                                "unit": null
+                              }
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    "fixed": true
+                  }
+                ],
+                "lines": [],
+                "circles": [],
+                "arcs": [],
+                "profile": [],
+                "constraints": [],
+                "texts": [
+                  {
+                    "id": "marking",
+                    "text": "PART 42",
+                    "font": "Liberation Sans",
+                    "style": "bold",
+                    "height": {
+                      "parameter": "text_height"
+                    },
+                    "anchor": "anchor",
+                    "align": "center"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "letters",
+          "operation": {
+            "extrude": {
+              "input": "letters_profile",
+              "direction": {
+                "components": {
+                  "x": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "y": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "z": {
+                    "negate": {
+                      "parameter": "depth"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "body",
+          "operation": {
+            "cut": {
+              "object": "blank",
+              "tool": "letters"
+            }
+          }
+        }
+      ]
+    },
+    "instances": [
+      {
+        "base": {
+          "id": "plate",
+          "overrides": {},
+          "provenance": "Nameplate engraved with bold Liberation Sans text (requires that font installed)"
+        }
+      }
+    ]
+  },
+  "outputs": [
+    {
+      "instance": "plate",
+      "output": "body"
+    }
+  ],
+  "sketches": true
+}

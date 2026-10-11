@@ -76,6 +76,44 @@ pub(super) fn sketch_scene(
             })
         })
         .collect::<Vec<_>>();
+    // Glyph outlines draw as text entities; one annotation per text links
+    // its height and angle controls and reports the resolved font file.
+    let mut text_annotations = Vec::new();
+    for text_outlines in sketch
+        .text_outlines(session, parameters, &solution, 8)
+        .stage("sketch")?
+    {
+        let id = text_outlines.id;
+        let file = text_outlines.font_file;
+        let outlines = text_outlines.outlines;
+        let text = sketch.texts.iter().find(|t| t.id == id).expect("text");
+        for (k, outline) in outlines.iter().enumerate() {
+            entities.push(json!({
+                "id": format!("{id}:glyph{k}"),
+                "points": outline.iter().map(|p| [p.x, p.y, 0.0]).collect::<Vec<_>>(),
+                "point_ids": [text.anchor],
+                "text": id,
+            }));
+        }
+        let height = text.height.evaluate(parameters).stage("sketch")?.value;
+        text_annotations.push(
+            Annotation {
+                id: format!("text-{id}"),
+                label: format!("text “{}” {} mm", text.text, length_label(height)),
+                kind: AnnotationKind::Group,
+                status: AnnotationStatus::Constructed,
+                targets: vec![text.anchor.clone()],
+                parameters: names(&json!([text.height, text.angle])),
+                anchors: json!([point_map_seed(&solution, &text.anchor)]),
+                detail: json!({
+                    "text": text,
+                    "font_file": file,
+                    "glyph_edges": outlines.len(),
+                }),
+            }
+            .into(),
+        );
+    }
     let explicit: HashMap<_, _> = sketch
         .splines
         .iter()
@@ -224,6 +262,7 @@ pub(super) fn sketch_scene(
         }
     }
     let mut annotations: Vec<Value> = Vec::new();
+    annotations.append(&mut text_annotations);
     if let Some(support) = &support {
         annotations.push(
             Annotation {
@@ -1688,4 +1727,10 @@ pub(super) fn sketch_scene(
         },
         "coordinate_system": "sketch-local XY millimeters",
     }))
+}
+
+/// A solved sketch point in the scene's sketch-local coordinates.
+fn point_map_seed(solution: &SketchSolution, id: &str) -> [f64; 3] {
+    let p = solution.points[id];
+    [p.x, p.y, 0.0]
 }

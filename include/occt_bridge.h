@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define OCCT_BRIDGE_ABI_VERSION 65u
+#define OCCT_BRIDGE_ABI_VERSION 66u
 #define OCCT_BRIDGE_INVALID_SHAPE_ID UINT64_C(0)
 
 #if defined(_WIN32) && defined(OCCT_BRIDGE_BUILD_SHARED)
@@ -905,6 +905,18 @@ OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_curve_closest_data(
     occt_bridge_session_t*, occt_bridge_shape_id_t, occt_bridge_vec3_t point,
     occt_bridge_vec3_t* closest, occt_bridge_vec3_t* tangent);
 OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_curve_closest_point(occt_bridge_session_t*, occt_bridge_shape_id_t, occt_bridge_vec3_t point, occt_bridge_vec3_t*);
+/* ABI 66: path of the installed scalable font of `family` in `style`
+ * (0 regular, 1 bold, 2 italic, 3 bold italic), matched strictly: no
+ * substitute family or style. Query the length with a NULL buffer and 0
+ * capacity; the buffer must also fit the terminating NUL. */
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_font_file(occt_bridge_session_t*, const char* family, int style, char* buffer, size_t capacity, size_t* out_length);
+/* ABI 66: one line of printable UTF-8 text (at most 1000 characters) as a
+ * compound of planar faces with glyph holes. Glyph outlines from the
+ * scalable font file are exact lines and Bezier edges; `height` is the em
+ * size. The baseline starts at `origin` along `x_axis` with `y_axis` up;
+ * align 0 starts, 1 centres and 2 ends the advance width at `origin`.
+ * Kerning pairs apply; missing glyphs are errors. */
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_create_text(occt_bridge_session_t*, const char* utf8, size_t length, const char* font_file, double height, occt_bridge_vec3_t origin, occt_bridge_vec3_t x_axis, occt_bridge_vec3_t y_axis, int align, occt_bridge_shape_id_t* out_shape);
 /* ABI 65: curvature vector (curvature times principal normal, zero where
  * straight) of a one-edge curve at its point nearest `point`, ends included.
  * Independent of edge orientation. Undefined tangents are errors. */

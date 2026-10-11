@@ -97,7 +97,6 @@ impl SketchDefinition {
             return expanded.face_on_plane(session, parameters, datum);
         }
         let solution = self.solved(parameters)?;
-        let wire = self.solved_profile_wire(session, parameters, datum, true, &solution)?;
         let (origin, x_axis, y_axis) = self.resolved_frame(parameters, datum)?;
         let transform =
             |point: SketchPoint2| add(origin, add(scale(x_axis, point.x), scale(y_axis, point.y)));
@@ -123,11 +122,26 @@ impl SketchDefinition {
                     ModelError::from(e).context(&format!("sketch '{}' {name} holes", self.id))
                 })
         };
-        let main = face(&wire, &self.holes, "profile")?;
-        if self.regions.is_empty() {
-            return Ok(main);
+        // A sketch of only texts has no profile face.
+        let text_only = self.profile.is_empty()
+            && self.regions.is_empty()
+            && !self.texts.is_empty()
+            && self.lines.is_empty()
+            && self.circles.is_empty()
+            && self.arcs.is_empty()
+            && self.ellipses.is_empty()
+            && self.splines.is_empty();
+        let mut faces = Vec::new();
+        let mut names = Vec::new();
+        if !text_only {
+            let wire = self.solved_profile_wire(session, parameters, datum, true, &solution)?;
+            let main = face(&wire, &self.holes, "profile")?;
+            if self.regions.is_empty() && self.texts.is_empty() {
+                return Ok(main);
+            }
+            faces.push(main);
+            names.push("profile".to_owned());
         }
-        let mut faces = vec![main];
         for (index, region) in self.regions.iter().enumerate() {
             let name = format!("region {index}");
             let outer = self.loop_wire(
@@ -139,9 +153,93 @@ impl SketchDefinition {
                 normal,
             )?;
             faces.push(face(&outer, &region.holes, &name)?);
+            names.push(name);
         }
-        disjoint_faces(session, &faces)?;
+        for text in &self.texts {
+            faces.push(
+                self.text_faces(session, parameters, &solution, text, &transform, &direction)?,
+            );
+            names.push(format!("text '{}'", text.id));
+        }
+        if faces.len() == 1 {
+            return Ok(faces.pop().unwrap());
+        }
+        disjoint_faces(session, &faces, &names)?;
         Ok(session.create_compound(&faces.iter().collect::<Vec<_>>())?)
+    }
+
+    /// The glyph faces of one text, placed at its solved anchor along its
+    /// baseline angle in the sketch plane.
+    pub(crate) fn text_faces<'session>(
+        &self,
+        session: &'session Session,
+        parameters: &HashMap<String, ParameterValue>,
+        solution: &SketchSolution,
+        text: &SketchText,
+        transform: &impl Fn(SketchPoint2) -> Vec3,
+        direction: &impl Fn(SketchPoint2) -> Vec3,
+    ) -> Result<Shape<'session>, ModelError> {
+        let file = font_file(session, &text.font, text.style)?;
+        let angle = match &text.angle {
+            Some(angle) => scalar(angle, parameters, Dimension::Scalar)?,
+            None => 0.0,
+        };
+        let (sin, cos) = angle.sin_cos();
+        let align = match text.align {
+            SketchTextAlign::Start => occt_bridge::TextAlign::Start,
+            SketchTextAlign::Center => occt_bridge::TextAlign::Center,
+            SketchTextAlign::End => occt_bridge::TextAlign::End,
+        };
+        session
+            .create_text(
+                &text.text,
+                &file,
+                scalar(&text.height, parameters, Dimension::Length)?,
+                transform(solution.points[&text.anchor]),
+                direction(SketchPoint2 { x: cos, y: sin }),
+                direction(SketchPoint2 { x: -sin, y: cos }),
+                align,
+            )
+            .map_err(|error| ModelError::from(error).context(&format!("sketch text '{}'", text.id)))
+    }
+
+    /// Sampled glyph edges of every text in sketch-local XY, with the
+    /// resolved font file, for previews: `samples` points per edge and at
+    /// most 20,000 edges in all.
+    pub fn text_outlines(
+        &self,
+        session: &Session,
+        parameters: &HashMap<String, ParameterValue>,
+        solution: &SketchSolution,
+        samples: usize,
+    ) -> Result<Vec<SketchTextOutlines>, ModelError> {
+        let local = |p: SketchPoint2| Vec3::new(p.x, p.y, 0.0);
+        let mut edges_left = 20_000usize;
+        self.texts
+            .iter()
+            .map(|text| {
+                let faces = self.text_faces(session, parameters, solution, text, &local, &local)?;
+                let edges = session.subshapes(&faces, ShapeType::Edge)?;
+                edges_left = edges_left
+                    .checked_sub(edges.len())
+                    .ok_or_else(|| ModelError::new("text previews exceed 20,000 glyph edges"))?;
+                let outlines = edges
+                    .iter()
+                    .map(|edge| {
+                        Ok(session
+                            .edge_sample_points(edge, samples)?
+                            .into_iter()
+                            .map(|p| SketchPoint2 { x: p.x, y: p.y })
+                            .collect())
+                    })
+                    .collect::<Result<Vec<_>, ModelError>>()?;
+                Ok(SketchTextOutlines {
+                    id: text.id.clone(),
+                    font_file: font_file(session, &text.font, text.style)?,
+                    outlines,
+                })
+            })
+            .collect()
     }
 
     /// A closed boundary wire through the named entities: an exact circle or
@@ -233,6 +331,11 @@ impl SketchDefinition {
     ) -> Result<Shape<'session>, ModelError> {
         if let std::borrow::Cow::Owned(expanded) = self.with_patterns(Some(parameters))? {
             return expanded.profile_wire(session, parameters, datum, closed);
+        }
+        if !self.texts.is_empty() {
+            return Err(ModelError::new(
+                "sketch texts apply only to face outputs, not wires",
+            ));
         }
         if !self.holes.is_empty() || !self.regions.is_empty() {
             return Err(ModelError::new(
@@ -769,10 +872,14 @@ impl SketchDefinition {
     }
 }
 
-/// Rejects overlapping region faces: candidate pairs come from a sweep over
-/// their bounds along x, then a native common must have no area. O(n log n)
-/// plus booleans for pairs whose bounds overlap.
-fn disjoint_faces(session: &Session, faces: &[Shape<'_>]) -> Result<(), ModelError> {
+/// Rejects overlapping faces of a sketch output: candidate pairs come from
+/// a sweep over their bounds along x, then a native common must have no
+/// area. O(n log n) plus booleans for pairs whose bounds overlap.
+fn disjoint_faces(
+    session: &Session,
+    faces: &[Shape<'_>],
+    names: &[String],
+) -> Result<(), ModelError> {
     let mut bounds = faces
         .iter()
         .enumerate()
@@ -796,20 +903,36 @@ fn disjoint_faces(session: &Session, faces: &[Shape<'_>]) -> Result<(), ModelErr
             let area = session.surface_area(&common).unwrap_or(0.0);
             if area > 1e-9 {
                 let (first, second) = ((*i).min(*j), (*i).max(*j));
-                let name = |index: usize| {
-                    if index == 0 {
-                        "profile".to_owned()
-                    } else {
-                        format!("region {}", index - 1)
-                    }
-                };
                 return Err(ModelError::new(format!(
                     "sketch {} and {} overlap",
-                    name(first),
-                    name(second)
+                    names[first], names[second]
                 )));
             }
         }
     }
     Ok(())
+}
+
+/// Installed font files by family and style, resolved once per process.
+pub(crate) fn font_file(
+    session: &Session,
+    family: &str,
+    style: SketchFontStyle,
+) -> Result<String, ModelError> {
+    use std::sync::{Mutex, OnceLock};
+    static FILES: OnceLock<Mutex<HashMap<(String, SketchFontStyle), String>>> = OnceLock::new();
+    let files = FILES.get_or_init(Default::default);
+    let key = (family.to_owned(), style);
+    if let Some(file) = files.lock().unwrap().get(&key) {
+        return Ok(file.clone());
+    }
+    let native = match style {
+        SketchFontStyle::Regular => occt_bridge::FontStyle::Regular,
+        SketchFontStyle::Bold => occt_bridge::FontStyle::Bold,
+        SketchFontStyle::Italic => occt_bridge::FontStyle::Italic,
+        SketchFontStyle::BoldItalic => occt_bridge::FontStyle::BoldItalic,
+    };
+    let file = session.font_file(family, native)?;
+    files.lock().unwrap().insert(key, file.clone());
+    Ok(file)
 }

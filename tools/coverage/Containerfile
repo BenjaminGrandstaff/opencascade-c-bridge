@@ -3,4 +3,5 @@
 FROM registry.fedoraproject.org/fedora:44
 RUN dnf -y install --setopt=install_weak_deps=False \
         rust cargo clang compiler-rt llvm opencascade-devel cmake gcc-c++ make \
+        freetype-devel fontconfig-devel liberation-sans-fonts \
     && dnf clean all
