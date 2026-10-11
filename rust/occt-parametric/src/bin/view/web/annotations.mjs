@@ -37,14 +37,14 @@ export function createAnnotationController({ request, mount, changed = () => {} 
         if (turn === serial) changed(`Annotations unavailable: ${error.message}`);
       } finally { if (turn === serial) pending = ''; }
     },
-    async preview(data) {
+    async preview(data, message = 'Rejected edit preview — the accepted model is unchanged.') {
       const turn = ++serial;
       key = ''; pending = '';
       rejected = JSON.stringify([data.scenes[0]?.instance, data.version]);
       await show(data);
       if (turn !== serial) return;
       viewer.update(data);
-      changed('Rejected edit preview — the accepted model is unchanged.', false);
+      changed(message, false);
     },
     invalidate() { serial += 1; key = ''; pending = ''; rejected = ''; },
     fit() { viewer?.fit(); },

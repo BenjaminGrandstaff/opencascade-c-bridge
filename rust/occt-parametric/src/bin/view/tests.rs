@@ -990,3 +990,114 @@ fn rejected_dimension_edits_show_conflicts_without_accepting_or_saving_geometry(
             .any(|s| s["kind"] == "sketch" && s["solver"]["solved"] == true)
     );
 }
+
+#[test]
+fn sketch_drafts_are_guarded_previewed_verified_and_saved() {
+    let directory = Directory::new();
+    let request: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../tools/model/sketch-repair.request.json"
+    ))
+    .unwrap();
+    let document = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+    let model = PathBuf::from(directory.model(&document));
+    let original = fs::read_to_string(&model).unwrap();
+    let mut studio = serve::Studio::load(&model, None).unwrap();
+    let (_, sketches) = get(&mut studio, "/api/sketches");
+    let (_, state) = get(&mut studio, "/api/state");
+    let (_, instances) = get(&mut studio, "/api/instances");
+    let gltf = studio.handle("GET", "/api/model.gltf", b"").body;
+    let expected = sketches["sketches"][0]["definition"].clone();
+    let mut draft = expected.clone();
+    draft["constraints"].as_array_mut().unwrap().pop();
+    let mut edit = json!({"version": state["version"], "instance": instances["instances"][0]["id"], "feature": sketches["sketches"][0]["feature"], "expected": expected, "definition": draft, "apply": false});
+    let post = |studio: &mut serve::Studio, body: &serde_json::Value| {
+        studio.handle("POST", "/api/sketch", body.to_string().as_bytes())
+    };
+    let preview = post(&mut studio, &edit);
+    assert_eq!(preview.status, 200);
+    let preview: serde_json::Value = serde_json::from_slice(&preview.body).unwrap();
+    assert_eq!(preview["can_apply"], true);
+    assert_eq!(preview["annotations"]["accepted"], false);
+    assert_eq!(get(&mut studio, "/api/state").1, state);
+    assert_eq!(studio.handle("GET", "/api/model.gltf", b"").body, gltf);
+    assert_eq!(fs::read_to_string(&model).unwrap(), original);
+    let mut bad = edit.clone();
+    bad["apply"] = json!(true);
+    bad["definition"]["profile"] = json!(["missing-curve"]);
+    assert_eq!(post(&mut studio, &bad).status, 422);
+    bad = edit.clone();
+    bad["apply"] = json!(true);
+    bad["expected"]["id"] = json!("stale-definition");
+    assert_eq!(post(&mut studio, &bad).status, 422);
+    assert_eq!(get(&mut studio, "/api/state").1, state);
+    edit["apply"] = json!(true);
+    assert_eq!(post(&mut studio, &edit).status, 200);
+    assert_eq!(fs::read_to_string(&model).unwrap(), original);
+    assert_eq!(get(&mut studio, "/api/state").1["dirty"], true);
+    assert_eq!(
+        post(&mut studio, &edit).status,
+        422,
+        "old version cannot overwrite an applied edit"
+    );
+    assert_eq!(studio.handle("POST", "/api/save", b"").status, 200);
+    assert_ne!(fs::read_to_string(&model).unwrap(), original);
+    assert_eq!(
+        get(&mut studio, "/api/sketches").1["sketches"][0]["definition"],
+        edit["definition"]
+    );
+}
+
+#[test]
+fn sketch_apply_rejects_failed_required_checks_and_keeps_the_source() {
+    let directory = Directory::new();
+    let request: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../tools/model/sketch-repair.request.json"
+    ))
+    .unwrap();
+    let mut document = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+    document.family.requirements.push(Requirement {
+        id: "volume-budget".into(),
+        version: 1,
+        kind: RequirementKind::Dimensional,
+        priority: RequirementPriority::Required,
+        statement: "Keep volume under 11,000 mm³".into(),
+        rule: VerificationRule::VolumeRange {
+            output: "body".into(),
+            minimum: Volume {
+                value: 1.0,
+                unit: LengthUnit::Millimeter,
+            },
+            maximum: Volume {
+                value: 11_000.0,
+                unit: LengthUnit::Millimeter,
+            },
+        },
+        provenance: "test".into(),
+        traces: vec![],
+    });
+    let model = PathBuf::from(directory.model(&document));
+    let original = fs::read_to_string(&model).unwrap();
+    let mut studio = serve::Studio::load(&model, None).unwrap();
+    let (_, sketches) = get(&mut studio, "/api/sketches");
+    let (_, state) = get(&mut studio, "/api/state");
+    let (_, instances) = get(&mut studio, "/api/instances");
+    let expected = sketches["sketches"][0]["definition"].clone();
+    let mut definition = expected.clone();
+    definition["constraints"][4]["horizontal_distance"]["value"] =
+        json!({"literal":{"value":80,"dimension":"length","unit":"millimeter"}});
+    let mut edit = json!({"version": state["version"], "instance": instances["instances"][0]["id"], "feature": sketches["sketches"][0]["feature"], "expected":expected, "definition":definition, "apply":false});
+    let preview = studio.handle("POST", "/api/sketch", edit.to_string().as_bytes());
+    assert_eq!(preview.status, 200);
+    let preview: serde_json::Value = serde_json::from_slice(&preview.body).unwrap();
+    assert_eq!(preview["can_apply"], false);
+    assert!(preview["error"].as_str().unwrap().contains("volume-budget"));
+    edit["apply"] = json!(true);
+    assert_eq!(
+        studio
+            .handle("POST", "/api/sketch", edit.to_string().as_bytes())
+            .status,
+        422
+    );
+    assert_eq!(get(&mut studio, "/api/state").1, state);
+    assert_eq!(fs::read_to_string(&model).unwrap(), original);
+}

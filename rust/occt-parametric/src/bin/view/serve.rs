@@ -1,5 +1,7 @@
 //! `--serve`: a localhost page that renders the model with WebGL, edits
 //! family parameter defaults, saves them, and follows saves made elsewhere.
+#[path = "serve_sketch.rs"]
+mod sketch;
 use super::{POLL, stamp, view_data};
 use occt_bridge::Session;
 use occt_parametric::{
@@ -599,6 +601,19 @@ impl Studio {
                     None => Response::error(400, "annotations need ?id="),
                 }
             }
+            ("GET", "/sketch-editor.mjs") => Response::text(
+                200,
+                "text/javascript",
+                include_str!("web/sketch-editor.mjs"),
+            ),
+            ("GET", "/api/sketches") => match self.sketches() {
+                Ok(data) => Response::json(200, &data),
+                Err(error) => Response::error(422, &error),
+            },
+            ("POST", "/api/sketch") => match self.sketch_edit(body) {
+                Ok(data) => Response::json(200, &data),
+                Err(error) => Response::error(422, &error),
+            },
             ("GET", "/api/state") => Response::json(200, &self.state()),
             ("GET", "/api/model.gltf") => Response::text(200, "model/gltf+json", &self.gltf),
             ("GET", "/api/requirements") => {

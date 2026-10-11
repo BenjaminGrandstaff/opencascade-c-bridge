@@ -120,7 +120,7 @@ for(let i=0;i<data.scenes.length;i++){
  assert(!elements.overlay.children.some(e=>e.attributes['data-annotation']===dimension.id),'dimension toggle hides annotations');
  visibility.checked=true;visibility.emit('change');
  elements.viewport.emit('keydown',{key:'Escape'});assert.equal(viewer.selected,undefined);
- if(viewer.scene.solver&&!viewer.scene.solver.solved){assert(elements.status.textContent.includes('Conflicting'));assert(viewer.scene.annotations.some(a=>a.status==='failed'));}
+ if(viewer.scene.solver&&!viewer.scene.solver.solved){assert(elements.status.textContent.includes('did not converge'));assert(viewer.scene.annotations.some(a=>a.status==='failed'));}
 }
 // Native regeneration replaces scene data without resetting camera or selection.
 const validIndex=data.scenes.findIndex(s=>!s.error);
@@ -137,5 +137,7 @@ viewer.update(revised);
 assert.equal(viewer.selected,selectedDimension.id);
 assert.equal(JSON.stringify(viewer.camera),camera,'regeneration preserves orbit, zoom and pan');
 assert(elements.selection.children.some(e=>e.tagName==='h3'&&e.textContent==='Updated native dimension'));
+const sketchScene=data.scenes.find(s=>s.kind==='sketch');
+if(sketchScene){viewer.selectScene('sketch',sketchScene.feature);assert.equal(viewer.scene.feature,sketchScene.feature);}
 viewer.destroy();
 console.log('PASS viewer scene navigation, label selection, related controls, orbit/pan/zoom, visibility and failed states');

@@ -122,6 +122,7 @@
 <script src="/annotations.js"></script>
 <script type="module">
 import { drawAssemblyAnnotations } from "./assembly_annotations.mjs";
+import { createSketchEditor } from "./sketch-editor.mjs";
 import { createAnnotationController, editableControls } from "./annotations.mjs";
 import { createRenderer, fitCamera, modelToGltf, pan, parseGltf, pick, ray } from "./viewer.mjs";
 
@@ -148,6 +149,7 @@ let instanceView = null;
 let report = null;
 let annotationRoot = null;
 let linked = [];
+let sketchEditor = null;
 let assemblySelected = null;
 const annotations = createAnnotationController({
   request: id => api(`/api/annotations?id=${encodeURIComponent(id)}`),
@@ -157,14 +159,25 @@ const annotations = createAnnotationController({
       const panel = await (await fetch('/annotation-panel.html')).text();
       annotationRoot.innerHTML = `<link rel="stylesheet" href="/annotations.css"><style>
         :host{display:block;color:#202c3b;background:#f3f5f8;color-scheme:light;font:14px system-ui,sans-serif}
-        main{padding:12px;gap:12px;grid-template-columns:minmax(0,1fr) 285px}
+        main{padding:12px;gap:12px;grid-template-columns:minmax(0,1fr) 285px;align-items:start}
+        aside{max-height:calc(100vh - 115px);overflow:auto}.workspace{position:sticky;top:0}
         #viewport{height:max(350px,calc(100vh - 265px))}.panel-summary{padding:8px 14px;font-weight:600}
         .linked-edit{display:grid;gap:8px;margin-top:12px;padding-top:12px;border-top:1px solid #dce2e9}
-        .linked-edit label{display:grid;gap:4px}.linked-edit input,.linked-edit select{width:100%;padding:6px;border:1px solid #cad4e0;border-radius:4px}
-        @media(max-width:1050px){main{grid-template-columns:1fr}#viewport{height:420px}}
+        .point{pointer-events:all;cursor:pointer}.linked-edit fieldset{margin:8px 0;border:1px solid #cad4e0;border-radius:5px}.linked-edit fieldset:focus-within{background:#edf3ff}.linked-edit input[type=checkbox]{width:auto;justify-self:start}.linked-edit label{display:grid;gap:4px}.linked-edit input,.linked-edit select{width:100%;padding:6px;border:1px solid #cad4e0;border-radius:4px}
+        @media(max-width:1050px){main{grid-template-columns:1fr}#viewport{height:420px}aside{max-height:none}.workspace{position:static}}
       </style>${panel}`;
     }
-    return window.createOcctAnnotatedViewer(annotationRoot, data, renderLinkedEditor);
+    const viewer = window.createOcctAnnotatedViewer(annotationRoot, data, renderLinkedEditor, {
+      onPoint: (id, scene) => sketchEditor?.selectPoint(id, scene),
+    });
+    sketchEditor = createSketchEditor({host: annotationRoot.querySelector('aside'), request: api,
+      instance: () => scope || instanceIds.values().next().value,
+      showSketch: feature => viewer.selectScene('sketch', feature),
+      preview: data => annotations.preview(data, "Sketch draft preview — Apply to update the model."),
+      applied: async next => { annotations.invalidate(); await apply(next); await refreshAnnotations(); },
+      restore: async () => { annotations.invalidate(); await refreshAnnotations(); },
+    });
+    return viewer;
   },
   changed: (message, waiting = true) => {
     $("annotation-message").textContent = message;

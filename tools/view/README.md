@@ -3,7 +3,7 @@
 `occt-view` regenerates a saved model document and shows every part, named
 after its instance and colored by its material appearance: in OCCT's DRAW
 viewer, or with `--serve` in a browser page that also edits the family's
-parameters.
+parameters and sketch definitions.
 
 ```sh
 OCCT_BRIDGE_LIB_DIR="$PWD/build" LD_LIBRARY_PATH="$PWD/build" \
@@ -72,6 +72,36 @@ Linked parameter fields use the parameter's actual unit, including for
 multi-parameter formulas; they do not silently invert a dimension expression.
 Native checks and geometry are shared with the standalone
 [dimension viewer](../model/VIEWER.md).
+
+### Sketch geometry drafts
+
+In **Dimensions & sketches**, choose **Edit sketch geometry**, select a sketch
+feature, and click **Load sketch draft**. Loading switches to that sketch view.
+The editor changes the primary family's definition, shared by every instance;
+instance selection chooses the preview's parameter values, not an independent
+sketch definition.
+
+Edit point coordinates and fixed/free status, or add named points, lines and
+circles. Lines use two existing points; circles use center and rim points.
+Click a visible sketch point to focus its coordinate controls. Literal coordinate
+fields use millimeters; parameter/formula coordinates retain their expressions.
+Free-point coordinates are solver starting positions, so constraints may move
+them. Edit the outer profile's curve names to include new boundary geometry.
+Removing a referenced point requires repairing its references in the same draft.
+
+The **Constraints** section edits/removes constraint definitions as JSON. The
+**Full definition** section exposes the remaining authored geometry, holes,
+regions, and profile edits. These advanced controls currently require knowledge
+of the model schema; this is a form-based editor, with no canvas dragging or
+click-to-draw tools yet.
+
+**Preview draft** shows candidate geometry and solver evidence without changing
+the accepted model or its file. **Apply verified draft** checks the model version
+and complete expected sketch, validates the definition, regenerates all variants,
+and enforces required checks before replacing the studio state. Rejected or stale
+drafts remain editable. **Save** writes an applied edit; **Revert** reloads the
+saved model. **Discard draft** closes the local draft and restores the accepted
+annotation view. No schema or native ABI change is needed.
 
 Choose **Assembly** to see every placed part and material color in the WebGL
 glTF view: click a part to select it, drag to orbit, Shift-drag or right-drag to
@@ -182,6 +212,7 @@ Annotation work is lazy and bounded per selected instance, with one cached
 result keyed by model version. Late requests cannot replace a newer instance
 or pair new geometry with older controls. Save waits for queued edits to finish.
 Native tests cover live sketch/solid updates, override isolation, save/revert,
-and rejected-constraint previews without acceptance. Browser automation was
-unavailable; the real page logic and shared renderer run against minimal DOM
-hosts in the JavaScript tests.
+and rejected-constraint previews without acceptance. The real page logic and shared renderer also run against minimal DOM
+hosts in the JavaScript tests. The sketch draft workflow was verified in headless
+Chrome through coordinate editing, preview, verified apply, and revert, with no
+page errors.

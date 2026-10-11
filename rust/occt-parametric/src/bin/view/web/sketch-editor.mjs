@@ -1,0 +1,121 @@
+// A local draft is isolated from the studio until a guarded, verified Apply.
+export const length = value => ({ literal: { value, dimension: 'length', unit: 'millimeter' } });
+export function addElement(definition, collection, element) {
+  if (!element.id?.trim()) throw new Error('Enter an entity name.');
+  const collections = ['points','lines','circles','arcs','ellipses','splines','shapes','texts','patterns','projections','measurements'];
+  if (collections.some(key => (definition[key] ?? []).some(item => item.id === element.id))) throw new Error('That entity name already exists.');
+  (definition[collection] ??= []).push(structuredClone(element));
+}
+export function createSketchEditor({ host, request, instance, preview, applied, restore, showSketch = () => {} }) {
+  let baseline = null, draft = null, version = null, feature = null, busy = false, generation = 0;
+  const panel = document.createElement('section');
+  panel.className = 'linked-edit';
+  const launch = document.createElement('button'); launch.textContent = 'Edit sketch geometry';
+  const content = document.createElement('div'), status = document.createElement('p'); status.setAttribute('role', 'status');
+  panel.append(launch, content, status); host.prepend(panel);
+  const message = text => { status.textContent = text; };
+  function button(text, action) {
+    const b = document.createElement('button'); b.textContent = text;
+    b.addEventListener('click', async () => {
+      if (busy) return;
+      try { await action(); } catch (error) { message(error.message); }
+    }); return b;
+  }
+  function input(label, value, change, type = 'text') {
+    const row = document.createElement('label'); row.textContent = label;
+    const control = document.createElement('input'); control.type = type;
+    if (type === 'checkbox') control.checked = value; else control.value = value;
+    if (type === 'number') control.step = 'any';
+    control.addEventListener('change', () => {
+      if (busy) return;
+      if (type === 'number' && (!control.value.trim() || !Number.isFinite(Number(control.value)))) { message('Enter a finite coordinate.'); return; }
+      change(type === 'checkbox' ? control.checked : type === 'number' ? Number(control.value) : control.value);
+      message('Draft changed. Preview before applying.');
+    }); row.append(control); return row;
+  }
+  function jsonEditor(label, value, change) {
+    let current = structuredClone(value);
+    const row = document.createElement('label'); row.textContent = label;
+    const control = document.createElement('textarea'); control.value = JSON.stringify(value, null, 2); control.rows = 5; control.style.width = '100%';
+    control.addEventListener('change', () => {
+      try { const next = JSON.parse(control.value); change(next); current = structuredClone(next); message('Draft changed. Preview before applying.'); }
+      catch (error) { message(`Invalid JSON: ${error.message}`); control.value = JSON.stringify(current, null, 2); }
+    }); row.append(control); return row;
+  }
+  function render() {
+    content.replaceChildren();
+    const note = document.createElement('p'); note.textContent = `Family-wide edit · ${feature}. Coordinates are sketch-local. Free point coordinates are solver starting positions; constraints determine the solved shape.`; content.append(note);
+    for (const point of draft.points ?? []) {
+      const row = document.createElement('fieldset'); row.dataset.editPoint = point.id;
+      const title = document.createElement('legend'); title.textContent = point.id; row.append(title);
+      for (const axis of ['x','y']) {
+        const q = point[axis]?.literal;
+        if (q?.unit === 'millimeter') row.append(input(`${axis.toUpperCase()} (mm)`, q.value, value => point[axis] = length(value), 'number'));
+        else row.append(jsonEditor(`${axis.toUpperCase()} expression`, point[axis], value => point[axis] = value));
+      }
+      row.append(input('Fixed position', point.fixed, value => point.fixed = value, 'checkbox'));
+      row.append(button('Remove point', () => { draft.points = draft.points.filter(p => p.id !== point.id); render(); message('Point removed from draft. Referencing geometry must also be updated.'); }));
+      content.append(row);
+    }
+    const add = document.createElement('details'), title = document.createElement('summary'); title.textContent = 'Add geometry'; add.append(title);
+    const kind = document.createElement('select'); for (const name of ['point','line','circle']) kind.append(new Option(name, name));
+    const fields = document.createElement('div'); let values = {};
+    function form() {
+      fields.replaceChildren(); values = { id: '', x: 0, y: 0, fixed: true, first: draft.points?.[0]?.id ?? '', second: draft.points?.[1]?.id ?? '' };
+      fields.append(input('Entity name', '', value => values.id = value));
+      if (kind.value === 'point') {
+        fields.append(input('X (mm)', 0, value => values.x = value, 'number'), input('Y (mm)', 0, value => values.y = value, 'number'), input('Fixed position', true, value => values.fixed = value, 'checkbox'));
+      } else {
+        for (const [key, caption] of [['first', kind.value === 'line' ? 'Start point' : 'Center point'], ['second', kind.value === 'line' ? 'End point' : 'Rim point']]) {
+          const label = document.createElement('label'); label.textContent = caption;
+          const select = document.createElement('select'); for (const p of draft.points ?? []) select.append(new Option(p.id, p.id)); select.value = values[key]; select.onchange = () => values[key] = select.value;
+          label.append(select); fields.append(label);
+        }
+      }
+    }
+    kind.onchange = form; form(); add.append(kind, fields, button('Add to draft', () => {
+      const k = kind.value;
+      if (k !== 'point' && (!values.first || !values.second || values.first === values.second)) throw new Error('Choose two distinct points.');
+      const element = k === 'point' ? {id: values.id, x: length(values.x), y: length(values.y), fixed: values.fixed} : k === 'line' ? {id: values.id, start: values.first, end: values.second} : {id: values.id, center: values.first, rim: values.second};
+      addElement(draft, {point:'points',line:'lines',circle:'circles'}[k], element); render(); message('Geometry added to the draft.');
+    })); content.append(add);
+    content.append(input('Outer profile (curve names, comma separated)', (draft.profile ?? []).join(', '), value => draft.profile = value.split(',').map(s => s.trim()).filter(Boolean)));
+    const constraints = document.createElement('details'), ct = document.createElement('summary'); ct.textContent = `Constraints (${draft.constraints?.length ?? 0})`; constraints.append(ct);
+    for (const [index, constraint] of (draft.constraints ?? []).entries()) {
+      constraints.append(jsonEditor(`Constraint ${index + 1}`, constraint, value => draft.constraints[index] = value), button(`Remove constraint ${index + 1}`, () => { draft.constraints.splice(index, 1); render(); message('Constraint removed from draft.'); }));
+    }
+    constraints.append(button('Add constraint definition', () => { (draft.constraints ??= []).push({horizontal:{line:draft.lines?.[0]?.id ?? ''}}); render(); message('Edit the constraint definition, then preview.'); })); content.append(constraints);
+    const advanced = document.createElement('details'), at = document.createElement('summary'); at.textContent = 'Full definition (advanced geometry, regions and constraints)'; advanced.append(at, jsonEditor('Sketch definition', draft, value => { draft = value; render(); })); content.append(advanced);
+    content.append(button('Preview draft', () => submit(false)), button('Apply verified draft', () => submit(true)), button('Discard draft', async () => { generation++; baseline = draft = null; content.replaceChildren(); message('Draft discarded.'); await restore(); }));
+  }
+  async function submit(apply) {
+    busy = true; content.inert = true; launch.disabled = true;
+    message(apply ? 'Regenerating and checking requirements…' : 'Computing draft preview…');
+    try {
+      const response = await request('/api/sketch', {method:'POST', body:JSON.stringify({version, instance:instance(), feature, expected:baseline, definition:draft, apply})});
+      if (apply) { baseline = draft = null; content.replaceChildren(); await applied(response.state); message('Sketch applied. Save writes it to the model file.'); }
+      else { await preview(response.annotations); message(response.can_apply ? 'Preview passes regeneration and required checks. Apply repeats the checks against the current model.' : `Draft cannot be applied: ${response.error}`); }
+    } finally { busy = false; content.inert = false; launch.disabled = false; }
+  }
+  launch.addEventListener('click', async () => {
+    if (busy) return;
+    const turn = ++generation;
+    try {
+      const data = await request('/api/sketches'); if (turn !== generation) return;
+      if (!data.sketches.length) { message('This family has no authored sketch features.'); return; }
+      // Explicit selection avoids changing a different sketch than the displayed one.
+      content.replaceChildren();
+      const choice = document.createElement('select'); choice.setAttribute('aria-label', 'Sketch to edit');
+      for (const item of data.sketches) choice.append(new Option(item.feature, item.feature));
+      content.append(choice, button('Load sketch draft', () => {
+        const item = data.sketches.find(s => s.feature === choice.value);
+        version = data.version; feature = item.feature; baseline = structuredClone(item.definition); draft = structuredClone(baseline); showSketch(feature); render(); message('Draft loaded. Click a visible sketch point to find its coordinate controls.');
+      })); message('Choose a sketch. Loading replaces any previous local draft.');
+    } catch (error) { message(error.message); }
+  });
+  return { selectPoint(id, scene) {
+    if (!draft || scene.feature !== feature) return;
+    const row = [...content.querySelectorAll('[data-edit-point]')].find(row => row.dataset.editPoint === id);
+    row?.scrollIntoView({block:'nearest'}); row?.querySelector('input,textarea')?.focus();
+  }};
+}
