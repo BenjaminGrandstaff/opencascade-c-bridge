@@ -2,9 +2,7 @@
 
 use std::{
     cell::Cell,
-    error::Error,
     ffi::{CStr, CString, c_char, c_int, c_void},
-    fmt,
     marker::PhantomData,
     path::Path,
     ptr::{self, NonNull},
@@ -21,7 +19,6 @@ mod session;
 mod types;
 
 use ffi::*;
-pub use projection::{AnalyticCurve, BezierSpan};
 pub use session::*;
 pub use types::*;
 

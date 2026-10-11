@@ -1,0 +1,8 @@
+[package]
+name = "occt-types"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Plain value types shared by the opencascade-c-bridge Rust crates"
+
+[dependencies]

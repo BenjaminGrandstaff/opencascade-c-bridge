@@ -149,7 +149,7 @@ impl Session {
                     )
                 };
                 (status == OK).then(|| Diagnostic {
-                    kind: DiagnosticKind::from_raw(raw.kind),
+                    kind: diagnostic_kind(raw.kind),
                     code: raw.code,
                     name: self.read_text_at(index, occt_bridge_session_diagnostic_name),
                     input_index: usize::try_from(raw.input_index).ok(),

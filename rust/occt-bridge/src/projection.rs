@@ -1,30 +1,6 @@
 //! Orthographic hidden-line removal and curve sampling for drawing exports.
 use super::*;
 
-/// Exact located line or conic. Conic points are center + major*cos(t) +
-/// minor*sin(t); parameters follow edge orientation (possibly descending).
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum AnalyticCurve {
-    Line {
-        start: Vec3,
-        end: Vec3,
-    },
-    Conic {
-        center: Vec3,
-        major: Vec3,
-        minor: Vec3,
-        first: f64,
-        last: f64,
-    },
-}
-
-/// One exact rational Bezier span, parameterized on [0, 1].
-#[derive(Clone, Debug, PartialEq)]
-pub struct BezierSpan {
-    pub poles: Vec<Vec3>,
-    pub weights: Vec<f64>,
-}
-
 impl Session {
     /// Exact non-destructive solid clipping by an infinite plane. The retained
     /// side includes the plane. Result may be empty and keeps input ancestry.

@@ -5,6 +5,9 @@ version = 4
 [[package]]
 name = "occt-bridge"
 version = "0.1.0"
+dependencies = [
+ "occt-types",
+]
 
 [[package]]
 name = "occt-recipes"
@@ -12,3 +15,7 @@ version = "0.1.0"
 dependencies = [
  "occt-bridge",
 ]
+
+[[package]]
+name = "occt-types"
+version = "0.1.0"

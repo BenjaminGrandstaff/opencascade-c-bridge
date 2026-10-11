@@ -33,6 +33,9 @@ dependencies = [
 [[package]]
 name = "occt-bridge"
 version = "0.1.0"
+dependencies = [
+ "occt-types",
+]
 
 [[package]]
 name = "occt-parametric"
@@ -43,6 +46,10 @@ dependencies = [
  "serde",
  "serde_json",
 ]
+
+[[package]]
+name = "occt-types"
+version = "0.1.0"
 
 [[package]]
 name = "proc-macro2"

@@ -2,6 +2,8 @@
 /rust/occt-bridge/target/
 /rust/occt-recipes/target/
 /rust/occt-parametric/target/
+/rust/occt-types/target/
+/rust/occt-parametric-core/target/
 *.brep
 !/tests/fixtures/*.brep
 /tools/mesh/**/__pycache__/

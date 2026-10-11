@@ -30,7 +30,7 @@ podman run --rm -v "$root:$root:ro,Z" -v "$out:/out:Z" "$image" bash -c "
     export OCCT_BRIDGE_LIB_DIR=/tmp/build LD_LIBRARY_PATH=/tmp/build
     export CARGO_TARGET_DIR=/tmp/target RUSTFLAGS='-C instrument-coverage'
     objects=()
-    for crate in occt-bridge occt-recipes occt-parametric; do
+    for crate in occt-types occt-bridge occt-recipes occt-parametric; do
         manifest='$root/rust/'\$crate/Cargo.toml
         if ! cargo test --quiet --locked --manifest-path \"\$manifest\" >/tmp/coverage-tests.log 2>&1; then
             cat /tmp/coverage-tests.log
