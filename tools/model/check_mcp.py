@@ -935,5 +935,18 @@ with tempfile.TemporaryDirectory(prefix='occb-mcp-scale-') as root:
         elapsed=time.monotonic()-started
         assert elapsed<10
         print(f'PASS MCP 20 keyhole tags trimmed at native crossings: {elapsed:.3f}s / 10s')
+        sets=client.tool('occt_get_example',dict(name='spacer-set'))['structuredContent']
+        for i in range(1,20):
+            sets['model']['instances'].append({'clone':dict(id=f'set-{i}',source='set',overrides={},provenance='scale')})
+            sets['outputs'].append(dict(instance=f'set-{i}',output='body'))
+        started=time.monotonic()
+        result=client.tool('occt_visualize_model',sets)
+        assert not result['isError'],result
+        data=json.loads(client.call('resources/read',dict(uri=result['structuredContent']['resources']['view.json']))['result']['contents'][0]['text'])
+        solids=[s for s in data['scenes'] if s['kind']=='solid']
+        assert len(solids)==20 and all(s['valid'] and abs(s['bounds'][1][0]-62)<1e-9 for s in solids)
+        elapsed=time.monotonic()-started
+        assert elapsed<10
+        print(f'PASS MCP 20 three-region spacer sets extruded from one sketch: {elapsed:.3f}s / 10s')
     finally:
         client.close()

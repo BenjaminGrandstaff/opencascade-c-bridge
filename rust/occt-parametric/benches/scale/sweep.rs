@@ -16,6 +16,7 @@ fn sketch(id: &str, x_axis: (f64, f64, f64), y_axis: (f64, f64, f64)) -> SketchD
     SketchDefinition {
         measurements: Vec::new(),
         shapes: Vec::new(),
+        regions: Vec::new(),
         acceptance: Default::default(),
         id: id.into(),
         datum_plane: None,

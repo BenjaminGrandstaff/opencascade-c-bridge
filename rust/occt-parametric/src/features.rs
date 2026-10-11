@@ -27,6 +27,23 @@ pub(crate) fn execute_profile_sweep<'session>(
     shapes: &HashMap<String, Shape<'session>>,
     definitions: &Features<'_>,
 ) -> Result<Shape<'session>, ModelError> {
+    // A multi-region sketch face sweeps each face into one solid of a
+    // compound; regions are disjoint, so the solids are too.
+    if session.shape_type(profile)? == ShapeType::Compound {
+        let faces = session.subshapes(profile, ShapeType::Face)?;
+        if faces.is_empty() || session.subshape_count(profile, ShapeType::Solid)? > 0 {
+            return Err(ModelError::new(
+                "sweep input must be a planar face or closed planar wire",
+            ));
+        }
+        let solids = faces
+            .iter()
+            .map(|face| {
+                execute_profile_sweep(session, operation, parameters, face, shapes, definitions)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        return Ok(session.create_compound(&solids.iter().collect::<Vec<_>>())?);
+    }
     let temporary_face = match session.shape_type(profile)? {
         ShapeType::Wire => Some(session.create_face_from_wire(profile)?),
         ShapeType::Face => None,

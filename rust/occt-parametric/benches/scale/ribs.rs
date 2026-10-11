@@ -45,6 +45,7 @@ fn rib_case(centered: bool, mode: RibCase) -> Outcome {
             sketch: Box::new(SketchDefinition {
                 measurements: Vec::new(),
                 shapes: Vec::new(),
+                regions: Vec::new(),
                 acceptance: Default::default(),
                 id: "brace".into(),
                 datum_plane: None,

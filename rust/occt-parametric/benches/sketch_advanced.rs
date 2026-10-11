@@ -26,6 +26,7 @@ fn sketch() -> SketchDefinition {
     SketchDefinition {
         measurements: Vec::new(),
         shapes: Vec::new(),
+        regions: Vec::new(),
         acceptance: Default::default(),
         id: "scale".into(),
         datum_plane: None,
@@ -2317,6 +2318,65 @@ fn main() {
                 assert!(session.is_valid(built.shape("body").unwrap()).unwrap());
                 previous = built;
             }
+        },
+    );
+    gate(
+        "1000 disjoint rectangle regions in one sketch built and extruded into 1001 solids",
+        10,
+        || {
+            let mut s = sketch();
+            let mut rectangle = |k: usize, x: f64, y: f64| {
+                s.points.extend([
+                    point(format!("a{k}"), x, y, true),
+                    point(format!("b{k}"), x + 4., y + 4., true),
+                ]);
+                s.shapes.push(SketchShape::Rectangle {
+                    id: format!("r{k}"),
+                    first: format!("a{k}"),
+                    opposite: format!("b{k}"),
+                    angle: None,
+                });
+            };
+            for k in 0..=1000 {
+                rectangle(k, 6. * (k % 40) as f64, 6. * (k / 40) as f64);
+            }
+            s.profile = vec!["r0".into()];
+            s.regions = (1..=1000)
+                .map(|k| SketchRegion {
+                    profile: vec![format!("r{k}")],
+                    holes: vec![],
+                })
+                .collect();
+            let mut family = ModelDocument::from_json(
+                &serde_json::from_str::<serde_json::Value>(include_str!(
+                    "../../../tools/model/spacer-set.request.json"
+                ))
+                .unwrap()["model"]
+                    .to_string(),
+            )
+            .unwrap()
+            .family;
+            family.requirements.clear();
+            let FeatureOperation::SketchFace { sketch: profile } =
+                &mut family.features[0].operation
+            else {
+                panic!("spacer-set starts with its sketch")
+            };
+            **profile = s;
+            let session = Session::new().unwrap();
+            let part = PartInstance {
+                id: "part".into(),
+                definition: &family,
+                overrides: HashMap::new(),
+                provenance: "scale".into(),
+            };
+            let built = part.regenerate(&session).unwrap();
+            let body = built.shape("body").unwrap();
+            assert_eq!(
+                session.subshape_count(body, ShapeType::Solid).unwrap(),
+                1001
+            );
+            assert!((session.volume(body).unwrap() - 1001. * 16. * 2.).abs() < 1e-6);
         },
     );
 }

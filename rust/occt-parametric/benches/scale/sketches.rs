@@ -12,6 +12,7 @@ pub(crate) fn profile_sweep_case(revolve: bool) -> Outcome {
     let sketch = SketchDefinition {
         measurements: Vec::new(),
         shapes: Vec::new(),
+        regions: Vec::new(),
         acceptance: Default::default(),
         id: "circle".into(),
         datum_plane: None,
@@ -163,6 +164,7 @@ pub(crate) fn datum_sketch_wire_case() -> Outcome {
     let mut sketch = SketchDefinition {
         measurements: Vec::new(),
         shapes: Vec::new(),
+        regions: Vec::new(),
         acceptance: Default::default(),
         id: "circle".into(),
         datum_plane: None,
@@ -279,6 +281,7 @@ pub(crate) fn curved_sketch_solver_case() -> Outcome {
     let sketch = SketchDefinition {
         measurements: Vec::new(),
         shapes: Vec::new(),
+        regions: Vec::new(),
         acceptance: Default::default(),
         id: "curved".into(),
         datum_plane: None,
@@ -361,6 +364,7 @@ pub(crate) fn sketch_solver_case() -> Outcome {
     let sketch = SketchDefinition {
         measurements: Vec::new(),
         shapes: Vec::new(),
+        regions: Vec::new(),
         acceptance: Default::default(),
         id: "bench-line".into(),
         datum_plane: None,
@@ -436,6 +440,7 @@ pub(crate) fn large_sketch_case(chain: bool) -> Outcome {
     let mut sketch = SketchDefinition {
         measurements: Vec::new(),
         shapes: Vec::new(),
+        regions: Vec::new(),
         acceptance: Default::default(),
         id: "large".into(),
         datum_plane: None,
@@ -547,6 +552,7 @@ fn spline_slot(crown: ScalarExpr) -> SketchDefinition {
     SketchDefinition {
         measurements: Vec::new(),
         shapes: Vec::new(),
+        regions: Vec::new(),
         acceptance: Default::default(),
         id: "slot".into(),
         datum_plane: None,

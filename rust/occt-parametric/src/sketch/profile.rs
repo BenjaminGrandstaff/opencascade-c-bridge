@@ -85,6 +85,8 @@ impl SketchDefinition {
 
     /// The profile face, with any `holes` added natively as inner boundaries:
     /// each strictly inside the outer loop, clear of the others and not nested.
+    /// With `regions`, a compound of that face and one face per region; the
+    /// regions' faces must not overlap each other or the profile's.
     pub(crate) fn face_on_plane<'session>(
         &self,
         session: &'session Session,
@@ -96,58 +98,85 @@ impl SketchDefinition {
         }
         let solution = self.solved(parameters)?;
         let wire = self.solved_profile_wire(session, parameters, datum, true, &solution)?;
-        if self.holes.is_empty() {
-            let face = session.create_face_from_wire(&wire)?;
-            if !session.is_valid(&face)? {
-                return Err(ModelError::new("sketch profile produced an invalid face"));
-            }
-            return Ok(face);
-        }
         let (origin, x_axis, y_axis) = self.resolved_frame(parameters, datum)?;
         let transform =
             |point: SketchPoint2| add(origin, add(scale(x_axis, point.x), scale(y_axis, point.y)));
         let direction = |d: SketchPoint2| add(scale(x_axis, d.x), scale(y_axis, d.y));
-        let entities = self.entities();
-        let loops = self
-            .holes
-            .iter()
-            .map(|ids| {
-                let members = ids
-                    .iter()
-                    .map(|id| entities[id.as_str()])
-                    .collect::<Vec<_>>();
-                match members.as_slice() {
-                    // Exact circles, as in outer profiles: an equal-radius
-                    // ellipse would force numeric extrema in hole checks.
-                    [Entity::Circle(circle)] => {
-                        let center = solution.points[&circle.center];
-                        let radius = line_length((center, solution.points[&circle.rim]));
-                        Ok(session.create_circle_wire(
-                            transform(center),
-                            cross(x_axis, y_axis),
-                            radius,
-                        )?)
-                    }
-                    [entity @ Entity::Ellipse(e)] if e.arc_ends().is_none() => self.entity_wire(
-                        session,
-                        *entity,
-                        &solution,
-                        &transform,
-                        &direction,
-                        cross(x_axis, y_axis),
-                    ),
-                    _ => {
-                        let segments = self
-                            .profile_segments(&members, &solution, &transform, &direction, true)?;
-                        Ok(session.create_curve_wire(&segments, true)?)
-                    }
+        let normal = cross(x_axis, y_axis);
+        let face = |outer: &Shape<'session>, holes: &[Vec<String>], name: &str| {
+            if holes.is_empty() {
+                let face = session.create_face_from_wire(outer)?;
+                if !session.is_valid(&face)? {
+                    return Err(ModelError::new(format!(
+                        "sketch {name} produced an invalid face"
+                    )));
                 }
-            })
-            .collect::<Result<Vec<_>, ModelError>>()?;
-        let inner = loops.iter().collect::<Vec<_>>();
-        session
-            .create_face_with_holes(&wire, &inner)
-            .map_err(|e| ModelError::from(e).context(&format!("sketch '{}' holes", self.id)))
+                return Ok(face);
+            }
+            let loops = holes
+                .iter()
+                .map(|ids| self.loop_wire(session, ids, &solution, &transform, &direction, normal))
+                .collect::<Result<Vec<_>, ModelError>>()?;
+            session
+                .create_face_with_holes(outer, &loops.iter().collect::<Vec<_>>())
+                .map_err(|e| {
+                    ModelError::from(e).context(&format!("sketch '{}' {name} holes", self.id))
+                })
+        };
+        let main = face(&wire, &self.holes, "profile")?;
+        if self.regions.is_empty() {
+            return Ok(main);
+        }
+        let mut faces = vec![main];
+        for (index, region) in self.regions.iter().enumerate() {
+            let name = format!("region {index}");
+            let outer = self.loop_wire(
+                session,
+                &region.profile,
+                &solution,
+                &transform,
+                &direction,
+                normal,
+            )?;
+            faces.push(face(&outer, &region.holes, &name)?);
+        }
+        disjoint_faces(session, &faces)?;
+        Ok(session.create_compound(&faces.iter().collect::<Vec<_>>())?)
+    }
+
+    /// A closed boundary wire through the named entities: an exact circle or
+    /// full ellipse alone, or a connected chain of segments.
+    fn loop_wire<'session>(
+        &self,
+        session: &'session Session,
+        ids: &[String],
+        solution: &SketchSolution,
+        transform: &impl Fn(SketchPoint2) -> Vec3,
+        direction: &impl Fn(SketchPoint2) -> Vec3,
+        normal: Vec3,
+    ) -> Result<Shape<'session>, ModelError> {
+        let entities = self.entities();
+        let members = ids
+            .iter()
+            .map(|id| entities[id.as_str()])
+            .collect::<Vec<_>>();
+        match members.as_slice() {
+            // Exact circles, as in outer profiles: an equal-radius ellipse
+            // would force numeric extrema in hole checks.
+            [Entity::Circle(circle)] => {
+                let center = solution.points[&circle.center];
+                let radius = line_length((center, solution.points[&circle.rim]));
+                Ok(session.create_circle_wire(transform(center), normal, radius)?)
+            }
+            [entity @ Entity::Ellipse(e)] if e.arc_ends().is_none() => {
+                self.entity_wire(session, *entity, solution, transform, direction, normal)
+            }
+            _ => {
+                let segments =
+                    self.profile_segments(&members, solution, transform, direction, true)?;
+                Ok(session.create_curve_wire(&segments, true)?)
+            }
+        }
     }
 
     pub(crate) fn wire<'session>(
@@ -205,9 +234,9 @@ impl SketchDefinition {
         if let std::borrow::Cow::Owned(expanded) = self.with_patterns(Some(parameters))? {
             return expanded.profile_wire(session, parameters, datum, closed);
         }
-        if !self.holes.is_empty() {
+        if !self.holes.is_empty() || !self.regions.is_empty() {
             return Err(ModelError::new(
-                "sketch holes apply only to face outputs, not wires",
+                "sketch holes and regions apply only to face outputs, not wires",
             ));
         }
         let solution = self.solved(parameters)?;
@@ -738,4 +767,49 @@ impl SketchDefinition {
         };
         Ok(profile)
     }
+}
+
+/// Rejects overlapping region faces: candidate pairs come from a sweep over
+/// their bounds along x, then a native common must have no area. O(n log n)
+/// plus booleans for pairs whose bounds overlap.
+fn disjoint_faces(session: &Session, faces: &[Shape<'_>]) -> Result<(), ModelError> {
+    let mut bounds = faces
+        .iter()
+        .enumerate()
+        .map(|(i, face)| Ok((i, session.exact_bounds(face)?)))
+        .collect::<Result<Vec<_>, ModelError>>()?;
+    bounds.sort_by(|a, b| a.1.min.x.total_cmp(&b.1.min.x));
+    let gap = 1e-9;
+    for (k, (i, a)) in bounds.iter().enumerate() {
+        for (j, b) in &bounds[k + 1..] {
+            if b.min.x > a.max.x + gap {
+                break;
+            }
+            let apart = b.min.y > a.max.y + gap
+                || a.min.y > b.max.y + gap
+                || b.min.z > a.max.z + gap
+                || a.min.z > b.max.z + gap;
+            if apart {
+                continue;
+            }
+            let common = session.common(&faces[*i], &faces[*j])?;
+            let area = session.surface_area(&common).unwrap_or(0.0);
+            if area > 1e-9 {
+                let (first, second) = ((*i).min(*j), (*i).max(*j));
+                let name = |index: usize| {
+                    if index == 0 {
+                        "profile".to_owned()
+                    } else {
+                        format!("region {}", index - 1)
+                    }
+                };
+                return Err(ModelError::new(format!(
+                    "sketch {} and {} overlap",
+                    name(first),
+                    name(second)
+                )));
+            }
+        }
+    }
+    Ok(())
 }

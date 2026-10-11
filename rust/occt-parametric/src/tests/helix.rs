@@ -33,6 +33,7 @@ fn wire_section() -> SketchDefinition {
     SketchDefinition {
         measurements: Vec::new(),
         shapes: Vec::new(),
+        regions: Vec::new(),
         acceptance: Default::default(),
         id: "section".into(),
         datum_plane: None,

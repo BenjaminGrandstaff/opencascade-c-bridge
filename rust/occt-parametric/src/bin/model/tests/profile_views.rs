@@ -2553,3 +2553,61 @@ fn keyhole_tag_previews_trims_at_crossings_and_follows_neck_edits() {
         }
     }
 }
+
+#[test]
+fn spacer_set_extrudes_three_regions_and_rejects_overlap_edits() {
+    let dir = Directory::new();
+    view_request(&dir, view_example("spacer-set"), "set").unwrap();
+    let data: Value =
+        serde_json::from_str(&fs::read_to_string(dir.0.join("set/view.json")).unwrap()).unwrap();
+    let body = &data["scenes"][0];
+    assert_eq!(body["valid"], true);
+    assert!((body["bounds"][1][0].as_f64().unwrap() - 62.0).abs() < 1e-9);
+    // A negative gap pushes the washer into the shim: the regions overlap.
+    let mut request = view_example("spacer-set");
+    request["model"]["family"]["parameters"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|p| p["id"] == "gap")
+        .unwrap()["minimum"]["value"] = json!(-10);
+    request["model"]["instances"][0]["base"]["overrides"] =
+        json!({"gap":{"scalar":{"value":-3,"dimension":"length","unit":"millimeter"}}});
+    // The viewer keeps the scene and reports the regeneration failure.
+    view_request(&dir, request, "overlap").unwrap();
+    let data: Value =
+        serde_json::from_str(&fs::read_to_string(dir.0.join("overlap/view.json")).unwrap())
+            .unwrap();
+    let failure = data["scenes"][0]["error"].as_str().unwrap();
+    assert!(
+        failure.contains("sketch profile and region 0 overlap"),
+        "{failure}"
+    );
+    // The solid compound holds one solid per region.
+    let session = Session::new().unwrap();
+    let family = ModelDocument::from_json(&view_example("spacer-set")["model"].to_string())
+        .unwrap()
+        .family;
+    let part = PartInstance {
+        id: "set".into(),
+        definition: &family,
+        overrides: HashMap::new(),
+        provenance: "test".into(),
+    };
+    let built = part.regenerate(&session).unwrap();
+    let body = built.shape("body").unwrap();
+    assert_eq!(
+        session
+            .subshape_count(body, occt_bridge::ShapeType::Solid)
+            .unwrap(),
+        3
+    );
+    let shim = 20.0 * 14.0;
+    let washer = std::f64::consts::PI * (49.0 - 9.0);
+    let slot = 8.0 * 12.0 + std::f64::consts::PI * 16.0;
+    let volume = session.volume(body).unwrap();
+    assert!(
+        (volume - 2.0 * (shim + washer + slot)).abs() < 1e-7,
+        "{volume}"
+    );
+}

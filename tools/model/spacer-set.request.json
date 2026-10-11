@@ -1,0 +1,656 @@
+{
+  "schema": "occb-model-view-v1",
+  "model": {
+    "schema_version": 127,
+    "family": {
+      "id": "spacer-set",
+      "version": 1,
+      "parameters": [
+        {
+          "id": "shim_width",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 20,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 10,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 40,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "shim_height",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 14,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 8,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 30,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "washer_radius",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 7,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 4,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 12,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "bore_radius",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 3,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 1.5,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 5,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "slot_radius",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 4,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 2,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 6,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "slot_travel",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 12,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 4,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 20,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "gap",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 4,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 1,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 10,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "thickness",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 2,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 0.5,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 5,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        }
+      ],
+      "derived_parameters": [],
+      "derived_vector_parameters": [],
+      "constraints": [],
+      "requirements": [
+        {
+          "id": "valid",
+          "version": 1,
+          "kind": "validation",
+          "priority": "required",
+          "statement": "body valid",
+          "rule": {
+            "shape_valid": {
+              "output": "body"
+            }
+          },
+          "provenance": "example; demonstration assumptions",
+          "traces": [
+            {
+              "feature": "body"
+            }
+          ]
+        }
+      ],
+      "datums": [],
+      "features": [
+        {
+          "id": "profile",
+          "operation": {
+            "sketch_face": {
+              "sketch": {
+                "id": "spacers",
+                "origin": {
+                  "literal": {
+                    "x": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    },
+                    "y": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                },
+                "x_axis": {
+                  "literal": {
+                    "x": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "y_axis": {
+                  "literal": {
+                    "x": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "points": [
+                  {
+                    "id": "a",
+                    "x": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "b",
+                    "x": {
+                      "parameter": "shim_width"
+                    },
+                    "y": {
+                      "parameter": "shim_height"
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "wc",
+                    "x": {
+                      "add": [
+                        {
+                          "parameter": "washer_radius"
+                        },
+                        {
+                          "add": [
+                            {
+                              "parameter": "shim_width"
+                            },
+                            {
+                              "parameter": "gap"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    "y": {
+                      "divide": [
+                        {
+                          "parameter": "shim_height"
+                        },
+                        {
+                          "literal": {
+                            "value": 2,
+                            "dimension": "scalar",
+                            "unit": null
+                          }
+                        }
+                      ]
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "wr",
+                    "x": {
+                      "add": [
+                        {
+                          "add": [
+                            {
+                              "parameter": "washer_radius"
+                            },
+                            {
+                              "add": [
+                                {
+                                  "parameter": "shim_width"
+                                },
+                                {
+                                  "parameter": "gap"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "parameter": "washer_radius"
+                        }
+                      ]
+                    },
+                    "y": {
+                      "divide": [
+                        {
+                          "parameter": "shim_height"
+                        },
+                        {
+                          "literal": {
+                            "value": 2,
+                            "dimension": "scalar",
+                            "unit": null
+                          }
+                        }
+                      ]
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "wb",
+                    "x": {
+                      "add": [
+                        {
+                          "add": [
+                            {
+                              "parameter": "washer_radius"
+                            },
+                            {
+                              "add": [
+                                {
+                                  "parameter": "shim_width"
+                                },
+                                {
+                                  "parameter": "gap"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "parameter": "bore_radius"
+                        }
+                      ]
+                    },
+                    "y": {
+                      "divide": [
+                        {
+                          "parameter": "shim_height"
+                        },
+                        {
+                          "literal": {
+                            "value": 2,
+                            "dimension": "scalar",
+                            "unit": null
+                          }
+                        }
+                      ]
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "s0",
+                    "x": {
+                      "add": [
+                        {
+                          "add": [
+                            {
+                              "add": [
+                                {
+                                  "parameter": "washer_radius"
+                                },
+                                {
+                                  "add": [
+                                    {
+                                      "parameter": "shim_width"
+                                    },
+                                    {
+                                      "parameter": "gap"
+                                    }
+                                  ]
+                                }
+                              ]
+                            },
+                            {
+                              "add": [
+                                {
+                                  "parameter": "washer_radius"
+                                },
+                                {
+                                  "parameter": "gap"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "parameter": "slot_radius"
+                        }
+                      ]
+                    },
+                    "y": {
+                      "divide": [
+                        {
+                          "parameter": "shim_height"
+                        },
+                        {
+                          "literal": {
+                            "value": 2,
+                            "dimension": "scalar",
+                            "unit": null
+                          }
+                        }
+                      ]
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "s1",
+                    "x": {
+                      "add": [
+                        {
+                          "add": [
+                            {
+                              "add": [
+                                {
+                                  "add": [
+                                    {
+                                      "parameter": "washer_radius"
+                                    },
+                                    {
+                                      "add": [
+                                        {
+                                          "parameter": "shim_width"
+                                        },
+                                        {
+                                          "parameter": "gap"
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                },
+                                {
+                                  "add": [
+                                    {
+                                      "parameter": "washer_radius"
+                                    },
+                                    {
+                                      "parameter": "gap"
+                                    }
+                                  ]
+                                }
+                              ]
+                            },
+                            {
+                              "parameter": "slot_radius"
+                            }
+                          ]
+                        },
+                        {
+                          "parameter": "slot_travel"
+                        }
+                      ]
+                    },
+                    "y": {
+                      "divide": [
+                        {
+                          "parameter": "shim_height"
+                        },
+                        {
+                          "literal": {
+                            "value": 2,
+                            "dimension": "scalar",
+                            "unit": null
+                          }
+                        }
+                      ]
+                    },
+                    "fixed": true
+                  }
+                ],
+                "lines": [],
+                "circles": [
+                  {
+                    "id": "washer",
+                    "center": "wc",
+                    "rim": "wr"
+                  },
+                  {
+                    "id": "bore",
+                    "center": "wc",
+                    "rim": "wb"
+                  }
+                ],
+                "arcs": [],
+                "profile": [
+                  "shim"
+                ],
+                "constraints": [],
+                "shapes": [
+                  {
+                    "rectangle": {
+                      "id": "shim",
+                      "first": "a",
+                      "opposite": "b"
+                    }
+                  },
+                  {
+                    "slot": {
+                      "id": "slot_shim",
+                      "start": "s0",
+                      "end": "s1",
+                      "radius": {
+                        "parameter": "slot_radius"
+                      }
+                    }
+                  }
+                ],
+                "regions": [
+                  {
+                    "profile": [
+                      "washer"
+                    ],
+                    "holes": [
+                      [
+                        "bore"
+                      ]
+                    ]
+                  },
+                  {
+                    "profile": [
+                      "slot_shim"
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "body",
+          "operation": {
+            "extrude": {
+              "input": "profile",
+              "direction": {
+                "components": {
+                  "x": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "y": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "z": {
+                    "parameter": "thickness"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "instances": [
+      {
+        "base": {
+          "id": "set",
+          "overrides": {},
+          "provenance": "A shim, a washer and a slot spacer drawn as three regions of one sketch"
+        }
+      }
+    ]
+  },
+  "outputs": [
+    {
+      "instance": "set",
+      "output": "body"
+    }
+  ],
+  "sketches": true
+}

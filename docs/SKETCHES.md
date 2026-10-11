@@ -1689,3 +1689,38 @@ in both senses, a spline trimmed from its start to a line crossing, and
 rejected bounds (identical, self-crossing, unknown, non-crossing, off the
 curve, or after a corner edit). 500 neck-width edits regenerate in 1.52 s
 (10 s budget).
+
+## Several regions in one sketch (schema 127)
+
+A sketch's face output can hold more than one outer boundary. `regions`
+lists further loops, each with its own holes:
+
+```json
+"profile": ["shim"],
+"regions": [{"profile": ["washer"], "holes": [["bore"]]},
+            {"profile": ["slot_shim"]}]
+```
+
+- The face output becomes one compound: the profile's face, then one face
+  per region in order. Shape IDs expand in region boundaries and holes as in
+  `profile`.
+- Every entity belongs to at most one loop across the profile, holes and
+  regions. Region boundaries and hole loops must be nonempty; at most 1,000
+  regions, each with at most 1,000 holes.
+- Regions must not overlap each other or the profile's face (touching is
+  allowed). Candidates come from a sweep over face bounds, then a native
+  common must have no area, so disjoint layouts cost O(n log n). The error
+  names the overlapping pair.
+- Profile operations (trims, fillets, offsets) apply to `profile` only.
+- Wire outputs reject regions, as they reject holes.
+- Extrude and revolve sweep each face of a compound into one solid of a
+  compound of disjoint solids.
+
+The [spacer set](../tools/model/spacer-set.request.json) draws a shim, a
+washer with its bore and a slot spacer in one sketch and extrudes all three
+with one feature. Tests check face counts and exact areas with holes and
+slots, overlap and touch cases, wire rejection, reused and empty loops,
+profile fillets beside regions, and the extruded volume. A negative gap
+that pushes the washer into the shim reports the overlap in the viewer.
+1,000 rectangle regions build and extrude into 1,001 solids in 0.79 s (10 s
+budget).

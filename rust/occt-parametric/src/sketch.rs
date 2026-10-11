@@ -531,6 +531,17 @@ pub enum SketchShape {
     },
 }
 
+/// An additional face region of a sketch: an ordered closed boundary and
+/// its inner loops, like `profile` and `holes` (schema 127).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SketchRegion {
+    pub profile: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[schemars(length(max = 1000))]
+    pub holes: Vec<Vec<String>>,
+}
+
 /// A driven (reference) dimension, measured on the solved sketch. It never
 /// constrains geometry and is reported beside the constraints (schema 122).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
@@ -820,6 +831,12 @@ pub struct SketchDefinition {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[schemars(length(max = 10000))]
     pub measurements: Vec<SketchMeasurement>,
+    /// Further disjoint outer boundaries, each with its own holes, for face
+    /// outputs (schema 127). The face output becomes one compound of all
+    /// regions' faces; profile operations apply only to `profile`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[schemars(length(max = 1000))]
+    pub regions: Vec<SketchRegion>,
     /// Linked entity copies, expanded in order before solving.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[schemars(length(max = 100))]

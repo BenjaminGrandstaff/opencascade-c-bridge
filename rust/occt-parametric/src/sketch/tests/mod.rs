@@ -6,6 +6,7 @@ mod dimensions;
 mod elliptical_arcs;
 mod patterns;
 mod profiles;
+mod regions;
 mod shapes;
 mod solving;
 mod splines;
@@ -29,6 +30,7 @@ fn rectangle() -> SketchDefinition {
     SketchDefinition {
         measurements: Vec::new(),
         shapes: Vec::new(),
+        regions: Vec::new(),
         acceptance: Default::default(),
         id: "rectangle".into(),
         datum_plane: None,

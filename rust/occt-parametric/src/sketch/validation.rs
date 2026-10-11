@@ -585,6 +585,31 @@ impl SketchDefinition {
                 }
             }
         }
+        if !self.regions.is_empty() && self.profile.is_empty() {
+            return Err(ModelError::new(
+                "sketch regions require an explicit profile",
+            ));
+        }
+        if self.regions.len() > 1000 {
+            return Err(ModelError::new("sketch regions exceed 1000"));
+        }
+        for region in &self.regions {
+            if region.profile.is_empty() || region.holes.iter().any(Vec::is_empty) {
+                return Err(ModelError::new(
+                    "sketch region boundaries and hole loops must be nonempty",
+                ));
+            }
+            if region.holes.len() > 1000 {
+                return Err(ModelError::new("sketch region holes exceed 1000 loops"));
+            }
+            for id in region.profile.iter().chain(region.holes.iter().flatten()) {
+                if !entity_ids.contains(id.as_str()) || !profile_ids.insert(id.as_str()) {
+                    return Err(ModelError::new(
+                        "sketch regions have unknown entities or reuse entities of other loops",
+                    ));
+                }
+            }
+        }
         Ok(())
     }
 }

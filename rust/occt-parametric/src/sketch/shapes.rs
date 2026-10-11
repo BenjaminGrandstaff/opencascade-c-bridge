@@ -380,6 +380,14 @@ impl SketchDefinition {
         };
         result.profile = expand(&self.profile);
         result.holes = self.holes.iter().map(|hole| expand(hole)).collect();
+        result.regions = self
+            .regions
+            .iter()
+            .map(|region| SketchRegion {
+                profile: expand(&region.profile),
+                holes: region.holes.iter().map(|hole| expand(hole)).collect(),
+            })
+            .collect();
         Ok(result)
     }
 }
