@@ -2,7 +2,7 @@
 
 use super::*;
 
-pub(crate) const ABI_VERSION: u32 = 60;
+pub(crate) const ABI_VERSION: u32 = 61;
 
 #[repr(C)]
 #[derive(Default)]
@@ -218,6 +218,15 @@ unsafe extern "C" {
         distance: f64,
         join: i32,
         out: *mut u64,
+    ) -> i32;
+    pub fn occt_bridge_planar_curve_intersections(
+        s: *mut c_void,
+        first: u64,
+        second: u64,
+        maximum_points: usize,
+        out: *mut RawVec3,
+        capacity: usize,
+        count: *mut usize,
     ) -> i32;
     pub fn occt_bridge_curve_closest_data(
         s: *mut c_void,

@@ -2,6 +2,7 @@ use super::*;
 use std::{fs, path::PathBuf};
 
 mod construction;
+mod curve_intersections;
 mod draft;
 mod exchange;
 mod extrusion_limits;

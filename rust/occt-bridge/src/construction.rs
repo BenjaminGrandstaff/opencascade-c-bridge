@@ -852,6 +852,50 @@ impl Session {
         })?;
         Ok(self.shape(shape))
     }
+    /// Isolated native XY-plane crossings of two finite edges/one-edge wires.
+    /// Rejects overlaps/unresolved tangent regions, degree>25, >10000 poles,
+    /// Over 10001 knots, over 10000 span pairs, and results over the 1–1000 point budget.
+    /// Two bounded native queries; no stored shapes or source mutation.
+    pub fn planar_curve_intersections(
+        &self,
+        first: &Shape<'_>,
+        second: &Shape<'_>,
+        maximum_points: usize,
+    ) -> Result<Vec<Vec3>, BridgeError> {
+        self.validate_shape(first)?;
+        self.validate_shape(second)?;
+        let mut count = 0;
+        // SAFETY: Owned handles, valid count pointer; null/zero requests the count.
+        self.check(unsafe {
+            occt_bridge_planar_curve_intersections(
+                self.raw.as_ptr(),
+                first.id,
+                second.id,
+                maximum_points,
+                std::ptr::null_mut(),
+                0,
+                &mut count,
+            )
+        })?;
+        if count == 0 {
+            return Ok(Vec::new());
+        }
+        let mut points = vec![RawVec3::default(); count];
+        // SAFETY: Output vector has the capacity returned by the count query.
+        self.check(unsafe {
+            occt_bridge_planar_curve_intersections(
+                self.raw.as_ptr(),
+                first.id,
+                second.id,
+                maximum_points,
+                points.as_mut_ptr(),
+                points.len(),
+                &mut count,
+            )
+        })?;
+        points.truncate(count);
+        Ok(points.into_iter().map(Into::into).collect())
+    }
     /// Bounded native closest point and oriented first derivative. Requires
     /// one edge or a one-edge wire; zero tangents and C0 knot contacts fail.
     pub fn curve_closest_data(

@@ -176,7 +176,7 @@ pub(super) fn materialize(
                 .clockwise = clockwise;
         }
     }
-    intersections::materialize(&mut result, &sketch.projections, parameters)?;
+    intersections::materialize(session, &mut result, &sketch.projections, parameters)?;
     result.validate_structure()?;
     Ok(result)
 }

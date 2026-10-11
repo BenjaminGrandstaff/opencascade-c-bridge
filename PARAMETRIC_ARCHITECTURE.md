@@ -1951,3 +1951,11 @@ curves are materialized, bounded analytic pair calculations resolve fixed points
 in sketch coordinates before solving. Pair caching avoids repeat calculations,
 and hint expressions participate in incremental invalidation. Constraints and
 viewer annotations use the same fixed aliases; native topology remains unchanged.
+
+
+ABI 61 extends the existing schema-119 aliases to native spline/chain and
+remaining conic pairs. Materialization caches reconstructed exact XY curves
+and bounded native results per unordered pair. Span-pair and candidate budgets
+apply before selection, while aliases and source/hint invalidation retain the
+same semantics. Native input handles are scoped to materialization, and overlap
+or unresolved tangential regions fail without replacing accepted geometry.

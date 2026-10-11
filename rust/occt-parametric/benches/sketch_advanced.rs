@@ -57,6 +57,116 @@ fn gate(name: &str, budget: u64, run: impl FnOnce()) {
 }
 fn main() {
     gate(
+        "1000 cached native spline intersection aliases with solved pad",
+        10,
+        || {
+            let request: serde_json::Value = serde_json::from_str(include_str!(
+                "../../../tools/model/projected-spline-intersection-pad.request.json"
+            ))
+            .unwrap();
+            let mut family = ModelDocument::from_json(&request["model"].to_string())
+                .unwrap()
+                .family;
+            let FeatureOperation::SketchFace { sketch } = &mut family.features[2].operation else {
+                panic!()
+            };
+            let template = sketch.projections[0].intersections[0].clone();
+            sketch.projections[0].intersections = (0..1000)
+                .map(|i| SketchProjectionIntersection {
+                    id: if i == 0 {
+                        "right".into()
+                    } else {
+                        format!("crossing-{i}")
+                    },
+                    ..template.clone()
+                })
+                .collect();
+            let session = Session::new().unwrap();
+            let part = PartInstance {
+                id: "part".into(),
+                definition: &family,
+                overrides: HashMap::new(),
+                provenance: "scale".into(),
+            };
+            let built = part.regenerate(&session).unwrap();
+            let snapshots = part.resolved_sketches(&session, &built).unwrap();
+            let sketch = &snapshots["profile"].as_ref().unwrap().sketch;
+            assert_eq!(
+                sketch
+                    .points
+                    .iter()
+                    .filter(|p| p.id.contains(":intersection:"))
+                    .count(),
+                1000
+            );
+            let solution = sketch.solve(&part.resolved_parameters().unwrap()).unwrap();
+            assert!(solution.solved && solution.free_degrees == 0);
+            assert!(
+                (solution.points["reference:intersection:crossing-999"].x - 20. - 160f64.sqrt())
+                    .abs()
+                    < 1e-7
+            );
+            drop(built);
+            assert_eq!(session.shape_count().unwrap(), 0);
+        },
+    );
+    for ellipse in [false, true] {
+        gate(
+            if ellipse {
+                "1000 native ellipse-pair intersection profile edits"
+            } else {
+                "1000 native rational spline intersection profile edits"
+            },
+            10,
+            || {
+                let request: serde_json::Value = serde_json::from_str(if ellipse {
+                    include_str!(
+                        "../../../tools/model/projected-ellipse-intersection-pad.request.json"
+                    )
+                } else {
+                    include_str!(
+                        "../../../tools/model/projected-spline-intersection-pad.request.json"
+                    )
+                })
+                .unwrap();
+                let mut family = ModelDocument::from_json(&request["model"].to_string())
+                    .unwrap()
+                    .family;
+                family.features.retain(|f| f.id != "body");
+                let session = Session::new().unwrap();
+                let mut part = PartInstance {
+                    id: "part".into(),
+                    definition: &family,
+                    overrides: HashMap::new(),
+                    provenance: "scale".into(),
+                };
+                for i in 0..1000 {
+                    part.overrides.insert(
+                        if ellipse { "radius" } else { "width" }.into(),
+                        ParameterValue::Scalar(Quantity::length(
+                            if ellipse {
+                                [10., 12., 14.][i % 3]
+                            } else {
+                                [40., 45., 50.][i % 3]
+                            },
+                            LengthUnit::Millimeter,
+                        )),
+                    );
+                    if !ellipse {
+                        part.overrides.insert(
+                            "weight".into(),
+                            ParameterValue::Scalar(Quantity::scalar([0.75, 1., 1.25][i % 3])),
+                        );
+                    }
+                    let built = part.regenerate(&session).unwrap();
+                    assert!(session.is_valid(built.shape("profile").unwrap()).unwrap());
+                    drop(built);
+                    assert_eq!(session.shape_count().unwrap(), 0);
+                }
+            },
+        );
+    }
+    gate(
         "1000 named intersection references sharing one finite curve pair",
         10,
         || {

@@ -8,22 +8,38 @@ tracks status and order.
 
 | Layer | Version | State |
 |---|---|---|
-| C ABI (`src/`, `include/`) | ABI 60 | Stable; exact version match required |
+| C ABI (`src/`, `include/`) | ABI 61 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
 | `occt-parametric` (engineering layer) | Schema 119 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 130 + first-use integration 1 (+1 doc test), recipes 3, parametric 578 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 19 + branch command 2 + model command 66, MCP Python 9, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 134 + first-use integration 1 (+1 doc test), recipes 3, parametric 581 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 19 + branch command 2 + model command 67, MCP Python 9, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
-| clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform code also passes. | `tools/cpp-lint/run.sh` |
+| clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
 | Coverage | Last recorded: 93.61% lines overall, test code excluded; C++ 94.13% lines, 87.40% branches, 100% functions; Rust 93.42% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 180 Rust cases plus 5 model-command and 41 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Scale benchmarks | 183 Rust cases plus 5 model-command and 43 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
 
+- Native projected intersections (schema 119 unchanged, ABI 61): rational
+  spline/chain and remaining ellipse pairs resolve isolated finite crossings
+  from exact native curves. Analytic fast paths remain. Cached unordered pairs,
+  10,000 span pairs/pair, 100,000 span pairs/sketch and bounded candidate lists
+  limit work; overlaps/unresolved tangential regions reject explicitly.
+  No sampled intersections or topology splitting. Tests verify contacts against
+  both curves, trims, rational weights, placements, tilted planes, source edits,
+  short C buffers, span budgets and handle cleanup. Viewer/MCP examples:
+  `projected-spline-intersection-pad`, `projected-ellipse-intersection-pad`.
+  Catalog: 57 examples, 69 resources, 154 request definitions; all 59 saved
+  model examples remain at schema 119. Native C tests, full Rust tests and
+  targeted clang-tidy/cppcheck/compiler checks pass. A 1,000-alias native pair
+  takes 0.005 s; 1,000 width/weight edits take 0.291 s; 1,000 ellipse-pair edits
+  take 0.263 s. MCP renders 20 native spline/ellipse pads in 0.184/0.179 s
+  (10 s budgets); all 41 advanced sketch and 43 MCP gates pass. STEP/STL exports
+  and live failure preservation are verified.
 - Named projected intersections (schema 119, ABI 60 unchanged): finite
   line/circle/arc pairs and line–ellipse crossings generate fixed named points
   for constraints, dimensions and native part positioning. Unique sketch-plane
@@ -1921,7 +1937,7 @@ that require zero local free degrees. Finite spline and trimmed-conic edges now
 project exactly into sketch planes, with stable endpoint references and source
 parameter links. Connected multi-edge selections now import as composite
 spline boundaries, with named junction references usable in constraints and
-dimensions. Separate junction edge topology and spline/ellipse-pair intersection authoring
+dimensions. Separate junction edge topology and unresolved native tangential contact regions
 remain extensions to that workflow.
 
 The earlier geometry and assembly milestones are complete. Manufacturing

@@ -1324,8 +1324,8 @@ The calculation uses analytic equations on the materialized projected curves,
 without sampled intersections or extra native queries. Curves can cross in the
 sketch plane even when their source edges do not meet in 3D. Intersections
 refer to the projected entities before profile trim, extend, offset, or corner
-operations. Splines/chains, ellipse–ellipse and ellipse–circle/arc pairs are
-currently rejected explicitly.
+operations. ABI 61 extends this to all projected curve pairs, including
+splines/chains and the remaining ellipse pairs, using the native path below.
 
 Exactly one crossing must fall within the hint radius. Zero matches or multiple
 matches reject regeneration; proximity does not silently choose the closest.
@@ -1344,7 +1344,7 @@ names sharing a pair do not repeat the calculation. Storage is O(sketch size +
 references + pairs), and matching is O(references); entity lookup is bounded by
 the existing 1,000-projection limit. Hint and radius expressions participate in
 parameter invalidation. Older documents migrate with an empty list, omitted
-on serialization. Native ABI remains 60.
+on serialization. This format remains schema 119; current native ABI is 61.
 
 The viewer and MCP expose a selectable `Intersection name` annotation with the
 fixed point, sketch coordinates, both curve targets, and controls from both
@@ -1367,3 +1367,67 @@ in 0.005 s; 1,000 driven profile regenerations take 0.236 s (10 s budgets).
 MCP renders 20 annotated pads in 0.188 s / 10 s. All 38 advanced sketch and
 41 MCP scale gates pass. Native curve-distance checks independently confirm
 that the selected point lies on both sources in the planar example.
+
+
+## Native projected intersections (ABI 61)
+
+Every pair of distinct declared projections now supports isolated finite
+crossings, including rational splines, connected chains, ellipse–ellipse,
+ellipse–circle and ellipse–arc. Existing line/circle/arc and line–ellipse pairs
+retain their analytic fast path. Native pairs reconstruct each exact materialized
+curve once in sketch-local XY, then use OCCT's bounded 2D curve intersection
+algorithm. They use explicit poles, knots, multiplicities and weights, without
+sampled polylines. Analytic arcs retain their directed finite span. Closed
+spline/chain profiles remain a single edge; aliases do not split topology.
+
+The hint rules, fixed alias IDs, constraints, dimensions, source controls,
+incremental invalidation, and accepted-build preservation are unchanged.
+Tilted and attached sketches use the same local coordinates as the solver;
+intersections are computed after projection, rather than on the original 3D
+source edges. The model format remains **schema 119**, and old examples still
+migrate as before. Native and Rust binaries require **ABI 61** and must be
+rebuilt together.
+
+The new C/Rust `planar_curve_intersections` query accepts an edge or one-edge
+wire in the XY plane. It returns sorted finite crossing coordinates, stores no
+shapes, and leaves inputs unchanged. Located shapes are resolved in world
+coordinates before checking planarity. Kernel intersection precision is 1e-9 mm;
+repeated reports within 1e-12 mm are merged. Distinct nearby candidates retain
+the usual ambiguity rule. A null/zero query returns the required count, and a
+short buffer fails without partial writes. The Rust wrapper validates both
+sessions, queries the count, then fills the bounded buffer.
+
+OCCT can return intersection regions for overlapping or tangential curves.
+This query rejects any reported region, and rejects an incomplete native solve;
+it does not substitute an endpoint, midpoint, or approximate nearest contact.
+Thus some isolated tangencies involving splines can fail explicitly. Existing
+analytic pairs retain their isolated-tangency behavior. See
+[OCCT's intersection guide](https://github.com/Open-Cascade-SAS/OCCT/blob/master/dox/user_guides/modeling_algos/modeling_algos.md).
+
+Budgets apply before kernel pair work: degree <=25, <=10,000 spline poles,
+<=10,001 knots, and <=10,000 spline span pairs per curve pair. The model limits
+aggregate native span-pair work to 100,000 and cached native candidates to
+10,000 per sketch, with at most 1,000 candidates per native pair. Existing
+1,000 references/projection and 10,000 references/sketch caps remain. These are
+input/output work bounds, not wall-time deadlines; kernel cost depends on curve
+complexity. Results are cached per unordered projection pair, and temporary
+native wires are released on success and failure.
+
+`projected-spline-intersection-pad` crosses a rational quadratic arch with a
+horizontal line. The selected right crossing drives a fully constrained 2 mm
+radius pad and its dimension. At width=40, rise=20, weight=1, offset=6 mm, its
+centre is x=20+sqrt(160), y=6 mm. Change `width` or the rational `weight` to move
+the pad; a broad `match_radius=50` rejects ambiguity. Restore 12 mm to recover.
+`projected-ellipse-intersection-pad` crosses two translated ellipses. Its upper
+crossing (named `right`) starts at x=5, y=sqrt(27) mm; edit `radius` or
+`minor_radius` to move it. Both examples keep native volume=16π mm³ and expose
+both curve/source controls in the viewer and MCP. Model tests also cover exact
+closed-chain intersections and tilted-plane coordinates.
+
+Performance gates pass: 1,000 aliases sharing a native spline pair build and
+solve in 0.005 s; 1,000 rational spline profile edits varying width and weight
+take 0.291 s; 1,000 ellipse-pair profile edits take 0.263 s (10 s budgets).
+MCP renders 20 native spline pads in 0.184 s and 20 ellipse pads in 0.179 s.
+All 41 advanced sketch and 43 MCP scale gates pass. Both examples export valid
+STEP/STL solids, including a weight=1.25 rational spline source. Live source
+edits and ambiguity rejection retain the accepted viewer result on failure.

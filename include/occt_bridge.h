@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define OCCT_BRIDGE_ABI_VERSION 60u
+#define OCCT_BRIDGE_ABI_VERSION 61u
 #define OCCT_BRIDGE_INVALID_SHAPE_ID UINT64_C(0)
 
 #if defined(_WIN32) && defined(OCCT_BRIDGE_BUILD_SHARED)
@@ -857,6 +857,19 @@ OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_offset_wire(occt_bridge_session
  * equal-distance ties choose the first candidate deterministically. Rejects
  * zero derivatives and contacts at internal C0 B-spline knots (including a
  * C0 periodic seam). No new shape handles are stored. */
+/* ABI 61: isolated crossings of two finite edges/one-edge wires in XY.
+ * Native 2D intersection precision is 1e-9 mm. Overlaps, unresolved tangent
+ * regions and failed native solves are errors. No shapes are stored/modified.
+ * Supported curves: lines, circles, ellipses, Bezier/B-spline (degree <=25,
+ * <=10000 poles, <=10001 knots, <=10000 span pairs). maximum_points is 1-1000.
+ * Query with NULL/0; out_count returns required capacity. A short buffer fails
+ * without partial writes. Count is zero on failures except a short buffer.
+ * Results are sorted XY with numerical duplicate reports merged at 1e-12 mm.
+ * Kernel time depends on the bounded input; this is not a wall-time deadline. */
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_planar_curve_intersections(
+    occt_bridge_session_t* session, occt_bridge_shape_id_t first_id, occt_bridge_shape_id_t second_id,
+    size_t maximum_points, occt_bridge_vec3_t* out_points, size_t capacity, size_t* out_count);
+
 OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_curve_closest_data(
     occt_bridge_session_t*, occt_bridge_shape_id_t, occt_bridge_vec3_t point,
     occt_bridge_vec3_t* closest, occt_bridge_vec3_t* tangent);

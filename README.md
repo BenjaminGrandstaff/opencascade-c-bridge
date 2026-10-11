@@ -3,7 +3,7 @@
 A small, stable C ABI over Open Cascade (OCCT), designed to be wrapped safely
 from Rust and other languages. Open Cascade C++ objects never cross the ABI.
 
-The current C ABI version is **60**.
+The current C ABI version is **61**.
 
 ## Current API
 
@@ -659,13 +659,13 @@ profiles (ABI 47, model schema 72).
 up to a selected face, and up to the next complete face limit, including
 inclined and curved surfaces. Target
 geometry participates in regeneration; the viewer shows the actual length.
-The native ABI is 60; model schema is 114. Native surface-ray witnesses measure
+The native ABI is 61; model schema is 119. Native surface-ray witnesses measure
 viewer extents on nonuniform caps.
 
 
 [Blind drill-point holes](docs/HOLES.md) add configurable conical bottoms, native tip
 containment checks, full-diameter depth callouts and linked viewer dimensions.
-The current model schema is 114 and native ABI is 60.
+The current model schema is 119 and native ABI is 61.
 
 
 [Geometry-driven holes](docs/HOLES.md) stop at a selected or next covering input
@@ -974,3 +974,11 @@ with unique-match hints, constraint/dimension references, and viewer/MCP control
 from both curves. Try `tools/model/projected-intersection-pad.request.json`.
 See [projected intersections](docs/SKETCHES.md#named-projected-intersections-schema-119)
 for supported curve pairs and matching rules. Native ABI remains 60.
+
+
+ABI 61 extends schema-119 intersection references to exact projected splines,
+connected chains, and the remaining ellipse pairs. The analytic fast paths are
+retained; native crossings have bounded input/output budgets and reject overlaps
+or unresolved tangent regions. Rebuild the native library and Rust tools together.
+Examples: `projected-spline-intersection-pad` and `projected-ellipse-intersection-pad`.
+See [native intersections](docs/SKETCHES.md#native-projected-intersections-abi-61).

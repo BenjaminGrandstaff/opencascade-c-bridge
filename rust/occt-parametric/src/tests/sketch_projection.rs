@@ -1125,7 +1125,7 @@ fn named_intersections_drive_native_parts_and_track_source_and_hint_edits() {
     assert_eq!(session.shape_count().unwrap(), 0);
 }
 #[test]
-fn projected_intersection_guards_reject_ambiguity_invalid_hints_and_unsupported_pairs() {
+fn projected_intersection_guards_reject_ambiguity_invalid_hints_and_reference_budgets() {
     let doc = intersection_document();
     let session = Session::new().unwrap();
     for case in 0..10 {
@@ -1157,8 +1157,8 @@ fn projected_intersection_guards_reject_ambiguity_invalid_hints_and_unsupported_
                 "distinct projections"
             }
             6 => {
-                sk.projections[1].kind = SketchProjectionKind::Spline;
-                "supports line/circle/arc"
+                sk.projections[0].intersections[0].id.clear();
+                "nonempty and unique"
             }
             7 => {
                 sk.points
@@ -1226,5 +1226,164 @@ fn projected_intersection_hints_select_opposite_branch_without_rebuilding_source
     assert!((solved.points["center"].x + 8.).abs() < 1e-8);
     drop(first2);
     drop(edited);
+    assert_eq!(session.shape_count().unwrap(), 0);
+}
+
+fn native_intersection_document(ellipse: bool) -> ModelDocument {
+    let request: serde_json::Value = serde_json::from_str(if ellipse {
+        include_str!("../../../../tools/model/projected-ellipse-intersection-pad.request.json")
+    } else {
+        include_str!("../../../../tools/model/projected-spline-intersection-pad.request.json")
+    })
+    .unwrap();
+    ModelDocument::from_json(&request["model"].to_string()).unwrap()
+}
+#[test]
+fn native_spline_and_ellipse_intersections_drive_parts_and_track_source_edits() {
+    let session = Session::new().unwrap();
+    for ellipse in [false, true] {
+        let doc = native_intersection_document(ellipse);
+        let mut instance = part(&doc.family);
+        let first = instance.regenerate(&session).unwrap();
+        let inspect = |instance: &PartInstance<'_>, built: &GeneratedResult<'_>| {
+            let snapshots = instance.resolved_sketches(&session, built).unwrap();
+            let sk = &snapshots["profile"].as_ref().unwrap().sketch;
+            let solved = sk.solve(&instance.resolved_parameters().unwrap()).unwrap();
+            assert!(solved.solved && solved.free_degrees == 0);
+            let p = solved.points["reference:intersection:right"];
+            assert!(
+                (p.x - solved.points["center"].x).hypot(p.y - solved.points["center"].y) < 1e-8
+            );
+            for id in ["source", "guide-source"] {
+                let q = session
+                    .curve_closest_point(built.shape(id).unwrap(), Vec3::new(p.x, p.y, 0.))
+                    .unwrap();
+                assert!((p.x - q.x).hypot(p.y - q.y).hypot(q.z) < 1e-7);
+            }
+            assert!(session.is_valid(built.shape("body").unwrap()).unwrap());
+            assert!(
+                (session.volume(built.shape("body").unwrap()).unwrap()
+                    - 16. * std::f64::consts::PI)
+                    .abs()
+                    < 1e-7
+            );
+            p
+        };
+        let a = inspect(&instance, &first);
+        if ellipse {
+            assert!((a.x - 5.).abs() < 1e-7 && (a.y - 27f64.sqrt()).abs() < 1e-7);
+        } else {
+            assert!((a.x - 20. - 160f64.sqrt()).abs() < 1e-7);
+        }
+        instance.overrides.insert(
+            if ellipse { "radius" } else { "width" }.into(),
+            ParameterValue::Scalar(Quantity::length(
+                if ellipse { 12. } else { 50. },
+                LengthUnit::Millimeter,
+            )),
+        );
+        let mut edited = instance.regenerate_incremental(&session, &first).unwrap();
+        let b = inspect(&instance, &edited);
+        assert!((a.x - b.x).hypot(a.y - b.y) > 0.1);
+        if !ellipse {
+            instance.overrides.insert(
+                "weight".into(),
+                ParameterValue::Scalar(Quantity::scalar(0.75)),
+            );
+            let weighted = instance.regenerate_incremental(&session, &edited).unwrap();
+            let c = inspect(&instance, &weighted);
+            assert!((c.x - b.x).abs() > 0.1);
+            drop(edited);
+            edited = weighted;
+        }
+        let before = session.shape_count().unwrap();
+        instance.overrides.insert(
+            "match_radius".into(),
+            ParameterValue::Scalar(Quantity::length(
+                if ellipse { 30. } else { 50. },
+                LengthUnit::Millimeter,
+            )),
+        );
+        let error = instance
+            .regenerate_incremental(&session, &edited)
+            .err()
+            .unwrap();
+        assert!(
+            error.message.contains("multiple crossings"),
+            "{}",
+            error.message
+        );
+        assert_eq!(session.shape_count().unwrap(), before);
+        assert!(session.is_valid(edited.shape("body").unwrap()).unwrap());
+        drop(first);
+        drop(edited);
+        assert_eq!(session.shape_count().unwrap(), 0);
+    }
+}
+#[test]
+fn native_chain_and_spline_intersections_resolve_in_tilted_sketch_coordinates() {
+    let session = Session::new().unwrap();
+    for chain in [false, true] {
+        let mut doc = native_intersection_document(false);
+        if chain {
+            let FeatureOperation::SketchOpenWire { sketch } = &doc.family.features[0].operation
+            else {
+                panic!()
+            };
+            let mut source = sketch.clone();
+            source.lines.push(SketchLine {
+                id: "closing".into(),
+                start: "c".into(),
+                end: "a".into(),
+            });
+            source.profile.push("closing".into());
+            doc.family.features[0].operation = FeatureOperation::SketchWire { sketch: source };
+        }
+        let sk = profile(&mut doc.family);
+        let tilt = 3f64.sqrt() / 2.;
+        sk.y_axis = vector(0., tilt, 0.5, Dimension::Scalar);
+        if chain {
+            sk.projections[0].kind = SketchProjectionKind::Chain;
+        }
+        for reference in &mut sk.projections[0].intersections {
+            reference.near = VectorExpr::Components {
+                x: if reference.id == "right" {
+                    ScalarExpr::Parameter("width".into())
+                } else {
+                    mm(0.)
+                },
+                y: ScalarExpr::Multiply(
+                    Box::new(ScalarExpr::Parameter("offset".into())),
+                    Box::new(ScalarExpr::Literal(Quantity::scalar(tilt))),
+                ),
+                z: mm(0.),
+            };
+        }
+        let instance = part(&doc.family);
+        let built = instance.regenerate(&session).unwrap();
+        let snapshots = instance.resolved_sketches(&session, &built).unwrap();
+        let solved = snapshots["profile"]
+            .as_ref()
+            .unwrap()
+            .sketch
+            .solve(&instance.resolved_parameters().unwrap())
+            .unwrap();
+        assert!(solved.solved && solved.free_degrees == 0);
+        let p = solved.points["reference:intersection:right"];
+        assert!((p.x - 20. - 160f64.sqrt()).abs() < 1e-7 && (p.y - 6. * tilt).abs() < 1e-7);
+        assert!(session.is_valid(built.shape("body").unwrap()).unwrap());
+        drop(built);
+        assert_eq!(session.shape_count().unwrap(), 0);
+    }
+}
+#[test]
+fn overlapping_native_projection_curves_reject_without_leaking_handles() {
+    let mut doc = native_intersection_document(false);
+    let sk = profile(&mut doc.family);
+    sk.projections[1].input = "source".into();
+    sk.projections[1].kind = SketchProjectionKind::Spline;
+    let session = Session::new().unwrap();
+    let error = part(&doc.family).regenerate(&session).err().unwrap();
+    assert!(error.message.contains("overlap"), "{}", error.message);
     assert_eq!(session.shape_count().unwrap(), 0);
 }

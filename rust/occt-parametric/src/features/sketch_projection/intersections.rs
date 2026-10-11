@@ -1,4 +1,4 @@
-//! Bounded analytic crossings in the sketch plane. No sampling or native handles.
+//! Cached finite sketch-plane crossings: analytic fast paths and bounded native curves.
 use super::*;
 use std::f64::consts::TAU;
 type Point = [f64; 2];
@@ -194,7 +194,72 @@ fn curve(
         "intersection curve is not a materialized analytic projection",
     ))
 }
+fn native_required(a: SketchProjectionKind, b: SketchProjectionKind) -> bool {
+    use SketchProjectionKind::*;
+    matches!(a, Spline | Chain)
+        || matches!(b, Spline | Chain)
+        || a == Ellipse && b != Line
+        || b == Ellipse && a != Line
+}
+fn native_spans(sketch: &SketchDefinition, id: &str) -> usize {
+    sketch
+        .splines
+        .iter()
+        .find(|s| s.id == id)
+        .and_then(|s| s.basis.as_ref())
+        .map_or(1, |b| b.knots.len().saturating_sub(1).max(1))
+}
+fn native_curve<'a>(
+    session: &'a Session,
+    sketch: &SketchDefinition,
+    id: &str,
+    points: &HashMap<&str, Point>,
+    parameters: &HashMap<String, ParameterValue>,
+) -> Result<Shape<'a>, ModelError> {
+    let vec = |p: Point| Vec3::new(p[0], p[1], 0.);
+    if let Some(s) = sketch.splines.iter().find(|s| s.id == id) {
+        let basis = s
+            .basis
+            .as_ref()
+            .ok_or_else(|| ModelError::new("intersection needs a materialized explicit spline"))?;
+        let poles = s.points.iter().map(|id| vec(points[id.as_str()])).collect();
+        let segment = s.explicit_segment(poles, basis.weights(parameters)?)?;
+        return Ok(session.create_curve_wire(
+            &[segment],
+            basis.periodic || s.points.first() == s.points.last(),
+        )?);
+    }
+    let normal = Vec3::new(0., 0., 1.);
+    Ok(match curve(sketch, id, points)? {
+        Curve::Line(a, b) => session.create_curve_wire(
+            &[occt_bridge::CurveSegment::Line {
+                start: vec(a),
+                end: vec(b),
+            }],
+            false,
+        )?,
+        Curve::Circle(c, r, None) => session.create_circle_wire(vec(c), normal, r)?,
+        Curve::Circle(c, r, Some((a, b, clockwise))) => {
+            let start = (a[1] - c[1]).atan2(a[0] - c[0]);
+            let end = (b[1] - c[1]).atan2(b[0] - c[0]);
+            let sign = if clockwise { -1. } else { 1. };
+            let middle = start + sign * (sign * (end - start)).rem_euclid(TAU) * 0.5;
+            session.create_curve_wire(
+                &[occt_bridge::CurveSegment::Arc {
+                    start: vec(a),
+                    middle: vec([c[0] + r * middle.cos(), c[1] + r * middle.sin()]),
+                    end: vec(b),
+                }],
+                false,
+            )?
+        }
+        Curve::Ellipse(c, u, a, b) => {
+            session.create_ellipse_wire_axes(vec(c), normal, vec(u), a, b)?
+        }
+    })
+}
 pub(super) fn materialize(
+    session: &Session,
     sketch: &mut SketchDefinition,
     projections: &[SketchProjection],
     parameters: &HashMap<String, ParameterValue>,
@@ -215,21 +280,63 @@ pub(super) fn materialize(
             ))
         })
         .collect::<Result<HashMap<_, _>, ModelError>>()?;
+    let kinds: HashMap<_, _> = projections
+        .iter()
+        .map(|p| (p.id.as_str(), p.kind))
+        .collect();
+    let mut native_curves = HashMap::new();
+    let mut native_work = 0usize;
+    let mut native_points = 0usize;
     let mut curves = HashMap::new();
     let mut pairs = HashMap::new();
     let mut updates = HashMap::new();
     for projection in projections {
         for reference in &projection.intersections {
             let mut run = || -> Result<Point, ModelError> {
-                for id in [projection.id.as_str(), reference.other.as_str()] {
-                    if !curves.contains_key(id) {
-                        curves.insert(id, curve(sketch, id, &points)?);
-                    }
-                }
                 let mut pair = [projection.id.as_str(), reference.other.as_str()];
                 pair.sort_unstable();
                 if let std::collections::hash_map::Entry::Vacant(entry) = pairs.entry(pair) {
-                    entry.insert(candidates(curves[pair[0]], curves[pair[1]])?);
+                    let points = if native_required(kinds[pair[0]], kinds[pair[1]]) {
+                        let work = native_spans(sketch, pair[0])
+                            .saturating_mul(native_spans(sketch, pair[1]));
+                        native_work = native_work.saturating_add(work);
+                        if work > 10000 || native_work > 100000 {
+                            return Err(ModelError::new(
+                                "intersection exceeds 10000 span pairs per curve pair or 100000 per sketch",
+                            ));
+                        }
+                        for id in pair {
+                            if let std::collections::hash_map::Entry::Vacant(entry) =
+                                native_curves.entry(id)
+                            {
+                                entry.insert(native_curve(
+                                    session, sketch, id, &points, parameters,
+                                )?);
+                            }
+                        }
+                        let intersections = session.planar_curve_intersections(
+                            &native_curves[pair[0]],
+                            &native_curves[pair[1]],
+                            1000,
+                        )?;
+                        native_points += intersections.len();
+                        if native_points > 10000 {
+                            return Err(ModelError::new(
+                                "intersection exceeds 10000 native crossing candidates per sketch",
+                            ));
+                        }
+                        intersections.into_iter().map(|p| [p.x, p.y]).collect()
+                    } else {
+                        for id in pair {
+                            if let std::collections::hash_map::Entry::Vacant(entry) =
+                                curves.entry(id)
+                            {
+                                entry.insert(curve(sketch, id, &points)?);
+                            }
+                        }
+                        candidates(curves[pair[0]], curves[pair[1]])?
+                    };
+                    entry.insert(points);
                 }
                 let near = vector(&reference.near, parameters, Dimension::Length)?;
                 let radius = scalar(&reference.maximum_distance, parameters, Dimension::Length)?;

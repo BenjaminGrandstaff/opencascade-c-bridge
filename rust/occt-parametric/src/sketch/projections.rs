@@ -29,30 +29,14 @@ impl SketchDefinition {
                         "intersection reference IDs must be nonempty and unique",
                     ));
                 }
-                let other = kinds.get(reference.other.as_str()).ok_or_else(|| {
-                    ModelError::new("intersection requires another declared projection")
-                })?;
+                if !kinds.contains_key(reference.other.as_str()) {
+                    return Err(ModelError::new(
+                        "intersection requires another declared projection",
+                    ));
+                }
                 if reference.other == projection.id {
                     return Err(ModelError::new(
                         "intersection requires distinct projections",
-                    ));
-                }
-                let analytic = |kind| {
-                    matches!(
-                        kind,
-                        SketchProjectionKind::Line
-                            | SketchProjectionKind::Circle
-                            | SketchProjectionKind::Arc
-                    )
-                };
-                if !(analytic(projection.kind) && analytic(*other)
-                    || projection.kind == SketchProjectionKind::Line
-                        && *other == SketchProjectionKind::Ellipse
-                    || projection.kind == SketchProjectionKind::Ellipse
-                        && *other == SketchProjectionKind::Line)
-                {
-                    return Err(ModelError::new(
-                        "intersection supports line/circle/arc pairs and line-ellipse pairs",
                     ));
                 }
             }

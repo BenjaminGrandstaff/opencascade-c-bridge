@@ -162,7 +162,7 @@ pub struct SketchBSplineBasis {
 }
 
 impl SketchBSplineBasis {
-    fn weights(
+    pub(crate) fn weights(
         &self,
         parameters: &HashMap<String, ParameterValue>,
     ) -> Result<Vec<f64>, ModelError> {
@@ -180,7 +180,7 @@ impl SketchBSplineBasis {
 }
 
 impl SketchSpline {
-    fn explicit_segment(
+    pub(crate) fn explicit_segment(
         &self,
         poles: Vec<Vec3>,
         weights: Vec<f64>,
@@ -454,7 +454,7 @@ pub struct SketchProjection {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[schemars(length(max = 1000))]
     pub junctions: Vec<SketchProjectionJunction>,
-    /// Named fixed crossings with another analytic projection, in sketch coordinates.
+    /// Named fixed crossings with another projection, in sketch coordinates.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[schemars(length(max = 1000))]
     pub intersections: Vec<SketchProjectionIntersection>,
@@ -473,8 +473,8 @@ pub struct SketchProjectionJunction {
 
 /// A unique crossing of two finite projected curves. The hint is a length vector
 /// in sketch-local coordinates (z must be zero); the radius is a positive length.
-/// Exposed as `projection:intersection:id`. Lines/circles/arcs are supported,
-/// together with line–ellipse pairs. Profile edits do not change these references.
+/// Exposed as `projection:intersection:id`. All projected curve kinds are supported
+/// for isolated crossings. Profile edits do not change these references.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SketchProjectionIntersection {

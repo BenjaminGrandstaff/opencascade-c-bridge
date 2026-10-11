@@ -1,0 +1,756 @@
+{
+  "schema": "occb-model-view-v1",
+  "model": {
+    "schema_version": 119,
+    "family": {
+      "id": "projected-ellipse-intersection-pad",
+      "version": 1,
+      "parameters": [
+        {
+          "id": "radius",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 10,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 8,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 15,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "minor_radius",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 6,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 4,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 7,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "offset",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 10,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 5,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 12,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "intersection_shift",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 0,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": -20,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 20,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "match_radius",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 4,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 0.001,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 30,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        }
+      ],
+      "derived_parameters": [],
+      "derived_vector_parameters": [],
+      "constraints": [],
+      "requirements": [],
+      "datums": [],
+      "features": [
+        {
+          "id": "source",
+          "operation": {
+            "sketch_wire": {
+              "sketch": {
+                "id": "ellipse-0",
+                "origin": {
+                  "components": {
+                    "x": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "z": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    }
+                  }
+                },
+                "x_axis": {
+                  "literal": {
+                    "x": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "y_axis": {
+                  "literal": {
+                    "x": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "points": [
+                  {
+                    "id": "c",
+                    "x": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "a",
+                    "x": {
+                      "add": [
+                        {
+                          "literal": {
+                            "value": 0,
+                            "dimension": "length",
+                            "unit": "millimeter"
+                          }
+                        },
+                        {
+                          "parameter": "radius"
+                        }
+                      ]
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "b",
+                    "x": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "parameter": "minor_radius"
+                    },
+                    "fixed": true
+                  }
+                ],
+                "lines": [],
+                "profile": [
+                  "ellipse"
+                ],
+                "constraints": [],
+                "splines": [],
+                "circles": [],
+                "arcs": [],
+                "projections": [],
+                "ellipses": [
+                  {
+                    "id": "ellipse",
+                    "center": "c",
+                    "major": "a",
+                    "minor": "b"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "guide-source",
+          "operation": {
+            "sketch_wire": {
+              "sketch": {
+                "id": "ellipse-1",
+                "origin": {
+                  "components": {
+                    "x": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "z": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    }
+                  }
+                },
+                "x_axis": {
+                  "literal": {
+                    "x": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "y_axis": {
+                  "literal": {
+                    "x": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "points": [
+                  {
+                    "id": "c",
+                    "x": {
+                      "parameter": "offset"
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "a",
+                    "x": {
+                      "add": [
+                        {
+                          "parameter": "offset"
+                        },
+                        {
+                          "parameter": "radius"
+                        }
+                      ]
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "b",
+                    "x": {
+                      "parameter": "offset"
+                    },
+                    "y": {
+                      "parameter": "minor_radius"
+                    },
+                    "fixed": true
+                  }
+                ],
+                "lines": [],
+                "profile": [
+                  "ellipse"
+                ],
+                "constraints": [],
+                "splines": [],
+                "circles": [],
+                "arcs": [],
+                "projections": [],
+                "ellipses": [
+                  {
+                    "id": "ellipse",
+                    "center": "c",
+                    "major": "a",
+                    "minor": "b"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "profile",
+          "operation": {
+            "sketch_face": {
+              "sketch": {
+                "id": "ellipse-intersection-pad",
+                "origin": {
+                  "components": {
+                    "x": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "z": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    }
+                  }
+                },
+                "x_axis": {
+                  "literal": {
+                    "x": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "y_axis": {
+                  "literal": {
+                    "x": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "points": [
+                  {
+                    "id": "center",
+                    "x": {
+                      "literal": {
+                        "value": 5,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 5,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": false
+                  },
+                  {
+                    "id": "rim",
+                    "x": {
+                      "literal": {
+                        "value": 7,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 5,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": false
+                  }
+                ],
+                "lines": [
+                  {
+                    "id": "radial",
+                    "start": "center",
+                    "end": "rim"
+                  }
+                ],
+                "profile": [
+                  "pad"
+                ],
+                "constraints": [
+                  {
+                    "coincident": {
+                      "first": "center",
+                      "second": "reference:intersection:right"
+                    }
+                  },
+                  {
+                    "horizontal": {
+                      "line": "radial"
+                    }
+                  },
+                  {
+                    "distance": {
+                      "first": "reference:intersection:right",
+                      "second": "rim",
+                      "value": {
+                        "literal": {
+                          "value": 2,
+                          "dimension": "length",
+                          "unit": "millimeter"
+                        }
+                      }
+                    }
+                  }
+                ],
+                "splines": [],
+                "circles": [
+                  {
+                    "id": "pad",
+                    "center": "center",
+                    "rim": "rim"
+                  }
+                ],
+                "arcs": [],
+                "projections": [
+                  {
+                    "id": "reference",
+                    "input": "source",
+                    "edge": {
+                      "at_extreme": {
+                        "axis": "z",
+                        "extremum": "maximum",
+                        "tolerance": {
+                          "literal": {
+                            "value": 1e-06,
+                            "dimension": "length",
+                            "unit": "millimeter"
+                          }
+                        }
+                      }
+                    },
+                    "kind": "ellipse",
+                    "intersections": [
+                      {
+                        "id": "right",
+                        "other": "guide",
+                        "near": {
+                          "components": {
+                            "x": {
+                              "add": [
+                                {
+                                  "divide": [
+                                    {
+                                      "parameter": "offset"
+                                    },
+                                    {
+                                      "literal": {
+                                        "value": 2,
+                                        "dimension": "scalar",
+                                        "unit": null
+                                      }
+                                    }
+                                  ]
+                                },
+                                {
+                                  "parameter": "intersection_shift"
+                                }
+                              ]
+                            },
+                            "y": {
+                              "parameter": "minor_radius"
+                            },
+                            "z": {
+                              "literal": {
+                                "value": 0,
+                                "dimension": "length",
+                                "unit": "millimeter"
+                              }
+                            }
+                          }
+                        },
+                        "maximum_distance": {
+                          "parameter": "match_radius"
+                        }
+                      },
+                      {
+                        "id": "left",
+                        "other": "guide",
+                        "near": {
+                          "components": {
+                            "x": {
+                              "add": [
+                                {
+                                  "divide": [
+                                    {
+                                      "parameter": "offset"
+                                    },
+                                    {
+                                      "literal": {
+                                        "value": 2,
+                                        "dimension": "scalar",
+                                        "unit": null
+                                      }
+                                    }
+                                  ]
+                                },
+                                {
+                                  "parameter": "intersection_shift"
+                                }
+                              ]
+                            },
+                            "y": {
+                              "negate": {
+                                "parameter": "minor_radius"
+                              }
+                            },
+                            "z": {
+                              "literal": {
+                                "value": 0,
+                                "dimension": "length",
+                                "unit": "millimeter"
+                              }
+                            }
+                          }
+                        },
+                        "maximum_distance": {
+                          "parameter": "match_radius"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "id": "guide",
+                    "input": "guide-source",
+                    "edge": {
+                      "at_extreme": {
+                        "axis": "z",
+                        "extremum": "maximum",
+                        "tolerance": {
+                          "literal": {
+                            "value": 1e-06,
+                            "dimension": "length",
+                            "unit": "millimeter"
+                          }
+                        }
+                      }
+                    },
+                    "kind": "ellipse"
+                  }
+                ],
+                "acceptance": "fully_constrained"
+              }
+            }
+          }
+        },
+        {
+          "id": "body",
+          "operation": {
+            "extrude": {
+              "input": "profile",
+              "direction": {
+                "components": {
+                  "x": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "y": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "z": {
+                    "literal": {
+                      "value": 4,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "instances": [
+      {
+        "base": {
+          "id": "part",
+          "overrides": {},
+          "provenance": "dimensions are illustrative assumptions"
+        }
+      }
+    ]
+  },
+  "outputs": [
+    {
+      "instance": "part",
+      "output": "body"
+    },
+    {
+      "instance": "part",
+      "output": "profile"
+    }
+  ],
+  "sketches": true
+}

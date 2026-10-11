@@ -1220,6 +1220,34 @@ static void sketch_edits(occt_bridge_session_t* session) {
     occt_bridge_shape_release(session,wire);occt_bridge_shape_release(session,box);
 }
 
+static void planar_intersections(occt_bridge_session_t* session) {
+    occt_bridge_shape_id_t line=0,circle=0,outside=0;
+    const occt_bridge_vec3_t ends[]={{-2,0,0},{2,0,0}};
+    size_t count=99;
+    occt_bridge_vec3_t output[2]={{99,99,99},{99,99,99}};
+    EXPECT(occt_bridge_create_polyline_wire(session,ends,2,0,&line),OK);
+    EXPECT(occt_bridge_create_circle_wire(session,vec(0,0,0),vec(0,0,1),1,&circle),OK);
+    EXPECT(occt_bridge_translate(session,line,vec(0,0,1),&outside),OK);
+    EXPECT(occt_bridge_planar_curve_intersections(session,line,circle,2,NULL,0,NULL),ARG);
+    EXPECT(occt_bridge_planar_curve_intersections(session,line,circle,0,NULL,0,&count),ARG);
+    EXPECT_TRUE(count==0,"invalid intersection query clears count");
+    EXPECT(occt_bridge_planar_curve_intersections(session,line,circle,1001,NULL,0,&count),ARG);
+    EXPECT(occt_bridge_planar_curve_intersections(session,line,circle,2,NULL,1,&count),ARG);
+    EXPECT(occt_bridge_planar_curve_intersections(session,unknown,circle,2,NULL,0,&count),MISSING);
+    EXPECT(occt_bridge_planar_curve_intersections(session,line,unknown,2,NULL,0,&count),MISSING);
+    EXPECT(occt_bridge_planar_curve_intersections(session,outside,circle,2,NULL,0,&count),ARG);
+    EXPECT(occt_bridge_planar_curve_intersections(session,line,circle,1,NULL,0,&count),ARG);
+    EXPECT(occt_bridge_planar_curve_intersections(session,line,circle,2,NULL,0,&count),OK);
+    EXPECT_TRUE(count==2,"intersection count query");
+    EXPECT(occt_bridge_planar_curve_intersections(session,line,circle,2,output,1,&count),ARG);
+    EXPECT_TRUE(count==2 && output[0].x==99,"short buffer has count and no partial writes");
+    EXPECT(occt_bridge_planar_curve_intersections(session,line,circle,2,output,2,&count),OK);
+    EXPECT_TRUE(count==2 && output[0].x==-1 && output[1].x==1,"sorted intersection coordinates");
+    occt_bridge_shape_release(session,line);
+    occt_bridge_shape_release(session,circle);
+    occt_bridge_shape_release(session,outside);
+}
+
 static void extrusion_limits(occt_bridge_session_t* session) {
     occt_bridge_shape_id_t wire=0,profile=0,limit=0,box=0,out=0;
     const occt_bridge_vec3_t zero=vec(0,0,0),up=vec(0,0,1),travel=vec(0,0,30);
@@ -1389,6 +1417,7 @@ int main(void) {
     session_and_diagnostics(session);
     primitives(session);
     sketch_edits(session);
+    planar_intersections(session);
     corner_edits(session);
     face_with_holes(session);
     extrusion_limits(session);

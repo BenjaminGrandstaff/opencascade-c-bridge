@@ -2153,3 +2153,68 @@ fn intersection_viewer_exposes_both_source_controls_and_fixed_crossing_targets()
             .any(|a| a["id"] == "fixed-reference:intersection:right")
     );
 }
+
+#[test]
+fn native_intersection_viewer_links_rational_and_ellipse_crossings_to_both_sources() {
+    let dir = Directory::new();
+    for example in [
+        "projected-spline-intersection-pad",
+        "projected-ellipse-intersection-pad",
+    ] {
+        view_request(&dir, view_example(example), example).unwrap();
+        let data: Value = serde_json::from_str(
+            &fs::read_to_string(dir.0.join(example).join("view.json")).unwrap(),
+        )
+        .unwrap();
+        let sk = data["scenes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["kind"] == "sketch" && s["feature"] == "profile")
+            .unwrap();
+        assert_eq!(sk["solver"]["accepted"], true);
+        let refs = sk["annotations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|a| a["id"].as_str().unwrap().starts_with("intersection-"))
+            .collect::<Vec<_>>();
+        assert_eq!(refs.len(), 2);
+        let right = refs
+            .iter()
+            .find(|a| a["id"] == "intersection-reference-right")
+            .unwrap();
+        let points = &sk["points"];
+        assert_eq!(right["anchors"][0], points["reference:intersection:right"]);
+        for name in if example.contains("spline") {
+            vec!["width", "rise", "weight", "offset"]
+        } else {
+            vec!["radius", "minor_radius", "offset"]
+        } {
+            assert!(
+                right["parameters"]
+                    .as_array()
+                    .unwrap()
+                    .contains(&json!(name)),
+                "{name}"
+            );
+        }
+        assert_eq!(
+            right["targets"],
+            json!(["reference", "guide", "reference:intersection:right"])
+        );
+        let dimension = sk["annotations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|a| a["detail"]["constraint_index"] == 2)
+            .unwrap();
+        assert_eq!(dimension["status"], "passed");
+        assert!(
+            dimension["targets"]
+                .as_array()
+                .unwrap()
+                .contains(&json!("reference:intersection:right"))
+        );
+    }
+}

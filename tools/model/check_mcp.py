@@ -779,5 +779,26 @@ with tempfile.TemporaryDirectory(prefix='occb-mcp-scale-') as root:
         elapsed=time.monotonic()-started
         assert elapsed<10
         print(f'PASS MCP 20 named-intersection pads with finite crossings, driven centres and source controls: {elapsed:.3f}s / 10s')
+        for name in ['projected-spline-intersection-pad','projected-ellipse-intersection-pad']:
+            native=client.tool('occt_get_example',dict(name=name))['structuredContent']
+            for i in range(1,20):
+                native['model']['instances'].append({'clone':dict(id=f'part-{i}',source='part',overrides={},provenance='scale')})
+                native['outputs'].extend(dict(instance=f'part-{i}',output=out) for out in ['body','profile'])
+            started=time.monotonic()
+            result=client.tool('occt_visualize_model',native)
+            assert not result['isError'],result
+            data=json.loads(client.call('resources/read',dict(uri=result['structuredContent']['resources']['view.json']))['result']['contents'][0]['text'])
+            profiles=[s for s in data['scenes'] if s['kind']=='sketch' and s['feature']=='profile']
+            assert len(profiles)==20
+            for scene in profiles:
+                assert scene['solver']['accepted']
+                refs=[a for a in scene['annotations'] if a['id'].startswith('intersection-')]
+                assert len(refs)==2 and all(a['anchors'] for a in refs)
+                controls={'width','rise','weight','offset'} if 'spline' in name else {'radius','minor_radius','offset'}
+                assert controls<=set(refs[0]['parameters'])
+                assert abs(scene['points']['center'][0]-(20+math.sqrt(160) if 'spline' in name else 5))<1e-7
+            elapsed=time.monotonic()-started
+            assert elapsed<10
+            print(f'PASS MCP 20 {name} native crossings, driven centres and both source controls: {elapsed:.3f}s / 10s')
     finally:
         client.close()

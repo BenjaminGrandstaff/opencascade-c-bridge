@@ -567,3 +567,12 @@ include controls from both sources. Change `radius` to move the pad; overly broa
 `match_radius` or a shifted missing hint rejects the build. The catalog now has
 55 examples and 12 schemas (67 resources); the request has 154 definitions.
 See [intersection rules](../../docs/SKETCHES.md#named-projected-intersections-schema-119).
+
+
+ABI 61 adds `projected-spline-intersection-pad` and
+`projected-ellipse-intersection-pad`, available through `occt_get_example` and
+example resources. Both are schema-119 view requests with exact native crossings,
+fully constrained pads, direct crossing dimensions and both source controls.
+The catalog contains 57 examples and 12 schemas (69 resources), with 154 request
+definitions. All 59 saved model examples remain at schema 119. See
+[native crossings](../../docs/SKETCHES.md#native-projected-intersections-abi-61).

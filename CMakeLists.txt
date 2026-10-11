@@ -43,6 +43,7 @@ add_library(
     src/step_assembly.cpp
     src/projection.cpp
     src/curve_export.cpp
+    src/curve_intersections.cpp
     src/mesh.cpp
     src/history.cpp
     src/open_profile.cpp
@@ -74,6 +75,7 @@ set(
     TKG2d
     TKG3d
     TKGeomBase
+    TKGeomAlgo
     TKBRep
     TKPrim
     TKTopAlgo
