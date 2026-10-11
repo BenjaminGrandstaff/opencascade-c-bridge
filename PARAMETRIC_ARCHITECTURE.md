@@ -1504,6 +1504,11 @@ trimmed-conic edge geometry
 into sketch planes through exact Bézier spans. Stable fixed endpoints support
 linked authoring; internal poles are bounded runtime data. Source parameters
 remain linked in the viewer. Native ABI remains 60.
+Schema 117 adds connected multi-edge projection as one spline boundary,
+with deterministic source-space ordering, exact degree elevation and bounded
+endpoint matching. Junctions are knots in this composite native edge; stable
+junction references and separate edge topology remain authoring extensions.
+
 
 The next cross-layer work should prioritize manufacturing product definition:
 standards-verified material hatch presets and drawing conventions, followed by

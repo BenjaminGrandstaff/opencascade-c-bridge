@@ -833,3 +833,139 @@ fn projected_spline_drives_point_constraints_and_strict_acceptance() {
     drop(built);
     assert_eq!(session.shape_count().unwrap(), 0);
 }
+
+#[test]
+fn mixed_degree_chain_projection_preserves_boundary_area_and_tracks_source_edits() {
+    let request: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../tools/model/projected-chain-pad.request.json"
+    ))
+    .unwrap();
+    let doc = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+    let session = Session::new().unwrap();
+    let mut instance = part(&doc.family);
+    for weight in [0.5, 0.7, 1.4] {
+        instance.overrides.insert(
+            "weight".into(),
+            ParameterValue::Scalar(Quantity::scalar(weight)),
+        );
+        let built = instance.regenerate(&session).unwrap();
+        let source_face = session
+            .create_face_from_wire(built.shape("source").unwrap())
+            .unwrap();
+        let expected = session.surface_area(&source_face).unwrap() * 3f64.sqrt() / 2.;
+        let area = session
+            .surface_area(built.shape("profile").unwrap())
+            .unwrap();
+        assert!(
+            (area - expected).abs() < 1e-7 * expected,
+            "{area} vs {expected}"
+        );
+        let snapshots = instance.resolved_sketches(&session, &built).unwrap();
+        let sk = &snapshots["profile"].as_ref().unwrap().sketch;
+        assert_eq!(sk.splines.len(), 1);
+        let s = &sk.splines[0];
+        assert_eq!(s.points.first(), s.points.last());
+        assert_eq!(s.basis.as_ref().unwrap().degree, 2);
+        assert!(
+            sk.solve(&instance.resolved_parameters().unwrap())
+                .unwrap()
+                .free_degrees
+                == 0
+        );
+        assert!(session.is_valid(built.shape("body").unwrap()).unwrap());
+        drop(source_face);
+        drop(built);
+        assert_eq!(session.shape_count().unwrap(), 0);
+    }
+}
+
+#[test]
+fn disconnected_and_branched_chain_projections_reject_without_handle_growth() {
+    let session = Session::new().unwrap();
+    for branched in [false, true] {
+        let mut source = blank();
+        source.points = vec![
+            point("a", 0., 0.),
+            point("b", 5., 0.),
+            point("c", 5., 5.),
+            point("d", 10., 0.),
+        ];
+        source.lines = vec![SketchLine {
+            id: "first".into(),
+            start: "a".into(),
+            end: "b".into(),
+        }];
+        source.profile = vec!["first".into()];
+        let mut family = fixture(
+            FeatureOperation::SketchOpenWire {
+                sketch: Box::new(source.clone()),
+            },
+            blank(),
+            true,
+        );
+        family.features.clear();
+        family.features.push(FeatureDefinition {
+            id: "first".into(),
+            operation: FeatureOperation::SketchOpenWire {
+                sketch: Box::new(source.clone()),
+            },
+        });
+        source.lines = vec![SketchLine {
+            id: "second".into(),
+            start: if branched { "b".into() } else { "c".into() },
+            end: "d".into(),
+        }];
+        source.profile = vec!["second".into()];
+        family.features.push(FeatureDefinition {
+            id: "second".into(),
+            operation: FeatureOperation::SketchOpenWire {
+                sketch: Box::new(source.clone()),
+            },
+        });
+        let mut inputs = vec!["first".into(), "second".into()];
+        if branched {
+            source.lines = vec![SketchLine {
+                id: "third".into(),
+                start: "b".into(),
+                end: "c".into(),
+            }];
+            source.profile = vec!["third".into()];
+            family.features.push(FeatureDefinition {
+                id: "third".into(),
+                operation: FeatureOperation::SketchOpenWire {
+                    sketch: Box::new(source),
+                },
+            });
+            inputs.push("third".into());
+        }
+        family.features.push(FeatureDefinition {
+            id: "source".into(),
+            operation: FeatureOperation::Compound { inputs },
+        });
+        let mut target = blank();
+        target.projections = vec![projection(
+            SketchProjectionKind::Chain,
+            EdgeSelector::AtExtreme {
+                axis: CoordinateAxis::Z,
+                extremum: Extremum::Maximum,
+                tolerance: mm(1e-6),
+            },
+        )];
+        target.profile = vec!["edge".into()];
+        family.features.push(FeatureDefinition {
+            id: "projected".into(),
+            operation: FeatureOperation::SketchOpenWire {
+                sketch: Box::new(target),
+            },
+        });
+        let error = part(&family).regenerate(&session).err().unwrap();
+        assert!(
+            error
+                .message
+                .contains(if branched { "branched" } else { "disconnected" }),
+            "{}",
+            error.message
+        );
+        assert_eq!(session.shape_count().unwrap(), 0);
+    }
+}

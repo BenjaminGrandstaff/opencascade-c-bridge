@@ -26,19 +26,21 @@ impl SketchDefinition {
                 name
             };
             match projection.kind {
-                SketchProjectionKind::Spline => resolved.splines.push(SketchSpline {
-                    id: id.clone(),
-                    points: vec![point("start", 0., 0.), point("end", 1., 0.)],
-                    basis: Some(SketchBSplineBasis {
-                        degree: 1,
-                        knots: vec![0., 1.],
-                        multiplicities: vec![2, 2],
-                        weights: Vec::new(),
-                        periodic: false,
-                        non_clamped: false,
-                    }),
-                    endpoints: None,
-                }),
+                SketchProjectionKind::Spline | SketchProjectionKind::Chain => {
+                    resolved.splines.push(SketchSpline {
+                        id: id.clone(),
+                        points: vec![point("start", 0., 0.), point("end", 1., 0.)],
+                        basis: Some(SketchBSplineBasis {
+                            degree: 1,
+                            knots: vec![0., 1.],
+                            multiplicities: vec![2, 2],
+                            weights: Vec::new(),
+                            periodic: false,
+                            non_clamped: false,
+                        }),
+                        endpoints: None,
+                    })
+                }
                 SketchProjectionKind::Line => resolved.lines.push(SketchLine {
                     id: id.clone(),
                     start: point("start", 0., 0.),

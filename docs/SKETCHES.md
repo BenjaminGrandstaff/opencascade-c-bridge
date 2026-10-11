@@ -79,7 +79,7 @@ export are verified. A 1,000-pair solve and residual-diagnostic gate passes in
 0.009 s (10 s budget); 20 solids plus 60 source sketch scenes and matched-radius
 annotations pass through MCP in 0.316 s (10 s budget).
 
-Current authoring examples use schema 116. Older model documents migrate
+Current authoring examples use schema 117. Older model documents migrate
 without adding constraints or changing their entities. Current native ABI is 60.
 
 ## Saved profile operations
@@ -1204,3 +1204,48 @@ tilted plane, closes its endpoints with a line and extrudes the face. Editing
 The viewer shows the exact basis/control polygon, distinguishes the external
 curve and links its projection annotation to source controls. Live failed edits
 preserve accepted geometry; the pad exports valid STEP and STL.
+
+## Connected multi-edge projection (schema 117)
+
+Set `"kind": "chain"` on a projection to import a connected selection of
+1–1000 edges as one rational B-spline. The existing semantic selector can use
+unions, persistent or named references, and type/position filters to select a
+whole open chain or closed boundary. Analytic and spline edge segments can be
+mixed. Exact rational degree elevation brings all spans to a common degree;
+projection and source-control linking then use the existing spline path.
+
+Connectivity is checked in located source-space coordinates before projection,
+so coincident projected ends cannot join unrelated 3D edges. Endpoint groups
+use a 1e-7 mm tolerance, with ambiguous/nontransitive matches rejected. Each
+node must have degree two, except an open chain's two terminal nodes.
+Disconnected selections, separate loops and branches reject regeneration.
+Returned poles, promoted poles and storage remain bounded by the 10,000-pole
+per-projection and 100,000-pole per-sketch limits; degree remains at most 25.
+Endpoint clustering takes bounded O(E²) work for E selected edges.
+
+An open chain starts at its lexicographically least terminal endpoint in
+source-space XYZ. A closed chain starts at its least source edge endpoint;
+incident-edge ties use oriented control poles and normalized weights. Edge
+orientation is reversed when needed. This makes ordering independent of
+selector enumeration, but the seam can move when source edits change those
+geometric ordering keys. Individual source edge labels are not retained.
+
+The geometry uses spline endpoint names `id:start/end`; internal poles are
+runtime data. Closed chains reuse the start pole and retain a fixed end alias,
+using the 1e-7 mm join/closure tolerance. Adjacent endpoint discrepancies within
+that tolerance are joined at the retained pole. Curve trace is preserved up
+to this joint tolerance without sampling; span parameterization is rebuilt.
+
+A chain becomes one native boundary edge: junctions are spline knots, rather
+than independently addressable topology vertices/edges. Native profile
+construction, extrusion and STEP/STL exchange are supported. Downstream edge
+selectors see this composite edge; individual junction topology and stable
+junction references remain separate authoring extensions.
+
+The `projected-chain-pad` example imports a closed rational arch plus its line
+segment into a tilted sketch, with strict acceptance. Editing source `weight`,
+`height` or `width` updates the entire boundary. Degenerate live edits preserve
+accepted geometry. Validation includes mixed degrees, reversed/permuted
+selection, ambiguous endpoints, branch/disconnect rejection and handle cleanup.
+A 1,000-edge closed import plus a 1,001-edge rejection takes 0.332 s;
+1,000 mixed-degree profile edits take 0.432 s (10 s budgets).

@@ -955,3 +955,9 @@ Schema 116 adds exact rational edge import through sketch projections with
 The [projected spline pad](tools/model/projected-spline-pad.request.json)
 uses a tilted sketch, fixed references and linked source weight edits. See
 [projection limits and endpoint IDs](docs/SKETCHES.md#exact-spline-and-trimmed-conic-projections-schema-116).
+
+Schema 117 adds `kind: "chain"` to project a connected multi-edge selection as
+one rational spline boundary. Mixed line/conic/spline degrees are elevated
+exactly; branching and disconnected selections fail. Try the
+[projected chain pad](tools/model/projected-chain-pad.request.json) and see
+[ordering, bounds and topology limits](docs/SKETCHES.md#connected-multi-edge-projection-schema-117).

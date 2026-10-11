@@ -723,5 +723,23 @@ with tempfile.TemporaryDirectory(prefix='occb-mcp-scale-') as root:
         elapsed=time.monotonic()-started
         assert elapsed<10
         print(f'PASS MCP 20 exact rational spline projections with tilted pads and source controls: {elapsed:.3f}s / 10s')
+        chain=client.tool('occt_get_example',dict(name='projected-chain-pad'))['structuredContent']
+        for i in range(1,20):
+            chain['model']['instances'].append({'clone':dict(id=f'part-{i}',source='part',overrides={},provenance='scale')})
+            chain['outputs'].extend(dict(instance=f'part-{i}',output=out) for out in ['body','profile'])
+        started=time.monotonic()
+        result=client.tool('occt_visualize_model',chain)
+        assert not result['isError'],result
+        data=json.loads(client.call('resources/read',dict(uri=result['structuredContent']['resources']['view.json']))['result']['contents'][0]['text'])
+        profiles=[s for s in data['scenes'] if s['kind']=='sketch' and s['feature']=='profile']
+        assert len(profiles)==20
+        for scene in profiles:
+            assert scene['solver']['accepted'] and len(scene['entities'])==1
+            poles=scene['entities'][0]['bspline']['control_points']
+            assert poles[0]==poles[-1] and len(poles)>7
+            assert next(a for a in scene['annotations'] if a['id']=='projection-reference')['detail']['definition']['kind']=='chain'
+        elapsed=time.monotonic()-started
+        assert elapsed<10
+        print(f'PASS MCP 20 multi-edge boundary projections with exact mixed-degree tilted pads: {elapsed:.3f}s / 10s')
     finally:
         client.close()

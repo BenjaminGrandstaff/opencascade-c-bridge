@@ -1999,3 +1999,46 @@ fn spline_projection_viewer_exposes_exact_basis_source_links_and_fixed_geometry(
         true
     );
 }
+
+#[test]
+fn chain_projection_viewer_links_the_complete_boundary_to_source_controls() {
+    let dir = Directory::new();
+    view_request(&dir, view_example("projected-chain-pad"), "chain").unwrap();
+    let data: Value =
+        serde_json::from_str(&fs::read_to_string(dir.0.join("chain/view.json")).unwrap()).unwrap();
+    let sk = data["scenes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["kind"] == "sketch" && s["feature"] == "profile")
+        .unwrap();
+    assert_eq!(sk["solver"]["accepted"], true);
+    assert_eq!(sk["entities"].as_array().unwrap().len(), 1);
+    let curve = &sk["entities"][0];
+    assert_eq!(curve["external"], true);
+    let points = curve["bspline"]["control_points"].as_array().unwrap();
+    assert_eq!(points.first(), points.last());
+    assert!(points.len() > 7);
+    let projection = sk["annotations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["id"] == "projection-reference")
+        .unwrap();
+    assert_eq!(projection["detail"]["definition"]["kind"], "chain");
+    assert!(
+        projection["parameters"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("weight"))
+    );
+    assert_eq!(
+        data["scenes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["kind"] == "solid" && s["feature"] == "body")
+            .unwrap()["valid"],
+        true
+    );
+}

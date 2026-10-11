@@ -57,6 +57,116 @@ fn gate(name: &str, budget: u64, run: impl FnOnce()) {
 }
 fn main() {
     gate(
+        "1000-edge closed chain projection and 1001-edge limit rejection",
+        10,
+        || {
+            let request: serde_json::Value = serde_json::from_str(include_str!(
+                "../../../tools/model/projected-chain-pad.request.json"
+            ))
+            .unwrap();
+            let mut family = ModelDocument::from_json(&request["model"].to_string())
+                .unwrap()
+                .family;
+            family.requirements.clear();
+            family.features.retain(|f| f.id != "body");
+            let session = Session::new().unwrap();
+            for count in [1000, 1001] {
+                let mut source = sketch();
+                source.acceptance = SketchAcceptance::FullyConstrained;
+                for i in 0..count {
+                    let angle = std::f64::consts::TAU * i as f64 / count as f64;
+                    source.points.push(point(
+                        format!("p{i}"),
+                        10. * angle.cos(),
+                        10. * angle.sin(),
+                        true,
+                    ));
+                    source.lines.push(SketchLine {
+                        id: format!("l{i}"),
+                        start: format!("p{i}"),
+                        end: format!("p{}", (i + 1) % count),
+                    });
+                    source.profile.push(format!("l{i}"));
+                }
+                family.features[0].operation = FeatureOperation::SketchWire {
+                    sketch: Box::new(source),
+                };
+                let part = PartInstance {
+                    id: "part".into(),
+                    definition: &family,
+                    overrides: HashMap::new(),
+                    provenance: "scale".into(),
+                };
+                if count == 1000 {
+                    let built = part.regenerate(&session).unwrap();
+                    assert!(session.is_valid(built.shape("profile").unwrap()).unwrap());
+                    let expected = 0.5
+                        * count as f64
+                        * 100.
+                        * (std::f64::consts::TAU / count as f64).sin()
+                        * 3f64.sqrt()
+                        / 2.;
+                    assert!(
+                        (session
+                            .surface_area(built.shape("profile").unwrap())
+                            .unwrap()
+                            - expected)
+                            .abs()
+                            < 1e-6
+                    );
+                    drop(built);
+                } else {
+                    assert!(
+                        part.regenerate(&session)
+                            .err()
+                            .unwrap()
+                            .to_string()
+                            .contains("requires 1–1000 edges")
+                    );
+                }
+                assert_eq!(session.shape_count().unwrap(), 0);
+            }
+        },
+    );
+    gate(
+        "1000 exact mixed-degree chain projection profiles with source edits",
+        10,
+        || {
+            let request: serde_json::Value = serde_json::from_str(include_str!(
+                "../../../tools/model/projected-chain-pad.request.json"
+            ))
+            .unwrap();
+            let mut family = ModelDocument::from_json(&request["model"].to_string())
+                .unwrap()
+                .family;
+            family.features.retain(|f| f.id != "body");
+            family.requirements.clear();
+            let session = Session::new().unwrap();
+            let mut part = PartInstance {
+                id: "part".into(),
+                definition: &family,
+                overrides: HashMap::new(),
+                provenance: "scale".into(),
+            };
+            for i in 0..1000 {
+                part.overrides.insert(
+                    "weight".into(),
+                    ParameterValue::Scalar(Quantity::scalar([0.5, 0.7, 1.4][i % 3])),
+                );
+                let built = part.regenerate(&session).unwrap();
+                assert!(session.is_valid(built.shape("profile").unwrap()).unwrap());
+                assert!(
+                    session
+                        .surface_area(built.shape("profile").unwrap())
+                        .unwrap()
+                        > 400.
+                );
+                drop(built);
+                assert_eq!(session.shape_count().unwrap(), 0);
+            }
+        },
+    );
+    gate(
         "1000 exact rational projected profiles with source weight edits",
         10,
         || {

@@ -38,15 +38,44 @@ pub(super) fn materialize(
             shapes,
             definitions,
         )?;
-        if edges.len() != 1 {
+        if projection.kind == SketchProjectionKind::Chain
+            && (edges.is_empty() || edges.len() > 1000)
+        {
+            return Err(ModelError::new(format!(
+                "sketch chain projection '{}' requires 1–1000 edges (selected {})",
+                projection.id,
+                edges.len()
+            )));
+        }
+        if projection.kind != SketchProjectionKind::Chain && edges.len() != 1 {
             return Err(ModelError::new(format!(
                 "sketch projection '{}' requires exactly one edge (selected {})",
                 projection.id,
                 edges.len()
             )));
         }
-        if projection.kind == SketchProjectionKind::Spline {
-            let spans = session.edge_bezier_spans(&edges[0], 10000)?;
+        if matches!(
+            projection.kind,
+            SketchProjectionKind::Spline | SketchProjectionKind::Chain
+        ) {
+            let spans = if projection.kind == SketchProjectionKind::Chain {
+                let mut curves = Vec::with_capacity(edges.len());
+                let mut count = 0usize;
+                for edge in &edges {
+                    if count > 9998 {
+                        return Err(ModelError::new(
+                            "chain projection exceeds 10000 native poles",
+                        ));
+                    }
+                    let spans = session.edge_bezier_spans(edge, 10000 - count)?;
+                    count += spans.iter().map(|s| s.poles.len()).sum::<usize>();
+                    curves.push(spans);
+                }
+                chain_spans(curves)
+                    .map_err(|e| e.context(&format!("sketch projection '{}'", projection.id)))?
+            } else {
+                session.edge_bezier_spans(&edges[0], 10000)?
+            };
             let (poles, basis) = project_spans(&spans, &point)
                 .map_err(|e| e.context(&format!("sketch projection '{}'", projection.id)))?;
             imported_poles += poles.len();
@@ -57,7 +86,11 @@ pub(super) fn materialize(
             }
             let closed = (poles[0][0] - poles[poles.len() - 1][0])
                 .hypot(poles[0][1] - poles[poles.len() - 1][1])
-                <= 1e-9;
+                <= if projection.kind == SketchProjectionKind::Chain {
+                    CHAIN_TOLERANCE
+                } else {
+                    1e-9
+                };
             let mut ids = Vec::with_capacity(poles.len());
             for (i, p) in poles.iter().enumerate() {
                 let suffix = if i == 0 {
@@ -119,6 +152,231 @@ pub(super) fn materialize(
     result.validate_structure()?;
     Ok(result)
 }
+const CHAIN_TOLERANCE: f64 = 1e-7;
+fn close(a: Vec3, b: Vec3) -> bool {
+    (a.x - b.x).hypot(a.y - b.y).hypot(a.z - b.z) <= CHAIN_TOLERANCE
+}
+fn point_order(a: Vec3, b: Vec3) -> std::cmp::Ordering {
+    a.x.total_cmp(&b.x)
+        .then(a.y.total_cmp(&b.y))
+        .then(a.z.total_cmp(&b.z))
+}
+/// Bounded O(E²) endpoint clustering for E<=1000. Match source-space endpoints
+/// before projection, so overlapping projections cannot join unrelated edges.
+fn chain_spans(mut curves: Vec<Vec<BezierSpan>>) -> Result<Vec<BezierSpan>, ModelError> {
+    if curves.is_empty() || curves.len() > 1000 {
+        return Err(ModelError::new("chain projection requires 1–1000 edges"));
+    }
+    let mut nodes: Vec<Vec3> = Vec::new();
+    let mut incidence: Vec<Vec<usize>> = Vec::new();
+    let mut members: Vec<Vec<Vec3>> = Vec::new();
+    let mut ends = Vec::new();
+    let degree = curves
+        .iter()
+        .flatten()
+        .map(|s| s.poles.len().saturating_sub(1))
+        .max()
+        .unwrap_or(0);
+    if !(1..=25).contains(&degree)
+        || curves.iter().any(|c| c.is_empty())
+        || curves
+            .iter()
+            .flatten()
+            .any(|s| s.poles.len() < 2 || s.poles.len() != s.weights.len())
+    {
+        return Err(ModelError::new(
+            "chain projection requires supported finite Bezier edges",
+        ));
+    }
+    if curves.iter().map(Vec::len).sum::<usize>() * (degree + 1) > 10000 {
+        return Err(ModelError::new(
+            "chain projection degree elevation exceeds 10000 poles",
+        ));
+    }
+    for (index, curve) in curves.iter().enumerate() {
+        let mut endpoints = [0; 2];
+        for (side, &p) in [
+            curve[0].poles.first().unwrap(),
+            curve.last().unwrap().poles.last().unwrap(),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let mut matches = Vec::new();
+            for (node, cluster) in members.iter().enumerate() {
+                let count = cluster.iter().filter(|&&q| close(p, q)).count();
+                if count > 0 {
+                    if count != cluster.len() {
+                        return Err(ModelError::new(
+                            "chain projection has ambiguous endpoint matches",
+                        ));
+                    }
+                    matches.push(node);
+                }
+            }
+            let node = match matches.as_slice() {
+                [] => {
+                    nodes.push(p);
+                    members.push(vec![p]);
+                    incidence.push(Vec::new());
+                    nodes.len() - 1
+                }
+                [i] => {
+                    members[*i].push(p);
+                    if point_order(p, nodes[*i]).is_lt() {
+                        nodes[*i] = p;
+                    }
+                    *i
+                }
+                _ => {
+                    return Err(ModelError::new(
+                        "chain projection has ambiguous endpoint matches",
+                    ));
+                }
+            };
+            endpoints[side] = node;
+            incidence[node].push(index);
+        }
+        ends.push(endpoints);
+    }
+    if incidence.iter().any(|edges| edges.len() > 2) {
+        return Err(ModelError::new("chain projection is branched"));
+    }
+    let terminals = incidence
+        .iter()
+        .enumerate()
+        .filter_map(|(i, e)| (e.len() == 1).then_some(i))
+        .collect::<Vec<_>>();
+    if !terminals.is_empty() && terminals.len() != 2 {
+        return Err(ModelError::new("chain projection is disconnected"));
+    }
+    let start = if terminals.is_empty() {
+        (0..nodes.len())
+            .min_by(|&a, &b| point_order(nodes[a], nodes[b]))
+            .unwrap()
+    } else {
+        *terminals
+            .iter()
+            .min_by(|&&a, &&b| point_order(nodes[a], nodes[b]))
+            .unwrap()
+    };
+    let mut used = vec![false; curves.len()];
+    let mut ordered = Vec::new();
+    let mut current = start;
+    loop {
+        let edge = incidence[current]
+            .iter()
+            .copied()
+            .filter(|&e| !used[e])
+            .min_by(|&a, &b| {
+                let other = |e: usize| {
+                    if ends[e][0] == current {
+                        ends[e][1]
+                    } else {
+                        ends[e][0]
+                    }
+                };
+                point_order(nodes[other(a)], nodes[other(b)])
+                    .then_with(|| {
+                        // Parallel graph edges (for example an arch and its closing
+                        // line) need a geometric tie-breaker, not selector order.
+                        let key = |e: usize| {
+                            let max = curves[e]
+                                .iter()
+                                .flat_map(|s| &s.weights)
+                                .copied()
+                                .fold(0., f64::max);
+                            let mut key = curves[e]
+                                .iter()
+                                .flat_map(|s| {
+                                    s.poles
+                                        .iter()
+                                        .copied()
+                                        .zip(s.weights.iter().map(|w| w / max))
+                                })
+                                .collect::<Vec<_>>();
+                            if ends[e][1] == current && ends[e][0] != current {
+                                key.reverse();
+                            }
+                            key
+                        };
+                        let (a, b) = (key(a), key(b));
+                        a.iter()
+                            .zip(&b)
+                            .map(|(&(p, w), &(q, v))| point_order(p, q).then(w.total_cmp(&v)))
+                            .find(|o| !o.is_eq())
+                            .unwrap_or_else(|| a.len().cmp(&b.len()))
+                    })
+                    .then(a.cmp(&b))
+            });
+        let Some(edge) = edge else { break };
+        used[edge] = true;
+        let reverse = ends[edge][1] == current && ends[edge][0] != current;
+        let mut curve = std::mem::take(&mut curves[edge]);
+        if reverse {
+            curve.reverse();
+            for span in &mut curve {
+                span.poles.reverse();
+                span.weights.reverse();
+            }
+        }
+        for span in curve {
+            ordered.push(elevate_span(span, degree)?);
+        }
+        current = if reverse {
+            ends[edge][0]
+        } else {
+            ends[edge][1]
+        };
+    }
+    if used.iter().any(|used| !*used) {
+        return Err(ModelError::new("chain projection is disconnected"));
+    }
+    Ok(ordered)
+}
+/// Exact rational degree elevation using normalized weights and convex pole
+/// combinations, avoiding coordinate*large-weight overflow.
+fn elevate_span(mut span: BezierSpan, degree: usize) -> Result<BezierSpan, ModelError> {
+    let max = span.weights.iter().copied().fold(0., f64::max);
+    for w in &mut span.weights {
+        *w /= max;
+    }
+    while span.poles.len() <= degree {
+        let n = span.poles.len() - 1;
+        let mut poles = Vec::with_capacity(n + 2);
+        let mut weights = Vec::with_capacity(n + 2);
+        poles.push(span.poles[0]);
+        weights.push(span.weights[0]);
+        for i in 1..=n {
+            let alpha = i as f64 / (n + 1) as f64;
+            let a = alpha * span.weights[i - 1];
+            let b = (1. - alpha) * span.weights[i];
+            let w = a + b;
+            let p = Vec3::new(
+                (a / w) * span.poles[i - 1].x + (b / w) * span.poles[i].x,
+                (a / w) * span.poles[i - 1].y + (b / w) * span.poles[i].y,
+                (a / w) * span.poles[i - 1].z + (b / w) * span.poles[i].z,
+            );
+            poles.push(p);
+            weights.push(w);
+        }
+        poles.push(*span.poles.last().unwrap());
+        weights.push(*span.weights.last().unwrap());
+        span = BezierSpan { poles, weights };
+    }
+    if span.weights.iter().any(|w| !w.is_finite() || *w <= 0.)
+        || span
+            .poles
+            .iter()
+            .any(|p| ![p.x, p.y, p.z].iter().all(|v| v.is_finite()))
+    {
+        return Err(ModelError::new(
+            "chain degree elevation needs finite poles and positive weights",
+        ));
+    }
+    Ok(span)
+}
+
 fn length_literal(value: f64) -> ScalarExpr {
     ScalarExpr::Literal(Quantity::length(value, LengthUnit::Millimeter))
 }
@@ -361,6 +619,85 @@ impl PartInstance<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn line_span(a: Vec3, b: Vec3) -> Vec<BezierSpan> {
+        vec![BezierSpan {
+            poles: vec![a, b],
+            weights: vec![1., 1.],
+        }]
+    }
+    #[test]
+    fn chain_endpoint_tolerance_rejects_nontransitive_matches_in_every_order() {
+        let curves = [
+            line_span(Vec3::new(0., 0., 0.), Vec3::new(10., 0., 0.)),
+            line_span(Vec3::new(1.5e-7, 0., 0.), Vec3::new(20., 0., 0.)),
+            line_span(Vec3::new(0.75e-7, 0., 0.), Vec3::new(30., 0., 0.)),
+        ];
+        for order in [
+            [0, 1, 2],
+            [0, 2, 1],
+            [1, 0, 2],
+            [1, 2, 0],
+            [2, 0, 1],
+            [2, 1, 0],
+        ] {
+            assert!(
+                chain_spans(order.into_iter().map(|i| curves[i].clone()).collect())
+                    .unwrap_err()
+                    .message
+                    .contains("ambiguous endpoint")
+            );
+        }
+    }
+    #[test]
+    fn chain_order_is_independent_of_selection_order_and_supports_mixed_degree_loops() {
+        let (a, b, c) = (
+            Vec3::new(0., 0., 0.),
+            Vec3::new(2., 0., 0.),
+            Vec3::new(3., 1., 0.),
+        );
+        let chain = chain_spans(vec![line_span(c, b), line_span(a, b)]).unwrap();
+        assert_eq!(chain[0].poles, vec![a, b]);
+        assert_eq!(chain[1].poles, vec![b, c]);
+        let arc = vec![BezierSpan {
+            poles: vec![a, Vec3::new(1., 2., 0.), b],
+            weights: vec![1., 0.5, 1.],
+        }];
+        let first = chain_spans(vec![arc.clone(), line_span(b, a)]).unwrap();
+        let second = chain_spans(vec![line_span(a, b), arc.clone()]).unwrap();
+        assert_eq!(first, second);
+        assert!(first.iter().all(|s| s.poles.len() == 3));
+        let xy = |p: Vec3| [p.x, p.y];
+        assert!(project_spans(&first, &xy).is_ok());
+        let elevated = elevate_span(
+            BezierSpan {
+                poles: vec![a, b],
+                weights: vec![1., 1.],
+            },
+            3,
+        )
+        .unwrap();
+        assert_eq!(elevated.poles.len(), 4);
+        assert!((elevated.poles[1].x - 2. / 3.).abs() < 1e-12);
+        assert!(
+            chain_spans(vec![
+                line_span(a, b),
+                line_span(b, c),
+                line_span(b, Vec3::new(2., 2., 0.))
+            ])
+            .unwrap_err()
+            .message
+            .contains("branched")
+        );
+        assert!(
+            chain_spans(vec![
+                line_span(a, b),
+                line_span(Vec3::new(10., 0., 0.), Vec3::new(11., 0., 0.))
+            ])
+            .unwrap_err()
+            .message
+            .contains("disconnected")
+        );
+    }
     #[test]
     fn projected_bezier_spans_normalize_join_weights_and_reject_invalid_geometry() {
         let spans = vec![

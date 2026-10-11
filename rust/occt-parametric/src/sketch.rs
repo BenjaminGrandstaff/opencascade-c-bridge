@@ -433,12 +433,15 @@ pub enum SketchProjectionKind {
     Arc,
     Ellipse,
     Spline,
+    /// Connected selection of up to 1000 edges, imported as one rational spline.
+    Chain,
 }
 
-/// A linked orthogonal projection of exactly one semantic source edge.
+/// A linked orthogonal projection of a semantic source edge, or a connected
+/// multi-edge selection for `Chain`.
 /// Generated point IDs are `id:start/end` for lines, `id:center/rim` for circles,
 /// `id:center/start/end` for arcs and `id:center/major/minor` for ellipses.
-/// Splines expose stable `id:start/end`; interior `id:pole:N` points are runtime
+/// Spline/chain imports expose stable `id:start/end`; interior `id:pole:N` points are runtime
 /// data whose count can change with the source edge.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]

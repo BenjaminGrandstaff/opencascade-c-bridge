@@ -58,7 +58,7 @@ class McpTests(unittest.TestCase):
         with self.assertRaises(jsonschema.ValidationError):
             jsonschema.validate(bad, schema)
         resources = self.client.call('resources/list')['result']['resources']
-        self.assertEqual(len(resources), 64)
+        self.assertEqual(len(resources), 65)
         self.assertEqual(len(self.client.call('resources/templates/list')['result']['resourceTemplates']), 1)
         read = self.client.call('resources/read', dict(uri='occt://schema/request'))['result']['contents'][0]
         self.assertEqual(json.loads(read['text']), schema)
@@ -243,6 +243,18 @@ class McpTests(unittest.TestCase):
                 self.assertTrue(group['detail']['conflict_group']['trace_complete'])
             else:
                 self.assertEqual(d['locally_redundant_constraints'],[5,6])
+        chain = self.client.tool('occt_get_example',dict(name='projected-chain-pad'))['structuredContent']
+        jsonschema.validate(chain,schema)
+        result = self.client.tool('occt_visualize_model',chain)
+        self.assertFalse(result['isError'])
+        data = json.loads(self.client.call('resources/read',dict(uri=result['structuredContent']['resources']['view.json']))['result']['contents'][0]['text'])
+        scene = next(s for s in data['scenes'] if s['kind']=='sketch' and s['feature']=='profile')
+        self.assertTrue(scene['solver']['accepted'])
+        self.assertEqual(len(scene['entities']),1)
+        points = scene['entities'][0]['bspline']['control_points']
+        self.assertEqual(points[0],points[-1])
+        self.assertGreater(len(points),7)
+        self.assertIn('weight',next(a for a in scene['annotations'] if a['id']=='projection-reference')['parameters'])
         projected = self.client.tool('occt_get_example',dict(name='projected-spline-pad'))['structuredContent']
         jsonschema.validate(projected,schema)
         for weight in [0.5,1.4]:

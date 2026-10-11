@@ -49,7 +49,7 @@ or remote service is started.
 input schema. All 38 current feature operations and 152 nested request-schema
 definitions are discoverable. Schemas derive from serde-compatible Rust types;
 new serialized variants require schema support at compilation. Authoring schemas
-target current model schema 116. The engine still migrates older documents.
+target current model schema 117. The engine still migrates older documents.
 Schemas describe serialization and basic request bounds; units, dependency
 references, dimensional constraints, selector resolution, and geometry validity
 are checked by the build engine.
@@ -545,3 +545,9 @@ extrudes the face. Source weight edits update the linked curve; viewer data
 exposes its explicit basis/control polygon and source controls. The same kind
 imports trimmed elliptic edges, periodic and non-clamped source domains. See
 [exact sketch projections](../../docs/SKETCHES.md#exact-spline-and-trimmed-conic-projections-schema-116).
+
+The `projected-chain-pad` example uses `kind: chain` to import an entire connected
+multi-edge boundary as one rational spline. It supports mixed degrees with
+exact elevation and linked source edits, with branch/disconnect/ambiguity
+rejection. The composite is one native edge; see
+[ordering and topology limits](../../docs/SKETCHES.md#connected-multi-edge-projection-schema-117).
