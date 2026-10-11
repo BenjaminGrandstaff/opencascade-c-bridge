@@ -805,7 +805,24 @@ fn open_sketch_ribs_have_exact_volume_and_composed_profile_history() {
         assert_eq!(faces.len(), 1);
         assert!((session.surface_area(&faces[0]).unwrap() - 12.0).abs() < 1e-8);
         assert!((session.center_of_mass(&faces[0]).unwrap().z - 7.0).abs() < 1e-8);
-        drop((faces, generated));
+        // The strip's translated edge is generated from the profile edge and
+        // survives the extrusion's base copy as the rib's far edge.
+        let profile = generated.shape("profile").unwrap();
+        let edge = session.subshape(profile, ShapeType::Edge, 0).unwrap();
+        let generated_edges = (0..session
+            .history_count(rib, &edge, occt_bridge::HistoryRelation::Generated)
+            .unwrap())
+            .map(|index| {
+                session
+                    .history(rib, &edge, occt_bridge::HistoryRelation::Generated, index)
+                    .unwrap()
+            })
+            .filter(|shape| session.shape_type(shape).unwrap() == ShapeType::Edge)
+            .collect::<Vec<_>>();
+        assert_eq!(generated_edges.len(), 1);
+        assert!((session.edge_length(&generated_edges[0]).unwrap() - 6.0).abs() < 1e-8);
+        assert!((session.center_of_mass(&generated_edges[0]).unwrap().z - 7.0).abs() < 1e-8);
+        drop((generated_edges, edge, faces, generated));
         assert_eq!(session.shape_count().unwrap(), 0);
     }
 }

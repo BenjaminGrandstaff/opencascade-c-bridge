@@ -205,25 +205,42 @@ fn rib_case(centered: bool, mode: RibCase) -> Outcome {
                     if (session.center_of_mass(shape)?.y - expected_center).abs() > 1e-6 {
                         return Err(failure("rib thickness placement differs".into()));
                     }
-                    if session.history_count(
+                    // The profile edge generates the rib's side face; an
+                    // open strip's translated edge also survives as the
+                    // rib's far edge, offset from the profile edge.
+                    let mut faces = Vec::new();
+                    let mut edges = Vec::new();
+                    for index in 0..session.history_count(
                         shape,
                         &profile_edge,
                         occt_bridge::HistoryRelation::Generated,
-                    )? != 1
-                    {
+                    )? {
+                        let generated = session.history(
+                            shape,
+                            &profile_edge,
+                            occt_bridge::HistoryRelation::Generated,
+                            index,
+                        )?;
+                        match session.shape_type(&generated)? {
+                            ShapeType::Face => faces.push(generated),
+                            _ => edges.push(generated),
+                        }
+                    }
+                    if faces.len() != 1 || edges.len() != usize::from(open) {
                         return Err(failure("rib profile history differs".into()));
                     }
-                    let face = session.history(
-                        shape,
-                        &profile_edge,
-                        occt_bridge::HistoryRelation::Generated,
-                        0,
-                    )?;
-                    if session.shape_type(&face)? != ShapeType::Face
-                        || (session.surface_area(&face)?
-                            - thickness * if open { 6.0 } else { 72.0_f64.sqrt() })
-                        .abs()
-                            > 1e-6
+                    for edge in &edges {
+                        if session.shape_type(edge)? != ShapeType::Edge
+                            || (session.edge_length(edge)? - 6.0).abs() > 1e-6
+                        {
+                            return Err(failure("rib profile history differs".into()));
+                        }
+                    }
+                    let face = faces.remove(0);
+                    if (session.surface_area(&face)?
+                        - thickness * if open { 6.0 } else { 72.0_f64.sqrt() })
+                    .abs()
+                        > 1e-6
                     {
                         return Err(failure("rib generated face differs".into()));
                     }

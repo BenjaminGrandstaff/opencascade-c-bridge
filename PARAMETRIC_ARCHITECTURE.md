@@ -698,7 +698,7 @@ of curved segments.
 
 ABI 31 exposes `create_open_profile_face`. Original edges remain boundary
 edges, translated edges are generated from them, and composed extrusion/fuse
-history preserves their surviving generated faces. Construction and history
+history preserves the faces and translated edges they generate. Construction and history
 indexing take O(edges) time and storage. OCCT's geometric self-intersection
 check is O(edges²) in the worst case; this topology check is necessary to reject
 crossing boundaries and does not scan graph instances or supporting faces.
