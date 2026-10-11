@@ -354,8 +354,16 @@ impl SketchDefinition {
     pub fn check_acceptance(&self, solution: &SketchSolution) -> Result<(), ModelError> {
         if !solution.solved {
             return Err(ModelError::new(format!(
-                "sketch '{}' constraints conflict; maximum residual {}",
-                self.id, solution.max_residual
+                "sketch '{}' constraints did not converge ({:?}); maximum residual {}",
+                self.id, solution.solver_report.termination, solution.max_residual
+            )));
+        }
+        if self.acceptance == SketchAcceptance::FullyConstrained
+            && !solution.solver_report.rank_reliable
+        {
+            return Err(ModelError::new(format!(
+                "sketch '{}' cannot certify fully constrained geometry: local rank is uncertain",
+                self.id
             )));
         }
         if self.acceptance == SketchAcceptance::FullyConstrained && solution.free_degrees > 0 {

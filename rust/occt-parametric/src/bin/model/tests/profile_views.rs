@@ -2954,3 +2954,38 @@ fn engraved_nameplate_draws_glyphs_and_cuts_them_from_the_plate() {
         "{removed} {letters}"
     );
 }
+
+#[test]
+fn reliable_sketch_viewer_exposes_convergence_rank_and_recovery_report() {
+    let dir = Directory::new();
+    let request = view_example("reliable-sketch");
+    let report = view_request(&dir, request, "reliable").unwrap();
+    assert_eq!(report["status"], "visualized");
+    let data: Value =
+        serde_json::from_str(&fs::read_to_string(dir.0.join("reliable/view.json")).unwrap())
+            .unwrap();
+    let scenes = data["scenes"].as_array().unwrap();
+    let sketch = scenes.iter().find(|s| s["kind"] == "sketch").unwrap();
+    assert_eq!(sketch["solver"]["report"]["termination"], "converged");
+    assert_eq!(sketch["solver"]["report"]["rank_reliable"], true);
+    assert_eq!(sketch["solver"]["free_degrees"], 0);
+    assert_eq!(sketch["solver"]["accepted"], true);
+    assert!(
+        sketch["solver"]["report"]["accepted_steps"]
+            .as_u64()
+            .unwrap()
+            > 0
+    );
+    assert!(
+        sketch["annotations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|a| a["id"] == "solver-report" && a["status"] == "passed")
+    );
+    assert!(
+        scenes
+            .iter()
+            .any(|s| s["kind"] == "solid" && s["valid"] == true)
+    );
+}

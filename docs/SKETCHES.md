@@ -2047,3 +2047,53 @@ extruded from `bottom-right`, fuses it onto the pad, and hollows the result
 through the region selected by `main-pick`. Width edits regenerate both named
 references; failed edits retain the accepted generation. Schema 132 documents
 migrate without changing their existing selectors or geometry.
+
+## Solver reliability (schema 133 / ABI 68 unchanged)
+
+The solver uses bounded safeguarded Newton steps. It first tries the existing
+sparse step so established native contact solutions retain their behavior.
+If that step stalls, it retries with equation/column equilibration and adaptive
+Levenberg–Marquardt damping. Each accepted step must reduce the original
+residual objective. The objective is scaled before squaring, so finite large
+residuals cannot overflow the convergence comparison. A solve has at most
+100 outer iterations, eight recovery attempts per iteration and 20
+backtracking trials per attempt.
+
+Undefined or nonfinite trial geometry is rejected while the last valid iterate
+is retained. Invalid initial geometry still fails explicitly. Finite differences
+use the extent of the points involved in each equation, rather than their
+distance from the sketch origin, and use the actual representable coordinate
+separation. If one perturbation is invalid, the valid side supplies a one-sided
+derivative; if both are invalid, the neighborhood is reduced up to eight
+times. Signed line-angle and line-to-line-angle differences wrap across ±π.
+
+`SketchSolution::solver_report` and the viewer/MCP scene's `solver.report`
+include:
+
+- `termination`: `converged`, `stationary`, `no_descent` or `iteration_limit`.
+- Accepted steps, rejected trials, derivative fallback and recovery counts.
+- Final damping and the last rejected trial's error, if any.
+- Whether named point seeds were used and whether local rank is reliable.
+
+The viewer includes a selectable solver-report annotation. Failure to converge
+is reported as a stopped local solve, rather than asserted as proof of a global
+constraint conflict. Existing per-constraint residuals and bounded conflict /
+free-motion analysis remain available.
+
+Rank uses an undamped equation/column-equilibrated Jacobian. The independent
+bounded sparse diagnosis cross-checks it. `fully_constrained` acceptance now
+requires both zero local free degrees and agreement with a completed local
+rank estimate. A capped conflict trace does not invalidate a completed rank;
+an incomplete rank or disagreement cannot certify strict acceptance. These
+remain numerical local statements, not global rigidity proofs.
+
+Call `sketch.solve_with_seed(parameters, &previous.points)` to opt into a warm
+start. Only matching free point IDs use supplied coordinates. Fixed points use
+the current definition, new points use authored seeds, removed IDs are ignored,
+and nonfinite supplied free-point coordinates reject. The supplied map and
+previous solution are never changed. Automatic feature regeneration continues
+to use authored seeds; callers opt into warm starts through this API.
+
+The `reliable-sketch` example solves a strict rectangle from deliberately poor
+seeds and exposes the solver report while dimensions change. The model format
+is unchanged, so all examples remain at schema 133 and ABI 68.

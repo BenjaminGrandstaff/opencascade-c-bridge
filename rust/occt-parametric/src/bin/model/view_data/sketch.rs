@@ -1414,6 +1414,16 @@ pub(super) fn sketch_scene(
             detail:json!({"conflict_group":group,"description":"Related equations disagree at the current iterate. Linearized groups are local evidence, not minimal conflict sets or a proof that the nonlinear sketch has no solution."}),
         }.into());
     }
+    annotations.push(Annotation {
+        id: "solver-report".into(),
+        label: if solution.solved { format!("Constraints solved · {} steps", solution.solver_report.accepted_steps) }
+            else { format!("Solve stopped · {:?}", solution.solver_report.termination) },
+        kind: AnnotationKind::Constraint,
+        status: if solution.solved { AnnotationStatus::Passed } else { AnnotationStatus::Failed },
+        targets: Vec::new(), parameters: Vec::new(),
+        anchors: json!(sketch.points.first().and_then(|p| point_map.get(&p.id)).into_iter().collect::<Vec<_>>()),
+        detail: json!({"report":solution.solver_report,"description":"Bounded local solve. Stopping without convergence is not proof of a global constraint conflict; strict acceptance also requires a reliable local rank."}),
+    }.into());
     if sketch.acceptance == SketchAcceptance::FullyConstrained {
         let targets = solution
             .diagnosis
@@ -1798,6 +1808,7 @@ pub(super) fn sketch_scene(
             "max_residual": solution.max_residual,
             "free_degrees": solution.free_degrees,
             "diagnosis": solution.diagnosis,
+            "report": solution.solver_report,
             "redundant_equations": solution.redundant_equations,
         },
         "coordinate_system": "sketch-local XY millimeters",

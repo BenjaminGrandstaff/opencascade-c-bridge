@@ -3341,7 +3341,7 @@ fn sketch_acceptance_checks_all_points_and_preserves_diagnostic_solving() {
         s.check_acceptance(&conflicting)
             .unwrap_err()
             .to_string()
-            .contains("constraints conflict")
+            .contains("constraints did not converge")
     );
 }
 

@@ -776,6 +776,11 @@ See the [edited regions](tools/model/edited-regions.request.json) example.
 connect named curves and witnessed regions to downstream topology history.
 Example: [stable sketch references](tools/model/stable-sketch-references.request.json).
 
+[Solver reliability](docs/SKETCHES.md#solver-reliability-schema-133--abi-68-unchanged)
+adds safeguarded trial rejection, adaptive recovery, local finite differences,
+rank certification and opt-in named-point warm starts. The viewer exposes why
+solving stopped; see [reliable sketch](tools/model/reliable-sketch.request.json).
+
 [Helices](docs/HELIX.md) are exact helical wires to sweep along for springs and
 coils, with parameter-driven radius, pitch, turns and handedness. ABI 52 adds
 `occt_bridge_create_helix_wire`; schema 82 adds the `helix` feature.

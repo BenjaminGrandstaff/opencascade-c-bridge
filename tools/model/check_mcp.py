@@ -1057,5 +1057,24 @@ with tempfile.TemporaryDirectory(prefix='occb-mcp-scale-') as root:
         elapsed=time.monotonic()-started
         assert elapsed<10
         print(f'PASS MCP 20 named sketch-reference parts through attached boss, fusion and hollow: {elapsed:.3f}s / 10s')
+        reliable=client.tool('occt_get_example',dict(name='reliable-sketch'))['structuredContent']
+        for i in range(1,20):
+            reliable['model']['instances'].append({'clone':dict(id=f'part-{i}',source='part',overrides={'width':{'scalar':{'value':30+i*0.5,'dimension':'length','unit':'millimeter'}}},provenance='scale')})
+            reliable['outputs'].append(dict(instance=f'part-{i}',output='body'))
+        started=time.monotonic()
+        result=client.tool('occt_visualize_model',reliable)
+        assert not result['isError'],result
+        data=json.loads(client.call('resources/read',dict(uri=result['structuredContent']['resources']['view.json']))['result']['contents'][0]['text'])
+        solids=[s for s in data['scenes'] if s['kind']=='solid']
+        sketches=[s for s in data['scenes'] if s['kind']=='sketch']
+        assert len(solids)==20 and all(s['valid'] for s in solids)
+        assert len(sketches)==20
+        for s in sketches:
+            assert s['solver']['accepted'] and s['solver']['report']['termination']=='converged'
+            assert s['solver']['report']['rank_reliable'] and s['solver']['free_degrees']==0
+            assert any(a['id']=='solver-report' for a in s['annotations'])
+        elapsed=time.monotonic()-started
+        assert elapsed<10
+        print(f'PASS MCP 20 strict sketches from poor seeds with solve termination and rank reports: {elapsed:.3f}s / 10s')
     finally:
         client.close()

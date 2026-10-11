@@ -1045,6 +1045,29 @@ pub struct SketchPoint2 {
     pub y: f64,
 }
 
+/// Why the bounded local solve stopped. Failure is not proof of a global conflict.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SketchTermination {
+    Converged,
+    Stationary,
+    NoDescent,
+    IterationLimit,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct SketchSolverReport {
+    pub termination: SketchTermination,
+    pub accepted_steps: usize,
+    pub rejected_trials: usize,
+    pub derivative_fallbacks: usize,
+    pub recovery_retries: usize,
+    pub final_damping: f64,
+    pub warm_started: bool,
+    pub rank_reliable: bool,
+    pub last_rejected_trial: Option<String>,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct SketchSolution {
     pub points: HashMap<String, SketchPoint2>,
@@ -1056,6 +1079,7 @@ pub struct SketchSolution {
     pub free_degrees: usize,
     pub redundant_equations: usize,
     pub diagnosis: SketchDiagnosis,
+    pub solver_report: SketchSolverReport,
 }
 
 #[derive(Clone, Copy)]

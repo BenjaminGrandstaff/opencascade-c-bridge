@@ -64,6 +64,100 @@ fn gate(name: &str, budget: u64, run: impl FnOnce()) {
 }
 fn main() {
     gate(
+        "1000 independent strict mixed-scale angular and distance components",
+        10,
+        || {
+            let mut s = sketch();
+            s.acceptance = SketchAcceptance::FullyConstrained;
+            for i in 0..1000 {
+                let radius = if i % 2 == 0 { 1e8 } else { 1e-4 };
+                let a = format!("a{i}");
+                let b = format!("b{i}");
+                let line = format!("line{i}");
+                s.points.push(point(a.clone(), 0., 0., true));
+                s.points
+                    .push(point(b.clone(), radius, radius * 0.01, false));
+                s.lines.push(SketchLine {
+                    id: line.clone(),
+                    start: a.clone(),
+                    end: b.clone(),
+                });
+                s.constraints.push(SketchConstraint::HorizontalDistance {
+                    first: a,
+                    second: b,
+                    value: mm(radius),
+                });
+                s.constraints.push(SketchConstraint::LineAngle {
+                    line,
+                    value: scalar(0.),
+                });
+            }
+            let result = s.solve(&HashMap::new()).unwrap();
+            s.check_acceptance(&result).unwrap();
+            assert_eq!(result.free_degrees, 0);
+            assert!(result.solver_report.rank_reliable);
+            assert!(result.solver_report.recovery_retries > 0);
+        },
+    );
+    gate(
+        "1000 cold and warm strict sketch solves with dimension edits",
+        10,
+        || {
+            let request: serde_json::Value = serde_json::from_str(include_str!(
+                "../../../tools/model/reliable-sketch.request.json"
+            ))
+            .unwrap();
+            let family = ModelDocument::from_json(&request["model"].to_string())
+                .unwrap()
+                .family;
+            let FeatureOperation::SketchFace { sketch } = &family.features[0].operation else {
+                panic!()
+            };
+            let mut params = HashMap::from([
+                (
+                    "width".into(),
+                    ParameterValue::Scalar(Quantity::length(40., LengthUnit::Millimeter)),
+                ),
+                (
+                    "height".into(),
+                    ParameterValue::Scalar(Quantity::length(25., LengthUnit::Millimeter)),
+                ),
+            ]);
+            let mut previous = sketch.solve(&params).unwrap();
+            let mut cold_iterations = 0;
+            let mut warm_iterations = 0;
+            for i in 0..1000 {
+                params.insert(
+                    "width".into(),
+                    ParameterValue::Scalar(Quantity::length(
+                        30. + (i % 20) as f64,
+                        LengthUnit::Millimeter,
+                    )),
+                );
+                params.insert(
+                    "height".into(),
+                    ParameterValue::Scalar(Quantity::length(
+                        15. + (i % 10) as f64,
+                        LengthUnit::Millimeter,
+                    )),
+                );
+                let cold = sketch.solve(&params).unwrap();
+                let warm = sketch.solve_with_seed(&params, &previous.points).unwrap();
+                sketch.check_acceptance(&cold).unwrap();
+                sketch.check_acceptance(&warm).unwrap();
+                for (id, p) in &cold.points {
+                    let q = warm.points[id];
+                    assert!((p.x - q.x).hypot(p.y - q.y) < 1e-7);
+                }
+                cold_iterations += cold.iterations;
+                warm_iterations += warm.iterations;
+                previous = warm;
+            }
+            assert!(warm_iterations < cold_iterations);
+            println!("cold/warm iterations: {cold_iterations}/{warm_iterations}");
+        },
+    );
+    gate(
         "100 named sketch-reference edits through attached boss, fusion and hollow",
         10,
         || {
