@@ -627,3 +627,49 @@ fn native_spline_corner_edits_reject_tangent_joins_and_scale_with_distant_planes
         }
     }
 }
+
+#[test]
+fn curves_trim_between_points_wrapping_closed_seams() {
+    let s = Session::new().unwrap();
+    let v = |x: f64, y: f64| Vec3::new(x, y, 0.0);
+    let circle = s
+        .create_circle_wire(v(0., 0.), Vec3::new(0., 0., 1.), 10.)
+        .unwrap();
+    let length = |w: &Shape<'_>| {
+        s.subshapes(w, ShapeType::Edge)
+            .unwrap()
+            .iter()
+            .map(|e| s.edge_length(e).unwrap())
+            .sum::<f64>()
+    };
+    // Counterclockwise from 90° to 0° wraps through the seam: three quarters.
+    let (top, right) = (v(0., 10.), v(10., 0.));
+    for (from, to, turns) in [(top, right, 0.75), (right, top, 0.25)] {
+        let arc = s.trim_curve_between(&circle, from, to).unwrap();
+        assert!((length(&arc) - turns * 20. * std::f64::consts::PI).abs() < 1e-9);
+        let (a, b, _, _) = s.curve_end_data(&arc).unwrap();
+        assert!((a.x - from.x).hypot(a.y - from.y) < 1e-9 && (b.x - to.x).hypot(b.y - to.y) < 1e-9);
+    }
+    // Open curves keep their order; reversed points are rejected.
+    let line = s
+        .create_polyline_wire(&[v(0., 0.), v(10., 0.)], false)
+        .unwrap();
+    let piece = s.trim_curve_between(&line, v(2., 0.), v(7., 0.)).unwrap();
+    assert!((length(&piece) - 5.).abs() < 1e-12);
+    let count = s.shape_count().unwrap();
+    for (from, to, message) in [
+        (v(7., 0.), v(2., 0.), "out of order"),
+        (v(2., 0.5), v(7., 0.), "not on the curve"),
+        (v(f64::NAN, 0.), v(7., 0.), "finite"),
+    ] {
+        let error = s.trim_curve_between(&line, from, to).unwrap_err();
+        assert!(error.message.contains(message), "{}", error.message);
+    }
+    assert!(
+        s.trim_curve_between(&circle, top, top)
+            .unwrap_err()
+            .message
+            .contains("coincide")
+    );
+    assert_eq!(s.shape_count().unwrap(), count);
+}

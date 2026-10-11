@@ -1650,3 +1650,42 @@ quarter circle (area 25π and length 5π to 1e-9), a control point solved as
 the intersection of two end tangents, revolved volumes against numerical
 integration of the exact curve (1e-6), and rejected `rho` and points. 500
 `rho` edits regenerate the revolved nose in 0.92 s (10 s budget).
+
+## Trimming between points and crossings (schema 126 / ABI 64)
+
+`trim_between` keeps the part of a profile entity from one bound to another
+along the entity's direction:
+
+```json
+{"trim_between": {"entity": "head",
+  "from": {"crossing": {"curve": "right", "near": "hint_r"}},
+  "to": {"crossing": {"curve": "left", "near": "hint_l"}}}}
+```
+
+Each bound is one of:
+
+| Bound | Meaning |
+|---|---|
+| `"start"`, `"end"` | The entity's own start or end, so the other end can stay. |
+| `{"point": {"point": id}}` | A sketch point on the entity: its solved position, which must lie within 1e-6 mm of the curve. Constrain it there, for example with `point_on_curve`. |
+| `{"crossing": {"curve": id, "near": id}}` | The native crossing of the entity with another sketch curve (in the profile or construction geometry) nearest to the hint point `near`. |
+
+Full circles, ellipses and periodic splines wrap through their seam, so a
+trimmed closed curve can be one segment of a larger profile; open curves
+need `from` before `to`. Like `trim`, it must precede corner edits and
+offsets, which then act on the joined boundary. Crossings come from the
+bridge's native planar intersection in sketch-local coordinates, so a trim
+follows the curves through every parameter edit without sampled geometry.
+
+ABI 64 adds `occt_bridge_trim_curve_between` (`Session::trim_curve_between`):
+it projects both points onto a one-edge curve, requires them on it within
+1e-6, and keeps the span between them along its traversal.
+
+The [keyhole tag](../tools/model/keyhole-tag.request.json) cuts a full
+circle back to the arc between its crossings with two legs, trims the legs
+at the same crossings, and fillets the feet. Tests check the keyhole area
+against its closed form (1e-9), a full ellipse trimmed between named points
+in both senses, a spline trimmed from its start to a line crossing, and
+rejected bounds (identical, self-crossing, unknown, non-crossing, off the
+curve, or after a corner edit). 500 neck-width edits regenerate in 1.52 s
+(10 s budget).

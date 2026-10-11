@@ -1,0 +1,550 @@
+{
+  "schema": "occb-model-view-v1",
+  "model": {
+    "schema_version": 126,
+    "family": {
+      "id": "keyhole-tag",
+      "version": 1,
+      "parameters": [
+        {
+          "id": "head_radius",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 8,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 5,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 12,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "neck_width",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 6,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 3,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 8,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "neck_length",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 20,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 14,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 40,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "foot_fillet",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 1,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 0.5,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 1.5,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "thickness",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 3,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 1,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 6,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        }
+      ],
+      "derived_parameters": [],
+      "derived_vector_parameters": [],
+      "constraints": [],
+      "requirements": [
+        {
+          "id": "valid",
+          "version": 1,
+          "kind": "validation",
+          "priority": "required",
+          "statement": "body valid",
+          "rule": {
+            "shape_valid": {
+              "output": "body"
+            }
+          },
+          "provenance": "example; demonstration assumptions",
+          "traces": [
+            {
+              "feature": "body"
+            }
+          ]
+        }
+      ],
+      "datums": [],
+      "features": [
+        {
+          "id": "profile",
+          "operation": {
+            "sketch_face": {
+              "sketch": {
+                "id": "keyhole",
+                "origin": {
+                  "literal": {
+                    "x": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    },
+                    "y": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                },
+                "x_axis": {
+                  "literal": {
+                    "x": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "y_axis": {
+                  "literal": {
+                    "x": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "points": [
+                  {
+                    "id": "c",
+                    "x": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "parameter": "neck_length"
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "r",
+                    "x": {
+                      "parameter": "head_radius"
+                    },
+                    "y": {
+                      "parameter": "neck_length"
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "rb",
+                    "x": {
+                      "divide": [
+                        {
+                          "parameter": "neck_width"
+                        },
+                        {
+                          "literal": {
+                            "value": 2,
+                            "dimension": "scalar",
+                            "unit": null
+                          }
+                        }
+                      ]
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "rt",
+                    "x": {
+                      "divide": [
+                        {
+                          "parameter": "neck_width"
+                        },
+                        {
+                          "literal": {
+                            "value": 2,
+                            "dimension": "scalar",
+                            "unit": null
+                          }
+                        }
+                      ]
+                    },
+                    "y": {
+                      "add": [
+                        {
+                          "parameter": "neck_length"
+                        },
+                        {
+                          "parameter": "head_radius"
+                        }
+                      ]
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "lt",
+                    "x": {
+                      "negate": {
+                        "divide": [
+                          {
+                            "parameter": "neck_width"
+                          },
+                          {
+                            "literal": {
+                              "value": 2,
+                              "dimension": "scalar",
+                              "unit": null
+                            }
+                          }
+                        ]
+                      }
+                    },
+                    "y": {
+                      "add": [
+                        {
+                          "parameter": "neck_length"
+                        },
+                        {
+                          "parameter": "head_radius"
+                        }
+                      ]
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "lb",
+                    "x": {
+                      "negate": {
+                        "divide": [
+                          {
+                            "parameter": "neck_width"
+                          },
+                          {
+                            "literal": {
+                              "value": 2,
+                              "dimension": "scalar",
+                              "unit": null
+                            }
+                          }
+                        ]
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "hint_r",
+                    "x": {
+                      "divide": [
+                        {
+                          "parameter": "neck_width"
+                        },
+                        {
+                          "literal": {
+                            "value": 2,
+                            "dimension": "scalar",
+                            "unit": null
+                          }
+                        }
+                      ]
+                    },
+                    "y": {
+                      "subtract": [
+                        {
+                          "parameter": "neck_length"
+                        },
+                        {
+                          "parameter": "head_radius"
+                        }
+                      ]
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "hint_l",
+                    "x": {
+                      "negate": {
+                        "divide": [
+                          {
+                            "parameter": "neck_width"
+                          },
+                          {
+                            "literal": {
+                              "value": 2,
+                              "dimension": "scalar",
+                              "unit": null
+                            }
+                          }
+                        ]
+                      }
+                    },
+                    "y": {
+                      "subtract": [
+                        {
+                          "parameter": "neck_length"
+                        },
+                        {
+                          "parameter": "head_radius"
+                        }
+                      ]
+                    },
+                    "fixed": true
+                  }
+                ],
+                "lines": [
+                  {
+                    "id": "right",
+                    "start": "rb",
+                    "end": "rt"
+                  },
+                  {
+                    "id": "left",
+                    "start": "lt",
+                    "end": "lb"
+                  },
+                  {
+                    "id": "bottom",
+                    "start": "lb",
+                    "end": "rb"
+                  }
+                ],
+                "circles": [
+                  {
+                    "id": "head",
+                    "center": "c",
+                    "rim": "r"
+                  }
+                ],
+                "arcs": [],
+                "profile": [
+                  "right",
+                  "head",
+                  "left",
+                  "bottom"
+                ],
+                "constraints": [],
+                "profile_operations": [
+                  {
+                    "trim_between": {
+                      "entity": "right",
+                      "from": "start",
+                      "to": {
+                        "crossing": {
+                          "curve": "head",
+                          "near": "hint_r"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "trim_between": {
+                      "entity": "head",
+                      "from": {
+                        "crossing": {
+                          "curve": "right",
+                          "near": "hint_r"
+                        }
+                      },
+                      "to": {
+                        "crossing": {
+                          "curve": "left",
+                          "near": "hint_l"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "trim_between": {
+                      "entity": "left",
+                      "from": {
+                        "crossing": {
+                          "curve": "head",
+                          "near": "hint_l"
+                        }
+                      },
+                      "to": "end"
+                    }
+                  },
+                  {
+                    "fillet": {
+                      "point": "rb",
+                      "radius": {
+                        "parameter": "foot_fillet"
+                      }
+                    }
+                  },
+                  {
+                    "fillet": {
+                      "point": "lb",
+                      "radius": {
+                        "parameter": "foot_fillet"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "body",
+          "operation": {
+            "extrude": {
+              "input": "profile",
+              "direction": {
+                "components": {
+                  "x": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "y": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "z": {
+                    "parameter": "thickness"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "instances": [
+      {
+        "base": {
+          "id": "tag",
+          "overrides": {},
+          "provenance": "Keyhole tag: a circle and two legs trimmed at their native crossings"
+        }
+      }
+    ]
+  },
+  "outputs": [
+    {
+      "instance": "tag",
+      "output": "body"
+    }
+  ],
+  "sketches": true
+}

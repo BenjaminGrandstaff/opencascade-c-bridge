@@ -1457,6 +1457,19 @@ pub(super) fn sketch_scene(
             SketchProfileOperation::Trim { entity, .. } => {
                 (format!("Trim {entity}"), vec![entity.clone()])
             }
+            SketchProfileOperation::TrimBetween { entity, from, to } => {
+                let mut targets = vec![entity.clone()];
+                for bound in [from, to] {
+                    match bound {
+                        SketchTrimBound::Point { point } => targets.push(point.clone()),
+                        SketchTrimBound::Crossing { curve, near } => {
+                            targets.extend([curve.clone(), near.clone()])
+                        }
+                        _ => {}
+                    }
+                }
+                (format!("Trim {entity} between bounds"), targets)
+            }
             SketchProfileOperation::Extend { entity, .. } => {
                 (format!("Extend {entity}"), vec![entity.clone()])
             }

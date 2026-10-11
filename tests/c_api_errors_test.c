@@ -1395,6 +1395,19 @@ static void elliptical_arcs(occt_bridge_session_t* session) {
         vec(0, 0, 0), vec(10, 0, 0), vec(0, 4, 0), vec(10, 1, 0), vec(-10, 0, 0)};
     EXPECT(occt_bridge_create_curve_wire(session, off, 5, &arc, 1, 0, &out), GEOMETRY);
     EXPECT_TRUE(out == OCCT_BRIDGE_INVALID_SHAPE_ID, "failed arc clears result");
+
+    /* Trims between points (ABI 64). */
+    occt_bridge_shape_id_t circle = 0;
+    EXPECT(occt_bridge_create_circle_wire(session, vec(0, 0, 0), vec(0, 0, 1), 10, &circle), OK);
+    EXPECT(occt_bridge_trim_curve_between(NULL, circle, vec(0, 10, 0), vec(10, 0, 0), &out), ARG);
+    EXPECT(occt_bridge_trim_curve_between(session, circle, vec(0, 10, 0), vec(10, 0, 0), NULL), ARG);
+    EXPECT(occt_bridge_trim_curve_between(session, unknown, vec(0, 10, 0), vec(10, 0, 0), &out), MISSING);
+    EXPECT(occt_bridge_trim_curve_between(session, circle, vec(NAN, 10, 0), vec(10, 0, 0), &out), ARG);
+    EXPECT(occt_bridge_trim_curve_between(session, circle, vec(0, 10, 0), vec(0, 10, 0), &out), ARG);
+    EXPECT(occt_bridge_trim_curve_between(session, circle, vec(0, 11, 0), vec(10, 0, 0), &out), GEOMETRY);
+    EXPECT(occt_bridge_trim_curve_between(session, circle, vec(0, 10, 0), vec(10, 0, 0), &out), OK);
+    occt_bridge_shape_release(session, out);
+    occt_bridge_shape_release(session, circle);
 }
 
 static void corner_edits(occt_bridge_session_t* session) {

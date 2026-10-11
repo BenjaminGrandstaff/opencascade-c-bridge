@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define OCCT_BRIDGE_ABI_VERSION 63u
+#define OCCT_BRIDGE_ABI_VERSION 64u
 #define OCCT_BRIDGE_INVALID_SHAPE_ID UINT64_C(0)
 
 #if defined(_WIN32) && defined(OCCT_BRIDGE_BUILD_SHARED)
@@ -871,6 +871,11 @@ OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_create_ellipse_wire_axes(occt_b
 OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_fillet_wire_corner(occt_bridge_session_t*, occt_bridge_shape_id_t, occt_bridge_vec3_t corner, double radius, occt_bridge_shape_id_t*);
 OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_chamfer_wire_corner(occt_bridge_session_t*, occt_bridge_shape_id_t, occt_bridge_vec3_t corner, double incoming, double outgoing, occt_bridge_shape_id_t*);
 OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_trim_curve(occt_bridge_session_t*, occt_bridge_shape_id_t, double first_fraction, double last_fraction, occt_bridge_shape_id_t*);
+/* ABI 64: keeps the part of a one-edge curve from `from` to `to` along its
+ * traversal. Both points must lie within 1e-6 of the curve. A closed periodic
+ * curve (full circle, ellipse, periodic spline) wraps through its seam; an
+ * open curve needs `from` before `to`. */
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_trim_curve_between(occt_bridge_session_t*, occt_bridge_shape_id_t, occt_bridge_vec3_t from, occt_bridge_vec3_t to, occt_bridge_shape_id_t*);
 OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_extend_curve(occt_bridge_session_t*, occt_bridge_shape_id_t, double start, double end, occt_bridge_shape_id_t*);
 OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_join_wires(occt_bridge_session_t*, const occt_bridge_shape_id_t*, size_t, int closed, occt_bridge_shape_id_t*);
 OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_offset_wire(occt_bridge_session_t*, occt_bridge_shape_id_t, occt_bridge_vec3_t normal, double distance, int join, occt_bridge_shape_id_t*);

@@ -919,5 +919,21 @@ with tempfile.TemporaryDirectory(prefix='occb-mcp-scale-') as root:
         elapsed=time.monotonic()-started
         assert elapsed<10
         print(f'PASS MCP 20 conic nose cones from elliptic to hyperbolic: {elapsed:.3f}s / 10s')
+        tags=client.tool('occt_get_example',dict(name='keyhole-tag'))['structuredContent']
+        for i in range(1,20):
+            neck=3+0.25*i
+            tags['model']['instances'].append({'clone':dict(id=f'tag-{i}',source='tag',overrides={'neck_width':{'scalar':{'value':neck,'dimension':'length','unit':'millimeter'}}},provenance='scale')})
+            tags['outputs'].append(dict(instance=f'tag-{i}',output='body'))
+        started=time.monotonic()
+        result=client.tool('occt_visualize_model',tags)
+        assert not result['isError'],result
+        data=json.loads(client.call('resources/read',dict(uri=result['structuredContent']['resources']['view.json']))['result']['contents'][0]['text'])
+        solids=[s for s in data['scenes'] if s['kind']=='solid']
+        sketches=[s for s in data['scenes'] if s['kind']=='sketch']
+        assert len(solids)==20 and all(s['valid'] for s in solids)
+        assert all(len([a for a in s['annotations'] if a['label'].startswith('Trim')])==3 and s['edited_profile'] for s in sketches)
+        elapsed=time.monotonic()-started
+        assert elapsed<10
+        print(f'PASS MCP 20 keyhole tags trimmed at native crossings: {elapsed:.3f}s / 10s')
     finally:
         client.close()

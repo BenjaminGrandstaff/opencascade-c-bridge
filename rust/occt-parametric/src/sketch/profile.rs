@@ -349,6 +349,28 @@ impl SketchDefinition {
                         scalar(last, parameters, Dimension::Scalar)?,
                     )?;
                 }
+                SketchProfileOperation::TrimBetween { entity, from, to } => {
+                    let i = *index.get(entity.as_str()).ok_or_else(|| {
+                        ModelError::new("trim entity must belong to the selected profile")
+                    })?;
+                    let (start, end, _, _) = session.curve_end_data(&wires[i])?;
+                    let at = |bound: &SketchTrimBound| -> Result<Vec3, ModelError> {
+                        Ok(match bound {
+                            SketchTrimBound::Start => start,
+                            SketchTrimBound::End => end,
+                            SketchTrimBound::Point { point } => transform(solution.points[point]),
+                            SketchTrimBound::Crossing { curve, near } => {
+                                transform(self.crossing(session, solution, entity, curve, near)?)
+                            }
+                        })
+                    };
+                    let (a, b) = (at(from)?, at(to)?);
+                    wires[i] = session
+                        .trim_curve_between(&wires[i], a, b)
+                        .map_err(|error| {
+                            ModelError::from(error).context(&format!("trim of '{entity}'"))
+                        })?;
+                }
                 SketchProfileOperation::Extend { entity, start, end } => {
                     let i = *index.get(entity.as_str()).ok_or_else(|| {
                         ModelError::new("extend entity must belong to the selected profile")
@@ -412,6 +434,36 @@ impl SketchDefinition {
             }));
         }
         Ok(wire)
+    }
+
+    /// The crossing of two sketch entities nearest to the point `near`, in
+    /// sketch-local XY, from the native planar intersection of their curves.
+    fn crossing(
+        &self,
+        session: &Session,
+        solution: &SketchSolution,
+        entity: &str,
+        curve: &str,
+        near: &str,
+    ) -> Result<SketchPoint2, ModelError> {
+        let entities = self.entities();
+        let local = |p: SketchPoint2| Vec3::new(p.x, p.y, 0.0);
+        let normal = Vec3::new(0.0, 0.0, 1.0);
+        let first =
+            self.entity_wire(session, entities[entity], solution, &local, &local, normal)?;
+        let second =
+            self.entity_wire(session, entities[curve], solution, &local, &local, normal)?;
+        let hint = solution.points[near];
+        session
+            .planar_curve_intersections(&first, &second, 1000)?
+            .into_iter()
+            .map(|p| SketchPoint2 { x: p.x, y: p.y })
+            .min_by(|a, b| {
+                (a.x - hint.x)
+                    .hypot(a.y - hint.y)
+                    .total_cmp(&(b.x - hint.x).hypot(b.y - hint.y))
+            })
+            .ok_or_else(|| ModelError::new(format!("'{entity}' and '{curve}' do not cross")))
     }
 
     /// Native sampled edited profile in sketch-local XY, for diagnostics.

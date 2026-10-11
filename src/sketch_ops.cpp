@@ -361,6 +361,43 @@ extern "C" {
             return store_curve(s,curve,a,b,reversed,out);
         });
     }
+    occt_bridge_status_t occt_bridge_trim_curve_between(occt_bridge_session_t* s, occt_bridge_shape_id_t id, occt_bridge_vec3_t from, occt_bridge_vec3_t to, occt_bridge_shape_id_t* out) {
+        return guarded(s,[&] {
+            if(out==nullptr) {
+                return fail(s,OCCT_BRIDGE_INVALID_ARGUMENT,"out_shape is null");
+            }
+            *out=OCCT_BRIDGE_INVALID_SHAPE_ID;
+            if(!finite(from)||!finite(to))return fail(s,OCCT_BRIDGE_INVALID_ARGUMENT,"trim points must be finite");
+            const auto* shape=find_shape(s,id);
+            if(!shape)return fail(s,OCCT_BRIDGE_SHAPE_NOT_FOUND,"trim curve was not found");
+            auto edge=single_edge(*shape);
+            if(edge.IsNull())return fail(s,OCCT_BRIDGE_INVALID_ARGUMENT,"curve editing requires exactly one edge");
+            double first,last;
+            auto curve=BRep_Tool::Curve(edge,first,last);
+            if(curve.IsNull())return fail(s,OCCT_BRIDGE_INVALID_GEOMETRY,"curve has no geometry");
+            // Parameters of both points, each within 1e-6 mm of the curve.
+            double u[2];
+            const gp_Pnt points[2]={to_point(from),to_point(to)};
+            if(points[0].Distance(points[1])<=Precision::Confusion())return fail(s,OCCT_BRIDGE_INVALID_ARGUMENT,"trim points coincide");
+            for(int k=0;k<2;++k) {
+                GeomAPI_ProjectPointOnCurve projection(points[k],curve,first,last);
+                if(projection.NbPoints()==0||projection.LowerDistance()>1e-6)return fail(s,OCCT_BRIDGE_INVALID_GEOMETRY,"trim point is not on the curve");
+                u[k]=projection.LowerDistanceParameter();
+            }
+            // Keep from `from` to `to` along the edge's traversal; a closed
+            // edge wraps through its seam, an open one needs them in order.
+            const bool reversed=edge.Orientation()==TopAbs_REVERSED;
+            double a=reversed?u[1]:u[0],b=reversed?u[0]:u[1];
+            const bool closed=BRep_Tool::IsClosed(edge)&&curve->IsPeriodic();
+            if(closed) {
+                const double period=curve->Period();
+                while(b<=a+Precision::PConfusion())b+=period;
+                while(b-a>period+Precision::PConfusion())b-=period;
+            }
+            if(b-a<=Precision::PConfusion())return fail(s,OCCT_BRIDGE_INVALID_ARGUMENT,"trim points are out of order along the curve");
+            return store_curve(s,curve,a,b,reversed,out);
+        });
+    }
     occt_bridge_status_t occt_bridge_extend_curve(occt_bridge_session_t* s, occt_bridge_shape_id_t id, double start, double end, occt_bridge_shape_id_t* out) {
         return guarded(s,[&] {
             if(out==nullptr) {

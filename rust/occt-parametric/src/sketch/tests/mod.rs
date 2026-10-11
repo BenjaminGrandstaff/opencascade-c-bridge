@@ -10,6 +10,7 @@ mod shapes;
 mod solving;
 mod splines;
 mod sweeps;
+mod trim_between;
 
 fn length(value: f64) -> ScalarExpr {
     ScalarExpr::Literal(Quantity::length(value, LengthUnit::Millimeter))

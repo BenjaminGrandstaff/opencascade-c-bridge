@@ -50,7 +50,7 @@ pub use sketch::{
     SketchPoint2, SketchPointMotion, SketchProfileOperation, SketchProjection,
     SketchProjectionIntersection, SketchProjectionJunction, SketchProjectionKind, SketchShape,
     SketchSolution, SketchSpline, SketchSplineCircleContact, SketchSplineEndpoints,
-    SketchSupportPlanes,
+    SketchSupportPlanes, SketchTrimBound,
 };
 pub use solve::PlacementSolution;
 

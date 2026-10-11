@@ -2501,3 +2501,55 @@ fn conic_nose_revolves_elliptic_parabolic_and_hyperbolic_profiles() {
         );
     }
 }
+
+#[test]
+fn keyhole_tag_previews_trims_at_crossings_and_follows_neck_edits() {
+    let dir = Directory::new();
+    for (name, neck) in [("default", 6.0f64), ("narrow", 3.5)] {
+        let mut request = view_example("keyhole-tag");
+        request["model"]["instances"][0]["base"]["overrides"] = json!({"neck_width":{"scalar":{"value":neck,"dimension":"length","unit":"millimeter"}}});
+        view_request(&dir, request, name).unwrap();
+        let data: Value =
+            serde_json::from_str(&fs::read_to_string(dir.0.join(name).join("view.json")).unwrap())
+                .unwrap();
+        let body = &data["scenes"][0];
+        assert_eq!(body["valid"], true);
+        assert!((body["bounds"][1][1].as_f64().unwrap() - 28.0).abs() < 1e-9);
+        let sketch = data["scenes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["kind"] == "sketch")
+            .unwrap();
+        let trims = sketch["annotations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|a| a["label"].as_str().unwrap().starts_with("Trim"))
+            .collect::<Vec<_>>();
+        assert_eq!(trims.len(), 3);
+        assert_eq!(
+            trims[1]["targets"],
+            json!(["head", "right", "hint_r", "left", "hint_l"])
+        );
+        // The edited profile meets each leg where it crosses the head:
+        // y = neck_length − √(r² − (w/2)²).
+        let crossing = 20.0 - (64.0f64 - neck * neck / 4.0).sqrt();
+        let edited = sketch["edited_profile"].as_array().unwrap();
+        let ends = edited
+            .iter()
+            .flat_map(|edge| {
+                let edge = edge.as_array().unwrap();
+                [edge[0].clone(), edge[edge.len() - 1].clone()]
+            })
+            .collect::<Vec<_>>();
+        for x in [neck / 2.0, -neck / 2.0] {
+            assert!(
+                ends.iter()
+                    .any(|p| (p[0].as_f64().unwrap() - x).abs() < 1e-9
+                        && (p[1].as_f64().unwrap() - crossing).abs() < 1e-9),
+                "{x}"
+            );
+        }
+    }
+}

@@ -2288,4 +2288,35 @@ fn main() {
             assert!(volumes.windows(2).all(|pair| pair[0] < pair[1]));
         },
     );
+    gate(
+        "500 keyhole neck edits trimmed at native crossings and extruded",
+        10,
+        || {
+            let request: serde_json::Value = serde_json::from_str(include_str!(
+                "../../../tools/model/keyhole-tag.request.json"
+            ))
+            .unwrap();
+            let family = ModelDocument::from_json(&request["model"].to_string())
+                .unwrap()
+                .family;
+            let session = Session::new().unwrap();
+            let mut part = PartInstance {
+                id: "tag".into(),
+                definition: &family,
+                overrides: HashMap::new(),
+                provenance: "scale".into(),
+            };
+            let mut previous = part.regenerate(&session).unwrap();
+            for k in 0..500 {
+                let neck = 3. + 0.5 * (k % 10) as f64;
+                part.overrides.insert(
+                    "neck_width".into(),
+                    ParameterValue::Scalar(Quantity::length(neck, LengthUnit::Millimeter)),
+                );
+                let built = part.regenerate_incremental(&session, &previous).unwrap();
+                assert!(session.is_valid(built.shape("body").unwrap()).unwrap());
+                previous = built;
+            }
+        },
+    );
 }

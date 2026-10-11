@@ -813,6 +813,19 @@ impl Session {
             occt_bridge_trim_curve(self.raw.as_ptr(), shape.id, first, last, out)
         })
     }
+    /// Keeps the part of a one-edge curve from `from` to `to` along its
+    /// traversal (ABI 64). Both points must be on the curve within 1e-6; a
+    /// closed periodic curve wraps through its seam.
+    pub fn trim_curve_between<'a>(
+        &'a self,
+        shape: &Shape<'_>,
+        from: Vec3,
+        to: Vec3,
+    ) -> Result<Shape<'a>, BridgeError> {
+        self.derived_shape(shape, |out| unsafe {
+            occt_bridge_trim_curve_between(self.raw.as_ptr(), shape.id, from.into(), to.into(), out)
+        })
+    }
     pub fn extend_curve<'a>(
         &'a self,
         shape: &Shape<'_>,

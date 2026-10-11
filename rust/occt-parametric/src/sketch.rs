@@ -108,6 +108,21 @@ impl SketchEllipse {
     }
 }
 
+/// One end of a `trim_between` profile edit.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum SketchTrimBound {
+    /// The entity's own start.
+    Start,
+    /// The entity's own end.
+    End,
+    /// A sketch point on the entity: its solved position, within 1e-6 mm.
+    Point { point: String },
+    /// The native crossing of the entity with another sketch curve nearest
+    /// to the sketch point `near`.
+    Crossing { curve: String, near: String },
+}
+
 /// Saved edits to the solved profile. Constraints refer to the source entities;
 /// these operations derive the profile used by features, in recorded order.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
@@ -118,6 +133,14 @@ pub enum SketchProfileOperation {
         entity: String,
         first: ScalarExpr,
         last: ScalarExpr,
+    },
+    /// Keeps the part of `entity` from `from` to `to` along its direction
+    /// (schema 126). Full circles, ellipses and periodic splines wrap
+    /// through their seam, so a trimmed closed curve can join a profile.
+    TrimBetween {
+        entity: String,
+        from: SketchTrimBound,
+        to: SketchTrimBound,
     },
     /// Nonnegative extension distances; analytic curves continue naturally,
     /// splines use native tangent-continuous extension to the tangent targets.
@@ -981,6 +1004,7 @@ impl SketchDefinition {
                     collect_scalar_parameters(first, names);
                     collect_scalar_parameters(last, names);
                 }
+                SketchProfileOperation::TrimBetween { .. } => {}
                 SketchProfileOperation::Extend { start, end, .. } => {
                     collect_scalar_parameters(start, names);
                     collect_scalar_parameters(end, names);

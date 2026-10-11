@@ -90,6 +90,7 @@ impl SketchDefinition {
                         ));
                     }
                 }
+                SketchProfileOperation::TrimBetween { .. } => {}
                 SketchProfileOperation::Extend { start, end, .. } => {
                     let a = scalar(start, parameters, Dimension::Length)?;
                     let b = scalar(end, parameters, Dimension::Length)?;
@@ -163,7 +164,9 @@ impl SketchDefinition {
         let mut corners = HashSet::new();
         for op in &self.profile_operations {
             match op {
-                SketchProfileOperation::Trim { .. } | SketchProfileOperation::Extend { .. }
+                SketchProfileOperation::Trim { .. }
+                | SketchProfileOperation::TrimBetween { .. }
+                | SketchProfileOperation::Extend { .. }
                     if whole =>
                 {
                     return Err(ModelError::new(
@@ -195,12 +198,41 @@ impl SketchDefinition {
         for op in &self.profile_operations {
             match op {
                 SketchProfileOperation::Trim { entity, .. }
+                | SketchProfileOperation::TrimBetween { entity, .. }
                 | SketchProfileOperation::Extend { entity, .. }
                     if !entity_ids.contains(entity.as_str()) =>
                 {
                     return Err(ModelError::new(
                         "profile operation refers to an unknown entity",
                     ));
+                }
+                SketchProfileOperation::TrimBetween { entity, from, to } => {
+                    if from == to {
+                        return Err(ModelError::new(format!(
+                            "trim of '{entity}' needs two different bounds"
+                        )));
+                    }
+                    for bound in [from, to] {
+                        match bound {
+                            SketchTrimBound::Point { point }
+                                if !point_ids.contains(point.as_str()) =>
+                            {
+                                return Err(ModelError::new(format!(
+                                    "trim bound refers to unknown point '{point}'"
+                                )));
+                            }
+                            SketchTrimBound::Crossing { curve, near }
+                                if !entity_ids.contains(curve.as_str())
+                                    || curve == entity
+                                    || !point_ids.contains(near.as_str()) =>
+                            {
+                                return Err(ModelError::new(format!(
+                                    "trim crossing needs another known curve and a known hint point, not '{curve}' near '{near}'"
+                                )));
+                            }
+                            _ => {}
+                        }
+                    }
                 }
                 _ => {}
             }
