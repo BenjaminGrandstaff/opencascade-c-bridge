@@ -1503,7 +1503,7 @@ pub(super) fn sketch_scene(
     if let Some(discovery) = &sketch.region_discovery {
         annotations.push(Annotation {
             id: "region-discovery".into(),
-            label: if discovery.seeds.is_empty() { "All bounded regions".into() } else { "Selected regions".into() },
+            label: if discovery.merge_adjacent { "Composed material regions".into() } else if discovery.seeds.is_empty() { "All bounded regions".into() } else { "Selected regions".into() },
             kind: AnnotationKind::Group,
             status: if profile_error.is_none() { AnnotationStatus::Constructed } else { AnnotationStatus::Failed },
             targets: discovery.seeds.clone(),

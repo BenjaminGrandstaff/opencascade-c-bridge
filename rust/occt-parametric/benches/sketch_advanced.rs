@@ -62,6 +62,87 @@ fn gate(name: &str, budget: u64, run: impl FnOnce()) {
 }
 fn main() {
     gate(
+        "1000 grid cells composed into one holed region and extruded",
+        10,
+        || {
+            use occt_bridge::Vec3;
+            let session = Session::new().unwrap();
+            let mut curves = vec![
+                session
+                    .create_polyline_wire(
+                        &[
+                            Vec3::new(0., 0., 0.),
+                            Vec3::new(100., 0., 0.),
+                            Vec3::new(100., 10., 0.),
+                            Vec3::new(0., 10., 0.),
+                        ],
+                        true,
+                    )
+                    .unwrap(),
+            ];
+            for x in 1..100 {
+                curves.push(
+                    session
+                        .create_polyline_wire(
+                            &[Vec3::new(x as f64, 0., 0.), Vec3::new(x as f64, 10., 0.)],
+                            false,
+                        )
+                        .unwrap(),
+                );
+            }
+            for y in 1..10 {
+                curves.push(
+                    session
+                        .create_polyline_wire(
+                            &[Vec3::new(0., y as f64, 0.), Vec3::new(100., y as f64, 0.)],
+                            false,
+                        )
+                        .unwrap(),
+                );
+            }
+            let seeds: Vec<_> = (0..10)
+                .flat_map(|y| {
+                    (0..100)
+                        .filter(move |x| *x != 50 || y != 5)
+                        .map(move |x| Vec3::new(x as f64 + 0.5, y as f64 + 0.5, 0.))
+                })
+                .collect();
+            let cells = session
+                .discover_planar_regions(
+                    &curves.iter().collect::<Vec<_>>(),
+                    Vec3::new(0., 0., 0.),
+                    Vec3::new(0., 0., 1.),
+                    Vec3::new(1., 0., 0.),
+                    &seeds,
+                )
+                .unwrap();
+            assert_eq!(
+                session.subshape_count(&cells, ShapeType::Face).unwrap(),
+                999
+            );
+            let composed = session.unify_same_domain(&cells, 1e-7, 1e-9).unwrap();
+            assert_eq!(
+                session.subshape_count(&composed, ShapeType::Face).unwrap(),
+                1
+            );
+            assert_eq!(
+                session.subshape_count(&composed, ShapeType::Wire).unwrap(),
+                2
+            );
+            assert_eq!(
+                session.subshape_count(&composed, ShapeType::Edge).unwrap(),
+                8
+            );
+            assert!((session.surface_area(&composed).unwrap() - 999.).abs() < 1e-7);
+            let face = session.subshape(&composed, ShapeType::Face, 0).unwrap();
+            let body = session
+                .create_prism_from_face(&face, Vec3::new(0., 0., 2.))
+                .unwrap();
+            assert!(session.is_valid(&body).unwrap());
+            assert!((session.volume(&body).unwrap() - 1998.).abs() < 1e-6);
+        },
+    );
+    gate(
         "1000 disjoint circle cells discovered, selected by 500 seeds and extruded",
         10,
         || {

@@ -31,7 +31,7 @@ impl SketchDefinition {
             .iter()
             .map(|id| transform(solution.points[id]))
             .collect();
-        session
+        let cells = session
             .discover_planar_regions(
                 &wires.iter().collect::<Vec<_>>(),
                 origin,
@@ -41,6 +41,22 @@ impl SketchDefinition {
             )
             .map_err(|e| {
                 ModelError::from(e).context(&format!("sketch '{}' region discovery", self.id))
-            })
+            })?;
+        if !discovery.merge_adjacent {
+            return Ok(cells);
+        }
+        let area = session.surface_area(&cells)?;
+        let regions = session.unify_same_domain(&cells, 1e-7, 1e-9).map_err(|e| {
+            ModelError::from(e).context(&format!("sketch '{}' region composition", self.id))
+        })?;
+        if !session.is_valid(&regions)?
+            || (session.surface_area(&regions)? - area).abs() > area * 1e-8 + 1e-9
+        {
+            return Err(ModelError::new(format!(
+                "sketch '{}' region composition must preserve valid material area",
+                self.id
+            )));
+        }
+        Ok(regions)
     }
 }

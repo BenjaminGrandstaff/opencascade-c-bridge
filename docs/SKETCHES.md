@@ -1840,8 +1840,9 @@ circle spacing, so edits follow the intended overlap without face indices.
 - Discovery applies only to face outputs. Additional text can join the
   resulting compound under the existing non-overlap rule. Profile operations
   require explicit profiles and cannot be mixed with discovery.
-- The result is a compound of selected face cells. Extrusion produces one
-  solid per cell, including adjacent cells; it does not merge those solids.
+- By default the result is a compound of selected face cells. Extrusion
+  produces one solid per cell. Schema 131 adds `merge_adjacent` to compose
+  connected material before extrusion (see below).
 - Limits are 1,000 expanded input curves, 10,000 native edges, 1,000 seeds
   and 1,000 discovered cells. Native splitting cost depends on crossings;
   seed classification uses bounding-box filtering before native distance and
@@ -1854,3 +1855,41 @@ areas, nested holes, splines, shape expansion, tilted planes, invalid requests,
 boundary seeds, unchanged inputs, and edited lens volumes and viewer data.
 The scale gates discover 1,000 circles, select 500 cells and extrude them in
 0.24 s, and regenerate 300 spacing edits in 0.66 s (10 s budgets).
+
+## Region composition (schema 131)
+
+Enable `merge_adjacent` to combine selected cells sharing an edge:
+
+```json
+"region_discovery": {
+  "seeds": ["pick-upper", "pick-lower", "island-center"],
+  "merge_adjacent": true
+}
+```
+
+The native same-domain operation removes internal boundaries between the
+selected cells. Each connected material region becomes one face, so extrusion
+produces one solid per region. Disconnected regions and regions that touch
+only at a point stay separate. Source curves and their constraints remain
+unchanged; the viewer shows the composed boundaries and seed anchors.
+
+Selection determines the material: excluded cells remain empty, preserving
+holes. Selecting an inner cell as well as its surrounding cells fills that
+hole. Empty `seeds` selects every bounded cell and therefore fills all such
+inner cells. Omitted or false `merge_adjacent` retains the schema-130 cell
+behavior; migrating older models does not enable composition.
+
+The [composed regions](../tools/model/composed-regions.request.json) example
+selects both halves of a divided annulus and an isolated disc. It builds two
+solids with an intact through bore. Radius and thickness edits regenerate the
+material and preview. Tests verify solid counts and analytic volumes, probe
+the bore and former divider, and check that the preview contains only the
+outer, bore and island circles. Additional tests cover overlapping circles,
+filled holes and point contacts.
+
+Composition rejects invalid output or material-area changes exceeding
+relative 1e-8 plus 1e-9 mm². It reuses ABI 67's existing unification operation
+with 1e-7 mm linear and 1e-9 rad angular tolerances; no new ABI is needed.
+The scale gate discovers a 1,000-cell grid, selects 999 cells, merges them into
+one face with a hole, removes all internal divider edges and extrudes it in
+0.19 s (10 s budget).

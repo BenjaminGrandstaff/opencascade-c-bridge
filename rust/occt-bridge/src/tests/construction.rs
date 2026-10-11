@@ -19,6 +19,9 @@ fn discovered_regions_split_crossings_and_select_cells() {
         .unwrap();
     assert_eq!(session.subshape_count(&all, ShapeType::Face).unwrap(), 2);
     assert!((session.surface_area(&all).unwrap() - 100. * PI).abs() < 1e-7);
+    let merged = session.unify_same_domain(&all, 1e-7, 1e-9).unwrap();
+    assert_eq!(session.subshape_count(&merged, ShapeType::Face).unwrap(), 1);
+    assert!((session.surface_area(&merged).unwrap() - 100. * PI).abs() < 1e-7);
     let half = session
         .discover_planar_regions(&inputs, origin, normal, x_axis, &[Vec3::new(0., 5., 0.)])
         .unwrap();

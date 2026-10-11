@@ -621,6 +621,16 @@ pub struct SketchRegionDiscovery {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[schemars(length(max = 1000))]
     pub seeds: Vec<String>,
+    /// Join selected cells sharing an edge into material regions (schema
+    /// 131). Holes and disconnected regions remain; false retains the cells.
+    #[serde(default, skip_serializing_if = "SketchRegionDiscovery::is_false")]
+    pub merge_adjacent: bool,
+}
+
+impl SketchRegionDiscovery {
+    fn is_false(value: &bool) -> bool {
+        !*value
+    }
 }
 
 /// A driven (reference) dimension, measured on the solved sketch. It never

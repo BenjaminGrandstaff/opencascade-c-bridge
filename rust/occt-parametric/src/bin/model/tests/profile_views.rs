@@ -1,6 +1,91 @@
 //! Viewer annotations for lofts, sweeps, revolves, and hollow profiles.
 
 use super::*;
+use occt_bridge::{ShapeType, Vec3};
+
+#[test]
+fn composed_regions_keep_a_bore_and_two_solids_through_parameter_edits() {
+    let dir = Directory::new();
+    for (outer, bore, island, thickness) in [(12., 3., 4., 2.), (16., 4., 5., 3.)] {
+        let mut request = view_example("composed-regions");
+        for p in request["model"]["family"]["parameters"]
+            .as_array_mut()
+            .unwrap()
+        {
+            let value = match p["id"].as_str().unwrap() {
+                "outer_radius" => outer,
+                "bore_radius" => bore,
+                "island_radius" => island,
+                "thickness" => thickness,
+                _ => panic!(),
+            };
+            p["default"]["scalar"]["value"] = json!(value);
+        }
+        let family = ModelDocument::from_json(&request["model"].to_string())
+            .unwrap()
+            .family;
+        let session = Session::new().unwrap();
+        let part = PartInstance {
+            id: "set".into(),
+            definition: &family,
+            overrides: HashMap::new(),
+            provenance: "test".into(),
+        };
+        let built = part.regenerate(&session).unwrap();
+        let body = built.shape("body").unwrap();
+        assert!(session.is_valid(body).unwrap());
+        assert_eq!(session.subshape_count(body, ShapeType::Solid).unwrap(), 2);
+        let area = std::f64::consts::PI * (outer * outer - bore * bore + island * island);
+        assert!((session.volume(body).unwrap() - area * thickness).abs() < 1e-6);
+        // Radial midpoint on the original divider is now interior material.
+        let midpoint = session
+            .create_box(
+                Vec3::new((outer + bore) / 2. - 0.1, -0.1, 0.5),
+                Vec3::new(0.2, 0.2, 0.2),
+            )
+            .unwrap();
+        assert!((session.overlap_volume(body, &midpoint).unwrap() - 0.008).abs() < 1e-7);
+        // The excluded centre remains a through bore.
+        let probe = session
+            .create_box(Vec3::new(-0.1, -0.1, 0.5), Vec3::new(0.2, 0.2, 0.2))
+            .unwrap();
+        assert!(session.overlap_volume(body, &probe).unwrap().abs() < 1e-9);
+        let name = format!("composed-{outer}");
+        view_request(&dir, request, &name).unwrap();
+        let data: Value =
+            serde_json::from_str(&fs::read_to_string(dir.0.join(name).join("view.json")).unwrap())
+                .unwrap();
+        let sketch = data["scenes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["kind"] == "sketch")
+            .unwrap();
+        assert_eq!(sketch["region_discovery"]["merge_adjacent"], true);
+        assert!(sketch["profile_error"].is_null());
+        assert_eq!(
+            sketch["annotations"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|a| a["id"] == "region-discovery")
+                .unwrap()["label"],
+            "Composed material regions"
+        );
+        let preview = sketch["edited_profile"].as_array().unwrap();
+        // Source divider remains visible as source geometry, but is absent
+        // from the actual material boundaries drawn by the edited preview.
+        for point in preview.iter().flat_map(|line| line.as_array().unwrap()) {
+            let x = point[0].as_f64().unwrap();
+            let y = point[1].as_f64().unwrap();
+            let r = x.hypot(y);
+            let ir = (x - 40.).hypot(y);
+            assert!(
+                (r - outer).abs() < 1e-6 || (r - bore).abs() < 1e-6 || (ir - island).abs() < 1e-6
+            );
+        }
+    }
+}
 
 #[test]
 fn discovered_lens_viewer_tracks_seed_selection_and_native_volume_after_edits() {

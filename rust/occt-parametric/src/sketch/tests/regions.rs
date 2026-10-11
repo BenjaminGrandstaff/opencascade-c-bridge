@@ -83,6 +83,92 @@ fn automatic_regions_split_intersections_and_select_named_seed_cells() {
 }
 
 #[test]
+fn region_composition_removes_internal_boundaries_and_fills_selected_holes() {
+    let mut s = sketch(json!({
+        "points": [p("c", 0., 0.), p("r", 10., 0.), p("b", 3., 0.), p("l", -12., 0.), p("h", 12., 0.)],
+        "circles": [{"id": "disc", "center": "c", "rim": "r"}, {"id": "bore", "center": "c", "rim": "b"}],
+        "lines": [{"id": "divider", "start": "l", "end": "h"}],
+        "region_discovery": {"merge_adjacent": true}
+    }));
+    let (count, area) = faces(&s).unwrap();
+    assert_eq!(count, 1);
+    assert!((area - 100. * PI).abs() < 1e-7);
+    let session = Session::new().unwrap();
+    let face = s.face(&session, &HashMap::new()).unwrap();
+    assert_eq!(session.subshape_count(&face, ShapeType::Wire).unwrap(), 1);
+    let solution = s.solve(&HashMap::new()).unwrap();
+    let preview = s
+        .preview_edited_profile(&session, &HashMap::new(), &solution, 32, true)
+        .unwrap();
+    // Both the divider and the filled inner circle disappear from the boundary.
+    for p in preview.iter().flatten() {
+        assert!((p.x.hypot(p.y) - 10.).abs() < 1e-6);
+    }
+    s.region_discovery.as_mut().unwrap().merge_adjacent = false;
+    assert_eq!(faces(&s).unwrap().0, 4);
+}
+
+#[test]
+fn region_composition_preserves_holes_and_disconnected_solids() {
+    let s = sketch(json!({
+        "points": [p("c", 0., 0.), p("r", 10., 0.), p("b", 3., 0.), p("l", -12., 0.), p("h", 12., 0.),
+            p("top", 5., 2.), p("bottom", 5., -2.), p("ic", 30., 0.), p("ir", 34., 0.)],
+        "circles": [{"id": "disc", "center": "c", "rim": "r"}, {"id": "bore", "center": "c", "rim": "b"},
+            {"id": "island", "center": "ic", "rim": "ir"}],
+        "lines": [{"id": "divider", "start": "l", "end": "h"}],
+        "region_discovery": {"seeds": ["top", "bottom", "ic"], "merge_adjacent": true}
+    }));
+    let session = Session::new().unwrap();
+    let regions = s.face(&session, &HashMap::new()).unwrap();
+    let faces = session.subshapes(&regions, ShapeType::Face).unwrap();
+    assert_eq!(faces.len(), 2);
+    assert_eq!(
+        session.subshape_count(&regions, ShapeType::Wire).unwrap(),
+        3
+    );
+    assert!((session.surface_area(&regions).unwrap() - 107. * PI).abs() < 1e-7);
+    let solids: Vec<_> = faces
+        .iter()
+        .map(|f| {
+            session
+                .create_prism_from_face(f, Vec3::new(0., 0., 2.))
+                .unwrap()
+        })
+        .collect();
+    let body = session
+        .create_compound(&solids.iter().collect::<Vec<_>>())
+        .unwrap();
+    assert!(session.is_valid(&body).unwrap());
+    assert_eq!(session.subshape_count(&body, ShapeType::Solid).unwrap(), 2);
+    assert!((session.volume(&body).unwrap() - 214. * PI).abs() < 1e-7);
+}
+
+#[test]
+fn region_composition_keeps_point_contacts_separate() {
+    let s = sketch(json!({
+        "points": [p("c0", 0., 0.), p("r0", 0., 5.), p("c1", 10., 0.), p("r1", 10., 5.)],
+        "circles": [{"id": "left", "center": "c0", "rim": "r0"}, {"id": "right", "center": "c1", "rim": "r1"}],
+        "region_discovery": {"merge_adjacent": true}
+    }));
+    let (count, area) = faces(&s).unwrap();
+    assert_eq!(count, 2);
+    assert!((area - 50. * PI).abs() < 1e-7);
+}
+
+#[test]
+fn region_composition_unions_overlapping_circles_without_double_counting() {
+    let s = sketch(json!({
+        "points": [p("c0", 0., 0.), p("r0", 0., 10.), p("c1", 10., 0.), p("r1", 10., 10.)],
+        "circles": [{"id": "left", "center": "c0", "rim": "r0"}, {"id": "right", "center": "c1", "rim": "r1"}],
+        "region_discovery": {"merge_adjacent": true}
+    }));
+    let (count, area) = faces(&s).unwrap();
+    assert_eq!(count, 1);
+    let lens_area = 200. * PI / 3. - 50. * 3_f64.sqrt();
+    assert!((area - (200. * PI - lens_area)).abs() < 1e-7);
+}
+
+#[test]
 fn automatic_regions_handle_nested_loops_and_overlapping_circles() {
     let nested = sketch(json!({
         "points": [p("c", 0., 0.), p("r", 10., 0.), p("b", 3., 0.), p("pick", 5., 0.)],

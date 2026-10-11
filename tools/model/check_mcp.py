@@ -998,5 +998,28 @@ with tempfile.TemporaryDirectory(prefix='occb-mcp-scale-') as root:
         elapsed=time.monotonic()-started
         assert elapsed<10
         print(f'PASS MCP 20 discovered lens regions with native boundaries and seed annotations: {elapsed:.3f}s / 10s')
+        composed=client.tool('occt_get_example',dict(name='composed-regions'))['structuredContent']
+        for i in range(1,20):
+            composed['model']['instances'].append({'clone':dict(id=f'set-{i}',source='set',overrides={'outer_radius':{'scalar':{'value':10+i*0.4,'dimension':'length','unit':'millimeter'}}},provenance='scale')})
+            composed['outputs'].append(dict(instance=f'set-{i}',output='body'))
+        started=time.monotonic()
+        result=client.tool('occt_visualize_model',composed)
+        assert not result['isError'],result
+        data=json.loads(client.call('resources/read',dict(uri=result['structuredContent']['resources']['view.json']))['result']['contents'][0]['text'])
+        solids=[s for s in data['scenes'] if s['kind']=='solid']
+        sketches=[s for s in data['scenes'] if s['kind']=='sketch']
+        assert len(solids)==20 and all(s['valid'] for s in solids)
+        assert len(sketches)==20 and all(s['profile_error'] is None and s['region_discovery']['merge_adjacent'] for s in sketches)
+        for s in sketches:
+            assert any(a['id']=='region-discovery' and a['label']=='Composed material regions' and a['status']=='constructed' for a in s['annotations'])
+            # Every preview point lies on an outer, bore or island circle;
+            # the divider between the selected annulus cells has disappeared.
+            points=[p for line in s['edited_profile'] for p in line]
+            radius=max(math.hypot(x,y) for x,y,z in points if x<25)
+            for x,y,z in points:
+                assert min(abs(math.hypot(x,y)-radius),abs(math.hypot(x,y)-3),abs(math.hypot(x-40,y)-4))<1e-6
+        elapsed=time.monotonic()-started
+        assert elapsed<10
+        print(f'PASS MCP 20 composed region sets with holes, separate bodies and boundary previews: {elapsed:.3f}s / 10s')
     finally:
         client.close()
