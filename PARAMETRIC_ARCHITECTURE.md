@@ -1499,8 +1499,11 @@ agreement are visible. See [Sketches](docs/SKETCHES.md#local-solver-explanations
 Schema 115 adds an optional `fully_constrained` sketch acceptance policy,
 checked before native profile generation. It requires zero local free degrees
 across construction and profile points, while diagnostic solving stays
-available for rejected edits. General projection of spline and ellipse edges
-into sketch planes is the next sketch authoring priority.
+available for rejected edits. Schema 116 imports finite rational spline and
+trimmed-conic edge geometry
+into sketch planes through exact Bézier spans. Stable fixed endpoints support
+linked authoring; internal poles are bounded runtime data. Source parameters
+remain linked in the viewer. Native ABI remains 60.
 
 The next cross-layer work should prioritize manufacturing product definition:
 standards-verified material hatch presets and drawing conventions, followed by

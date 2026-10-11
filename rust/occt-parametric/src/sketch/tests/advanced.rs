@@ -3320,7 +3320,7 @@ fn sketch_acceptance_schema115_migrates_with_compatible_default_and_roundtrips_p
     .unwrap()["model"]
         .clone();
     let current = ModelDocument::from_json(&value.to_string()).unwrap();
-    assert_eq!(current.schema_version, 115);
+    assert_eq!(current.schema_version, CURRENT_SCHEMA_VERSION);
     assert!(
         current
             .to_json_pretty()
@@ -3333,7 +3333,7 @@ fn sketch_acceptance_schema115_migrates_with_compatible_default_and_roundtrips_p
         .unwrap()
         .remove("acceptance");
     let migrated = ModelDocument::from_json(&value.to_string()).unwrap();
-    assert_eq!(migrated.schema_version, 115);
+    assert_eq!(migrated.schema_version, CURRENT_SCHEMA_VERSION);
     assert!(
         !migrated
             .to_json_pretty()

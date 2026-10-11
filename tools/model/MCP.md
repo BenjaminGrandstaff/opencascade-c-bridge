@@ -49,7 +49,7 @@ or remote service is started.
 input schema. All 38 current feature operations and 152 nested request-schema
 definitions are discoverable. Schemas derive from serde-compatible Rust types;
 new serialized variants require schema support at compilation. Authoring schemas
-target current model schema 115. The engine still migrates older documents.
+target current model schema 116. The engine still migrates older documents.
 Schemas describe serialization and basic request bounds; units, dependency
 references, dimensional constraints, selector resolution, and geometry validity
 are checked by the build engine.
@@ -538,3 +538,10 @@ Set the `lift` override to 0 mm to obtain diagnostic scenes with
 `occt_build` rejects that model at regeneration; `occt_visualize_model` retains
 the source sketch and solver evidence. See
 [sketch acceptance](../../docs/SKETCHES.md#sketch-acceptance-policy-schema-115).
+
+The `projected-spline-pad` example imports an exact rational spline into a tilted
+sketch plane (`kind: spline`), closes its stable generated endpoints, and
+extrudes the face. Source weight edits update the linked curve; viewer data
+exposes its explicit basis/control polygon and source controls. The same kind
+imports trimmed elliptic edges, periodic and non-clamped source domains. See
+[exact sketch projections](../../docs/SKETCHES.md#exact-spline-and-trimmed-conic-projections-schema-116).

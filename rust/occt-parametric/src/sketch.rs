@@ -423,7 +423,8 @@ fn zero_support_offset() -> ScalarExpr {
 }
 
 /// Expected analytic type of a projected source edge. Ellipse requires a full
-/// conic; Arc requires a circular projection. General splines are not imported.
+/// conic; Arc requires a circular projection. Spline imports exact rational
+/// B-spline geometry from a finite standard edge, including trimmed conics.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SketchProjectionKind {
@@ -431,11 +432,14 @@ pub enum SketchProjectionKind {
     Circle,
     Arc,
     Ellipse,
+    Spline,
 }
 
 /// A linked orthogonal projection of exactly one semantic source edge.
 /// Generated point IDs are `id:start/end` for lines, `id:center/rim` for circles,
 /// `id:center/start/end` for arcs and `id:center/major/minor` for ellipses.
+/// Splines expose stable `id:start/end`; interior `id:pole:N` points are runtime
+/// data whose count can change with the source edge.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SketchProjection {

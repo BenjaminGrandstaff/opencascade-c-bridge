@@ -366,7 +366,7 @@ fn ambiguous_collapsed_and_invalid_projection_definitions_fail_without_handle_gr
         true,
     );
     let error = part(&f).regenerate(&session).err().unwrap();
-    assert!(error.message.contains("spline projection is not supported"));
+    assert!(error.message.contains("use kind spline"));
     assert_eq!(session.shape_count().unwrap(), 0);
     let mut d = document();
     profile(&mut d.family).projections.resize(
@@ -509,4 +509,327 @@ fn point_line_margin_edits_reposition_native_pocket_and_reuse_source_block() {
     assert!((bounds.max.y - 34.).abs() < 1e-7);
     assert!(session.is_valid(edited.shape("body").unwrap()).unwrap());
     assert!((session.volume(edited.shape("body").unwrap()).unwrap() - 46800.).abs() < 1e-5);
+}
+
+#[test]
+fn exact_rational_spline_projection_tracks_weights_and_preserves_source_and_area() {
+    let request: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../tools/model/projected-spline-pad.request.json"
+    ))
+    .unwrap();
+    let doc = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+    let session = Session::new().unwrap();
+    let mut instance = part(&doc.family);
+    for weight in [0.5, 0.7, 1.4] {
+        instance.overrides.insert(
+            "weight".into(),
+            ParameterValue::Scalar(Quantity::scalar(weight)),
+        );
+        let built = instance.regenerate(&session).unwrap();
+        let snapshot = instance.resolved_sketches(&session, &built).unwrap();
+        let runtime = &snapshot["profile"].as_ref().unwrap().sketch;
+        let spline = &runtime.splines[0];
+        assert!(spline.basis.as_ref().unwrap().weights.len() > 5);
+        assert_eq!(spline.points.first().unwrap(), "reference:start");
+        assert_eq!(spline.points.last().unwrap(), "reference:end");
+        assert!(runtime.points.iter().all(|p| p.fixed));
+        let source = session
+            .subshapes(built.shape("source").unwrap(), ShapeType::Edge)
+            .unwrap();
+        let solved = runtime
+            .solve(&instance.resolved_parameters().unwrap())
+            .unwrap();
+        let samples = runtime.preview_curves(&session, &solved, 100).unwrap();
+        let curve = &samples.iter().find(|(id, _)| id == "reference").unwrap().1;
+        for p in curve {
+            // Undo the affine projection into the tilted sketch; closest-point
+            // queries verify the exact rational trace independently of sampling.
+            let original = Vec3::new(p.x, (p.y + 2.) / (3f64.sqrt() / 2.), 0.);
+            let closest = session.curve_closest_point(&source[0], original).unwrap();
+            assert!((closest.x - original.x).hypot(closest.y - original.y) < 1e-6);
+        }
+        assert!(session.is_valid(built.shape("body").unwrap()).unwrap());
+        let area = session
+            .surface_area(built.shape("profile").unwrap())
+            .unwrap();
+        let volume = session.volume(built.shape("body").unwrap()).unwrap();
+        assert!(
+            (volume - area * 10.).abs() < 1e-7 * volume,
+            "weight {weight}: volume {volume}, area {area}"
+        );
+        drop(source);
+        drop(built);
+        assert_eq!(session.shape_count().unwrap(), 0);
+    }
+}
+
+#[test]
+fn exact_spline_projection_imports_closed_ellipses_and_trimmed_elliptic_arcs() {
+    let mut source = blank();
+    source.points = vec![point("c", 0., 0.), point("a", 10., 0.), point("b", 0., 5.)];
+    source.ellipses = vec![SketchEllipse {
+        id: "ellipse".into(),
+        center: "c".into(),
+        major: "a".into(),
+        minor: "b".into(),
+    }];
+    source.profile = vec!["ellipse".into()];
+    let session = Session::new().unwrap();
+    for trimmed in [false, true] {
+        let mut source = source.clone();
+        if trimmed {
+            source.profile_operations = vec![SketchProfileOperation::Trim {
+                entity: "ellipse".into(),
+                first: ScalarExpr::Literal(Quantity::scalar(0.)),
+                last: ScalarExpr::Literal(Quantity::scalar(0.5)),
+            }];
+        }
+        let mut target = blank();
+        target.projections = vec![projection(
+            SketchProjectionKind::Spline,
+            EdgeSelector::AtExtreme {
+                axis: CoordinateAxis::Z,
+                extremum: Extremum::Maximum,
+                tolerance: mm(1e-6),
+            },
+        )];
+        target.profile = vec!["edge".into()];
+        if trimmed {
+            target.lines = vec![SketchLine {
+                id: "closing".into(),
+                start: "edge:end".into(),
+                end: "edge:start".into(),
+            }];
+            target.profile.push("closing".into());
+        }
+        let f = fixture(
+            if trimmed {
+                FeatureOperation::SketchOpenWire {
+                    sketch: Box::new(source),
+                }
+            } else {
+                FeatureOperation::SketchWire {
+                    sketch: Box::new(source),
+                }
+            },
+            target,
+            false,
+        );
+        let built = part(&f).regenerate(&session).unwrap();
+        let area = session
+            .surface_area(built.shape("projected").unwrap())
+            .unwrap();
+        assert!((area - std::f64::consts::PI * 50. * if trimmed { 0.5 } else { 1. }).abs() < 1e-6);
+        drop(built);
+        assert_eq!(session.shape_count().unwrap(), 0);
+    }
+}
+
+#[test]
+fn spline_projection_respects_locations_rejects_collapses_and_keeps_prior_build() {
+    let request: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../tools/model/projected-spline-pad.request.json"
+    ))
+    .unwrap();
+    let mut doc = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+    doc.family.features[0].id = "unplaced".into();
+    doc.family.features.insert(
+        1,
+        FeatureDefinition {
+            id: "source".into(),
+            operation: FeatureOperation::Translate {
+                input: "unplaced".into(),
+                offset: vector(7., 8., 9., Dimension::Length),
+            },
+        },
+    );
+    let session = Session::new().unwrap();
+    let built = part(&doc.family).regenerate(&session).unwrap();
+    let snapshots = part(&doc.family)
+        .resolved_sketches(&session, &built)
+        .unwrap();
+    let runtime = &snapshots["profile"].as_ref().unwrap().sketch;
+    let solved = runtime
+        .solve(&part(&doc.family).resolved_parameters().unwrap())
+        .unwrap();
+    let p = solved.points["reference:start"];
+    assert!((p.x - 7.).abs() < 1e-7 && (p.y - (8. * 3f64.sqrt() / 2. + 2.5)).abs() < 1e-7);
+    let count = session.shape_count().unwrap();
+    let FeatureOperation::SketchFace { sketch } = &mut doc.family.features[2].operation else {
+        panic!()
+    };
+    sketch.points.push(point("reference:pole:1", 0., 0.));
+    assert!(
+        part(&doc.family)
+            .regenerate_incremental(&session, &built)
+            .is_err()
+    );
+    assert_eq!(session.shape_count().unwrap(), count);
+    drop(built);
+    assert_eq!(session.shape_count().unwrap(), 0);
+    let mut source = blank();
+    source.points = vec![point("a", 0., 0.), point("b", 0., 5.), point("c", 0., 10.)];
+    source.splines = vec![SketchSpline {
+        id: "vertical".into(),
+        points: vec!["a".into(), "b".into(), "c".into()],
+        basis: None,
+        endpoints: None,
+    }];
+    source.profile = vec!["vertical".into()];
+    source.x_axis = vector(1., 0., 0., Dimension::Scalar);
+    source.y_axis = vector(0., 0., 1., Dimension::Scalar);
+    let mut target = blank();
+    target.projections = vec![projection(
+        SketchProjectionKind::Spline,
+        EdgeSelector::AtExtreme {
+            axis: CoordinateAxis::X,
+            extremum: Extremum::Maximum,
+            tolerance: mm(1e-6),
+        },
+    )];
+    target.profile = vec!["edge".into()];
+    let f = fixture(
+        FeatureOperation::SketchOpenWire {
+            sketch: Box::new(source),
+        },
+        target,
+        true,
+    );
+    let error = part(&f).regenerate(&session).err().unwrap();
+    assert!(
+        error.message.contains("collapses to a point"),
+        "{}",
+        error.message
+    );
+    assert_eq!(session.shape_count().unwrap(), 0);
+}
+
+#[test]
+fn projected_periodic_and_nonclamped_splines_preserve_native_active_domains() {
+    let session = Session::new().unwrap();
+    for (file, closed) in [
+        (
+            include_str!("../../../../tools/model/periodic-spline-pad.request.json"),
+            true,
+        ),
+        (
+            include_str!("../../../../tools/model/non-clamped-spline-cap.request.json"),
+            false,
+        ),
+    ] {
+        let request: serde_json::Value = serde_json::from_str(file).unwrap();
+        let doc = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+        let original = part(&doc.family).regenerate(&session).unwrap();
+        let expected = session
+            .surface_area(original.shape("profile").unwrap())
+            .unwrap();
+        let FeatureOperation::SketchFace { sketch } = &doc.family.features[0].operation else {
+            panic!()
+        };
+        let mut source = sketch.as_ref().clone();
+        source.profile = vec!["curve".into()];
+        let mut target = blank();
+        target.projections = vec![projection(
+            SketchProjectionKind::Spline,
+            EdgeSelector::AtExtreme {
+                axis: CoordinateAxis::Z,
+                extremum: Extremum::Maximum,
+                tolerance: mm(1e-6),
+            },
+        )];
+        target.profile = vec!["edge".into()];
+        if !closed {
+            target.lines = vec![SketchLine {
+                id: "closing".into(),
+                start: "edge:end".into(),
+                end: "edge:start".into(),
+            }];
+            target.profile.push("closing".into());
+        }
+        let mut family = doc.family.clone();
+        family.requirements.clear();
+        family.features = vec![
+            FeatureDefinition {
+                id: "source".into(),
+                operation: if closed {
+                    FeatureOperation::SketchWire {
+                        sketch: Box::new(source),
+                    }
+                } else {
+                    FeatureOperation::SketchOpenWire {
+                        sketch: Box::new(source),
+                    }
+                },
+            },
+            FeatureDefinition {
+                id: "projected".into(),
+                operation: FeatureOperation::SketchFace {
+                    sketch: Box::new(target),
+                },
+            },
+        ];
+        let built = part(&family).regenerate(&session).unwrap();
+        let area = session
+            .surface_area(built.shape("projected").unwrap())
+            .unwrap();
+        assert!(
+            (area - expected).abs() < 1e-6 * expected,
+            "closed {closed}: {area} vs {expected}"
+        );
+        drop(built);
+        drop(original);
+        assert_eq!(session.shape_count().unwrap(), 0);
+    }
+}
+
+#[test]
+fn projected_spline_drives_point_constraints_and_strict_acceptance() {
+    let request: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../tools/model/projected-spline-pad.request.json"
+    ))
+    .unwrap();
+    let mut doc = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+    let FeatureOperation::SketchFace { sketch } = &mut doc.family.features[1].operation else {
+        panic!()
+    };
+    sketch.points.push(SketchPoint {
+        id: "on_reference".into(),
+        x: mm(5.),
+        y: mm(5.),
+        fixed: false,
+    });
+    sketch.constraints = vec![
+        SketchConstraint::PointOnCurve {
+            point: "on_reference".into(),
+            curve: "reference".into(),
+        },
+        SketchConstraint::Distance {
+            first: "reference:start".into(),
+            second: "on_reference".into(),
+            value: mm(10.),
+        },
+    ];
+    let session = Session::new().unwrap();
+    let built = part(&doc.family).regenerate(&session).unwrap();
+    let snapshots = part(&doc.family)
+        .resolved_sketches(&session, &built)
+        .unwrap();
+    let runtime = &snapshots["profile"].as_ref().unwrap().sketch;
+    let solution = runtime
+        .solve(&part(&doc.family).resolved_parameters().unwrap())
+        .unwrap();
+    assert!(solution.solved && solution.free_degrees == 0);
+    runtime.check_acceptance(&solution).unwrap();
+    let p = solution.points["on_reference"];
+    let start = solution.points["reference:start"];
+    assert!(((p.x - start.x).hypot(p.y - start.y) - 10.).abs() < 1e-8);
+    let edge = session
+        .subshapes(built.shape("source").unwrap(), ShapeType::Edge)
+        .unwrap();
+    let original = Vec3::new(p.x, (p.y + 2.) / (3f64.sqrt() / 2.), 0.);
+    let closest = session.curve_closest_point(&edge[0], original).unwrap();
+    assert!((closest.x - original.x).hypot(closest.y - original.y) < 1e-7);
+    drop(edge);
+    drop(built);
+    assert_eq!(session.shape_count().unwrap(), 0);
 }

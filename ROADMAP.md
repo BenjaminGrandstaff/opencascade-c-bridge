@@ -11,18 +11,34 @@ tracks status and order.
 | C ABI (`src/`, `include/`) | ABI 60 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 115 | Active development |
+| `occt-parametric` (engineering layer) | Schema 116 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 130 + first-use integration 1 (+1 doc test), recipes 3, parametric 559 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 19 + branch command 2 + model command 62, MCP Python 9, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 130 + first-use integration 1 (+1 doc test), recipes 3, parametric 565 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 19 + branch command 2 + model command 63, MCP Python 9, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform code also passes. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
 | Coverage | Last recorded: 93.61% lines overall, test code excluded; C++ 94.13% lines, 87.40% branches, 100% functions; Rust 93.42% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 172 Rust cases plus 5 model-command and 37 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Scale benchmarks | 174 Rust cases plus 5 model-command and 38 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
+
+- Exact spline sketch projections (schema 116, ABI 60 unchanged): `kind: spline`
+  imports finite rational B-spline/Bézier and convertible conic edges using
+  exact native Bézier spans, projected poles and normalized shared weights.
+  Periodic and non-clamped active domains and trimmed ellipses are preserved
+  geometrically; span parameterization is rebuilt. Stable fixed start/end
+  references drive profile lines and point constraints; internal poles remain
+  bounded runtime data. Source edits, locations, collapse rejection, duplicate
+  IDs and failed incremental/live edits are verified, with handle cleanup.
+  Example: `projected-spline-pad`. Catalog: 52 examples, 64 resources;
+  all saved model examples use schema 116. 1,000 projected-profile weight edits
+  take 0.850 s; 250 full pad builds take 4.139 s; MCP renders 20 linked tilted
+  pads in 0.309 s (10 s budgets). All 32 advanced sketch gates pass.
+  An exploratory 1,000-full-pad gate took 11.651 s and exceeded its 10 s
+  budget; projection/profile work is measured separately from the established
+  250-solid gate. Valid STEP/STL export and viewer control polygons are verified.
 
 - Sketch acceptance policy (schema 115, ABI 60 unchanged): optional
   `fully_constrained` requires satisfied equations and zero local free degrees
@@ -1862,8 +1878,10 @@ and trimmed-ellipse corners, and sketches support linked mirror, linear and
 circular patterns with inner holes. Local solver explanations now identify
 conflicting equation groups, redundancy and representative free motion. The
 optional `fully_constrained` acceptance policy now supports AI-authored parts
-that require zero local free degrees. The next sketch priority is general
-projection of spline and ellipse edges into sketch planes.
+that require zero local free degrees. Finite spline and trimmed-conic edges now
+project exactly into sketch planes, with stable endpoint references and source
+parameter links. Multi-edge selection and curve-intersection authoring remain
+extensions to this single-edge projection workflow.
 
 The earlier geometry and assembly milestones are complete. Manufacturing
 product definition is the next general CAD priority; additional rib variants

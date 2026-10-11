@@ -58,7 +58,7 @@ class McpTests(unittest.TestCase):
         with self.assertRaises(jsonschema.ValidationError):
             jsonschema.validate(bad, schema)
         resources = self.client.call('resources/list')['result']['resources']
-        self.assertEqual(len(resources), 63)
+        self.assertEqual(len(resources), 64)
         self.assertEqual(len(self.client.call('resources/templates/list')['result']['resourceTemplates']), 1)
         read = self.client.call('resources/read', dict(uri='occt://schema/request'))['result']['contents'][0]
         self.assertEqual(json.loads(read['text']), schema)
@@ -243,6 +243,22 @@ class McpTests(unittest.TestCase):
                 self.assertTrue(group['detail']['conflict_group']['trace_complete'])
             else:
                 self.assertEqual(d['locally_redundant_constraints'],[5,6])
+        projected = self.client.tool('occt_get_example',dict(name='projected-spline-pad'))['structuredContent']
+        jsonschema.validate(projected,schema)
+        for weight in [0.5,1.4]:
+            projected['model']['instances'][0]['base']['overrides']['weight'] = {'scalar':dict(value=weight,dimension='scalar',unit=None)}
+            result = self.client.tool('occt_visualize_model',projected)
+            self.assertFalse(result['isError'])
+            data = json.loads(self.client.call('resources/read',dict(uri=result['structuredContent']['resources']['view.json']))['result']['contents'][0]['text'])
+            scene = next(s for s in data['scenes'] if s['kind']=='sketch' and s['feature']=='profile')
+            self.assertTrue(scene['solver']['accepted'])
+            entity = next(e for e in scene['entities'] if e['id']=='reference')
+            self.assertTrue(entity['external'])
+            self.assertGreater(len(entity['bspline']['control_points']),5)
+            self.assertEqual(entity['bspline']['basis']['degree'],2)
+            link = next(a for a in scene['annotations'] if a['id']=='projection-reference')
+            self.assertIn('weight',link['parameters'])
+            self.assertEqual(link['detail']['definition']['kind'],'spline')
         strict = self.client.tool('occt_get_example',dict(name='strict-sketch-block'))['structuredContent']
         jsonschema.validate(strict,schema)
         for lift in [4,0]:

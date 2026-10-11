@@ -1938,3 +1938,64 @@ fn strict_sketch_acceptance_rejects_geometry_without_hiding_solved_diagnostics()
         }
     }
 }
+
+#[test]
+fn spline_projection_viewer_exposes_exact_basis_source_links_and_fixed_geometry() {
+    let dir = Directory::new();
+    view_request(
+        &dir,
+        view_example("projected-spline-pad"),
+        "projected-spline",
+    )
+    .unwrap();
+    let data: Value = serde_json::from_str(
+        &fs::read_to_string(dir.0.join("projected-spline/view.json")).unwrap(),
+    )
+    .unwrap();
+    let scene = data["scenes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["kind"] == "sketch" && s["feature"] == "profile")
+        .unwrap();
+    assert_eq!(scene["solver"]["accepted"], true);
+    assert_eq!(scene["solver"]["free_degrees"], 0);
+    let entity = scene["entities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["id"] == "reference")
+        .unwrap();
+    assert_eq!(entity["external"], true);
+    assert_eq!(entity["bspline"]["basis"]["degree"], 2);
+    assert!(
+        entity["bspline"]["control_points"]
+            .as_array()
+            .unwrap()
+            .len()
+            > 5
+    );
+    let link = scene["annotations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["id"] == "projection-reference")
+        .unwrap();
+    assert_eq!(link["detail"]["definition"]["kind"], "spline");
+    assert!(
+        link["parameters"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("weight"))
+    );
+    assert_eq!(link["targets"], json!(["reference"]));
+    assert_eq!(
+        data["scenes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["kind"] == "solid" && s["feature"] == "body")
+            .unwrap()["valid"],
+        true
+    );
+}

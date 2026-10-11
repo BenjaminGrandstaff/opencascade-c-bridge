@@ -79,7 +79,7 @@ export are verified. A 1,000-pair solve and residual-diagnostic gate passes in
 0.009 s (10 s budget); 20 solids plus 60 source sketch scenes and matched-radius
 annotations pass through MCP in 0.316 s (10 s budget).
 
-Current authoring examples use schema 115. Older model documents migrate
+Current authoring examples use schema 116. Older model documents migrate
 without adding constraints or changing their entities. Current native ABI is 60.
 
 ## Saved profile operations
@@ -1163,3 +1163,44 @@ The equations still solve, but strict acceptance rejects the edit. Restore
 `lift` to 4 mm to recover. For AI part authoring, use this policy on each
 sketch that must pass the local full-constraint check, then verify the native
 shape and engineering requirements as usual.
+
+## Exact spline and trimmed-conic projections (schema 116)
+
+A sketch projection with `"kind": "spline"` imports a finite standard edge as
+an exact rational B-spline. Native B-spline, Bézier, periodic and non-clamped
+curves are supported through their actual bounded edge domains. Full ellipses
+remain available through `"kind": "ellipse"`; trimmed elliptic edges and other
+finite convertible conics can use `spline`. Existing analytic projection kinds
+retain their type checks. Unsupported/offset curves and point-collapsed
+projections fail explicitly. Native ABI remains 60.
+
+The existing semantic selector must resolve exactly one source edge. Its located
+geometry is converted to rational Bézier spans, poles are projected into the
+resolved sketch frame, and adjacent spans are combined into a clamped rational
+B-spline. The curve trace and edge traversal are preserved without sampling.
+Each span receives a unit parameter interval, so the source parameterization
+and parametric continuity order are not preserved; this does not change the
+geometric trace. Shared endpoint weights are normalized per span. Native
+metric queries still have their usual numerical integration tolerances.
+
+The projected entity is named by the projection ID. Stable fixed endpoint IDs
+are `id:start` and `id:end`; use these in authored lines and constraints.
+Interior fixed `id:pole:N` points are runtime inspection data whose count can
+change with source knot/trim edits. Their names cannot be relied on in saved
+constraints. Closed imports reuse the start point at the spline's last pole
+(within 1e-9 mm closure tolerance), while retaining the fixed end alias. As with
+other closed splines, a closed import must be the sole entity in its profile.
+
+Each import permits up to 10,000 returned native poles and degree 25; a sketch
+permits up to 100,000 imported spline poles in total. Disconnected spans,
+nonfinite coordinates/weights and exhausted bounds reject regeneration. Native
+conversion uses count/fill queries; Rust copy/storage scale with returned poles.
+Sources remain unchanged and query handles are released. Imported points are
+fixed, so strict sketch acceptance permits fully fixed references.
+
+The `projected-spline-pad` example projects a multi-span rational arch into a
+tilted plane, closes its endpoints with a line and extrudes the face. Editing
+`weight`, `width` or `height` updates both source and projected geometry.
+The viewer shows the exact basis/control polygon, distinguishes the external
+curve and links its projection annotation to source controls. Live failed edits
+preserve accepted geometry; the pad exports valid STEP and STL.

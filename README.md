@@ -949,3 +949,9 @@ through tap and a countersunk M6×1 blind tap. See
 Schema 114 adds thread `runout`: the groove fades out of the material over a
 set length instead of ending abruptly, on threads and tapped holes. See
 [thread runout](docs/THREADS.md#runout-schema-114).
+
+Schema 116 adds exact rational edge import through sketch projections with
+`kind: "spline"`, including periodic/non-clamped curves and trimmed conics.
+The [projected spline pad](tools/model/projected-spline-pad.request.json)
+uses a tilted sketch, fixed references and linked source weight edits. See
+[projection limits and endpoint IDs](docs/SKETCHES.md#exact-spline-and-trimmed-conic-projections-schema-116).

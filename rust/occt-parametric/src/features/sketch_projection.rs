@@ -1,9 +1,10 @@
-//! Linked analytic edge projections. Expansion/storage are O(sketch definition
+//! Linked analytic and exact rational edge projections. Expansion/storage are O(sketch definition
 //! size + projections); source-query cost follows the existing semantic selector.
-//! Each analytic projection is O(1), with no sampling or retained native handles.
+//! Analytic projection is O(1); rational import is O(returned poles) plus
+//! native conversion. Neither path samples curves or retains native handles.
 use super::*;
 use crate::assembly::{dot, subtract};
-use occt_bridge::AnalyticCurve;
+use occt_bridge::{AnalyticCurve, BezierSpan};
 
 pub(super) fn materialize(
     session: &Session,
@@ -27,6 +28,7 @@ pub(super) fn materialize(
         [dot(v, x), dot(v, y)]
     };
     let vector = |v| [dot(v, x), dot(v, y)];
+    let mut imported_poles = 0usize;
     for projection in &sketch.projections {
         let edges = resolve_edge_selector(
             session,
@@ -43,7 +45,56 @@ pub(super) fn materialize(
                 edges.len()
             )));
         }
-        let curve=session.edge_analytic_curve(&edges[0])?.ok_or_else(||ModelError::new("sketch projection requires an analytic line or conic; spline projection is not supported"))?;
+        if projection.kind == SketchProjectionKind::Spline {
+            let spans = session.edge_bezier_spans(&edges[0], 10000)?;
+            let (poles, basis) = project_spans(&spans, &point)
+                .map_err(|e| e.context(&format!("sketch projection '{}'", projection.id)))?;
+            imported_poles += poles.len();
+            if imported_poles > 100000 {
+                return Err(ModelError::new(
+                    "sketch spline projections exceed 100000 total poles",
+                ));
+            }
+            let closed = (poles[0][0] - poles[poles.len() - 1][0])
+                .hypot(poles[0][1] - poles[poles.len() - 1][1])
+                <= 1e-9;
+            let mut ids = Vec::with_capacity(poles.len());
+            for (i, p) in poles.iter().enumerate() {
+                let suffix = if i == 0 {
+                    "start".into()
+                } else if i == poles.len() - 1 {
+                    "end".into()
+                } else {
+                    format!("pole:{i}")
+                };
+                let id = format!("{}:{suffix}", projection.id);
+                let value = SketchPoint {
+                    id: id.clone(),
+                    x: length_literal(p[0]),
+                    y: length_literal(p[1]),
+                    fixed: true,
+                };
+                if i == 0 || i == poles.len() - 1 {
+                    result.points[indexes[&id]] = value;
+                } else {
+                    result.points.push(value);
+                }
+                ids.push(if closed && i == poles.len() - 1 {
+                    format!("{}:start", projection.id)
+                } else {
+                    id
+                });
+            }
+            let spline = result
+                .splines
+                .iter_mut()
+                .find(|s| s.id == projection.id)
+                .expect("declared spline");
+            spline.points = ids;
+            spline.basis = Some(basis);
+            continue;
+        }
+        let curve=session.edge_analytic_curve(&edges[0])?.ok_or_else(||ModelError::new("sketch projection requires an analytic line or conic; use kind spline for exact rational import"))?;
         let (points, clockwise) = project(curve, projection.kind, &point, &vector)
             .map_err(|e| e.context(&format!("sketch projection '{}'", projection.id)))?;
         for (suffix, p) in points {
@@ -65,8 +116,79 @@ pub(super) fn materialize(
                 .clockwise = clockwise;
         }
     }
+    result.validate_structure()?;
     Ok(result)
 }
+fn length_literal(value: f64) -> ScalarExpr {
+    ScalarExpr::Literal(Quantity::length(value, LengthUnit::Millimeter))
+}
+/// Equal-length span domains preserve the exact trace and orientation, not the
+/// source parameterization. Shared endpoint weights are normalized per span.
+fn project_spans(
+    spans: &[BezierSpan],
+    point: &impl Fn(Vec3) -> [f64; 2],
+) -> Result<(Vec<[f64; 2]>, SketchBSplineBasis), ModelError> {
+    let degree = spans.first().map_or(0, |s| s.poles.len().saturating_sub(1));
+    if !(1..=25).contains(&degree)
+        || spans
+            .iter()
+            .any(|s| s.poles.len() != degree + 1 || s.weights.len() != s.poles.len())
+    {
+        return Err(ModelError::new(
+            "spline projection needs finite supported equal-degree Bezier spans",
+        ));
+    }
+    let mut poles: Vec<[f64; 2]> = Vec::new();
+    let mut weights: Vec<f64> = Vec::new();
+    for span in spans {
+        let scale = weights.last().copied().unwrap_or(span.weights[0]) / span.weights[0];
+        for (i, (&p, &w)) in span.poles.iter().zip(&span.weights).enumerate() {
+            let p = point(p);
+            let w = w * scale;
+            if !p.iter().all(|v| v.is_finite()) || !w.is_finite() || w <= 0. {
+                return Err(ModelError::new(
+                    "spline projection needs finite poles and positive weights",
+                ));
+            }
+            if !poles.is_empty() && i == 0 {
+                let last = poles.last().unwrap();
+                if (last[0] - p[0]).hypot(last[1] - p[1]) > 1e-7 {
+                    return Err(ModelError::new("spline projection spans are disconnected"));
+                }
+                continue;
+            }
+            poles.push(p);
+            weights.push(w);
+        }
+    }
+    if poles.len() > 10000 {
+        return Err(ModelError::new("spline projection exceeds 10000 poles"));
+    }
+    if poles
+        .iter()
+        .all(|p| (p[0] - poles[0][0]).hypot(p[1] - poles[0][1]) <= 1e-9)
+    {
+        return Err(ModelError::new("spline projection collapses to a point"));
+    }
+    let mut multiplicities = vec![degree as i32; spans.len() + 1];
+    multiplicities[0] += 1;
+    *multiplicities.last_mut().unwrap() += 1;
+    Ok((
+        poles,
+        SketchBSplineBasis {
+            degree: degree as i32,
+            knots: (0..=spans.len()).map(|i| i as f64).collect(),
+            multiplicities,
+            weights: weights
+                .into_iter()
+                .map(|v| ScalarExpr::Literal(Quantity::scalar(v)))
+                .collect(),
+            periodic: false,
+            non_clamped: false,
+        },
+    ))
+}
+
 type ProjectedPoints = Vec<(&'static str, [f64; 2])>;
 fn project(
     curve: AnalyticCurve,
@@ -239,6 +361,48 @@ impl PartInstance<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn projected_bezier_spans_normalize_join_weights_and_reject_invalid_geometry() {
+        let spans = vec![
+            BezierSpan {
+                poles: vec![
+                    Vec3::new(0., 0., 0.),
+                    Vec3::new(1., 1., 0.),
+                    Vec3::new(2., 0., 0.),
+                ],
+                weights: vec![1., 0.5, 2.],
+            },
+            BezierSpan {
+                poles: vec![
+                    Vec3::new(2., 0., 0.),
+                    Vec3::new(3., -1., 0.),
+                    Vec3::new(4., 0., 0.),
+                ],
+                weights: vec![4., 1., 2.],
+            },
+        ];
+        let xy = |p: Vec3| [p.x, p.y];
+        let (points, basis) = project_spans(&spans, &xy).unwrap();
+        assert_eq!(points.len(), 5);
+        assert_eq!(basis.multiplicities, vec![3, 2, 3]);
+        assert_eq!(
+            basis.weights,
+            vec![1., 0.5, 2., 0.5, 1.]
+                .into_iter()
+                .map(|v| ScalarExpr::Literal(Quantity::scalar(v)))
+                .collect::<Vec<_>>()
+        );
+        let mut bad = spans.clone();
+        bad[1].poles[0].x += 1.;
+        assert!(project_spans(&bad, &xy).is_err());
+        bad = spans.clone();
+        bad[0].weights[0] = 0.;
+        assert!(project_spans(&bad, &xy).is_err());
+        bad = spans.clone();
+        bad[0].poles[1].x = f64::INFINITY;
+        assert!(project_spans(&bad, &xy).is_err());
+        assert!(project_spans(&[], &xy).is_err());
+    }
     #[test]
     fn almost_closed_arc_is_not_imported_as_a_full_circle() {
         let curve = |last| AnalyticCurve::Conic {

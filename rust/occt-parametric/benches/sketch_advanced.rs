@@ -57,6 +57,77 @@ fn gate(name: &str, budget: u64, run: impl FnOnce()) {
 }
 fn main() {
     gate(
+        "1000 exact rational projected profiles with source weight edits",
+        10,
+        || {
+            let request: serde_json::Value = serde_json::from_str(include_str!(
+                "../../../tools/model/projected-spline-pad.request.json"
+            ))
+            .unwrap();
+            let mut family = ModelDocument::from_json(&request["model"].to_string())
+                .unwrap()
+                .family;
+            family.features.retain(|f| f.id != "body");
+            family.requirements.clear();
+            let session = Session::new().unwrap();
+            let mut part = PartInstance {
+                id: "part".into(),
+                definition: &family,
+                overrides: HashMap::new(),
+                provenance: "scale".into(),
+            };
+            for i in 0..1000 {
+                part.overrides.insert(
+                    "weight".into(),
+                    ParameterValue::Scalar(Quantity::scalar([0.5, 0.7, 1.4][i % 3])),
+                );
+                let built = part.regenerate(&session).unwrap();
+                assert!(session.is_valid(built.shape("profile").unwrap()).unwrap());
+                assert!(
+                    session
+                        .surface_area(built.shape("profile").unwrap())
+                        .unwrap()
+                        > 400.
+                );
+                drop(built);
+                assert_eq!(session.shape_count().unwrap(), 0);
+            }
+        },
+    );
+    gate(
+        "250 exact rational projected pads with source weight edits",
+        10,
+        || {
+            let request: serde_json::Value = serde_json::from_str(include_str!(
+                "../../../tools/model/projected-spline-pad.request.json"
+            ))
+            .unwrap();
+            let doc = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+            let session = Session::new().unwrap();
+            let mut part = PartInstance {
+                id: "part".into(),
+                definition: &doc.family,
+                overrides: HashMap::new(),
+                provenance: "scale".into(),
+            };
+            for i in 0..250 {
+                part.overrides.insert(
+                    "weight".into(),
+                    ParameterValue::Scalar(Quantity::scalar([0.5, 0.7, 1.4][i % 3])),
+                );
+                let built = part.regenerate(&session).unwrap();
+                assert!(session.is_valid(built.shape("body").unwrap()).unwrap());
+                let area = session
+                    .surface_area(built.shape("profile").unwrap())
+                    .unwrap();
+                let volume = session.volume(built.shape("body").unwrap()).unwrap();
+                assert!((volume - area * 10.).abs() < 1e-7 * volume);
+                drop(built);
+                assert_eq!(session.shape_count().unwrap(), 0);
+            }
+        },
+    );
+    gate(
         "1000 strict sketch builds and 1000 free-motion rejections",
         10,
         || {
