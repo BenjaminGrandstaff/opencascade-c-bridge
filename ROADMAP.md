@@ -8,22 +8,31 @@ tracks status and order.
 
 | Layer | Version | State |
 |---|---|---|
-| C ABI (`src/`, `include/`) | ABI 61 | Stable; exact version match required |
+| C ABI (`src/`, `include/`) | ABI 62 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 120 | Active development |
+| `occt-parametric` (engineering layer) | Schema 121 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 138 + first-use integration 1 (+1 doc test), recipes 3, parametric 582 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 19 + branch command 2 + model command 68, MCP Python 9, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 142 + first-use integration 1 (+1 doc test), recipes 3, parametric 590 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 19 + branch command 2 + model command 69, MCP Python 9, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
 | Coverage | Last recorded: 93.61% lines overall, test code excluded; C++ 94.13% lines, 87.40% branches, 100% functions; Rust 93.42% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 185 Rust cases plus 5 model-command and 44 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Scale benchmarks | 189 Rust cases plus 5 model-command and 46 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
 
+- Thickened sheets (schema 121, ABI 62): `thicken` closes faces or open
+  shells into a solid along, against or across their normals with one
+  native intersection-joined skin offset (two when symmetric); sharp edges
+  are mitred. Sheet faces generate their offset faces and free edges their
+  side walls. Example: `thickened-strap`, a pipe clamp strap swept from an
+  open profile. Strap volumes match a closed form including the mitres to
+  1e-9 for all three sides. A 400-face corrugated sheet
+  thickens in 0.40 s (5 s budget); 500 strap thickness edits reusing the
+  sheet take 7.97 s (15 s); the MCP renders 20 straps in 0.81 s (10 s).
 - Split bodies (schema 120, no ABI change): a `split` feature cuts a solid
   with an editable plane and keeps the normal side, the other side, or both
   as a compound. Each side is one cut by a plane-aligned prism beyond the

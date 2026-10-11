@@ -136,6 +136,30 @@ impl Session {
         })
     }
 
+    /// Thickens a sheet (faces or shells, no solids) into a solid. Positive
+    /// `thickness` grows along the face normals; `symmetric` spans half the
+    /// magnitude to each side. Sharp edges join by intersection. Sheet faces
+    /// map to their offset faces (modified), boundary edges to side walls
+    /// (generated).
+    pub fn thicken<'a>(
+        &'a self,
+        sheet: &Shape<'_>,
+        thickness: f64,
+        symmetric: bool,
+        tolerance: f64,
+    ) -> Result<Shape<'a>, BridgeError> {
+        self.derived_shape(sheet, |out| unsafe {
+            occt_bridge_thicken(
+                self.raw.as_ptr(),
+                sheet.id,
+                thickness,
+                c_int::from(symmetric),
+                tolerance,
+                out,
+            )
+        })
+    }
+
     /// Merges adjacent faces on the same surface, and edges on the same
     /// curve, that booleans left split. Surfaces match within
     /// `linear_tolerance` (> 0) and `angular_tolerance` radians, in

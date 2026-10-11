@@ -84,6 +84,21 @@ pub struct ModeledThread {
     pub runout: Option<ScalarExpr>,
 }
 
+/// Which side of a sheet a `Thicken` grows toward.
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum ThickenSide {
+    /// Along the sheet's face normals.
+    #[default]
+    Normal,
+    /// Against the face normals.
+    Reverse,
+    /// Half the thickness to each side of the sheet.
+    Symmetric,
+}
+
 /// Which side of a split plane a `Split` keeps.
 #[derive(
     Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
@@ -457,6 +472,18 @@ pub enum FeatureOperation {
         #[serde(default)]
         keep: SplitKeep,
     },
+    /// Thickens a sheet, the `input` faces or shells with no solids, into a
+    /// solid by the positive length `thickness` (schema 121). `side` grows it
+    /// along the face normals (`normal`, the default), against them
+    /// (`reverse`) or half to each side (`symmetric`). Sharp edges between
+    /// faces are mitred. Sheet faces generate their offset faces and free
+    /// edges their side walls. At most 10,000 sheet faces.
+    Thicken {
+        input: String,
+        thickness: ScalarExpr,
+        #[serde(default)]
+        side: ThickenSide,
+    },
     /// Joined skin offset. Distance is a signed, nonzero length; tolerance is
     /// a positive length. Uses native join semantics and retained ancestry.
     Offset {
@@ -565,6 +592,7 @@ impl FeatureOperation {
             | Self::LinearPattern { input, .. }
             | Self::Offset { input, .. }
             | Self::Split { input, .. }
+            | Self::Thicken { input, .. }
             | Self::Unify { input, .. } => vec![input],
             Self::Fillet { input, edges, .. }
             | Self::VariableFillet { input, edges, .. }

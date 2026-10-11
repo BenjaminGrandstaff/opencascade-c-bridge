@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define OCCT_BRIDGE_ABI_VERSION 61u
+#define OCCT_BRIDGE_ABI_VERSION 62u
 #define OCCT_BRIDGE_INVALID_SHAPE_ID UINT64_C(0)
 
 #if defined(_WIN32) && defined(OCCT_BRIDGE_BUILD_SHARED)
@@ -788,6 +788,24 @@ OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_hollow(
     const occt_bridge_shape_id_t* faces_to_remove,
     size_t face_count,
     double thickness,
+    double tolerance,
+    occt_bridge_shape_id_t* out_shape
+);
+
+/*
+ * Thickens a sheet into a solid. The input is a face, a shell, or a compound
+ * of them, and contains no solids. thickness is signed and nonzero: positive
+ * grows along the face normals. With symmetric nonzero the sheet is first
+ * offset by -thickness/2, so the solid spans |thickness|/2 to each side.
+ * Sharp edges between faces join by intersection (mitred). History maps each
+ * sheet face to its offset face (modified) and each boundary edge to its side
+ * wall (generated); with symmetric, through the intermediate offset.
+ */
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_thicken(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t shape,
+    double thickness,
+    int symmetric,
     double tolerance,
     occt_bridge_shape_id_t* out_shape
 );

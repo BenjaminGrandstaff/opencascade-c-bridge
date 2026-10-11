@@ -196,3 +196,50 @@ fn circular_pattern_viewer_links_count_sweep_and_an_arc_at_the_source_radius() {
     assert!((arc[32][0].as_f64().unwrap() - 6.0).abs() < 1e-6);
     assert!((arc[32][1].as_f64().unwrap() - 6.0 * 3.0_f64.sqrt()).abs() < 1e-6);
 }
+
+#[test]
+fn thicken_viewer_measures_the_wall_on_each_side_of_the_sheet() {
+    let dir = Directory::new();
+    for (side, start_z, end_z, top) in [
+        ("normal", 0.0, 2.5, 14.5),
+        ("reverse", 0.0, -2.5, 12.0),
+        ("symmetric", -1.25, 1.25, 13.25),
+    ] {
+        let mut request = view_example("thickened-strap");
+        request["model"]["family"]["features"][3]["operation"]["thicken"]["side"] = json!(side);
+        request["model"]["instances"][0]["base"]["overrides"] =
+            json!({"thickness":{"scalar":{"value":2.5,"dimension":"length","unit":"millimeter"}}});
+        view_request(&dir, request, side).unwrap();
+        let data: Value =
+            serde_json::from_str(&fs::read_to_string(dir.0.join(side).join("view.json")).unwrap())
+                .unwrap();
+        let shell = &data["scenes"][0];
+        assert_eq!(shell["feature"], "shell");
+        assert_eq!(shell["valid"], true);
+        assert!(
+            (shell["bounds"][1][2].as_f64().unwrap() - top).abs() < 1e-7,
+            "{side}"
+        );
+        let a = shell["annotations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|a| a["id"] == "driving-thicken-wall")
+            .unwrap();
+        assert_eq!(a["detail"]["side"], side);
+        assert_eq!(a["detail"]["value_mm"], 2.5);
+        assert_eq!(a["detail"]["solids"], 1);
+        assert!((a["detail"]["measured_mm"].as_f64().unwrap() - 2.5).abs() < 1e-7);
+        assert_eq!(a["parameters"], json!(["thickness"]));
+        // The first sheet face is a foot: the wall dimension is vertical.
+        let anchors = a["anchors"].as_array().unwrap();
+        assert!(
+            (anchors[0][2].as_f64().unwrap() - start_z).abs() < 1e-7,
+            "{side}"
+        );
+        assert!(
+            (anchors[1][2].as_f64().unwrap() - end_z).abs() < 1e-7,
+            "{side}"
+        );
+    }
+}

@@ -1,0 +1,678 @@
+{
+  "schema": "occb-model-view-v1",
+  "model": {
+    "schema_version": 121,
+    "family": {
+      "id": "thickened-strap",
+      "version": 1,
+      "parameters": [
+        {
+          "id": "pipe_radius",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 12,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 6,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 30,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "thickness",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 2,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 0.8,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 4,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "width",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 20,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 10,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 40,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "foot",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 14,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 10,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 25,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "bolt_hole",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 5.5,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 3,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 8,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        }
+      ],
+      "derived_parameters": [],
+      "derived_vector_parameters": [],
+      "constraints": [],
+      "requirements": [
+        {
+          "id": "valid",
+          "version": 1,
+          "kind": "validation",
+          "priority": "required",
+          "statement": "strap valid",
+          "rule": {
+            "shape_valid": {
+              "output": "strap"
+            }
+          },
+          "provenance": "example; demonstration assumptions",
+          "traces": [
+            {
+              "feature": "strap"
+            }
+          ]
+        }
+      ],
+      "datums": [],
+      "features": [
+        {
+          "id": "profile",
+          "operation": {
+            "sketch_open_wire": {
+              "sketch": {
+                "id": "strap_profile",
+                "origin": {
+                  "literal": {
+                    "x": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    },
+                    "y": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                },
+                "x_axis": {
+                  "literal": {
+                    "x": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "y_axis": {
+                  "literal": {
+                    "x": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "points": [
+                  {
+                    "id": "a",
+                    "x": {
+                      "negate": {
+                        "add": [
+                          {
+                            "parameter": "pipe_radius"
+                          },
+                          {
+                            "parameter": "foot"
+                          }
+                        ]
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "b",
+                    "x": {
+                      "negate": {
+                        "parameter": "pipe_radius"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "o",
+                    "x": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "e",
+                    "x": {
+                      "parameter": "pipe_radius"
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "f",
+                    "x": {
+                      "add": [
+                        {
+                          "parameter": "pipe_radius"
+                        },
+                        {
+                          "parameter": "foot"
+                        }
+                      ]
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": true
+                  }
+                ],
+                "lines": [
+                  {
+                    "id": "left_foot",
+                    "start": "a",
+                    "end": "b"
+                  },
+                  {
+                    "id": "right_foot",
+                    "start": "e",
+                    "end": "f"
+                  }
+                ],
+                "circles": [],
+                "arcs": [
+                  {
+                    "id": "loop",
+                    "center": "o",
+                    "start": "b",
+                    "end": "e",
+                    "clockwise": true
+                  }
+                ],
+                "profile": [
+                  "left_foot",
+                  "loop",
+                  "right_foot"
+                ],
+                "constraints": []
+              }
+            }
+          }
+        },
+        {
+          "id": "path",
+          "operation": {
+            "sketch_open_wire": {
+              "sketch": {
+                "id": "strap_width",
+                "origin": {
+                  "literal": {
+                    "x": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    },
+                    "y": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                },
+                "x_axis": {
+                  "literal": {
+                    "x": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "y_axis": {
+                  "literal": {
+                    "x": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "points": [
+                  {
+                    "id": "start",
+                    "x": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "end",
+                    "x": {
+                      "parameter": "width"
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": true
+                  }
+                ],
+                "lines": [
+                  {
+                    "id": "run",
+                    "start": "start",
+                    "end": "end"
+                  }
+                ],
+                "circles": [],
+                "profile": [
+                  "run"
+                ],
+                "constraints": []
+              }
+            }
+          }
+        },
+        {
+          "id": "sheet",
+          "operation": {
+            "sweep": {
+              "profile": "profile",
+              "path": "path",
+              "orientation": "corrected_frenet"
+            }
+          }
+        },
+        {
+          "id": "shell",
+          "operation": {
+            "thicken": {
+              "input": "sheet",
+              "thickness": {
+                "parameter": "thickness"
+              },
+              "side": "normal"
+            }
+          }
+        },
+        {
+          "id": "left_hole",
+          "operation": {
+            "hole": {
+              "input": "shell",
+              "position": {
+                "components": {
+                  "x": {
+                    "negate": {
+                      "divide": [
+                        {
+                          "add": [
+                            {
+                              "multiply": [
+                                {
+                                  "parameter": "pipe_radius"
+                                },
+                                {
+                                  "literal": {
+                                    "value": 2,
+                                    "dimension": "scalar",
+                                    "unit": null
+                                  }
+                                }
+                              ]
+                            },
+                            {
+                              "parameter": "foot"
+                            }
+                          ]
+                        },
+                        {
+                          "literal": {
+                            "value": 2,
+                            "dimension": "scalar",
+                            "unit": null
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "y": {
+                    "divide": [
+                      {
+                        "parameter": "width"
+                      },
+                      {
+                        "literal": {
+                          "value": 2,
+                          "dimension": "scalar",
+                          "unit": null
+                        }
+                      }
+                    ]
+                  },
+                  "z": {
+                    "literal": {
+                      "value": 10,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                }
+              },
+              "axis": {
+                "literal": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "z": {
+                    "value": -1,
+                    "dimension": "scalar",
+                    "unit": null
+                  }
+                }
+              },
+              "diameter": {
+                "parameter": "bolt_hole"
+              },
+              "extent": "through_all",
+              "bottom": "flat",
+              "finish": "plain"
+            }
+          }
+        },
+        {
+          "id": "strap",
+          "operation": {
+            "hole": {
+              "input": "left_hole",
+              "position": {
+                "components": {
+                  "x": {
+                    "divide": [
+                      {
+                        "add": [
+                          {
+                            "multiply": [
+                              {
+                                "parameter": "pipe_radius"
+                              },
+                              {
+                                "literal": {
+                                  "value": 2,
+                                  "dimension": "scalar",
+                                  "unit": null
+                                }
+                              }
+                            ]
+                          },
+                          {
+                            "parameter": "foot"
+                          }
+                        ]
+                      },
+                      {
+                        "literal": {
+                          "value": 2,
+                          "dimension": "scalar",
+                          "unit": null
+                        }
+                      }
+                    ]
+                  },
+                  "y": {
+                    "divide": [
+                      {
+                        "parameter": "width"
+                      },
+                      {
+                        "literal": {
+                          "value": 2,
+                          "dimension": "scalar",
+                          "unit": null
+                        }
+                      }
+                    ]
+                  },
+                  "z": {
+                    "literal": {
+                      "value": 10,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                }
+              },
+              "axis": {
+                "literal": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "z": {
+                    "value": -1,
+                    "dimension": "scalar",
+                    "unit": null
+                  }
+                }
+              },
+              "diameter": {
+                "parameter": "bolt_hole"
+              },
+              "extent": "through_all",
+              "bottom": "flat",
+              "finish": "plain"
+            }
+          }
+        }
+      ]
+    },
+    "instances": [
+      {
+        "base": {
+          "id": "strap",
+          "overrides": {},
+          "provenance": "Pipe clamp strap thickened from a swept open profile"
+        }
+      }
+    ]
+  },
+  "outputs": [
+    {
+      "instance": "strap",
+      "output": "shell"
+    },
+    {
+      "instance": "strap",
+      "output": "strap"
+    }
+  ]
+}

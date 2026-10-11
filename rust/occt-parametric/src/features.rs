@@ -15,6 +15,7 @@ mod sketch_projection;
 mod sketch_support;
 mod split;
 mod sweeps;
+mod thicken;
 pub(crate) mod threads;
 mod variable_fillet;
 
@@ -385,6 +386,18 @@ pub(crate) fn execute_feature<'session>(
                 .common(shape(shapes, left)?, shape(shapes, right)?)
                 .map_err(|error| ModelError::from(error).locate_operands([left, right]))?;
             return retain_group_history(session, result, &[left, right], shapes, definitions);
+        }
+        FeatureOperation::Thicken {
+            input,
+            thickness,
+            side,
+        } => {
+            return thicken::execute(
+                session,
+                shape(shapes, input)?,
+                scalar(thickness, parameters, Dimension::Length)?,
+                *side,
+            );
         }
         FeatureOperation::Split {
             input,

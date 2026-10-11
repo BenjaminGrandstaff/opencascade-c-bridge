@@ -207,3 +207,4 @@ mod open_corner_pipe;
 mod spline_corner_pad;
 mod split_body;
 mod tapped_holes;
+mod thicken;

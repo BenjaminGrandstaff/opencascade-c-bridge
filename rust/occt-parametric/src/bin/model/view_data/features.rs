@@ -42,6 +42,7 @@ pub(super) fn feature_dimensions(
     scale_dimension(scene, feature, annotations)?;
     mirror_plane(scene, feature, annotations)?;
     split_plane(scene, feature, annotations)?;
+    thicken_wall(scene, feature, annotations)?;
     revolve_annotation(scene, feature, budget, annotations)?;
     sweep_route_length(scene, feature, budget, annotations)?;
     loft_section_spacing(scene, feature, annotations)?;
@@ -1310,6 +1311,93 @@ fn extrusion_dimension(
                 "value_mm": has_measurement.then_some(length),
                 "measurement": measurement,
                 "driving": !geometry_driven,
+            }),
+        }
+        .into(),
+    );
+    Ok(())
+}
+
+/// Wall dimension of a thickened sheet across its first face: from the point
+/// where the face normal through its centroid meets the face, along the side
+/// grown. The measured value is the native ray distance through the result.
+fn thicken_wall(
+    scene: &SolidScene<'_, '_>,
+    feature: &FeatureDefinition,
+    annotations: &mut Vec<Value>,
+) -> Result<(), Failure> {
+    let SolidScene {
+        session,
+        output,
+        parameters,
+        shape,
+        min,
+        max,
+        ..
+    } = *scene;
+    let FeatureOperation::Thicken {
+        input,
+        thickness,
+        side,
+    } = &feature.operation
+    else {
+        return Ok(());
+    };
+    let Some(sheet) = scene.generated.shape(input) else {
+        return Ok(());
+    };
+    let t = scalar(thickness, parameters)?;
+    let face = session
+        .subshape(sheet, ShapeType::Face, 0)
+        .stage("visualization")?;
+    let n = point(session.face_normal(&face).stage("visualization")?);
+    let c = point(session.center_of_mass(&face).stage("visualization")?);
+    let reach = (max[0] - min[0]).hypot((max[1] - min[1]).hypot(max[2] - min[2])) + 1.0;
+    let at = |base: [f64; 3], s: f64| -> [f64; 3] { std::array::from_fn(|i| base[i] + s * n[i]) };
+    let to = |p: [f64; 3]| Vec3::new(p[0], p[1], p[2]);
+    let on_face = session
+        .ray_first_hit(&face, to(at(c, -reach)), to(n), 2.0 * reach)
+        .stage("visualization")?
+        .map_or(c, |(p, _)| point(p));
+    let (start, end, label) = match side {
+        ThickenSide::Normal => (on_face, at(on_face, t), "along face normals"),
+        ThickenSide::Reverse => (on_face, at(on_face, -t), "against face normals"),
+        ThickenSide::Symmetric => (at(on_face, -t / 2.0), at(on_face, t / 2.0), "symmetric"),
+    };
+    let direction: [f64; 3] = std::array::from_fn(|i| (end[i] - start[i]) / t);
+    // Contacts at the ray origin are excluded, so the far skin is hit first.
+    let measured = session
+        .ray_first_hit(shape, to(start), to(direction), 2.0 * t + 1.0)
+        .stage("visualization")?
+        .map(|(_, length)| length);
+    let solids = session
+        .subshape_count(shape, ShapeType::Solid)
+        .stage("visualization")?;
+    let expressions = json!([thickness]);
+    annotations.push(
+        Annotation {
+            id: "driving-thicken-wall".into(),
+            label: format!(
+                "thicken {t:.3} mm · {label} · {solids} solid{}",
+                if solids == 1 { "" } else { "s" }
+            ),
+            kind: AnnotationKind::Dimension,
+            status: AnnotationStatus::Driving,
+            targets: vec![output.into()],
+            parameters: names(&expressions),
+            anchors: json!([start, end]),
+            detail: json!({
+                "input": input,
+                "value_mm": t,
+                "measured_mm": measured,
+                "side": side,
+                "direction": direction,
+                "solids": solids,
+                "expressions": expressions,
+                "driving": true,
+                "description": "Sheet thickness across the first sheet face, \
+                    from its centroid's projection along the grown side; \
+                    measured_mm is the native ray distance through the solid.",
             }),
         }
         .into(),

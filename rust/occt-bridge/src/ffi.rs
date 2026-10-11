@@ -2,7 +2,7 @@
 
 use super::*;
 
-pub(crate) const ABI_VERSION: u32 = 61;
+pub(crate) const ABI_VERSION: u32 = 62;
 
 #[repr(C)]
 #[derive(Default)]
@@ -674,6 +674,14 @@ unsafe extern "C" {
         session: *mut c_void,
         shape: RawShapeId,
         offset: f64,
+        tolerance: f64,
+        out: *mut RawShapeId,
+    ) -> RawStatus;
+    pub(crate) fn occt_bridge_thicken(
+        session: *mut c_void,
+        shape: RawShapeId,
+        thickness: f64,
+        symmetric: c_int,
         tolerance: f64,
         out: *mut RawShapeId,
     ) -> RawStatus;

@@ -56,9 +56,11 @@ at `split_height` into a `cap` (above) and a `base` (below). Tests check:
 - planes at or outside the block's faces, and a zero normal, fail without
   leaking handles while the accepted pieces stay valid.
 
-1,000 full regenerations of the housing (box, three holes and two splits)
-are a required scale case (20 s budget). The MCP renders 20 housings (40
-pieces) within a 10 s budget.
+Two required scale cases bound the work. A 410 × 410 mm plate with 400
+holes splits through a column of holes, keeping both sides, within 5 s. 500
+split-height edits of the housing, which reuse the bored block and rebuild
+both pieces, run within 30 s (about 31 ms each). The MCP renders 20 housings
+(40 pieces) within a 10 s budget.
 
 ## Not yet included
 

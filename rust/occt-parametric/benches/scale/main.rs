@@ -53,6 +53,7 @@ mod step_export;
 mod sweep;
 mod tangency;
 mod textures;
+mod thicken;
 mod threads;
 mod validation;
 mod variable_fillet;
@@ -172,6 +173,8 @@ fn main() -> ExitCode {
     outcomes.push(threads::thread_runout_case(definition));
     outcomes.push(split::split_plate_case(definition));
     outcomes.push(split::split_edit_case());
+    outcomes.push(thicken::thicken_sheet_case());
+    outcomes.push(thicken::thicken_edit_case());
     outcomes.push(threads::thread_pattern_case(definition));
     outcomes.push(parts_list::parts_list_case(definition, false));
     outcomes.push(parts_list::parts_list_case(definition, true));

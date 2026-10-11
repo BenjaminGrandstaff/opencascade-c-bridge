@@ -836,5 +836,20 @@ with tempfile.TemporaryDirectory(prefix='occb-mcp-scale-') as root:
         elapsed=time.monotonic()-started
         assert elapsed<10
         print(f'PASS MCP 20 split housings with cap and base pieces: {elapsed:.3f}s / 10s')
+        straps=client.tool('occt_get_example',dict(name='thickened-strap'))['structuredContent']
+        for i in range(1,20):
+            straps['model']['instances'].append({'clone':dict(id=f'strap-{i}',source='strap',overrides={},provenance='scale')})
+            straps['outputs'].extend(dict(instance=f'strap-{i}',output=out) for out in ['shell','strap'])
+        started=time.monotonic()
+        result=client.tool('occt_visualize_model',straps)
+        assert not result['isError'],result
+        data=json.loads(client.call('resources/read',dict(uri=result['structuredContent']['resources']['view.json']))['result']['contents'][0]['text'])
+        solids=[s for s in data['scenes'] if s['kind']=='solid']
+        assert len(solids)==40 and all(s['valid'] for s in solids)
+        walls=[a for s in solids if s['feature']=='shell' for a in s['annotations'] if a['id']=='driving-thicken-wall']
+        assert len(walls)==20 and all(abs(a['detail']['measured_mm']-2)<1e-7 and a['parameters']==['thickness'] for a in walls),walls[:1]
+        elapsed=time.monotonic()-started
+        assert elapsed<10
+        print(f'PASS MCP 20 thickened clamp straps with measured walls and bolt holes: {elapsed:.3f}s / 10s')
     finally:
         client.close()

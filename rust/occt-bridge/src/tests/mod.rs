@@ -40,3 +40,4 @@ fn fixture(name: &str) -> String {
 }
 
 mod mirror;
+mod thicken;

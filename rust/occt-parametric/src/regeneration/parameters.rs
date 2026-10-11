@@ -221,6 +221,9 @@ pub(crate) fn collect_operation_parameters<'a>(
             collect_scalar_parameters(distance, names);
             collect_scalar_parameters(tolerance, names);
         }
+        FeatureOperation::Thicken { thickness, .. } => {
+            collect_scalar_parameters(thickness, names);
+        }
         FeatureOperation::Split { origin, normal, .. } => {
             collect_vector_parameters(origin, names);
             collect_vector_parameters(normal, names);

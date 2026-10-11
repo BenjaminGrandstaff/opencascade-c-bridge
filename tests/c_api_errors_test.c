@@ -555,6 +555,13 @@ static void combinations_and_features(occt_bridge_session_t* session) {
     EXPECT(occt_bridge_hollow(session, box, wrong_faces, 1, -0.5, 1e-6, &out), GEOMETRY);
     EXPECT(occt_bridge_hollow(session, box, foreign_faces, 1, -0.5, 1e-6, &out), GEOMETRY);
 
+    EXPECT(occt_bridge_thicken(session, faces[0], 0.5, 0, 1e-6, NULL), ARG);
+    EXPECT(occt_bridge_thicken(session, faces[0], NAN, 0, 1e-6, &out), ARG);
+    EXPECT(occt_bridge_thicken(session, faces[0], 0, 1, 1e-6, &out), ARG);
+    EXPECT(occt_bridge_thicken(session, faces[0], 0.5, 0, 0, &out), ARG);
+    EXPECT(occt_bridge_thicken(session, unknown, 0.5, 0, 1e-6, &out), MISSING);
+    EXPECT(occt_bridge_thicken(session, box, 0.5, 0, 1e-6, &out), GEOMETRY);
+
     EXPECT(occt_bridge_translate(session, box, up, NULL), ARG);
     EXPECT(occt_bridge_translate(session, box, nan_x, &out), ARG);
     EXPECT(occt_bridge_translate(session, unknown, up, &out), MISSING);

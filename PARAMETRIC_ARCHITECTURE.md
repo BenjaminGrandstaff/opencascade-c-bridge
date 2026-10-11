@@ -1492,6 +1492,8 @@ internal thread groove is fused into the hole cutter so one cut keeps input
 history (schema 113). Thread runout joins the helix to a tangent
 interpolated spiral that moves the groove out of the material (schema 114). Planar `split`
 features cut a solid by a half-space prism per kept side (schema 120).
+`thicken` closes a sheet into a solid with one native intersection-joined
+skin offset (schema 121, ABI 62).
 
 Local sketch diagnosis reuses the final Jacobian without changing authoring
 schema 114 or ABI 60. It links local dependencies and representative nullspace
