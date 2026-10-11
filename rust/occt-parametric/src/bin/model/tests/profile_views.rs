@@ -2042,3 +2042,52 @@ fn chain_projection_viewer_links_the_complete_boundary_to_source_controls() {
         true
     );
 }
+
+#[test]
+fn named_junction_viewer_exposes_point_references_controls_and_dimension_targets() {
+    let dir = Directory::new();
+    view_request(&dir, view_example("projected-junction-pad"), "junction").unwrap();
+    let data: Value =
+        serde_json::from_str(&fs::read_to_string(dir.0.join("junction/view.json")).unwrap())
+            .unwrap();
+    let sk = data["scenes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["kind"] == "sketch" && s["feature"] == "profile")
+        .unwrap();
+    assert_eq!(sk["solver"]["accepted"], true);
+    let right = sk["annotations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["id"] == "junction-reference-right")
+        .unwrap();
+    assert_eq!(right["detail"]["point"], "reference:junction:right");
+    assert_eq!(right["anchors"].as_array().unwrap().len(), 1);
+    assert!(
+        right["targets"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("reference:junction:right"))
+    );
+    assert!(
+        right["parameters"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("junction_shift"))
+    );
+    let dimension = sk["annotations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["detail"]["constraint_index"] == 1)
+        .unwrap();
+    assert_eq!(dimension["status"], "passed");
+    assert!(
+        dimension["targets"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("reference:junction:right"))
+    );
+}

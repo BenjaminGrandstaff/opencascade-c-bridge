@@ -1508,6 +1508,10 @@ Schema 117 adds connected multi-edge projection as one spline boundary,
 with deterministic source-space ordering, exact degree elevation and bounded
 endpoint matching. Junctions are knots in this composite native edge; stable
 junction references and separate edge topology remain authoring extensions.
+Schema 118 adds named fixed junction references through bounded geometric
+source-space matches, independent of pole/traversal indices. Hint and radius
+parameters enter incremental invalidation. Missing or ambiguous matches reject
+edits; separate edge topology remains an extension.
 
 
 The next cross-layer work should prioritize manufacturing product definition:

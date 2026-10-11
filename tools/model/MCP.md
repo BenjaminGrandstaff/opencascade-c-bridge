@@ -46,10 +46,10 @@ or remote service is started.
 | `occt_build` | The entire `occb-model-request-v1` object | Accepted report, build ID, local directory, and artifact resource URIs |
 
 `tools/list` provides the generated complete request schema as `occt_build`'s
-input schema. All 38 current feature operations and 152 nested request-schema
+input schema. All 38 current feature operations and 153 nested request-schema
 definitions are discoverable. Schemas derive from serde-compatible Rust types;
 new serialized variants require schema support at compilation. Authoring schemas
-target current model schema 117. The engine still migrates older documents.
+target current model schema 118. The engine still migrates older documents.
 Schemas describe serialization and basic request bounds; units, dependency
 references, dimensional constraints, selector resolution, and geometry validity
 are checked by the build engine.
@@ -551,3 +551,10 @@ multi-edge boundary as one rational spline. It supports mixed degrees with
 exact elevation and linked source edits, with branch/disconnect/ambiguity
 rejection. The composite is one native edge; see
 [ordering and topology limits](../../docs/SKETCHES.md#connected-multi-edge-projection-schema-117).
+
+The `projected-junction-pad` example adds named chain `junctions` and uses their
+fixed point IDs in a coincident constraint and width dimension. Set `width` to
+60 mm to move the marker, or `junction_shift` to 0.1 mm to exercise a guarded
+missing-match failure. Hint parameters invalidate the projection independently
+of source geometry. See
+[named references](../../docs/SKETCHES.md#named-chain-junction-references-schema-118).

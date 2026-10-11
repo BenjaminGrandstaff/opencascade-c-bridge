@@ -57,6 +57,113 @@ fn gate(name: &str, budget: u64, run: impl FnOnce()) {
 }
 fn main() {
     gate(
+        "1000 named junction references on a 1000-edge projected loop",
+        10,
+        || {
+            let request: serde_json::Value = serde_json::from_str(include_str!(
+                "../../../tools/model/projected-junction-pad.request.json"
+            ))
+            .unwrap();
+            let mut family = ModelDocument::from_json(&request["model"].to_string())
+                .unwrap()
+                .family;
+            family.features.retain(|f| f.id != "body");
+            family.requirements.clear();
+            let mut source = sketch();
+            source.acceptance = SketchAcceptance::FullyConstrained;
+            let mut references = Vec::new();
+            for i in 0..1000 {
+                let angle = std::f64::consts::TAU * i as f64 / 1000.;
+                let (x, y) = (10. * angle.cos(), 10. * angle.sin());
+                source.points.push(point(format!("p{i}"), x, y, true));
+                source.lines.push(SketchLine {
+                    id: format!("l{i}"),
+                    start: format!("p{i}"),
+                    end: format!("p{}", (i + 1) % 1000),
+                });
+                source.profile.push(format!("l{i}"));
+                references.push(SketchProjectionJunction {
+                    id: format!("v{i}"),
+                    near: VectorExpr::Literal(VectorQuantity::lengths(
+                        x,
+                        y,
+                        0.,
+                        LengthUnit::Millimeter,
+                    )),
+                    maximum_distance: mm(1e-6),
+                });
+            }
+            family.features[0].operation = FeatureOperation::SketchWire {
+                sketch: Box::new(source),
+            };
+            let FeatureOperation::SketchFace { sketch } = &mut family.features[1].operation else {
+                panic!()
+            };
+            sketch.points.clear();
+            sketch.constraints.clear();
+            sketch.projections[0].junctions = references;
+            let session = Session::new().unwrap();
+            let part = PartInstance {
+                id: "part".into(),
+                definition: &family,
+                overrides: HashMap::new(),
+                provenance: "scale".into(),
+            };
+            let built = part.regenerate(&session).unwrap();
+            assert!(session.is_valid(built.shape("profile").unwrap()).unwrap());
+            let snapshots = part.resolved_sketches(&session, &built).unwrap();
+            let sk = &snapshots["profile"].as_ref().unwrap().sketch;
+            assert_eq!(
+                sk.points
+                    .iter()
+                    .filter(|p| p.id.contains(":junction:"))
+                    .count(),
+                1000
+            );
+            let solved = sk.solve(&part.resolved_parameters().unwrap()).unwrap();
+            assert_eq!(solved.free_degrees, 0);
+            let p = solved.points["reference:junction:v0"];
+            assert!((p.x - 10.).abs() < 1e-7 && (p.y + 2.).abs() < 1e-7);
+            drop(built);
+            assert_eq!(session.shape_count().unwrap(), 0);
+        },
+    );
+    gate(
+        "1000 named-junction profile edits with driven point and dimension",
+        10,
+        || {
+            let request: serde_json::Value = serde_json::from_str(include_str!(
+                "../../../tools/model/projected-junction-pad.request.json"
+            ))
+            .unwrap();
+            let mut family = ModelDocument::from_json(&request["model"].to_string())
+                .unwrap()
+                .family;
+            family.features.retain(|f| f.id != "body");
+            family.requirements.clear();
+            let session = Session::new().unwrap();
+            let mut part = PartInstance {
+                id: "part".into(),
+                definition: &family,
+                overrides: HashMap::new(),
+                provenance: "scale".into(),
+            };
+            for i in 0..1000 {
+                part.overrides.insert(
+                    "width".into(),
+                    ParameterValue::Scalar(Quantity::length(
+                        [40., 50., 60.][i % 3],
+                        LengthUnit::Millimeter,
+                    )),
+                );
+                let built = part.regenerate(&session).unwrap();
+                assert!(session.is_valid(built.shape("profile").unwrap()).unwrap());
+                drop(built);
+                assert_eq!(session.shape_count().unwrap(), 0);
+            }
+        },
+    );
+    gate(
         "1000-edge closed chain projection and 1001-edge limit rejection",
         10,
         || {

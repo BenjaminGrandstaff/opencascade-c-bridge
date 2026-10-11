@@ -58,6 +58,7 @@ pub(super) fn materialize(
             projection.kind,
             SketchProjectionKind::Spline | SketchProjectionKind::Chain
         ) {
+            let mut junction_points = Vec::new();
             let spans = if projection.kind == SketchProjectionKind::Chain {
                 let mut curves = Vec::with_capacity(edges.len());
                 let mut count = 0usize;
@@ -71,11 +72,36 @@ pub(super) fn materialize(
                     count += spans.iter().map(|s| s.poles.len()).sum::<usize>();
                     curves.push(spans);
                 }
-                chain_spans(curves)
-                    .map_err(|e| e.context(&format!("sketch projection '{}'", projection.id)))?
+                let chain = chain_geometry(curves)
+                    .map_err(|e| e.context(&format!("sketch projection '{}'", projection.id)))?;
+                junction_points = chain.junctions;
+                chain.spans
             } else {
                 session.edge_bezier_spans(&edges[0], 10000)?
             };
+            for junction in &projection.junctions {
+                let matched =
+                    match_junction(junction, &junction_points, parameters).map_err(|e| {
+                        e.context(&format!(
+                            "sketch projection '{}' junction '{}'",
+                            projection.id, junction.id
+                        ))
+                    })?;
+                let p = point(matched);
+                if !p.iter().all(|v| v.is_finite()) {
+                    return Err(ModelError::new(
+                        "junction projection exceeds finite coordinates",
+                    ));
+                }
+                let id = format!("{}:junction:{}", projection.id, junction.id);
+                let index = indexes[&id];
+                result.points[index] = SketchPoint {
+                    id,
+                    x: length_literal(p[0]),
+                    y: length_literal(p[1]),
+                    fixed: true,
+                };
+            }
             let (poles, basis) = project_spans(&spans, &point)
                 .map_err(|e| e.context(&format!("sketch projection '{}'", projection.id)))?;
             imported_poles += poles.len();
@@ -163,7 +189,15 @@ fn point_order(a: Vec3, b: Vec3) -> std::cmp::Ordering {
 }
 /// Bounded O(E²) endpoint clustering for E<=1000. Match source-space endpoints
 /// before projection, so overlapping projections cannot join unrelated edges.
-fn chain_spans(mut curves: Vec<Vec<BezierSpan>>) -> Result<Vec<BezierSpan>, ModelError> {
+struct ChainGeometry {
+    spans: Vec<BezierSpan>,
+    junctions: Vec<Vec3>,
+}
+#[cfg(test)]
+fn chain_spans(curves: Vec<Vec<BezierSpan>>) -> Result<Vec<BezierSpan>, ModelError> {
+    Ok(chain_geometry(curves)?.spans)
+}
+fn chain_geometry(mut curves: Vec<Vec<BezierSpan>>) -> Result<ChainGeometry, ModelError> {
     if curves.is_empty() || curves.len() > 1000 {
         return Err(ModelError::new("chain projection requires 1–1000 edges"));
     }
@@ -263,6 +297,7 @@ fn chain_spans(mut curves: Vec<Vec<BezierSpan>>) -> Result<Vec<BezierSpan>, Mode
     let mut used = vec![false; curves.len()];
     let mut ordered = Vec::new();
     let mut current = start;
+    let mut retained = vec![None; nodes.len()];
     loop {
         let edge = incidence[current]
             .iter()
@@ -320,6 +355,10 @@ fn chain_spans(mut curves: Vec<Vec<BezierSpan>>) -> Result<Vec<BezierSpan>, Mode
                 span.weights.reverse();
             }
         }
+        if retained[current].is_none() {
+            retained[current] = Some(curve[0].poles[0]);
+        }
+        let endpoint = *curve.last().unwrap().poles.last().unwrap();
         for span in curve {
             ordered.push(elevate_span(span, degree)?);
         }
@@ -328,11 +367,49 @@ fn chain_spans(mut curves: Vec<Vec<BezierSpan>>) -> Result<Vec<BezierSpan>, Mode
         } else {
             ends[edge][1]
         };
+        if retained[current].is_none() {
+            retained[current] = Some(endpoint);
+        }
     }
     if used.iter().any(|used| !*used) {
         return Err(ModelError::new("chain projection is disconnected"));
     }
-    Ok(ordered)
+    let junctions = incidence
+        .iter()
+        .enumerate()
+        .filter(|(_, edges)| edges.len() == 2 && edges[0] != edges[1])
+        .map(|(i, _)| retained[i].unwrap())
+        .collect();
+    Ok(ChainGeometry {
+        spans: ordered,
+        junctions,
+    })
+}
+fn match_junction(
+    reference: &SketchProjectionJunction,
+    points: &[Vec3],
+    parameters: &HashMap<String, ParameterValue>,
+) -> Result<Vec3, ModelError> {
+    let near = vector(&reference.near, parameters, Dimension::Length)?;
+    let radius = scalar(&reference.maximum_distance, parameters, Dimension::Length)?;
+    if radius <= 0. {
+        return Err(ModelError::new(
+            "junction maximum distance must be positive",
+        ));
+    }
+    let mut matches = points
+        .iter()
+        .copied()
+        .filter(|p| (p.x - near.x).hypot(p.y - near.y).hypot(p.z - near.z) <= radius);
+    let first = matches.next().ok_or_else(|| {
+        ModelError::new("junction reference found no source junction within maximum distance")
+    })?;
+    if matches.next().is_some() {
+        return Err(ModelError::new(
+            "junction reference matches multiple source junctions",
+        ));
+    }
+    Ok(first)
 }
 /// Exact rational degree elevation using normalized weights and convex pole
 /// combinations, avoiding coordinate*large-weight overflow.
@@ -624,6 +701,45 @@ mod tests {
             poles: vec![a, b],
             weights: vec![1., 1.],
         }]
+    }
+    #[test]
+    fn junction_matches_are_independent_of_chain_order_and_exclude_terminals() {
+        let (a, b, c) = (
+            Vec3::new(0., 0., 0.),
+            Vec3::new(2., 0., 0.),
+            Vec3::new(3., 1., 0.),
+        );
+        let mut reference = SketchProjectionJunction {
+            id: "middle".into(),
+            near: VectorExpr::Literal(VectorQuantity::lengths(2., 0., 0., LengthUnit::Millimeter)),
+            maximum_distance: length_literal(1e-6),
+        };
+        for curves in [
+            vec![line_span(a, b), line_span(b, c)],
+            vec![line_span(c, b), line_span(b, a)],
+        ] {
+            let chain = chain_geometry(curves).unwrap();
+            assert_eq!(chain.junctions, vec![b]);
+            assert_eq!(
+                match_junction(&reference, &chain.junctions, &HashMap::new()).unwrap(),
+                b
+            );
+            reference.near =
+                VectorExpr::Literal(VectorQuantity::lengths(0., 0., 0., LengthUnit::Millimeter));
+            assert!(match_junction(&reference, &chain.junctions, &HashMap::new()).is_err());
+            reference.near =
+                VectorExpr::Literal(VectorQuantity::lengths(2., 0., 0., LengthUnit::Millimeter));
+        }
+        let loop_edge = vec![BezierSpan {
+            poles: vec![a, b, a],
+            weights: vec![1., 1., 1.],
+        }];
+        assert!(
+            chain_geometry(vec![loop_edge])
+                .unwrap()
+                .junctions
+                .is_empty()
+        );
     }
     #[test]
     fn chain_endpoint_tolerance_rejects_nontransitive_matches_in_every_order() {

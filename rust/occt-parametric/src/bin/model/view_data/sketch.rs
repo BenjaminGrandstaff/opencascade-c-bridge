@@ -260,6 +260,28 @@ pub(super) fn sketch_scene(
             .into(),
         );
     }
+    let mut junction_point_ids = BTreeSet::new();
+    for projection in &projections {
+        let Some(id) = projection["definition"]["id"].as_str() else {
+            continue;
+        };
+        for junction in projection["definition"]["junctions"]
+            .as_array()
+            .into_iter()
+            .flatten()
+        {
+            let name = junction["id"].as_str().expect("junction ID");
+            let point_id = format!("{id}:junction:{name}");
+            junction_point_ids.insert(point_id.clone());
+            if let Some(p) = point_map.get(&point_id) {
+                annotations.push(Annotation {
+                    id:format!("junction-{id}-{name}"),label:format!("Junction {name}"),kind:AnnotationKind::Group,status:AnnotationStatus::Constructed,
+                    targets:vec![id.into(),point_id.clone()],parameters:projection["source_parameters"].as_array().into_iter().flatten().filter_map(|v|v.as_str().map(str::to_owned)).collect(),
+                    anchors:json!([p]),detail:json!({"junction":junction,"point":point_id,"source":projection["definition"]["input"],"coordinates_mm":p,"fixed":true,"match":"unique source-space junction","topology":"fixed reference point; composite spline topology is unchanged"}),
+                }.into());
+            }
+        }
+    }
     for spline in &sketch.splines {
         if let Some(basis) = &spline.basis {
             let mut parameters: BTreeSet<String> = names(&json!(basis)).into_iter().collect();
@@ -1113,7 +1135,7 @@ pub(super) fn sketch_scene(
                 .collect::<BTreeSet<_>>()
                 .into_iter()
                 .collect::<Vec<_>>();
-        if p.fixed {
+        if p.fixed && !junction_point_ids.contains(&p.id) {
             annotations.push(
                 Annotation {
                     id: format!("fixed-{}", p.id),

@@ -79,7 +79,7 @@ export are verified. A 1,000-pair solve and residual-diagnostic gate passes in
 0.009 s (10 s budget); 20 solids plus 60 source sketch scenes and matched-radius
 annotations pass through MCP in 0.316 s (10 s budget).
 
-Current authoring examples use schema 117. Older model documents migrate
+Current authoring examples use schema 118. Older model documents migrate
 without adding constraints or changing their entities. Current native ABI is 60.
 
 ## Saved profile operations
@@ -1249,3 +1249,59 @@ accepted geometry. Validation includes mixed degrees, reversed/permuted
 selection, ambiguous endpoints, branch/disconnect rejection and handle cleanup.
 A 1,000-edge closed import plus a 1,001-edge rejection takes 0.332 s;
 1,000 mixed-degree profile edits take 0.432 s (10 s budgets).
+
+## Named chain junction references (schema 118)
+
+A chain projection may declare `junctions`, with user-chosen names and bounded
+source-space matches. Each entry has `id`, length-vector expression `near`, and
+positive length expression `maximum_distance`. For example:
+
+```json
+{
+  "id": "right",
+  "near": {"components": {
+    "x": {"parameter": "width"},
+    "y": {"literal": {"value": 0, "dimension": "length", "unit": "millimeter"}},
+    "z": {"literal": {"value": 0, "dimension": "length", "unit": "millimeter"}}
+  }},
+  "maximum_distance": {"literal": {"value": 0.000001, "dimension": "length", "unit": "millimeter"}}
+}
+```
+
+The entry creates fixed point `projection:junction:right` in sketch coordinates.
+Use it in constraints, dimensions and authored profile entities. The name
+retains its meaning through source and control-pole changes by matching a
+unique geometric junction, rather than selecting a pole or traversal index.
+Hint expressions use located family coordinates before sketch-plane projection;
+instance/assembly placement is outside that coordinate system. Source edits
+must keep the intended junction within the authored bound. This is a guarded
+geometric reference, not persistent topological identity.
+
+Candidates are connections between two distinct selected source edges.
+Open-chain terminals use the existing `start/end` names; a standalone closed
+edge's seam and internal Bézier boundaries are not junction candidates. Both
+smooth and corner connections qualify. A closed multi-edge seam qualifies.
+Exactly one candidate must lie within the bound: zero or multiple candidates
+reject regeneration, even if one ambiguous candidate is closer. Aliases use
+retained curve endpoint coordinates at the join, so they agree with the
+composite curve after the existing 1e-7 mm connection/closure tolerance.
+
+Names must be nonempty and unique within the projection. At most 1,000 entries
+are allowed per chain and 10,000 per sketch. Non-chain projections reject
+junction entries. Matching reuses the chain's existing endpoint graph and
+performs bounded O(references × junctions) distance checks without extra native
+queries. Hint and radius parameters participate in incremental invalidation;
+failed hint-only edits preserve the accepted build. Older documents migrate
+with an empty list, omitted on serialization. Native ABI remains 60.
+
+Viewer/MCP group annotations expose the name, fixed point, coordinate, match
+rule and source controls. Point constraints and dimension annotations link to
+the same fixed references. The `projected-junction-pad` example constrains a
+marker to the right-hand junction and checks the width between left/right
+references. Change `width` to move the marker; set `junction_shift` to 0.1 mm
+to trigger a missing match, then restore zero. Valid STEP/STL export is verified.
+
+The composite remains one native edge. Named reference points do not restore
+separate junction vertices, split edges or change tangent/corner-edit semantics.
+A 1,000-reference/1,000-edge loop takes 0.360 s, and 1,000 driven profile edits
+take 0.307 s (10 s budgets). MCP renders 20 annotated pads in 1.308 s / 10 s.

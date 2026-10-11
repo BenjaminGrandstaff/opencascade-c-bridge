@@ -8,7 +8,27 @@ impl SketchDefinition {
         }
         let mut resolved = self.clone();
         resolved.projections.clear();
+        let mut junction_count = 0usize;
         for projection in &self.projections {
+            junction_count += projection.junctions.len();
+            if projection.junctions.len() > 1000 || junction_count > 10000 {
+                return Err(ModelError::new(
+                    "junction references exceed 1000 per projection or 10000 per sketch",
+                ));
+            }
+            if !projection.junctions.is_empty() && projection.kind != SketchProjectionKind::Chain {
+                return Err(ModelError::new(
+                    "junction references require a chain projection",
+                ));
+            }
+            let mut names = HashSet::new();
+            for junction in &projection.junctions {
+                if junction.id.is_empty() || !names.insert(&junction.id) {
+                    return Err(ModelError::new(
+                        "junction reference IDs must be nonempty and unique",
+                    ));
+                }
+            }
             if projection.id.is_empty() || projection.input.is_empty() {
                 return Err(ModelError::new(
                     "sketch projections require nonempty IDs and source features",
@@ -25,6 +45,9 @@ impl SketchDefinition {
                 });
                 name
             };
+            for junction in &projection.junctions {
+                point(&format!("junction:{}", junction.id), 0., 0.);
+            }
             match projection.kind {
                 SketchProjectionKind::Spline | SketchProjectionKind::Chain => {
                     resolved.splines.push(SketchSpline {

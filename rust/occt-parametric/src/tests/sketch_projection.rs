@@ -80,6 +80,7 @@ fn fixture(source: FeatureOperation, sketch: SketchDefinition, open: bool) -> Fa
 }
 fn projection(kind: SketchProjectionKind, edge: EdgeSelector) -> SketchProjection {
     SketchProjection {
+        junctions: Vec::new(),
         id: "edge".into(),
         input: "source".into(),
         edge,
@@ -966,6 +967,96 @@ fn disconnected_and_branched_chain_projections_reject_without_handle_growth() {
             "{}",
             error.message
         );
+        assert_eq!(session.shape_count().unwrap(), 0);
+    }
+}
+
+#[test]
+fn named_junctions_drive_constraints_and_invalidate_on_hint_only_edits() {
+    let request: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../tools/model/projected-junction-pad.request.json"
+    ))
+    .unwrap();
+    let doc = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+    let session = Session::new().unwrap();
+    let mut instance = part(&doc.family);
+    let first = instance.regenerate(&session).unwrap();
+    let snapshots = instance.resolved_sketches(&session, &first).unwrap();
+    let sk = &snapshots["profile"].as_ref().unwrap().sketch;
+    let solution = sk.solve(&instance.resolved_parameters().unwrap()).unwrap();
+    assert!(solution.solved && solution.free_degrees == 0);
+    let right = solution.points["reference:junction:right"];
+    let marker = solution.points["marker"];
+    assert!((right.x - 40.).abs() < 1e-8 && (right.y + 2.).abs() < 1e-8);
+    assert!((marker.x - right.x).hypot(marker.y - right.y) < 1e-8);
+    instance.overrides.insert(
+        "width".into(),
+        ParameterValue::Scalar(Quantity::length(60., LengthUnit::Millimeter)),
+    );
+    let edited = instance.regenerate_incremental(&session, &first).unwrap();
+    let snapshots = instance.resolved_sketches(&session, &edited).unwrap();
+    let sk = &snapshots["profile"].as_ref().unwrap().sketch;
+    let solution = sk.solve(&instance.resolved_parameters().unwrap()).unwrap();
+    assert!((solution.points["reference:junction:right"].x - 60.).abs() < 1e-7);
+    let count = session.shape_count().unwrap();
+    instance.overrides.insert(
+        "junction_shift".into(),
+        ParameterValue::Scalar(Quantity::length(0.1, LengthUnit::Millimeter)),
+    );
+    let error = instance
+        .regenerate_incremental(&session, &edited)
+        .err()
+        .unwrap();
+    assert!(
+        error.message.contains("found no source junction"),
+        "{}",
+        error.message
+    );
+    assert_eq!(session.shape_count().unwrap(), count);
+    assert!(session.is_valid(edited.shape("body").unwrap()).unwrap());
+    drop(first);
+    drop(edited);
+    assert_eq!(session.shape_count().unwrap(), 0);
+}
+
+#[test]
+fn junction_references_reject_ambiguous_matches_bad_ids_and_non_chain_usage() {
+    let request: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../tools/model/projected-junction-pad.request.json"
+    ))
+    .unwrap();
+    let doc = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+    let session = Session::new().unwrap();
+    for case in 0..5 {
+        let mut f = doc.family.clone();
+        let FeatureOperation::SketchFace { sketch } = &mut f.features[1].operation else {
+            panic!()
+        };
+        let projection = &mut sketch.projections[0];
+        let expected = match case {
+            0 => {
+                projection.junctions[0].maximum_distance = mm(100.);
+                "multiple source junctions"
+            }
+            1 => {
+                projection.junctions[0].maximum_distance = mm(0.);
+                "must be positive"
+            }
+            2 => {
+                projection.junctions[1].id = "left".into();
+                "nonempty and unique"
+            }
+            3 => {
+                projection.kind = SketchProjectionKind::Spline;
+                "require a chain"
+            }
+            _ => {
+                sketch.points.push(point("reference:junction:left", 0., 0.));
+                "unique"
+            }
+        };
+        let error = part(&f).regenerate(&session).err().unwrap();
+        assert!(error.message.contains(expected), "{}", error.message);
         assert_eq!(session.shape_count().unwrap(), 0);
     }
 }

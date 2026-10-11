@@ -47,8 +47,9 @@ pub use sketch::{
     SketchConstraintCheck, SketchCoordinateAxis, SketchDefinition, SketchDiagnosis, SketchEllipse,
     SketchEquationSource, SketchFaceSupport, SketchFreeCoordinate, SketchFreeMotion, SketchLine,
     SketchLineSide, SketchOffsetJoin, SketchPattern, SketchPoint, SketchPoint2, SketchPointMotion,
-    SketchProfileOperation, SketchProjection, SketchProjectionKind, SketchSolution, SketchSpline,
-    SketchSplineCircleContact, SketchSplineEndpoints, SketchSupportPlanes,
+    SketchProfileOperation, SketchProjection, SketchProjectionJunction, SketchProjectionKind,
+    SketchSolution, SketchSpline, SketchSplineCircleContact, SketchSplineEndpoints,
+    SketchSupportPlanes,
 };
 pub use solve::PlacementSolution;
 

@@ -961,3 +961,9 @@ one rational spline boundary. Mixed line/conic/spline degrees are elevated
 exactly; branching and disconnected selections fail. Try the
 [projected chain pad](tools/model/projected-chain-pad.request.json) and see
 [ordering, bounds and topology limits](docs/SKETCHES.md#connected-multi-edge-projection-schema-117).
+
+Schema 118 adds named `junctions` to chain projections. Bounded source-space
+matches create fixed points for constraints and dimensions, with source and
+hint parameters tracked during edits. Try the
+[projected junction pad](tools/model/projected-junction-pad.request.json) and see
+[matching and topology limits](docs/SKETCHES.md#named-chain-junction-references-schema-118).

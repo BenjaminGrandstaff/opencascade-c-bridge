@@ -741,5 +741,24 @@ with tempfile.TemporaryDirectory(prefix='occb-mcp-scale-') as root:
         elapsed=time.monotonic()-started
         assert elapsed<10
         print(f'PASS MCP 20 multi-edge boundary projections with exact mixed-degree tilted pads: {elapsed:.3f}s / 10s')
+        junction=client.tool('occt_get_example',dict(name='projected-junction-pad'))['structuredContent']
+        for i in range(1,20):
+            junction['model']['instances'].append({'clone':dict(id=f'part-{i}',source='part',overrides={},provenance='scale')})
+            junction['outputs'].extend(dict(instance=f'part-{i}',output=out) for out in ['body','profile'])
+        started=time.monotonic()
+        result=client.tool('occt_visualize_model',junction)
+        assert not result['isError'],result
+        data=json.loads(client.call('resources/read',dict(uri=result['structuredContent']['resources']['view.json']))['result']['contents'][0]['text'])
+        profiles=[s for s in data['scenes'] if s['kind']=='sketch' and s['feature']=='profile']
+        assert len(profiles)==20
+        for scene in profiles:
+            assert scene['solver']['accepted']
+            refs=[a for a in scene['annotations'] if a['id'].startswith('junction-')]
+            assert len(refs)==2 and all(a['anchors'] for a in refs)
+            assert 'junction_shift' in refs[0]['parameters']
+            assert abs(scene['points']['marker'][0]-40)<1e-7
+        elapsed=time.monotonic()-started
+        assert elapsed<10
+        print(f'PASS MCP 20 named-junction pads with driven points, dimensions and source controls: {elapsed:.3f}s / 10s')
     finally:
         client.close()

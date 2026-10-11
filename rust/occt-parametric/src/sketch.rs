@@ -450,6 +450,21 @@ pub struct SketchProjection {
     pub input: String,
     pub edge: EdgeSelector,
     pub kind: SketchProjectionKind,
+    /// Named fixed references to junctions between distinct selected edges.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[schemars(length(max = 1000))]
+    pub junctions: Vec<SketchProjectionJunction>,
+}
+
+/// A uniquely matched source-space junction, exposed as `projection:junction:id`.
+/// The hint and radius are lengths in located family coordinates, before
+/// projection into the sketch plane.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SketchProjectionJunction {
+    pub id: String,
+    pub near: VectorExpr,
+    pub maximum_distance: ScalarExpr,
 }
 
 /// Runtime sketch snapshot, with fixed projected geometry and its native plane.
@@ -674,6 +689,10 @@ impl SketchDefinition {
     pub(crate) fn collect_parameters<'a>(&'a self, names: &mut HashSet<&'a str>) {
         for projection in &self.projections {
             collect_edge_selector_parameters(&projection.edge, names);
+            for junction in &projection.junctions {
+                collect_vector_parameters(&junction.near, names);
+                collect_scalar_parameters(&junction.maximum_distance, names);
+            }
         }
         collect_vector_parameters(&self.x_axis, names);
         if self.datum_plane.is_none() {
