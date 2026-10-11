@@ -1,8 +1,18 @@
 //! Native arrangement construction, shared by face outputs and previews.
 use super::*;
+pub(crate) trait SketchDefinitionDiscoveryInternal {
+    fn discovered_regions<'a>(
+        &self,
+        session: &'a Session,
+        parameters: &HashMap<String, ParameterValue>,
+        solution: &SketchSolution,
+        discovery: &SketchRegionDiscovery,
+        frame: (Vec3, Vec3, Vec3),
+    ) -> Result<Shape<'a>, ModelError>;
+}
 
-impl SketchDefinition {
-    pub(super) fn discovered_regions<'a>(
+impl SketchDefinitionDiscoveryInternal for SketchDefinition {
+    fn discovered_regions<'a>(
         &self,
         session: &'a Session,
         parameters: &HashMap<String, ParameterValue>,

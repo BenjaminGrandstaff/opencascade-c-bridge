@@ -1,156 +1,9 @@
 use super::*;
 use crate::assembly::{Rigid, compose, invert, rigid};
+#[allow(unused_imports)]
+pub use occt_parametric_core::mesh::export::*;
 use serde_json::{Value, json};
 use std::fmt::Write;
-
-impl TaggedSurfaceMesh {
-    /// Gmsh 2.2 ASCII surface mesh in mm. Near-coincident seam vertices weld
-    /// within max(1e-9 mm, span*1e-12); collapsed triangles are rejected.
-    pub fn to_msh(&self) -> Result<String, ModelError> {
-        let (nodes, triangles) = welded(self)?;
-        let mut output = String::from("$MeshFormat\n2.2 0 8\n$EndMeshFormat\n");
-        if !self.names.is_empty() {
-            writeln!(output, "$PhysicalNames\n{}", self.names.len()).expect("string write");
-            for (index, name) in self.names.iter().enumerate() {
-                if !valid_name(name) {
-                    return Err(ModelError::new("invalid mesh physical name"));
-                }
-                writeln!(output, "2 {} \"{}\"", index + 1, name).expect("string write");
-            }
-            output.push_str("$EndPhysicalNames\n");
-        }
-        writeln!(output, "$Nodes\n{}", nodes.len()).expect("string write");
-        for (index, node) in nodes.iter().enumerate() {
-            writeln!(output, "{} {} {} {}", index + 1, node[0], node[1], node[2])
-                .expect("string write");
-        }
-        writeln!(output, "$EndNodes\n$Elements\n{}", triangles.len()).expect("string write");
-        for (index, (nodes, face)) in triangles.iter().enumerate() {
-            let tag = self
-                .face_tags
-                .get(*face)
-                .copied()
-                .ok_or_else(|| ModelError::new("mesh triangle face index is invalid"))?;
-            if tag as usize > self.names.len() {
-                return Err(ModelError::new("mesh physical tag is invalid"));
-            }
-            writeln!(
-                output,
-                "{} 2 2 {} {} {} {} {}",
-                index + 1,
-                tag,
-                face + 1,
-                nodes[0],
-                nodes[1],
-                nodes[2]
-            )
-            .expect("string write");
-        }
-        output.push_str("$EndElements\n");
-        Ok(output)
-    }
-
-    pub fn to_gltf(&self, appearance: MaterialAppearance) -> Result<String, ModelError> {
-        let mut scene = Scene::default();
-        scene.add(self, appearance, &self.id)?;
-        scene.finish(1)
-    }
-}
-
-pub(super) type IndexedTriangle = ([usize; 3], usize);
-pub(super) fn welded(
-    mesh: &TaggedSurfaceMesh,
-) -> Result<(Vec<[f64; 3]>, Vec<IndexedTriangle>), ModelError> {
-    let (minimum, maximum) = bounds(mesh)?;
-    let tolerance = (0..3)
-        .map(|axis| maximum[axis] - minimum[axis])
-        .fold(0.0, f64::max)
-        .mul_add(1e-12, 0.0)
-        .max(1e-9);
-    let mut buckets: HashMap<[i64; 3], Vec<usize>> = HashMap::new();
-    let mut nodes: Vec<[f64; 3]> = Vec::new();
-    let mut triangles = Vec::with_capacity(mesh.triangles.len());
-    for triangle in &mesh.triangles {
-        let mut indices = [0; 3];
-        for (vertex, point) in triangle.points.iter().enumerate() {
-            let point = xyz(*point);
-            let cell = std::array::from_fn(|axis| {
-                ((point[axis] - minimum[axis]) / tolerance).floor() as i64
-            });
-            let existing = neighboring_node(cell, point, tolerance, &buckets, &nodes);
-            let index = existing.unwrap_or_else(|| {
-                let index = nodes.len();
-                nodes.push(point);
-                buckets.entry(cell).or_default().push(index);
-                index
-            });
-            indices[vertex] = index + 1;
-        }
-        if indices[0] == indices[1] || indices[1] == indices[2] || indices[0] == indices[2] {
-            return Err(ModelError::new(
-                "mesh welding collapses a triangle; use a larger model scale",
-            ));
-        }
-        manufacturing::triangle_normal(&MeshTriangle {
-            face_index: triangle.face_index,
-            points: indices.map(|index| {
-                let point = nodes[index - 1];
-                Vec3::new(point[0], point[1], point[2])
-            }),
-        })
-        .map_err(|error| error.context("mesh welding collapsed a triangle"))?;
-        triangles.push((indices, triangle.face_index));
-    }
-    Ok((nodes, triangles))
-}
-
-fn neighboring_node(
-    cell: [i64; 3],
-    point: [f64; 3],
-    tolerance: f64,
-    buckets: &HashMap<[i64; 3], Vec<usize>>,
-    nodes: &[[f64; 3]],
-) -> Option<usize> {
-    for x in -1..=1 {
-        for y in -1..=1 {
-            for z in -1..=1 {
-                let key = [cell[0] + x, cell[1] + y, cell[2] + z];
-                if let Some(index) = buckets.get(&key).into_iter().flatten().find(|index| {
-                    (0..3).all(|axis| (nodes[**index][axis] - point[axis]).abs() <= tolerance)
-                }) {
-                    return Some(*index);
-                }
-            }
-        }
-    }
-    None
-}
-
-pub(super) fn bounds(mesh: &TaggedSurfaceMesh) -> Result<([f64; 3], [f64; 3]), ModelError> {
-    if mesh.triangles.is_empty() {
-        return Err(ModelError::new("cannot export an empty mesh"));
-    }
-    let mut minimum = [f64::INFINITY; 3];
-    let mut maximum = [f64::NEG_INFINITY; 3];
-    for point in mesh
-        .triangles
-        .iter()
-        .flat_map(|triangle| triangle.points)
-        .map(xyz)
-    {
-        for axis in 0..3 {
-            if !point[axis].is_finite() {
-                return Err(ModelError::new("mesh contains nonfinite coordinates"));
-            }
-            minimum[axis] = minimum[axis].min(point[axis]);
-            maximum[axis] = maximum[axis].max(point[axis]);
-        }
-    }
-    if (0..3).any(|axis| !(maximum[axis] - minimum[axis]).is_finite()) {
-        return Err(ModelError::new("mesh coordinate span overflows"));
-    }
-    Ok((minimum, maximum))
-}
 
 fn gltf_axis(point: [f64; 3]) -> [f64; 3] {
     [point[0], point[2], -point[1]]
@@ -202,18 +55,6 @@ struct Tessellated {
     center: [f64; 3],
     world: Rigid,
     source: TaggedSurfaceMesh,
-}
-
-#[derive(Default)]
-struct Scene {
-    binary: Vec<u8>,
-    views: Vec<Value>,
-    accessors: Vec<Value>,
-    meshes: Vec<Value>,
-    materials: Vec<Value>,
-    nodes: Vec<Value>,
-    geometry: HashMap<Vec<u8>, usize>,
-    appearances: HashMap<Vec<u8>, usize>,
 }
 impl Scene {
     fn material(&mut self, appearance: MaterialAppearance) -> Result<usize, ModelError> {
@@ -392,13 +233,43 @@ fn base64(bytes: &[u8]) -> String {
     }
     result
 }
-
-impl<'definition> InstanceGraph<'definition> {
+pub trait InstanceGraphExport<'definition> {
     /// glTF of the named output of every unsuppressed instance whose family
     /// has it, nodes named by instance id: the mesh counterpart of
     /// `OutputSet::AllWithOutput`. O(instances log instances) to select, plus
     /// `export_gltf`, which shares meshes between identical variants.
-    pub fn export_gltf_output(
+    fn export_gltf_output(
+        &self,
+        session: &Session,
+        output: &str,
+        settings: MeshSettings,
+    ) -> Result<String, ModelError>;
+
+    /// Regenerate selected instances together, preserve current poses, and emit
+    /// glTF 2.0 with inherited material appearance. One final output per instance.
+    /// Identical rebased geometry/material combinations share a glTF mesh.
+    fn export_gltf(
+        &self,
+        session: &Session,
+        definitions: &[MeshExportDefinition],
+    ) -> Result<String, ModelError>;
+
+    /// glTF of the named output of every generated instance that has it, from
+    /// an existing regeneration (such as `regenerate_all`, whose verification
+    /// results the caller keeps), so geometry is not generated twice. Nodes
+    /// are named by instance id. O(instances log instances) to select, plus
+    /// one tessellation per shared variant.
+    fn export_gltf_generated(
+        &self,
+        session: &Session,
+        generation: &GraphRegeneration<'_>,
+        output: &str,
+        settings: MeshSettings,
+    ) -> Result<String, ModelError>;
+}
+
+impl<'definition> InstanceGraphExport<'definition> for InstanceGraph<'definition> {
+    fn export_gltf_output(
         &self,
         session: &Session,
         output: &str,
@@ -409,10 +280,7 @@ impl<'definition> InstanceGraph<'definition> {
         self.export_gltf(session, &definitions)
     }
 
-    /// Regenerate selected instances together, preserve current poses, and emit
-    /// glTF 2.0 with inherited material appearance. One final output per instance.
-    /// Identical rebased geometry/material combinations share a glTF mesh.
-    pub fn export_gltf(
+    fn export_gltf(
         &self,
         session: &Session,
         definitions: &[MeshExportDefinition],
@@ -436,12 +304,7 @@ impl<'definition> InstanceGraph<'definition> {
         self.scene(session, &generation, definitions, &mut context)
     }
 
-    /// glTF of the named output of every generated instance that has it, from
-    /// an existing regeneration (such as `regenerate_all`, whose verification
-    /// results the caller keeps), so geometry is not generated twice. Nodes
-    /// are named by instance id. O(instances log instances) to select, plus
-    /// one tessellation per shared variant.
-    pub fn export_gltf_generated(
+    fn export_gltf_generated(
         &self,
         session: &Session,
         generation: &GraphRegeneration<'_>,
@@ -454,44 +317,20 @@ impl<'definition> InstanceGraph<'definition> {
         })?;
         self.scene(session, generation, &definitions, &mut context)
     }
+}
 
-    /// One untagged mesh definition per instance that `include`s and whose
-    /// family has `output`, in instance-id order.
-    fn output_definitions(
-        &self,
-        output: &str,
-        settings: MeshSettings,
-        context: &mut ExportContext<'definition>,
-        include: impl Fn(&str) -> bool,
-    ) -> Result<Vec<MeshExportDefinition>, ModelError> {
-        settings.options()?;
-        let mut ids: Vec<&String> = self.nodes.keys().filter(|id| include(id)).collect();
-        ids.sort_unstable();
-        let definitions: Vec<_> = ids
-            .into_iter()
-            .enumerate()
-            .map(|(index, instance)| MeshExportDefinition {
-                // Instance ids need not be safe mesh names; nodes keep the id.
-                id: format!("part_{index}"),
-                output: InstanceOutputRef {
-                    instance: instance.clone(),
-                    output: output.to_owned(),
-                },
-                settings,
-                face_tags: Vec::new(),
-                manufacturing: None,
-            })
-            .filter(|definition| definition.validate_cached(self, context).is_ok())
-            .collect();
-        if definitions.is_empty() {
-            return Err(ModelError::new(format!(
-                "no unsuppressed instance has output '{output}'"
-            )));
-        }
-        Ok(definitions)
-    }
-
+pub(crate) trait InstanceGraphExportInternal<'definition> {
     /// Writes the glTF scene for already generated `definitions`.
+    fn scene(
+        &self,
+        session: &Session,
+        generation: &GraphRegeneration<'_>,
+        definitions: &[MeshExportDefinition],
+        context: &mut ExportContext<'definition>,
+    ) -> Result<String, ModelError>;
+}
+
+impl<'definition> InstanceGraphExportInternal<'definition> for InstanceGraph<'definition> {
     fn scene(
         &self,
         session: &Session,
@@ -566,5 +405,76 @@ impl<'definition> InstanceGraph<'definition> {
             }
         }
         scene.finish(generation.generated_variants())
+    }
+}
+
+#[derive(Default)]
+struct Scene {
+    binary: Vec<u8>,
+    views: Vec<Value>,
+    accessors: Vec<Value>,
+    meshes: Vec<Value>,
+    materials: Vec<Value>,
+    nodes: Vec<Value>,
+    geometry: HashMap<Vec<u8>, usize>,
+    appearances: HashMap<Vec<u8>, usize>,
+}
+pub trait TaggedSurfaceMeshExport {
+    /// Gmsh 2.2 ASCII surface mesh in mm. Near-coincident seam vertices weld
+    /// within max(1e-9 mm, span*1e-12); collapsed triangles are rejected.
+    fn to_msh(&self) -> Result<String, ModelError>;
+
+    fn to_gltf(&self, appearance: MaterialAppearance) -> Result<String, ModelError>;
+}
+
+impl TaggedSurfaceMeshExport for TaggedSurfaceMesh {
+    fn to_msh(&self) -> Result<String, ModelError> {
+        let (nodes, triangles) = welded(self)?;
+        let mut output = String::from("$MeshFormat\n2.2 0 8\n$EndMeshFormat\n");
+        if !self.names.is_empty() {
+            writeln!(output, "$PhysicalNames\n{}", self.names.len()).expect("string write");
+            for (index, name) in self.names.iter().enumerate() {
+                if !valid_name(name) {
+                    return Err(ModelError::new("invalid mesh physical name"));
+                }
+                writeln!(output, "2 {} \"{}\"", index + 1, name).expect("string write");
+            }
+            output.push_str("$EndPhysicalNames\n");
+        }
+        writeln!(output, "$Nodes\n{}", nodes.len()).expect("string write");
+        for (index, node) in nodes.iter().enumerate() {
+            writeln!(output, "{} {} {} {}", index + 1, node[0], node[1], node[2])
+                .expect("string write");
+        }
+        writeln!(output, "$EndNodes\n$Elements\n{}", triangles.len()).expect("string write");
+        for (index, (nodes, face)) in triangles.iter().enumerate() {
+            let tag = self
+                .face_tags
+                .get(*face)
+                .copied()
+                .ok_or_else(|| ModelError::new("mesh triangle face index is invalid"))?;
+            if tag as usize > self.names.len() {
+                return Err(ModelError::new("mesh physical tag is invalid"));
+            }
+            writeln!(
+                output,
+                "{} 2 2 {} {} {} {} {}",
+                index + 1,
+                tag,
+                face + 1,
+                nodes[0],
+                nodes[1],
+                nodes[2]
+            )
+            .expect("string write");
+        }
+        output.push_str("$EndElements\n");
+        Ok(output)
+    }
+
+    fn to_gltf(&self, appearance: MaterialAppearance) -> Result<String, ModelError> {
+        let mut scene = Scene::default();
+        scene.add(self, appearance, &self.id)?;
+        scene.finish(1)
     }
 }

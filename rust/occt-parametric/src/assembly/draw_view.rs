@@ -38,8 +38,7 @@ fn hex(appearance: &MaterialAppearance) -> String {
     let [r, g, b, _] = appearance.base_color;
     format!("#{:02X}{:02X}{:02X}", channel(r), channel(g), channel(b))
 }
-
-impl InstanceGraph<'_> {
+pub trait InstanceGraphDrawView {
     /// Writes `model.brep` (the generated `outputs` as one compound, placed),
     /// `view.tcl` and `reload.tcl` into `directory`, creating it if needed.
     /// Run `DRAWEXE -i -f view.tcl` there to open every part shaded, named
@@ -48,7 +47,17 @@ impl InstanceGraph<'_> {
     /// export to the same directory, `source reload.tcl` in that DRAW session
     /// replaces the displayed parts and keeps the camera. Returns the
     /// `view.tcl` path. O(outputs) plus one BREP write.
-    pub fn export_draw_view(
+    fn export_draw_view(
+        &self,
+        session: &Session,
+        generation: &GraphRegeneration<'_>,
+        directory: impl AsRef<Path>,
+        outputs: &OutputSet,
+    ) -> Result<PathBuf, ModelError>;
+}
+
+impl InstanceGraphDrawView for InstanceGraph<'_> {
+    fn export_draw_view(
         &self,
         session: &Session,
         generation: &GraphRegeneration<'_>,

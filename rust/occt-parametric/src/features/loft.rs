@@ -107,18 +107,6 @@ pub(crate) fn execute<'session>(
     })
 }
 
-pub(crate) fn collect_parameters<'a>(sections: &'a [LoftSection], names: &mut HashSet<&'a str>) {
-    for section in sections {
-        for vector in [&section.origin, &section.x_axis, &section.y_axis] {
-            collect_vector_parameters(vector, names);
-        }
-        collect_scalar_parameters(&section.scale, names);
-        if let Some(angle) = &section.rotation_radians {
-            collect_scalar_parameters(angle, names);
-        }
-    }
-}
-
 /// Linear profile/topology indexing; native curve compatibility and surface
 /// interpolation cost depends on edge correspondence, sections and degree.
 pub(crate) fn execute_profiles<'a>(

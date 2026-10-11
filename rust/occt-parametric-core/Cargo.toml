@@ -1,0 +1,12 @@
+[package]
+name = "occt-parametric-core"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Kernel-free parametric model definitions, documents, solvers and checks"
+
+[dependencies]
+occt-types = { path = "../occt-types" }
+schemars = { version = "1.2.2", features = ["derive"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = { version = "1.0.151", features = ["float_roundtrip"] }

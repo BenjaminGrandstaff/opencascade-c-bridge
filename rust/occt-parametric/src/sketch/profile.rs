@@ -1,41 +1,301 @@
 //! Native wires and faces built from solved sketch profiles, including offset and edited profiles.
 
-use super::validation::{validate_curve_entities, validate_open_endpoints};
 use super::*;
-
-impl SketchDefinition {
-    /// O(expression size); resolves the same orthonormal frame for projection
-    /// and native profile construction. Attachment/datum planes are caller-resolved.
-    pub(crate) fn resolved_frame(
+#[allow(unused_imports)]
+pub use occt_parametric_core::sketch::profile::*;
+pub trait SketchDefinitionProfiles {
+    /// Sampled glyph edges of every text in sketch-local XY, with the
+    /// resolved font file, for previews: `samples` points per edge and at
+    /// most 20,000 edges in all.
+    fn text_outlines(
         &self,
+        session: &Session,
         parameters: &HashMap<String, ParameterValue>,
-        datum: Option<ResolvedDatum>,
-    ) -> Result<(Vec3, Vec3, Vec3), ModelError> {
-        let x_axis = unit(vector(&self.x_axis, parameters, Dimension::Scalar)?)?;
-        let (origin, y_axis) = match (
-            self.datum_plane.is_some() || self.face_support.is_some(),
-            datum,
-        ) {
-            (true, Some(ResolvedDatum::Plane { origin, normal })) => {
-                if dot(x_axis, normal).abs() > 1e-9 {
-                    return Err(ModelError::new("sketch x axis must lie in its datum plane"));
-                }
-                (origin, unit(cross(normal, x_axis))?)
-            }
-            (true, _) => return Err(ModelError::new("sketch requires a resolved plane datum")),
-            (false, _) => (
-                vector(&self.origin, parameters, Dimension::Length)?,
-                unit(vector(&self.y_axis, parameters, Dimension::Scalar)?)?,
-            ),
-        };
-        if dot(x_axis, y_axis).abs() > 1e-9 {
-            return Err(ModelError::new("sketch plane axes must be perpendicular"));
-        }
-        Ok((origin, x_axis, y_axis))
+        solution: &SketchSolution,
+        samples: usize,
+    ) -> Result<Vec<SketchTextOutlines>, ModelError>;
+
+    /// Native sampled edited profile in sketch-local XY, for diagnostics.
+    /// Source constraints stay attached to source entities; these curves show
+    /// the derived boundary actually used by solid/wire features.
+    fn preview_edited_profile(
+        &self,
+        session: &Session,
+        parameters: &HashMap<String, ParameterValue>,
+        solution: &SketchSolution,
+        samples: usize,
+        closed: bool,
+    ) -> Result<Vec<Vec<SketchPoint2>>, ModelError>;
+}
+
+impl SketchDefinitionProfiles for SketchDefinition {
+    fn text_outlines(
+        &self,
+        session: &Session,
+        parameters: &HashMap<String, ParameterValue>,
+        solution: &SketchSolution,
+        samples: usize,
+    ) -> Result<Vec<SketchTextOutlines>, ModelError> {
+        let local = |p: SketchPoint2| Vec3::new(p.x, p.y, 0.0);
+        let mut edges_left = 20_000usize;
+        self.texts
+            .iter()
+            .map(|text| {
+                let faces = self.text_faces(session, parameters, solution, text, &local, &local)?;
+                let edges = session.subshapes(&faces, ShapeType::Edge)?;
+                edges_left = edges_left
+                    .checked_sub(edges.len())
+                    .ok_or_else(|| ModelError::new("text previews exceed 20,000 glyph edges"))?;
+                let outlines = edges
+                    .iter()
+                    .map(|edge| {
+                        Ok(session
+                            .edge_sample_points(edge, samples)?
+                            .into_iter()
+                            .map(|p| SketchPoint2 { x: p.x, y: p.y })
+                            .collect())
+                    })
+                    .collect::<Result<Vec<_>, ModelError>>()?;
+                Ok(SketchTextOutlines {
+                    id: text.id.clone(),
+                    font_file: font_file(session, &text.font, text.style)?,
+                    outlines,
+                })
+            })
+            .collect()
     }
 
+    fn preview_edited_profile(
+        &self,
+        session: &Session,
+        parameters: &HashMap<String, ParameterValue>,
+        solution: &SketchSolution,
+        samples: usize,
+        closed: bool,
+    ) -> Result<Vec<Vec<SketchPoint2>>, ModelError> {
+        if let std::borrow::Cow::Owned(expanded) = self.with_patterns(Some(parameters))? {
+            return expanded.preview_edited_profile(session, parameters, solution, samples, closed);
+        }
+        if !self.projections.is_empty() {
+            return Err(ModelError::new(
+                "projected sketch requires source-geometry resolution before preview",
+            ));
+        }
+        if !(2..=256).contains(&samples) {
+            return Err(ModelError::new("profile preview samples must be in 2..256"));
+        }
+        if !self.region_edits.is_empty() || !self.curve_operations.is_empty() {
+            let mut local = self.clone();
+            local.origin =
+                VectorExpr::Literal(VectorQuantity::lengths(0., 0., 0., LengthUnit::Millimeter));
+            local.x_axis = VectorExpr::Literal(VectorQuantity::scalars(1., 0., 0.));
+            local.y_axis = VectorExpr::Literal(VectorQuantity::scalars(0., 1., 0.));
+            local.datum_plane = None;
+            local.face_support = None;
+            local.texts.clear();
+            let shape = if closed {
+                local.face_on_plane(session, parameters, None)?
+            } else {
+                local.open_wire(session, parameters, None)?
+            };
+            return session
+                .subshapes(&shape, ShapeType::Edge)?
+                .iter()
+                .map(|edge| {
+                    Ok(session
+                        .edge_sample_points(edge, samples)?
+                        .into_iter()
+                        .map(|p| SketchPoint2 { x: p.x, y: p.y })
+                        .collect())
+                })
+                .collect();
+        }
+        if self.profile_operations.is_empty() && self.region_discovery.is_none() {
+            return Ok(Vec::new());
+        }
+        self.validate(parameters)?;
+        for p in &self.points {
+            if !solution
+                .points
+                .get(&p.id)
+                .is_some_and(|p| p.x.is_finite() && p.y.is_finite())
+            {
+                return Err(ModelError::new("profile preview is missing a finite point"));
+            }
+        }
+        self.validate_curve_geometry(&solution.points)?;
+        let transform = |p: SketchPoint2| Vec3::new(p.x, p.y, 0.0);
+        let wire = if let Some(discovery) = &self.region_discovery {
+            self.discovered_regions(
+                session,
+                parameters,
+                solution,
+                discovery,
+                (
+                    Vec3::new(0., 0., 0.),
+                    Vec3::new(1., 0., 0.),
+                    Vec3::new(0., 1., 0.),
+                ),
+            )?
+        } else {
+            self.edited_profile(
+                session,
+                parameters,
+                solution,
+                &self.profile_entities()?,
+                &transform,
+                &transform,
+                Vec3::new(0.0, 0.0, 1.0),
+                closed,
+            )?
+        };
+        session
+            .subshapes(&wire, ShapeType::Edge)?
+            .iter()
+            .map(|edge| {
+                Ok(session
+                    .edge_sample_points(edge, samples)?
+                    .into_iter()
+                    .map(|p| SketchPoint2 { x: p.x, y: p.y })
+                    .collect())
+            })
+            .collect()
+    }
+}
+
+pub(crate) trait SketchDefinitionProfilesInternal {
     #[cfg(test)]
-    pub(crate) fn face<'session>(
+    fn face<'session>(
+        &self,
+        session: &'session Session,
+        parameters: &HashMap<String, ParameterValue>,
+    ) -> Result<Shape<'session>, ModelError>;
+
+    fn ellipse_wire<'a>(
+        &self,
+        session: &'a Session,
+        ellipse: &SketchEllipse,
+        solution: &SketchSolution,
+        transform: &impl Fn(SketchPoint2) -> Vec3,
+        direction: &impl Fn(SketchPoint2) -> Vec3,
+        normal: Vec3,
+    ) -> Result<Shape<'a>, ModelError>;
+
+    /// The profile face, with any `holes` added natively as inner boundaries:
+    /// each strictly inside the outer loop, clear of the others and not nested.
+    /// With `regions`, a compound of that face and one face per region; the
+    /// regions' faces must not overlap each other or the profile's.
+    fn face_on_plane<'session>(
+        &self,
+        session: &'session Session,
+        parameters: &HashMap<String, ParameterValue>,
+        datum: Option<ResolvedDatum>,
+    ) -> Result<Shape<'session>, ModelError>;
+
+    /// The glyph faces of one text, placed at its solved anchor along its
+    /// baseline angle in the sketch plane.
+    fn text_faces<'session>(
+        &self,
+        session: &'session Session,
+        parameters: &HashMap<String, ParameterValue>,
+        solution: &SketchSolution,
+        text: &SketchText,
+        transform: &impl Fn(SketchPoint2) -> Vec3,
+        direction: &impl Fn(SketchPoint2) -> Vec3,
+    ) -> Result<Shape<'session>, ModelError>;
+
+    /// A closed boundary wire through the named entities: an exact circle or
+    /// full ellipse alone, or a connected chain of segments.
+    #[allow(clippy::too_many_arguments)]
+    fn loop_wire<'session>(
+        &self,
+        session: &'session Session,
+        ids: &[String],
+        solution: &SketchSolution,
+        transform: &impl Fn(SketchPoint2) -> Vec3,
+        direction: &impl Fn(SketchPoint2) -> Vec3,
+        normal: Vec3,
+        library: Option<&super::editing::CurveLibrary<'session>>,
+    ) -> Result<Shape<'session>, ModelError>;
+
+    fn wire<'session>(
+        &self,
+        session: &'session Session,
+        parameters: &HashMap<String, ParameterValue>,
+        datum: Option<ResolvedDatum>,
+    ) -> Result<Shape<'session>, ModelError>;
+
+    fn open_wire<'session>(
+        &self,
+        session: &'session Session,
+        parameters: &HashMap<String, ParameterValue>,
+        datum: Option<ResolvedDatum>,
+    ) -> Result<Shape<'session>, ModelError>;
+
+    fn profile_wire<'session>(
+        &self,
+        session: &'session Session,
+        parameters: &HashMap<String, ParameterValue>,
+        datum: Option<ResolvedDatum>,
+        closed: bool,
+    ) -> Result<Shape<'session>, ModelError>;
+
+    fn solved_profile_wire<'session>(
+        &self,
+        session: &'session Session,
+        parameters: &HashMap<String, ParameterValue>,
+        datum: Option<ResolvedDatum>,
+        closed: bool,
+        solution: &SketchSolution,
+    ) -> Result<Shape<'session>, ModelError>;
+
+    fn entity_wire<'a>(
+        &self,
+        session: &'a Session,
+        entity: Entity<'_>,
+        solution: &SketchSolution,
+        transform: &impl Fn(SketchPoint2) -> Vec3,
+        direction: &impl Fn(SketchPoint2) -> Vec3,
+        normal: Vec3,
+    ) -> Result<Shape<'a>, ModelError>;
+
+    #[allow(clippy::too_many_arguments)]
+    fn edited_profile<'a>(
+        &self,
+        session: &'a Session,
+        parameters: &HashMap<String, ParameterValue>,
+        solution: &SketchSolution,
+        profile: &[Entity<'_>],
+        transform: &impl Fn(SketchPoint2) -> Vec3,
+        direction: &impl Fn(SketchPoint2) -> Vec3,
+        normal: Vec3,
+        closed: bool,
+    ) -> Result<Shape<'a>, ModelError>;
+
+    #[allow(clippy::too_many_arguments)]
+    fn edited_named_profile<'a>(
+        &self,
+        session: &'a Session,
+        parameters: &HashMap<String, ParameterValue>,
+        solution: &SketchSolution,
+        ids: &[String],
+        library: &super::editing::CurveLibrary<'a>,
+        transform: &impl Fn(SketchPoint2) -> Vec3,
+        normal: Vec3,
+        closed: bool,
+    ) -> Result<Shape<'a>, ModelError>;
+
+    fn solved(
+        &self,
+        parameters: &HashMap<String, ParameterValue>,
+    ) -> Result<SketchSolution, ModelError>;
+
+    fn profile_entities(&self) -> Result<Vec<Entity<'_>>, ModelError>;
+}
+
+impl SketchDefinitionProfilesInternal for SketchDefinition {
+    #[cfg(test)]
+    fn face<'session>(
         &self,
         session: &'session Session,
         parameters: &HashMap<String, ParameterValue>,
@@ -43,7 +303,7 @@ impl SketchDefinition {
         self.face_on_plane(session, parameters, None)
     }
 
-    pub(super) fn ellipse_wire<'a>(
+    fn ellipse_wire<'a>(
         &self,
         session: &'a Session,
         ellipse: &SketchEllipse,
@@ -83,11 +343,7 @@ impl SketchDefinition {
         )?)
     }
 
-    /// The profile face, with any `holes` added natively as inner boundaries:
-    /// each strictly inside the outer loop, clear of the others and not nested.
-    /// With `regions`, a compound of that face and one face per region; the
-    /// regions' faces must not overlap each other or the profile's.
-    pub(crate) fn face_on_plane<'session>(
+    fn face_on_plane<'session>(
         &self,
         session: &'session Session,
         parameters: &HashMap<String, ParameterValue>,
@@ -207,9 +463,7 @@ impl SketchDefinition {
         Ok(session.create_compound(&faces.iter().collect::<Vec<_>>())?)
     }
 
-    /// The glyph faces of one text, placed at its solved anchor along its
-    /// baseline angle in the sketch plane.
-    pub(crate) fn text_faces<'session>(
+    fn text_faces<'session>(
         &self,
         session: &'session Session,
         parameters: &HashMap<String, ParameterValue>,
@@ -242,47 +496,6 @@ impl SketchDefinition {
             .map_err(|error| ModelError::from(error).context(&format!("sketch text '{}'", text.id)))
     }
 
-    /// Sampled glyph edges of every text in sketch-local XY, with the
-    /// resolved font file, for previews: `samples` points per edge and at
-    /// most 20,000 edges in all.
-    pub fn text_outlines(
-        &self,
-        session: &Session,
-        parameters: &HashMap<String, ParameterValue>,
-        solution: &SketchSolution,
-        samples: usize,
-    ) -> Result<Vec<SketchTextOutlines>, ModelError> {
-        let local = |p: SketchPoint2| Vec3::new(p.x, p.y, 0.0);
-        let mut edges_left = 20_000usize;
-        self.texts
-            .iter()
-            .map(|text| {
-                let faces = self.text_faces(session, parameters, solution, text, &local, &local)?;
-                let edges = session.subshapes(&faces, ShapeType::Edge)?;
-                edges_left = edges_left
-                    .checked_sub(edges.len())
-                    .ok_or_else(|| ModelError::new("text previews exceed 20,000 glyph edges"))?;
-                let outlines = edges
-                    .iter()
-                    .map(|edge| {
-                        Ok(session
-                            .edge_sample_points(edge, samples)?
-                            .into_iter()
-                            .map(|p| SketchPoint2 { x: p.x, y: p.y })
-                            .collect())
-                    })
-                    .collect::<Result<Vec<_>, ModelError>>()?;
-                Ok(SketchTextOutlines {
-                    id: text.id.clone(),
-                    font_file: font_file(session, &text.font, text.style)?,
-                    outlines,
-                })
-            })
-            .collect()
-    }
-
-    /// A closed boundary wire through the named entities: an exact circle or
-    /// full ellipse alone, or a connected chain of segments.
     #[allow(clippy::too_many_arguments)]
     fn loop_wire<'session>(
         &self,
@@ -322,7 +535,7 @@ impl SketchDefinition {
         }
     }
 
-    pub(crate) fn wire<'session>(
+    fn wire<'session>(
         &self,
         session: &'session Session,
         parameters: &HashMap<String, ParameterValue>,
@@ -331,48 +544,13 @@ impl SketchDefinition {
         self.profile_wire(session, parameters, datum, true)
     }
 
-    pub(crate) fn open_wire<'session>(
+    fn open_wire<'session>(
         &self,
         session: &'session Session,
         parameters: &HashMap<String, ParameterValue>,
         datum: Option<ResolvedDatum>,
     ) -> Result<Shape<'session>, ModelError> {
         self.profile_wire(session, parameters, datum, false)
-    }
-
-    fn solved(
-        &self,
-        parameters: &HashMap<String, ParameterValue>,
-    ) -> Result<SketchSolution, ModelError> {
-        let solution = self.solve(parameters)?;
-        self.check_acceptance(&solution)?;
-        Ok(solution)
-    }
-
-    /// Check a solution produced by this sketch against its acceptance policy.
-    /// This uses the solver's local numerical rank, not a global rigidity proof.
-    pub fn check_acceptance(&self, solution: &SketchSolution) -> Result<(), ModelError> {
-        if !solution.solved {
-            return Err(ModelError::new(format!(
-                "sketch '{}' constraints did not converge ({:?}); maximum residual {}",
-                self.id, solution.solver_report.termination, solution.max_residual
-            )));
-        }
-        if self.acceptance == SketchAcceptance::FullyConstrained
-            && !solution.solver_report.rank_reliable
-        {
-            return Err(ModelError::new(format!(
-                "sketch '{}' cannot certify fully constrained geometry: local rank is uncertain",
-                self.id
-            )));
-        }
-        if self.acceptance == SketchAcceptance::FullyConstrained && solution.free_degrees > 0 {
-            return Err(ModelError::new(format!(
-                "sketch '{}' requires fully constrained geometry; {} free degrees remain",
-                self.id, solution.free_degrees
-            )));
-        }
-        Ok(())
     }
 
     fn profile_wire<'session>(
@@ -489,7 +667,7 @@ impl SketchDefinition {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn entity_wire<'a>(
+    fn entity_wire<'a>(
         &self,
         session: &'a Session,
         entity: Entity<'_>,
@@ -525,6 +703,7 @@ impl SketchDefinition {
             }
         }
     }
+
     #[allow(clippy::too_many_arguments)]
     fn edited_profile<'a>(
         &self,
@@ -678,285 +857,13 @@ impl SketchDefinition {
         Ok(wire)
     }
 
-    /// Native sampled edited profile in sketch-local XY, for diagnostics.
-    /// Source constraints stay attached to source entities; these curves show
-    /// the derived boundary actually used by solid/wire features.
-    pub fn preview_edited_profile(
+    fn solved(
         &self,
-        session: &Session,
         parameters: &HashMap<String, ParameterValue>,
-        solution: &SketchSolution,
-        samples: usize,
-        closed: bool,
-    ) -> Result<Vec<Vec<SketchPoint2>>, ModelError> {
-        if let std::borrow::Cow::Owned(expanded) = self.with_patterns(Some(parameters))? {
-            return expanded.preview_edited_profile(session, parameters, solution, samples, closed);
-        }
-        if !self.projections.is_empty() {
-            return Err(ModelError::new(
-                "projected sketch requires source-geometry resolution before preview",
-            ));
-        }
-        if !(2..=256).contains(&samples) {
-            return Err(ModelError::new("profile preview samples must be in 2..256"));
-        }
-        if !self.region_edits.is_empty() || !self.curve_operations.is_empty() {
-            let mut local = self.clone();
-            local.origin =
-                VectorExpr::Literal(VectorQuantity::lengths(0., 0., 0., LengthUnit::Millimeter));
-            local.x_axis = VectorExpr::Literal(VectorQuantity::scalars(1., 0., 0.));
-            local.y_axis = VectorExpr::Literal(VectorQuantity::scalars(0., 1., 0.));
-            local.datum_plane = None;
-            local.face_support = None;
-            local.texts.clear();
-            let shape = if closed {
-                local.face_on_plane(session, parameters, None)?
-            } else {
-                local.open_wire(session, parameters, None)?
-            };
-            return session
-                .subshapes(&shape, ShapeType::Edge)?
-                .iter()
-                .map(|edge| {
-                    Ok(session
-                        .edge_sample_points(edge, samples)?
-                        .into_iter()
-                        .map(|p| SketchPoint2 { x: p.x, y: p.y })
-                        .collect())
-                })
-                .collect();
-        }
-        if self.profile_operations.is_empty() && self.region_discovery.is_none() {
-            return Ok(Vec::new());
-        }
-        self.validate(parameters)?;
-        for p in &self.points {
-            if !solution
-                .points
-                .get(&p.id)
-                .is_some_and(|p| p.x.is_finite() && p.y.is_finite())
-            {
-                return Err(ModelError::new("profile preview is missing a finite point"));
-            }
-        }
-        self.validate_curve_geometry(&solution.points)?;
-        let transform = |p: SketchPoint2| Vec3::new(p.x, p.y, 0.0);
-        let wire = if let Some(discovery) = &self.region_discovery {
-            self.discovered_regions(
-                session,
-                parameters,
-                solution,
-                discovery,
-                (
-                    Vec3::new(0., 0., 0.),
-                    Vec3::new(1., 0., 0.),
-                    Vec3::new(0., 1., 0.),
-                ),
-            )?
-        } else {
-            self.edited_profile(
-                session,
-                parameters,
-                solution,
-                &self.profile_entities()?,
-                &transform,
-                &transform,
-                Vec3::new(0.0, 0.0, 1.0),
-                closed,
-            )?
-        };
-        session
-            .subshapes(&wire, ShapeType::Edge)?
-            .iter()
-            .map(|edge| {
-                Ok(session
-                    .edge_sample_points(edge, samples)?
-                    .into_iter()
-                    .map(|p| SketchPoint2 { x: p.x, y: p.y })
-                    .collect())
-            })
-            .collect()
-    }
-
-    /// Wire segments for the profile in order. Spline ends tangent to a line
-    /// or arc continue that entity's direction away from the shared point.
-    pub(super) fn profile_segments(
-        &self,
-        profile: &[Entity<'_>],
-        solution: &SketchSolution,
-        transform: &impl Fn(SketchPoint2) -> Vec3,
-        direction: &impl Fn(SketchPoint2) -> Vec3,
-        closed: bool,
-    ) -> Result<Vec<CurveSegment>, ModelError> {
-        validate_curve_entities(profile)?;
-        if !closed {
-            validate_open_endpoints(profile, solution)?;
-        }
-        let mut segments = Vec::with_capacity(profile.len());
-        for (index, entity) in profile.iter().enumerate() {
-            let (start, end) = entity.endpoints();
-            if (closed || index + 1 < profile.len())
-                && end != profile[(index + 1) % profile.len()].endpoints().0
-            {
-                return Err(ModelError::new(
-                    "sketch profile is not a continuous boundary",
-                ));
-            }
-            let start_point = solution.points[start];
-            let end_point = solution.points[end];
-            let segment = match entity {
-                Entity::Line(_) => CurveSegment::Line {
-                    start: transform(start_point),
-                    end: transform(end_point),
-                },
-                Entity::Arc(arc) => {
-                    let middle = arc_middle(arc, solution);
-                    CurveSegment::Arc {
-                        start: transform(start_point),
-                        middle: transform(middle),
-                        end: transform(end_point),
-                    }
-                }
-                Entity::Spline(spline) if spline.basis.is_some() => spline.explicit_segment(
-                    spline
-                        .points
-                        .iter()
-                        .map(|id| transform(solution.points[id]))
-                        .collect(),
-                    solution
-                        .spline_weights
-                        .get(&spline.id)
-                        .ok_or_else(|| {
-                            ModelError::new("explicit spline solution is missing weights")
-                        })?
-                        .clone(),
-                )?,
-                Entity::Spline(spline) => {
-                    let periodic = spline.closed();
-                    let through = if periodic {
-                        &spline.points[..spline.points.len() - 1]
-                    } else {
-                        &spline.points[..]
-                    };
-                    let away = |point: &str| self.tangent_away(&spline.id, point, solution);
-                    CurveSegment::Spline {
-                        points: through
-                            .iter()
-                            .map(|id| transform(solution.points[id]))
-                            .collect(),
-                        // Leave the start opposite to where the neighbor
-                        // extends; arrive at the end heading into it.
-                        start_tangent: away(start)?
-                            .map(|d| direction(SketchPoint2 { x: -d.x, y: -d.y })),
-                        end_tangent: away(end)?.map(direction),
-                        periodic,
-                    }
-                }
-                Entity::Ellipse(e) if e.arc_ends().is_some() => {
-                    let at = |id: &str| transform(solution.points[id]);
-                    let normal = cross(
-                        direction(SketchPoint2 { x: 1.0, y: 0.0 }),
-                        direction(SketchPoint2 { x: 0.0, y: 1.0 }),
-                    );
-                    e.native_arc(
-                        [
-                            at(&e.center),
-                            at(&e.major),
-                            at(&e.minor),
-                            at(start),
-                            at(end),
-                        ],
-                        normal,
-                    )
-                }
-                Entity::Circle(_) | Entity::Ellipse(_) => {
-                    unreachable!("closed conics handled above")
-                }
-            };
-            segments.push(segment);
-        }
-        Ok(segments)
-    }
-
-    fn tangent_neighbor<'a>(
-        &'a self,
-        spline: &str,
-        point: &str,
-    ) -> Result<Option<&'a str>, ModelError> {
-        let neighbors = self
-            .constraints
-            .iter()
-            .filter_map(|constraint| match constraint {
-                SketchConstraint::Tangent {
-                    first,
-                    second,
-                    point: at,
-                } if at == point && (first == spline || second == spline) => {
-                    Some(if first == spline {
-                        second.as_str()
-                    } else {
-                        first.as_str()
-                    })
-                }
-                _ => None,
-            })
-            .collect::<Vec<_>>();
-        let Some(neighbor) = neighbors.first() else {
-            return Ok(None);
-        };
-        if neighbors.len() > 1 {
-            return Err(ModelError::new(format!(
-                "spline '{spline}' has more than one tangency at '{point}'"
-            )));
-        }
-        Ok(Some(*neighbor))
-    }
-
-    /// The direction in which the line or arc tangent to `spline` at `point`
-    /// extends away from that point, if such a tangency exists.
-    fn tangent_away(
-        &self,
-        spline: &str,
-        point: &str,
-        solution: &SketchSolution,
-    ) -> Result<Option<SketchPoint2>, ModelError> {
-        let Some(neighbor) = self.tangent_neighbor(spline, point)? else {
-            return Ok(None);
-        };
-        let entities = self.entities();
-        let at = solution.points[point];
-        let away = match entities[neighbor] {
-            Entity::Line(line) => {
-                let other = if line.start == point {
-                    &line.end
-                } else {
-                    &line.start
-                };
-                let other = solution.points[other];
-                SketchPoint2 {
-                    x: other.x - at.x,
-                    y: other.y - at.y,
-                }
-            }
-            Entity::Arc(arc) => {
-                let center = solution.points[&arc.center];
-                let (rx, ry) = (at.x - center.x, at.y - center.y);
-                // Travel direction at `point`; the arc extends forward from
-                // its start and backward from its end.
-                let sense = if arc.clockwise { -1.0 } else { 1.0 };
-                let forward = if arc.start == point { 1.0 } else { -1.0 };
-                SketchPoint2 {
-                    x: -ry * sense * forward,
-                    y: rx * sense * forward,
-                }
-            }
-            _ => {
-                return Err(ModelError::new(
-                    "a spline can be tangent only to a line or an arc",
-                ));
-            }
-        };
-        Ok(Some(away))
+    ) -> Result<SketchSolution, ModelError> {
+        let solution = self.solve(parameters)?;
+        self.check_acceptance(&solution)?;
+        Ok(solution)
     }
 
     fn profile_entities(&self) -> Result<Vec<Entity<'_>>, ModelError> {

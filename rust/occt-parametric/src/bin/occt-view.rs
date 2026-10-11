@@ -1,5 +1,6 @@
 //! Regenerates a saved model and opens its parts in OCCT's DRAW viewer.
 use occt_bridge::Session;
+use occt_parametric::prelude::*;
 use occt_parametric::{ModelDocument, OutputSet};
 use std::{
     error::Error,

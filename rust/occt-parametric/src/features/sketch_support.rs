@@ -49,14 +49,21 @@ pub(crate) fn resolve(
     }
     Ok(Some(ResolvedDatum::Plane { origin, normal }))
 }
-
-impl PartInstance<'_> {
+pub trait PartInstanceSupport {
     /// Resolve attached sketch planes against an already generated local result.
     /// Builds parameter/feature indexes once. Cost is O(features + parameter
     /// resolution + sum of support-query costs), with one plane/error per support.
     ///
     /// Returned planes are values; native query handles are released immediately.
-    pub fn sketch_support_planes(
+    fn sketch_support_planes(
+        &self,
+        session: &Session,
+        generated: &GeneratedResult<'_>,
+    ) -> Result<SketchSupportPlanes, ModelError>;
+}
+
+impl PartInstanceSupport for PartInstance<'_> {
+    fn sketch_support_planes(
         &self,
         session: &Session,
         generated: &GeneratedResult<'_>,

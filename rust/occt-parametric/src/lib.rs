@@ -1,97 +1,89 @@
 //! Unit-aware part families, instances, feature graphs, and verification.
+//!
+//! Model definitions, documents, solving and checks live in the kernel-free
+//! `occt-parametric-core` crate and are re-exported here unchanged; this crate
+//! regenerates them with OpenCASCADE through `occt-bridge`.
+
+// Kernel modules extend the core modules of the same name: each imports its
+// core counterpart's items and declares kernel-only submodules that shadow
+// same-named core submodules, which is intended.
+#![allow(hidden_glob_reexports)]
 
 mod assembly;
-mod change_impact;
-mod definition;
-mod document;
-mod document_diff;
 mod drawing;
-mod error;
-mod expressions;
 mod face_colors;
 mod features;
 mod graph;
-mod hole_sizes;
 mod mesh;
-mod pattern;
-mod quantity;
 mod regeneration;
-mod revisions;
 mod selection;
 mod sheet_metal;
 mod sketch;
-mod solve;
-mod sparse;
 mod verification;
 
-pub use assembly::{
-    AssemblyJoint, AssemblyMassProperties, AssemblyRelationship, AssemblyRequirement,
-    AssemblySemantics, AssemblyVerificationRule, BalancePosition, ChordReference, CollisionOptions,
-    CollisionPairRef, ComponentMassProperties, Configuration, ContinuousCollisionOptions,
-    ContinuousMotionResult, ContinuousPairResult, ContinuousStatus, DatumDefinition, DatumKind,
-    DatumRef, InstanceOutputRef, JointDof, JointKind, JointPosition, JointScalar,
-    MAX_MOTION_SAMPLES, Material, MaterialMassProperties, MeanAerodynamicChord, MotionResult,
-    MotionSample, MotionSampleResult, MotionStudy, OutputSet, PairCheck, PairStatus,
-    PhysicalMassProperties, PlanformStation, RELATIONSHIP_ANGULAR_TOLERANCE,
-    RELATIONSHIP_LINEAR_TOLERANCE, RelationKind, RelationshipCheck, RelationshipTolerances,
-    ResolvedDatum, SymmetricWingPlanform,
-};
-pub use assembly::{
-    ClosedMotionOptions, ClosedMotionResult, JointBranchEquivalence, JointBranchSearchOptions,
-    JointBranchSearchResult, JointBranchSearchStatus, JointMotionSolution, JointMotionStatus,
-    JointSeedAxis, JointSolution, JointSolveOptions, JointVariable,
-};
-pub use sketch::{
-    ResolvedSketch, ResolvedSketches, SketchAcceptance, SketchArc, SketchBSplineBasis,
-    SketchBoundaryOperation, SketchCircle, SketchCircleTangency, SketchConflictGroup,
-    SketchConstraint, SketchConstraintCheck, SketchCoordinateAxis, SketchCurveEnd,
-    SketchCurveOperation, SketchDefinition, SketchDiagnosis, SketchEditedCurve, SketchEllipse,
-    SketchEquationSource, SketchFaceSupport, SketchFontStyle, SketchFreeCoordinate,
-    SketchFreeMotion, SketchLine, SketchLineSide, SketchMeasure, SketchMeasurement,
-    SketchOffsetJoin, SketchPattern, SketchPoint, SketchPoint2, SketchPointMotion,
-    SketchProfileOperation, SketchProjection, SketchProjectionIntersection,
-    SketchProjectionJunction, SketchProjectionKind, SketchRegion, SketchRegionDiscovery,
-    SketchRegionEdit, SketchShape, SketchSolution, SketchSolverReport, SketchSpline,
-    SketchSplineCircleContact, SketchSplineEndpoints, SketchSupportPlanes, SketchTermination,
-    SketchText, SketchTextAlign, SketchTextOutlines, SketchTrimBound,
-};
-pub use solve::PlacementSolution;
+pub use occt_parametric_core::*;
 
 pub use occt_bridge::DiagnosticKind;
-use occt_bridge::{
-    BridgeError, CurvatureExtrema, Diagnostic, HistoryRelation, Session, Shape, ShapeType, Vec3,
-};
-use serde::{Deserialize, Serialize};
-use std::{
-    collections::{BTreeMap, HashMap, HashSet},
-    error::Error,
-    fmt,
-};
+use occt_bridge::{CurvatureExtrema, HistoryRelation, Session, Shape, ShapeType, Vec3};
+use std::collections::{HashMap, HashSet};
 
-pub use change_impact::*;
-pub use definition::*;
-pub use document::*;
-pub use document_diff::*;
+pub use assembly::*;
 pub use drawing::*;
-pub use error::*;
-use expressions::*;
 use face_colors::*;
 use features::*;
 pub use graph::*;
-use hole_sizes::clearance_scalar;
-pub use hole_sizes::{
-    ClearanceSeries, HoleCatalogSystem, SocketHeadDimension, SocketHeadRecess,
-    carr_lane_socket_dimension_v1, carr_lane_socket_head_v1, carr_lane_tap_drill_v1,
-    iso273_clearance_v1,
-};
 pub use mesh::*;
-pub use pattern::*;
-pub use quantity::*;
 pub use regeneration::*;
-pub use revisions::*;
 use selection::*;
 pub use sheet_metal::*;
+pub use sketch::*;
 pub use verification::*;
+
+// Kernel operations on the core model types.
+pub use assembly::InstanceGraphClosedMotion;
+pub use assembly::InstanceGraphContinuousMotion;
+pub use assembly::InstanceGraphDrawView;
+pub use assembly::InstanceGraphMass;
+pub use assembly::InstanceGraphMaterials;
+pub use assembly::InstanceGraphMotion;
+pub use assembly::InstanceGraphRequirements;
+pub(crate) use assembly::InstanceGraphRequirementsInternal;
+pub use assembly::InstanceGraphStepExport;
+pub use drawing::DrawingDefinitionRendering;
+pub use features::PartInstanceHoles;
+pub use features::PartInstanceProjection;
+pub use features::PartInstanceSupport;
+pub use graph::InstanceGraphPatternEdits;
+pub use graph::InstanceGraphRegeneration;
+pub(crate) use graph::InstanceGraphRegenerationInternal;
+pub use graph::ResolvedInstanceRegeneration;
+pub use mesh::InstanceGraphExport;
+pub use mesh::MeshExportDefinitionMeshExport;
+pub use mesh::TaggedSurfaceMeshExport;
+pub use regeneration::PartInstanceRegeneration;
+pub use selection::PartInstanceSelection;
+pub(crate) use sheet_metal::SheetMetalDefinitionUnfoldingInternal;
+pub use sketch::SketchDefinitionChecks;
+pub use sketch::SketchDefinitionEditing;
+pub(crate) use sketch::SketchDefinitionEditingInternal;
+pub use sketch::SketchDefinitionProfiles;
+pub(crate) use sketch::SketchDefinitionProfilesInternal;
+pub use sketch::SketchDefinitionSolving;
+
+/// The kernel operations on core model types, as traits: import with
+/// `use occt_parametric::prelude::*;` when not glob-importing the crate.
+pub mod prelude {
+    pub use super::{
+        DrawingDefinitionRendering, InstanceGraphClosedMotion, InstanceGraphContinuousMotion,
+        InstanceGraphDrawView, InstanceGraphExport, InstanceGraphMass, InstanceGraphMaterials,
+        InstanceGraphMotion, InstanceGraphPatternEdits, InstanceGraphRegeneration,
+        InstanceGraphRequirements, InstanceGraphStepExport, MeshExportDefinitionMeshExport,
+        PartInstanceHoles, PartInstanceProjection, PartInstanceRegeneration, PartInstanceSelection,
+        PartInstanceSupport, ResolvedInstanceRegeneration, SketchDefinitionChecks,
+        SketchDefinitionEditing, SketchDefinitionProfiles, SketchDefinitionSolving,
+        TaggedSurfaceMeshExport,
+    };
+}
 
 #[cfg(test)]
 mod tests;

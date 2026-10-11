@@ -628,12 +628,19 @@ fn ellipse_axes(u: [f64; 2], v: [f64; 2]) -> Result<([f64; 2], [f64; 2], f64, f6
         r2,
     ))
 }
-
-impl PartInstance<'_> {
+pub trait PartInstanceProjection {
     /// Runtime snapshots for sketches with linked geometry or face supports.
     /// Resolves parameters, datums and feature indexes once. Cost is linear in
     /// those definitions plus total selector/query and sketch-copy work.
-    pub fn resolved_sketches(
+    fn resolved_sketches(
+        &self,
+        session: &Session,
+        generated: &GeneratedResult<'_>,
+    ) -> Result<ResolvedSketches, ModelError>;
+}
+
+impl PartInstanceProjection for PartInstance<'_> {
+    fn resolved_sketches(
         &self,
         session: &Session,
         generated: &GeneratedResult<'_>,

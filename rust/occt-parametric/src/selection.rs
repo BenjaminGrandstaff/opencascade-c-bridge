@@ -632,13 +632,32 @@ pub(crate) fn filter_by_membership<'session>(
     }
     Ok(kept)
 }
-
-impl PartInstance<'_> {
+pub trait PartInstanceSelection {
     /// Resolve a semantic face query against a result generated from this
     /// instance's current definition/parameters. Returned handles are owned;
     /// dropping them releases query temporaries. Topology indices are not
     /// persistent identities across regeneration.
-    pub fn select_faces<'session>(
+    fn select_faces<'session>(
+        &self,
+        session: &'session Session,
+        generated: &GeneratedResult<'session>,
+        output: &str,
+        selector: &FaceSelector,
+    ) -> Result<Vec<Shape<'session>>, ModelError>;
+
+    /// Resolve a semantic edge query against a result generated from this
+    /// instance's current definition/parameters. Returned handles are owned.
+    fn select_edges<'session>(
+        &self,
+        session: &'session Session,
+        generated: &GeneratedResult<'session>,
+        output: &str,
+        selector: &EdgeSelector,
+    ) -> Result<Vec<Shape<'session>>, ModelError>;
+}
+
+impl PartInstanceSelection for PartInstance<'_> {
+    fn select_faces<'session>(
         &self,
         session: &'session Session,
         generated: &GeneratedResult<'session>,
@@ -658,9 +677,7 @@ impl PartInstance<'_> {
         )
     }
 
-    /// Resolve a semantic edge query against a result generated from this
-    /// instance's current definition/parameters. Returned handles are owned.
-    pub fn select_edges<'session>(
+    fn select_edges<'session>(
         &self,
         session: &'session Session,
         generated: &GeneratedResult<'session>,

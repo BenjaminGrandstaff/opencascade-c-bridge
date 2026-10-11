@@ -205,12 +205,20 @@ fn geometry_limit<'a>(
         _ => unreachable!(),
     }
 }
-
-impl PartInstance<'_> {
+pub trait PartInstanceHoles {
     /// Exact centre-ray witness of a geometric hole limit, for a result generated
     /// from this instance's current definition/parameters. None for numeric or
     /// through-all extents. Returned measurements create no retained handles.
-    pub fn hole_limit_measurement<'a>(
+    fn hole_limit_measurement<'a>(
+        &self,
+        session: &'a Session,
+        generated: &GeneratedResult<'a>,
+        output: &str,
+    ) -> Result<Option<occt_bridge::DistanceResult>, ModelError>;
+}
+
+impl PartInstanceHoles for PartInstance<'_> {
+    fn hole_limit_measurement<'a>(
         &self,
         session: &'a Session,
         generated: &GeneratedResult<'a>,

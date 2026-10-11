@@ -4,6 +4,7 @@
 mod sketch;
 use super::{POLL, stamp, view_data};
 use occt_bridge::Session;
+use occt_parametric::prelude::*;
 use occt_parametric::{
     AxisAngle, InstanceNode, LengthUnit, MeshSettings, ModelDocument, ParameterValue, Placement,
     VectorQuantity,

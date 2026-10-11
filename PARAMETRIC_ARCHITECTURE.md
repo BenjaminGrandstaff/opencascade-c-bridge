@@ -1350,6 +1350,22 @@ The Rust parametric layer owns or is intended to own:
 This keeps the ABI small and reusable while allowing Rust, JSON/YAML tools,
 and user interfaces to work with engineering concepts rather than C++ types.
 
+Within that layer, `occt-parametric-core` owns everything that is pure model
+data or pure math: definitions and the versioned document format, units and
+expressions, sketch definitions and validation, placement and assembly
+solving, diff/merge and change impact, drawing/GD&T/parts-list data, hole
+catalogs and model validation. It depends only on `occt-types` (plain
+vectors, shape types, history relations, curve segments and errors), serde
+and schemars, so editors, validators and merge tools can use it without
+linking OpenCASCADE. `occt-parametric` owns everything that needs a session:
+feature execution, regeneration and history, persistent selection, sketch
+solving and native profiles (spline and ellipse equations evaluate natively),
+meshes, drawing projection, motion and collisions. It mirrors the core module
+layout, extends core types through extension traits, and re-exports the core
+API unchanged. Hiding the kernel behind an abstract interface is deliberately
+not attempted: history relations, validity and face-naming semantics are
+OpenCASCADE-specific, and no second kernel is planned.
+
 Application-specific constructors belong in `occt-recipes`. The stone and
 torch C entry points remain exported only as compatibility APIs; new Rust
 application code should use the recipe crate.

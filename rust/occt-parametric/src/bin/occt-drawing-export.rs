@@ -1,5 +1,6 @@
 //! General drawing and planar cutting-template batch export.
 use occt_bridge::Session;
+use occt_parametric::prelude::*;
 use occt_parametric::{DrawingDefinition, DrawingRenderOptions, ModelDocument};
 use serde::Deserialize;
 use serde_json::json;

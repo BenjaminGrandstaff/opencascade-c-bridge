@@ -1,4 +1,5 @@
 use super::*;
+use std::collections::BTreeMap;
 
 mod assembly_motion;
 mod balance;
@@ -21,12 +22,14 @@ mod inspection;
 mod linkage;
 mod loft;
 mod math_functions;
+mod merge_regeneration;
 mod mesh;
 mod mirror;
 mod named_references;
 mod parts_list;
 mod patterns;
 mod persistent;
+mod placement_solving;
 mod primitives;
 mod regeneration;
 mod regions;

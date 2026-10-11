@@ -180,11 +180,21 @@ free degrees before generating geometry. Try
     healing, and diagnostics).
   - [`shape_validator.cpp`](src/shape_validator.cpp): BRepCheck validation
     that scales to faces with many holes.
+- [`rust/occt-types`](rust/occt-types): plain value types (vectors, shape
+  types, history relations, curve segments, diagnostics and errors) shared by
+  the Rust crates, with no native dependency.
 - [`rust/occt-bridge`](rust/occt-bridge): safe Rust wrapper with session-owned,
-  generation-checked shape handles.
+  generation-checked shape handles; re-exports `occt-types`.
 - [`rust/occt-recipes`](rust/occt-recipes): application-level geometry recipes
   composed over the generic bridge.
-- [`rust/occt-parametric`](rust/occt-parametric): typed parameters, families,
+- [`rust/occt-parametric-core`](rust/occt-parametric-core): the kernel-free
+  part of the engineering layer: model definitions and documents, units and
+  expressions, sketch definitions and validation, placement and assembly
+  solving, document diff/merge and change impact, drawing, GD&T and
+  parts-list data, hole catalogs and model validation. It builds and tests
+  without OpenCASCADE, for tools that describe, edit or check models.
+- [`rust/occt-parametric`](rust/occt-parametric): regenerates core models with
+  OpenCASCADE and re-exports the core API unchanged: typed parameters, families,
   instances, linked clones and patterns, placement, managed/frozen revisions,
   incremental feature rebuilding, derived expressions and constraints, feature
   graphs, named results, requirement verification and semantic face/edge
@@ -200,6 +210,9 @@ free degrees before generating geometry. Try
 cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo
 cmake --build build
 ctest --test-dir build --output-on-failure
+
+cargo test --manifest-path rust/occt-types/Cargo.toml
+cargo test --manifest-path rust/occt-parametric-core/Cargo.toml
 
 LD_LIBRARY_PATH="$PWD/build" \
   cargo test --manifest-path rust/occt-bridge/Cargo.toml
@@ -289,8 +302,16 @@ entirely from generic bridge primitives, and its faceted-stone recipe sews
 planar facets and closes them into a solid. The corresponding C entry points
 remain exported only for compatibility.
 
-The [`occt-parametric`](rust/occt-parametric) crate provides the first local
-engineering-model layer: typed unit-aware parameters, versioned families,
+The engineering-model layer is split in two. [`occt-parametric-core`](rust/occt-parametric-core)
+holds everything that does not need the geometry kernel and depends only on
+`occt-types`, serde and schemars; [`occt-parametric`](rust/occt-parametric)
+adds kernel regeneration (features, sketch solving and profiles, selection,
+meshes, drawings, motion and collisions) and re-exports the core API, so
+existing code keeps using one crate. Kernel operations on core types, such as
+`PartInstance::regenerate` or `SketchDefinition::solve`, are extension traits:
+`use occt_parametric::*` brings them into scope, or import
+`occt_parametric::prelude::*` alongside explicit imports. Together they
+provide the first local engineering-model layer: typed unit-aware parameters, versioned families,
 instances with overrides and provenance, dependency-ordered feature graphs,
 named results, linked clone inheritance, accepted and stale regeneration
 states, axis-angle placement, nested assembly frames, linear and circular
@@ -623,7 +644,8 @@ dependency-free Rust layers:
 - the stable C ABI used by other languages;
 - the dependency-free safe Rust wrapper for that ABI;
 - application recipes composed from generic bridge operations;
-- the initial unit-aware parametric family and verification model;
+- the unit-aware parametric family and verification model, split into a
+  kernel-free core and its OpenCASCADE regeneration;
 - focused C and Rust tests of each layer.
 
 It is not a scene language, asset library, renderer, VTT integration, finite

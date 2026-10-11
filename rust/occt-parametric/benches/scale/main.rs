@@ -12,6 +12,7 @@
 //! non-gap case fails.
 
 use occt_bridge::{Session, SessionOptions, ShapeType, Vec3};
+use occt_parametric::prelude::*;
 use occt_parametric::{
     AssemblyRelationship, AssemblyRequirement, AssemblyVerificationRule, AxisAngle,
     ClearanceSeries, CoordinateAxis, DatumDefinition, DatumKind, DatumRef, Dimension, Extremum,

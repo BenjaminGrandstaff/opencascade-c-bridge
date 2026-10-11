@@ -2,14 +2,10 @@
 //! result placement.
 
 use super::*;
-
-mod parameters;
+#[allow(unused_imports)]
+pub use occt_parametric_core::regeneration::*;
 mod requirements;
-mod validation;
-
-pub(crate) use parameters::*;
 pub(crate) use requirements::*;
-pub(crate) use validation::*;
 
 pub struct GeneratedResult<'session> {
     pub(crate) shapes: HashMap<String, Shape<'session>>,
@@ -19,12 +15,6 @@ pub struct GeneratedResult<'session> {
     pub(crate) face_colors: HashMap<String, FaceColors>,
     pub verification: Vec<VerificationResult>,
     pub regeneration: RegenerationReport,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct RegenerationReport {
-    pub rebuilt: Vec<String>,
-    pub reused: Vec<String>,
 }
 
 impl<'session> GeneratedResult<'session> {
@@ -41,16 +31,6 @@ impl<'session> GeneratedResult<'session> {
     pub fn named_outputs(&self) -> impl Iterator<Item = &str> {
         self.shapes.keys().map(String::as_str)
     }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum RegenerationState {
-    NeverGenerated,
-    Current,
-    Frozen,
-    Stale,
-    Failed,
 }
 
 pub struct ManagedPartInstance<'definition, 'session> {
@@ -174,12 +154,29 @@ pub struct DiagnosticGeneration<'session> {
     pub generated: GeneratedResult<'session>,
     pub verification_errors: Vec<(String, ModelError)>,
 }
-
-impl PartInstance<'_> {
+pub trait PartInstanceRegeneration {
     /// Generate a local diagnostic snapshot even when required checks fail.
     /// Geometry creation still validates results. Verification errors remain
     /// explicitly unverified; callers must not publish this as an accepted build.
-    pub fn diagnostic_geometry<'session>(
+    fn diagnostic_geometry<'session>(
+        &self,
+        session: &'session Session,
+    ) -> Result<DiagnosticGeneration<'session>, ModelError>;
+
+    fn regenerate<'session>(
+        &self,
+        session: &'session Session,
+    ) -> Result<GeneratedResult<'session>, ModelError>;
+
+    fn regenerate_incremental<'session>(
+        &self,
+        session: &'session Session,
+        previous: &GeneratedResult<'session>,
+    ) -> Result<GeneratedResult<'session>, ModelError>;
+}
+
+impl PartInstanceRegeneration for PartInstance<'_> {
+    fn diagnostic_geometry<'session>(
         &self,
         session: &'session Session,
     ) -> Result<DiagnosticGeneration<'session>, ModelError> {
@@ -207,22 +204,32 @@ impl PartInstance<'_> {
         })
     }
 
-    pub fn regenerate<'session>(
+    fn regenerate<'session>(
         &self,
         session: &'session Session,
     ) -> Result<GeneratedResult<'session>, ModelError> {
         self.regenerate_internal(session, None)
     }
 
-    pub fn regenerate_incremental<'session>(
+    fn regenerate_incremental<'session>(
         &self,
         session: &'session Session,
         previous: &GeneratedResult<'session>,
     ) -> Result<GeneratedResult<'session>, ModelError> {
         self.regenerate_internal(session, Some(previous))
     }
+}
 
-    pub(crate) fn regenerate_internal<'session>(
+pub(crate) trait PartInstanceRegenerationInternal {
+    fn regenerate_internal<'session>(
+        &self,
+        session: &'session Session,
+        previous: Option<&GeneratedResult<'session>>,
+    ) -> Result<GeneratedResult<'session>, ModelError>;
+}
+
+impl PartInstanceRegenerationInternal for PartInstance<'_> {
+    fn regenerate_internal<'session>(
         &self,
         session: &'session Session,
         previous: Option<&GeneratedResult<'session>>,
@@ -381,97 +388,6 @@ impl<'session> FeatureBuild<'session> {
     }
 }
 
-#[derive(Serialize, schemars::JsonSchema)]
-pub(crate) struct FeatureSignature<'a> {
-    pub(crate) feature: &'a FeatureDefinition,
-    pub(crate) parameters: Vec<(&'a str, &'a ParameterValue)>,
-    pub(crate) datum: Option<&'a DatumDefinition>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub(crate) references: Vec<&'a NamedReference>,
-}
-
-pub(crate) fn sketch_datum<'a>(
-    datums: &HashMap<&str, &'a DatumDefinition>,
-    operation: &FeatureOperation,
-) -> Result<Option<&'a DatumDefinition>, ModelError> {
-    let sketch = match operation {
-        FeatureOperation::SketchFace { sketch }
-        | FeatureOperation::SketchWire { sketch }
-        | FeatureOperation::SketchOpenWire { sketch } => sketch,
-        _ => return Ok(None),
-    };
-    let Some(id) = &sketch.datum_plane else {
-        return Ok(None);
-    };
-    let datum = datums
-        .get(id.as_str())
-        .copied()
-        .ok_or_else(|| ModelError::new(format!("unknown sketch plane datum '{id}'")))?;
-    if !matches!(datum.kind, DatumKind::Plane { .. }) {
-        return Err(ModelError::new(format!(
-            "sketch datum '{id}' must be a plane"
-        )));
-    }
-    Ok(Some(datum))
-}
-
-/// The feature, the parameter values it reads, its sketch datum, and the
-/// named references it uses: any change to these rebuilds it.
-pub(crate) fn feature_signature(
-    datums: &HashMap<&str, &DatumDefinition>,
-    feature: &FeatureDefinition,
-    references: &References<'_>,
-    parameters: &HashMap<String, ParameterValue>,
-) -> Result<Vec<u8>, ModelError> {
-    let mut names = HashSet::new();
-    collect_operation_parameters(&feature.operation, &mut names);
-    let mut used = feature
-        .operation
-        .reference_names()
-        .into_iter()
-        .filter_map(|(name, _)| references.get(name).copied())
-        .collect::<Vec<_>>();
-    used.sort_by(|a, b| a.name.cmp(&b.name));
-    used.dedup_by(|a, b| a.name == b.name);
-    for reference in &used {
-        match &reference.target {
-            ReferenceTarget::Faces(selector) => {
-                collect_face_selector_parameters(selector, &mut names)
-            }
-            ReferenceTarget::Edges(selector) => {
-                collect_edge_selector_parameters(selector, &mut names)
-            }
-        }
-    }
-    let datum = sketch_datum(datums, &feature.operation)?;
-    if let Some(DatumDefinition {
-        kind: DatumKind::Plane { origin, normal },
-        ..
-    }) = datum
-    {
-        collect_vector_parameters(origin, &mut names);
-        collect_vector_parameters(normal, &mut names);
-    }
-    let mut names = names.into_iter().collect::<Vec<_>>();
-    names.sort_unstable();
-    let values = names
-        .into_iter()
-        .map(|name| {
-            parameters
-                .get(name)
-                .map(|value| (name, value))
-                .ok_or_else(|| ModelError::new(format!("unknown parameter '{name}'")))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    serde_json::to_vec(&FeatureSignature {
-        feature,
-        parameters: values,
-        datum,
-        references: used,
-    })
-    .map_err(|error| ModelError::new(format!("create feature signature: {error}")))
-}
-
 pub(crate) fn cleanup_shapes<'session>(
     session: &Session,
     shapes: impl IntoIterator<Item = Shape<'session>>,
@@ -488,10 +404,6 @@ pub(crate) fn shape<'a, 'session>(
     shapes
         .get(name)
         .ok_or_else(|| ModelError::new(format!("named output '{name}' was not generated")))
-}
-
-pub(crate) fn instance_error(id: &str, error: ModelError) -> ModelError {
-    error.context(&format!("instance '{id}'"))
 }
 
 pub(crate) fn release_results<'session>(

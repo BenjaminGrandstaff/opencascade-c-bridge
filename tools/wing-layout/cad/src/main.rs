@@ -1,4 +1,5 @@
 use occt_bridge::{Session, Shape, Vec3};
+use occt_parametric::prelude::*;
 use occt_parametric::{InstanceGraph, ModelDocument, PartInstance, VerificationStatus};
 use serde::Deserialize;
 use std::{collections::HashMap, error::Error, path::Path, path::PathBuf};

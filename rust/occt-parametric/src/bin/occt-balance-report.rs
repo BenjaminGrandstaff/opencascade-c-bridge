@@ -5,6 +5,7 @@ mod config;
 mod report;
 use occt_bridge::Session;
 use occt_parametric::ModelDocument;
+use occt_parametric::prelude::*;
 use std::{
     error::Error,
     ffi::OsString,

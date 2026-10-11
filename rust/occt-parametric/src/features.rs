@@ -4,15 +4,17 @@ use super::*;
 
 mod extrusions;
 mod holes;
+pub use holes::PartInstanceHoles;
 mod hollow;
 mod loft;
-pub(crate) use loft::collect_parameters as collect_loft_parameters;
 mod patterns;
 mod primitives;
 mod regions;
 mod ribs;
 pub(crate) mod sketch_projection;
+pub use sketch_projection::PartInstanceProjection;
 pub(crate) mod sketch_support;
+pub use sketch_support::PartInstanceSupport;
 mod split;
 mod sweeps;
 mod thicken;

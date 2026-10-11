@@ -2,523 +2,93 @@
 
 use super::solver::SketchProblem;
 use super::*;
+#[allow(unused_imports)]
+pub use occt_parametric_core::sketch::diagnostics::*;
+pub trait SketchDefinitionChecks {
+    /// Sample each entity in sketch-local XY using native curve construction,
+    /// including spline end tangency. Available for unsolved diagnostic sketches.
+    fn preview_curves(
+        &self,
+        session: &Session,
+        solution: &SketchSolution,
+        samples: usize,
+    ) -> Result<Vec<(String, Vec<SketchPoint2>)>, ModelError>;
 
-/// Per-constraint diagnostics from the same residual equations as the solver.
-#[derive(Clone, Debug, PartialEq)]
-pub struct SketchConstraintCheck {
-    pub index: usize,
-    pub max_residual: Option<f64>,
-    pub satisfied: bool,
-    /// Spline end tangency is imposed during curve construction, not solved
-    /// by a residual equation. It must not be reported as a measured zero.
-    pub by_construction: bool,
-}
-/// Measured seed, native spline contact and circular contact, with any arc
-/// domain violation kept separate from tangent alignment.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct SketchSplineCircleContact {
-    pub points: [SketchPoint2; 3],
-    pub tangent_sine: f64,
-    pub arc_span_residual_mm: Option<f64>,
-}
-
-/// Measured ellipse/circular contact positions, tangent alignment and arc-domain residual.
-/// Shares the contact representation with spline/circular tangency.
-pub type SketchEllipseCircleContact = SketchSplineCircleContact;
-
-impl SketchDefinition {
     /// Exact ellipse support contacts and their supporting-line projections,
     /// indexed by constraint number. Distinct positions reveal a diagnostic
     /// residual. Indexing the curves keeps this O(lines + ellipses + constraints).
-    pub fn line_ellipse_tangent_contacts(
+    fn line_ellipse_tangent_contacts(
         &self,
         solution: &SketchSolution,
-    ) -> Result<HashMap<usize, [SketchPoint2; 2]>, ModelError> {
-        let lines: HashMap<_, _> = self.lines.iter().map(|l| (l.id.as_str(), l)).collect();
-        let ellipses: HashMap<_, _> = self.ellipses.iter().map(|e| (e.id.as_str(), e)).collect();
-        let p = |id: &str| {
-            solution
-                .points
-                .get(id)
-                .copied()
-                .ok_or_else(|| ModelError::new("tangency solution is missing a point"))
-        };
-        let mut result = HashMap::new();
-        for (index, constraint) in self.constraints.iter().enumerate() {
-            let SketchConstraint::LineEllipseTangent {
-                line,
-                ellipse,
-                side,
-            } = constraint
-            else {
-                continue;
-            };
-            let l = lines
-                .get(line.as_str())
-                .ok_or_else(|| ModelError::new("unknown tangency line"))?;
-            let e = ellipses
-                .get(ellipse.as_str())
-                .ok_or_else(|| ModelError::new("unknown tangency ellipse"))?;
-            let (_, contacts) = super::geometry::line_ellipse_contact(
-                (p(&l.start)?, p(&l.end)?),
-                p(&e.center)?,
-                p(&e.major)?,
-                p(&e.minor)?,
-                *side,
-            )?;
-            result.insert(index, contacts);
-        }
-        Ok(result)
-    }
+    ) -> Result<HashMap<usize, [SketchPoint2; 2]>, ModelError>;
 
     /// Seed point, bounded native spline contact, supporting-line projection,
     /// and measured tangent sine, indexed by line-spline constraint number.
-    pub fn line_spline_tangent_contacts(
+    fn line_spline_tangent_contacts(
         &self,
         parameters: &HashMap<String, ParameterValue>,
         solution: &SketchSolution,
-    ) -> Result<HashMap<usize, ([SketchPoint2; 3], f64)>, ModelError> {
-        if !self
-            .constraints
-            .iter()
-            .any(|c| matches!(c, SketchConstraint::LineSplineTangent { .. }))
-        {
-            return Ok(HashMap::new());
-        }
-        if !self.projections.is_empty() {
-            return Err(ModelError::new(
-                "projected sketch requires source-geometry resolution before contact diagnostics",
-            ));
-        }
-        if solution
-            .points
-            .values()
-            .any(|p| !p.x.is_finite() || !p.y.is_finite())
-        {
-            return Err(ModelError::new(
-                "spline contact diagnostic point is not finite",
-            ));
-        }
-        self.validate(parameters)?;
-        let fixed = self
-            .points
-            .iter()
-            .map(|p| {
-                solution
-                    .points
-                    .get(&p.id)
-                    .copied()
-                    .map(|v| (p.id.as_str(), v))
-                    .ok_or_else(|| ModelError::new("contact solution is missing a point"))
-            })
-            .collect::<Result<HashMap<_, _>, _>>()?;
-        let problem = SketchProblem::new(self, parameters, HashMap::new(), fixed)?;
-        let mut result = HashMap::new();
-        for (index, c) in self.constraints.iter().enumerate() {
-            if let SketchConstraint::LineSplineTangent {
-                line,
-                spline,
-                point,
-            } = c
-            {
-                result.insert(
-                    index,
-                    problem.line_spline_contact(line, spline, point, &[])?,
-                );
-            }
-        }
-        Ok(result)
-    }
+    ) -> Result<HashMap<usize, ([SketchPoint2; 3], f64)>, ModelError>;
 
     /// Seed point, bounded native spline contact, second bounded native spline contact,
     /// and measured tangent sine, indexed by spline-spline constraint number.
-    pub fn spline_spline_tangent_contacts(
+    fn spline_spline_tangent_contacts(
         &self,
         parameters: &HashMap<String, ParameterValue>,
         solution: &SketchSolution,
-    ) -> Result<HashMap<usize, ([SketchPoint2; 3], f64)>, ModelError> {
-        if !self
-            .constraints
-            .iter()
-            .any(|c| matches!(c, SketchConstraint::SplineSplineTangent { .. }))
-        {
-            return Ok(HashMap::new());
-        }
-        if !self.projections.is_empty() {
-            return Err(ModelError::new(
-                "projected sketch requires source-geometry resolution before contact diagnostics",
-            ));
-        }
-        if solution
-            .points
-            .values()
-            .any(|p| !p.x.is_finite() || !p.y.is_finite())
-        {
-            return Err(ModelError::new(
-                "spline contact diagnostic point is not finite",
-            ));
-        }
-        self.validate(parameters)?;
-        let fixed = self
-            .points
-            .iter()
-            .map(|p| {
-                solution
-                    .points
-                    .get(&p.id)
-                    .copied()
-                    .map(|v| (p.id.as_str(), v))
-                    .ok_or_else(|| ModelError::new("contact solution is missing a point"))
-            })
-            .collect::<Result<HashMap<_, _>, _>>()?;
-        let problem = SketchProblem::new(self, parameters, HashMap::new(), fixed)?;
-        let mut result = HashMap::new();
-        for (index, c) in self.constraints.iter().enumerate() {
-            if let SketchConstraint::SplineSplineTangent {
-                first,
-                second,
-                point,
-            } = c
-            {
-                result.insert(
-                    index,
-                    problem.spline_spline_contact(first, second, point, &[])?,
-                );
-            }
-        }
-        Ok(result)
-    }
+    ) -> Result<HashMap<usize, ([SketchPoint2; 3], f64)>, ModelError>;
 
     /// Seed point, native full ellipse contact, second native full ellipse contact,
     /// and measured tangent sine, indexed by ellipse-ellipse constraint number.
-    pub fn ellipse_ellipse_tangent_contacts(
+    fn ellipse_ellipse_tangent_contacts(
         &self,
         parameters: &HashMap<String, ParameterValue>,
         solution: &SketchSolution,
-    ) -> Result<HashMap<usize, ([SketchPoint2; 3], f64)>, ModelError> {
-        if !self
-            .constraints
-            .iter()
-            .any(|c| matches!(c, SketchConstraint::EllipseEllipseTangent { .. }))
-        {
-            return Ok(HashMap::new());
-        }
-        if !self.projections.is_empty() {
-            return Err(ModelError::new(
-                "projected sketch requires source-geometry resolution before contact diagnostics",
-            ));
-        }
-        if solution
-            .points
-            .values()
-            .any(|p| !p.x.is_finite() || !p.y.is_finite())
-        {
-            return Err(ModelError::new(
-                "ellipse contact diagnostic point is not finite",
-            ));
-        }
-        self.validate(parameters)?;
-        let fixed = self
-            .points
-            .iter()
-            .map(|p| {
-                solution
-                    .points
-                    .get(&p.id)
-                    .copied()
-                    .map(|v| (p.id.as_str(), v))
-                    .ok_or_else(|| ModelError::new("contact solution is missing a point"))
-            })
-            .collect::<Result<HashMap<_, _>, _>>()?;
-        let problem = SketchProblem::new(self, parameters, HashMap::new(), fixed)?;
-        let mut result = HashMap::new();
-        for (index, c) in self.constraints.iter().enumerate() {
-            if let SketchConstraint::EllipseEllipseTangent {
-                first,
-                second,
-                point,
-            } = c
-            {
-                result.insert(
-                    index,
-                    problem.ellipse_ellipse_contact(first, second, point, &[])?,
-                );
-            }
-        }
-        Ok(result)
-    }
+    ) -> Result<HashMap<usize, ([SketchPoint2; 3], f64)>, ModelError>;
 
     /// Seed point, bounded native spline contact, native ellipse contact,
     /// and measured tangent sine, indexed by spline-ellipse constraint number.
-    pub fn spline_ellipse_tangent_contacts(
+    fn spline_ellipse_tangent_contacts(
         &self,
         parameters: &HashMap<String, ParameterValue>,
         solution: &SketchSolution,
-    ) -> Result<HashMap<usize, ([SketchPoint2; 3], f64)>, ModelError> {
-        if !self
-            .constraints
-            .iter()
-            .any(|c| matches!(c, SketchConstraint::SplineEllipseTangent { .. }))
-        {
-            return Ok(HashMap::new());
-        }
-        if !self.projections.is_empty() {
-            return Err(ModelError::new(
-                "projected sketch requires source-geometry resolution before contact diagnostics",
-            ));
-        }
-        if solution
-            .points
-            .values()
-            .any(|p| !p.x.is_finite() || !p.y.is_finite())
-        {
-            return Err(ModelError::new(
-                "spline contact diagnostic point is not finite",
-            ));
-        }
-        self.validate(parameters)?;
-        let fixed = self
-            .points
-            .iter()
-            .map(|p| {
-                solution
-                    .points
-                    .get(&p.id)
-                    .copied()
-                    .map(|v| (p.id.as_str(), v))
-                    .ok_or_else(|| ModelError::new("contact solution is missing a point"))
-            })
-            .collect::<Result<HashMap<_, _>, _>>()?;
-        let problem = SketchProblem::new(self, parameters, HashMap::new(), fixed)?;
-        let mut result = HashMap::new();
-        for (index, c) in self.constraints.iter().enumerate() {
-            if let SketchConstraint::SplineEllipseTangent {
-                spline,
-                ellipse,
-                point,
-            } = c
-            {
-                result.insert(
-                    index,
-                    problem.spline_ellipse_contact(spline, ellipse, point, &[])?,
-                );
-            }
-        }
-        Ok(result)
-    }
+    ) -> Result<HashMap<usize, ([SketchPoint2; 3], f64)>, ModelError>;
 
     /// Seed point, bounded native spline contact, circular contact,
     /// and measured tangent sine, indexed by spline-circle constraint number.
-    pub fn spline_circle_tangent_contacts(
+    fn spline_circle_tangent_contacts(
         &self,
         parameters: &HashMap<String, ParameterValue>,
         solution: &SketchSolution,
-    ) -> Result<HashMap<usize, SketchSplineCircleContact>, ModelError> {
-        if !self
-            .constraints
-            .iter()
-            .any(|c| matches!(c, SketchConstraint::SplineCircleTangent { .. }))
-        {
-            return Ok(HashMap::new());
-        }
-        if !self.projections.is_empty() {
-            return Err(ModelError::new(
-                "projected sketch requires source-geometry resolution before contact diagnostics",
-            ));
-        }
-        if solution
-            .points
-            .values()
-            .any(|p| !p.x.is_finite() || !p.y.is_finite())
-        {
-            return Err(ModelError::new(
-                "spline contact diagnostic point is not finite",
-            ));
-        }
-        self.validate(parameters)?;
-        let fixed = self
-            .points
-            .iter()
-            .map(|p| {
-                solution
-                    .points
-                    .get(&p.id)
-                    .copied()
-                    .map(|v| (p.id.as_str(), v))
-                    .ok_or_else(|| ModelError::new("contact solution is missing a point"))
-            })
-            .collect::<Result<HashMap<_, _>, _>>()?;
-        let problem = SketchProblem::new(self, parameters, HashMap::new(), fixed)?;
-        let mut result = HashMap::new();
-        for (index, c) in self.constraints.iter().enumerate() {
-            if let SketchConstraint::SplineCircleTangent {
-                spline,
-                circle,
-                point,
-            } = c
-            {
-                result.insert(
-                    index,
-                    problem.spline_circle_contact(spline, circle, point, &[])?,
-                );
-            }
-        }
-        Ok(result)
-    }
+    ) -> Result<HashMap<usize, SketchSplineCircleContact>, ModelError>;
 
     /// Seed point, native full ellipse contact, circular contact,
     /// and measured tangent sine, indexed by ellipse-circle constraint number.
-    pub fn ellipse_circle_tangent_contacts(
+    fn ellipse_circle_tangent_contacts(
         &self,
         parameters: &HashMap<String, ParameterValue>,
         solution: &SketchSolution,
-    ) -> Result<HashMap<usize, SketchEllipseCircleContact>, ModelError> {
-        if !self
-            .constraints
-            .iter()
-            .any(|c| matches!(c, SketchConstraint::EllipseCircleTangent { .. }))
-        {
-            return Ok(HashMap::new());
-        }
-        if !self.projections.is_empty() {
-            return Err(ModelError::new(
-                "projected sketch requires source-geometry resolution before contact diagnostics",
-            ));
-        }
-        if solution
-            .points
-            .values()
-            .any(|p| !p.x.is_finite() || !p.y.is_finite())
-        {
-            return Err(ModelError::new(
-                "ellipse contact diagnostic point is not finite",
-            ));
-        }
-        self.validate(parameters)?;
-        let fixed = self
-            .points
-            .iter()
-            .map(|p| {
-                solution
-                    .points
-                    .get(&p.id)
-                    .copied()
-                    .map(|v| (p.id.as_str(), v))
-                    .ok_or_else(|| ModelError::new("contact solution is missing a point"))
-            })
-            .collect::<Result<HashMap<_, _>, _>>()?;
-        let problem = SketchProblem::new(self, parameters, HashMap::new(), fixed)?;
-        let mut result = HashMap::new();
-        for (index, c) in self.constraints.iter().enumerate() {
-            if let SketchConstraint::EllipseCircleTangent {
-                ellipse,
-                circle,
-                point,
-            } = c
-            {
-                result.insert(
-                    index,
-                    problem.ellipse_circle_contact(ellipse, circle, point, &[])?,
-                );
-            }
-        }
-        Ok(result)
-    }
+    ) -> Result<HashMap<usize, SketchEllipseCircleContact>, ModelError>;
 
-    pub fn constraint_checks(
+    fn constraint_checks(
         &self,
         parameters: &HashMap<String, ParameterValue>,
         solution: &SketchSolution,
-    ) -> Result<Vec<SketchConstraintCheck>, ModelError> {
-        if !self.projections.is_empty() {
-            return Err(ModelError::new(
-                "projected sketch requires source-geometry resolution before diagnostics",
-            ));
-        }
-        // Authored constraints keep their indices: expansion appends.
-        if let std::borrow::Cow::Owned(expanded) = self.with_patterns(Some(parameters))? {
-            return expanded.constraint_checks(parameters, solution);
-        }
-        self.validate(parameters)?;
-        let mut fixed = HashMap::new();
-        for point in &self.points {
-            let value = solution
-                .points
-                .get(&point.id)
-                .ok_or_else(|| ModelError::new("sketch diagnostic solution is missing a point"))?;
-            if !value.x.is_finite() || !value.y.is_finite() {
-                return Err(ModelError::new("sketch diagnostic point is not finite"));
-            }
-            fixed.insert(point.id.as_str(), *value);
-        }
-        let problem = SketchProblem::new(self, parameters, HashMap::new(), fixed)?;
-        self.constraints
-            .iter()
-            .enumerate()
-            .map(|(index, constraint)| {
-                if self.spline_tangency(constraint) {
-                    return Ok(SketchConstraintCheck {
-                        index,
-                        max_residual: None,
-                        satisfied: false,
-                        by_construction: true,
-                    });
-                }
-                let mut residuals = Vec::new();
-                problem.constraint_residuals(constraint, &[], &mut residuals)?;
-                let residual = max_abs(&residuals);
-                Ok(SketchConstraintCheck {
-                    index,
-                    max_residual: Some(residual),
-                    satisfied: residual <= RESIDUAL_TOLERANCE,
-                    by_construction: false,
-                })
-            })
-            .collect()
-    }
+    ) -> Result<Vec<SketchConstraintCheck>, ModelError>;
 
     /// Driven dimensions measured on a solution, in `measurements` order:
     /// lengths in millimetres, angles in radians. Each is the matching
     /// constraint's residual at a zero target, so it uses the solver's own
     /// geometry, including native ellipse and spline lengths.
-    pub fn measure(
+    fn measure(
         &self,
         parameters: &HashMap<String, ParameterValue>,
         solution: &SketchSolution,
-    ) -> Result<Vec<(String, f64)>, ModelError> {
-        if self.measurements.is_empty() {
-            return Ok(Vec::new());
-        }
-        if let std::borrow::Cow::Owned(expanded) = self.with_patterns(Some(parameters))? {
-            return expanded.measure(parameters, solution);
-        }
-        self.validate_structure()?;
-        let mut fixed = HashMap::new();
-        for point in &self.points {
-            let value = solution
-                .points
-                .get(&point.id)
-                .ok_or_else(|| ModelError::new("sketch measurement solution is missing a point"))?;
-            fixed.insert(point.id.as_str(), *value);
-        }
-        let problem = SketchProblem::new(self, parameters, HashMap::new(), fixed)?;
-        self.measurements
-            .iter()
-            .map(|measurement| {
-                let mut residuals = Vec::new();
-                problem.constraint_residuals(
-                    &measurement.measure.constraint(),
-                    &[],
-                    &mut residuals,
-                )?;
-                Ok((measurement.id.clone(), residuals[0]))
-            })
-            .collect()
-    }
+    ) -> Result<Vec<(String, f64)>, ModelError>;
+}
 
-    /// Sample each entity in sketch-local XY using native curve construction,
-    /// including spline end tangency. Available for unsolved diagnostic sketches.
-    pub fn preview_curves(
+impl SketchDefinitionChecks for SketchDefinition {
+    fn preview_curves(
         &self,
         session: &Session,
         solution: &SketchSolution,
@@ -600,5 +170,475 @@ impl SketchDefinition {
         }
         result.sort_by(|a, b| a.0.cmp(&b.0));
         Ok(result)
+    }
+
+    fn line_ellipse_tangent_contacts(
+        &self,
+        solution: &SketchSolution,
+    ) -> Result<HashMap<usize, [SketchPoint2; 2]>, ModelError> {
+        let lines: HashMap<_, _> = self.lines.iter().map(|l| (l.id.as_str(), l)).collect();
+        let ellipses: HashMap<_, _> = self.ellipses.iter().map(|e| (e.id.as_str(), e)).collect();
+        let p = |id: &str| {
+            solution
+                .points
+                .get(id)
+                .copied()
+                .ok_or_else(|| ModelError::new("tangency solution is missing a point"))
+        };
+        let mut result = HashMap::new();
+        for (index, constraint) in self.constraints.iter().enumerate() {
+            let SketchConstraint::LineEllipseTangent {
+                line,
+                ellipse,
+                side,
+            } = constraint
+            else {
+                continue;
+            };
+            let l = lines
+                .get(line.as_str())
+                .ok_or_else(|| ModelError::new("unknown tangency line"))?;
+            let e = ellipses
+                .get(ellipse.as_str())
+                .ok_or_else(|| ModelError::new("unknown tangency ellipse"))?;
+            let (_, contacts) = super::geometry::line_ellipse_contact(
+                (p(&l.start)?, p(&l.end)?),
+                p(&e.center)?,
+                p(&e.major)?,
+                p(&e.minor)?,
+                *side,
+            )?;
+            result.insert(index, contacts);
+        }
+        Ok(result)
+    }
+
+    fn line_spline_tangent_contacts(
+        &self,
+        parameters: &HashMap<String, ParameterValue>,
+        solution: &SketchSolution,
+    ) -> Result<HashMap<usize, ([SketchPoint2; 3], f64)>, ModelError> {
+        if !self
+            .constraints
+            .iter()
+            .any(|c| matches!(c, SketchConstraint::LineSplineTangent { .. }))
+        {
+            return Ok(HashMap::new());
+        }
+        if !self.projections.is_empty() {
+            return Err(ModelError::new(
+                "projected sketch requires source-geometry resolution before contact diagnostics",
+            ));
+        }
+        if solution
+            .points
+            .values()
+            .any(|p| !p.x.is_finite() || !p.y.is_finite())
+        {
+            return Err(ModelError::new(
+                "spline contact diagnostic point is not finite",
+            ));
+        }
+        self.validate(parameters)?;
+        let fixed = self
+            .points
+            .iter()
+            .map(|p| {
+                solution
+                    .points
+                    .get(&p.id)
+                    .copied()
+                    .map(|v| (p.id.as_str(), v))
+                    .ok_or_else(|| ModelError::new("contact solution is missing a point"))
+            })
+            .collect::<Result<HashMap<_, _>, _>>()?;
+        let problem = SketchProblem::new(self, parameters, HashMap::new(), fixed)?;
+        let mut result = HashMap::new();
+        for (index, c) in self.constraints.iter().enumerate() {
+            if let SketchConstraint::LineSplineTangent {
+                line,
+                spline,
+                point,
+            } = c
+            {
+                result.insert(
+                    index,
+                    problem.line_spline_contact(line, spline, point, &[])?,
+                );
+            }
+        }
+        Ok(result)
+    }
+
+    fn spline_spline_tangent_contacts(
+        &self,
+        parameters: &HashMap<String, ParameterValue>,
+        solution: &SketchSolution,
+    ) -> Result<HashMap<usize, ([SketchPoint2; 3], f64)>, ModelError> {
+        if !self
+            .constraints
+            .iter()
+            .any(|c| matches!(c, SketchConstraint::SplineSplineTangent { .. }))
+        {
+            return Ok(HashMap::new());
+        }
+        if !self.projections.is_empty() {
+            return Err(ModelError::new(
+                "projected sketch requires source-geometry resolution before contact diagnostics",
+            ));
+        }
+        if solution
+            .points
+            .values()
+            .any(|p| !p.x.is_finite() || !p.y.is_finite())
+        {
+            return Err(ModelError::new(
+                "spline contact diagnostic point is not finite",
+            ));
+        }
+        self.validate(parameters)?;
+        let fixed = self
+            .points
+            .iter()
+            .map(|p| {
+                solution
+                    .points
+                    .get(&p.id)
+                    .copied()
+                    .map(|v| (p.id.as_str(), v))
+                    .ok_or_else(|| ModelError::new("contact solution is missing a point"))
+            })
+            .collect::<Result<HashMap<_, _>, _>>()?;
+        let problem = SketchProblem::new(self, parameters, HashMap::new(), fixed)?;
+        let mut result = HashMap::new();
+        for (index, c) in self.constraints.iter().enumerate() {
+            if let SketchConstraint::SplineSplineTangent {
+                first,
+                second,
+                point,
+            } = c
+            {
+                result.insert(
+                    index,
+                    problem.spline_spline_contact(first, second, point, &[])?,
+                );
+            }
+        }
+        Ok(result)
+    }
+
+    fn ellipse_ellipse_tangent_contacts(
+        &self,
+        parameters: &HashMap<String, ParameterValue>,
+        solution: &SketchSolution,
+    ) -> Result<HashMap<usize, ([SketchPoint2; 3], f64)>, ModelError> {
+        if !self
+            .constraints
+            .iter()
+            .any(|c| matches!(c, SketchConstraint::EllipseEllipseTangent { .. }))
+        {
+            return Ok(HashMap::new());
+        }
+        if !self.projections.is_empty() {
+            return Err(ModelError::new(
+                "projected sketch requires source-geometry resolution before contact diagnostics",
+            ));
+        }
+        if solution
+            .points
+            .values()
+            .any(|p| !p.x.is_finite() || !p.y.is_finite())
+        {
+            return Err(ModelError::new(
+                "ellipse contact diagnostic point is not finite",
+            ));
+        }
+        self.validate(parameters)?;
+        let fixed = self
+            .points
+            .iter()
+            .map(|p| {
+                solution
+                    .points
+                    .get(&p.id)
+                    .copied()
+                    .map(|v| (p.id.as_str(), v))
+                    .ok_or_else(|| ModelError::new("contact solution is missing a point"))
+            })
+            .collect::<Result<HashMap<_, _>, _>>()?;
+        let problem = SketchProblem::new(self, parameters, HashMap::new(), fixed)?;
+        let mut result = HashMap::new();
+        for (index, c) in self.constraints.iter().enumerate() {
+            if let SketchConstraint::EllipseEllipseTangent {
+                first,
+                second,
+                point,
+            } = c
+            {
+                result.insert(
+                    index,
+                    problem.ellipse_ellipse_contact(first, second, point, &[])?,
+                );
+            }
+        }
+        Ok(result)
+    }
+
+    fn spline_ellipse_tangent_contacts(
+        &self,
+        parameters: &HashMap<String, ParameterValue>,
+        solution: &SketchSolution,
+    ) -> Result<HashMap<usize, ([SketchPoint2; 3], f64)>, ModelError> {
+        if !self
+            .constraints
+            .iter()
+            .any(|c| matches!(c, SketchConstraint::SplineEllipseTangent { .. }))
+        {
+            return Ok(HashMap::new());
+        }
+        if !self.projections.is_empty() {
+            return Err(ModelError::new(
+                "projected sketch requires source-geometry resolution before contact diagnostics",
+            ));
+        }
+        if solution
+            .points
+            .values()
+            .any(|p| !p.x.is_finite() || !p.y.is_finite())
+        {
+            return Err(ModelError::new(
+                "spline contact diagnostic point is not finite",
+            ));
+        }
+        self.validate(parameters)?;
+        let fixed = self
+            .points
+            .iter()
+            .map(|p| {
+                solution
+                    .points
+                    .get(&p.id)
+                    .copied()
+                    .map(|v| (p.id.as_str(), v))
+                    .ok_or_else(|| ModelError::new("contact solution is missing a point"))
+            })
+            .collect::<Result<HashMap<_, _>, _>>()?;
+        let problem = SketchProblem::new(self, parameters, HashMap::new(), fixed)?;
+        let mut result = HashMap::new();
+        for (index, c) in self.constraints.iter().enumerate() {
+            if let SketchConstraint::SplineEllipseTangent {
+                spline,
+                ellipse,
+                point,
+            } = c
+            {
+                result.insert(
+                    index,
+                    problem.spline_ellipse_contact(spline, ellipse, point, &[])?,
+                );
+            }
+        }
+        Ok(result)
+    }
+
+    fn spline_circle_tangent_contacts(
+        &self,
+        parameters: &HashMap<String, ParameterValue>,
+        solution: &SketchSolution,
+    ) -> Result<HashMap<usize, SketchSplineCircleContact>, ModelError> {
+        if !self
+            .constraints
+            .iter()
+            .any(|c| matches!(c, SketchConstraint::SplineCircleTangent { .. }))
+        {
+            return Ok(HashMap::new());
+        }
+        if !self.projections.is_empty() {
+            return Err(ModelError::new(
+                "projected sketch requires source-geometry resolution before contact diagnostics",
+            ));
+        }
+        if solution
+            .points
+            .values()
+            .any(|p| !p.x.is_finite() || !p.y.is_finite())
+        {
+            return Err(ModelError::new(
+                "spline contact diagnostic point is not finite",
+            ));
+        }
+        self.validate(parameters)?;
+        let fixed = self
+            .points
+            .iter()
+            .map(|p| {
+                solution
+                    .points
+                    .get(&p.id)
+                    .copied()
+                    .map(|v| (p.id.as_str(), v))
+                    .ok_or_else(|| ModelError::new("contact solution is missing a point"))
+            })
+            .collect::<Result<HashMap<_, _>, _>>()?;
+        let problem = SketchProblem::new(self, parameters, HashMap::new(), fixed)?;
+        let mut result = HashMap::new();
+        for (index, c) in self.constraints.iter().enumerate() {
+            if let SketchConstraint::SplineCircleTangent {
+                spline,
+                circle,
+                point,
+            } = c
+            {
+                result.insert(
+                    index,
+                    problem.spline_circle_contact(spline, circle, point, &[])?,
+                );
+            }
+        }
+        Ok(result)
+    }
+
+    fn ellipse_circle_tangent_contacts(
+        &self,
+        parameters: &HashMap<String, ParameterValue>,
+        solution: &SketchSolution,
+    ) -> Result<HashMap<usize, SketchEllipseCircleContact>, ModelError> {
+        if !self
+            .constraints
+            .iter()
+            .any(|c| matches!(c, SketchConstraint::EllipseCircleTangent { .. }))
+        {
+            return Ok(HashMap::new());
+        }
+        if !self.projections.is_empty() {
+            return Err(ModelError::new(
+                "projected sketch requires source-geometry resolution before contact diagnostics",
+            ));
+        }
+        if solution
+            .points
+            .values()
+            .any(|p| !p.x.is_finite() || !p.y.is_finite())
+        {
+            return Err(ModelError::new(
+                "ellipse contact diagnostic point is not finite",
+            ));
+        }
+        self.validate(parameters)?;
+        let fixed = self
+            .points
+            .iter()
+            .map(|p| {
+                solution
+                    .points
+                    .get(&p.id)
+                    .copied()
+                    .map(|v| (p.id.as_str(), v))
+                    .ok_or_else(|| ModelError::new("contact solution is missing a point"))
+            })
+            .collect::<Result<HashMap<_, _>, _>>()?;
+        let problem = SketchProblem::new(self, parameters, HashMap::new(), fixed)?;
+        let mut result = HashMap::new();
+        for (index, c) in self.constraints.iter().enumerate() {
+            if let SketchConstraint::EllipseCircleTangent {
+                ellipse,
+                circle,
+                point,
+            } = c
+            {
+                result.insert(
+                    index,
+                    problem.ellipse_circle_contact(ellipse, circle, point, &[])?,
+                );
+            }
+        }
+        Ok(result)
+    }
+
+    fn constraint_checks(
+        &self,
+        parameters: &HashMap<String, ParameterValue>,
+        solution: &SketchSolution,
+    ) -> Result<Vec<SketchConstraintCheck>, ModelError> {
+        if !self.projections.is_empty() {
+            return Err(ModelError::new(
+                "projected sketch requires source-geometry resolution before diagnostics",
+            ));
+        }
+        // Authored constraints keep their indices: expansion appends.
+        if let std::borrow::Cow::Owned(expanded) = self.with_patterns(Some(parameters))? {
+            return expanded.constraint_checks(parameters, solution);
+        }
+        self.validate(parameters)?;
+        let mut fixed = HashMap::new();
+        for point in &self.points {
+            let value = solution
+                .points
+                .get(&point.id)
+                .ok_or_else(|| ModelError::new("sketch diagnostic solution is missing a point"))?;
+            if !value.x.is_finite() || !value.y.is_finite() {
+                return Err(ModelError::new("sketch diagnostic point is not finite"));
+            }
+            fixed.insert(point.id.as_str(), *value);
+        }
+        let problem = SketchProblem::new(self, parameters, HashMap::new(), fixed)?;
+        self.constraints
+            .iter()
+            .enumerate()
+            .map(|(index, constraint)| {
+                if self.spline_tangency(constraint) {
+                    return Ok(SketchConstraintCheck {
+                        index,
+                        max_residual: None,
+                        satisfied: false,
+                        by_construction: true,
+                    });
+                }
+                let mut residuals = Vec::new();
+                problem.constraint_residuals(constraint, &[], &mut residuals)?;
+                let residual = max_abs(&residuals);
+                Ok(SketchConstraintCheck {
+                    index,
+                    max_residual: Some(residual),
+                    satisfied: residual <= RESIDUAL_TOLERANCE,
+                    by_construction: false,
+                })
+            })
+            .collect()
+    }
+
+    fn measure(
+        &self,
+        parameters: &HashMap<String, ParameterValue>,
+        solution: &SketchSolution,
+    ) -> Result<Vec<(String, f64)>, ModelError> {
+        if self.measurements.is_empty() {
+            return Ok(Vec::new());
+        }
+        if let std::borrow::Cow::Owned(expanded) = self.with_patterns(Some(parameters))? {
+            return expanded.measure(parameters, solution);
+        }
+        self.validate_structure()?;
+        let mut fixed = HashMap::new();
+        for point in &self.points {
+            let value = solution
+                .points
+                .get(&point.id)
+                .ok_or_else(|| ModelError::new("sketch measurement solution is missing a point"))?;
+            fixed.insert(point.id.as_str(), *value);
+        }
+        let problem = SketchProblem::new(self, parameters, HashMap::new(), fixed)?;
+        self.measurements
+            .iter()
+            .map(|measurement| {
+                let mut residuals = Vec::new();
+                problem.constraint_residuals(
+                    &measurement.measure.constraint(),
+                    &[],
+                    &mut residuals,
+                )?;
+                Ok((measurement.id.clone(), residuals[0]))
+            })
+            .collect()
     }
 }

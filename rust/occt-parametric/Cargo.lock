@@ -32,6 +32,18 @@ name = "occt-parametric"
 version = "0.1.0"
 dependencies = [
  "occt-bridge",
+ "occt-parametric-core",
+ "occt-types",
+ "schemars",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "occt-parametric-core"
+version = "0.1.0"
+dependencies = [
+ "occt-types",
  "schemars",
  "serde",
  "serde_json",

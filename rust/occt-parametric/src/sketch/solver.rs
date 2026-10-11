@@ -1,228 +1,8 @@
 //! Newton least-squares solve of sketch constraints with a sparse Jacobian.
 
 use super::*;
-
-impl SketchDefinition {
-    /// Solves using the assembly solver's sparse normal-matrix algebra.
-    /// Analytic constraints touch only defining coordinates. Point-on-spline
-    /// also touches its interpolation and tangent-neighbor points: native
-    /// projection/interpolation and local finite differences scale with that
-    /// curve, not the full sketch. Normal assembly is O(sum(row widths²));
-    /// elimination depends on fill-in, small for independent components.
-    /// Source constraints are solved before saved profile edits are applied.
-    pub fn solve(
-        &self,
-        parameters: &HashMap<String, ParameterValue>,
-    ) -> Result<SketchSolution, ModelError> {
-        self.solve_internal(parameters, None)
-    }
-
-    /// Warm start free points by stable point ID. New points use authored seeds,
-    /// removed IDs are ignored, and fixed points always use the definition.
-    pub fn solve_with_seed(
-        &self,
-        parameters: &HashMap<String, ParameterValue>,
-        seed: &HashMap<String, SketchPoint2>,
-    ) -> Result<SketchSolution, ModelError> {
-        self.solve_internal(parameters, Some(seed))
-    }
-
-    fn solve_internal(
-        &self,
-        parameters: &HashMap<String, ParameterValue>,
-        seed: Option<&HashMap<String, SketchPoint2>>,
-    ) -> Result<SketchSolution, ModelError> {
-        if !self.projections.is_empty() {
-            return Err(ModelError::new(
-                "projected sketch requires source-geometry resolution before solving",
-            ));
-        }
-        if let std::borrow::Cow::Owned(expanded) = self.with_patterns(Some(parameters))? {
-            return expanded.solve_internal(parameters, seed);
-        }
-        self.validate(parameters)?;
-        let mut values = Vec::new();
-        let mut variables = HashMap::new();
-        let mut fixed = HashMap::new();
-        for point in &self.points {
-            let mut value = SketchPoint2 {
-                x: scalar(&point.x, parameters, Dimension::Length)?,
-                y: scalar(&point.y, parameters, Dimension::Length)?,
-            };
-            if point.fixed {
-                fixed.insert(point.id.as_str(), value);
-            } else {
-                if let Some(supplied) = seed.and_then(|s| s.get(&point.id)) {
-                    if !supplied.x.is_finite() || !supplied.y.is_finite() {
-                        return Err(ModelError::new(format!(
-                            "sketch seed for '{}' is not finite",
-                            point.id
-                        )));
-                    }
-                    value = *supplied;
-                }
-                variables.insert(point.id.as_str(), values.len());
-                values.extend([value.x, value.y]);
-            }
-        }
-        let problem = SketchProblem::new(self, parameters, variables, fixed)?;
-        let mut residual = problem.residuals(&values)?;
-        let mut iterations = 0;
-        let nonlinear = self.constraints.iter().any(|c| {
-            matches!(
-                c,
-                SketchConstraint::Angle { .. }
-                    | SketchConstraint::Radius { .. }
-                    | SketchConstraint::Diameter { .. }
-                    | SketchConstraint::EqualRadius { .. }
-                    | SketchConstraint::Midpoint { .. }
-                    | SketchConstraint::PointLineDistance { .. }
-                    | SketchConstraint::Tangent { .. }
-                    | SketchConstraint::LineCircleTangent { .. }
-                    | SketchConstraint::LineEllipseTangent { .. }
-                    | SketchConstraint::LineSplineTangent { .. }
-                    | SketchConstraint::SplineCircleTangent { .. }
-                    | SketchConstraint::SplineSplineTangent { .. }
-                    | SketchConstraint::SplineEllipseTangent { .. }
-                    | SketchConstraint::EllipseEllipseTangent { .. }
-                    | SketchConstraint::EllipseCircleTangent { .. }
-                    | SketchConstraint::CircleCircleTangent { .. }
-                    | SketchConstraint::Concentric { .. }
-                    | SketchConstraint::Symmetric { .. }
-                    | SketchConstraint::PointOnCurve { .. }
-                    | SketchConstraint::LineAngle { .. }
-                    | SketchConstraint::ArcAngle { .. }
-                    | SketchConstraint::CurveLength { .. }
-                    | SketchConstraint::EqualCurveLength { .. }
-                    | SketchConstraint::Collinear { .. }
-                    | SketchConstraint::Coradial { .. }
-                    | SketchConstraint::CurvatureContinuous { .. }
-            )
-        }) || self.splines.iter().any(|s| s.endpoints.is_some())
-            || self.ellipses.iter().any(|e| e.arc_ends().is_some())
-            || !self.patterns.is_empty();
-        let mut damping = if nonlinear { 1e-8 } else { 0. };
-        let mut report = SketchSolverReport {
-            termination: SketchTermination::IterationLimit,
-            accepted_steps: 0,
-            rejected_trials: 0,
-            derivative_fallbacks: 0,
-            recovery_retries: 0,
-            final_damping: damping,
-            warm_started: self
-                .points
-                .iter()
-                .any(|p| !p.fixed && seed.is_some_and(|s| s.contains_key(&p.id))),
-            rank_reliable: false,
-            last_rejected_trial: None,
-        };
-        while iterations < MAX_ITERATIONS && max_abs(&residual) > RESIDUAL_TOLERANCE {
-            iterations += 1;
-            let jacobian = problem.jacobian(&values)?;
-            let mut accepted = None;
-            let mut stationary = false;
-            for retry in 0..8 {
-                if retry > 0 {
-                    report.recovery_retries += 1;
-                }
-                if let Some(step) = least_squares_step(&jacobian, &residual, damping, retry > 0) {
-                    if step.iter().all(|v| *v == 0.) {
-                        if retry > 0 {
-                            stationary = true;
-                            break;
-                        }
-                        continue;
-                    }
-                    accepted = problem.line_search(&values, &step, &residual, &mut report);
-                }
-                if accepted.is_some() {
-                    break;
-                }
-                damping = (damping * 100.).max(1e-6);
-            }
-            let Some((trial, trial_residual)) = accepted else {
-                report.termination = if stationary {
-                    SketchTermination::Stationary
-                } else {
-                    SketchTermination::NoDescent
-                };
-                break;
-            };
-            report.accepted_steps += 1;
-            values = trial;
-            residual = trial_residual;
-            damping = (damping * 0.1).max(if nonlinear { 1e-8 } else { 0. });
-        }
-        if max_abs(&residual) <= RESIDUAL_TOLERANCE {
-            report.termination = SketchTermination::Converged;
-        }
-        report.final_damping = damping;
-        let mut sources = Vec::new();
-        let mut structural = Vec::new();
-        let jacobian = problem.jacobian_labeled(&values, Some((&mut sources, &mut structural)))?;
-        let (conditioned, _) = equilibrated(&jacobian, true);
-        let rank = conditioned.normal_matrix().rank(PIVOT_TOLERANCE);
-        let mut points = self
-            .points
-            .iter()
-            .filter(|point| point.fixed)
-            .map(|point| (point.id.clone(), problem.fixed[point.id.as_str()]))
-            .collect::<HashMap<_, _>>();
-        for (id, index) in &problem.variables {
-            points.insert(
-                (*id).to_owned(),
-                SketchPoint2 {
-                    x: values[*index],
-                    y: values[*index + 1],
-                },
-            );
-        }
-        self.validate_curve_geometry(&points)?;
-        let coordinates = self
-            .points
-            .iter()
-            .filter(|p| !p.fixed)
-            .flat_map(|p| {
-                [
-                    SketchFreeCoordinate {
-                        point: p.id.clone(),
-                        axis: SketchCoordinateAxis::X,
-                    },
-                    SketchFreeCoordinate {
-                        point: p.id.clone(),
-                        axis: SketchCoordinateAxis::Y,
-                    },
-                ]
-            })
-            .collect::<Vec<_>>();
-        let diagnosis = super::diagnosis::analyze(
-            &jacobian,
-            &residual,
-            &sources,
-            &structural,
-            &coordinates,
-            rank,
-        );
-        report.rank_reliable = diagnosis.local_rank == Some(rank);
-        report.derivative_fallbacks = problem.derivative_fallbacks.get();
-        Ok(SketchSolution {
-            points,
-            spline_weights: self
-                .splines
-                .iter()
-                .filter_map(|s| s.basis.as_ref().map(|b| (s, b)))
-                .map(|(s, b)| Ok((s.id.clone(), b.weights(parameters)?)))
-                .collect::<Result<HashMap<_, _>, ModelError>>()?,
-            solved: max_abs(&residual) <= RESIDUAL_TOLERANCE,
-            iterations,
-            max_residual: max_abs(&residual),
-            free_degrees: values.len().saturating_sub(rank),
-            redundant_equations: residual.len().saturating_sub(rank),
-            diagnosis,
-            solver_report: report,
-        })
-    }
-}
+#[allow(unused_imports)]
+pub use occt_parametric_core::sketch::solver::*;
 
 struct EllipseLocal {
     angle: f64,
@@ -1974,100 +1754,6 @@ fn normalized_dot(
     Ok((u.0 * v.0 + u.1 * v.1) / scale)
 }
 
-/// Column equilibration avoids dropping independent small derivatives simply
-/// because a disconnected component has much larger ones. Rank additionally
-/// normalizes equation rows; damping is excluded from rank reporting.
-fn equilibrated(j: &SparseJacobian, normalize_rows: bool) -> (SparseJacobian, Vec<f64>) {
-    let mut rows = j.rows.clone();
-    if normalize_rows {
-        for row in &mut rows {
-            let norm = row
-                .iter()
-                .fold(0_f64, |a, (_, v)| a.hypot(*v))
-                .max(f64::MIN_POSITIVE);
-            for (_, v) in row {
-                *v /= norm;
-            }
-        }
-    }
-    let mut norms = vec![0_f64; j.columns];
-    for row in &rows {
-        for &(c, v) in row {
-            norms[c] = norms[c].hypot(v);
-        }
-    }
-    for row in &mut rows {
-        for (c, v) in row {
-            *v /= norms[*c].max(f64::MIN_POSITIVE);
-        }
-    }
-    (
-        SparseJacobian {
-            rows,
-            columns: j.columns,
-        },
-        norms,
-    )
-}
-
-fn least_squares_step(
-    jacobian: &SparseJacobian,
-    residual: &[f64],
-    damping: f64,
-    condition: bool,
-) -> Option<Vec<f64>> {
-    if !condition {
-        let scale = max_abs(residual).max(1.);
-        let rhs =
-            jacobian.transpose_times(&residual.iter().map(|r| -r / scale).collect::<Vec<_>>());
-        let mut normal = jacobian.normal_matrix();
-        for i in 0..normal.size() {
-            normal.add_diagonal(i, damping * normal.diagonal(i));
-        }
-        let step: Vec<_> = normal
-            .solve_dropping_null(rhs, PIVOT_TOLERANCE)?
-            .into_iter()
-            .map(|v| v * scale)
-            .collect();
-        return step.iter().all(|v| v.is_finite()).then_some(step);
-    }
-
-    // Equilibrate equations as well as columns. Uniform damping in the
-    // equation-scaled physical coordinates avoids sending a nearly free
-    // coordinate to infinity to satisfy an angular equation approximately.
-    let mut weighted = SparseJacobian {
-        rows: jacobian.rows.clone(),
-        columns: jacobian.columns,
-    };
-    let mut residual = residual.to_vec();
-    for (row, r) in weighted.rows.iter_mut().zip(&mut residual) {
-        let norm = row.iter().fold(0_f64, |a, (_, v)| a.hypot(*v));
-        if norm > 0. {
-            for (_, v) in row {
-                *v /= norm;
-            }
-            *r /= norm;
-        }
-    }
-    let (j, norms) = equilibrated(&weighted, false);
-    let scale = max_abs(&residual).max(1.);
-    let scaled: Vec<_> = residual.iter().map(|v| -v / scale).collect();
-    let rhs = j.transpose_times(&scaled);
-    let mut normal = j.normal_matrix();
-    for (i, norm) in norms.iter().enumerate() {
-        if *norm > 0. {
-            normal.add_diagonal(i, damping / norm.powi(2).max(f64::MIN_POSITIVE));
-        }
-    }
-    let step = normal.solve_dropping_null(rhs, PIVOT_TOLERANCE)?;
-    let step: Vec<_> = step
-        .iter()
-        .zip(norms)
-        .map(|(v, norm)| if norm == 0. { 0. } else { (v / norm) * scale })
-        .collect();
-    step.iter().all(|v| v.is_finite()).then_some(step)
-}
-
 fn scaled_cost(values: &[f64], scale: f64) -> f64 {
     values.iter().map(|v| (v / scale).powi(2)).sum()
 }
@@ -2084,4 +1770,248 @@ fn push_derivative(
         row.push((column, derivative));
     }
     Ok(())
+}
+pub trait SketchDefinitionSolving {
+    /// Solves using the assembly solver's sparse normal-matrix algebra.
+    /// Analytic constraints touch only defining coordinates. Point-on-spline
+    /// also touches its interpolation and tangent-neighbor points: native
+    /// projection/interpolation and local finite differences scale with that
+    /// curve, not the full sketch. Normal assembly is O(sum(row widths²));
+    /// elimination depends on fill-in, small for independent components.
+    /// Source constraints are solved before saved profile edits are applied.
+    fn solve(
+        &self,
+        parameters: &HashMap<String, ParameterValue>,
+    ) -> Result<SketchSolution, ModelError>;
+
+    /// Warm start free points by stable point ID. New points use authored seeds,
+    /// removed IDs are ignored, and fixed points always use the definition.
+    fn solve_with_seed(
+        &self,
+        parameters: &HashMap<String, ParameterValue>,
+        seed: &HashMap<String, SketchPoint2>,
+    ) -> Result<SketchSolution, ModelError>;
+}
+
+impl SketchDefinitionSolving for SketchDefinition {
+    fn solve(
+        &self,
+        parameters: &HashMap<String, ParameterValue>,
+    ) -> Result<SketchSolution, ModelError> {
+        self.solve_internal(parameters, None)
+    }
+
+    fn solve_with_seed(
+        &self,
+        parameters: &HashMap<String, ParameterValue>,
+        seed: &HashMap<String, SketchPoint2>,
+    ) -> Result<SketchSolution, ModelError> {
+        self.solve_internal(parameters, Some(seed))
+    }
+}
+
+pub(crate) trait SketchDefinitionSolvingInternal {
+    fn solve_internal(
+        &self,
+        parameters: &HashMap<String, ParameterValue>,
+        seed: Option<&HashMap<String, SketchPoint2>>,
+    ) -> Result<SketchSolution, ModelError>;
+}
+
+impl SketchDefinitionSolvingInternal for SketchDefinition {
+    fn solve_internal(
+        &self,
+        parameters: &HashMap<String, ParameterValue>,
+        seed: Option<&HashMap<String, SketchPoint2>>,
+    ) -> Result<SketchSolution, ModelError> {
+        if !self.projections.is_empty() {
+            return Err(ModelError::new(
+                "projected sketch requires source-geometry resolution before solving",
+            ));
+        }
+        if let std::borrow::Cow::Owned(expanded) = self.with_patterns(Some(parameters))? {
+            return expanded.solve_internal(parameters, seed);
+        }
+        self.validate(parameters)?;
+        let mut values = Vec::new();
+        let mut variables = HashMap::new();
+        let mut fixed = HashMap::new();
+        for point in &self.points {
+            let mut value = SketchPoint2 {
+                x: scalar(&point.x, parameters, Dimension::Length)?,
+                y: scalar(&point.y, parameters, Dimension::Length)?,
+            };
+            if point.fixed {
+                fixed.insert(point.id.as_str(), value);
+            } else {
+                if let Some(supplied) = seed.and_then(|s| s.get(&point.id)) {
+                    if !supplied.x.is_finite() || !supplied.y.is_finite() {
+                        return Err(ModelError::new(format!(
+                            "sketch seed for '{}' is not finite",
+                            point.id
+                        )));
+                    }
+                    value = *supplied;
+                }
+                variables.insert(point.id.as_str(), values.len());
+                values.extend([value.x, value.y]);
+            }
+        }
+        let problem = SketchProblem::new(self, parameters, variables, fixed)?;
+        let mut residual = problem.residuals(&values)?;
+        let mut iterations = 0;
+        let nonlinear = self.constraints.iter().any(|c| {
+            matches!(
+                c,
+                SketchConstraint::Angle { .. }
+                    | SketchConstraint::Radius { .. }
+                    | SketchConstraint::Diameter { .. }
+                    | SketchConstraint::EqualRadius { .. }
+                    | SketchConstraint::Midpoint { .. }
+                    | SketchConstraint::PointLineDistance { .. }
+                    | SketchConstraint::Tangent { .. }
+                    | SketchConstraint::LineCircleTangent { .. }
+                    | SketchConstraint::LineEllipseTangent { .. }
+                    | SketchConstraint::LineSplineTangent { .. }
+                    | SketchConstraint::SplineCircleTangent { .. }
+                    | SketchConstraint::SplineSplineTangent { .. }
+                    | SketchConstraint::SplineEllipseTangent { .. }
+                    | SketchConstraint::EllipseEllipseTangent { .. }
+                    | SketchConstraint::EllipseCircleTangent { .. }
+                    | SketchConstraint::CircleCircleTangent { .. }
+                    | SketchConstraint::Concentric { .. }
+                    | SketchConstraint::Symmetric { .. }
+                    | SketchConstraint::PointOnCurve { .. }
+                    | SketchConstraint::LineAngle { .. }
+                    | SketchConstraint::ArcAngle { .. }
+                    | SketchConstraint::CurveLength { .. }
+                    | SketchConstraint::EqualCurveLength { .. }
+                    | SketchConstraint::Collinear { .. }
+                    | SketchConstraint::Coradial { .. }
+                    | SketchConstraint::CurvatureContinuous { .. }
+            )
+        }) || self.splines.iter().any(|s| s.endpoints.is_some())
+            || self.ellipses.iter().any(|e| e.arc_ends().is_some())
+            || !self.patterns.is_empty();
+        let mut damping = if nonlinear { 1e-8 } else { 0. };
+        let mut report = SketchSolverReport {
+            termination: SketchTermination::IterationLimit,
+            accepted_steps: 0,
+            rejected_trials: 0,
+            derivative_fallbacks: 0,
+            recovery_retries: 0,
+            final_damping: damping,
+            warm_started: self
+                .points
+                .iter()
+                .any(|p| !p.fixed && seed.is_some_and(|s| s.contains_key(&p.id))),
+            rank_reliable: false,
+            last_rejected_trial: None,
+        };
+        while iterations < MAX_ITERATIONS && max_abs(&residual) > RESIDUAL_TOLERANCE {
+            iterations += 1;
+            let jacobian = problem.jacobian(&values)?;
+            let mut accepted = None;
+            let mut stationary = false;
+            for retry in 0..8 {
+                if retry > 0 {
+                    report.recovery_retries += 1;
+                }
+                if let Some(step) = least_squares_step(&jacobian, &residual, damping, retry > 0) {
+                    if step.iter().all(|v| *v == 0.) {
+                        if retry > 0 {
+                            stationary = true;
+                            break;
+                        }
+                        continue;
+                    }
+                    accepted = problem.line_search(&values, &step, &residual, &mut report);
+                }
+                if accepted.is_some() {
+                    break;
+                }
+                damping = (damping * 100.).max(1e-6);
+            }
+            let Some((trial, trial_residual)) = accepted else {
+                report.termination = if stationary {
+                    SketchTermination::Stationary
+                } else {
+                    SketchTermination::NoDescent
+                };
+                break;
+            };
+            report.accepted_steps += 1;
+            values = trial;
+            residual = trial_residual;
+            damping = (damping * 0.1).max(if nonlinear { 1e-8 } else { 0. });
+        }
+        if max_abs(&residual) <= RESIDUAL_TOLERANCE {
+            report.termination = SketchTermination::Converged;
+        }
+        report.final_damping = damping;
+        let mut sources = Vec::new();
+        let mut structural = Vec::new();
+        let jacobian = problem.jacobian_labeled(&values, Some((&mut sources, &mut structural)))?;
+        let (conditioned, _) = equilibrated(&jacobian, true);
+        let rank = conditioned.normal_matrix().rank(PIVOT_TOLERANCE);
+        let mut points = self
+            .points
+            .iter()
+            .filter(|point| point.fixed)
+            .map(|point| (point.id.clone(), problem.fixed[point.id.as_str()]))
+            .collect::<HashMap<_, _>>();
+        for (id, index) in &problem.variables {
+            points.insert(
+                (*id).to_owned(),
+                SketchPoint2 {
+                    x: values[*index],
+                    y: values[*index + 1],
+                },
+            );
+        }
+        self.validate_curve_geometry(&points)?;
+        let coordinates = self
+            .points
+            .iter()
+            .filter(|p| !p.fixed)
+            .flat_map(|p| {
+                [
+                    SketchFreeCoordinate {
+                        point: p.id.clone(),
+                        axis: SketchCoordinateAxis::X,
+                    },
+                    SketchFreeCoordinate {
+                        point: p.id.clone(),
+                        axis: SketchCoordinateAxis::Y,
+                    },
+                ]
+            })
+            .collect::<Vec<_>>();
+        let diagnosis = super::diagnosis::analyze(
+            &jacobian,
+            &residual,
+            &sources,
+            &structural,
+            &coordinates,
+            rank,
+        );
+        report.rank_reliable = diagnosis.local_rank == Some(rank);
+        report.derivative_fallbacks = problem.derivative_fallbacks.get();
+        Ok(SketchSolution {
+            points,
+            spline_weights: self
+                .splines
+                .iter()
+                .filter_map(|s| s.basis.as_ref().map(|b| (s, b)))
+                .map(|(s, b)| Ok((s.id.clone(), b.weights(parameters)?)))
+                .collect::<Result<HashMap<_, _>, ModelError>>()?,
+            solved: max_abs(&residual) <= RESIDUAL_TOLERANCE,
+            iterations,
+            max_residual: max_abs(&residual),
+            free_degrees: values.len().saturating_sub(rank),
+            redundant_equations: residual.len().saturating_sub(rank),
+            diagnosis,
+            solver_report: report,
+        })
+    }
 }

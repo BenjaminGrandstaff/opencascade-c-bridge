@@ -7,6 +7,8 @@ description = "Unit-aware parametric feature graphs over opencascade-c-bridge"
 
 [dependencies]
 occt-bridge = { path = "../occt-bridge" }
+occt-parametric-core = { path = "../occt-parametric-core" }
+occt-types = { path = "../occt-types" }
 schemars = { version = "1.2.2", features = ["derive"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = { version = "1.0.151", features = ["float_roundtrip"] }

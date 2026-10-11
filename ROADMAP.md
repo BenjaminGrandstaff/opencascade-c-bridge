@@ -9,13 +9,15 @@ tracks status and order.
 | Layer | Version | State |
 |---|---|---|
 | C ABI (`src/`, `include/`) | ABI 68 | Stable; exact version match required |
-| `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
+| `occt-types` (shared value types) | — | No native dependency |
+| `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI; re-exports `occt-types` |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 133 | Active development |
+| `occt-parametric-core` (kernel-free engineering layer) | Schema 133 | Definitions, documents, solving and checks without OCCT |
+| `occt-parametric` (kernel regeneration) | Schema 133 | Active development; re-exports the core API |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 153 + first-use integration 1 (+1 doc test), recipes 3, parametric 655 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 19 + branch command 2 + model command 89, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 153 + first-use integration 1 (+1 doc test), recipes 3, parametric core 35 + kernel 620 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 19 + branch command 2 + model command 89, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -23,6 +25,20 @@ tracks status and order.
 | Scale benchmarks | Last full suite: 189 Rust cases plus 5 model-command cases and a 10,000-face Python matcher. Sketch authoring integration rechecked 60 sketch cases and 60 MCP cases within budget. | `tools/bench/run.sh` |
 
 ## Done
+
+- Kernel-free parametric core (schema 133, ABI 68 unchanged). The engineering
+  layer is now two crates: `occt-parametric-core` (definitions, documents,
+  expressions, sketch validation, placement solving, diff/merge, change
+  impact, drawing/GD&T data, hole catalogs and validation; about 25k lines)
+  builds and tests without OpenCASCADE, and `occt-parametric` regenerates
+  core models with the kernel and re-exports the core API unchanged. Plain
+  value types moved from `occt-bridge` into `occt-types`, which the bridge
+  re-exports. Kernel operations on core types are extension traits, in scope
+  through `use occt_parametric::*` or `occt_parametric::prelude::*`. The same
+  655 parametric library tests pass (35 now in the core crate), and every
+  model example builds and visualizes byte-identically to the previous
+  release. Sketch solving stays in the kernel crate because spline and
+  ellipse equations evaluate natively.
 
 - Sketch milestone 5: AI sketch edit/repair workflow (schema 133 / ABI 68
   unchanged). Focused `sketch_feature` inspection isolates source geometry and

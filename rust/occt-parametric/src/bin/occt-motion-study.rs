@@ -6,6 +6,7 @@ mod report;
 
 use occt_bridge::Session;
 use occt_parametric::ModelDocument;
+use occt_parametric::prelude::*;
 use std::{error::Error, ffi::OsString, fs, path::Path, process::ExitCode};
 
 fn main() -> ExitCode {
