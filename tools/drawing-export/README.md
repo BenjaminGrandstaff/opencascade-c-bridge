@@ -33,6 +33,12 @@ All drawings share generation and a cumulative vertex budget.
 Views can use `material_hatching` maps for material-ID overrides, paired line
 families, crosshatching or suppression. See [material hatch families](../../docs/DRAWINGS.md#material-hatch-families-schema-68) for defaults and validation.
 
+`sheet-conventions-example.json` exports the linear dimension layout on an
+ANSI B sheet with an 8 × 4 zone grid and on an ISO A3 sheet with ISO 5457
+zones. Both use standard lettering and Y14.2M line weights. Run it against
+`dimension-layout.model.json`; see
+[sheet conventions](../../docs/DRAWINGS.md#sheet-conventions-schema-134).
+
 `wing-example.json` selects `wing:right_body` and `wing:left_body` at the four
 stations of `tools/wing-layout/example.json`. It exports eight profiles with
 scale 1, physical millimeter SVG dimensions and millimeter DXF insertion units.

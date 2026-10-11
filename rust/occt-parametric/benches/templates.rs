@@ -445,6 +445,9 @@ fn main() {
                 } else {
                     ProjectionConvention::ThirdAngle
                 }),
+                lettering: None,
+                zones: None,
+                line_weights: None,
             });
             page
         })
@@ -478,6 +481,76 @@ fn main() {
     assert!(started.elapsed().as_secs_f64() < 10.0);
     println!(
         "1000 standard sheets with projection symbols and SVG/DXF exports: {:?} (10s budget), one shared variant",
+        started.elapsed()
+    );
+    // Schema 134: the same 1,000 sheets with standard lettering, reference
+    // zones and Y14.2M line weights, alternating ANSI D grids and ISO A2.
+    let conventional: Vec<_> = sheets
+        .iter()
+        .enumerate()
+        .map(|(i, page)| {
+            let mut page = page.clone();
+            let sheet = page.sheet.as_mut().unwrap();
+            sheet.lettering = Some(SheetLettering::Standard);
+            sheet.line_weights = Some(SheetLineWeights::Y14_2m);
+            if i % 2 == 0 {
+                sheet.size = DrawingSheetSize::AnsiD;
+                sheet.zones = Some(SheetZones::Grid {
+                    columns: 8,
+                    rows: 4,
+                });
+            } else {
+                sheet.size = DrawingSheetSize::IsoA2;
+                sheet.zones = Some(SheetZones::Iso5457);
+            }
+            page
+        })
+        .collect();
+    let started = Instant::now();
+    let generated = DrawingDefinition::generate_many(
+        &conventional,
+        &graph,
+        &session,
+        DrawingRenderOptions {
+            curve_tolerance_mm: 0.01,
+            exact_curves: false,
+            curve_samples: 8,
+            maximum_vertices: 1_000_000,
+        },
+    )
+    .unwrap();
+    let mut lookups = 0usize;
+    for (i, page) in generated.iter().enumerate() {
+        let grid = page.zones.as_ref().unwrap();
+        let (columns, rows) = if i % 2 == 0 { (8, 4) } else { (12, 8) };
+        assert_eq!(
+            (grid.columns_mm.len(), grid.rows_mm.len()),
+            (columns + 1, rows + 1)
+        );
+        let [w, h] = page.paper_size_mm;
+        for step in 0..100 {
+            let t = (step as f64 + 0.5) / 100.0;
+            assert!(
+                grid.zone_at([13.0 + t * (w - 26.0), 13.0 + t * (h - 26.0)])
+                    .is_some()
+            );
+            lookups += 1;
+        }
+        assert!(
+            page.sheet_labels
+                .iter()
+                .any(|l| l.text.starts_with("DRAWING: ")
+                    && l.height_mm == if i % 2 == 0 { 0.24 * 25.4 } else { 3.0 })
+        );
+        let svg = page.to_svg();
+        assert!(svg.contains("stroke-width=\"0.7\"") && svg.contains("stroke-width=\"0.35\""));
+        assert!(page.to_dxf().contains("\n370\n70\n"));
+    }
+    assert_eq!(lookups, 100_000);
+    assert_eq!(session.shape_count().unwrap(), 0);
+    assert!(started.elapsed().as_secs_f64() < 10.0);
+    println!(
+        "1000 sheets with standard lettering, zones, line weights and SVG/DXF exports plus 100000 zone lookups: {:?} (10s budget), one shared variant",
         started.elapsed()
     );
     let mut gdt = template.clone();

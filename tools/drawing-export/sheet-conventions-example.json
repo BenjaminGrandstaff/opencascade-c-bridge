@@ -1,0 +1,406 @@
+{
+  "schema": "occb-drawing-export-v1",
+  "drawings": [
+    {
+      "id": "conventions-ansi-b",
+      "title": "Bracket with standard sheet conventions",
+      "paper_size_mm": [
+        297,
+        210
+      ],
+      "views": [
+        {
+          "id": "top",
+          "outputs": [
+            {
+              "instance": "part",
+              "output": "block"
+            }
+          ],
+          "origin": {
+            "x": {
+              "value": 0,
+              "dimension": "length",
+              "unit": "millimeter"
+            },
+            "y": {
+              "value": 0,
+              "dimension": "length",
+              "unit": "millimeter"
+            },
+            "z": {
+              "value": 0,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "direction": {
+            "x": {
+              "value": 0,
+              "dimension": "scalar",
+              "unit": null
+            },
+            "y": {
+              "value": 0,
+              "dimension": "scalar",
+              "unit": null
+            },
+            "z": {
+              "value": 1,
+              "dimension": "scalar",
+              "unit": null
+            }
+          },
+          "x_axis": {
+            "x": {
+              "value": 1,
+              "dimension": "scalar",
+              "unit": null
+            },
+            "y": {
+              "value": 0,
+              "dimension": "scalar",
+              "unit": null
+            },
+            "z": {
+              "value": 0,
+              "dimension": "scalar",
+              "unit": null
+            }
+          },
+          "paper_origin_mm": [
+            95,
+            85
+          ],
+          "scale": 2,
+          "show_hidden": false,
+          "kind": "orthographic",
+          "detail": null
+        }
+      ],
+      "dimensions": [
+        {
+          "id": "width-basic",
+          "view": "top",
+          "first": {
+            "instance": "part",
+            "datum": "origin"
+          },
+          "second": {
+            "instance": "part",
+            "datum": "x"
+          },
+          "direction": "horizontal",
+          "offset_mm": 55,
+          "precision": 2,
+          "presentation": {
+            "length_unit": "millimeter",
+            "tolerance": "basic"
+          }
+        },
+        {
+          "id": "depth-deviations",
+          "view": "top",
+          "first": {
+            "instance": "part",
+            "datum": "origin"
+          },
+          "second": {
+            "instance": "part",
+            "datum": "y"
+          },
+          "direction": "vertical",
+          "offset_mm": 20,
+          "precision": 2,
+          "presentation": {
+            "length_unit": "millimeter",
+            "tolerance": {
+              "deviations": {
+                "lower": {
+                  "value": -0.05,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                },
+                "upper": {
+                  "value": 0.1,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "width-limits",
+          "view": "top",
+          "first": {
+            "instance": "part",
+            "datum": "origin"
+          },
+          "second": {
+            "instance": "part",
+            "datum": "x"
+          },
+          "direction": "horizontal",
+          "offset_mm": -18,
+          "precision": 2,
+          "presentation": {
+            "length_unit": "millimeter",
+            "tolerance": {
+              "limits": {
+                "lower": {
+                  "value": 29.9,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                },
+                "upper": {
+                  "value": 30.1,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "depth-reference",
+          "view": "top",
+          "first": {
+            "instance": "part",
+            "datum": "origin"
+          },
+          "second": {
+            "instance": "part",
+            "datum": "y"
+          },
+          "direction": "vertical",
+          "offset_mm": -82,
+          "precision": 2,
+          "presentation": {
+            "length_unit": "millimeter",
+            "tolerance": "reference"
+          }
+        }
+      ],
+      "metadata": {
+        "units": "mm",
+        "view scale": "2:1"
+      },
+      "sheet": {
+        "size": "ansi_b",
+        "orientation": "landscape",
+        "drawing_number": "BRK-200",
+        "revision": "A",
+        "sheet_number": 1,
+        "sheet_count": 1,
+        "projection": "third_angle",
+        "lettering": "standard",
+        "zones": {
+          "grid": {
+            "columns": 8,
+            "rows": 4
+          }
+        },
+        "line_weights": "y14_2m"
+      }
+    },
+    {
+      "id": "conventions-iso-a3",
+      "title": "Bracket with standard sheet conventions",
+      "paper_size_mm": [
+        297,
+        210
+      ],
+      "views": [
+        {
+          "id": "top",
+          "outputs": [
+            {
+              "instance": "part",
+              "output": "block"
+            }
+          ],
+          "origin": {
+            "x": {
+              "value": 0,
+              "dimension": "length",
+              "unit": "millimeter"
+            },
+            "y": {
+              "value": 0,
+              "dimension": "length",
+              "unit": "millimeter"
+            },
+            "z": {
+              "value": 0,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "direction": {
+            "x": {
+              "value": 0,
+              "dimension": "scalar",
+              "unit": null
+            },
+            "y": {
+              "value": 0,
+              "dimension": "scalar",
+              "unit": null
+            },
+            "z": {
+              "value": 1,
+              "dimension": "scalar",
+              "unit": null
+            }
+          },
+          "x_axis": {
+            "x": {
+              "value": 1,
+              "dimension": "scalar",
+              "unit": null
+            },
+            "y": {
+              "value": 0,
+              "dimension": "scalar",
+              "unit": null
+            },
+            "z": {
+              "value": 0,
+              "dimension": "scalar",
+              "unit": null
+            }
+          },
+          "paper_origin_mm": [
+            95,
+            85
+          ],
+          "scale": 2,
+          "show_hidden": false,
+          "kind": "orthographic",
+          "detail": null
+        }
+      ],
+      "dimensions": [
+        {
+          "id": "width-basic",
+          "view": "top",
+          "first": {
+            "instance": "part",
+            "datum": "origin"
+          },
+          "second": {
+            "instance": "part",
+            "datum": "x"
+          },
+          "direction": "horizontal",
+          "offset_mm": 55,
+          "precision": 2,
+          "presentation": {
+            "length_unit": "millimeter",
+            "tolerance": "basic"
+          }
+        },
+        {
+          "id": "depth-deviations",
+          "view": "top",
+          "first": {
+            "instance": "part",
+            "datum": "origin"
+          },
+          "second": {
+            "instance": "part",
+            "datum": "y"
+          },
+          "direction": "vertical",
+          "offset_mm": 20,
+          "precision": 2,
+          "presentation": {
+            "length_unit": "millimeter",
+            "tolerance": {
+              "deviations": {
+                "lower": {
+                  "value": -0.05,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                },
+                "upper": {
+                  "value": 0.1,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "width-limits",
+          "view": "top",
+          "first": {
+            "instance": "part",
+            "datum": "origin"
+          },
+          "second": {
+            "instance": "part",
+            "datum": "x"
+          },
+          "direction": "horizontal",
+          "offset_mm": -18,
+          "precision": 2,
+          "presentation": {
+            "length_unit": "millimeter",
+            "tolerance": {
+              "limits": {
+                "lower": {
+                  "value": 29.9,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                },
+                "upper": {
+                  "value": 30.1,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "depth-reference",
+          "view": "top",
+          "first": {
+            "instance": "part",
+            "datum": "origin"
+          },
+          "second": {
+            "instance": "part",
+            "datum": "y"
+          },
+          "direction": "vertical",
+          "offset_mm": -82,
+          "precision": 2,
+          "presentation": {
+            "length_unit": "millimeter",
+            "tolerance": "reference"
+          }
+        }
+      ],
+      "metadata": {
+        "units": "mm",
+        "view scale": "2:1"
+      },
+      "sheet": {
+        "size": "iso_a3",
+        "orientation": "landscape",
+        "drawing_number": "BRK-200",
+        "revision": "A",
+        "sheet_number": 1,
+        "sheet_count": 1,
+        "projection": "third_angle",
+        "lettering": "standard",
+        "zones": "iso5457",
+        "line_weights": "y14_2m"
+      }
+    }
+  ]
+}

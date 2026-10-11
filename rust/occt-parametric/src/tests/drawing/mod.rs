@@ -1,5 +1,6 @@
 use super::*;
 
+mod conventions;
 mod dimensions;
 mod exact_geometry;
 mod gdt;
@@ -237,5 +238,8 @@ fn standard_sheet(
         sheet_number: 1,
         sheet_count: 2,
         projection,
+        lettering: None,
+        zones: None,
+        line_weights: None,
     }
 }

@@ -12,12 +12,12 @@ tracks status and order.
 | `occt-types` (shared value types) | — | No native dependency |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI; re-exports `occt-types` |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric-core` (kernel-free engineering layer) | Schema 133 | Definitions, documents, solving and checks without OCCT |
-| `occt-parametric` (kernel regeneration) | Schema 133 | Active development; re-exports the core API |
+| `occt-parametric-core` (kernel-free engineering layer) | Schema 134 | Definitions, documents, solving and checks without OCCT |
+| `occt-parametric` (kernel regeneration) | Schema 134 | Active development; re-exports the core API |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 153 + first-use integration 1 (+1 doc test), recipes 3, parametric core 35 + kernel 620 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 19 + branch command 2 + model command 89, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 153 + first-use integration 1 (+1 doc test), recipes 3, parametric core 35 + kernel 629 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 5 + view command 13 + viewer Node 19 + branch command 2 + model command 89, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -25,6 +25,18 @@ tracks status and order.
 | Scale benchmarks | Last full suite: 189 Rust cases plus 5 model-command cases and a 10,000-face Python matcher. Sketch authoring integration rechecked 60 sketch cases and 60 MCP cases within budget. | `tools/bench/run.sh` |
 
 ## Done
+
+- Standards-referenced sheet conventions (schema 134, ABI 68 unchanged).
+  Optional sheet presets set text heights by role, from the DOD-STD-100D table
+  for inch sheets and the Y14.2-2014 minimums for ISO sheets. They draw ISO 5457
+  reference zones (50 mm fields from the centring axes, published field counts)
+  or explicit equal grids, with `zone_at` lookups, and export ANSI Y14.2M
+  0.7/0.35 mm line weights in SVG and DXF. Title wrapping and table cells use
+  measured widths at the larger heights. Example:
+  `tools/drawing-export/sheet-conventions-example.json`. 1,000 sheets with all
+  presets plus 100,000 zone lookups in 1.72 s (10 s budget). Material
+  section-lining symbols, Y14.1 zone defaults and dimension spacing remain
+  open: no public normative source was found.
 
 - Measured circularity and cylindricity (schema 133 / ABI 68 unchanged).
   Inspection reports evaluate round-form controls about the anchor's nominal
@@ -2112,9 +2124,10 @@ remain lower priority. The ASME comparison below is based on public standard
 scopes and inspected repo capabilities, not a full conformity audit.
 
 1. **Drawing conventions and manufacturing sheets** — [Y14 family](https://www.asme.org/codes-standards/y14-standards):
-   standards-verified material hatch presets and sheet formats,
-   and standards-verified dimension
-   placement and typography.
+   material section-lining presets, ASME Y14.1 zone and revision-block
+   formats, and dimension spacing need the standards' own tables, which no
+   public source provided. Standards-referenced lettering heights, ISO 5457
+   or explicit zones, and Y14.2M line weights exist (schema 134).
    Standard drawing curves and detail trims now support exact DXF export, with
    bounded SVG approximation for curves SVG cannot represent. Direct deviations
    and limits render stacked values.

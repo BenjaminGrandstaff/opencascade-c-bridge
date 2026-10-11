@@ -38,7 +38,10 @@ pub use guides::{DrawingGuide, DrawingGuideKind, DrawingGuideLine, DrawingGuideL
 pub use parts_list::{DrawingBalloon, DrawingPartsList, PartsListItem};
 pub use releases::{DrawingApproval, DrawingRelease, DrawingReleaseStatus, DrawingRevisionTable};
 pub mod sheets;
-pub use sheets::{DrawingSheet, DrawingSheetOrientation, DrawingSheetSize, ProjectionConvention};
+pub use sheets::{
+    DrawingLettering, DrawingSheet, DrawingSheetOrientation, DrawingSheetSize, DrawingZoneGrid,
+    ProjectionConvention, SheetLettering, SheetLineWeights, SheetZones,
+};
 pub mod hatching;
 pub use hatching::SectionHatching;
 
@@ -201,6 +204,9 @@ impl Default for DrawingRenderOptions {
 pub struct DrawingPolyline {
     pub points_mm: Vec<[f64; 2]>,
     pub hidden: bool,
+    /// Drawn with the thin width when a line-weight preset is active
+    /// (dimension, leader, table and zone lines); outlines are thick.
+    pub thin: bool,
 }
 #[derive(Clone, Debug, PartialEq)]
 pub struct DrawingDimensionStack {
@@ -215,6 +221,8 @@ pub struct DrawingLabel {
     pub position_mm: [f64; 2],
     pub text: String,
     pub stack: Option<DrawingDimensionStack>,
+    /// Letter height; stacked tolerance rows use 11/15 of it.
+    pub height_mm: f64,
 }
 #[derive(Clone, Debug, PartialEq)]
 pub struct GeneratedDrawing {
@@ -232,6 +240,12 @@ pub struct GeneratedDrawing {
     pub labels: Vec<DrawingLabel>,
     pub metadata: BTreeMap<String, String>,
     pub generated_variants: usize,
+    /// Text heights by role, from the sheet's lettering preset.
+    pub lettering: DrawingLettering,
+    /// Export line widths; `None` keeps the legacy uniform widths.
+    pub line_weights: Option<SheetLineWeights>,
+    /// Reference-zone grid, when the sheet has zones.
+    pub zones: Option<DrawingZoneGrid>,
 }
 
 pub fn finite_pair(value: [f64; 2]) -> bool {
@@ -614,6 +628,7 @@ pub fn append_dimension(
         drawing.polylines.push(DrawingPolyline {
             points_mm: points.to_vec(),
             hidden: false,
+            thin: true,
         });
     }
     append_arrows(first_end, second_end, drawing)?;
@@ -624,6 +639,7 @@ pub fn append_dimension(
         ],
         text: dimensions::label(dimension, value, context)?,
         stack: None,
+        height_mm: drawing.lettering.notes,
     });
     dimensions::stack_label(dimension, drawing);
     let side = if dimension.offset_mm < 0.0 { -1.0 } else { 1.0 };
@@ -665,6 +681,7 @@ fn append_arrows(
             drawing.polylines.push(DrawingPolyline {
                 points_mm: vec![tip, wing],
                 hidden: false,
+                thin: true,
             });
         }
     }

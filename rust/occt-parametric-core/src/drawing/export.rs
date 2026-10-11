@@ -30,22 +30,23 @@ impl GeneratedDrawing {
             "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width}mm\" height=\"{height}mm\" viewBox=\"0 0 {width} {height}\"><title>{}</title>\n<rect width=\"{width}\" height=\"{height}\" fill=\"white\"/>\n",
             xml(&self.title)
         );
+        let weights = self.line_weights.map(SheetLineWeights::widths_mm);
         for line in &self.hatches {
-            append_svg_hatch(&mut out, line, height);
+            append_svg_hatch(&mut out, line, height, weights);
         }
         for hidden in [true, false] {
             for curve in self.curves.iter().filter(|curve| curve.hidden == hidden) {
-                append_svg_curve(&mut out, curve, height);
+                append_svg_curve(&mut out, curve, height, weights);
             }
             for line in self.polylines.iter().filter(|line| line.hidden == hidden) {
-                append_svg_polyline(&mut out, line, height);
+                append_svg_polyline(&mut out, line, height, weights);
             }
         }
         for line in self.frame_lines().iter().chain(&self.gdt_lines) {
-            append_svg_polyline(&mut out, line, height);
+            append_svg_polyline(&mut out, line, height, weights);
         }
         for line in &self.guides {
-            append_svg_guide(&mut out, line, height);
+            append_svg_guide(&mut out, line, height, weights);
         }
         for label in self
             .labels
@@ -90,26 +91,27 @@ impl GeneratedDrawing {
                 .to_owned();
         append_dxf_tables(&mut out);
         out.push_str("0\nSECTION\n2\nENTITIES\n");
+        let weights = self.line_weights.map(SheetLineWeights::widths_mm);
         for line in &self.hatches {
-            append_dxf_hatch(&mut out, line);
+            append_dxf_hatch(&mut out, line, weights);
         }
         for hidden in [true, false] {
             let layer = if hidden { "HIDDEN" } else { "VISIBLE" };
             for curve in self.curves.iter().filter(|curve| curve.hidden == hidden) {
-                append_dxf_curve(&mut out, curve);
+                append_dxf_curve(&mut out, curve, weights);
             }
             for line in self.polylines.iter().filter(|line| line.hidden == hidden) {
-                append_dxf_polyline(&mut out, line, layer);
+                append_dxf_polyline(&mut out, line, layer, weights);
             }
         }
         for line in self.frame_lines() {
-            append_dxf_polyline(&mut out, &line, "VISIBLE");
+            append_dxf_polyline(&mut out, &line, "VISIBLE", weights);
         }
         for line in &self.gdt_lines {
-            append_dxf_polyline(&mut out, line, "GD_T");
+            append_dxf_polyline(&mut out, line, "GD_T", weights);
         }
         for line in &self.guides {
-            append_dxf_guide(&mut out, line);
+            append_dxf_guide(&mut out, line, weights);
         }
         for label in self
             .labels
@@ -126,6 +128,7 @@ impl GeneratedDrawing {
                     position_mm: [10.0, 10.0],
                     text: self.title.clone(),
                     stack: None,
+                    height_mm: sheets::TEXT_MM,
                 },
             );
             for (index, (key, value)) in self.metadata.iter().enumerate() {
@@ -135,6 +138,7 @@ impl GeneratedDrawing {
                         position_mm: [10.0, 16.0 + 5.0 * index as f64],
                         text: format!("{key}: {value}"),
                         stack: None,
+                        height_mm: sheets::TEXT_MM,
                     },
                 );
             }
@@ -168,6 +172,7 @@ impl GeneratedDrawing {
         .map(|points_mm| DrawingPolyline {
             points_mm,
             hidden: false,
+            thin: false,
         })
         .collect()
     }
@@ -201,6 +206,22 @@ fn append_dxf_label(out: &mut String, label: &DrawingLabel) {
     }
 }
 
+type Weights = Option<(f64, f64)>;
+
+/// SVG stroke width: the preset's thick/thin width, else `legacy`.
+fn svg_width(weights: Weights, thin: bool, legacy: f64) -> f64 {
+    weights.map_or(legacy, |(thick, narrow)| if thin { narrow } else { thick })
+}
+/// DXF lineweight group (hundredths of a millimeter) when a preset is active.
+fn dxf_weight(weights: Weights, thin: bool) -> String {
+    weights.map_or_else(String::new, |(thick, narrow)| {
+        format!(
+            "370\n{}\n",
+            ((if thin { narrow } else { thick }) * 100.0).round()
+        )
+    })
+}
+
 fn guide_style(kind: DrawingGuideLineKind) -> (&'static str, &'static str, u16) {
     match kind {
         DrawingGuideLineKind::Center => ("CENTER", "CENTER", 18),
@@ -209,12 +230,12 @@ fn guide_style(kind: DrawingGuideLineKind) -> (&'static str, &'static str, u16) 
         DrawingGuideLineKind::Arrow => ("CUTTING_PLANE", "CONTINUOUS", 50),
     }
 }
-fn append_svg_guide(out: &mut String, line: &DrawingGuideLine, height: f64) {
-    let (_, line_type, width) = guide_style(line.kind);
+fn append_svg_guide(out: &mut String, line: &DrawingGuideLine, height: f64, weights: Weights) {
+    let (layer, line_type, width) = guide_style(line.kind);
     write!(
         out,
         "<polyline fill=\"none\" stroke=\"black\" stroke-width=\"{}\"",
-        f64::from(width) / 100.0
+        svg_width(weights, layer == "CENTER", f64::from(width) / 100.0)
     )
     .unwrap();
     if line_type == "CENTER" {
@@ -226,23 +247,32 @@ fn append_svg_guide(out: &mut String, line: &DrawingGuideLine, height: f64) {
     }
     out.push_str("\"/>\n");
 }
-fn append_dxf_guide(out: &mut String, line: &DrawingGuideLine) {
+fn append_dxf_guide(out: &mut String, line: &DrawingGuideLine, weights: Weights) {
     let (layer, line_type, width) = guide_style(line.kind);
+    let width = weights.map_or(f64::from(width), |(thick, thin)| {
+        100.0 * if layer == "CENTER" { thin } else { thick }
+    });
     write!(out,"0\nLWPOLYLINE\n100\nAcDbEntity\n8\n{layer}\n6\n{line_type}\n370\n{width}\n100\nAcDbPolyline\n90\n{}\n70\n0\n",line.points_mm.len()).unwrap();
     for point in &line.points_mm {
         write!(out, "10\n{}\n20\n{}\n", point[0], point[1]).unwrap();
     }
 }
 
-fn append_svg_hatch(out: &mut String, line: &DrawingPolyline, height: f64) {
-    out.push_str("<polyline fill=\"none\" stroke=\"black\" stroke-width=\"0.13\" points=\"");
+fn append_svg_hatch(out: &mut String, line: &DrawingPolyline, height: f64, weights: Weights) {
+    write!(
+        out,
+        "<polyline fill=\"none\" stroke=\"black\" stroke-width=\"{}\" points=\"",
+        svg_width(weights, true, 0.13)
+    )
+    .unwrap();
     for point in &line.points_mm {
         write!(out, "{},{} ", point[0], height - point[1]).unwrap();
     }
     out.push_str("\"/>\n");
 }
-fn append_dxf_hatch(out: &mut String, line: &DrawingPolyline) {
-    write!(out,"0\nLWPOLYLINE\n100\nAcDbEntity\n8\nSECTION_HATCH\n370\n13\n100\nAcDbPolyline\n90\n{}\n70\n0\n",line.points_mm.len()).unwrap();
+fn append_dxf_hatch(out: &mut String, line: &DrawingPolyline, weights: Weights) {
+    let width = weights.map_or(13.0, |(_, thin)| 100.0 * thin);
+    write!(out,"0\nLWPOLYLINE\n100\nAcDbEntity\n8\nSECTION_HATCH\n370\n{width}\n100\nAcDbPolyline\n90\n{}\n70\n0\n",line.points_mm.len()).unwrap();
     for point in &line.points_mm {
         write!(out, "10\n{}\n20\n{}\n", point[0], point[1]).unwrap();
     }
@@ -256,9 +286,14 @@ fn ellipse_point(center: [f64; 2], major: [f64; 2], minor: f64, t: f64) -> [f64;
         center[1] + major[1] * cos + major[0] / radius * minor * sin,
     ]
 }
-fn append_svg_curve(out: &mut String, curve: &DrawingCurve, height: f64) {
+fn append_svg_curve(out: &mut String, curve: &DrawingCurve, height: f64, weights: Weights) {
     use DrawingCurveGeometry::*;
-    out.push_str("<path fill=\"none\" stroke=\"black\" stroke-width=\"0.25\"");
+    write!(
+        out,
+        "<path fill=\"none\" stroke=\"black\" stroke-width=\"{}\"",
+        svg_width(weights, curve.hidden, 0.25)
+    )
+    .unwrap();
     if curve.hidden {
         out.push_str(" stroke-dasharray=\"2 1\"");
     }
@@ -330,7 +365,8 @@ fn append_svg_curve(out: &mut String, curve: &DrawingCurve, height: f64) {
         }
     }
 }
-fn append_dxf_curve(out: &mut String, curve: &DrawingCurve) {
+fn append_dxf_curve(out: &mut String, curve: &DrawingCurve, weights: Weights) {
+    let weight = dxf_weight(weights, curve.hidden);
     use DrawingCurveGeometry::*;
     let layer = if curve.hidden { "HIDDEN" } else { "VISIBLE" };
     match curve.geometry {
@@ -341,7 +377,7 @@ fn append_dxf_curve(out: &mut String, curve: &DrawingCurve) {
         } => {
             let rational = weights.iter().any(|w| *w != weights[0]);
             let flags = 8 + if rational { 4 } else { 0 };
-            write!(out,"0\nSPLINE\n100\nAcDbEntity\n8\n{layer}\n100\nAcDbSpline\n210\n0\n220\n0\n230\n1\n70\n{flags}\n71\n{}\n72\n{}\n73\n{}\n74\n0\n",poles_mm.len()-1,2*poles_mm.len(),poles_mm.len()).unwrap();
+            write!(out,"0\nSPLINE\n100\nAcDbEntity\n8\n{layer}\n{weight}100\nAcDbSpline\n210\n0\n220\n0\n230\n1\n70\n{flags}\n71\n{}\n72\n{}\n73\n{}\n74\n0\n",poles_mm.len()-1,2*poles_mm.len(),poles_mm.len()).unwrap();
             for knot in [0, 1] {
                 for _ in poles_mm {
                     write!(out, "40\n{knot}\n").unwrap();
@@ -361,7 +397,7 @@ fn append_dxf_curve(out: &mut String, curve: &DrawingCurve) {
             start_mm: a,
             end_mm: b,
         } => {
-            write!(out,"0\nLINE\n100\nAcDbEntity\n8\n{layer}\n100\nAcDbLine\n10\n{}\n20\n{}\n30\n0\n11\n{}\n21\n{}\n31\n0\n",a[0],a[1],b[0],b[1]).unwrap();
+            write!(out,"0\nLINE\n100\nAcDbEntity\n8\n{layer}\n{weight}100\nAcDbLine\n10\n{}\n20\n{}\n30\n0\n11\n{}\n21\n{}\n31\n0\n",a[0],a[1],b[0],b[1]).unwrap();
         }
         Ellipse {
             center_mm: c,
@@ -374,7 +410,7 @@ fn append_dxf_curve(out: &mut String, curve: &DrawingCurve) {
             let full = last - first == std::f64::consts::TAU;
             if (a - b).abs() <= 64.0 * f64::EPSILON * a {
                 let entity = if full { "CIRCLE" } else { "ARC" };
-                write!(out,"0\n{entity}\n100\nAcDbEntity\n8\n{layer}\n100\nAcDbCircle\n10\n{}\n20\n{}\n30\n0\n40\n{a}\n",c[0],c[1]).unwrap();
+                write!(out,"0\n{entity}\n100\nAcDbEntity\n8\n{layer}\n{weight}100\nAcDbCircle\n10\n{}\n20\n{}\n30\n0\n40\n{a}\n",c[0],c[1]).unwrap();
                 if !full {
                     let rotation = m[1].atan2(m[0]);
                     write!(
@@ -391,14 +427,19 @@ fn append_dxf_curve(out: &mut String, curve: &DrawingCurve) {
                 } else {
                     last.rem_euclid(std::f64::consts::TAU)
                 };
-                write!(out,"0\nELLIPSE\n100\nAcDbEntity\n8\n{layer}\n100\nAcDbEllipse\n10\n{}\n20\n{}\n30\n0\n11\n{}\n21\n{}\n31\n0\n40\n{}\n41\n{first}\n42\n{last}\n",c[0],c[1],m[0],m[1],b/a).unwrap();
+                write!(out,"0\nELLIPSE\n100\nAcDbEntity\n8\n{layer}\n{weight}100\nAcDbEllipse\n10\n{}\n20\n{}\n30\n0\n11\n{}\n21\n{}\n31\n0\n40\n{}\n41\n{first}\n42\n{last}\n",c[0],c[1],m[0],m[1],b/a).unwrap();
             }
         }
     }
 }
 
-fn append_svg_polyline(out: &mut String, line: &DrawingPolyline, height: f64) {
-    out.push_str("<polyline fill=\"none\" stroke=\"black\" stroke-width=\"0.25\"");
+fn append_svg_polyline(out: &mut String, line: &DrawingPolyline, height: f64, weights: Weights) {
+    write!(
+        out,
+        "<polyline fill=\"none\" stroke=\"black\" stroke-width=\"{}\"",
+        svg_width(weights, line.thin || line.hidden, 0.25)
+    )
+    .unwrap();
     if line.hidden {
         out.push_str(" stroke-dasharray=\"2 1\"");
     }
@@ -408,10 +449,11 @@ fn append_svg_polyline(out: &mut String, line: &DrawingPolyline, height: f64) {
     }
     out.push_str("\"/>\n");
 }
-fn append_dxf_polyline(out: &mut String, line: &DrawingPolyline, layer: &str) {
+fn append_dxf_polyline(out: &mut String, line: &DrawingPolyline, layer: &str, weights: Weights) {
     write!(
         out,
-        "0\nLWPOLYLINE\n100\nAcDbEntity\n8\n{layer}\n100\nAcDbPolyline\n90\n{}\n70\n0\n",
+        "0\nLWPOLYLINE\n100\nAcDbEntity\n8\n{layer}\n{}100\nAcDbPolyline\n90\n{}\n70\n0\n",
+        dxf_weight(weights, line.thin || line.hidden),
         line.points_mm.len()
     )
     .unwrap();
@@ -437,7 +479,7 @@ mod curve_tests {
             },
         };
         let mut dxf = String::new();
-        append_dxf_curve(&mut dxf, &curve);
+        append_dxf_curve(&mut dxf, &curve, None);
         let fields: Vec<_> = dxf.lines().collect();
         let values = |code: &str| {
             fields
@@ -464,7 +506,7 @@ mod curve_tests {
             assert!((px.hypot(py) - 2.0).abs() < 1e-12);
         }
         let mut svg = String::new();
-        append_svg_curve(&mut svg, &curve, 100.0);
+        append_svg_curve(&mut svg, &curve, 100.0, None);
         assert!(svg.contains("stroke-dasharray=\"2 1\""));
         assert!(svg.contains("M 2 100 L"));
         assert!(svg.ends_with("0 98\"/>\n"));

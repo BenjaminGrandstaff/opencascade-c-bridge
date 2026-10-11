@@ -229,11 +229,12 @@ fn validate_kind(
 fn line(drawing: &mut GeneratedDrawing, points_mm: Vec<[f64; 2]>, kind: DrawingGuideLineKind) {
     drawing.guides.push(DrawingGuideLine { points_mm, kind });
 }
-fn text(drawing: &mut GeneratedDrawing, position_mm: [f64; 2], text: String) {
+fn text(drawing: &mut GeneratedDrawing, position_mm: [f64; 2], text: String, height_mm: f64) {
     drawing.labels.push(DrawingLabel {
         position_mm,
         text,
         stack: None,
+        height_mm,
     });
 }
 pub fn append(
@@ -314,12 +315,14 @@ fn append_cut(
                 DrawingGuideLineKind::Arrow,
             );
         }
-        text(drawing, offset(tail, sight, -4.0)?, label.to_owned());
+        let size = drawing.lettering.section_letter;
+        text(drawing, offset(tail, sight, -4.0)?, label.to_owned(), size);
     }
     text(
         drawing,
         offset(section.paper_origin_mm, [0.0, 1.0], -8.0)?,
         format!("SECTION {label}-{label}"),
+        drawing.lettering.caption,
     );
     Ok(())
 }

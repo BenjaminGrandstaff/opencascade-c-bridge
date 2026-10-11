@@ -548,13 +548,110 @@ proportional storage; furniture per sheet is bounded. A 1,000-sheet benchmark
 checks both symbols, numbering, exports, shared regeneration and handle cleanup.
 
 These presets cover standard paper sizes and practical frame/title-block layout.
-They do not claim complete conformity with prescribed zones, revision/approval
-blocks, lettering or sheet-format requirements. References:
+[Sheet conventions](#sheet-conventions-schema-134) add referenced lettering,
+zones and line weights. Prescribed revision/approval blocks and sheet formats
+are still not checked for conformity. References:
 [ASME Y14.1 scope](https://www.asme.org/codes-standards/find-codes-standards/drawing-sheet-size-and-format/2020),
 [ISO 5457 sheet sizes and layout](https://www.iso.org/standard/29017.html),
 [ISO 5456-2 projection methods](https://www.iso.org/obp/ui?_escaped_fragment_=iso%3Astd%3Aiso%3A5456%3A-2%3Aed-1%3Av1%3Aen),
 and the projection-symbol examples in the
 [government engineering-drawing training manual](https://bharatskills.gov.in/pdf/E_Books/CTS/35/English/ED/Engineering%20Drawing%20-%20Group%207%20%282022%29.pdf).
+
+## Sheet conventions (schema 134)
+
+Three optional `DrawingSheet` fields apply drafting conventions taken from
+public references. Each is off by default, and documents saved before schema
+134 load with all three off, so existing drawings export unchanged.
+
+```json
+"sheet": {
+  "size": "ansi_d",
+  "drawing_number": "BRK-200",
+  "revision": "A",
+  "sheet_number": 1,
+  "sheet_count": 1,
+  "lettering": "standard",
+  "zones": {"grid": {"columns": 8, "rows": 4}},
+  "line_weights": "y14_2m"
+}
+```
+
+**Lettering (`"lettering": "standard"`).** Text heights follow its role.
+Inch sheets use the minimum of each range in the
+[DOD-STD-100D](https://ibiblio.org/apollo/Documents/assist.dla.mil/MIL_STD_100D.pdf)
+lettering table (Figure 100-1), which applies ANSI Y14.2M. ISO sheets use the
+ASME Y14.2-2014 minimums as summarized in
+[public training material](https://www.isbe.net/CTEDocuments/TEE-600173.pdf).
+
+| Role | ANSI A, B | ANSI C, D, E | ISO A0, A1 | ISO A2–A4 |
+|---|---|---|---|---|
+| Drawing number | 6.10 mm (.24 in) | 6.10 mm (.24 in) | 6 mm | 3 mm |
+| Title | 4.83 mm (.19 in) | 6.10 mm (.24 in) | 6 mm | 3 mm |
+| Revision in the title block | 3.56 mm (.14 in) | 4.06 mm (.16 in) | 6 mm | 3 mm |
+| Scale, size, sheet and metadata entries | 4.83 mm (.19 in) | 6.10 mm (.24 in) | 3 mm | 3 mm |
+| Dimensions, notes, GD&T and tables | 3.56 mm (.14 in) | 4.06 mm (.16 in) | 3 mm | 3 mm |
+| SECTION/VIEW captions | 3.56 mm (.14 in) | 4.83 mm (.19 in) | 6 mm | 6 mm |
+| Section letters at cutting planes | 4.83 mm (.19 in) | 6.10 mm (.24 in) | 6 mm | 6 mm |
+| Zone labels | 6 mm | 6 mm | 6 mm | 6 mm |
+
+Zone labels use the Y14.2-2014 6 mm minimum for zone letters on every sheet.
+Stacked tolerance rows are 11/15 of the dimension height, matching the legacy
+2.2/3 ratio. The title wraps at word boundaries to the measured 176 mm cell,
+with lines spaced 1.5 times the letter height. The Y14.2 minimum is half the
+height. Validation rejects a title needing more than two lines, a single word
+wider than the cell, and a drawing number, revision or metadata entry wider
+than its cell. Parts-list and revision-table cells are cut with an ellipsis to
+their measured column width. Widths use the deterministic advance estimates of
+[upright label layout](#upright-dimension-label-layout), not measured fonts.
+
+**Zones (`"zones"`).** Grid references sit in a band between the drawing frame,
+12.7 mm from the trimmed edge, and a border 4 mm from it. Columns are numbered
+from 1 at the left and rows are lettered from A at the top, skipping I and O.
+Labels repeat on opposite sides.
+
+- `"iso5457"` (ISO sizes only) follows ISO 5457 as summarized by
+  [CAD Setter Out](https://cadsetterout.com/drawing-standards/grid-reference-frame/).
+  Fields are 50 mm, measured outward from the sheet's centring axes, with the
+  outer fields taking the remainder. Field counts (long × short side) are 24 × 16
+  for A0, 16 × 12 for A1, 12 × 8 for A2, 8 × 6 for A3 and 6 × 4 for A4. A4 is
+  zoned on the top and right only. Thick centring marks run from the border to
+  10 mm inside the frame.
+- `{"grid": {"columns": c, "rows": r}}` divides any sheet into equal fields,
+  with 1–40 columns and 1–24 rows. It uses the same labeling. ASME Y14.1 zone
+  counts and ordering were not available from a public source, so ANSI sheets
+  use explicit counts rather than a claimed Y14.1 default.
+
+`GeneratedDrawing::zones` and `DrawingSheet::zone_grid()` return the field
+boundaries. `DrawingZoneGrid::zone_at(point)` returns a reference such as `C4`
+for a paper point inside the frame, in O(log n) time.
+
+**Line weights (`"line_weights": "y14_2m"`).** Exports use the ANSI Y14.2M
+widths reprinted in
+[Machinery's Handbook](https://www.globalspec.com/reference/68262/203279/Standards-for-Drawings): 0.7 mm thick and 0.35 mm thin.
+Visible outlines, the drawing frame, cutting-plane lines and centring marks are
+thick. Hidden lines, dimension and extension lines, arrows, GD&T frames, hatch,
+centre lines, title-block and table rules, and zone ticks are thin.
+`DrawingPolyline::thin` records the class. SVG writes the width as
+`stroke-width`; DXF writes group 370 (`70` or `35`) on each entity. The
+handbook notes that these widths distinguish line classes and are not
+acceptance limits.
+
+**Not covered.** No public source gave ANSI section-lining symbol geometry for
+individual materials, so material hatching stays the explicit
+[material hatch families](#material-hatch-families-schema-69). Dimension-line
+spacing from the part and between parallel dimensions, and extension-line gaps,
+also had no public normative values; dimensions keep their saved offsets.
+Title-block and revision-block layouts are not checked against ASME Y14.1.
+These presets are standards-referenced, not certified conformant.
+
+**Cost.** Lettering and line weights add O(1) work per label or entity. Zones
+add O(columns + rows) lines and labels per sheet, and each lookup is
+O(log columns + log rows). The templates benchmark generates and exports 1,000
+sheets with all three presets, alternating ANSI D 8 × 4 grids and ISO A2 zones,
+plus 100,000 zone lookups, in 1.72 s (10 s budget). The same sheets without
+presets take 1.67 s. The
+[sheet-conventions example](../tools/drawing-export/sheet-conventions-example.json)
+renders an ANSI B sheet and an ISO A3 sheet with every preset.
 
 ## Structured GD&T intent
 

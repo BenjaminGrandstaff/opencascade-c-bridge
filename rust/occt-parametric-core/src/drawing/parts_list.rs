@@ -422,6 +422,7 @@ impl Layout {
                 position_mm: [center[0] - 1.0 * text.len() as f64, center[1] - 1.2],
                 text,
                 stack: None,
+                height_mm: out.lettering.notes,
             });
         }
         Ok(())
@@ -441,12 +442,14 @@ impl Layout {
                 [x, top],
             ],
             hidden: false,
+            thin: true,
         });
         for row in 1..rows {
             let y = top - ROW_MM * row as f64;
             out.sheet_lines.push(DrawingPolyline {
                 points_mm: vec![[x, y], [x + width, y]],
                 hidden: false,
+                thin: true,
             });
         }
         let mut column_x = x;
@@ -455,6 +458,7 @@ impl Layout {
             out.sheet_lines.push(DrawingPolyline {
                 points_mm: vec![[column_x, top], [column_x, bottom]],
                 hidden: false,
+                thin: true,
             });
         }
         let cells =
@@ -473,6 +477,12 @@ impl Layout {
             let mut column_x = x;
             for (column, (value, width)) in values.into_iter().zip(COLUMNS_MM).enumerate() {
                 let indent = if column == 2 { 3.0 * depth as f64 } else { 0.0 };
+                // Standard lettering is larger: cut cells to their measured width.
+                let value = if out.lettering == DrawingLettering::default() {
+                    value
+                } else {
+                    text_layout::fit(&value, out.lettering.notes, width - 3.0 - indent)
+                };
                 out.sheet_labels.push(DrawingLabel {
                     position_mm: [
                         column_x + 1.5 + indent,
@@ -480,6 +490,7 @@ impl Layout {
                     ],
                     text: value,
                     stack: None,
+                    height_mm: out.lettering.notes,
                 });
                 column_x += width;
             }
@@ -491,6 +502,7 @@ fn line(out: &mut GeneratedDrawing, points_mm: Vec<[f64; 2]>) {
     out.gdt_lines.push(DrawingPolyline {
         points_mm,
         hidden: false,
+        thin: true,
     });
 }
 

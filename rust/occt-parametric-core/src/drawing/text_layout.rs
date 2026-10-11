@@ -5,7 +5,7 @@ use super::*;
 
 // Approximate upright sans-serif advances. Wide unit letters must not use the
 // numeric advance (notably `mm` next to a vertical dimension line).
-fn width(text: &str, size: f64) -> f64 {
+pub fn width(text: &str, size: f64) -> f64 {
     text.chars()
         .map(|c| {
             size * match c {
@@ -23,18 +23,46 @@ fn width(text: &str, size: f64) -> f64 {
         .sum()
 }
 
+/// `text` cut with an ellipsis to fit `cell` millimeters at `size`. O(chars²)
+/// worst case for a cell's bounded text.
+pub fn fit(text: &str, size: f64, cell: f64) -> String {
+    if width(text, size) <= cell {
+        return text.to_owned();
+    }
+    let mut chars: Vec<char> = text.chars().collect();
+    while !chars.is_empty() {
+        chars.pop();
+        let candidate: String = chars.iter().chain(['…'].iter()).collect();
+        if width(&candidate, size) <= cell {
+            return candidate;
+        }
+    }
+    String::new()
+}
+
+/// Stacked-row size and offset for `height`; exact legacy values at 3 mm.
+fn stack_metrics(height: f64) -> (f64, f64) {
+    if height == sheets::TEXT_MM {
+        (2.2, 1.8)
+    } else {
+        (height * 11.0 / 15.0, height * 0.6)
+    }
+}
+
 pub fn parts(label: &DrawingLabel) -> Vec<([f64; 2], String, f64)> {
     let [x, y] = label.position_mm;
+    let size = label.height_mm;
     let Some(stack) = &label.stack else {
-        return vec![(label.position_mm, label.text.clone(), 3.0)];
+        return vec![(label.position_mm, label.text.clone(), size)];
     };
-    let column = x + width(&stack.prefix, 3.0) + 1.0;
-    let suffix_x = column + width(&stack.upper, 2.2).max(width(&stack.lower, 2.2)) + 1.0;
+    let (small, rise) = stack_metrics(size);
+    let column = x + width(&stack.prefix, size) + 1.0;
+    let suffix_x = column + width(&stack.upper, small).max(width(&stack.lower, small)) + 1.0;
     vec![
-        ([x, y], stack.prefix.clone(), 3.0),
-        ([column, y + 1.8], stack.upper.clone(), 2.2),
-        ([column, y - 1.8], stack.lower.clone(), 2.2),
-        ([suffix_x, y], stack.suffix.clone(), 3.0),
+        ([x, y], stack.prefix.clone(), size),
+        ([column, y + rise], stack.upper.clone(), small),
+        ([column, y - rise], stack.lower.clone(), small),
+        ([suffix_x, y], stack.suffix.clone(), size),
     ]
 }
 

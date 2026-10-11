@@ -142,6 +142,9 @@ impl DrawingDefinitionRenderingInternal for DrawingDefinition {
             labels: Vec::new(),
             metadata: self.metadata.clone(),
             generated_variants: generation.generated_variants(),
+            lettering: DrawingLettering::for_sheet(self.sheet.as_ref()),
+            line_weights: self.sheet.as_ref().and_then(|sheet| sheet.line_weights),
+            zones: None,
         };
         if let Some(sheet) = &self.sheet {
             sheets::decorate(
@@ -240,6 +243,7 @@ impl DrawingDefinitionRenderingInternal for DrawingDefinition {
                 position_mm: note.position_mm,
                 text: note.text.resolve(graph)?,
                 stack: None,
+                height_mm: drawing.lettering.notes,
             });
         }
         Ok(drawing)
@@ -366,9 +370,11 @@ fn append_edges(
                 .into_iter()
                 .map(|point| view.paper(point))
                 .collect::<Result<Vec<_>, _>>()?;
-            drawing
-                .polylines
-                .push(DrawingPolyline { points_mm, hidden });
+            drawing.polylines.push(DrawingPolyline {
+                points_mm,
+                hidden,
+                thin: hidden,
+            });
         }
     }
     Ok(())

@@ -246,12 +246,14 @@ pub fn append(drawing: &DrawingDefinition, out: &mut GeneratedDrawing) {
             [x, top],
         ],
         hidden: false,
+        thin: true,
     });
     for row in 1..rows {
         let y = top - ROW_MM * row as f64;
         out.sheet_lines.push(DrawingPolyline {
             points_mm: vec![[x, y], [x + width, y]],
             hidden: false,
+            thin: true,
         });
     }
     let mut column_x = x;
@@ -260,6 +262,7 @@ pub fn append(drawing: &DrawingDefinition, out: &mut GeneratedDrawing) {
         out.sheet_lines.push(DrawingPolyline {
             points_mm: vec![[column_x, top], [column_x, bottom]],
             hidden: false,
+            thin: true,
         });
     }
     let rows =
@@ -292,10 +295,17 @@ pub fn append(drawing: &DrawingDefinition, out: &mut GeneratedDrawing) {
     for (row, values) in rows.enumerate() {
         let mut column_x = x;
         for (value, width) in values.into_iter().zip(COLUMNS_MM) {
+            // Standard lettering is larger: cut cells to their measured width.
+            let value = if out.lettering == DrawingLettering::default() {
+                value
+            } else {
+                text_layout::fit(&value, out.lettering.notes, width - 3.0)
+            };
             out.sheet_labels.push(DrawingLabel {
                 position_mm: [column_x + 1.5, top - ROW_MM * (row as f64 + 1.0) + 2.0],
                 text: value,
                 stack: None,
+                height_mm: out.lettering.notes,
             });
             column_x += width;
         }

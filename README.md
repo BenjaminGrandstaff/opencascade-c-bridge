@@ -360,7 +360,9 @@ covering dimensions, supplied-axis positions and measured points; see
 [Drawings](docs/DRAWINGS.md). Schema 63 adds two-row composite controls, reusable named datum-reference frames
 and nominal planar 3-2-1 coordinates. Schema 62 adds datum-feature symbols and structured GD&T feature-control frames
 with ordered datum references and material modifiers. Schema 61 adds ANSI/ISO paper presets, structured title blocks, sheet numbering
-and first-/third-angle projection symbols. Schema 60 adds configurable automatic section hatching, preserving holes and
+and first-/third-angle projection symbols; schema 134 adds referenced lettering heights, ISO 5457 or explicit
+reference zones with zone lookup, and Y14.2M thick/thin line weights
+([sheet conventions](docs/DRAWINGS.md#sheet-conventions-schema-134)). Schema 60 adds configurable automatic section hatching, preserving holes and
 disconnected material regions in SVG/DXF. Schema 59 adds datum-linked center marks, centerlines and section cutting-plane
 indicators in saved drawings and SVG/DXF exports. Schema 58 adds manufacturing dimension types, unit-aware tolerances, basic/reference
 notation and live hole callouts; see [Drawings](docs/DRAWINGS.md). Schema 57 combines the newer geometry and reference features with planar slice

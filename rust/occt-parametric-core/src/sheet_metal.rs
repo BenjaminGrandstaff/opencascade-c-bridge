@@ -112,10 +112,12 @@ impl FlatPatternMetrics {
                 [x, y],
             ],
             hidden: false,
+            thin: false,
         }];
         polylines.extend(self.bend_lines_mm.iter().map(|line| DrawingPolyline {
             points_mm: vec![[x + line, y], [x + line, y + width]],
             hidden: true,
+            thin: true,
         }));
         Ok(GeneratedDrawing {
             curves: Vec::new(),
@@ -135,6 +137,9 @@ impl FlatPatternMetrics {
                 ("Neutral factor K".into(), self.neutral_factor.to_string()),
             ]),
             generated_variants: 0,
+            lettering: DrawingLettering::default(),
+            line_weights: None,
+            zones: None,
         })
     }
 }

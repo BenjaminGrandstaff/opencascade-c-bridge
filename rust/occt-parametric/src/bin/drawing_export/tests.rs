@@ -196,3 +196,46 @@ fn command_exact_curves_are_counted_as_nonempty_geometry() {
         4
     );
 }
+
+#[test]
+fn sheet_conventions_example_exports_zones_lettering_and_line_weights() {
+    let directory = Directory::new();
+    let examples = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tools/drawing-export");
+    let args = vec![
+        examples
+            .join("dimension-layout.model.json")
+            .into_os_string(),
+        examples
+            .join("sheet-conventions-example.json")
+            .into_os_string(),
+        directory.0.join("output").into_os_string(),
+    ];
+    run(&args).unwrap();
+    let output = Path::new(&args[2]);
+    for (page, size, zone_count) in [
+        ("0001", "ANSI B", 2 * (8 + 4)),
+        ("0002", "ISO A3", 2 * (8 + 6)),
+    ] {
+        let svg = fs::read_to_string(output.join(format!("{page}.svg"))).unwrap();
+        assert!(svg.contains(&format!("SIZE: {size}")));
+        assert!(svg.contains("stroke-width=\"0.7\"") && svg.contains("stroke-width=\"0.35\""));
+        let dxf = fs::read_to_string(output.join(format!("{page}.dxf"))).unwrap();
+        assert!(dxf.contains("\n370\n70\n") && dxf.contains("\n370\n35\n"));
+        // Zone labels are the only 6 mm text on either sheet.
+        assert_eq!(svg.matches("font-size=\"6\"").count(), zone_count, "{page}");
+    }
+    let loaded =
+        ModelDocument::from_json(&fs::read_to_string(output.join("drawings.model.json")).unwrap())
+            .unwrap();
+    let sheets: Vec<_> = loaded
+        .drawings
+        .iter()
+        .filter_map(|drawing| drawing.sheet.as_ref())
+        .collect();
+    assert_eq!(sheets.len(), 2);
+    assert!(
+        sheets
+            .iter()
+            .all(|sheet| sheet.lettering == Some(SheetLettering::Standard))
+    );
+}

@@ -299,6 +299,9 @@ mod tests {
             labels: vec![],
             metadata: Default::default(),
             generated_variants: 0,
+            lettering: Default::default(),
+            line_weights: None,
+            zones: None,
         };
         let options = DrawingRenderOptions {
             exact_curves: true,

@@ -43,6 +43,9 @@ fn sheet_drawing(revision: &str) -> DrawingDefinition {
             sheet_number: 1,
             sheet_count: 1,
             projection: None,
+            lettering: None,
+            zones: None,
+            line_weights: None,
         }),
         id: "block".into(),
         title: "Block".into(),
@@ -274,5 +277,49 @@ fn revision_tables_render_with_exact_budgets_and_persist() {
     let migrated = ModelDocument::from_json(&legacy.to_string()).unwrap();
     assert!(migrated.drawings[0].releases.is_empty());
     drop(graph);
+    assert_eq!(session.shape_count().unwrap(), 0);
+}
+
+#[test]
+fn standard_lettering_cuts_revision_cells_to_their_measured_width() {
+    let family = block_family();
+    let mut document = ledger_document(&family);
+    let mut drawing = sheet_drawing("B");
+    drawing.sheet.as_mut().unwrap().lettering = Some(SheetLettering::Standard);
+    let mut first = release("A", "2026-10-01", Some("r1"));
+    first.description =
+        "Initial release for production tooling and first-article inspection".into();
+    drawing.releases = vec![first, release("B", "2026-10-08", Some("r2"))];
+    document.drawings[0] = drawing.clone();
+    let graph = document.instance_graph().unwrap();
+    let session = Session::new().unwrap();
+    let generated = drawing
+        .generate(&graph, &session, DrawingRenderOptions::default())
+        .unwrap();
+    let notes = 0.14 * 25.4;
+    let description = generated
+        .sheet_labels
+        .iter()
+        .find(|label| label.text.starts_with("Initial"))
+        .unwrap();
+    assert_eq!(description.height_mm, notes);
+    assert!(description.text.ends_with('…'));
+    // The 80 mm description column keeps 1.5 mm padding on both sides.
+    let advance = |c: char| match c {
+        'm' | 'w' | 'M' | 'W' => 0.95,
+        ' ' => 0.35,
+        '-' => 0.4,
+        c if c.is_ascii_uppercase() => 0.75,
+        c if c.is_ascii() => 0.65,
+        _ => 1.0,
+    };
+    let width: f64 = description.text.chars().map(|c| notes * advance(c)).sum();
+    assert!(width <= 77.0, "{width}");
+    assert!(
+        generated
+            .sheet_labels
+            .iter()
+            .any(|label| label.text == "REV" && label.height_mm == notes)
+    );
     assert_eq!(session.shape_count().unwrap(), 0);
 }

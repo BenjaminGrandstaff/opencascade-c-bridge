@@ -308,6 +308,7 @@ fn line(d: &mut GeneratedDrawing, p: Vec<[f64; 2]>) {
     d.gdt_lines.push(DrawingPolyline {
         points_mm: p,
         hidden: false,
+        thin: true,
     });
 }
 fn text(d: &mut GeneratedDrawing, p: [f64; 2], value: String) {
@@ -315,6 +316,7 @@ fn text(d: &mut GeneratedDrawing, p: [f64; 2], value: String) {
         position_mm: p,
         text: value,
         stack: None,
+        height_mm: d.lettering.notes,
     });
 }
 fn rectangle(d: &mut GeneratedDrawing, p: [f64; 2], w: f64) {

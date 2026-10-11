@@ -209,6 +209,7 @@ fn append_intervals(
                 drawing.hatches.push(DrawingPolyline {
                     points_mm,
                     hidden: false,
+                    thin: true,
                 });
             }
         }

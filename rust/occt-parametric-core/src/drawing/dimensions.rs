@@ -375,6 +375,7 @@ fn line(drawing: &mut GeneratedDrawing, points: Vec<[f64; 2]>) -> Result<(), Mod
     drawing.polylines.push(DrawingPolyline {
         points_mm: points,
         hidden: false,
+        thin: true,
     });
     Ok(())
 }
@@ -412,6 +413,7 @@ pub fn append_special(
             position_mm: [endpoint[0] + normal[0] * 2.0, endpoint[1] + normal[1] * 2.0],
             text: String::new(),
             stack: None,
+            height_mm: drawing.lettering.notes,
         });
     }
     drawing.labels.last_mut().expect("dimension label").text = label(d, value, context)?;
@@ -496,6 +498,7 @@ fn append_angular(
         ],
         text: String::new(),
         stack: None,
+        height_mm: drawing.lettering.notes,
     });
     Ok(())
 }
