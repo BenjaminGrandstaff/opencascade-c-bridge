@@ -681,6 +681,14 @@ triangle, leader and boxed datum label.
   `least` (circled L), plus an explicit `feature_of_size` declaration.
 - Ordered `datums: Vec<DrawingDatumReference>`. Each reference names a
   `datum_feature` ID and `boundary`: `regardless`, `maximum`, or `least`.
+  Since schema 136, `common_with` lists up to two further datum feature IDs that
+  form a common datum with it in the same compartment, drawn as `A-B`. Members
+  must be nominally coplanar planes (same outward normal) or coaxial axes, and
+  no feature may appear twice in a frame. The boundary applies to every member.
+
+```json
+{"datum_feature": "A", "common_with": ["B"]}
+```
 
 For example, a position frame may state a 0.10 mm diameter zone at maximum
 material condition with primary A, secondary B at maximum material boundary,
@@ -711,7 +719,7 @@ material modifiers, both exports, shared regeneration and native handle cleanup.
 
 Feature-of-size flags and geometric controls are manufacturing declarations.
 Anchors locate leaders on selected solid outputs; they do not identify persistent
-faces or establish datum simulators. Multi-level composite frames, common datums, targets,
+faces or establish datum simulators. Multi-level composite frames, targets,
 projected zones, advanced modifiers, datum shift and semantic PMI exchange remain
 on the roadmap; measured simulators, bonus tolerance and zone evaluation for a
 supported subset are described in [Measured inspection](#measured-inspection-schema-68). References: [ASME Y14.5 scope and contents](https://www.asme.org/getmedia/da2ff89e-067b-4160-8e2e-53e6c7da1d3b/17707.pdf)
@@ -991,6 +999,16 @@ Datum simulators follow the precedence order:
   the axis is free to shift and tilt. After one primary plane it is held
   perpendicular to that plane, and the envelope is a circle in the plane. Other
   precedences with axis datums are not evaluated.
+- **Common datum plane (schema 136):** coplanar members `A-B` share one
+  simulator, the constrained-L∞ plane over the union of their points. It
+  contacts the high points of both surfaces at once. It can take any plane
+  precedence.
+- **Common datum axis (schema 136):** two coaxial cylindrical datum features
+  of size establish the line through the midpoints of each member's own
+  mating-envelope axis over its measured length. This is a common CMM
+  construction, not the Y14.5 simulator whose two coaxial cylinders expand or
+  contract simultaneously. It is evaluated as the primary datum only, and the
+  report lists both mating sizes in `datum_axes[].mating_sizes_mm`.
 
 ```json
 {"id": "D", "label": "D", "feature_of_size": true, "size_kind": "internal",
@@ -1059,11 +1077,14 @@ fit is linear in its points per simplex pivot. The scale benchmark evaluates
 surface, against one shared frame, in 0.19 s; and 1,000 cylindricity plus 1,000
 circularity controls (612,000 points) in 0.13 s. It also evaluates 1,000
 circular plus 1,000 total runout controls (471,600 points), with each of 100
-bore datum axes fitted once, in 0.03 s. All three cases have 1 s budgets.
+bore datum axes fitted once, in 0.03 s. Against 100 common datum axes from
+200 bore journals (511,200 points), the same controls take 0.037 s. All four
+cases have 1 s budgets.
 Runout readings cost O(n log n) per control after the datum fit.
 
 **Not yet covered.** Datum shift (material boundaries), planar datum features
-of size (width centre planes), common datums such as A-B, pattern and composite
+of size (width centre planes), simultaneous-contact common axis simulators,
+common axes after a primary plane, pattern and composite
 evaluation, measured datum targets, profile against nominal surfaces, conical
 runout surfaces, and straightness. Measurement uncertainty is not modeled.
 

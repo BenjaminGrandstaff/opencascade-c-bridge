@@ -601,14 +601,17 @@ fn main() {
                 DrawingDatumReference {
                     datum_feature: "primary".into(),
                     boundary: DatumMaterialBoundary::Regardless,
+                    common_with: Vec::new(),
                 },
                 DrawingDatumReference {
                     datum_feature: "secondary".into(),
                     boundary: DatumMaterialBoundary::Maximum,
+                    common_with: Vec::new(),
                 },
                 DrawingDatumReference {
                     datum_feature: "tertiary".into(),
                     boundary: DatumMaterialBoundary::Least,
+                    common_with: Vec::new(),
                 },
             ],
         })
@@ -730,6 +733,7 @@ fn main() {
                 .map(|r| DrawingDatumReference {
                     datum_feature: r.datum_feature.clone(),
                     boundary: DatumMaterialBoundary::Regardless,
+                    common_with: Vec::new(),
                 })
                 .collect(),
         })

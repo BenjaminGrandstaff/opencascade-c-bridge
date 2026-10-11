@@ -138,6 +138,7 @@ fn fixture() -> ModelDocument {
                 .map(|id| DrawingDatumReference {
                     datum_feature: id.into(),
                     boundary: DatumMaterialBoundary::Regardless,
+                    common_with: Vec::new(),
                 })
                 .collect(),
         });

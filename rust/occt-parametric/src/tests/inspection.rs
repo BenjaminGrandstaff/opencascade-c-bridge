@@ -83,6 +83,7 @@ fn control(
             .map(|d| DrawingDatumReference {
                 datum_feature: (*d).into(),
                 boundary: DatumMaterialBoundary::Regardless,
+                common_with: Vec::new(),
             })
             .collect(),
     }
@@ -128,6 +129,7 @@ pub(super) fn page() -> DrawingDefinition {
                 .map(|d| DrawingDatumReference {
                     datum_feature: (*d).into(),
                     boundary: DatumMaterialBoundary::Regardless,
+                    common_with: Vec::new(),
                 })
                 .collect(),
         }],
@@ -717,6 +719,7 @@ fn runout_page(
                 .map(|d| DrawingDatumReference {
                     datum_feature: (*d).into(),
                     boundary: DatumMaterialBoundary::Regardless,
+                    common_with: Vec::new(),
                 })
                 .collect(),
         });
@@ -823,6 +826,7 @@ fn axis_datums_use_the_mating_envelope_for_holes_and_shafts() {
                 datums: vec![DrawingDatumReference {
                     datum_feature: "D".into(),
                     boundary: DatumMaterialBoundary::Regardless,
+                    common_with: Vec::new(),
                 }],
             });
         let report = page
@@ -834,7 +838,7 @@ fn axis_datums_use_the_mating_envelope_for_holes_and_shafts() {
             .find(|a| a.datum_features == ["D"])
             .unwrap();
         assert!(
-            (axis.mating_size_mm - size).abs() < 1e-6,
+            (axis.mating_sizes_mm[0] - size).abs() < 1e-6,
             "{kind:?} {axis:?}"
         );
         assert!((axis.origin_mm.x - HOLE[0]).abs() < 1e-6);
@@ -942,4 +946,187 @@ fn runout_reports_unsupported_setups_and_size_kind_validates() {
         ModelDocument::from_json(&json).unwrap().drawings,
         document.drawings
     );
+}
+
+/// Datum features A and B on the hole axis (shaft journals), E on the
+/// bottom plane, and a named frame with the common datum A-B.
+fn common_page() -> DrawingDefinition {
+    let mut page = page();
+    page.datum_features.retain(|f| f.id != "B");
+    for (id, anchor, kind) in [
+        ("A2", "hole", Some(FeatureOfSizeKind::External)),
+        ("B", "hole", Some(FeatureOfSizeKind::External)),
+        ("E", "bottom", None),
+    ] {
+        page.datum_features.push(DrawingDatumFeature {
+            id: id.into(),
+            label: if id == "A2" { "F".into() } else { id.into() },
+            feature_of_size: kind.is_some(),
+            attachment: attachment(anchor),
+            size_kind: kind,
+        });
+    }
+    page.datum_reference_frames = vec![DrawingDatumReferenceFrame {
+        id: "FB".into(),
+        datums: vec![DrawingDatumReference {
+            datum_feature: "A2".into(),
+            boundary: DatumMaterialBoundary::Regardless,
+            common_with: vec!["B".into()],
+        }],
+    }];
+    page
+}
+
+#[test]
+fn common_datum_axis_joins_the_midpoints_of_both_journal_envelopes() {
+    let definition = plate();
+    let mut graph = InstanceGraph::new(&definition);
+    graph.add_base("part", HashMap::new(), "test").unwrap();
+    let mut page = common_page();
+    let mut common = control(
+        "common",
+        "hole",
+        GeometricCharacteristic::TotalRunout,
+        0.01,
+        &["A2"],
+    );
+    common.datums[0].common_with = vec!["B".into()];
+    let single = control(
+        "single",
+        "hole",
+        GeometricCharacteristic::TotalRunout,
+        0.01,
+        &["A2"],
+    );
+    page.feature_control_frames = vec![common, single];
+    // Journal F (radius 5, z 0-10) is on the nominal axis; journal B
+    // (radius 6, z 30-40) sits 0.02 mm off it, so the common axis tilts
+    // 0.02 mm over the 30 mm between their midpoints.
+    let f = cylinder([HOLE[0], HOLE[1], 0.0], [0.0, 0.0, 1.0], |_| 5.0);
+    let b = cylinder([HOLE[0] + 0.02, HOLE[1], 30.0], [0.0, 0.0, 1.0], |_| 6.0);
+    let slope = 0.02 / 30.0;
+    let surface = cylinder(
+        [HOLE[0] + slope * 7.0, HOLE[1], 12.0],
+        [slope, 0.0, 1.0],
+        |_| 8.0,
+    );
+    let record = InspectionRecord {
+        drawing: "plate".into(),
+        surface_textures: Vec::new(),
+        datum_features: vec![measured("A2", f), measured("B", b)],
+        controls: vec![
+            measured("common", surface.clone()),
+            measured("single", surface),
+        ],
+    };
+    let report = page.evaluate_inspection(&graph, &record).unwrap();
+    // On the common axis the surface has no runout; about F alone its axis
+    // drifts from 0.0047 to 0.011 mm off, reading twice the far offset.
+    assert!(evaluated(&report, "common").deviation_mm < 1e-6);
+    let single = evaluated(&report, "single").deviation_mm;
+    let far = slope * (12.0 + 10.0 / (1.0 + slope * slope).sqrt() - 5.0);
+    assert!(
+        (single - 2.0 * far).abs() < 1e-5,
+        "{single} vs {}",
+        2.0 * far
+    );
+    let axis = &report.datum_axes[0];
+    assert_eq!(axis.datum_features, ["A2", "B"]);
+    assert!((axis.mating_sizes_mm[0] - 10.0).abs() < 1e-6);
+    assert!((axis.mating_sizes_mm[1] - 12.0).abs() < 1e-6);
+    assert!((axis.direction.x - slope).abs() < 1e-6);
+}
+
+#[test]
+fn common_datum_plane_contacts_both_pads_at_once() {
+    let definition = plate();
+    let mut graph = InstanceGraph::new(&definition);
+    graph.add_base("part", HashMap::new(), "test").unwrap();
+    let mut page = common_page();
+    let mut parallel = control(
+        "parallel",
+        "top",
+        GeometricCharacteristic::Parallelism,
+        0.02,
+        &["A"],
+    );
+    parallel.datums[0].common_with = vec!["E".into()];
+    let alone = control(
+        "alone",
+        "top",
+        GeometricCharacteristic::Parallelism,
+        0.02,
+        &["A"],
+    );
+    page.feature_control_frames = vec![parallel, alone];
+    // Pad A (x 0-20) is at z = 0 and pad E (x 40-60) stands 0.01 mm proud.
+    // The common simulator's minimum-zone orientation rises 0.01 mm per
+    // 40 mm, so a perfectly flat top reads 60 · 0.00025 = 0.015 mm.
+    let record = InspectionRecord {
+        drawing: "plate".into(),
+        surface_textures: Vec::new(),
+        datum_features: vec![
+            measured("A", grid(|u, v| [20.0 * u, 40.0 * v, 0.0])),
+            measured("E", grid(|u, v| [40.0 + 20.0 * u, 40.0 * v, -0.01])),
+        ],
+        controls: vec![
+            measured("parallel", grid(|u, v| [60.0 * u, 40.0 * v, 10.0])),
+            measured("alone", grid(|u, v| [60.0 * u, 40.0 * v, 10.0])),
+        ],
+    };
+    let report = page.evaluate_inspection(&graph, &record).unwrap();
+    let common = evaluated(&report, "parallel").deviation_mm;
+    assert!((common - 0.015).abs() < 1e-9, "{common}");
+    assert!(evaluated(&report, "alone").deviation_mm < 1e-9);
+}
+
+#[test]
+fn common_datums_validate_render_and_round_trip() {
+    let definition = plate();
+    let mut graph = InstanceGraph::new(&definition);
+    graph.add_base("part", HashMap::new(), "test").unwrap();
+    let mut page = common_page();
+    let mut frame = control(
+        "parallel",
+        "top",
+        GeometricCharacteristic::Parallelism,
+        0.02,
+        &["A"],
+    );
+    frame.datums[0].common_with = vec!["E".into()];
+    page.feature_control_frames = vec![frame];
+    let session = Session::new().unwrap();
+    let generated = page
+        .generate(&graph, &session, DrawingRenderOptions::default())
+        .unwrap();
+    assert!(generated.gdt_labels.iter().any(|l| l.text == "A-E"));
+    let mut document = ModelDocument::from_graph(&graph);
+    document.drawings.push(page.clone());
+    let json = document.to_json_pretty().unwrap();
+    assert!(json.contains("\"common_with\": ["));
+    assert_eq!(
+        ModelDocument::from_json(&json).unwrap().drawings,
+        document.drawings
+    );
+    for (members, reason) in [
+        // Top and bottom are parallel but not coplanar; an axis is not a plane.
+        (vec!["top_feature"], "coplanar planes or coaxial axes"),
+        (vec!["A2"], "coplanar planes or coaxial axes"),
+        (vec!["A"], "repeats"),
+        (vec!["E", "B", "A2"], "at most three"),
+    ] {
+        let mut invalid = page.clone();
+        invalid.datum_features.push(DrawingDatumFeature {
+            id: "top_feature".into(),
+            label: "T".into(),
+            feature_of_size: false,
+            attachment: attachment("top"),
+            size_kind: None,
+        });
+        invalid.feature_control_frames[0].datums[0].common_with =
+            members.into_iter().map(Into::into).collect();
+        let message = invalid.validate(&graph).unwrap_err().message;
+        assert!(message.contains(reason), "{message}");
+    }
+    assert_eq!(session.shape_count().unwrap(), 0);
 }

@@ -51,14 +51,17 @@ fn gdt_page() -> DrawingDefinition {
                 DrawingDatumReference {
                     datum_feature: "primary".into(),
                     boundary: DatumMaterialBoundary::Regardless,
+                    common_with: Vec::new(),
                 },
                 DrawingDatumReference {
                     datum_feature: "secondary".into(),
                     boundary: DatumMaterialBoundary::Maximum,
+                    common_with: Vec::new(),
                 },
                 DrawingDatumReference {
                     datum_feature: "tertiary".into(),
                     boundary: DatumMaterialBoundary::Least,
+                    common_with: Vec::new(),
                 },
             ],
         });

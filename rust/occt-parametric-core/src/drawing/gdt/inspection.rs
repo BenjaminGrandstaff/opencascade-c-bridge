@@ -135,16 +135,16 @@ impl InspectionReport {
 
 /// A datum simulator: a contacting plane (point, outward normal) or the axis
 /// of an actual mating envelope (point, unit direction, mating size).
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 enum Simulator {
     Plane(Vec3, Vec3),
-    Axis(Vec3, Vec3, f64),
+    Axis(Vec3, Vec3, Vec<f64>),
 }
 type Simulators = Vec<Simulator>;
 impl Simulator {
-    fn plane_normal(self) -> Result<Vec3, String> {
+    fn plane_normal(&self) -> Result<Vec3, String> {
         match self {
-            Self::Plane(_, normal) => Ok(normal),
+            Self::Plane(_, normal) => Ok(*normal),
             Self::Axis(..) => Err("orientation to an axis datum is not evaluated".into()),
         }
     }
@@ -156,8 +156,9 @@ pub struct MeasuredDatumAxis {
     pub datum_features: Vec<String>,
     pub origin_mm: Vec3,
     pub direction: Vec3,
-    /// Actual mating size (diameter) of the axis datum feature.
-    pub mating_size_mm: f64,
+    /// Actual mating size (diameter) of each axis datum feature, in order
+    /// (two for a common datum axis).
+    pub mating_sizes_mm: Vec<f64>,
 }
 
 struct Context<'a, 'g> {
@@ -165,7 +166,7 @@ struct Context<'a, 'g> {
     features: HashMap<&'a str, &'a DrawingDatumFeature>,
     measured_datums: HashMap<&'a str, Vec<Vec3>>,
     /// Simulator planes keyed by datum precedence prefix; each prefix is fitted once.
-    simulators: HashMap<Vec<String>, Result<Simulators, String>>,
+    simulators: HashMap<Vec<Vec<String>>, Result<Simulators, String>>,
 }
 
 impl DrawingDefinition {
@@ -226,22 +227,22 @@ impl DrawingDefinition {
             let ids: Vec<String> = reference
                 .datums
                 .iter()
-                .map(|d| d.datum_feature.clone())
+                .flat_map(|d| d.members().map(str::to_owned))
                 .collect();
             if let Ok(frame) = context.measured_frame(&reference.datums) {
                 datum_frames.push(MeasuredDatumFrame {
                     datum_features: ids,
                     frame,
                 });
-            } else if let Ok(Some(Simulator::Axis(origin, direction, size))) = context
+            } else if let Ok(Some(Simulator::Axis(origin, direction, sizes))) = context
                 .simulators(&reference.datums)
-                .map(|s| s.last().copied())
+                .map(|s| s.last().cloned())
             {
                 datum_axes.push(MeasuredDatumAxis {
                     datum_features: ids,
                     origin_mm: origin,
                     direction,
-                    mating_size_mm: size,
+                    mating_sizes_mm: sizes,
                 });
             }
         }
@@ -386,7 +387,11 @@ impl Context<'_, '_> {
 
     /// Simulator planes (point, outward normal) for an ordered datum prefix.
     fn simulators(&mut self, datums: &[DrawingDatumReference]) -> Result<Simulators, String> {
-        let key: Vec<String> = datums.iter().map(|d| d.datum_feature.clone()).collect();
+        // Common datums are distinct simulators: key by every member.
+        let key: Vec<Vec<String>> = datums
+            .iter()
+            .map(|d| d.members().map(str::to_owned).collect())
+            .collect();
         if let Some(cached) = self.simulators.get(&key) {
             return cached.clone();
         }
@@ -404,15 +409,32 @@ impl Context<'_, '_> {
             return Err("datum shift at a material boundary is not evaluated".into());
         }
         let id = last.datum_feature.as_str();
-        let points = self
-            .measured_datums
-            .get(id)
-            .ok_or_else(|| format!("datum feature '{id}' was not measured"))?;
+        let members = last
+            .members()
+            .map(|member| {
+                self.measured_datums
+                    .get(member)
+                    .map(|points| (self.features[member], points.as_slice()))
+                    .ok_or_else(|| format!("datum feature '{member}' was not measured"))
+            })
+            .collect::<Result<Vec<_>, String>>()?;
         let feature = self.features[id];
         if let ResolvedDatum::Axis { direction, .. } = self.nominal(&feature.attachment.anchor)? {
-            simulators.push(self.axis_simulator(feature, points, direction, &simulators)?);
+            let simulator = if let [(feature, points)] = members.as_slice() {
+                self.axis_simulator(feature, points, direction, &simulators)?
+            } else {
+                self.common_axis(&members, direction, &simulators)?
+            };
+            simulators.push(simulator);
             return Ok(simulators);
         }
+        // A common plane's simulator contacts every member at once: one
+        // constrained-L∞ plane over their union.
+        let union: Vec<Vec3> = members
+            .iter()
+            .flat_map(|(_, p)| p.iter().copied())
+            .collect();
+        let points = union.as_slice();
         if simulators.iter().any(|s| matches!(s, Simulator::Axis(..))) {
             return Err("plane datums after an axis datum are not evaluated".into());
         }
@@ -454,6 +476,48 @@ impl Context<'_, '_> {
         Ok(simulators)
     }
 
+    /// Common datum axis of two coaxial datum features of size: the line
+    /// through the midpoints of each member's own mating-envelope axis over
+    /// its measured length (a CMM construction, not a simultaneous-contact
+    /// simulator). Evaluated as the primary datum only.
+    fn common_axis(
+        &self,
+        members: &[(&DrawingDatumFeature, &[Vec3])],
+        nominal: Vec3,
+        prefix: &[Simulator],
+    ) -> Result<Simulator, String> {
+        if !prefix.is_empty() || members.len() != 2 {
+            return Err(
+                "common datum axes are evaluated from two features as the primary datum".into(),
+            );
+        }
+        let nominal = unit(nominal).map_err(|e| e.to_string())?;
+        let mut midpoints = Vec::with_capacity(2);
+        let mut sizes = Vec::with_capacity(2);
+        for (feature, points) in members {
+            let Simulator::Axis(origin, direction, size) =
+                self.axis_simulator(feature, points, nominal, &[])?
+            else {
+                unreachable!("axis simulator");
+            };
+            let (lo, hi) =
+                points
+                    .iter()
+                    .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), &p| {
+                        let t = dot(subtract(p, origin), direction);
+                        (lo.min(t), hi.max(t))
+                    });
+            midpoints.push(add(origin, scale(direction, 0.5 * (lo + hi))));
+            sizes.extend(size);
+        }
+        let mut direction = unit(subtract(midpoints[1], midpoints[0]))
+            .map_err(|_| "common datum features share a measured midpoint".to_string())?;
+        if dot(direction, nominal) < 0.0 {
+            direction = scale(direction, -1.0);
+        }
+        Ok(Simulator::Axis(midpoints[0], direction, sizes))
+    }
+
     /// Axis of the actual mating envelope of a cylindrical datum feature of
     /// size: the largest inscribed cylinder of a hole or the smallest
     /// circumscribed cylinder of a shaft. As primary the axis is free; after
@@ -485,7 +549,7 @@ impl Context<'_, '_> {
                 } else {
                     direction
                 };
-                Ok(Simulator::Axis(origin, direction, 2.0 * radius))
+                Ok(Simulator::Axis(origin, direction, vec![2.0 * radius]))
             }
             [Simulator::Plane(point, normal)] => {
                 if length(cross(nominal, *normal)) > 1e-9 {
@@ -504,7 +568,7 @@ impl Context<'_, '_> {
                     .collect();
                 let (center, radius) = fit_circle(&projected, fit).map_err(|e| e.to_string())?;
                 let origin = add(*point, add(scale(u, center[0]), scale(v, center[1])));
-                Ok(Simulator::Axis(origin, *normal, 2.0 * radius))
+                Ok(Simulator::Axis(origin, *normal, vec![2.0 * radius]))
             }
             _ => Err(
                 "axis datums are evaluated as the primary datum or after one primary plane".into(),
@@ -531,11 +595,15 @@ impl Context<'_, '_> {
             .enumerate()
             .map(|(i, r)| {
                 let geometry = match planes {
-                    Some(p) => match p[i] {
-                        Simulator::Plane(origin, normal) => ResolvedDatum::Plane { origin, normal },
-                        Simulator::Axis(origin, direction, _) => {
-                            ResolvedDatum::Axis { origin, direction }
-                        }
+                    Some(p) => match &p[i] {
+                        Simulator::Plane(origin, normal) => ResolvedDatum::Plane {
+                            origin: *origin,
+                            normal: *normal,
+                        },
+                        Simulator::Axis(origin, direction, _) => ResolvedDatum::Axis {
+                            origin: *origin,
+                            direction: *direction,
+                        },
                     },
                     None => {
                         self.nominal(&self.features[r.datum_feature.as_str()].attachment.anchor)?
@@ -685,7 +753,7 @@ impl Context<'_, '_> {
         tolerance: f64,
     ) -> Result<ControlMeasurement, String> {
         let Some(Simulator::Axis(origin, axis, _)) =
-            self.simulators(&frame.datums)?.last().copied()
+            self.simulators(&frame.datums)?.last().cloned()
         else {
             return Err(
                 "runout needs a datum axis from a measured cylindrical datum feature".into(),
@@ -724,7 +792,9 @@ impl Context<'_, '_> {
                 false
             }
             _ => {
-                return Err("runout needs an axis or plane anchor on the controlled surface".into());
+                return Err(
+                    "runout needs an axis or plane anchor on the controlled surface".into(),
+                );
             }
         };
         // (element key, indicated value): radial readings are grouped by axial

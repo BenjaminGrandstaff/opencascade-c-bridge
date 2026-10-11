@@ -97,6 +97,7 @@ pub(crate) fn inspection_case(definition: &FamilyDefinition) -> Outcome {
             let reference = |id: &str| DrawingDatumReference {
                 datum_feature: id.into(),
                 boundary: DatumMaterialBoundary::Regardless,
+                common_with: Vec::new(),
             };
             let mut controls: Vec<DrawingFeatureControlFrame> = (0..CONTROLS)
                 .map(|i| DrawingFeatureControlFrame {
@@ -409,10 +410,13 @@ pub(crate) fn form_case(definition: &FamilyDefinition) -> Outcome {
 /// largest inscribed cylinder, and 1,000 circular plus 1,000 total runout
 /// controls on eccentric surfaces about them; every tenth surface reads
 /// 0.06 mm, over its 0.05 mm tolerance.
-pub(crate) fn runout_case(definition: &FamilyDefinition) -> Outcome {
+/// With `common`, each datum is the common axis D-J of two coaxial bore
+/// journals (200 envelope fits), through their envelope-axis midpoints.
+pub(crate) fn runout_case(definition: &FamilyDefinition, common: bool) -> Outcome {
     timed(
         format!(
-            "inspection: {FORM_CONTROLS} circular + {FORM_CONTROLS} total runout controls on 100 fitted datum axes"
+            "inspection: {FORM_CONTROLS} circular + {FORM_CONTROLS} total runout controls on 100 fitted {} axes",
+            if common { "common datum" } else { "datum" }
         ),
         Duration::from_secs(1),
         Expectation::Required,
@@ -460,14 +464,25 @@ pub(crate) fn runout_case(definition: &FamilyDefinition) -> Outcome {
                 datums: vec![DrawingDatumReference {
                     datum_feature: format!("D{}", i % holes),
                     boundary: DatumMaterialBoundary::Regardless,
+                    common_with: if common {
+                        vec![format!("J{}", i % holes)]
+                    } else {
+                        Vec::new()
+                    },
                 }],
             };
             let drawing = DrawingDefinition {
                 datum_reference_frames: Vec::new(),
                 datum_features: (0..holes)
-                    .map(|h| DrawingDatumFeature {
-                        id: format!("D{h}"),
-                        label: label(h),
+                    .map(|h| (format!("D{h}"), label(h), h))
+                    .chain(
+                        (0..holes)
+                            .filter(|_| common)
+                            .map(|h| (format!("J{h}"), label(holes + h), h)),
+                    )
+                    .map(|(id, label, h)| DrawingDatumFeature {
+                        id,
+                        label,
                         feature_of_size: true,
                         attachment: attachment(&format!("hole-{h}")),
                         size_kind: Some(FeatureOfSizeKind::Internal),
@@ -521,6 +536,16 @@ pub(crate) fn runout_case(definition: &FamilyDefinition) -> Outcome {
                         id: format!("D{h}"),
                         points_mm: bore(hole_center(h), 6, 66, 0.0, 0.005),
                     })
+                    .chain((0..holes).filter(|_| common).map(|h| {
+                        MeasuredFeature {
+                            id: format!("J{h}"),
+                            // A second journal 20 mm further along the same axis.
+                            points_mm: bore(hole_center(h), 6, 66, 0.0, 0.005)
+                                .into_iter()
+                                .map(|[x, y, z]| [x, y, z + 20.0])
+                                .collect(),
+                        }
+                    }))
                     .collect(),
                 controls: (0..FORM_CONTROLS)
                     .map(|i| MeasuredFeature {
@@ -560,7 +585,7 @@ pub(crate) fn runout_case(definition: &FamilyDefinition) -> Outcome {
             Ok(format!(
                 "{conforming} of {} conform, {} measured points",
                 report.controls.len(),
-                holes * 396 + 2 * FORM_CONTROLS * 216
+                holes * 396 * if common { 2 } else { 1 } + 2 * FORM_CONTROLS * 216
             ))
         },
     )

@@ -12,12 +12,12 @@ tracks status and order.
 | `occt-types` (shared value types) | — | No native dependency |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI; re-exports `occt-types` |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric-core` (kernel-free engineering layer) | Schema 135 | Definitions, documents, solving and checks without OCCT |
-| `occt-parametric` (kernel regeneration) | Schema 135 | Active development; re-exports the core API |
+| `occt-parametric-core` (kernel-free engineering layer) | Schema 136 | Definitions, documents, solving and checks without OCCT |
+| `occt-parametric` (kernel regeneration) | Schema 136 | Active development; re-exports the core API |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 153 + first-use integration 1 (+1 doc test), recipes 3, parametric core 35 + kernel 633 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 5 + view command 13 + viewer Node 19 + branch command 2 + model command 89, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 153 + first-use integration 1 (+1 doc test), recipes 3, parametric core 35 + kernel 636 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 5 + view command 13 + viewer Node 19 + branch command 2 + model command 89, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -25,6 +25,15 @@ tracks status and order.
 | Scale benchmarks | Last full suite: 189 Rust cases plus 5 model-command cases and a 10,000-face Python matcher. Sketch authoring integration rechecked 60 sketch cases and 60 MCP cases within budget. | `tools/bench/run.sh` |
 
 ## Done
+
+- Common datums (schema 136, ABI 68 unchanged). A datum reference's
+  `common_with` joins up to three nominally coplanar planes or coaxial axes
+  into one compartment, drawn `A-B` and validated. Measured common planes use
+  one constrained-L∞ simulator over all members' points. Common axes join the
+  midpoints of each journal's mating-envelope axis (a CMM construction), and
+  report both mating sizes. The simulator cache keys common datums by every
+  member. 2,000 runout controls on 100 common axes from 200 journals in
+  0.037 s (1 s budget).
 
 - Cylindrical datum features of size and runout (schema 135, ABI 68
   unchanged). Datum features declare `size_kind`. A measured cylindrical datum
@@ -2144,11 +2153,13 @@ scopes and inspected repo capabilities, not a full conformity audit.
 2. **Structured GD&T** — [Y14.5](https://www.asme.org/codes-standards/find-codes-standards/y14-5-dimensioning-tolerancing):
    datum shift, planar datum features of size, non-orthogonal datum
    simulators, pattern and composite evaluation, profile against nominal
-   surfaces, conical runout, common datums and advanced modifiers, and
+   surfaces, conical runout, simultaneous common-axis simulators and advanced
+   modifiers, and
    measurement uncertainty. Measured planar datum frames, flatness,
    circularity, cylindricity, planar orientation zones and position with
    MMC/LMC bonus are evaluated (schema 68), and cylindrical datum features of
-   size with circular and total runout (schema 135).
+   size with circular and total runout (schema 135), and common datums A-B
+   (schema 136).
 3. **3D manufacturing annotations and exchange** — [Y14.41](https://www.asme.org/codes-standards/find-codes-standards/y14-41-digital-product-definition-data-practices):
    structured PMI attached to persistent geometry, annotation views, dataset
    authority and revision rules, and verified semantic PMI exchange. Geometry

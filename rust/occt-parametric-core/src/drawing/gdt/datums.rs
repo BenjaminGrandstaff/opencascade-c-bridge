@@ -163,7 +163,7 @@ fn resolve(
             let feature = index[r.datum_feature.as_str()];
             Ok(ResolvedDrawingDatumReference {
                 datum_feature: r.datum_feature.clone(),
-                label: feature.label.clone(),
+                label: r.label(index),
                 precedence: match i {
                     0 => DatumPrecedence::Primary,
                     1 => DatumPrecedence::Secondary,

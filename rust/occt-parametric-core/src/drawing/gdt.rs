@@ -1,5 +1,6 @@
 //! Structured drawing GD&T intent and measured inspection of supported controls.
 use super::*;
+use crate::assembly::{length, unit};
 pub mod composite;
 pub mod datums;
 pub mod inspection;
@@ -131,6 +132,25 @@ pub struct DrawingDatumReference {
     pub datum_feature: String,
     #[serde(default)]
     pub boundary: DatumMaterialBoundary,
+    /// Further datum features that form a common datum with `datum_feature`
+    /// in this compartment, shown as `A-B` (schema 136). Members must be
+    /// nominally coplanar planes or coaxial axes.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub common_with: Vec<String>,
+}
+impl DrawingDatumReference {
+    /// The compartment's datum features: `datum_feature`, then `common_with`.
+    pub fn members(&self) -> impl Iterator<Item = &str> {
+        std::iter::once(self.datum_feature.as_str())
+            .chain(self.common_with.iter().map(String::as_str))
+    }
+    /// Label text such as `A` or `A-B`.
+    pub fn label(&self, index: &HashMap<&str, &DrawingDatumFeature>) -> String {
+        self.members()
+            .map(|id| index[id].label.as_str())
+            .collect::<Vec<_>>()
+            .join("-")
+    }
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -244,6 +264,7 @@ pub fn validate(
     }
     for frame in reference_frames {
         validate_references(&frame.datums, &index)?;
+        validate_common(&frame.datums, &index, graph)?;
     }
     let mut ids = HashSet::new();
     let resolved = effective_frames(frames, reference_frames)?;
@@ -259,6 +280,7 @@ pub fn validate(
         size::validate(frame)?;
         composite::validate(frame, &index)?;
         validate_references(&frame.datums, &index)?;
+        validate_common(&frame.datums, &index, graph)?;
     }
     Ok(())
 }
@@ -268,18 +290,71 @@ fn validate_references(
 ) -> Result<(), ModelError> {
     let mut references = HashSet::new();
     for reference in datums {
-        let feature = index.get(reference.datum_feature.as_str()).ok_or_else(|| {
-            ModelError::new("feature control frame references an unknown datum feature")
-        })?;
-        if !references.insert(&reference.datum_feature) {
+        if reference.common_with.len() > 2 {
             return Err(ModelError::new(
-                "feature control frame repeats a datum feature",
+                "a common datum has at most three datum features",
             ));
         }
-        if reference.boundary != DatumMaterialBoundary::Regardless && !feature.feature_of_size {
-            return Err(ModelError::new(
-                "datum material boundary requires a declared feature of size",
-            ));
+        for member in reference.members() {
+            let feature = index.get(member).ok_or_else(|| {
+                ModelError::new("feature control frame references an unknown datum feature")
+            })?;
+            if !references.insert(member) {
+                return Err(ModelError::new(
+                    "feature control frame repeats a datum feature",
+                ));
+            }
+            if reference.boundary != DatumMaterialBoundary::Regardless && !feature.feature_of_size {
+                return Err(ModelError::new(
+                    "datum material boundary requires a declared feature of size",
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+/// Common datum members must be nominally coplanar planes (same outward
+/// normal) or coaxial axes. O(members).
+fn validate_common(
+    datums: &[DrawingDatumReference],
+    index: &HashMap<&str, &DrawingDatumFeature>,
+    graph: &InstanceGraph<'_>,
+) -> Result<(), ModelError> {
+    for reference in datums.iter().filter(|r| !r.common_with.is_empty()) {
+        let geometry = |id: &str| {
+            let anchor = &index[id].attachment.anchor;
+            graph.datum(&anchor.instance, &anchor.datum)
+        };
+        let first = geometry(&reference.datum_feature)?;
+        for member in &reference.common_with {
+            let coincident = match (first, geometry(member)?) {
+                (
+                    ResolvedDatum::Plane { origin, normal },
+                    ResolvedDatum::Plane {
+                        origin: other,
+                        normal: other_normal,
+                    },
+                ) => {
+                    let (n, m) = (unit(normal)?, unit(other_normal)?);
+                    dot(n, m) > 1.0 - 1e-9 && dot(subtract(other, origin), n).abs() <= 1e-6
+                }
+                (
+                    ResolvedDatum::Axis { origin, direction },
+                    ResolvedDatum::Axis {
+                        origin: other,
+                        direction: other_direction,
+                    },
+                ) => {
+                    let (d, e) = (unit(direction)?, unit(other_direction)?);
+                    length(cross(d, e)) <= 1e-9 && length(cross(subtract(other, origin), d)) <= 1e-6
+                }
+                _ => false,
+            };
+            if !coincident {
+                return Err(ModelError::new(
+                    "common datum features must be nominally coplanar planes or coaxial axes",
+                ));
+            }
         }
     }
     Ok(())
@@ -486,7 +561,7 @@ fn cell_widths(
             },
     ];
     cells.extend(f.datums.iter().map(|r| {
-        4.0 + index[r.datum_feature.as_str()].label.len() as f64 * 3.0
+        4.0 + r.label(index).len() as f64 * 3.0
             + if r.boundary != DatumMaterialBoundary::Regardless {
                 6.0
             } else {
@@ -527,7 +602,7 @@ fn append_row(
         }
         x += width;
         if let Some(r) = f.datums.get(i - 1) {
-            let label = &index[r.datum_feature.as_str()].label;
+            let label = r.label(index);
             text(d, [x + 2.0, p[1] + 2.5], label.clone());
             if r.boundary != DatumMaterialBoundary::Regardless {
                 modifier(
