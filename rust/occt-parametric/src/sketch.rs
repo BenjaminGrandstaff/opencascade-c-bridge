@@ -14,6 +14,7 @@ const PIVOT_TOLERANCE: f64 = 1e-10;
 mod diagnosis;
 mod diagnostics;
 mod discovery;
+mod editing;
 mod geometry;
 mod patterns;
 mod profile;
@@ -166,6 +167,95 @@ pub enum SketchProfileOperation {
         #[serde(default)]
         join: SketchOffsetJoin,
     },
+}
+
+/// Source-geometry edits producing named native curves (schema 132).
+/// Constraints remain on authored entities; pieces are selectable boundaries.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum SketchCurveOperation {
+    Split {
+        entity: String,
+        at: SketchTrimBound,
+        before: String,
+        after: String,
+    },
+    /// Extend one end to a crossing within a positive search distance. The
+    /// crossing nearest `near` (or the original end) is selected.
+    ExtendTo {
+        entity: String,
+        end: SketchCurveEnd,
+        target: String,
+        limit: ScalarExpr,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        near: Option<String>,
+    },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SketchCurveEnd {
+    Start,
+    End,
+}
+
+/// Fillet/chamfer/material-offset edits to the face containing a named seed.
+/// Applies to original, additional or discovered regions (schema 132).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SketchRegionEdit {
+    pub seed: String,
+    #[schemars(length(min = 1, max = 1024))]
+    #[schemars(with = "Vec<SketchBoundaryOperation>")]
+    pub operations: Vec<SketchProfileOperation>,
+}
+
+/// The region-edit schema admits boundary operations only; source trims and
+/// extensions belong to profile/curve operations. Convert to a profile
+/// operation when constructing `SketchRegionEdit` through the Rust API.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum SketchBoundaryOperation {
+    Fillet {
+        point: String,
+        radius: ScalarExpr,
+    },
+    Chamfer {
+        point: String,
+        incoming: ScalarExpr,
+        outgoing: ScalarExpr,
+    },
+    Offset {
+        distance: ScalarExpr,
+        #[serde(default)]
+        join: SketchOffsetJoin,
+    },
+}
+
+impl From<SketchBoundaryOperation> for SketchProfileOperation {
+    fn from(operation: SketchBoundaryOperation) -> Self {
+        match operation {
+            SketchBoundaryOperation::Fillet { point, radius } => Self::Fillet { point, radius },
+            SketchBoundaryOperation::Chamfer {
+                point,
+                incoming,
+                outgoing,
+            } => Self::Chamfer {
+                point,
+                incoming,
+                outgoing,
+            },
+            SketchBoundaryOperation::Offset { distance, join } => Self::Offset { distance, join },
+        }
+    }
+}
+
+/// Sampled active edited curve, linked to its original authored entity.
+#[derive(Clone, Debug)]
+pub struct SketchEditedCurve {
+    pub id: String,
+    pub source: String,
+    pub points: Vec<SketchPoint2>,
 }
 #[derive(
     Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
@@ -931,6 +1021,12 @@ pub struct SketchDefinition {
     /// Discover bounded cells instead of enumerating profile/holes/regions.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub region_discovery: Option<SketchRegionDiscovery>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[schemars(length(max = 1024))]
+    pub curve_operations: Vec<SketchCurveOperation>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[schemars(length(max = 1000))]
+    pub region_edits: Vec<SketchRegionEdit>,
     /// Single-line text outlines added to face outputs (schema 129).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[schemars(length(max = 100))]
@@ -1113,7 +1209,11 @@ impl SketchDefinition {
             collect_scalar_parameters(&point.x, names);
             collect_scalar_parameters(&point.y, names);
         }
-        for operation in &self.profile_operations {
+        for operation in self
+            .profile_operations
+            .iter()
+            .chain(self.region_edits.iter().flat_map(|edit| &edit.operations))
+        {
             match operation {
                 SketchProfileOperation::Trim { first, last, .. } => {
                     collect_scalar_parameters(first, names);
@@ -1136,6 +1236,11 @@ impl SketchDefinition {
                 SketchProfileOperation::Offset { distance, .. } => {
                     collect_scalar_parameters(distance, names)
                 }
+            }
+        }
+        for operation in &self.curve_operations {
+            if let SketchCurveOperation::ExtendTo { limit, .. } = operation {
+                collect_scalar_parameters(limit, names);
             }
         }
         for pattern in &self.patterns {

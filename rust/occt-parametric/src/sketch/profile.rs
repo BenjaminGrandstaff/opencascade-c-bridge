@@ -102,6 +102,11 @@ impl SketchDefinition {
             |point: SketchPoint2| add(origin, add(scale(x_axis, point.x), scale(y_axis, point.y)));
         let direction = |d: SketchPoint2| add(scale(x_axis, d.x), scale(y_axis, d.y));
         let normal = cross(x_axis, y_axis);
+        let library = if self.curve_operations.is_empty() {
+            None
+        } else {
+            Some(self.curve_library(session, parameters, &solution, (origin, x_axis, y_axis))?)
+        };
         let face = |outer: &Shape<'session>, holes: &[Vec<String>], name: &str| {
             if holes.is_empty() {
                 let face = session.create_face_from_wire(outer)?;
@@ -114,7 +119,17 @@ impl SketchDefinition {
             }
             let loops = holes
                 .iter()
-                .map(|ids| self.loop_wire(session, ids, &solution, &transform, &direction, normal))
+                .map(|ids| {
+                    self.loop_wire(
+                        session,
+                        ids,
+                        &solution,
+                        &transform,
+                        &direction,
+                        normal,
+                        library.as_ref(),
+                    )
+                })
                 .collect::<Result<Vec<_>, ModelError>>()?;
             session
                 .create_face_with_holes(outer, &loops.iter().collect::<Vec<_>>())
@@ -136,6 +151,7 @@ impl SketchDefinition {
         if let Some(discovery) = &self.region_discovery {
             faces.push(self.discovered_regions(
                 session,
+                parameters,
                 &solution,
                 discovery,
                 (origin, x_axis, y_axis),
@@ -144,7 +160,7 @@ impl SketchDefinition {
         } else if !text_only {
             let wire = self.solved_profile_wire(session, parameters, datum, true, &solution)?;
             let main = face(&wire, &self.holes, "profile")?;
-            if self.regions.is_empty() && self.texts.is_empty() {
+            if self.regions.is_empty() && self.texts.is_empty() && self.region_edits.is_empty() {
                 return Ok(main);
             }
             faces.push(main);
@@ -159,9 +175,24 @@ impl SketchDefinition {
                 &transform,
                 &direction,
                 normal,
+                library.as_ref(),
             )?;
             faces.push(face(&outer, &region.holes, &name)?);
             names.push(name);
+        }
+        if !self.region_edits.is_empty() {
+            let mut flattened = Vec::new();
+            for face in &faces {
+                flattened.extend(session.subshapes(face, ShapeType::Face)?);
+            }
+            faces = self.edited_regions(
+                session,
+                parameters,
+                &solution,
+                flattened,
+                (origin, x_axis, y_axis),
+            )?;
+            names = (0..faces.len()).map(|i| format!("region {i}")).collect();
         }
         for text in &self.texts {
             faces.push(
@@ -252,6 +283,7 @@ impl SketchDefinition {
 
     /// A closed boundary wire through the named entities: an exact circle or
     /// full ellipse alone, or a connected chain of segments.
+    #[allow(clippy::too_many_arguments)]
     fn loop_wire<'session>(
         &self,
         session: &'session Session,
@@ -260,7 +292,12 @@ impl SketchDefinition {
         transform: &impl Fn(SketchPoint2) -> Vec3,
         direction: &impl Fn(SketchPoint2) -> Vec3,
         normal: Vec3,
+        library: Option<&super::editing::CurveLibrary<'session>>,
     ) -> Result<Shape<'session>, ModelError> {
+        if let Some(library) = library {
+            let wires: Vec<_> = ids.iter().map(|id| &library.curves[id]).collect();
+            return Ok(session.join_wires(&wires, true)?);
+        }
         let entities = self.entities();
         let members = ids
             .iter()
@@ -345,6 +382,11 @@ impl SketchDefinition {
                 "sketch texts apply only to face outputs, not wires",
             ));
         }
+        if !self.region_edits.is_empty() {
+            return Err(ModelError::new(
+                "region edits apply only to face outputs, not wires",
+            ));
+        }
         if self.region_discovery.is_some() {
             return Err(ModelError::new(
                 "sketch region discovery applies only to face outputs, not wires",
@@ -370,6 +412,25 @@ impl SketchDefinition {
         let (origin, x_axis, y_axis) = self.resolved_frame(parameters, datum)?;
         let transform =
             |point: SketchPoint2| add(origin, add(scale(x_axis, point.x), scale(y_axis, point.y)));
+        if !self.curve_operations.is_empty() {
+            let library =
+                self.curve_library(session, parameters, solution, (origin, x_axis, y_axis))?;
+            let ids = if self.profile.is_empty() {
+                &library.active
+            } else {
+                &self.profile
+            };
+            return self.edited_named_profile(
+                session,
+                parameters,
+                solution,
+                ids,
+                &library,
+                &transform,
+                cross(x_axis, y_axis),
+                closed,
+            );
+        }
         let profile = self.profile_entities()?;
         let wire = if !self.profile_operations.is_empty() {
             let direction = |d: SketchPoint2| add(scale(x_axis, d.x), scale(y_axis, d.y));
@@ -468,14 +529,38 @@ impl SketchDefinition {
         normal: Vec3,
         closed: bool,
     ) -> Result<Shape<'a>, ModelError> {
-        let index = profile
+        let frame = (
+            transform(SketchPoint2 { x: 0., y: 0. }),
+            direction(SketchPoint2 { x: 1., y: 0. }),
+            direction(SketchPoint2 { x: 0., y: 1. }),
+        );
+        let library = self.curve_library(session, parameters, solution, frame)?;
+        let ids: Vec<_> = profile.iter().map(|e| e.id().to_owned()).collect();
+        self.edited_named_profile(
+            session, parameters, solution, &ids, &library, transform, normal, closed,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn edited_named_profile<'a>(
+        &self,
+        session: &'a Session,
+        parameters: &HashMap<String, ParameterValue>,
+        solution: &SketchSolution,
+        ids: &[String],
+        library: &super::editing::CurveLibrary<'a>,
+        transform: &impl Fn(SketchPoint2) -> Vec3,
+        normal: Vec3,
+        closed: bool,
+    ) -> Result<Shape<'a>, ModelError> {
+        let index = ids
             .iter()
             .enumerate()
-            .map(|(i, e)| (e.id(), i))
+            .map(|(i, id)| (id.as_str(), i))
             .collect::<HashMap<_, _>>();
-        let mut wires = profile
+        let mut wires = ids
             .iter()
-            .map(|e| self.entity_wire(session, *e, solution, transform, direction, normal))
+            .map(|id| session.duplicate(&library.curves[id]))
             .collect::<Result<Vec<_>, _>>()?;
         let mut joined = None;
         for operation in &self.profile_operations {
@@ -498,18 +583,22 @@ impl SketchDefinition {
                     let i = *index.get(entity.as_str()).ok_or_else(|| {
                         ModelError::new("trim entity must belong to the selected profile")
                     })?;
-                    let (start, end, _, _) = session.curve_end_data(&wires[i])?;
-                    let at = |bound: &SketchTrimBound| -> Result<Vec3, ModelError> {
-                        Ok(match bound {
-                            SketchTrimBound::Start => start,
-                            SketchTrimBound::End => end,
-                            SketchTrimBound::Point { point } => transform(solution.points[point]),
-                            SketchTrimBound::Crossing { curve, near } => {
-                                transform(self.crossing(session, solution, entity, curve, near)?)
-                            }
-                        })
-                    };
-                    let (a, b) = (at(from)?, at(to)?);
+                    let a = self.bound_point(
+                        session,
+                        solution,
+                        &library.curves,
+                        &wires[i],
+                        from,
+                        transform,
+                    )?;
+                    let b = self.bound_point(
+                        session,
+                        solution,
+                        &library.curves,
+                        &wires[i],
+                        to,
+                        transform,
+                    )?;
                     wires[i] = session
                         .trim_curve_between(&wires[i], a, b)
                         .map_err(|error| {
@@ -581,36 +670,6 @@ impl SketchDefinition {
         Ok(wire)
     }
 
-    /// The crossing of two sketch entities nearest to the point `near`, in
-    /// sketch-local XY, from the native planar intersection of their curves.
-    fn crossing(
-        &self,
-        session: &Session,
-        solution: &SketchSolution,
-        entity: &str,
-        curve: &str,
-        near: &str,
-    ) -> Result<SketchPoint2, ModelError> {
-        let entities = self.entities();
-        let local = |p: SketchPoint2| Vec3::new(p.x, p.y, 0.0);
-        let normal = Vec3::new(0.0, 0.0, 1.0);
-        let first =
-            self.entity_wire(session, entities[entity], solution, &local, &local, normal)?;
-        let second =
-            self.entity_wire(session, entities[curve], solution, &local, &local, normal)?;
-        let hint = solution.points[near];
-        session
-            .planar_curve_intersections(&first, &second, 1000)?
-            .into_iter()
-            .map(|p| SketchPoint2 { x: p.x, y: p.y })
-            .min_by(|a, b| {
-                (a.x - hint.x)
-                    .hypot(a.y - hint.y)
-                    .total_cmp(&(b.x - hint.x).hypot(b.y - hint.y))
-            })
-            .ok_or_else(|| ModelError::new(format!("'{entity}' and '{curve}' do not cross")))
-    }
-
     /// Native sampled edited profile in sketch-local XY, for diagnostics.
     /// Source constraints stay attached to source entities; these curves show
     /// the derived boundary actually used by solid/wire features.
@@ -633,6 +692,32 @@ impl SketchDefinition {
         if !(2..=256).contains(&samples) {
             return Err(ModelError::new("profile preview samples must be in 2..256"));
         }
+        if !self.region_edits.is_empty() || !self.curve_operations.is_empty() {
+            let mut local = self.clone();
+            local.origin =
+                VectorExpr::Literal(VectorQuantity::lengths(0., 0., 0., LengthUnit::Millimeter));
+            local.x_axis = VectorExpr::Literal(VectorQuantity::scalars(1., 0., 0.));
+            local.y_axis = VectorExpr::Literal(VectorQuantity::scalars(0., 1., 0.));
+            local.datum_plane = None;
+            local.face_support = None;
+            local.texts.clear();
+            let shape = if closed {
+                local.face_on_plane(session, parameters, None)?
+            } else {
+                local.open_wire(session, parameters, None)?
+            };
+            return session
+                .subshapes(&shape, ShapeType::Edge)?
+                .iter()
+                .map(|edge| {
+                    Ok(session
+                        .edge_sample_points(edge, samples)?
+                        .into_iter()
+                        .map(|p| SketchPoint2 { x: p.x, y: p.y })
+                        .collect())
+                })
+                .collect();
+        }
         if self.profile_operations.is_empty() && self.region_discovery.is_none() {
             return Ok(Vec::new());
         }
@@ -651,6 +736,7 @@ impl SketchDefinition {
         let wire = if let Some(discovery) = &self.region_discovery {
             self.discovered_regions(
                 session,
+                parameters,
                 solution,
                 discovery,
                 (
@@ -904,7 +990,7 @@ impl SketchDefinition {
 /// Rejects overlapping faces of a sketch output: candidate pairs come from
 /// a sweep over their bounds along x, then a native common must have no
 /// area. O(n log n) plus booleans for pairs whose bounds overlap.
-fn disjoint_faces(
+pub(super) fn disjoint_faces(
     session: &Session,
     faces: &[Shape<'_>],
     names: &[String],

@@ -35,6 +35,8 @@ fn wire_section() -> SketchDefinition {
         shapes: Vec::new(),
         regions: Vec::new(),
         region_discovery: None,
+        curve_operations: Vec::new(),
+        region_edits: Vec::new(),
         texts: Vec::new(),
         acceptance: Default::default(),
         id: "section".into(),

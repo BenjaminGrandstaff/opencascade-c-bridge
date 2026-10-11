@@ -47,6 +47,8 @@ fn rib_case(centered: bool, mode: RibCase) -> Outcome {
                 shapes: Vec::new(),
                 regions: Vec::new(),
                 region_discovery: None,
+                curve_operations: Vec::new(),
+                region_edits: Vec::new(),
                 texts: Vec::new(),
                 acceptance: Default::default(),
                 id: "brace".into(),

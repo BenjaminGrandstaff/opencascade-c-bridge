@@ -32,6 +32,7 @@
 #include <TopoDS.hxx>
 #include <TopoDS_Wire.hxx>
 #include <gp_Elips.hxx>
+#include <gp_Circ.hxx>
 #include <gp_Ax2.hxx>
 #include <gp_Pln.hxx>
 #include <algorithm>
@@ -512,6 +513,26 @@ extern "C" {
             }
             const bool closed = BRep_Tool::IsClosed(*shape);
             const auto only = single_edge(*shape);
+            // OCCT 7.9's general medial-axis offset can crash on a full
+            // equal-radius ellipse. Circular offsets are exact and need no
+            // medial-axis construction; positive distance expands the loop
+            // regardless of its traversal (including face hole wires).
+            if (closed && !only.IsNull()) {
+                BRepAdaptor_Curve analytic(only);
+                const bool is_circle = analytic.GetType() == GeomAbs_Circle;
+                const bool circular_ellipse = analytic.GetType() == GeomAbs_Ellipse
+                    && analytic.Ellipse().MajorRadius() == analytic.Ellipse().MinorRadius();
+                if (is_circle || circular_ellipse) {
+                    gp_Circ circle = is_circle ? analytic.Circle()
+                        : gp_Circ(analytic.Ellipse().Position(), analytic.Ellipse().MajorRadius());
+                    const double radius = circle.Radius() + distance;
+                    if (radius <= Precision::Confusion()) return fail(s, OCCT_BRIDGE_INVALID_GEOMETRY, "circular offset collapses its boundary");
+                    circle.SetRadius(radius);
+                    auto edge = BRepBuilderAPI_MakeEdge(circle).Edge();
+                    if (only.Orientation() == TopAbs_REVERSED) edge.Reverse();
+                    return store_shape(s, BRepBuilderAPI_MakeWire(edge).Wire(), out);
+                }
+            }
             if (!closed && !only.IsNull()) {
                 double a, b;
                 auto source = BRep_Tool::Curve(only, a, b);

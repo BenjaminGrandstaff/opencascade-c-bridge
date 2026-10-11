@@ -4,6 +4,80 @@ use super::*;
 use occt_bridge::{ShapeType, Vec3};
 
 #[test]
+fn edited_regions_viewer_and_incremental_builds_keep_named_pieces_holes_and_source_constraints() {
+    let dir = Directory::new();
+    let request = view_example("edited-regions");
+    let family = ModelDocument::from_json(&request["model"].to_string())
+        .unwrap()
+        .family;
+    let session = Session::new().unwrap();
+    let mut part = PartInstance {
+        id: "part".into(),
+        definition: &family,
+        overrides: HashMap::new(),
+        provenance: "test".into(),
+    };
+    let original = part.regenerate(&session).unwrap();
+    let original_volume = session.volume(original.shape("body").unwrap()).unwrap();
+    assert_eq!(
+        session
+            .subshape_count(original.shape("body").unwrap(), ShapeType::Solid)
+            .unwrap(),
+        3
+    );
+    part.overrides.insert(
+        "width".into(),
+        ParameterValue::Scalar(Quantity::length(24., LengthUnit::Millimeter)),
+    );
+    let changed = part.regenerate_incremental(&session, &original).unwrap();
+    assert!(changed.regeneration.reused.contains(&"ring_profile".into()));
+    assert!(changed.regeneration.reused.contains(&"ring".into()));
+    assert!(
+        (session.volume(changed.shape("body").unwrap()).unwrap() - original_volume - 80.).abs()
+            < 1e-6
+    );
+    // An oversized corner edit rejects without changing either accepted generation.
+    part.overrides.insert(
+        "fillet".into(),
+        ParameterValue::Scalar(Quantity::length(100., LengthUnit::Millimeter)),
+    );
+    assert!(part.regenerate_incremental(&session, &changed).is_err());
+    assert!(
+        (session.volume(original.shape("body").unwrap()).unwrap() - original_volume).abs() < 1e-7
+    );
+    assert!(session.is_valid(changed.shape("body").unwrap()).unwrap());
+    view_request(&dir, request, "edited").unwrap();
+    let data: Value =
+        serde_json::from_str(&fs::read_to_string(dir.0.join("edited/view.json")).unwrap()).unwrap();
+    let scenes = data["scenes"].as_array().unwrap();
+    let pads = scenes
+        .iter()
+        .find(|s| s["kind"] == "sketch" && s["feature"] == "profile")
+        .unwrap();
+    let curves = pads["edited_curves"].as_array().unwrap();
+    assert_eq!(curves.len(), 2);
+    for id in ["bottom-left", "bottom-right"] {
+        let curve = curves.iter().find(|c| c["id"] == id).unwrap();
+        assert_eq!(curve["source"], "bottom");
+    }
+    assert!(pads["profile_error"].is_null());
+    assert_eq!(pads["region_edits"].as_array().unwrap().len(), 2);
+    let ring = scenes
+        .iter()
+        .find(|s| s["kind"] == "sketch" && s["feature"] == "ring_profile")
+        .unwrap();
+    assert!(ring["profile_error"].is_null());
+    assert_eq!(ring["region_edits"].as_array().unwrap().len(), 1);
+    assert!(
+        pads["annotations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|a| a["id"] == "curve-edit-1" && a["status"] == "constructed")
+    );
+}
+
+#[test]
 fn composed_regions_keep_a_bore_and_two_solids_through_parameter_edits() {
     let dir = Directory::new();
     for (outer, bore, island, thickness) in [(12., 3., 4., 2.), (16., 4., 5., 3.)] {

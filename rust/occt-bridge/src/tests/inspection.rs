@@ -3,6 +3,49 @@
 use super::*;
 
 #[test]
+fn ordered_face_boundaries_and_strict_planar_seed_queries_cover_holes_and_seams() {
+    let session = Session::new().unwrap();
+    let normal = Vec3::new(0., 0., 1.);
+    let origin = Vec3::new(0., 0., 0.);
+    let outer = session
+        .create_ellipse_wire_axes(origin, normal, Vec3::new(1., 0., 0.), 10., 10.)
+        .unwrap();
+    let inner = session.create_circle_wire(origin, normal, 3.).unwrap();
+    let face = session.create_face_with_holes(&outer, &[&inner]).unwrap();
+    let boundary = session.face_boundary(&face, 0).unwrap();
+    assert!((session.exact_bounds(&boundary).unwrap().max.x - 10.).abs() < 1e-7);
+    assert_eq!(
+        session
+            .planar_face_point_state(&face, Vec3::new(5., 0., 0.))
+            .unwrap(),
+        FacePointState::Inside
+    );
+    for p in [origin, Vec3::new(20., 0., 0.), Vec3::new(5., 0., 1.)] {
+        assert_eq!(
+            session.planar_face_point_state(&face, p).unwrap(),
+            FacePointState::Outside
+        );
+    }
+    for p in [Vec3::new(10., 0., 0.), Vec3::new(3., 0., 0.)] {
+        assert_eq!(
+            session.planar_face_point_state(&face, p).unwrap(),
+            FacePointState::Boundary
+        );
+    }
+    // Full-circle/equal-radius-ellipse offsets bypass the native medial-axis
+    // crash and remain exact, including reversed hole boundaries.
+    let expanded = session.offset_wire(&boundary, normal, 1., false).unwrap();
+    assert!((session.exact_bounds(&expanded).unwrap().max.x - 11.).abs() < 1e-7);
+    let hole = session.face_boundary(&face, 1).unwrap();
+    let contracted = session.offset_wire(&hole, normal, -1., false).unwrap();
+    assert!((session.exact_bounds(&contracted).unwrap().max.x - 2.).abs() < 1e-7);
+    let before = session.shape_count().unwrap();
+    assert!(session.face_boundary(&face, 2).is_err());
+    assert!(session.offset_wire(&hole, normal, -4., false).is_err());
+    assert_eq!(session.shape_count().unwrap(), before);
+}
+
+#[test]
 fn bulk_subshapes_match_indexed_traversal_and_release_independent_handles() {
     let session = Session::new().unwrap();
     let body = unit_box(&session, 0.0);

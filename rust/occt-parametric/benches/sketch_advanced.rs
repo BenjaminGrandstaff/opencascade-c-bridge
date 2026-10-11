@@ -28,6 +28,8 @@ fn sketch() -> SketchDefinition {
         shapes: Vec::new(),
         regions: Vec::new(),
         region_discovery: None,
+        curve_operations: Vec::new(),
+        region_edits: Vec::new(),
         texts: Vec::new(),
         acceptance: Default::default(),
         id: "scale".into(),
@@ -61,6 +63,107 @@ fn gate(name: &str, budget: u64, run: impl FnOnce()) {
     println!("PASS {name}: {:.3}s / {budget}s", elapsed.as_secs_f64());
 }
 fn main() {
+    gate(
+        "1000 named line splits built as a 1001-edge open profile",
+        10,
+        || {
+            let session = Session::new().unwrap();
+            let mut s = sketch();
+            s.points = (0..=1001)
+                .map(|i| point(format!("p{i}"), i as f64, 0., true))
+                .collect();
+            s.lines = vec![SketchLine {
+                id: "source".into(),
+                start: "p0".into(),
+                end: "p1001".into(),
+            }];
+            let mut source = "source".to_owned();
+            for i in 1..=1000 {
+                let before = format!("piece{i}");
+                let after = format!("tail{i}");
+                s.curve_operations.push(SketchCurveOperation::Split {
+                    entity: source,
+                    at: SketchTrimBound::Point {
+                        point: format!("p{i}"),
+                    },
+                    before: before.clone(),
+                    after: after.clone(),
+                });
+                s.profile.push(before);
+                source = after;
+            }
+            s.profile.push(source);
+            let mut family = ModelDocument::from_json(
+                &serde_json::from_str::<serde_json::Value>(include_str!(
+                    "../../../tools/model/edited-regions.request.json"
+                ))
+                .unwrap()["model"]
+                    .to_string(),
+            )
+            .unwrap()
+            .family;
+            family.requirements.clear();
+            family.features = vec![FeatureDefinition {
+                id: "wire".into(),
+                operation: FeatureOperation::SketchOpenWire {
+                    sketch: Box::new(s),
+                },
+            }];
+            let part = PartInstance {
+                id: "part".into(),
+                definition: &family,
+                overrides: HashMap::new(),
+                provenance: "scale".into(),
+            };
+            let built = part.regenerate(&session).unwrap();
+            let wire = built.shape("wire").unwrap();
+            assert_eq!(session.subshape_count(wire, ShapeType::Edge).unwrap(), 1001);
+            assert!((session.exact_bounds(wire).unwrap().max.x - 1001.).abs() < 1e-7);
+            assert!(session.is_valid(wire).unwrap());
+        },
+    );
+    gate(
+        "200 split/extend/fillet/chamfer/holed-offset part edits with branch reuse",
+        10,
+        || {
+            let request: serde_json::Value = serde_json::from_str(include_str!(
+                "../../../tools/model/edited-regions.request.json"
+            ))
+            .unwrap();
+            let family = ModelDocument::from_json(&request["model"].to_string())
+                .unwrap()
+                .family;
+            let session = Session::new().unwrap();
+            let mut part = PartInstance {
+                id: "part".into(),
+                definition: &family,
+                overrides: HashMap::new(),
+                provenance: "scale".into(),
+            };
+            let mut previous = part.regenerate(&session).unwrap();
+            for i in 0..200 {
+                let width = 16. + (i % 12) as f64;
+                let offset = 0.2 + (i % 6) as f64 * 0.1;
+                part.overrides.insert(
+                    "width".into(),
+                    ParameterValue::Scalar(Quantity::length(width, LengthUnit::Millimeter)),
+                );
+                part.overrides.insert(
+                    "offset".into(),
+                    ParameterValue::Scalar(Quantity::length(offset, LengthUnit::Millimeter)),
+                );
+                let built = part.regenerate_incremental(&session, &previous).unwrap();
+                let body = built.shape("body").unwrap();
+                assert_eq!(session.subshape_count(body, ShapeType::Solid).unwrap(), 3);
+                let expected = 2.
+                    * (width * 10. - (4. - std::f64::consts::PI)
+                        + 98.
+                        + std::f64::consts::PI * ((6. + offset).powi(2) - (2. - offset).powi(2)));
+                assert!((session.volume(body).unwrap() - expected).abs() < 1e-6);
+                previous = built;
+            }
+        },
+    );
     gate(
         "1000 grid cells composed into one holed region and extruded",
         10,

@@ -1021,5 +1021,27 @@ with tempfile.TemporaryDirectory(prefix='occb-mcp-scale-') as root:
         elapsed=time.monotonic()-started
         assert elapsed<10
         print(f'PASS MCP 20 composed region sets with holes, separate bodies and boundary previews: {elapsed:.3f}s / 10s')
+        edited=client.tool('occt_get_example',dict(name='edited-regions'))['structuredContent']
+        for i in range(1,20):
+            edited['model']['instances'].append({'clone':dict(id=f'part-{i}',source='part',overrides={'width':{'scalar':{'value':16+i*0.5,'dimension':'length','unit':'millimeter'}}},provenance='scale')})
+            edited['outputs'].append(dict(instance=f'part-{i}',output='body'))
+        started=time.monotonic()
+        result=client.tool('occt_visualize_model',edited)
+        assert not result['isError'],result
+        data=json.loads(client.call('resources/read',dict(uri=result['structuredContent']['resources']['view.json']))['result']['contents'][0]['text'])
+        solids=[s for s in data['scenes'] if s['kind']=='solid']
+        pads=[s for s in data['scenes'] if s['kind']=='sketch' and s['feature']=='profile']
+        rings=[s for s in data['scenes'] if s['kind']=='sketch' and s['feature']=='ring_profile']
+        assert len(solids)==20 and all(s['valid'] for s in solids)
+        assert len(pads)==20 and len(rings)==20
+        for s in pads:
+            assert s['profile_error'] is None
+            assert {c['id'] for c in s['edited_curves']}=={'bottom-left','bottom-right'}
+            assert all(c['source']=='bottom' for c in s['edited_curves'])
+            assert len(s['region_edits'])==2
+        assert all(s['profile_error'] is None and len(s['region_edits'])==1 for s in rings)
+        elapsed=time.monotonic()-started
+        assert elapsed<10
+        print(f'PASS MCP 20 edited part sets with named pieces, region corners and holed offsets: {elapsed:.3f}s / 10s')
     finally:
         client.close()

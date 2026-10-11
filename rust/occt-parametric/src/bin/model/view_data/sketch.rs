@@ -76,6 +76,13 @@ pub(super) fn sketch_scene(
             })
         })
         .collect::<Vec<_>>();
+    let (edited_curves,curve_edit_error)=match sketch.edited_curve_previews(session,parameters,&solution,32) {
+        Ok(curves)=>(curves.into_iter().map(|curve|json!({"id":curve.id,"source":curve.source,"points":curve.points.iter().map(|p|[p.x,p.y,0.]).collect::<Vec<_>>()})).collect::<Vec<_>>(),None),
+        Err(error)=>(Vec::new(),Some(error.message)),
+    };
+    for curve in &edited_curves {
+        entities.push(json!({"id":format!("edited:{}",curve["id"].as_str().unwrap()),"curve_id":curve["id"],"source_entity":curve["source"],"points":curve["points"],"point_ids":[]}));
+    }
     // Glyph outlines draw as text entities; one annotation per text links
     // its height and angle controls and reports the resolved font file.
     let mut text_annotations = Vec::new();
@@ -1485,7 +1492,7 @@ pub(super) fn sketch_scene(
             );
         }
     }
-    let (edited_profile, profile_error) =
+    let (edited_profile, mut profile_error) =
         match sketch.preview_edited_profile(session, parameters, &solution, 32, closed) {
             Ok(lines) => (
                 lines
@@ -1500,6 +1507,9 @@ pub(super) fn sketch_scene(
             ),
             Err(error) => (Vec::new(), Some(error.message)),
         };
+    if profile_error.is_none() {
+        profile_error = curve_edit_error.clone();
+    }
     if let Some(discovery) = &sketch.region_discovery {
         annotations.push(Annotation {
             id: "region-discovery".into(),
@@ -1511,6 +1521,54 @@ pub(super) fn sketch_scene(
             anchors: json!(discovery.seeds.iter().map(|id| point_map[id]).collect::<Vec<_>>()),
             detail: json!({"selection": discovery, "native_boundary_edges": edited_profile.len(), "error": profile_error}),
         }.into());
+    }
+    for (i, edit) in sketch.region_edits.iter().enumerate() {
+        annotations.push(
+            Annotation {
+                id: format!("region-edit-{i}"),
+                label: format!("Region edits at {}", edit.seed),
+                kind: AnnotationKind::Group,
+                status: if profile_error.is_none() {
+                    AnnotationStatus::Constructed
+                } else {
+                    AnnotationStatus::Failed
+                },
+                targets: vec![edit.seed.clone()],
+                parameters: names(&json!(edit)),
+                anchors: json!([point_map[&edit.seed]]),
+                detail: json!({"edit":edit,"error":profile_error}),
+            }
+            .into(),
+        );
+    }
+    for (i, operation) in sketch.curve_operations.iter().enumerate() {
+        annotations.push(
+            Annotation {
+                id: format!("curve-edit-{i}"),
+                label: match operation {
+                    SketchCurveOperation::Split {
+                        entity,
+                        before,
+                        after,
+                        ..
+                    } => format!("Split {entity} → {before}, {after}"),
+                    SketchCurveOperation::ExtendTo { entity, target, .. } => {
+                        format!("Extend {entity} to {target}")
+                    }
+                },
+                kind: AnnotationKind::Group,
+                status: if profile_error.is_none() {
+                    AnnotationStatus::Constructed
+                } else {
+                    AnnotationStatus::Failed
+                },
+                targets: vec![],
+                parameters: names(&json!(operation)),
+                anchors: json!([]),
+                detail: json!(operation),
+            }
+            .into(),
+        );
     }
     for (i, operation) in sketch.profile_operations.iter().enumerate() {
         let detail = serde_json::to_value(operation).stage("sketch")?;
@@ -1724,6 +1782,10 @@ pub(super) fn sketch_scene(
         "acceptance_error": acceptance_error,
         "profile_operations": sketch.profile_operations,
         "region_discovery": sketch.region_discovery,
+        "region_edits": sketch.region_edits,
+        "curve_operations": sketch.curve_operations,
+        "edited_curves": edited_curves,
+        "curve_edit_error": curve_edit_error,
         "holes": sketch.holes,
         "patterns": sketch.patterns,
         "points": point_map,

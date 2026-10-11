@@ -18,6 +18,8 @@ fn sketch(id: &str, x_axis: (f64, f64, f64), y_axis: (f64, f64, f64)) -> SketchD
         shapes: Vec::new(),
         regions: Vec::new(),
         region_discovery: None,
+        curve_operations: Vec::new(),
+        region_edits: Vec::new(),
         texts: Vec::new(),
         acceptance: Default::default(),
         id: id.into(),

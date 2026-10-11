@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define OCCT_BRIDGE_ABI_VERSION 67u
+#define OCCT_BRIDGE_ABI_VERSION 68u
 #define OCCT_BRIDGE_INVALID_SHAPE_ID UINT64_C(0)
 
 #if defined(_WIN32) && defined(OCCT_BRIDGE_BUILD_SHARED)
@@ -373,6 +373,15 @@ OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_create_ellipse_wire(
     double minor_radius,
     occt_bridge_shape_id_t* out_shape
 );
+
+/* ABI 68: ordered face boundary; index 0 is the outer wire, followed by
+ * unique inner wires. Returns an independently owned handle. */
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_face_boundary(
+    occt_bridge_session_t*, occt_bridge_shape_id_t, size_t index, occt_bridge_shape_id_t*);
+/* ABI 68: point against a planar trimmed face: 0 outside (including holes
+ * and points off its plane), 1 strictly inside, 2 within 1e-7 mm of boundary. */
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_planar_face_point_state(
+    occt_bridge_session_t*, occt_bridge_shape_id_t, occt_bridge_vec3_t point, int* out_state);
 
 /* Creates a planar face from a closed wire handle. */
 OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_create_face_from_wire(

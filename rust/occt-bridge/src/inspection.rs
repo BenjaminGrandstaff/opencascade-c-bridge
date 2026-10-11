@@ -4,6 +4,39 @@
 use super::*;
 
 impl Session {
+    /// Outer boundary (index 0) or an inner boundary of a face, ABI 68.
+    pub fn face_boundary<'a>(
+        &'a self,
+        face: &Shape<'_>,
+        index: usize,
+    ) -> Result<Shape<'a>, BridgeError> {
+        self.derived_shape(face, |out| unsafe {
+            occt_bridge_face_boundary(self.raw.as_ptr(), face.id, index, out)
+        })
+    }
+    /// Strict point classification against a planar trimmed face, ABI 68.
+    pub fn planar_face_point_state(
+        &self,
+        face: &Shape<'_>,
+        point: Vec3,
+    ) -> Result<FacePointState, BridgeError> {
+        self.validate_shape(face)?;
+        let mut state = 0;
+        // SAFETY: Validated face and a writable output pointer.
+        self.check(unsafe {
+            occt_bridge_planar_face_point_state(
+                self.raw.as_ptr(),
+                face.id,
+                point.into(),
+                &mut state,
+            )
+        })?;
+        Ok(match state {
+            1 => FacePointState::Inside,
+            2 => FacePointState::Boundary,
+            _ => FacePointState::Outside,
+        })
+    }
     /// Axis-aligned bounds, enlarged by shape tolerances as OCCT reports them.
     pub fn bounds(&self, shape: &Shape<'_>) -> Result<Bounds, BridgeError> {
         self.query_bounds(shape, occt_bridge_shape_bounds)

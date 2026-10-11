@@ -8,22 +8,31 @@ tracks status and order.
 
 | Layer | Version | State |
 |---|---|---|
-| C ABI (`src/`, `include/`) | ABI 67 | Stable; exact version match required |
+| C ABI (`src/`, `include/`) | ABI 68 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 131 | Active development |
+| `occt-parametric` (engineering layer) | Schema 132 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 151 + first-use integration 1 (+1 doc test), recipes 3, parametric 632 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 19 + branch command 2 + model command 79, MCP Python 9, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 152 + first-use integration 1 (+1 doc test), recipes 3, parametric 639 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 19 + branch command 2 + model command 80, MCP Python 9, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
 | Coverage | Last recorded: 93.61% lines overall, test code excluded; C++ 94.13% lines, 87.40% branches, 100% functions; Rust 93.42% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | Last full suite: 189 Rust cases plus 5 model-command cases and a 10,000-face Python matcher. Region-composition integration rechecked 55 sketch cases and 56 MCP cases within budget. | `tools/bench/run.sh` |
+| Scale benchmarks | Last full suite: 189 Rust cases plus 5 model-command cases and a 10,000-face Python matcher. Geometry-editing integration rechecked 57 sketch cases and 57 MCP cases within budget. | `tools/bench/run.sh` |
 
 ## Done
 
+- Sketch milestone 2: geometry editing (schema 132, ABI 68). Named native
+  split pieces feed profiles, discovery and later curve edits; bounded
+  extend-to searches stop at native intersections. Seed-selected region
+  fillets, chamfers and material offsets work on main/additional/discovered
+  regions and their holes. Source constraints remain intact, previews expose
+  names/source links, and rejected edits preserve accepted generations.
+  Exact circular offsets avoid an OCCT 7.9 equal-radius-ellipse medial-axis
+  crash. Example: `edited-regions`; 1,000 splits in 0.02 s and 200 part edits
+  in 1.39 s (10 s budgets).
 - Sketch milestone 1: region composition (schema 131, ABI 67 unchanged).
   `region_discovery.merge_adjacent` removes shared boundaries between selected
   cells, preserves excluded holes and disconnected/point-touching regions,
@@ -2029,8 +2038,9 @@ dimensions. Separate junction edge topology and conic/spline tangential contact 
 remain extensions to that workflow. Automatic bounded-region discovery now
 selects native cells with named interior points; optional region composition
 merges adjacent selections before extrusion while preserving holes and
-separate bodies. Next sketch milestones are geometry editing on additional
-and discovered regions, stable references through topology edits, solver
+separate bodies. Geometry editing now adds named splits, extend-to crossings,
+and seed-selected boundary operations on explicit and discovered regions.
+Next sketch milestones are stable references through topology edits, solver
 reliability and complete sketch-aware AI editing/repair operations.
 
 The earlier geometry and assembly milestones are complete. Manufacturing

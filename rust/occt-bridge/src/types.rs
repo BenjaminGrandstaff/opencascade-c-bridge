@@ -75,6 +75,13 @@ impl Vec3 {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FacePointState {
+    Outside,
+    Inside,
+    Boundary,
+}
+
 impl From<Vec3> for RawVec3 {
     fn from(value: Vec3) -> Self {
         Self {

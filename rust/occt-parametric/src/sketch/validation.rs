@@ -90,7 +90,20 @@ impl SketchDefinition {
                 scalar(angle, parameters, Dimension::Scalar)?;
             }
         }
-        for op in &self.profile_operations {
+        for operation in &self.curve_operations {
+            if let SketchCurveOperation::ExtendTo { limit, .. } = operation
+                && scalar(limit, parameters, Dimension::Length)? <= 1e-6
+            {
+                return Err(ModelError::new(
+                    "extend-to search limit must be a positive length above 1e-6 mm",
+                ));
+            }
+        }
+        for op in self
+            .profile_operations
+            .iter()
+            .chain(self.region_edits.iter().flat_map(|edit| &edit.operations))
+        {
             match op {
                 SketchProfileOperation::Trim { first, last, .. } => {
                     let a = scalar(first, parameters, Dimension::Scalar)?;
@@ -166,7 +179,8 @@ impl SketchDefinition {
         let point_ids = self.validate_points()?;
         let line_ids = self.validate_lines(&point_ids)?;
         let entity_ids = self.validate_curves(&point_ids, &line_ids)?;
-        self.validate_profile(&entity_ids)?;
+        let boundary_ids = self.validate_edit_references(&entity_ids, &point_ids)?;
+        self.validate_profile(&boundary_ids)?;
         if self.profile_operations.len() > 1024 {
             return Err(ModelError::new("sketch profile operations exceed 1024"));
         }
@@ -211,7 +225,7 @@ impl SketchDefinition {
                 SketchProfileOperation::Trim { entity, .. }
                 | SketchProfileOperation::TrimBetween { entity, .. }
                 | SketchProfileOperation::Extend { entity, .. }
-                    if !entity_ids.contains(entity.as_str()) =>
+                    if !boundary_ids.contains(entity.as_str()) =>
                 {
                     return Err(ModelError::new(
                         "profile operation refers to an unknown entity",
@@ -233,7 +247,7 @@ impl SketchDefinition {
                                 )));
                             }
                             SketchTrimBound::Crossing { curve, near }
-                                if !entity_ids.contains(curve.as_str())
+                                if !boundary_ids.contains(curve.as_str())
                                     || curve == entity
                                     || !point_ids.contains(near.as_str()) =>
                             {
@@ -585,7 +599,15 @@ impl SketchDefinition {
                     "region discovery exceeds 1000 entities or seeds",
                 ));
             }
-            if discovery.entities.is_empty() && entity_ids.len() > 1000 {
+            if discovery.entities.is_empty()
+                && self.entities().len()
+                    + self
+                        .curve_operations
+                        .iter()
+                        .filter(|op| matches!(op, SketchCurveOperation::Split { .. }))
+                        .count()
+                    > 1000
+            {
                 return Err(ModelError::new(
                     "region discovery includes more than 1000 expanded curve entities",
                 ));

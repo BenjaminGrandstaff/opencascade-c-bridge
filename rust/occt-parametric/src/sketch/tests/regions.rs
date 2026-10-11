@@ -169,6 +169,173 @@ fn region_composition_unions_overlapping_circles_without_double_counting() {
 }
 
 #[test]
+fn named_splits_build_exact_profiles_and_extensions_stop_at_crossings() {
+    let mut s = sketch(json!({
+        "points":[p("a",0.,0.),p("b",10.,0.),p("c",10.,10.),p("d",0.,10.),p("cut",4.,0.),p("v0",6.,-2.),p("v1",6.,12.)],
+        "lines":[{"id":"bottom","start":"a","end":"b"},{"id":"right","start":"b","end":"c"},
+            {"id":"top","start":"c","end":"d"},{"id":"left","start":"d","end":"a"},{"id":"stop","start":"v0","end":"v1"}],
+        "curve_operations":[{"split":{"entity":"bottom","at":{"point":{"point":"cut"}},"before":"first","after":"second"}}],
+        "profile":["first","second","right","top","left"]
+    }));
+    assert!((faces(&s).unwrap().1 - 100.).abs() < 1e-7);
+    assert_eq!(s.solve(&HashMap::new()).unwrap().free_degrees, 0);
+    s.profile = vec!["first".into()];
+    s.curve_operations.push(
+        serde_json::from_value(
+            json!({"extend_to":{"entity":"first","end":"end","target":"stop","limit":mm(3.)}}),
+        )
+        .unwrap(),
+    );
+    let session = Session::new().unwrap();
+    let wire = s.open_wire(&session, &HashMap::new(), None).unwrap();
+    let (a, b, _, _) = session.curve_end_data(&wire).unwrap();
+    assert!((a.x - 0.).abs() < 1e-7 && (b.x - 6.).abs() < 1e-7);
+    // Authored endpoints and constraints stay unchanged.
+    assert_eq!(s.solve(&HashMap::new()).unwrap().points["cut"].x, 4.);
+    s.curve_operations[1] = serde_json::from_value(
+        json!({"extend_to":{"entity":"first","end":"end","target":"stop","limit":mm(1.)}}),
+    )
+    .unwrap();
+    assert!(
+        s.open_wire(&session, &HashMap::new(), None)
+            .unwrap_err()
+            .message
+            .contains("no crossing")
+    );
+}
+
+#[test]
+fn named_circle_and_spline_pieces_preserve_native_geometry() {
+    let circle = sketch(json!({
+        "points":[p("c",0.,0.),p("r",10.,0.),p("v0",0.,-12.),p("v1",0.,12.),p("hint",0.,10.)],
+        "circles":[{"id":"disc","center":"c","rim":"r"}],
+        "lines":[{"id":"divider","start":"v0","end":"v1"}],
+        "curve_operations":[{"split":{"entity":"disc","at":{"crossing":{"curve":"divider","near":"hint"}},"before":"arc-a","after":"arc-b"}}],
+        "profile":["arc-a","arc-b"]
+    }));
+    assert!((faces(&circle).unwrap().1 - 100. * PI).abs() < 1e-7);
+    let mut spline = sketch(json!({
+        "points":[p("a",0.,0.),p("b",5.,4.),p("c",10.,0.)],
+        "splines":[{"id":"arch","points":["a","b","c"]}],
+        "lines":[{"id":"base","start":"c","end":"a"}],
+        "curve_operations":[{"split":{"entity":"arch","at":{"point":{"point":"b"}},"before":"arch-a","after":"arch-b"}}],
+        "profile":["arch-a","arch-b","base"]
+    }));
+    let (_, split_area) = faces(&spline).unwrap();
+    spline.curve_operations.clear();
+    spline.profile = vec!["arch".into(), "base".into()];
+    assert!((faces(&spline).unwrap().1 - split_area).abs() < 1e-7);
+}
+
+#[test]
+fn region_edits_fillet_an_additional_region_and_offset_discovered_material() {
+    let mut s = sketch(json!({
+        "points":[p("a",0.,0.),p("b",20.,10.),p("c",30.,0.),p("d",40.,10.),p("pick",35.,5.)],
+        "shapes":[{"rectangle":{"id":"first","first":"a","opposite":"b"}},
+            {"rectangle":{"id":"second","first":"c","opposite":"d"}}],
+        "profile":["first"],"regions":[{"profile":["second"]}],
+        "region_edits":[{"seed":"pick","operations":[{"fillet":{"point":"c","radius":mm(2.)}}]}]
+    }));
+    assert!((faces(&s).unwrap().1 - (296. + PI)).abs() < 1e-7);
+    s.profile.clear();
+    s.regions.clear();
+    s.region_discovery = Some(serde_json::from_value(json!({"merge_adjacent":true})).unwrap());
+    s.region_edits[0]
+        .operations
+        .push(serde_json::from_value(json!({"offset":{"distance":mm(1.)}})).unwrap());
+    assert!((faces(&s).unwrap().1 - (332. + 3. * PI)).abs() < 1e-6);
+}
+
+#[test]
+fn region_offsets_expand_material_and_contract_holes() {
+    let s = sketch(json!({
+        "points":[p("c",0.,0.),p("r",10.,0.),p("b",3.,0.),p("pick",0.,6.)],
+        "circles":[{"id":"disc","center":"c","rim":"r"},{"id":"bore","center":"c","rim":"b"}],
+        "region_discovery":{"seeds":["pick"],"merge_adjacent":true},
+        "region_edits":[{"seed":"pick","operations":[{"offset":{"distance":mm(1.)}}]}]
+    }));
+    let (count, area) = faces(&s).unwrap();
+    assert_eq!(count, 1);
+    assert!((area - 117. * PI).abs() < 1e-7);
+    let session = Session::new().unwrap();
+    let face = s.face(&session, &HashMap::new()).unwrap();
+    assert_eq!(session.subshape_count(&face, ShapeType::Wire).unwrap(), 2);
+}
+
+#[test]
+fn region_offsets_and_corner_edits_handle_polygonal_holes() {
+    let mut s = sketch(json!({
+        "points":[p("a",0.,0.),p("b",40.,30.),p("h0",10.,10.),p("h1",20.,18.),p("pick",5.,5.)],
+        "shapes":[{"rectangle":{"id":"outer","first":"a","opposite":"b"}},
+            {"rectangle":{"id":"bore","first":"h0","opposite":"h1"}}],
+        "profile":["outer"],"holes":[["bore"]],
+        "region_edits":[{"seed":"pick","operations":[{"offset":{"distance":mm(1.)}}]}]
+    }));
+    assert!((faces(&s).unwrap().1 - (1292. + PI)).abs() < 1e-6);
+    s.region_edits[0].operations =
+        serde_json::from_value(json!([{"fillet":{"point":"h0","radius":mm(1.)}}])).unwrap();
+    assert!((faces(&s).unwrap().1 - (1121. - PI / 4.)).abs() < 1e-6);
+}
+
+#[test]
+fn extend_to_both_ends_uses_the_nearest_crossing_or_an_explicit_hint() {
+    let mut s = sketch(json!({
+        "points":[p("a",0.,0.),p("b",4.,0.),p("c",10.,0.),p("r",12.,0.),p("hint",12.,0.)],
+        "lines":[{"id":"line","start":"a","end":"b"}],
+        "circles":[{"id":"stop","center":"c","rim":"r"}],"profile":["line"],
+        "curve_operations":[{"extend_to":{"entity":"line","end":"end","target":"stop","limit":mm(10.)}}]
+    }));
+    let session = Session::new().unwrap();
+    let end = |s: &SketchDefinition| {
+        session
+            .curve_end_data(&s.open_wire(&session, &HashMap::new(), None).unwrap())
+            .unwrap()
+    };
+    assert!((end(&s).1.x - 8.).abs() < 1e-7);
+    if let SketchCurveOperation::ExtendTo { near, .. } = &mut s.curve_operations[0] {
+        *near = Some("hint".into());
+    }
+    assert!((end(&s).1.x - 12.).abs() < 1e-7);
+    s.points.iter_mut().find(|p| p.id == "c").unwrap().x = serde_json::from_value(mm(-7.)).unwrap();
+    s.points.iter_mut().find(|p| p.id == "r").unwrap().x = serde_json::from_value(mm(-5.)).unwrap();
+    if let SketchCurveOperation::ExtendTo { end, near, .. } = &mut s.curve_operations[0] {
+        *end = SketchCurveEnd::Start;
+        *near = None;
+    }
+    assert!((end(&s).0.x + 5.).abs() < 1e-7);
+}
+
+#[test]
+fn geometry_edit_errors_reject_lost_corners_bad_names_and_region_seeds() {
+    let mut s = sketch(json!({
+        "points":[p("a",0.,0.),p("b",10.,10.),p("pick",5.,5.)],
+        "shapes":[{"rectangle":{"id":"box","first":"a","opposite":"b"}}],"profile":["box"],
+        "region_edits":[{"seed":"pick","operations":[{"chamfer":{"point":"pick","incoming":mm(1.),"outgoing":mm(1.)}}]}]
+    }));
+    assert!(
+        faces(&s)
+            .unwrap_err()
+            .message
+            .contains("not a remaining boundary vertex")
+    );
+    s.region_edits[0].seed = "a".into();
+    assert!(
+        faces(&s)
+            .unwrap_err()
+            .message
+            .contains("lies on a boundary")
+    );
+    s.region_edits.clear();
+    s.curve_operations=serde_json::from_value(json!([{"split":{"entity":"missing","at":{"point":{"point":"a"}},"before":"one","after":"two"}}])).unwrap();
+    assert!(
+        faces(&s)
+            .unwrap_err()
+            .message
+            .contains("active known curve")
+    );
+}
+
+#[test]
 fn automatic_regions_handle_nested_loops_and_overlapping_circles() {
     let nested = sketch(json!({
         "points": [p("c", 0., 0.), p("r", 10., 0.), p("b", 3., 0.), p("pick", 5., 0.)],

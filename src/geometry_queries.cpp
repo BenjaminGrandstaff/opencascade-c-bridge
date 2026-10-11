@@ -14,6 +14,12 @@
 #include <BRepLib.hxx>
 #include <BRepLProp_SLProps.hxx>
 #include <BRepTools.hxx>
+#include <BRepBuilderAPI_MakeVertex.hxx>
+#include <BRepClass_FaceClassifier.hxx>
+#include <BRepExtrema_DistShapeShape.hxx>
+#include <BRep_Builder.hxx>
+#include <TopoDS_Compound.hxx>
+#include <TopoDS_Wire.hxx>
 #include <GCPnts_AbscissaPoint.hxx>
 #include <gp_Dir.hxx>
 #include <gp_Pnt.hxx>
@@ -374,6 +380,53 @@ occt_bridge_status_t occt_bridge_shape_faces_are_tangent_within(
                 session, OCCT_BRIDGE_INVALID_ARGUMENT, "angular tolerance must be in (0, pi/2) radians");
         }
         return faces_tangent(session, parent, first_face, second_face, angular_tolerance, out_are_tangent);
+    });
+}
+
+occt_bridge_status_t occt_bridge_face_boundary(
+    occt_bridge_session_t* session, occt_bridge_shape_id_t face, size_t index, occt_bridge_shape_id_t* out) {
+    return guarded(session, [&] {
+        if (out == nullptr) return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_shape is null");
+        *out = OCCT_BRIDGE_INVALID_SHAPE_ID;
+        const auto* shape = find_shape(session, face);
+        if (shape == nullptr) return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "face was not found");
+        if (shape->ShapeType() != TopAbs_FACE) return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "shape is not a face");
+        const TopoDS_Wire outer = BRepTools::OuterWire(TopoDS::Face(*shape));
+        if (outer.IsNull()) return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "face has no outer wire");
+        if (index == 0) return store_shape(session, outer, out);
+        TopTools_IndexedMapOfShape wires;
+        TopExp::MapShapes(*shape, TopAbs_WIRE, wires);
+        size_t next = 1;
+        for (int i = 1; i <= wires.Extent(); ++i) {
+            if (!wires(i).IsSame(outer) && next++ == index) return store_shape(session, wires(i), out);
+        }
+        return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "face boundary index is out of range");
+    });
+}
+
+occt_bridge_status_t occt_bridge_planar_face_point_state(
+    occt_bridge_session_t* session, occt_bridge_shape_id_t face, occt_bridge_vec3_t point, int* out) {
+    return guarded(session, [&] {
+        if (out == nullptr || !finite(point)) return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "invalid face point query");
+        *out = 0;
+        const auto* shape = find_shape(session, face);
+        if (shape == nullptr) return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "face was not found");
+        if (shape->ShapeType() != TopAbs_FACE) return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "shape is not a face");
+        const auto value = TopoDS::Face(*shape);
+        BRepAdaptor_Surface surface(value);
+        if (surface.GetType() != GeomAbs_Plane) return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "face must be planar");
+        const gp_Pnt p = to_point(point);
+        if (surface.Plane().Distance(p) > 1e-7) return succeed(session);
+        TopoDS_Compound boundary;
+        BRep_Builder builder;
+        builder.MakeCompound(boundary);
+        for (TopExp_Explorer it(value, TopAbs_EDGE); it.More(); it.Next()) builder.Add(boundary, it.Current());
+        BRepExtrema_DistShapeShape distance(BRepBuilderAPI_MakeVertex(p).Vertex(), boundary);
+        if (!distance.IsDone()) return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "face boundary distance failed");
+        if (distance.Value() <= 1e-7) { *out = 2; return succeed(session); }
+        const auto state = BRepClass_FaceClassifier(value, p, 1e-7).State();
+        *out = state == TopAbs_IN ? 1 : state == TopAbs_ON ? 2 : 0;
+        return succeed(session);
     });
 }
 

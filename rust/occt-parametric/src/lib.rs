@@ -43,15 +43,17 @@ pub use assembly::{
 };
 pub use sketch::{
     ResolvedSketch, ResolvedSketches, SketchAcceptance, SketchArc, SketchBSplineBasis,
-    SketchCircle, SketchCircleTangency, SketchConflictGroup, SketchConstraint,
-    SketchConstraintCheck, SketchCoordinateAxis, SketchDefinition, SketchDiagnosis, SketchEllipse,
+    SketchBoundaryOperation, SketchCircle, SketchCircleTangency, SketchConflictGroup,
+    SketchConstraint, SketchConstraintCheck, SketchCoordinateAxis, SketchCurveEnd,
+    SketchCurveOperation, SketchDefinition, SketchDiagnosis, SketchEditedCurve, SketchEllipse,
     SketchEquationSource, SketchFaceSupport, SketchFontStyle, SketchFreeCoordinate,
     SketchFreeMotion, SketchLine, SketchLineSide, SketchMeasure, SketchMeasurement,
     SketchOffsetJoin, SketchPattern, SketchPoint, SketchPoint2, SketchPointMotion,
     SketchProfileOperation, SketchProjection, SketchProjectionIntersection,
     SketchProjectionJunction, SketchProjectionKind, SketchRegion, SketchRegionDiscovery,
-    SketchShape, SketchSolution, SketchSpline, SketchSplineCircleContact, SketchSplineEndpoints,
-    SketchSupportPlanes, SketchText, SketchTextAlign, SketchTextOutlines, SketchTrimBound,
+    SketchRegionEdit, SketchShape, SketchSolution, SketchSpline, SketchSplineCircleContact,
+    SketchSplineEndpoints, SketchSupportPlanes, SketchText, SketchTextAlign, SketchTextOutlines,
+    SketchTrimBound,
 };
 pub use solve::PlacementSolution;
 

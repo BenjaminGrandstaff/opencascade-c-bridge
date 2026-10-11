@@ -1839,7 +1839,8 @@ circle spacing, so edits follow the intended overlap without face indices.
   1e-6 mm. Input geometry is unchanged on success or failure.
 - Discovery applies only to face outputs. Additional text can join the
   resulting compound under the existing non-overlap rule. Profile operations
-  require explicit profiles and cannot be mixed with discovery.
+  require explicit profiles; schema 132 adds seed-selected `region_edits`
+  for discovered material boundaries.
 - By default the result is a compound of selected face cells. Extrusion
   produces one solid per cell. Schema 131 adds `merge_adjacent` to compose
   connected material before extrusion (see below).
@@ -1893,3 +1894,85 @@ with 1e-7 mm linear and 1e-9 rad angular tolerances; no new ABI is needed.
 The scale gate discovers a 1,000-cell grid, selects 999 cells, merges them into
 one face with a hole, removes all internal divider edges and extrudes it in
 0.19 s (10 s budget).
+
+## Geometry editing (schema 132 / ABI 68)
+
+`curve_operations` runs on exact solved source curves before constructing
+profiles or discovering cells. Constraints remain attached to authored
+geometry. Split pieces have explicit names for profile lists, discovery
+entity lists and subsequent curve/profile operations:
+
+```json
+"curve_operations": [
+  {"extend_to": {"entity": "bottom", "end": "end", "target": "right",
+                 "limit": {"parameter": "width"}}},
+  {"split": {"entity": "bottom", "at": {"point": {"point": "cut"}},
+             "before": "bottom-left", "after": "bottom-right"}}
+]
+```
+
+- `split.at` accepts a named on-curve point or the existing `crossing` bound
+  with another curve and a hint point. It must be inside the native active
+  interval. Full closed curves split about their native seam; splitting at
+  the seam or an open end rejects. Named pieces preserve native lines, conics
+  and splines rather than sampled geometry.
+- Piece names must be nonempty and unused. Splitting replaces the source in
+  the active curve list with the two pieces, in traversal order. The original
+  remains selectable as source/construction geometry. Further splits and
+  extensions operate on active pieces; default discovery includes active
+  curves, and explicit selections may name the retained originals.
+- `extend_to` accepts `start` or `end`, a different known target curve and
+  a positive length `limit` above 1e-6 mm. It searches only the added portion,
+  chooses the crossing nearest the original end, and trims there. Optional
+  `near` names a hint point to choose another crossing. Analytic curves
+  continue naturally; spline limits use the existing tangent-target extension
+  semantics. Closed curves and searches without a new crossing reject.
+- At most 1,024 curve operations. Forward references, repeated piece names,
+  inactive edit sources and unknown bounds/targets reject. These names are
+  boundary references; driving constraints continue to use authored entities.
+
+`region_edits` runs after explicit face construction or discovery/composition
+and before adding text. Each entry selects the current material face strictly
+containing its named seed:
+
+```json
+"region_edits": [{"seed": "pick", "operations": [
+  {"fillet": {"point": "corner", "radius": {"parameter": "fillet"}}},
+  {"offset": {"distance": {"parameter": "offset"}}}
+]}]
+```
+
+These edits work on the main profile, additional regions and discovered
+regions, including holes. The generated region-edit schema admits only
+`fillet`, `chamfer` and `offset`; Rust callers may convert
+`SketchBoundaryOperation` into the existing profile-operation type.
+
+- Fillets/chamfers identify a named point at a remaining boundary vertex.
+  Inner boundaries can be edited too. Corner edits precede offsets within an
+  entry, and a corner is edited once per entry.
+- Positive offsets expand material: outer loops grow and hole loops shrink.
+  Negative offsets do the reverse. Join options retain their existing meaning.
+  Circular offsets are analytic, avoiding an OCCT 7.9 medial-axis crash on
+  equal-radius ellipses. Offsets that collapse/split a loop, invalidate a face
+  or make regions overlap reject; they do not silently remove holes or merge
+  previously separate regions.
+- Seeds on a boundary, outside the material or in overlapping faces reject.
+  Entries run in order and select the current edited geometry. There are at
+  most 1,000 entries and 1,024 boundary operations total. Wire outputs reject
+  region edits. Existing `profile_operations` retains its original behavior.
+
+The viewer shows named edited pieces separately from authored source curves,
+their source links, selected region seeds and final material boundaries.
+Failed curve edits retain source previews with diagnostic errors. ABI 68 adds
+`face_boundary` (outer first, then holes) and `planar_face_point_state`
+(outside/inside/boundary) to the bridge and Rust wrapper.
+
+The [edited regions](../tools/model/edited-regions.request.json) example
+extends and splits a plate boundary, fillets its corner, chamfers an additional
+pad and offsets a discovered annulus while preserving the bore. It builds
+three solids. Tests verify exact areas/volumes, line/circle/spline pieces,
+both extension ends and crossing hints, polygonal and circular holes,
+incremental branch reuse, rejected edits preserving accepted geometry,
+viewer data and native query error paths. Scale gates build 1,000 splits into
+a 1,001-edge profile in 0.02 s and regenerate 200 edited parts in 1.39 s
+(10 s budgets).

@@ -1465,6 +1465,30 @@ static void planar_region_discovery(occt_bridge_session_t* session) {
     occt_bridge_shape_release(session, wire);
 }
 
+static void planar_face_edit_queries(occt_bridge_session_t* session) {
+    occt_bridge_shape_id_t wire=0, face=0, out=99;
+    int state=-1;
+    const occt_bridge_vec3_t point=vec(0,0,0);
+    EXPECT(occt_bridge_create_circle_wire(session,point,vec(0,0,1),5,&wire),OK);
+    EXPECT(occt_bridge_create_face_from_wire(session,wire,&face),OK);
+    EXPECT(occt_bridge_face_boundary(NULL,face,0,&out),ARG);
+    EXPECT(occt_bridge_face_boundary(session,face,0,NULL),ARG);
+    EXPECT(occt_bridge_face_boundary(session,UINT64_C(999999),0,&out),MISSING);
+    EXPECT(occt_bridge_face_boundary(session,wire,0,&out),GEOMETRY);
+    EXPECT(occt_bridge_face_boundary(session,face,1,&out),ARG);
+    EXPECT_TRUE(out==OCCT_BRIDGE_INVALID_SHAPE_ID,"failed boundary query clears output");
+    EXPECT(occt_bridge_planar_face_point_state(NULL,face,point,&state),ARG);
+    EXPECT(occt_bridge_planar_face_point_state(session,face,point,NULL),ARG);
+    EXPECT(occt_bridge_planar_face_point_state(session,face,vec(NAN,0,0),&state),ARG);
+    EXPECT(occt_bridge_planar_face_point_state(session,UINT64_C(999999),point,&state),MISSING);
+    EXPECT(occt_bridge_planar_face_point_state(session,wire,point,&state),GEOMETRY);
+    EXPECT(occt_bridge_planar_face_point_state(session,face,point,&state),OK);
+    EXPECT_TRUE(state==1,"disc centre is inside");
+    EXPECT(occt_bridge_planar_face_point_state(session,face,vec(5,0,0),&state),OK);
+    EXPECT_TRUE(state==2,"disc seam is on boundary");
+    occt_bridge_shape_release(session,wire);occt_bridge_shape_release(session,face);
+}
+
 static void corner_edits(occt_bridge_session_t* session) {
     occt_bridge_shape_id_t wire=0,out=99;
     const occt_bridge_vec3_t points[]={vec(0,0,0),vec(20,0,0),vec(20,10,0),vec(0,10,0)};
@@ -1524,6 +1548,7 @@ int main(void) {
     corner_edits(session);
     elliptical_arcs(session);
     planar_region_discovery(session);
+    planar_face_edit_queries(session);
     face_with_holes(session);
     extrusion_limits(session);
     profile_lofts(session);
