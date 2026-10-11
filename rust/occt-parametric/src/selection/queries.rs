@@ -705,38 +705,51 @@ pub(crate) fn select_at_extreme<'session>(
     Ok(selected)
 }
 
-/// The features from `origin` to `target`, inclusive, following feature
-/// dependencies backward from `target`. Depth-first, O(features + edges).
-fn feature_path<'a>(
+/// Topology ancestors in dependency-first order. Only nodes reachable from
+/// origin contribute; a shared ancestor is visited once, without enumerating
+/// the potentially exponential number of paths through a feature DAG.
+fn topology_order<'a>(
     origin: &'a str,
     target: &'a str,
     definitions: &Features<'a>,
 ) -> Option<Vec<&'a str>> {
-    let mut stack = vec![(target, vec![target])];
+    let mut stack = vec![(target, false)];
     let mut seen = HashSet::new();
-    while let Some((current, path)) = stack.pop() {
-        if current == origin {
-            let mut path = path;
-            path.reverse();
-            return Some(path);
+    let mut reachable = HashSet::new();
+    let mut order = Vec::new();
+    while let Some((current, exiting)) = stack.pop() {
+        if exiting {
+            let connected = current == origin
+                || definitions.by_id.get(current).is_some_and(|f| {
+                    f.operation
+                        .topology_inputs()
+                        .iter()
+                        .any(|d| reachable.contains(d))
+                });
+            if connected {
+                reachable.insert(current);
+                order.push(current);
+            }
+            continue;
         }
         if !seen.insert(current) {
             continue;
         }
-        if let Some(feature) = definitions.by_id.get(current) {
-            for dependency in dependencies_with_references(feature, &definitions.references) {
-                let mut next = path.clone();
-                next.push(dependency);
-                stack.push((dependency, next));
+        stack.push((current, true));
+        if current != origin
+            && let Some(feature) = definitions.by_id.get(current)
+        {
+            for dependency in feature.operation.topology_inputs() {
+                stack.push((dependency, false));
             }
         }
     }
-    None
+    reachable.contains(target).then_some(order)
 }
 
-/// Follows subshapes selected on `origin`'s output forward through each later
-/// feature to `result`: kept while a result still contains them, replaced by
-/// their modified descendants otherwise. Consumes `chosen` on every path.
+/// Follows all contributing topology branches, preserving shared descendants
+/// once at joins. A removed branch can coexist with a surviving branch; failure
+/// occurs only when the target has no surviving descendants.
 pub(crate) fn follow_forward<'session>(
     session: &'session Session,
     result: &Shape<'session>,
@@ -754,45 +767,61 @@ pub(crate) fn follow_forward<'session>(
     let target = shapes
         .iter()
         .filter(|(_, shape)| session.is_same(shape, result).unwrap_or(false))
-        .find_map(|(id, _)| feature_path(origin, id, definitions));
-    let Some(path) = target else {
-        cleanup_shapes(session, chosen);
+        .find_map(|(id, _)| {
+            topology_order(origin, id, definitions).map(|path| (id.as_str(), path))
+        });
+    let Some((target, order)) = target else {
         return Err(ModelError::new(format!(
             "persistent {noun} from '{origin}' do not lead to this feature's input"
         )));
     };
-    let mut current = chosen;
-    for step in &path[1..] {
-        let output = &shapes[*step];
+    let mut selected = HashMap::from([(origin, chosen)]);
+    let mut removed_by = HashMap::new();
+    for step in order.into_iter().filter(|id| *id != origin) {
+        let output = &shapes[step];
+        let inputs = definitions.by_id[step].operation.topology_inputs();
         let mut next = Vec::new();
-        let mut pending = std::mem::take(&mut current).into_iter();
-        while let Some(subshape) = pending.next() {
-            if session.subshape_indices(output, kind, &[&subshape]).is_ok() {
-                next.push(subshape);
+        let mut had_sources = false;
+        for input in &inputs {
+            let Some(sources) = selected.get(input) else {
                 continue;
-            }
-            let count = session
-                .history_count(output, &subshape, HistoryRelation::Modified)
-                .unwrap_or(0);
-            let descendants = (0..count)
-                .map(|index| session.history(output, &subshape, HistoryRelation::Modified, index))
-                .collect::<Result<Vec<_>, _>>();
-            let _ = session.remove(subshape);
-            match descendants {
-                Ok(descendants) if !descendants.is_empty() => next.extend(descendants),
-                result => {
-                    if let Ok(shapes) = result {
-                        cleanup_shapes(session, shapes);
+            };
+            had_sources |= !sources.is_empty();
+            for source in sources {
+                if let Ok(indices) = session.subshape_indices(output, kind, &[source]) {
+                    next.push(session.subshape(output, kind, indices[0])?);
+                    continue;
+                }
+                let count = session.history_count(output, source, HistoryRelation::Modified)?;
+                for index in 0..count {
+                    let descendant =
+                        session.history(output, source, HistoryRelation::Modified, index)?;
+                    if session.shape_type(&descendant)? == kind {
+                        next.push(descendant);
                     }
-                    cleanup_shapes(session, pending);
-                    cleanup_shapes(session, next);
-                    return Err(ModelError::new(format!(
-                        "persistent {noun} from '{origin}' were removed by feature '{step}'"
-                    )));
                 }
             }
         }
-        current = union_shapes(session, vec![next])?;
+        let next = union_shapes(session, vec![next])?;
+        if next.is_empty() {
+            let cause = if had_sources {
+                step
+            } else {
+                inputs
+                    .iter()
+                    .find_map(|input| removed_by.get(input).copied())
+                    .unwrap_or(step)
+            };
+            removed_by.insert(step, cause);
+        }
+        selected.insert(step, next);
+    }
+    let current = selected.remove(target).unwrap_or_default();
+    if current.is_empty() {
+        let step = removed_by.get(target).copied().unwrap_or(target);
+        return Err(ModelError::new(format!(
+            "persistent {noun} from '{origin}' were removed by feature '{step}'"
+        )));
     }
     Ok(current)
 }

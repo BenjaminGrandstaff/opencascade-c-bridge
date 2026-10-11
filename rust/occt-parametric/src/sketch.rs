@@ -14,7 +14,7 @@ const PIVOT_TOLERANCE: f64 = 1e-10;
 mod diagnosis;
 mod diagnostics;
 mod discovery;
-mod editing;
+pub(crate) mod editing;
 mod geometry;
 mod patterns;
 mod profile;

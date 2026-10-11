@@ -208,3 +208,5 @@ mod spline_corner_pad;
 mod split_body;
 mod tapped_holes;
 mod thicken;
+
+mod sketch_references;

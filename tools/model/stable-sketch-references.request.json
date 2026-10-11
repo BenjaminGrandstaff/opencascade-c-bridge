@@ -1,0 +1,624 @@
+{
+  "schema": "occb-model-view-v1",
+  "model": {
+    "schema_version": 133,
+    "family": {
+      "id": "stable-sketch-references",
+      "version": 1,
+      "parameters": [
+        {
+          "id": "width",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 20,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 16,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 28,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "height",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 10,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 8,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 16,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "thickness",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 2,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 0.5,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 5,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        }
+      ],
+      "derived_parameters": [],
+      "derived_vector_parameters": [],
+      "constraints": [],
+      "requirements": [
+        {
+          "id": "valid",
+          "version": 1,
+          "kind": "validation",
+          "priority": "required",
+          "statement": "body valid",
+          "rule": {
+            "shape_valid": {
+              "output": "body"
+            }
+          },
+          "provenance": "example; demonstration assumptions",
+          "traces": [
+            {
+              "feature": "body"
+            }
+          ]
+        }
+      ],
+      "datums": [],
+      "features": [
+        {
+          "id": "profile",
+          "operation": {
+            "sketch_face": {
+              "sketch": {
+                "id": "edited-pads",
+                "origin": {
+                  "literal": {
+                    "x": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    },
+                    "y": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                },
+                "x_axis": {
+                  "literal": {
+                    "x": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "y_axis": {
+                  "literal": {
+                    "x": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "points": [
+                  {
+                    "id": "a",
+                    "x": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "short-end",
+                    "x": {
+                      "multiply": [
+                        {
+                          "parameter": "width"
+                        },
+                        {
+                          "literal": {
+                            "value": 0.4,
+                            "dimension": "scalar",
+                            "unit": null
+                          }
+                        }
+                      ]
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "b",
+                    "x": {
+                      "parameter": "width"
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "c",
+                    "x": {
+                      "parameter": "width"
+                    },
+                    "y": {
+                      "parameter": "height"
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "d",
+                    "x": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "parameter": "height"
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "cut",
+                    "x": {
+                      "multiply": [
+                        {
+                          "parameter": "width"
+                        },
+                        {
+                          "literal": {
+                            "value": 0.5,
+                            "dimension": "scalar",
+                            "unit": null
+                          }
+                        }
+                      ]
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "main-pick",
+                    "x": {
+                      "literal": {
+                        "value": 4,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 4,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": true
+                  }
+                ],
+                "circles": [],
+                "lines": [
+                  {
+                    "id": "bottom",
+                    "start": "a",
+                    "end": "short-end"
+                  },
+                  {
+                    "id": "right",
+                    "start": "b",
+                    "end": "c"
+                  },
+                  {
+                    "id": "top",
+                    "start": "c",
+                    "end": "d"
+                  },
+                  {
+                    "id": "left",
+                    "start": "d",
+                    "end": "a"
+                  }
+                ],
+                "shapes": [],
+                "curve_operations": [
+                  {
+                    "extend_to": {
+                      "entity": "bottom",
+                      "end": "end",
+                      "target": "right",
+                      "limit": {
+                        "parameter": "width"
+                      }
+                    }
+                  },
+                  {
+                    "split": {
+                      "entity": "bottom",
+                      "at": {
+                        "point": {
+                          "point": "cut"
+                        }
+                      },
+                      "before": "bottom-left",
+                      "after": "bottom-right"
+                    }
+                  }
+                ],
+                "profile": [
+                  "bottom-left",
+                  "bottom-right",
+                  "right",
+                  "top",
+                  "left"
+                ],
+                "regions": [],
+                "region_edits": []
+              }
+            }
+          }
+        },
+        {
+          "id": "pads",
+          "operation": {
+            "extrude": {
+              "input": "profile",
+              "direction": {
+                "components": {
+                  "x": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "y": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "z": {
+                    "parameter": "thickness"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "boss_profile",
+          "operation": {
+            "sketch_face": {
+              "sketch": {
+                "id": "side-boss",
+                "origin": {
+                  "literal": {
+                    "x": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    },
+                    "y": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                },
+                "x_axis": {
+                  "literal": {
+                    "x": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "y_axis": {
+                  "literal": {
+                    "x": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "face_support": {
+                  "input": "pads",
+                  "face": {
+                    "named": "split-side"
+                  }
+                },
+                "points": [
+                  {
+                    "id": "a",
+                    "x": {
+                      "literal": {
+                        "value": -1,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": -0.3,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "b",
+                    "x": {
+                      "literal": {
+                        "value": 1,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 0.3,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": true
+                  }
+                ],
+                "shapes": [
+                  {
+                    "rectangle": {
+                      "id": "outline",
+                      "first": "a",
+                      "opposite": "b"
+                    }
+                  }
+                ],
+                "profile": [
+                  "outline"
+                ],
+                "lines": []
+              }
+            }
+          }
+        },
+        {
+          "id": "boss",
+          "operation": {
+            "extrude": {
+              "input": "boss_profile",
+              "direction": {
+                "literal": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": -2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 0,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "joined",
+          "operation": {
+            "fuse": {
+              "left": "pads",
+              "right": "boss"
+            }
+          }
+        },
+        {
+          "id": "body",
+          "operation": {
+            "hollow": {
+              "input": "joined",
+              "faces": [
+                {
+                  "named": "pad-region"
+                }
+              ],
+              "thickness": {
+                "literal": {
+                  "value": -0.2,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                }
+              },
+              "tolerance": {
+                "literal": {
+                  "value": 0.0001,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "references": [
+        {
+          "name": "pad-region",
+          "target": {
+            "faces": {
+              "persistent": {
+                "feature": "profile",
+                "select": {
+                  "sketch_region": {
+                    "witnesses": [
+                      "main-pick"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "split-side",
+          "target": {
+            "faces": {
+              "generated_from_edges": {
+                "source_feature": "profile",
+                "source": {
+                  "sketch_curve": {
+                    "entity": "bottom-right",
+                    "require_complete": true
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "instances": [
+      {
+        "base": {
+          "id": "part",
+          "overrides": {},
+          "provenance": "Named split boundary drives a side boss; witnessed region follows extrusion and fusion to the hollow opening"
+        }
+      }
+    ]
+  },
+  "outputs": [
+    {
+      "instance": "part",
+      "output": "body"
+    }
+  ],
+  "sketches": true
+}

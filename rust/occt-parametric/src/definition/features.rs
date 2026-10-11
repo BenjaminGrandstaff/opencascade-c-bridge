@@ -547,6 +547,24 @@ impl FeatureOperation {
         names
     }
 
+    /// Inputs whose topology contributes to this output. Selector targets,
+    /// face support and projection sources are build dependencies only.
+    pub(crate) fn topology_inputs(&self) -> Vec<&str> {
+        match self {
+            Self::SketchFace { .. } | Self::SketchWire { .. } | Self::SketchOpenWire { .. } => {
+                Vec::new()
+            }
+            Self::Extrude { input, .. }
+            | Self::Hole { input, .. }
+            | Self::Fillet { input, .. }
+            | Self::VariableFillet { input, .. }
+            | Self::Chamfer { input, .. }
+            | Self::Hollow { input, .. }
+            | Self::Draft { input, .. } => vec![input],
+            _ => self.dependencies(),
+        }
+    }
+
     /// Direct output dependencies, including embedded selectors.
     /// Use `FamilyDefinition::feature_inputs` to expand named references.
     pub fn dependencies(&self) -> Vec<&str> {

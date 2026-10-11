@@ -439,7 +439,7 @@ pub(crate) fn collect_edge_selector_parameters<'a>(
         EdgeSelector::History { source, .. } => collect_edge_selector_parameters(source, names),
         EdgeSelector::Persistent { select, .. } => collect_edge_selector_parameters(select, names),
         // A named reference's parameters join its users' signatures directly.
-        EdgeSelector::Named(_) => {}
+        EdgeSelector::Named(_) | EdgeSelector::SketchCurve { .. } => {}
     }
 }
 
@@ -492,7 +492,7 @@ pub(crate) fn collect_face_selector_parameters<'a>(
         }
         FaceSelector::History { source, .. } => collect_face_selector_parameters(source, names),
         FaceSelector::Persistent { select, .. } => collect_face_selector_parameters(select, names),
-        FaceSelector::Named(_) => {}
+        FaceSelector::Named(_) | FaceSelector::SketchRegion { .. } => {}
         FaceSelector::GeneratedFromEdges { source, .. } => {
             collect_edge_selector_parameters(source, names)
         }

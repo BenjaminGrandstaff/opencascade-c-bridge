@@ -3,7 +3,7 @@
 use super::*;
 use crate::assembly::{add, scale, unit};
 
-pub(super) fn resolve(
+pub(crate) fn resolve(
     session: &Session,
     sketch: &SketchDefinition,
     parameters: &HashMap<String, ParameterValue>,

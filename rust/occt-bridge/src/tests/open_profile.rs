@@ -31,19 +31,43 @@ fn translated_open_profiles_preserve_exact_area_and_edge_ancestry() {
     let fused = session.fuse(&body, &wall).unwrap();
     let result = session.compose_history(&fused, &wall).unwrap();
     assert!((session.volume(&result).unwrap() - 172.0).abs() < 1e-8);
+    // Generated ancestry includes the surviving copied generated edge as
+    // well as its extruded side face. Check both dimensions explicitly.
     assert_eq!(
         session
             .history_count(&result, &edge, HistoryRelation::Generated)
             .unwrap(),
-        1
+        2
     );
-    let top = session
-        .history(&result, &edge, HistoryRelation::Generated, 0)
+    let descendants = (0..2)
+        .map(|i| {
+            session
+                .history(&result, &edge, HistoryRelation::Generated, i)
+                .unwrap()
+        })
+        .collect::<Vec<_>>();
+    let top = descendants
+        .iter()
+        .find(|shape| session.shape_type(shape).unwrap() == ShapeType::Face)
         .unwrap();
-    assert_eq!(session.shape_type(&top).unwrap(), ShapeType::Face);
-    assert!((session.surface_area(&top).unwrap() - 12.0).abs() < 1e-8);
+    let copied_edge = descendants
+        .iter()
+        .find(|shape| session.shape_type(shape).unwrap() == ShapeType::Edge)
+        .unwrap();
+    assert!((session.edge_length(copied_edge).unwrap() - 6.).abs() < 1e-8);
+    assert!((session.center_of_mass(copied_edge).unwrap().z - 7.).abs() < 1e-8);
+    assert!((session.surface_area(top).unwrap() - 12.0).abs() < 1e-8);
     drop((
-        source, face, edge, shifted, prism, wall, body, fused, result, top,
+        source,
+        face,
+        edge,
+        shifted,
+        prism,
+        wall,
+        body,
+        fused,
+        result,
+        descendants,
     ));
     assert_eq!(session.shape_count().unwrap(), 0);
 }

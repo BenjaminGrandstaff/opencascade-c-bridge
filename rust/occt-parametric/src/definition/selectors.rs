@@ -46,6 +46,14 @@ impl From<SemanticHistoryRelation> for HistoryRelation {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum EdgeSelector {
+    /// Boundary descendants overlapping a named authored or split sketch curve.
+    /// Use on the sketch output, or inside Persistent/GeneratedFromEdges.
+    SketchCurve {
+        entity: String,
+        /// Reject trimming/removal of any part of the referenced curve.
+        #[serde(default)]
+        require_complete: bool,
+    },
     NearestCenter {
         target: VectorExpr,
         maximum_distance: ScalarExpr,
@@ -153,6 +161,16 @@ impl EdgeSelector {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum FaceSelector {
+    /// A sketch material region containing every named witness point.
+    /// Excluded points detect an unintended merge with another region.
+    /// Use on the sketch output or inside a Persistent selector.
+    SketchRegion {
+        #[schemars(length(min = 1, max = 1000))]
+        witnesses: Vec<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        #[schemars(length(max = 1000))]
+        excludes: Vec<String>,
+    },
     NearestCenter {
         target: VectorExpr,
         maximum_distance: ScalarExpr,
@@ -235,7 +253,8 @@ impl FaceSelector {
             }
             Self::History { source, .. } => source.names(names),
             Self::Persistent { select, .. } => select.names(names),
-            Self::NearestCenter { .. }
+            Self::SketchRegion { .. }
+            | Self::NearestCenter { .. }
             | Self::AtExtreme { .. }
             | Self::NormalAligned { .. }
             | Self::LargestArea { .. } => {}
@@ -276,7 +295,8 @@ impl FaceSelector {
                 base.dependencies(dependencies);
                 subtract.dependencies(dependencies);
             }
-            Self::NearestCenter { .. }
+            Self::SketchRegion { .. }
+            | Self::NearestCenter { .. }
             | Self::AtExtreme { .. }
             | Self::NormalAligned { .. }
             | Self::LargestArea { .. } => {}

@@ -7,7 +7,7 @@ use crate::assembly::{dot, subtract};
 use occt_bridge::{AnalyticCurve, BezierSpan};
 mod intersections;
 
-pub(super) fn materialize(
+pub(crate) fn materialize(
     session: &Session,
     sketch: &SketchDefinition,
     parameters: &HashMap<String, ParameterValue>,

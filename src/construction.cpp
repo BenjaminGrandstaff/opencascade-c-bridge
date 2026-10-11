@@ -379,12 +379,18 @@ occt_bridge_status_t occt_bridge_create_prism_from_face(
         if (!builder.IsDone()) {
             return fail(session, OCCT_BRIDGE_KERNEL_ERROR, "prism construction failed");
         }
-        return store_shape_with_history(
-            session,
-            builder.Shape(),
-            out_shape,
-            builder,
-            {value});
+        // Copy=true produces new base topology. OCCT reports generated
+        // lateral faces, but not this replacement in Modified(). Record the
+        // base descendants explicitly so persistent sketch references survive.
+        auto history = collect_history(builder, {value});
+        for (auto& entry : history) {
+            const TopoDS_Shape base = builder.FirstShape(entry.source);
+            if (!base.IsNull() && !base.IsSame(entry.source)) {
+                append_unique_shape(entry.modified, base);
+                entry.deleted = false;
+            }
+        }
+        return store_shape_with_entries(session, builder.Shape(), out_shape, std::move(history));
     });
 }
 

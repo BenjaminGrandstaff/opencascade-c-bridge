@@ -11,18 +11,31 @@ tracks status and order.
 | C ABI (`src/`, `include/`) | ABI 68 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 132 | Active development |
+| `occt-parametric` (engineering layer) | Schema 133 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 152 + first-use integration 1 (+1 doc test), recipes 3, parametric 639 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 19 + branch command 2 + model command 80, MCP Python 9, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 153 + first-use integration 1 (+1 doc test), recipes 3, parametric 646 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 19 + branch command 2 + model command 80, MCP Python 9, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
 | Coverage | Last recorded: 93.61% lines overall, test code excluded; C++ 94.13% lines, 87.40% branches, 100% functions; Rust 93.42% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | Last full suite: 189 Rust cases plus 5 model-command cases and a 10,000-face Python matcher. Geometry-editing integration rechecked 57 sketch cases and 57 MCP cases within budget. | `tools/bench/run.sh` |
+| Scale benchmarks | Last full suite: 189 Rust cases plus 5 model-command cases and a 10,000-face Python matcher. Sketch-reference integration rechecked 58 sketch cases and 58 MCP cases within budget. | `tools/bench/run.sh` |
 
 ## Done
+
+- Sketch milestone 3: stable sketch references (schema 133, ABI 68 unchanged).
+  Exact-overlap `sketch_curve` selectors retain authored/split lineage across
+  boundary edits and native arrangement splits; optional complete coverage
+  detects trimming. `sketch_region` witnesses and excluded points diagnose
+  lost, ambiguous, split and merged region selections. Existing persistent
+  references now follow geometry inputs instead of support-only dependencies,
+  traversal retains descendants from all contributing branches, and copied
+  prism bases record modified face/edge ancestry for distance/symmetric and
+  face-limited extrusions. Example:
+  `stable-sketch-references`, an attached boss, fusion and witnessed hollow.
+  Performance: 100 reference-driven edits in 1.53 s; 1,000 exact boundary
+  descendants selected and projected in 0.11 s (10 s budgets).
 
 - Sketch milestone 2: geometry editing (schema 132, ABI 68). Named native
   split pieces feed profiles, discovery and later curve edits; bounded
@@ -2040,7 +2053,8 @@ selects native cells with named interior points; optional region composition
 merges adjacent selections before extrusion while preserving holes and
 separate bodies. Geometry editing now adds named splits, extend-to crossings,
 and seed-selected boundary operations on explicit and discovered regions.
-Next sketch milestones are stable references through topology edits, solver
+Named curve and witnessed region selectors now feed downstream history with
+explicit lost/split/merge diagnostics. Next sketch milestones are solver
 reliability and complete sketch-aware AI editing/repair operations.
 
 The earlier geometry and assembly milestones are complete. Manufacturing

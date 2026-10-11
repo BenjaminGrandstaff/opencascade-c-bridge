@@ -1,13 +1,34 @@
 //! Named native curve edits and seed-selected material boundary edits.
 use super::*;
 
-pub(super) struct CurveLibrary<'a> {
+pub(crate) struct CurveLibrary<'a> {
     pub curves: HashMap<String, Shape<'a>>,
     pub active: Vec<String>,
 }
 
 fn distance(a: Vec3, b: Vec3) -> f64 {
     (a.x - b.x).hypot(a.y - b.y).hypot(a.z - b.z)
+}
+
+/// A hint is a selection rule, not a native enumeration index. Ties must
+/// fail, otherwise a topology reorder can silently switch the chosen branch.
+fn nearest_crossing(
+    mut candidates: Vec<Vec3>,
+    hint: Vec3,
+    context: &str,
+) -> Result<Vec3, ModelError> {
+    candidates.sort_by(|a, b| distance(*a, hint).total_cmp(&distance(*b, hint)));
+    let first = candidates.first().copied().ok_or_else(|| {
+        ModelError::new(format!("{context}: lost crossing reference (no crossing)"))
+    })?;
+    if candidates.iter().skip(1).any(|p| {
+        distance(*p, first) > 1e-7 && (distance(*p, hint) - distance(first, hint)).abs() <= 1e-7
+    }) {
+        return Err(ModelError::new(format!(
+            "{context}: ambiguous crossing reference; move the hint point"
+        )));
+    }
+    Ok(first)
 }
 
 impl SketchDefinition {
@@ -178,7 +199,7 @@ impl SketchDefinition {
         }
         Ok(known)
     }
-    pub(super) fn curve_library<'a>(
+    pub(crate) fn curve_library<'a>(
         &self,
         session: &'a Session,
         parameters: &HashMap<String, ParameterValue>,
@@ -263,8 +284,11 @@ impl SketchDefinition {
                             candidates.push(p);
                         }
                     }
-                    let hit=candidates.into_iter().min_by(|a,b|distance(*a,hint).total_cmp(&distance(*b,hint)))
-                        .ok_or_else(||ModelError::new(format!("extend-to of '{entity}' finds no crossing beyond that end within its search limit")))?;
+                    let hit = nearest_crossing(
+                        candidates,
+                        hint,
+                        &format!("extend-to of '{entity}' beyond that end within its search limit"),
+                    )?;
                     let result = session.trim_curve_between(
                         &extended,
                         if at_start { hit } else { a },
@@ -294,13 +318,11 @@ impl SketchDefinition {
             SketchTrimBound::Point { point } => place(solution.points[point]),
             SketchTrimBound::Crossing { curve, near } => {
                 let hint = place(solution.points[near]);
-                session
-                    .planar_curve_intersections(wire, &curves[curve], 1000)?
-                    .into_iter()
-                    .min_by(|a, b| distance(*a, hint).total_cmp(&distance(*b, hint)))
-                    .ok_or_else(|| {
-                        ModelError::new(format!("trim/split curve and '{curve}' do not cross"))
-                    })?
+                nearest_crossing(
+                    session.planar_curve_intersections(wire, &curves[curve], 1000)?,
+                    hint,
+                    &format!("trim/split curve and '{curve}' do not cross unambiguously"),
+                )?
             }
         })
     }

@@ -178,6 +178,11 @@ occt_bridge_status_t occt_bridge_create_prism_until_face(
         }
         // Preserve generated source-edge ancestry through native splitting.
         for (auto entry : collect_history(prism, {base})) {
+            // Copy=true replaces the base just as in distance extrusions.
+            const TopoDS_Shape copied_base = prism.FirstShape(entry.source);
+            if (!copied_base.IsNull() && !copied_base.IsSame(entry.source)) {
+                append_unique_shape(entry.modified, copied_base);
+            }
             entry.generated = descendants(entry.generated, splitter, output);
             entry.modified = descendants(entry.modified, splitter, output);
             entry.deleted = !output.Contains(entry.source) && entry.modified.empty();

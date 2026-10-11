@@ -1043,5 +1043,19 @@ with tempfile.TemporaryDirectory(prefix='occb-mcp-scale-') as root:
         elapsed=time.monotonic()-started
         assert elapsed<10
         print(f'PASS MCP 20 edited part sets with named pieces, region corners and holed offsets: {elapsed:.3f}s / 10s')
+        stable=client.tool('occt_get_example',dict(name='stable-sketch-references'))['structuredContent']
+        for i in range(1,20):
+            stable['model']['instances'].append({'clone':dict(id=f'part-{i}',source='part',overrides={'width':{'scalar':{'value':16+i*0.5,'dimension':'length','unit':'millimeter'}}},provenance='scale')})
+            stable['outputs'].append(dict(instance=f'part-{i}',output='body'))
+        started=time.monotonic()
+        result=client.tool('occt_visualize_model',stable)
+        assert not result['isError'],result
+        data=json.loads(client.call('resources/read',dict(uri=result['structuredContent']['resources']['view.json']))['result']['contents'][0]['text'])
+        solids=[s for s in data['scenes'] if s['kind']=='solid']
+        assert len(solids)==20 and all(s['valid'] for s in solids)
+        assert all(s.get('profile_error') is None for s in data['scenes'] if s['kind']=='sketch')
+        elapsed=time.monotonic()-started
+        assert elapsed<10
+        print(f'PASS MCP 20 named sketch-reference parts through attached boss, fusion and hollow: {elapsed:.3f}s / 10s')
     finally:
         client.close()

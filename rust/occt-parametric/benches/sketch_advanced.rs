@@ -64,7 +64,48 @@ fn gate(name: &str, budget: u64, run: impl FnOnce()) {
 }
 fn main() {
     gate(
-        "1000 named line splits built as a 1001-edge open profile",
+        "100 named sketch-reference edits through attached boss, fusion and hollow",
+        10,
+        || {
+            let request: serde_json::Value = serde_json::from_str(include_str!(
+                "../../../tools/model/stable-sketch-references.request.json"
+            ))
+            .unwrap();
+            let family = ModelDocument::from_json(&request["model"].to_string())
+                .unwrap()
+                .family;
+            let session = Session::new().unwrap();
+            let mut part = PartInstance {
+                id: "part".into(),
+                definition: &family,
+                overrides: HashMap::new(),
+                provenance: "scale".into(),
+            };
+            let mut previous = part.regenerate(&session).unwrap();
+            for i in 0..100 {
+                part.overrides.insert(
+                    "width".into(),
+                    ParameterValue::Scalar(Quantity::length(
+                        16. + (i % 12) as f64,
+                        LengthUnit::Millimeter,
+                    )),
+                );
+                let built = part.regenerate_incremental(&session, &previous).unwrap();
+                assert!(session.is_valid(built.shape("body").unwrap()).unwrap());
+                assert_eq!(
+                    session
+                        .subshape_count(built.shape("body").unwrap(), ShapeType::Solid)
+                        .unwrap(),
+                    1
+                );
+                previous = built;
+            }
+            drop(previous);
+            assert_eq!(session.shape_count().unwrap(), 0);
+        },
+    );
+    gate(
+        "1000 named line splits and exact ancestor reference projected as a chain",
         10,
         || {
             let session = Session::new().unwrap();
@@ -109,6 +150,20 @@ fn main() {
                     sketch: Box::new(s),
                 },
             }];
+            let mut projected = sketch();
+            projected.id = "linked".into();
+            projected.projections = serde_json::from_value(serde_json::json!([{
+                "id":"reference", "input":"wire", "kind":"chain",
+                "edge":{"sketch_curve":{"entity":"tail1","require_complete":true}}
+            }]))
+            .unwrap();
+            projected.profile = vec!["reference".into()];
+            family.features.push(FeatureDefinition {
+                id: "linked".into(),
+                operation: FeatureOperation::SketchOpenWire {
+                    sketch: Box::new(projected),
+                },
+            });
             let part = PartInstance {
                 id: "part".into(),
                 definition: &family,
@@ -120,6 +175,14 @@ fn main() {
             assert_eq!(session.subshape_count(wire, ShapeType::Edge).unwrap(), 1001);
             assert!((session.exact_bounds(wire).unwrap().max.x - 1001.).abs() < 1e-7);
             assert!(session.is_valid(wire).unwrap());
+            let linked = built.shape("linked").unwrap();
+            assert!(session.is_valid(linked).unwrap());
+            // Native bounds include the curve's 1e-7 mm topology tolerance.
+            let bounds = session.exact_bounds(linked).unwrap();
+            assert!((bounds.min.x - 1.).abs() < 2e-7);
+            assert!((bounds.max.x - 1001.).abs() < 2e-7);
+            let edge = session.subshape(linked, ShapeType::Edge, 0).unwrap();
+            assert!((session.edge_length(&edge).unwrap() - 1000.).abs() < 1e-6);
         },
     );
     gate(

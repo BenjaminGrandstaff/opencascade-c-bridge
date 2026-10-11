@@ -1976,3 +1976,74 @@ incremental branch reuse, rejected edits preserving accepted geometry,
 viewer data and native query error paths. Scale gates build 1,000 splits into
 a 1,001-edge profile in 0.02 s and regenerate 200 edited parts in 1.39 s
 (10 s budgets).
+
+## Stable sketch references (schema 133 / ABI 68)
+
+Sketch selectors identify material by authored names rather than native edge
+or face enumeration. They resolve on a sketch feature's output. Wrap them in
+`persistent` to follow surviving topology through later operations, or use
+`generated_from_edges` to select the extruded side faces of a named curve.
+Family `references` can declare these selectors once for downstream features.
+
+```json
+{"name": "pad-region", "target": {"faces": {
+  "persistent": {"feature": "profile", "select": {
+    "sketch_region": {"witnesses": ["inside-left", "inside-right"],
+                      "excludes": ["other-region"]}
+  }}
+}}}
+```
+
+Every witness must lie strictly inside the same current material face. A
+missing point or a point outside material reports a lost reference; a boundary
+point or multiple containing faces reports ambiguity. Witnesses in different
+faces report a split. An excluded point touching or entering the selected
+face reports a merge or ambiguity. Lists are bounded to 1–1,000 witnesses and
+0–1,000 excludes, with no duplicate or shared names. These are explicit
+identity guards: place multiple witnesses across the intended region and
+excluded points inside regions that must remain separate. A single witness
+cannot detect a split elsewhere, and an unguarded merge intentionally selects
+the combined region. No previous-generation geometry or nearest-face fallback
+is used.
+
+```json
+{"name": "split-side", "target": {"faces": {
+  "generated_from_edges": {"source_feature": "profile", "source": {
+    "sketch_curve": {"entity": "bottom-right", "require_complete": true}
+  }}
+}}}
+```
+
+`sketch_curve` accepts authored curve IDs and named split pieces, including
+retained ancestors of later splits. Exact native curve/boundary intersection
+finds every surviving edge piece, including arrangement splits. Construction
+curves and internal boundaries removed by composition fail when they have no
+surviving boundary. By default, references accept surviving partial curves
+through fillets and trims. `require_complete: true` rejects missing coverage
+using exact native lengths (absolute tolerance 1e-7 mm plus relative 1e-8).
+Selecting a curve from a non-sketch output requires a `persistent` wrapper
+whose `feature` names the source sketch. Driving constraints continue to use
+source entities.
+
+Persistent traversal follows geometry inputs, excluding selector targets,
+face-attachment planes and projection sources that only establish build
+order. Copied prism base faces and edges record modified ancestry for distance,
+symmetric and face-limited extrusions; generated
+side-face history remains available. Splits downstream yield surviving modified
+pieces. Forks retain descendants from every contributing geometry branch, and
+joins deduplicate shared descendants. A removed branch does not invalidate a
+reference retained by another branch; loss of all descendants fails and
+identifies the removing feature. These semantics also preserve placement and fusion ancestry without choosing a support-only
+branch.
+
+Trim/split and bounded extend-to crossing hints reject distinct crossings
+whose hint distances tie within 1e-7 mm. Missing crossings report lost
+references. Hints remain geometric selection rules: changing a hint changes
+the intended crossing; they are not a guarantee of global branch identity
+through arbitrary topology changes.
+
+The `stable-sketch-references` example attaches a side boss to the face
+extruded from `bottom-right`, fuses it onto the pad, and hollows the result
+through the region selected by `main-pick`. Width edits regenerate both named
+references; failed edits retain the accepted generation. Schema 132 documents
+migrate without changing their existing selectors or geometry.

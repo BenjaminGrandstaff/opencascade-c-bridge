@@ -443,3 +443,33 @@ fn subset_extraction_expands_located_history_and_checks_ownership_and_index() {
     drop((source, original, placed, face, mapped, plain));
     assert_eq!(session.shape_count().unwrap(), 0);
 }
+
+#[test]
+fn prism_records_copied_base_face_and_edge_replacements_for_persistent_references() {
+    let session = Session::new().unwrap();
+    {
+        let wire = session
+            .create_circle_wire(Vec3::new(0., 0., 0.), Vec3::new(0., 0., 1.), 5.)
+            .unwrap();
+        let face = session.create_face_from_wire(&wire).unwrap();
+        let edge = session.subshape(&face, ShapeType::Edge, 0).unwrap();
+        let prism = session
+            .create_prism_from_face(&face, Vec3::new(0., 0., 3.))
+            .unwrap();
+        for source in [&face, &edge] {
+            assert_eq!(
+                session
+                    .history_count(&prism, source, HistoryRelation::Modified)
+                    .unwrap(),
+                1
+            );
+            let base = session
+                .history(&prism, source, HistoryRelation::Modified, 0)
+                .unwrap();
+            assert_member(&session, &prism, &base);
+            assert!(!session.history_is_deleted(&prism, source).unwrap());
+            assert!(session.exact_bounds(&base).unwrap().max.z.abs() < 1e-7);
+        }
+    }
+    assert_eq!(session.shape_count().unwrap(), 0);
+}

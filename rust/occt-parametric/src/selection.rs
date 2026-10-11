@@ -8,6 +8,8 @@ use super::*;
 pub(crate) struct Features<'a> {
     pub(crate) by_id: HashMap<&'a str, &'a FeatureDefinition>,
     pub(crate) references: References<'a>,
+    /// Family datums used to resolve sketch reference frames.
+    pub(crate) datums: HashMap<&'a str, &'a DatumDefinition>,
     /// The family's feature colors.
     pub(crate) colors: HashMap<&'a str, [f64; 3]>,
 }
@@ -21,6 +23,7 @@ impl<'a> Features<'a> {
                 .map(|feature| (feature.id.as_str(), feature))
                 .collect(),
             references: reference_map(family),
+            datums: family.datums.iter().map(|d| (d.id.as_str(), d)).collect(),
             colors: family
                 .feature_colors
                 .iter()
@@ -49,6 +52,7 @@ impl<'a> Features<'a> {
 }
 
 mod queries;
+mod sketch_references;
 pub(crate) use queries::*;
 
 pub(crate) fn resolve_edge_selectors<'session>(
@@ -91,6 +95,18 @@ pub(crate) fn resolve_edge_selector<'session>(
     definitions: &Features<'_>,
 ) -> Result<Vec<Shape<'session>>, ModelError> {
     match selector {
+        EdgeSelector::SketchCurve {
+            entity,
+            require_complete,
+        } => sketch_references::curve(
+            session,
+            result,
+            entity,
+            *require_complete,
+            parameters,
+            shapes,
+            definitions,
+        ),
         EdgeSelector::NearestCenter {
             target,
             maximum_distance,
@@ -207,6 +223,7 @@ pub(crate) fn resolve_edge_selector<'session>(
         EdgeSelector::Named(name) => match definitions.reference(name, ReferenceUse::Edges)? {
             ReferenceTarget::Edges(selector) => {
                 resolve_edge_selector(session, result, selector, parameters, shapes, definitions)
+                    .map_err(|e| e.context(&format!("named reference '{name}'")))
             }
             ReferenceTarget::Faces(_) => unreachable!("kind checked by reference()"),
         },
@@ -259,6 +276,18 @@ pub(crate) fn resolve_face_selector<'session>(
     definitions: &Features<'_>,
 ) -> Result<Vec<Shape<'session>>, ModelError> {
     match selector {
+        FaceSelector::SketchRegion {
+            witnesses,
+            excludes,
+        } => sketch_references::region(
+            session,
+            result,
+            witnesses,
+            excludes,
+            parameters,
+            shapes,
+            definitions,
+        ),
         FaceSelector::NearestCenter {
             target,
             maximum_distance,
@@ -376,6 +405,7 @@ pub(crate) fn resolve_face_selector<'session>(
         FaceSelector::Named(name) => match definitions.reference(name, ReferenceUse::Faces)? {
             ReferenceTarget::Faces(selector) => {
                 resolve_face_selector(session, result, selector, parameters, shapes, definitions)
+                    .map_err(|e| e.context(&format!("named reference '{name}'")))
             }
             ReferenceTarget::Edges(_) => unreachable!("kind checked by reference()"),
         },
