@@ -483,6 +483,18 @@ pub enum SketchShape {
         end: String,
         radius: ScalarExpr,
     },
+    /// Conic arc from `start` to `end` whose end tangents meet at `control`
+    /// (schema 125): an exact rational quadratic spline with the shape's
+    /// own `id`. `rho` in (0, 1) sets the shoulder: below 0.5 an ellipse arc,
+    /// 0.5 (the default) a parabola, above 0.5 a hyperbola.
+    Conic {
+        id: String,
+        start: String,
+        control: String,
+        end: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        rho: Option<ScalarExpr>,
+    },
     /// Regular polygon of `sides` vertices inscribed in the circle about
     /// `center` through `vertex`. Generates vertices `{id}:vertex1`.. after
     /// `vertex`, sides `{id}:side0`.. from `vertex`, and the construction
@@ -1002,6 +1014,7 @@ impl SketchDefinition {
                     angle: Some(angle), ..
                 } => collect_scalar_parameters(angle, names),
                 SketchShape::Slot { radius, .. } => collect_scalar_parameters(radius, names),
+                SketchShape::Conic { rho: Some(rho), .. } => collect_scalar_parameters(rho, names),
                 _ => {}
             }
         }

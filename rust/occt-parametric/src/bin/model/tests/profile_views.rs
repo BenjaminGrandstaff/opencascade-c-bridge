@@ -2425,3 +2425,79 @@ fn arched_panel_draws_its_elliptical_arc_and_follows_rise_edits() {
         assert!(length > 40.0 && length < 20.0 * std::f64::consts::PI);
     }
 }
+
+/// Volume of revolving the rational quadratic conic from (r, 0) through
+/// control (r, l) to (0, l) about the z axis, by midpoint integration.
+fn conic_nose_volume(r: f64, l: f64, rho: f64) -> f64 {
+    let w = rho / (1.0 - rho);
+    let point = |t: f64| {
+        let (a, b, c) = ((1.0 - t).powi(2), 2.0 * w * t * (1.0 - t), t * t);
+        let d = a + b + c;
+        (r * (a + b) / d, l * (b + c) / d)
+    };
+    let n = 200_000;
+    (0..n)
+        .map(|i| {
+            let (t0, t1) = (i as f64 / n as f64, (i + 1) as f64 / n as f64);
+            let ((x0, z0), (x1, z1)) = (point(t0), point(t1));
+            // Frustum stack: second-order accurate in the step.
+            std::f64::consts::PI * (x0 * x0 + x0 * x1 + x1 * x1) / 3.0 * (z1 - z0)
+        })
+        .sum()
+}
+
+#[test]
+fn conic_nose_revolves_elliptic_parabolic_and_hyperbolic_profiles() {
+    let dir = Directory::new();
+    for (rho, kind) in [(0.3, "elliptic"), (0.5, "parabola"), (0.7, "hyperbolic")] {
+        let mut request = view_example("conic-nose");
+        request["model"]["instances"][0]["base"]["overrides"] =
+            json!({"rho":{"scalar":{"value":rho,"dimension":"scalar","unit":null}}});
+        let name = format!("rho-{rho}");
+        view_request(&dir, request, &name).unwrap();
+        let data: Value =
+            serde_json::from_str(&fs::read_to_string(dir.0.join(&name).join("view.json")).unwrap())
+                .unwrap();
+        let sketch = data["scenes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["kind"] == "sketch")
+            .unwrap();
+        let shape = sketch["annotations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|a| a["id"] == "shape-skin")
+            .unwrap();
+        assert_eq!(shape["label"], format!("conic ρ {rho:.3} ({kind})"));
+        assert_eq!(shape["parameters"], json!(["rho"]));
+        assert_eq!(data["scenes"][0]["valid"], true);
+    }
+    // The solid volume matches the revolved exact conic.
+    let session = Session::new().unwrap();
+    let request = view_example("conic-nose");
+    let family = ModelDocument::from_json(&request["model"].to_string())
+        .unwrap()
+        .family;
+    for rho in [0.3, 0.5, 0.7] {
+        let mut overrides = HashMap::new();
+        overrides.insert(
+            "rho".to_owned(),
+            ParameterValue::Scalar(Quantity::scalar(rho)),
+        );
+        let part = PartInstance {
+            id: "nose".into(),
+            definition: &family,
+            overrides,
+            provenance: "test".into(),
+        };
+        let built = part.regenerate(&session).unwrap();
+        let volume = session.volume(built.shape("body").unwrap()).unwrap();
+        let expected = conic_nose_volume(15.0, 40.0, rho);
+        assert!(
+            (volume - expected).abs() < 1e-6 * expected,
+            "{rho}: {volume} vs {expected}"
+        );
+    }
+}

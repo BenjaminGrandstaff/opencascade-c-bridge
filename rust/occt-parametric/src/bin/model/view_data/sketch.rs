@@ -1133,6 +1133,30 @@ pub(super) fn sketch_scene(
                 vec![point_map[start], point_map[end]],
                 json!(radius),
             ),
+            SketchShape::Conic {
+                start,
+                control,
+                end,
+                rho,
+                ..
+            } => {
+                let value = match rho {
+                    Some(rho) => rho.evaluate(parameters).stage("sketch")?.value,
+                    None => 0.5,
+                };
+                let kind = if (value - 0.5).abs() <= 1e-12 {
+                    "parabola"
+                } else if value < 0.5 {
+                    "elliptic"
+                } else {
+                    "hyperbolic"
+                };
+                (
+                    format!("conic ρ {value:.3} ({kind})"),
+                    vec![point_map[start], point_map[control], point_map[end]],
+                    json!(rho),
+                )
+            }
             SketchShape::Polygon { center, sides, .. } => (
                 format!("regular {sides}-gon"),
                 vec![point_map[center]],

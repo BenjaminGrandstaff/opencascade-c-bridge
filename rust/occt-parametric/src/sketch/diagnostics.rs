@@ -435,6 +435,10 @@ impl SketchDefinition {
                 "projected sketch requires source-geometry resolution before diagnostics",
             ));
         }
+        // Authored constraints keep their indices: expansion appends.
+        if let std::borrow::Cow::Owned(expanded) = self.with_patterns(Some(parameters))? {
+            return expanded.constraint_checks(parameters, solution);
+        }
         self.validate(parameters)?;
         let mut fixed = HashMap::new();
         for point in &self.points {
@@ -484,6 +488,9 @@ impl SketchDefinition {
     ) -> Result<Vec<(String, f64)>, ModelError> {
         if self.measurements.is_empty() {
             return Ok(Vec::new());
+        }
+        if let std::borrow::Cow::Owned(expanded) = self.with_patterns(Some(parameters))? {
+            return expanded.measure(parameters, solution);
         }
         self.validate_structure()?;
         let mut fixed = HashMap::new();

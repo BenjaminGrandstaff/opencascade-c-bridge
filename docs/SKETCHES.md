@@ -1617,3 +1617,36 @@ point with a native arc length matching numerical integration, the span
 check on a rotated ellipse, a mirrored quarter arc closing a half ellipse,
 native fillets at both arc corners, and rejected definitions. 500 rise
 edits of the panel regenerate with exact volumes in 0.62 s (10 s budget).
+
+## Conic arcs (schema 125)
+
+The `conic` shape draws a conic arc from `start` to `end` whose end tangents
+meet at `control`:
+
+```json
+{"conic": {"id": "skin", "start": "r", "control": "c", "end": "tip",
+           "rho": {"parameter": "rho"}}}
+```
+
+`rho` is a dimensionless expression in (0, 1): the shoulder point (the
+curve's midpoint) lies `rho` of the way from the chord's midpoint to
+`control`. Below 0.5 the arc is elliptic (`rho = w/(1 + w)` with `w = cos θ`
+gives a circular arc of half-angle θ), 0.5 (the default) a parabola, and
+above 0.5 a hyperbola.
+
+A conic expands into an explicit rational quadratic spline with the shape's
+own `id`: poles `start`, `control`, `end`, clamped knots and weights
+`[1, rho/(1 − rho), 1]`. It is exact, not an approximation, and inherits
+every spline capability: end tangency through the control point, point
+membership, native length, intersections, profile and corner edits. The
+viewer labels it `conic ρ … (elliptic | parabola | hyperbolic)` and links
+`rho`.
+
+The [conic nose](../tools/model/conic-nose.request.json) revolves a conic
+half profile into a nose cone; `rho` moves it from elliptic (0.3) through
+parabolic to hyperbolic (0.7). Tests check the parabolic segment's
+two-thirds area, the shoulder position for all three types, an exact
+quarter circle (area 25π and length 5π to 1e-9), a control point solved as
+the intersection of two end tangents, revolved volumes against numerical
+integration of the exact curve (1e-6), and rejected `rho` and points. 500
+`rho` edits regenerate the revolved nose in 0.92 s (10 s budget).

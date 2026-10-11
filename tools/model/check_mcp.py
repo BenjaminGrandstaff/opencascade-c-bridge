@@ -903,5 +903,21 @@ with tempfile.TemporaryDirectory(prefix='occb-mcp-scale-') as root:
         elapsed=time.monotonic()-started
         assert elapsed<10
         print(f'PASS MCP 20 arched panels with authored elliptical arcs: {elapsed:.3f}s / 10s')
+        noses=client.tool('occt_get_example',dict(name='conic-nose'))['structuredContent']
+        for i in range(1,20):
+            rho=0.3+0.4*i/19
+            noses['model']['instances'].append({'clone':dict(id=f'nose-{i}',source='nose',overrides={'rho':{'scalar':{'value':rho,'dimension':'scalar','unit':None}}},provenance='scale')})
+            noses['outputs'].append(dict(instance=f'nose-{i}',output='body'))
+        started=time.monotonic()
+        result=client.tool('occt_visualize_model',noses)
+        assert not result['isError'],result
+        data=json.loads(client.call('resources/read',dict(uri=result['structuredContent']['resources']['view.json']))['result']['contents'][0]['text'])
+        solids=[s for s in data['scenes'] if s['kind']=='solid']
+        assert len(solids)==20 and all(s['valid'] and abs(s['bounds'][1][2]-40)<1e-6 for s in solids)
+        labels={a['label'].split('(')[1] for s in data['scenes'] if s['kind']=='sketch' for a in s['annotations'] if a['id']=='shape-skin'}
+        assert labels=={'elliptic)','parabola)','hyperbolic)'},labels
+        elapsed=time.monotonic()-started
+        assert elapsed<10
+        print(f'PASS MCP 20 conic nose cones from elliptic to hyperbolic: {elapsed:.3f}s / 10s')
     finally:
         client.close()

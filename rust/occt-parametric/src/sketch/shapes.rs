@@ -10,7 +10,10 @@ const MAX_SHAPE_POINTS: usize = 20_000;
 impl SketchShape {
     pub fn id(&self) -> &str {
         match self {
-            Self::Rectangle { id, .. } | Self::Slot { id, .. } | Self::Polygon { id, .. } => id,
+            Self::Rectangle { id, .. }
+            | Self::Slot { id, .. }
+            | Self::Conic { id, .. }
+            | Self::Polygon { id, .. } => id,
         }
     }
 
@@ -23,6 +26,7 @@ impl SketchShape {
                 .map(|part| format!("{id}:{part}"))
                 .into(),
             Self::Polygon { sides, .. } => (0..*sides).map(|k| format!("{id}:side{k}")).collect(),
+            Self::Conic { .. } => vec![id.to_owned()],
         }
     }
 
@@ -31,6 +35,7 @@ impl SketchShape {
             Self::Rectangle { .. } => 2,
             Self::Slot { .. } => 4,
             Self::Polygon { sides, .. } => *sides as usize - 1,
+            Self::Conic { .. } => 0,
         }
     }
 }
@@ -256,6 +261,52 @@ impl SketchDefinition {
                             point: point.clone(),
                         });
                     }
+                }
+                SketchShape::Conic {
+                    start,
+                    control,
+                    end,
+                    rho,
+                    ..
+                } => {
+                    for point in [start, control, end] {
+                        seed(point)?;
+                    }
+                    if start == control || control == end || start == end {
+                        return Err(ModelError::new(format!(
+                            "conic '{id}' needs distinct start, control and end points"
+                        )));
+                    }
+                    let rho = rho
+                        .clone()
+                        .unwrap_or(ScalarExpr::Literal(Quantity::scalar(0.5)));
+                    if parameters.is_some() {
+                        let value = value(&rho, Dimension::Scalar)?;
+                        if !(value > 0.0 && value < 1.0) {
+                            return Err(ModelError::new(format!(
+                                "conic '{id}' rho must be in (0, 1); it is {value}"
+                            )));
+                        }
+                    }
+                    // Middle weight w = rho / (1 − rho); end weights are 1.
+                    let one = ScalarExpr::Literal(Quantity::scalar(1.0));
+                    let weight = ScalarExpr::Divide(
+                        Box::new(rho.clone()),
+                        Box::new(ScalarExpr::Subtract(Box::new(one.clone()), Box::new(rho))),
+                    );
+                    result.splines.push(SketchSpline {
+                        id: id.to_owned(),
+                        points: vec![start.clone(), control.clone(), end.clone()],
+                        basis: Some(SketchBSplineBasis {
+                            non_clamped: false,
+                            periodic: false,
+                            degree: 2,
+                            knots: vec![0.0, 1.0],
+                            multiplicities: vec![3, 3],
+                            weights: vec![one.clone(), weight, one],
+                        }),
+                        endpoints: None,
+                    });
                 }
                 SketchShape::Polygon {
                     center,

@@ -1,6 +1,7 @@
 use super::*;
 
 mod advanced;
+mod conics;
 mod dimensions;
 mod elliptical_arcs;
 mod patterns;

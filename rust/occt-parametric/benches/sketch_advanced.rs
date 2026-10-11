@@ -2257,4 +2257,35 @@ fn main() {
             }
         },
     );
+    gate(
+        "500 conic nose-cone rho edits regenerated as revolved solids",
+        10,
+        || {
+            let request: serde_json::Value =
+                serde_json::from_str(include_str!("../../../tools/model/conic-nose.request.json"))
+                    .unwrap();
+            let family = ModelDocument::from_json(&request["model"].to_string())
+                .unwrap()
+                .family;
+            let session = Session::new().unwrap();
+            let mut part = PartInstance {
+                id: "nose".into(),
+                definition: &family,
+                overrides: HashMap::new(),
+                provenance: "scale".into(),
+            };
+            let mut previous = part.regenerate(&session).unwrap();
+            let mut volumes = [0.0; 5];
+            for k in 0..500 {
+                let rho = 0.3 + 0.1 * (k % 5) as f64;
+                part.overrides
+                    .insert("rho".into(), ParameterValue::Scalar(Quantity::scalar(rho)));
+                let built = part.regenerate_incremental(&session, &previous).unwrap();
+                volumes[k % 5] = session.volume(built.shape("body").unwrap()).unwrap();
+                previous = built;
+            }
+            // Fuller shoulders hold more volume.
+            assert!(volumes.windows(2).all(|pair| pair[0] < pair[1]));
+        },
+    );
 }
