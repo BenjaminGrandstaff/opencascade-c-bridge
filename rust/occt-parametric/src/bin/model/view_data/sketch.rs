@@ -282,6 +282,43 @@ pub(super) fn sketch_scene(
             }
         }
     }
+    for projection in &projections {
+        let id = projection["definition"]["id"]
+            .as_str()
+            .expect("projection ID");
+        for reference in projection["definition"]["intersections"]
+            .as_array()
+            .into_iter()
+            .flatten()
+        {
+            let name = reference["id"].as_str().expect("intersection ID");
+            let other = reference["other"].as_str().expect("other projection");
+            let point_id = format!("{id}:intersection:{name}");
+            junction_point_ids.insert(point_id.clone());
+            let mut controls: BTreeSet<String> = projection["source_parameters"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|v| v.as_str().map(str::to_owned))
+                .collect();
+            if let Some(other) = projections.iter().find(|p| p["definition"]["id"] == other) {
+                controls.extend(
+                    other["source_parameters"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|v| v.as_str().map(str::to_owned)),
+                );
+            }
+            if let Some(p) = point_map.get(&point_id) {
+                annotations.push(Annotation {
+                    id:format!("intersection-{id}-{name}"),label:format!("Intersection {name}"),kind:AnnotationKind::Group,status:AnnotationStatus::Constructed,
+                    targets:vec![id.into(),other.into(),point_id.clone()],parameters:controls.into_iter().collect(),
+                    anchors:json!([p]),detail:json!({"intersection":reference,"point":point_id,"coordinates_mm":p,"fixed":true,"match":"unique finite projected crossing","topology":"fixed reference point; curve topology is unchanged"}),
+                }.into());
+            }
+        }
+    }
     for spline in &sketch.splines {
         if let Some(basis) = &spline.basis {
             let mut parameters: BTreeSet<String> = names(&json!(basis)).into_iter().collect();

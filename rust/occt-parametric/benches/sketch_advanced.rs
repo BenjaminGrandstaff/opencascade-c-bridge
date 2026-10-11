@@ -57,6 +57,90 @@ fn gate(name: &str, budget: u64, run: impl FnOnce()) {
 }
 fn main() {
     gate(
+        "1000 named intersection references sharing one finite curve pair",
+        10,
+        || {
+            let request: serde_json::Value = serde_json::from_str(include_str!(
+                "../../../tools/model/projected-intersection-pad.request.json"
+            ))
+            .unwrap();
+            let mut family = ModelDocument::from_json(&request["model"].to_string())
+                .unwrap()
+                .family;
+            let FeatureOperation::SketchFace { sketch } = &mut family.features[2].operation else {
+                panic!()
+            };
+            let template = sketch.projections[0].intersections[0].clone();
+            sketch.projections[0].intersections = (0..1000)
+                .map(|i| SketchProjectionIntersection {
+                    id: if i == 0 {
+                        "right".into()
+                    } else {
+                        format!("crossing-{i}")
+                    },
+                    ..template.clone()
+                })
+                .collect();
+            let session = Session::new().unwrap();
+            let part = PartInstance {
+                id: "part".into(),
+                definition: &family,
+                overrides: HashMap::new(),
+                provenance: "scale".into(),
+            };
+            let built = part.regenerate(&session).unwrap();
+            let snapshots = part.resolved_sketches(&session, &built).unwrap();
+            let sketch = &snapshots["profile"].as_ref().unwrap().sketch;
+            assert_eq!(
+                sketch
+                    .points
+                    .iter()
+                    .filter(|p| p.id.contains(":intersection:"))
+                    .count(),
+                1000
+            );
+            let solution = sketch.solve(&part.resolved_parameters().unwrap()).unwrap();
+            assert!(solution.solved && solution.free_degrees == 0);
+            assert!((solution.points["reference:intersection:crossing-999"].x - 8.).abs() < 1e-8);
+            drop(built);
+            assert_eq!(session.shape_count().unwrap(), 0);
+        },
+    );
+    gate(
+        "1000 projected intersection profile edits with driven pad centres",
+        10,
+        || {
+            let request: serde_json::Value = serde_json::from_str(include_str!(
+                "../../../tools/model/projected-intersection-pad.request.json"
+            ))
+            .unwrap();
+            let mut family = ModelDocument::from_json(&request["model"].to_string())
+                .unwrap()
+                .family;
+            family.features.retain(|f| f.id != "body");
+            let session = Session::new().unwrap();
+            let mut part = PartInstance {
+                id: "part".into(),
+                definition: &family,
+                overrides: HashMap::new(),
+                provenance: "scale".into(),
+            };
+            for i in 0..1000 {
+                part.overrides.insert(
+                    "radius".into(),
+                    ParameterValue::Scalar(Quantity::length(
+                        [10., 12., 14.][i % 3],
+                        LengthUnit::Millimeter,
+                    )),
+                );
+                let built = part.regenerate(&session).unwrap();
+                assert!(session.is_valid(built.shape("profile").unwrap()).unwrap());
+                drop(built);
+                assert_eq!(session.shape_count().unwrap(), 0);
+            }
+        },
+    );
+    gate(
         "1000 named junction references on a 1000-edge projected loop",
         10,
         || {

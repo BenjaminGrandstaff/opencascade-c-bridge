@@ -58,7 +58,7 @@ class McpTests(unittest.TestCase):
         with self.assertRaises(jsonschema.ValidationError):
             jsonschema.validate(bad, schema)
         resources = self.client.call('resources/list')['result']['resources']
-        self.assertEqual(len(resources), 66)
+        self.assertEqual(len(resources), 67)
         self.assertEqual(len(self.client.call('resources/templates/list')['result']['resourceTemplates']), 1)
         read = self.client.call('resources/read', dict(uri='occt://schema/request'))['result']['contents'][0]
         self.assertEqual(json.loads(read['text']), schema)
@@ -243,6 +243,24 @@ class McpTests(unittest.TestCase):
                 self.assertTrue(group['detail']['conflict_group']['trace_complete'])
             else:
                 self.assertEqual(d['locally_redundant_constraints'],[5,6])
+        crossing = self.client.tool('occt_get_example',dict(name='projected-intersection-pad'))['structuredContent']
+        jsonschema.validate(crossing,schema)
+        result = self.client.tool('occt_visualize_model',crossing)
+        self.assertFalse(result['isError'],result)
+        data = json.loads(self.client.call('resources/read',dict(uri=result['structuredContent']['resources']['view.json']))['result']['contents'][0]['text'])
+        scene = next(s for s in data['scenes'] if s['kind']=='sketch' and s['feature']=='profile')
+        self.assertTrue(scene['solver']['accepted'])
+        refs = [a for a in scene['annotations'] if a['id'].startswith('intersection-')]
+        self.assertEqual(len(refs),2)
+        right = next(a for a in refs if a['id']=='intersection-reference-right')
+        self.assertEqual(right['detail']['point'],'reference:intersection:right')
+        self.assertTrue({'radius','offset','intersection_shift','match_radius'} <= set(right['parameters']))
+        self.assertAlmostEqual(scene['points']['center'][0],8)
+        crossing['model']['instances'][0]['base']['overrides']['match_radius'] = {'scalar':dict(value=30,dimension='length',unit='millimeter')}
+        build = dict(schema='occb-model-request-v1',model=crossing['model'],outputs=[dict(instance='part',output='body')],preview=False,step=False,stl=False)
+        result = self.client.tool('occt_build',build)
+        self.assertTrue(result['isError'])
+        self.assertIn('multiple crossings',result['structuredContent']['message'])
         junction = self.client.tool('occt_get_example',dict(name='projected-junction-pad'))['structuredContent']
         jsonschema.validate(junction,schema)
         result = self.client.tool('occt_visualize_model',junction)

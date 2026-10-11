@@ -9,7 +9,53 @@ impl SketchDefinition {
         let mut resolved = self.clone();
         resolved.projections.clear();
         let mut junction_count = 0usize;
+        let mut intersection_count = 0usize;
+        let kinds: HashMap<_, _> = self
+            .projections
+            .iter()
+            .map(|p| (p.id.as_str(), p.kind))
+            .collect();
         for projection in &self.projections {
+            intersection_count += projection.intersections.len();
+            if projection.intersections.len() > 1000 || intersection_count > 10000 {
+                return Err(ModelError::new(
+                    "intersection references exceed 1000 per projection or 10000 per sketch",
+                ));
+            }
+            let mut intersection_names = HashSet::new();
+            for reference in &projection.intersections {
+                if reference.id.is_empty() || !intersection_names.insert(&reference.id) {
+                    return Err(ModelError::new(
+                        "intersection reference IDs must be nonempty and unique",
+                    ));
+                }
+                let other = kinds.get(reference.other.as_str()).ok_or_else(|| {
+                    ModelError::new("intersection requires another declared projection")
+                })?;
+                if reference.other == projection.id {
+                    return Err(ModelError::new(
+                        "intersection requires distinct projections",
+                    ));
+                }
+                let analytic = |kind| {
+                    matches!(
+                        kind,
+                        SketchProjectionKind::Line
+                            | SketchProjectionKind::Circle
+                            | SketchProjectionKind::Arc
+                    )
+                };
+                if !(analytic(projection.kind) && analytic(*other)
+                    || projection.kind == SketchProjectionKind::Line
+                        && *other == SketchProjectionKind::Ellipse
+                    || projection.kind == SketchProjectionKind::Ellipse
+                        && *other == SketchProjectionKind::Line)
+                {
+                    return Err(ModelError::new(
+                        "intersection supports line/circle/arc pairs and line-ellipse pairs",
+                    ));
+                }
+            }
             junction_count += projection.junctions.len();
             if projection.junctions.len() > 1000 || junction_count > 10000 {
                 return Err(ModelError::new(
@@ -45,6 +91,9 @@ impl SketchDefinition {
                 });
                 name
             };
+            for reference in &projection.intersections {
+                point(&format!("intersection:{}", reference.id), 0., 0.);
+            }
             for junction in &projection.junctions {
                 point(&format!("junction:{}", junction.id), 0., 0.);
             }

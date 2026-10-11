@@ -81,6 +81,7 @@ fn fixture(source: FeatureOperation, sketch: SketchDefinition, open: bool) -> Fa
 fn projection(kind: SketchProjectionKind, edge: EdgeSelector) -> SketchProjection {
     SketchProjection {
         junctions: Vec::new(),
+        intersections: Vec::new(),
         id: "edge".into(),
         input: "source".into(),
         edge,
@@ -1059,4 +1060,171 @@ fn junction_references_reject_ambiguous_matches_bad_ids_and_non_chain_usage() {
         assert!(error.message.contains(expected), "{}", error.message);
         assert_eq!(session.shape_count().unwrap(), 0);
     }
+}
+
+fn intersection_document() -> ModelDocument {
+    let request: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../tools/model/projected-intersection-pad.request.json"
+    ))
+    .unwrap();
+    ModelDocument::from_json(&request["model"].to_string()).unwrap()
+}
+#[test]
+fn named_intersections_drive_native_parts_and_track_source_and_hint_edits() {
+    let doc = intersection_document();
+    let session = Session::new().unwrap();
+    let mut instance = part(&doc.family);
+    let first = instance.regenerate(&session).unwrap();
+    let inspect = |instance: &PartInstance<'_>, built: &GeneratedResult<'_>| {
+        let snapshots = instance.resolved_sketches(&session, built).unwrap();
+        let sketch = &snapshots["profile"].as_ref().unwrap().sketch;
+        let solution = sketch
+            .solve(&instance.resolved_parameters().unwrap())
+            .unwrap();
+        assert!(solution.solved && solution.free_degrees == 0);
+        let p = solution.points["reference:intersection:right"];
+        let c = solution.points["center"];
+        assert!((p.x - c.x).hypot(p.y - c.y) < 1e-8);
+        assert!((p.y - 6.).abs() < 1e-8);
+        for source in ["source", "guide-source"] {
+            let closest = session
+                .curve_closest_point(built.shape(source).unwrap(), Vec3::new(p.x, p.y, 0.))
+                .unwrap();
+            assert!((closest.x - p.x).hypot(closest.y - p.y).hypot(closest.z) < 1e-7);
+        }
+        assert!(session.is_valid(built.shape("body").unwrap()).unwrap());
+        assert!(
+            (session.volume(built.shape("body").unwrap()).unwrap() - 16. * std::f64::consts::PI)
+                .abs()
+                < 1e-7
+        );
+        p.x
+    };
+    assert!((inspect(&instance, &first) - 8.).abs() < 1e-8);
+    instance.overrides.insert(
+        "radius".into(),
+        ParameterValue::Scalar(Quantity::length(12., LengthUnit::Millimeter)),
+    );
+    let edited = instance.regenerate_incremental(&session, &first).unwrap();
+    assert!((inspect(&instance, &edited) - 108f64.sqrt()).abs() < 1e-8);
+    assert!(edited.regeneration.rebuilt.contains(&"profile".to_owned()));
+    let count = session.shape_count().unwrap();
+    instance.overrides.insert(
+        "intersection_shift".into(),
+        ParameterValue::Scalar(Quantity::length(10., LengthUnit::Millimeter)),
+    );
+    let err = instance
+        .regenerate_incremental(&session, &edited)
+        .err()
+        .unwrap();
+    assert!(err.message.contains("found no crossing"), "{}", err.message);
+    assert_eq!(session.shape_count().unwrap(), count);
+    assert!(session.is_valid(edited.shape("body").unwrap()).unwrap());
+    drop(first);
+    drop(edited);
+    assert_eq!(session.shape_count().unwrap(), 0);
+}
+#[test]
+fn projected_intersection_guards_reject_ambiguity_invalid_hints_and_unsupported_pairs() {
+    let doc = intersection_document();
+    let session = Session::new().unwrap();
+    for case in 0..10 {
+        let mut f = doc.family.clone();
+        let sk = profile(&mut f);
+        let expected = match case {
+            0 => {
+                sk.projections[0].intersections[0].maximum_distance = mm(30.);
+                "multiple crossings"
+            }
+            1 => {
+                sk.projections[0].intersections[0].maximum_distance = mm(0.);
+                "must be positive"
+            }
+            2 => {
+                sk.projections[0].intersections[0].near = vector(8., 6., 1., Dimension::Length);
+                "z equal to zero"
+            }
+            3 => {
+                sk.projections[0].intersections[1].id = "right".into();
+                "nonempty and unique"
+            }
+            4 => {
+                sk.projections[0].intersections[0].other = "missing".into();
+                "another declared projection"
+            }
+            5 => {
+                sk.projections[0].intersections[0].other = "reference".into();
+                "distinct projections"
+            }
+            6 => {
+                sk.projections[1].kind = SketchProjectionKind::Spline;
+                "supports line/circle/arc"
+            }
+            7 => {
+                sk.points
+                    .push(point("reference:intersection:right", 0., 0.));
+                "unique"
+            }
+            8 => {
+                let reference = sk.projections[0].intersections[0].clone();
+                sk.projections[0].intersections = (0..1001)
+                    .map(|i| SketchProjectionIntersection {
+                        id: format!("ref-{i}"),
+                        ..reference.clone()
+                    })
+                    .collect();
+                "exceed 1000"
+            }
+            _ => {
+                let mut projection = sk.projections[0].clone();
+                let reference = projection.intersections[0].clone();
+                projection.intersections = (0..1000)
+                    .map(|i| SketchProjectionIntersection {
+                        id: format!("ref-{i}"),
+                        ..reference.clone()
+                    })
+                    .collect();
+                sk.projections = (0..11)
+                    .map(|i| SketchProjection {
+                        id: format!("projected-{i}"),
+                        ..projection.clone()
+                    })
+                    .chain(std::iter::once(sk.projections[1].clone()))
+                    .collect();
+                "exceed 1000"
+            }
+        };
+        let err = part(&f).regenerate(&session).err().unwrap();
+        assert!(err.message.contains(expected), "{}", err.message);
+        assert_eq!(session.shape_count().unwrap(), 0);
+    }
+}
+#[test]
+fn projected_intersection_hints_select_opposite_branch_without_rebuilding_sources() {
+    let doc = intersection_document();
+    let session = Session::new().unwrap();
+    // Keep only right: the left reference's shared hint parameter would otherwise leave the curve.
+    let mut family = doc.family.clone();
+    profile(&mut family).projections[0]
+        .intersections
+        .truncate(1);
+    let mut instance = part(&family);
+    let first2 = instance.regenerate(&session).unwrap();
+    instance.overrides.insert(
+        "intersection_shift".into(),
+        ParameterValue::Scalar(Quantity::length(-18., LengthUnit::Millimeter)),
+    );
+    let edited = instance.regenerate_incremental(&session, &first2).unwrap();
+    assert_eq!(edited.regeneration.rebuilt, vec!["profile", "body"]);
+    let snapshots = instance.resolved_sketches(&session, &edited).unwrap();
+    let solved = snapshots["profile"]
+        .as_ref()
+        .unwrap()
+        .sketch
+        .solve(&instance.resolved_parameters().unwrap())
+        .unwrap();
+    assert!((solved.points["center"].x + 8.).abs() < 1e-8);
+    drop(first2);
+    drop(edited);
+    assert_eq!(session.shape_count().unwrap(), 0);
 }

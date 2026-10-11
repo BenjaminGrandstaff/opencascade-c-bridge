@@ -454,6 +454,10 @@ pub struct SketchProjection {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[schemars(length(max = 1000))]
     pub junctions: Vec<SketchProjectionJunction>,
+    /// Named fixed crossings with another analytic projection, in sketch coordinates.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[schemars(length(max = 1000))]
+    pub intersections: Vec<SketchProjectionIntersection>,
 }
 
 /// A uniquely matched source-space junction, exposed as `projection:junction:id`.
@@ -463,6 +467,19 @@ pub struct SketchProjection {
 #[serde(deny_unknown_fields)]
 pub struct SketchProjectionJunction {
     pub id: String,
+    pub near: VectorExpr,
+    pub maximum_distance: ScalarExpr,
+}
+
+/// A unique crossing of two finite projected curves. The hint is a length vector
+/// in sketch-local coordinates (z must be zero); the radius is a positive length.
+/// Exposed as `projection:intersection:id`. Lines/circles/arcs are supported,
+/// together with line–ellipse pairs. Profile edits do not change these references.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SketchProjectionIntersection {
+    pub id: String,
+    pub other: String,
     pub near: VectorExpr,
     pub maximum_distance: ScalarExpr,
 }
@@ -689,6 +706,10 @@ impl SketchDefinition {
     pub(crate) fn collect_parameters<'a>(&'a self, names: &mut HashSet<&'a str>) {
         for projection in &self.projections {
             collect_edge_selector_parameters(&projection.edge, names);
+            for intersection in &projection.intersections {
+                collect_vector_parameters(&intersection.near, names);
+                collect_scalar_parameters(&intersection.maximum_distance, names);
+            }
             for junction in &projection.junctions {
                 collect_vector_parameters(&junction.near, names);
                 collect_scalar_parameters(&junction.maximum_distance, names);

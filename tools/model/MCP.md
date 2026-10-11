@@ -46,10 +46,10 @@ or remote service is started.
 | `occt_build` | The entire `occb-model-request-v1` object | Accepted report, build ID, local directory, and artifact resource URIs |
 
 `tools/list` provides the generated complete request schema as `occt_build`'s
-input schema. All 38 current feature operations and 153 nested request-schema
+input schema. All 38 current feature operations and 154 nested request-schema
 definitions are discoverable. Schemas derive from serde-compatible Rust types;
 new serialized variants require schema support at compilation. Authoring schemas
-target current model schema 118. The engine still migrates older documents.
+target current model schema 119. The engine still migrates older documents.
 Schemas describe serialization and basic request bounds; units, dependency
 references, dimensional constraints, selector resolution, and geometry validity
 are checked by the build engine.
@@ -558,3 +558,12 @@ fixed point IDs in a coincident constraint and width dimension. Set `width` to
 missing-match failure. Hint parameters invalidate the projection independently
 of source geometry. See
 [named references](../../docs/SKETCHES.md#named-chain-junction-references-schema-118).
+
+
+`occt_get_example {"name":"projected-intersection-pad"}` returns a schema-119
+view request with circle–line crossings driving a solid pad. Named intersection
+annotations target both projected curves and their fixed reference point, and
+include controls from both sources. Change `radius` to move the pad; overly broad
+`match_radius` or a shifted missing hint rejects the build. The catalog now has
+55 examples and 12 schemas (67 resources); the request has 154 definitions.
+See [intersection rules](../../docs/SKETCHES.md#named-projected-intersections-schema-119).

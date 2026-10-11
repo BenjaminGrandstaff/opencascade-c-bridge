@@ -5,6 +5,7 @@
 use super::*;
 use crate::assembly::{dot, subtract};
 use occt_bridge::{AnalyticCurve, BezierSpan};
+mod intersections;
 
 pub(super) fn materialize(
     session: &Session,
@@ -175,6 +176,7 @@ pub(super) fn materialize(
                 .clockwise = clockwise;
         }
     }
+    intersections::materialize(&mut result, &sketch.projections, parameters)?;
     result.validate_structure()?;
     Ok(result)
 }

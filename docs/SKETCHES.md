@@ -79,7 +79,7 @@ export are verified. A 1,000-pair solve and residual-diagnostic gate passes in
 0.009 s (10 s budget); 20 solids plus 60 source sketch scenes and matched-radius
 annotations pass through MCP in 0.316 s (10 s budget).
 
-Current authoring examples use schema 118. Older model documents migrate
+Current authoring examples use schema 119. Older model documents migrate
 without adding constraints or changing their entities. Current native ABI is 60.
 
 ## Saved profile operations
@@ -1305,3 +1305,65 @@ The composite remains one native edge. Named reference points do not restore
 separate junction vertices, split edges or change tangent/corner-edit semantics.
 A 1,000-reference/1,000-edge loop takes 0.360 s, and 1,000 driven profile edits
 take 0.307 s (10 s budgets). MCP renders 20 annotated pads in 1.308 s / 10 s.
+
+
+## Named projected intersections (schema 119)
+
+An analytic projection may declare `intersections`, each with `id`, `other`
+(the ID of another projection in the same sketch), length-vector expression
+`near`, and positive length expression `maximum_distance`. It creates a fixed
+point named `projection:intersection:id`, usable by constraints, dimensions,
+and authored geometry. The hint uses **sketch-local coordinates**, with z=0,
+including on tilted or attached sketch planes. This differs from junction hints,
+which use source family coordinates before projection.
+
+Supported pairs are line–line, line–circle, line–arc, circle–circle,
+circle–arc, arc–arc, and line–ellipse, in either order. Lines are finite
+segments and arcs obey their directed span; circles and ellipses are full curves.
+The calculation uses analytic equations on the materialized projected curves,
+without sampled intersections or extra native queries. Curves can cross in the
+sketch plane even when their source edges do not meet in 3D. Intersections
+refer to the projected entities before profile trim, extend, offset, or corner
+operations. Splines/chains, ellipse–ellipse and ellipse–circle/arc pairs are
+currently rejected explicitly.
+
+Exactly one crossing must fall within the hint radius. Zero matches or multiple
+matches reject regeneration; proximity does not silently choose the closest.
+An isolated tangent contact is one candidate. Overlapping collinear segments
+and equal coincident circular supports are rejected; coincident circular
+supports are rejected even when their arc spans are disjoint. A shared endpoint
+of otherwise disjoint collinear segments is an isolated candidate. Calculations
+use floating-point analytic equations with bounded roundoff checks; ill-conditioned
+or degenerate input can fail rather than produce an arbitrary reference.
+
+Names must be nonempty and unique within each projection, and `other` must name
+a distinct declared projection. Generated point IDs obey the usual uniqueness
+checks. Limits are 1,000 references per projection and 10,000 per sketch.
+Curve data and up to two crossings are cached once per referenced pair, so many
+names sharing a pair do not repeat the calculation. Storage is O(sketch size +
+references + pairs), and matching is O(references); entity lookup is bounded by
+the existing 1,000-projection limit. Hint and radius expressions participate in
+parameter invalidation. Older documents migrate with an empty list, omitted
+on serialization. Native ABI remains 60.
+
+The viewer and MCP expose a selectable `Intersection name` annotation with the
+fixed point, sketch coordinates, both curve targets, and controls from both
+source projections. Reference points do not split curves or introduce native
+vertices. Authored free geometry can be driven by coincident/distance relations
+to these fixed points under `fully_constrained` acceptance.
+
+See `tools/model/projected-intersection-pad.request.json`: a horizontal projected
+line crosses a projected circle, and the right crossing drives the centre of a
+2 mm radius extruded pad. Change `radius` from 10 to 12 mm to move the centre
+from x=8 to x=sqrt(108) mm while y=6 mm and volume=16π mm³ remain unchanged.
+The left crossing has its own fixed alias. Setting `match_radius` to 30 mm
+rejects an ambiguous selection; setting `intersection_shift` to 10 mm rejects
+a missing match. Restore the defaults to recover. Hint-only failures retain the
+accepted part; hint-only successful branch changes rebuild the profile and body
+while reusing the source features.
+
+Performance gates: 1,000 aliases sharing a curve pair resolve, build, and solve
+in 0.005 s; 1,000 driven profile regenerations take 0.236 s (10 s budgets).
+MCP renders 20 annotated pads in 0.188 s / 10 s. All 38 advanced sketch and
+41 MCP scale gates pass. Native curve-distance checks independently confirm
+that the selected point lies on both sources in the planar example.

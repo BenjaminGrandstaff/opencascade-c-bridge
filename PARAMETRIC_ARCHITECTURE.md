@@ -1944,3 +1944,10 @@ geometry without sampled replacements. Source/named/history dependencies enter
 ordering and signatures. Bulk snapshot inspection builds all indexes once,
 and the viewer shares that snapshot for attachment metadata and linked imports.
 See [sketch projections](docs/SKETCH_PROJECTIONS.md).
+
+
+Schema 119 adds guarded projected-curve intersection aliases. After all linked
+curves are materialized, bounded analytic pair calculations resolve fixed points
+in sketch coordinates before solving. Pair caching avoids repeat calculations,
+and hint expressions participate in incremental invalidation. Constraints and
+viewer annotations use the same fixed aliases; native topology remains unchanged.

@@ -11,19 +11,31 @@ tracks status and order.
 | C ABI (`src/`, `include/`) | ABI 60 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric` (engineering layer) | Schema 118 | Active development |
+| `occt-parametric` (engineering layer) | Schema 119 | Active development |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 130 + first-use integration 1 (+1 doc test), recipes 3, parametric 572 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 19 + branch command 2 + model command 65, MCP Python 9, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 130 + first-use integration 1 (+1 doc test), recipes 3, parametric 578 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 19 + branch command 2 + model command 66, MCP Python 9, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform code also passes. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
 | Coverage | Last recorded: 93.61% lines overall, test code excluded; C++ 94.13% lines, 87.40% branches, 100% functions; Rust 93.42% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | 178 Rust cases plus 5 model-command and 40 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
+| Scale benchmarks | 180 Rust cases plus 5 model-command and 41 MCP cases and a 10,000-face Python matcher passing within budget | `tools/bench/run.sh` |
 
 ## Done
 
+- Named projected intersections (schema 119, ABI 60 unchanged): finite
+  line/circle/arc pairs and line–ellipse crossings generate fixed named points
+  for constraints, dimensions and native part positioning. Unique sketch-plane
+  hints reject missing/ambiguous crossings, overlaps and unsupported pairs.
+  Pair caching and 1,000-per-projection/10,000-per-sketch limits bound work;
+  hint-only edits invalidate the profile and preserve accepted parts on failure.
+  Viewer/MCP annotations link both curves and both source controls. Native
+  topology stays unchanged. Example: `projected-intersection-pad`; catalog:
+  55 examples, 67 resources, 154 request definitions. All 57 saved model
+  examples use schema 119. A 1,000-reference pair takes 0.005 s; 1,000
+  driven profile regenerations take 0.236 s; MCP renders 20 pads in 0.188 s
+  (10 s budgets). All 38 advanced sketch and 41 MCP scale gates pass.
 - Named chain junction references (schema 118, ABI 60 unchanged): authored
   names resolve unique selected source-edge junctions within a bounded
   family-coordinate hint. Fixed sketch points drive constraints/dimensions
@@ -1909,7 +1921,7 @@ that require zero local free degrees. Finite spline and trimmed-conic edges now
 project exactly into sketch planes, with stable endpoint references and source
 parameter links. Connected multi-edge selections now import as composite
 spline boundaries, with named junction references usable in constraints and
-dimensions. Separate junction edge topology and curve-intersection authoring
+dimensions. Separate junction edge topology and spline/ellipse-pair intersection authoring
 remain extensions to that workflow.
 
 The earlier geometry and assembly milestones are complete. Manufacturing

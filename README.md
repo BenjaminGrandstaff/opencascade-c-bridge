@@ -967,3 +967,10 @@ matches create fixed points for constraints and dimensions, with source and
 hint parameters tracked during edits. Try the
 [projected junction pad](tools/model/projected-junction-pad.request.json) and see
 [matching and topology limits](docs/SKETCHES.md#named-chain-junction-references-schema-118).
+
+
+Schema 119 adds named finite crossings between analytic sketch projections,
+with unique-match hints, constraint/dimension references, and viewer/MCP controls
+from both curves. Try `tools/model/projected-intersection-pad.request.json`.
+See [projected intersections](docs/SKETCHES.md#named-projected-intersections-schema-119)
+for supported curve pairs and matching rules. Native ABI remains 60.

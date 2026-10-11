@@ -2091,3 +2091,65 @@ fn named_junction_viewer_exposes_point_references_controls_and_dimension_targets
             .contains(&json!("reference:junction:right"))
     );
 }
+
+#[test]
+fn intersection_viewer_exposes_both_source_controls_and_fixed_crossing_targets() {
+    let dir = Directory::new();
+    view_request(
+        &dir,
+        view_example("projected-intersection-pad"),
+        "intersection",
+    )
+    .unwrap();
+    let data: Value =
+        serde_json::from_str(&fs::read_to_string(dir.0.join("intersection/view.json")).unwrap())
+            .unwrap();
+    let sk = data["scenes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["kind"] == "sketch" && s["feature"] == "profile")
+        .unwrap();
+    assert_eq!(sk["solver"]["accepted"], true);
+    let right = sk["annotations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["id"] == "intersection-reference-right")
+        .unwrap();
+    assert_eq!(right["detail"]["point"], "reference:intersection:right");
+    assert_eq!(
+        right["targets"],
+        json!(["reference", "guide", "reference:intersection:right"])
+    );
+    for name in ["radius", "offset", "intersection_shift", "match_radius"] {
+        assert!(
+            right["parameters"]
+                .as_array()
+                .unwrap()
+                .contains(&json!(name)),
+            "{name}"
+        );
+    }
+    assert!((right["anchors"][0][0].as_f64().unwrap() - 8.).abs() < 1e-8);
+    let dimension = sk["annotations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["detail"]["constraint_index"] == 2)
+        .unwrap();
+    assert_eq!(dimension["status"], "passed");
+    assert!(
+        dimension["targets"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("reference:intersection:right"))
+    );
+    assert!(
+        !sk["annotations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|a| a["id"] == "fixed-reference:intersection:right")
+    );
+}
