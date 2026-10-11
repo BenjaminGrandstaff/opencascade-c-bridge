@@ -16,8 +16,8 @@ import sys
 import uuid
 
 PROTOCOLS = ('2025-11-25', '2025-06-18')
-SCHEMAS = ('request', 'model', 'feature', 'parameter', 'sketch', 'requirement', 'inspection', 'face_selector', 'edge_selector', 'edit', 'change', 'view')
-EXAMPLES = ('bracket', 'enclosure', 'shaft', 'mating-parts', 'sketch-block', 'sketch-conflict', 'sketch-advanced', 'extrusion-limits', 'curved-extrusions', 'drill-point', 'hole-limits', 'profile-loft', 'curved-pipe', 'revolved-ring', 'symmetric-revolve', 'hollow-profile', 'hollow-sweep', 'hollow-loft', 'mirrored-part', 'scaled-part', 'spring', 'offset-part', 'multi-hole-plate', 'patterned-plate', 'bolt-circle', 'threaded-rod', 'edge-treatments', 'variable-fillet', 'equal-radius-plate', 'face-pocket', 'projected-pocket', 'concentric-bushing', 'tangent-boss', 'arc-tangent-boss', 'rational-spline-cap', 'periodic-spline-pad', 'non-clamped-spline-cap', 'ellipse-tangent-pad', 'spline-tangent-cap', 'spline-tangent-boss', 'spline-tangent-pair', 'spline-tangent-ellipse', 'ellipse-tangent-boss', 'ellipse-tangent-pair', 'corner-treated-plate', 'open-corner-pipe', 'spline-corner-pad', 'mirrored-flange', 'tapped-block', 'projected-tangent-intersection-pad', 'projected-spline-intersection-pad', 'projected-ellipse-intersection-pad', 'projected-intersection-pad', 'projected-junction-pad', 'projected-chain-pad', 'projected-spline-pad', 'strict-sketch-block', 'sketch-diagnosis', 'split-housing', 'thickened-strap', 'dimensioned-plate', 'slotted-plate', 'arched-panel', 'conic-nose', 'keyhole-tag', 'spacer-set', 'g2-paddle', 'engraved-nameplate', 'discovered-lens', 'composed-regions', 'edited-regions', 'stable-sketch-references', 'reliable-sketch')
+SCHEMAS = ('request', 'model', 'feature', 'parameter', 'sketch', 'requirement', 'inspection', 'face_selector', 'edge_selector', 'edit', 'change', 'sketch_change', 'view')
+EXAMPLES = ('bracket', 'enclosure', 'shaft', 'mating-parts', 'sketch-block', 'sketch-conflict', 'sketch-advanced', 'extrusion-limits', 'curved-extrusions', 'drill-point', 'hole-limits', 'profile-loft', 'curved-pipe', 'revolved-ring', 'symmetric-revolve', 'hollow-profile', 'hollow-sweep', 'hollow-loft', 'mirrored-part', 'scaled-part', 'spring', 'offset-part', 'multi-hole-plate', 'patterned-plate', 'bolt-circle', 'threaded-rod', 'edge-treatments', 'variable-fillet', 'equal-radius-plate', 'face-pocket', 'projected-pocket', 'concentric-bushing', 'tangent-boss', 'arc-tangent-boss', 'rational-spline-cap', 'periodic-spline-pad', 'non-clamped-spline-cap', 'ellipse-tangent-pad', 'spline-tangent-cap', 'spline-tangent-boss', 'spline-tangent-pair', 'spline-tangent-ellipse', 'ellipse-tangent-boss', 'ellipse-tangent-pair', 'corner-treated-plate', 'open-corner-pipe', 'spline-corner-pad', 'mirrored-flange', 'tapped-block', 'projected-tangent-intersection-pad', 'projected-spline-intersection-pad', 'projected-ellipse-intersection-pad', 'projected-intersection-pad', 'projected-junction-pad', 'projected-chain-pad', 'projected-spline-pad', 'strict-sketch-block', 'sketch-diagnosis', 'split-housing', 'thickened-strap', 'dimensioned-plate', 'slotted-plate', 'arched-panel', 'conic-nose', 'keyhole-tag', 'spacer-set', 'g2-paddle', 'engraved-nameplate', 'discovered-lens', 'composed-regions', 'edited-regions', 'stable-sketch-references', 'reliable-sketch', 'sketch-repair')
 MAX_MESSAGE = 64 * 1024 * 1024
 MAX_RESOURCE = 32 * 1024 * 1024
 ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -78,13 +78,15 @@ class Server:
                  inputSchema=object_schema({'name': dict(type='string', enum=list(SCHEMAS))}, ['name']), annotations=read),
             dict(name='occt_get_example', description='Read a complete editable example request; dimensions are demonstration assumptions.',
                  inputSchema=object_schema({'name': dict(type='string', enum=list(EXAMPLES))}, ['name']), annotations=read),
-            dict(name='occt_inspect_model', description='Read paged model/instance parameters, feature inputs, datums, references and requirements. Optional output regeneration measures faces/edges and tests semantic selectors. Does not publish or edit a build.',
+            dict(name='occt_inspect_model', description='Read paged model/instance parameters, feature inputs, datums, references and requirements. Use sketch_feature with an instance for isolated sketch solver/geometry diagnosis and guarded repair candidates. Optional output regeneration measures faces/edges and tests semantic selectors. Does not publish or edit a build.',
                  inputSchema=self.schemas['inspection'], annotations=read),
             dict(name='occt_inspect_build', description='Inspect an accepted build by ID without resending its model. Use instance/output and optional semantic selectors for geometry queries; snapshot indices are not persistent identities.',
                  inputSchema=self.build_inspection_schema, annotations=read),
             dict(name='occt_visualize_model', description='Create a self-contained interactive annotated viewer for sketches and 3D shapes. Dimensions, driving values, solver constraint residuals, and failed requirement witnesses are linked to geometry. Diagnostic snapshots never become accepted builds.',
                  inputSchema=self.schemas['view'], annotations=dict(readOnlyHint=True, destructiveHint=False, idempotentHint=False, openWorldHint=False)),
-            dict(name='occt_edit_build', description='Apply guarded edits to an accepted model snapshot: add/replace/remove features, add parameters/requirements/references, and set parameter overrides. Requires expected model SHA-256 and explicit revision metadata. Preserves existing requirements and source build; verifies and publishes a new build with a semantic change record.',
+            dict(name='occt_preview_edit_build', description='Preview guarded edits against an accepted build snapshot. Returns diagnostic candidate geometry and solver reports without accepting the candidate, recording a revision, or modifying the source build. Repair suggestions require a successful verified edit before publication.',
+                 inputSchema=self.build_edit_schema, annotations=dict(readOnlyHint=True, destructiveHint=False, idempotentHint=False, openWorldHint=False)),
+            dict(name='occt_edit_build', description='Apply guarded feature, sketch element/constraint/configuration and named-reference edits to an accepted model snapshot, or set parameter overrides. Requires expected model SHA-256 and explicit revision metadata. Preserves existing requirements and source build; verifies and publishes a new build with a semantic change record.',
                  inputSchema=self.build_edit_schema, annotations=dict(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False)),
             dict(name='occt_build', description='Validate/migrate a model, apply typed parameter edits, verify requirements, and build selected parts into a new server-owned directory. Returns report and artifact resource URIs. Failed edits preserve previous builds.',
                  inputSchema=self.schemas['request'], annotations=dict(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False)),
@@ -164,7 +166,7 @@ class Server:
             return tool_result(value)
         return result
 
-    async def edit_build(self, arguments):
+    async def edit_build(self, arguments, preview=False):
         allowed = set(self.build_edit_schema['properties'])
         if not isinstance(arguments, dict) or not set(arguments).issubset(allowed) or not isinstance(arguments.get('build_id'), str) or not re.fullmatch(r'[0-9a-f]{32}', arguments['build_id']) or not isinstance(arguments.get('expected_model_sha256'), str) or not re.fullmatch(r'[0-9a-f]{64}', arguments['expected_model_sha256']):
             raise RpcError(-32602, 'expected build_id, expected_model_sha256, and supported edit fields')
@@ -174,9 +176,9 @@ class Server:
             return tool_result(dict(status='failed', stage='conflict', message='source model fingerprint differs from the inspected snapshot'), True)
         request = {key: value for key, value in arguments.items() if key not in ('build_id', 'expected_model_sha256')}
         request.update(schema='occb-model-edit-v1', model=decode(text), source=dict(build_id=arguments['build_id'], model_sha256=fingerprint))
-        return await self.worker(request, editing=True)
+        return await self.worker(request, editing=True, previewing=preview)
 
-    async def worker(self, request, inspection=False, editing=False, visualization=False):
+    async def worker(self, request, inspection=False, editing=False, visualization=False, previewing=False):
         if not isinstance(request, dict):
             raise RpcError(-32602, 'build arguments must be a model request object')
         # Paths and executable are configured by the local operator; tool callers
@@ -192,6 +194,8 @@ class Server:
             command = [str(self.binary)]
             if inspection:
                 command.append('--inspect')
+            elif previewing:
+                command.append('--preview-edit')
             elif editing:
                 command.append('--edit')
             elif visualization:
@@ -222,7 +226,7 @@ class Server:
                 fingerprint = hashlib.file_digest(file, 'sha256').hexdigest()
             accepted = True
             result = dict(model_sha256=fingerprint, report=report, directory=str(work / 'build'),resources={name: f'occt://build/{build_id}/{name}' for name in sorted(filenames)})
-            result['visualization_id' if visualization else 'build_id'] = build_id
+            result['visualization_id' if visualization or previewing else 'build_id'] = build_id
             return tool_result(result)
         except TimeoutError:
             return tool_result(dict(status='failed', stage='timeout', message=f'build exceeded {self.timeout:g} seconds'), True)
@@ -257,7 +261,7 @@ class Server:
             return dict(protocolVersion=params['protocolVersion'] if params['protocolVersion'] in PROTOCOLS else PROTOCOLS[0],
                         capabilities=dict(tools=dict(listChanged=False), resources=dict(listChanged=False)),
                         serverInfo=dict(name='occt-model', version='0.1.0'),
-                        instructions='Read a schema/example, preserve requirements and explicit assumptions, then build. Read model.json to continue from the accepted model. Preview SVGs are sampled; inspect requirement evidence.')
+                        instructions='Read a schema/example, preserve requirements and explicit assumptions, then build. Inspect sketch_feature for solver/repair evidence, preview guarded proposals with occt_preview_edit_build, then publish intended changes with occt_edit_build. Read model.json to continue from the accepted model. Preview SVGs are sampled; inspect requirement evidence.')
         if self.state != 'ready':
             raise RpcError(-32600, 'initialize and send notifications/initialized first')
         if method == 'tools/list':
@@ -276,6 +280,8 @@ class Server:
                 return await self.inspect_build(arguments)
             if name == 'occt_visualize_model':
                 return await self.worker(arguments, visualization=True)
+            if name == 'occt_preview_edit_build':
+                return await self.edit_build(arguments, preview=True)
             if name == 'occt_edit_build':
                 return await self.edit_build(arguments)
             if name == 'occt_build':
@@ -284,8 +290,8 @@ class Server:
         if method == 'resources/list':
             return dict(resources=self.fixed_resources())
         if method == 'resources/templates/list':
-            return dict(resourceTemplates=[dict(uriTemplate='occt://build/{build_id}/{artifact}', name='Accepted build artifact',
-                description='Use artifact URIs returned by occt_build: model/report JSON, SVG previews, binary STL or STEP; maximum read size 32 MiB.')])
+            return dict(resourceTemplates=[dict(uriTemplate='occt://build/{build_id}/{artifact}', name='Build or diagnostic artifact',
+                description='Use artifact URIs returned by build or preview tools: model/report JSON, SVG previews, binary STL or STEP; maximum read size 32 MiB.')])
         if method == 'resources/read':
             return self.resource(params.get('uri'))
         raise RpcError(-32601, 'method not found')

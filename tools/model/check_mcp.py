@@ -1076,5 +1076,29 @@ with tempfile.TemporaryDirectory(prefix='occb-mcp-scale-') as root:
         elapsed=time.monotonic()-started
         assert elapsed<10
         print(f'PASS MCP 20 strict sketches from poor seeds with solve termination and rank reports: {elapsed:.3f}s / 10s')
+        repair=client.tool('occt_get_example',dict(name='sketch-repair'))['structuredContent']
+        source=client.tool('occt_build',repair)
+        assert not source['isError'],source
+        source=source['structuredContent']
+        started=time.monotonic()
+        for i in range(20):
+            inspected=client.tool('occt_inspect_build',dict(build_id=source['build_id'],instance='part',sketch_feature='profile'))
+            assert not inspected['isError'],inspected
+            diagnosis=inspected['structuredContent']['sketch']
+            candidate=next(c for c in diagnosis['repair_candidates'] if c['kind']=='remove_locally_redundant_constraint')
+            edit=dict(build_id=source['build_id'],expected_model_sha256=source['model_sha256'],
+                changes=[dict(action='edit_sketch',family='sketch-repair',feature='profile',expected=diagnosis['definition'],changes=[candidate['change']])],
+                outputs=[dict(instance='part',output='body')],revision=dict(id=f'repair-{i}',author='bench',recorded_at='benchmark',message='Remove duplicated angle'),step=False,preview=False)
+            preview=client.tool('occt_preview_edit_build',edit)
+            assert not preview['isError'],preview
+            assert preview['structuredContent']['report']['status']=='previewed'
+            assert not preview['structuredContent']['report']['accepted']
+            published=client.tool('occt_edit_build',edit)
+            assert not published['isError'],published
+            assert published['structuredContent']['report']['outputs'][0]['valid']
+            assert published['structuredContent']['report']['revision']['id']==f'repair-{i}'
+        elapsed=time.monotonic()-started
+        assert elapsed<10
+        print(f'PASS MCP 20 guarded sketch diagnose/preview/repair/publication cycles: {elapsed:.3f}s / 10s')
     finally:
         client.close()

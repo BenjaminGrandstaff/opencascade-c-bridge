@@ -3,6 +3,8 @@ use super::*;
 use occt_bridge::{Shape, ShapeType, Vec3};
 use serde::Serialize;
 use std::{collections::BTreeMap, fs::OpenOptions, io::Write};
+#[path = "inspect/sketch.rs"]
+mod sketch;
 
 #[derive(Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -13,6 +15,8 @@ pub struct Inspection {
     instance: Option<String>,
     #[serde(default)]
     output: Option<String>,
+    #[serde(default)]
+    sketch_feature: Option<String>,
     #[serde(default)]
     face_selector: Option<FaceSelector>,
     #[serde(default)]
@@ -73,7 +77,9 @@ fn inspect(request: Inspection) -> Result<Value, Failure> {
             "expected occb-model-inspection-v1 and a limit in 1..1000",
         ));
     }
-    if (request.output.is_some() && request.instance.is_none())
+    if ((request.output.is_some() || request.sketch_feature.is_some())
+        && request.instance.is_none())
+        || (request.output.is_some() && request.sketch_feature.is_some())
         || ((request.face_selector.is_some() || request.edge_selector.is_some())
             && request.output.is_none())
     {
@@ -133,6 +139,16 @@ fn inspect(request: Inspection) -> Result<Value, Failure> {
         "features":page(&feature_info,request.offset,request.limit),"requirements":page(&family.requirements,request.offset,request.limit),
         "constraints":page(&family.constraints,request.offset,request.limit),"datums":page(&family.datums,request.offset,request.limit),
         "references":page(&family.references,request.offset,request.limit),"assumptions":page(&family.assumptions,request.offset,request.limit)});
+    if let Some(feature) = &request.sketch_feature {
+        result["sketch"] = sketch::inspect(part, feature, request.offset, request.limit)?;
+        result["geometry_generated"] = json!(
+            result["sketch"]["geometry_checked"] == true
+                || result["sketch"]["dependency_geometry_generated"] == true
+        );
+        result["inventory_scope"] = json!(
+            "isolated sketch and its geometry dependencies; downstream requirements are not certified"
+        );
+    }
     if let (Some(output), Some(session), Some(generation)) =
         (&request.output, &session, &generation)
     {

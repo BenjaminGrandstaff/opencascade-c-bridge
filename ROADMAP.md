@@ -15,14 +15,26 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 153 + first-use integration 1 (+1 doc test), recipes 3, parametric 655 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 19 + branch command 2 + model command 81, MCP Python 9, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 153 + first-use integration 1 (+1 doc test), recipes 3, parametric 655 + merge driver 3 + motion command 16 + balance command 4 + drawing command 3 + inspection command 5 + view command 13 + viewer Node 19 + branch command 2 + model command 89, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
 | Coverage | Last recorded: 93.61% lines overall, test code excluded; C++ 94.13% lines, 87.40% branches, 100% functions; Rust 93.42% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | Last full suite: 189 Rust cases plus 5 model-command cases and a 10,000-face Python matcher. Solver-reliability integration rechecked 60 sketch cases and 59 MCP cases within budget. | `tools/bench/run.sh` |
+| Scale benchmarks | Last full suite: 189 Rust cases plus 5 model-command cases and a 10,000-face Python matcher. Sketch authoring integration rechecked 60 sketch cases and 60 MCP cases within budget. | `tools/bench/run.sh` |
 
 ## Done
+
+- Sketch milestone 5: AI sketch edit/repair workflow (schema 133 / ABI 68
+  unchanged). Focused `sketch_feature` inspection isolates source geometry and
+  returns constraint snapshots, solver/rank checks and bounded repair candidates.
+  Typed guarded edits cover sketch entities, constraints and configuration;
+  guarded named-reference replacements allow atomic geometry/reference repair.
+  `occt_preview_edit_build` / `--preview-edit` creates diagnostic candidates
+  without accepting geometry or recording revisions. Verified publication
+  preserves source builds, requirements and semantic revision history. Example:
+  `sketch-repair`; 74 examples, 13 schemas and 87 fixed MCP resources.
+  Twenty complete MCP diagnose/preview/repair/publication cycles in 1.32 s
+  (10 s budget).
 
 - Sketch milestone 4: solver reliability (schema 133 / ABI 68 unchanged).
   Bounded adaptive recovery, safe rejection of invalid trial geometry, scaled
@@ -2066,8 +2078,9 @@ separate bodies. Geometry editing now adds named splits, extend-to crossings,
 and seed-selected boundary operations on explicit and discovered regions.
 Named curve and witnessed region selectors now feed downstream history with
 explicit lost/split/merge diagnostics. Safeguarded solving now includes rank
-certification, stopping reports and opt-in warm starts. The next sketch
-milestone is complete sketch-aware AI editing/repair operations.
+certification, stopping reports and opt-in warm starts. The five sketch-engine milestones are complete: composition, geometry editing,
+stable references, solver reliability and guarded AI editing/repair. Interactive
+sketch authoring UI and broader solver/geometry extensions remain separate work.
 
 The earlier geometry and assembly milestones are complete. Manufacturing
 product definition is the next general CAD priority; additional rib variants

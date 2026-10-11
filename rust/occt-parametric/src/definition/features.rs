@@ -508,6 +508,14 @@ pub enum FeatureOperation {
 }
 
 impl FeatureOperation {
+    /// Names of family references used by this operation, for authoring tools.
+    pub fn named_reference_names(&self) -> Vec<&str> {
+        self.reference_names()
+            .into_iter()
+            .map(|(name, _)| name)
+            .collect()
+    }
+
     /// Named references used by this operation's selectors.
     pub(crate) fn reference_names(&self) -> Vec<(&str, ReferenceUse)> {
         let mut names = Vec::new();

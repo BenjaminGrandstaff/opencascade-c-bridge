@@ -781,6 +781,11 @@ adds safeguarded trial rejection, adaptive recovery, local finite differences,
 rank certification and opt-in named-point warm starts. The viewer exposes why
 solving stopped; see [reliable sketch](tools/model/reliable-sketch.request.json).
 
+[AI sketch editing and repair](tools/model/MCP.md#sketch-edit-and-repair-workflow)
+provides focused diagnosis, typed element/constraint/configuration edits,
+guarded reference repair and diagnostic previews before verified publication.
+Example: [sketch repair](tools/model/sketch-repair.request.json).
+
 [Helices](docs/HELIX.md) are exact helical wires to sweep along for springs and
 coils, with parameter-driven radius, pitch, turns and handedness. ABI 52 adds
 `occt_bridge_create_helix_wire`; schema 82 adds the `helix` feature.

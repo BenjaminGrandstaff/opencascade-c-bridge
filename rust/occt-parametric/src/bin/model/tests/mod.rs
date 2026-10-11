@@ -187,3 +187,5 @@ fn view_example(name: &str) -> Value {
     )
     .unwrap()
 }
+
+mod sketch_workflow;

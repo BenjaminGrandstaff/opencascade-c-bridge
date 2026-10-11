@@ -85,7 +85,7 @@ fn main() -> ExitCode {
             }
             None => {
                 eprintln!(
-                    "unknown schema; choose request, model, feature, parameter, sketch, requirement, inspection, face_selector, edge_selector, edit, change, or view"
+                    "unknown schema; choose request, model, feature, parameter, sketch, requirement, inspection, face_selector, edge_selector, edit, change, sketch_change, or view"
                 );
                 ExitCode::FAILURE
             }
@@ -93,6 +93,9 @@ fn main() -> ExitCode {
     }
     let outcome = match args.as_slice() {
         [flag, request, destination] if flag == "--inspect" => inspect::run(request, destination),
+        [flag, request, destination] if flag == "--preview-edit" => {
+            patch::preview(request, destination)
+        }
         [flag, request, destination] if flag == "--edit" => patch::run(request, destination),
         [flag, request, destination] if flag == "--visualize" => {
             visualize::run(request, destination)

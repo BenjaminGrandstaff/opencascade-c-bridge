@@ -124,3 +124,9 @@ and annotated SVG snapshots whenever previews are enabled. Labels link to
 parameters/requirements, sketch symbols show actual solver results, and failed
 checks are visible. Use `--visualize` / `occt_visualize_model` for diagnostic
 proposals that cannot pass normal build verification.
+
+Sketch authoring now supports [guarded editing and repair](MCP.md#sketch-edit-and-repair-workflow):
+inspect `sketch_feature`, propose typed `edit_sketch` operations, preview with
+`occt_preview_edit_build`, and publish through `occt_edit_build` after review.
+Use `--preview-edit REQUEST.json NEW_DIRECTORY` for the same diagnostic preview
+without MCP. The `sketch-repair` example contains a duplicated driving angle.

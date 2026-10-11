@@ -1,6 +1,8 @@
 //! Guarded edits by family/entity identity, followed by verified generation.
 use super::*;
 use std::collections::HashMap;
+#[path = "patch/sketch.rs"]
+pub(super) mod sketch;
 
 #[derive(Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -30,6 +32,12 @@ struct Source {
 #[derive(Deserialize, schemars::JsonSchema)]
 #[serde(tag = "action", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Change {
+    EditSketch {
+        family: String,
+        feature: String,
+        expected: Box<SketchDefinition>,
+        changes: Vec<sketch::SketchChange>,
+    },
     AddFeature {
         family: String,
         feature: Box<FeatureDefinition>,
@@ -55,31 +63,53 @@ pub enum Change {
         family: String,
         reference: Box<NamedReference>,
     },
+    ReplaceReference {
+        family: String,
+        expected: Box<NamedReference>,
+        reference: Box<NamedReference>,
+    },
+    RemoveReference {
+        family: String,
+        expected: Box<NamedReference>,
+    },
 }
 impl Change {
     fn family(&self) -> &str {
         match self {
-            Self::AddFeature { family, .. }
+            Self::EditSketch { family, .. }
+            | Self::AddFeature { family, .. }
             | Self::ReplaceFeature { family, .. }
             | Self::RemoveFeature { family, .. }
             | Self::AddParameter { family, .. }
             | Self::AddRequirement { family, .. }
-            | Self::AddReference { family, .. } => family,
+            | Self::AddReference { family, .. }
+            | Self::ReplaceReference { family, .. }
+            | Self::RemoveReference { family, .. } => family,
         }
     }
     fn identity(&self) -> (&str, &str) {
         match self {
+            Self::EditSketch { feature, .. } => ("feature", feature),
             Self::AddFeature { feature, .. } | Self::ReplaceFeature { feature, .. } => {
                 ("feature", &feature.id)
             }
             Self::RemoveFeature { expected, .. } => ("feature", &expected.id),
             Self::AddParameter { parameter, .. } => ("parameter", &parameter.id),
             Self::AddRequirement { requirement, .. } => ("requirement", &requirement.id),
-            Self::AddReference { reference, .. } => ("reference", &reference.name),
+            Self::AddReference { reference, .. } | Self::ReplaceReference { reference, .. } => {
+                ("reference", &reference.name)
+            }
+            Self::RemoveReference { expected, .. } => ("reference", &expected.name),
         }
     }
 }
 pub fn run(path: &OsString, destination: &OsString) -> Result<Value, Failure> {
+    load(path, destination, false)
+}
+pub fn preview(path: &OsString, destination: &OsString) -> Result<Value, Failure> {
+    load(path, destination, true)
+}
+fn load(path: &OsString, destination: &OsString, preview: bool) -> Result<Value, Failure> {
     let mut raw: Value =
         serde_json::from_str(&fs::read_to_string(path).map_err(|e| failure("request", e))?)
             .map_err(|e| failure("request", e))?;
@@ -91,9 +121,9 @@ pub fn run(path: &OsString, destination: &OsString) -> Result<Value, Failure> {
     .map_err(|e| model_failure("validation", e))?;
     raw["model"] = serde_json::to_value(model).map_err(|e| failure("request", e))?;
     let request: PatchRequest = serde_json::from_value(raw).map_err(|e| failure("request", e))?;
-    edit(request, Path::new(destination))
+    edit(request, Path::new(destination), preview)
 }
-fn edit(request: PatchRequest, destination: &Path) -> Result<Value, Failure> {
+fn edit(request: PatchRequest, destination: &Path, preview: bool) -> Result<Value, Failure> {
     if request.schema != "occb-model-edit-v1"
         || request.changes.len() > 10000
         || request.edits.len() > 10000
@@ -139,6 +169,63 @@ fn edit(request: PatchRequest, destination: &Path) -> Result<Value, Failure> {
     edited
         .to_json_pretty()
         .map_err(|e| model_failure("validation", e))?;
+    if preview {
+        if request.edits.len() > 10000
+            || request.outputs.is_empty()
+            || request.outputs.len() > 10000
+        {
+            return Err(failure(
+                "request",
+                "preview requires 1..10000 outputs and at most 10000 parameter edits",
+            ));
+        }
+        if request
+            .outputs
+            .iter()
+            .map(|o| &o.instance)
+            .collect::<HashSet<_>>()
+            .len()
+            != request.outputs.len()
+        {
+            return Err(failure("request", "select at most one output per instance"));
+        }
+        let mut graph = edited
+            .instance_graph()
+            .map_err(|e| model_failure("validation", e))?;
+        let mut seen = HashSet::new();
+        for edit in &request.edits {
+            if !seen.insert((&edit.instance, &edit.parameter)) {
+                return Err(failure("edits", "duplicate instance/parameter edit"));
+            }
+            graph
+                .set_override(&edit.instance, &edit.parameter, edit.value.clone())
+                .map_err(|e| model_failure("edits", e))?;
+        }
+        let refreshed = ModelDocument::from_graph(&graph);
+        edited.instances = refreshed.instances;
+        edited.patterns = refreshed.patterns;
+        let mut report = visualize::write(
+            &edited,
+            &request.outputs,
+            true,
+            &visualize::ViewOptions::default(),
+            destination,
+            true,
+        )?;
+        report["status"] = json!("previewed");
+        report["accepted"] = json!(false);
+        report["source"] = json!(request.source);
+        let publication = fs::write(
+            destination.join("report.json"),
+            serde_json::to_string_pretty(&report).map_err(|e| failure("publication", e))?,
+        )
+        .map_err(|e| failure("publication", e));
+        if publication.is_err() {
+            let _ = fs::remove_dir_all(destination);
+        }
+        publication?;
+        return Ok(report);
+    }
     let mut report = build_internal(
         Request {
             schema: "occb-model-request-v1".into(),
@@ -221,6 +308,18 @@ fn apply(model: &mut ModelDocument, changes: &[Change]) -> Result<(), Failure> {
         {
             return Err(failure("patch", "replacement must preserve the feature ID"));
         }
+        if let Change::ReplaceReference {
+            expected,
+            reference,
+            ..
+        } = change
+            && expected.name != reference.name
+        {
+            return Err(failure(
+                "patch",
+                "replacement must preserve the reference name",
+            ));
+        }
         groups.entry(change.family()).or_default().push(change);
     }
     for family in std::iter::once(&mut model.family).chain(&mut model.additional_families) {
@@ -240,6 +339,7 @@ fn apply_family(family: &mut FamilyDefinition, changes: &[&Change]) -> Result<bo
     let mut modifications = changes
         .iter()
         .filter_map(|c| match c {
+            Change::EditSketch { feature, .. } => Some((feature.as_str(), *c)),
             Change::ReplaceFeature { expected, .. } | Change::RemoveFeature { expected, .. } => {
                 Some((expected.id.as_str(), *c))
             }
@@ -252,8 +352,35 @@ fn apply_family(family: &mut FamilyDefinition, changes: &[&Change]) -> Result<bo
         .iter()
         .map(|f| f.id.clone())
         .collect::<HashSet<_>>();
-    for feature in family.features.drain(..) {
+    for mut feature in family.features.drain(..) {
         match modifications.remove(feature.id.as_str()) {
+            Some(Change::EditSketch {
+                expected, changes, ..
+            }) => {
+                let sketch = match &mut feature.operation {
+                    FeatureOperation::SketchFace { sketch }
+                    | FeatureOperation::SketchWire { sketch }
+                    | FeatureOperation::SketchOpenWire { sketch } => sketch,
+                    _ => {
+                        return Err(failure(
+                            "patch",
+                            format!("feature '{}' is not a sketch", feature.id),
+                        ));
+                    }
+                };
+                if sketch.as_ref() != expected.as_ref() {
+                    return Err(failure(
+                        "conflict",
+                        format!(
+                            "sketch feature '{}' differs from expected snapshot",
+                            feature.id
+                        ),
+                    ));
+                }
+                sketch::apply(sketch, changes)?;
+                changed |= sketch.as_ref() != expected.as_ref();
+                features.push(feature);
+            }
             Some(Change::ReplaceFeature {
                 expected,
                 feature: replacement,
@@ -312,6 +439,43 @@ fn apply_family(family: &mut FamilyDefinition, changes: &[&Change]) -> Result<bo
         .iter()
         .map(|r| r.id.clone())
         .collect::<HashSet<_>>();
+    for change in changes {
+        let (expected, replacement) = match change {
+            Change::ReplaceReference {
+                expected,
+                reference,
+                ..
+            } => (expected.as_ref(), Some(reference.as_ref())),
+            Change::RemoveReference { expected, .. } => (expected.as_ref(), None),
+            _ => continue,
+        };
+        let index = family
+            .references
+            .iter()
+            .position(|r| r.name == expected.name)
+            .ok_or_else(|| {
+                failure(
+                    "conflict",
+                    format!("reference '{}' is missing", expected.name),
+                )
+            })?;
+        if &family.references[index] != expected {
+            return Err(failure(
+                "conflict",
+                format!(
+                    "reference '{}' differs from expected snapshot",
+                    expected.name
+                ),
+            ));
+        }
+        if let Some(reference) = replacement {
+            changed |= reference != expected;
+            family.references[index] = reference.clone();
+        } else {
+            family.references.remove(index);
+            changed = true;
+        }
+    }
     let mut reference_names = family
         .references
         .iter()

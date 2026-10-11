@@ -13,6 +13,7 @@ pub fn document(name: &str) -> Option<Value> {
         "face_selector" => serde_json::to_value(schemars::schema_for!(FaceSelector)),
         "edge_selector" => serde_json::to_value(schemars::schema_for!(EdgeSelector)),
         "edit" => serde_json::to_value(schemars::schema_for!(patch::PatchRequest)),
+        "sketch_change" => serde_json::to_value(schemars::schema_for!(patch::sketch::SketchChange)),
         "change" => serde_json::to_value(schemars::schema_for!(patch::Change)),
         "view" => serde_json::to_value(schemars::schema_for!(visualize::ViewRequest)),
         _ => return None,

@@ -39,17 +39,19 @@ or remote service is started.
 
 | Tool | Arguments | Result |
 | --- | --- | --- |
-| `occt_get_schema` | `name`: `request`, `model`, `feature`, `parameter`, `sketch`, `requirement`, `inspection`, `face_selector`, `edge_selector`, `edit`, `change`, or `view` | Complete generated JSON Schema |
-| `occt_get_example` | `name`: `bracket`, `enclosure`, `shaft`, or `mating-parts` | Complete editable build request |
+| `occt_get_schema` | `name`: `request`, `model`, `feature`, `parameter`, `sketch`, `requirement`, `inspection`, `face_selector`, `edge_selector`, `edit`, `change`, `sketch_change`, or `view` | Complete generated JSON Schema |
+| `occt_get_example` | Any name listed by `tools/list`, including `sketch-repair` | Complete editable build or visualization request |
 | `occt_visualize_model` | `occb-model-view-v1` request | Annotated sketch/solid viewer and diagnostic snapshots |
+| `occt_inspect_model` / `occt_inspect_build` | Model or accepted build ID, instance and output or sketch feature | Read-only declarations, geometry queries or focused sketch diagnosis |
+| `occt_preview_edit_build` | Accepted build ID/hash, guarded changes, outputs and proposed revision metadata | Diagnostic candidate with no accepted build or new revision |
 | `occt_edit_build` | Accepted build ID/hash, guarded changes, outputs and revision metadata | Verified new build and semantic change record |
 | `occt_build` | The entire `occb-model-request-v1` object | Accepted report, build ID, local directory, and artifact resource URIs |
 
 `tools/list` provides the generated complete request schema as `occt_build`'s
-input schema. All 38 current feature operations and 154 nested request-schema
+input schema. All 40 current feature operations and their nested request-schema
 definitions are discoverable. Schemas derive from serde-compatible Rust types;
 new serialized variants require schema support at compilation. Authoring schemas
-target current model schema 119. The engine still migrates older documents.
+target current model schema 133. The engine still migrates older documents.
 Schemas describe serialization and basic request bounds; units, dependency
 references, dimensional constraints, selector resolution, and geometry validity
 are checked by the build engine.
@@ -61,7 +63,7 @@ LD_LIBRARY_PATH="$PWD/build" rust/occt-parametric/target/debug/occt-model \
   --schema request > /tmp/occt-request.schema.json
 ```
 
-`resources/list` advertises twelve `occt://schema/NAME` and nineteen
+`resources/list` advertises thirteen `occt://schema/NAME` and seventy-four
 `occt://example/NAME` resources. Accepted builds return specific
 `occt://build/BUILD_ID/ARTIFACT` URIs; a resource template advertises this form.
 JSON and SVG resources return text, while STEP and STL return base64 blobs.
@@ -95,7 +97,7 @@ shared sessions/revision locking, or prove unverified strength/manufacturability
 ## Validation and scale
 
 Wire tests use the actual server and model executable. They independently check
-all twelve schemas with a Draft 2020-12 validator, validate all four examples, test
+all thirteen schemas with a Draft 2020-12 validator, validate all four examples, test
 initialization/discovery/errors, exercise bracket build/edit/reject/repair and
 artifact reads, reject path traversal, and stop/clean timed-out and cancelled
 workers (including repeated cancellation).
@@ -585,3 +587,76 @@ move it; positive `offset` rejects no contact, negative `offset` rejects two
 contacts. The catalog now contains 58 examples and 12 schemas (70 resources),
 with 154 request definitions. All 60 saved model examples remain at schema 119;
 native ABI remains 61. See [touch rules](../../docs/SKETCHES.md#isolated-line-spline-touches-schema-119--abi-61).
+
+## Sketch edit and repair workflow
+
+Use `occt_get_example` with `sketch-repair` for a buildable sketch containing a
+deliberately duplicated driving angle. The saved model remains schema 133;
+this workflow extends authoring requests, not the saved model format.
+
+1. Build the example and retain its accepted `build_id` and `model_sha256`.
+2. Call `occt_inspect_build` with `instance: "part"` and
+   `sketch_feature: "profile"`. This is mutually exclusive with output geometry
+   inspection. It returns the exact authored definition/configuration, solved
+   points in sketch-local millimeters, paged indexed constraint snapshots,
+   residual checks, solver/rank diagnostics and bounded repair candidates.
+3. Make a guarded `edit_sketch` change using that authored definition as
+   `expected`. Changes run sequentially on a private candidate. Entity updates
+   preserve their IDs; constraint indices refer to the current candidate after
+   earlier changes, and each replacement/removal checks its expected value.
+4. Call `occt_preview_edit_build` with the accepted ID/hash, changes, outputs and
+   proposed revision metadata. The result has `visualization_id`, diagnostic
+   artifact URIs, `status: "previewed"` and `accepted: false`. A failed solver
+   can still produce inspectable diagnostic geometry and conflict evidence.
+5. Review the candidate's `view.json` or viewer. Adjust the proposal against the
+   original accepted snapshot if it fails. A preview cannot be used as the
+   source of `occt_inspect_build` or `occt_edit_build`.
+6. Submit the intended proposal to `occt_edit_build`. Publication reruns normal
+   output generation and requirement verification, records one semantic revision
+   and leaves the source build unchanged. Preview does not consume a revision ID.
+
+```json
+{
+  "action": "edit_sketch",
+  "family": "sketch-repair",
+  "feature": "profile",
+  "expected": "COPY THE AUTHORED DEFINITION OBJECT FROM INSPECTION",
+  "changes": [{
+    "action": "remove_constraint",
+    "index": 6,
+    "expected": {"line_angle": {
+      "line": "AB",
+      "value": {"literal": {"value": 0, "dimension": "scalar", "unit": null}}
+    }}
+  }]
+}
+```
+
+The `expected` placeholder above must be replaced with an object. Read the
+`sketch_change` schema for complete typed operations:
+
+- `upsert_element`: omitted/null expected value adds an unused ID; an expected
+  point/line/circle/arc/ellipse/spline/shape/text/pattern/projection/measurement
+  replaces exactly that element. Fixed coordinates drive geometry; free point
+  coordinates are solver seeds. Other driving expressions remain untouched.
+- `remove_element`: removes an exact expected element. Dangling references fail
+  validation and do not publish.
+- `add_constraint`, `replace_constraint`, `remove_constraint`: explicit typed
+  constraints with expected-value guards where existing equations change.
+- `configure`: replaces exact expected non-entity configuration: sketch frame,
+  support/datum, acceptance, profiles/holes/regions/discovery and saved curve or
+  boundary operations. It does not replace points or constraints.
+
+`replace_reference` and `remove_reference` provide expected-value guards for
+family named references. A replacement preserves the reference name. Geometry
+and reference changes can be submitted atomically when a curve/region identity
+intentionally changes. Requirements cannot be removed through these changes.
+
+Focused diagnosis builds only the selected sketch and required source geometry;
+unrelated/downstream failures do not prevent source-sketch analysis. It does not
+certify the rest of the part or its requirements. Structurally invalid requests
+and unavailable source geometry fail explicitly; local solve errors appear in
+`sketch.error`. Repair candidates describe
+local redundancy, conflict groups and free motion; they never choose design
+intent, execute automatically or add arbitrary fixed-point constraints. Local
+redundancy does not prove equivalence across every parameter configuration.

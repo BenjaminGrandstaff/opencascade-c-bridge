@@ -35,18 +35,18 @@ class McpTests(unittest.TestCase):
         self.assertEqual(result['result']['protocolVersion'], '2025-06-18')
         self.assertEqual(self.client.call('tools/list')['error']['code'], -32600)
         self.client.send(dict(jsonrpc='2.0', method='notifications/initialized'))
-        self.assertEqual(len(self.client.call('tools/list')['result']['tools']), 7)
+        self.assertEqual(len(self.client.call('tools/list')['result']['tools']), 8)
         self.assertEqual(self.client.call('initialize')['error']['code'], -32600)
 
     def test_discovery_schemas_and_complete_examples(self):
         tools = self.client.call('tools/list')['result']['tools']
-        self.assertEqual({tool['name'] for tool in tools}, {'occt_get_schema', 'occt_get_example', 'occt_build', 'occt_inspect_model', 'occt_inspect_build', 'occt_edit_build', 'occt_visualize_model'})
+        self.assertEqual({tool['name'] for tool in tools}, {'occt_get_schema', 'occt_get_example', 'occt_build', 'occt_inspect_model', 'occt_inspect_build', 'occt_edit_build', 'occt_preview_edit_build', 'occt_visualize_model'})
         schema = next(tool['inputSchema'] for tool in tools if tool['name'] == 'occt_build')
         jsonschema.Draft202012Validator.check_schema(schema)
         self.assertEqual(schema['properties']['model']['$ref'], '#/$defs/ModelDocument')
         variants = schema['$defs']['FeatureOperation']['oneOf']
         self.assertEqual(len(variants), 40)
-        for name in ['request', 'model', 'feature', 'parameter', 'sketch', 'requirement', 'inspection', 'face_selector', 'edge_selector', 'edit', 'change', 'view']:
+        for name in ['request', 'model', 'feature', 'parameter', 'sketch', 'requirement', 'inspection', 'face_selector', 'edge_selector', 'edit', 'change', 'sketch_change', 'view']:
             result = self.client.tool('occt_get_schema', dict(name=name))
             self.assertFalse(result['isError'])
             jsonschema.Draft202012Validator.check_schema(result['structuredContent'])
@@ -58,10 +58,68 @@ class McpTests(unittest.TestCase):
         with self.assertRaises(jsonschema.ValidationError):
             jsonschema.validate(bad, schema)
         resources = self.client.call('resources/list')['result']['resources']
-        self.assertEqual(len(resources), 85)
+        self.assertEqual(len(resources), 87)
         self.assertEqual(len(self.client.call('resources/templates/list')['result']['resourceTemplates']), 1)
         read = self.client.call('resources/read', dict(uri='occt://schema/request'))['result']['contents'][0]
         self.assertEqual(json.loads(read['text']), schema)
+
+    def test_guarded_sketch_diagnose_preview_repair_and_publish(self):
+        request = self.client.tool('occt_get_example', dict(name='sketch-repair'))['structuredContent']
+        built = self.client.tool('occt_build', request)
+        self.assertFalse(built['isError'], built)
+        source = built['structuredContent']
+        original_model = pathlib.Path(source['directory'], 'model.json').read_bytes()
+        original_report = pathlib.Path(source['directory'], 'report.json').read_bytes()
+        inspected = self.client.tool('occt_inspect_build', dict(build_id=source['build_id'], instance='part', sketch_feature='profile', limit=2))
+        self.assertFalse(inspected['isError'], inspected)
+        data = inspected['structuredContent']['sketch']
+        self.assertTrue(data['solver']['solved'])
+        self.assertTrue(data['native_profile']['valid'])
+        candidate = next(c for c in data['repair_candidates'] if c['kind']=='remove_locally_redundant_constraint')
+        edits = dict(build_id=source['build_id'], expected_model_sha256=source['model_sha256'],
+            changes=[dict(action='edit_sketch', family='sketch-repair', feature='profile', expected=data['definition'], changes=[candidate['change']])],
+            outputs=[dict(instance='part',output='body')],
+            revision=dict(id='repair-1',author='test',recorded_at='test-time',message='Remove deliberately duplicated angle'), step=False, preview=False)
+        preview = self.client.tool('occt_preview_edit_build', edits)
+        self.assertFalse(preview['isError'], preview)
+        value = preview['structuredContent']
+        self.assertNotIn('build_id',value)
+        self.assertEqual(value['report']['status'],'previewed')
+        self.assertFalse(value['report']['accepted'])
+        model = json.loads(self.client.call('resources/read',dict(uri=value['resources']['model.json']))['result']['contents'][0]['text'])
+        self.assertEqual(model.get('revisions',[]),json.loads(original_model).get('revisions',[]))
+        denied = self.client.call('tools/call',dict(name='occt_inspect_build',arguments=dict(build_id=value['visualization_id'])))
+        self.assertEqual(denied['error']['code'],-32602)
+        stale = dict(edits, expected_model_sha256='0'*64)
+        self.assertTrue(self.client.tool('occt_preview_edit_build',stale)['isError'])
+        accepted = self.client.tool('occt_edit_build',edits)
+        self.assertFalse(accepted['isError'],accepted)
+        final = accepted['structuredContent']
+        self.assertEqual(final['report']['revision']['id'],'repair-1')
+        saved = json.loads(self.client.call('resources/read',dict(uri=final['resources']['model.json']))['result']['contents'][0]['text'])
+        self.assertEqual(saved['family']['requirements'],json.loads(original_model)['family']['requirements'])
+        self.assertEqual(len(saved['revisions']),1)
+        self.assertEqual(pathlib.Path(source['directory'],'model.json').read_bytes(),original_model)
+        self.assertEqual(pathlib.Path(source['directory'],'report.json').read_bytes(),original_report)
+
+    def test_failed_sketch_preview_and_publication_retain_accepted_build(self):
+        request = self.client.tool('occt_get_example',dict(name='sketch-repair'))['structuredContent']
+        source = self.client.tool('occt_build',request)['structuredContent']
+        original = pathlib.Path(source['directory'],'model.json').read_bytes()
+        inspected = self.client.tool('occt_inspect_build',dict(build_id=source['build_id'],instance='part',sketch_feature='profile'))['structuredContent']['sketch']
+        constraint = {'horizontal_distance':dict(first='A',second='B',value={'literal':dict(value=41,dimension='length',unit='millimeter')})}
+        edits = dict(build_id=source['build_id'],expected_model_sha256=source['model_sha256'],
+            changes=[dict(action='edit_sketch',family='sketch-repair',feature='profile',expected=inspected['definition'],changes=[dict(action='add_constraint',constraint=constraint)])],
+            outputs=[dict(instance='part',output='body')],revision=dict(id='bad-1',author='test',recorded_at='test-time',message='Conflicting diagnostic proposal'),step=False,preview=False)
+        preview = self.client.tool('occt_preview_edit_build',edits)
+        self.assertFalse(preview['isError'],preview)
+        data = json.loads(self.client.call('resources/read',dict(uri=preview['structuredContent']['resources']['view.json']))['result']['contents'][0]['text'])
+        sketch = next(s for s in data['scenes'] if s['kind']=='sketch')
+        self.assertFalse(sketch['solver']['accepted'])
+        self.assertTrue(self.client.tool('occt_edit_build',edits)['isError'])
+        self.assertEqual(pathlib.Path(source['directory'],'model.json').read_bytes(),original)
+        healthy = self.client.tool('occt_inspect_build',dict(build_id=source['build_id'],instance='part',sketch_feature='profile'))
+        self.assertTrue(healthy['structuredContent']['sketch']['solver']['solved'])
 
     def test_build_edit_reject_repair_and_artifact_resources(self):
         request = self.client.tool('occt_get_example', dict(name='bracket'))['structuredContent']
