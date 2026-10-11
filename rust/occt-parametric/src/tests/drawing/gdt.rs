@@ -23,6 +23,7 @@ fn gdt_page() -> DrawingDefinition {
                 offset_mm: [20.0, 30.0],
             },
             size_kind: None,
+            size_limits: None,
         });
     }
     page.feature_control_frames

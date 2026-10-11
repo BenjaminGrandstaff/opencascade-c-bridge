@@ -1,7 +1,7 @@
 {
   "schema": "occb-model-view-v1",
   "model": {
-    "schema_version": 136,
+    "schema_version": 137,
     "family": {
       "id": "mirrored-flange",
       "version": 1,

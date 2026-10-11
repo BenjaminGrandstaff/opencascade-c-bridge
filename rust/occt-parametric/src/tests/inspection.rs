@@ -120,6 +120,7 @@ pub(super) fn page() -> DrawingDefinition {
         feature_of_size: false,
         attachment: attachment(anchor),
         size_kind: None,
+        size_limits: None,
     };
     DrawingDefinition {
         datum_reference_frames: vec![DrawingDatumReferenceFrame {
@@ -710,6 +711,7 @@ fn runout_page(
         feature_of_size: true,
         attachment: attachment("hole"),
         size_kind: kind,
+        size_limits: None,
     });
     page.datum_reference_frames
         .push(DrawingDatumReferenceFrame {
@@ -964,6 +966,7 @@ fn common_page() -> DrawingDefinition {
             feature_of_size: kind.is_some(),
             attachment: attachment(anchor),
             size_kind: kind,
+            size_limits: None,
         });
     }
     page.datum_reference_frames = vec![DrawingDatumReferenceFrame {
@@ -1122,6 +1125,7 @@ fn common_datums_validate_render_and_round_trip() {
             feature_of_size: false,
             attachment: attachment("top"),
             size_kind: None,
+            size_limits: None,
         });
         invalid.feature_control_frames[0].datums[0].common_with =
             members.into_iter().map(Into::into).collect();
@@ -1129,4 +1133,236 @@ fn common_datums_validate_render_and_round_trip() {
         assert!(message.contains(reason), "{message}");
     }
     assert_eq!(session.shape_count().unwrap(), 0);
+}
+
+const PATTERN: [[f64; 2]; 4] = [[15.0, 10.0], [45.0, 10.0], [15.0, 30.0], [45.0, 30.0]];
+
+/// Plate with a center bore datum B (hole axis, Ø9.9-10.1) referenced
+/// A | B(`boundary`) | C(front), and four Ø0.04 RFS position controls on a
+/// 30 × 20 hole pattern around it.
+fn shift_setup(boundary: DatumMaterialBoundary) -> (FamilyDefinition, DrawingDefinition) {
+    let mut definition = plate();
+    for (i, [x, y]) in PATTERN.into_iter().enumerate() {
+        definition.datums.push(DatumDefinition {
+            id: format!("p{i}"),
+            kind: DatumKind::Axis {
+                origin: VectorExpr::Literal(VectorQuantity::lengths(
+                    x,
+                    y,
+                    0.0,
+                    LengthUnit::Millimeter,
+                )),
+                direction: VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, 1.0)),
+            },
+        });
+    }
+    let mut page = page();
+    page.datum_features.retain(|f| f.id != "B");
+    let limits = DrawingSizeLimits {
+        kind: FeatureOfSizeKind::Internal,
+        lower: Quantity::length(9.9, LengthUnit::Millimeter),
+        upper: Quantity::length(10.1, LengthUnit::Millimeter),
+    };
+    page.datum_features.push(DrawingDatumFeature {
+        id: "B".into(),
+        label: "B".into(),
+        feature_of_size: true,
+        attachment: attachment("hole"),
+        size_kind: Some(FeatureOfSizeKind::Internal),
+        size_limits: Some(limits.clone()),
+    });
+    page.datum_reference_frames.clear();
+    page.feature_control_frames = (0..PATTERN.len())
+        .map(|i| {
+            let mut f = control(
+                &format!("hole{i}"),
+                &format!("p{i}"),
+                GeometricCharacteristic::Position,
+                0.04,
+                &["A", "B", "C"],
+            );
+            f.datums[1].boundary = boundary;
+            f.zone = GeometricToleranceZone::Diameter;
+            f.feature_of_size = true;
+            f.size_limits = Some(DrawingSizeLimits {
+                kind: FeatureOfSizeKind::Internal,
+                lower: Quantity::length(5.9, LengthUnit::Millimeter),
+                upper: Quantity::length(6.1, LengthUnit::Millimeter),
+            });
+            f
+        })
+        .collect();
+    (definition, page)
+}
+
+/// A measured part: bore of `bore` diameter at the nominal center, pattern
+/// holes displaced by `offsets[i]` from their true positions.
+fn shift_record(bore: f64, offsets: [[f64; 2]; 4]) -> InspectionRecord {
+    InspectionRecord {
+        drawing: "plate".into(),
+        surface_textures: Vec::new(),
+        datum_features: vec![
+            measured("A", grid(|u, v| [60.0 * u, 40.0 * v, 0.0])),
+            measured("B", hole(HOLE, bore)),
+            measured("C", grid(|u, v| [60.0 * u, 0.0, 10.0 * v])),
+        ],
+        controls: (0..4)
+            .map(|i| {
+                let [x, y] = PATTERN[i];
+                measured(
+                    &format!("hole{i}"),
+                    hole([x + offsets[i][0], y + offsets[i][1]], 6.0),
+                )
+            })
+            .collect(),
+    }
+}
+
+fn graph_of(definition: &FamilyDefinition) -> InstanceGraph<'_> {
+    let mut graph = InstanceGraph::new(definition);
+    graph.add_base("part", HashMap::new(), "test").unwrap();
+    graph
+}
+
+#[test]
+fn position_is_measured_from_the_bore_in_a_plane_axis_plane_frame() {
+    let (definition, page) = shift_setup(DatumMaterialBoundary::Regardless);
+    let graph = graph_of(&definition);
+    // The whole pattern sits 0.05 mm off its nominal place, but so does the
+    // bore: located from B, every hole is exactly at true position.
+    let mut record = shift_record(10.0, [[0.05, 0.0]; 4]);
+    record.datum_features[1] = measured("B", hole([HOLE[0] + 0.05, HOLE[1]], 10.0));
+    let report = page.evaluate_inspection(&graph, &record).unwrap();
+    for i in 0..4 {
+        let m = evaluated(&report, &format!("hole{i}"));
+        assert!(m.deviation_mm < 1e-6, "{m:?}");
+        assert_eq!((m.datum_shift_mm, m.datum_shift_limit_mm), (0.0, 0.0));
+        assert!(m.conforms);
+    }
+}
+
+#[test]
+fn maximum_material_boundary_lets_the_pattern_shift_together() {
+    let (definition, page) = shift_setup(DatumMaterialBoundary::Maximum);
+    let graph = graph_of(&definition);
+    // A Ø10.06 bore departs 0.16 mm from its Ø9.9 MMB: the pattern may shift
+    // up to 0.08 mm. A uniform 0.05 mm displacement shifts away entirely.
+    let report = page
+        .evaluate_inspection(&graph, &shift_record(10.06, [[0.05, 0.0]; 4]))
+        .unwrap();
+    for i in 0..4 {
+        let m = evaluated(&report, &format!("hole{i}"));
+        assert!(m.deviation_mm < 1e-3, "{m:?}");
+        assert!((m.datum_shift_mm - 0.05).abs() < 1e-3, "{m:?}");
+        assert!((m.datum_shift_limit_mm - 0.08).abs() < 1e-9, "{m:?}");
+        assert!(m.conforms);
+    }
+    // Opposite displacements cannot be removed by one shared shift: the
+    // simultaneous requirement keeps the pattern together.
+    let spread = [[0.05, 0.0], [-0.05, 0.0], [0.05, 0.0], [-0.05, 0.0]];
+    let report = page
+        .evaluate_inspection(&graph, &shift_record(10.06, spread))
+        .unwrap();
+    for i in 0..4 {
+        let m = evaluated(&report, &format!("hole{i}"));
+        assert!((m.deviation_mm - 0.1).abs() < 1e-3, "{m:?}");
+        assert!(m.datum_shift_mm < 1e-3, "{m:?}");
+        assert!(!m.conforms);
+    }
+    // A bore near its MMB (Ø9.92, 0.01 mm shift) can take up only part of
+    // the displacement.
+    let report = page
+        .evaluate_inspection(&graph, &shift_record(9.92, [[0.05, 0.0]; 4]))
+        .unwrap();
+    let m = evaluated(&report, "hole0");
+    assert!((m.datum_shift_mm - 0.01).abs() < 1e-9, "{m:?}");
+    assert!((m.deviation_mm - 0.08).abs() < 1e-6, "{m:?}");
+    assert!(!m.conforms);
+    // Without the boundary (RMB) the same part reads its full displacement.
+    let (_, rmb) = shift_setup(DatumMaterialBoundary::Regardless);
+    let report = rmb
+        .evaluate_inspection(&graph, &shift_record(10.06, [[0.05, 0.0]; 4]))
+        .unwrap();
+    assert!((evaluated(&report, "hole0").deviation_mm - 0.1).abs() < 1e-6);
+}
+
+#[test]
+fn least_material_boundary_shift_uses_the_minimum_material_envelope() {
+    let (definition, page) = shift_setup(DatumMaterialBoundary::Least);
+    let graph = graph_of(&definition);
+    // A round Ø10.0 bore is 0.1 mm inside its Ø10.1 LMB: 0.05 mm of shift.
+    let report = page
+        .evaluate_inspection(&graph, &shift_record(10.0, [[0.03, 0.04]; 4]))
+        .unwrap();
+    let m = evaluated(&report, "hole0");
+    assert!((m.datum_shift_limit_mm - 0.05).abs() < 1e-9, "{m:?}");
+    assert!(m.deviation_mm < 1e-3 && m.conforms, "{m:?}");
+}
+
+#[test]
+fn datum_shift_reports_unsupported_setups_and_validates_limits() {
+    let (definition, page) = shift_setup(DatumMaterialBoundary::Maximum);
+    let graph = graph_of(&definition);
+    // A bore smaller than its MMB violates the boundary.
+    let report = page
+        .evaluate_inspection(&graph, &shift_record(9.85, [[0.0, 0.0]; 4]))
+        .unwrap();
+    assert!(
+        matches!(
+            &report.controls[0].result,
+            ControlResult::NotEvaluated(r) if r.contains("violates its maximum material boundary")
+        ),
+        "{:?}",
+        report.controls[0]
+    );
+    // Without size limits the boundary is unknown.
+    let mut unlimited = page.clone();
+    unlimited.datum_features.last_mut().unwrap().size_limits = None;
+    let report = unlimited
+        .evaluate_inspection(&graph, &shift_record(10.0, [[0.0, 0.0]; 4]))
+        .unwrap();
+    assert!(matches!(
+        &report.controls[0].result,
+        ControlResult::NotEvaluated(r) if r.contains("needs size limits")
+    ));
+    // Runout is evaluated regardless of material boundary only.
+    let mut runout = page.clone();
+    runout.feature_control_frames = vec![control(
+        "run",
+        "hole",
+        GeometricCharacteristic::TotalRunout,
+        0.05,
+        &["A", "B"],
+    )];
+    runout.feature_control_frames[0].datums[1].boundary = DatumMaterialBoundary::Maximum;
+    let mut record = shift_record(10.0, [[0.0, 0.0]; 4]);
+    record.controls = vec![measured("run", hole(HOLE, 10.0))];
+    let report = runout.evaluate_inspection(&graph, &record).unwrap();
+    assert!(matches!(
+        &report.controls[0].result,
+        ControlResult::NotEvaluated(r) if r.contains("regardless of material boundary")
+    ));
+    // Limits need a feature of size and must agree with its kind.
+    let mut invalid = page.clone();
+    invalid.datum_features.last_mut().unwrap().size_kind = Some(FeatureOfSizeKind::External);
+    assert!(
+        invalid
+            .validate(&graph)
+            .unwrap_err()
+            .message
+            .contains("disagree")
+    );
+    let mut invalid = page.clone();
+    let b = invalid.datum_features.last_mut().unwrap();
+    b.feature_of_size = false;
+    b.size_kind = None;
+    assert!(invalid.validate(&graph).is_err());
+    let mut document = ModelDocument::from_graph(&graph);
+    document.drawings.push(page);
+    let json = document.to_json_pretty().unwrap();
+    assert!(json.contains("\"size_limits\""));
+    assert_eq!(
+        ModelDocument::from_json(&json).unwrap().drawings,
+        document.drawings
+    );
 }

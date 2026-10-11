@@ -720,7 +720,7 @@ material modifiers, both exports, shared regeneration and native handle cleanup.
 Feature-of-size flags and geometric controls are manufacturing declarations.
 Anchors locate leaders on selected solid outputs; they do not identify persistent
 faces or establish datum simulators. Multi-level composite frames, targets,
-projected zones, advanced modifiers, datum shift and semantic PMI exchange remain
+projected zones, advanced modifiers, primary-axis datum shift and semantic PMI exchange remain
 on the roadmap; measured simulators, bonus tolerance and zone evaluation for a
 supported subset are described in [Measured inspection](#measured-inspection-schema-68). References: [ASME Y14.5 scope and contents](https://www.asme.org/getmedia/da2ff89e-067b-4160-8e2e-53e6c7da1d3b/17707.pdf)
 and [NIST datum-system model](https://nvlpubs.nist.gov/nistpubs/jres/104/4/html/j44mac.htm).
@@ -999,6 +999,13 @@ Datum simulators follow the precedence order:
   the axis is free to shift and tilt. After one primary plane it is held
   perpendicular to that plane, and the envelope is a circle in the plane. Other
   precedences with axis datums are not evaluated.
+- **Plane, axis, plane frames (schema 137):** a primary plane A, a
+  secondary axis datum feature of size B normal to it, and an optional
+  tertiary plane C form a frame. Its origin is where B's axis meets A, z runs
+  along A's normal, and C's normal projected into A gives x. The tertiary
+  simulator turns only about A's normal, so C only clocks rotation about B.
+  Without C, only features coaxial with B can be located, since rotation
+  about B is free.
 - **Common datum plane (schema 136):** coplanar members `A-B` share one
   simulator, the constrained-L∞ plane over the union of their points. It
   contacts the high points of both surfaces at once. It can take any plane
@@ -1031,7 +1038,7 @@ Supported controls:
 | Circularity | Worst section's radial width between the narrowest concentric circles, center free. Sections are points sharing a position along the anchor's nominal axis (within 1e-3 mm or 1e-6 of the axial span); each needs at least four points |
 | Cylindricity | Radial width between the narrowest coaxial cylinders, axis free to shift and tilt from the anchor's nominal axis; at least six points |
 | Parallelism, perpendicularity, angularity (planar zone) | Zone width at the basic orientation to the measured datums; with a single datum, rotation about its normal stays free |
-| Position (diameter zone, axis normal to primary plane) | Twice the radial offset of the related actual mating envelope from true position, in the measured frame |
+| Position (diameter zone, axis normal to primary plane) | Twice the radial offset of the related actual mating envelope from true position, in the measured frame: three planes (3-2-1) or a plane-axis frame (schema 137), after any datum shift |
 | Circular runout (schema 135) | Full indicator movement about the datum axis, for the worst circular element. On a surface coaxial with the datum axis, the reading is radial and elements are points sharing an axial position. On a face perpendicular to it, the reading is axial and elements are points sharing a radius. Elements group within 1e-3 mm or 1e-6 of the span; each needs at least three points |
 | Total runout (schema 135) | The same readings over all points of the surface |
 
@@ -1054,13 +1061,53 @@ final orientation or center, so a fit that stops early can only overstate a
 deviation. Plane points must not be collinear, and circle points must surround
 their center. Round-form zones linearize the radial distance the same way.
 
+**Datum shift (schema 137).** A secondary axis datum feature of size
+referenced at maximum or least material boundary (`"boundary": "maximum"` or
+`"least"`) needs `size_limits` on its datum feature. The kind must match
+`size_kind`; either may be given alone.
+
+- **MMB:** the boundary is the maximum material size, the lower limit for a
+  hole and the upper for a shaft. The measured actual mating envelope may float
+  inside or around it.
+- **LMB:** the boundary is the least material size. The minimum-material
+  envelope (circumscribed for a hole, inscribed for a shaft) floats against it
+  and also locates the axis.
+
+The largest radial shift is half the envelope's departure from the boundary.
+A feature beyond its boundary is reported. The boundary does not include
+geometric tolerances that would enlarge it, such as perpendicularity to A at
+MMC.
+
+The shift is a translation within plane A. Under the default simultaneous
+requirement, every position control with identical datum references
+(features, precedence and boundaries) shares one shift. The shift minimizes the
+largest excess of any control's offset over its allowed radius (half of
+tolerance plus bonus). An active set of at most a few controls is solved as a
+small LP with 256-gon zones, within 0.008% of optimal, and ties resolve to the
+smallest shift. Each control then reports its deviation exactly at that shift,
+with `datum_shift_mm` (applied radial shift) and `datum_shift_limit_mm`. A
+uniformly displaced pattern can shift back into tolerance; holes displaced in
+opposite directions cannot.
+
+```json
+{"id": "B", "label": "B", "feature_of_size": true,
+ "size_limits": {"kind": "internal",
+                 "lower": {"value": 9.9, "dimension": "length", "unit": "millimeter"},
+                 "upper": {"value": 10.1, "dimension": "length", "unit": "millimeter"}},
+ "attachment": {"view": "top", "output": {"instance": "part", "output": "body"},
+                "anchor": {"instance": "part", "datum": "bore"}, "offset_mm": [20, 30]}}
+```
+
 **Report results.** Each control has one of three results:
 - `Evaluated`: deviation, tolerance, bonus, actual size and conformance.
 - `NotMeasured`: the record has no points for the control.
 - `NotEvaluated`: a stated reason, for unsupported cases such as composite
-  frames, datum shift at a material boundary, profile, straightness, round
+  frames, profile, straightness, round
   form at a material condition or with a non-characteristic zone, a datum
   feature that was not measured, or an axis datum without a `size_kind`.
+  Datum shift also reports a boundary without `size_limits`, a feature beyond
+  its boundary, and shift of a primary or common axis or of a planar datum.
+  Runout reports any datum referenced at a material boundary.
   Runout also reports a frame without a datum axis, and a surface whose nominal
   axis or normal is not along the datum feature's nominal axis. Orientation and
   position controls report frames that contain an axis datum.
@@ -1080,10 +1127,15 @@ circular plus 1,000 total runout controls (471,600 points), with each of 100
 bore datum axes fitted once, in 0.03 s. Against 100 common datum axes from
 200 bore journals (511,200 points), the same controls take 0.037 s. All four
 cases have 1 s budgets.
-Runout readings cost O(n log n) per control after the datum fit.
+Runout readings cost O(n log n) per control after the datum fit. 10,000
+position controls located A | B(MMB) | C from a center bore share one datum
+shift in 0.17 s (1 s budget). The active set keeps each LP small whatever the
+pattern size.
 
-**Not yet covered.** Datum shift (material boundaries), planar datum features
-of size (width centre planes), simultaneous-contact common axis simulators,
+**Not yet covered.** Datum shift of a primary axis datum (tilt), of common
+axes and of planar datum features of size (width centre planes); rotational
+shift about a datum axis; the separate requirement (`SEP REQT`); boundaries
+enlarged by geometric tolerances; simultaneous-contact common axis simulators,
 common axes after a primary plane, pattern and composite
 evaluation, measured datum targets, profile against nominal surfaces, conical
 runout surfaces, and straightness. Measurement uncertainty is not modeled.

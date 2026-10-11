@@ -146,6 +146,7 @@ pub(crate) fn inspection_case(definition: &FamilyDefinition) -> Outcome {
                         feature_of_size: false,
                         attachment: attachment(anchor),
                         size_kind: None,
+                        size_limits: None,
                     })
                     .collect(),
                 feature_control_frames: controls,
@@ -486,6 +487,7 @@ pub(crate) fn runout_case(definition: &FamilyDefinition, common: bool) -> Outcom
                         feature_of_size: true,
                         attachment: attachment(&format!("hole-{h}")),
                         size_kind: Some(FeatureOfSizeKind::Internal),
+                        size_limits: None,
                     })
                     .collect(),
                 feature_control_frames: (0..FORM_CONTROLS)
@@ -586,6 +588,195 @@ pub(crate) fn runout_case(definition: &FamilyDefinition, common: bool) -> Outcom
                 "{conforming} of {} conform, {} measured points",
                 report.controls.len(),
                 holes * 396 * if common { 2 } else { 1 } + 2 * FORM_CONTROLS * 216
+            ))
+        },
+    )
+}
+
+/// 10,000 position controls on 100 pattern holes located A | B(MMB) | C from
+/// a center bore B (Ø9.9-10.1, measured Ø10.06: 0.08 mm of shift). Every
+/// hole sits 0.05 mm off in x (±0.01 mm in y): one shared datum shift under
+/// the simultaneous requirement brings all of them inside Ø0.04.
+pub(crate) fn datum_shift_case(definition: &FamilyDefinition) -> Outcome {
+    timed(
+        format!("inspection: {CONTROLS} position controls sharing one MMB datum shift"),
+        Duration::from_secs(1),
+        Expectation::Required,
+        || {
+            let mut definition = definition.clone();
+            let side = 20.0 * HOLES_PER_SIDE as f64;
+            let bore = [side / 2.0 + 10.0, side / 2.0 + 10.0];
+            definition.datums = vec![
+                plane("bottom", [0.0; 3], [0.0, 0.0, -1.0]),
+                plane("front", [0.0; 3], [0.0, -1.0, 0.0]),
+                DatumDefinition {
+                    id: "bore".into(),
+                    kind: DatumKind::Axis {
+                        origin: literal([bore[0], bore[1], 0.0]),
+                        direction: VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, 1.0)),
+                    },
+                },
+            ];
+            definition
+                .datums
+                .extend((0..HOLES_PER_SIDE * HOLES_PER_SIDE).map(|h| {
+                    let [x, y] = hole_center(h);
+                    DatumDefinition {
+                        id: format!("hole-{h}"),
+                        kind: DatumKind::Axis {
+                            origin: literal([x, y, 0.0]),
+                            direction: VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, 1.0)),
+                        },
+                    }
+                }));
+            let mut graph = InstanceGraph::new(&definition);
+            graph.add_base("part", HashMap::new(), "bench")?;
+            let reference = |id: &str, boundary| DrawingDatumReference {
+                datum_feature: id.into(),
+                boundary,
+                common_with: Vec::new(),
+            };
+            let limits = |kind, lower, upper| DrawingSizeLimits {
+                kind,
+                lower: Quantity::length(lower, LengthUnit::Millimeter),
+                upper: Quantity::length(upper, LengthUnit::Millimeter),
+            };
+            let controls: Vec<DrawingFeatureControlFrame> = (0..CONTROLS)
+                .map(|i| DrawingFeatureControlFrame {
+                    size_limits: Some(limits(FeatureOfSizeKind::Internal, 5.9, 6.1)),
+                    datum_reference_frame: None,
+                    refinement: None,
+                    id: format!("position-{i}"),
+                    attachment: attachment(&format!(
+                        "hole-{}",
+                        i % (HOLES_PER_SIDE * HOLES_PER_SIDE)
+                    )),
+                    characteristic: GeometricCharacteristic::Position,
+                    tolerance: Quantity::length(0.04, LengthUnit::Millimeter),
+                    display_unit: LengthUnit::Millimeter,
+                    precision: 2,
+                    zone: GeometricToleranceZone::Diameter,
+                    material: ToleranceMaterialCondition::Regardless,
+                    feature_of_size: true,
+                    datums: vec![
+                        reference("A", DatumMaterialBoundary::Regardless),
+                        reference("B", DatumMaterialBoundary::Maximum),
+                        reference("C", DatumMaterialBoundary::Regardless),
+                    ],
+                })
+                .collect();
+            let feature =
+                |id: &str, anchor: &str, size: Option<DrawingSizeLimits>| DrawingDatumFeature {
+                    id: id.into(),
+                    label: id.into(),
+                    feature_of_size: size.is_some(),
+                    attachment: attachment(anchor),
+                    size_kind: None,
+                    size_limits: size,
+                };
+            let drawing = DrawingDefinition {
+                datum_reference_frames: Vec::new(),
+                datum_features: vec![
+                    feature("A", "bottom", None),
+                    feature(
+                        "B",
+                        "bore",
+                        Some(limits(FeatureOfSizeKind::Internal, 9.9, 10.1)),
+                    ),
+                    feature("C", "front", None),
+                ],
+                feature_control_frames: controls,
+                surface_textures: Vec::new(),
+                parts_list: None,
+                balloons: Vec::new(),
+                releases: Vec::new(),
+                revision_table: None,
+                sheet: None,
+                id: "shifted".into(),
+                title: "Datum shift".into(),
+                paper_size_mm: [1000.0, 1000.0],
+                guides: Vec::new(),
+                dimensions: Vec::new(),
+                notes: Vec::new(),
+                metadata: Default::default(),
+                views: vec![DrawingView {
+                    id: "top".into(),
+                    outputs: vec![InstanceOutputRef {
+                        instance: "part".into(),
+                        output: "body".into(),
+                    }],
+                    origin: VectorQuantity::lengths(0.0, 0.0, 0.0, LengthUnit::Millimeter),
+                    direction: VectorQuantity::scalars(0.0, 0.0, 1.0),
+                    x_axis: VectorQuantity::scalars(1.0, 0.0, 0.0),
+                    paper_origin_mm: [10.0, 100.0],
+                    scale: 1.0,
+                    show_hidden: false,
+                    kind: DrawingViewKind::Orthographic,
+                    detail: None,
+                    hatching: None,
+                    material_hatching: Default::default(),
+                }],
+            };
+            let circle = |[x, y]: [f64; 2], radius: f64| -> Vec<[f64; 3]> {
+                (0..36)
+                    .flat_map(|k| [2.0, 8.0].map(|z| (k, z)))
+                    .map(|(k, z)| {
+                        let a = k as f64 * std::f64::consts::TAU / 36.0;
+                        [x + radius * a.cos(), y + radius * a.sin(), z]
+                    })
+                    .collect()
+            };
+            let measured: Vec<MeasuredFeature> = (0..CONTROLS)
+                .map(|i| {
+                    let [x, y] = hole_center(i % (HOLES_PER_SIDE * HOLES_PER_SIDE));
+                    let wobble = if i % 2 == 0 { 0.01 } else { -0.01 };
+                    MeasuredFeature {
+                        id: format!("position-{i}"),
+                        points_mm: circle([x + 0.05, y + wobble], 3.0),
+                    }
+                })
+                .collect();
+            let record = InspectionRecord {
+                drawing: "shifted".into(),
+                surface_textures: Vec::new(),
+                datum_features: vec![
+                    MeasuredFeature {
+                        id: "A".into(),
+                        points_mm: grid(400, |u, v| [side * u, side * v, 0.0]),
+                    },
+                    MeasuredFeature {
+                        id: "B".into(),
+                        points_mm: circle(bore, 5.03),
+                    },
+                    MeasuredFeature {
+                        id: "C".into(),
+                        points_mm: grid(400, |u, v| [side * u, 0.0, 10.0 * v]),
+                    },
+                ],
+                controls: measured,
+            };
+            let report = drawing.evaluate_inspection(&graph, &record)?;
+            let mut shift = 0.0;
+            for control in &report.controls {
+                let ControlResult::Evaluated(m) = &control.result else {
+                    return Err(failure(format!(
+                        "{} was not evaluated: {:?}",
+                        control.control, control.result
+                    )));
+                };
+                if !m.conforms || (m.datum_shift_limit_mm - 0.08).abs() > 1e-9 {
+                    return Err(failure(format!("{} measured {m:?}", control.control)));
+                }
+                shift = m.datum_shift_mm;
+            }
+            if (shift - 0.05).abs() > 1e-3 {
+                return Err(failure(format!("shared shift {shift}")));
+            }
+            Ok(format!(
+                "{} of {} conform with a shared {shift:.4} mm shift, {} measured points",
+                report.controls.len(),
+                report.controls.len(),
+                CONTROLS * 72 + 872
             ))
         },
     )

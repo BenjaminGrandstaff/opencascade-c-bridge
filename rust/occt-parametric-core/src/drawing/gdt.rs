@@ -48,6 +48,17 @@ pub struct DrawingDatumFeature {
     /// actual mating envelope that simulates a measured axis datum (schema 135).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub size_kind: Option<FeatureOfSizeKind>,
+    /// Size limits of a datum feature of size; their maximum or least
+    /// material limit is the boundary of an MMB or LMB reference, which sets
+    /// the allowed datum shift (schema 137). The kind must match `size_kind`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size_limits: Option<DrawingSizeLimits>,
+}
+impl DrawingDatumFeature {
+    /// Internal or external, from `size_kind` or the size limits.
+    pub fn kind(&self) -> Option<FeatureOfSizeKind> {
+        self.size_kind.or(self.size_limits.as_ref().map(|l| l.kind))
+    }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -255,10 +266,20 @@ pub fn validate(
                 "datum features need unique IDs and unique one-to-three-letter uppercase labels excluding I/O/Q",
             ));
         }
-        if feature.size_kind.is_some() && !feature.feature_of_size {
+        if (feature.size_kind.is_some() || feature.size_limits.is_some())
+            && !feature.feature_of_size
+        {
             return Err(ModelError::new(
                 "datum feature size kind requires a declared feature of size",
             ));
+        }
+        if let Some(limits) = &feature.size_limits {
+            limits.bounds()?;
+            if feature.size_kind.is_some_and(|kind| kind != limits.kind) {
+                return Err(ModelError::new(
+                    "datum feature size limits and size kind disagree",
+                ));
+            }
         }
         anchor(&feature.attachment, views, graph)?;
     }

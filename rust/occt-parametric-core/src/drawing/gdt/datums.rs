@@ -98,6 +98,71 @@ impl ResolvedDrawingDatumReferenceFrame {
         })
     }
 }
+impl ResolvedDrawingDatumReferenceFrame {
+    /// Frame of a primary plane A, a secondary axis B normal to it and an
+    /// optional tertiary plane C (schema 137): origin where B meets A, z along
+    /// A's normal, x along C's normal projected into A. Without C the x axis is
+    /// arbitrary, so only rotation-invariant (coaxial) uses are meaningful.
+    /// Boundaries are ignored here; datum shift is applied by the evaluator.
+    pub fn plane_axis_frame(&self) -> Result<DrawingDatumCoordinateFrame, ModelError> {
+        let (a, b, c) = match self.datums.as_slice() {
+            [a, b] => (a, b, None),
+            [a, b, c] => (a, b, Some(c)),
+            _ => {
+                return Err(ModelError::new(
+                    "a plane-axis frame needs a primary plane and a secondary axis",
+                ));
+            }
+        };
+        let (
+            ResolvedDatum::Plane { origin: p, normal },
+            ResolvedDatum::Axis {
+                origin: q,
+                direction,
+            },
+        ) = (a.geometry, b.geometry)
+        else {
+            return Err(ModelError::new(
+                "a plane-axis frame needs a primary plane and a secondary axis",
+            ));
+        };
+        let z = axis(VectorQuantity::scalars(normal.x, normal.y, normal.z))?;
+        let d = axis(VectorQuantity::scalars(
+            direction.x,
+            direction.y,
+            direction.z,
+        ))?;
+        if length(cross(z, d)) > 1e-6 {
+            return Err(ModelError::new(
+                "the secondary axis datum must be normal to the primary plane",
+            ));
+        }
+        // Where the axis line meets the primary plane.
+        let travel = dot(subtract(p, q), z) / dot(d, z);
+        let origin = Vec3::new(q.x + d.x * travel, q.y + d.y * travel, q.z + d.z * travel);
+        let reference = match c.map(|c| c.geometry) {
+            Some(ResolvedDatum::Plane { normal, .. }) => normal,
+            Some(_) => {
+                return Err(ModelError::new(
+                    "the tertiary datum of a plane-axis frame must be a plane",
+                ));
+            }
+            None if z.x.abs() < 0.9 => Vec3::new(1.0, 0.0, 0.0),
+            None => Vec3::new(0.0, 1.0, 0.0),
+        };
+        let x = axis(VectorQuantity::scalars(
+            reference.x - z.x * dot(z, reference),
+            reference.y - z.y * dot(z, reference),
+            reference.z - z.z * dot(z, reference),
+        ))?;
+        Ok(DrawingDatumCoordinateFrame {
+            origin_mm: origin,
+            x_axis: x,
+            y_axis: cross(z, x),
+            z_axis: z,
+        })
+    }
+}
 fn plane(d: &ResolvedDrawingDatumReference) -> Result<(Vec3, Vec3), ModelError> {
     if d.boundary != DatumMaterialBoundary::Regardless {
         return Err(ModelError::new(

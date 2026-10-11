@@ -128,6 +128,7 @@ fn fixture() -> ModelDocument {
             feature_of_size: false,
             attachment: attachment.clone(),
             size_kind: None,
+            size_limits: None,
         });
     }
     page.datum_reference_frames

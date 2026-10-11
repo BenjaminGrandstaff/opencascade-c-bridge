@@ -83,6 +83,11 @@ pub struct ControlMeasurement {
     pub actual_size_mm: Option<f64>,
     pub size_conforms: Option<bool>,
     pub conforms: bool,
+    /// Radial datum shift applied before measuring (schema 137): one shift
+    /// shared by every position control with identical datum references.
+    pub datum_shift_mm: f64,
+    /// Largest radial datum shift the referenced material boundaries allow.
+    pub datum_shift_limit_mm: f64,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -138,7 +143,9 @@ impl InspectionReport {
 #[derive(Clone, Debug, PartialEq)]
 enum Simulator {
     Plane(Vec3, Vec3),
-    Axis(Vec3, Vec3, Vec<f64>),
+    /// Point, unit direction, mating sizes, and the largest radial datum
+    /// shift its material boundary allows (zero regardless of boundary).
+    Axis(Vec3, Vec3, Vec<f64>, f64),
 }
 type Simulators = Vec<Simulator>;
 impl Simulator {
@@ -167,6 +174,10 @@ struct Context<'a, 'g> {
     measured_datums: HashMap<&'a str, Vec<Vec3>>,
     /// Simulator planes keyed by datum precedence prefix; each prefix is fitted once.
     simulators: HashMap<Vec<Vec<String>>, Result<Simulators, String>>,
+    /// Fitted position offsets by control ID, each fitted once.
+    positions: HashMap<String, Result<PositionData, String>>,
+    /// Shared datum shift by control ID (simultaneous requirement).
+    shifts: HashMap<String, [f64; 2]>,
 }
 
 impl DrawingDefinition {
@@ -206,7 +217,49 @@ impl DrawingDefinition {
             features,
             measured_datums,
             simulators: HashMap::new(),
+            positions: HashMap::new(),
+            shifts: HashMap::new(),
         };
+        // Simultaneous requirement: position controls with identical datum
+        // references (features, precedence and boundaries) share one datum
+        // shift. Groups are keyed by their serialized references.
+        let mut groups: BTreeMap<String, Vec<&DrawingFeatureControlFrame>> = BTreeMap::new();
+        for frame in &frames {
+            if frame.characteristic == GeometricCharacteristic::Position
+                && measured_controls.contains_key(frame.id.as_str())
+                && frame
+                    .datums
+                    .iter()
+                    .any(|d| d.boundary != DatumMaterialBoundary::Regardless)
+            {
+                let key = serde_json::to_string(&frame.datums)
+                    .map_err(|e| ModelError::new(e.to_string()))?;
+                groups.entry(key).or_default().push(frame);
+            }
+        }
+        for group in groups.values() {
+            let mut members = Vec::with_capacity(group.len());
+            let mut limit: f64 = 0.0;
+            for frame in group {
+                let points = &measured_controls[frame.id.as_str()];
+                let (Ok(data), Ok(tolerance)) = (
+                    context.position_data(frame, points),
+                    frame.tolerance.normalized(),
+                ) else {
+                    continue;
+                };
+                limit = limit.max(data.shift_limit);
+                members.push((
+                    frame.id.clone(),
+                    (data.offset, 0.5 * (tolerance + data.bonus)),
+                ));
+            }
+            let zones: Vec<_> = members.iter().map(|(_, zone)| *zone).collect();
+            let shift = common_shift(&zones, limit);
+            for (id, _) in members {
+                context.shifts.insert(id, shift);
+            }
+        }
         let mut controls = Vec::with_capacity(frames.len());
         for frame in &frames {
             let result = match measured_controls.get(frame.id.as_str()) {
@@ -234,7 +287,7 @@ impl DrawingDefinition {
                     datum_features: ids,
                     frame,
                 });
-            } else if let Ok(Some(Simulator::Axis(origin, direction, sizes))) = context
+            } else if let Ok(Some(Simulator::Axis(origin, direction, sizes, _))) = context
                 .simulators(&reference.datums)
                 .map(|s| s.last().cloned())
             {
@@ -405,9 +458,6 @@ impl Context<'_, '_> {
             return Ok(Vec::new());
         };
         let mut simulators = self.simulators(prefix)?;
-        if last.boundary != DatumMaterialBoundary::Regardless {
-            return Err("datum shift at a material boundary is not evaluated".into());
-        }
         let id = last.datum_feature.as_str();
         let members = last
             .members()
@@ -421,7 +471,9 @@ impl Context<'_, '_> {
         let feature = self.features[id];
         if let ResolvedDatum::Axis { direction, .. } = self.nominal(&feature.attachment.anchor)? {
             let simulator = if let [(feature, points)] = members.as_slice() {
-                self.axis_simulator(feature, points, direction, &simulators)?
+                self.axis_simulator(feature, points, direction, &simulators, last.boundary)?
+            } else if last.boundary != DatumMaterialBoundary::Regardless {
+                return Err("datum shift of a common datum axis is not evaluated".into());
             } else {
                 self.common_axis(&members, direction, &simulators)?
             };
@@ -435,6 +487,22 @@ impl Context<'_, '_> {
             .flat_map(|(_, p)| p.iter().copied())
             .collect();
         let points = union.as_slice();
+        if last.boundary != DatumMaterialBoundary::Regardless {
+            return Err("datum shift of planar datum features is not evaluated".into());
+        }
+        // A tertiary plane after a primary plane and a secondary axis only
+        // clocks rotation about that axis: its normal turns about A's normal.
+        if let [Simulator::Plane(_, primary), Simulator::Axis(..)] = simulators.as_slice() {
+            let (_, nominal) = self.nominal_datum(id)?;
+            let normal = unit(subtract(nominal, scale(*primary, dot(nominal, *primary))))
+                .map_err(|_| "tertiary datum plane is parallel to the primary".to_string())?;
+            let fitted = fit_plane(&union, normal, &[*primary]).map_err(|e| e.to_string())?;
+            simulators.push(Simulator::Plane(
+                scale(fitted.normal, fitted.contact),
+                fitted.normal,
+            ));
+            return Ok(simulators);
+        }
         if simulators.iter().any(|s| matches!(s, Simulator::Axis(..))) {
             return Err("plane datums after an axis datum are not evaluated".into());
         }
@@ -442,7 +510,7 @@ impl Context<'_, '_> {
             .iter()
             .map(|s| match s {
                 Simulator::Plane(_, n) => *n,
-                Simulator::Axis(_, d, _) => *d,
+                Simulator::Axis(_, d, ..) => *d,
             })
             .collect();
         let (_, nominal) = self.nominal_datum(id)?;
@@ -495,8 +563,13 @@ impl Context<'_, '_> {
         let mut midpoints = Vec::with_capacity(2);
         let mut sizes = Vec::with_capacity(2);
         for (feature, points) in members {
-            let Simulator::Axis(origin, direction, size) =
-                self.axis_simulator(feature, points, nominal, &[])?
+            let Simulator::Axis(origin, direction, size, _) = self.axis_simulator(
+                feature,
+                points,
+                nominal,
+                &[],
+                DatumMaterialBoundary::Regardless,
+            )?
             else {
                 unreachable!("axis simulator");
             };
@@ -515,7 +588,7 @@ impl Context<'_, '_> {
         if dot(direction, nominal) < 0.0 {
             direction = scale(direction, -1.0);
         }
-        Ok(Simulator::Axis(midpoints[0], direction, sizes))
+        Ok(Simulator::Axis(midpoints[0], direction, sizes, 0.0))
     }
 
     /// Axis of the actual mating envelope of a cylindrical datum feature of
@@ -528,8 +601,9 @@ impl Context<'_, '_> {
         points: &[Vec3],
         nominal: Vec3,
         prefix: &[Simulator],
+        boundary: DatumMaterialBoundary,
     ) -> Result<Simulator, String> {
-        let kind = feature.size_kind.ok_or_else(|| {
+        let kind = feature.kind().ok_or_else(|| {
             format!(
                 "axis datum feature '{}' needs a declared size kind (internal or external)",
                 feature.id
@@ -542,6 +616,9 @@ impl Context<'_, '_> {
         let nominal = unit(nominal).map_err(|e| e.to_string())?;
         match prefix {
             [] => {
+                if boundary != DatumMaterialBoundary::Regardless {
+                    return Err("datum shift of a primary axis datum is not evaluated".into());
+                }
                 let (origin, direction, radius) =
                     fit_cylinder(points, nominal, fit).map_err(|e| e.to_string())?;
                 let direction = if dot(direction, nominal) < 0.0 {
@@ -549,7 +626,7 @@ impl Context<'_, '_> {
                 } else {
                     direction
                 };
-                Ok(Simulator::Axis(origin, direction, vec![2.0 * radius]))
+                Ok(Simulator::Axis(origin, direction, vec![2.0 * radius], 0.0))
             }
             [Simulator::Plane(point, normal)] => {
                 if length(cross(nominal, *normal)) > 1e-9 {
@@ -567,13 +644,73 @@ impl Context<'_, '_> {
                     })
                     .collect();
                 let (center, radius) = fit_circle(&projected, fit).map_err(|e| e.to_string())?;
+                let (center, limit) =
+                    self.datum_shift(feature, kind, boundary, &projected, center, radius)?;
                 let origin = add(*point, add(scale(u, center[0]), scale(v, center[1])));
-                Ok(Simulator::Axis(origin, *normal, vec![2.0 * radius]))
+                Ok(Simulator::Axis(origin, *normal, vec![2.0 * radius], limit))
             }
             _ => Err(
                 "axis datums are evaluated as the primary datum or after one primary plane".into(),
             ),
         }
+    }
+
+    /// Reference center and largest radial datum shift of a secondary axis
+    /// datum feature referenced at a material boundary. MMB: the feature's
+    /// mating envelope may float inside (hole) or outside (shaft) a boundary
+    /// of its maximum material size. LMB: the minimum-material envelope
+    /// floats against a boundary of its least material size and locates the
+    /// axis. Sizes come from the feature's `size_limits`; geometric tolerances
+    /// that would enlarge the boundary are not included.
+    fn datum_shift(
+        &self,
+        feature: &DrawingDatumFeature,
+        kind: FeatureOfSizeKind,
+        boundary: DatumMaterialBoundary,
+        projected: &[[f64; 2]],
+        center: [f64; 2],
+        radius: f64,
+    ) -> Result<([f64; 2], f64), String> {
+        if boundary == DatumMaterialBoundary::Regardless {
+            return Ok((center, 0.0));
+        }
+        let limits = feature.size_limits.as_ref().ok_or_else(|| {
+            format!(
+                "datum feature '{}' needs size limits for its material boundary",
+                feature.id
+            )
+        })?;
+        let (lower, upper) = limits.bounds().map_err(|e| e.to_string())?;
+        let internal = kind == FeatureOfSizeKind::Internal;
+        let (center, departure) = if boundary == DatumMaterialBoundary::Maximum {
+            let size = 2.0 * radius;
+            (center, if internal { size - lower } else { upper - size })
+        } else {
+            let opposite = if internal {
+                Fit::Circumscribed
+            } else {
+                Fit::Inscribed
+            };
+            let (minimum_center, minimum_radius) =
+                fit_circle(projected, opposite).map_err(|e| e.to_string())?;
+            let size = 2.0 * minimum_radius;
+            (
+                minimum_center,
+                if internal { upper - size } else { size - lower },
+            )
+        };
+        if departure < -1e-9 {
+            return Err(format!(
+                "datum feature '{}' violates its {} material boundary",
+                feature.id,
+                if boundary == DatumMaterialBoundary::Maximum {
+                    "maximum"
+                } else {
+                    "least"
+                }
+            ));
+        }
+        Ok((center, 0.5 * departure.max(0.0)))
     }
 
     fn measured_frame(
@@ -600,7 +737,7 @@ impl Context<'_, '_> {
                             origin: *origin,
                             normal: *normal,
                         },
-                        Simulator::Axis(origin, direction, _) => ResolvedDatum::Axis {
+                        Simulator::Axis(origin, direction, ..) => ResolvedDatum::Axis {
                             origin: *origin,
                             direction: *direction,
                         },
@@ -680,6 +817,8 @@ impl Context<'_, '_> {
             actual_size_mm: None,
             size_conforms: None,
             conforms: fitted.width <= tolerance,
+            datum_shift_mm: 0.0,
+            datum_shift_limit_mm: 0.0,
         })
     }
 
@@ -736,6 +875,8 @@ impl Context<'_, '_> {
             actual_size_mm: None,
             size_conforms: None,
             conforms: deviation <= tolerance,
+            datum_shift_mm: 0.0,
+            datum_shift_limit_mm: 0.0,
         })
     }
 
@@ -752,7 +893,14 @@ impl Context<'_, '_> {
         points: &[Vec3],
         tolerance: f64,
     ) -> Result<ControlMeasurement, String> {
-        let Some(Simulator::Axis(origin, axis, _)) =
+        if frame
+            .datums
+            .iter()
+            .any(|d| d.boundary != DatumMaterialBoundary::Regardless)
+        {
+            return Err("runout datums are evaluated regardless of material boundary".into());
+        }
+        let Some(Simulator::Axis(origin, axis, ..)) =
             self.simulators(&frame.datums)?.last().cloned()
         else {
             return Err(
@@ -827,6 +975,8 @@ impl Context<'_, '_> {
             actual_size_mm: None,
             size_conforms: None,
             conforms: deviation <= tolerance,
+            datum_shift_mm: 0.0,
+            datum_shift_limit_mm: 0.0,
         })
     }
 
@@ -869,21 +1019,71 @@ impl Context<'_, '_> {
         points: &[Vec3],
         tolerance: f64,
     ) -> Result<ControlMeasurement, String> {
+        let data = self.position_data(frame, points)?;
+        let shift = self
+            .shifts
+            .get(frame.id.as_str())
+            .copied()
+            .unwrap_or([0.0, 0.0]);
+        let deviation = 2.0 * (data.offset[0] - shift[0]).hypot(data.offset[1] - shift[1]);
+        Ok(ControlMeasurement {
+            deviation_mm: deviation,
+            tolerance_mm: tolerance,
+            bonus_mm: data.bonus,
+            actual_size_mm: Some(data.size),
+            size_conforms: Some(data.size_conforms),
+            conforms: data.size_conforms && deviation <= tolerance + data.bonus,
+            datum_shift_mm: shift[0].hypot(shift[1]),
+            datum_shift_limit_mm: data.shift_limit,
+        })
+    }
+
+    /// Offset of the related actual mating envelope (or the minimum-material
+    /// envelope at LMC) from true position in the measured frame, before any
+    /// datum shift; cached per control. Frames are three planes (3-2-1) or a
+    /// primary plane, a secondary axis and an optional tertiary plane.
+    fn position_data(
+        &mut self,
+        frame: &DrawingFeatureControlFrame,
+        points: &[Vec3],
+    ) -> Result<PositionData, String> {
+        if let Some(cached) = self.positions.get(frame.id.as_str()) {
+            return cached.clone();
+        }
+        let result = self.fit_position(frame, points);
+        self.positions.insert(frame.id.clone(), result.clone());
+        result
+    }
+
+    fn fit_position(
+        &mut self,
+        frame: &DrawingFeatureControlFrame,
+        points: &[Vec3],
+    ) -> Result<PositionData, String> {
         let limits = frame
             .size_limits
             .as_ref()
             .ok_or("position evaluation needs size limits to identify the mating envelope")?;
-        if frame.datums.len() != 3 {
-            return Err("position evaluation needs three plane datums".into());
-        }
         let ResolvedDatum::Axis { origin, direction } = self.nominal(&frame.attachment.anchor)?
         else {
             return Err("position evaluation needs axis datum geometry".into());
         };
-        let nominal_frame = self
-            .resolved_frame(&frame.datums, None)?
-            .nominal_planar_321()
-            .map_err(|e| e.to_string())?;
+        let nominal = self.resolved_frame(&frame.datums, None)?;
+        let axis_frame = nominal
+            .datums
+            .iter()
+            .any(|d| matches!(d.geometry, ResolvedDatum::Axis { .. }));
+        let nominal_frame = if axis_frame {
+            nominal.plane_axis_frame()
+        } else if frame.datums.len() == 3 {
+            nominal.nominal_planar_321()
+        } else {
+            return Err(
+                "position evaluation needs three plane datums, or a plane, an axis and an optional plane"
+                    .into(),
+            );
+        }
+        .map_err(|e| e.to_string())?;
         if length(cross(
             unit(direction).map_err(|e| e.to_string())?,
             nominal_frame.z_axis,
@@ -893,10 +1093,29 @@ impl Context<'_, '_> {
                 "position evaluation needs a feature axis normal to the primary datum".into(),
             );
         }
-        let measured_frame = self.measured_frame(&frame.datums)?;
         let true_position = nominal_frame
             .coordinates_mm(origin)
             .map_err(|e| e.to_string())?;
+        if axis_frame && frame.datums.len() == 2 && true_position.x.hypot(true_position.y) > 1e-9 {
+            return Err(
+                "position off a secondary datum axis needs a tertiary datum to fix rotation".into(),
+            );
+        }
+        let simulators = self.simulators(&frame.datums)?;
+        let measured_frame = if axis_frame {
+            self.resolved_frame(&frame.datums, Some(&simulators))?
+                .plane_axis_frame()
+                .map_err(|e| e.to_string())?
+        } else {
+            self.measured_frame(&frame.datums)?
+        };
+        let shift_limit = simulators
+            .iter()
+            .map(|s| match s {
+                Simulator::Axis(.., limit) => *limit,
+                Simulator::Plane(..) => 0.0,
+            })
+            .sum();
         let projected = points
             .iter()
             .map(|&p| measured_frame.coordinates_mm(p).map(|c| [c.x, c.y]))
@@ -933,20 +1152,106 @@ impl Context<'_, '_> {
                 .max(0.0),
             ),
         };
-        let deviation = 2.0 * (center[0] - true_position.x).hypot(center[1] - true_position.y);
         let size_conforms = if internal {
             size >= lower && minimum_size <= upper
         } else {
             size <= upper && minimum_size >= lower
         };
-        Ok(ControlMeasurement {
-            deviation_mm: deviation,
-            tolerance_mm: tolerance,
-            bonus_mm: bonus,
-            actual_size_mm: Some(size),
-            size_conforms: Some(size_conforms),
-            conforms: size_conforms && deviation <= tolerance + bonus,
+        Ok(PositionData {
+            offset: [center[0] - true_position.x, center[1] - true_position.y],
+            bonus,
+            size,
+            size_conforms,
+            shift_limit,
         })
+    }
+}
+
+#[derive(Clone, Debug)]
+struct PositionData {
+    offset: [f64; 2],
+    bonus: f64,
+    size: f64,
+    size_conforms: bool,
+    /// Largest radial datum shift the frame's material boundaries allow.
+    shift_limit: f64,
+}
+
+/// One datum shift `t` (|t| ≤ `limit`) shared by controls under the
+/// simultaneous requirement, minimizing the largest excess `|d − t| − r` of
+/// each control's offset `d` over its allowed radius `r`. The optimum of this
+/// 2-D min-max is fixed by at most three controls, so an active set starts
+/// from the three worst at `t = 0` and adds the worst outside control until
+/// none exceeds the active maximum: each step is a small LP. Circles are
+/// circumscribed 256-gons (within 0.008% of optimal) and a 1e-6 weight on
+/// |t|₁ picks the smallest of near-optimal shifts. Conformance is decided
+/// exactly at the returned shift. O(iterations · (n + active · 256 · pivots)).
+fn common_shift(controls: &[([f64; 2], f64)], limit: f64) -> [f64; 2] {
+    if limit <= 0.0 || controls.is_empty() {
+        return [0.0, 0.0];
+    }
+    let excess = |t: [f64; 2], &(d, r): &([f64; 2], f64)| (d[0] - t[0]).hypot(d[1] - t[1]) - r;
+    let mut order: Vec<usize> = (0..controls.len()).collect();
+    order.sort_by(|&a, &b| {
+        excess([0.0; 2], &controls[b]).total_cmp(&excess([0.0; 2], &controls[a]))
+    });
+    let mut active: Vec<usize> = order.into_iter().take(3).collect();
+    loop {
+        let subset: Vec<_> = active.iter().map(|&i| controls[i]).collect();
+        let t = shift_lp(&subset, limit);
+        let active_worst = subset
+            .iter()
+            .map(|c| excess(t, c))
+            .fold(f64::NEG_INFINITY, f64::max);
+        let (worst, value) = controls
+            .iter()
+            .enumerate()
+            .map(|(i, c)| (i, excess(t, c)))
+            .fold((0, f64::NEG_INFINITY), |a, b| if b.1 > a.1 { b } else { a });
+        if value <= active_worst + 1e-12 || active.contains(&worst) {
+            return t;
+        }
+        active.push(worst);
+    }
+}
+
+/// The min-max datum shift LP over `controls` (see [`common_shift`]).
+fn shift_lp(controls: &[([f64; 2], f64)], limit: f64) -> [f64; 2] {
+    const SIDES: usize = 256;
+    let directions: Vec<[f64; 2]> = (0..SIDES)
+        .map(|k| {
+            let a = std::f64::consts::TAU * k as f64 / SIDES as f64;
+            [a.cos(), a.sin()]
+        })
+        .collect();
+    // Variables: tx, ty, z (largest excess), wx ≥ |tx|, wy ≥ |ty|.
+    let mut rows = Vec::with_capacity(((controls.len() + 1) * SIDES + 4) * 5);
+    let mut bounds = Vec::with_capacity((controls.len() + 1) * SIDES + 4);
+    for &(d, r) in controls {
+        for u in &directions {
+            rows.extend([-u[0], -u[1], -1.0, 0.0, 0.0]);
+            bounds.push(r - u[0] * d[0] - u[1] * d[1]);
+        }
+    }
+    for u in &directions {
+        rows.extend([u[0], u[1], 0.0, 0.0, 0.0]);
+        bounds.push(limit);
+    }
+    for (axis, sign) in [(0, 1.0), (0, -1.0), (1, 1.0), (1, -1.0)] {
+        let mut row = [0.0; 5];
+        row[axis] = sign;
+        row[3 + axis] = -1.0;
+        rows.extend(row);
+        bounds.push(0.0);
+    }
+    let Ok(x) = fit::maximize(&[0.0, 0.0, -1.0, -1e-6, -1e-6], &rows, &bounds) else {
+        return [0.0, 0.0];
+    };
+    let length = x[0].hypot(x[1]);
+    if length > limit && length > 0.0 {
+        [x[0] * limit / length, x[1] * limit / length]
+    } else {
+        [x[0], x[1]]
     }
 }
 

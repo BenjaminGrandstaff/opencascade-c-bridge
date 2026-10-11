@@ -170,6 +170,7 @@ fn main() -> ExitCode {
     outcomes.push(inspection::form_case(definition));
     outcomes.push(inspection::runout_case(definition, false));
     outcomes.push(inspection::runout_case(definition, true));
+    outcomes.push(inspection::datum_shift_case(definition));
     outcomes.push(helix::helix_case());
     outcomes.push(helix::helix_pattern_case(definition));
     outcomes.push(threads::thread_case(definition));

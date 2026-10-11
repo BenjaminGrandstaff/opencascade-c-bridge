@@ -573,6 +573,7 @@ fn main() {
                 offset_mm: [20.0, 30.0],
             },
             size_kind: None,
+            size_limits: None,
         });
     }
     gdt.feature_control_frames = (0..10_000)
