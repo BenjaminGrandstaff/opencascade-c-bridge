@@ -669,6 +669,7 @@ fn main() {
         f.refinement = Some(DrawingCompositeRefinement {
             tolerance: Quantity::length(0.05, LengthUnit::Millimeter),
             datums: vec![references[0].clone()],
+            refinement: None,
         });
     }
     let started = Instant::now();

@@ -155,8 +155,9 @@ pub struct ControlMeasurement {
     /// Largest translation of the frame origin the referenced material
     /// boundaries allow with the frame square to its mating envelopes.
     pub datum_shift_limit_mm: f64,
-    /// The lower (feature-relating) segment of a composite position control
-    /// (schema 138); `conforms` covers both segments.
+    /// The lower (feature-relating) segment of a composite control (schema
+    /// 138), holding any further lower segments (schema 141); `conforms`
+    /// covers every segment.
     pub refinement: Option<RefinementMeasurement>,
     /// Surface profile detail (schema 139).
     pub profile: Option<ProfileMeasurement>,
@@ -169,7 +170,7 @@ pub struct ControlMeasurement {
 }
 
 impl ControlMeasurement {
-    /// Decides both segments under `rule` with uncertainty `u`. Size
+    /// Decides every segment under `rule` with uncertainty `u`. Size
     /// conformance is kept as measured.
     fn decide(&mut self, rule: DecisionRule, u: f64) {
         let near = |deviation: f64, allowed: f64| u > 0.0 && (deviation - allowed).abs() < u;
@@ -177,11 +178,13 @@ impl ControlMeasurement {
         let mut conforms =
             self.size_conforms.unwrap_or(true) && rule.conforms(self.deviation_mm, allowed, u);
         let mut indeterminate = near(self.deviation_mm, allowed);
-        if let Some(refined) = &mut self.refinement {
+        let mut next = self.refinement.as_mut();
+        while let Some(refined) = next {
             let allowed = refined.tolerance_mm + refined.bonus_mm;
             refined.conforms = rule.conforms(refined.deviation_mm, allowed, u);
             conforms &= refined.conforms;
             indeterminate |= near(refined.deviation_mm, allowed);
+            next = refined.refinement.as_deref_mut();
         }
         self.conforms = conforms;
         self.indeterminate = indeterminate;
@@ -223,6 +226,23 @@ pub struct RefinementMeasurement {
     /// angle of the fitted turn about any axis.
     pub pattern_translation_mm: f64,
     pub pattern_rotation_rad: f64,
+    /// The next lower segment (schema 141).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub refinement: Option<Box<RefinementMeasurement>>,
+}
+
+impl RefinementMeasurement {
+    /// Nests lower segments, top to bottom, each under the one above.
+    fn chain(segments: Vec<RefinementMeasurement>) -> Option<RefinementMeasurement> {
+        segments.into_iter().rev().fold(None, |below, mut segment| {
+            segment.refinement = below.map(Box::new);
+            Some(segment)
+        })
+    }
+    /// Whether this segment and every one below it conform.
+    fn all_conform(&self) -> bool {
+        self.conforms && self.refinement.as_ref().is_none_or(|r| r.all_conform())
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -340,7 +360,8 @@ struct Context<'a, 'g> {
     /// Motions each datum precedence's material boundaries allow.
     spaces: HashMap<SimulatorKey, Result<Rc<ShiftSpace>, String>>,
     /// Composite lower-segment results by control ID, fitted per pattern.
-    refinements: HashMap<String, RefinementMeasurement>,
+    /// Each composite position control's lower segments, top to bottom.
+    refinements: HashMap<String, Vec<RefinementMeasurement>>,
     /// Profile results by control ID, fitted per pattern.
     profiles: HashMap<String, Result<ControlMeasurement, String>>,
     /// Drawing views by ID: a line profile's elements are sections normal to
@@ -1611,26 +1632,18 @@ impl Context<'_, '_> {
         Ok((normal, if free { vec![measured_a] } else { Vec::new() }))
     }
 
-    /// Fits one translation, and a rotation unless the refinement's datums
-    /// include a plane after the primary, relating every measured member of
-    /// a composite pattern, then records each member's refined deviation.
+    /// For each lower segment of a composite pattern: fits one translation,
+    /// and a rotation unless the segment's datums include a plane after the
+    /// primary, relating every measured member, then records each member's
+    /// deviation in that segment. Segments are fitted independently.
     fn refine_pattern(
         &mut self,
         group: &[&DrawingFeatureControlFrame],
         measured: &HashMap<&str, Vec<Vec3>>,
     ) {
-        let Some(refinement) = group.first().and_then(|f| f.refinement.as_ref()) else {
+        let Some(first) = group.first() else {
             return;
         };
-        let Ok(tolerance) = refinement.tolerance.normalized() else {
-            return;
-        };
-        let rotation_fixed = refinement.datums.iter().skip(1).any(|d| {
-            self.features
-                .get(d.datum_feature.as_str())
-                .and_then(|f| self.nominal(&f.attachment.anchor).ok())
-                .is_some_and(|g| matches!(g, ResolvedDatum::Plane { .. }))
-        });
         let mut members = Vec::with_capacity(group.len());
         for frame in group {
             if let Ok(data) = self.position_data(frame, &measured[frame.id.as_str()]) {
@@ -1647,33 +1660,48 @@ impl Context<'_, '_> {
                 c[1] + d.true_position[1] / count,
             ]
         });
-        let fit: Vec<PatternMember> = members
-            .iter()
-            .map(|(_, d)| PatternMember {
-                offset: d.offset,
-                lever: [
-                    d.true_position[0] - centroid[0],
-                    d.true_position[1] - centroid[1],
-                ],
-                radius: 0.5 * (tolerance + d.bonus),
-            })
-            .collect();
-        let motion = fit_motion(&fit, &ShiftSpace::free(!rotation_fixed));
-        let (translation, rotation) = (motion.t, motion.angle);
-        for ((id, data), member) in members.iter().zip(&fit) {
-            let r = member.residual(motion);
-            let deviation = 2.0 * r[0].hypot(r[1]);
-            self.refinements.insert(
-                id.clone(),
-                RefinementMeasurement {
-                    deviation_mm: deviation,
-                    tolerance_mm: tolerance,
-                    bonus_mm: data.bonus,
-                    conforms: deviation <= tolerance + data.bonus,
-                    pattern_translation_mm: translation[0].hypot(translation[1]),
-                    pattern_rotation_rad: rotation,
-                },
-            );
+        for segment in composite::segments(first).iter().skip(1) {
+            let Ok(tolerance) = segment.tolerance.normalized() else {
+                for (id, _) in &members {
+                    self.refinements.remove(id);
+                }
+                return;
+            };
+            let rotation_fixed = segment.datums.iter().skip(1).any(|d| {
+                self.features
+                    .get(d.datum_feature.as_str())
+                    .and_then(|f| self.nominal(&f.attachment.anchor).ok())
+                    .is_some_and(|g| matches!(g, ResolvedDatum::Plane { .. }))
+            });
+            let fit: Vec<PatternMember> = members
+                .iter()
+                .map(|(_, d)| PatternMember {
+                    offset: d.offset,
+                    lever: [
+                        d.true_position[0] - centroid[0],
+                        d.true_position[1] - centroid[1],
+                    ],
+                    radius: 0.5 * (tolerance + d.bonus),
+                })
+                .collect();
+            let motion = fit_motion(&fit, &ShiftSpace::free(!rotation_fixed));
+            let (translation, rotation) = (motion.t, motion.angle);
+            for ((id, data), member) in members.iter().zip(&fit) {
+                let r = member.residual(motion);
+                let deviation = 2.0 * r[0].hypot(r[1]);
+                self.refinements
+                    .entry(id.clone())
+                    .or_default()
+                    .push(RefinementMeasurement {
+                        deviation_mm: deviation,
+                        tolerance_mm: tolerance,
+                        bonus_mm: data.bonus,
+                        conforms: deviation <= tolerance + data.bonus,
+                        pattern_translation_mm: translation[0].hypot(translation[1]),
+                        pattern_rotation_rad: rotation,
+                        refinement: None,
+                    });
+            }
         }
     }
 
@@ -1723,9 +1751,9 @@ impl Context<'_, '_> {
             indeterminate: false,
         })
         .map(|mut m| {
-            if let Some(refined) = self.refinements.get(frame.id.as_str()) {
-                m.conforms &= refined.conforms;
-                m.refinement = Some(refined.clone());
+            if let Some(segments) = self.refinements.get(frame.id.as_str()) {
+                m.refinement = RefinementMeasurement::chain(segments.clone());
+                m.conforms &= m.refinement.as_ref().is_none_or(|r| r.all_conform());
             }
             m
         })

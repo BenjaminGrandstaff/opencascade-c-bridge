@@ -719,7 +719,7 @@ material modifiers, both exports, shared regeneration and native handle cleanup.
 
 Feature-of-size flags and geometric controls are manufacturing declarations.
 Anchors locate leaders on selected solid outputs; they do not identify persistent
-faces or establish datum simulators. Multi-level composite frames, targets,
+faces or establish datum simulators. Targets,
 projected zones, advanced modifiers, primary-axis datum shift and semantic PMI exchange remain
 on the roadmap; measured simulators, bonus tolerance and zone evaluation for a
 supported subset are described in [Measured inspection](#measured-inspection-schema-68). References: [ASME Y14.5 scope and contents](https://www.asme.org/getmedia/da2ff89e-067b-4160-8e2e-53e6c7da1d3b/17707.pdf)
@@ -752,8 +752,27 @@ The lower segment describes feature-relating refinement and inherits zone shape,
 material condition, units and precision. It must be strictly tighter both in
 normalized length and after display rounding. Its references may be empty or an
 unchanged prefix of the upper references, including material boundaries. This
-prefix restriction is the initial supported subset; other composite arrangements
-are rejected. The refinement is not a second independent position tolerance:
+prefix restriction is the supported subset; other composite arrangements are
+rejected.
+
+Since schema 141 a refinement may hold its own `refinement`, a further lower
+segment, to any depth: Ø0.8 to A | B | C, then Ø0.25 to A | B, then Ø0.1 to
+A. Each segment must be tighter than the one above it, and its references an
+unchanged prefix of the upper segment's (so a lower segment may name more
+datums than the one above it). The frame draws one row per segment under one
+characteristic cell spanning them all, with a stepped right edge.
+
+```json
+"refinement": {
+  "tolerance": {"value": 0.25, "dimension": "length", "unit": "millimeter"},
+  "datums": [{"datum_feature": "A", "boundary": "regardless"},
+             {"datum_feature": "B", "boundary": "regardless"}],
+  "refinement": {
+    "tolerance": {"value": 0.1, "dimension": "length", "unit": "millimeter"},
+    "datums": [{"datum_feature": "A", "boundary": "regardless"}]
+  }
+}
+``` The refinement is not a second independent position tolerance:
 its datum references express orientation of the refining pattern rather than
 independently locating that pattern by translation. Measured composite position
 is evaluated since schema 138, and composite surface profile since schema 139;
@@ -778,8 +797,8 @@ disposed about the true profile.
 "unequal": {"value": 0.03, "dimension": "length", "unit": "millimeter"}
 ```
 
-SVG and DXF show one shared 16 mm tall characteristic cell, two 8 mm rows and a
-stepped right edge when the lower row is shorter. The same leader attaches the
+SVG and DXF show one shared characteristic cell 8 mm tall per segment, an 8 mm
+row per segment and a stepped right edge where row widths differ. The same leader attaches the
 entire control. Both rows and modifiers count in the exact vertex reservation;
 large batches fail their shared budget before allocating output geometry.
 
@@ -825,7 +844,8 @@ an existing limit dimension or hole callout.
 
 `control.tolerance_allowance(supplied_size)` returns millimetre values for the
 supplied size, maximum/least material sizes, bonus, total tolerance and optional
-position-composite refinement total. For internal features MMC is the lower size
+position-composite refinement total (the second segment's; further segments add
+the same bonus to their own tolerances). For internal features MMC is the lower size
 and LMC the upper; external features reverse these. MMC/LMC bonus is the size
 departure from that condition; RFS bonus is zero. Each composite row adds that
 bonus to its own specified tolerance. Out-of-limit, non-length, nonfinite,
@@ -1260,7 +1280,8 @@ MMB (or wider than its LMB) violates the boundary and is reported.
 evaluated like any position control, including datum shift and the
 simultaneous requirement shared with other controls on the same datums. The
 lower, feature-relating segment fits each pattern (controls with the same
-`pattern` ID, or a lone control) as one rigid group. It translates freely and
+`pattern` ID, or a lone control) as one rigid group, each lower segment on its
+own. It translates freely and
 rotates about the primary normal unless the refinement references a plane
 after its primary datum, such as `A, B` with B a face. The fit minimizes the
 largest excess of any feature over its refined zone (half of refined tolerance
@@ -1355,6 +1376,8 @@ its translation and rotation are the largest of any element.
 the zone center (zero, or `unequal − tolerance / 2`), the fitted translation
 and rotation angle, and the number of line elements. For a composite profile, `refinement` reports the lower
 segment with the pattern's fitted translation and its unsigned rotation angle.
+Each reported lower segment holds the next in its own `refinement`, and the
+control conforms only if every segment does.
 Profile measures size as well as form and location: a uniformly oversized
 bore stays out of its zone even when it is free to move.
 
@@ -1436,7 +1459,8 @@ A(MMB) | B with B the face that stops them and no clock, turned 1 mrad
 together, share one turn of the frame in 0.71 s (1 s budget: each hole's
 two envelope fits relinearize their turn). 10,000 composite position controls in
 100 patterns of 100 evaluate in 0.19 s (1 s budget). Ten patterns with a
-0.1 mm outlier fail their relating fit. 10,000 composite surface profiles on
+0.1 mm outlier fail their relating fit. With a Ø0.15 segment to A | B between
+the two (three segments), they evaluate in 0.29 s (1 s budget). 10,000 composite surface profiles on
 the same bores (720,000 points with nominals, 100 patterns of 7,200 points
 fitted as rigid groups) take 0.18 s (1 s budget), and one 1,000,000-point
 surface profile with all six motions free takes 0.30 s (2 s budget). 1,000
@@ -1452,7 +1476,7 @@ hole or pin's form error limiting its rotational shift; a tertiary plane
 re-contacting as a shifting secondary width turns; common width datums; the separate requirement
 (`SEP REQT`); boundaries
 enlarged by geometric tolerances; simultaneous-contact common axis simulators,
-common axes after a primary plane, composites beyond two segments,
+common axes after a primary plane,
 reporting n× patterns as one frame on drawings, measured datum targets,
 profile datums at a material boundary, and
 straightness. Uncertainty is supplied, not estimated from the points or the

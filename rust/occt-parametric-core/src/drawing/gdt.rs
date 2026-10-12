@@ -769,9 +769,12 @@ pub fn vertex_count(
         .iter()
         .try_fold(base, |sum, f| {
             let count = if f.refinement.is_some() {
-                16 + glyph_vertices(f.characteristic)
-                    + row_vertices(f)
-                    + row_vertices(&composite::refined(f))
+                // Outline 2n + 3, divider 2, n - 1 row separators of 2, and
+                // the leader.
+                let segments = composite::segments(f);
+                8 + 4 * segments.len()
+                    + glyph_vertices(f.characteristic)
+                    + segments.iter().map(row_vertices).sum::<usize>()
             } else {
                 12 + glyph_vertices(f.characteristic) + row_vertices(f)
             };

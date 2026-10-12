@@ -492,6 +492,7 @@ fn unsupported_or_unmeasured_controls_are_reported_and_bad_records_fail() {
     page.feature_control_frames[4].refinement = Some(DrawingCompositeRefinement {
         tolerance: Quantity::length(0.02, LengthUnit::Millimeter),
         datums: Vec::new(),
+        refinement: None,
     });
     page.datum_reference_frames[0].datums[0].boundary = DatumMaterialBoundary::Regardless;
     page.feature_control_frames[3].datums[1].boundary = DatumMaterialBoundary::Maximum;
@@ -2804,6 +2805,7 @@ fn composite_page(
             f.refinement = Some(DrawingCompositeRefinement {
                 tolerance: Quantity::length(lower, LengthUnit::Millimeter),
                 datums: f.datums[..lower_datums.len()].to_vec(),
+                refinement: None,
             });
             f
         })
@@ -2889,6 +2891,85 @@ fn a_refinement_datum_plane_fixes_the_pattern_rotation() {
         );
         assert!(lower.conforms);
     }
+}
+
+#[test]
+fn each_lower_segment_of_a_composite_relates_the_pattern_on_its_own() {
+    // Ø0.2 to A | B | C, then Ø0.1 to A | B (the pattern may translate but
+    // stays square to B), then Ø0.04 to A (it may also turn).
+    let (definition, mut page) = composite_page(0.2, 0.1, &["A", "B"]);
+    for f in &mut page.feature_control_frames {
+        f.refinement.as_mut().unwrap().refinement = Some(Box::new(DrawingCompositeRefinement {
+            tolerance: Quantity::length(0.04, LengthUnit::Millimeter),
+            datums: f.datums[..1].to_vec(),
+            refinement: None,
+        }));
+    }
+    let graph = graph_of(&definition);
+    let radius = 15.0_f64.hypot(10.0);
+    // Turned 1 mrad: 2 · 18.03 · 0.001 mm in the middle segment, nothing in
+    // the lowest.
+    let report = page
+        .evaluate_inspection(&graph, &composite_record([0.0; 2], 0.001, [[0.0; 2]; 4]))
+        .unwrap();
+    for i in 0..4 {
+        let m = evaluated(&report, &format!("hole{i}"));
+        let middle = m.refinement.clone().unwrap();
+        let lowest = middle.refinement.clone().unwrap();
+        assert!(
+            (middle.deviation_mm - 2.0 * radius * 0.001).abs() < 1e-3,
+            "{middle:?}"
+        );
+        assert_eq!(middle.pattern_rotation_rad, 0.0);
+        assert!(lowest.deviation_mm < 1e-4, "{lowest:?}");
+        assert!(
+            (lowest.pattern_rotation_rad + 0.001).abs() < 1e-5,
+            "{lowest:?}"
+        );
+        assert!(lowest.refinement.is_none());
+        assert!(m.conforms && middle.conforms && lowest.conforms);
+    }
+    // Turned 3 mrad: 0.108 mm breaks the middle segment alone.
+    let report = page
+        .evaluate_inspection(&graph, &composite_record([0.0; 2], 0.003, [[0.0; 2]; 4]))
+        .unwrap();
+    let m = evaluated(&report, "hole0");
+    let middle = m.refinement.clone().unwrap();
+    let lowest = middle.refinement.clone().unwrap();
+    assert!(m.deviation_mm < 0.2, "{m:?}");
+    assert!(!middle.conforms && lowest.conforms, "{middle:?}");
+    assert!(!m.conforms);
+    // A three-segment surface profile on a face leaning 0.02 mm over its
+    // height: 0.04 to A | B, 0.02 to A (free to slide), 0 with no datums.
+    let lean = |amount: f64| {
+        measured(
+            "right_profile",
+            grid(|u, v| [60.0 + amount * v, 40.0 * u, 10.0 * v]),
+        )
+    };
+    let mut profile = right_profile(GeometricCharacteristic::ProfileSurface, &["A", "B"]);
+    profile.refinement = Some(DrawingCompositeRefinement {
+        tolerance: Quantity::length(0.03, LengthUnit::Millimeter),
+        datums: profile.datums[..1].to_vec(),
+        refinement: Some(Box::new(DrawingCompositeRefinement {
+            tolerance: Quantity::length(0.01, LengthUnit::Millimeter),
+            datums: Vec::new(),
+            refinement: None,
+        })),
+    });
+    let report = profile_report(vec![profile.clone()], vec![lean(0.02)]);
+    let m = evaluated(&report, "right_profile");
+    let middle = m.refinement.clone().unwrap();
+    let lowest = middle.refinement.clone().unwrap();
+    assert!((m.deviation_mm - 0.04).abs() < 1e-9, "{m:?}");
+    assert!((middle.deviation_mm - 0.02).abs() < 1e-9, "{middle:?}");
+    assert!(lowest.deviation_mm < 1e-9, "{lowest:?}");
+    assert!(m.conforms);
+    // Leaning 0.04 mm fails the upper and middle segments but not the lowest.
+    let report = profile_report(vec![profile], vec![lean(0.04)]);
+    let m = evaluated(&report, "right_profile");
+    let middle = m.refinement.clone().unwrap();
+    assert!(!m.conforms && !middle.conforms && middle.refinement.unwrap().conforms);
 }
 
 #[test]
@@ -3082,6 +3163,7 @@ fn a_profile_pattern_is_one_simultaneous_requirement_with_a_composite_segment() 
                 f.refinement = lower.map(|datums| DrawingCompositeRefinement {
                     tolerance: Quantity::length(0.02, LengthUnit::Millimeter),
                     datums: f.datums[..datums.len()].to_vec(),
+                    refinement: None,
                 });
                 f
             })
@@ -3339,6 +3421,7 @@ fn line_profile_fits_each_element_in_its_section() {
     composite.refinement = Some(DrawingCompositeRefinement {
         tolerance: Quantity::length(0.01, LengthUnit::Millimeter),
         datums: Vec::new(),
+        refinement: None,
     });
     let report = profile_report(vec![composite], vec![right_face(bow)]);
     let m = evaluated(&report, "right_profile");

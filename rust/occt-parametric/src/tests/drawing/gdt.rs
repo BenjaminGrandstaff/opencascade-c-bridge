@@ -339,6 +339,7 @@ fn composite_gdt_page() -> DrawingDefinition {
     f.refinement = Some(DrawingCompositeRefinement {
         tolerance: Quantity::length(0.05, LengthUnit::Millimeter),
         datums: vec![f.datums[0].clone()],
+        refinement: None,
     });
     page.datum_reference_frames
         .push(DrawingDatumReferenceFrame {
@@ -446,6 +447,91 @@ fn composite_frames_export_one_shared_symbol_two_tolerance_rows_and_exact_budget
         std::fs::write("/tmp/occb-composite-gdt.svg", generated.to_svg()).unwrap();
         std::fs::write("/tmp/occb-composite-gdt.dxf", generated.to_dxf()).unwrap();
     }
+    assert_eq!(session.shape_count().unwrap(), 0);
+}
+#[test]
+fn composite_frames_stack_a_row_per_segment() {
+    let definition = family_with_datums();
+    let mut graph = InstanceGraph::new(&definition);
+    graph.add_base("part", HashMap::new(), "test").unwrap();
+    let session = Session::new().unwrap();
+    let mut page = composite_gdt_page();
+    let third = |tolerance: f64, datums| {
+        Some(Box::new(DrawingCompositeRefinement {
+            tolerance: Quantity::length(tolerance, LengthUnit::Millimeter),
+            datums,
+            refinement: None,
+        }))
+    };
+    page.feature_control_frames[0]
+        .refinement
+        .as_mut()
+        .unwrap()
+        .refinement = third(0.02, Vec::new());
+    let generated = page
+        .generate(&graph, &session, DrawingRenderOptions::default())
+        .unwrap();
+    for text in ["0.10 mm", "0.05 mm", "0.02 mm"] {
+        assert!(
+            generated.gdt_labels.iter().any(|l| l.text == text),
+            "{text}"
+        );
+    }
+    assert_eq!(
+        generated
+            .gdt_lines
+            .iter()
+            .map(|l| l.points_mm.len())
+            .sum::<usize>(),
+        crate::drawing::gdt::vertex_count(
+            &page.datum_features,
+            &page.feature_control_frames,
+            &page.datum_reference_frames
+        )
+        .unwrap()
+    );
+    // One outline of 2·3 + 3 points, three rows tall, and two separators.
+    let outline = generated
+        .gdt_lines
+        .iter()
+        .find(|l| l.points_mm.len() == 9)
+        .unwrap();
+    assert!((outline.points_mm[7][1] - outline.points_mm[0][1] - 24.0).abs() < 1e-8);
+    let round = ModelDocument::from_graph(&graph);
+    let mut document = round.clone();
+    document.drawings.push(page.clone());
+    assert_eq!(
+        ModelDocument::from_json(&document.to_json_pretty().unwrap()).unwrap(),
+        document
+    );
+    // Each segment must be tighter than the one above, and its datums a
+    // prefix of the upper segment's.
+    let upper = page.datum_reference_frames[0].datums.clone();
+    for (tolerance, datums) in [(0.05, Vec::new()), (0.02, vec![upper[1].clone()])] {
+        let mut invalid = page.clone();
+        invalid.feature_control_frames[0]
+            .refinement
+            .as_mut()
+            .unwrap()
+            .refinement = third(tolerance, datums);
+        assert!(
+            invalid
+                .generate(&graph, &session, DrawingRenderOptions::default())
+                .is_err()
+        );
+    }
+    // A lowest segment may name more datums than the middle one.
+    let mut deeper = page.clone();
+    deeper.feature_control_frames[0]
+        .refinement
+        .as_mut()
+        .unwrap()
+        .refinement = third(0.02, upper[..2].to_vec());
+    assert!(
+        deeper
+            .generate(&graph, &session, DrawingRenderOptions::default())
+            .is_ok()
+    );
     assert_eq!(session.shape_count().unwrap(), 0);
 }
 #[test]

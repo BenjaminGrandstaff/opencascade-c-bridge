@@ -176,39 +176,41 @@ impl Context<'_, '_> {
             .collect();
         let upper = self.profile_alignment(&first.datums, false)?;
         let upper_fit = self.fit_members(&members, &points, &targets, &centers, &upper)?;
-        let lower = match &first.refinement {
-            None => None,
-            Some(refinement) => {
-                let tolerance = refinement
-                    .tolerance
-                    .normalized()
-                    .map_err(|e| e.to_string())?;
-                let alignment = self.profile_alignment(&refinement.datums, true)?;
-                let zero = vec![0.0; points.len()];
-                Some((
-                    tolerance,
-                    self.fit_members(&members, &points, &targets, &zero, &alignment)?,
-                ))
-            }
-        };
+        // Each lower segment: its own fit, oriented only by its datums.
+        let mut lower = Vec::new();
+        for segment in composite::segments(first).iter().skip(1) {
+            let tolerance = segment.tolerance.normalized().map_err(|e| e.to_string())?;
+            let alignment = self.profile_alignment(&segment.datums, true)?;
+            let zero = vec![0.0; points.len()];
+            lower.push((
+                tolerance,
+                self.fit_members(&members, &points, &targets, &zero, &alignment)?,
+            ));
+        }
         Ok(members
             .iter()
             .map(|m| {
                 let span = &upper_fit.deviations[m.range.clone()];
                 let deviation = zone_width(span, m.center);
-                let refinement = lower.as_ref().map(|(tolerance, fit)| {
-                    let deviation = zone_width(&fit.deviations[m.range.clone()], 0.0);
-                    RefinementMeasurement {
-                        deviation_mm: deviation,
-                        tolerance_mm: *tolerance,
-                        bonus_mm: 0.0,
-                        conforms: deviation <= *tolerance,
-                        pattern_translation_mm: fit.translation,
-                        pattern_rotation_rad: fit.rotation,
-                    }
-                });
+                let refinement = RefinementMeasurement::chain(
+                    lower
+                        .iter()
+                        .map(|(tolerance, fit)| {
+                            let deviation = zone_width(&fit.deviations[m.range.clone()], 0.0);
+                            RefinementMeasurement {
+                                deviation_mm: deviation,
+                                tolerance_mm: *tolerance,
+                                bonus_mm: 0.0,
+                                conforms: deviation <= *tolerance,
+                                pattern_translation_mm: fit.translation,
+                                pattern_rotation_rad: fit.rotation,
+                                refinement: None,
+                            }
+                        })
+                        .collect(),
+                );
                 let conforms =
-                    deviation <= m.tolerance && refinement.as_ref().is_none_or(|r| r.conforms);
+                    deviation <= m.tolerance && refinement.as_ref().is_none_or(|r| r.all_conform());
                 (
                     m.frame.id.clone(),
                     Ok(ControlMeasurement {

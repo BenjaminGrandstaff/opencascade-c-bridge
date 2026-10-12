@@ -1,7 +1,7 @@
 {
   "schema": "occb-model-view-v1",
   "model": {
-    "schema_version": 140,
+    "schema_version": 141,
     "family": {
       "id": "ellipse-tangent-pad",
       "version": 1,

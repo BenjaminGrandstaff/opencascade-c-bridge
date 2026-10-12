@@ -1058,10 +1058,18 @@ fn abc_drawing(id: &str, controls: Vec<DrawingFeatureControlFrame>) -> DrawingDe
 /// turned 0.5 mrad; every tenth also has one hole 0.1 mm off its neighbours,
 /// which fails that whole pattern's feature-relating fit. Decided under
 /// guarded acceptance with U = 0.001 mm, which leaves those results alone.
-pub(crate) fn composite_case(definition: &FamilyDefinition) -> Outcome {
+/// With `three` segments, a Ø0.15 segment to A | B (the pattern may
+/// translate but stays square to B) sits between the upper segment and the
+/// Ø0.04 segment to A.
+pub(crate) fn composite_case(definition: &FamilyDefinition, three: bool) -> Outcome {
     timed(
         format!(
-            "inspection: {CONTROLS} composite position controls in 100 patterns, guarded acceptance"
+            "inspection: {CONTROLS} {} composite position controls in 100 patterns, guarded acceptance",
+            if three {
+                "three-segment"
+            } else {
+                "two-segment"
+            }
         ),
         Duration::from_secs(1),
         Expectation::Required,
@@ -1087,9 +1095,21 @@ pub(crate) fn composite_case(definition: &FamilyDefinition) -> Outcome {
                         upper: Quantity::length(6.1, LengthUnit::Millimeter),
                     }),
                     datum_reference_frame: None,
-                    refinement: Some(DrawingCompositeRefinement {
-                        tolerance: Quantity::length(0.04, LengthUnit::Millimeter),
-                        datums: vec![reference("A")],
+                    refinement: Some({
+                        let relating = DrawingCompositeRefinement {
+                            tolerance: Quantity::length(0.04, LengthUnit::Millimeter),
+                            datums: vec![reference("A")],
+                            refinement: None,
+                        };
+                        if three {
+                            DrawingCompositeRefinement {
+                                tolerance: Quantity::length(0.15, LengthUnit::Millimeter),
+                                datums: vec![reference("A"), reference("B")],
+                                refinement: Some(Box::new(relating)),
+                            }
+                        } else {
+                            relating
+                        }
                     }),
                     id: format!("composite-{i}"),
                     attachment: attachment(&format!("hole-{}", i % holes)),
@@ -1157,10 +1177,18 @@ pub(crate) fn composite_case(definition: &FamilyDefinition) -> Outcome {
                         control.control, control.result
                     )));
                 };
-                let lower = m
+                let mut lower = m
                     .refinement
                     .as_ref()
                     .ok_or_else(|| failure(format!("{} has no refinement", control.control)))?;
+                if three {
+                    if lower.pattern_rotation_rad != 0.0 {
+                        return Err(failure(format!("{} turned square to B", control.control)));
+                    }
+                    lower = lower.refinement.as_deref().ok_or_else(|| {
+                        failure(format!("{} has no third segment", control.control))
+                    })?;
+                }
                 let bad = (i / holes).is_multiple_of(10);
                 if m.uncertainty_mm != 0.001
                     || m.conforms == bad
@@ -1235,6 +1263,7 @@ pub(crate) fn profile_case(definition: &FamilyDefinition) -> Outcome {
                     refinement: Some(DrawingCompositeRefinement {
                         tolerance: Quantity::length(0.04, LengthUnit::Millimeter),
                         datums: vec![reference("A")],
+                        refinement: None,
                     }),
                     id: format!("profile-{i}"),
                     attachment: attachment(&format!("hole-{}", i % holes)),
