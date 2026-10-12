@@ -16,8 +16,9 @@ pub mod gdt;
 pub mod guides;
 pub use gdt::{
     ControlInspection, ControlMeasurement, ControlResult, InspectionRecord, InspectionReport,
-    MAX_INSPECTION_POINTS, MeasuredDatumFrame, MeasuredFeature, MeasuredTexture, TextureInspection,
-    TextureMeasurement, TextureResult,
+    MAX_INSPECTION_POINTS, MeasuredDatumAxis, MeasuredDatumFrame, MeasuredDatumWidth,
+    MeasuredFeature, MeasuredTexture, RefinementMeasurement, TextureInspection, TextureMeasurement,
+    TextureResult,
 };
 pub use gdt::{
     DatumMaterialBoundary, DatumPrecedence, DrawingCompositeRefinement,

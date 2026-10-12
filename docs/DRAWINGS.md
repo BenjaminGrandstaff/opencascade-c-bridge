@@ -755,8 +755,13 @@ unchanged prefix of the upper references, including material boundaries. This
 prefix restriction is the initial supported subset; other composite arrangements
 are rejected. The refinement is not a second independent position tolerance:
 its datum references express orientation of the refining pattern rather than
-independently locating that pattern by translation. No numerical zone evaluator
-or pattern-fit solver is implied by these annotations.
+independently locating that pattern by translation. Measured composite position
+is evaluated since schema 138; see [Measured inspection](#measured-inspection-schema-68).
+
+Schema 138 adds `pattern: Option<String>` to feature-control frames. Controls
+sharing a pattern ID act as one n× control over several features. They must
+match except for their ID and attachment, and only position and profile
+controls may form patterns. Each still draws its own frame.
 
 SVG and DXF show one shared 16 mm tall characteristic cell, two 8 mm rows and a
 stepped right edge when the lower row is shorter. The same leader attaches the
@@ -1054,6 +1059,7 @@ Supported controls:
 | Position (diameter zone, axis normal to primary plane) | Twice the radial offset of the related actual mating envelope from true position, in the measured frame: three planes (3-2-1) or a plane-axis frame (schema 137), after any datum shift |
 | Circular runout (schema 135) | Full indicator movement about the datum axis, for the worst circular element. On a surface coaxial with the datum axis, the reading is radial and elements are points sharing an axial position. On a face perpendicular to it, the reading is axial and elements are points sharing a radius. Elements group within 1e-3 mm or 1e-6 of the span; each needs at least three points |
 | Total runout (schema 135) | The same readings over all points of the surface |
+| Composite position (schema 138) | Upper segment: position as above. Lower segment: the pattern's true positions translate, and rotate about A's normal unless a refinement datum after the primary is a plane, as one rigid group minimizing the largest excess over the refined zones; each feature's deviation from that fit |
 
 For position, the mating envelope is the largest inscribed cylinder for
 internal features and the smallest circumscribed cylinder for external ones,
@@ -1111,11 +1117,29 @@ opposite directions cannot.
                 "anchor": {"instance": "part", "datum": "bore"}, "offset_mm": [20, 30]}}
 ```
 
+**Composite position (schema 138).** The upper, pattern-locating segment is
+evaluated like any position control, including datum shift and the
+simultaneous requirement shared with other controls on the same datums. The
+lower, feature-relating segment fits each pattern (controls with the same
+`pattern` ID, or a lone control) as one rigid group. It translates freely and
+rotates about the primary normal unless the refinement references a plane
+after its primary datum, such as `A, B` with B a face. The fit minimizes the
+largest excess of any feature over its refined zone (half of refined tolerance
+plus bonus). Like the datum-shift fit, it uses an active set with small
+256-gon LPs, relinearized in the angle. `ControlMeasurement.refinement` reports
+the refined deviation, tolerance, bonus and conformance with the pattern's
+fitted translation and rotation (radians about the measured frame's z axis, the
+primary datum's outward normal). The control conforms only when both segments
+do. Because the fit is min-max, one feature out of relation spreads its error
+across the pattern, and the pattern fails its relating zone as a whole. A lone
+feature's refinement only re-checks orientation, which the planar measurement
+already holds, so it reads zero.
+
 **Report results.** Each control has one of three results:
 - `Evaluated`: deviation, tolerance, bonus, actual size and conformance.
 - `NotMeasured`: the record has no points for the control.
-- `NotEvaluated`: a stated reason, for unsupported cases such as composite
-  frames, profile, straightness, round
+- `NotEvaluated`: a stated reason, for unsupported cases such as profile
+  (including composite profile), straightness, round
   form at a material condition or with a non-characteristic zone, a datum
   feature that was not measured, or an axis datum without a `size_kind`.
   Width datums report measurements missing a face and common widths.
@@ -1145,15 +1169,17 @@ Runout readings cost O(n log n) per control after the datum fit. 10,000
 position controls located A | B(MMB) | C from a center bore share one datum
 shift in 0.17 s (1 s budget). The active set keeps each LP small whatever the
 pattern size. The same 10,000 controls clocked by a slot width datum, with the
-part turned 2 mrad, evaluate in 0.16 s.
+part turned 2 mrad, evaluate in 0.16 s. 10,000 composite position controls in
+100 patterns of 100 evaluate in 0.19 s (1 s budget). Ten patterns with a
+0.1 mm outlier fail their relating fit.
 
 **Not yet covered.** Datum shift of a primary axis datum (tilt), of common
 axes and of width datum features (slots and tabs); rotational
 shift about a datum axis; common width datums; the separate requirement
 (`SEP REQT`); boundaries
 enlarged by geometric tolerances; simultaneous-contact common axis simulators,
-common axes after a primary plane, pattern and composite
-evaluation, measured datum targets, profile against nominal surfaces, conical
+common axes after a primary plane, composites beyond two-segment position,
+reporting n× patterns as one frame on drawings, measured datum targets, profile against nominal surfaces, conical
 runout surfaces, and straightness. Measurement uncertainty is not modeled.
 
 ## Surface texture (schema 71)

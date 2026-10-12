@@ -88,6 +88,24 @@ pub struct ControlMeasurement {
     pub datum_shift_mm: f64,
     /// Largest radial datum shift the referenced material boundaries allow.
     pub datum_shift_limit_mm: f64,
+    /// The lower (feature-relating) segment of a composite position control
+    /// (schema 138); `conforms` covers both segments.
+    pub refinement: Option<RefinementMeasurement>,
+}
+
+/// A composite control's feature-relating segment: the pattern may translate,
+/// and rotate unless a refinement datum plane fixes it, as one rigid group.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct RefinementMeasurement {
+    pub deviation_mm: f64,
+    pub tolerance_mm: f64,
+    pub bonus_mm: f64,
+    pub conforms: bool,
+    /// Translation and rotation (about the measured frame's z axis, the
+    /// primary datum normal) of the pattern's true positions that best relate
+    /// its features, shared by every member of the pattern.
+    pub pattern_translation_mm: f64,
+    pub pattern_rotation_rad: f64,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -152,6 +170,8 @@ enum Simulator {
     Axis(Vec3, Vec3, Vec<f64>, f64),
 }
 type Simulators = Vec<Simulator>;
+/// A datum precedence prefix: each compartment's members and boundary.
+type SimulatorKey = Vec<(Vec<String>, DatumMaterialBoundary)>;
 impl Simulator {
     fn plane_normal(&self) -> Result<Vec3, String> {
         match self {
@@ -189,11 +209,13 @@ struct Context<'a, 'g> {
     features: HashMap<&'a str, &'a DrawingDatumFeature>,
     measured_datums: HashMap<&'a str, Vec<Vec3>>,
     /// Simulator planes keyed by datum precedence prefix; each prefix is fitted once.
-    simulators: HashMap<Vec<Vec<String>>, Result<Simulators, String>>,
+    simulators: HashMap<SimulatorKey, Result<Simulators, String>>,
     /// Fitted position offsets by control ID, each fitted once.
     positions: HashMap<String, Result<PositionData, String>>,
     /// Shared datum shift by control ID (simultaneous requirement).
     shifts: HashMap<String, [f64; 2]>,
+    /// Composite lower-segment results by control ID, fitted per pattern.
+    refinements: HashMap<String, RefinementMeasurement>,
 }
 
 impl DrawingDefinition {
@@ -235,6 +257,7 @@ impl DrawingDefinition {
             simulators: HashMap::new(),
             positions: HashMap::new(),
             shifts: HashMap::new(),
+            refinements: HashMap::new(),
         };
         // Simultaneous requirement: position controls with identical datum
         // references (features, precedence and boundaries) share one datum
@@ -275,6 +298,21 @@ impl DrawingDefinition {
             for (id, _) in members {
                 context.shifts.insert(id, shift);
             }
+        }
+        // Composite position: each pattern's feature-relating segment moves
+        // its true positions as one rigid group.
+        let mut patterns: BTreeMap<&str, Vec<&DrawingFeatureControlFrame>> = BTreeMap::new();
+        for frame in &frames {
+            if frame.characteristic == GeometricCharacteristic::Position
+                && frame.refinement.is_some()
+                && measured_controls.contains_key(frame.id.as_str())
+            {
+                let key = frame.pattern.as_deref().unwrap_or(frame.id.as_str());
+                patterns.entry(key).or_default().push(frame);
+            }
+        }
+        for group in patterns.values() {
+            context.refine_pattern(group, &measured_controls);
         }
         let mut controls = Vec::with_capacity(frames.len());
         for frame in &frames {
@@ -475,9 +513,10 @@ impl Context<'_, '_> {
     /// Simulator planes (point, outward normal) for an ordered datum prefix.
     fn simulators(&mut self, datums: &[DrawingDatumReference]) -> Result<Simulators, String> {
         // Common datums are distinct simulators: key by every member.
-        let key: Vec<Vec<String>> = datums
+        // Boundaries change the simulator (and its shift), so they key it too.
+        let key: SimulatorKey = datums
             .iter()
-            .map(|d| d.members().map(str::to_owned).collect())
+            .map(|d| (d.members().map(str::to_owned).collect(), d.boundary))
             .collect();
         if let Some(cached) = self.simulators.get(&key) {
             return cached.clone();
@@ -841,8 +880,8 @@ impl Context<'_, '_> {
         frame: &DrawingFeatureControlFrame,
         points: &[Vec3],
     ) -> Result<ControlMeasurement, String> {
-        if frame.refinement.is_some() {
-            return Err("composite controls are not evaluated".into());
+        if frame.refinement.is_some() && frame.characteristic != GeometricCharacteristic::Position {
+            return Err("composite profile controls are not evaluated".into());
         }
         let tolerance = frame.tolerance.normalized().map_err(|e| e.to_string())?;
         let c = frame.characteristic;
@@ -890,6 +929,7 @@ impl Context<'_, '_> {
             conforms: fitted.width <= tolerance,
             datum_shift_mm: 0.0,
             datum_shift_limit_mm: 0.0,
+            refinement: None,
         })
     }
 
@@ -948,6 +988,7 @@ impl Context<'_, '_> {
             conforms: deviation <= tolerance,
             datum_shift_mm: 0.0,
             datum_shift_limit_mm: 0.0,
+            refinement: None,
         })
     }
 
@@ -1048,6 +1089,7 @@ impl Context<'_, '_> {
             conforms: deviation <= tolerance,
             datum_shift_mm: 0.0,
             datum_shift_limit_mm: 0.0,
+            refinement: None,
         })
     }
 
@@ -1084,6 +1126,71 @@ impl Context<'_, '_> {
         Ok((normal, if free { vec![measured_a] } else { Vec::new() }))
     }
 
+    /// Fits one translation, and a rotation unless the refinement's datums
+    /// include a plane after the primary, relating every measured member of
+    /// a composite pattern, then records each member's refined deviation.
+    fn refine_pattern(
+        &mut self,
+        group: &[&DrawingFeatureControlFrame],
+        measured: &HashMap<&str, Vec<Vec3>>,
+    ) {
+        let Some(refinement) = group.first().and_then(|f| f.refinement.as_ref()) else {
+            return;
+        };
+        let Ok(tolerance) = refinement.tolerance.normalized() else {
+            return;
+        };
+        let rotation_fixed = refinement.datums.iter().skip(1).any(|d| {
+            self.features
+                .get(d.datum_feature.as_str())
+                .and_then(|f| self.nominal(&f.attachment.anchor).ok())
+                .is_some_and(|g| matches!(g, ResolvedDatum::Plane { .. }))
+        });
+        let mut members = Vec::with_capacity(group.len());
+        for frame in group {
+            if let Ok(data) = self.position_data(frame, &measured[frame.id.as_str()]) {
+                members.push((frame.id.clone(), data));
+            }
+        }
+        if members.is_empty() {
+            return;
+        }
+        let count = members.len() as f64;
+        let centroid = members.iter().fold([0.0, 0.0], |c, (_, d)| {
+            [
+                c[0] + d.true_position[0] / count,
+                c[1] + d.true_position[1] / count,
+            ]
+        });
+        let fit: Vec<PatternMember> = members
+            .iter()
+            .map(|(_, d)| PatternMember {
+                offset: d.offset,
+                lever: [
+                    d.true_position[0] - centroid[0],
+                    d.true_position[1] - centroid[1],
+                ],
+                radius: 0.5 * (tolerance + d.bonus),
+            })
+            .collect();
+        let (translation, rotation) = pattern_fit(&fit, !rotation_fixed);
+        for ((id, data), member) in members.iter().zip(&fit) {
+            let r = member.residual(translation, rotation);
+            let deviation = 2.0 * r[0].hypot(r[1]);
+            self.refinements.insert(
+                id.clone(),
+                RefinementMeasurement {
+                    deviation_mm: deviation,
+                    tolerance_mm: tolerance,
+                    bonus_mm: data.bonus,
+                    conforms: deviation <= tolerance + data.bonus,
+                    pattern_translation_mm: translation[0].hypot(translation[1]),
+                    pattern_rotation_rad: rotation,
+                },
+            );
+        }
+    }
+
     fn position(
         &mut self,
         frame: &DrawingFeatureControlFrame,
@@ -1106,6 +1213,21 @@ impl Context<'_, '_> {
             conforms: data.size_conforms && deviation <= tolerance + data.bonus,
             datum_shift_mm: shift[0].hypot(shift[1]),
             datum_shift_limit_mm: data.shift_limit,
+            refinement: None,
+        })
+        .map(|mut m| {
+            if let Some(refined) = self.refinements.get(frame.id.as_str()) {
+                m.conforms &= refined.conforms;
+                m.refinement = Some(refined.clone());
+            }
+            m
+        })
+        .and_then(|m| {
+            if frame.refinement.is_some() && m.refinement.is_none() {
+                Err("composite refinement could not be fitted".into())
+            } else {
+                Ok(m)
+            }
         })
     }
 
@@ -1230,6 +1352,7 @@ impl Context<'_, '_> {
         };
         Ok(PositionData {
             offset: [center[0] - true_position.x, center[1] - true_position.y],
+            true_position: [true_position.x, true_position.y],
             bonus,
             size,
             size_conforms,
@@ -1241,11 +1364,120 @@ impl Context<'_, '_> {
 #[derive(Clone, Debug)]
 struct PositionData {
     offset: [f64; 2],
+    /// True position in the frame, the lever arm for pattern rotation.
+    true_position: [f64; 2],
     bonus: f64,
     size: f64,
     size_conforms: bool,
     /// Largest radial datum shift the frame's material boundaries allow.
     shift_limit: f64,
+}
+
+/// A member of a composite pattern: its offset from true position, its true
+/// position relative to the pattern centroid, and its allowed zone radius.
+#[derive(Clone, Copy, Debug)]
+struct PatternMember {
+    offset: [f64; 2],
+    lever: [f64; 2],
+    radius: f64,
+}
+impl PatternMember {
+    /// Offset left after translating the true positions by `t` and turning
+    /// them by `angle` about the centroid.
+    fn residual(&self, t: [f64; 2], angle: f64) -> [f64; 2] {
+        let (s, c) = angle.sin_cos();
+        let turned = [
+            c * self.lever[0] - s * self.lever[1],
+            s * self.lever[0] + c * self.lever[1],
+        ];
+        [
+            self.offset[0] - t[0] - (turned[0] - self.lever[0]),
+            self.offset[1] - t[1] - (turned[1] - self.lever[1]),
+        ]
+    }
+    fn excess(&self, t: [f64; 2], angle: f64) -> f64 {
+        let r = self.residual(t, angle);
+        r[0].hypot(r[1]) - self.radius
+    }
+}
+
+/// Translation and rotation (radians, about the centroid; zero unless
+/// `rotate`) minimizing the largest excess of any member over its zone, the
+/// feature-relating fit of a composite pattern. An active set (the four worst
+/// members, then the worst outside member) keeps each LP small; each LP is
+/// relinearized in the angle and uses 256-gon zones. O(iterations · active ·
+/// 256 · pivots + n).
+fn pattern_fit(members: &[PatternMember], rotate: bool) -> ([f64; 2], f64) {
+    if members.is_empty() {
+        return ([0.0, 0.0], 0.0);
+    }
+    let mut order: Vec<usize> = (0..members.len()).collect();
+    order.sort_by(|&a, &b| {
+        members[b]
+            .excess([0.0; 2], 0.0)
+            .total_cmp(&members[a].excess([0.0; 2], 0.0))
+    });
+    let mut active: Vec<usize> = order.into_iter().take(4).collect();
+    loop {
+        let subset: Vec<PatternMember> = active.iter().map(|&i| members[i]).collect();
+        let (t, angle) = pattern_lp(&subset, rotate);
+        let active_worst = subset
+            .iter()
+            .map(|m| m.excess(t, angle))
+            .fold(f64::NEG_INFINITY, f64::max);
+        let (worst, value) = members
+            .iter()
+            .enumerate()
+            .map(|(i, m)| (i, m.excess(t, angle)))
+            .fold((0, f64::NEG_INFINITY), |a, b| if b.1 > a.1 { b } else { a });
+        if value <= active_worst + 1e-12 || active.contains(&worst) {
+            return (t, angle);
+        }
+        active.push(worst);
+    }
+}
+
+fn pattern_lp(members: &[PatternMember], rotate: bool) -> ([f64; 2], f64) {
+    const SIDES: usize = 256;
+    let directions: Vec<[f64; 2]> = (0..SIDES)
+        .map(|k| {
+            let a = std::f64::consts::TAU * k as f64 / SIDES as f64;
+            [a.cos(), a.sin()]
+        })
+        .collect();
+    let (mut t, mut angle): ([f64; 2], f64) = ([0.0, 0.0], 0.0);
+    for _ in 0..6 {
+        // Variables: Δtx, Δty, Δangle, z; residual ≈ e − Δt − Δangle·q.
+        let mut rows = Vec::with_capacity((members.len() * SIDES + 2) * 4);
+        let mut bounds = Vec::with_capacity(members.len() * SIDES + 2);
+        let (s, c) = angle.sin_cos();
+        for m in members {
+            let e = m.residual(t, angle);
+            let turned = [
+                c * m.lever[0] - s * m.lever[1],
+                s * m.lever[0] + c * m.lever[1],
+            ];
+            let q = [-turned[1], turned[0]];
+            for u in &directions {
+                rows.extend([-u[0], -u[1], -(u[0] * q[0] + u[1] * q[1]), -1.0]);
+                bounds.push(m.radius - u[0] * e[0] - u[1] * e[1]);
+            }
+        }
+        let step = if rotate { 0.05 } else { 0.0 };
+        for sign in [1.0, -1.0] {
+            rows.extend([0.0, 0.0, sign, 0.0]);
+            bounds.push(step);
+        }
+        let Ok(x) = fit::maximize(&[0.0, 0.0, 0.0, -1.0], &rows, &bounds) else {
+            break;
+        };
+        t = [t[0] + x[0], t[1] + x[1]];
+        angle += x[2];
+        if x[2].abs() < 1e-12 {
+            break;
+        }
+    }
+    (t, angle)
 }
 
 /// One datum shift `t` (|t| ≤ `limit`) shared by controls under the

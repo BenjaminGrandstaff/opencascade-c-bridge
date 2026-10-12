@@ -66,6 +66,7 @@ fn control(
     datums: &[&str],
 ) -> DrawingFeatureControlFrame {
     DrawingFeatureControlFrame {
+        pattern: None,
         size_limits: None,
         datum_reference_frame: None,
         refinement: None,
@@ -492,10 +493,11 @@ fn unsupported_or_unmeasured_controls_are_reported_and_bad_records_fail() {
     page.feature_control_frames[3].datums[1].boundary = DatumMaterialBoundary::Maximum;
     page.datum_features[1].feature_of_size = true;
     let report = page.evaluate_inspection(&graph, &nominal_record()).unwrap();
-    assert!(matches!(
-        &report.controls[4].result,
-        ControlResult::NotEvaluated(r) if r.contains("composite")
-    ));
+    // Composite position is evaluated since schema 138: a single feature's
+    // refinement relates it to nothing else, so only the upper segment binds.
+    let composite = evaluated(&report, "position");
+    let refined = composite.refinement.expect("refinement");
+    assert!(refined.deviation_mm < 1e-6, "{refined:?}");
     assert!(matches!(
         &report.controls[3].result,
         ControlResult::NotEvaluated(r) if r.contains("datum shift")
@@ -1555,5 +1557,157 @@ fn width_datums_report_one_sided_common_and_shifted_setups() {
         ),
         "{:?}",
         report.controls[0]
+    );
+}
+
+/// Four pattern holes with composite position: Ø`upper` to A | B | C (the
+/// plate's three planes), refined to Ø`lower` relating the pattern with
+/// `lower_datums` (a prefix of A, B, C).
+fn composite_page(
+    upper: f64,
+    lower: f64,
+    lower_datums: &[&str],
+) -> (FamilyDefinition, DrawingDefinition) {
+    let (definition, _) = shift_setup(DatumMaterialBoundary::Regardless);
+    let mut page = page();
+    page.feature_control_frames = (0..PATTERN.len())
+        .map(|i| {
+            let mut f = control(
+                &format!("hole{i}"),
+                &format!("p{i}"),
+                GeometricCharacteristic::Position,
+                upper,
+                &["A", "B", "C"],
+            );
+            f.zone = GeometricToleranceZone::Diameter;
+            f.feature_of_size = true;
+            f.pattern = Some("4X".into());
+            f.size_limits = Some(DrawingSizeLimits {
+                kind: FeatureOfSizeKind::Internal,
+                lower: Quantity::length(5.9, LengthUnit::Millimeter),
+                upper: Quantity::length(6.1, LengthUnit::Millimeter),
+            });
+            f.refinement = Some(DrawingCompositeRefinement {
+                tolerance: Quantity::length(lower, LengthUnit::Millimeter),
+                datums: f.datums[..lower_datums.len()].to_vec(),
+            });
+            f
+        })
+        .collect();
+    (definition, page)
+}
+
+/// The pattern moved by `t`, turned by `angle` about its center, and each
+/// hole further displaced by `extra[i]`.
+fn composite_record(t: [f64; 2], angle: f64, extra: [[f64; 2]; 4]) -> InspectionRecord {
+    let center = [30.0, 20.0];
+    let mut record = nominal_record();
+    record.controls = (0..4)
+        .map(|i| {
+            let [x, y] = PATTERN[i];
+            let (s, c) = f64::sin_cos(angle);
+            let (dx, dy) = (x - center[0], y - center[1]);
+            let p = [
+                center[0] + c * dx - s * dy + t[0] + extra[i][0],
+                center[1] + s * dx + c * dy + t[1] + extra[i][1],
+            ];
+            measured(&format!("hole{i}"), hole(p, 6.0))
+        })
+        .collect();
+    record
+}
+
+#[test]
+fn composite_position_relates_the_pattern_and_locates_it_loosely() {
+    let (definition, page) = composite_page(0.2, 0.04, &["A"]);
+    let graph = graph_of(&definition);
+    // The whole pattern moved 0.06, 0.02 mm and turned 1 mrad: the loose
+    // locating zone holds it, and relative to each other the holes are exact.
+    let report = page
+        .evaluate_inspection(
+            &graph,
+            &composite_record([0.06, 0.02], 0.001, [[0.0; 2]; 4]),
+        )
+        .unwrap();
+    for i in 0..4 {
+        let m = evaluated(&report, &format!("hole{i}"));
+        let lower = m.refinement.clone().unwrap();
+        assert!(m.deviation_mm > 0.08 && m.deviation_mm < 0.2, "{m:?}");
+        assert!(lower.deviation_mm < 1e-4, "{lower:?}");
+        // Rotation is about the frame's z axis, A's outward normal (world -z).
+        assert!(
+            (lower.pattern_rotation_rad + 0.001).abs() < 1e-5,
+            "{lower:?}"
+        );
+        assert!((lower.pattern_translation_mm - 0.06_f64.hypot(0.02)).abs() < 1e-4);
+        assert!(m.conforms);
+    }
+    // One hole 0.06 mm off its neighbours breaks the feature-relating zone
+    // even though the pattern is still well located.
+    let mut extra = [[0.0; 2]; 4];
+    extra[1] = [0.06, 0.0];
+    let report = page
+        .evaluate_inspection(&graph, &composite_record([0.0, 0.0], 0.0, extra))
+        .unwrap();
+    let m = evaluated(&report, "hole1");
+    assert!(m.deviation_mm <= 0.2 + 1e-9, "{m:?}");
+    let lower = m.refinement.clone().unwrap();
+    assert!(lower.deviation_mm > 0.04 && !lower.conforms, "{lower:?}");
+    assert!(!m.conforms);
+}
+
+#[test]
+fn a_refinement_datum_plane_fixes_the_pattern_rotation() {
+    // Lower segment to A and B (both planes): the pattern may translate but
+    // must stay square to B, so a 1 mrad turn reads 2 · 18.03 · 0.001 mm.
+    let (definition, page) = composite_page(0.2, 0.04, &["A", "B"]);
+    let graph = graph_of(&definition);
+    let report = page
+        .evaluate_inspection(&graph, &composite_record([0.05, 0.0], 0.001, [[0.0; 2]; 4]))
+        .unwrap();
+    let radius = 15.0_f64.hypot(10.0);
+    for i in 0..4 {
+        let lower = evaluated(&report, &format!("hole{i}")).refinement.unwrap();
+        assert_eq!(lower.pattern_rotation_rad, 0.0);
+        assert!(
+            (lower.deviation_mm - 2.0 * radius * 0.001).abs() < 1e-3,
+            "{lower:?}"
+        );
+        assert!(lower.conforms);
+    }
+}
+
+#[test]
+fn patterns_validate_and_round_trip() {
+    let (definition, page) = composite_page(0.2, 0.04, &["A"]);
+    let graph = graph_of(&definition);
+    let mut mismatched = page.clone();
+    mismatched.feature_control_frames[2].tolerance = Quantity::length(0.3, LengthUnit::Millimeter);
+    assert!(
+        mismatched
+            .validate(&graph)
+            .unwrap_err()
+            .message
+            .contains("pattern")
+    );
+    let mut flat = page.clone();
+    flat.feature_control_frames.push({
+        let mut f = control("flat", "top", GeometricCharacteristic::Flatness, 0.05, &[]);
+        f.pattern = Some("F".into());
+        f
+    });
+    assert!(
+        flat.validate(&graph)
+            .unwrap_err()
+            .message
+            .contains("position or profile")
+    );
+    let mut document = ModelDocument::from_graph(&graph);
+    document.drawings.push(page);
+    let json = document.to_json_pretty().unwrap();
+    assert!(json.contains("\"pattern\": \"4X\""));
+    assert_eq!(
+        ModelDocument::from_json(&json).unwrap().drawings,
+        document.drawings
     );
 }

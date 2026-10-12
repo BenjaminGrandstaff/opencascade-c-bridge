@@ -578,6 +578,7 @@ fn main() {
     }
     gdt.feature_control_frames = (0..10_000)
         .map(|i| DrawingFeatureControlFrame {
+            pattern: None,
             size_limits: None,
             datum_reference_frame: None,
             refinement: None,

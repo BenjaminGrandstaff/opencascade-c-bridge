@@ -14,8 +14,9 @@ pub use datums::{
 };
 pub use inspection::{
     ControlInspection, ControlMeasurement, ControlResult, InspectionRecord, InspectionReport,
-    MAX_INSPECTION_POINTS, MeasuredDatumFrame, MeasuredFeature, MeasuredTexture, TextureInspection,
-    TextureMeasurement, TextureResult,
+    MAX_INSPECTION_POINTS, MeasuredDatumAxis, MeasuredDatumFrame, MeasuredDatumWidth,
+    MeasuredFeature, MeasuredTexture, RefinementMeasurement, TextureInspection, TextureMeasurement,
+    TextureResult,
 };
 pub use position::{
     DrawingPositionMeasurement, DrawingPositionMeasurementResult, PositionSampleEvaluation,
@@ -128,7 +129,7 @@ pub enum ToleranceMaterialCondition {
     Least,
 }
 #[derive(
-    Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
+    Clone, Copy, Debug, Default, PartialEq, Hash, Eq, Serialize, Deserialize, schemars::JsonSchema,
 )]
 #[serde(rename_all = "snake_case")]
 pub enum DatumMaterialBoundary {
@@ -172,6 +173,11 @@ pub struct DrawingFeatureControlFrame {
     pub datum_reference_frame: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub refinement: Option<DrawingCompositeRefinement>,
+    /// Pattern ID (schema 138): controls sharing it are one n× control over
+    /// several features and must match except for ID and attachment. A
+    /// composite refinement relates the features of one pattern.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pattern: Option<String>,
     pub id: String,
     pub attachment: DrawingGdtAttachment,
     pub characteristic: GeometricCharacteristic,
@@ -288,6 +294,7 @@ pub fn validate(
         validate_common(&frame.datums, &index, graph)?;
     }
     let mut ids = HashSet::new();
+    let mut patterns: HashMap<&str, DrawingFeatureControlFrame> = HashMap::new();
     let resolved = effective_frames(frames, reference_frames)?;
     for frame in &resolved {
         if frame.id.is_empty() || !ids.insert(&frame.id) {
@@ -301,6 +308,31 @@ pub fn validate(
         size::validate(frame)?;
         composite::validate(frame, &index)?;
         validate_references(&frame.datums, &index)?;
+        if let Some(pattern) = &frame.pattern {
+            // Members match once their own ID and attachment are set aside.
+            let shape = |f: &DrawingFeatureControlFrame, attachment: &DrawingGdtAttachment| {
+                let mut f = f.clone();
+                f.id.clear();
+                f.attachment = attachment.clone();
+                f
+            };
+            if let Some(first) = patterns.get(pattern.as_str()) {
+                if shape(frame, &first.attachment) != shape(first, &first.attachment) {
+                    return Err(ModelError::new(
+                        "controls in a pattern must match except for ID and attachment",
+                    ));
+                }
+            } else if pattern.is_empty()
+                || (frame.characteristic != GeometricCharacteristic::Position
+                    && !frame.characteristic.profile())
+            {
+                return Err(ModelError::new(
+                    "patterns need a nonempty ID on position or profile controls",
+                ));
+            } else {
+                patterns.insert(pattern.as_str(), frame.as_ref().clone());
+            }
+        }
         validate_common(&frame.datums, &index, graph)?;
     }
     Ok(())

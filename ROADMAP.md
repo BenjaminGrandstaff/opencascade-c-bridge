@@ -12,12 +12,12 @@ tracks status and order.
 | `occt-types` (shared value types) | — | No native dependency |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI; re-exports `occt-types` |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric-core` (kernel-free engineering layer) | Schema 137 | Definitions, documents, solving and checks without OCCT |
-| `occt-parametric` (kernel regeneration) | Schema 137 | Active development; re-exports the core API |
+| `occt-parametric-core` (kernel-free engineering layer) | Schema 138 | Definitions, documents, solving and checks without OCCT |
+| `occt-parametric` (kernel regeneration) | Schema 138 | Active development; re-exports the core API |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 153 + first-use integration 1 (+1 doc test), recipes 3, parametric core 35 + kernel 643 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 5 + view command 13 + viewer Node 19 + branch command 2 + model command 89, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 153 + first-use integration 1 (+1 doc test), recipes 3, parametric core 35 + kernel 646 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 5 + view command 13 + viewer Node 19 + branch command 2 + model command 89, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -25,6 +25,17 @@ tracks status and order.
 | Scale benchmarks | Last full suite: 189 Rust cases plus 5 model-command cases and a 10,000-face Python matcher. Sketch authoring integration rechecked 60 sketch cases and 60 MCP cases within budget. | `tools/bench/run.sh` |
 
 ## Done
+
+- Composite position over patterns (schema 138, ABI 68 unchanged).
+  Feature-control frames take a `pattern` ID, so controls sharing it act as
+  one n× control. Composite position is evaluated in two segments. The upper
+  segment locates as any position control, with datum shift and the
+  simultaneous requirement. The lower segment fits each pattern as one rigid
+  group, translating and, unless a refinement plane fixes it, rotating, by an
+  active-set min-max LP. Results report both segments and the pattern's fitted
+  motion. The simulator cache now keys datum boundaries too, fixing MMB/RMB
+  reuse of one fit. 10,000 composite controls in 100 patterns in 0.19 s (1 s
+  budget).
 
 - Slot and tab width datums (schema 137, no format change). A plane datum
   feature of size with a declared kind is simulated by the center plane of its
@@ -2169,7 +2180,7 @@ scopes and inspected repo capabilities, not a full conformity audit.
    and limits render stacked values.
 2. **Structured GD&T** — [Y14.5](https://www.asme.org/codes-standards/find-codes-standards/y14-5-dimensioning-tolerancing):
    primary-axis, rotational and width datum shift, non-orthogonal datum
-   simulators, pattern and composite evaluation, profile against nominal
+   simulators, composite profile and multi-segment composites, profile against nominal
    surfaces, conical runout, simultaneous common-axis simulators and advanced
    modifiers, and
    measurement uncertainty. Measured planar datum frames, flatness,
@@ -2178,7 +2189,8 @@ scopes and inspected repo capabilities, not a full conformity audit.
    size with circular and total runout (schema 135), common datums A-B
    (schema 136), and position in plane-axis frames with MMB/LMB datum shift
    under the simultaneous requirement (schema 137), and slot/tab width
-   datum center planes.
+   datum center planes, and two-segment composite position over n×
+   patterns (schema 138).
 3. **3D manufacturing annotations and exchange** — [Y14.41](https://www.asme.org/codes-standards/find-codes-standards/y14-41-digital-product-definition-data-practices):
    structured PMI attached to persistent geometry, annotation views, dataset
    authority and revision rules, and verified semantic PMI exchange. Geometry

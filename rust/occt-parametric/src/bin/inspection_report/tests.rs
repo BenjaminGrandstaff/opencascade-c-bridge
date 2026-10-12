@@ -145,6 +145,7 @@ fn fixture() -> ModelDocument {
         });
     page.feature_control_frames
         .push(DrawingFeatureControlFrame {
+            pattern: None,
             id: "position".into(),
             attachment,
             characteristic: GeometricCharacteristic::Position,
