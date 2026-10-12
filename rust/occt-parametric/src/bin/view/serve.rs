@@ -602,6 +602,11 @@ impl Studio {
                     None => Response::error(400, "annotations need ?id="),
                 }
             }
+            ("GET", "/constraint-controls.mjs") => Response::text(
+                200,
+                "text/javascript",
+                include_str!("web/constraint-controls.mjs"),
+            ),
             ("GET", "/sketch-editor.mjs") => Response::text(
                 200,
                 "text/javascript",

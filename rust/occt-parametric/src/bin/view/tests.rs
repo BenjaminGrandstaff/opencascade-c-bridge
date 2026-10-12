@@ -1101,3 +1101,66 @@ fn sketch_apply_rejects_failed_required_checks_and_keeps_the_source() {
     assert_eq!(get(&mut studio, "/api/state").1, state);
     assert_eq!(fs::read_to_string(&model).unwrap(), original);
 }
+
+#[test]
+fn visual_constraint_conflicts_preview_without_replacing_the_accepted_model() {
+    let directory = Directory::new();
+    let request: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../tools/model/sketch-repair.request.json"
+    ))
+    .unwrap();
+    let document = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+    let model = PathBuf::from(directory.model(&document));
+    let original = fs::read_to_string(&model).unwrap();
+    let mut studio = serve::Studio::load(&model, None).unwrap();
+    let (_, sketches) = get(&mut studio, "/api/sketches");
+    assert!(
+        sketches["parameters"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|p| p["id"] == "width")
+    );
+    assert_eq!(
+        studio.handle("GET", "/constraint-controls.mjs", b"").status,
+        200
+    );
+    let (_, state) = get(&mut studio, "/api/state");
+    let (_, instances) = get(&mut studio, "/api/instances");
+    let gltf = studio.handle("GET", "/api/model.gltf", b"").body;
+    let expected = sketches["sketches"][0]["definition"].clone();
+    let mut definition = expected.clone();
+    // A 45-degree bottom edge conflicts with this rectangle's horizontal top
+    // and vertical sides. Visual fields store degrees as native scalar radians.
+    definition["constraints"][0]["line_angle"]["value"] =
+        json!({"literal":{"value":std::f64::consts::FRAC_PI_4,"dimension":"scalar","unit":null}});
+    let mut edit = json!({"version":state["version"],"instance":instances["instances"][0]["id"],"feature":sketches["sketches"][0]["feature"],"expected":expected,"definition":definition,"apply":false});
+    let preview = studio.handle("POST", "/api/sketch", edit.to_string().as_bytes());
+    assert_eq!(preview.status, 200);
+    let preview: serde_json::Value = serde_json::from_slice(&preview.body).unwrap();
+    assert_eq!(preview["can_apply"], false);
+    let sketch = preview["annotations"]["scenes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["kind"] == "sketch")
+        .unwrap();
+    assert_eq!(sketch["solver"]["solved"], false);
+    assert!(
+        sketch["annotations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|a| a["status"] == "failed")
+    );
+    edit["apply"] = json!(true);
+    assert_eq!(
+        studio
+            .handle("POST", "/api/sketch", edit.to_string().as_bytes())
+            .status,
+        422
+    );
+    assert_eq!(get(&mut studio, "/api/state").1, state);
+    assert_eq!(studio.handle("GET", "/api/model.gltf", b"").body, gltf);
+    assert_eq!(fs::read_to_string(&model).unwrap(), original);
+}

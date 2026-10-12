@@ -140,4 +140,25 @@ assert(elements.selection.children.some(e=>e.tagName==='h3'&&e.textContent==='Up
 const sketchScene=data.scenes.find(s=>s.kind==='sketch');
 if(sketchScene){viewer.selectScene('sketch',sketchScene.feature);assert.equal(viewer.scene.feature,sketchScene.feature);}
 viewer.destroy();
+if(sketchScene){
+ const picks=[];let cleared=0;
+ const interactive=context.window.createOcctAnnotatedViewer(context.document,data,()=>{}, {
+  onGeometry:(id,scene)=>{picks.push([id,scene.feature]);return true;},onPoint:(id,scene)=>{picks.push([id,scene.feature]);return true;},onClear:()=>cleared++,
+ });
+ interactive.selectScene('sketch',sketchScene.feature);
+ const entity=sketchScene.entities.find(e=>!e.external);
+ if(entity){
+  assert(elements.overlay.children.some(e=>e.attributes.class==='pick-geometry'&&e.attributes['data-entity']===entity.id));
+  const camera=JSON.stringify(interactive.camera);
+  elements.viewport.emit('pointerdown',{target:{closest:selector=>selector==='[data-entity]'?{dataset:{entity:entity.id}}:null}});
+  elements.viewport.emit('pointermove',{clientX:30,clientY:30});
+  assert.equal(JSON.stringify(interactive.camera),camera,'picking must not pan');
+  interactive.setGeometrySelection([entity.id],sketchScene.feature);
+  assert(elements.overlay.children.some(e=>e.attributes['data-entity']===entity.id&&e.attributes.class.includes('selected')));
+  elements.viewport.emit('keydown',{key:'Escape'});assert.equal(cleared,1);
+ }
+ const point=Object.keys(sketchScene.points||{})[0];
+ if(point){elements.viewport.emit('pointerdown',{target:{closest:selector=>selector==='[data-point]'?{dataset:{point}}:null}});assert.equal(picks.at(-1)[0],point);}
+ interactive.destroy();
+}
 console.log('PASS viewer scene navigation, label selection, related controls, orbit/pan/zoom, visibility and failed states');

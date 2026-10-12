@@ -1,3 +1,4 @@
+import {createConstraintControls} from "./constraint-controls.mjs";
 // A local draft is isolated from the studio until a guarded, verified Apply.
 export const length = value => ({ literal: { value, dimension: 'length', unit: 'millimeter' } });
 export function addElement(definition, collection, element) {
@@ -6,8 +7,8 @@ export function addElement(definition, collection, element) {
   if (collections.some(key => (definition[key] ?? []).some(item => item.id === element.id))) throw new Error('That entity name already exists.');
   (definition[collection] ??= []).push(structuredClone(element));
 }
-export function createSketchEditor({ host, request, instance, preview, applied, restore, showSketch = () => {} }) {
-  let baseline = null, draft = null, version = null, feature = null, busy = false, generation = 0;
+export function createSketchEditor({ host, request, instance, preview, applied, restore, showSketch = () => {}, highlight = () => {} }) {
+  let baseline = null, draft = null, version = null, feature = null, busy = false, generation = 0, parameters = [], constraintControls = null;
   const panel = document.createElement('section');
   panel.className = 'linked-edit';
   const launch = document.createElement('button'); launch.textContent = 'Edit sketch geometry';
@@ -45,6 +46,9 @@ export function createSketchEditor({ host, request, instance, preview, applied, 
   function render() {
     content.replaceChildren();
     const note = document.createElement('p'); note.textContent = `Family-wide edit · ${feature}. Coordinates are sketch-local. Free point coordinates are solver starting positions; constraints determine the solved shape.`; content.append(note);
+    constraintControls = createConstraintControls({host:content, definition:draft, parameters,
+      initialSelection:constraintControls?.selection ?? [], initialType:constraintControls?.type ?? 'horizontal',
+      changed:render, message, highlight:ids=>highlight(ids, feature)});
     for (const point of draft.points ?? []) {
       const row = document.createElement('fieldset'); row.dataset.editPoint = point.id;
       const title = document.createElement('legend'); title.textContent = point.id; row.append(title);
@@ -80,20 +84,20 @@ export function createSketchEditor({ host, request, instance, preview, applied, 
       addElement(draft, {point:'points',line:'lines',circle:'circles'}[k], element); render(); message('Geometry added to the draft.');
     })); content.append(add);
     content.append(input('Outer profile (curve names, comma separated)', (draft.profile ?? []).join(', '), value => draft.profile = value.split(',').map(s => s.trim()).filter(Boolean)));
-    const constraints = document.createElement('details'), ct = document.createElement('summary'); ct.textContent = `Constraints (${draft.constraints?.length ?? 0})`; constraints.append(ct);
+    const constraints = document.createElement('details'), ct = document.createElement('summary'); ct.textContent = `Advanced constraint definitions (${draft.constraints?.length ?? 0})`; constraints.append(ct);
     for (const [index, constraint] of (draft.constraints ?? []).entries()) {
-      constraints.append(jsonEditor(`Constraint ${index + 1}`, constraint, value => draft.constraints[index] = value), button(`Remove constraint ${index + 1}`, () => { draft.constraints.splice(index, 1); render(); message('Constraint removed from draft.'); }));
+      constraints.append(jsonEditor(`Constraint ${index + 1}`, constraint, value => { draft.constraints[index] = value; render(); }), button(`Remove constraint ${index + 1}`, () => { draft.constraints.splice(index, 1); render(); message('Constraint removed from draft.'); }));
     }
-    constraints.append(button('Add constraint definition', () => { (draft.constraints ??= []).push({horizontal:{line:draft.lines?.[0]?.id ?? ''}}); render(); message('Edit the constraint definition, then preview.'); })); content.append(constraints);
+    content.append(constraints);
     const advanced = document.createElement('details'), at = document.createElement('summary'); at.textContent = 'Full definition (advanced geometry, regions and constraints)'; advanced.append(at, jsonEditor('Sketch definition', draft, value => { draft = value; render(); })); content.append(advanced);
-    content.append(button('Preview draft', () => submit(false)), button('Apply verified draft', () => submit(true)), button('Discard draft', async () => { generation++; baseline = draft = null; content.replaceChildren(); message('Draft discarded.'); await restore(); }));
+    content.append(button('Preview draft', () => submit(false)), button('Apply verified draft', () => submit(true)), button('Discard draft', async () => { generation++; baseline = draft = null; constraintControls = null; highlight([]); content.replaceChildren(); message('Draft discarded.'); await restore(); }));
   }
   async function submit(apply) {
     busy = true; content.inert = true; launch.disabled = true;
     message(apply ? 'Regenerating and checking requirements…' : 'Computing draft preview…');
     try {
       const response = await request('/api/sketch', {method:'POST', body:JSON.stringify({version, instance:instance(), feature, expected:baseline, definition:draft, apply})});
-      if (apply) { baseline = draft = null; content.replaceChildren(); await applied(response.state); message('Sketch applied. Save writes it to the model file.'); }
+      if (apply) { baseline = draft = null; constraintControls = null; highlight([]); content.replaceChildren(); await applied(response.state); message('Sketch applied. Save writes it to the model file.'); }
       else { await preview(response.annotations); message(response.can_apply ? 'Preview passes regeneration and required checks. Apply repeats the checks against the current model.' : `Draft cannot be applied: ${response.error}`); }
     } finally { busy = false; content.inert = false; launch.disabled = false; }
   }
@@ -109,12 +113,16 @@ export function createSketchEditor({ host, request, instance, preview, applied, 
       for (const item of data.sketches) choice.append(new Option(item.feature, item.feature));
       content.append(choice, button('Load sketch draft', () => {
         const item = data.sketches.find(s => s.feature === choice.value);
-        version = data.version; feature = item.feature; baseline = structuredClone(item.definition); draft = structuredClone(baseline); showSketch(feature); render(); message('Draft loaded. Click a visible sketch point to find its coordinate controls.');
+        parameters = data.parameters ?? []; constraintControls = null; highlight([]); version = data.version; feature = item.feature; baseline = structuredClone(item.definition); draft = structuredClone(baseline); showSketch(feature); render(); message('Draft loaded. Click sketch points or curves to select geometry for dimensions and constraints.');
       })); message('Choose a sketch. Loading replaces any previous local draft.');
     } catch (error) { message(error.message); }
   });
-  return { selectPoint(id, scene) {
-    if (!draft || scene.feature !== feature) return;
+  return {
+    selectGeometry(id, scene) {if(busy || !draft || scene.feature !== feature)return false;return constraintControls?.pick(id) ?? false;},
+    selectConstraint(annotation, scene) {if(busy || !draft || scene.feature !== feature)return;if(annotation?.detail?.constraint && !constraintControls?.selectAnnotation(annotation))message('This label has no matching supported constraint in the draft. Preview your changes or use the constraint list.');},
+    clearSelection() {constraintControls?.clear();},
+    selectPoint(id, scene) {
+    if (busy || !draft || scene.feature !== feature) return;
     const row = [...content.querySelectorAll('[data-edit-point]')].find(row => row.dataset.editPoint === id);
     row?.scrollIntoView({block:'nearest'}); row?.querySelector('input,textarea')?.focus();
   }};

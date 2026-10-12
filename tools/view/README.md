@@ -83,17 +83,38 @@ sketch definition.
 
 Edit point coordinates and fixed/free status, or add named points, lines and
 circles. Lines use two existing points; circles use center and rim points.
-Click a visible sketch point to focus its coordinate controls. Literal coordinate
+Click visible sketch points or curves to select them for dimension and constraint controls. Literal coordinate
 fields use millimeters; parameter/formula coordinates retain their expressions.
 Free-point coordinates are solver starting positions, so constraints may move
 them. Edit the outer profile's curve names to include new boundary geometry.
 Removing a referenced point requires repairing its references in the same draft.
 
-The **Constraints** section edits/removes constraint definitions as JSON. The
-**Full definition** section exposes the remaining authored geometry, holes,
-regions, and profile edits. These advanced controls currently require knowledge
-of the model schema; this is a form-based editor, with no canvas dragging or
-click-to-draw tools yet.
+The **Dimensions & constraints** panel creates and edits relationships through
+geometry selectors and numeric fields. Choose a constraint type, then click
+points or curves in the view (click again to deselect), or use the geometry lists.
+For two-entity relationships, selection order determines **First** and **Second**.
+Selected geometry is highlighted; **Clear geometry selection** or Escape clears
+it. Picks are limited to authored points and curves in the loaded sketch.
+
+Tools include horizontal/vertical, coincident, parallel/perpendicular/collinear,
+equal line lengths or radii, concentric, midpoint, point-on-curve, and tangency
+at a shared point or between independent lines/circles/arcs. Dimensions include
+point distance, signed horizontal/vertical and point-to-line distance, radius,
+diameter, curve length, line/line angle, line-to-axis angle, and arc sweep.
+Lengths use millimeters and angles use degrees; angle expressions remain radians
+in the model. Choose **Driving value** to enter a number or link a compatible
+family scalar parameter. Existing formulas remain intact unless explicitly
+replaced. These are driving dimensions; reference measurements remain read-only.
+
+Click a listed constraint or its dimension/constraint annotation to edit its
+supported authored definition, then **Update selected constraint**. **Remove
+constraint** deletes it from the draft. Generated constraint annotations cannot
+be edited as authored constraints. Preview recomputes native geometry, dimensions
+and residuals; conflicts remain diagnostic and cannot be applied.
+
+**Advanced constraint definitions** and **Full definition** retain JSON controls
+for other constraint kinds, generated/projected geometry, holes, regions, and
+profile edits. Canvas dragging and click-to-draw tools remain future work.
 
 **Preview draft** shows candidate geometry and solver evidence without changing
 the accepted model or its file. **Apply verified draft** checks the model version
@@ -214,5 +235,6 @@ or pair new geometry with older controls. Save waits for queued edits to finish.
 Native tests cover live sketch/solid updates, override isolation, save/revert,
 and rejected-constraint previews without acceptance. The real page logic and shared renderer also run against minimal DOM
 hosts in the JavaScript tests. The sketch draft workflow was verified in headless
-Chrome through coordinate editing, preview, verified apply, and revert, with no
+Chrome through canvas curve selection, equal-length creation, annotated dimension
+editing, coordinate editing, preview, verified apply, and revert, with no
 page errors.

@@ -23,7 +23,7 @@ impl Studio {
             })
             .collect::<Vec<_>>();
         Ok(
-            json!({"version": self.version, "family": self.document.family.id, "sketches": features}),
+            json!({"version": self.version, "family": self.document.family.id, "sketches": features, "parameters": self.document.family.parameters}),
         )
     }
 
