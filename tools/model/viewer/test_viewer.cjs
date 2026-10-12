@@ -5,7 +5,7 @@ class Element {
  constructor(tag='div'){this.tagName=tag;this.children=[];this.attributes={};this.dataset={};this.handlers={};this.checked=true;this.value='';this.clientWidth=900;this.clientHeight=580;this.textContent='';}
  setAttribute(k,v){this.attributes[k]=String(v);if(k==='class')this.className=v;if(k.startsWith('data-'))this.dataset[k.slice(5)]=v;}
  append(...nodes){this.children.push(...nodes);}replaceChildren(...nodes){this.children=nodes;}
- addEventListener(name,fn){this.handlers[name]=fn;}setPointerCapture(){}getContext(){return null;}
+ addEventListener(name,fn){this.handlers[name]=fn;}setPointerCapture(){}getBoundingClientRect(){return {left:0,top:0};}getContext(){return null;}
  emit(name,event={}){this.handlers[name]?.({preventDefault(){},stopPropagation(){},...event});}
 }
 const source=fs.readFileSync(__dirname+'/viewer.js','utf8');
@@ -146,6 +146,16 @@ if(sketchScene){
   onGeometry:(id,scene)=>{picks.push([id,scene.feature]);return true;},onPoint:(id,scene)=>{picks.push([id,scene.feature]);return true;},onClear:()=>cleared++,
  });
  interactive.selectScene('sketch',sketchScene.feature);
+ const location=sketchScene.bounds?.[0]??[1,2,0],screen=interactive.project(location),local=interactive.unproject(...screen);
+ assert(Math.abs(local[0]-location[0])<1e-8&&Math.abs(local[1]-location[1])<1e-8,'canvas coordinates invert the camera projection');
+ elements.viewport.emit('wheel',{deltaY:-100});
+ elements.viewport.emit('pointerdown',{clientX:50,clientY:50,target:{closest:()=>null}});
+ elements.viewport.emit('pointermove',{clientX:90,clientY:75});elements.viewport.emit('pointerup');
+ const changedScreen=interactive.project(location),changedLocal=interactive.unproject(...changedScreen);
+ assert(Math.abs(changedLocal[0]-location[0])<1e-8&&Math.abs(changedLocal[1]-location[1])<1e-8,'snapping coordinates follow zoom and pan');
+ interactive.setGhost([[location]],sketchScene.feature);assert(elements.overlay.children.some(e=>e.attributes.class==='canvas-ghost'));
+ interactive.setGhost([],sketchScene.feature);
+
  const entity=sketchScene.entities.find(e=>!e.external);
  if(entity){
   assert(elements.overlay.children.some(e=>e.attributes.class==='pick-geometry'&&e.attributes['data-entity']===entity.id));

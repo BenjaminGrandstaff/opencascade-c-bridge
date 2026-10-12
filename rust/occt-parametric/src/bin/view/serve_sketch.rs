@@ -27,6 +27,106 @@ impl Studio {
         )
     }
 
+    /// Solve a temporary pin, then release it and verify the original sketch
+    /// policy and all model requirements. Both passes are read-only previews.
+    pub(super) fn sketch_drag(&mut self, body: &[u8]) -> Result<Value, String> {
+        #[derive(serde::Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Drag {
+            version: u64,
+            instance: String,
+            feature: String,
+            expected: SketchDefinition,
+            definition: SketchDefinition,
+            point: String,
+            target: [f64; 2],
+        }
+        let edit: Drag = serde_json::from_slice(body).map_err(|e| format!("invalid drag: {e}"))?;
+        if !edit.target.iter().all(|v| v.is_finite()) {
+            return Err("Drag coordinates must be finite.".into());
+        }
+        let mut pinned = edit.definition.clone();
+        let point = pinned
+            .points
+            .iter_mut()
+            .find(|p| p.id == edit.point)
+            .ok_or("Only authored points can be dragged.")?;
+        if point.fixed {
+            return Err(
+                "This point is fixed. Edit its coordinates or explicitly unfix it first.".into(),
+            );
+        }
+        use occt_parametric::{Quantity, ScalarExpr};
+        if !matches!(point.x, ScalarExpr::Literal(_)) || !matches!(point.y, ScalarExpr::Literal(_))
+        {
+            return Err("This point has parameter or formula coordinates. Edit its driving controls instead.".into());
+        }
+        let coordinate =
+            |value| ScalarExpr::Literal(Quantity::length(value, LengthUnit::Millimeter));
+        point.x = coordinate(edit.target[0]);
+        point.y = coordinate(edit.target[1]);
+        point.fixed = true;
+        let request = |definition: &SketchDefinition| json!({"version":edit.version,"instance":edit.instance,"feature":edit.feature,"expected":edit.expected,"definition":definition,"apply":false});
+        let pinned_view =
+            self.sketch_edit(&serde_json::to_vec(&request(&pinned)).map_err(|e| e.to_string())?)?;
+        let scene = |view: &Value| -> Result<Value, String> {
+            view["annotations"]["scenes"]
+                .as_array()
+                .and_then(|scenes| {
+                    scenes
+                        .iter()
+                        .find(|s| s["kind"] == "sketch" && s["feature"] == edit.feature)
+                })
+                .cloned()
+                .ok_or("Drag preview has no sketch scene.".into())
+        };
+        let pinned_scene = scene(&pinned_view)?;
+        if pinned_scene["solver"]["solved"] != true {
+            return Err(format!(
+                "Drag of point '{}' did not converge with the existing constraints. Try a smaller move or edit a driving dimension.",
+                edit.point
+            ));
+        }
+        if pinned_view["can_apply"] != true {
+            return Err(format!("Drag preview failed: {}", pinned_view["error"]));
+        }
+        let mut definition = edit.definition.clone();
+        for point in &mut definition.points {
+            if point.fixed {
+                continue;
+            }
+            let solved = &pinned_scene["points"][&point.id];
+            if let Some(x) = solved[0].as_f64()
+                && matches!(point.x, ScalarExpr::Literal(_))
+            {
+                point.x = coordinate(x);
+            }
+            if let Some(y) = solved[1].as_f64()
+                && matches!(point.y, ScalarExpr::Literal(_))
+            {
+                point.y = coordinate(y);
+            }
+        }
+        let mut result = self
+            .sketch_edit(&serde_json::to_vec(&request(&definition)).map_err(|e| e.to_string())?)?;
+        if result["can_apply"] != true {
+            return Err(format!("Released drag failed: {}", result["error"]));
+        }
+        let released = scene(&result)?;
+        let solved = &released["points"][&edit.point];
+        let target_met = edit.target.iter().enumerate().all(|(axis, target)| {
+            solved[axis].as_f64().is_some_and(|value| {
+                (value - target).abs() <= (1e-6 + 32.0 * f64::EPSILON * target.abs())
+            })
+        });
+        if !target_met {
+            return Err("The released solve moved the point away from the target. Use a driving dimension to define this position.".into());
+        }
+        result["definition"] = json!(definition);
+        result["dragged_point"] = json!(edit.point);
+        Ok(result)
+    }
+
     pub(super) fn sketch_edit(&mut self, body: &[u8]) -> Result<Value, String> {
         #[derive(serde::Deserialize)]
         #[serde(deny_unknown_fields)]

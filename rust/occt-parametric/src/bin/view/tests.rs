@@ -1164,3 +1164,73 @@ fn visual_constraint_conflicts_preview_without_replacing_the_accepted_model() {
     assert_eq!(studio.handle("GET", "/api/model.gltf", b"").body, gltf);
     assert_eq!(fs::read_to_string(&model).unwrap(), original);
 }
+
+#[test]
+fn constrained_drag_solves_a_temporary_pin_and_releases_it_without_accepting() {
+    let directory = Directory::new();
+    let mut request: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../tools/model/sketch-repair.request.json"
+    ))
+    .unwrap();
+    let sketch =
+        &mut request["model"]["family"]["features"][0]["operation"]["sketch_face"]["sketch"];
+    sketch["acceptance"] = json!("solved");
+    sketch["constraints"].as_array_mut().unwrap().remove(4); // Width is free.
+    let document = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+    let model = PathBuf::from(directory.model(&document));
+    let original = fs::read_to_string(&model).unwrap();
+    let mut studio = serve::Studio::load(&model, None).unwrap();
+    let (_, sketches) = get(&mut studio, "/api/sketches");
+    let (_, state) = get(&mut studio, "/api/state");
+    let (_, instances) = get(&mut studio, "/api/instances");
+    let expected = sketches["sketches"][0]["definition"].clone();
+    let mut drag = json!({"version":state["version"],"instance":instances["instances"][0]["id"],"feature":sketches["sketches"][0]["feature"],"expected":expected,"definition":expected,"point":"B","target":[55,0]});
+    let response = studio.handle("POST", "/api/sketch-drag", drag.to_string().as_bytes());
+    assert_eq!(
+        response.status,
+        200,
+        "{}",
+        String::from_utf8_lossy(&response.body)
+    );
+    let solved: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+    assert_eq!(solved["can_apply"], true);
+    assert_eq!(solved["annotations"]["accepted"], false);
+    let points = solved["definition"]["points"].as_array().unwrap();
+    let b = points.iter().find(|p| p["id"] == "B").unwrap();
+    let c = points.iter().find(|p| p["id"] == "C").unwrap();
+    assert_eq!(b["fixed"], false, "temporary pin must be released");
+    assert!((b["x"]["literal"]["value"].as_f64().unwrap() - 55.0).abs() < 1e-7);
+    assert!(
+        (c["x"]["literal"]["value"].as_f64().unwrap() - 55.0).abs() < 1e-7,
+        "connected geometry must follow the drag"
+    );
+    assert_eq!(
+        solved["definition"]["constraints"],
+        drag["definition"]["constraints"]
+    );
+    assert_eq!(get(&mut studio, "/api/state").1, state);
+    assert_eq!(fs::read_to_string(&model).unwrap(), original);
+    drag["target"] = json!([55, 3]); // Horizontal constraint forbids this y.
+    assert_eq!(
+        studio
+            .handle("POST", "/api/sketch-drag", drag.to_string().as_bytes())
+            .status,
+        422
+    );
+    drag["point"] = json!("A");
+    assert_eq!(
+        studio
+            .handle("POST", "/api/sketch-drag", drag.to_string().as_bytes())
+            .status,
+        422
+    );
+    drag["point"] = json!("B");
+    drag["version"] = json!(0);
+    assert_eq!(
+        studio
+            .handle("POST", "/api/sketch-drag", drag.to_string().as_bytes())
+            .status,
+        422
+    );
+    assert_eq!(get(&mut studio, "/api/state").1, state);
+}

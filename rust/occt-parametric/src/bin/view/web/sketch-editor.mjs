@@ -1,3 +1,4 @@
+import {createCanvasTools} from "./canvas-tools.mjs";
 import {createConstraintControls} from "./constraint-controls.mjs";
 // A local draft is isolated from the studio until a guarded, verified Apply.
 export const length = value => ({ literal: { value, dimension: 'length', unit: 'millimeter' } });
@@ -7,14 +8,30 @@ export function addElement(definition, collection, element) {
   if (collections.some(key => (definition[key] ?? []).some(item => item.id === element.id))) throw new Error('That entity name already exists.');
   (definition[collection] ??= []).push(structuredClone(element));
 }
-export function createSketchEditor({ host, request, instance, preview, applied, restore, showSketch = () => {}, highlight = () => {} }) {
+export function createSketchEditor({ host, request, instance, preview, applied, restore, showSketch = () => {}, highlight = () => {}, ghost = () => {}, canvasMode = () => {} }) {
+  let dragInFlight = false;
   let baseline = null, draft = null, version = null, feature = null, busy = false, generation = 0, parameters = [], constraintControls = null;
   const panel = document.createElement('section');
   panel.className = 'linked-edit';
   const launch = document.createElement('button'); launch.textContent = 'Edit sketch geometry';
   const content = document.createElement('div'), status = document.createElement('p'); status.setAttribute('role', 'status');
-  panel.append(launch, content, status); host.prepend(panel);
+  const canvasMount = document.createElement('div'); canvasMount.hidden = true;
+  panel.append(launch, canvasMount, content, status); host.prepend(panel);
   const message = text => { status.textContent = text; };
+  const canvasTools = createCanvasTools({host:canvasMount, getDraft:()=>draft, setDraft:next=>draft=next,
+    changed:render, message, ghost:paths=>ghost(paths,feature), modeChanged:mode=>canvasMode(mode,feature),
+    dragPoint:async(point,target)=>{
+      const turn=++generation, selectedInstance=instance();
+      dragInFlight=true;busy=true;content.inert=true;canvasMount.inert=true;launch.disabled=true;message('Solving drag with existing constraints…');
+      try {
+        const response=await request('/api/sketch-drag',{method:'POST',body:JSON.stringify({version,instance:selectedInstance,feature,expected:baseline,definition:draft,point,target})});
+        if(turn!==generation||selectedInstance!==instance())return;
+        draft=response.definition;canvasTools.reviewed();render();await preview(response.annotations);message('Drag solved and verified in the draft. Apply to update the model.');
+      }catch(error){if(turn===generation)message(`Drag rejected: ${error.message}`);}
+      finally{dragInFlight=false;busy=false;content.inert=false;canvasMount.inert=false;launch.disabled=false;}
+    },
+  });
+  function resetCanvas(){generation++;canvasTools.reviewed();canvasMount.hidden=true;canvasMode('select');}
   function button(text, action) {
     const b = document.createElement('button'); b.textContent = text;
     b.addEventListener('click', async () => {
@@ -90,16 +107,16 @@ export function createSketchEditor({ host, request, instance, preview, applied, 
     }
     content.append(constraints);
     const advanced = document.createElement('details'), at = document.createElement('summary'); at.textContent = 'Full definition (advanced geometry, regions and constraints)'; advanced.append(at, jsonEditor('Sketch definition', draft, value => { draft = value; render(); })); content.append(advanced);
-    content.append(button('Preview draft', () => submit(false)), button('Apply verified draft', () => submit(true)), button('Discard draft', async () => { generation++; baseline = draft = null; constraintControls = null; highlight([]); content.replaceChildren(); message('Draft discarded.'); await restore(); }));
+    content.append(button('Preview draft', () => submit(false)), button('Apply verified draft', () => submit(true)), button('Discard draft', async () => { generation++; baseline = draft = null; resetCanvas(); constraintControls = null; highlight([]); content.replaceChildren(); message('Draft discarded.'); await restore(); }));
   }
   async function submit(apply) {
-    busy = true; content.inert = true; launch.disabled = true;
+    busy = true; content.inert = true; canvasMount.inert = true; launch.disabled = true;
     message(apply ? 'Regenerating and checking requirements…' : 'Computing draft preview…');
     try {
       const response = await request('/api/sketch', {method:'POST', body:JSON.stringify({version, instance:instance(), feature, expected:baseline, definition:draft, apply})});
-      if (apply) { baseline = draft = null; constraintControls = null; highlight([]); content.replaceChildren(); await applied(response.state); message('Sketch applied. Save writes it to the model file.'); }
-      else { await preview(response.annotations); message(response.can_apply ? 'Preview passes regeneration and required checks. Apply repeats the checks against the current model.' : `Draft cannot be applied: ${response.error}`); }
-    } finally { busy = false; content.inert = false; launch.disabled = false; }
+      if (apply) { baseline = draft = null; resetCanvas(); constraintControls = null; highlight([]); content.replaceChildren(); await applied(response.state); message('Sketch applied. Save writes it to the model file.'); }
+      else { canvasTools.reviewed();await preview(response.annotations); message(response.can_apply ? 'Preview passes regeneration and required checks. Apply repeats the checks against the current model.' : `Draft cannot be applied: ${response.error}`); }
+    } finally { busy = false; content.inert = false; canvasMount.inert = false; launch.disabled = false; }
   }
   launch.addEventListener('click', async () => {
     if (busy) return;
@@ -113,11 +130,15 @@ export function createSketchEditor({ host, request, instance, preview, applied, 
       for (const item of data.sketches) choice.append(new Option(item.feature, item.feature));
       content.append(choice, button('Load sketch draft', () => {
         const item = data.sketches.find(s => s.feature === choice.value);
-        parameters = data.parameters ?? []; constraintControls = null; highlight([]); version = data.version; feature = item.feature; baseline = structuredClone(item.definition); draft = structuredClone(baseline); showSketch(feature); render(); message('Draft loaded. Click sketch points or curves to select geometry for dimensions and constraints.');
+        canvasTools.reviewed(); canvasMount.hidden=false;parameters = data.parameters ?? []; constraintControls = null; highlight([]); version = data.version; feature = item.feature; baseline = structuredClone(item.definition); draft = structuredClone(baseline); showSketch(feature);canvasMode(canvasTools.mode,feature);render(); message('Draft loaded. Click sketch points or curves to select geometry for dimensions and constraints.');
       })); message('Choose a sketch. Loading replaces any previous local draft.');
     } catch (error) { message(error.message); }
   });
   return {
+    canvasDown(event){return !busy&&draft&&event.scene.feature===feature ? canvasTools.down(event):false;},
+    canvasMove(event){return !busy&&draft&&event.scene.feature===feature ? canvasTools.move(event):false;},
+    canvasUp(event){if(!busy&&draft&&event.scene.feature===feature)return canvasTools.up(event).catch(error=>message(error.message));},
+    canvasCancel(){generation++;canvasTools.cancel();if(dragInFlight)message('Drag canceled. Current draft retained.');},
     selectGeometry(id, scene) {if(busy || !draft || scene.feature !== feature)return false;return constraintControls?.pick(id) ?? false;},
     selectConstraint(annotation, scene) {if(busy || !draft || scene.feature !== feature)return;if(annotation?.detail?.constraint && !constraintControls?.selectAnnotation(annotation))message('This label has no matching supported constraint in the draft. Preview your changes or use the constraint list.');},
     clearSelection() {constraintControls?.clear();},

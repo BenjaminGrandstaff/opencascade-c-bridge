@@ -114,7 +114,38 @@ and residuals; conflicts remain diagnostic and cannot be applied.
 
 **Advanced constraint definitions** and **Full definition** retain JSON controls
 for other constraint kinds, generated/projected geometry, holes, regions, and
-profile edits. Canvas dragging and click-to-draw tools remain future work.
+profile edits.
+
+### Canvas drawing and constrained dragging
+
+After loading a sketch draft, choose a **Canvas tool**: Point uses one click;
+Line, Circle (center then rim), and Rectangle (opposite corners) use two clicks.
+The cursor snaps to existing authored points before using the configurable
+millimeter grid; set the grid to zero to disable grid snapping. Named point IDs
+are reused when snapped. New entities receive unused stable IDs. Rectangles add
+horizontal/vertical constraints. **Fix new points** defaults on; turn it off to
+create free geometry that you will constrain later.
+
+New geometry appears as a dashed local draft overlay. Native solving and profile
+validation occur on **Preview draft**, followed by guarded **Apply** and **Save**.
+Drawing normally adds construction geometry. **Use new circle / rectangle as
+outer profile** explicitly replaces a simple outer boundary; sketches with holes
+or region/profile edits require their existing profile controls instead.
+
+The Drag tool moves authored free points with literal coordinates. Fixed,
+generated, and formula-driven points require their coordinate or driving controls.
+During movement a dashed guide shows the target; on release, a read-only native
+preview temporarily pins the point, solves its connected geometry, releases the
+pin, and verifies the original acceptance policy and all required checks. It
+returns a draft only if the released solve still reaches the target. Existing
+constraints and fixed positions are retained. Unsupported/conflicting or stale
+moves are rejected; the accepted model and file remain unchanged. Solving occurs
+on release, rather than on every pointer movement.
+
+Shift-drag empty space to pan while a drawing tool is active. Escape or pointer
+cancellation cancels an unfinished gesture; completed local drawings remain in
+the draft. Escape during a pending drag discards its eventual reply. Drawing tools
+are limited to the loaded sketch; other views keep their normal navigation.
 
 **Preview draft** shows candidate geometry and solver evidence without changing
 the accepted model or its file. **Apply verified draft** checks the model version

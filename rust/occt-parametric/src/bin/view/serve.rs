@@ -602,6 +602,13 @@ impl Studio {
                     None => Response::error(400, "annotations need ?id="),
                 }
             }
+            ("GET", "/canvas-tools.mjs") => {
+                Response::text(200, "text/javascript", include_str!("web/canvas-tools.mjs"))
+            }
+            ("POST", "/api/sketch-drag") => match self.sketch_drag(body) {
+                Ok(data) => Response::json(200, &data),
+                Err(error) => Response::error(422, &error),
+            },
             ("GET", "/constraint-controls.mjs") => Response::text(
                 200,
                 "text/javascript",

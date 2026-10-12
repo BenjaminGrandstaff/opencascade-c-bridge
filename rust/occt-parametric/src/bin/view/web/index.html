@@ -161,13 +161,17 @@ const annotations = createAnnotationController({
         :host{display:block;color:#202c3b;background:#f3f5f8;color-scheme:light;font:14px system-ui,sans-serif}
         main{padding:12px;gap:12px;grid-template-columns:minmax(0,1fr) 285px;align-items:start}
         aside{max-height:calc(100vh - 115px);overflow:auto}.workspace{position:sticky;top:0}
-        #viewport{height:max(350px,calc(100vh - 265px))}.panel-summary{padding:8px 14px;font-weight:600}
+        #viewport{user-select:none;height:max(350px,calc(100vh - 265px))}.panel-summary{padding:8px 14px;font-weight:600}
         .linked-edit{display:grid;gap:8px;margin-top:12px;padding-top:12px;border-top:1px solid #dce2e9}
-        .point{pointer-events:all;cursor:pointer}.pick-geometry{pointer-events:stroke;stroke:transparent;stroke-width:12;fill:none;cursor:pointer}.constraint-tools{display:grid;gap:8px}.constraint-tools>div{display:grid;gap:8px}.linked-edit fieldset{margin:8px 0;border:1px solid #cad4e0;border-radius:5px}.linked-edit fieldset:focus-within{background:#edf3ff}.linked-edit input[type=checkbox]{width:auto;justify-self:start}.linked-edit label{display:grid;gap:4px}.linked-edit input,.linked-edit select{width:100%;padding:6px;border:1px solid #cad4e0;border-radius:4px}
+        .canvas-tools{display:grid;gap:8px}.canvas-ghost{pointer-events:none;stroke:#c36d12;fill:none;stroke-width:2;stroke-dasharray:5 3}#overlay[data-canvas-active=true] .anno{pointer-events:none}.point{pointer-events:all;cursor:pointer}.pick-geometry{pointer-events:stroke;stroke:transparent;stroke-width:12;fill:none;cursor:pointer}.constraint-tools{display:grid;gap:8px}.constraint-tools>div{display:grid;gap:8px}.linked-edit fieldset{margin:8px 0;border:1px solid #cad4e0;border-radius:5px}.linked-edit fieldset:focus-within{background:#edf3ff}.linked-edit input[type=checkbox]{width:auto;justify-self:start}.linked-edit label{display:grid;gap:4px}.linked-edit input,.linked-edit select{width:100%;padding:6px;border:1px solid #cad4e0;border-radius:4px}
         @media(max-width:1050px){main{grid-template-columns:1fr}#viewport{height:420px}aside{max-height:none}.workspace{position:static}}
       </style>${panel}`;
     }
     const viewer = window.createOcctAnnotatedViewer(annotationRoot, data, renderLinkedEditor, {
+      onCanvasDown:event=>sketchEditor?.canvasDown(event),
+      onCanvasMove:event=>sketchEditor?.canvasMove(event),
+      onCanvasUp:event=>sketchEditor?.canvasUp(event),
+      onCanvasCancel:()=>sketchEditor?.canvasCancel(),
       onPoint: (id, scene) => sketchEditor?.selectGeometry(id, scene),
       onGeometry: (id, scene) => sketchEditor?.selectGeometry(id, scene),
       onClear: () => sketchEditor?.clearSelection(),
@@ -176,6 +180,7 @@ const annotations = createAnnotationController({
       instance: () => scope || instanceIds.values().next().value,
       showSketch: feature => viewer.selectScene('sketch', feature),
       highlight: (ids, feature) => viewer.setGeometrySelection(ids, feature),
+      ghost: (paths,feature) => viewer.setGhost(paths,feature), canvasMode:(mode,feature)=>viewer.setCanvasMode(mode,feature),
       preview: data => annotations.preview(data, "Sketch draft preview — Apply to update the model."),
       applied: async next => { annotations.invalidate(); await apply(next); await refreshAnnotations(); },
       restore: async () => { annotations.invalidate(); await refreshAnnotations(); },
