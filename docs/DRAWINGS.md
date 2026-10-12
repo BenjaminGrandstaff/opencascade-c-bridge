@@ -953,8 +953,11 @@ The model must contain the referenced drawings. A minimal dimensional request is
 
 Each drawing group accepts optional `dimensions` and `positions` arrays and an
 optional `points` object, and must contain at least one measurement. `points`
-holds `datum_features` and `controls` lists of `{ "id", "points_mm" }` entries,
-evaluated as described in [Measured inspection](#measured-inspection-schema-68);
+holds `datum_features` and `controls` lists of `{ "id", "points_mm" }` entries
+(controls may add `nominals`), evaluated as described in
+[Measured inspection](#measured-inspection-schema-68). When a drawing has
+profile controls with a `surface`, the command starts a kernel session and
+takes missing nominals from the regenerated part;
 the report lists each measured control's `result` with a `status` of
 `evaluated` (with `detail` holding deviation, tolerance, bonus, size and
 conformance) or `not_evaluated` (with the reason). Drawing groups must have unique saved IDs;
@@ -1165,7 +1168,34 @@ control may carry its nominal surface point and outward normal in
 There must be exactly one nominal per point, with finite values and a nonzero
 normal (it is normalized). Nominals on datum features or non-profile controls
 fail the record. A profile anchored on a plane datum may omit them: each point
-is then compared with its projection onto that plane. Other anchors need them.
+is then compared with its projection onto that plane. Other anchors need them,
+or a `surface` on the control.
+
+**Profile against the model (schema 140, ABI 69).** A profile control may name
+the faces it covers with `surface`, a `FaceSelector` on its attachment output,
+such as a family's named face reference. Only face references of that
+instance's family may be named, and pattern members each name their own
+faces:
+
+```json
+"characteristic": "profile_surface",
+"surface": {"named": "bore_wall"}
+```
+
+`DrawingDefinitionInspection::project_profile_nominals(graph, session,
+record)` fills the nominals of every measured profile control that names a
+surface and was recorded without them. Each attachment instance is
+regenerated once at its own parameters, the selector picks its faces there,
+and every measured point is moved into the instance's local coordinates
+(undoing its placement and enclosing frames) and projected onto the nearest
+of those faces with `occt_bridge_faces_project_points`. The nearest point and
+the face's outward normal there are moved back into model coordinates as the
+point's nominal. Nominals already in the record are kept.
+`evaluate_inspection_on_model` projects and then evaluates. The projection
+uses each face's surface, starting from the previous point's parameters, and
+falls back to an exact point-to-face distance when the surface projection
+lands outside the face's boundary; faces whose bounding boxes are farther than
+the best candidate are skipped.
 Deviations are signed along the nominal normal (positive out of the material),
 measured from the nominal point, so they are exact for planes and first-order
 for curved surfaces near their nominal points.
@@ -1238,7 +1268,10 @@ part turned 2 mrad, evaluate in 0.16 s. 10,000 composite position controls in
 0.1 mm outlier fail their relating fit. 10,000 composite surface profiles on
 the same bores (720,000 points with nominals, 100 patterns of 7,200 points
 fitted as rigid groups) take 0.18 s (1 s budget), and one 1,000,000-point
-surface profile with all six motions free takes 0.30 s (2 s budget).
+surface profile with all six motions free takes 0.30 s (2 s budget). 1,000
+profiles recorded without nominals on bands of a cylinder (1,000,000 points)
+regenerate the part once and project every point onto the named side face in
+0.59 s (2 s budget).
 
 **Not yet covered.** Datum shift of a primary axis datum (tilt), of common
 axes and of width datum features (slots and tabs); rotational
@@ -1247,8 +1280,7 @@ shift about a datum axis; common width datums; the separate requirement
 enlarged by geometric tolerances; simultaneous-contact common axis simulators,
 common axes after a primary plane, composites beyond two segments,
 reporting n× patterns as one frame on drawings, measured datum targets, profile
-of a line, profile datums at a material boundary, profile against the model's
-own surfaces (records supply the nominal points), conical runout surfaces, and
+of a line, profile datums at a material boundary, conical runout surfaces, and
 straightness. Measurement uncertainty is not modeled.
 
 ## Surface texture (schema 71)

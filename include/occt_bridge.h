@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define OCCT_BRIDGE_ABI_VERSION 68u
+#define OCCT_BRIDGE_ABI_VERSION 69u
 #define OCCT_BRIDGE_INVALID_SHAPE_ID UINT64_C(0)
 
 #if defined(_WIN32) && defined(OCCT_BRIDGE_BUILD_SHARED)
@@ -1555,6 +1555,31 @@ OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_shape_edge_concavities(
     occt_bridge_edge_concavity_t* out_concavities,
     size_t capacity,
     size_t* out_count
+);
+
+/* ABI 69: a point's nearest location on several faces. */
+typedef struct occt_bridge_face_projection {
+    occt_bridge_vec3_t point;  /* Nearest point on the faces, boundaries included. */
+    occt_bridge_vec3_t normal; /* Unit normal there along the face's orientation:
+                                  out of the material for faces of a solid. */
+    double distance;
+    uint32_t face;             /* Index into the faces argument. */
+} occt_bridge_face_projection_t;
+
+/* ABI 69: projects each of point_count points onto the nearest of face_count
+ * faces (1 to 100,000; at most 10,000,000 points), writing one projection per
+ * point. Projections inside a face come from the surface, starting from the
+ * face's previous parameters; others from an exact point-to-face distance.
+ * Faces whose bounding boxes are farther than the best candidate are skipped.
+ * A non-finite point, or a nearest location without a defined normal (such as
+ * a cone apex), fails the call. No handles are created. */
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_faces_project_points(
+    occt_bridge_session_t* session,
+    const occt_bridge_shape_id_t* faces,
+    size_t face_count,
+    const occt_bridge_vec3_t* points,
+    size_t point_count,
+    occt_bridge_face_projection_t* out_projections
 );
 
 #ifdef __cplusplus

@@ -14,6 +14,53 @@ impl Session {
             occt_bridge_face_boundary(self.raw.as_ptr(), face.id, index, out)
         })
     }
+    /// Nearest location of each point on any of `faces`, boundaries
+    /// included, with the face's outward unit normal there (ABI 69). Faces
+    /// farther (by bounding box) than the best candidate are skipped, so
+    /// cost is O(points · nearby faces). Fails for non-faces, non-finite
+    /// points, or a nearest location without a normal.
+    pub fn project_points_to_faces(
+        &self,
+        faces: &[&Shape<'_>],
+        points: &[Vec3],
+    ) -> Result<Vec<FaceProjection>, BridgeError> {
+        for face in faces {
+            self.validate_shape(face)?;
+        }
+        let ids: Vec<RawShapeId> = faces.iter().map(|f| f.id).collect();
+        let raw_points: Vec<RawVec3> = points.iter().map(|&p| p.into()).collect();
+        let origin: RawVec3 = Vec3::new(0.0, 0.0, 0.0).into();
+        let mut raw = vec![
+            RawFaceProjection {
+                point: origin,
+                normal: origin,
+                distance: 0.0,
+                face: 0,
+            };
+            points.len()
+        ];
+        // SAFETY: Validated face IDs, `points.len()` readable points and as
+        // many writable projections.
+        self.check(unsafe {
+            occt_bridge_faces_project_points(
+                self.raw.as_ptr(),
+                ids.as_ptr(),
+                ids.len(),
+                raw_points.as_ptr(),
+                raw_points.len(),
+                raw.as_mut_ptr(),
+            )
+        })?;
+        Ok(raw
+            .into_iter()
+            .map(|p| FaceProjection {
+                point: p.point.into(),
+                normal: p.normal.into(),
+                distance: p.distance,
+                face: p.face as usize,
+            })
+            .collect())
+    }
     /// Strict point classification against a planar trimmed face, ABI 68.
     pub fn planar_face_point_state(
         &self,

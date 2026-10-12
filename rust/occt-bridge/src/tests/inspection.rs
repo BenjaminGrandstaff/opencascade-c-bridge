@@ -717,3 +717,57 @@ fn edge_lengths_are_exact_on_full_ellipses_and_long_splines() {
     let length = session.edge_length(&edge).unwrap();
     assert!(length > 80.0 * 26f64.sqrt(), "{length}");
 }
+
+#[test]
+fn points_project_to_the_nearest_face_with_outward_normals() {
+    let session = Session::new().unwrap();
+    let block = session
+        .create_box(Vec3::new(0., 0., 0.), Vec3::new(20., 20., 10.))
+        .unwrap();
+    let bore = session
+        .create_cylinder(Vec3::new(10., 10., -1.), Vec3::new(0., 0., 1.), 5., 12.)
+        .unwrap();
+    let part = session.cut(&block, &bore).unwrap();
+    let faces = session.subshapes(&part, ShapeType::Face).unwrap();
+    let faces: Vec<&Shape<'_>> = faces.iter().collect();
+    let projections = session
+        .project_points_to_faces(
+            &faces,
+            &[
+                // In the bore's void, nearer its wall than the faces.
+                Vec3::new(14., 10., 5.),
+                // Above the top face, then above the bore's rim.
+                Vec3::new(2., 2., 13.),
+                Vec3::new(10., 10., 11.),
+            ],
+        )
+        .unwrap();
+    let wall = projections[0];
+    assert!((wall.distance - 1.).abs() < 1e-7, "{wall:?}");
+    assert!((wall.point.x - 15.).abs() < 1e-7);
+    // Out of the material is toward the bore's axis.
+    assert!((wall.normal.x + 1.).abs() < 1e-7, "{wall:?}");
+    let top = projections[1];
+    assert!((top.point.z - 10.).abs() < 1e-7 && (top.normal.z - 1.).abs() < 1e-7);
+    // The rim circle is the nearest point: 5 mm across, 1 mm up.
+    let rim = projections[2];
+    assert!((rim.distance - 26f64.sqrt()).abs() < 1e-6, "{rim:?}");
+    assert!(faces.len() > rim.face);
+    assert!(session.project_points_to_faces(&[], &[wall.point]).is_err());
+    assert!(
+        session
+            .project_points_to_faces(&[&part], &[wall.point])
+            .is_err()
+    );
+    assert!(
+        session
+            .project_points_to_faces(&faces, &[Vec3::new(f64::NAN, 0., 0.)])
+            .is_err()
+    );
+    assert!(
+        session
+            .project_points_to_faces(&faces, &[])
+            .unwrap()
+            .is_empty()
+    );
+}

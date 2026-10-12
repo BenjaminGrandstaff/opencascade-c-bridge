@@ -41,6 +41,7 @@ add_library(
     src/geometry_queries.cpp
     src/measurements.cpp
     src/surface_radius.cpp
+    src/surface_projection.cpp
     src/text.cpp
     src/planar_regions.cpp
     src/face_pull.cpp

@@ -147,6 +147,7 @@ fn fixture() -> ModelDocument {
         .push(DrawingFeatureControlFrame {
             pattern: None,
             unequal: None,
+            surface: None,
             id: "position".into(),
             attachment,
             characteristic: GeometricCharacteristic::Position,
@@ -447,4 +448,46 @@ fn profile_points_carry_nominals_through_the_report() {
     let low = detail["profile"]["min_deviation_mm"].as_f64().unwrap();
     let high = detail["profile"]["max_deviation_mm"].as_f64().unwrap();
     assert!((high - low - 0.004).abs() < 1e-6, "{detail}");
+}
+
+#[test]
+fn profile_surfaces_take_nominals_from_the_regenerated_part() {
+    let mut document = fixture();
+    document.family.references.push(NamedReference {
+        name: "top_face".into(),
+        target: ReferenceTarget::Faces(FaceSelector::NormalAligned {
+            direction: VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, 1.0)),
+            minimum_dot: ScalarExpr::Literal(Quantity::scalar(0.999)),
+        }),
+    });
+    let page = &mut document.drawings[0];
+    let mut profile = page.feature_control_frames[1].clone();
+    profile.id = "profile".into();
+    profile.characteristic = GeometricCharacteristic::ProfileSurface;
+    profile.tolerance = mm(0.02);
+    // A point anchor: without the surface the points would have no nominals.
+    profile.attachment.anchor = DatumRef::new("part", "corner");
+    profile.surface = Some(FaceSelector::Named("top_face".into()));
+    page.feature_control_frames.push(profile);
+    let points: Vec<[f64; 3]> = (0..=4)
+        .flat_map(|i| (0..=4).map(move |j| [2.5 * i as f64, 5.0 * j as f64, 30.5]))
+        .chain([[5.0, 10.0, 30.496]])
+        .collect();
+    let directory = Directory::new();
+    let args = inputs(
+        &directory,
+        &document,
+        &json!({"schema":"occb-inspection-setup-v1","drawings":[{"drawing":"page","points":{"controls":[
+            {"id":"profile","points_mm":points}
+        ]}}]}),
+    );
+    assert!(!run(&args).unwrap());
+    let result: Value = serde_json::from_str(&fs::read_to_string(&args[2]).unwrap()).unwrap();
+    let detail = &result["drawings"][0]["controls"][0]["result"]["detail"];
+    // Free of datums, the 0.5 mm offset fits away and the dent remains.
+    assert!(
+        (detail["deviation_mm"].as_f64().unwrap() - 0.004).abs() < 1e-6,
+        "{detail}"
+    );
+    assert_eq!(detail["conforms"], true);
 }

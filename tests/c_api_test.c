@@ -1041,6 +1041,40 @@ static void test_recipes_and_lofts(occt_bridge_session_t* session) {
     require_true(is_valid == 1, "polyline tube validity");
 }
 
+/* Nearest points and outward normals on a cylinder's faces (ABI 69). */
+static void test_face_projection(occt_bridge_session_t* session) {
+    occt_bridge_shape_id_t cylinder = OCCT_BRIDGE_INVALID_SHAPE_ID;
+    require_ok(session, occt_bridge_create_cylinder(
+        session, (occt_bridge_vec3_t){0, 0, 0}, (occt_bridge_vec3_t){0, 0, 1}, 5.0, 10.0, &cylinder));
+    occt_bridge_shape_id_t faces[3];
+    size_t count = 0;
+    require_ok(session, occt_bridge_shape_subshapes(
+        session, cylinder, OCCT_BRIDGE_SHAPE_FACE, faces, 3, &count));
+    require_true(count == 3, "cylinder has three faces");
+    const occt_bridge_vec3_t points[4] = {{8, 0, 5}, {0, 0, 12}, {8, 0, 13}, {0, 1, 5}};
+    occt_bridge_face_projection_t out[4];
+    require_ok(session, occt_bridge_faces_project_points(session, faces, count, points, 4, out));
+    require_true(close_enough(out[0].distance, 3.0) && close_enough(out[0].point.x, 5.0)
+                     && close_enough(out[0].normal.x, 1.0),
+                 "side projection is outward");
+    require_true(close_enough(out[1].point.z, 10.0) && close_enough(out[1].normal.z, 1.0),
+                 "cap projection is outward");
+    require_true(close_enough(out[2].distance, sqrt(18.0)) && close_enough(out[2].point.x, 5.0)
+                     && close_enough(out[2].point.z, 10.0),
+                 "projection beyond the rim lands on the rim");
+    require_true(close_enough(out[3].distance, 4.0) && close_enough(out[3].normal.y, 1.0)
+                     && out[3].face == out[0].face,
+                 "an inside point projects to the nearest face, normal still outward");
+    require_true(occt_bridge_faces_project_points(session, faces, 0, points, 4, out)
+                     == OCCT_BRIDGE_INVALID_ARGUMENT,
+                 "projection needs faces");
+    require_true(occt_bridge_faces_project_points(session, &cylinder, 1, points, 4, out)
+                     == OCCT_BRIDGE_INVALID_GEOMETRY,
+                 "projection rejects non-faces");
+    require_ok(session, occt_bridge_shape_remove(session, cylinder));
+    for (size_t i = 0; i < count; ++i) require_ok(session, occt_bridge_shape_remove(session, faces[i]));
+}
+
 int main(void) {
     require_true(occt_bridge_abi_version() == OCCT_BRIDGE_ABI_VERSION, "ABI version");
 
@@ -1082,6 +1116,7 @@ int main(void) {
     test_inferred_tangency(session);
     test_session_options(session);
     test_failure_diagnostics(session);
+    test_face_projection(session);
     occt_bridge_session_destroy(session);
     puts("C ABI smoke test passed");
     return 0;

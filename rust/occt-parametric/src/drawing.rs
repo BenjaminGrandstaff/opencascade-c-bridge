@@ -6,6 +6,8 @@ pub use occt_parametric_core::drawing::*;
 use std::collections::BTreeSet;
 mod curves;
 mod hatching;
+mod nominals;
+pub use nominals::DrawingDefinitionInspection;
 
 mod slice;
 pub trait DrawingDefinitionRendering {

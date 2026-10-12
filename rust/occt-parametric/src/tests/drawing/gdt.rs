@@ -30,6 +30,7 @@ fn gdt_page() -> DrawingDefinition {
         .push(DrawingFeatureControlFrame {
             pattern: None,
             unequal: None,
+            surface: None,
             size_limits: None,
             datum_reference_frame: None,
             refinement: None,

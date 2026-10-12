@@ -580,6 +580,7 @@ fn main() {
         .map(|i| DrawingFeatureControlFrame {
             pattern: None,
             unequal: None,
+            surface: None,
             size_limits: None,
             datum_reference_frame: None,
             refinement: None,

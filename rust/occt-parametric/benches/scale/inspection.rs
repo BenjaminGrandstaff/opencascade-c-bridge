@@ -7,8 +7,8 @@ use occt_parametric::{
     DrawingDatumReference, DrawingDatumReferenceFrame, DrawingDefinition,
     DrawingFeatureControlFrame, DrawingGdtAttachment, DrawingSizeLimits, DrawingView,
     DrawingViewKind, FeatureOfSizeKind, GeometricCharacteristic, GeometricToleranceZone,
-    InspectionRecord, InstanceOutputRef, MeasuredFeature, MeasuredNominal,
-    ToleranceMaterialCondition,
+    InspectionRecord, InstanceOutputRef, MeasuredFeature, MeasuredNominal, NamedReference,
+    ReferenceTarget, ToleranceMaterialCondition,
 };
 
 const HOLES_PER_SIDE: usize = 10;
@@ -104,6 +104,7 @@ pub(crate) fn inspection_case(definition: &FamilyDefinition) -> Outcome {
                 .map(|i| DrawingFeatureControlFrame {
                     pattern: None,
                     unequal: None,
+                    surface: None,
                     size_limits: Some(DrawingSizeLimits {
                         kind: FeatureOfSizeKind::Internal,
                         lower: Quantity::length(5.9, LengthUnit::Millimeter),
@@ -303,6 +304,7 @@ pub(crate) fn form_case(definition: &FamilyDefinition) -> Outcome {
             let control = |i: usize, cylindricity: bool| DrawingFeatureControlFrame {
                 pattern: None,
                 unequal: None,
+                surface: None,
                 size_limits: None,
                 datum_reference_frame: None,
                 refinement: None,
@@ -458,6 +460,7 @@ pub(crate) fn runout_case(definition: &FamilyDefinition, common: bool) -> Outcom
             let control = |i: usize, total: bool| DrawingFeatureControlFrame {
                 pattern: None,
                 unequal: None,
+                surface: None,
                 size_limits: None,
                 datum_reference_frame: None,
                 refinement: None,
@@ -670,6 +673,7 @@ pub(crate) fn datum_shift_case(definition: &FamilyDefinition, slot: bool) -> Out
                 .map(|i| DrawingFeatureControlFrame {
                     pattern: None,
                     unequal: None,
+                    surface: None,
                     size_limits: Some(limits(FeatureOfSizeKind::Internal, 5.9, 6.1)),
                     datum_reference_frame: None,
                     refinement: None,
@@ -956,6 +960,7 @@ pub(crate) fn composite_case(definition: &FamilyDefinition) -> Outcome {
                 .map(|i| DrawingFeatureControlFrame {
                     pattern: Some(format!("P{}", i / holes)),
                     unequal: None,
+                    surface: None,
                     size_limits: Some(DrawingSizeLimits {
                         kind: FeatureOfSizeKind::Internal,
                         lower: Quantity::length(5.9, LengthUnit::Millimeter),
@@ -1098,6 +1103,7 @@ pub(crate) fn profile_case(definition: &FamilyDefinition) -> Outcome {
                 .map(|i| DrawingFeatureControlFrame {
                     pattern: Some(format!("P{}", i / holes)),
                     unequal: None,
+                    surface: None,
                     size_limits: None,
                     datum_reference_frame: None,
                     refinement: Some(DrawingCompositeRefinement {
@@ -1197,6 +1203,7 @@ pub(crate) fn profile_surface_case(definition: &FamilyDefinition) -> Outcome {
                 vec![DrawingFeatureControlFrame {
                     pattern: None,
                     unequal: None,
+                    surface: None,
                     size_limits: None,
                     datum_reference_frame: None,
                     refinement: None,
@@ -1233,6 +1240,104 @@ pub(crate) fn profile_surface_case(definition: &FamilyDefinition) -> Outcome {
                 return Err(failure(format!("measured {m:?}")));
             }
             Ok(format!("zone {:.5} mm", m.deviation_mm))
+        },
+    )
+}
+
+/// 1,000 surface profiles, each 1,000 measured points on its own band of a
+/// Ø50 × 100 mm cylinder's side and recorded without nominals: the part is
+/// regenerated once, each control selects the named side face, and all
+/// 1,000,000 points are projected onto it for their nominal points and
+/// outward normals. A ±0.005 mm lobing leaves a 0.01 mm zone.
+pub(crate) fn profile_projection_case(definition: &FamilyDefinition) -> Outcome {
+    const PROFILES: usize = 1_000;
+    const POINTS: usize = 1_000;
+    timed(
+        format!(
+            "inspection: {PROFILES} surface profiles projecting {} points onto the model",
+            PROFILES * POINTS
+        ),
+        Duration::from_secs(2),
+        Expectation::Required,
+        || {
+            let mut definition = hole_plate(definition);
+            let mm = |v: f64| ScalarExpr::Literal(Quantity::length(v, LengthUnit::Millimeter));
+            definition.features = vec![FeatureDefinition {
+                id: "body".into(),
+                operation: FeatureOperation::Cylinder {
+                    origin: literal([0.0; 3]),
+                    axis: VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, 1.0)),
+                    radius: mm(25.0),
+                    height: mm(100.0),
+                },
+            }];
+            definition.requirements.clear();
+            definition.references = vec![NamedReference {
+                name: "side".into(),
+                target: ReferenceTarget::Faces(FaceSelector::NearestCenter {
+                    target: literal([0.0, 0.0, 50.0]),
+                    maximum_distance: mm(1.0),
+                }),
+            }];
+            let mut graph = InstanceGraph::new(&definition);
+            graph.add_base("part", HashMap::new(), "bench")?;
+            let controls = (0..PROFILES)
+                .map(|i| DrawingFeatureControlFrame {
+                    pattern: None,
+                    unequal: None,
+                    surface: Some(FaceSelector::Named("side".into())),
+                    size_limits: None,
+                    datum_reference_frame: None,
+                    refinement: None,
+                    id: format!("band-{i}"),
+                    attachment: attachment("hole-0"),
+                    characteristic: GeometricCharacteristic::ProfileSurface,
+                    tolerance: Quantity::length(0.02, LengthUnit::Millimeter),
+                    display_unit: LengthUnit::Millimeter,
+                    precision: 2,
+                    zone: GeometricToleranceZone::Characteristic,
+                    material: ToleranceMaterialCondition::Regardless,
+                    feature_of_size: false,
+                    datums: Vec::new(),
+                })
+                .collect();
+            let drawing = abc_drawing("bands", controls);
+            let record = InspectionRecord {
+                drawing: "bands".into(),
+                surface_textures: Vec::new(),
+                datum_features: Vec::new(),
+                controls: (0..PROFILES)
+                    .map(|i| MeasuredFeature {
+                        id: format!("band-{i}"),
+                        nominals: Vec::new(),
+                        points_mm: (0..POINTS)
+                            .map(|k| {
+                                let a = k as f64 * std::f64::consts::TAU / 50.0;
+                                let z = 0.05 + 0.1 * i as f64 + 0.002 * (k / 50) as f64;
+                                let r = 25.0 + 0.005 * (5.0 * a).cos();
+                                [r * a.cos(), r * a.sin(), z]
+                            })
+                            .collect(),
+                    })
+                    .collect(),
+            };
+            let session = Session::new()?;
+            let report = drawing.evaluate_inspection_on_model(&graph, &session, &record)?;
+            for control in &report.controls {
+                let ControlResult::Evaluated(m) = &control.result else {
+                    return Err(failure(format!(
+                        "{} was not evaluated: {:?}",
+                        control.control, control.result
+                    )));
+                };
+                if !m.conforms || (m.deviation_mm - 0.01).abs() > 2e-4 {
+                    return Err(failure(format!("{} measured {m:?}", control.control)));
+                }
+            }
+            Ok(format!(
+                "{} profiles conform with 0.01 mm zones",
+                report.controls.len()
+            ))
         },
     )
 }

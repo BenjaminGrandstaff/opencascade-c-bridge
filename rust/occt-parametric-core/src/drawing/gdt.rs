@@ -183,6 +183,12 @@ pub struct DrawingFeatureControlFrame {
     /// the whole tolerance (all outside). Equal-bilateral when absent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub unequal: Option<Quantity>,
+    /// Faces of the attachment output that a profile control covers (schema
+    /// 140), resolved on the regenerated part to supply nominal points and
+    /// normals for measured points that lack them. Each pattern member names
+    /// its own faces.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub surface: Option<FaceSelector>,
     pub id: String,
     pub attachment: DrawingGdtAttachment,
     pub characteristic: GeometricCharacteristic,
@@ -338,21 +344,24 @@ pub fn validate(
         number(frame)?;
         validate_control(frame)?;
         unequal_text(frame)?;
+        validate_surface(frame, graph)?;
         size::validate(frame)?;
         composite::validate(frame, &index)?;
         validate_references(&frame.datums, &index)?;
         if let Some(pattern) = &frame.pattern {
-            // Members match once their own ID and attachment are set aside.
+            // Members match once their own ID, attachment and faces are set
+            // aside.
             let shape = |f: &DrawingFeatureControlFrame, attachment: &DrawingGdtAttachment| {
                 let mut f = f.clone();
                 f.id.clear();
                 f.attachment = attachment.clone();
+                f.surface = None;
                 f
             };
             if let Some(first) = patterns.get(pattern.as_str()) {
                 if shape(frame, &first.attachment) != shape(first, &first.attachment) {
                     return Err(ModelError::new(
-                        "controls in a pattern must match except for ID and attachment",
+                        "controls in a pattern must match except for ID, attachment and surface",
                     ));
                 }
             } else if pattern.is_empty()
@@ -367,6 +376,36 @@ pub fn validate(
             }
         }
         validate_common(&frame.datums, &index, graph)?;
+    }
+    Ok(())
+}
+/// A profile control's surface selector may name only face references of the
+/// attachment instance's family.
+fn validate_surface(
+    frame: &DrawingFeatureControlFrame,
+    graph: &InstanceGraph<'_>,
+) -> Result<(), ModelError> {
+    let Some(surface) = &frame.surface else {
+        return Ok(());
+    };
+    if !frame.characteristic.profile() {
+        return Err(ModelError::new(
+            "a surface selector applies to profile controls",
+        ));
+    }
+    let definition = graph.resolve(&frame.attachment.output.instance)?.definition;
+    let mut names = Vec::new();
+    surface.names(&mut names);
+    for (name, _) in names {
+        if !definition
+            .references
+            .iter()
+            .any(|r| r.name == name && matches!(r.target, ReferenceTarget::Faces(_)))
+        {
+            return Err(ModelError::new(format!(
+                "profile surface names unknown face reference '{name}'"
+            )));
+        }
     }
     Ok(())
 }

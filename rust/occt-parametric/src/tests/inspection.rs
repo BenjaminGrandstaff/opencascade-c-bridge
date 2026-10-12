@@ -68,6 +68,7 @@ fn control(
     DrawingFeatureControlFrame {
         pattern: None,
         unequal: None,
+        surface: None,
         size_limits: None,
         datum_reference_frame: None,
         refinement: None,
@@ -2051,4 +2052,204 @@ fn profile_records_and_unequal_zones_validate_render_and_round_trip() {
         &report.controls[0].result,
         ControlResult::NotEvaluated(reason) if reason.contains("profile of a line")
     ));
+}
+
+/// The plate as real geometry, a 60 × 40 × 10 block cut by a Ø10 bore at
+/// `HOLE`, with named face references for the bore wall and the top.
+fn solid_plate() -> FamilyDefinition {
+    let mut definition = plate();
+    let at = |x: f64, y: f64, z: f64| {
+        VectorExpr::Literal(VectorQuantity::lengths(x, y, z, LengthUnit::Millimeter))
+    };
+    let mm = |v: f64| ScalarExpr::Literal(Quantity::length(v, LengthUnit::Millimeter));
+    definition.features = vec![
+        FeatureDefinition {
+            id: "block".into(),
+            operation: FeatureOperation::Box {
+                origin: at(0.0, 0.0, 0.0),
+                size: at(60.0, 40.0, 10.0),
+            },
+        },
+        FeatureDefinition {
+            id: "bore".into(),
+            operation: FeatureOperation::Cylinder {
+                origin: at(HOLE[0], HOLE[1], -1.0),
+                axis: VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, 1.0)),
+                radius: mm(5.0),
+                height: mm(12.0),
+            },
+        },
+        FeatureDefinition {
+            id: "body".into(),
+            operation: FeatureOperation::Cut {
+                object: "block".into(),
+                tool: "bore".into(),
+            },
+        },
+    ];
+    definition.references = vec![
+        NamedReference {
+            name: "bore_wall".into(),
+            target: ReferenceTarget::Faces(FaceSelector::NearestCenter {
+                target: at(HOLE[0], HOLE[1], 5.0),
+                maximum_distance: mm(1.0),
+            }),
+        },
+        NamedReference {
+            name: "top".into(),
+            target: ReferenceTarget::Faces(FaceSelector::NormalAligned {
+                direction: VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, 1.0)),
+                minimum_dot: ScalarExpr::Literal(Quantity::scalar(0.999)),
+            }),
+        },
+    ];
+    definition
+}
+
+fn surface_profile(
+    id: &str,
+    anchor: &str,
+    face: &str,
+    tolerance: f64,
+    datums: &[&str],
+) -> DrawingFeatureControlFrame {
+    let mut f = control(
+        id,
+        anchor,
+        GeometricCharacteristic::ProfileSurface,
+        tolerance,
+        datums,
+    );
+    f.surface = Some(FaceSelector::Named(face.into()));
+    f
+}
+
+#[test]
+fn profile_nominals_come_from_the_regenerated_part() {
+    let definition = solid_plate();
+    let graph = graph_of(&definition);
+    let session = Session::new().unwrap();
+    let mut page = page();
+    page.feature_control_frames = vec![
+        surface_profile("bore", "hole", "bore_wall", 0.06, &["A", "B", "C"]),
+        surface_profile("top_profile", "top", "top", 0.1, &["A"]),
+    ];
+    // The same Ø10.04 bore 0.02 mm off center as with explicit nominals.
+    let mut record = nominal_record();
+    record.controls = vec![
+        measured("bore", hole([HOLE[0] + 0.02, HOLE[1]], 10.04)),
+        top(|_| 10.03),
+    ];
+    let projected = page
+        .project_profile_nominals(&graph, &session, &record)
+        .unwrap();
+    for (n, p) in projected.controls[0]
+        .nominals
+        .iter()
+        .zip(&projected.controls[0].points_mm)
+    {
+        // On the Ø10 wall, normal toward the axis (out of the material).
+        let radial = [n.point_mm[0] - HOLE[0], n.point_mm[1] - HOLE[1]];
+        assert!((radial[0].hypot(radial[1]) - 5.0).abs() < 1e-7);
+        assert!((n.normal[0] * radial[0] + n.normal[1] * radial[1] + 5.0).abs() < 1e-6);
+        assert!((n.point_mm[2] - p[2]).abs() < 1e-7);
+    }
+    let report = page
+        .evaluate_inspection_on_model(&graph, &session, &record)
+        .unwrap();
+    let wall = evaluated(&report, "bore");
+    assert!((wall.deviation_mm - 0.08).abs() < 1e-4, "{wall:?}");
+    assert!(!wall.conforms);
+    let top_face = evaluated(&report, "top_profile");
+    assert!((top_face.deviation_mm - 0.06).abs() < 1e-9, "{top_face:?}");
+    // Nominals already in the record are kept.
+    let mut given = record.clone();
+    given.controls[0] = bore("bore", HOLE, [HOLE[0] + 0.02, HOLE[1]], 10.04);
+    let kept = page
+        .project_profile_nominals(&graph, &session, &given)
+        .unwrap();
+    assert_eq!(kept.controls[0], given.controls[0]);
+}
+
+#[test]
+fn profile_nominals_follow_the_instance_placement() {
+    let definition = solid_plate();
+    let mut graph = graph_of(&definition);
+    // Turned a quarter about z and moved: measured points are in the model.
+    graph
+        .set_placement(
+            "part",
+            Placement {
+                translation: VectorQuantity::lengths(100.0, 50.0, 5.0, LengthUnit::Millimeter),
+                rotation: Some(AxisAngle {
+                    origin: VectorQuantity::lengths(0.0, 0.0, 0.0, LengthUnit::Millimeter),
+                    axis: VectorQuantity::scalars(0.0, 0.0, 1.0),
+                    angle_radians: std::f64::consts::FRAC_PI_2,
+                }),
+            },
+        )
+        .unwrap();
+    let session = Session::new().unwrap();
+    let mut page = page();
+    page.feature_control_frames = vec![surface_profile("bore", "hole", "bore_wall", 0.06, &[])];
+    let place = |p: [f64; 3]| [100.0 - p[1], 50.0 + p[0], 5.0 + p[2]];
+    let axis = place([HOLE[0], HOLE[1], 0.0]);
+    let mut record = nominal_record();
+    record.datum_features.clear();
+    record.controls = vec![measured(
+        "bore",
+        hole([HOLE[0] + 0.02, HOLE[1]], 10.04)
+            .into_iter()
+            .map(place)
+            .collect(),
+    )];
+    let projected = page
+        .project_profile_nominals(&graph, &session, &record)
+        .unwrap();
+    for n in &projected.controls[0].nominals {
+        let radial = [n.point_mm[0] - axis[0], n.point_mm[1] - axis[1]];
+        assert!((radial[0].hypot(radial[1]) - 5.0).abs() < 1e-7, "{n:?}");
+        assert!((n.normal[0] * radial[0] + n.normal[1] * radial[1] + 5.0).abs() < 1e-6);
+    }
+    // Unlocated, only the 0.02 mm oversize per side remains.
+    let report = page.evaluate_inspection(&graph, &projected).unwrap();
+    let bore = evaluated(&report, "bore");
+    assert!((bore.deviation_mm - 0.04).abs() < 1e-4, "{bore:?}");
+}
+
+#[test]
+fn profile_surfaces_validate_and_round_trip() {
+    let definition = solid_plate();
+    let graph = graph_of(&definition);
+    let mut page = page();
+    page.feature_control_frames = vec![surface_profile("bore", "hole", "bore_wall", 0.06, &[])];
+    page.validate(&graph).unwrap();
+    let mut flat = page.clone();
+    flat.feature_control_frames[0].characteristic = GeometricCharacteristic::Flatness;
+    let error = flat.validate(&graph).unwrap_err().message;
+    assert!(error.contains("profile controls"), "{error}");
+    let mut unknown = page.clone();
+    unknown.feature_control_frames[0].surface = Some(FaceSelector::Named("missing".into()));
+    let error = unknown.validate(&graph).unwrap_err().message;
+    assert!(
+        error.contains("unknown face reference 'missing'"),
+        "{error}"
+    );
+    // Pattern members name their own faces.
+    let mut pattern = page.clone();
+    pattern.feature_control_frames[0].pattern = Some("2X".into());
+    let mut second = pattern.feature_control_frames[0].clone();
+    second.id = "top_profile".into();
+    second.attachment = attachment("top");
+    second.surface = Some(FaceSelector::Named("top".into()));
+    pattern.feature_control_frames.push(second);
+    pattern.validate(&graph).unwrap();
+    let mut document = ModelDocument::from_graph(&graph);
+    document.drawings.push(pattern);
+    let json = document.to_json_pretty().unwrap();
+    assert!(json.contains("\"surface\""));
+    assert_eq!(
+        ModelDocument::from_json(&json).unwrap().drawings,
+        document.drawings
+    );
 }

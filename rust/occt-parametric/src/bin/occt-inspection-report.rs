@@ -1,4 +1,7 @@
 //! Supplied dimensional and fixed position measurements against saved drawings.
+//! Profile controls with a `surface` take their nominals from the regenerated
+//! part when the measured points omit them.
+use occt_bridge::Session;
 use occt_parametric::*;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -165,6 +168,7 @@ fn evaluate(document: &ModelDocument, setup: &Setup) -> Result<Report, Box<dyn E
         .map(|d| (d.id.as_str(), d))
         .collect();
     let mut seen = HashSet::new();
+    let mut session: Option<Session> = None;
     let mut summary = Summary::default();
     let mut drawings = Vec::with_capacity(setup.drawings.len());
     for request in &setup.drawings {
@@ -180,15 +184,27 @@ fn evaluate(document: &ModelDocument, setup: &Setup) -> Result<Report, Box<dyn E
             .ok_or_else(|| format!("unknown measurement drawing '{}'", request.drawing))?;
         let (controls, surface_textures) = match &request.points {
             Some(points) => {
-                let inspection = drawing.evaluate_inspection(
-                    &graph,
-                    &InspectionRecord {
-                        drawing: request.drawing.clone(),
-                        datum_features: points.datum_features.clone(),
-                        controls: points.controls.clone(),
-                        surface_textures: points.surface_textures.clone(),
-                    },
-                )?;
+                let record = InspectionRecord {
+                    drawing: request.drawing.clone(),
+                    datum_features: points.datum_features.clone(),
+                    controls: points.controls.clone(),
+                    surface_textures: points.surface_textures.clone(),
+                };
+                // Profile surfaces need the regenerated part for nominals;
+                // other drawings never start the kernel.
+                let inspection = if drawing
+                    .feature_control_frames
+                    .iter()
+                    .any(|f| f.surface.is_some())
+                {
+                    if session.is_none() {
+                        session = Some(Session::new()?);
+                    }
+                    let session = session.as_ref().expect("session started");
+                    drawing.evaluate_inspection_on_model(&graph, session, &record)?
+                } else {
+                    drawing.evaluate_inspection(&graph, &record)?
+                };
                 (
                     inspection
                         .controls

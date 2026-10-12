@@ -2,7 +2,7 @@
 
 use super::*;
 
-pub(crate) const ABI_VERSION: u32 = 68;
+pub(crate) const ABI_VERSION: u32 = 69;
 
 #[repr(C)]
 #[derive(Default)]
@@ -131,6 +131,15 @@ pub(crate) struct RawFacePullRange {
     pub(crate) minimum_point: RawVec3,
     pub(crate) maximum_point: RawVec3,
     pub(crate) exact: i32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub(crate) struct RawFaceProjection {
+    pub(crate) point: RawVec3,
+    pub(crate) normal: RawVec3,
+    pub(crate) distance: f64,
+    pub(crate) face: u32,
 }
 
 #[repr(C)]
@@ -525,6 +534,14 @@ unsafe extern "C" {
         face: RawShapeId,
         index: usize,
         out: *mut RawShapeId,
+    ) -> RawStatus;
+    pub(crate) fn occt_bridge_faces_project_points(
+        session: *mut c_void,
+        faces: *const RawShapeId,
+        face_count: usize,
+        points: *const RawVec3,
+        point_count: usize,
+        out: *mut RawFaceProjection,
     ) -> RawStatus;
     pub(crate) fn occt_bridge_planar_face_point_state(
         session: *mut c_void,

@@ -77,6 +77,17 @@ impl Vec3 {
     }
 }
 
+/// A point's nearest location on a set of faces (ABI 69).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FaceProjection {
+    pub point: Vec3,
+    /// Unit normal along the face's orientation: out of a solid's material.
+    pub normal: Vec3,
+    pub distance: f64,
+    /// Index into the faces passed to the projection.
+    pub face: usize,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FacePointState {
     Outside,
