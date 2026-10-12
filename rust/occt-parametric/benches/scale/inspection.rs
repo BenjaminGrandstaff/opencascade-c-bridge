@@ -597,9 +597,17 @@ pub(crate) fn runout_case(definition: &FamilyDefinition, common: bool) -> Outcom
 /// a center bore B (Ø9.9-10.1, measured Ø10.06: 0.08 mm of shift). Every
 /// hole sits 0.05 mm off in x (±0.01 mm in y): one shared datum shift under
 /// the simultaneous requirement brings all of them inside Ø0.04.
-pub(crate) fn datum_shift_case(definition: &FamilyDefinition) -> Outcome {
+///
+/// With `slot`, B is RMB and C is a slot (width datum) through the bore; the
+/// part, slot and pattern are all turned 2 mrad about the bore, so the slot's
+/// center plane must clock the frame for every hole to conform.
+pub(crate) fn datum_shift_case(definition: &FamilyDefinition, slot: bool) -> Outcome {
     timed(
-        format!("inspection: {CONTROLS} position controls sharing one MMB datum shift"),
+        if slot {
+            format!("inspection: {CONTROLS} position controls clocked by a slot width datum")
+        } else {
+            format!("inspection: {CONTROLS} position controls sharing one MMB datum shift")
+        },
         Duration::from_secs(1),
         Expectation::Required,
         || {
@@ -609,6 +617,7 @@ pub(crate) fn datum_shift_case(definition: &FamilyDefinition) -> Outcome {
             definition.datums = vec![
                 plane("bottom", [0.0; 3], [0.0, 0.0, -1.0]),
                 plane("front", [0.0; 3], [0.0, -1.0, 0.0]),
+                plane("slot", [bore[0], bore[1], 0.0], [1.0, 0.0, 0.0]),
                 DatumDefinition {
                     id: "bore".into(),
                     kind: DatumKind::Axis {
@@ -660,7 +669,14 @@ pub(crate) fn datum_shift_case(definition: &FamilyDefinition) -> Outcome {
                     feature_of_size: true,
                     datums: vec![
                         reference("A", DatumMaterialBoundary::Regardless),
-                        reference("B", DatumMaterialBoundary::Maximum),
+                        reference(
+                            "B",
+                            if slot {
+                                DatumMaterialBoundary::Regardless
+                            } else {
+                                DatumMaterialBoundary::Maximum
+                            },
+                        ),
                         reference("C", DatumMaterialBoundary::Regardless),
                     ],
                 })
@@ -683,7 +699,15 @@ pub(crate) fn datum_shift_case(definition: &FamilyDefinition) -> Outcome {
                         "bore",
                         Some(limits(FeatureOfSizeKind::Internal, 9.9, 10.1)),
                     ),
-                    feature("C", "front", None),
+                    if slot {
+                        DrawingDatumFeature {
+                            size_kind: Some(FeatureOfSizeKind::Internal),
+                            feature_of_size: true,
+                            ..feature("C", "slot", None)
+                        }
+                    } else {
+                        feature("C", "front", None)
+                    },
                 ],
                 feature_control_frames: controls,
                 surface_textures: Vec::new(),
@@ -726,15 +750,33 @@ pub(crate) fn datum_shift_case(definition: &FamilyDefinition) -> Outcome {
                     })
                     .collect()
             };
+            let angle: f64 = if slot { 0.002 } else { 0.0 };
+            let turn = |[x, y]: [f64; 2]| {
+                let (s, c) = angle.sin_cos();
+                [
+                    bore[0] + c * (x - bore[0]) - s * (y - bore[1]),
+                    bore[1] + s * (x - bore[0]) + c * (y - bore[1]),
+                ]
+            };
             let measured: Vec<MeasuredFeature> = (0..CONTROLS)
                 .map(|i| {
                     let [x, y] = hole_center(i % (HOLES_PER_SIDE * HOLES_PER_SIDE));
                     let wobble = if i % 2 == 0 { 0.01 } else { -0.01 };
+                    let offset = if slot { [0.0, wobble] } else { [0.05, wobble] };
                     MeasuredFeature {
                         id: format!("position-{i}"),
-                        points_mm: circle([x + 0.05, y + wobble], 3.0),
+                        points_mm: circle(turn([x + offset[0], y + offset[1]]), 3.0),
                     }
                 })
+                .collect();
+            // Slot walls 4 mm either side of the bore, turned with the part.
+            let (s, c) = angle.sin_cos();
+            let walls: Vec<[f64; 3]> = [-4.0, 4.0]
+                .into_iter()
+                .flat_map(|d| {
+                    (0..=40).flat_map(move |k| [2.0, 8.0].map(move |z| (d, k as f64 - 20.0, z)))
+                })
+                .map(|(d, t, z)| [bore[0] + c * d - s * t, bore[1] + s * d + c * t, z])
                 .collect();
             let record = InspectionRecord {
                 drawing: "shifted".into(),
@@ -750,11 +792,21 @@ pub(crate) fn datum_shift_case(definition: &FamilyDefinition) -> Outcome {
                     },
                     MeasuredFeature {
                         id: "C".into(),
-                        points_mm: grid(400, |u, v| [side * u, 0.0, 10.0 * v]),
+                        points_mm: if slot {
+                            walls
+                        } else {
+                            grid(400, |u, v| [side * u, 0.0, 10.0 * v])
+                        },
                     },
                 ],
                 controls: measured,
             };
+            let points: usize = record
+                .datum_features
+                .iter()
+                .chain(&record.controls)
+                .map(|m| m.points_mm.len())
+                .sum();
             let report = drawing.evaluate_inspection(&graph, &record)?;
             let mut shift = 0.0;
             for control in &report.controls {
@@ -764,19 +816,20 @@ pub(crate) fn datum_shift_case(definition: &FamilyDefinition) -> Outcome {
                         control.control, control.result
                     )));
                 };
-                if !m.conforms || (m.datum_shift_limit_mm - 0.08).abs() > 1e-9 {
+                let limit = if slot { 0.0 } else { 0.08 };
+                if !m.conforms || (m.datum_shift_limit_mm - limit).abs() > 1e-9 {
                     return Err(failure(format!("{} measured {m:?}", control.control)));
                 }
                 shift = m.datum_shift_mm;
             }
-            if (shift - 0.05).abs() > 1e-3 {
+            if (shift - if slot { 0.0 } else { 0.05 }).abs() > 1e-3 {
                 return Err(failure(format!("shared shift {shift}")));
             }
             Ok(format!(
                 "{} of {} conform with a shared {shift:.4} mm shift, {} measured points",
                 report.controls.len(),
                 report.controls.len(),
-                CONTROLS * 72 + 872
+                points
             ))
         },
     )

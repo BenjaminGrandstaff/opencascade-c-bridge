@@ -999,6 +999,19 @@ Datum simulators follow the precedence order:
   the axis is free to shift and tilt. After one primary plane it is held
   perpendicular to that plane, and the envelope is a circle in the plane. Other
   precedences with axis datums are not evaluated.
+- **Width datum feature of size:** a datum feature with
+  `feature_of_size: true`, a plane anchor on the nominal center plane and a
+  `size_kind` (or `size_limits`) is a slot (`internal`) or tab (`external`).
+  Its measured points split into the two faces by side of the nominal center
+  plane. The simulator is the center plane of the actual mating envelope: the
+  widest pair of parallel planes between a slot's walls, or the narrowest pair
+  enclosing a tab. The planes turn only as a plane datum in that precedence
+  may: free as primary, about the primary normal as secondary, fixed as
+  tertiary of three planes, and about A's normal when clocking a plane-axis
+  frame. A slot through a bore therefore clocks an A | B | C frame. Plane
+  datum features of size without a kind keep the contact-plane simulator. The
+  report lists each width datum in a named frame under `datum_widths` (center
+  plane point, normal, mating width).
 - **Plane, axis, plane frames (schema 137):** a primary plane A, a
   secondary axis datum feature of size B normal to it, and an optional
   tertiary plane C form a frame. Its origin is where B's axis meets A, z runs
@@ -1105,6 +1118,7 @@ opposite directions cannot.
   frames, profile, straightness, round
   form at a material condition or with a non-characteristic zone, a datum
   feature that was not measured, or an axis datum without a `size_kind`.
+  Width datums report measurements missing a face and common widths.
   Datum shift also reports a boundary without `size_limits`, a feature beyond
   its boundary, and shift of a primary or common axis or of a planar datum.
   Runout reports any datum referenced at a material boundary.
@@ -1130,11 +1144,13 @@ cases have 1 s budgets.
 Runout readings cost O(n log n) per control after the datum fit. 10,000
 position controls located A | B(MMB) | C from a center bore share one datum
 shift in 0.17 s (1 s budget). The active set keeps each LP small whatever the
-pattern size.
+pattern size. The same 10,000 controls clocked by a slot width datum, with the
+part turned 2 mrad, evaluate in 0.16 s.
 
 **Not yet covered.** Datum shift of a primary axis datum (tilt), of common
-axes and of planar datum features of size (width centre planes); rotational
-shift about a datum axis; the separate requirement (`SEP REQT`); boundaries
+axes and of width datum features (slots and tabs); rotational
+shift about a datum axis; common width datums; the separate requirement
+(`SEP REQT`); boundaries
 enlarged by geometric tolerances; simultaneous-contact common axis simulators,
 common axes after a primary plane, pattern and composite
 evaluation, measured datum targets, profile against nominal surfaces, conical

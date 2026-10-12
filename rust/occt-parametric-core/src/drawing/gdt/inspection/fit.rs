@@ -590,3 +590,110 @@ pub fn fit_cylinder(
     }
     Ok((add(center, scale(origin, size)), direction, r * size))
 }
+
+/// Actual mating envelope of a width feature: two parallel planes with
+/// normal starting at `normal` and turning only about the unit `axes`, the
+/// widest pair fitting between the faces of a slot (`Fit::Inscribed`) or the
+/// narrowest pair enclosing the faces of a tab (`Fit::Circumscribed`).
+/// `upper` holds points on the face toward `normal`, `lower` the opposite
+/// face. Returns the normal, the center plane offset (`normal·p`) and the
+/// width, exact for the returned normal. O(linearizations · pivots · n).
+pub fn fit_width(
+    upper: &[Vec3],
+    lower: &[Vec3],
+    normal: Vec3,
+    axes: &[Vec3],
+    fit: Fit,
+) -> Result<(Vec3, f64, f64), ModelError> {
+    if upper.is_empty() || lower.is_empty() || upper.len() + lower.len() < 3 || fit == Fit::Zone {
+        return Err(ModelError::new(
+            "a measured width needs points on both faces",
+        ));
+    }
+    let all: Vec<Vec3> = upper.iter().chain(lower).copied().collect();
+    let (center, size) = normalization(&all);
+    let scaled = |p: &[Vec3]| -> Vec<Vec3> {
+        p.iter()
+            .map(|&q| scale(subtract(q, center), 1.0 / size))
+            .collect()
+    };
+    let (up, low) = (scaled(upper), scaled(lower));
+    let internal = fit == Fit::Inscribed;
+    // Exact bounding offsets of the two faces along `n`: the slot's walls
+    // nearest each other, or the tab's farthest faces.
+    let planes = |n: Vec3| {
+        let along = |p: &[Vec3], high: bool| {
+            p.iter().map(|&q| dot(n, q)).fold(
+                if high {
+                    f64::NEG_INFINITY
+                } else {
+                    f64::INFINITY
+                },
+                |a, b| if high { a.max(b) } else { a.min(b) },
+            )
+        };
+        if internal {
+            (along(&up, false), along(&low, true))
+        } else {
+            (along(&up, true), along(&low, false))
+        }
+    };
+    let width_of = |(a, b): (f64, f64)| a - b;
+    let better = |a: f64, b: f64| if internal { a > b } else { a < b };
+    let mut n = unit(normal)?;
+    let mut best = (width_of(planes(n)), n);
+    let k = axes.len();
+    let mut radius = 0.1;
+    for _ in 0..if k == 0 { 0 } else { MAX_LINEARIZATIONS } {
+        // Variables: rotation angles, upper plane, lower plane.
+        let vars = k + 2;
+        let mut rows = Vec::new();
+        let mut bounds = Vec::new();
+        let gradient = |q: Vec3| axes.iter().map(move |&a| dot(cross(a, n), q));
+        for &q in &up {
+            let mut row: Vec<f64> = gradient(q).map(|g| if internal { -g } else { g }).collect();
+            row.extend(if internal { [1.0, 0.0] } else { [-1.0, 0.0] });
+            rows.extend(row);
+            bounds.push(if internal { dot(n, q) } else { -dot(n, q) });
+        }
+        for &q in &low {
+            let mut row: Vec<f64> = gradient(q).map(|g| if internal { g } else { -g }).collect();
+            row.extend(if internal { [0.0, -1.0] } else { [0.0, 1.0] });
+            rows.extend(row);
+            bounds.push(if internal { -dot(n, q) } else { dot(n, q) });
+        }
+        for j in 0..k {
+            for sign in [1.0, -1.0] {
+                let mut row = vec![0.0; vars];
+                row[j] = sign;
+                rows.extend(row);
+                bounds.push(radius);
+            }
+        }
+        let mut objective = vec![0.0; vars];
+        objective[k] = if internal { 1.0 } else { -1.0 };
+        objective[k + 1] = -objective[k];
+        let step = maximize(&objective, &rows, &bounds)?;
+        let mut trial = n;
+        for (&a, &angle) in axes.iter().zip(&step) {
+            trial = rotate(trial, a, angle);
+        }
+        let trial = unit(trial)?;
+        let width = width_of(planes(trial));
+        if better(width, best.0) {
+            best = (width, trial);
+            n = trial;
+        } else {
+            radius *= 0.5;
+        }
+        if step[..k].iter().all(|a| a.abs() < 1e-13) || radius < 1e-12 {
+            break;
+        }
+    }
+    let (width, n) = best;
+    let (a, b) = planes(n);
+    if internal && width <= 0.0 {
+        return Err(ModelError::new("measured slot faces overlap"));
+    }
+    Ok((n, dot(n, center) + 0.5 * (a + b) * size, width * size))
+}

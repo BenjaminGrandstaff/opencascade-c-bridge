@@ -1366,3 +1366,194 @@ fn datum_shift_reports_unsupported_setups_and_validates_limits() {
         document.drawings
     );
 }
+
+/// Points on a wall of the plane through `center` with unit in-plane
+/// `along` and normal `normal`, offset `offset + wave(s)` along the normal.
+fn wall(
+    center: [f64; 2],
+    normal: [f64; 2],
+    offset: f64,
+    wave: impl Fn(f64) -> f64,
+) -> Vec<[f64; 3]> {
+    let along = [-normal[1], normal[0]];
+    (0..=8)
+        .flat_map(|i| [2.0, 8.0].map(|z| (i as f64 - 4.0, z)))
+        .map(|(s, z)| {
+            let d = offset + wave(s);
+            [
+                center[0] + normal[0] * d + along[0] * s,
+                center[1] + normal[1] * d + along[1] * s,
+                z,
+            ]
+        })
+        .collect()
+}
+
+/// `shift_setup` with C a width datum on the slot center plane through the
+/// bore (x = 30, normal +x), of the given kind.
+fn slot_setup(kind: FeatureOfSizeKind) -> (FamilyDefinition, DrawingDefinition) {
+    let (mut definition, mut page) = shift_setup(DatumMaterialBoundary::Regardless);
+    definition
+        .datums
+        .push(plane("slot", [HOLE[0], HOLE[1], 0.0], [1.0, 0.0, 0.0]));
+    let c = page
+        .datum_features
+        .iter_mut()
+        .find(|f| f.id == "C")
+        .unwrap();
+    c.attachment = attachment("slot");
+    c.feature_of_size = true;
+    c.size_kind = Some(kind);
+    page.datum_reference_frames = vec![DrawingDatumReferenceFrame {
+        id: "C-only".into(),
+        datums: vec![DrawingDatumReference {
+            datum_feature: "C".into(),
+            boundary: DatumMaterialBoundary::Regardless,
+            common_with: Vec::new(),
+        }],
+    }];
+    (definition, page)
+}
+
+fn slot_record(angle: f64, pattern_angle: f64, wave: f64) -> InspectionRecord {
+    let rotate = |[x, y]: [f64; 2], a: f64| {
+        let (s, c) = a.sin_cos();
+        [
+            HOLE[0] + c * (x - HOLE[0]) - s * (y - HOLE[1]),
+            HOLE[1] + s * (x - HOLE[0]) + c * (y - HOLE[1]),
+        ]
+    };
+    let normal = [angle.cos(), angle.sin()];
+    // Equal bumps at the center and both ends: turning the planes cannot
+    // shrink (tab) or widen (slot) the envelope, so it stays square.
+    let bump = move |s: f64| wave * (std::f64::consts::FRAC_PI_4 * s).cos().abs();
+    let mut slot = wall(HOLE, normal, 4.0, bump);
+    slot.extend(wall(HOLE, normal, -4.0, move |s| -bump(s)));
+    let mut record = shift_record(10.0, [[0.0, 0.0]; 4]);
+    record.datum_features[2] = measured("C", slot);
+    record.controls = (0..4)
+        .map(|i| {
+            measured(
+                &format!("hole{i}"),
+                hole(rotate(PATTERN[i], pattern_angle), 6.0),
+            )
+        })
+        .collect();
+    record
+}
+
+#[test]
+fn width_datums_simulate_the_center_plane_of_the_mating_envelope() {
+    for (kind, size) in [
+        // A tab's faces bulge 0.01 mm: the enclosing envelope is 8.02 wide.
+        (FeatureOfSizeKind::External, 8.02),
+        // A slot's walls bulge inward 0.01 mm: the widest fit is 7.98.
+        (FeatureOfSizeKind::Internal, 7.98),
+    ] {
+        let (definition, page) = slot_setup(kind);
+        let graph = graph_of(&definition);
+        let sign = if kind == FeatureOfSizeKind::External {
+            1.0
+        } else {
+            -1.0
+        };
+        let report = page
+            .evaluate_inspection(&graph, &slot_record(0.0, 0.0, sign * 0.01))
+            .unwrap();
+        let width = &report.datum_widths[0];
+        assert_eq!(width.datum_feature, "C");
+        assert!(
+            (width.mating_size_mm - size).abs() < 1e-6,
+            "{kind:?} {width:?}"
+        );
+        assert!(
+            (width.point_mm.x * width.normal.x - HOLE[0]).abs() < 1e-6,
+            "{width:?}"
+        );
+        assert!((width.normal.x.abs() - 1.0).abs() < 1e-9);
+    }
+    // A slot turned 10 mrad: the fit turns its planes with it and finds the
+    // true 8 mm width instead of the wider projection.
+    let (definition, page) = slot_setup(FeatureOfSizeKind::Internal);
+    let graph = graph_of(&definition);
+    let report = page
+        .evaluate_inspection(&graph, &slot_record(0.01, 0.0, 0.0))
+        .unwrap();
+    let width = &report.datum_widths[0];
+    assert!((width.mating_size_mm - 8.0).abs() < 1e-6, "{width:?}");
+    assert!(
+        (width.normal.y / width.normal.x - 0.01_f64.tan()).abs() < 1e-6,
+        "{width:?}"
+    );
+}
+
+#[test]
+fn a_slot_center_plane_clocks_a_bore_frame() {
+    let (definition, page) = slot_setup(FeatureOfSizeKind::Internal);
+    let graph = graph_of(&definition);
+    // The part turned 2 mrad about the bore, slot and pattern together: the
+    // frame turns with the slot, so every hole is at true position.
+    let report = page
+        .evaluate_inspection(&graph, &slot_record(0.002, 0.002, 0.0))
+        .unwrap();
+    for i in 0..4 {
+        let m = evaluated(&report, &format!("hole{i}"));
+        assert!(m.deviation_mm < 1e-6, "{m:?}");
+    }
+    // The pattern turned 2 mrad but the slot did not: each hole is off by
+    // its radius from the bore (18.03 mm) times the angle.
+    let report = page
+        .evaluate_inspection(&graph, &slot_record(0.0, 0.002, 0.0))
+        .unwrap();
+    let radius = 15.0_f64.hypot(10.0);
+    for i in 0..4 {
+        let m = evaluated(&report, &format!("hole{i}"));
+        assert!(
+            (m.deviation_mm - 2.0 * radius * 0.002).abs() < 1e-4,
+            "{m:?}"
+        );
+        assert!(!m.conforms);
+    }
+}
+
+#[test]
+fn width_datums_report_one_sided_common_and_shifted_setups() {
+    let (definition, page) = slot_setup(FeatureOfSizeKind::Internal);
+    let graph = graph_of(&definition);
+    let mut one_sided = slot_record(0.0, 0.0, 0.0);
+    one_sided.datum_features[2] = measured("C", wall(HOLE, [1.0, 0.0], 4.0, |_| 0.0));
+    let report = page.evaluate_inspection(&graph, &one_sided).unwrap();
+    assert!(
+        matches!(
+            &report.controls[0].result,
+            ControlResult::NotEvaluated(r) if r.contains("both faces")
+        ),
+        "{:?}",
+        report.controls[0]
+    );
+    let mut shifted = page.clone();
+    for frame in &mut shifted.feature_control_frames {
+        frame.datums[2].boundary = DatumMaterialBoundary::Maximum;
+    }
+    shifted
+        .datum_features
+        .iter_mut()
+        .find(|f| f.id == "C")
+        .unwrap()
+        .size_limits = Some(DrawingSizeLimits {
+        kind: FeatureOfSizeKind::Internal,
+        lower: Quantity::length(7.9, LengthUnit::Millimeter),
+        upper: Quantity::length(8.1, LengthUnit::Millimeter),
+    });
+    let report = shifted
+        .evaluate_inspection(&graph, &slot_record(0.0, 0.0, 0.0))
+        .unwrap();
+    assert!(
+        matches!(
+            &report.controls[0].result,
+            ControlResult::NotEvaluated(r) if r.contains("planar datum features")
+        ),
+        "{:?}",
+        report.controls[0]
+    );
+}

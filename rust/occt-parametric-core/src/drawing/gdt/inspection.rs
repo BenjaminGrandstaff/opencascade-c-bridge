@@ -10,7 +10,7 @@
 use super::*;
 use crate::assembly::{add, length, scale, unit};
 pub mod fit;
-use fit::{Fit, circle_zone, cylinder_zone, fit_circle, fit_cylinder, fit_plane};
+use fit::{Fit, circle_zone, cylinder_zone, fit_circle, fit_cylinder, fit_plane, fit_width};
 
 /// Upper bound on measured points in one record, which bounds memory and time.
 pub const MAX_INSPECTION_POINTS: usize = 10_000_000;
@@ -118,6 +118,8 @@ pub struct InspectionReport {
     pub datum_frames: Vec<MeasuredDatumFrame>,
     /// Named datum reference frames whose last datum is a measured axis.
     pub datum_axes: Vec<MeasuredDatumAxis>,
+    /// Width datum features simulated in named frames, once each.
+    pub datum_widths: Vec<MeasuredDatumWidth>,
     /// One entry per effective feature control frame, in drawing order.
     pub controls: Vec<ControlInspection>,
     /// One entry per surface texture requirement, in drawing order.
@@ -142,7 +144,9 @@ impl InspectionReport {
 /// of an actual mating envelope (point, unit direction, mating size).
 #[derive(Clone, Debug, PartialEq)]
 enum Simulator {
-    Plane(Vec3, Vec3),
+    /// Point, normal, and the mating width of a width datum feature of size
+    /// whose simulator is the envelope's center plane.
+    Plane(Vec3, Vec3, Option<f64>),
     /// Point, unit direction, mating sizes, and the largest radial datum
     /// shift its material boundary allows (zero regardless of boundary).
     Axis(Vec3, Vec3, Vec<f64>, f64),
@@ -151,10 +155,22 @@ type Simulators = Vec<Simulator>;
 impl Simulator {
     fn plane_normal(&self) -> Result<Vec3, String> {
         match self {
-            Self::Plane(_, normal) => Ok(*normal),
+            Self::Plane(_, normal, _) => Ok(*normal),
             Self::Axis(..) => Err("orientation to an axis datum is not evaluated".into()),
         }
     }
+}
+
+/// A datum center plane established from a measured width datum feature of
+/// size (slot or tab).
+#[derive(Clone, Debug, PartialEq)]
+pub struct MeasuredDatumWidth {
+    pub datum_feature: String,
+    /// A point on the center plane and its unit normal.
+    pub point_mm: Vec3,
+    pub normal: Vec3,
+    /// Actual mating width.
+    pub mating_size_mm: f64,
 }
 
 /// A datum axis established from a measured cylindrical datum feature of size.
@@ -276,7 +292,24 @@ impl DrawingDefinition {
         }
         let mut datum_frames = Vec::new();
         let mut datum_axes = Vec::new();
+        let mut datum_widths: Vec<MeasuredDatumWidth> = Vec::new();
         for reference in &self.datum_reference_frames {
+            if let Ok(simulators) = context.simulators(&reference.datums) {
+                for (datum, simulator) in reference.datums.iter().zip(simulators) {
+                    if let Simulator::Plane(point, normal, Some(width)) = simulator
+                        && !datum_widths
+                            .iter()
+                            .any(|w| w.datum_feature == datum.datum_feature)
+                    {
+                        datum_widths.push(MeasuredDatumWidth {
+                            datum_feature: datum.datum_feature.clone(),
+                            point_mm: point,
+                            normal,
+                            mating_size_mm: width,
+                        });
+                    }
+                }
+            }
             let ids: Vec<String> = reference
                 .datums
                 .iter()
@@ -304,6 +337,7 @@ impl DrawingDefinition {
             drawing: self.id.clone(),
             datum_frames,
             datum_axes,
+            datum_widths,
             controls,
             surface_textures,
         })
@@ -492,15 +526,12 @@ impl Context<'_, '_> {
         }
         // A tertiary plane after a primary plane and a secondary axis only
         // clocks rotation about that axis: its normal turns about A's normal.
-        if let [Simulator::Plane(_, primary), Simulator::Axis(..)] = simulators.as_slice() {
+        if let [Simulator::Plane(_, primary, _), Simulator::Axis(..)] = simulators.as_slice() {
             let (_, nominal) = self.nominal_datum(id)?;
             let normal = unit(subtract(nominal, scale(*primary, dot(nominal, *primary))))
                 .map_err(|_| "tertiary datum plane is parallel to the primary".to_string())?;
-            let fitted = fit_plane(&union, normal, &[*primary]).map_err(|e| e.to_string())?;
-            simulators.push(Simulator::Plane(
-                scale(fitted.normal, fitted.contact),
-                fitted.normal,
-            ));
+            let primary = *primary;
+            simulators.push(self.plane_simulator(&members, &union, normal, &[primary])?);
             return Ok(simulators);
         }
         if simulators.iter().any(|s| matches!(s, Simulator::Axis(..))) {
@@ -509,7 +540,7 @@ impl Context<'_, '_> {
         let planes: Vec<Vec3> = simulators
             .iter()
             .map(|s| match s {
-                Simulator::Plane(_, n) => *n,
+                Simulator::Plane(_, n, _) => *n,
                 Simulator::Axis(_, d, ..) => *d,
             })
             .collect();
@@ -536,12 +567,52 @@ impl Context<'_, '_> {
                 )
             }
         };
-        let fitted = fit_plane(points, normal, &axes).map_err(|e| e.to_string())?;
-        simulators.push(Simulator::Plane(
+        simulators.push(self.plane_simulator(&members, points, normal, &axes)?);
+        Ok(simulators)
+    }
+
+    /// A contacting plane (constrained L∞) over `points`, or for a single
+    /// width datum feature of size, the center plane of its actual mating
+    /// envelope: the widest pair of parallel planes between a slot's faces or
+    /// the narrowest pair around a tab's. Points split into the two faces by
+    /// side of the nominal center plane. The normal starts at `normal` and
+    /// turns only about `axes`, as for any plane datum in that precedence.
+    fn plane_simulator(
+        &self,
+        members: &[(&DrawingDatumFeature, &[Vec3])],
+        points: &[Vec3],
+        normal: Vec3,
+        axes: &[Vec3],
+    ) -> Result<Simulator, String> {
+        let width =
+            |feature: &DrawingDatumFeature| feature.feature_of_size && feature.kind().is_some();
+        if members.iter().any(|(feature, _)| width(feature)) {
+            let [(feature, points)] = members else {
+                return Err("common width datums are not evaluated".into());
+            };
+            let (origin, nominal) = self.nominal_datum(&feature.id)?;
+            let (upper, lower): (Vec<Vec3>, Vec<Vec3>) = points
+                .iter()
+                .partition(|&&p| dot(subtract(p, origin), nominal) >= 0.0);
+            let fit = match feature.kind() {
+                Some(FeatureOfSizeKind::Internal) => Fit::Inscribed,
+                _ => Fit::Circumscribed,
+            };
+            let (upper, lower) = if dot(normal, nominal) >= 0.0 {
+                (upper, lower)
+            } else {
+                (lower, upper)
+            };
+            let (n, offset, size) =
+                fit_width(&upper, &lower, normal, axes, fit).map_err(|e| e.to_string())?;
+            return Ok(Simulator::Plane(scale(n, offset), n, Some(size)));
+        }
+        let fitted = fit_plane(points, normal, axes).map_err(|e| e.to_string())?;
+        Ok(Simulator::Plane(
             scale(fitted.normal, fitted.contact),
             fitted.normal,
-        ));
-        Ok(simulators)
+            None,
+        ))
     }
 
     /// Common datum axis of two coaxial datum features of size: the line
@@ -628,7 +699,7 @@ impl Context<'_, '_> {
                 };
                 Ok(Simulator::Axis(origin, direction, vec![2.0 * radius], 0.0))
             }
-            [Simulator::Plane(point, normal)] => {
+            [Simulator::Plane(point, normal, _)] => {
                 if length(cross(nominal, *normal)) > 1e-9 {
                     return Err(
                         "a secondary axis datum must be nominally perpendicular to the primary plane"
@@ -733,7 +804,7 @@ impl Context<'_, '_> {
             .map(|(i, r)| {
                 let geometry = match planes {
                     Some(p) => match &p[i] {
-                        Simulator::Plane(origin, normal) => ResolvedDatum::Plane {
+                        Simulator::Plane(origin, normal, _) => ResolvedDatum::Plane {
                             origin: *origin,
                             normal: *normal,
                         },
