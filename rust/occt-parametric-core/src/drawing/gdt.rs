@@ -194,6 +194,15 @@ pub struct DrawingFeatureControlFrame {
     /// names its own faces.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub surface: Option<FaceSelector>,
+    /// Projected tolerance zone (schema 142, Ⓟ) of a position control on a
+    /// cylindrical feature: the zone extends `height` beyond the part.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub projected: Option<DrawingProjectedZone>,
+    /// Tangent plane (schema 142, Ⓣ) of an orientation control on a plane:
+    /// only the plane contacting the surface's high points must lie in the
+    /// zone, not every point of the surface.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub tangent_plane: bool,
     pub id: String,
     pub attachment: DrawingGdtAttachment,
     pub characteristic: GeometricCharacteristic,
@@ -207,6 +216,18 @@ pub struct DrawingFeatureControlFrame {
     pub feature_of_size: bool,
     #[serde(default)]
     pub datums: Vec<DrawingDatumReference>,
+}
+/// Where a projected tolerance zone lies (schema 142): from a plane of the
+/// part, the face the mating part seats on, `height` along that plane's
+/// outward normal.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct DrawingProjectedZone {
+    pub height: Quantity,
+    /// A plane datum of the control's attachment instance; the primary
+    /// datum plane when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from: Option<String>,
 }
 fn anchor(
     a: &DrawingGdtAttachment,
@@ -291,6 +312,23 @@ fn unequal_text(frame: &DrawingFeatureControlFrame) -> Result<Option<String>, Mo
         precision = frame.precision as usize
     )))
 }
+/// Displayed Ⓟ height, in the tolerance's display unit and precision.
+fn projected_text(frame: &DrawingFeatureControlFrame) -> Result<Option<String>, ModelError> {
+    let Some(projected) = &frame.projected else {
+        return Ok(None);
+    };
+    let mm = projected.height.normalized()?;
+    if projected.height.dimension != Dimension::Length || !mm.is_finite() || mm <= 0.0 {
+        return Err(ModelError::new(
+            "a projected tolerance zone needs a positive finite height",
+        ));
+    }
+    let value = mm / frame.display_unit.millimeter_factor();
+    Ok(Some(format!(
+        "{value:.precision$}",
+        precision = frame.precision as usize
+    )))
+}
 pub fn validate(
     features: &[DrawingDatumFeature],
     frames: &[DrawingFeatureControlFrame],
@@ -349,6 +387,8 @@ pub fn validate(
         number(frame)?;
         validate_control(frame)?;
         unequal_text(frame)?;
+        projected_text(frame)?;
+        validate_modifiers(frame, graph)?;
         validate_surface(frame, graph)?;
         size::validate(frame)?;
         composite::validate(frame, &index)?;
@@ -381,6 +421,46 @@ pub fn validate(
             }
         }
         validate_common(&frame.datums, &index, graph)?;
+    }
+    Ok(())
+}
+/// Ⓟ applies to position of a cylindrical feature of size, from a plane
+/// datum of the attachment instance; Ⓣ to orientation of a plane.
+fn validate_modifiers(
+    frame: &DrawingFeatureControlFrame,
+    graph: &InstanceGraph<'_>,
+) -> Result<(), ModelError> {
+    if let Some(projected) = &frame.projected {
+        if frame.characteristic != GeometricCharacteristic::Position
+            || !frame.feature_of_size
+            || frame.zone != GeometricToleranceZone::Diameter
+        {
+            return Err(ModelError::new(
+                "a projected tolerance zone applies to position of a cylindrical feature of size",
+            ));
+        }
+        if let Some(from) = &projected.from
+            && !matches!(
+                graph.datum(&frame.attachment.anchor.instance, from)?,
+                ResolvedDatum::Plane { .. }
+            )
+        {
+            return Err(ModelError::new(
+                "a projected tolerance zone starts from a plane datum of the attachment instance",
+            ));
+        }
+    }
+    if frame.tangent_plane
+        && !matches!(
+            frame.characteristic,
+            GeometricCharacteristic::Parallelism
+                | GeometricCharacteristic::Perpendicularity
+                | GeometricCharacteristic::Angularity
+        )
+    {
+        return Err(ModelError::new(
+            "a tangent plane applies to parallelism, perpendicularity and angularity",
+        ));
     }
     Ok(())
 }
@@ -692,7 +772,12 @@ fn cell_widths(
             + unequal_text(f)
                 .ok()
                 .flatten()
-                .map_or(0.0, |u| 7.0 + u.len() as f64 * 2.0),
+                .map_or(0.0, |u| 7.0 + u.len() as f64 * 2.0)
+            + projected_text(f)
+                .ok()
+                .flatten()
+                .map_or(0.0, |h| 7.0 + h.len() as f64 * 2.0)
+            + if f.tangent_plane { 6.0 } else { 0.0 },
     ];
     cells.extend(f.datums.iter().map(|r| {
         4.0 + r.label(index).len() as f64 * 3.0
@@ -735,6 +820,18 @@ fn append_row(
         circle(d, [ux, p[1] + 4.0], 2.3, 0.0, std::f64::consts::TAU);
         text(d, [ux - 1.1, p[1] + 3.0], "U".into());
         text(d, [ux + 3.5, p[1] + 2.5], unequal);
+    }
+    // Ⓟ with its height, then Ⓣ, after any material modifier.
+    let mut mx = tx + value.len() as f64 * 2.0 + 3.0 + if material { 6.0 } else { 0.0 };
+    if let Ok(Some(height)) = projected_text(f) {
+        circle(d, [mx, p[1] + 4.0], 2.3, 0.0, std::f64::consts::TAU);
+        text(d, [mx - 1.1, p[1] + 3.0], "P".into());
+        text(d, [mx + 3.5, p[1] + 2.5], height.clone());
+        mx += 7.0 + height.len() as f64 * 2.0;
+    }
+    if f.tangent_plane {
+        circle(d, [mx, p[1] + 4.0], 2.3, 0.0, std::f64::consts::TAU);
+        text(d, [mx - 1.1, p[1] + 3.0], "T".into());
     }
     for (i, width) in cells.iter().enumerate().skip(1) {
         if i > 1 || first_divider {
@@ -808,6 +905,8 @@ fn row_vertices(f: &DrawingFeatureControlFrame) -> usize {
             0
         }
         + if f.unequal.is_some() { 33 } else { 0 }
+        + if f.projected.is_some() { 33 } else { 0 }
+        + if f.tangent_plane { 33 } else { 0 }
         + 33 * f
             .datums
             .iter()

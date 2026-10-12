@@ -66,6 +66,8 @@ fn control(
     datums: &[&str],
 ) -> DrawingFeatureControlFrame {
     DrawingFeatureControlFrame {
+        projected: None,
+        tangent_plane: false,
         pattern: None,
         unequal: None,
         surface: None,
@@ -3010,6 +3012,105 @@ fn each_lower_segment_of_a_composite_relates_the_pattern_on_its_own() {
     let m = evaluated(&report, "right_profile");
     let middle = m.refinement.clone().unwrap();
     assert!(!m.conforms && !middle.conforms && middle.refinement.unwrap().conforms);
+}
+
+#[test]
+fn a_projected_zone_extends_the_hole_axis_beyond_the_part() {
+    let definition = plate();
+    let graph = graph_of(&definition);
+    // Ø0.1 RFS to A | B | C on the Ø10.04 hole, its axis leaning 2 mrad in
+    // x: 0.02 mm across the plate's 10 mm.
+    let mut page = page();
+    page.feature_control_frames = page
+        .feature_control_frames
+        .into_iter()
+        .filter(|f| f.id == "position")
+        .map(|mut f| {
+            f.material = ToleranceMaterialCondition::Regardless;
+            f.tolerance = Quantity::length(0.1, LengthUnit::Millimeter);
+            f
+        })
+        .collect();
+    let mut record = nominal_record();
+    record.controls = vec![measured(
+        "position",
+        cylinder([HOLE[0], HOLE[1], 0.0], [0.002, 0.0, 1.0], |_| 5.02),
+    )];
+    let projected = |from: Option<&str>| {
+        let mut page = page.clone();
+        page.feature_control_frames[0].projected = Some(DrawingProjectedZone {
+            height: Quantity::length(20.0, LengthUnit::Millimeter),
+            from: from.map(Into::into),
+        });
+        page.evaluate_inspection(&graph, &record).unwrap()
+    };
+    // Square to A, the related envelope reads the lean only as a smaller
+    // size; the plate itself holds the hole well inside its zone.
+    let m = evaluated(
+        &page.evaluate_inspection(&graph, &record).unwrap(),
+        "position",
+    );
+    assert!(m.deviation_mm < 0.05 && m.conforms, "{m:?}");
+    // Projected 20 mm above the top face (z 10-30), the axis leaves the zone
+    // 0.06 mm off true position: 0.12 mm.
+    let m = evaluated(&projected(Some("top")), "position");
+    assert!((m.deviation_mm - 0.12).abs() < 1e-4 && !m.conforms, "{m:?}");
+    assert!((m.actual_size_mm.unwrap() - 10.04).abs() < 1e-4, "{m:?}");
+    // Without a starting plane the zone runs 20 mm below A (z 0 to -20).
+    let m = evaluated(&projected(None), "position");
+    assert!((m.deviation_mm - 0.08).abs() < 1e-4 && m.conforms, "{m:?}");
+    // The zone starts from a plane square to the hole.
+    let report = projected(Some("right"));
+    assert!(
+        matches!(
+            &report.controls[0].result,
+            ControlResult::NotEvaluated(r) if r.contains("square to the feature axis")
+        ),
+        "{:?}",
+        report.controls[0]
+    );
+}
+
+#[test]
+fn a_tangent_plane_orients_only_the_high_points() {
+    let definition = plate();
+    let graph = graph_of(&definition);
+    let mut page = page();
+    page.feature_control_frames.retain(|f| f.id == "parallel");
+    page.feature_control_frames[0].tolerance = Quantity::length(0.02, LengthUnit::Millimeter);
+    let mut tangent = page.clone();
+    tangent.feature_control_frames[0].tangent_plane = true;
+    let top = |lift: &dyn Fn(f64, f64) -> f64| {
+        let mut record = nominal_record();
+        record.controls = vec![measured(
+            "parallel",
+            grid(|u, v| [60.0 * u, 40.0 * v, 10.0 + lift(u, v)]),
+        )];
+        record
+    };
+    // A level top with a 0.03 mm ridge across its middle: every point needs
+    // a 0.03 mm zone, but the plane on the ridge is level.
+    let ridge = top(&|u, _| if (u - 0.5).abs() < 0.1 { 0.03 } else { 0.0 });
+    let m = evaluated(
+        &page.evaluate_inspection(&graph, &ridge).unwrap(),
+        "parallel",
+    );
+    assert!((m.deviation_mm - 0.03).abs() < 1e-9 && !m.conforms, "{m:?}");
+    let m = evaluated(
+        &tangent.evaluate_inspection(&graph, &ridge).unwrap(),
+        "parallel",
+    );
+    assert!(m.deviation_mm < 1e-9 && m.conforms, "{m:?}");
+    // Tilted 0.025 mm over its length, the tangent plane tilts with it.
+    let tilted = top(&|u, _| 0.025 * u);
+    let m = evaluated(
+        &tangent.evaluate_inspection(&graph, &tilted).unwrap(),
+        "parallel",
+    );
+    assert!(
+        (m.deviation_mm - 0.025).abs() < 1e-9 && !m.conforms,
+        "{m:?}"
+    );
 }
 
 #[test]

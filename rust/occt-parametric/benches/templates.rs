@@ -578,6 +578,8 @@ fn main() {
     }
     gdt.feature_control_frames = (0..10_000)
         .map(|i| DrawingFeatureControlFrame {
+            projected: None,
+            tangent_plane: false,
             pattern: None,
             unequal: None,
             surface: None,

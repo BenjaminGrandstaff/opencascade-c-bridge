@@ -12,12 +12,12 @@ tracks status and order.
 | `occt-types` (shared value types) | — | No native dependency |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI; re-exports `occt-types` |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric-core` (kernel-free engineering layer) | Schema 141 | Definitions, documents, solving and checks without OCCT |
-| `occt-parametric` (kernel regeneration) | Schema 141 | Active development; re-exports the core API |
+| `occt-parametric-core` (kernel-free engineering layer) | Schema 142 | Definitions, documents, solving and checks without OCCT |
+| `occt-parametric` (kernel regeneration) | Schema 142 | Active development; re-exports the core API |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 154 + first-use integration 1 (+1 doc test), recipes 3, parametric core 35 + kernel 673 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 8 + view command 17 + viewer Node 19 + branch command 2 + model command 89, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 154 + first-use integration 1 (+1 doc test), recipes 3, parametric core 35 + kernel 676 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 8 + view command 20 + viewer Node 19 + branch command 2 + model command 89, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -25,6 +25,15 @@ tracks status and order.
 | Scale benchmarks | Last full suite: 194 Rust cases plus 5 model-command cases and a 10,000-face Python matcher. Sketch authoring integration rechecked 60 sketch cases and 60 MCP cases within budget. | `tools/bench/run.sh` |
 
 ## Done
+
+- Projected tolerance zones and tangent planes (schema 142, ABI 69
+  unchanged). Position of a cylindrical feature may carry Ⓟ with a height
+  and a starting plane: the unrelated mating envelope's axis is extended
+  beyond the part and checked where it enters and leaves the zone, through
+  datum shift and composite fits. Orientation of a plane may carry Ⓣ,
+  judging only the plane on the surface's high points. Both draw in the
+  frame. 10,000 position controls with projected zones evaluate in 0.28 s
+  (1 s budget).
 
 - Simultaneous common datum axis simulators (schema 141 and ABI 69
   unchanged). A common datum axis A-B is now the axis of coaxial cylinders
@@ -2310,7 +2319,8 @@ scopes and inspected repo capabilities, not a full conformity audit.
    bounded SVG approximation for curves SVG cannot represent. Direct deviations
    and limits render stacked values.
 2. **Structured GD&T** — [Y14.5](https://www.asme.org/codes-standards/find-codes-standards/y14-5-dimensioning-tolerancing):
-   advanced modifiers, and estimating measurement uncertainty from the
+   free state, statistical, continuous feature, translation and dynamic
+   profile modifiers, and estimating measurement uncertainty from the
    measurement itself. Measured planar datum frames, flatness,
    circularity, cylindricity, planar orientation zones and position with
    MMC/LMC bonus are evaluated (schema 68), and cylindrical datum features of
@@ -2331,7 +2341,8 @@ scopes and inspected repo capabilities, not a full conformity audit.
    position at an angle to a primary datum axis with a free turn when
    unclocked, and plane datum simulators at non-square basic angles, and
    composites of any number of segments (schema 141), and simultaneous
-   common datum axis simulators.
+   common datum axis simulators, and projected tolerance zones and
+   tangent planes (schema 142).
 3. **3D manufacturing annotations and exchange** — [Y14.41](https://www.asme.org/codes-standards/find-codes-standards/y14-41-digital-product-definition-data-practices):
    structured PMI attached to persistent geometry, annotation views, dataset
    authority and revision rules, and verified semantic PMI exchange. Geometry

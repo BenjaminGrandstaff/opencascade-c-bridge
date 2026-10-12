@@ -491,11 +491,7 @@ impl DrawingDefinition {
                 if let Some(member) = data.axial {
                     axial.push(AxialMember { radius, ..member });
                 } else {
-                    members.push(PatternMember {
-                        offset: data.offset,
-                        lever: data.true_position,
-                        radius,
-                    });
+                    members.extend(data.members(data.true_position, radius));
                 }
                 space = Some(data.space);
             }
@@ -1400,7 +1396,23 @@ impl Context<'_, '_> {
             | GeometricCharacteristic::Perpendicularity
             | GeometricCharacteristic::Angularity => {
                 let (normal, axes) = self.oriented(frame, nominal)?;
-                fit_plane(points, normal, &axes)
+                if frame.tangent_plane {
+                    // Ⓣ: the plane contacting the high points (minimum-zone
+                    // orientation, outermost contact) stands in for the
+                    // surface; its extent over the points must fit the zone.
+                    let (u, v) = perpendiculars(nominal);
+                    let tangent = fit_plane(points, nominal, &[u, v]).map_err(|e| e.to_string())?;
+                    let on_tangent: Vec<Vec3> = points
+                        .iter()
+                        .map(|&p| {
+                            let height = dot(tangent.normal, p) - tangent.contact;
+                            subtract(p, scale(tangent.normal, height))
+                        })
+                        .collect();
+                    fit_plane(&on_tangent, normal, &axes)
+                } else {
+                    fit_plane(points, normal, &axes)
+                }
             }
             _ => return Err(format!("{c:?} is not evaluated")),
         }
@@ -1679,22 +1691,20 @@ impl Context<'_, '_> {
                     .and_then(|f| self.nominal(&f.attachment.anchor).ok())
                     .is_some_and(|g| matches!(g, ResolvedDatum::Plane { .. }))
             });
+            let lever = |d: &PositionData| {
+                [
+                    d.true_position[0] - centroid[0],
+                    d.true_position[1] - centroid[1],
+                ]
+            };
             let fit: Vec<PatternMember> = members
                 .iter()
-                .map(|(_, d)| PatternMember {
-                    offset: d.offset,
-                    lever: [
-                        d.true_position[0] - centroid[0],
-                        d.true_position[1] - centroid[1],
-                    ],
-                    radius: 0.5 * (tolerance + d.bonus),
-                })
+                .flat_map(|(_, d)| d.members(lever(d), 0.5 * (tolerance + d.bonus)))
                 .collect();
             let motion = fit_motion(&fit, &ShiftSpace::free(!rotation_fixed));
             let (translation, rotation) = (motion.t, motion.angle);
-            for ((id, data), member) in members.iter().zip(&fit) {
-                let r = member.residual(motion);
-                let deviation = 2.0 * r[0].hypot(r[1]);
+            for (id, data) in &members {
+                let deviation = data.deviation(motion, lever(data));
                 self.refinements
                     .entry(id.clone())
                     .or_default()
@@ -1723,13 +1733,7 @@ impl Context<'_, '_> {
             .get(frame.id.as_str())
             .copied()
             .unwrap_or_default();
-        let member = PatternMember {
-            offset: data.offset,
-            lever: data.true_position,
-            radius: 0.0,
-        };
-        let r = member.residual(shift);
-        let mut deviation = 2.0 * r[0].hypot(r[1]);
+        let mut deviation = data.deviation(shift, data.true_position);
         let (mut translation, mut rotation) = (shift.t[0].hypot(shift.t[1]), shift.angle);
         if let (Some(member), Some(span)) = (data.axial, data.space.span) {
             let motion = self
@@ -1809,6 +1813,12 @@ impl Context<'_, '_> {
                     .anchor,
             )?
         {
+            if frame.projected.is_some() {
+                return Err(
+                    "a projected tolerance zone is evaluated in frames on a primary datum plane"
+                        .into(),
+                );
+            }
             return self.fit_axial(frame, points, limits, origin, direction);
         }
         let nominal = self.resolved_frame(&frame.datums, None)?;
@@ -1853,6 +1863,18 @@ impl Context<'_, '_> {
             self.measured_frame(&frame.datums)?
         };
         let space = self.shift_space(&frame.datums, &measured_frame, &nominal_frame)?;
+        if let Some(zone) = &frame.projected {
+            return self.fit_projected(
+                frame,
+                zone,
+                points,
+                limits,
+                direction,
+                [true_position.x, true_position.y],
+                (&measured_frame, &nominal_frame),
+                space,
+            );
+        }
         let projected = points
             .iter()
             .map(|&p| measured_frame.coordinates_mm(p).map(|c| [c.x, c.y]))
@@ -1902,6 +1924,109 @@ impl Context<'_, '_> {
             size_conforms,
             space,
             axial: None,
+            projected: None,
+        })
+    }
+
+    /// Position in a projected tolerance zone (Ⓟ): the axis of the feature's
+    /// unrelated actual mating envelope (free to tilt; the minimum-material
+    /// envelope's at LMC), extended beyond the part, against the zone from
+    /// the starting plane `height` along its outward normal. Its offsets
+    /// from true position where it enters and leaves the zone bound it, as
+    /// the zone is a cylinder.
+    #[allow(clippy::too_many_arguments)]
+    fn fit_projected(
+        &self,
+        frame: &DrawingFeatureControlFrame,
+        zone: &DrawingProjectedZone,
+        points: &[Vec3],
+        limits: &DrawingSizeLimits,
+        direction: Vec3,
+        true_position: [f64; 2],
+        (measured, nominal): (&DrawingDatumCoordinateFrame, &DrawingDatumCoordinateFrame),
+        space: Rc<ShiftSpace>,
+    ) -> Result<PositionData, String> {
+        let height = zone.height.normalized().map_err(|e| e.to_string())?;
+        let (start, normal) = match &zone.from {
+            Some(from) => plane_datum(
+                self.graph
+                    .datum(&frame.attachment.anchor.instance, from)
+                    .map_err(|e| e.to_string())?,
+                "projected tolerance zone",
+            )?,
+            None => self.nominal_datum(&frame.datums[0].datum_feature)?,
+        };
+        if length(cross(normal, nominal.z_axis)) > 1e-6 {
+            return Err(
+                "a projected tolerance zone starts from a plane square to the feature axis".into(),
+            );
+        }
+        let z0 = nominal.coordinates_mm(start).map_err(|e| e.to_string())?.z;
+        let z1 = z0 + height * dot(normal, nominal.z_axis).signum();
+        let internal = limits.kind == FeatureOfSizeKind::Internal;
+        let (mating, minimum_material) = if internal {
+            (Fit::Inscribed, Fit::Circumscribed)
+        } else {
+            (Fit::Circumscribed, Fit::Inscribed)
+        };
+        let (lower, upper) = limits.bounds().map_err(|e| e.to_string())?;
+        let direction = unit(direction).map_err(|e| e.to_string())?;
+        let (mating_origin, mating_axis, radius) =
+            fit_cylinder(points, direction, mating).map_err(|e| e.to_string())?;
+        let (minimum_origin, minimum_axis, minimum_radius) =
+            fit_cylinder(points, direction, minimum_material).map_err(|e| e.to_string())?;
+        let (size, minimum_size) = (2.0 * radius, 2.0 * minimum_radius);
+        let ((axis_origin, axis), bonus) = match frame.material {
+            ToleranceMaterialCondition::Regardless => ((mating_origin, mating_axis), 0.0),
+            ToleranceMaterialCondition::Maximum => (
+                (mating_origin, mating_axis),
+                if internal { size - lower } else { upper - size }.max(0.0),
+            ),
+            ToleranceMaterialCondition::Least => (
+                (minimum_origin, minimum_axis),
+                if internal {
+                    upper - minimum_size
+                } else {
+                    minimum_size - lower
+                }
+                .max(0.0),
+            ),
+        };
+        let o = measured
+            .coordinates_mm(axis_origin)
+            .map_err(|e| e.to_string())?;
+        let d = [
+            dot(axis, measured.x_axis),
+            dot(axis, measured.y_axis),
+            dot(axis, measured.z_axis),
+        ];
+        if d[2].abs() < 1e-9 {
+            return Err("the feature axis lies in the projected zone's starting plane".into());
+        }
+        let ends = [z0, z1].map(|z| {
+            let t = (z - o.z) / d[2];
+            [
+                o.x + d[0] * t - true_position[0],
+                o.y + d[1] * t - true_position[1],
+            ]
+        });
+        let size_conforms = if internal {
+            size >= lower && minimum_size <= upper
+        } else {
+            size <= upper && minimum_size >= lower
+        };
+        Ok(PositionData {
+            offset: [
+                0.5 * (ends[0][0] + ends[1][0]),
+                0.5 * (ends[0][1] + ends[1][1]),
+            ],
+            true_position,
+            bonus,
+            size,
+            size_conforms,
+            space,
+            axial: None,
+            projected: Some(ends),
         })
     }
 }
@@ -2054,6 +2179,7 @@ impl Context<'_, '_> {
                 across,
                 radius: 0.0,
             }),
+            projected: None,
         })
     }
 }
@@ -2071,6 +2197,40 @@ struct PositionData {
     /// For a feature located to a primary datum axis: its axis ends'
     /// offsets from its zone axis (radius unset).
     axial: Option<AxialMember>,
+    /// For a projected tolerance zone: the feature axis's offsets from true
+    /// position where it enters and leaves the zone.
+    projected: Option<[[f64; 2]; 2]>,
+}
+
+impl PositionData {
+    /// The feature as pattern members with zone radius `radius` and the
+    /// lever `lever`: its axis in the frame plane, or both ends of a
+    /// projected zone.
+    fn members(&self, lever: [f64; 2], radius: f64) -> Vec<PatternMember> {
+        let offsets = match self.projected {
+            Some(ends) => ends.to_vec(),
+            None => vec![self.offset],
+        };
+        offsets
+            .into_iter()
+            .map(|offset| PatternMember {
+                offset,
+                lever,
+                radius,
+            })
+            .collect()
+    }
+    /// Diameter of the smallest zone about the moved true position holding
+    /// every member.
+    fn deviation(&self, motion: Motion, lever: [f64; 2]) -> f64 {
+        self.members(lever, 0.0)
+            .iter()
+            .map(|m| {
+                let r = m.residual(motion);
+                2.0 * r[0].hypot(r[1])
+            })
+            .fold(0.0, f64::max)
+    }
 }
 
 /// Largest minus smallest value; zero for an empty sequence.

@@ -166,8 +166,13 @@ fn main() -> ExitCode {
     outcomes.push(requirements::manufacturing_rules_case(definition));
     outcomes.push(drawing::drawing_case(definition));
     outcomes.push(drawing::assembly_drawing_case(definition));
-    outcomes.push(inspection::inspection_case(definition, false));
-    outcomes.push(inspection::inspection_case(definition, true));
+    for variant in [
+        inspection::Inspected::Square,
+        inspection::Inspected::Oblique,
+        inspection::Inspected::Projected,
+    ] {
+        outcomes.push(inspection::inspection_case(definition, variant));
+    }
     outcomes.push(inspection::form_case(definition));
     outcomes.push(inspection::runout_case(definition, false, false));
     outcomes.push(inspection::runout_case(definition, false, true));

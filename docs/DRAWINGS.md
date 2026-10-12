@@ -720,7 +720,7 @@ material modifiers, both exports, shared regeneration and native handle cleanup.
 Feature-of-size flags and geometric controls are manufacturing declarations.
 Anchors locate leaders on selected solid outputs; they do not identify persistent
 faces or establish datum simulators. Targets,
-projected zones, advanced modifiers, primary-axis datum shift and semantic PMI exchange remain
+free-state, statistical, continuous-feature, translation and dynamic-profile modifiers and semantic PMI exchange remain
 on the roadmap; measured simulators, bonus tolerance and zone evaluation for a
 supported subset are described in [Measured inspection](#measured-inspection-schema-68). References: [ASME Y14.5 scope and contents](https://www.asme.org/getmedia/da2ff89e-067b-4160-8e2e-53e6c7da1d3b/17707.pdf)
 and [NIST datum-system model](https://nvlpubs.nist.gov/nistpubs/jres/104/4/html/j44mac.htm).
@@ -795,6 +795,26 @@ disposed about the true profile.
 "characteristic": "profile_surface",
 "tolerance": {"value": 0.1, "dimension": "length", "unit": "millimeter"},
 "unequal": {"value": 0.03, "dimension": "length", "unit": "millimeter"}
+```
+
+Schema 142 adds two modifiers:
+
+- **Projected tolerance zone Ⓟ:** `projected: {height, from?}` on position
+  of a cylindrical feature of size, for example a tapped or press-fit hole
+  whose mating part extends beyond it. The zone runs `height` from the
+  plane datum `from` (a datum of the attachment instance, the face the
+  mating part seats on) along that plane's outward normal. Without `from`
+  it starts at the primary datum plane. It draws as a circled P followed
+  by the height.
+- **Tangent plane Ⓣ:** `tangent_plane: true` on parallelism,
+  perpendicularity or angularity of a plane. Only the plane contacting the
+  surface's high points must lie in the zone, so form error below them does
+  not count. It draws as a circled T.
+
+```json
+"characteristic": "position",
+"projected": {"height": {"value": 20, "dimension": "length", "unit": "millimeter"},
+              "from": "top"}
 ```
 
 SVG and DXF show one shared characteristic cell 8 mm tall per segment, an 8 mm
@@ -1123,8 +1143,9 @@ Supported controls:
 | Flatness | Minimum-zone width over all orientations |
 | Circularity | Worst section's radial width between the narrowest concentric circles, center free. Sections are points sharing a position along the anchor's nominal axis (within 1e-3 mm or 1e-6 of the axial span); each needs at least four points |
 | Cylindricity | Radial width between the narrowest coaxial cylinders, axis free to shift and tilt from the anchor's nominal axis; at least six points |
-| Parallelism, perpendicularity, angularity (planar zone) | Zone width at the basic orientation to the measured datums; with a single datum, rotation about its normal stays free |
+| Parallelism, perpendicularity, angularity (planar zone) | Zone width at the basic orientation to the measured datums; with a single datum, rotation about its normal stays free. With Ⓣ (schema 142), the points are first projected onto their tangent plane: the minimum-zone orientation placed against the outermost points, like a primary datum simulator |
 | Position (diameter zone, axis normal to primary plane) | Twice the radial offset of the related actual mating envelope from true position, in the measured frame: three planes (3-2-1) or a plane-axis frame (schema 137), after any datum shift |
+| Position in a projected zone (schema 142, Ⓟ) | The axis of the unrelated actual mating envelope (free to tilt; the minimum-material envelope's at LMC), extended beyond the part: twice the larger offset from true position where it enters and leaves the zone. Datum shift and composite fits treat the two ends as members of the pattern. Frames on a primary datum axis are reported |
 | Circular runout (schema 135) | Full indicator movement about the datum axis, for the worst circular element. On a surface coaxial with the datum axis, the reading is radial and elements are points sharing an axial position. On a face perpendicular to it, the reading is axial and elements are points sharing a radius. Elements group within 1e-3 mm or 1e-6 of the span; each needs at least three points |
 | Total runout (schema 135) | The same readings over all points of the surface |
 | Runout of a surface of revolution with nominals (schema 140) | Readings square to the nominal surface: each point's signed distance from its nominal point along the nominal normal, with the nominal geometry placed on the measured datums. Circles are points whose nominal points share an axial position and then a radius, so cones, spheres and faces all work |
@@ -1442,12 +1463,12 @@ shared across controls. Time is O(controls · datums) plus the fit costs, and ea
 fit is linear in its points per simplex pivot. The scale benchmark evaluates
 10,000 MMC position controls of 72 points each, plus a 100,000-point flatness
 surface, against one shared frame, in 0.19 s, or in 0.22 s with datum B a
-bevel at 45° to A; and 1,000 cylindricity plus 1,000
+bevel at 45° to A, or in 0.28 s with every zone projected 10 mm (Ⓟ); and 1,000 cylindricity plus 1,000
 circularity controls (612,000 points) in 0.13 s. It also evaluates 1,000
 circular plus 1,000 total runout controls (471,600 points), with each of 100
 bore datum axes fitted once, in 0.03 s. Against 100 common datum axes from
 200 bore journals (511,200 points), each a simultaneous simulator, the same
-controls take 0.060 s. All five
+controls take 0.060 s. All six
 cases have 1 s budgets.
 Runout readings cost O(n log n) per control after the datum fit. 10,000
 position controls located A | B(MMB) | C from a center bore share one datum

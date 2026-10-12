@@ -25,8 +25,8 @@ pub use gdt::{
     DatumMaterialBoundary, DatumPrecedence, DrawingCompositeRefinement,
     DrawingDatumCoordinateFrame, DrawingDatumFeature, DrawingDatumReference,
     DrawingDatumReferenceFrame, DrawingFeatureControlFrame, DrawingGdtAttachment,
-    DrawingPositionMeasurement, DrawingPositionMeasurementResult, DrawingSizeLimits,
-    FeatureOfSizeKind, GeometricCharacteristic, GeometricToleranceAllowance,
+    DrawingPositionMeasurement, DrawingPositionMeasurementResult, DrawingProjectedZone,
+    DrawingSizeLimits, FeatureOfSizeKind, GeometricCharacteristic, GeometricToleranceAllowance,
     GeometricToleranceZone, PositionSampleEvaluation, PositionToleranceAxis,
     ResolvedDrawingDatumReference, ResolvedDrawingDatumReferenceFrame, ToleranceMaterialCondition,
 };

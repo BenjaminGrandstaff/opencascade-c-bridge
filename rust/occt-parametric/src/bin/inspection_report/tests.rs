@@ -145,6 +145,8 @@ fn fixture() -> ModelDocument {
         });
     page.feature_control_frames
         .push(DrawingFeatureControlFrame {
+            projected: None,
+            tangent_plane: false,
             pattern: None,
             unequal: None,
             surface: None,

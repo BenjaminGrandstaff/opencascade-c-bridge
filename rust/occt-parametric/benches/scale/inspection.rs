@@ -5,10 +5,10 @@ use super::*;
 use occt_parametric::{
     ControlResult, DatumMaterialBoundary, DecisionRule, DrawingCompositeRefinement,
     DrawingDatumFeature, DrawingDatumReference, DrawingDatumReferenceFrame, DrawingDefinition,
-    DrawingFeatureControlFrame, DrawingGdtAttachment, DrawingSizeLimits, DrawingView,
-    DrawingViewKind, FeatureOfSizeKind, GeometricCharacteristic, GeometricToleranceZone,
-    InspectionRecord, InstanceOutputRef, MeasuredFeature, MeasuredNominal, MeasurementUncertainty,
-    NamedReference, ReferenceTarget, ToleranceMaterialCondition,
+    DrawingFeatureControlFrame, DrawingGdtAttachment, DrawingProjectedZone, DrawingSizeLimits,
+    DrawingView, DrawingViewKind, FeatureOfSizeKind, GeometricCharacteristic,
+    GeometricToleranceZone, InspectionRecord, InstanceOutputRef, MeasuredFeature, MeasuredNominal,
+    MeasurementUncertainty, NamedReference, ReferenceTarget, ToleranceMaterialCondition,
 };
 
 const HOLES_PER_SIDE: usize = 10;
@@ -65,16 +65,26 @@ fn grid(count: usize, point: impl Fn(f64, f64) -> [f64; 3]) -> Vec<[f64; 3]> {
         .collect()
 }
 
-/// With `oblique`, datum B is a 45° bevel along the plate's left edge,
-/// tilted to A, in place of the square left face.
-pub(crate) fn inspection_case(definition: &FamilyDefinition, oblique: bool) -> Outcome {
+/// The frame and zones of [`inspection_case`].
+#[derive(Clone, Copy, PartialEq)]
+pub(crate) enum Inspected {
+    Square,
+    /// Datum B is a 45° bevel along the plate's left edge, tilted to A, in
+    /// place of the square left face.
+    Oblique,
+    /// Every position zone is projected 10 mm beyond A (Ⓟ).
+    Projected,
+}
+
+pub(crate) fn inspection_case(definition: &FamilyDefinition, variant: Inspected) -> Outcome {
+    let oblique = variant == Inspected::Oblique;
     timed(
         format!(
             "inspection: {CONTROLS} measured position controls + {SURFACE_POINTS}-point flatness{}",
-            if oblique {
-                ", secondary datum at 45° to A"
-            } else {
-                ""
+            match variant {
+                Inspected::Square => "",
+                Inspected::Oblique => ", secondary datum at 45° to A",
+                Inspected::Projected => ", projected zones",
             }
         ),
         Duration::from_secs(1),
@@ -114,6 +124,8 @@ pub(crate) fn inspection_case(definition: &FamilyDefinition, oblique: bool) -> O
             };
             let mut controls: Vec<DrawingFeatureControlFrame> = (0..CONTROLS)
                 .map(|i| DrawingFeatureControlFrame {
+                    projected: None,
+                    tangent_plane: false,
                     pattern: None,
                     unequal: None,
                     surface: None,
@@ -139,6 +151,14 @@ pub(crate) fn inspection_case(definition: &FamilyDefinition, oblique: bool) -> O
                     datums: Vec::new(),
                 })
                 .collect();
+            if variant == Inspected::Projected {
+                for control in &mut controls {
+                    control.projected = Some(DrawingProjectedZone {
+                        height: Quantity::length(10.0, LengthUnit::Millimeter),
+                        from: None,
+                    });
+                }
+            }
             let mut flat = controls[0].clone();
             flat.id = "flat".into();
             flat.attachment = attachment("top");
@@ -148,6 +168,7 @@ pub(crate) fn inspection_case(definition: &FamilyDefinition, oblique: bool) -> O
             flat.feature_of_size = false;
             flat.size_limits = None;
             flat.datum_reference_frame = None;
+            flat.projected = None;
             controls.push(flat);
             let drawing = DrawingDefinition {
                 datum_reference_frames: vec![DrawingDatumReferenceFrame {
@@ -346,6 +367,8 @@ pub(crate) fn form_case(definition: &FamilyDefinition) -> Outcome {
             graph.add_base("part", HashMap::new(), "bench")?;
             let holes = HOLES_PER_SIDE * HOLES_PER_SIDE;
             let control = |i: usize, cylindricity: bool| DrawingFeatureControlFrame {
+                projected: None,
+                tangent_plane: false,
                 pattern: None,
                 unequal: None,
                 surface: None,
@@ -508,6 +531,8 @@ pub(crate) fn runout_case(definition: &FamilyDefinition, common: bool, conical: 
                     .collect::<String>()
             };
             let control = |i: usize, total: bool| DrawingFeatureControlFrame {
+                projected: None,
+                tangent_plane: false,
                 pattern: None,
                 unequal: None,
                 surface: None,
@@ -760,6 +785,8 @@ pub(crate) fn datum_shift_case(definition: &FamilyDefinition, frame: ShiftFrame)
             };
             let controls: Vec<DrawingFeatureControlFrame> = (0..CONTROLS)
                 .map(|i| DrawingFeatureControlFrame {
+                    projected: None,
+                    tangent_plane: false,
                     pattern: None,
                     unequal: None,
                     surface: None,
@@ -1086,6 +1113,8 @@ pub(crate) fn composite_case(definition: &FamilyDefinition, three: bool) -> Outc
             };
             let controls: Vec<DrawingFeatureControlFrame> = (0..CONTROLS)
                 .map(|i| DrawingFeatureControlFrame {
+                    projected: None,
+                    tangent_plane: false,
                     pattern: Some(format!("P{}", i / holes)),
                     unequal: None,
                     surface: None,
@@ -1255,6 +1284,8 @@ pub(crate) fn profile_case(definition: &FamilyDefinition) -> Outcome {
             };
             let controls: Vec<DrawingFeatureControlFrame> = (0..CONTROLS)
                 .map(|i| DrawingFeatureControlFrame {
+                    projected: None,
+                    tangent_plane: false,
                     pattern: Some(format!("P{}", i / holes)),
                     unequal: None,
                     surface: None,
@@ -1357,6 +1388,8 @@ pub(crate) fn profile_surface_case(definition: &FamilyDefinition) -> Outcome {
             let drawing = abc_drawing(
                 "surface",
                 vec![DrawingFeatureControlFrame {
+                    projected: None,
+                    tangent_plane: false,
                     pattern: None,
                     unequal: None,
                     surface: None,
@@ -1440,6 +1473,8 @@ pub(crate) fn profile_projection_case(definition: &FamilyDefinition) -> Outcome 
             graph.add_base("part", HashMap::new(), "bench")?;
             let controls = (0..PROFILES)
                 .map(|i| DrawingFeatureControlFrame {
+                    projected: None,
+                    tangent_plane: false,
                     pattern: None,
                     unequal: None,
                     surface: Some(FaceSelector::Named("side".into())),
@@ -1523,6 +1558,8 @@ pub(crate) fn profile_line_case(definition: &FamilyDefinition) -> Outcome {
             let drawing = abc_drawing(
                 "rows",
                 vec![DrawingFeatureControlFrame {
+                    projected: None,
+                    tangent_plane: false,
                     pattern: None,
                     unequal: None,
                     surface: None,
@@ -1614,6 +1651,8 @@ pub(crate) fn coaxial_shift_case(definition: &FamilyDefinition, common: bool) ->
             };
             let controls: Vec<DrawingFeatureControlFrame> = (0..CONTROLS)
                 .map(|i| DrawingFeatureControlFrame {
+                    projected: None,
+                    tangent_plane: false,
                     pattern: None,
                     unequal: None,
                     surface: None,
@@ -1805,6 +1844,8 @@ pub(crate) fn radial_case(definition: &FamilyDefinition) -> Outcome {
             };
             let controls: Vec<DrawingFeatureControlFrame> = (0..CONTROLS)
                 .map(|i| DrawingFeatureControlFrame {
+                    projected: None,
+                    tangent_plane: false,
                     pattern: None,
                     unequal: None,
                     surface: None,

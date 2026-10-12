@@ -28,6 +28,8 @@ fn gdt_page() -> DrawingDefinition {
     }
     page.feature_control_frames
         .push(DrawingFeatureControlFrame {
+            projected: None,
+            tangent_plane: false,
             pattern: None,
             unequal: None,
             surface: None,
@@ -446,6 +448,77 @@ fn composite_frames_export_one_shared_symbol_two_tolerance_rows_and_exact_budget
             .unwrap();
         std::fs::write("/tmp/occb-composite-gdt.svg", generated.to_svg()).unwrap();
         std::fs::write("/tmp/occb-composite-gdt.dxf", generated.to_dxf()).unwrap();
+    }
+    assert_eq!(session.shape_count().unwrap(), 0);
+}
+#[test]
+fn projected_and_tangent_plane_modifiers_render_and_validate() {
+    let definition = family_with_datums();
+    let mut graph = InstanceGraph::new(&definition);
+    graph.add_base("part", HashMap::new(), "test").unwrap();
+    let session = Session::new().unwrap();
+    let mut page = gdt_page();
+    let projected = DrawingProjectedZone {
+        height: Quantity::length(12.0, LengthUnit::Millimeter),
+        from: None,
+    };
+    page.feature_control_frames[0].projected = Some(projected.clone());
+    let mut orientation = page.feature_control_frames[0].clone();
+    orientation.id = "parallel".into();
+    orientation.characteristic = GeometricCharacteristic::Parallelism;
+    orientation.zone = GeometricToleranceZone::Characteristic;
+    orientation.material = ToleranceMaterialCondition::Regardless;
+    orientation.feature_of_size = false;
+    orientation.projected = None;
+    orientation.tangent_plane = true;
+    orientation.datums.truncate(1);
+    page.feature_control_frames.push(orientation);
+    let generated = page
+        .generate(&graph, &session, DrawingRenderOptions::default())
+        .unwrap();
+    for text in ["P", "12.00", "T"] {
+        assert!(
+            generated.gdt_labels.iter().any(|l| l.text == text),
+            "{text}"
+        );
+    }
+    assert_eq!(
+        generated
+            .gdt_lines
+            .iter()
+            .map(|l| l.points_mm.len())
+            .sum::<usize>(),
+        crate::drawing::gdt::vertex_count(
+            &page.datum_features,
+            &page.feature_control_frames,
+            &page.datum_reference_frames
+        )
+        .unwrap()
+    );
+    let mut document = ModelDocument::from_graph(&graph);
+    document.drawings.push(page.clone());
+    let json = document.to_json_pretty().unwrap();
+    assert!(json.contains("\"tangent_plane\": true") && json.contains("\"projected\""));
+    assert_eq!(ModelDocument::from_json(&json).unwrap(), document);
+    // Ⓟ belongs to position of a cylindrical feature of size with a
+    // positive height from a plane; Ⓣ to orientation.
+    for case in 0..4 {
+        let mut invalid = page.clone();
+        let [position, parallel] = invalid.feature_control_frames.as_mut_slice() else {
+            unreachable!()
+        };
+        match case {
+            0 => parallel.projected = Some(projected.clone()),
+            1 => position.tangent_plane = true,
+            2 => position.projected.as_mut().unwrap().height.value = 0.0,
+            _ => position.projected.as_mut().unwrap().from = Some("origin".into()),
+        }
+        assert!(
+            invalid
+                .generate(&graph, &session, DrawingRenderOptions::default())
+                .is_err(),
+            "case {case}"
+        );
     }
     assert_eq!(session.shape_count().unwrap(), 0);
 }
