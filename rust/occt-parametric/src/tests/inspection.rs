@@ -1800,6 +1800,182 @@ fn slot_and_tab_width_datums_shift_a_planar_frame() {
     assert!(m.deviation_mm < 1e-4 && m.conforms, "{m:?}");
 }
 
+/// Plate drawing with a primary datum bore D (Ø9.9-10.1 on the hole axis,
+/// referenced at `boundary`) and Ø0.04 RFS position controls `ids` on
+/// Ø15.9-16.1 counterbores coaxial with it.
+fn coaxial_page(boundary: DatumMaterialBoundary, ids: &[&str]) -> DrawingDefinition {
+    let mut page = page();
+    page.datum_features.push(DrawingDatumFeature {
+        id: "D".into(),
+        label: "D".into(),
+        feature_of_size: true,
+        attachment: attachment("hole"),
+        size_kind: None,
+        size_limits: Some(DrawingSizeLimits {
+            kind: FeatureOfSizeKind::Internal,
+            lower: Quantity::length(9.9, LengthUnit::Millimeter),
+            upper: Quantity::length(10.1, LengthUnit::Millimeter),
+        }),
+    });
+    page.datum_reference_frames.clear();
+    page.feature_control_frames = ids
+        .iter()
+        .map(|id| {
+            let mut f = control(id, "hole", GeometricCharacteristic::Position, 0.04, &["D"]);
+            f.datums[0].boundary = boundary;
+            f.zone = GeometricToleranceZone::Diameter;
+            f.feature_of_size = true;
+            f.size_limits = Some(DrawingSizeLimits {
+                kind: FeatureOfSizeKind::Internal,
+                lower: Quantity::length(15.9, LengthUnit::Millimeter),
+                upper: Quantity::length(16.1, LengthUnit::Millimeter),
+            });
+            f
+        })
+        .collect();
+    page
+}
+
+/// A measured Ø`bore` datum bore over z 0-10 on the nominal axis, and Ø16
+/// counterbores over z 10-20 whose axes are offset in x by `ends[i]` at
+/// z = 10 and z = 20.
+fn coaxial_record(bore: f64, ends: &[[f64; 2]]) -> InspectionRecord {
+    InspectionRecord {
+        uncertainty: None,
+        drawing: "plate".into(),
+        surface_textures: Vec::new(),
+        datum_features: vec![measured(
+            "D",
+            cylinder([HOLE[0], HOLE[1], 0.0], [0.0, 0.0, 1.0], |_| bore / 2.0),
+        )],
+        controls: ends
+            .iter()
+            .enumerate()
+            .map(|(i, [low, high])| {
+                let base = [HOLE[0] + low, HOLE[1], 10.0];
+                measured(
+                    &format!("cbore{i}"),
+                    cylinder(base, [high - low, 0.0, 10.0], |_| 8.0),
+                )
+            })
+            .collect(),
+    }
+}
+
+#[test]
+fn coaxial_position_is_measured_over_the_feature_length_from_a_primary_axis() {
+    let definition = plate();
+    let graph = graph_of(&definition);
+    let page = coaxial_page(DatumMaterialBoundary::Regardless, &["cbore0"]);
+    // Offset 0.03 mm throughout: twice the offset.
+    let report = page
+        .evaluate_inspection(&graph, &coaxial_record(10.0, &[[0.03, 0.03]]))
+        .unwrap();
+    let m = evaluated(&report, "cbore0");
+    assert!((m.deviation_mm - 0.06).abs() < 1e-6, "{m:?}");
+    assert!(!m.conforms);
+    assert_eq!((m.datum_shift_mm, m.datum_shift_limit_mm), (0.0, 0.0));
+    assert!((m.actual_size_mm.unwrap() - 16.0).abs() < 1e-6, "{m:?}");
+    // Square at its base but leaning 0.015 mm at its top end: the worse end.
+    let report = page
+        .evaluate_inspection(&graph, &coaxial_record(10.0, &[[0.0, 0.015]]))
+        .unwrap();
+    let m = evaluated(&report, "cbore0");
+    assert!((m.deviation_mm - 0.03).abs() < 1e-6, "{m:?}");
+    assert!(m.conforms);
+    // A feature off the datum axis is not coaxial with it.
+    let mut definition = plate();
+    definition.datums.push(DatumDefinition {
+        id: "off".into(),
+        kind: DatumKind::Axis {
+            origin: VectorExpr::Literal(VectorQuantity::lengths(
+                35.0,
+                20.0,
+                0.0,
+                LengthUnit::Millimeter,
+            )),
+            direction: VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, 1.0)),
+        },
+    });
+    let graph = graph_of(&definition);
+    let mut off = page.clone();
+    off.feature_control_frames[0].attachment = attachment("off");
+    let report = off
+        .evaluate_inspection(&graph, &coaxial_record(10.0, &[[0.0, 0.0]]))
+        .unwrap();
+    assert!(
+        matches!(
+            &report.controls[0].result,
+            ControlResult::NotEvaluated(r) if r.contains("coaxial")
+        ),
+        "{:?}",
+        report.controls[0]
+    );
+}
+
+#[test]
+fn a_primary_axis_at_a_material_boundary_shifts_and_tilts() {
+    use DatumMaterialBoundary::{Least, Maximum};
+    let definition = plate();
+    let graph = graph_of(&definition);
+    let page = coaxial_page(Maximum, &["cbore0"]);
+    // A Ø10.06 bore clears its Ø9.9 MMB by 0.08 mm a side: an offset of
+    // 0.05 mm shifts away.
+    let report = page
+        .evaluate_inspection(&graph, &coaxial_record(10.06, &[[0.05, 0.05]]))
+        .unwrap();
+    let m = evaluated(&report, "cbore0");
+    assert!(m.deviation_mm < 1e-6 && m.conforms, "{m:?}");
+    assert!((m.datum_shift_mm - 0.05).abs() < 1e-6, "{m:?}");
+    assert!(m.datum_shift_rotation_rad < 1e-9, "{m:?}");
+    assert!((m.datum_shift_limit_mm - 0.08).abs() < 1e-9, "{m:?}");
+    // Leaning 0.1 mm over z 10-20 needs the datum axis to tilt beyond its
+    // ends' 0.08 mm: with its far end at -0.08 mm and its near end at a,
+    // the counterbore ends sit a and 0.02 - 2a off; a = 0.02/3 balances
+    // them.
+    let report = page
+        .evaluate_inspection(&graph, &coaxial_record(10.06, &[[0.0, 0.1]]))
+        .unwrap();
+    let m = evaluated(&report, "cbore0");
+    assert!((m.deviation_mm - 0.04 / 3.0).abs() < 1e-6, "{m:?}");
+    assert!(
+        (m.datum_shift_rotation_rad - (0.08 + 0.02 / 3.0) / 10.0).abs() < 1e-6,
+        "{m:?}"
+    );
+    // Coaxial controls with the same datum references share one shift.
+    let pair = coaxial_page(Maximum, &["cbore0", "cbore1"]);
+    let report = pair
+        .evaluate_inspection(
+            &graph,
+            &coaxial_record(10.06, &[[0.05, 0.05], [-0.05, -0.05]]),
+        )
+        .unwrap();
+    for id in ["cbore0", "cbore1"] {
+        let m = evaluated(&report, id);
+        assert!((m.deviation_mm - 0.1).abs() < 1e-6, "{m:?}");
+        assert!(m.datum_shift_mm < 1e-6, "{m:?}");
+    }
+    // LMB: a Ø10.0 bore is 0.1 mm inside its Ø10.1 boundary.
+    let report = coaxial_page(Least, &["cbore0"])
+        .evaluate_inspection(&graph, &coaxial_record(10.0, &[[0.03, 0.03]]))
+        .unwrap();
+    let m = evaluated(&report, "cbore0");
+    assert!((m.datum_shift_limit_mm - 0.05).abs() < 1e-9, "{m:?}");
+    assert!(m.deviation_mm < 1e-6, "{m:?}");
+    // A bore inside its MMB violates the boundary.
+    let report = page
+        .evaluate_inspection(&graph, &coaxial_record(9.85, &[[0.0, 0.0]]))
+        .unwrap();
+    assert!(
+        matches!(
+            &report.controls[0].result,
+            ControlResult::NotEvaluated(r) if r.contains("violates its maximum material boundary")
+        ),
+        "{:?}",
+        report.controls[0]
+    );
+}
+
 /// Four pattern holes with composite position: Ø`upper` to A | B | C (the
 /// plate's three planes), refined to Ø`lower` relating the pattern with
 /// `lower_datums` (a prefix of A, B, C).

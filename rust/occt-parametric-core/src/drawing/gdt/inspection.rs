@@ -14,7 +14,7 @@ pub mod fit;
 mod profile;
 mod shift;
 use fit::{Fit, circle_zone, cylinder_zone, fit_circle, fit_cylinder, fit_plane, fit_width};
-use shift::{Motion, PatternMember, ShiftSpace, fit_motion};
+use shift::{AxialMember, Motion, PatternMember, ShiftSpace, fit_axis_shift, fit_motion};
 use std::rc::Rc;
 
 /// Upper bound on measured points in one record, which bounds memory and time.
@@ -330,6 +330,9 @@ struct Context<'a, 'g> {
     positions: HashMap<String, Result<PositionData, String>>,
     /// Shared datum shift by control ID (simultaneous requirement).
     shifts: HashMap<String, Motion>,
+    /// Shared shift of a primary datum axis by control ID: the offsets of
+    /// its two ends (simultaneous requirement).
+    axial_shifts: HashMap<String, [[f64; 2]; 2]>,
     /// Motions each datum precedence's material boundaries allow.
     spaces: HashMap<SimulatorKey, Result<Rc<ShiftSpace>, String>>,
     /// Composite lower-segment results by control ID, fitted per pattern.
@@ -410,6 +413,7 @@ impl DrawingDefinition {
             simulators: HashMap::new(),
             positions: HashMap::new(),
             shifts: HashMap::new(),
+            axial_shifts: HashMap::new(),
             spaces: HashMap::new(),
             refinements: HashMap::new(),
             profiles: HashMap::new(),
@@ -436,6 +440,8 @@ impl DrawingDefinition {
         for group in groups.values() {
             let mut ids = Vec::with_capacity(group.len());
             let mut members = Vec::with_capacity(group.len());
+            let mut axial = Vec::new();
+            let mut span = [0.0, 0.0];
             let mut space = None;
             for frame in group {
                 let points = &measured_controls[frame.id.as_str()];
@@ -446,14 +452,30 @@ impl DrawingDefinition {
                     continue;
                 };
                 ids.push(frame.id.clone());
-                members.push(PatternMember {
-                    offset: data.offset,
-                    lever: data.true_position,
-                    radius: 0.5 * (tolerance + data.bonus),
-                });
+                let radius = 0.5 * (tolerance + data.bonus);
+                if let Some(coaxial) = &data.axial {
+                    axial.push(AxialMember {
+                        ends: coaxial.ends,
+                        radius,
+                    });
+                    span = coaxial.span;
+                } else {
+                    members.push(PatternMember {
+                        offset: data.offset,
+                        lever: data.true_position,
+                        radius,
+                    });
+                }
                 space = Some(data.space);
             }
             let Some(space) = space else { continue };
+            if !axial.is_empty() {
+                let shift = fit_axis_shift(&axial, space.limit, span);
+                for id in ids {
+                    context.axial_shifts.insert(id, shift);
+                }
+                continue;
+            }
             let shift = fit_motion(&members, &space);
             for id in ids {
                 context.shifts.insert(id, shift);
@@ -950,17 +972,38 @@ impl Context<'_, '_> {
         let nominal = unit(nominal).map_err(|e| e.to_string())?;
         match prefix {
             [] => {
-                if boundary != DatumMaterialBoundary::Regardless {
-                    return Err("datum shift of a primary axis datum is not evaluated".into());
-                }
                 let (origin, direction, radius) =
                     fit_cylinder(points, nominal, fit).map_err(|e| e.to_string())?;
+                let size = 2.0 * radius;
+                // At LMB the minimum-material envelope locates the axis.
+                let (origin, direction, limit) = match boundary {
+                    DatumMaterialBoundary::Regardless => (origin, direction, 0.0),
+                    DatumMaterialBoundary::Maximum => (
+                        origin,
+                        direction,
+                        boundary_clearance(feature, kind, boundary, size)?,
+                    ),
+                    DatumMaterialBoundary::Least => {
+                        let opposite = if kind == FeatureOfSizeKind::Internal {
+                            Fit::Circumscribed
+                        } else {
+                            Fit::Inscribed
+                        };
+                        let (origin, direction, minimum) =
+                            fit_cylinder(points, nominal, opposite).map_err(|e| e.to_string())?;
+                        (
+                            origin,
+                            direction,
+                            boundary_clearance(feature, kind, boundary, 2.0 * minimum)?,
+                        )
+                    }
+                };
                 let direction = if dot(direction, nominal) < 0.0 {
                     scale(direction, -1.0)
                 } else {
                     direction
                 };
-                Ok(Simulator::Axis(origin, direction, vec![2.0 * radius], 0.0))
+                Ok(Simulator::Axis(origin, direction, vec![size], limit))
             }
             [Simulator::Plane(point, normal, _)] => {
                 if length(cross(nominal, *normal)) > 1e-9 {
@@ -1005,46 +1048,21 @@ impl Context<'_, '_> {
         center: [f64; 2],
         radius: f64,
     ) -> Result<([f64; 2], f64), String> {
-        if boundary == DatumMaterialBoundary::Regardless {
-            return Ok((center, 0.0));
-        }
-        let limits = feature.size_limits.as_ref().ok_or_else(|| {
-            format!(
-                "datum feature '{}' needs size limits for its material boundary",
-                feature.id
-            )
-        })?;
-        let (lower, upper) = limits.bounds().map_err(|e| e.to_string())?;
-        let internal = kind == FeatureOfSizeKind::Internal;
-        let (center, departure) = if boundary == DatumMaterialBoundary::Maximum {
-            let size = 2.0 * radius;
-            (center, if internal { size - lower } else { upper - size })
-        } else {
-            let opposite = if internal {
-                Fit::Circumscribed
-            } else {
-                Fit::Inscribed
-            };
-            let (minimum_center, minimum_radius) =
-                fit_circle(projected, opposite).map_err(|e| e.to_string())?;
-            let size = 2.0 * minimum_radius;
-            (
-                minimum_center,
-                if internal { upper - size } else { size - lower },
-            )
-        };
-        if departure < -1e-9 {
-            return Err(format!(
-                "datum feature '{}' violates its {} material boundary",
-                feature.id,
-                if boundary == DatumMaterialBoundary::Maximum {
-                    "maximum"
+        let (center, size) = match boundary {
+            DatumMaterialBoundary::Regardless => return Ok((center, 0.0)),
+            DatumMaterialBoundary::Maximum => (center, 2.0 * radius),
+            DatumMaterialBoundary::Least => {
+                let opposite = if kind == FeatureOfSizeKind::Internal {
+                    Fit::Circumscribed
                 } else {
-                    "least"
-                }
-            ));
-        }
-        Ok((center, 0.5 * departure.max(0.0)))
+                    Fit::Inscribed
+                };
+                let (center, radius) =
+                    fit_circle(projected, opposite).map_err(|e| e.to_string())?;
+                (center, 2.0 * radius)
+            }
+        };
+        Ok((center, boundary_clearance(feature, kind, boundary, size)?))
     }
 
     fn measured_frame(
@@ -1460,7 +1478,25 @@ impl Context<'_, '_> {
             radius: 0.0,
         };
         let r = member.residual(shift);
-        let deviation = 2.0 * r[0].hypot(r[1]);
+        let mut deviation = 2.0 * r[0].hypot(r[1]);
+        let (mut translation, mut rotation) = (shift.t[0].hypot(shift.t[1]), shift.angle);
+        if let Some(coaxial) = &data.axial {
+            let ends = self
+                .axial_shifts
+                .get(frame.id.as_str())
+                .copied()
+                .unwrap_or_default();
+            let member = AxialMember {
+                ends: coaxial.ends,
+                radius: 0.0,
+            };
+            deviation = member.deviation(ends, coaxial.span);
+            translation = ends[0][0]
+                .hypot(ends[0][1])
+                .max(ends[1][0].hypot(ends[1][1]));
+            rotation = (ends[1][0] - ends[0][0]).hypot(ends[1][1] - ends[0][1])
+                / (coaxial.span[1] - coaxial.span[0]);
+        }
         Ok(ControlMeasurement {
             deviation_mm: deviation,
             tolerance_mm: tolerance,
@@ -1468,8 +1504,8 @@ impl Context<'_, '_> {
             actual_size_mm: Some(data.size),
             size_conforms: Some(data.size_conforms),
             conforms: data.size_conforms && deviation <= tolerance + data.bonus,
-            datum_shift_mm: shift.t[0].hypot(shift.t[1]),
-            datum_shift_rotation_rad: shift.angle,
+            datum_shift_mm: translation,
+            datum_shift_rotation_rad: rotation,
             datum_shift_limit_mm: data.space.limit,
             refinement: None,
             profile: None,
@@ -1522,6 +1558,15 @@ impl Context<'_, '_> {
         else {
             return Err("position evaluation needs axis datum geometry".into());
         };
+        if let [primary] = frame.datums.as_slice()
+            && let ResolvedDatum::Axis { .. } = self.nominal(
+                &self.features[primary.datum_feature.as_str()]
+                    .attachment
+                    .anchor,
+            )?
+        {
+            return self.fit_coaxial(frame, points, limits, origin, direction);
+        }
         let nominal = self.resolved_frame(&frame.datums, None)?;
         let axis_frame = nominal
             .datums
@@ -1612,6 +1657,163 @@ impl Context<'_, '_> {
             size,
             size_conforms,
             space,
+            axial: None,
+        })
+    }
+}
+
+/// Half the departure of a datum feature of size from its material boundary:
+/// `size` is the actual mating size at MMB or the minimum-material size at
+/// LMB. Sizes come from the feature's `size_limits`; geometric tolerances
+/// that would enlarge the boundary are not included.
+fn boundary_clearance(
+    feature: &DrawingDatumFeature,
+    kind: FeatureOfSizeKind,
+    boundary: DatumMaterialBoundary,
+    size: f64,
+) -> Result<f64, String> {
+    let limits = feature.size_limits.as_ref().ok_or_else(|| {
+        format!(
+            "datum feature '{}' needs size limits for its material boundary",
+            feature.id
+        )
+    })?;
+    let (lower, upper) = limits.bounds().map_err(|e| e.to_string())?;
+    let internal = kind == FeatureOfSizeKind::Internal;
+    let maximum = boundary == DatumMaterialBoundary::Maximum;
+    let departure = match (maximum, internal) {
+        (true, true) => size - lower,
+        (true, false) => upper - size,
+        (false, true) => upper - size,
+        (false, false) => size - lower,
+    };
+    if departure < -1e-9 {
+        return Err(format!(
+            "datum feature '{}' violates its {} material boundary",
+            feature.id,
+            if maximum { "maximum" } else { "least" }
+        ));
+    }
+    Ok(0.5 * departure.max(0.0))
+}
+
+/// A feature coaxial with a primary datum axis: its axis ends' offsets from
+/// the datum simulator axis and their positions along it, and the datum
+/// feature's extent along it (where a shifted simulator's ends float).
+#[derive(Clone, Debug)]
+struct Coaxial {
+    ends: [([f64; 2], f64); 2],
+    span: [f64; 2],
+}
+
+impl Context<'_, '_> {
+    /// Position of a feature coaxial with a primary datum axis (or common
+    /// axis): its related actual mating envelope's axis (the minimum-material
+    /// envelope's at LMC) between its measured ends, against the datum
+    /// simulator axis. The zone is a cylinder about the datum axis over the
+    /// feature's length, so both ends must lie within it.
+    fn fit_coaxial(
+        &mut self,
+        frame: &DrawingFeatureControlFrame,
+        points: &[Vec3],
+        limits: &DrawingSizeLimits,
+        origin: Vec3,
+        direction: Vec3,
+    ) -> Result<PositionData, String> {
+        if frame.refinement.is_some() {
+            return Err("composite position to a primary datum axis is not evaluated".into());
+        }
+        let datum = &frame.datums[0];
+        let ResolvedDatum::Axis {
+            origin: datum_origin,
+            direction: datum_direction,
+        } = self.nominal(
+            &self.features[datum.datum_feature.as_str()]
+                .attachment
+                .anchor,
+        )?
+        else {
+            return Err("position evaluation needs a primary datum axis".into());
+        };
+        let direction = unit(direction).map_err(|e| e.to_string())?;
+        let datum_direction = unit(datum_direction).map_err(|e| e.to_string())?;
+        if length(cross(direction, datum_direction)) > 1e-9
+            || length(cross(subtract(origin, datum_origin), datum_direction)) > 1e-9
+        {
+            return Err(
+                "position to a primary datum axis is evaluated for features coaxial with it".into(),
+            );
+        }
+        let simulators = self.simulators(&frame.datums)?;
+        let Some(Simulator::Axis(axis_origin, axis, _, limit)) = simulators.first().cloned() else {
+            return Err("position evaluation needs a primary datum axis simulator".into());
+        };
+        let (u, v) = perpendiculars(axis);
+        let coordinates = |p: Vec3| {
+            let d = subtract(p, axis_origin);
+            ([dot(d, u), dot(d, v)], dot(d, axis))
+        };
+        let mut span = [f64::INFINITY, f64::NEG_INFINITY];
+        for member in datum.members() {
+            for &p in &self.measured_datums[member] {
+                let z = coordinates(p).1;
+                span = [span[0].min(z), span[1].max(z)];
+            }
+        }
+        if span[1] - span[0] <= 1e-9 {
+            return Err("the primary datum axis feature has no measured length".into());
+        }
+        let internal = limits.kind == FeatureOfSizeKind::Internal;
+        let (mating, minimum_material) = if internal {
+            (Fit::Inscribed, Fit::Circumscribed)
+        } else {
+            (Fit::Circumscribed, Fit::Inscribed)
+        };
+        let (lower, upper) = limits.bounds().map_err(|e| e.to_string())?;
+        let (mating_origin, mating_axis, radius) =
+            fit_cylinder(points, direction, mating).map_err(|e| e.to_string())?;
+        let (minimum_origin, minimum_axis, minimum_radius) =
+            fit_cylinder(points, direction, minimum_material).map_err(|e| e.to_string())?;
+        let (size, minimum_size) = (2.0 * radius, 2.0 * minimum_radius);
+        let ((feature_origin, feature_axis), bonus) = match frame.material {
+            ToleranceMaterialCondition::Regardless => ((mating_origin, mating_axis), 0.0),
+            ToleranceMaterialCondition::Maximum => (
+                (mating_origin, mating_axis),
+                if internal { size - lower } else { upper - size }.max(0.0),
+            ),
+            ToleranceMaterialCondition::Least => (
+                (minimum_origin, minimum_axis),
+                if internal {
+                    upper - minimum_size
+                } else {
+                    minimum_size - lower
+                }
+                .max(0.0),
+            ),
+        };
+        let (lo, hi) = points
+            .iter()
+            .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), &p| {
+                let t = dot(subtract(p, feature_origin), feature_axis);
+                (lo.min(t), hi.max(t))
+            });
+        let ends = [lo, hi].map(|t| coordinates(add(feature_origin, scale(feature_axis, t))));
+        let size_conforms = if internal {
+            size >= lower && minimum_size <= upper
+        } else {
+            size <= upper && minimum_size >= lower
+        };
+        Ok(PositionData {
+            offset: [0.0, 0.0],
+            true_position: [0.0, 0.0],
+            bonus,
+            size,
+            size_conforms,
+            space: Rc::new(ShiftSpace {
+                limit,
+                ..ShiftSpace::default()
+            }),
+            axial: Some(Coaxial { ends, span }),
         })
     }
 }
@@ -1626,6 +1828,8 @@ struct PositionData {
     size_conforms: bool,
     /// Motions the frame's material boundaries allow.
     space: Rc<ShiftSpace>,
+    /// Set for a feature located to a primary datum axis.
+    axial: Option<Coaxial>,
 }
 
 /// Largest minus smallest value; zero for an empty sequence.

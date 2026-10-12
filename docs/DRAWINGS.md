@@ -1154,6 +1154,22 @@ measured faces exactly rather than through a single departure value.
   a boundary too: a contacting plane, or a width regardless of size, would
   have to re-contact as the frame turns, and is reported.
 
+**Primary datum axis.** Position of a feature coaxial with a primary datum
+axis A (a frame of A alone, or a common axis A-B) is measured from the related
+actual mating envelope's axis between the feature's measured ends, or the
+minimum-material envelope's at LMC. Each end's offset from A's simulator axis
+must lie within the cylindrical zone, so the deviation is twice the larger
+end offset. A feature whose nominal axis is not A's is reported. Referenced
+at MMB or LMB, A's simulator may translate and tilt: each end of its axis,
+at the datum feature's measured extent, floats within half the feature's
+departure from the boundary (the same clearance as a secondary axis). This is
+exact for a datum feature of perfect form; form error does not restrict the
+motion further. Coaxial controls with the same datum references share one
+shift, chosen by the same active-set min-max LP in four variables. They
+report the larger end displacement as `datum_shift_mm` and the tilt (end
+displacement difference over the datum length, unsigned) as
+`datum_shift_rotation_rad`. Composite coaxial position is reported.
+
 `datum_shift_limit_mm` is the largest origin translation the boundaries allow
 with the frame square to its mating envelopes: the bore's radial limit plus
 the combined half departures of locating widths. A width narrower than its
@@ -1305,7 +1321,7 @@ readings are kept as measured. The decision is one O(1) pass per control.
   feature that was not measured, or an axis datum without a `size_kind`.
   Width datums report measurements missing a face and common widths.
   Datum shift also reports a boundary without `size_limits`, a feature beyond
-  its boundary, shift of a primary or common axis or of a common plane, and a
+  its boundary, shift of a common axis or of a common plane, and a
   tertiary plane or regardless-of-size width after a secondary width at a
   boundary. Orientation reports datums referenced at a material boundary.
   Runout reports any datum referenced at a material boundary.
@@ -1334,8 +1350,9 @@ position controls located A | B(MMB) | C from a center bore share one datum
 shift in 0.17 s. The active set keeps each LP small whatever the
 pattern size. With a slot through the bore at MMB as well (2.5 mrad of
 rotational shift), the same 10,000 controls on a pattern turned 2 mrad and
-moved 0.05 mm share one translation and rotation in 0.17 s. Both cases have
-0.5 s budgets. 10,000 composite position controls in
+moved 0.05 mm share one translation and rotation in 0.17 s. 10,000 position
+controls on bands coaxial with a primary datum bore at MMB share one shift of
+its axis in 0.23 s. All three cases have 0.5 s budgets. 10,000 composite position controls in
 100 patterns of 100 evaluate in 0.19 s (1 s budget). Ten patterns with a
 0.1 mm outlier fail their relating fit. 10,000 composite surface profiles on
 the same bores (720,000 points with nominals, 100 patterns of 7,200 points
@@ -1346,8 +1363,8 @@ regenerate the part once and project every point onto the named side face in
 0.59 s (2 s budget). One line profile of 1,000,000 points in 1,000 elements
 takes 0.20 s (1 s budget).
 
-**Not yet covered.** Datum shift of a primary axis datum (tilt) and of common
-axes; rotational shift from a tertiary hole or pin; a tertiary plane
+**Not yet covered.** Datum shift of common axes; position of features off a
+primary datum axis (which needs a clocking datum after it); rotational shift from a tertiary hole or pin; a tertiary plane
 re-contacting as a shifting secondary width turns; common width datums; the separate requirement
 (`SEP REQT`); boundaries
 enlarged by geometric tolerances; simultaneous-contact common axis simulators,

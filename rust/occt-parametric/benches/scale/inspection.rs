@@ -1485,3 +1485,163 @@ pub(crate) fn profile_line_case(definition: &FamilyDefinition) -> Outcome {
         },
     )
 }
+
+/// 10,000 position controls on bands of one long bore, all coaxial with a
+/// primary datum bore A (Ø9.9-10.1, measured Ø10.06: each end of its axis
+/// may float 0.08 mm). Every band sits 0.05 mm off in x (±0.01 mm in y):
+/// the shared shift of the datum axis brings all of them inside Ø0.04.
+pub(crate) fn coaxial_shift_case(definition: &FamilyDefinition) -> Outcome {
+    timed(
+        format!(
+            "inspection: {CONTROLS} coaxial position controls sharing a primary-axis MMB shift"
+        ),
+        Duration::from_millis(500),
+        Expectation::Required,
+        || {
+            let mut definition = definition.clone();
+            definition.datums = vec![DatumDefinition {
+                id: "bore".into(),
+                kind: DatumKind::Axis {
+                    origin: literal([0.0; 3]),
+                    direction: VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, 1.0)),
+                },
+            }];
+            let mut graph = InstanceGraph::new(&definition);
+            graph.add_base("part", HashMap::new(), "bench")?;
+            let limits = |lower, upper| DrawingSizeLimits {
+                kind: FeatureOfSizeKind::Internal,
+                lower: Quantity::length(lower, LengthUnit::Millimeter),
+                upper: Quantity::length(upper, LengthUnit::Millimeter),
+            };
+            let controls: Vec<DrawingFeatureControlFrame> = (0..CONTROLS)
+                .map(|i| DrawingFeatureControlFrame {
+                    pattern: None,
+                    unequal: None,
+                    surface: None,
+                    size_limits: Some(limits(15.9, 16.1)),
+                    datum_reference_frame: None,
+                    refinement: None,
+                    id: format!("coaxial-{i}"),
+                    attachment: attachment("bore"),
+                    characteristic: GeometricCharacteristic::Position,
+                    tolerance: Quantity::length(0.04, LengthUnit::Millimeter),
+                    display_unit: LengthUnit::Millimeter,
+                    precision: 2,
+                    zone: GeometricToleranceZone::Diameter,
+                    material: ToleranceMaterialCondition::Regardless,
+                    feature_of_size: true,
+                    datums: vec![DrawingDatumReference {
+                        datum_feature: "A".into(),
+                        boundary: DatumMaterialBoundary::Maximum,
+                        common_with: Vec::new(),
+                    }],
+                })
+                .collect();
+            let drawing = DrawingDefinition {
+                datum_reference_frames: Vec::new(),
+                datum_features: vec![DrawingDatumFeature {
+                    id: "A".into(),
+                    label: "A".into(),
+                    feature_of_size: true,
+                    attachment: attachment("bore"),
+                    size_kind: None,
+                    size_limits: Some(limits(9.9, 10.1)),
+                }],
+                feature_control_frames: controls,
+                surface_textures: Vec::new(),
+                parts_list: None,
+                balloons: Vec::new(),
+                releases: Vec::new(),
+                revision_table: None,
+                sheet: None,
+                id: "coaxial".into(),
+                title: "Coaxial".into(),
+                paper_size_mm: [1000.0, 1000.0],
+                guides: Vec::new(),
+                dimensions: Vec::new(),
+                notes: Vec::new(),
+                metadata: Default::default(),
+                views: vec![DrawingView {
+                    id: "top".into(),
+                    outputs: vec![InstanceOutputRef {
+                        instance: "part".into(),
+                        output: "body".into(),
+                    }],
+                    origin: VectorQuantity::lengths(0.0, 0.0, 0.0, LengthUnit::Millimeter),
+                    direction: VectorQuantity::scalars(0.0, 0.0, 1.0),
+                    x_axis: VectorQuantity::scalars(1.0, 0.0, 0.0),
+                    paper_origin_mm: [10.0, 100.0],
+                    scale: 1.0,
+                    show_hidden: false,
+                    kind: DrawingViewKind::Orthographic,
+                    detail: None,
+                    hatching: None,
+                    material_hatching: Default::default(),
+                }],
+            };
+            // Rings of 36 points of `radius` about (x, y) at each height.
+            let rings = |[x, y]: [f64; 2], radius: f64, heights: &[f64]| -> Vec<[f64; 3]> {
+                heights
+                    .iter()
+                    .flat_map(|&z| {
+                        (0..36).map(move |k| {
+                            let a = k as f64 * std::f64::consts::TAU / 36.0;
+                            [x + radius * a.cos(), y + radius * a.sin(), z]
+                        })
+                    })
+                    .collect()
+            };
+            let datum_heights: Vec<f64> = (0..=50).map(|k| k as f64).collect();
+            let record = InspectionRecord {
+                uncertainty: None,
+                drawing: "coaxial".into(),
+                surface_textures: Vec::new(),
+                datum_features: vec![MeasuredFeature {
+                    nominals: Vec::new(),
+                    id: "A".into(),
+                    points_mm: rings([0.0, 0.0], 5.03, &datum_heights),
+                }],
+                controls: (0..CONTROLS)
+                    .map(|i| {
+                        let wobble = if i % 2 == 0 { 0.01 } else { -0.01 };
+                        let z = 60.0 + (i % 100) as f64;
+                        MeasuredFeature {
+                            nominals: Vec::new(),
+                            id: format!("coaxial-{i}"),
+                            points_mm: rings([0.05, wobble], 8.0, &[z, z + 0.8]),
+                        }
+                    })
+                    .collect(),
+            };
+            let points: usize = record
+                .datum_features
+                .iter()
+                .chain(&record.controls)
+                .map(|m| m.points_mm.len())
+                .sum();
+            let report = drawing.evaluate_inspection(&graph, &record)?;
+            let mut shift = 0.0;
+            for control in &report.controls {
+                let ControlResult::Evaluated(m) = &control.result else {
+                    return Err(failure(format!(
+                        "{} was not evaluated: {:?}",
+                        control.control, control.result
+                    )));
+                };
+                if !m.conforms || (m.datum_shift_limit_mm - 0.08).abs() > 1e-9 {
+                    return Err(failure(format!("{} measured {m:?}", control.control)));
+                }
+                shift = m.datum_shift_mm;
+            }
+            if (shift - 0.05).abs() > 1e-3 {
+                return Err(failure(format!("shared shift {shift}")));
+            }
+            Ok(format!(
+                "{} of {} conform with a shared {shift:.4} mm datum axis shift, {} measured points",
+                report.controls.len(),
+                report.controls.len(),
+                points
+            ))
+        },
+    )
+}

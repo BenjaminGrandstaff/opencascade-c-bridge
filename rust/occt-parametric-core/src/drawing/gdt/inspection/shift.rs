@@ -237,6 +237,143 @@ fn motion_lp(members: &[PatternMember], space: &ShiftSpace) -> Motion {
     motion
 }
 
+/// A feature coaxial with a primary datum axis: the offsets of its axis
+/// ends from the datum simulator axis with their positions along it, and its
+/// allowed zone radius.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct AxialMember {
+    pub ends: [([f64; 2], f64); 2],
+    pub radius: f64,
+}
+impl AxialMember {
+    /// Each end's offset from the datum axis after its ends (at `span`)
+    /// move by `shift`, interpolated along the axis.
+    fn residuals(&self, shift: [[f64; 2]; 2], span: [f64; 2]) -> [[f64; 2]; 2] {
+        self.ends.map(|(offset, z)| {
+            let w = (z - span[0]) / (span[1] - span[0]);
+            [
+                offset[0] - (1.0 - w) * shift[0][0] - w * shift[1][0],
+                offset[1] - (1.0 - w) * shift[0][1] - w * shift[1][1],
+            ]
+        })
+    }
+    /// Diameter of the smallest zone about the shifted datum axis holding
+    /// both ends.
+    pub fn deviation(&self, shift: [[f64; 2]; 2], span: [f64; 2]) -> f64 {
+        let r = self.residuals(shift, span);
+        2.0 * r[0][0].hypot(r[0][1]).max(r[1][0].hypot(r[1][1]))
+    }
+    fn excess(&self, shift: [[f64; 2]; 2], span: [f64; 2]) -> f64 {
+        0.5 * self.deviation(shift, span) - self.radius
+    }
+}
+
+/// Shift of a primary datum axis at a material boundary shared by coaxial
+/// controls: the simulator's ends, at the datum feature's measured extent
+/// `span`, each move within `limit` of the mating (or minimum-material)
+/// axis, which translates and tilts the axis. Exact for a datum feature of
+/// perfect form; form error is not used to restrict the motion further. The
+/// same min-max as [`fit_motion`] in four linear variables, with an active
+/// set started from the five worst members. O(iterations · pivots ·
+/// active · 512 + n).
+pub(super) fn fit_axis_shift(members: &[AxialMember], limit: f64, span: [f64; 2]) -> [[f64; 2]; 2] {
+    let zero = [[0.0; 2]; 2];
+    if limit <= 0.0 || members.is_empty() {
+        return zero;
+    }
+    let mut order: Vec<usize> = (0..members.len()).collect();
+    order.sort_by(|&a, &b| {
+        members[b]
+            .excess(zero, span)
+            .total_cmp(&members[a].excess(zero, span))
+    });
+    let mut active: Vec<usize> = order.into_iter().take(5).collect();
+    loop {
+        let subset: Vec<AxialMember> = active.iter().map(|&i| members[i]).collect();
+        let shift = axis_shift_lp(&subset, limit, span);
+        let active_worst = subset
+            .iter()
+            .map(|m| m.excess(shift, span))
+            .fold(f64::NEG_INFINITY, f64::max);
+        let (worst, value) = members
+            .iter()
+            .enumerate()
+            .map(|(i, m)| (i, m.excess(shift, span)))
+            .fold((0, f64::NEG_INFINITY), |a, b| if b.1 > a.1 { b } else { a });
+        if value <= active_worst + 1e-12 || active.contains(&worst) {
+            return shift;
+        }
+        active.push(worst);
+    }
+}
+
+fn axis_shift_lp(members: &[AxialMember], limit: f64, span: [f64; 2]) -> [[f64; 2]; 2] {
+    let directions: Vec<[f64; 2]> = (0..SIDES)
+        .map(|k| {
+            let a = std::f64::consts::TAU * k as f64 / SIDES as f64;
+            [a.cos(), a.sin()]
+        })
+        .collect();
+    // Variables: e0x, e0y, e1x, e1y, z, then w ≥ |e| per component.
+    let mut rows: Vec<f64> = Vec::new();
+    let mut bounds: Vec<f64> = Vec::new();
+    let mut push = |row: [f64; 9], bound: f64| {
+        rows.extend(row);
+        bounds.push(bound);
+    };
+    for m in members {
+        for (offset, z) in m.ends {
+            let w = (z - span[0]) / (span[1] - span[0]);
+            for u in &directions {
+                push(
+                    [
+                        -(1.0 - w) * u[0],
+                        -(1.0 - w) * u[1],
+                        -w * u[0],
+                        -w * u[1],
+                        -1.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                    ],
+                    m.radius - u[0] * offset[0] - u[1] * offset[1],
+                );
+            }
+        }
+    }
+    for end in 0..2 {
+        for u in &directions {
+            let mut row = [0.0; 9];
+            row[2 * end] = u[0];
+            row[2 * end + 1] = u[1];
+            push(row, limit);
+        }
+    }
+    for i in 0..4 {
+        for sign in [1.0, -1.0] {
+            let mut row = [0.0; 9];
+            row[i] = sign;
+            row[5 + i] = -1.0;
+            push(row, 0.0);
+        }
+    }
+    let mut objective = [-1e-6; 9];
+    objective[..4].fill(0.0);
+    objective[4] = -1.0;
+    let Ok(x) = fit::maximize(&objective, &rows, &bounds) else {
+        return [[0.0; 2]; 2];
+    };
+    [[x[0], x[1]], [x[2], x[3]]].map(|e| {
+        let length = e[0].hypot(e[1]);
+        if length > limit {
+            [e[0] * limit / length, e[1] * limit / length]
+        } else {
+            e
+        }
+    })
+}
+
 fn turn(v: [f64; 2], angle: f64) -> [f64; 2] {
     let (s, c) = angle.sin_cos();
     [c * v[0] - s * v[1], s * v[0] + c * v[1]]

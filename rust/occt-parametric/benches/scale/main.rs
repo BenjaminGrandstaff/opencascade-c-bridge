@@ -173,6 +173,7 @@ fn main() -> ExitCode {
     outcomes.push(inspection::runout_case(definition, true, false));
     outcomes.push(inspection::datum_shift_case(definition, false));
     outcomes.push(inspection::datum_shift_case(definition, true));
+    outcomes.push(inspection::coaxial_shift_case(definition));
     outcomes.push(inspection::composite_case(definition));
     outcomes.push(inspection::profile_case(definition));
     outcomes.push(inspection::profile_surface_case(definition));
