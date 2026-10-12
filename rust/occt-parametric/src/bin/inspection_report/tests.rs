@@ -146,6 +146,7 @@ fn fixture() -> ModelDocument {
     page.feature_control_frames
         .push(DrawingFeatureControlFrame {
             pattern: None,
+            unequal: None,
             id: "position".into(),
             attachment,
             characteristic: GeometricCharacteristic::Position,
@@ -408,4 +409,42 @@ fn measured_points_report_fitted_controls_and_unsupported_ones() {
     );
     assert!(run(&args).is_err());
     assert!(!Path::new(&args[2]).exists());
+}
+
+#[test]
+fn profile_points_carry_nominals_through_the_report() {
+    let mut document = fixture();
+    let page = &mut document.drawings[0];
+    let mut profile = page.feature_control_frames[1].clone();
+    profile.id = "profile".into();
+    profile.characteristic = GeometricCharacteristic::ProfileSurface;
+    profile.tolerance = mm(0.02);
+    profile.unequal = Some(mm(0.02));
+    page.feature_control_frames.push(profile);
+    // Unlocated, the 0.5 mm offset fits away and the 0.004 mm dent stays,
+    // well inside the 0.02 zone.
+    let points: Vec<[f64; 3]> = (0..=4)
+        .flat_map(|i| (0..=4).map(move |j| [2.5 * i as f64, 5.0 * j as f64, 30.5]))
+        .chain([[5.0, 10.0, 30.496]])
+        .collect();
+    let nominals: Vec<Value> = points
+        .iter()
+        .map(|p| json!({"point_mm":[p[0],p[1],30.0],"normal":[0.0,0.0,2.0]}))
+        .collect();
+    let directory = Directory::new();
+    let args = inputs(
+        &directory,
+        &document,
+        &json!({"schema":"occb-inspection-setup-v1","drawings":[{"drawing":"page","points":{"controls":[
+            {"id":"profile","points_mm":points,"nominals":nominals}
+        ]}}]}),
+    );
+    assert!(!run(&args).unwrap());
+    let result: Value = serde_json::from_str(&fs::read_to_string(&args[2]).unwrap()).unwrap();
+    let detail = &result["drawings"][0]["controls"][0]["result"]["detail"];
+    assert_eq!(detail["conforms"], true);
+    assert!((detail["profile"]["zone_center_mm"].as_f64().unwrap() - 0.01).abs() < 1e-12);
+    let low = detail["profile"]["min_deviation_mm"].as_f64().unwrap();
+    let high = detail["profile"]["max_deviation_mm"].as_f64().unwrap();
+    assert!((high - low - 0.004).abs() < 1e-6, "{detail}");
 }

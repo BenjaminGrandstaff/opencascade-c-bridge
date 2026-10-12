@@ -15,8 +15,8 @@ pub use datums::{
 pub use inspection::{
     ControlInspection, ControlMeasurement, ControlResult, InspectionRecord, InspectionReport,
     MAX_INSPECTION_POINTS, MeasuredDatumAxis, MeasuredDatumFrame, MeasuredDatumWidth,
-    MeasuredFeature, MeasuredTexture, RefinementMeasurement, TextureInspection, TextureMeasurement,
-    TextureResult,
+    MeasuredFeature, MeasuredNominal, MeasuredTexture, ProfileMeasurement, RefinementMeasurement,
+    TextureInspection, TextureMeasurement, TextureResult,
 };
 pub use position::{
     DrawingPositionMeasurement, DrawingPositionMeasurementResult, PositionSampleEvaluation,
@@ -178,6 +178,11 @@ pub struct DrawingFeatureControlFrame {
     /// composite refinement relates the features of one pattern.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pattern: Option<String>,
+    /// Unequally disposed profile zone (schema 139, Ⓤ): the part of the
+    /// tolerance that lies outside the material, from zero (all inside) to
+    /// the whole tolerance (all outside). Equal-bilateral when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unequal: Option<Quantity>,
     pub id: String,
     pub attachment: DrawingGdtAttachment,
     pub characteristic: GeometricCharacteristic,
@@ -248,6 +253,33 @@ fn number(frame: &DrawingFeatureControlFrame) -> Result<String, ModelError> {
     };
     Ok(format!("{text} {unit}"))
 }
+/// Displayed Ⓤ value of an unequally disposed profile zone, in the
+/// tolerance's display unit and precision.
+fn unequal_text(frame: &DrawingFeatureControlFrame) -> Result<Option<String>, ModelError> {
+    let Some(unequal) = &frame.unequal else {
+        return Ok(None);
+    };
+    if !frame.characteristic.profile() {
+        return Err(ModelError::new(
+            "an unequally disposed zone applies to profile controls",
+        ));
+    }
+    let mm = unequal.normalized()?;
+    if unequal.dimension != Dimension::Length
+        || !mm.is_finite()
+        || mm < 0.0
+        || mm > frame.tolerance.normalized()?
+    {
+        return Err(ModelError::new(
+            "an unequally disposed zone needs a length from zero to the tolerance",
+        ));
+    }
+    let value = mm / frame.display_unit.millimeter_factor();
+    Ok(Some(format!(
+        "{value:.precision$}",
+        precision = frame.precision as usize
+    )))
+}
 pub fn validate(
     features: &[DrawingDatumFeature],
     frames: &[DrawingFeatureControlFrame],
@@ -305,6 +337,7 @@ pub fn validate(
         anchor(&frame.attachment, views, graph)?;
         number(frame)?;
         validate_control(frame)?;
+        unequal_text(frame)?;
         size::validate(frame)?;
         composite::validate(frame, &index)?;
         validate_references(&frame.datums, &index)?;
@@ -611,7 +644,11 @@ fn cell_widths(
                 6.0
             } else {
                 0.0
-            },
+            }
+            + unequal_text(f)
+                .ok()
+                .flatten()
+                .map_or(0.0, |u| 7.0 + u.len() as f64 * 2.0),
     ];
     cells.extend(f.datums.iter().map(|r| {
         4.0 + r.label(index).len() as f64 * 3.0
@@ -648,6 +685,12 @@ fn append_row(
             [tx + value.len() as f64 * 2.0 + 3.0, p[1] + 4.0],
             f.material == ToleranceMaterialCondition::Maximum,
         );
+    }
+    if let Ok(Some(unequal)) = unequal_text(f) {
+        let ux = tx + value.len() as f64 * 2.0 + 3.0;
+        circle(d, [ux, p[1] + 4.0], 2.3, 0.0, std::f64::consts::TAU);
+        text(d, [ux - 1.1, p[1] + 3.0], "U".into());
+        text(d, [ux + 3.5, p[1] + 2.5], unequal);
     }
     for (i, width) in cells.iter().enumerate().skip(1) {
         if i > 1 || first_divider {
@@ -717,6 +760,7 @@ fn row_vertices(f: &DrawingFeatureControlFrame) -> usize {
         } else {
             0
         }
+        + if f.unequal.is_some() { 33 } else { 0 }
         + 33 * f
             .datums
             .iter()

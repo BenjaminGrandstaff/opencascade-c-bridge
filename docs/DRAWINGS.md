@@ -756,12 +756,27 @@ prefix restriction is the initial supported subset; other composite arrangements
 are rejected. The refinement is not a second independent position tolerance:
 its datum references express orientation of the refining pattern rather than
 independently locating that pattern by translation. Measured composite position
-is evaluated since schema 138; see [Measured inspection](#measured-inspection-schema-68).
+is evaluated since schema 138, and composite surface profile since schema 139;
+see [Measured inspection](#measured-inspection-schema-68). The lower segment's
+profile zone is always equally disposed.
 
 Schema 138 adds `pattern: Option<String>` to feature-control frames. Controls
 sharing a pattern ID act as one n× control over several features. They must
 match except for their ID and attachment, and only position and profile
 controls may form patterns. Each still draws its own frame.
+
+Schema 139 adds `unequal: Option<Quantity>` to profile controls: the Ⓤ
+unequally disposed zone, giving how much of the tolerance lies outside the
+material (from zero, all inside, to the whole tolerance, all outside). It must
+be a length within that range and draws as a circled U followed by the value in
+the tolerance's display unit and precision. Without it the zone is equally
+disposed about the true profile.
+
+```json
+"characteristic": "profile_surface",
+"tolerance": {"value": 0.1, "dimension": "length", "unit": "millimeter"},
+"unequal": {"value": 0.03, "dimension": "length", "unit": "millimeter"}
+```
 
 SVG and DXF show one shared 16 mm tall characteristic cell, two 8 mm rows and a
 stepped right edge when the lower row is shorter. The same leader attaches the
@@ -1060,6 +1075,8 @@ Supported controls:
 | Circular runout (schema 135) | Full indicator movement about the datum axis, for the worst circular element. On a surface coaxial with the datum axis, the reading is radial and elements are points sharing an axial position. On a face perpendicular to it, the reading is axial and elements are points sharing a radius. Elements group within 1e-3 mm or 1e-6 of the span; each needs at least three points |
 | Total runout (schema 135) | The same readings over all points of the surface |
 | Composite position (schema 138) | Upper segment: position as above. Lower segment: the pattern's true positions translate, and rotate about A's normal unless a refinement datum after the primary is a plane, as one rigid group minimizing the largest excess over the refined zones; each feature's deviation from that fit |
+| Profile of a surface (schema 139) | Twice the largest distance, along the nominal normals, of any point from the zone center, after the rigid motions the datums leave free are fitted; a pattern's surfaces move together |
+| Composite profile of a surface (schema 139) | Upper segment as above. Lower segment: the same fit with every translation free and the refinement datums constraining orientation only |
 
 For position, the mating envelope is the largest inscribed cylinder for
 internal features and the smallest circumscribed cylinder for external ones,
@@ -1135,11 +1152,57 @@ across the pattern, and the pattern fails its relating zone as a whole. A lone
 feature's refinement only re-checks orientation, which the planar measurement
 already holds, so it reads zero.
 
+**Profile of a surface (schema 139).** Each measured point of a profile
+control may carry its nominal surface point and outward normal in
+`MeasuredFeature.nominals`, as coordinate measuring software reports them:
+
+```json
+{"id": "bore_profile",
+ "points_mm": [[35.02, 20.0, 1.0], ...],
+ "nominals": [{"point_mm": [35.0, 20.0, 1.0], "normal": [-1.0, 0.0, 0.0]}, ...]}
+```
+
+There must be exactly one nominal per point, with finite values and a nonzero
+normal (it is normalized). Nominals on datum features or non-profile controls
+fail the record. A profile anchored on a plane datum may omit them: each point
+is then compared with its projection onto that plane. Other anchors need them.
+Deviations are signed along the nominal normal (positive out of the material),
+measured from the nominal point, so they are exact for planes and first-order
+for curved surfaces near their nominal points.
+
+The nominal geometry is first placed on the measured datum simulators (planes,
+width center planes or axes, regardless of material boundary). The first two
+independent datum directions fix its orientation; a single one, such as A
+alone, leaves rotation about that direction free. Planes fix translation along
+their normals and axes fix translation across themselves. Profile without
+datums controls form only, so all six motions are free. The free motions are
+then fitted to minimize the largest distance of any point from the zone center
+(a Chebyshev fit of at most six parameters), relinearized up to 16 times.
+Motions that do not move the points along their normals, such as sliding a
+plane within itself, are not fitted. Point sets larger than 512 use an active
+set: a strided sample, then the worst violators, until every point is inside
+the sample's zone.
+
+Profile controls with the same `pattern` ID are one simultaneous requirement:
+their surfaces move as one rigid group, so two bores spread apart cannot each
+be fitted separately. A composite profile's lower segment refits the same
+points with every translation free and only the refinement datums'
+orientation fixed, with an equally disposed refined zone. The control
+conforms only when both segments do.
+
+`ControlMeasurement.profile` reports the lowest and highest signed deviation,
+the zone center (zero, or `unequal − tolerance / 2`), and the fitted translation
+and rotation angle. For a composite profile, `refinement` reports the lower
+segment with the pattern's fitted translation and its unsigned rotation angle.
+Profile measures size as well as form and location: a uniformly oversized
+bore stays out of its zone even when it is free to move.
+
 **Report results.** Each control has one of three results:
 - `Evaluated`: deviation, tolerance, bonus, actual size and conformance.
 - `NotMeasured`: the record has no points for the control.
-- `NotEvaluated`: a stated reason, for unsupported cases such as profile
-  (including composite profile), straightness, round
+- `NotEvaluated`: a stated reason, for unsupported cases such as profile of a
+  line, profile datums at a material boundary, a non-planar profile anchor
+  without nominals, straightness, round
   form at a material condition or with a non-characteristic zone, a datum
   feature that was not measured, or an axis datum without a `size_kind`.
   Width datums report measurements missing a face and common widths.
@@ -1150,7 +1213,8 @@ already holds, so it reads zero.
   axis or normal is not along the datum feature's nominal axis. Orientation and
   position controls report frames that contain an axis datum.
 
-The call fails outright for unknown or repeated IDs, non-finite points, a
+The call fails outright for unknown or repeated IDs, non-finite points, bad
+nominals, a
 different drawing, or more than `MAX_INSPECTION_POINTS` (10 million) points.
 `InspectionReport::conforms()` is true only when every control was evaluated
 and conforms.
@@ -1171,16 +1235,21 @@ shift in 0.17 s (1 s budget). The active set keeps each LP small whatever the
 pattern size. The same 10,000 controls clocked by a slot width datum, with the
 part turned 2 mrad, evaluate in 0.16 s. 10,000 composite position controls in
 100 patterns of 100 evaluate in 0.19 s (1 s budget). Ten patterns with a
-0.1 mm outlier fail their relating fit.
+0.1 mm outlier fail their relating fit. 10,000 composite surface profiles on
+the same bores (720,000 points with nominals, 100 patterns of 7,200 points
+fitted as rigid groups) take 0.18 s (1 s budget), and one 1,000,000-point
+surface profile with all six motions free takes 0.30 s (2 s budget).
 
 **Not yet covered.** Datum shift of a primary axis datum (tilt), of common
 axes and of width datum features (slots and tabs); rotational
 shift about a datum axis; common width datums; the separate requirement
 (`SEP REQT`); boundaries
 enlarged by geometric tolerances; simultaneous-contact common axis simulators,
-common axes after a primary plane, composites beyond two-segment position,
-reporting n× patterns as one frame on drawings, measured datum targets, profile against nominal surfaces, conical
-runout surfaces, and straightness. Measurement uncertainty is not modeled.
+common axes after a primary plane, composites beyond two segments,
+reporting n× patterns as one frame on drawings, measured datum targets, profile
+of a line, profile datums at a material boundary, profile against the model's
+own surfaces (records supply the nominal points), conical runout surfaces, and
+straightness. Measurement uncertainty is not modeled.
 
 ## Surface texture (schema 71)
 

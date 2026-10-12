@@ -12,19 +12,30 @@ tracks status and order.
 | `occt-types` (shared value types) | — | No native dependency |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI; re-exports `occt-types` |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric-core` (kernel-free engineering layer) | Schema 138 | Definitions, documents, solving and checks without OCCT |
-| `occt-parametric` (kernel regeneration) | Schema 138 | Active development; re-exports the core API |
+| `occt-parametric-core` (kernel-free engineering layer) | Schema 139 | Definitions, documents, solving and checks without OCCT |
+| `occt-parametric` (kernel regeneration) | Schema 139 | Active development; re-exports the core API |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 153 + first-use integration 1 (+1 doc test), recipes 3, parametric core 35 + kernel 646 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 5 + view command 13 + viewer Node 19 + branch command 2 + model command 89, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 153 + first-use integration 1 (+1 doc test), recipes 3, parametric core 35 + kernel 651 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 6 + view command 13 + viewer Node 19 + branch command 2 + model command 89, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
 | Coverage | Last recorded: 93.61% lines overall, test code excluded; C++ 94.13% lines, 87.40% branches, 100% functions; Rust 93.42% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | Last full suite: 189 Rust cases plus 5 model-command cases and a 10,000-face Python matcher. Sketch authoring integration rechecked 60 sketch cases and 60 MCP cases within budget. | `tools/bench/run.sh` |
+| Scale benchmarks | Last full suite: 191 Rust cases plus 5 model-command cases and a 10,000-face Python matcher. Sketch authoring integration rechecked 60 sketch cases and 60 MCP cases within budget. | `tools/bench/run.sh` |
 
 ## Done
+
+- Surface profile evaluation (schema 139, ABI 68 unchanged). Measured
+  points may carry CMM nominal points and outward normals; plane-anchored
+  profiles may omit them. The nominal surface is placed on the measured datum
+  simulators, and the rigid motions those datums leave free (all six without
+  datums) are fitted by a relinearized active-set Chebyshev LP. n× profile
+  patterns move as one simultaneous group, and composite profile refits with
+  translation free and refinement datums orienting only. Profile controls take
+  an `unequal` (Ⓤ) disposition, validated and drawn. 10,000 composite
+  profiles on 720,000 bore points in 100 patterns in 0.18 s (1 s budget); one
+  1,000,000-point surface with six free motions in 0.30 s (2 s budget).
 
 - Composite position over patterns (schema 138, ABI 68 unchanged).
   Feature-control frames take a `pattern` ID, so controls sharing it act as
@@ -2180,8 +2191,8 @@ scopes and inspected repo capabilities, not a full conformity audit.
    and limits render stacked values.
 2. **Structured GD&T** — [Y14.5](https://www.asme.org/codes-standards/find-codes-standards/y14-5-dimensioning-tolerancing):
    primary-axis, rotational and width datum shift, non-orthogonal datum
-   simulators, composite profile and multi-segment composites, profile against nominal
-   surfaces, conical runout, simultaneous common-axis simulators and advanced
+   simulators, multi-segment composites, profile of a line, profile nominals projected
+   from the model's own surfaces, conical runout, simultaneous common-axis simulators and advanced
    modifiers, and
    measurement uncertainty. Measured planar datum frames, flatness,
    circularity, cylindricity, planar orientation zones and position with
@@ -2190,7 +2201,8 @@ scopes and inspected repo capabilities, not a full conformity audit.
    (schema 136), and position in plane-axis frames with MMB/LMB datum shift
    under the simultaneous requirement (schema 137), and slot/tab width
    datum center planes, and two-segment composite position over n×
-   patterns (schema 138).
+   patterns (schema 138), and surface profile against CMM nominal points
+   with unequal disposition, n× patterns and composite profile (schema 139).
 3. **3D manufacturing annotations and exchange** — [Y14.41](https://www.asme.org/codes-standards/find-codes-standards/y14-41-digital-product-definition-data-practices):
    structured PMI attached to persistent geometry, annotation views, dataset
    authority and revision rules, and verified semantic PMI exchange. Geometry

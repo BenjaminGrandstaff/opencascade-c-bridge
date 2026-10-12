@@ -273,7 +273,7 @@ pub struct PlaneFit {
     pub width: f64,
 }
 
-fn rotate(v: Vec3, axis: Vec3, angle: f64) -> Vec3 {
+pub(super) fn rotate(v: Vec3, axis: Vec3, angle: f64) -> Vec3 {
     let (s, c) = angle.sin_cos();
     add(
         add(scale(v, c), scale(cross(axis, v), s)),

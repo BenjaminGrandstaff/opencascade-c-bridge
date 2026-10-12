@@ -14,6 +14,8 @@ pub fn refined(frame: &DrawingFeatureControlFrame) -> DrawingFeatureControlFrame
     lower.datums = refinement.datums.clone();
     lower.datum_reference_frame = None;
     lower.refinement = None;
+    // The lower segment's zone is equally disposed.
+    lower.unequal = None;
     lower
 }
 pub fn validate(

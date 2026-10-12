@@ -1,6 +1,7 @@
 //! Measured inspection: datum simulators fitted to measured points and
 //! conformance of planar form/orientation, round form (circularity and
-//! cylindricity, minimum zone) and axis position controls.
+//! cylindricity, minimum zone), axis position, runout and surface profile
+//! controls.
 //!
 //! Measured points are in model coordinates at the current poses, as from a
 //! coordinate measuring machine aligned to the part; the residual misalignment
@@ -10,6 +11,7 @@
 use super::*;
 use crate::assembly::{add, length, scale, unit};
 pub mod fit;
+mod profile;
 use fit::{Fit, circle_zone, cylinder_zone, fit_circle, fit_cylinder, fit_plane, fit_width};
 
 /// Upper bound on measured points in one record, which bounds memory and time.
@@ -21,6 +23,19 @@ pub struct MeasuredFeature {
     /// Drawing datum feature ID or feature control frame ID.
     pub id: String,
     pub points_mm: Vec<[f64; 3]>,
+    /// Nominal surface point and outward normal for each measured point of a
+    /// profile control (schema 139), as a coordinate measuring machine
+    /// reports them. A profile anchored on a plane may omit them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub nominals: Vec<MeasuredNominal>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MeasuredNominal {
+    pub point_mm: [f64; 3],
+    /// Out of the material; normalized on use.
+    pub normal: [f64; 3],
 }
 
 /// Measured points for one part against one drawing's GD&T.
@@ -91,6 +106,24 @@ pub struct ControlMeasurement {
     /// The lower (feature-relating) segment of a composite position control
     /// (schema 138); `conforms` covers both segments.
     pub refinement: Option<RefinementMeasurement>,
+    /// Surface profile detail (schema 139).
+    pub profile: Option<ProfileMeasurement>,
+}
+
+/// Measured surface profile. Deviations are signed along the nominal outward
+/// normals from the true profile after the fitted free motion; the zone is
+/// `tolerance_mm` wide about `zone_center_mm`, which an unequally disposed
+/// zone moves outward, and `deviation_mm` is the width of the smallest zone
+/// about that center holding every point.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct ProfileMeasurement {
+    pub min_deviation_mm: f64,
+    pub max_deviation_mm: f64,
+    pub zone_center_mm: f64,
+    /// Rigid motion, within the freedom the datums leave, of the measured
+    /// surface (or the pattern's surfaces together) that best fits the zone.
+    pub translation_mm: f64,
+    pub rotation_rad: f64,
 }
 
 /// A composite control's feature-relating segment: the pattern may translate,
@@ -103,7 +136,9 @@ pub struct RefinementMeasurement {
     pub conforms: bool,
     /// Translation and rotation (about the measured frame's z axis, the
     /// primary datum normal) of the pattern's true positions that best relate
-    /// its features, shared by every member of the pattern.
+    /// its features, shared by every member of the pattern. For profile, the
+    /// pattern's surfaces move together and the rotation is the unsigned
+    /// angle of the fitted turn about any axis.
     pub pattern_translation_mm: f64,
     pub pattern_rotation_rad: f64,
 }
@@ -170,6 +205,8 @@ enum Simulator {
     Axis(Vec3, Vec3, Vec<f64>, f64),
 }
 type Simulators = Vec<Simulator>;
+/// Nominal surface points and unit outward normals by profile control ID.
+type Nominals<'a> = HashMap<&'a str, Vec<(Vec3, Vec3)>>;
 /// A datum precedence prefix: each compartment's members and boundary.
 type SimulatorKey = Vec<(Vec<String>, DatumMaterialBoundary)>;
 impl Simulator {
@@ -216,6 +253,8 @@ struct Context<'a, 'g> {
     shifts: HashMap<String, [f64; 2]>,
     /// Composite lower-segment results by control ID, fitted per pattern.
     refinements: HashMap<String, RefinementMeasurement>,
+    /// Profile results by control ID, fitted per pattern.
+    profiles: HashMap<String, Result<ControlMeasurement, String>>,
 }
 
 impl DrawingDefinition {
@@ -250,6 +289,16 @@ impl DrawingDefinition {
         })?;
         let measured_controls =
             measured(&record.controls, &mut total, |id| control_ids.contains(id))?;
+        let nominals = nominal_points(record, &measured_controls)?;
+        if let Some(frame) = frames
+            .iter()
+            .find(|f| nominals.contains_key(f.id.as_str()) && !f.characteristic.profile())
+        {
+            return Err(ModelError::new(format!(
+                "nominal points apply to profile controls, not '{}'",
+                frame.id
+            )));
+        }
         let mut context = Context {
             graph,
             features,
@@ -258,6 +307,7 @@ impl DrawingDefinition {
             positions: HashMap::new(),
             shifts: HashMap::new(),
             refinements: HashMap::new(),
+            profiles: HashMap::new(),
         };
         // Simultaneous requirement: position controls with identical datum
         // references (features, precedence and boundaries) share one datum
@@ -313,6 +363,17 @@ impl DrawingDefinition {
         }
         for group in patterns.values() {
             context.refine_pattern(group, &measured_controls);
+        }
+        // Profile: a pattern's surfaces are fitted together.
+        let mut profiles: BTreeMap<&str, Vec<&DrawingFeatureControlFrame>> = BTreeMap::new();
+        for frame in &frames {
+            if frame.characteristic.profile() && measured_controls.contains_key(frame.id.as_str()) {
+                let key = frame.pattern.as_deref().unwrap_or(frame.id.as_str());
+                profiles.entry(key).or_default().push(frame);
+            }
+        }
+        for group in profiles.values() {
+            context.profile_group(group, &measured_controls, &nominals);
         }
         let mut controls = Vec::with_capacity(frames.len());
         for frame in &frames {
@@ -482,6 +543,45 @@ fn measured<'a>(
                 "inspection record repeats a measured feature",
             ));
         }
+    }
+    Ok(map)
+}
+
+/// Nominal points and unit outward normals by control ID: only for measured
+/// profile controls, one per measured point, finite and nonzero.
+fn nominal_points<'a>(
+    record: &'a InspectionRecord,
+    measured: &HashMap<&str, Vec<Vec3>>,
+) -> Result<Nominals<'a>, ModelError> {
+    if record.datum_features.iter().any(|f| !f.nominals.is_empty()) {
+        return Err(ModelError::new(
+            "nominal points apply to profile controls, not datum features",
+        ));
+    }
+    let mut map = HashMap::new();
+    for m in record.controls.iter().filter(|m| !m.nominals.is_empty()) {
+        if m.nominals.len() != measured[m.id.as_str()].len() {
+            return Err(ModelError::new(
+                "a measured control needs one nominal per measured point",
+            ));
+        }
+        let nominals = m
+            .nominals
+            .iter()
+            .map(|n| {
+                let point = Vec3::new(n.point_mm[0], n.point_mm[1], n.point_mm[2]);
+                let normal = Vec3::new(n.normal[0], n.normal[1], n.normal[2]);
+                match unit(normal) {
+                    Ok(normal) if n.point_mm.iter().chain(&n.normal).all(|v| v.is_finite()) => {
+                        Ok((point, normal))
+                    }
+                    _ => Err(ModelError::new(
+                        "nominal points must be finite with nonzero finite normals",
+                    )),
+                }
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        map.insert(m.id.as_str(), nominals);
     }
     Ok(map)
 }
@@ -880,8 +980,8 @@ impl Context<'_, '_> {
         frame: &DrawingFeatureControlFrame,
         points: &[Vec3],
     ) -> Result<ControlMeasurement, String> {
-        if frame.refinement.is_some() && frame.characteristic != GeometricCharacteristic::Position {
-            return Err("composite profile controls are not evaluated".into());
+        if let Some(result) = self.profiles.get(frame.id.as_str()) {
+            return result.clone();
         }
         let tolerance = frame.tolerance.normalized().map_err(|e| e.to_string())?;
         let c = frame.characteristic;
@@ -930,6 +1030,7 @@ impl Context<'_, '_> {
             datum_shift_mm: 0.0,
             datum_shift_limit_mm: 0.0,
             refinement: None,
+            profile: None,
         })
     }
 
@@ -989,6 +1090,7 @@ impl Context<'_, '_> {
             datum_shift_mm: 0.0,
             datum_shift_limit_mm: 0.0,
             refinement: None,
+            profile: None,
         })
     }
 
@@ -1090,6 +1192,7 @@ impl Context<'_, '_> {
             datum_shift_mm: 0.0,
             datum_shift_limit_mm: 0.0,
             refinement: None,
+            profile: None,
         })
     }
 
@@ -1214,6 +1317,7 @@ impl Context<'_, '_> {
             datum_shift_mm: shift[0].hypot(shift[1]),
             datum_shift_limit_mm: data.shift_limit,
             refinement: None,
+            profile: None,
         })
         .map(|mut m| {
             if let Some(refined) = self.refinements.get(frame.id.as_str()) {

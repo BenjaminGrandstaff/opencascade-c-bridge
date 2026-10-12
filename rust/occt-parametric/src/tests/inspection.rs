@@ -67,6 +67,7 @@ fn control(
 ) -> DrawingFeatureControlFrame {
     DrawingFeatureControlFrame {
         pattern: None,
+        unequal: None,
         size_limits: None,
         datum_reference_frame: None,
         refinement: None,
@@ -222,6 +223,7 @@ fn hole(center: [f64; 2], diameter: f64) -> Vec<[f64; 3]> {
 
 fn measured(id: &str, points_mm: Vec<[f64; 3]>) -> MeasuredFeature {
     MeasuredFeature {
+        nominals: Vec::new(),
         id: id.into(),
         points_mm,
     }
@@ -1710,4 +1712,343 @@ fn patterns_validate_and_round_trip() {
         ModelDocument::from_json(&json).unwrap().drawings,
         document.drawings
     );
+}
+
+/// Profile of the top face (a plane, so nominals are optional) to `datums`.
+fn top_profile(tolerance: f64, datums: &[&str]) -> DrawingFeatureControlFrame {
+    control(
+        "top_profile",
+        "top",
+        GeometricCharacteristic::ProfileSurface,
+        tolerance,
+        datums,
+    )
+}
+
+fn profile_report(
+    page_controls: Vec<DrawingFeatureControlFrame>,
+    controls: Vec<MeasuredFeature>,
+) -> InspectionReport {
+    let (definition, _) = shift_setup(DatumMaterialBoundary::Regardless);
+    let graph = graph_of(&definition);
+    let mut page = page();
+    page.feature_control_frames = page_controls;
+    let mut record = nominal_record();
+    record.controls = controls;
+    page.evaluate_inspection(&graph, &record).unwrap()
+}
+
+/// The top face at `height(x)`.
+fn top(height: impl Fn(f64) -> f64) -> MeasuredFeature {
+    measured(
+        "top_profile",
+        grid(|u, v| [60.0 * u, 40.0 * v, height(60.0 * u)]),
+    )
+}
+
+#[test]
+fn surface_profile_is_located_by_its_datums() {
+    // Raised 0.03 mm: 2 · 0.03 wide about the true profile 10 mm above A.
+    let report = profile_report(vec![top_profile(0.1, &["A"])], vec![top(|_| 10.03)]);
+    let m = evaluated(&report, "top_profile");
+    let profile = m.profile.clone().unwrap();
+    assert!((m.deviation_mm - 0.06).abs() < 1e-9, "{m:?}");
+    assert!((profile.min_deviation_mm - 0.03).abs() < 1e-9);
+    assert!((profile.max_deviation_mm - 0.03).abs() < 1e-9);
+    assert!(m.conforms);
+    // Raised 0.06 mm it leaves the 0.1 zone; without datums the profile is
+    // form only, so the offset fits away.
+    let report = profile_report(vec![top_profile(0.1, &["A"])], vec![top(|_| 10.06)]);
+    assert!(!evaluated(&report, "top_profile").conforms);
+    let report = profile_report(vec![top_profile(0.1, &[])], vec![top(|_| 10.06)]);
+    let m = evaluated(&report, "top_profile");
+    assert!(m.deviation_mm < 1e-9 && m.conforms, "{m:?}");
+    assert!((m.profile.unwrap().translation_mm - 0.06).abs() < 1e-9);
+    // A 0.04 mm tilt over the face stays with A as the datum, and is removed
+    // (with a turn of 0.04 / 60 rad) without datums.
+    let tilt = |x: f64| 10.0 + 0.04 * x / 60.0;
+    let report = profile_report(vec![top_profile(0.1, &["A"])], vec![top(tilt)]);
+    assert!((evaluated(&report, "top_profile").deviation_mm - 0.08).abs() < 1e-9);
+    let report = profile_report(vec![top_profile(0.1, &[])], vec![top(tilt)]);
+    let m = evaluated(&report, "top_profile");
+    assert!(m.deviation_mm < 1e-6, "{m:?}");
+    assert!((m.profile.unwrap().rotation_rad - (0.04_f64 / 60.0).atan()).abs() < 1e-7);
+}
+
+#[test]
+fn unequally_disposed_zones_move_outward() {
+    let unequal = |outward: f64| {
+        let mut f = top_profile(0.1, &["A"]);
+        f.unequal = Some(Quantity::length(outward, LengthUnit::Millimeter));
+        f
+    };
+    // All 0.1 outside the material: +0.08 fits, −0.02 does not.
+    let report = profile_report(vec![unequal(0.1)], vec![top(|_| 10.08)]);
+    let m = evaluated(&report, "top_profile");
+    assert!((m.profile.clone().unwrap().zone_center_mm - 0.05).abs() < 1e-12);
+    assert!((m.deviation_mm - 0.06).abs() < 1e-9 && m.conforms, "{m:?}");
+    let report = profile_report(vec![unequal(0.1)], vec![top(|_| 9.98)]);
+    assert!(!evaluated(&report, "top_profile").conforms);
+    // All inside: the same +0.08 is out.
+    let report = profile_report(vec![unequal(0.0)], vec![top(|_| 10.08)]);
+    assert!(!evaluated(&report, "top_profile").conforms);
+}
+
+/// Bore points (as `hole`) of `diameter` about `center`, with the nominal
+/// Ø10 surface points and normals about `HOLE` pointing out of the material
+/// (toward the axis).
+fn bore(id: &str, nominal: [f64; 2], center: [f64; 2], diameter: f64) -> MeasuredFeature {
+    let mut m = measured(id, hole(center, diameter));
+    m.nominals = m
+        .points_mm
+        .iter()
+        .map(|p| {
+            let a = (p[1] - center[1]).atan2(p[0] - center[0]);
+            MeasuredNominal {
+                point_mm: [nominal[0] + 5.0 * a.cos(), nominal[1] + 5.0 * a.sin(), p[2]],
+                normal: [-a.cos(), -a.sin(), 0.0],
+            }
+        })
+        .collect();
+    m
+}
+
+#[test]
+fn a_bore_profile_against_nominal_points_controls_size_and_location() {
+    let bore_profile = |datums: &[&str]| {
+        control(
+            "bore",
+            "hole",
+            GeometricCharacteristic::ProfileSurface,
+            0.06,
+            datums,
+        )
+    };
+    // Ø10.04 and 0.02 mm off center: from A | B | C the surface lies 0 to
+    // 0.04 mm into the material.
+    let measured = || bore("bore", HOLE, [HOLE[0] + 0.02, HOLE[1]], 10.04);
+    let report = profile_report(vec![bore_profile(&["A", "B", "C"])], vec![measured()]);
+    let m = evaluated(&report, "bore");
+    let profile = m.profile.clone().unwrap();
+    assert!((m.deviation_mm - 0.08).abs() < 1e-4, "{m:?}");
+    assert!((profile.min_deviation_mm + 0.04).abs() < 1e-4);
+    assert!(profile.max_deviation_mm.abs() < 1e-4);
+    assert!(!m.conforms);
+    // Unlocated, the offset fits away but the oversize does not: profile
+    // controls size.
+    let report = profile_report(vec![bore_profile(&[])], vec![measured()]);
+    let m = evaluated(&report, "bore");
+    assert!((m.deviation_mm - 0.04).abs() < 1e-4, "{m:?}");
+    assert!((m.profile.unwrap().translation_mm - 0.02).abs() < 1e-4);
+    assert!(m.conforms);
+    // A primary axis cannot be measured here, but a plane anchor does not
+    // need nominals and other anchors do.
+    let mut bare = measured();
+    bare.nominals.clear();
+    let report = profile_report(vec![bore_profile(&["A"])], vec![bare]);
+    assert!(matches!(
+        &report.controls[0].result,
+        ControlResult::NotEvaluated(reason) if reason.contains("plane datum geometry")
+    ));
+}
+
+#[test]
+fn a_profile_pattern_is_one_simultaneous_requirement_with_a_composite_segment() {
+    // 2× profile of two pattern bores to A only: the pair may slide and turn
+    // in A together, not separately.
+    let pair = |lower: Option<&[&str]>| -> Vec<DrawingFeatureControlFrame> {
+        (0..2)
+            .map(|i| {
+                let mut f = control(
+                    &format!("bore{i}"),
+                    &format!("p{i}"),
+                    GeometricCharacteristic::ProfileSurface,
+                    0.1,
+                    &["A"],
+                );
+                f.pattern = Some("2X".into());
+                f.refinement = lower.map(|datums| DrawingCompositeRefinement {
+                    tolerance: Quantity::length(0.02, LengthUnit::Millimeter),
+                    datums: f.datums[..datums.len()].to_vec(),
+                });
+                f
+            })
+            .collect()
+    };
+    let bores = |shift: [[f64; 2]; 2]| -> Vec<MeasuredFeature> {
+        (0..2)
+            .map(|i| {
+                let [x, y] = PATTERN[i];
+                let mut m = bore(
+                    &format!("bore{i}"),
+                    [x, y],
+                    [x + shift[i][0], y + shift[i][1]],
+                    6.0,
+                );
+                // Ø6 pattern bores: rescale the Ø10 nominal.
+                for (n, p) in m.nominals.iter_mut().zip(&m.points_mm) {
+                    n.point_mm = [x - 3.0 * n.normal[0], y - 3.0 * n.normal[1], p[2]];
+                }
+                m
+            })
+            .collect()
+    };
+    // Shifted together: the pair slides back as one.
+    let report = profile_report(pair(None), bores([[0.03, 0.0], [0.03, 0.0]]));
+    for i in 0..2 {
+        assert!(evaluated(&report, &format!("bore{i}")).deviation_mm < 1e-4);
+    }
+    // Spread apart along their common line, no single move fits both: each
+    // keeps its 0.03 mm, where alone it would fit exactly.
+    let spread = bores([[-0.03, 0.0], [0.03, 0.0]]);
+    let report = profile_report(pair(None), spread.clone());
+    for i in 0..2 {
+        let m = evaluated(&report, &format!("bore{i}"));
+        assert!((m.deviation_mm - 0.06).abs() < 1e-4, "{m:?}");
+    }
+    let mut alone = pair(None);
+    alone.iter_mut().for_each(|f| f.pattern = None);
+    let report = profile_report(alone, spread);
+    assert!(evaluated(&report, "bore0").deviation_mm < 1e-4);
+    // Composite: located loosely to A (0.1), related tightly (0.02) with no
+    // datums. Both bores off by 0.04 mm across their line: one 0.08 move
+    // fits them together, at 0.02 they relate exactly.
+    let report = profile_report(pair(Some(&[])), bores([[0.0, 0.04], [0.0, 0.04]]));
+    for i in 0..2 {
+        let m = evaluated(&report, &format!("bore{i}"));
+        let lower = m.refinement.clone().unwrap();
+        assert!(lower.deviation_mm < 1e-4 && lower.conforms, "{lower:?}");
+        assert!((lower.pattern_translation_mm - 0.04).abs() < 1e-4);
+        assert!(m.conforms);
+    }
+    // Apart along their line the pair keeps 0.02 mm each: 0.04 > 0.02.
+    let report = profile_report(pair(Some(&[])), bores([[-0.02, 0.0], [0.02, 0.0]]));
+    let lower = evaluated(&report, "bore0").refinement.unwrap();
+    assert!((lower.deviation_mm - 0.04).abs() < 1e-4, "{lower:?}");
+    assert!(!lower.conforms);
+}
+
+#[test]
+fn profile_records_and_unequal_zones_validate_render_and_round_trip() {
+    let (definition, _) = shift_setup(DatumMaterialBoundary::Regardless);
+    let graph = graph_of(&definition);
+    let mut page = page();
+    let mut f = top_profile(0.1, &["A"]);
+    f.unequal = Some(Quantity::length(0.03, LengthUnit::Millimeter));
+    page.feature_control_frames = vec![f.clone()];
+    let session = Session::new().unwrap();
+    let generated = page
+        .generate(&graph, &session, DrawingRenderOptions::default())
+        .unwrap();
+    for text in ["0.100 mm", "U", "0.030"] {
+        assert!(
+            generated.gdt_labels.iter().any(|l| l.text == text),
+            "{text}"
+        );
+    }
+    assert_eq!(
+        generated
+            .gdt_lines
+            .iter()
+            .map(|l| l.points_mm.len())
+            .sum::<usize>(),
+        crate::drawing::gdt::vertex_count(
+            &page.datum_features,
+            &page.feature_control_frames,
+            &page.datum_reference_frames
+        )
+        .unwrap()
+    );
+    for (characteristic, outward, reason) in [
+        (GeometricCharacteristic::Flatness, 0.03, "profile controls"),
+        (
+            GeometricCharacteristic::ProfileSurface,
+            0.2,
+            "from zero to the tolerance",
+        ),
+        (
+            GeometricCharacteristic::ProfileSurface,
+            -0.01,
+            "from zero to the tolerance",
+        ),
+    ] {
+        let mut bad = page.clone();
+        let g = &mut bad.feature_control_frames[0];
+        g.characteristic = characteristic;
+        if characteristic == GeometricCharacteristic::Flatness {
+            g.datums.clear();
+        }
+        g.unequal = Some(Quantity::length(outward, LengthUnit::Millimeter));
+        let error = bad.validate(&graph).unwrap_err().message;
+        assert!(error.contains(reason), "{error}");
+    }
+    let mut document = ModelDocument::from_graph(&graph);
+    document.drawings.push(page.clone());
+    let json = document.to_json_pretty().unwrap();
+    assert!(json.contains("\"unequal\""));
+    assert_eq!(
+        ModelDocument::from_json(&json).unwrap().drawings,
+        document.drawings
+    );
+    // Records: one nominal per point, finite, only on profile controls.
+    let mut record = nominal_record();
+    let mut top_points = top(|_| 10.0);
+    top_points.nominals = vec![
+        MeasuredNominal {
+            point_mm: [0.0, 0.0, 10.0],
+            normal: [0.0, 0.0, 1.0],
+        };
+        top_points.points_mm.len() - 1
+    ];
+    record.controls = vec![top_points.clone()];
+    let error = page
+        .evaluate_inspection(&graph, &record)
+        .unwrap_err()
+        .message;
+    assert!(error.contains("one nominal per measured point"), "{error}");
+    top_points.nominals.push(MeasuredNominal {
+        point_mm: [0.0, 0.0, 10.0],
+        normal: [0.0, 0.0, 0.0],
+    });
+    record.controls = vec![top_points];
+    let error = page
+        .evaluate_inspection(&graph, &record)
+        .unwrap_err()
+        .message;
+    assert!(error.contains("nonzero finite normals"), "{error}");
+    let mut flat_page = page.clone();
+    flat_page.feature_control_frames = vec![control(
+        "flat",
+        "top",
+        GeometricCharacteristic::Flatness,
+        0.05,
+        &[],
+    )];
+    let mut flat = measured("flat", grid(|u, v| [60.0 * u, 40.0 * v, 10.0]));
+    flat.nominals = vec![
+        MeasuredNominal {
+            point_mm: [0.0, 0.0, 10.0],
+            normal: [0.0, 0.0, 1.0],
+        };
+        flat.points_mm.len()
+    ];
+    record.controls = vec![flat];
+    let error = flat_page
+        .evaluate_inspection(&graph, &record)
+        .unwrap_err()
+        .message;
+    assert!(error.contains("profile controls"), "{error}");
+    let json = serde_json::to_string(&record).unwrap();
+    assert_eq!(
+        serde_json::from_str::<InspectionRecord>(&json).unwrap(),
+        record
+    );
+    // Line profiles and shifted datums are reported, not evaluated.
+    let mut line = top_profile(0.1, &["A"]);
+    line.characteristic = GeometricCharacteristic::ProfileLine;
+    let report = profile_report(vec![line], vec![top(|_| 10.0)]);
+    assert!(matches!(
+        &report.controls[0].result,
+        ControlResult::NotEvaluated(reason) if reason.contains("profile of a line")
+    ));
 }
