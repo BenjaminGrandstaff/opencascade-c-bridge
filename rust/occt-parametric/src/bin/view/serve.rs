@@ -1,5 +1,7 @@
 //! `--serve`: a localhost page that renders the model with WebGL, edits
 //! family parameter defaults, saves them, and follows saves made elsewhere.
+#[path = "serve_features.rs"]
+mod features;
 #[path = "serve_sketch.rs"]
 mod sketch;
 use super::{POLL, stamp, view_data};
@@ -60,6 +62,7 @@ impl Response {
 pub(super) struct Studio {
     model: PathBuf,
     output: Option<String>,
+    base_output: Option<String>,
     document: ModelDocument,
     gltf: String,
     /// Requirement results of the generation `gltf` was drawn from.
@@ -84,6 +87,7 @@ impl Studio {
         let (gltf, requirements) = build(&document, output.as_deref())?;
         Ok(Self {
             model: model.to_owned(),
+            base_output: output.clone(),
             output,
             document,
             gltf,
@@ -129,7 +133,8 @@ impl Studio {
     fn reload(&mut self) -> Result<(), String> {
         let text = fs::read_to_string(&self.model).map_err(|e| e.to_string())?;
         let document = ModelDocument::from_json(&text).map_err(|e| e.to_string())?;
-        let (gltf, requirements) = build(&document, self.output.as_deref())?;
+        let (gltf, requirements) = build(&document, self.base_output.as_deref())?;
+        self.output = self.base_output.clone();
         self.seen = stamp(&self.model);
         self.document = document;
         self.gltf = gltf;
@@ -602,6 +607,14 @@ impl Studio {
                     None => Response::error(400, "annotations need ?id="),
                 }
             }
+            ("GET", "/solid-editor.mjs") => {
+                Response::text(200, "text/javascript", include_str!("web/solid-editor.mjs"))
+            }
+            ("GET", "/api/features") => Response::json(200, &self.feature_view()),
+            ("POST", "/api/features") => match self.feature_edit(body) {
+                Ok(data) => Response::json(200, &data),
+                Err(error) => Response::error(422, &error),
+            },
             ("GET", "/canvas-tools.mjs") => {
                 Response::text(200, "text/javascript", include_str!("web/canvas-tools.mjs"))
             }

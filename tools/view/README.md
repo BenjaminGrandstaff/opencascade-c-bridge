@@ -155,6 +155,46 @@ drafts remain editable. **Save** writes an applied edit; **Revert** reloads the
 saved model. **Discard draft** closes the local draft and restores the accepted
 annotation view. No schema or native ABI change is needed.
 
+### Sketch-to-solid controls
+
+Choose **Sketch to solid** to create a new extrusion, add material by union, or
+remove material by cut. Select an existing **Sketch / planar profile**, enter a
+result feature name, and choose a target solid for union/cut. The profile's current
+material regions and holes are used together; individual region picking and new
+sketch creation are not part of these controls. Apply pending sketch drafts first;
+saving them is unnecessary before creating a solid draft.
+
+Enter positive depth in millimeters or link a length parameter. Direction X/Y/Z
+is a finite, nonzero vector in family coordinates, normalized so depth sets the
+travel distance. Use negative components to reverse travel. **Symmetric** splits
+the total depth equally about the profile plane. A profile on the top of a plate
+can cut a pocket by extruding toward the plate, for example direction `(0,0,-1)`.
+**Show source sketch** switches the annotated view to its authored geometry.
+
+The **Feature list** opens existing distance/symmetric extrusions for editing.
+Their IDs stay stable. Known direction/depth expressions retain their authored
+form when unchanged; other formulas have a **Keep existing direction and formula**
+choice and are replaced only when you explicitly choose entered values or a
+parameter. Geometric cutoff extents and editing other operation types remain
+outside this panel.
+
+**Preview solid** displays candidate 3D geometry and per-instance solid count and
+volume while the accepted document, glTF, and file remain unchanged. Apply repeats
+validation against the expected feature graph and model version. All variants
+regenerate and existing required checks remain enforced. The result must contain
+valid, nonempty solid material; unions/cuts must make an actual material change.
+A cut that erases a thinner variant is rejected even if another variant survives.
+Required validity and positive-volume checks for the result are stored in the
+model, so later parameter edits and CLI/MCP regeneration enforce them too. Existing
+requirements are retained; identical result guarantees are reused.
+
+**Apply verified solid** updates the studio and displays the result output;
+**Save** persists the feature graph. **Revert** restores the saved document and
+original CLI output selection. **Close solid draft** restores the accepted view.
+Union/cut creation adds a named extrusion tool plus a boolean result, preserving
+the source profile and target as editable dependencies. No schema or ABI change
+is required.
+
 Choose **Assembly** to see every placed part and material color in the WebGL
 glTF view: click a part to select it, drag to orbit, Shift-drag or right-drag to
 pan, and wheel to zoom. The annotated views use **family-local coordinates**;
@@ -267,5 +307,6 @@ Native tests cover live sketch/solid updates, override isolation, save/revert,
 and rejected-constraint previews without acceptance. The real page logic and shared renderer also run against minimal DOM
 hosts in the JavaScript tests. The sketch draft workflow was verified in headless
 Chrome through canvas curve selection, equal-length creation, annotated dimension
-editing, coordinate editing, preview, verified apply, and revert, with no
+editing, coordinate editing, pocket-cut preview/apply/revert, existing extrusion
+editing, and constrained dragging/drawing, with no
 page errors.

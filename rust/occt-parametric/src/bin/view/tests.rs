@@ -1234,3 +1234,240 @@ fn constrained_drag_solves_a_temporary_pin_and_releases_it_without_accepting() {
     );
     assert_eq!(get(&mut studio, "/api/state").1, state);
 }
+
+#[test]
+fn solid_controls_preview_add_union_cut_and_guard_all_variants_and_outputs() {
+    let directory = Directory::new();
+    let request: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../tools/model/sketch-block.request.json"
+    ))
+    .unwrap();
+    let mut document = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+    document.instances.push(InstanceNode::Clone {
+        id: "thin".into(),
+        source: "block".into(),
+        overrides: HashMap::from([(
+            "depth".into(),
+            ParameterValue::Scalar(Quantity::length(5.0, LengthUnit::Millimeter)),
+        )]),
+        placement: Default::default(),
+        frame: None,
+        provenance: "test".into(),
+    });
+    let model = PathBuf::from(directory.model(&document));
+    let original = fs::read_to_string(&model).unwrap();
+    let mut studio = serve::Studio::load(&model, Some("body".into())).unwrap();
+    let (_, features) = get(&mut studio, "/api/features");
+    let (_, state) = get(&mut studio, "/api/state");
+    let build = |mode: &str, depth: f64, reverse: bool| {
+        let extrusion = json!({"id":"draft-extrusion","operation":{"extrude":{"input":"profile","direction":{"components":{"x":{"literal":{"value":0,"dimension":"length","unit":"millimeter"}},"y":{"literal":{"value":0,"dimension":"length","unit":"millimeter"}},"z":{"multiply":[{"literal":{"value":depth,"dimension":"length","unit":"millimeter"}},{"literal":{"value":if reverse{-1}else{1},"dimension":"scalar","unit":null}}]}}}}}});
+        let changes = if mode == "new" {
+            vec![extrusion]
+        } else {
+            vec![
+                extrusion,
+                json!({"id":"draft","operation":if mode=="cut"{json!({"cut":{"object":"body","tool":"draft-extrusion"}})}else{json!({"fuse":{"left":"body","right":"draft-extrusion"}})}}),
+            ]
+        };
+        json!({"version":features["version"],"instance":"block","expected":features["features"],"action":"add","features":changes,"output":if mode=="new"{"draft-extrusion"}else{"draft"},"apply":false})
+    };
+    let post = |studio: &mut serve::Studio, edit: &serde_json::Value| {
+        studio.handle("POST", "/api/features", edit.to_string().as_bytes())
+    };
+    for (mode, depth, expected_volume) in [
+        ("new", 15.0, 15000.0),
+        ("fuse", 15.0, 15000.0),
+        ("cut", 3.0, 7000.0),
+    ] {
+        let response = post(&mut studio, &build(mode, depth, false));
+        assert_eq!(
+            response.status,
+            200,
+            "{}",
+            String::from_utf8_lossy(&response.body)
+        );
+        let result: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+        assert_eq!(result["can_apply"], true, "{result}");
+        assert!(
+            (result["geometry"]["block"]["volume_mm3"].as_f64().unwrap() - expected_volume).abs()
+                < 1e-6
+        );
+        assert_eq!(result["annotations"]["accepted"], false);
+    }
+    for (mode, depth, reverse) in [
+        ("cut", 7.0, false),
+        ("cut", 20.0, false),
+        ("cut", 3.0, true),
+        ("fuse", 5.0, false),
+    ] {
+        let mut edit = build(mode, depth, reverse);
+        let response = post(&mut studio, &edit);
+        assert_eq!(response.status, 200);
+        let result: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+        assert_eq!(result["can_apply"], false, "{result}");
+        edit["apply"] = json!(true);
+        assert_eq!(post(&mut studio, &edit).status, 422);
+    }
+    assert_eq!(get(&mut studio, "/api/state").1, state);
+    assert_eq!(fs::read_to_string(&model).unwrap(), original);
+    let mut edit = build("cut", 3.0, false);
+    edit["apply"] = json!(true);
+    assert_eq!(post(&mut studio, &edit).status, 200);
+    assert_eq!(get(&mut studio, "/api/features").1["output"], "draft");
+    let current = get(&mut studio, "/api/state").1;
+    assert_eq!(
+        studio
+            .handle("POST", "/api/parameters", br#"{"set":{"depth":2}}"#)
+            .status,
+        422,
+        "later parameters cannot erase the applied solid"
+    );
+    assert_eq!(get(&mut studio, "/api/state").1, current);
+    assert_eq!(get(&mut studio, "/api/state").1["dirty"], true);
+    assert_eq!(
+        post(&mut studio, &edit).status,
+        422,
+        "stale version/graph must not overwrite accepted state"
+    );
+    assert_eq!(studio.handle("POST", "/api/revert", b"").status, 200);
+    assert_eq!(
+        get(&mut studio, "/api/features").1["output"],
+        "body",
+        "revert restores an explicit CLI output"
+    );
+    assert_eq!(fs::read_to_string(&model).unwrap(), original);
+}
+
+#[test]
+fn existing_extrusion_edits_preserve_requirements_and_save_the_verified_graph() {
+    let directory = Directory::new();
+    let request: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../tools/model/sketch-block.request.json"
+    ))
+    .unwrap();
+    let mut document = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+    document.family.requirements.push(Requirement {
+        id: "budget".into(),
+        version: 1,
+        kind: RequirementKind::Dimensional,
+        priority: RequirementPriority::Required,
+        statement: "Volume below 11,000 mm3".into(),
+        rule: VerificationRule::VolumeRange {
+            output: "body".into(),
+            minimum: Volume {
+                value: 1.0,
+                unit: LengthUnit::Millimeter,
+            },
+            maximum: Volume {
+                value: 11000.0,
+                unit: LengthUnit::Millimeter,
+            },
+        },
+        provenance: "test".into(),
+        traces: vec![],
+    });
+    let model = PathBuf::from(directory.model(&document));
+    let original = fs::read_to_string(&model).unwrap();
+    let mut studio = serve::Studio::load(&model, None).unwrap();
+    let (_, data) = get(&mut studio, "/api/features");
+    let mut feature = data["features"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["id"] == "body")
+        .unwrap()
+        .clone();
+    feature["operation"]["extrude"]["direction"]["components"]["z"] =
+        json!({"literal":{"value":12,"dimension":"length","unit":"millimeter"}});
+    let mut edit = json!({"version":data["version"],"instance":"block","expected":data["features"],"action":"replace","features":[feature],"output":"body","apply":false});
+    let response = studio.handle("POST", "/api/features", edit.to_string().as_bytes());
+    assert_eq!(response.status, 200);
+    let result: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+    assert_eq!(result["can_apply"], false);
+    edit["apply"] = json!(true);
+    assert_eq!(
+        studio
+            .handle("POST", "/api/features", edit.to_string().as_bytes())
+            .status,
+        422
+    );
+    assert_eq!(fs::read_to_string(&model).unwrap(), original);
+    edit["features"][0]["operation"]["extrude"]["direction"]["components"]["z"]["literal"]["value"] =
+        json!(8);
+    assert_eq!(
+        studio
+            .handle("POST", "/api/features", edit.to_string().as_bytes())
+            .status,
+        200
+    );
+    assert_eq!(studio.handle("POST", "/api/save", b"").status, 200);
+    let saved = ModelDocument::from_json(&fs::read_to_string(&model).unwrap()).unwrap();
+    assert!(
+        document
+            .family
+            .requirements
+            .iter()
+            .all(|r| saved.family.requirements.contains(r))
+    );
+    assert!(
+        saved
+            .family
+            .requirements
+            .iter()
+            .any(|r| r.id.contains("solid-material"))
+    );
+    assert_eq!(saved.family.version, document.family.version + 1);
+}
+
+#[test]
+fn a_standalone_sketch_becomes_a_saved_solid_with_persistent_guarantees() {
+    let directory = Directory::new();
+    let mut request: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../tools/model/sketch-block.request.json"
+    ))
+    .unwrap();
+    request["model"]["family"]["features"]
+        .as_array_mut()
+        .unwrap()
+        .truncate(1);
+    request["model"]["family"]["requirements"] = json!([]);
+    let document = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+    let model = PathBuf::from(directory.model(&document));
+    let mut studio = serve::Studio::load(&model, None).unwrap();
+    let (_, data) = get(&mut studio, "/api/features");
+    let feature = FeatureDefinition {
+        id: "made-part".into(),
+        operation: FeatureOperation::Extrude {
+            input: "profile".into(),
+            direction: VectorExpr::Components {
+                x: ScalarExpr::Literal(Quantity::length(0.0, LengthUnit::Millimeter)),
+                y: ScalarExpr::Literal(Quantity::length(0.0, LengthUnit::Millimeter)),
+                z: ScalarExpr::Parameter("depth".into()),
+            },
+            extent: ExtrudeExtent::Distance,
+        },
+    };
+    let edit = json!({"version":data["version"],"instance":"block","expected":data["features"],"action":"add","features":[feature],"output":"made-part","apply":true});
+    let response = studio.handle("POST", "/api/features", edit.to_string().as_bytes());
+    assert_eq!(
+        response.status,
+        200,
+        "{}",
+        String::from_utf8_lossy(&response.body)
+    );
+    let result: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+    assert_eq!(result["geometry"]["block"]["solids"], 1);
+    assert_eq!(studio.handle("POST", "/api/save", b"").status, 200);
+    assert_eq!(studio.handle("POST", "/api/revert", b"").status, 200);
+    assert_eq!(get(&mut studio, "/api/features").1["output"], "made-part");
+    let saved = ModelDocument::from_json(&fs::read_to_string(&model).unwrap()).unwrap();
+    assert_eq!(saved.family.features.len(), 2);
+    assert_eq!(saved.family.requirements.len(), 2);
+    assert!(
+        saved
+            .family
+            .requirements
+            .iter()
+            .all(|r| r.priority == RequirementPriority::Required)
+    );
+}

@@ -122,6 +122,7 @@
 <script src="/annotations.js"></script>
 <script type="module">
 import { drawAssemblyAnnotations } from "./assembly_annotations.mjs";
+import { createSolidEditor } from "./solid-editor.mjs";
 import { createSketchEditor } from "./sketch-editor.mjs";
 import { createAnnotationController, editableControls } from "./annotations.mjs";
 import { createRenderer, fitCamera, modelToGltf, pan, parseGltf, pick, ray } from "./viewer.mjs";
@@ -184,6 +185,13 @@ const annotations = createAnnotationController({
       preview: data => annotations.preview(data, "Sketch draft preview — Apply to update the model."),
       applied: async next => { annotations.invalidate(); await apply(next); await refreshAnnotations(); },
       restore: async () => { annotations.invalidate(); await refreshAnnotations(); },
+    });
+    createSolidEditor({host:annotationRoot.querySelector('aside'),request:api,
+      instance:()=>scope||instanceIds.values().next().value,
+      showSketch:feature=>viewer.selectScene('sketch',feature),showSolid:feature=>viewer.selectScene('solid',feature),
+      preview:data=>annotations.preview(data,'Solid draft preview — Apply to update the model.'),
+      applied:async next=>{annotations.invalidate();await apply(next);await refreshAnnotations();},
+      restore:async()=>{annotations.invalidate();await refreshAnnotations();},
     });
     return viewer;
   },

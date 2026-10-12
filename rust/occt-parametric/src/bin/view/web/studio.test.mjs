@@ -57,7 +57,7 @@ const settle=async check=>{for(let i=0;i<40;i++){if(check())return;await new Pro
   };
   const renderer={draw(){},setSelection(){},setModel(){},setMarkers(){}};
   const context={document,fetch,console,URL,Option:class extends Element{constructor(label,value){super('option');this.textContent=label;this.value=value;}},ResizeObserver:class{observe(){}},setTimeout:()=>1,clearTimeout(){},requestAnimationFrame:()=>1,
-    createSketchEditor:()=>({selectGeometry(){},selectConstraint(){},clearSelection(){}}),createAnnotationController,editableControls,drawAssemblyAnnotations,createRenderer:()=>renderer,fitCamera:()=>({}),modelToGltf:v=>v,pan:()=>({}),parseGltf:g=>({...g,bounds:null}),pick:()=>-1,ray:()=>({}),
+    createSolidEditor:()=>{},createSketchEditor:()=>({selectGeometry(){},selectConstraint(){},clearSelection(){}}),createAnnotationController,editableControls,drawAssemblyAnnotations,createRenderer:()=>renderer,fitCamera:()=>({}),modelToGltf:v=>v,pan:()=>({}),parseGltf:g=>({...g,bounds:null}),pick:()=>-1,ray:()=>({}),
     window:{createOcctAnnotatedViewer:(root,data,select)=>{onSelect=select;component={data,fit(){},update(next){this.data=next;if(selectedAnnotation){selectedScene=next.scenes[0];selectedAnnotation=selectedScene.annotations[0];root.getElementById('selection').replaceChildren();select(selectedAnnotation,selectedScene);}}};return component;}}};
   vm.createContext(context);
   const page=fs.readFileSync(new URL('./index.html',import.meta.url),'utf8').split('<script type="module">')[1].split('</script>')[0].replace(/^import .*;$/gm,'');
