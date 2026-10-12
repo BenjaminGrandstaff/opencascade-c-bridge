@@ -121,9 +121,12 @@ pub struct ProfileMeasurement {
     pub max_deviation_mm: f64,
     pub zone_center_mm: f64,
     /// Rigid motion, within the freedom the datums leave, of the measured
-    /// surface (or the pattern's surfaces together) that best fits the zone.
+    /// surface (or the pattern's surfaces together) that best fits the zone;
+    /// for profile of a line, the largest over its elements.
     pub translation_mm: f64,
     pub rotation_rad: f64,
+    /// Line elements fitted separately (profile of a line), or 1.
+    pub elements: usize,
 }
 
 /// A composite control's feature-relating segment: the pattern may translate,
@@ -255,6 +258,9 @@ struct Context<'a, 'g> {
     refinements: HashMap<String, RefinementMeasurement>,
     /// Profile results by control ID, fitted per pattern.
     profiles: HashMap<String, Result<ControlMeasurement, String>>,
+    /// Drawing views by ID: a line profile's elements are sections normal to
+    /// its view direction.
+    views: HashMap<&'a str, &'a DrawingView>,
 }
 
 impl DrawingDefinition {
@@ -308,6 +314,7 @@ impl DrawingDefinition {
             shifts: HashMap::new(),
             refinements: HashMap::new(),
             profiles: HashMap::new(),
+            views: self.views.iter().map(|v| (v.id.as_str(), v)).collect(),
         };
         // Simultaneous requirement: position controls with identical datum
         // references (features, precedence and boundaries) share one datum

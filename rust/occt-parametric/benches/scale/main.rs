@@ -176,6 +176,7 @@ fn main() -> ExitCode {
     outcomes.push(inspection::profile_case(definition));
     outcomes.push(inspection::profile_surface_case(definition));
     outcomes.push(inspection::profile_projection_case(definition));
+    outcomes.push(inspection::profile_line_case(definition));
     outcomes.push(helix::helix_case());
     outcomes.push(helix::helix_pattern_case(definition));
     outcomes.push(threads::thread_case(definition));

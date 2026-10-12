@@ -1341,3 +1341,79 @@ pub(crate) fn profile_projection_case(definition: &FamilyDefinition) -> Outcome 
         },
     )
 }
+
+/// One profile of a line on a 200 × 10 mm side face seen from the top view:
+/// 1,000,000 points in 1,000 line elements (rows), each bowed out as a whole
+/// by up to 0.01 mm and waved ±0.002 mm along its length. Each element is
+/// fitted alone within its section (active set per element), so the bow
+/// fits away and a 0.004 mm zone remains.
+pub(crate) fn profile_line_case(definition: &FamilyDefinition) -> Outcome {
+    const ROWS: usize = 1_000;
+    const PER_ROW: usize = 1_000;
+    timed(
+        format!(
+            "inspection: one line profile of {} points in {ROWS} elements",
+            ROWS * PER_ROW
+        ),
+        Duration::from_secs(1),
+        Expectation::Required,
+        || {
+            let definition = hole_plate(definition);
+            let side = 20.0 * HOLES_PER_SIDE as f64;
+            let mut graph = InstanceGraph::new(&definition);
+            graph.add_base("part", HashMap::new(), "bench")?;
+            let drawing = abc_drawing(
+                "rows",
+                vec![DrawingFeatureControlFrame {
+                    pattern: None,
+                    unequal: None,
+                    surface: None,
+                    size_limits: None,
+                    datum_reference_frame: None,
+                    refinement: None,
+                    id: "rows".into(),
+                    attachment: attachment("left"),
+                    characteristic: GeometricCharacteristic::ProfileLine,
+                    tolerance: Quantity::length(0.005, LengthUnit::Millimeter),
+                    display_unit: LengthUnit::Millimeter,
+                    precision: 3,
+                    zone: GeometricToleranceZone::Characteristic,
+                    material: ToleranceMaterialCondition::Regardless,
+                    feature_of_size: false,
+                    datums: Vec::new(),
+                }],
+            );
+            let record = InspectionRecord {
+                drawing: "rows".into(),
+                surface_textures: Vec::new(),
+                datum_features: Vec::new(),
+                controls: vec![MeasuredFeature {
+                    nominals: Vec::new(),
+                    id: "rows".into(),
+                    points_mm: (0..ROWS * PER_ROW)
+                        .map(|i| {
+                            let (row, k) = (i / PER_ROW, i % PER_ROW);
+                            let y = side * k as f64 / PER_ROW as f64;
+                            let bow = 0.01 * (row as f64 * 0.37).sin();
+                            let wave = 0.002 * (y * 0.37).sin();
+                            [-(bow + wave), y, 10.0 * row as f64 / ROWS as f64]
+                        })
+                        .collect(),
+                }],
+            };
+            let report = drawing.evaluate_inspection(&graph, &record)?;
+            let ControlResult::Evaluated(m) = &report.controls[0].result else {
+                return Err(failure(format!("not evaluated: {:?}", report.controls[0])));
+            };
+            let elements = m.profile.as_ref().map_or(0, |p| p.elements);
+            if !m.conforms || elements != ROWS || m.deviation_mm > 0.0041 || m.deviation_mm < 0.0039
+            {
+                return Err(failure(format!("measured {m:?}")));
+            }
+            Ok(format!(
+                "zone {:.5} mm over {elements} elements",
+                m.deviation_mm
+            ))
+        },
+    )
+}

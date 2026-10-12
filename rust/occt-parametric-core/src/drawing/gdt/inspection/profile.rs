@@ -1,6 +1,8 @@
-//! Profile of a surface (schema 139): measured points against their nominal
-//! surface points and outward normals, inside a zone located by the datum
-//! reference frame and disposed about the true profile.
+//! Profile of a surface (schema 139) and of a line: measured points against
+//! their nominal surface points and outward normals, inside a zone located by
+//! the datum reference frame and disposed about the true profile. A line
+//! profile applies the same fit to each line element (a section normal to the
+//! control's view direction) on its own, moving only within that section.
 //!
 //! The nominal geometry is first placed on the measured datum simulators;
 //! the rigid motions those datums leave free (all six without datums) are
@@ -20,6 +22,7 @@ const ACTIVE_SET: usize = 512;
 
 /// Nominal geometry placed on the measured datums, and the rigid motions of
 /// the measured points that the datums leave free.
+#[derive(Clone)]
 struct Alignment {
     /// Images of the model x, y and z axes.
     rotation: [Vec3; 3],
@@ -31,6 +34,47 @@ struct Alignment {
     pivot: Option<Vec3>,
 }
 impl Alignment {
+    /// The free motions that keep a section plane normal to unit `normal` in
+    /// itself: free translations within the plane, and rotation about the
+    /// normal when that rotation is free.
+    fn in_plane(&self, normal: Vec3) -> Self {
+        // The free translation nearest the normal leaves; the rest are kept.
+        let along = self
+            .translations
+            .iter()
+            .fold(Vec3::new(0.0, 0.0, 0.0), |w, &t| {
+                add(w, scale(t, dot(t, normal)))
+            });
+        let mut translations: Vec<Vec3> = Vec::new();
+        for &t in &self.translations {
+            let mut q = t;
+            if length(along) > 1e-9 {
+                let w = scale(along, 1.0 / length(along));
+                q = subtract(q, scale(w, dot(q, w)));
+            }
+            for &r in &translations {
+                q = subtract(q, scale(r, dot(q, r)));
+            }
+            if length(q) > 1e-6 {
+                translations.push(scale(q, 1.0 / length(q)));
+            }
+        }
+        let rest = self
+            .rotations
+            .iter()
+            .fold(normal, |n, &r| subtract(n, scale(r, dot(n, r))));
+        let rotations = if !self.rotations.is_empty() && length(rest) < 1e-9 {
+            vec![normal]
+        } else {
+            Vec::new()
+        };
+        Self {
+            translations,
+            rotations,
+            ..self.clone()
+        }
+    }
+
     fn turn(&self, v: Vec3) -> Vec3 {
         add(
             add(scale(self.rotation[0], v.x), scale(self.rotation[1], v.y)),
@@ -48,6 +92,7 @@ struct ProfileFit {
     deviations: Vec<f64>,
     translation: f64,
     rotation: f64,
+    elements: usize,
 }
 
 /// Each member control's ID and measurement (or reason it was not evaluated).
@@ -88,9 +133,6 @@ impl Context<'_, '_> {
         nominals: &Nominals<'_>,
     ) -> Result<MemberResults, String> {
         let first = group[0];
-        if first.characteristic != GeometricCharacteristic::ProfileSurface {
-            return Err("profile of a line is not evaluated".into());
-        }
         let mut points = Vec::new();
         let mut targets = Vec::new();
         let mut members = Vec::with_capacity(group.len());
@@ -133,7 +175,7 @@ impl Context<'_, '_> {
             .flat_map(|m| std::iter::repeat_n(m.center, m.range.len()))
             .collect();
         let upper = self.profile_alignment(&first.datums, false)?;
-        let upper_fit = fit_profile(&points, &targets, &centers, &upper)?;
+        let upper_fit = self.fit_members(&members, &points, &targets, &centers, &upper)?;
         let lower = match &first.refinement {
             None => None,
             Some(refinement) => {
@@ -145,7 +187,7 @@ impl Context<'_, '_> {
                 let zero = vec![0.0; points.len()];
                 Some((
                     tolerance,
-                    fit_profile(&points, &targets, &zero, &alignment)?,
+                    self.fit_members(&members, &points, &targets, &zero, &alignment)?,
                 ))
             }
         };
@@ -188,11 +230,76 @@ impl Context<'_, '_> {
                             zone_center_mm: m.center,
                             translation_mm: upper_fit.translation,
                             rotation_rad: upper_fit.rotation,
+                            elements: upper_fit.elements,
                         }),
                     }),
                 )
             })
             .collect())
+    }
+
+    /// One segment's fit of a group. A surface profile moves the group as
+    /// one rigid body. A line profile fits each member's line elements on
+    /// their own: points sharing a position along the member's view direction
+    /// (within 1e-3 mm or 1e-6 of the span), each moving only within its
+    /// section plane, so patterns do not couple line elements.
+    fn fit_members(
+        &self,
+        members: &[Member<'_>],
+        points: &[Vec3],
+        targets: &[(Vec3, Vec3)],
+        centers: &[f64],
+        alignment: &Alignment,
+    ) -> Result<ProfileFit, String> {
+        if members[0].frame.characteristic != GeometricCharacteristic::ProfileLine {
+            return fit_profile(points, targets, centers, alignment);
+        }
+        let mut fit = ProfileFit {
+            deviations: vec![0.0; points.len()],
+            translation: 0.0,
+            rotation: 0.0,
+            elements: 0,
+        };
+        for member in members {
+            let view = self
+                .views
+                .get(member.frame.attachment.view.as_str())
+                .ok_or("profile of a line needs its attachment view")?;
+            let normal = view.frame().map_err(|e| e.to_string())?.direction;
+            let restricted = alignment.in_plane(normal);
+            let mut order: Vec<(f64, usize)> = member
+                .range
+                .clone()
+                .map(|i| (dot(points[i], normal), i))
+                .collect();
+            order.sort_by(|a, b| a.0.total_cmp(&b.0));
+            let span = order.last().map_or(0.0, |o| o.0) - order.first().map_or(0.0, |o| o.0);
+            let gap = (1e-6 * span).max(1e-3);
+            let mut start = 0;
+            for end in 1..=order.len() {
+                if end < order.len() && order[end].0 - order[end - 1].0 <= gap {
+                    continue;
+                }
+                let element: Vec<usize> = order[start..end].iter().map(|o| o.1).collect();
+                start = end;
+                if element.len() < 2 {
+                    return Err("each profile line element needs at least two points".into());
+                }
+                let element_fit = fit_profile(
+                    &element.iter().map(|&i| points[i]).collect::<Vec<_>>(),
+                    &element.iter().map(|&i| targets[i]).collect::<Vec<_>>(),
+                    &element.iter().map(|&i| centers[i]).collect::<Vec<_>>(),
+                    &restricted,
+                )?;
+                for (&i, &d) in element.iter().zip(&element_fit.deviations) {
+                    fit.deviations[i] = d;
+                }
+                fit.translation = fit.translation.max(element_fit.translation);
+                fit.rotation = fit.rotation.max(element_fit.rotation);
+                fit.elements += 1;
+            }
+        }
+        Ok(fit)
     }
 
     /// Places nominal geometry on the measured simulators of `datums` and
@@ -454,6 +561,7 @@ fn fit_profile(
             .collect(),
         translation: length(translated),
         rotation: (0.5 * (trace - 1.0)).clamp(-1.0, 1.0).acos(),
+        elements: 1,
     })
 }
 

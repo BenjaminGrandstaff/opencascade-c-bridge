@@ -17,14 +17,20 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 154 + first-use integration 1 (+1 doc test), recipes 3, parametric core 35 + kernel 654 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 7 + view command 13 + viewer Node 19 + branch command 2 + model command 89, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 154 + first-use integration 1 (+1 doc test), recipes 3, parametric core 35 + kernel 655 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 7 + view command 13 + viewer Node 19 + branch command 2 + model command 89, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
 | Coverage | Last recorded: 93.61% lines overall, test code excluded; C++ 94.13% lines, 87.40% branches, 100% functions; Rust 93.42% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | Last full suite: 192 Rust cases plus 5 model-command cases and a 10,000-face Python matcher. Sketch authoring integration rechecked 60 sketch cases and 60 MCP cases within budget. | `tools/bench/run.sh` |
+| Scale benchmarks | Last full suite: 193 Rust cases plus 5 model-command cases and a 10,000-face Python matcher. Sketch authoring integration rechecked 60 sketch cases and 60 MCP cases within budget. | `tools/bench/run.sh` |
 
 ## Done
+
+- Profile of a line (schema 140 and ABI 69 unchanged). Line elements are
+  sections normal to the control's view direction; each is fitted alone with
+  the surface-profile zone, its free motions narrowed to its plane, for single
+  and composite controls. Reports count the elements. One line profile of
+  1,000,000 points in 1,000 elements in 0.20 s (1 s budget).
 
 - Profile against the model's surfaces (schema 140, ABI 69). Profile
   controls may name their faces with a `surface` selector.
@@ -2202,7 +2208,7 @@ scopes and inspected repo capabilities, not a full conformity audit.
    and limits render stacked values.
 2. **Structured GD&T** — [Y14.5](https://www.asme.org/codes-standards/find-codes-standards/y14-5-dimensioning-tolerancing):
    primary-axis, rotational and width datum shift, non-orthogonal datum
-   simulators, multi-segment composites, profile of a line, conical runout, simultaneous common-axis simulators and advanced
+   simulators, multi-segment composites, conical runout, simultaneous common-axis simulators and advanced
    modifiers, and
    measurement uncertainty. Measured planar datum frames, flatness,
    circularity, cylindricity, planar orientation zones and position with
@@ -2214,7 +2220,7 @@ scopes and inspected repo capabilities, not a full conformity audit.
    patterns (schema 138), and surface profile against CMM nominal points
    with unequal disposition, n× patterns and composite profile (schema 139),
    and profile nominals projected onto the model's own faces (schema 140,
-   ABI 69).
+   ABI 69), and profile of a line by sections normal to its view.
 3. **3D manufacturing annotations and exchange** — [Y14.41](https://www.asme.org/codes-standards/find-codes-standards/y14-41-digital-product-definition-data-practices):
    structured PMI attached to persistent geometry, annotation views, dataset
    authority and revision rules, and verified semantic PMI exchange. Geometry

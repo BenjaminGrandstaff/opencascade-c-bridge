@@ -2044,14 +2044,96 @@ fn profile_records_and_unequal_zones_validate_render_and_round_trip() {
         serde_json::from_str::<InspectionRecord>(&json).unwrap(),
         record
     );
-    // Line profiles and shifted datums are reported, not evaluated.
+    // A line element of a single point is reported, not evaluated.
     let mut line = top_profile(0.1, &["A"]);
     line.characteristic = GeometricCharacteristic::ProfileLine;
-    let report = profile_report(vec![line], vec![top(|_| 10.0)]);
+    let mut stray = top(|_| 10.0);
+    stray.points_mm.push([5.0, 5.0, 9.0]);
+    let report = profile_report(vec![line], vec![stray]);
     assert!(matches!(
         &report.controls[0].result,
-        ControlResult::NotEvaluated(reason) if reason.contains("profile of a line")
+        ControlResult::NotEvaluated(reason) if reason.contains("at least two points")
     ));
+}
+
+/// Profile of the right face (x = 60) seen in the top view: its line
+/// elements are the horizontal rows at each height.
+fn right_profile(
+    characteristic: GeometricCharacteristic,
+    datums: &[&str],
+) -> DrawingFeatureControlFrame {
+    control("right_profile", "right", characteristic, 0.05, datums)
+}
+
+/// The right face bowed out by `bow(z)` at each height, every row straight.
+fn right_face(bow: impl Fn(f64) -> f64) -> MeasuredFeature {
+    measured(
+        "right_profile",
+        grid(|u, v| [60.0 + bow(10.0 * v), 40.0 * u, 10.0 * v]),
+    )
+}
+
+#[test]
+fn line_profile_fits_each_element_in_its_section() {
+    let bow = |z: f64| 0.02 * (std::f64::consts::PI * z / 10.0).sin();
+    // Without datums a surface profile keeps the bow; each straight row of
+    // a line profile slides onto its line.
+    let report = profile_report(
+        vec![right_profile(GeometricCharacteristic::ProfileSurface, &[])],
+        vec![right_face(bow)],
+    );
+    let surface = evaluated(&report, "right_profile");
+    assert!(surface.deviation_mm > 0.015, "{surface:?}");
+    assert_eq!(surface.profile.unwrap().elements, 1);
+    let report = profile_report(
+        vec![right_profile(GeometricCharacteristic::ProfileLine, &[])],
+        vec![right_face(bow)],
+    );
+    let line = evaluated(&report, "right_profile");
+    let profile = line.profile.clone().unwrap();
+    assert!(line.deviation_mm < 1e-9, "{line:?}");
+    assert_eq!(profile.elements, 5);
+    assert!((profile.translation_mm - 0.02).abs() < 1e-9);
+    // Located by A and B, every row keeps its bulge out of B's plane...
+    let report = profile_report(
+        vec![right_profile(
+            GeometricCharacteristic::ProfileLine,
+            &["A", "B"],
+        )],
+        vec![right_face(bow)],
+    );
+    let located = evaluated(&report, "right_profile");
+    assert!((located.deviation_mm - 0.04).abs() < 1e-9, "{located:?}");
+    assert!((located.profile.unwrap().max_deviation_mm - 0.02).abs() < 1e-9);
+    // ...but a row turned in its plane still turns back: A leaves rotation
+    // about its normal, the view direction, free.
+    let turned = |row: f64| {
+        measured(
+            "right_profile",
+            grid(|u, v| {
+                let y = 40.0 * u;
+                [60.0 + row * (y - 20.0) * 0.001 * v, y, 10.0 * v]
+            }),
+        )
+    };
+    let report = profile_report(
+        vec![right_profile(GeometricCharacteristic::ProfileLine, &["A"])],
+        vec![turned(1.0)],
+    );
+    let m = evaluated(&report, "right_profile");
+    assert!(m.deviation_mm < 1e-6, "{m:?}");
+    assert!((m.profile.unwrap().rotation_rad - 0.001).abs() < 1e-6);
+    // A composite lower segment with no datums relates each row alone.
+    let mut composite = right_profile(GeometricCharacteristic::ProfileLine, &["A", "B"]);
+    composite.refinement = Some(DrawingCompositeRefinement {
+        tolerance: Quantity::length(0.01, LengthUnit::Millimeter),
+        datums: Vec::new(),
+    });
+    let report = profile_report(vec![composite], vec![right_face(bow)]);
+    let m = evaluated(&report, "right_profile");
+    let lower = m.refinement.clone().unwrap();
+    assert!(lower.deviation_mm < 1e-9 && lower.conforms, "{lower:?}");
+    assert!(m.conforms);
 }
 
 /// The plate as real geometry, a 60 × 40 × 10 block cut by a Ø10 bore at

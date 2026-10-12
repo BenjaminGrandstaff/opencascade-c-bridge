@@ -1080,6 +1080,7 @@ Supported controls:
 | Composite position (schema 138) | Upper segment: position as above. Lower segment: the pattern's true positions translate, and rotate about A's normal unless a refinement datum after the primary is a plane, as one rigid group minimizing the largest excess over the refined zones; each feature's deviation from that fit |
 | Profile of a surface (schema 139) | Twice the largest distance, along the nominal normals, of any point from the zone center, after the rigid motions the datums leave free are fitted; a pattern's surfaces move together |
 | Composite profile of a surface (schema 139) | Upper segment as above. Lower segment: the same fit with every translation free and the refinement datums constraining orientation only |
+| Profile of a line, single or composite | The same zone for each line element on its own: a section normal to the control's view direction, moving only within its plane (in-plane translations and rotation about the view direction that the datums leave free) |
 
 For position, the mating envelope is the largest inscribed cylinder for
 internal features and the smallest circumscribed cylinder for external ones,
@@ -1220,9 +1221,21 @@ points with every translation free and only the refinement datums'
 orientation fixed, with an equally disposed refined zone. The control
 conforms only when both segments do.
 
+**Profile of a line.** Line elements are sections normal to the direction
+of the view the control is attached to, as Y14.5 reads the control in that
+view: points sharing a position along the view direction (within 1e-3 mm or
+1e-6 of the span) form one element, and each needs at least two points. Each
+element is fitted alone with the same zone, its free motions narrowed to its
+section plane: the free translations within it, and rotation about the view
+direction when the datums leave that rotation free. A straight but displaced
+row therefore fits back onto its line where a surface profile would keep the
+bow between rows. Elements of different pattern members are not coupled. The
+report's `elements` counts the fitted elements (1 for a surface profile), and
+its translation and rotation are the largest of any element.
+
 `ControlMeasurement.profile` reports the lowest and highest signed deviation,
-the zone center (zero, or `unequal − tolerance / 2`), and the fitted translation
-and rotation angle. For a composite profile, `refinement` reports the lower
+the zone center (zero, or `unequal − tolerance / 2`), the fitted translation
+and rotation angle, and the number of line elements. For a composite profile, `refinement` reports the lower
 segment with the pattern's fitted translation and its unsigned rotation angle.
 Profile measures size as well as form and location: a uniformly oversized
 bore stays out of its zone even when it is free to move.
@@ -1230,8 +1243,8 @@ bore stays out of its zone even when it is free to move.
 **Report results.** Each control has one of three results:
 - `Evaluated`: deviation, tolerance, bonus, actual size and conformance.
 - `NotMeasured`: the record has no points for the control.
-- `NotEvaluated`: a stated reason, for unsupported cases such as profile of a
-  line, profile datums at a material boundary, a non-planar profile anchor
+- `NotEvaluated`: a stated reason, for unsupported cases such as a line
+  element with a single point, profile datums at a material boundary, a non-planar profile anchor
   without nominals, straightness, round
   form at a material condition or with a non-characteristic zone, a datum
   feature that was not measured, or an axis datum without a `size_kind`.
@@ -1271,7 +1284,8 @@ fitted as rigid groups) take 0.18 s (1 s budget), and one 1,000,000-point
 surface profile with all six motions free takes 0.30 s (2 s budget). 1,000
 profiles recorded without nominals on bands of a cylinder (1,000,000 points)
 regenerate the part once and project every point onto the named side face in
-0.59 s (2 s budget).
+0.59 s (2 s budget). One line profile of 1,000,000 points in 1,000 elements
+takes 0.20 s (1 s budget).
 
 **Not yet covered.** Datum shift of a primary axis datum (tilt), of common
 axes and of width datum features (slots and tabs); rotational
@@ -1279,8 +1293,8 @@ shift about a datum axis; common width datums; the separate requirement
 (`SEP REQT`); boundaries
 enlarged by geometric tolerances; simultaneous-contact common axis simulators,
 common axes after a primary plane, composites beyond two segments,
-reporting n× patterns as one frame on drawings, measured datum targets, profile
-of a line, profile datums at a material boundary, conical runout surfaces, and
+reporting n× patterns as one frame on drawings, measured datum targets,
+profile datums at a material boundary, conical runout surfaces, and
 straightness. Measurement uncertainty is not modeled.
 
 ## Surface texture (schema 71)
