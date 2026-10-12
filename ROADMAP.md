@@ -17,7 +17,7 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 154 + first-use integration 1 (+1 doc test), recipes 3, parametric core 35 + kernel 664 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 8 + view command 15 + viewer Node 19 + branch command 2 + model command 89, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 154 + first-use integration 1 (+1 doc test), recipes 3, parametric core 35 + kernel 666 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 8 + view command 15 + viewer Node 19 + branch command 2 + model command 89, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -25,6 +25,18 @@ tracks status and order.
 | Scale benchmarks | Last full suite: 194 Rust cases plus 5 model-command cases and a 10,000-face Python matcher. Sketch authoring integration rechecked 60 sketch cases and 60 MCP cases within budget. | `tools/bench/run.sh` |
 
 ## Done
+
+- Off-axis position from a primary datum axis (schema 140 and ABI 69
+  unchanged). A primary datum axis may be followed by a face perpendicular to
+  it (a stop that sets the origin along the axis) and a plane or slot/tab
+  width parallel to it (a clock that turns only about the axis), and the
+  measured B | A | C frame is reported. Features parallel to the axis are
+  located from their mating envelope axis between their measured ends, so a
+  lean counts by its worse end. With the bore at MMB/LMB its axis ends float
+  as before, and a clocking width at MMB/LMB turns the frame about the axis
+  with its boundary pair moving with the axis; one motion is shared under the
+  simultaneous requirement. 10,000 controls off a bore at MMB clocked by a
+  slot at MMB share one shift and turn in 0.24 s (0.5 s budget).
 
 - Primary datum axis position and shift (schema 140 and ABI 69 unchanged).
   Position controls on features coaxial with a primary datum axis (or common
@@ -2245,8 +2257,8 @@ scopes and inspected repo capabilities, not a full conformity audit.
    bounded SVG approximation for curves SVG cannot represent. Direct deviations
    and limits render stacked values.
 2. **Structured GD&T** — [Y14.5](https://www.asme.org/codes-standards/find-codes-standards/y14-5-dimensioning-tolerancing):
-   off-axis position from a primary datum axis, rotational shift from a
-   tertiary hole, common-axis datum shift, non-orthogonal datum
+   features at an angle to a primary datum axis, clocking with a hole or
+   pin, rotational shift from a tertiary hole, common-axis datum shift, non-orthogonal datum
    simulators, multi-segment composites, simultaneous common-axis simulators,
    advanced modifiers, and estimating measurement uncertainty from the
    measurement itself. Measured planar datum frames, flatness,
@@ -2262,8 +2274,9 @@ scopes and inspected repo capabilities, not a full conformity audit.
    ABI 69), and profile of a line by sections normal to its view, and runout
    of cones and other surfaces of revolution read square to their nominals,
    and supplied measurement uncertainty with guarded decision rules, and
-   width and rotational datum shift from slot and tab datums, and coaxial
-   position with primary-axis datum shift and tilt.
+   width and rotational datum shift from slot and tab datums, and position
+   from a primary datum axis, stopped and clocked by planes or widths, with
+   primary-axis shift, tilt and clocking rotation.
 3. **3D manufacturing annotations and exchange** — [Y14.41](https://www.asme.org/codes-standards/find-codes-standards/y14-41-digital-product-definition-data-practices):
    structured PMI attached to persistent geometry, annotation views, dataset
    authority and revision rules, and verified semantic PMI exchange. Geometry

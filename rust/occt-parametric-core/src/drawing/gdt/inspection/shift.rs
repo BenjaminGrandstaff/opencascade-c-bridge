@@ -69,6 +69,8 @@ pub(super) struct WidthBoundary {
     pub outside: bool,
     /// Measured points in the frame and their side: +1 toward `normal`.
     pub points: Vec<([f64; 2], f64)>,
+    /// Each point's position along a primary datum axis (the frame's z).
+    pub along: Vec<f64>,
 }
 impl WidthBoundary {
     /// Signed distance of `p` from the moved center plane, and its gradient
@@ -93,6 +95,9 @@ pub(super) struct ShiftSpace {
     /// Largest translation of the frame origin the boundaries allow with the
     /// frame square to its mating envelopes.
     pub limit: f64,
+    /// A primary datum axis feature's measured extent along the axis, where
+    /// the simulator's ends float within `disk`.
+    pub span: Option<[f64; 2]>,
 }
 impl ShiftSpace {
     /// Free translation, and rotation when `rotate`: a composite pattern's
@@ -237,48 +242,94 @@ fn motion_lp(members: &[PatternMember], space: &ShiftSpace) -> Motion {
     motion
 }
 
-/// A feature coaxial with a primary datum axis: the offsets of its axis
-/// ends from the datum simulator axis with their positions along it, and its
+/// A feature parallel to a primary datum axis: the offsets of its axis
+/// ends from true position with their positions along the datum axis, its
+/// true position relative to the axis (the lever arm for clocking), and its
 /// allowed zone radius.
 #[derive(Clone, Copy, Debug)]
 pub(super) struct AxialMember {
     pub ends: [([f64; 2], f64); 2],
+    pub lever: [f64; 2],
     pub radius: f64,
 }
 impl AxialMember {
-    /// Each end's offset from the datum axis after its ends (at `span`)
-    /// move by `shift`, interpolated along the axis.
-    fn residuals(&self, shift: [[f64; 2]; 2], span: [f64; 2]) -> [[f64; 2]; 2] {
+    /// Each end's offset from its zone axis after the datum axis ends (at
+    /// `span`) move by `motion.ends`, interpolated along the axis, and the
+    /// frame turns by `motion.angle` about the axis.
+    fn residuals(&self, motion: AxisMotion, span: [f64; 2]) -> [[f64; 2]; 2] {
+        let turned = turn(self.lever, motion.angle);
         self.ends.map(|(offset, z)| {
-            let w = (z - span[0]) / (span[1] - span[0]);
+            let t = motion.at(z, span);
             [
-                offset[0] - (1.0 - w) * shift[0][0] - w * shift[1][0],
-                offset[1] - (1.0 - w) * shift[0][1] - w * shift[1][1],
+                offset[0] - t[0] - (turned[0] - self.lever[0]),
+                offset[1] - t[1] - (turned[1] - self.lever[1]),
             ]
         })
     }
-    /// Diameter of the smallest zone about the shifted datum axis holding
-    /// both ends.
-    pub fn deviation(&self, shift: [[f64; 2]; 2], span: [f64; 2]) -> f64 {
-        let r = self.residuals(shift, span);
+    /// Diameter of the smallest zone about the moved true position axis
+    /// holding both ends.
+    pub fn deviation(&self, motion: AxisMotion, span: [f64; 2]) -> f64 {
+        let r = self.residuals(motion, span);
         2.0 * r[0][0].hypot(r[0][1]).max(r[1][0].hypot(r[1][1]))
     }
-    fn excess(&self, shift: [[f64; 2]; 2], span: [f64; 2]) -> f64 {
-        0.5 * self.deviation(shift, span) - self.radius
+    fn excess(&self, motion: AxisMotion, span: [f64; 2]) -> f64 {
+        0.5 * self.deviation(motion, span) - self.radius
     }
 }
 
-/// Shift of a primary datum axis at a material boundary shared by coaxial
-/// controls: the simulator's ends, at the datum feature's measured extent
-/// `span`, each move within `limit` of the mating (or minimum-material)
-/// axis, which translates and tilts the axis. Exact for a datum feature of
-/// perfect form; form error is not used to restrict the motion further. The
-/// same min-max as [`fit_motion`] in four linear variables, with an active
-/// set started from the five worst members. O(iterations · pivots ·
-/// active · 512 + n).
-pub(super) fn fit_axis_shift(members: &[AxialMember], limit: f64, span: [f64; 2]) -> [[f64; 2]; 2] {
-    let zero = [[0.0; 2]; 2];
-    if limit <= 0.0 || members.is_empty() {
+/// Motion of a frame on a primary datum axis: the offsets of the datum
+/// axis's ends (at the datum feature's measured extent) and the turn about
+/// the axis.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(super) struct AxisMotion {
+    pub ends: [[f64; 2]; 2],
+    pub angle: f64,
+}
+impl AxisMotion {
+    /// Translation of the axis at position `z` along it.
+    fn at(&self, z: f64, span: [f64; 2]) -> [f64; 2] {
+        let w = weight(z, span);
+        [
+            (1.0 - w) * self.ends[0][0] + w * self.ends[1][0],
+            (1.0 - w) * self.ends[0][1] + w * self.ends[1][1],
+        ]
+    }
+    /// Largest movement of either end of the datum axis.
+    pub fn translation(&self) -> f64 {
+        self.ends[0][0]
+            .hypot(self.ends[0][1])
+            .max(self.ends[1][0].hypot(self.ends[1][1]))
+    }
+    /// Size of the rotation: the axis's tilt combined with the turn about
+    /// it, signed by the turn.
+    pub fn rotation(&self, span: [f64; 2]) -> f64 {
+        let tilt = (self.ends[1][0] - self.ends[0][0]).hypot(self.ends[1][1] - self.ends[0][1])
+            / (span[1] - span[0]);
+        tilt.hypot(self.angle).copysign(self.angle)
+    }
+}
+
+fn weight(z: f64, span: [f64; 2]) -> f64 {
+    (z - span[0]) / (span[1] - span[0])
+}
+
+/// Datum shift in a frame on a primary datum axis, shared by the controls
+/// that reference it: the simulator's ends, at the datum feature's
+/// measured extent, each move within the axis's material-boundary limit
+/// (`space.disk`) of the mating (or minimum-material) axis, which
+/// translates and tilts the axis; a clocking width at a material boundary
+/// turns the frame about the axis while its boundary pair stays clear of
+/// the measured faces. Exact for datum features of perfect form; form error
+/// is not used to restrict the motion further. The same min-max as
+/// [`fit_motion`] in five variables, relinearized in the turn, with an
+/// active set started from the five worst members. O(iterations ·
+/// linearizations · pivots · (active · 512 + datum points) + n).
+pub(super) fn fit_axis_motion(members: &[AxialMember], space: &ShiftSpace) -> AxisMotion {
+    let zero = AxisMotion::default();
+    let Some(span) = space.span else {
+        return zero;
+    };
+    if members.is_empty() || (space.disk.is_none() && space.rotation_fixed) {
         return zero;
     }
     let mut order: Vec<usize> = (0..members.len()).collect();
@@ -290,88 +341,161 @@ pub(super) fn fit_axis_shift(members: &[AxialMember], limit: f64, span: [f64; 2]
     let mut active: Vec<usize> = order.into_iter().take(5).collect();
     loop {
         let subset: Vec<AxialMember> = active.iter().map(|&i| members[i]).collect();
-        let shift = axis_shift_lp(&subset, limit, span);
+        let motion = axis_motion_lp(&subset, space, span);
         let active_worst = subset
             .iter()
-            .map(|m| m.excess(shift, span))
+            .map(|m| m.excess(motion, span))
             .fold(f64::NEG_INFINITY, f64::max);
         let (worst, value) = members
             .iter()
             .enumerate()
-            .map(|(i, m)| (i, m.excess(shift, span)))
+            .map(|(i, m)| (i, m.excess(motion, span)))
             .fold((0, f64::NEG_INFINITY), |a, b| if b.1 > a.1 { b } else { a });
         if value <= active_worst + 1e-12 || active.contains(&worst) {
-            return shift;
+            return motion;
         }
         active.push(worst);
     }
 }
 
-fn axis_shift_lp(members: &[AxialMember], limit: f64, span: [f64; 2]) -> [[f64; 2]; 2] {
+fn axis_motion_lp(members: &[AxialMember], space: &ShiftSpace, span: [f64; 2]) -> AxisMotion {
     let directions: Vec<[f64; 2]> = (0..SIDES)
         .map(|k| {
             let a = std::f64::consts::TAU * k as f64 / SIDES as f64;
             [a.cos(), a.sin()]
         })
         .collect();
-    // Variables: e0x, e0y, e1x, e1y, z, then w ≥ |e| per component.
-    let mut rows: Vec<f64> = Vec::new();
-    let mut bounds: Vec<f64> = Vec::new();
-    let mut push = |row: [f64; 9], bound: f64| {
-        rows.extend(row);
-        bounds.push(bound);
-    };
-    for m in members {
-        for (offset, z) in m.ends {
-            let w = (z - span[0]) / (span[1] - span[0]);
+    let lever = members
+        .iter()
+        .map(|m| m.lever[0].hypot(m.lever[1]))
+        .fold(1.0, f64::max);
+    let limit = space.disk.unwrap_or(0.0);
+    let mut motion = AxisMotion::default();
+    for _ in 0..LINEARIZATIONS {
+        // Variables: Δe0x, Δe0y, Δe1x, Δe1y, Δangle, z, then w ≥ |e| per
+        // component and wa ≥ |angle|.
+        let mut rows: Vec<f64> = Vec::new();
+        let mut bounds: Vec<f64> = Vec::new();
+        let mut push = |row: [f64; 11], bound: f64| {
+            rows.extend(row);
+            bounds.push(bound);
+        };
+        // A translation of the axis at height z, as a row over the end
+        // variables, plus a turn coefficient.
+        let row = |g: [f64; 2], w: f64, turn: f64, z: f64| {
+            [
+                (1.0 - w) * g[0],
+                (1.0 - w) * g[1],
+                w * g[0],
+                w * g[1],
+                turn,
+                z,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+            ]
+        };
+        for m in members {
+            let residuals = m.residuals(motion, span);
+            let turned = turn(m.lever, motion.angle);
+            let q = [-turned[1], turned[0]];
+            for ((_, z), e) in m.ends.iter().zip(residuals) {
+                let w = weight(*z, span);
+                for u in &directions {
+                    let along = u[0] * q[0] + u[1] * q[1];
+                    push(
+                        row([-u[0], -u[1]], w, -along, -1.0),
+                        m.radius - u[0] * e[0] - u[1] * e[1],
+                    );
+                }
+            }
+        }
+        let step = if space.rotation_fixed { 0.0 } else { STEP };
+        for sign in [1.0, -1.0] {
+            push(row([0.0; 2], 0.0, sign, 0.0), step);
+        }
+        for end in 0..2 {
             for u in &directions {
+                let mut r = [0.0; 11];
+                r[2 * end] = u[0];
+                r[2 * end + 1] = u[1];
                 push(
-                    [
-                        -(1.0 - w) * u[0],
-                        -(1.0 - w) * u[1],
-                        -w * u[0],
-                        -w * u[1],
-                        -1.0,
-                        0.0,
-                        0.0,
-                        0.0,
-                        0.0,
-                    ],
-                    m.radius - u[0] * offset[0] - u[1] * offset[1],
+                    r,
+                    limit - u[0] * motion.ends[end][0] - u[1] * motion.ends[end][1],
                 );
             }
         }
-    }
-    for end in 0..2 {
-        for u in &directions {
-            let mut row = [0.0; 9];
-            row[2 * end] = u[0];
-            row[2 * end + 1] = u[1];
-            push(row, limit);
+        for width in &space.widths {
+            for (&(p, side), &z) in width.points.iter().zip(&width.along) {
+                let t = motion.at(z, span);
+                let (value, gradient) = width.distance(
+                    p,
+                    Motion {
+                        t,
+                        angle: motion.angle,
+                    },
+                );
+                let sign = if width.outside { -side } else { side };
+                push(
+                    row(
+                        [sign * gradient[0], sign * gradient[1]],
+                        weight(z, span),
+                        sign * gradient[2],
+                        0.0,
+                    ),
+                    if width.outside {
+                        side * value - width.half_width
+                    } else {
+                        width.half_width - side * value
+                    },
+                );
+            }
+        }
+        let current = [
+            motion.ends[0][0],
+            motion.ends[0][1],
+            motion.ends[1][0],
+            motion.ends[1][1],
+            motion.angle,
+        ];
+        for (axis, value) in current.into_iter().enumerate() {
+            for sign in [1.0, -1.0] {
+                let mut r = [0.0; 11];
+                r[axis] = sign;
+                r[6 + axis] = -1.0;
+                push(r, -sign * value);
+            }
+        }
+        let mut objective = [-1e-6; 11];
+        objective[..5].fill(0.0);
+        objective[5] = -1.0;
+        objective[10] = -1e-6 * lever;
+        let Ok(x) = fit::maximize(&objective, &rows, &bounds) else {
+            break;
+        };
+        motion.ends = [
+            [motion.ends[0][0] + x[0], motion.ends[0][1] + x[1]],
+            [motion.ends[1][0] + x[2], motion.ends[1][1] + x[3]],
+        ];
+        motion.angle += x[4];
+        if x[..5].iter().all(|v| v.abs() < 1e-12) {
+            break;
         }
     }
-    for i in 0..4 {
-        for sign in [1.0, -1.0] {
-            let mut row = [0.0; 9];
-            row[i] = sign;
-            row[5 + i] = -1.0;
-            push(row, 0.0);
-        }
+    if space.rotation_fixed {
+        motion.angle = 0.0;
     }
-    let mut objective = [-1e-6; 9];
-    objective[..4].fill(0.0);
-    objective[4] = -1.0;
-    let Ok(x) = fit::maximize(&objective, &rows, &bounds) else {
-        return [[0.0; 2]; 2];
-    };
-    [[x[0], x[1]], [x[2], x[3]]].map(|e| {
+    motion.ends = motion.ends.map(|e| {
         let length = e[0].hypot(e[1]);
-        if length > limit {
+        if length > limit && length > 0.0 {
             [e[0] * limit / length, e[1] * limit / length]
         } else {
             e
         }
-    })
+    });
+    motion
 }
 
 fn turn(v: [f64; 2], angle: f64) -> [f64; 2] {
@@ -414,6 +538,9 @@ impl Context<'_, '_> {
         nominal: &DrawingDatumCoordinateFrame,
     ) -> Result<ShiftSpace, String> {
         let simulators = self.simulators(datums)?;
+        if let Some(Simulator::Axis(.., limit)) = simulators.first() {
+            return self.axis_space(datums, &simulators, *limit, measured, nominal);
+        }
         let axis_frame = simulators.iter().any(|s| matches!(s, Simulator::Axis(..)));
         let in_plane = |n: Vec3| [dot(n, measured.x_axis), dot(n, measured.y_axis)];
         let mut space = ShiftSpace::default();
@@ -470,6 +597,59 @@ impl Context<'_, '_> {
         Ok(space)
     }
 
+    /// Motions a frame on a primary datum axis allows: the axis's ends float
+    /// within its material-boundary limit over the datum feature's measured
+    /// extent, and a clocking width at a material boundary turns the frame
+    /// about the axis, its boundary pair at the width's basic offset from the
+    /// axis. A plane perpendicular to the axis only stops translation along
+    /// it, which leaves zones parallel to the axis in place.
+    fn axis_space(
+        &mut self,
+        datums: &[DrawingDatumReference],
+        simulators: &[Simulator],
+        limit: f64,
+        measured: &DrawingDatumCoordinateFrame,
+        nominal: &DrawingDatumCoordinateFrame,
+    ) -> Result<ShiftSpace, String> {
+        let mut span = [f64::INFINITY, f64::NEG_INFINITY];
+        for member in datums[0].members() {
+            for &p in &self.measured_datums[member] {
+                let z = measured.coordinates_mm(p).map_err(|e| e.to_string())?.z;
+                span = [span[0].min(z), span[1].max(z)];
+            }
+        }
+        if span[1] - span[0] <= 1e-9 {
+            return Err("the primary datum axis feature has no measured length".into());
+        }
+        let mut space = ShiftSpace {
+            disk: (limit > 0.0).then_some(limit),
+            rotation_fixed: true,
+            limit,
+            span: Some(span),
+            ..ShiftSpace::default()
+        };
+        for (datum, simulator) in datums.iter().zip(simulators).skip(1) {
+            let Simulator::Plane(_, normal, width) = simulator else {
+                continue;
+            };
+            if datum.boundary == DatumMaterialBoundary::Regardless
+                || dot(*normal, measured.z_axis).abs() > 0.5
+            {
+                continue;
+            }
+            let Some(width) = width else {
+                return Err("datum shift applies to datum features of size".into());
+            };
+            let (origin, _) = self.nominal_datum(&datum.datum_feature)?;
+            let offset = nominal.coordinates_mm(origin).map_err(|e| e.to_string())?.x;
+            let n = [dot(*normal, measured.x_axis), dot(*normal, measured.y_axis)];
+            let (boundary, _) = self.width_boundary(datum, *normal, *width, n, offset, measured)?;
+            space.widths.push(boundary);
+            space.rotation_fixed = false;
+        }
+        Ok(space)
+    }
+
     /// The boundary pair of a width datum feature of size and half its
     /// departure from the boundary at the mating orientation. Sizes come from
     /// the feature's `size_limits`; geometric tolerances that would enlarge
@@ -499,6 +679,7 @@ impl Context<'_, '_> {
         let points = &self.measured_datums[id];
         let mut faces = (Vec::new(), Vec::new());
         let mut projected = Vec::with_capacity(points.len());
+        let mut along = Vec::with_capacity(points.len());
         for &p in points {
             let side = if dot(subtract(p, origin), nominal) >= 0.0 {
                 facing
@@ -512,6 +693,7 @@ impl Context<'_, '_> {
             }
             let c = measured.coordinates_mm(p).map_err(|e| e.to_string())?;
             projected.push(([c.x, c.y], side));
+            along.push(c.z);
         }
         let maximum = datum.boundary == DatumMaterialBoundary::Maximum;
         let (size, departure) = if maximum {
@@ -555,6 +737,7 @@ impl Context<'_, '_> {
                 half_width: 0.5 * size,
                 outside: internal == maximum,
                 points: projected,
+                along,
             },
             0.5 * departure.max(0.0),
         ))

@@ -1906,7 +1906,7 @@ fn coaxial_position_is_measured_over_the_feature_length_from_a_primary_axis() {
     assert!(
         matches!(
             &report.controls[0].result,
-            ControlResult::NotEvaluated(r) if r.contains("coaxial")
+            ControlResult::NotEvaluated(r) if r.contains("clocking datum")
         ),
         "{:?}",
         report.controls[0]
@@ -1974,6 +1974,162 @@ fn a_primary_axis_at_a_material_boundary_shifts_and_tilts() {
         "{:?}",
         report.controls[0]
     );
+}
+
+/// `clocking_setup` with each control referenced to the datums `order`
+/// (the bore B first), and a named frame B | A | C.
+fn axis_clocking_setup(
+    order: &[&str],
+    b: DatumMaterialBoundary,
+    c: DatumMaterialBoundary,
+) -> (FamilyDefinition, DrawingDefinition) {
+    let (definition, mut page) = clocking_setup(b, c);
+    for frame in &mut page.feature_control_frames {
+        let datums = std::mem::take(&mut frame.datums);
+        frame.datums = order
+            .iter()
+            .map(|id| {
+                datums
+                    .iter()
+                    .find(|d| d.datum_feature == *id)
+                    .unwrap()
+                    .clone()
+            })
+            .collect();
+    }
+    page.datum_reference_frames = vec![DrawingDatumReferenceFrame {
+        id: "B-A-C".into(),
+        datums: ["B", "A", "C"]
+            .map(|id| DrawingDatumReference {
+                datum_feature: id.into(),
+                boundary: DatumMaterialBoundary::Regardless,
+                common_with: Vec::new(),
+            })
+            .to_vec(),
+    }];
+    (definition, page)
+}
+
+#[test]
+fn a_slot_clocks_position_off_a_primary_datum_axis() {
+    use DatumMaterialBoundary::Regardless;
+    let lever = 15.0_f64.hypot(10.0);
+    let (definition, page) = axis_clocking_setup(&["B", "A", "C"], Regardless, Regardless);
+    let graph = graph_of(&definition);
+    // Bore, slot and pattern all 0.05 mm off nominal: located from the bore
+    // and clocked by the slot, every hole is at true position.
+    let mut record = clocking_record(10.0, 8.0, 0.0, [0.05, 0.0]);
+    record.datum_features[1] = measured("B", hole([HOLE[0] + 0.05, HOLE[1]], 10.0));
+    let center = [HOLE[0] + 0.05, HOLE[1] + 25.0];
+    let mut slot = wall(center, [1.0, 0.0], 4.0, |_| 0.0);
+    slot.extend(wall(center, [1.0, 0.0], -4.0, |_| 0.0));
+    record.datum_features[2] = measured("C", slot);
+    let report = page.evaluate_inspection(&graph, &record).unwrap();
+    for i in 0..4 {
+        let m = evaluated(&report, &format!("hole{i}"));
+        assert!(m.deviation_mm < 1e-6 && m.conforms, "{m:?}");
+        assert_eq!((m.datum_shift_mm, m.datum_shift_rotation_rad), (0.0, 0.0));
+    }
+    // The named frame: origin where the face meets the bore axis, z along
+    // the bore, x along the slot's normal.
+    let frame = &report.datum_frames[0];
+    assert_eq!(frame.datum_features, ["B", "A", "C"]);
+    let f = &frame.frame;
+    assert!(
+        (f.origin_mm.x - 30.05).abs() < 1e-6 && f.origin_mm.z.abs() < 1e-6,
+        "{f:?}"
+    );
+    assert!(
+        (f.z_axis.z - 1.0).abs() < 1e-9 && (f.x_axis.x - 1.0).abs() < 1e-9,
+        "{f:?}"
+    );
+    // The pattern turned 1.5 mrad about the bore against a square slot.
+    let turned = clocking_record(10.0, 8.0, 0.0015, [0.0; 2]);
+    let expected = 2.0 * 2.0 * lever * 0.00075_f64.sin();
+    let report = page.evaluate_inspection(&graph, &turned).unwrap();
+    let m = evaluated(&report, "hole0");
+    assert!((m.deviation_mm - expected).abs() < 1e-6, "{m:?}");
+    // Without the face the slot still clocks the frame.
+    let (_, unstopped) = axis_clocking_setup(&["B", "C"], Regardless, Regardless);
+    let report = unstopped.evaluate_inspection(&graph, &turned).unwrap();
+    assert!((evaluated(&report, "hole0").deviation_mm - expected).abs() < 1e-6);
+    // A hole leaning 0.02 mm over its 10 mm is out by its worse end.
+    let mut leaning = clocking_record(10.0, 8.0, 0.0, [0.0; 2]);
+    leaning.controls[0] = measured(
+        "hole0",
+        cylinder(
+            [PATTERN[0][0], PATTERN[0][1], 0.0],
+            [0.02, 0.0, 10.0],
+            |_| 3.0,
+        ),
+    );
+    let report = page.evaluate_inspection(&graph, &leaning).unwrap();
+    let m = evaluated(&report, "hole0");
+    assert!((m.deviation_mm - 0.04).abs() < 1e-6, "{m:?}");
+    // Without a clocking datum, rotation about the bore is not fixed.
+    let (_, unclocked) = axis_clocking_setup(&["B", "A"], Regardless, Regardless);
+    let report = unclocked.evaluate_inspection(&graph, &turned).unwrap();
+    assert!(
+        matches!(
+            &report.controls[0].result,
+            ControlResult::NotEvaluated(r) if r.contains("clocking datum")
+        ),
+        "{:?}",
+        report.controls[0]
+    );
+}
+
+#[test]
+fn a_clocking_slot_at_a_material_boundary_turns_the_frame_about_a_primary_axis() {
+    use DatumMaterialBoundary::{Maximum, Regardless};
+    let (definition, page) = axis_clocking_setup(&["B", "A", "C"], Regardless, Maximum);
+    let graph = graph_of(&definition);
+    // The 8.0 slot clears its 7.9 MMB: a 1.5 mrad turn of the pattern is
+    // taken up, positive about the bore's +z axis.
+    let report = page
+        .evaluate_inspection(&graph, &clocking_record(10.0, 8.0, 0.0015, [0.0; 2]))
+        .unwrap();
+    for i in 0..4 {
+        let m = evaluated(&report, &format!("hole{i}"));
+        assert!(m.deviation_mm < 1e-4 && m.conforms, "{m:?}");
+        assert!((m.datum_shift_rotation_rad - 0.0015).abs() < 1e-5, "{m:?}");
+        assert!(m.datum_shift_mm < 1e-9, "{m:?}");
+    }
+    // Turned 3 mrad, the frame stops where the slot's far end meets the
+    // boundary: 4·cos θ − 29·sin θ = 3.95.
+    let limit = {
+        let mut a = 0.0_f64;
+        for _ in 0..50 {
+            a -= (4.0 * a.cos() - 29.0 * a.sin() - 3.95) / (-4.0 * a.sin() - 29.0 * a.cos());
+        }
+        a
+    };
+    let report = page
+        .evaluate_inspection(&graph, &clocking_record(10.0, 8.0, 0.003, [0.0; 2]))
+        .unwrap();
+    let m = evaluated(&report, "hole0");
+    assert!((m.datum_shift_rotation_rad - limit).abs() < 1e-6, "{m:?}");
+    let lever = 15.0_f64.hypot(10.0);
+    let expected = 2.0 * 2.0 * lever * (0.5 * (0.003 - limit)).sin();
+    assert!((m.deviation_mm - expected).abs() < 1e-5, "{m:?} {expected}");
+    // With the bore at MMB too, the frame shifts and turns together: the
+    // slot block moves with the bore, so a 0.05 mm move and a 1.5 mrad turn
+    // are both taken up, but not a move the other way.
+    let (_, both) = axis_clocking_setup(&["B", "A", "C"], Maximum, Maximum);
+    let report = both
+        .evaluate_inspection(&graph, &clocking_record(10.06, 8.0, 0.0015, [0.05, 0.0]))
+        .unwrap();
+    for i in 0..4 {
+        let m = evaluated(&report, &format!("hole{i}"));
+        assert!(m.deviation_mm < 1e-4, "{m:?}");
+        assert!((m.datum_shift_mm - 0.05).abs() < 1e-4, "{m:?}");
+        assert!((m.datum_shift_rotation_rad - 0.0015).abs() < 1e-4, "{m:?}");
+        assert!((m.datum_shift_limit_mm - 0.08).abs() < 1e-9, "{m:?}");
+    }
+    let report = both
+        .evaluate_inspection(&graph, &clocking_record(10.06, 8.0, 0.0015, [-0.05, 0.0]))
+        .unwrap();
+    assert!(evaluated(&report, "hole0").deviation_mm > 1e-3);
 }
 
 /// Four pattern holes with composite position: Ø`upper` to A | B | C (the

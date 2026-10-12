@@ -662,14 +662,31 @@ pub(crate) fn runout_case(definition: &FamilyDefinition, common: bool, conical: 
 /// of rotational shift). The pattern is turned 2 mrad about the bore and
 /// sits 0.05 mm off along the slot: one shared translation and rotation of
 /// the frame bring every hole inside Ø0.04.
-pub(crate) fn datum_shift_case(definition: &FamilyDefinition, slot: bool) -> Outcome {
+/// The datum frame of [`datum_shift_case`].
+#[derive(Clone, Copy, PartialEq)]
+pub(crate) enum ShiftFrame {
+    /// A | B(M) | C: a face, a bore and a contacting plane.
+    Bore,
+    /// A | B(M) | C(M): a face, a bore and a clocking slot.
+    Slot,
+    /// B(M) | A | C(M): the bore as primary axis, stopped by the face and
+    /// clocked by the slot.
+    AxisSlot,
+}
+
+pub(crate) fn datum_shift_case(definition: &FamilyDefinition, frame: ShiftFrame) -> Outcome {
+    let slot = frame != ShiftFrame::Bore;
     timed(
-        if slot {
-            format!(
+        match frame {
+            ShiftFrame::Bore => {
+                format!("inspection: {CONTROLS} position controls sharing one MMB datum shift")
+            }
+            ShiftFrame::Slot => format!(
                 "inspection: {CONTROLS} position controls with bore and slot MMB shift and rotation"
-            )
-        } else {
-            format!("inspection: {CONTROLS} position controls sharing one MMB datum shift")
+            ),
+            ShiftFrame::AxisSlot => format!(
+                "inspection: {CONTROLS} position controls off a primary bore axis clocked by a slot at MMB"
+            ),
         },
         Duration::from_millis(500),
         Expectation::Required,
@@ -733,18 +750,23 @@ pub(crate) fn datum_shift_case(definition: &FamilyDefinition, slot: bool) -> Out
                     zone: GeometricToleranceZone::Diameter,
                     material: ToleranceMaterialCondition::Regardless,
                     feature_of_size: true,
-                    datums: vec![
-                        reference("A", DatumMaterialBoundary::Regardless),
-                        reference("B", DatumMaterialBoundary::Maximum),
-                        reference(
+                    datums: {
+                        let a = reference("A", DatumMaterialBoundary::Regardless);
+                        let b = reference("B", DatumMaterialBoundary::Maximum);
+                        let c = reference(
                             "C",
                             if slot {
                                 DatumMaterialBoundary::Maximum
                             } else {
                                 DatumMaterialBoundary::Regardless
                             },
-                        ),
-                    ],
+                        );
+                        if frame == ShiftFrame::AxisSlot {
+                            vec![b, a, c]
+                        } else {
+                            vec![a, b, c]
+                        }
+                    },
                 })
                 .collect();
             let feature =

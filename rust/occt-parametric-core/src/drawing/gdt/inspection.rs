@@ -14,7 +14,9 @@ pub mod fit;
 mod profile;
 mod shift;
 use fit::{Fit, circle_zone, cylinder_zone, fit_circle, fit_cylinder, fit_plane, fit_width};
-use shift::{AxialMember, Motion, PatternMember, ShiftSpace, fit_axis_shift, fit_motion};
+use shift::{
+    AxialMember, AxisMotion, Motion, PatternMember, ShiftSpace, fit_axis_motion, fit_motion,
+};
 use std::rc::Rc;
 
 /// Upper bound on measured points in one record, which bounds memory and time.
@@ -330,9 +332,10 @@ struct Context<'a, 'g> {
     positions: HashMap<String, Result<PositionData, String>>,
     /// Shared datum shift by control ID (simultaneous requirement).
     shifts: HashMap<String, Motion>,
-    /// Shared shift of a primary datum axis by control ID: the offsets of
-    /// its two ends (simultaneous requirement).
-    axial_shifts: HashMap<String, [[f64; 2]; 2]>,
+    /// Shared shift of a frame on a primary datum axis by control ID: the
+    /// offsets of the axis's two ends and the turn about it (simultaneous
+    /// requirement).
+    axial_shifts: HashMap<String, AxisMotion>,
     /// Motions each datum precedence's material boundaries allow.
     spaces: HashMap<SimulatorKey, Result<Rc<ShiftSpace>, String>>,
     /// Composite lower-segment results by control ID, fitted per pattern.
@@ -441,7 +444,6 @@ impl DrawingDefinition {
             let mut ids = Vec::with_capacity(group.len());
             let mut members = Vec::with_capacity(group.len());
             let mut axial = Vec::new();
-            let mut span = [0.0, 0.0];
             let mut space = None;
             for frame in group {
                 let points = &measured_controls[frame.id.as_str()];
@@ -453,12 +455,12 @@ impl DrawingDefinition {
                 };
                 ids.push(frame.id.clone());
                 let radius = 0.5 * (tolerance + data.bonus);
-                if let Some(coaxial) = &data.axial {
+                if let Some(ends) = data.axial {
                     axial.push(AxialMember {
-                        ends: coaxial.ends,
+                        ends,
+                        lever: data.true_position,
                         radius,
                     });
-                    span = coaxial.span;
                 } else {
                     members.push(PatternMember {
                         offset: data.offset,
@@ -470,7 +472,7 @@ impl DrawingDefinition {
             }
             let Some(space) = space else { continue };
             if !axial.is_empty() {
-                let shift = fit_axis_shift(&axial, space.limit, span);
+                let shift = fit_axis_motion(&axial, &space);
                 for id in ids {
                     context.axial_shifts.insert(id, shift);
                 }
@@ -809,6 +811,12 @@ impl Context<'_, '_> {
         {
             return Err("datum shift of a common datum plane is not evaluated".into());
         }
+        if let Some(Simulator::Axis(_, axis, ..)) = simulators.first() {
+            let axis = *axis;
+            let simulator = self.after_axis(id, &members, &union, axis, &simulators[1..])?;
+            simulators.push(simulator);
+            return Ok(simulators);
+        }
         // A tertiary plane after a primary plane and a secondary axis only
         // clocks rotation about that axis: its normal turns about A's normal.
         if let [Simulator::Plane(_, primary, _), Simulator::Axis(..)] = simulators.as_slice() {
@@ -898,6 +906,117 @@ impl Context<'_, '_> {
             fitted.normal,
             None,
         ))
+    }
+
+    /// A plane datum after a primary datum axis: perpendicular to the axis it
+    /// stops translation along it (a contacting plane held square to the
+    /// axis); parallel to it, it clocks rotation about it (a contacting
+    /// plane, or a width's center plane, turning only about the axis). One
+    /// of each may follow the axis, in either order.
+    fn after_axis(
+        &self,
+        id: &str,
+        members: &[(&DrawingDatumFeature, &[Vec3])],
+        points: &[Vec3],
+        axis: Vec3,
+        prefix: &[Simulator],
+    ) -> Result<Simulator, String> {
+        let (_, nominal) = self.nominal_datum(id)?;
+        let nominal = unit(nominal).map_err(|e| e.to_string())?;
+        let along = dot(nominal, axis);
+        let stop = along.abs() > 1.0 - 1e-9;
+        if !stop && along.abs() > 1e-9 {
+            return Err(
+                "a plane datum after a primary datum axis must be perpendicular or parallel to it"
+                    .into(),
+            );
+        }
+        if prefix.iter().any(|s| match s {
+            Simulator::Plane(_, n, _) => (dot(*n, axis).abs() > 0.5) == stop,
+            Simulator::Axis(..) => true,
+        }) {
+            return Err(
+                "a primary datum axis is followed by at most one perpendicular and one parallel plane datum"
+                    .into(),
+            );
+        }
+        if stop {
+            let normal = if along < 0.0 { scale(axis, -1.0) } else { axis };
+            self.plane_simulator(members, points, normal, &[])
+        } else {
+            self.plane_simulator(members, points, nominal, &[axis])
+        }
+    }
+
+    /// Frames on a primary datum axis: the measured frame (z along the
+    /// simulator axis, x along the clocking plane's normal, origin where a
+    /// perpendicular plane meets the axis) and the nominal frame built the
+    /// same way from the datums' nominal geometry. Without a clocking datum
+    /// x is arbitrary; without a perpendicular plane the origin is the
+    /// axis simulator's point. Returns whether a clocking datum fixes x.
+    fn axis_frames(
+        &mut self,
+        datums: &[DrawingDatumReference],
+    ) -> Result<
+        (
+            DrawingDatumCoordinateFrame,
+            DrawingDatumCoordinateFrame,
+            bool,
+        ),
+        String,
+    > {
+        let simulators = self.simulators(datums)?;
+        let Some(Simulator::Axis(origin, axis, ..)) = simulators.first().cloned() else {
+            return Err("frame needs a primary datum axis".into());
+        };
+        let ResolvedDatum::Axis {
+            origin: nominal_origin,
+            direction,
+        } = self.nominal(
+            &self.features[datums[0].datum_feature.as_str()]
+                .attachment
+                .anchor,
+        )?
+        else {
+            return Err("frame needs a primary datum axis".into());
+        };
+        let direction = unit(direction).map_err(|e| e.to_string())?;
+        let mut measured = (origin, None);
+        let mut nominal = (nominal_origin, None);
+        for (datum, simulator) in datums.iter().zip(&simulators).skip(1) {
+            let Simulator::Plane(point, normal, _) = simulator else {
+                continue;
+            };
+            let (plane_origin, plane_normal) = self.nominal_datum(&datum.datum_feature)?;
+            if dot(*normal, axis).abs() > 0.5 {
+                let meet = |origin: Vec3, axis: Vec3, point: Vec3, normal: Vec3| {
+                    let t = dot(subtract(point, origin), normal) / dot(axis, normal);
+                    add(origin, scale(axis, t))
+                };
+                measured.0 = meet(origin, axis, *point, *normal);
+                nominal.0 = meet(nominal_origin, direction, plane_origin, plane_normal);
+            } else {
+                measured.1 = Some(*normal);
+                nominal.1 = Some(
+                    unit(subtract(
+                        plane_normal,
+                        scale(direction, dot(plane_normal, direction)),
+                    ))
+                    .map_err(|e| e.to_string())?,
+                );
+            }
+        }
+        let clocked = measured.1.is_some();
+        let frame = |(origin, x): (Vec3, Option<Vec3>), z: Vec3| {
+            let x = x.unwrap_or_else(|| perpendiculars(z).0);
+            DrawingDatumCoordinateFrame {
+                origin_mm: origin,
+                x_axis: x,
+                y_axis: cross(z, x),
+                z_axis: z,
+            }
+        };
+        Ok((frame(measured, axis), frame(nominal, direction), clocked))
     }
 
     /// Common datum axis of two coaxial datum features of size: the line
@@ -1070,6 +1189,9 @@ impl Context<'_, '_> {
         datums: &[DrawingDatumReference],
     ) -> Result<DrawingDatumCoordinateFrame, String> {
         let planes = self.simulators(datums)?;
+        if let (Some(Simulator::Axis(..)), [_, _, _]) = (planes.first(), datums) {
+            return self.axis_frames(datums).map(|(frame, ..)| frame);
+        }
         let resolved = self.resolved_frame(datums, Some(&planes))?;
         resolved.nominal_planar_321().map_err(|e| e.to_string())
     }
@@ -1480,22 +1602,20 @@ impl Context<'_, '_> {
         let r = member.residual(shift);
         let mut deviation = 2.0 * r[0].hypot(r[1]);
         let (mut translation, mut rotation) = (shift.t[0].hypot(shift.t[1]), shift.angle);
-        if let Some(coaxial) = &data.axial {
-            let ends = self
+        if let (Some(ends), Some(span)) = (data.axial, data.space.span) {
+            let motion = self
                 .axial_shifts
                 .get(frame.id.as_str())
                 .copied()
                 .unwrap_or_default();
             let member = AxialMember {
-                ends: coaxial.ends,
+                ends,
+                lever: data.true_position,
                 radius: 0.0,
             };
-            deviation = member.deviation(ends, coaxial.span);
-            translation = ends[0][0]
-                .hypot(ends[0][1])
-                .max(ends[1][0].hypot(ends[1][1]));
-            rotation = (ends[1][0] - ends[0][0]).hypot(ends[1][1] - ends[0][1])
-                / (coaxial.span[1] - coaxial.span[0]);
+            deviation = member.deviation(motion, span);
+            translation = motion.translation();
+            rotation = motion.rotation(span);
         }
         Ok(ControlMeasurement {
             deviation_mm: deviation,
@@ -1558,14 +1678,14 @@ impl Context<'_, '_> {
         else {
             return Err("position evaluation needs axis datum geometry".into());
         };
-        if let [primary] = frame.datums.as_slice()
+        if let Some(primary) = frame.datums.first()
             && let ResolvedDatum::Axis { .. } = self.nominal(
                 &self.features[primary.datum_feature.as_str()]
                     .attachment
                     .anchor,
             )?
         {
-            return self.fit_coaxial(frame, points, limits, origin, direction);
+            return self.fit_axial(frame, points, limits, origin, direction);
         }
         let nominal = self.resolved_frame(&frame.datums, None)?;
         let axis_frame = nominal
@@ -1697,22 +1817,14 @@ fn boundary_clearance(
     Ok(0.5 * departure.max(0.0))
 }
 
-/// A feature coaxial with a primary datum axis: its axis ends' offsets from
-/// the datum simulator axis and their positions along it, and the datum
-/// feature's extent along it (where a shifted simulator's ends float).
-#[derive(Clone, Debug)]
-struct Coaxial {
-    ends: [([f64; 2], f64); 2],
-    span: [f64; 2],
-}
-
 impl Context<'_, '_> {
-    /// Position of a feature coaxial with a primary datum axis (or common
+    /// Position of a feature parallel to a primary datum axis (or common
     /// axis): its related actual mating envelope's axis (the minimum-material
-    /// envelope's at LMC) between its measured ends, against the datum
-    /// simulator axis. The zone is a cylinder about the datum axis over the
-    /// feature's length, so both ends must lie within it.
-    fn fit_coaxial(
+    /// envelope's at LMC) between its measured ends, against a zone parallel
+    /// to the datum simulator axis at true position. The zone extends over
+    /// the feature's length, so both ends must lie within it. A feature off
+    /// the axis needs a clocking datum parallel to the axis to fix rotation.
+    fn fit_axial(
         &mut self,
         frame: &DrawingFeatureControlFrame,
         points: &[Vec3],
@@ -1723,46 +1835,21 @@ impl Context<'_, '_> {
         if frame.refinement.is_some() {
             return Err("composite position to a primary datum axis is not evaluated".into());
         }
-        let datum = &frame.datums[0];
-        let ResolvedDatum::Axis {
-            origin: datum_origin,
-            direction: datum_direction,
-        } = self.nominal(
-            &self.features[datum.datum_feature.as_str()]
-                .attachment
-                .anchor,
-        )?
-        else {
-            return Err("position evaluation needs a primary datum axis".into());
-        };
         let direction = unit(direction).map_err(|e| e.to_string())?;
-        let datum_direction = unit(datum_direction).map_err(|e| e.to_string())?;
-        if length(cross(direction, datum_direction)) > 1e-9
-            || length(cross(subtract(origin, datum_origin), datum_direction)) > 1e-9
-        {
+        let (measured, nominal, clocked) = self.axis_frames(&frame.datums)?;
+        if length(cross(direction, nominal.z_axis)) > 1e-9 {
             return Err(
-                "position to a primary datum axis is evaluated for features coaxial with it".into(),
+                "position to a primary datum axis is evaluated for features parallel to it".into(),
             );
         }
-        let simulators = self.simulators(&frame.datums)?;
-        let Some(Simulator::Axis(axis_origin, axis, _, limit)) = simulators.first().cloned() else {
-            return Err("position evaluation needs a primary datum axis simulator".into());
-        };
-        let (u, v) = perpendiculars(axis);
-        let coordinates = |p: Vec3| {
-            let d = subtract(p, axis_origin);
-            ([dot(d, u), dot(d, v)], dot(d, axis))
-        };
-        let mut span = [f64::INFINITY, f64::NEG_INFINITY];
-        for member in datum.members() {
-            for &p in &self.measured_datums[member] {
-                let z = coordinates(p).1;
-                span = [span[0].min(z), span[1].max(z)];
-            }
+        let true_position = nominal.coordinates_mm(origin).map_err(|e| e.to_string())?;
+        let true_position = [true_position.x, true_position.y];
+        if !clocked && true_position[0].hypot(true_position[1]) > 1e-9 {
+            return Err(
+                "position off a primary datum axis needs a clocking datum parallel to it".into(),
+            );
         }
-        if span[1] - span[0] <= 1e-9 {
-            return Err("the primary datum axis feature has no measured length".into());
-        }
+        let space = self.shift_space(&frame.datums, &measured, &nominal)?;
         let internal = limits.kind == FeatureOfSizeKind::Internal;
         let (mating, minimum_material) = if internal {
             (Fit::Inscribed, Fit::Circumscribed)
@@ -1797,23 +1884,29 @@ impl Context<'_, '_> {
                 let t = dot(subtract(p, feature_origin), feature_axis);
                 (lo.min(t), hi.max(t))
             });
-        let ends = [lo, hi].map(|t| coordinates(add(feature_origin, scale(feature_axis, t))));
+        let mut ends = [([0.0; 2], 0.0); 2];
+        for (end, t) in ends.iter_mut().zip([lo, hi]) {
+            let c = measured
+                .coordinates_mm(add(feature_origin, scale(feature_axis, t)))
+                .map_err(|e| e.to_string())?;
+            *end = ([c.x - true_position[0], c.y - true_position[1]], c.z);
+        }
         let size_conforms = if internal {
             size >= lower && minimum_size <= upper
         } else {
             size <= upper && minimum_size >= lower
         };
         Ok(PositionData {
-            offset: [0.0, 0.0],
-            true_position: [0.0, 0.0],
+            offset: [
+                0.5 * (ends[0].0[0] + ends[1].0[0]),
+                0.5 * (ends[0].0[1] + ends[1].0[1]),
+            ],
+            true_position,
             bonus,
             size,
             size_conforms,
-            space: Rc::new(ShiftSpace {
-                limit,
-                ..ShiftSpace::default()
-            }),
-            axial: Some(Coaxial { ends, span }),
+            space,
+            axial: Some(ends),
         })
     }
 }
@@ -1828,8 +1921,9 @@ struct PositionData {
     size_conforms: bool,
     /// Motions the frame's material boundaries allow.
     space: Rc<ShiftSpace>,
-    /// Set for a feature located to a primary datum axis.
-    axial: Option<Coaxial>,
+    /// For a feature located to a primary datum axis: its axis ends' offsets
+    /// from true position and their positions along the datum axis.
+    axial: Option<[([f64; 2], f64); 2]>,
 }
 
 /// Largest minus smallest value; zero for an empty sequence.

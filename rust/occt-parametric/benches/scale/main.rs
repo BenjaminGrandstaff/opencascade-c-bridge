@@ -171,8 +171,18 @@ fn main() -> ExitCode {
     outcomes.push(inspection::runout_case(definition, false, false));
     outcomes.push(inspection::runout_case(definition, false, true));
     outcomes.push(inspection::runout_case(definition, true, false));
-    outcomes.push(inspection::datum_shift_case(definition, false));
-    outcomes.push(inspection::datum_shift_case(definition, true));
+    outcomes.push(inspection::datum_shift_case(
+        definition,
+        inspection::ShiftFrame::Bore,
+    ));
+    outcomes.push(inspection::datum_shift_case(
+        definition,
+        inspection::ShiftFrame::Slot,
+    ));
+    outcomes.push(inspection::datum_shift_case(
+        definition,
+        inspection::ShiftFrame::AxisSlot,
+    ));
     outcomes.push(inspection::coaxial_shift_case(definition));
     outcomes.push(inspection::composite_case(definition));
     outcomes.push(inspection::profile_case(definition));

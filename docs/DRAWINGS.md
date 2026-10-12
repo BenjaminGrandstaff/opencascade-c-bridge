@@ -1021,7 +1021,9 @@ Datum simulators follow the precedence order:
   the largest inscribed cylinder of a hole or the smallest circumscribed
   cylinder of a shaft, regardless of material boundary. As the primary datum
   the axis is free to shift and tilt. After one primary plane it is held
-  perpendicular to that plane, and the envelope is a circle in the plane. Other
+  perpendicular to that plane, and the envelope is a circle in the plane. A
+  primary axis may be followed by one plane perpendicular to it and one
+  parallel to it, in either order (see **Primary datum axis frames**). Other
   precedences with axis datums are not evaluated.
 - **Width datum feature of size:** a datum feature with
   `feature_of_size: true`, a plane anchor on the nominal center plane and a
@@ -1154,21 +1156,44 @@ measured faces exactly rather than through a single departure value.
   a boundary too: a contacting plane, or a width regardless of size, would
   have to re-contact as the frame turns, and is reported.
 
-**Primary datum axis.** Position of a feature coaxial with a primary datum
-axis A (a frame of A alone, or a common axis A-B) is measured from the related
-actual mating envelope's axis between the feature's measured ends, or the
-minimum-material envelope's at LMC. Each end's offset from A's simulator axis
-must lie within the cylindrical zone, so the deviation is twice the larger
-end offset. A feature whose nominal axis is not A's is reported. Referenced
-at MMB or LMB, A's simulator may translate and tilt: each end of its axis,
-at the datum feature's measured extent, floats within half the feature's
-departure from the boundary (the same clearance as a secondary axis). This is
-exact for a datum feature of perfect form; form error does not restrict the
-motion further. Coaxial controls with the same datum references share one
-shift, chosen by the same active-set min-max LP in four variables. They
-report the larger end displacement as `datum_shift_mm` and the tilt (end
-displacement difference over the datum length, unsigned) as
-`datum_shift_rotation_rad`. Composite coaxial position is reported.
+**Primary datum axis frames.** A primary datum axis A (or common axis A-B)
+fixes four degrees of freedom. Two plane datums may follow it, one of each
+kind, in either order:
+
+- **Stop:** a plane perpendicular to A (a face) is a contacting plane held
+  square to A's simulator. It fixes translation along A, and the frame origin
+  is where it meets the axis. Zones parallel to A do not depend on it.
+- **Clock:** a plane parallel to A (a flat, or a slot or tab width) turns only
+  about A's simulator axis, as a contacting plane or the width's mating
+  center plane. Its normal gives the frame's x axis. Without a clock, only
+  features coaxial with A can be located, since rotation about A is free.
+
+The report lists a named frame B | A | C (axis, stop, clock) under
+`datum_frames` with z along the axis.
+
+**Position to a primary datum axis.** Position of a feature parallel to A is
+measured from the related actual mating envelope's axis between the
+feature's measured ends, or the minimum-material envelope's at LMC. The zone
+is parallel to A's simulator axis at true position. Both ends must lie in it,
+so the deviation is twice the larger end offset, and a feature leaning
+relative to A is out by its worse end. A feature not parallel to A, or off
+A's axis with no clock, is reported.
+
+Referenced at MMB or LMB, A's simulator may translate and tilt: each end of
+its axis, at the datum feature's measured extent, floats within half the
+feature's departure from the boundary (the same clearance as a secondary
+axis). This is exact for a datum feature of perfect form; form error does
+not restrict the motion further. A clocking width at MMB or LMB lets the
+frame turn about A while its boundary pair, at its basic offset from A and
+moving with A's ends, stays clear of the measured faces. A clock regardless
+of material boundary, or a contacting plane, fixes the turn. Controls with
+the same datum references share one motion, chosen by the same active-set
+min-max LP in the ends and the turn (relinearized in the turn). They report
+the larger end displacement as `datum_shift_mm` and, as
+`datum_shift_rotation_rad`, the axis tilt (end displacement difference over
+the datum length) combined with the turn about A, signed by the turn
+(positive counterclockwise about A's direction). Composite position to a
+primary datum axis is reported.
 
 `datum_shift_limit_mm` is the largest origin translation the boundaries allow
 with the frame square to its mating envelopes: the bore's radial limit plus
@@ -1352,7 +1377,10 @@ pattern size. With a slot through the bore at MMB as well (2.5 mrad of
 rotational shift), the same 10,000 controls on a pattern turned 2 mrad and
 moved 0.05 mm share one translation and rotation in 0.17 s. 10,000 position
 controls on bands coaxial with a primary datum bore at MMB share one shift of
-its axis in 0.23 s. All three cases have 0.5 s budgets. 10,000 composite position controls in
+its axis in 0.23 s. Located B(MMB) | A | C(MMB) instead, from the bore as
+primary axis stopped by the face and clocked by the slot, the turned and
+moved pattern shares one axis shift and turn in 0.24 s. All four cases have
+0.5 s budgets. 10,000 composite position controls in
 100 patterns of 100 evaluate in 0.19 s (1 s budget). Ten patterns with a
 0.1 mm outlier fail their relating fit. 10,000 composite surface profiles on
 the same bores (720,000 points with nominals, 100 patterns of 7,200 points
@@ -1363,8 +1391,9 @@ regenerate the part once and project every point onto the named side face in
 0.59 s (2 s budget). One line profile of 1,000,000 points in 1,000 elements
 takes 0.20 s (1 s budget).
 
-**Not yet covered.** Datum shift of common axes; position of features off a
-primary datum axis (which needs a clocking datum after it); rotational shift from a tertiary hole or pin; a tertiary plane
+**Not yet covered.** Datum shift of common axes; features at an angle to a
+primary datum axis; clocking a primary datum axis with a hole or pin;
+composite position to a primary datum axis; rotational shift from a tertiary hole or pin; a tertiary plane
 re-contacting as a shifting secondary width turns; common width datums; the separate requirement
 (`SEP REQT`); boundaries
 enlarged by geometric tolerances; simultaneous-contact common axis simulators,
