@@ -17,7 +17,7 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 154 + first-use integration 1 (+1 doc test), recipes 3, parametric core 35 + kernel 668 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 8 + view command 15 + viewer Node 19 + branch command 2 + model command 89, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 154 + first-use integration 1 (+1 doc test), recipes 3, parametric core 35 + kernel 669 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 8 + view command 15 + viewer Node 19 + branch command 2 + model command 89, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -25,6 +25,13 @@ tracks status and order.
 | Scale benchmarks | Last full suite: 194 Rust cases plus 5 model-command cases and a 10,000-face Python matcher. Sketch authoring integration rechecked 60 sketch cases and 60 MCP cases within budget. | `tools/bench/run.sh` |
 
 ## Done
+
+- Common datum axis shift (schema 140 and ABI 69 unchanged). A common datum
+  axis A-B referenced at MMB or LMB shifts and tilts: each member uses its
+  own envelope and clearance, and the axis must pass within that clearance
+  of the member's axis at both ends of its measured length. Coaxial and
+  clocked position controls share one motion. 10,000 coaxial controls
+  between two datum bores at MMB share one shift in 0.24 s (0.5 s budget).
 
 - Clocking and rotational shift from a hole or pin (schema 140 and ABI 69
   unchanged). A tertiary hole or pin clocks a plane-axis frame A | B | C, and
@@ -2267,7 +2274,7 @@ scopes and inspected repo capabilities, not a full conformity audit.
    bounded SVG approximation for curves SVG cannot represent. Direct deviations
    and limits render stacked values.
 2. **Structured GD&T** — [Y14.5](https://www.asme.org/codes-standards/find-codes-standards/y14-5-dimensioning-tolerancing):
-   features at an angle to a primary datum axis, common-axis datum shift, non-orthogonal datum
+   features at an angle to a primary datum axis, non-orthogonal datum
    simulators, multi-segment composites, simultaneous common-axis simulators,
    advanced modifiers, and estimating measurement uncertainty from the
    measurement itself. Measured planar datum frames, flatness,
@@ -2286,7 +2293,7 @@ scopes and inspected repo capabilities, not a full conformity audit.
    width and rotational datum shift from slot and tab datums, and position
    from a primary datum axis, stopped and clocked by planes or widths, with
    primary-axis shift, tilt and clocking rotation, and clocking and
-   rotational shift from a hole or pin.
+   rotational shift from a hole or pin, and common datum axis shift.
 3. **3D manufacturing annotations and exchange** — [Y14.41](https://www.asme.org/codes-standards/find-codes-standards/y14-41-digital-product-definition-data-practices):
    structured PMI attached to persistent geometry, annotation views, dataset
    authority and revision rules, and verified semantic PMI exchange. Geometry

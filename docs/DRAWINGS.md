@@ -1056,7 +1056,10 @@ Datum simulators follow the precedence order:
   mating-envelope axis over its measured length. This is a common CMM
   construction, not the Y14.5 simulator whose two coaxial cylinders expand or
   contract simultaneously. It is evaluated as the primary datum only, and the
-  report lists both mating sizes in `datum_axes[].mating_sizes_mm`.
+  report lists both mating sizes in `datum_axes[].mating_sizes_mm`. At MMB
+  or LMB each member uses its own envelope (the minimum-material one at LMB)
+  and clearance, and the axis may shift and tilt as described under
+  **Position to a primary datum axis**.
 
 ```json
 {"id": "D", "label": "D", "feature_of_size": true, "size_kind": "internal",
@@ -1193,7 +1196,11 @@ Referenced at MMB or LMB, A's simulator may translate and tilt: each end of
 its axis, at the datum feature's measured extent, floats within half the
 feature's departure from the boundary (the same clearance as a secondary
 axis). This is exact for a datum feature of perfect form; form error does
-not restrict the motion further. A clocking width at MMB or LMB lets the
+not restrict the motion further. For a common axis A-B the ends span both
+members, and the axis must pass within each member's own clearance of that
+member's axis at both ends of the member's measured length. A tight member
+therefore holds the axis near it while a loose one lets it tilt away.
+A clocking width at MMB or LMB lets the
 frame turn about A while its boundary pair, at its basic offset from A and
 moving with A's ends, stays clear of the measured faces. A clocking hole or
 pin at MMB or LMB lets it turn as in a plane-axis frame, its boundary
@@ -1389,11 +1396,12 @@ pattern size. With a slot through the bore at MMB as well (2.5 mrad of
 rotational shift), the same 10,000 controls on a pattern turned 2 mrad and
 moved 0.05 mm share one translation and rotation in 0.17 s. 10,000 position
 controls on bands coaxial with a primary datum bore at MMB share one shift of
-its axis in 0.23 s. Located B(MMB) | A | C(MMB) instead, from the bore as
+its axis in 0.23 s, and to a common axis of bores either side of them in
+0.24 s. Located B(MMB) | A | C(MMB) instead, from the bore as
 primary axis stopped by the face and clocked by the slot, the turned and
 moved pattern shares one axis shift and turn in 0.24 s. Clocked instead by a
 Ø6.06 dowel hole at MMB 25 mm from the bore (A | B(MMB) | C(MMB)), the same
-pattern shares one translation and rotation in 0.18 s. All five cases have
+pattern shares one translation and rotation in 0.18 s. All six cases have
 0.5 s budgets. 10,000 composite position controls in
 100 patterns of 100 evaluate in 0.19 s (1 s budget). Ten patterns with a
 0.1 mm outlier fail their relating fit. 10,000 composite surface profiles on
@@ -1405,7 +1413,7 @@ regenerate the part once and project every point onto the named side face in
 0.59 s (2 s budget). One line profile of 1,000,000 points in 1,000 elements
 takes 0.20 s (1 s budget).
 
-**Not yet covered.** Datum shift of common axes; features at an angle to a
+**Not yet covered.** Datum shift of common planes; features at an angle to a
 primary datum axis; composite position to a primary datum axis; a tertiary
 hole or pin's form error limiting its rotational shift; a tertiary plane
 re-contacting as a shifting secondary width turns; common width datums; the separate requirement

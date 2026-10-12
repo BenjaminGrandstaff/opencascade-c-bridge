@@ -187,7 +187,8 @@ fn main() -> ExitCode {
         definition,
         inspection::ShiftFrame::Pin,
     ));
-    outcomes.push(inspection::coaxial_shift_case(definition));
+    outcomes.push(inspection::coaxial_shift_case(definition, false));
+    outcomes.push(inspection::coaxial_shift_case(definition, true));
     outcomes.push(inspection::composite_case(definition));
     outcomes.push(inspection::profile_case(definition));
     outcomes.push(inspection::profile_surface_case(definition));

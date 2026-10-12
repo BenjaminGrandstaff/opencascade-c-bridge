@@ -2310,6 +2310,102 @@ fn a_hole_clocks_a_primary_datum_axis() {
     assert!(evaluated(&report, "hole0").deviation_mm > 1e-3);
 }
 
+/// `coaxial_page` located to the common axis D-E of two Ø9.9-10.1 bores on
+/// the hole axis, at `boundary`.
+fn common_shift_page(boundary: DatumMaterialBoundary) -> DrawingDefinition {
+    let mut page = coaxial_page(boundary, &["cbore0"]);
+    let mut e = page.datum_features.last().unwrap().clone();
+    e.id = "E".into();
+    e.label = "E".into();
+    page.datum_features.push(e);
+    page.feature_control_frames[0].datums[0].common_with = vec!["E".into()];
+    page
+}
+
+/// Bores D (z 0-10) and E (z 30-40) of diameters `d` and `e` on the nominal
+/// axis, and a Ø16 counterbore over z 12-22 offset `offset` in x.
+fn common_shift_record(d: f64, e: f64, offset: f64) -> InspectionRecord {
+    InspectionRecord {
+        uncertainty: None,
+        drawing: "plate".into(),
+        surface_textures: Vec::new(),
+        datum_features: vec![
+            measured(
+                "D",
+                cylinder([HOLE[0], HOLE[1], 0.0], [0.0, 0.0, 1.0], |_| d / 2.0),
+            ),
+            measured(
+                "E",
+                cylinder([HOLE[0], HOLE[1], 30.0], [0.0, 0.0, 1.0], |_| e / 2.0),
+            ),
+        ],
+        controls: vec![measured(
+            "cbore0",
+            cylinder([HOLE[0] + offset, HOLE[1], 12.0], [0.0, 0.0, 1.0], |_| 8.0),
+        )],
+    }
+}
+
+#[test]
+fn a_common_datum_axis_at_a_material_boundary_shifts_within_each_member() {
+    use DatumMaterialBoundary::{Least, Maximum, Regardless};
+    let definition = plate();
+    let graph = graph_of(&definition);
+    let page = common_shift_page(Maximum);
+    // Both bores Ø10.06 clear their Ø9.9 MMB by 0.08 mm: a 0.05 mm offset
+    // shifts away; a 0.1 mm offset leaves 0.02 mm a side.
+    let report = page
+        .evaluate_inspection(&graph, &common_shift_record(10.06, 10.06, 0.05))
+        .unwrap();
+    let m = evaluated(&report, "cbore0");
+    assert!(m.deviation_mm < 1e-6 && m.conforms, "{m:?}");
+    assert!((m.datum_shift_mm - 0.05).abs() < 1e-6, "{m:?}");
+    assert!((m.datum_shift_limit_mm - 0.08).abs() < 1e-9, "{m:?}");
+    let report = page
+        .evaluate_inspection(&graph, &common_shift_record(10.06, 10.06, 0.1))
+        .unwrap();
+    let m = evaluated(&report, "cbore0");
+    assert!((m.deviation_mm - 0.04).abs() < 1e-4, "{m:?}");
+    // E at Ø9.94 clears only 0.02 mm: the axis may sit 0.08 mm off at z = 0
+    // but 0.02 mm at z = 30, so at z = 22 it reaches (8·0.08 + 22·0.02)/30
+    // and the counterbore's top is 0.05 minus that off.
+    let report = page
+        .evaluate_inspection(&graph, &common_shift_record(10.06, 9.94, 0.05))
+        .unwrap();
+    let m = evaluated(&report, "cbore0");
+    let reach = (8.0 * 0.08 + 22.0 * 0.02) / 30.0;
+    assert!(
+        (m.deviation_mm - 2.0 * (0.05 - reach)).abs() < 1e-4,
+        "{m:?}"
+    );
+    assert!(m.datum_shift_rotation_rad > 1e-3, "{m:?}");
+    // Regardless of boundary the common axis does not move.
+    let report = common_shift_page(Regardless)
+        .evaluate_inspection(&graph, &common_shift_record(10.06, 10.06, 0.05))
+        .unwrap();
+    let m = evaluated(&report, "cbore0");
+    assert!((m.deviation_mm - 0.1).abs() < 1e-6, "{m:?}");
+    // LMB: Ø10.0 bores are 0.1 mm inside their Ø10.1 boundary.
+    let report = common_shift_page(Least)
+        .evaluate_inspection(&graph, &common_shift_record(10.0, 10.0, 0.03))
+        .unwrap();
+    let m = evaluated(&report, "cbore0");
+    assert!(m.deviation_mm < 1e-6, "{m:?}");
+    assert!((m.datum_shift_limit_mm - 0.05).abs() < 1e-9, "{m:?}");
+    // A member inside its MMB violates the boundary.
+    let report = page
+        .evaluate_inspection(&graph, &common_shift_record(10.06, 9.85, 0.0))
+        .unwrap();
+    assert!(
+        matches!(
+            &report.controls[0].result,
+            ControlResult::NotEvaluated(r) if r.contains("violates its maximum material boundary")
+        ),
+        "{:?}",
+        report.controls[0]
+    );
+}
+
 /// Four pattern holes with composite position: Ø`upper` to A | B | C (the
 /// plate's three planes), refined to Ø`lower` relating the pattern with
 /// `lower_datums` (a prefix of A, B, C).

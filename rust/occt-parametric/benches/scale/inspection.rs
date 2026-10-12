@@ -1536,11 +1536,19 @@ pub(crate) fn profile_line_case(definition: &FamilyDefinition) -> Outcome {
 /// primary datum bore A (Ø9.9-10.1, measured Ø10.06: each end of its axis
 /// may float 0.08 mm). Every band sits 0.05 mm off in x (±0.01 mm in y):
 /// the shared shift of the datum axis brings all of them inside Ø0.04.
-pub(crate) fn coaxial_shift_case(definition: &FamilyDefinition) -> Outcome {
+/// Coaxial controls to a primary datum bore A at MMB, or with `common` to
+/// the common axis A-E of two bores either side of them.
+pub(crate) fn coaxial_shift_case(definition: &FamilyDefinition, common: bool) -> Outcome {
     timed(
-        format!(
-            "inspection: {CONTROLS} coaxial position controls sharing a primary-axis MMB shift"
-        ),
+        if common {
+            format!(
+                "inspection: {CONTROLS} coaxial position controls sharing a common-axis MMB shift"
+            )
+        } else {
+            format!(
+                "inspection: {CONTROLS} coaxial position controls sharing a primary-axis MMB shift"
+            )
+        },
         Duration::from_millis(500),
         Expectation::Required,
         || {
@@ -1579,20 +1587,22 @@ pub(crate) fn coaxial_shift_case(definition: &FamilyDefinition) -> Outcome {
                     datums: vec![DrawingDatumReference {
                         datum_feature: "A".into(),
                         boundary: DatumMaterialBoundary::Maximum,
-                        common_with: Vec::new(),
+                        common_with: if common { vec!["E".into()] } else { Vec::new() },
                     }],
                 })
                 .collect();
             let drawing = DrawingDefinition {
                 datum_reference_frames: Vec::new(),
-                datum_features: vec![DrawingDatumFeature {
-                    id: "A".into(),
-                    label: "A".into(),
-                    feature_of_size: true,
-                    attachment: attachment("bore"),
-                    size_kind: None,
-                    size_limits: Some(limits(9.9, 10.1)),
-                }],
+                datum_features: ["A", "E"]
+                    .map(|id| DrawingDatumFeature {
+                        id: id.into(),
+                        label: id.into(),
+                        feature_of_size: true,
+                        attachment: attachment("bore"),
+                        size_kind: None,
+                        size_limits: Some(limits(9.9, 10.1)),
+                    })
+                    .to_vec(),
                 feature_control_frames: controls,
                 surface_textures: Vec::new(),
                 parts_list: None,
@@ -1642,11 +1652,19 @@ pub(crate) fn coaxial_shift_case(definition: &FamilyDefinition) -> Outcome {
                 uncertainty: None,
                 drawing: "coaxial".into(),
                 surface_textures: Vec::new(),
-                datum_features: vec![MeasuredFeature {
-                    nominals: Vec::new(),
-                    id: "A".into(),
-                    points_mm: rings([0.0, 0.0], 5.03, &datum_heights),
-                }],
+                datum_features: [("A", 0.0), ("E", 200.0)]
+                    .into_iter()
+                    .take(if common { 2 } else { 1 })
+                    .map(|(id, base)| MeasuredFeature {
+                        nominals: Vec::new(),
+                        id: id.into(),
+                        points_mm: rings(
+                            [0.0, 0.0],
+                            5.03,
+                            &datum_heights.iter().map(|z| z + base).collect::<Vec<_>>(),
+                        ),
+                    })
+                    .collect(),
                 controls: (0..CONTROLS)
                     .map(|i| {
                         let wobble = if i % 2 == 0 { 0.01 } else { -0.01 };

@@ -99,6 +99,10 @@ pub(super) struct ShiftSpace {
     /// the simulator's ends float within `disk`.
     pub span: Option<[f64; 2]>,
     pub pins: Vec<PinBoundary>,
+    /// For a common datum axis at a material boundary, in place of `disk`:
+    /// where the axis must pass (basic `[0, 0]`) within each member's
+    /// clearance of that member's own axis, at both ends of its extent.
+    pub axis_bounds: Vec<PinBoundary>,
 }
 
 /// A clocking hole or pin referenced at a material boundary: the boundary
@@ -370,7 +374,9 @@ pub(super) fn fit_axis_motion(members: &[AxialMember], space: &ShiftSpace) -> Ax
     let Some(span) = space.span else {
         return zero;
     };
-    if members.is_empty() || (space.disk.is_none() && space.rotation_fixed) {
+    if members.is_empty()
+        || (space.disk.is_none() && space.axis_bounds.is_empty() && space.rotation_fixed)
+    {
         return zero;
     }
     let mut order: Vec<usize> = (0..members.len()).collect();
@@ -458,6 +464,9 @@ fn axis_motion_lp(members: &[AxialMember], space: &ShiftSpace, span: [f64; 2]) -
             push(row([0.0; 2], 0.0, sign, 0.0), step);
         }
         for end in 0..2 {
+            if !space.axis_bounds.is_empty() {
+                break;
+            }
             for u in &directions {
                 let mut r = [0.0; 11];
                 r[2 * end] = u[0];
@@ -494,7 +503,7 @@ fn axis_motion_lp(members: &[AxialMember], space: &ShiftSpace, span: [f64; 2]) -
                 );
             }
         }
-        for pin in &space.pins {
+        for pin in space.pins.iter().chain(&space.axis_bounds) {
             let (e, q) = pin.offset(motion.at(pin.along, span), motion.angle);
             for u in &directions {
                 push(
@@ -544,7 +553,7 @@ fn axis_motion_lp(members: &[AxialMember], space: &ShiftSpace, span: [f64; 2]) -
     }
     motion.ends = motion.ends.map(|e| {
         let length = e[0].hypot(e[1]);
-        if length > limit && length > 0.0 {
+        if space.axis_bounds.is_empty() && length > limit && length > 0.0 {
             [e[0] * limit / length, e[1] * limit / length]
         } else {
             e
@@ -693,6 +702,10 @@ impl Context<'_, '_> {
             span: Some(span),
             ..ShiftSpace::default()
         };
+        if datums[0].members().nth(1).is_some() && limit > 0.0 {
+            space.disk = None;
+            space.axis_bounds = self.common_bounds(&datums[0], measured)?;
+        }
         for (datum, simulator) in datums.iter().zip(simulators).skip(1) {
             let (normal, width) = match simulator {
                 Simulator::Plane(_, normal, width) => (normal, width),
@@ -722,6 +735,62 @@ impl Context<'_, '_> {
             space.rotation_fixed = false;
         }
         Ok(space)
+    }
+
+    /// Where a common datum axis at a material boundary may pass: within
+    /// each member's clearance of that member's own mating (or
+    /// minimum-material) axis at both ends of its measured extent. Exact for
+    /// members of perfect form.
+    fn common_bounds(
+        &self,
+        datum: &DrawingDatumReference,
+        measured: &DrawingDatumCoordinateFrame,
+    ) -> Result<Vec<PinBoundary>, String> {
+        let ResolvedDatum::Axis { direction, .. } = self.nominal(
+            &self.features[datum.datum_feature.as_str()]
+                .attachment
+                .anchor,
+        )?
+        else {
+            return Err("common datum axis has no axis geometry".into());
+        };
+        let mut bounds = Vec::new();
+        for member in datum.members() {
+            let points = &self.measured_datums[member];
+            let Simulator::Axis(origin, axis, _, limit) = self.axis_simulator(
+                self.features[member],
+                points,
+                direction,
+                &[],
+                datum.boundary,
+            )?
+            else {
+                unreachable!("axis simulator");
+            };
+            let (lo, hi) =
+                points
+                    .iter()
+                    .try_fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), &p| {
+                        measured
+                            .coordinates_mm(p)
+                            .map(|c| (lo.min(c.z), hi.max(c.z)))
+                            .map_err(|e| e.to_string())
+                    })?;
+            let start = measured.coordinates_mm(origin).map_err(|e| e.to_string())?;
+            let rise = dot(axis, measured.z_axis);
+            for z in [lo, hi] {
+                let at = measured
+                    .coordinates_mm(add(origin, scale(axis, (z - start.z) / rise)))
+                    .map_err(|e| e.to_string())?;
+                bounds.push(PinBoundary {
+                    basic: [0.0, 0.0],
+                    center: [at.x, at.y],
+                    limit,
+                    along: z,
+                });
+            }
+        }
+        Ok(bounds)
     }
 
     /// The boundary of a clocking hole or pin at a material boundary: its

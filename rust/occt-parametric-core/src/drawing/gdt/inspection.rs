@@ -791,10 +791,8 @@ impl Context<'_, '_> {
         if let ResolvedDatum::Axis { direction, .. } = self.nominal(&feature.attachment.anchor)? {
             let simulator = if let [(feature, points)] = members.as_slice() {
                 self.axis_simulator(feature, points, direction, &simulators, last.boundary)?
-            } else if last.boundary != DatumMaterialBoundary::Regardless {
-                return Err("datum shift of a common datum axis is not evaluated".into());
             } else {
-                self.common_axis(&members, direction, &simulators)?
+                self.common_axis(&members, direction, &simulators, last.boundary)?
             };
             simulators.push(simulator);
             return Ok(simulators);
@@ -1040,12 +1038,15 @@ impl Context<'_, '_> {
     /// Common datum axis of two coaxial datum features of size: the line
     /// through the midpoints of each member's own mating-envelope axis over
     /// its measured length (a CMM construction, not a simultaneous-contact
-    /// simulator). Evaluated as the primary datum only.
+    /// simulator), the minimum-material envelopes' at LMB. Evaluated as the
+    /// primary datum only. The limit is the larger member clearance; the
+    /// shift space bounds the axis by each member's own.
     fn common_axis(
         &self,
         members: &[(&DrawingDatumFeature, &[Vec3])],
         nominal: Vec3,
         prefix: &[Simulator],
+        boundary: DatumMaterialBoundary,
     ) -> Result<Simulator, String> {
         if !prefix.is_empty() || members.len() != 2 {
             return Err(
@@ -1055,17 +1056,14 @@ impl Context<'_, '_> {
         let nominal = unit(nominal).map_err(|e| e.to_string())?;
         let mut midpoints = Vec::with_capacity(2);
         let mut sizes = Vec::with_capacity(2);
+        let mut largest = 0.0_f64;
         for (feature, points) in members {
-            let Simulator::Axis(origin, direction, size, _) = self.axis_simulator(
-                feature,
-                points,
-                nominal,
-                &[],
-                DatumMaterialBoundary::Regardless,
-            )?
+            let Simulator::Axis(origin, direction, size, limit) =
+                self.axis_simulator(feature, points, nominal, &[], boundary)?
             else {
                 unreachable!("axis simulator");
             };
+            largest = largest.max(limit);
             let (lo, hi) =
                 points
                     .iter()
@@ -1081,7 +1079,7 @@ impl Context<'_, '_> {
         if dot(direction, nominal) < 0.0 {
             direction = scale(direction, -1.0);
         }
-        Ok(Simulator::Axis(midpoints[0], direction, sizes, 0.0))
+        Ok(Simulator::Axis(midpoints[0], direction, sizes, largest))
     }
 
     /// Axis of the actual mating envelope of a cylindrical datum feature of
