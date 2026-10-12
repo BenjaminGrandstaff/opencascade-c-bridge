@@ -219,6 +219,7 @@ impl Context<'_, '_> {
                         size_conforms: None,
                         conforms,
                         datum_shift_mm: 0.0,
+                        datum_shift_rotation_rad: 0.0,
                         datum_shift_limit_mm: 0.0,
                         refinement,
                         profile: Some(ProfileMeasurement {
@@ -714,6 +715,7 @@ impl Context<'_, '_> {
             size_conforms: None,
             conforms: deviation <= tolerance,
             datum_shift_mm: 0.0,
+            datum_shift_rotation_rad: 0.0,
             datum_shift_limit_mm: 0.0,
             refinement: None,
             profile: None,

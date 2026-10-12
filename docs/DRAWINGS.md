@@ -1120,16 +1120,44 @@ A feature beyond its boundary is reported. The boundary does not include
 geometric tolerances that would enlarge it, such as perpendicularity to A at
 MMC.
 
-The shift is a translation within plane A. Under the default simultaneous
-requirement, every position control with identical datum references
-(features, precedence and boundaries) shares one shift. The shift minimizes the
-largest excess of any control's offset over its allowed radius (half of
-tolerance plus bonus). An active set of at most a few controls is solved as a
-small LP with 256-gon zones, within 0.008% of optimal, and ties resolve to the
-smallest shift. Each control then reports its deviation exactly at that shift,
-with `datum_shift_mm` (applied radial shift) and `datum_shift_limit_mm`. A
+The shift is a rigid motion within plane A: a translation of the frame
+origin and, where a width datum allows it, a rotation about A's normal.
+Under the default simultaneous requirement, every position control with
+identical datum references (features, precedence and boundaries) shares one
+shift. The shift minimizes the largest excess of any control's offset over
+its allowed radius (half of tolerance plus bonus). An active set of at most a
+few controls is solved as a small LP with 256-gon zones, within 0.008% of
+optimal, relinearized in the rotation; ties resolve to the smallest shift.
+Each control then reports its deviation exactly at that shift, with
+`datum_shift_mm` (applied translation), `datum_shift_rotation_rad` (applied
+rotation, signed about A's outward normal) and `datum_shift_limit_mm`. A
 uniformly displaced pattern can shift back into tolerance; holes displaced in
 opposite directions cannot.
+
+**Width and rotational datum shift.** A slot or tab width datum feature of
+size can also be referenced at MMB or LMB, with `size_limits` on its datum
+feature. Its boundary is a pair of parallel planes at the boundary width
+(MMB: a slot's lower limit or a tab's upper; LMB: the reverse), centered on
+the datum's basic center plane and carried with the frame. Every measured
+point of the slot or tab must stay on its own side of that pair. These are
+linear constraints on the shift, so the LP holds the pair inside the
+measured faces exactly rather than through a single departure value.
+
+- **Rotational shift:** in an A | B | C frame of a primary plane, a bore B
+  and a tertiary slot or tab C, C at a boundary lets the frame turn about B's
+  axis. C's pair passes through B at its basic offset; how far the frame can
+  turn depends on the clearance and on how far the slot lies from B. B at MMB
+  or LMB adds its own translation, and C's pair moves with it.
+- **Width shift:** in a frame of three planes, a secondary or tertiary width
+  at a boundary lets the origin move along its normal. A secondary width at a
+  boundary also lets the frame turn, so its tertiary must then be a width at
+  a boundary too: a contacting plane, or a width regardless of size, would
+  have to re-contact as the frame turns, and is reported.
+
+`datum_shift_limit_mm` is the largest origin translation the boundaries allow
+with the frame square to its mating envelopes: the bore's radial limit plus
+the combined half departures of locating widths. A width narrower than its
+MMB (or wider than its LMB) violates the boundary and is reported.
 
 ```json
 {"id": "B", "label": "B", "feature_of_size": true,
@@ -1277,7 +1305,9 @@ readings are kept as measured. The decision is one O(1) pass per control.
   feature that was not measured, or an axis datum without a `size_kind`.
   Width datums report measurements missing a face and common widths.
   Datum shift also reports a boundary without `size_limits`, a feature beyond
-  its boundary, and shift of a primary or common axis or of a planar datum.
+  its boundary, shift of a primary or common axis or of a common plane, and a
+  tertiary plane or regardless-of-size width after a secondary width at a
+  boundary. Orientation reports datums referenced at a material boundary.
   Runout reports any datum referenced at a material boundary.
   Runout also reports a frame without a datum axis, and a surface whose nominal
   axis or normal is not along the datum feature's nominal axis. Orientation and
@@ -1301,9 +1331,11 @@ bore datum axes fitted once, in 0.03 s. Against 100 common datum axes from
 cases have 1 s budgets.
 Runout readings cost O(n log n) per control after the datum fit. 10,000
 position controls located A | B(MMB) | C from a center bore share one datum
-shift in 0.17 s (1 s budget). The active set keeps each LP small whatever the
-pattern size. The same 10,000 controls clocked by a slot width datum, with the
-part turned 2 mrad, evaluate in 0.16 s. 10,000 composite position controls in
+shift in 0.17 s. The active set keeps each LP small whatever the
+pattern size. With a slot through the bore at MMB as well (2.5 mrad of
+rotational shift), the same 10,000 controls on a pattern turned 2 mrad and
+moved 0.05 mm share one translation and rotation in 0.17 s. Both cases have
+0.5 s budgets. 10,000 composite position controls in
 100 patterns of 100 evaluate in 0.19 s (1 s budget). Ten patterns with a
 0.1 mm outlier fail their relating fit. 10,000 composite surface profiles on
 the same bores (720,000 points with nominals, 100 patterns of 7,200 points
@@ -1314,9 +1346,9 @@ regenerate the part once and project every point onto the named side face in
 0.59 s (2 s budget). One line profile of 1,000,000 points in 1,000 elements
 takes 0.20 s (1 s budget).
 
-**Not yet covered.** Datum shift of a primary axis datum (tilt), of common
-axes and of width datum features (slots and tabs); rotational
-shift about a datum axis; common width datums; the separate requirement
+**Not yet covered.** Datum shift of a primary axis datum (tilt) and of common
+axes; rotational shift from a tertiary hole or pin; a tertiary plane
+re-contacting as a shifting secondary width turns; common width datums; the separate requirement
 (`SEP REQT`); boundaries
 enlarged by geometric tolerances; simultaneous-contact common axis simulators,
 common axes after a primary plane, composites beyond two segments,

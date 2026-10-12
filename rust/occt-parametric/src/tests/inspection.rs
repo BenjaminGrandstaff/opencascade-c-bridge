@@ -504,7 +504,7 @@ fn unsupported_or_unmeasured_controls_are_reported_and_bad_records_fail() {
     assert!(refined.deviation_mm < 1e-6, "{refined:?}");
     assert!(matches!(
         &report.controls[3].result,
-        ControlResult::NotEvaluated(r) if r.contains("datum shift")
+        ControlResult::NotEvaluated(r) if r.contains("regardless of material boundary")
     ));
 
     let page = self::page();
@@ -1529,7 +1529,7 @@ fn a_slot_center_plane_clocks_a_bore_frame() {
 }
 
 #[test]
-fn width_datums_report_one_sided_common_and_shifted_setups() {
+fn width_datums_need_both_faces() {
     let (definition, page) = slot_setup(FeatureOfSizeKind::Internal);
     let graph = graph_of(&definition);
     let mut one_sided = slot_record(0.0, 0.0, 0.0);
@@ -1543,31 +1543,261 @@ fn width_datums_report_one_sided_common_and_shifted_setups() {
         "{:?}",
         report.controls[0]
     );
-    let mut shifted = page.clone();
-    for frame in &mut shifted.feature_control_frames {
-        frame.datums[2].boundary = DatumMaterialBoundary::Maximum;
-    }
-    shifted
-        .datum_features
-        .iter_mut()
-        .find(|f| f.id == "C")
-        .unwrap()
-        .size_limits = Some(DrawingSizeLimits {
+}
+
+fn slot_limits() -> DrawingSizeLimits {
+    DrawingSizeLimits {
         kind: FeatureOfSizeKind::Internal,
         lower: Quantity::length(7.9, LengthUnit::Millimeter),
         upper: Quantity::length(8.1, LengthUnit::Millimeter),
-    });
-    let report = shifted
-        .evaluate_inspection(&graph, &slot_record(0.0, 0.0, 0.0))
+    }
+}
+
+/// `slot_setup` with C a 7.9-8.1 slot referenced A | B(`b`) | C(`c`): its
+/// center plane x = 30 passes through the bore, and the slot is measured
+/// 21-29 mm from it.
+fn clocking_setup(
+    b: DatumMaterialBoundary,
+    c: DatumMaterialBoundary,
+) -> (FamilyDefinition, DrawingDefinition) {
+    let (definition, mut page) = slot_setup(FeatureOfSizeKind::Internal);
+    let feature = page
+        .datum_features
+        .iter_mut()
+        .find(|f| f.id == "C")
+        .unwrap();
+    feature.size_limits = Some(slot_limits());
+    for frame in &mut page.feature_control_frames {
+        frame.datums[1].boundary = b;
+        frame.datums[2].boundary = c;
+    }
+    (definition, page)
+}
+
+/// A measured part: Ø`bore` bore at the nominal center, a slot of `width`
+/// 25 mm from it, and the pattern turned by `turn` about the bore and moved
+/// by `t`.
+fn clocking_record(bore: f64, width: f64, turn: f64, t: [f64; 2]) -> InspectionRecord {
+    let mut record = shift_record(bore, [[0.0, 0.0]; 4]);
+    let center = [HOLE[0], HOLE[1] + 25.0];
+    let mut slot = wall(center, [1.0, 0.0], width / 2.0, |_| 0.0);
+    slot.extend(wall(center, [1.0, 0.0], -width / 2.0, |_| 0.0));
+    record.datum_features[2] = measured("C", slot);
+    let (s, c) = turn.sin_cos();
+    record.controls = PATTERN
+        .iter()
+        .enumerate()
+        .map(|(i, [x, y])| {
+            let (dx, dy) = (x - HOLE[0], y - HOLE[1]);
+            let at = [
+                HOLE[0] + c * dx - s * dy + t[0],
+                HOLE[1] + s * dx + c * dy + t[1],
+            ];
+            measured(&format!("hole{i}"), hole(at, 6.0))
+        })
+        .collect();
+    record
+}
+
+#[test]
+fn a_slot_at_a_material_boundary_lets_the_frame_turn_about_the_bore() {
+    use DatumMaterialBoundary::{Least, Maximum, Regardless};
+    let lever = 15.0_f64.hypot(10.0);
+    let (definition, page) = clocking_setup(Regardless, Maximum);
+    let graph = graph_of(&definition);
+    // An 8.0 slot clears its 7.9 MMB by 0.05 mm a side; at 29 mm from the
+    // bore that lets the frame turn 1.72 mrad. A pattern turned 1.5 mrad
+    // turns back to true position (negative about A's outward normal, -z).
+    let report = page
+        .evaluate_inspection(&graph, &clocking_record(10.0, 8.0, 0.0015, [0.0; 2]))
+        .unwrap();
+    for i in 0..4 {
+        let m = evaluated(&report, &format!("hole{i}"));
+        assert!(m.deviation_mm < 1e-4, "{m:?}");
+        assert!((m.datum_shift_rotation_rad + 0.0015).abs() < 1e-5, "{m:?}");
+        assert!(
+            m.datum_shift_mm < 1e-9 && m.datum_shift_limit_mm == 0.0,
+            "{m:?}"
+        );
+        assert!(m.conforms);
+    }
+    // Turned 3 mrad, the frame stops where the slot's far end meets the
+    // boundary: 4·cos θ − 29·sin θ = 3.95.
+    let report = page
+        .evaluate_inspection(&graph, &clocking_record(10.0, 8.0, 0.003, [0.0; 2]))
+        .unwrap();
+    let limit = {
+        let mut a = 0.0_f64;
+        for _ in 0..50 {
+            a -= (4.0 * a.cos() - 29.0 * a.sin() - 3.95) / (-4.0 * a.sin() - 29.0 * a.cos());
+        }
+        a
+    };
+    let m = evaluated(&report, "hole0");
+    assert!((m.datum_shift_rotation_rad + limit).abs() < 1e-6, "{m:?}");
+    let expected = 2.0 * 2.0 * lever * (0.5 * (0.003 - limit)).sin();
+    assert!((m.deviation_mm - expected).abs() < 1e-5, "{m:?} {expected}");
+    // Regardless of material boundary the slot clocks the frame square.
+    let (_, rmb) = clocking_setup(Regardless, Regardless);
+    let report = rmb
+        .evaluate_inspection(&graph, &clocking_record(10.0, 8.0, 0.0015, [0.0; 2]))
+        .unwrap();
+    let m = evaluated(&report, "hole0");
+    assert!((m.deviation_mm - 2.0 * 2.0 * lever * 0.00075_f64.sin()).abs() < 1e-6);
+    assert_eq!(m.datum_shift_rotation_rad, 0.0);
+    assert!(!m.conforms);
+    // At LMB the 8.1 boundary encloses the 8.0 slot with the same clearance.
+    let (_, lmb) = clocking_setup(Regardless, Least);
+    let report = lmb
+        .evaluate_inspection(&graph, &clocking_record(10.0, 8.0, 0.0015, [0.0; 2]))
+        .unwrap();
+    assert!(evaluated(&report, "hole0").deviation_mm < 1e-4);
+    // A slot narrower than its MMB violates the boundary.
+    let report = page
+        .evaluate_inspection(&graph, &clocking_record(10.0, 7.85, 0.0, [0.0; 2]))
         .unwrap();
     assert!(
         matches!(
             &report.controls[0].result,
-            ControlResult::NotEvaluated(r) if r.contains("planar datum features")
+            ControlResult::NotEvaluated(r) if r.contains("violates its maximum material boundary")
         ),
         "{:?}",
         report.controls[0]
     );
+}
+
+#[test]
+fn bore_and_slot_boundaries_shift_and_turn_the_frame_together() {
+    use DatumMaterialBoundary::Maximum;
+    let (definition, page) = clocking_setup(Maximum, Maximum);
+    let graph = graph_of(&definition);
+    // A Ø10.06 bore allows 0.08 mm of translation; the slot block moves with
+    // it, so a 0.05 mm move and a 1.5 mrad turn (0.0125-0.0065 mm net at
+    // the slot) are both taken up.
+    let record = clocking_record(10.06, 8.0, 0.0015, [0.05, 0.0]);
+    let report = page.evaluate_inspection(&graph, &record).unwrap();
+    for i in 0..4 {
+        let m = evaluated(&report, &format!("hole{i}"));
+        assert!(m.deviation_mm < 1e-4, "{m:?}");
+        assert!((m.datum_shift_mm - 0.05).abs() < 1e-4, "{m:?}");
+        assert!((m.datum_shift_rotation_rad + 0.0015).abs() < 1e-5, "{m:?}");
+        assert!((m.datum_shift_limit_mm - 0.08).abs() < 1e-9, "{m:?}");
+    }
+    // Moving 0.05 mm the other way uses the slot's clearance against the
+    // turn: the block would sit 0.05 + 29·θ from center, so the turn
+    // cannot be taken up in full.
+    let record = clocking_record(10.06, 8.0, 0.0015, [-0.05, 0.0]);
+    let report = page.evaluate_inspection(&graph, &record).unwrap();
+    let m = evaluated(&report, "hole0");
+    assert!(m.deviation_mm > 1e-3, "{m:?}");
+}
+
+/// Plate frame A | B | C of two slot widths: B's center plane x = 30
+/// (measured 11-19 mm above the origin) and C's y = 20 (measured 21-29 mm
+/// left of it), both 7.9-8.1, with the hole pattern about (30, 20).
+fn width_frame_setup(
+    b: DatumMaterialBoundary,
+    c: DatumMaterialBoundary,
+) -> (FamilyDefinition, DrawingDefinition) {
+    let (mut definition, mut page) = shift_setup(DatumMaterialBoundary::Regardless);
+    definition
+        .datums
+        .push(plane("xslot", [HOLE[0], 0.0, 0.0], [1.0, 0.0, 0.0]));
+    definition
+        .datums
+        .push(plane("yslot", [0.0, HOLE[1], 0.0], [0.0, 1.0, 0.0]));
+    for (id, anchor) in [("B", "xslot"), ("C", "yslot")] {
+        let feature = page.datum_features.iter_mut().find(|f| f.id == id).unwrap();
+        feature.attachment = attachment(anchor);
+        feature.feature_of_size = true;
+        feature.size_kind = Some(FeatureOfSizeKind::Internal);
+        feature.size_limits = Some(slot_limits());
+    }
+    for frame in &mut page.feature_control_frames {
+        frame.datums[1].boundary = b;
+        frame.datums[2].boundary = c;
+    }
+    (definition, page)
+}
+
+fn width_frame_record(turn: f64, t: [f64; 2]) -> InspectionRecord {
+    let mut record = clocking_record(10.0, 8.0, turn, t);
+    let slot = |center: [f64; 2], normal: [f64; 2]| {
+        let mut points = wall(center, normal, 4.0, |_| 0.0);
+        points.extend(wall(center, normal, -4.0, |_| 0.0));
+        points
+    };
+    record.datum_features[1] = measured("B", slot([HOLE[0], HOLE[1] + 15.0], [1.0, 0.0]));
+    record.datum_features[2] = measured("C", slot([HOLE[0] - 25.0, HOLE[1]], [0.0, 1.0]));
+    record
+}
+
+#[test]
+fn slot_and_tab_width_datums_shift_a_planar_frame() {
+    use DatumMaterialBoundary::{Maximum, Regardless};
+    let (definition, page) = width_frame_setup(Maximum, Maximum);
+    let graph = graph_of(&definition);
+    // Each 8.0 slot clears its 7.9 MMB by 0.05 mm: the origin may move up
+    // to 0.05 mm along each normal.
+    let report = page
+        .evaluate_inspection(&graph, &width_frame_record(0.0, [0.03, -0.04]))
+        .unwrap();
+    for i in 0..4 {
+        let m = evaluated(&report, &format!("hole{i}"));
+        assert!(m.deviation_mm < 1e-4, "{m:?}");
+        assert!((m.datum_shift_mm - 0.05).abs() < 1e-4, "{m:?}");
+        assert!((m.datum_shift_limit_mm - 0.05 * 2.0_f64.sqrt()).abs() < 1e-9);
+    }
+    // The secondary slot also lets the frame turn: 1 mrad moves the
+    // tertiary slot 21-29 µm, inside its clearance.
+    let report = page
+        .evaluate_inspection(&graph, &width_frame_record(0.001, [0.0; 2]))
+        .unwrap();
+    let m = evaluated(&report, "hole0");
+    assert!(m.deviation_mm < 1e-4, "{m:?}");
+    assert!((m.datum_shift_rotation_rad + 0.001).abs() < 1e-5, "{m:?}");
+    // A secondary slot regardless of size fixes rotation and its own
+    // translation; the tertiary still shifts.
+    let (_, square) = width_frame_setup(Regardless, Maximum);
+    let report = square
+        .evaluate_inspection(&graph, &width_frame_record(0.001, [0.0, 0.04]))
+        .unwrap();
+    let m = evaluated(&report, "hole0");
+    let lever = 15.0_f64.hypot(10.0);
+    assert!(
+        (m.deviation_mm - 2.0 * 2.0 * lever * 0.0005_f64.sin()).abs() < 1e-4,
+        "{m:?}"
+    );
+    assert_eq!(m.datum_shift_rotation_rad, 0.0);
+    // A shifting secondary slot with a tertiary regardless of size would
+    // have to re-contact as it turns.
+    let (_, coupled) = width_frame_setup(Maximum, Regardless);
+    let report = coupled
+        .evaluate_inspection(&graph, &width_frame_record(0.0, [0.0; 2]))
+        .unwrap();
+    assert!(
+        matches!(
+            &report.controls[0].result,
+            ControlResult::NotEvaluated(r) if r.contains("must be a width at a material boundary")
+        ),
+        "{:?}",
+        report.controls[0]
+    );
+    // Tabs: the 8.1 MMB pair encloses an 8.0 tab with the same clearance.
+    let (_, mut tabs) = width_frame_setup(Maximum, Maximum);
+    for feature in &mut tabs.datum_features {
+        if feature.feature_of_size {
+            feature.size_kind = Some(FeatureOfSizeKind::External);
+            if let Some(limits) = &mut feature.size_limits {
+                limits.kind = FeatureOfSizeKind::External;
+            }
+        }
+    }
+    let report = tabs
+        .evaluate_inspection(&graph, &width_frame_record(0.0, [0.03, -0.04]))
+        .unwrap();
+    let m = evaluated(&report, "hole0");
+    assert!(m.deviation_mm < 1e-4 && m.conforms, "{m:?}");
 }
 
 /// Four pattern holes with composite position: Ø`upper` to A | B | C (the

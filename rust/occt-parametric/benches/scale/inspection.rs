@@ -657,17 +657,21 @@ pub(crate) fn runout_case(definition: &FamilyDefinition, common: bool, conical: 
 /// hole sits 0.05 mm off in x (±0.01 mm in y): one shared datum shift under
 /// the simultaneous requirement brings all of them inside Ø0.04.
 ///
-/// With `slot`, B is RMB and C is a slot (width datum) through the bore; the
-/// part, slot and pattern are all turned 2 mrad about the bore, so the slot's
-/// center plane must clock the frame for every hole to conform.
+/// With `slot`, C is a 7.9-8.1 slot (width datum) through the bore at MMB,
+/// measured square and 8.0 wide over 20 mm either side of the bore (2.5 mrad
+/// of rotational shift). The pattern is turned 2 mrad about the bore and
+/// sits 0.05 mm off along the slot: one shared translation and rotation of
+/// the frame bring every hole inside Ø0.04.
 pub(crate) fn datum_shift_case(definition: &FamilyDefinition, slot: bool) -> Outcome {
     timed(
         if slot {
-            format!("inspection: {CONTROLS} position controls clocked by a slot width datum")
+            format!(
+                "inspection: {CONTROLS} position controls with bore and slot MMB shift and rotation"
+            )
         } else {
             format!("inspection: {CONTROLS} position controls sharing one MMB datum shift")
         },
-        Duration::from_secs(1),
+        Duration::from_millis(500),
         Expectation::Required,
         || {
             let mut definition = definition.clone();
@@ -731,15 +735,15 @@ pub(crate) fn datum_shift_case(definition: &FamilyDefinition, slot: bool) -> Out
                     feature_of_size: true,
                     datums: vec![
                         reference("A", DatumMaterialBoundary::Regardless),
+                        reference("B", DatumMaterialBoundary::Maximum),
                         reference(
-                            "B",
+                            "C",
                             if slot {
-                                DatumMaterialBoundary::Regardless
-                            } else {
                                 DatumMaterialBoundary::Maximum
+                            } else {
+                                DatumMaterialBoundary::Regardless
                             },
                         ),
-                        reference("C", DatumMaterialBoundary::Regardless),
                     ],
                 })
                 .collect();
@@ -765,7 +769,11 @@ pub(crate) fn datum_shift_case(definition: &FamilyDefinition, slot: bool) -> Out
                         DrawingDatumFeature {
                             size_kind: Some(FeatureOfSizeKind::Internal),
                             feature_of_size: true,
-                            ..feature("C", "slot", None)
+                            ..feature(
+                                "C",
+                                "slot",
+                                Some(limits(FeatureOfSizeKind::Internal, 7.9, 8.1)),
+                            )
                         }
                     } else {
                         feature("C", "front", None)
@@ -824,7 +832,11 @@ pub(crate) fn datum_shift_case(definition: &FamilyDefinition, slot: bool) -> Out
                 .map(|i| {
                     let [x, y] = hole_center(i % (HOLES_PER_SIDE * HOLES_PER_SIDE));
                     let wobble = if i % 2 == 0 { 0.01 } else { -0.01 };
-                    let offset = if slot { [0.0, wobble] } else { [0.05, wobble] };
+                    let offset = if slot {
+                        [0.0, 0.05 + wobble]
+                    } else {
+                        [0.05, wobble]
+                    };
                     MeasuredFeature {
                         nominals: Vec::new(),
                         id: format!("position-{i}"),
@@ -832,14 +844,13 @@ pub(crate) fn datum_shift_case(definition: &FamilyDefinition, slot: bool) -> Out
                     }
                 })
                 .collect();
-            // Slot walls 4 mm either side of the bore, turned with the part.
-            let (s, c) = angle.sin_cos();
+            // Square slot walls 4 mm either side of the bore.
             let walls: Vec<[f64; 3]> = [-4.0, 4.0]
                 .into_iter()
                 .flat_map(|d| {
                     (0..=40).flat_map(move |k| [2.0, 8.0].map(move |z| (d, k as f64 - 20.0, z)))
                 })
-                .map(|(d, t, z)| [bore[0] + c * d - s * t, bore[1] + s * d + c * t, z])
+                .map(|(d, t, z)| [bore[0] + d, bore[1] + t, z])
                 .collect();
             let record = InspectionRecord {
                 uncertainty: None,
@@ -875,7 +886,7 @@ pub(crate) fn datum_shift_case(definition: &FamilyDefinition, slot: bool) -> Out
                 .map(|m| m.points_mm.len())
                 .sum();
             let report = drawing.evaluate_inspection(&graph, &record)?;
-            let mut shift = 0.0;
+            let (mut shift, mut rotation) = (0.0, 0.0);
             for control in &report.controls {
                 let ControlResult::Evaluated(m) = &control.result else {
                     return Err(failure(format!(
@@ -883,19 +894,22 @@ pub(crate) fn datum_shift_case(definition: &FamilyDefinition, slot: bool) -> Out
                         control.control, control.result
                     )));
                 };
-                let limit = if slot { 0.0 } else { 0.08 };
-                if !m.conforms || (m.datum_shift_limit_mm - limit).abs() > 1e-9 {
+                if !m.conforms || (m.datum_shift_limit_mm - 0.08).abs() > 1e-9 {
                     return Err(failure(format!("{} measured {m:?}", control.control)));
                 }
                 shift = m.datum_shift_mm;
+                rotation = m.datum_shift_rotation_rad.abs();
             }
-            if (shift - if slot { 0.0 } else { 0.05 }).abs() > 1e-3 {
-                return Err(failure(format!("shared shift {shift}")));
+            if (shift - 0.05).abs() > 1e-3 || (rotation - angle).abs() > 1e-5 {
+                return Err(failure(format!(
+                    "shared shift {shift}, rotation {rotation}"
+                )));
             }
             Ok(format!(
-                "{} of {} conform with a shared {shift:.4} mm shift, {} measured points",
+                "{} of {} conform with a shared {shift:.4} mm, {:.2} mrad shift, {} measured points",
                 report.controls.len(),
                 report.controls.len(),
+                1e3 * rotation,
                 points
             ))
         },

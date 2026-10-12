@@ -17,7 +17,7 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 154 + first-use integration 1 (+1 doc test), recipes 3, parametric core 35 + kernel 659 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 8 + view command 13 + viewer Node 19 + branch command 2 + model command 89, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 154 + first-use integration 1 (+1 doc test), recipes 3, parametric core 35 + kernel 662 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 8 + view command 15 + viewer Node 19 + branch command 2 + model command 89, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -25,6 +25,18 @@ tracks status and order.
 | Scale benchmarks | Last full suite: 194 Rust cases plus 5 model-command cases and a 10,000-face Python matcher. Sketch authoring integration rechecked 60 sketch cases and 60 MCP cases within budget. | `tools/bench/run.sh` |
 
 ## Done
+
+- Width and rotational datum shift (schema 140 and ABI 69 unchanged). Slot
+  and tab width datum features referenced at MMB or LMB shift the frame: the
+  boundary pair of planes, carried with the frame, must stay clear of every
+  measured face point. A tertiary slot or tab after a primary plane and a
+  bore lets the frame turn about the bore, together with the bore's own MMB
+  translation; secondary and tertiary widths in three-plane frames move the
+  origin along their normals, and a shifting secondary width turns the frame.
+  One translation and rotation is shared under the simultaneous requirement
+  (a relinearized min-max LP, also used for composite pattern fits), and
+  controls report `datum_shift_rotation_rad`. 10,000 controls sharing a bore
+  and slot MMB shift and rotation in 0.17 s (0.5 s budget).
 
 - Measurement uncertainty and decision rules (schema 140 and ABI 69
   unchanged). Inspection records take an expanded uncertainty U, per-control
@@ -2223,7 +2235,7 @@ scopes and inspected repo capabilities, not a full conformity audit.
    bounded SVG approximation for curves SVG cannot represent. Direct deviations
    and limits render stacked values.
 2. **Structured GD&T** — [Y14.5](https://www.asme.org/codes-standards/find-codes-standards/y14-5-dimensioning-tolerancing):
-   primary-axis, rotational and width datum shift, non-orthogonal datum
+   primary-axis datum shift, rotational shift from a tertiary hole, non-orthogonal datum
    simulators, multi-segment composites, simultaneous common-axis simulators,
    advanced modifiers, and estimating measurement uncertainty from the
    measurement itself. Measured planar datum frames, flatness,
@@ -2238,7 +2250,8 @@ scopes and inspected repo capabilities, not a full conformity audit.
    and profile nominals projected onto the model's own faces (schema 140,
    ABI 69), and profile of a line by sections normal to its view, and runout
    of cones and other surfaces of revolution read square to their nominals,
-   and supplied measurement uncertainty with guarded decision rules.
+   and supplied measurement uncertainty with guarded decision rules, and
+   width and rotational datum shift from slot and tab datums.
 3. **3D manufacturing annotations and exchange** — [Y14.41](https://www.asme.org/codes-standards/find-codes-standards/y14-41-digital-product-definition-data-practices):
    structured PMI attached to persistent geometry, annotation views, dataset
    authority and revision rules, and verified semantic PMI exchange. Geometry

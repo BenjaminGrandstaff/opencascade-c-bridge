@@ -12,7 +12,10 @@ use super::*;
 use crate::assembly::{add, length, scale, unit};
 pub mod fit;
 mod profile;
+mod shift;
 use fit::{Fit, circle_zone, cylinder_zone, fit_circle, fit_cylinder, fit_plane, fit_width};
+use shift::{Motion, PatternMember, ShiftSpace, fit_motion};
+use std::rc::Rc;
 
 /// Upper bound on measured points in one record, which bounds memory and time.
 pub const MAX_INSPECTION_POINTS: usize = 10_000_000;
@@ -141,10 +144,13 @@ pub struct ControlMeasurement {
     pub actual_size_mm: Option<f64>,
     pub size_conforms: Option<bool>,
     pub conforms: bool,
-    /// Radial datum shift applied before measuring (schema 137): one shift
+    /// Datum shift applied before measuring: one translation of the frame
+    /// origin (schema 137) and one rotation about the primary datum normal,
     /// shared by every position control with identical datum references.
     pub datum_shift_mm: f64,
-    /// Largest radial datum shift the referenced material boundaries allow.
+    pub datum_shift_rotation_rad: f64,
+    /// Largest translation of the frame origin the referenced material
+    /// boundaries allow with the frame square to its mating envelopes.
     pub datum_shift_limit_mm: f64,
     /// The lower (feature-relating) segment of a composite position control
     /// (schema 138); `conforms` covers both segments.
@@ -323,7 +329,9 @@ struct Context<'a, 'g> {
     /// Fitted position offsets by control ID, each fitted once.
     positions: HashMap<String, Result<PositionData, String>>,
     /// Shared datum shift by control ID (simultaneous requirement).
-    shifts: HashMap<String, [f64; 2]>,
+    shifts: HashMap<String, Motion>,
+    /// Motions each datum precedence's material boundaries allow.
+    spaces: HashMap<SimulatorKey, Result<Rc<ShiftSpace>, String>>,
     /// Composite lower-segment results by control ID, fitted per pattern.
     refinements: HashMap<String, RefinementMeasurement>,
     /// Profile results by control ID, fitted per pattern.
@@ -402,6 +410,7 @@ impl DrawingDefinition {
             simulators: HashMap::new(),
             positions: HashMap::new(),
             shifts: HashMap::new(),
+            spaces: HashMap::new(),
             refinements: HashMap::new(),
             profiles: HashMap::new(),
             views: self.views.iter().map(|v| (v.id.as_str(), v)).collect(),
@@ -425,8 +434,9 @@ impl DrawingDefinition {
             }
         }
         for group in groups.values() {
+            let mut ids = Vec::with_capacity(group.len());
             let mut members = Vec::with_capacity(group.len());
-            let mut limit: f64 = 0.0;
+            let mut space = None;
             for frame in group {
                 let points = &measured_controls[frame.id.as_str()];
                 let (Ok(data), Ok(tolerance)) = (
@@ -435,15 +445,17 @@ impl DrawingDefinition {
                 ) else {
                     continue;
                 };
-                limit = limit.max(data.shift_limit);
-                members.push((
-                    frame.id.clone(),
-                    (data.offset, 0.5 * (tolerance + data.bonus)),
-                ));
+                ids.push(frame.id.clone());
+                members.push(PatternMember {
+                    offset: data.offset,
+                    lever: data.true_position,
+                    radius: 0.5 * (tolerance + data.bonus),
+                });
+                space = Some(data.space);
             }
-            let zones: Vec<_> = members.iter().map(|(_, zone)| *zone).collect();
-            let shift = common_shift(&zones, limit);
-            for (id, _) in members {
+            let Some(space) = space else { continue };
+            let shift = fit_motion(&members, &space);
+            for id in ids {
                 context.shifts.insert(id, shift);
             }
         }
@@ -770,8 +782,10 @@ impl Context<'_, '_> {
             .flat_map(|(_, p)| p.iter().copied())
             .collect();
         let points = union.as_slice();
-        if last.boundary != DatumMaterialBoundary::Regardless {
-            return Err("datum shift of planar datum features is not evaluated".into());
+        if last.boundary != DatumMaterialBoundary::Regardless
+            && !(members.len() == 1 && feature.feature_of_size && feature.kind().is_some())
+        {
+            return Err("datum shift of a common datum plane is not evaluated".into());
         }
         // A tertiary plane after a primary plane and a secondary axis only
         // clocks rotation about that axis: its normal turns about A's normal.
@@ -1074,7 +1088,8 @@ impl Context<'_, '_> {
                         DatumPrecedence::Secondary,
                         DatumPrecedence::Tertiary,
                     ][i],
-                    boundary: r.boundary,
+                    // Datum shift is applied by the evaluator.
+                    boundary: DatumMaterialBoundary::Regardless,
                     geometry,
                 })
             })
@@ -1138,6 +1153,7 @@ impl Context<'_, '_> {
             size_conforms: None,
             conforms: fitted.width <= tolerance,
             datum_shift_mm: 0.0,
+            datum_shift_rotation_rad: 0.0,
             datum_shift_limit_mm: 0.0,
             refinement: None,
             profile: None,
@@ -1200,6 +1216,7 @@ impl Context<'_, '_> {
             size_conforms: None,
             conforms: deviation <= tolerance,
             datum_shift_mm: 0.0,
+            datum_shift_rotation_rad: 0.0,
             datum_shift_limit_mm: 0.0,
             refinement: None,
             profile: None,
@@ -1310,6 +1327,7 @@ impl Context<'_, '_> {
             size_conforms: None,
             conforms: deviation <= tolerance,
             datum_shift_mm: 0.0,
+            datum_shift_rotation_rad: 0.0,
             datum_shift_limit_mm: 0.0,
             refinement: None,
             profile: None,
@@ -1326,6 +1344,13 @@ impl Context<'_, '_> {
         nominal: Vec3,
     ) -> Result<(Vec3, Vec<Vec3>), String> {
         let datums = &frame.datums[..frame.datums.len().min(2)];
+        if frame
+            .datums
+            .iter()
+            .any(|d| d.boundary != DatumMaterialBoundary::Regardless)
+        {
+            return Err("orientation datums are evaluated regardless of material boundary".into());
+        }
         let planes = self.simulators(datums)?;
         let (_, a) = self.nominal_datum(&datums[0].datum_feature)?;
         let measured_a = planes[0].plane_normal()?;
@@ -1398,9 +1423,10 @@ impl Context<'_, '_> {
                 radius: 0.5 * (tolerance + d.bonus),
             })
             .collect();
-        let (translation, rotation) = pattern_fit(&fit, !rotation_fixed);
+        let motion = fit_motion(&fit, &ShiftSpace::free(!rotation_fixed));
+        let (translation, rotation) = (motion.t, motion.angle);
         for ((id, data), member) in members.iter().zip(&fit) {
-            let r = member.residual(translation, rotation);
+            let r = member.residual(motion);
             let deviation = 2.0 * r[0].hypot(r[1]);
             self.refinements.insert(
                 id.clone(),
@@ -1427,8 +1453,14 @@ impl Context<'_, '_> {
             .shifts
             .get(frame.id.as_str())
             .copied()
-            .unwrap_or([0.0, 0.0]);
-        let deviation = 2.0 * (data.offset[0] - shift[0]).hypot(data.offset[1] - shift[1]);
+            .unwrap_or_default();
+        let member = PatternMember {
+            offset: data.offset,
+            lever: data.true_position,
+            radius: 0.0,
+        };
+        let r = member.residual(shift);
+        let deviation = 2.0 * r[0].hypot(r[1]);
         Ok(ControlMeasurement {
             deviation_mm: deviation,
             tolerance_mm: tolerance,
@@ -1436,8 +1468,9 @@ impl Context<'_, '_> {
             actual_size_mm: Some(data.size),
             size_conforms: Some(data.size_conforms),
             conforms: data.size_conforms && deviation <= tolerance + data.bonus,
-            datum_shift_mm: shift[0].hypot(shift[1]),
-            datum_shift_limit_mm: data.shift_limit,
+            datum_shift_mm: shift.t[0].hypot(shift.t[1]),
+            datum_shift_rotation_rad: shift.angle,
+            datum_shift_limit_mm: data.space.limit,
             refinement: None,
             profile: None,
             uncertainty_mm: 0.0,
@@ -1530,13 +1563,7 @@ impl Context<'_, '_> {
         } else {
             self.measured_frame(&frame.datums)?
         };
-        let shift_limit = simulators
-            .iter()
-            .map(|s| match s {
-                Simulator::Axis(.., limit) => *limit,
-                Simulator::Plane(..) => 0.0,
-            })
-            .sum();
+        let space = self.shift_space(&frame.datums, &measured_frame, &nominal_frame)?;
         let projected = points
             .iter()
             .map(|&p| measured_frame.coordinates_mm(p).map(|c| [c.x, c.y]))
@@ -1584,7 +1611,7 @@ impl Context<'_, '_> {
             bonus,
             size,
             size_conforms,
-            shift_limit,
+            space,
         })
     }
 }
@@ -1597,193 +1624,8 @@ struct PositionData {
     bonus: f64,
     size: f64,
     size_conforms: bool,
-    /// Largest radial datum shift the frame's material boundaries allow.
-    shift_limit: f64,
-}
-
-/// A member of a composite pattern: its offset from true position, its true
-/// position relative to the pattern centroid, and its allowed zone radius.
-#[derive(Clone, Copy, Debug)]
-struct PatternMember {
-    offset: [f64; 2],
-    lever: [f64; 2],
-    radius: f64,
-}
-impl PatternMember {
-    /// Offset left after translating the true positions by `t` and turning
-    /// them by `angle` about the centroid.
-    fn residual(&self, t: [f64; 2], angle: f64) -> [f64; 2] {
-        let (s, c) = angle.sin_cos();
-        let turned = [
-            c * self.lever[0] - s * self.lever[1],
-            s * self.lever[0] + c * self.lever[1],
-        ];
-        [
-            self.offset[0] - t[0] - (turned[0] - self.lever[0]),
-            self.offset[1] - t[1] - (turned[1] - self.lever[1]),
-        ]
-    }
-    fn excess(&self, t: [f64; 2], angle: f64) -> f64 {
-        let r = self.residual(t, angle);
-        r[0].hypot(r[1]) - self.radius
-    }
-}
-
-/// Translation and rotation (radians, about the centroid; zero unless
-/// `rotate`) minimizing the largest excess of any member over its zone, the
-/// feature-relating fit of a composite pattern. An active set (the four worst
-/// members, then the worst outside member) keeps each LP small; each LP is
-/// relinearized in the angle and uses 256-gon zones. O(iterations · active ·
-/// 256 · pivots + n).
-fn pattern_fit(members: &[PatternMember], rotate: bool) -> ([f64; 2], f64) {
-    if members.is_empty() {
-        return ([0.0, 0.0], 0.0);
-    }
-    let mut order: Vec<usize> = (0..members.len()).collect();
-    order.sort_by(|&a, &b| {
-        members[b]
-            .excess([0.0; 2], 0.0)
-            .total_cmp(&members[a].excess([0.0; 2], 0.0))
-    });
-    let mut active: Vec<usize> = order.into_iter().take(4).collect();
-    loop {
-        let subset: Vec<PatternMember> = active.iter().map(|&i| members[i]).collect();
-        let (t, angle) = pattern_lp(&subset, rotate);
-        let active_worst = subset
-            .iter()
-            .map(|m| m.excess(t, angle))
-            .fold(f64::NEG_INFINITY, f64::max);
-        let (worst, value) = members
-            .iter()
-            .enumerate()
-            .map(|(i, m)| (i, m.excess(t, angle)))
-            .fold((0, f64::NEG_INFINITY), |a, b| if b.1 > a.1 { b } else { a });
-        if value <= active_worst + 1e-12 || active.contains(&worst) {
-            return (t, angle);
-        }
-        active.push(worst);
-    }
-}
-
-fn pattern_lp(members: &[PatternMember], rotate: bool) -> ([f64; 2], f64) {
-    const SIDES: usize = 256;
-    let directions: Vec<[f64; 2]> = (0..SIDES)
-        .map(|k| {
-            let a = std::f64::consts::TAU * k as f64 / SIDES as f64;
-            [a.cos(), a.sin()]
-        })
-        .collect();
-    let (mut t, mut angle): ([f64; 2], f64) = ([0.0, 0.0], 0.0);
-    for _ in 0..6 {
-        // Variables: Δtx, Δty, Δangle, z; residual ≈ e − Δt − Δangle·q.
-        let mut rows = Vec::with_capacity((members.len() * SIDES + 2) * 4);
-        let mut bounds = Vec::with_capacity(members.len() * SIDES + 2);
-        let (s, c) = angle.sin_cos();
-        for m in members {
-            let e = m.residual(t, angle);
-            let turned = [
-                c * m.lever[0] - s * m.lever[1],
-                s * m.lever[0] + c * m.lever[1],
-            ];
-            let q = [-turned[1], turned[0]];
-            for u in &directions {
-                rows.extend([-u[0], -u[1], -(u[0] * q[0] + u[1] * q[1]), -1.0]);
-                bounds.push(m.radius - u[0] * e[0] - u[1] * e[1]);
-            }
-        }
-        let step = if rotate { 0.05 } else { 0.0 };
-        for sign in [1.0, -1.0] {
-            rows.extend([0.0, 0.0, sign, 0.0]);
-            bounds.push(step);
-        }
-        let Ok(x) = fit::maximize(&[0.0, 0.0, 0.0, -1.0], &rows, &bounds) else {
-            break;
-        };
-        t = [t[0] + x[0], t[1] + x[1]];
-        angle += x[2];
-        if x[2].abs() < 1e-12 {
-            break;
-        }
-    }
-    (t, angle)
-}
-
-/// One datum shift `t` (|t| ≤ `limit`) shared by controls under the
-/// simultaneous requirement, minimizing the largest excess `|d − t| − r` of
-/// each control's offset `d` over its allowed radius `r`. The optimum of this
-/// 2-D min-max is fixed by at most three controls, so an active set starts
-/// from the three worst at `t = 0` and adds the worst outside control until
-/// none exceeds the active maximum: each step is a small LP. Circles are
-/// circumscribed 256-gons (within 0.008% of optimal) and a 1e-6 weight on
-/// |t|₁ picks the smallest of near-optimal shifts. Conformance is decided
-/// exactly at the returned shift. O(iterations · (n + active · 256 · pivots)).
-fn common_shift(controls: &[([f64; 2], f64)], limit: f64) -> [f64; 2] {
-    if limit <= 0.0 || controls.is_empty() {
-        return [0.0, 0.0];
-    }
-    let excess = |t: [f64; 2], &(d, r): &([f64; 2], f64)| (d[0] - t[0]).hypot(d[1] - t[1]) - r;
-    let mut order: Vec<usize> = (0..controls.len()).collect();
-    order.sort_by(|&a, &b| {
-        excess([0.0; 2], &controls[b]).total_cmp(&excess([0.0; 2], &controls[a]))
-    });
-    let mut active: Vec<usize> = order.into_iter().take(3).collect();
-    loop {
-        let subset: Vec<_> = active.iter().map(|&i| controls[i]).collect();
-        let t = shift_lp(&subset, limit);
-        let active_worst = subset
-            .iter()
-            .map(|c| excess(t, c))
-            .fold(f64::NEG_INFINITY, f64::max);
-        let (worst, value) = controls
-            .iter()
-            .enumerate()
-            .map(|(i, c)| (i, excess(t, c)))
-            .fold((0, f64::NEG_INFINITY), |a, b| if b.1 > a.1 { b } else { a });
-        if value <= active_worst + 1e-12 || active.contains(&worst) {
-            return t;
-        }
-        active.push(worst);
-    }
-}
-
-/// The min-max datum shift LP over `controls` (see [`common_shift`]).
-fn shift_lp(controls: &[([f64; 2], f64)], limit: f64) -> [f64; 2] {
-    const SIDES: usize = 256;
-    let directions: Vec<[f64; 2]> = (0..SIDES)
-        .map(|k| {
-            let a = std::f64::consts::TAU * k as f64 / SIDES as f64;
-            [a.cos(), a.sin()]
-        })
-        .collect();
-    // Variables: tx, ty, z (largest excess), wx ≥ |tx|, wy ≥ |ty|.
-    let mut rows = Vec::with_capacity(((controls.len() + 1) * SIDES + 4) * 5);
-    let mut bounds = Vec::with_capacity((controls.len() + 1) * SIDES + 4);
-    for &(d, r) in controls {
-        for u in &directions {
-            rows.extend([-u[0], -u[1], -1.0, 0.0, 0.0]);
-            bounds.push(r - u[0] * d[0] - u[1] * d[1]);
-        }
-    }
-    for u in &directions {
-        rows.extend([u[0], u[1], 0.0, 0.0, 0.0]);
-        bounds.push(limit);
-    }
-    for (axis, sign) in [(0, 1.0), (0, -1.0), (1, 1.0), (1, -1.0)] {
-        let mut row = [0.0; 5];
-        row[axis] = sign;
-        row[3 + axis] = -1.0;
-        rows.extend(row);
-        bounds.push(0.0);
-    }
-    let Ok(x) = fit::maximize(&[0.0, 0.0, -1.0, -1e-6, -1e-6], &rows, &bounds) else {
-        return [0.0, 0.0];
-    };
-    let length = x[0].hypot(x[1]);
-    if length > limit && length > 0.0 {
-        [x[0] * limit / length, x[1] * limit / length]
-    } else {
-        [x[0], x[1]]
-    }
+    /// Motions the frame's material boundaries allow.
+    space: Rc<ShiftSpace>,
 }
 
 /// Largest minus smallest value; zero for an empty sequence.
