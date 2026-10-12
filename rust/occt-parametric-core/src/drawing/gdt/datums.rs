@@ -142,9 +142,11 @@ impl ResolvedDrawingDatumReferenceFrame {
         let origin = Vec3::new(q.x + d.x * travel, q.y + d.y * travel, q.z + d.z * travel);
         let reference = match c.map(|c| c.geometry) {
             Some(ResolvedDatum::Plane { normal, .. }) => normal,
+            // A tertiary hole or pin clocks the frame toward its axis.
+            Some(ResolvedDatum::Axis { origin: r, .. }) => subtract(r, origin),
             Some(_) => {
                 return Err(ModelError::new(
-                    "the tertiary datum of a plane-axis frame must be a plane",
+                    "the tertiary datum of a plane-axis frame must be a plane or an axis",
                 ));
             }
             None if z.x.abs() < 0.9 => Vec3::new(1.0, 0.0, 0.0),

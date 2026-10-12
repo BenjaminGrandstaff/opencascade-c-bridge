@@ -183,6 +183,10 @@ fn main() -> ExitCode {
         definition,
         inspection::ShiftFrame::AxisSlot,
     ));
+    outcomes.push(inspection::datum_shift_case(
+        definition,
+        inspection::ShiftFrame::Pin,
+    ));
     outcomes.push(inspection::coaxial_shift_case(definition));
     outcomes.push(inspection::composite_case(definition));
     outcomes.push(inspection::profile_case(definition));

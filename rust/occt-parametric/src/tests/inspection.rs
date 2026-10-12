@@ -2132,6 +2132,184 @@ fn a_clocking_slot_at_a_material_boundary_turns_the_frame_about_a_primary_axis()
     assert!(evaluated(&report, "hole0").deviation_mm > 1e-3);
 }
 
+/// `shift_setup` with C a Ø5.9-6.1 dowel hole 25 mm from the bore along +y,
+/// each control referenced to the datums `order` with B at `b` and C at `c`.
+fn pin_setup(
+    order: &[&str],
+    b: DatumMaterialBoundary,
+    c: DatumMaterialBoundary,
+) -> (FamilyDefinition, DrawingDefinition) {
+    let (mut definition, mut page) = shift_setup(DatumMaterialBoundary::Regardless);
+    definition.datums.push(DatumDefinition {
+        id: "pin".into(),
+        kind: DatumKind::Axis {
+            origin: VectorExpr::Literal(VectorQuantity::lengths(
+                HOLE[0],
+                HOLE[1] + 25.0,
+                0.0,
+                LengthUnit::Millimeter,
+            )),
+            direction: VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, 1.0)),
+        },
+    });
+    let feature = page
+        .datum_features
+        .iter_mut()
+        .find(|f| f.id == "C")
+        .unwrap();
+    feature.attachment = attachment("pin");
+    feature.feature_of_size = true;
+    feature.size_kind = Some(FeatureOfSizeKind::Internal);
+    feature.size_limits = Some(DrawingSizeLimits {
+        kind: FeatureOfSizeKind::Internal,
+        lower: Quantity::length(5.9, LengthUnit::Millimeter),
+        upper: Quantity::length(6.1, LengthUnit::Millimeter),
+    });
+    for frame in &mut page.feature_control_frames {
+        let datums = std::mem::take(&mut frame.datums);
+        frame.datums = order
+            .iter()
+            .map(|id| {
+                let mut d = datums
+                    .iter()
+                    .find(|d| d.datum_feature == *id)
+                    .unwrap()
+                    .clone();
+                d.boundary = match *id {
+                    "B" => b,
+                    "C" => c,
+                    _ => DatumMaterialBoundary::Regardless,
+                };
+                d
+            })
+            .collect();
+    }
+    (definition, page)
+}
+
+/// `clocking_record` with C a Ø`pin` dowel hole turned `pin_turn` about the
+/// bore from its nominal place.
+fn pin_record(bore: f64, pin: f64, pin_turn: f64, turn: f64, t: [f64; 2]) -> InspectionRecord {
+    let mut record = clocking_record(bore, 8.0, turn, t);
+    let (s, c) = pin_turn.sin_cos();
+    record.datum_features[2] = measured("C", hole([HOLE[0] - 25.0 * s, HOLE[1] + 25.0 * c], pin));
+    record
+}
+
+#[test]
+fn a_tertiary_hole_clocks_and_turns_a_plane_axis_frame() {
+    use DatumMaterialBoundary::{Maximum, Regardless};
+    let lever = 15.0_f64.hypot(10.0);
+    let (definition, page) = pin_setup(&["A", "B", "C"], Regardless, Regardless);
+    let graph = graph_of(&definition);
+    // The dowel hole and the pattern turned together: the frame follows.
+    let report = page
+        .evaluate_inspection(&graph, &pin_record(10.0, 6.0, 0.002, 0.002, [0.0; 2]))
+        .unwrap();
+    for i in 0..4 {
+        let m = evaluated(&report, &format!("hole{i}"));
+        assert!(m.deviation_mm < 1e-6 && m.conforms, "{m:?}");
+    }
+    // The pattern turned 1.5 mrad against a dowel hole in place.
+    let record = pin_record(10.0, 6.0, 0.0, 0.0015, [0.0; 2]);
+    let report = page.evaluate_inspection(&graph, &record).unwrap();
+    let m = evaluated(&report, "hole0");
+    assert!(
+        (m.deviation_mm - 4.0 * lever * 0.00075_f64.sin()).abs() < 1e-6,
+        "{m:?}"
+    );
+    assert_eq!(m.datum_shift_rotation_rad, 0.0);
+    // At MMB a Ø6.0 hole clears its Ø5.9 boundary by 0.05 mm, which at
+    // 25 mm lets the frame turn 2 mrad: the 1.5 mrad turn is taken up.
+    let (_, mmb) = pin_setup(&["A", "B", "C"], Regardless, Maximum);
+    let report = mmb.evaluate_inspection(&graph, &record).unwrap();
+    for i in 0..4 {
+        let m = evaluated(&report, &format!("hole{i}"));
+        assert!(m.deviation_mm < 1e-4 && m.conforms, "{m:?}");
+        assert!(
+            (m.datum_shift_rotation_rad.abs() - 0.0015).abs() < 1e-5,
+            "{m:?}"
+        );
+        assert!(m.datum_shift_mm < 1e-9, "{m:?}");
+    }
+    // Turned 3 mrad, the boundary meets the hole after 2·asin(0.05/50).
+    let report = mmb
+        .evaluate_inspection(&graph, &pin_record(10.0, 6.0, 0.0, 0.003, [0.0; 2]))
+        .unwrap();
+    let m = evaluated(&report, "hole0");
+    let limit = 2.0 * (0.05_f64 / 50.0).asin();
+    assert!(
+        (m.datum_shift_rotation_rad.abs() - limit).abs() < 1e-6,
+        "{m:?}"
+    );
+    let expected = 4.0 * lever * (0.5 * (0.003 - limit)).sin();
+    assert!((m.deviation_mm - expected).abs() < 1e-5, "{m:?} {expected}");
+    // With the bore at MMB too, a 0.05 mm move and the turn are both taken
+    // up (the boundary moves 0.05 − 0.0375 mm), but not a move the other way.
+    let (_, both) = pin_setup(&["A", "B", "C"], Maximum, Maximum);
+    let report = both
+        .evaluate_inspection(&graph, &pin_record(10.06, 6.0, 0.0, 0.0015, [0.05, 0.0]))
+        .unwrap();
+    let m = evaluated(&report, "hole0");
+    assert!(m.deviation_mm < 1e-4, "{m:?}");
+    assert!((m.datum_shift_mm - 0.05).abs() < 1e-4, "{m:?}");
+    let report = both
+        .evaluate_inspection(&graph, &pin_record(10.06, 6.0, 0.0, 0.0015, [-0.05, 0.0]))
+        .unwrap();
+    assert!(evaluated(&report, "hole0").deviation_mm > 1e-3);
+    // A dowel hole smaller than its MMB violates the boundary.
+    let report = mmb
+        .evaluate_inspection(&graph, &pin_record(10.0, 5.85, 0.0, 0.0, [0.0; 2]))
+        .unwrap();
+    assert!(
+        matches!(
+            &report.controls[0].result,
+            ControlResult::NotEvaluated(r) if r.contains("violates its maximum material boundary")
+        ),
+        "{:?}",
+        report.controls[0]
+    );
+}
+
+#[test]
+fn a_hole_clocks_a_primary_datum_axis() {
+    use DatumMaterialBoundary::{Maximum, Regardless};
+    let lever = 15.0_f64.hypot(10.0);
+    let (definition, page) = pin_setup(&["B", "A", "C"], Regardless, Regardless);
+    let graph = graph_of(&definition);
+    let report = page
+        .evaluate_inspection(&graph, &pin_record(10.0, 6.0, 0.002, 0.002, [0.0; 2]))
+        .unwrap();
+    for i in 0..4 {
+        let m = evaluated(&report, &format!("hole{i}"));
+        assert!(m.deviation_mm < 1e-6 && m.conforms, "{m:?}");
+    }
+    let report = page
+        .evaluate_inspection(&graph, &pin_record(10.0, 6.0, 0.0, 0.0015, [0.0; 2]))
+        .unwrap();
+    let m = evaluated(&report, "hole0");
+    assert!(
+        (m.deviation_mm - 4.0 * lever * 0.00075_f64.sin()).abs() < 1e-6,
+        "{m:?}"
+    );
+    // Bore and dowel hole both at MMB: the axis shifts and the frame turns,
+    // positive about the bore's +z axis.
+    let (_, both) = pin_setup(&["B", "A", "C"], Maximum, Maximum);
+    let report = both
+        .evaluate_inspection(&graph, &pin_record(10.06, 6.0, 0.0, 0.0015, [0.05, 0.0]))
+        .unwrap();
+    for i in 0..4 {
+        let m = evaluated(&report, &format!("hole{i}"));
+        assert!(m.deviation_mm < 1e-4, "{m:?}");
+        assert!((m.datum_shift_mm - 0.05).abs() < 1e-4, "{m:?}");
+        assert!((m.datum_shift_rotation_rad - 0.0015).abs() < 1e-4, "{m:?}");
+    }
+    let report = both
+        .evaluate_inspection(&graph, &pin_record(10.06, 6.0, 0.0, 0.0015, [-0.05, 0.0]))
+        .unwrap();
+    assert!(evaluated(&report, "hole0").deviation_mm > 1e-3);
+}
+
 /// Four pattern holes with composite position: Ø`upper` to A | B | C (the
 /// plate's three planes), refined to Ø`lower` relating the pattern with
 /// `lower_datums` (a prefix of A, B, C).

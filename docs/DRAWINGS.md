@@ -1040,11 +1040,13 @@ Datum simulators follow the precedence order:
   plane point, normal, mating width).
 - **Plane, axis, plane frames (schema 137):** a primary plane A, a
   secondary axis datum feature of size B normal to it, and an optional
-  tertiary plane C form a frame. Its origin is where B's axis meets A, z runs
-  along A's normal, and C's normal projected into A gives x. The tertiary
-  simulator turns only about A's normal, so C only clocks rotation about B.
-  Without C, only features coaxial with B can be located, since rotation
-  about B is free.
+  tertiary plane or hole/pin C form a frame. Its origin is where B's axis
+  meets A, z runs along A's normal, and x is C's normal projected into A or,
+  for a hole or pin, the direction from B's axis to C's. A tertiary plane
+  turns only about A's normal; a tertiary hole or pin is simulated by its
+  mating envelope held normal to A (the circle in A's plane). Either way C
+  only clocks rotation about B. Without C, only features coaxial with B can
+  be located, since rotation about B is free.
 - **Common datum plane (schema 136):** coplanar members `A-B` share one
   simulator, the constrained-L∞ plane over the union of their points. It
   contacts the high points of both surfaces at once. It can take any plane
@@ -1150,6 +1152,12 @@ measured faces exactly rather than through a single departure value.
   axis. C's pair passes through B at its basic offset; how far the frame can
   turn depends on the clearance and on how far the slot lies from B. B at MMB
   or LMB adds its own translation, and C's pair moves with it.
+  A tertiary hole or pin C at a boundary does the same: its boundary
+  cylinder, at C's basic place from B, moves with the frame and must stay
+  within half C's departure of C's measured mating axis (the
+  minimum-material axis at LMB), as for a shifting secondary bore. This is
+  exact for C of perfect form, and the frame can turn about as far as that
+  clearance over C's distance from B.
 - **Width shift:** in a frame of three planes, a secondary or tertiary width
   at a boundary lets the origin move along its normal. A secondary width at a
   boundary also lets the frame turn, so its tertiary must then be a width at
@@ -1165,7 +1173,9 @@ kind, in either order:
   is where it meets the axis. Zones parallel to A do not depend on it.
 - **Clock:** a plane parallel to A (a flat, or a slot or tab width) turns only
   about A's simulator axis, as a contacting plane or the width's mating
-  center plane. Its normal gives the frame's x axis. Without a clock, only
+  center plane, and its normal gives the frame's x axis. A hole or pin
+  parallel to A clocks it too: its mating envelope is held parallel to A's
+  simulator, and x runs from A's axis toward its axis. Without a clock, only
   features coaxial with A can be located, since rotation about A is free.
 
 The report lists a named frame B | A | C (axis, stop, clock) under
@@ -1185,8 +1195,10 @@ feature's departure from the boundary (the same clearance as a secondary
 axis). This is exact for a datum feature of perfect form; form error does
 not restrict the motion further. A clocking width at MMB or LMB lets the
 frame turn about A while its boundary pair, at its basic offset from A and
-moving with A's ends, stays clear of the measured faces. A clock regardless
-of material boundary, or a contacting plane, fixes the turn. Controls with
+moving with A's ends, stays clear of the measured faces. A clocking hole or
+pin at MMB or LMB lets it turn as in a plane-axis frame, its boundary
+cylinder moving with A's axis at the middle of its measured length. A clock
+regardless of material boundary, or a contacting plane, fixes the turn. Controls with
 the same datum references share one motion, chosen by the same active-set
 min-max LP in the ends and the turn (relinearized in the turn). They report
 the larger end displacement as `datum_shift_mm` and, as
@@ -1379,7 +1391,9 @@ moved 0.05 mm share one translation and rotation in 0.17 s. 10,000 position
 controls on bands coaxial with a primary datum bore at MMB share one shift of
 its axis in 0.23 s. Located B(MMB) | A | C(MMB) instead, from the bore as
 primary axis stopped by the face and clocked by the slot, the turned and
-moved pattern shares one axis shift and turn in 0.24 s. All four cases have
+moved pattern shares one axis shift and turn in 0.24 s. Clocked instead by a
+Ø6.06 dowel hole at MMB 25 mm from the bore (A | B(MMB) | C(MMB)), the same
+pattern shares one translation and rotation in 0.18 s. All five cases have
 0.5 s budgets. 10,000 composite position controls in
 100 patterns of 100 evaluate in 0.19 s (1 s budget). Ten patterns with a
 0.1 mm outlier fail their relating fit. 10,000 composite surface profiles on
@@ -1392,8 +1406,8 @@ regenerate the part once and project every point onto the named side face in
 takes 0.20 s (1 s budget).
 
 **Not yet covered.** Datum shift of common axes; features at an angle to a
-primary datum axis; clocking a primary datum axis with a hole or pin;
-composite position to a primary datum axis; rotational shift from a tertiary hole or pin; a tertiary plane
+primary datum axis; composite position to a primary datum axis; a tertiary
+hole or pin's form error limiting its rotational shift; a tertiary plane
 re-contacting as a shifting secondary width turns; common width datums; the separate requirement
 (`SEP REQT`); boundaries
 enlarged by geometric tolerances; simultaneous-contact common axis simulators,

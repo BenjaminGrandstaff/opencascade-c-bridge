@@ -98,6 +98,38 @@ pub(super) struct ShiftSpace {
     /// A primary datum axis feature's measured extent along the axis, where
     /// the simulator's ends float within `disk`.
     pub span: Option<[f64; 2]>,
+    pub pins: Vec<PinBoundary>,
+}
+
+/// A clocking hole or pin referenced at a material boundary: the boundary
+/// cylinder at the datum's basic location moves with the frame and must
+/// stay within `limit` of the measured envelope's axis (half the datum's
+/// departure from the boundary; exact for a datum of perfect form).
+#[derive(Clone, Debug, PartialEq)]
+pub(super) struct PinBoundary {
+    /// Basic and measured (mating, or minimum-material at LMB) axis
+    /// positions in the measured frame before any motion.
+    pub basic: [f64; 2],
+    pub center: [f64; 2],
+    pub limit: f64,
+    /// Position along a primary datum axis (the frame's z).
+    pub along: f64,
+}
+impl PinBoundary {
+    /// Offset of the moved boundary from the measured axis, with the turn
+    /// rate of the boundary's position.
+    fn offset(&self, t: [f64; 2], angle: f64) -> ([f64; 2], [f64; 2]) {
+        let q = turn(self.basic, angle);
+        (
+            [q[0] + t[0] - self.center[0], q[1] + t[1] - self.center[1]],
+            [-q[1], q[0]],
+        )
+    }
+}
+
+/// Bound of a 256-gon inscribed in a disk of radius `limit`.
+fn inscribed(limit: f64) -> f64 {
+    limit * (std::f64::consts::PI / SIDES as f64).cos()
 }
 impl ShiftSpace {
     /// Free translation, and rotation when `rotate`: a composite pattern's
@@ -209,6 +241,15 @@ fn motion_lp(members: &[PatternMember], space: &ShiftSpace) -> Motion {
                     } else {
                         width.half_width - side * value
                     },
+                );
+            }
+        }
+        for pin in &space.pins {
+            let (e, q) = pin.offset(motion.t, motion.angle);
+            for u in &directions {
+                push(
+                    [u[0], u[1], u[0] * q[0] + u[1] * q[1], 0.0, 0.0, 0.0, 0.0],
+                    inscribed(pin.limit) - u[0] * e[0] - u[1] * e[1],
                 );
             }
         }
@@ -453,6 +494,20 @@ fn axis_motion_lp(members: &[AxialMember], space: &ShiftSpace, span: [f64; 2]) -
                 );
             }
         }
+        for pin in &space.pins {
+            let (e, q) = pin.offset(motion.at(pin.along, span), motion.angle);
+            for u in &directions {
+                push(
+                    row(
+                        [u[0], u[1]],
+                        weight(pin.along, span),
+                        u[0] * q[0] + u[1] * q[1],
+                        0.0,
+                    ),
+                    inscribed(pin.limit) - u[0] * e[0] - u[1] * e[1],
+                );
+            }
+        }
         let current = [
             motion.ends[0][0],
             motion.ends[0][1],
@@ -548,6 +603,16 @@ impl Context<'_, '_> {
         for (i, (datum, simulator)) in datums.iter().zip(&simulators).enumerate().skip(1) {
             let shifts = datum.boundary != DatumMaterialBoundary::Regardless;
             match simulator {
+                Simulator::Axis(origin, ..) if i == 2 => {
+                    // A tertiary hole or pin clocks the plane-axis frame.
+                    if shifts {
+                        let pin =
+                            self.pin_boundary(datum, simulator, *origin, measured, nominal)?;
+                        space.pins.push(pin);
+                    } else {
+                        space.rotation_fixed = true;
+                    }
+                }
                 Simulator::Axis(.., limit) if *limit > 0.0 => {
                     space.disk = Some(*limit);
                     space.limit += limit;
@@ -629,8 +694,17 @@ impl Context<'_, '_> {
             ..ShiftSpace::default()
         };
         for (datum, simulator) in datums.iter().zip(simulators).skip(1) {
-            let Simulator::Plane(_, normal, width) = simulator else {
-                continue;
+            let (normal, width) = match simulator {
+                Simulator::Plane(_, normal, width) => (normal, width),
+                Simulator::Axis(origin, ..) => {
+                    if datum.boundary != DatumMaterialBoundary::Regardless {
+                        let pin =
+                            self.pin_boundary(datum, simulator, *origin, measured, nominal)?;
+                        space.pins.push(pin);
+                        space.rotation_fixed = false;
+                    }
+                    continue;
+                }
             };
             if datum.boundary == DatumMaterialBoundary::Regardless
                 || dot(*normal, measured.z_axis).abs() > 0.5
@@ -648,6 +722,45 @@ impl Context<'_, '_> {
             space.rotation_fixed = false;
         }
         Ok(space)
+    }
+
+    /// The boundary of a clocking hole or pin at a material boundary: its
+    /// basic place in `nominal`, its measured axis (`origin`) in `measured`
+    /// at the middle of its measured extent along z, and its limit.
+    fn pin_boundary(
+        &self,
+        datum: &DrawingDatumReference,
+        simulator: &Simulator,
+        origin: Vec3,
+        measured: &DrawingDatumCoordinateFrame,
+        nominal: &DrawingDatumCoordinateFrame,
+    ) -> Result<PinBoundary, String> {
+        let Simulator::Axis(.., limit) = simulator else {
+            unreachable!("axis simulator");
+        };
+        let id = datum.datum_feature.as_str();
+        let ResolvedDatum::Axis { origin: basic, .. } =
+            self.nominal(&self.features[id].attachment.anchor)?
+        else {
+            return Err(format!("datum feature '{id}' has no axis geometry"));
+        };
+        let basic = nominal.coordinates_mm(basic).map_err(|e| e.to_string())?;
+        let center = measured.coordinates_mm(origin).map_err(|e| e.to_string())?;
+        let (lo, hi) = self.measured_datums[id].iter().try_fold(
+            (f64::INFINITY, f64::NEG_INFINITY),
+            |(lo, hi), &p| {
+                measured
+                    .coordinates_mm(p)
+                    .map(|c| (lo.min(c.z), hi.max(c.z)))
+                    .map_err(|e| e.to_string())
+            },
+        )?;
+        Ok(PinBoundary {
+            basic: [basic.x, basic.y],
+            center: [center.x, center.y],
+            limit: *limit,
+            along: 0.5 * (lo + hi),
+        })
     }
 
     /// The boundary pair of a width datum feature of size and half its

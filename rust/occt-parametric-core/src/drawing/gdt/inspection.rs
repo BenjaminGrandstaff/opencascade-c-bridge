@@ -933,10 +933,10 @@ impl Context<'_, '_> {
         }
         if prefix.iter().any(|s| match s {
             Simulator::Plane(_, n, _) => (dot(*n, axis).abs() > 0.5) == stop,
-            Simulator::Axis(..) => true,
+            Simulator::Axis(..) => !stop,
         }) {
             return Err(
-                "a primary datum axis is followed by at most one perpendicular and one parallel plane datum"
+                "a primary datum axis is followed by at most one perpendicular and one parallel datum"
                     .into(),
             );
         }
@@ -983,9 +983,27 @@ impl Context<'_, '_> {
         let direction = unit(direction).map_err(|e| e.to_string())?;
         let mut measured = (origin, None);
         let mut nominal = (nominal_origin, None);
+        let across = |v: Vec3, axis: Vec3| {
+            unit(subtract(v, scale(axis, dot(v, axis))))
+                .map_err(|_| "a clocking datum axis lies on the primary datum axis".to_string())
+        };
         for (datum, simulator) in datums.iter().zip(&simulators).skip(1) {
-            let Simulator::Plane(point, normal, _) = simulator else {
-                continue;
+            let (point, normal) = match simulator {
+                Simulator::Plane(point, normal, _) => (point, normal),
+                // A clocking hole or pin: x runs from the axis toward it.
+                Simulator::Axis(point, ..) => {
+                    let ResolvedDatum::Axis { origin: clock, .. } = self.nominal(
+                        &self.features[datum.datum_feature.as_str()]
+                            .attachment
+                            .anchor,
+                    )?
+                    else {
+                        return Err("clocking datum axis has no axis geometry".into());
+                    };
+                    measured.1 = Some(across(subtract(*point, origin), axis)?);
+                    nominal.1 = Some(across(subtract(clock, nominal_origin), direction)?);
+                    continue;
+                }
             };
             let (plane_origin, plane_normal) = self.nominal_datum(&datum.datum_feature)?;
             if dot(*normal, axis).abs() > 0.5 {
@@ -1124,10 +1142,25 @@ impl Context<'_, '_> {
                 };
                 Ok(Simulator::Axis(origin, direction, vec![size], limit))
             }
-            [Simulator::Plane(point, normal, _)] => {
+            // After a primary plane (secondary, or tertiary clocking a
+            // plane-axis frame) the axis is held normal to the plane; after
+            // a primary axis it clocks the frame, held parallel to that axis.
+            [Simulator::Plane(point, normal, _)]
+            | [Simulator::Plane(point, normal, _), Simulator::Axis(..)]
+            | [Simulator::Axis(point, normal, ..)]
+            | [Simulator::Axis(point, normal, ..), Simulator::Plane(..)] => {
                 if length(cross(nominal, *normal)) > 1e-9 {
+                    return Err(match prefix[0] {
+                        Simulator::Plane(..) => "an axis datum after a primary plane must be nominally perpendicular to it",
+                        Simulator::Axis(..) => "an axis datum after a primary datum axis must be nominally parallel to it",
+                    }
+                    .into());
+                }
+                if let [Simulator::Axis(..), Simulator::Plane(_, n, _)] = prefix
+                    && dot(*n, *normal).abs() < 0.5
+                {
                     return Err(
-                        "a secondary axis datum must be nominally perpendicular to the primary plane"
+                        "a primary datum axis is followed by at most one perpendicular and one parallel datum"
                             .into(),
                     );
                 }
@@ -1146,7 +1179,8 @@ impl Context<'_, '_> {
                 Ok(Simulator::Axis(origin, *normal, vec![2.0 * radius], limit))
             }
             _ => Err(
-                "axis datums are evaluated as the primary datum or after one primary plane".into(),
+                "axis datums are evaluated as the primary datum, after a primary plane or axis, or clocking a plane-axis frame"
+                    .into(),
             ),
         }
     }

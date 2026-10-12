@@ -672,6 +672,8 @@ pub(crate) enum ShiftFrame {
     /// B(M) | A | C(M): the bore as primary axis, stopped by the face and
     /// clocked by the slot.
     AxisSlot,
+    /// A | B(M) | C(M): a face, a bore and a dowel hole 25 mm from it.
+    Pin,
 }
 
 pub(crate) fn datum_shift_case(definition: &FamilyDefinition, frame: ShiftFrame) -> Outcome {
@@ -687,6 +689,9 @@ pub(crate) fn datum_shift_case(definition: &FamilyDefinition, frame: ShiftFrame)
             ShiftFrame::AxisSlot => format!(
                 "inspection: {CONTROLS} position controls off a primary bore axis clocked by a slot at MMB"
             ),
+            ShiftFrame::Pin => format!(
+                "inspection: {CONTROLS} position controls with bore and dowel hole MMB shift and rotation"
+            ),
         },
         Duration::from_millis(500),
         Expectation::Required,
@@ -698,6 +703,13 @@ pub(crate) fn datum_shift_case(definition: &FamilyDefinition, frame: ShiftFrame)
                 plane("bottom", [0.0; 3], [0.0, 0.0, -1.0]),
                 plane("front", [0.0; 3], [0.0, -1.0, 0.0]),
                 plane("slot", [bore[0], bore[1], 0.0], [1.0, 0.0, 0.0]),
+                DatumDefinition {
+                    id: "pin".into(),
+                    kind: DatumKind::Axis {
+                        origin: literal([bore[0], bore[1] + 25.0, 0.0]),
+                        direction: VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, 1.0)),
+                    },
+                },
                 DatumDefinition {
                     id: "bore".into(),
                     kind: DatumKind::Axis {
@@ -787,7 +799,16 @@ pub(crate) fn datum_shift_case(definition: &FamilyDefinition, frame: ShiftFrame)
                         "bore",
                         Some(limits(FeatureOfSizeKind::Internal, 9.9, 10.1)),
                     ),
-                    if slot {
+                    if frame == ShiftFrame::Pin {
+                        DrawingDatumFeature {
+                            size_kind: Some(FeatureOfSizeKind::Internal),
+                            ..feature(
+                                "C",
+                                "pin",
+                                Some(limits(FeatureOfSizeKind::Internal, 5.9, 6.1)),
+                            )
+                        }
+                    } else if slot {
                         DrawingDatumFeature {
                             size_kind: Some(FeatureOfSizeKind::Internal),
                             feature_of_size: true,
@@ -892,7 +913,10 @@ pub(crate) fn datum_shift_case(definition: &FamilyDefinition, frame: ShiftFrame)
                     MeasuredFeature {
                         nominals: Vec::new(),
                         id: "C".into(),
-                        points_mm: if slot {
+                        // A Ø6.06 dowel hole clears its MMB by 0.08 mm.
+                        points_mm: if frame == ShiftFrame::Pin {
+                            circle([bore[0], bore[1] + 25.0], 3.03)
+                        } else if slot {
                             walls
                         } else {
                             grid(400, |u, v| [side * u, 0.0, 10.0 * v])
