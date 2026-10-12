@@ -233,6 +233,7 @@ fn measured(id: &str, points_mm: Vec<[f64; 3]>) -> MeasuredFeature {
 /// Exact datum and feature surfaces of the nominal plate.
 pub(super) fn nominal_record() -> InspectionRecord {
     InspectionRecord {
+        uncertainty: None,
         drawing: "plate".into(),
         surface_textures: Vec::new(),
         datum_features: vec![
@@ -562,6 +563,7 @@ fn size_limits_validate_persist_and_inspection_records_round_trip() {
             .is_none()
     );
     let record = InspectionRecord {
+        uncertainty: None,
         drawing: "plate".into(),
         surface_textures: Vec::new(),
         datum_features: vec![measured("A", vec![[0.5, -2.0, 1e6]])],
@@ -632,6 +634,7 @@ fn round_page() -> DrawingDefinition {
 
 fn round_record(round: Vec<[f64; 3]>, straight: Vec<[f64; 3]>) -> InspectionRecord {
     InspectionRecord {
+        uncertainty: None,
         drawing: "plate".into(),
         surface_textures: Vec::new(),
         datum_features: Vec::new(),
@@ -751,6 +754,7 @@ fn runout_page(
 
 fn runout_record(datum: Vec<[f64; 3]>, surface: Vec<[f64; 3]>) -> InspectionRecord {
     InspectionRecord {
+        uncertainty: None,
         drawing: "plate".into(),
         surface_textures: Vec::new(),
         datum_features: vec![
@@ -1019,6 +1023,7 @@ fn common_datum_axis_joins_the_midpoints_of_both_journal_envelopes() {
         |_| 8.0,
     );
     let record = InspectionRecord {
+        uncertainty: None,
         drawing: "plate".into(),
         surface_textures: Vec::new(),
         datum_features: vec![measured("A2", f), measured("B", b)],
@@ -1071,6 +1076,7 @@ fn common_datum_plane_contacts_both_pads_at_once() {
     // The common simulator's minimum-zone orientation rises 0.01 mm per
     // 40 mm, so a perfectly flat top reads 60 · 0.00025 = 0.015 mm.
     let record = InspectionRecord {
+        uncertainty: None,
         drawing: "plate".into(),
         surface_textures: Vec::new(),
         datum_features: vec![
@@ -1204,6 +1210,7 @@ fn shift_setup(boundary: DatumMaterialBoundary) -> (FamilyDefinition, DrawingDef
 /// holes displaced by `offsets[i]` from their true positions.
 fn shift_record(bore: f64, offsets: [[f64; 2]; 4]) -> InspectionRecord {
     InspectionRecord {
+        uncertainty: None,
         drawing: "plate".into(),
         surface_textures: Vec::new(),
         datum_features: vec![
@@ -2433,4 +2440,98 @@ fn runout_controls_take_surfaces_and_nominals() {
     flat.feature_control_frames[0].datums.clear();
     let error = flat.validate(&graph).unwrap_err().message;
     assert!(error.contains("profile and runout controls"), "{error}");
+}
+
+fn uncertain(expanded: f64, rule: DecisionRule) -> Option<MeasurementUncertainty> {
+    Some(MeasurementUncertainty {
+        expanded_mm: expanded,
+        rule,
+        controls: BTreeMap::new(),
+    })
+}
+
+/// The top face profile (0.1 mm to A) raised `raise` mm, under `uncertainty`.
+fn decided(raise: f64, uncertainty: Option<MeasurementUncertainty>) -> ControlMeasurement {
+    let (definition, _) = shift_setup(DatumMaterialBoundary::Regardless);
+    let graph = graph_of(&definition);
+    let mut page = page();
+    page.feature_control_frames = vec![top_profile(0.1, &["A"])];
+    let mut record = nominal_record();
+    record.controls = vec![top(|_| 10.0 + raise)];
+    record.uncertainty = uncertainty;
+    evaluated(
+        &page.evaluate_inspection(&graph, &record).unwrap(),
+        "top_profile",
+    )
+}
+
+#[test]
+fn decision_rules_apply_the_expanded_uncertainty() {
+    use DecisionRule::*;
+    // 0.09 mm against 0.1 with U = 0.02: inside, but within U of the limit.
+    let simple = decided(0.045, uncertain(0.02, SimpleAcceptance));
+    assert!(simple.conforms && simple.indeterminate, "{simple:?}");
+    assert_eq!(simple.uncertainty_mm, 0.02);
+    let guarded = decided(0.045, uncertain(0.02, GuardedAcceptance));
+    assert!(!guarded.conforms && guarded.indeterminate);
+    // 0.11 fails simply, but nonconformance is not proven.
+    assert!(!decided(0.055, uncertain(0.02, SimpleAcceptance)).conforms);
+    let rejection = decided(0.055, uncertain(0.02, GuardedRejection));
+    assert!(rejection.conforms && rejection.indeterminate);
+    // Far from the limit the rules agree and nothing is indeterminate.
+    for rule in [SimpleAcceptance, GuardedAcceptance, GuardedRejection] {
+        let m = decided(0.01, uncertain(0.02, rule));
+        assert!(m.conforms && !m.indeterminate, "{rule:?}");
+        assert!(!decided(0.09, uncertain(0.02, rule)).conforms, "{rule:?}");
+    }
+    // Without a record uncertainty, results are unchanged.
+    let plain = decided(0.045, None);
+    assert!(plain.conforms && !plain.indeterminate && plain.uncertainty_mm == 0.0);
+    // A per-control U overrides the record's.
+    let mut exact = uncertain(0.02, GuardedAcceptance).unwrap();
+    exact.controls.insert("top_profile".into(), 0.0);
+    let m = decided(0.045, Some(exact));
+    assert!(m.conforms && !m.indeterminate && m.uncertainty_mm == 0.0);
+}
+
+#[test]
+fn guarded_decisions_cover_composite_segments_and_validate() {
+    let (definition, page) = composite_page(0.2, 0.04, &["A"]);
+    let graph = graph_of(&definition);
+    // The lower segment reads ~0 against 0.04, the upper ~0.13 against 0.2.
+    let mut record = composite_record([0.06, 0.02], 0.001, [[0.0; 2]; 4]);
+    record.uncertainty = uncertain(0.039, DecisionRule::GuardedAcceptance);
+    let m = evaluated(&page.evaluate_inspection(&graph, &record).unwrap(), "hole0");
+    assert!(m.conforms && m.refinement.unwrap().conforms);
+    record.uncertainty = uncertain(0.041, DecisionRule::GuardedAcceptance);
+    let m = evaluated(&page.evaluate_inspection(&graph, &record).unwrap(), "hole0");
+    let lower = m.refinement.clone().unwrap();
+    assert!(!lower.conforms && !m.conforms && m.indeterminate, "{m:?}");
+    // Bad uncertainties fail the record; records round-trip.
+    for (expanded, control, reason) in [
+        (-0.01, None, "finite and nonnegative"),
+        (f64::NAN, None, "finite and nonnegative"),
+        (0.01, Some(("hole0", -1.0)), "finite and nonnegative"),
+        (0.01, Some(("missing", 0.01)), "unknown control 'missing'"),
+    ] {
+        let mut bad = uncertain(expanded, DecisionRule::GuardedRejection).unwrap();
+        if let Some((id, u)) = control {
+            bad.controls.insert(id.into(), u);
+        }
+        record.uncertainty = Some(bad);
+        let error = page
+            .evaluate_inspection(&graph, &record)
+            .unwrap_err()
+            .message;
+        assert!(error.contains(reason), "{error}");
+    }
+    let mut good = uncertain(0.004, DecisionRule::GuardedRejection).unwrap();
+    good.controls.insert("hole1".into(), 0.006);
+    record.uncertainty = Some(good);
+    let json = serde_json::to_string(&record).unwrap();
+    assert!(json.contains("\"guarded_rejection\""));
+    assert_eq!(
+        serde_json::from_str::<InspectionRecord>(&json).unwrap(),
+        record
+    );
 }

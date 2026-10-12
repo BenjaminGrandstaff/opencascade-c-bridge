@@ -41,6 +41,9 @@ struct MeasuredPoints {
     controls: Vec<MeasuredFeature>,
     #[serde(default)]
     surface_textures: Vec<MeasuredTexture>,
+    /// Expanded uncertainty and decision rule for the group's controls.
+    #[serde(default)]
+    uncertainty: Option<MeasurementUncertainty>,
 }
 #[derive(Default, Serialize)]
 struct Summary {
@@ -52,6 +55,8 @@ struct Summary {
     controls_conforming: usize,
     controls_nonconforming: usize,
     controls_not_evaluated: usize,
+    /// Evaluated controls within U of a limit, also counted above.
+    controls_indeterminate: usize,
 }
 impl Summary {
     fn failed(&self) -> bool {
@@ -71,6 +76,9 @@ impl Summary {
             }
         }
         for control in &report.controls {
+            if matches!(&control.result, ControlResult::Evaluated(m) if m.indeterminate) {
+                self.controls_indeterminate += 1;
+            }
             match &control.result {
                 ControlResult::Evaluated(m) if m.conforms => self.controls_conforming += 1,
                 ControlResult::Evaluated(_) => self.controls_nonconforming += 1,
@@ -185,6 +193,7 @@ fn evaluate(document: &ModelDocument, setup: &Setup) -> Result<Report, Box<dyn E
         let (controls, surface_textures) = match &request.points {
             Some(points) => {
                 let record = InspectionRecord {
+                    uncertainty: points.uncertainty.clone(),
                     drawing: request.drawing.clone(),
                     datum_features: points.datum_features.clone(),
                     controls: points.controls.clone(),

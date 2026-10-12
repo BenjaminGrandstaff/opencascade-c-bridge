@@ -50,6 +50,49 @@ pub struct InspectionRecord {
     /// Measured roughness values by drawing surface texture ID.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub surface_textures: Vec<MeasuredTexture>,
+    /// Measurement uncertainty and the decision rule that applies it to every
+    /// evaluated control; without it, results use simple acceptance.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub uncertainty: Option<MeasurementUncertainty>,
+}
+
+/// Expanded measurement uncertainty U of each control's measured deviation,
+/// as the measuring process reports it (usually with coverage factor k = 2),
+/// and the rule deciding conformance with it (ISO 14253-1, ASME B89.7.3.1).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MeasurementUncertainty {
+    pub expanded_mm: f64,
+    #[serde(default)]
+    pub rule: DecisionRule,
+    /// U by control ID where it differs from `expanded_mm`.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub controls: BTreeMap<String, f64>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DecisionRule {
+    /// Conforms when the deviation is within the allowed zone; U is
+    /// reported but not applied (shared risk).
+    #[default]
+    SimpleAcceptance,
+    /// Conforms only when the deviation plus U is within the zone, proving
+    /// conformance as a supplier must.
+    GuardedAcceptance,
+    /// Fails only when the deviation minus U exceeds the zone, proving
+    /// nonconformance as a customer must to reject.
+    GuardedRejection,
+}
+
+impl DecisionRule {
+    fn conforms(self, deviation: f64, allowed: f64, uncertainty: f64) -> bool {
+        match self {
+            Self::SimpleAcceptance => deviation <= allowed,
+            Self::GuardedAcceptance => deviation + uncertainty <= allowed,
+            Self::GuardedRejection => deviation - uncertainty <= allowed,
+        }
+    }
 }
 
 /// Roughness readings for one surface texture requirement, each in the
@@ -108,6 +151,33 @@ pub struct ControlMeasurement {
     pub refinement: Option<RefinementMeasurement>,
     /// Surface profile detail (schema 139).
     pub profile: Option<ProfileMeasurement>,
+    /// Expanded uncertainty the record's decision rule applied (zero without
+    /// one).
+    pub uncertainty_mm: f64,
+    /// A segment's deviation lies within U of its allowed zone, so the
+    /// measurement alone proves neither conformance nor nonconformance.
+    pub indeterminate: bool,
+}
+
+impl ControlMeasurement {
+    /// Decides both segments under `rule` with uncertainty `u`. Size
+    /// conformance is kept as measured.
+    fn decide(&mut self, rule: DecisionRule, u: f64) {
+        let near = |deviation: f64, allowed: f64| u > 0.0 && (deviation - allowed).abs() < u;
+        let allowed = self.tolerance_mm + self.bonus_mm;
+        let mut conforms =
+            self.size_conforms.unwrap_or(true) && rule.conforms(self.deviation_mm, allowed, u);
+        let mut indeterminate = near(self.deviation_mm, allowed);
+        if let Some(refined) = &mut self.refinement {
+            let allowed = refined.tolerance_mm + refined.bonus_mm;
+            refined.conforms = rule.conforms(refined.deviation_mm, allowed, u);
+            conforms &= refined.conforms;
+            indeterminate |= near(refined.deviation_mm, allowed);
+        }
+        self.conforms = conforms;
+        self.indeterminate = indeterminate;
+        self.uncertainty_mm = u;
+    }
 }
 
 /// Measured surface profile. Deviations are signed along the nominal outward
@@ -184,7 +254,7 @@ pub struct InspectionReport {
 
 impl InspectionReport {
     /// True only when every control and surface texture was evaluated and
-    /// conforms.
+    /// conforms (under the record's decision rule).
     pub fn conforms(&self) -> bool {
         self.controls
             .iter()
@@ -297,6 +367,24 @@ impl DrawingDefinition {
         })?;
         let measured_controls =
             measured(&record.controls, &mut total, |id| control_ids.contains(id))?;
+        if let Some(uncertainty) = &record.uncertainty {
+            let valid = |u: f64| u.is_finite() && u >= 0.0;
+            if !valid(uncertainty.expanded_mm) || !uncertainty.controls.values().all(|&u| valid(u))
+            {
+                return Err(ModelError::new(
+                    "measurement uncertainty must be finite and nonnegative",
+                ));
+            }
+            if let Some(id) = uncertainty
+                .controls
+                .keys()
+                .find(|id| !control_ids.contains(id.as_str()))
+            {
+                return Err(ModelError::new(format!(
+                    "measurement uncertainty names unknown control '{id}'"
+                )));
+            }
+        }
         let nominals = nominal_points(record, &measured_controls)?;
         if let Some(frame) = frames
             .iter()
@@ -392,7 +480,17 @@ impl DrawingDefinition {
             let result = match measured_controls.get(frame.id.as_str()) {
                 None => ControlResult::NotMeasured,
                 Some(points) => match context.evaluate(frame, points) {
-                    Ok(m) => ControlResult::Evaluated(m),
+                    Ok(mut m) => {
+                        if let Some(uncertainty) = &record.uncertainty {
+                            let u = uncertainty
+                                .controls
+                                .get(frame.id.as_str())
+                                .copied()
+                                .unwrap_or(uncertainty.expanded_mm);
+                            m.decide(uncertainty.rule, u);
+                        }
+                        ControlResult::Evaluated(m)
+                    }
                     Err(reason) => ControlResult::NotEvaluated(reason),
                 },
             };
@@ -1043,6 +1141,8 @@ impl Context<'_, '_> {
             datum_shift_limit_mm: 0.0,
             refinement: None,
             profile: None,
+            uncertainty_mm: 0.0,
+            indeterminate: false,
         })
     }
 
@@ -1103,6 +1203,8 @@ impl Context<'_, '_> {
             datum_shift_limit_mm: 0.0,
             refinement: None,
             profile: None,
+            uncertainty_mm: 0.0,
+            indeterminate: false,
         })
     }
 
@@ -1211,6 +1313,8 @@ impl Context<'_, '_> {
             datum_shift_limit_mm: 0.0,
             refinement: None,
             profile: None,
+            uncertainty_mm: 0.0,
+            indeterminate: false,
         })
     }
 
@@ -1336,6 +1440,8 @@ impl Context<'_, '_> {
             datum_shift_limit_mm: data.shift_limit,
             refinement: None,
             profile: None,
+            uncertainty_mm: 0.0,
+            indeterminate: false,
         })
         .map(|mut m| {
             if let Some(refined) = self.refinements.get(frame.id.as_str()) {

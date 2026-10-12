@@ -240,7 +240,7 @@ fn report_preserves_order_units_and_uncontrolled_states_with_violations() {
     assert_eq!(result["model_schema_version"], CURRENT_SCHEMA_VERSION);
     assert_eq!(
         result["summary"],
-        json!({"dimensions_within_limits":1,"dimensions_outside_limits":2,"dimensions_without_limits":3,"positions_within_zone":2,"positions_outside_zone":1,"controls_conforming":0,"controls_nonconforming":0,"controls_not_evaluated":0})
+        json!({"dimensions_within_limits":1,"dimensions_outside_limits":2,"dimensions_without_limits":3,"positions_within_zone":2,"positions_outside_zone":1,"controls_conforming":0,"controls_nonconforming":0,"controls_not_evaluated":0,"controls_indeterminate":0})
     );
     let dimensions = &result["drawings"][0]["dimensions"];
     assert_eq!(dimensions[1]["evaluation"]["deviation"], json!(mm(0.25)));
@@ -490,4 +490,30 @@ fn profile_surfaces_take_nominals_from_the_regenerated_part() {
         "{detail}"
     );
     assert_eq!(detail["conforms"], true);
+}
+
+#[test]
+fn guarded_acceptance_counts_indeterminate_controls() {
+    let document = fixture();
+    // Flatness 0.004 against 0.005 with U = 0.002 cannot be proven.
+    let points: Vec<[f64; 3]> = (0..=4)
+        .flat_map(|i| (0..=4).map(move |j| [2.5 * i as f64, 5.0 * j as f64, 30.0]))
+        .chain([[5.0, 10.0, 30.004]])
+        .collect();
+    let directory = Directory::new();
+    let args = inputs(
+        &directory,
+        &document,
+        &json!({"schema":"occb-inspection-setup-v1","drawings":[{"drawing":"page","points":{
+            "controls":[{"id":"flat","points_mm":points}],
+            "uncertainty":{"expanded_mm":0.002,"rule":"guarded_acceptance"}
+        }}]}),
+    );
+    assert!(run(&args).unwrap());
+    let result: Value = serde_json::from_str(&fs::read_to_string(&args[2]).unwrap()).unwrap();
+    assert_eq!(result["summary"]["controls_nonconforming"], 1);
+    assert_eq!(result["summary"]["controls_indeterminate"], 1);
+    let detail = &result["drawings"][0]["controls"][0]["result"]["detail"];
+    assert_eq!(detail["uncertainty_mm"], 0.002);
+    assert_eq!(detail["indeterminate"], true);
 }

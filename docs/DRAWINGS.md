@@ -973,7 +973,8 @@ The versioned `occb-inspection-report-v1` JSON includes the model schema version
 ordered per-drawing results and summary counts of dimensional values inside or
 outside limits, dimensions without acceptance limits, and position samples inside
 or outside their zones, and measured controls that conform, do not conform, or
-were not evaluated. Length results use mm, angles use scalar radians; output
+were not evaluated, plus how many evaluated controls are indeterminate. A
+`points` object may carry `uncertainty` as in an inspection record. Length results use mm, angles use scalar radians; output
 includes the full typed evaluation, margins, allowance and worst-sample index.
 Basic/reference/untoleranced dimensions retain their distinct dispositions and
 are counted as having no acceptance limits. No model/drawing edits, native shape
@@ -1241,6 +1242,31 @@ segment with the pattern's fitted translation and its unsigned rotation angle.
 Profile measures size as well as form and location: a uniformly oversized
 bore stays out of its zone even when it is free to move.
 
+**Measurement uncertainty and decision rules.** A record's optional
+`uncertainty` gives the expanded uncertainty U of each control's measured
+deviation, as the measuring process states it (usually with coverage factor
+k = 2), and the decision rule that applies it, following ISO 14253-1 and
+ASME B89.7.3.1:
+
+```json
+"uncertainty": {"expanded_mm": 0.004, "rule": "guarded_acceptance",
+                "controls": {"bore_profile": 0.006}}
+```
+
+- `simple_acceptance` (default): conforms when the deviation is within the
+  allowed zone (tolerance plus bonus); U is reported but not applied.
+- `guarded_acceptance`: conforms only when deviation + U is within the zone,
+  proving conformance as a supplier must.
+- `guarded_rejection`: fails only when deviation − U exceeds the zone, proving
+  nonconformance as a customer must before rejecting.
+
+`controls` overrides U by control ID. U must be finite and nonnegative, and
+unknown IDs fail the record. Each evaluated control reports `uncertainty_mm`
+and `indeterminate`, true when either segment's deviation lies within U of its
+allowed zone, so the measurement alone proves neither outcome. Composite lower
+segments are decided the same way. Size conformance and surface texture
+readings are kept as measured. The decision is one O(1) pass per control.
+
 **Report results.** Each control has one of three results:
 - `Evaluated`: deviation, tolerance, bonus, actual size and conformance.
 - `NotMeasured`: the record has no points for the control.
@@ -1296,7 +1322,8 @@ enlarged by geometric tolerances; simultaneous-contact common axis simulators,
 common axes after a primary plane, composites beyond two segments,
 reporting n× patterns as one frame on drawings, measured datum targets,
 profile datums at a material boundary, and
-straightness. Measurement uncertainty is not modeled.
+straightness. Uncertainty is supplied, not estimated from the points or the
+fit (for example by task-specific simulation).
 
 ## Surface texture (schema 71)
 

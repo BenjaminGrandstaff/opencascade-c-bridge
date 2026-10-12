@@ -232,6 +232,8 @@ impl Context<'_, '_> {
                             rotation_rad: upper_fit.rotation,
                             elements: upper_fit.elements,
                         }),
+                        uncertainty_mm: 0.0,
+                        indeterminate: false,
                     }),
                 )
             })
@@ -715,6 +717,8 @@ impl Context<'_, '_> {
             datum_shift_limit_mm: 0.0,
             refinement: None,
             profile: None,
+            uncertainty_mm: 0.0,
+            indeterminate: false,
         })
     }
 }

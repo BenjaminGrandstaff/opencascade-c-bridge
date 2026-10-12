@@ -15,10 +15,11 @@ pub(crate) mod export;
 pub mod gdt;
 pub mod guides;
 pub use gdt::{
-    ControlInspection, ControlMeasurement, ControlResult, InspectionRecord, InspectionReport,
-    MAX_INSPECTION_POINTS, MeasuredDatumAxis, MeasuredDatumFrame, MeasuredDatumWidth,
-    MeasuredFeature, MeasuredNominal, MeasuredTexture, ProfileMeasurement, RefinementMeasurement,
-    TextureInspection, TextureMeasurement, TextureResult,
+    ControlInspection, ControlMeasurement, ControlResult, DecisionRule, InspectionRecord,
+    InspectionReport, MAX_INSPECTION_POINTS, MeasuredDatumAxis, MeasuredDatumFrame,
+    MeasuredDatumWidth, MeasuredFeature, MeasuredNominal, MeasuredTexture, MeasurementUncertainty,
+    ProfileMeasurement, RefinementMeasurement, TextureInspection, TextureMeasurement,
+    TextureResult,
 };
 pub use gdt::{
     DatumMaterialBoundary, DatumPrecedence, DrawingCompositeRefinement,

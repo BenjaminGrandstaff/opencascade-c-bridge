@@ -3,12 +3,12 @@
 
 use super::*;
 use occt_parametric::{
-    ControlResult, DatumMaterialBoundary, DrawingCompositeRefinement, DrawingDatumFeature,
-    DrawingDatumReference, DrawingDatumReferenceFrame, DrawingDefinition,
+    ControlResult, DatumMaterialBoundary, DecisionRule, DrawingCompositeRefinement,
+    DrawingDatumFeature, DrawingDatumReference, DrawingDatumReferenceFrame, DrawingDefinition,
     DrawingFeatureControlFrame, DrawingGdtAttachment, DrawingSizeLimits, DrawingView,
     DrawingViewKind, FeatureOfSizeKind, GeometricCharacteristic, GeometricToleranceZone,
-    InspectionRecord, InstanceOutputRef, MeasuredFeature, MeasuredNominal, NamedReference,
-    ReferenceTarget, ToleranceMaterialCondition,
+    InspectionRecord, InstanceOutputRef, MeasuredFeature, MeasuredNominal, MeasurementUncertainty,
+    NamedReference, ReferenceTarget, ToleranceMaterialCondition,
 };
 
 const HOLES_PER_SIDE: usize = 10;
@@ -220,6 +220,7 @@ pub(crate) fn inspection_case(definition: &FamilyDefinition) -> Outcome {
                 }),
             });
             let record = InspectionRecord {
+                uncertainty: None,
                 drawing: "inspected".into(),
                 surface_textures: Vec::new(),
                 datum_features: vec![
@@ -418,6 +419,7 @@ pub(crate) fn form_case(definition: &FamilyDefinition) -> Outcome {
                 }))
                 .collect();
             let record = InspectionRecord {
+                uncertainty: None,
                 drawing: "round".into(),
                 surface_textures: Vec::new(),
                 datum_features: Vec::new(),
@@ -586,6 +588,7 @@ pub(crate) fn runout_case(definition: &FamilyDefinition, common: bool, conical: 
                 }
             };
             let record = InspectionRecord {
+                uncertainty: None,
                 drawing: "runout".into(),
                 surface_textures: Vec::new(),
                 datum_features: (0..holes)
@@ -839,6 +842,7 @@ pub(crate) fn datum_shift_case(definition: &FamilyDefinition, slot: bool) -> Out
                 .map(|(d, t, z)| [bore[0] + c * d - s * t, bore[1] + s * d + c * t, z])
                 .collect();
             let record = InspectionRecord {
+                uncertainty: None,
                 drawing: "shifted".into(),
                 surface_textures: Vec::new(),
                 datum_features: vec![
@@ -976,10 +980,13 @@ fn abc_drawing(id: &str, controls: Vec<DrawingFeatureControlFrame>) -> DrawingDe
 /// A | B | C, refined to Ø0.04 relating each pattern (lower segment to A, so
 /// patterns may translate and turn). Every pattern sits 0.03, 0.01 mm off and
 /// turned 0.5 mrad; every tenth also has one hole 0.1 mm off its neighbours,
-/// which fails that whole pattern's feature-relating fit.
+/// which fails that whole pattern's feature-relating fit. Decided under
+/// guarded acceptance with U = 0.001 mm, which leaves those results alone.
 pub(crate) fn composite_case(definition: &FamilyDefinition) -> Outcome {
     timed(
-        format!("inspection: {CONTROLS} composite position controls in 100 patterns"),
+        format!(
+            "inspection: {CONTROLS} composite position controls in 100 patterns, guarded acceptance"
+        ),
         Duration::from_secs(1),
         Expectation::Required,
         || {
@@ -1051,6 +1058,11 @@ pub(crate) fn composite_case(definition: &FamilyDefinition) -> Outcome {
                 points_mm: grid(400, point),
             };
             let record = InspectionRecord {
+                uncertainty: Some(MeasurementUncertainty {
+                    expanded_mm: 0.001,
+                    rule: DecisionRule::GuardedAcceptance,
+                    controls: Default::default(),
+                }),
                 drawing: "composite".into(),
                 surface_textures: Vec::new(),
                 datum_features: vec![
@@ -1074,7 +1086,8 @@ pub(crate) fn composite_case(definition: &FamilyDefinition) -> Outcome {
                     .as_ref()
                     .ok_or_else(|| failure(format!("{} has no refinement", control.control)))?;
                 let bad = (i / holes).is_multiple_of(10);
-                if m.conforms == bad
+                if m.uncertainty_mm != 0.001
+                    || m.conforms == bad
                     || (!bad
                         && (m.deviation_mm > 0.2
                             || (lower.pattern_rotation_rad.abs() - 0.0005).abs() > 2e-5))
@@ -1180,6 +1193,7 @@ pub(crate) fn profile_case(definition: &FamilyDefinition) -> Outcome {
                 points_mm: grid(400, point),
             };
             let record = InspectionRecord {
+                uncertainty: None,
                 drawing: "profile".into(),
                 surface_textures: Vec::new(),
                 datum_features: vec![
@@ -1257,6 +1271,7 @@ pub(crate) fn profile_surface_case(definition: &FamilyDefinition) -> Outcome {
                 }],
             );
             let record = InspectionRecord {
+                uncertainty: None,
                 drawing: "surface".into(),
                 surface_textures: Vec::new(),
                 datum_features: Vec::new(),
@@ -1340,6 +1355,7 @@ pub(crate) fn profile_projection_case(definition: &FamilyDefinition) -> Outcome 
                 .collect();
             let drawing = abc_drawing("bands", controls);
             let record = InspectionRecord {
+                uncertainty: None,
                 drawing: "bands".into(),
                 surface_textures: Vec::new(),
                 datum_features: Vec::new(),
@@ -1421,6 +1437,7 @@ pub(crate) fn profile_line_case(definition: &FamilyDefinition) -> Outcome {
                 }],
             );
             let record = InspectionRecord {
+                uncertainty: None,
                 drawing: "rows".into(),
                 surface_textures: Vec::new(),
                 datum_features: Vec::new(),
