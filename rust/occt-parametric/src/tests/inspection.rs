@@ -993,7 +993,7 @@ fn common_page() -> DrawingDefinition {
 }
 
 #[test]
-fn common_datum_axis_joins_the_midpoints_of_both_journal_envelopes() {
+fn common_datum_axis_contracts_both_journal_simulators_together() {
     let definition = plate();
     let mut graph = InstanceGraph::new(&definition);
     graph.add_base("part", HashMap::new(), "test").unwrap();
@@ -1015,8 +1015,9 @@ fn common_datum_axis_joins_the_midpoints_of_both_journal_envelopes() {
     );
     page.feature_control_frames = vec![common, single];
     // Journal F (radius 5, z 0-10) is on the nominal axis; journal B
-    // (radius 6, z 30-40) sits 0.02 mm off it, so the common axis tilts
-    // 0.02 mm over the 30 mm between their midpoints.
+    // (radius 6, z 30-40) sits 0.02 mm off it. Coaxial simulators
+    // contracting together grow least, 0.0033 mm each, on the axis tilting
+    // 0.02 mm over the 30 mm between the journals' midpoints.
     let f = cylinder([HOLE[0], HOLE[1], 0.0], [0.0, 0.0, 1.0], |_| 5.0);
     let b = cylinder([HOLE[0] + 0.02, HOLE[1], 30.0], [0.0, 0.0, 1.0], |_| 6.0);
     let slope = 0.02 / 30.0;
@@ -1051,6 +1052,45 @@ fn common_datum_axis_joins_the_midpoints_of_both_journal_envelopes() {
     assert!((axis.mating_sizes_mm[0] - 10.0).abs() < 1e-6);
     assert!((axis.mating_sizes_mm[1] - 12.0).abs() < 1e-6);
     assert!((axis.direction.x - slope).abs() < 1e-6);
+    // With B twice as long (z 30-50), the simulators contract least on the
+    // axis through F's axis at z = 0 rising 0.0005 per mm: the journals'
+    // axes sit 0.005 mm from it at z = 10, 30 and 50, alternately on each
+    // side. The line through the midpoints (z 5 and 40) would read about
+    // 0.004 mm of runout on a surface about that axis.
+    let mut long = cylinder([HOLE[0] + 0.02, HOLE[1], 30.0], [0.0, 0.0, 1.0], |_| 6.0);
+    long.extend(cylinder(
+        [HOLE[0] + 0.02, HOLE[1], 40.0],
+        [0.0, 0.0, 1.0],
+        |_| 6.0,
+    ));
+    let slope = 0.0005;
+    let surface = cylinder(
+        [HOLE[0] + slope * 12.0, HOLE[1], 12.0],
+        [slope, 0.0, 1.0],
+        |_| 8.0,
+    );
+    let record = InspectionRecord {
+        uncertainty: None,
+        drawing: "plate".into(),
+        surface_textures: Vec::new(),
+        datum_features: vec![
+            measured(
+                "A2",
+                cylinder([HOLE[0], HOLE[1], 0.0], [0.0, 0.0, 1.0], |_| 5.0),
+            ),
+            measured("B", long),
+        ],
+        controls: vec![
+            measured("common", surface.clone()),
+            measured("single", surface),
+        ],
+    };
+    let report = page.evaluate_inspection(&graph, &record).unwrap();
+    let common = evaluated(&report, "common").deviation_mm;
+    assert!(common < 1e-6, "{common}");
+    let axis = &report.datum_axes[0];
+    assert!((axis.direction.x - slope).abs() < 1e-7, "{axis:?}");
+    assert!(axis.direction.y.abs() < 1e-9, "{axis:?}");
 }
 
 #[test]

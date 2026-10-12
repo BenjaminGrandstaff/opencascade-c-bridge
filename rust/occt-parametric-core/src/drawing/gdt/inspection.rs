@@ -13,7 +13,10 @@ use crate::assembly::{add, length, scale, unit};
 pub mod fit;
 mod profile;
 mod shift;
-use fit::{Fit, circle_zone, cylinder_zone, fit_circle, fit_cylinder, fit_plane, fit_width};
+use fit::{
+    Fit, circle_zone, cylinder_zone, fit_circle, fit_common_cylinder, fit_cylinder, fit_plane,
+    fit_width,
+};
 use profile::{minimal_rotation, orthonormal};
 use shift::{
     AxialMember, AxisMotion, Motion, PatternMember, ShiftSpace, fit_axis_motion, fit_motion,
@@ -1117,12 +1120,13 @@ impl Context<'_, '_> {
         Ok((frame(measured, axis), frame(nominal, direction), stopped))
     }
 
-    /// Common datum axis of two coaxial datum features of size: the line
-    /// through the midpoints of each member's own mating-envelope axis over
-    /// its measured length (a CMM construction, not a simultaneous-contact
-    /// simulator), the minimum-material envelopes' at LMB. Evaluated as the
-    /// primary datum only. The limit is the larger member clearance; the
-    /// shift space bounds the axis by each member's own.
+    /// Common datum axis of two coaxial datum features of size: the axis of
+    /// their simultaneous simulator, coaxial cylinders contracting about
+    /// shafts or expanding inside holes at one rate (each member's own
+    /// minimum-material envelope at LMB, so the cylinders run the other
+    /// way), as one primary datum. Each member's mating size and
+    /// boundary clearance are its own; the limit is the larger clearance,
+    /// and the shift space bounds the axis by each member's own.
     fn common_axis(
         &self,
         members: &[(&DrawingDatumFeature, &[Vec3])],
@@ -1136,32 +1140,34 @@ impl Context<'_, '_> {
             );
         }
         let nominal = unit(nominal).map_err(|e| e.to_string())?;
-        let mut midpoints = Vec::with_capacity(2);
         let mut sizes = Vec::with_capacity(2);
         let mut largest = 0.0_f64;
+        let mut envelopes = Vec::with_capacity(2);
         for (feature, points) in members {
-            let Simulator::Axis(origin, direction, size, limit) =
+            let Simulator::Axis(_, _, size, limit) =
                 self.axis_simulator(feature, points, nominal, &[], boundary)?
             else {
                 unreachable!("axis simulator");
             };
             largest = largest.max(limit);
-            let (lo, hi) =
-                points
-                    .iter()
-                    .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), &p| {
-                        let t = dot(subtract(p, origin), direction);
-                        (lo.min(t), hi.max(t))
-                    });
-            midpoints.push(add(origin, scale(direction, 0.5 * (lo + hi))));
             sizes.extend(size);
+            let internal = feature.kind() == Some(FeatureOfSizeKind::Internal);
+            let least = boundary == DatumMaterialBoundary::Least;
+            let fit = if internal != least {
+                Fit::Inscribed
+            } else {
+                Fit::Circumscribed
+            };
+            envelopes.push((*points, fit));
         }
-        let mut direction = unit(subtract(midpoints[1], midpoints[0]))
-            .map_err(|_| "common datum features share a measured midpoint".to_string())?;
-        if dot(direction, nominal) < 0.0 {
-            direction = scale(direction, -1.0);
-        }
-        Ok(Simulator::Axis(midpoints[0], direction, sizes, largest))
+        let (origin, direction, _) =
+            fit_common_cylinder(&envelopes, nominal).map_err(|e| e.to_string())?;
+        let direction = if dot(direction, nominal) < 0.0 {
+            scale(direction, -1.0)
+        } else {
+            direction
+        };
+        Ok(Simulator::Axis(origin, direction, sizes, largest))
     }
 
     /// Axis of the actual mating envelope of a cylindrical datum feature of

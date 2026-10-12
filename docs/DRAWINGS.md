@@ -1087,11 +1087,18 @@ clocking a plane-axis frame at an angle to A.
   contacts the high points of both surfaces at once. It can take any plane
   precedence.
 - **Common datum axis (schema 136):** two coaxial cylindrical datum features
-  of size establish the line through the midpoints of each member's own
-  mating-envelope axis over its measured length. This is a common CMM
-  construction, not the Y14.5 simulator whose two coaxial cylinders expand or
-  contract simultaneously. It is evaluated as the primary datum only, and the
-  report lists both mating sizes in `datum_axes[].mating_sizes_mm`. At MMB
+  of size establish the axis of the Y14.5 simultaneous simulator: one
+  cylinder per member about one shared axis, contracting about shafts or
+  expanding inside holes at one rate. Each starts from its member's own
+  envelope (the minimum-material one at LMB, so they run the other way), and
+  the axis minimizes the largest growth or shrinkage any member needs.
+  Journals that are each straight but not in line therefore pull the axis to
+  the minimax line between them. With one journal twice as long as the
+  other, that line differs from the one through their midpoints. Among
+  equally small simulators (point sampling leaves a flat set), the axis
+  nearest the line through the members' own envelope-axis midpoints is
+  taken. It is evaluated as the primary datum only, and the report lists
+  both mating sizes in `datum_axes[].mating_sizes_mm`. At MMB
   or LMB each member uses its own envelope (the minimum-material one at LMB)
   and clearance, and the axis may shift and tilt as described under
   **Position to a primary datum axis**.
@@ -1439,7 +1446,8 @@ bevel at 45° to A; and 1,000 cylindricity plus 1,000
 circularity controls (612,000 points) in 0.13 s. It also evaluates 1,000
 circular plus 1,000 total runout controls (471,600 points), with each of 100
 bore datum axes fitted once, in 0.03 s. Against 100 common datum axes from
-200 bore journals (511,200 points), the same controls take 0.037 s. All five
+200 bore journals (511,200 points), each a simultaneous simulator, the same
+controls take 0.060 s. All five
 cases have 1 s budgets.
 Runout readings cost O(n log n) per control after the datum fit. 10,000
 position controls located A | B(MMB) | C from a center bore share one datum
@@ -1475,8 +1483,8 @@ composite position to a primary datum axis; a tertiary
 hole or pin's form error limiting its rotational shift; a tertiary plane
 re-contacting as a shifting secondary width turns; common width datums; the separate requirement
 (`SEP REQT`); boundaries
-enlarged by geometric tolerances; simultaneous-contact common axis simulators,
-common axes after a primary plane,
+enlarged by geometric tolerances; common axes of more than two members or
+after a primary plane,
 reporting n× patterns as one frame on drawings, measured datum targets,
 profile datums at a material boundary, and
 straightness. Uncertainty is supplied, not estimated from the points or the

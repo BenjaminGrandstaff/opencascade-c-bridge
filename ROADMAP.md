@@ -26,6 +26,15 @@ tracks status and order.
 
 ## Done
 
+- Simultaneous common datum axis simulators (schema 141 and ABI 69
+  unchanged). A common datum axis A-B is now the axis of coaxial cylinders
+  contracting about shafts, or expanding inside holes, at one rate from
+  each member's own envelope. This replaces the line through the members'
+  envelope-axis midpoints, which now only breaks ties. One minimax LP over
+  both members' points with a 1e-6 pull toward that line. 1,000 circular
+  plus 1,000 total runout controls against 100 common axes from 200
+  journals take 0.060 s (1 s budget).
+
 - Composite controls beyond two segments (schema 141, ABI 69 unchanged). A
   composite refinement may hold a further `refinement`, to any depth; each
   segment must be tighter than the one above it, and its datums a prefix of
@@ -2301,7 +2310,6 @@ scopes and inspected repo capabilities, not a full conformity audit.
    bounded SVG approximation for curves SVG cannot represent. Direct deviations
    and limits render stacked values.
 2. **Structured GD&T** — [Y14.5](https://www.asme.org/codes-standards/find-codes-standards/y14-5-dimensioning-tolerancing):
-   simultaneous common-axis simulators,
    advanced modifiers, and estimating measurement uncertainty from the
    measurement itself. Measured planar datum frames, flatness,
    circularity, cylindricity, planar orientation zones and position with
@@ -2322,7 +2330,8 @@ scopes and inspected repo capabilities, not a full conformity audit.
    rotational shift from a hole or pin, and common datum axis shift, and
    position at an angle to a primary datum axis with a free turn when
    unclocked, and plane datum simulators at non-square basic angles, and
-   composites of any number of segments (schema 141).
+   composites of any number of segments (schema 141), and simultaneous
+   common datum axis simulators.
 3. **3D manufacturing annotations and exchange** — [Y14.41](https://www.asme.org/codes-standards/find-codes-standards/y14-41-digital-product-definition-data-practices):
    structured PMI attached to persistent geometry, annotation views, dataset
    authority and revision rules, and verified semantic PMI exchange. Geometry

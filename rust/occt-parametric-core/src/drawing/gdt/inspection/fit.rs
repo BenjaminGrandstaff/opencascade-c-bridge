@@ -591,6 +591,148 @@ pub fn fit_cylinder(
     Ok((add(center, scale(origin, size)), direction, r * size))
 }
 
+/// Simulator of a common datum axis (Y14.5 simultaneous requirement): coaxial
+/// cylinders, one per member, contracting about shafts (`Fit::Circumscribed`)
+/// or expanding inside holes (`Fit::Inscribed`) at one rate about one shared
+/// axis free to shift and tilt from `axis`. Each member's cylinder starts at
+/// that member's own envelope, so the axis minimizes the largest growth
+/// (shafts) or shrinkage (holes) any member needs. Returns the axis point,
+/// unit direction and each member's simulator radius, exact for the returned
+/// axis. O(members · own fit + linearizations · pivots · n).
+pub fn fit_common_cylinder(
+    members: &[(&[Vec3], Fit)],
+    axis: Vec3,
+) -> Result<(Vec3, Vec3, Vec<f64>), ModelError> {
+    if members.is_empty() || members.iter().any(|(_, fit)| *fit == Fit::Zone) {
+        return Err(ModelError::new(
+            "a common datum axis needs members fitted as holes or shafts",
+        ));
+    }
+    let own = members
+        .iter()
+        .map(|&(points, fit)| fit_cylinder(points, axis, fit))
+        .collect::<Result<Vec<_>, _>>()?;
+    let all: Vec<Vec3> = members
+        .iter()
+        .flat_map(|(points, _)| points.iter().copied())
+        .collect();
+    let (center, size) = normalization(&all);
+    let normalized = |p: Vec3| scale(subtract(p, center), 1.0 / size);
+    // Ties between equally small simulators (sampling leaves a flat set of
+    // optimal axes) go to the axis nearest the line through the first and
+    // last members' own envelope-axis midpoints.
+    let midpoint = |i: usize| {
+        let (points, _) = members[i];
+        let (origin, direction, _) = own[i];
+        let (lo, hi) = points
+            .iter()
+            .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), &p| {
+                let t = dot(subtract(p, origin), direction);
+                (lo.min(t), hi.max(t))
+            });
+        normalized(add(origin, scale(direction, 0.5 * (lo + hi))))
+    };
+    let (first, last) = (midpoint(0), midpoint(members.len() - 1));
+    let reference_direction = match unit(subtract(last, first)) {
+        Ok(d) if members.len() > 1 => {
+            if dot(d, axis) < 0.0 {
+                scale(d, -1.0)
+            } else {
+                d
+            }
+        }
+        _ => own[0].1,
+    };
+    let reference = (first, reference_direction);
+    // Points scaled about the center, each with its member's own radius
+    // and the sign that turns a hole's expansion into a minimized growth.
+    let q: Vec<(Vec3, f64, f64)> = members
+        .iter()
+        .zip(&own)
+        .flat_map(|(&(points, fit), &(.., r))| {
+            let sign = if fit == Fit::Inscribed { -1.0 } else { 1.0 };
+            points.iter().map(move |&p| (normalized(p), r / size, sign))
+        })
+        .collect();
+    let radial = |p: Vec3, origin: Vec3, direction: Vec3| {
+        let d = subtract(p, origin);
+        let along = dot(d, direction);
+        let r = subtract(d, scale(direction, along));
+        (length(r), r, along)
+    };
+    // The largest growth over every point: sign · (distance − own radius).
+    let growth = |origin: Vec3, direction: Vec3| {
+        q.iter()
+            .map(|&(p, r, sign)| sign * (radial(p, origin, direction).0 - r))
+            .fold(f64::NEG_INFINITY, f64::max)
+    };
+    let (mut origin, mut direction) = reference;
+    let mut best = (growth(origin, direction), origin, direction);
+    for _ in 0..MAX_LINEARIZATIONS {
+        let (e1, e2) = basis(direction);
+        // Variables: four axis steps, the growth z, and w ≥ |offset from the
+        // reference axis| per step component.
+        let mut rows = Vec::with_capacity((q.len() + 8) * 9);
+        let mut bounds = Vec::with_capacity(q.len() + 8);
+        for &(p, r, sign) in &q {
+            let (rho, v, along) = radial(p, origin, direction);
+            if rho < 1e-12 {
+                return Err(ModelError::new("measured points lie on the datum axis"));
+            }
+            let (a, b) = (dot(v, e1) / rho, dot(v, e2) / rho);
+            rows.extend([a, b, a * along, b * along].map(|g| -sign * g));
+            rows.extend([-1.0, 0.0, 0.0, 0.0, 0.0]);
+            bounds.push(-sign * (rho - r));
+        }
+        let foot = add(
+            reference.0,
+            scale(reference.1, dot(subtract(origin, reference.0), reference.1)),
+        );
+        let offset = subtract(origin, foot);
+        let current = [
+            dot(offset, e1),
+            dot(offset, e2),
+            -dot(reference.1, e1),
+            -dot(reference.1, e2),
+        ];
+        for (i, c) in current.into_iter().enumerate() {
+            for sign in [1.0, -1.0] {
+                let mut row = [0.0; 9];
+                row[i] = sign;
+                row[5 + i] = -1.0;
+                rows.extend(row);
+                bounds.push(-sign * c);
+            }
+        }
+        let mut objective = [-1e-6; 9];
+        objective[..4].fill(0.0);
+        objective[4] = -1.0;
+        let step = maximize(&objective, &rows, &bounds)?;
+        origin = add(origin, add(scale(e1, step[0]), scale(e2, step[1])));
+        direction = unit(add(direction, add(scale(e1, step[2]), scale(e2, step[3]))))?;
+        let g = growth(origin, direction);
+        if g <= best.0 + 1e-12 {
+            best = (g, origin, direction);
+        }
+        if step[..4].iter().all(|s| s.abs() < 1e-13) {
+            break;
+        }
+    }
+    let (g, origin, direction) = best;
+    let radii = members
+        .iter()
+        .zip(&own)
+        .map(|(&(_, fit), &(.., r))| {
+            if fit == Fit::Inscribed {
+                r - g * size
+            } else {
+                r + g * size
+            }
+        })
+        .collect();
+    Ok((add(center, scale(origin, size)), direction, radii))
+}
+
 /// Actual mating envelope of a width feature: two parallel planes with
 /// normal starting at `normal` and turning only about the unit `axes`, the
 /// widest pair fitting between the faces of a slot (`Fit::Inscribed`) or the
