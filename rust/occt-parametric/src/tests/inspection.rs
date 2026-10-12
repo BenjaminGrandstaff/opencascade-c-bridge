@@ -590,10 +590,12 @@ fn section(center: [f64; 2], z: f64, lobes: impl Fn(f64) -> f64) -> Vec<[f64; 3]
 fn cylinder(base: [f64; 3], axis: [f64; 3], radius: impl Fn(f64) -> f64) -> Vec<[f64; 3]> {
     let n = (axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2]).sqrt();
     let w = [axis[0] / n, axis[1] / n, axis[2] / n];
-    // u ⟂ w from the x axis, v = w × u.
-    let d = w[0];
+    // u ⟂ w from the x axis (the y axis for an axis near x), v = w × u.
+    let seed = if w[0].abs() < 0.9 { 0 } else { 1 };
+    let d = w[seed];
     let u = {
-        let u = [1.0 - d * w[0], -d * w[1], -d * w[2]];
+        let mut u = [-d * w[0], -d * w[1], -d * w[2]];
+        u[seed] += 1.0;
         let m = (u[0] * u[0] + u[1] * u[1] + u[2] * u[2]).sqrt();
         [u[0] / m, u[1] / m, u[2] / m]
     };
@@ -1883,7 +1885,8 @@ fn coaxial_position_is_measured_over_the_feature_length_from_a_primary_axis() {
     let m = evaluated(&report, "cbore0");
     assert!((m.deviation_mm - 0.03).abs() < 1e-6, "{m:?}");
     assert!(m.conforms);
-    // A feature off the datum axis is not coaxial with it.
+    // A feature off the datum axis but measured on it: no turn about the
+    // axis brings it back out to its true position.
     let mut definition = plate();
     definition.datums.push(DatumDefinition {
         id: "off".into(),
@@ -1903,14 +1906,8 @@ fn coaxial_position_is_measured_over_the_feature_length_from_a_primary_axis() {
     let report = off
         .evaluate_inspection(&graph, &coaxial_record(10.0, &[[0.0, 0.0]]))
         .unwrap();
-    assert!(
-        matches!(
-            &report.controls[0].result,
-            ControlResult::NotEvaluated(r) if r.contains("clocking datum")
-        ),
-        "{:?}",
-        report.controls[0]
-    );
+    let m = evaluated(&report, "cbore0");
+    assert!((m.deviation_mm - 10.0).abs() < 1e-6, "{m:?}");
 }
 
 #[test]
@@ -2066,17 +2063,15 @@ fn a_slot_clocks_position_off_a_primary_datum_axis() {
     let report = page.evaluate_inspection(&graph, &leaning).unwrap();
     let m = evaluated(&report, "hole0");
     assert!((m.deviation_mm - 0.04).abs() < 1e-6, "{m:?}");
-    // Without a clocking datum, rotation about the bore is not fixed.
+    // Without a clocking datum the frame turns freely about the bore, and
+    // the pattern turns with it.
     let (_, unclocked) = axis_clocking_setup(&["B", "A"], Regardless, Regardless);
     let report = unclocked.evaluate_inspection(&graph, &turned).unwrap();
-    assert!(
-        matches!(
-            &report.controls[0].result,
-            ControlResult::NotEvaluated(r) if r.contains("clocking datum")
-        ),
-        "{:?}",
-        report.controls[0]
-    );
+    for i in 0..4 {
+        let m = evaluated(&report, &format!("hole{i}"));
+        assert!(m.deviation_mm < 1e-6, "{m:?}");
+        assert!((m.datum_shift_rotation_rad - 0.0015).abs() < 1e-6, "{m:?}");
+    }
 }
 
 #[test]
@@ -2308,6 +2303,190 @@ fn a_hole_clocks_a_primary_datum_axis() {
         .evaluate_inspection(&graph, &pin_record(10.06, 6.0, 0.0, 0.0015, [-0.05, 0.0]))
         .unwrap();
     assert!(evaluated(&report, "hole0").deviation_mm > 1e-3);
+}
+
+/// Plate with datum bore D (Ø9.9-10.1 on the hole axis, at `boundary`)
+/// and Ø0.05 RFS position controls on Ø2.9-3.1 cross holes at z = 5 square
+/// to it, along +x (`cross0`) and +y (`cross1`), referenced to `order`.
+fn cross_setup(
+    order: &[&str],
+    boundary: DatumMaterialBoundary,
+) -> (FamilyDefinition, DrawingDefinition) {
+    let mut definition = plate();
+    for (i, direction) in [[1.0, 0.0], [0.0, 1.0]].into_iter().enumerate() {
+        definition.datums.push(DatumDefinition {
+            id: format!("cross{i}"),
+            kind: DatumKind::Axis {
+                origin: VectorExpr::Literal(VectorQuantity::lengths(
+                    HOLE[0],
+                    HOLE[1],
+                    5.0,
+                    LengthUnit::Millimeter,
+                )),
+                direction: VectorExpr::Literal(VectorQuantity::scalars(
+                    direction[0],
+                    direction[1],
+                    0.0,
+                )),
+            },
+        });
+    }
+    let mut page = coaxial_page(boundary, &[]);
+    page.feature_control_frames = (0..2)
+        .map(|i| {
+            let id = format!("cross{i}");
+            let mut f = control(&id, &id, GeometricCharacteristic::Position, 0.05, order);
+            f.datums[0].boundary = boundary;
+            f.zone = GeometricToleranceZone::Diameter;
+            f.feature_of_size = true;
+            f.size_limits = Some(DrawingSizeLimits {
+                kind: FeatureOfSizeKind::Internal,
+                lower: Quantity::length(2.9, LengthUnit::Millimeter),
+                upper: Quantity::length(3.1, LengthUnit::Millimeter),
+            });
+            f
+        })
+        .collect();
+    (definition, page)
+}
+
+/// A measured part: Ø`bore` bore over z 0-10 on the nominal axis, the
+/// bottom face A and front face C, and Ø3 cross holes 5-15 mm from the axis
+/// turned by `turn` about it, raised by `lift[i]` and moved square to their
+/// own axis (in the plate's plane) by `side[i]`.
+fn cross_record(bore: f64, turn: f64, lift: [f64; 2], side: [f64; 2]) -> InspectionRecord {
+    InspectionRecord {
+        uncertainty: None,
+        drawing: "plate".into(),
+        surface_textures: Vec::new(),
+        datum_features: vec![
+            measured(
+                "D",
+                cylinder([HOLE[0], HOLE[1], 0.0], [0.0, 0.0, 1.0], |_| bore / 2.0),
+            ),
+            measured("A", grid(|u, v| [60.0 * u, 40.0 * v, 0.0])),
+            measured("C", grid(|u, v| [60.0 * u, 0.0, 10.0 * v])),
+        ],
+        controls: (0..2)
+            .map(|i| {
+                let a = turn + i as f64 * std::f64::consts::FRAC_PI_2;
+                let (s, c) = a.sin_cos();
+                let base = [
+                    HOLE[0] + 5.0 * c - side[i] * s,
+                    HOLE[1] + 5.0 * s + side[i] * c,
+                    5.0 + lift[i],
+                ];
+                measured(&format!("cross{i}"), cylinder(base, [c, s, 0.0], |_| 1.5))
+            })
+            .collect(),
+    }
+}
+
+#[test]
+fn position_is_measured_at_an_angle_to_a_primary_datum_axis() {
+    use DatumMaterialBoundary::{Maximum, Regardless};
+    let (definition, page) = cross_setup(&["D", "A"], Regardless);
+    let graph = graph_of(&definition);
+    let report = page
+        .evaluate_inspection(&graph, &cross_record(10.0, 0.0, [0.0; 2], [0.0; 2]))
+        .unwrap();
+    for id in ["cross0", "cross1"] {
+        let m = evaluated(&report, id);
+        assert!(m.deviation_mm < 1e-6 && m.conforms, "{m:?}");
+        assert!((m.actual_size_mm.unwrap() - 3.0).abs() < 1e-6, "{m:?}");
+    }
+    // Raised 0.02 mm along the datum axis: the face stops the frame there.
+    let report = page
+        .evaluate_inspection(&graph, &cross_record(10.0, 0.0, [0.02, 0.0], [0.0; 2]))
+        .unwrap();
+    let m = evaluated(&report, "cross0");
+    assert!((m.deviation_mm - 0.04).abs() < 1e-6 && m.conforms, "{m:?}");
+    // Without a clocking datum the frame turns freely about the bore: both
+    // holes turned 10 mrad are at true position, sharing one turn.
+    let report = page
+        .evaluate_inspection(&graph, &cross_record(10.0, 0.01, [0.0; 2], [0.0; 2]))
+        .unwrap();
+    for id in ["cross0", "cross1"] {
+        let m = evaluated(&report, id);
+        assert!(m.deviation_mm < 1e-6, "{m:?}");
+        assert!((m.datum_shift_rotation_rad - 0.01).abs() < 1e-6, "{m:?}");
+        assert_eq!((m.datum_shift_mm, m.datum_shift_limit_mm), (0.0, 0.0));
+    }
+    // A hole 0.03 mm to the side of the axis, 5-15 mm out, turned by θ
+    // with the other hole: its far end is 0.03 - 15θ off and the other
+    // hole's 15θ, balanced at θ = 1.5 mrad.
+    let report = page
+        .evaluate_inspection(&graph, &cross_record(10.0, 0.0, [0.0; 2], [0.03, 0.0]))
+        .unwrap();
+    for id in ["cross0", "cross1"] {
+        let m = evaluated(&report, id);
+        assert!((m.deviation_mm - 0.045).abs() < 1e-5 && m.conforms, "{m:?}");
+        assert!((m.datum_shift_rotation_rad - 0.0015).abs() < 1e-5, "{m:?}");
+    }
+    // The front face clocks the frame: nothing turns.
+    let (_, clocked) = cross_setup(&["D", "A", "C"], Regardless);
+    let report = clocked
+        .evaluate_inspection(&graph, &cross_record(10.0, 0.0, [0.0; 2], [0.03, 0.0]))
+        .unwrap();
+    let m = evaluated(&report, "cross0");
+    assert!((m.deviation_mm - 0.06).abs() < 1e-6, "{m:?}");
+    assert_eq!(m.datum_shift_rotation_rad, 0.0);
+    let report = clocked
+        .evaluate_inspection(&graph, &cross_record(10.0, 0.001, [0.0; 2], [0.0; 2]))
+        .unwrap();
+    let m = evaluated(&report, "cross0");
+    assert!((m.deviation_mm - 0.03).abs() < 1e-6, "{m:?}");
+    // The bore at MMB clears its Ø9.9 boundary by 0.08 mm a side: tilting
+    // the axis by g lowers the raised hole's ends by 5g and 15g, balanced
+    // at g = 2 mrad, inside the 16 mrad the bore allows.
+    let (_, shifted) = cross_setup(&["D", "A"], Maximum);
+    let report = shifted
+        .evaluate_inspection(&graph, &cross_record(10.06, 0.0, [0.02, 0.0], [0.0; 2]))
+        .unwrap();
+    let m = evaluated(&report, "cross0");
+    assert!((m.deviation_mm - 0.02).abs() < 1e-5, "{m:?}");
+    assert!((m.datum_shift_limit_mm - 0.08).abs() < 1e-9, "{m:?}");
+    // A hole at 45° to the axis raised 0.02 mm is 0.02·sin 45° off its zone.
+    let mut definition = definition.clone();
+    let s = std::f64::consts::FRAC_1_SQRT_2;
+    definition.datums.push(DatumDefinition {
+        id: "slant".into(),
+        kind: DatumKind::Axis {
+            origin: VectorExpr::Literal(VectorQuantity::lengths(
+                HOLE[0],
+                HOLE[1],
+                5.0,
+                LengthUnit::Millimeter,
+            )),
+            direction: VectorExpr::Literal(VectorQuantity::scalars(s, 0.0, s)),
+        },
+    });
+    let graph = graph_of(&definition);
+    let mut slanted = page.clone();
+    slanted.feature_control_frames.truncate(1);
+    slanted.feature_control_frames[0].id = "slant".into();
+    slanted.feature_control_frames[0].attachment = attachment("slant");
+    let mut record = cross_record(10.0, 0.0, [0.0; 2], [0.0; 2]);
+    record.controls = vec![measured(
+        "slant",
+        cylinder([HOLE[0] + 2.0, HOLE[1], 7.02], [1.0, 0.0, 1.0], |_| 1.5),
+    )];
+    let report = slanted.evaluate_inspection(&graph, &record).unwrap();
+    let m = evaluated(&report, "slant");
+    assert!((m.deviation_mm - 0.04 * s).abs() < 1e-6, "{m:?}");
+    // Without the face nothing places the holes along the axis.
+    let (_, unstopped) = cross_setup(&["D"], Regardless);
+    let report = unstopped
+        .evaluate_inspection(&graph, &cross_record(10.0, 0.0, [0.0; 2], [0.0; 2]))
+        .unwrap();
+    assert!(
+        matches!(
+            &report.controls[0].result,
+            ControlResult::NotEvaluated(r) if r.contains("perpendicular datum")
+        ),
+        "{:?}",
+        report.controls[0]
+    );
 }
 
 /// `coaxial_page` located to the common axis D-E of two Ø9.9-10.1 bores on

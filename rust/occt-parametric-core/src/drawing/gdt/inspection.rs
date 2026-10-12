@@ -425,15 +425,23 @@ impl DrawingDefinition {
         };
         // Simultaneous requirement: position controls with identical datum
         // references (features, precedence and boundaries) share one datum
-        // shift. Groups are keyed by their serialized references.
+        // shift, and one turn about an unclocked primary datum axis. Groups
+        // are keyed by their serialized references.
         let mut groups: BTreeMap<String, Vec<&DrawingFeatureControlFrame>> = BTreeMap::new();
         for frame in &frames {
-            if frame.characteristic == GeometricCharacteristic::Position
-                && measured_controls.contains_key(frame.id.as_str())
-                && frame
-                    .datums
-                    .iter()
-                    .any(|d| d.boundary != DatumMaterialBoundary::Regardless)
+            if frame.characteristic != GeometricCharacteristic::Position {
+                continue;
+            }
+            let Some(points) = measured_controls.get(frame.id.as_str()) else {
+                continue;
+            };
+            if frame
+                .datums
+                .iter()
+                .any(|d| d.boundary != DatumMaterialBoundary::Regardless)
+                || context
+                    .position_data(frame, points)
+                    .is_ok_and(|data| data.space.turn_free)
             {
                 let key = serde_json::to_string(&frame.datums)
                     .map_err(|e| ModelError::new(e.to_string()))?;
@@ -455,12 +463,8 @@ impl DrawingDefinition {
                 };
                 ids.push(frame.id.clone());
                 let radius = 0.5 * (tolerance + data.bonus);
-                if let Some(ends) = data.axial {
-                    axial.push(AxialMember {
-                        ends,
-                        lever: data.true_position,
-                        radius,
-                    });
+                if let Some(member) = data.axial {
+                    axial.push(AxialMember { radius, ..member });
                 } else {
                     members.push(PatternMember {
                         offset: data.offset,
@@ -951,7 +955,8 @@ impl Context<'_, '_> {
     /// perpendicular plane meets the axis) and the nominal frame built the
     /// same way from the datums' nominal geometry. Without a clocking datum
     /// x is arbitrary; without a perpendicular plane the origin is the
-    /// axis simulator's point. Returns whether a clocking datum fixes x.
+    /// axis simulator's point. Returns whether a perpendicular plane stops
+    /// the frame along the axis.
     fn axis_frames(
         &mut self,
         datums: &[DrawingDatumReference],
@@ -981,6 +986,7 @@ impl Context<'_, '_> {
         let direction = unit(direction).map_err(|e| e.to_string())?;
         let mut measured = (origin, None);
         let mut nominal = (nominal_origin, None);
+        let mut stopped = false;
         let across = |v: Vec3, axis: Vec3| {
             unit(subtract(v, scale(axis, dot(v, axis))))
                 .map_err(|_| "a clocking datum axis lies on the primary datum axis".to_string())
@@ -1010,6 +1016,7 @@ impl Context<'_, '_> {
                     add(origin, scale(axis, t))
                 };
                 measured.0 = meet(origin, axis, *point, *normal);
+                stopped = true;
                 nominal.0 = meet(nominal_origin, direction, plane_origin, plane_normal);
             } else {
                 measured.1 = Some(*normal);
@@ -1022,7 +1029,6 @@ impl Context<'_, '_> {
                 );
             }
         }
-        let clocked = measured.1.is_some();
         let frame = |(origin, x): (Vec3, Option<Vec3>), z: Vec3| {
             let x = x.unwrap_or_else(|| perpendiculars(z).0);
             DrawingDatumCoordinateFrame {
@@ -1032,7 +1038,7 @@ impl Context<'_, '_> {
                 z_axis: z,
             }
         };
-        Ok((frame(measured, axis), frame(nominal, direction), clocked))
+        Ok((frame(measured, axis), frame(nominal, direction), stopped))
     }
 
     /// Common datum axis of two coaxial datum features of size: the line
@@ -1634,17 +1640,12 @@ impl Context<'_, '_> {
         let r = member.residual(shift);
         let mut deviation = 2.0 * r[0].hypot(r[1]);
         let (mut translation, mut rotation) = (shift.t[0].hypot(shift.t[1]), shift.angle);
-        if let (Some(ends), Some(span)) = (data.axial, data.space.span) {
+        if let (Some(member), Some(span)) = (data.axial, data.space.span) {
             let motion = self
                 .axial_shifts
                 .get(frame.id.as_str())
                 .copied()
                 .unwrap_or_default();
-            let member = AxialMember {
-                ends,
-                lever: data.true_position,
-                radius: 0.0,
-            };
             deviation = member.deviation(motion, span);
             translation = motion.translation();
             rotation = motion.rotation(span);
@@ -1850,12 +1851,14 @@ fn boundary_clearance(
 }
 
 impl Context<'_, '_> {
-    /// Position of a feature parallel to a primary datum axis (or common
+    /// Position of a feature located to a primary datum axis (or common
     /// axis): its related actual mating envelope's axis (the minimum-material
-    /// envelope's at LMC) between its measured ends, against a zone parallel
-    /// to the datum simulator axis at true position. The zone extends over
-    /// the feature's length, so both ends must lie within it. A feature off
-    /// the axis needs a clocking datum parallel to the axis to fix rotation.
+    /// envelope's at LMC) between its measured ends, against a zone about
+    /// the true position axis in the frame, parallel or at an angle to the
+    /// datum axis. The zone extends over the feature's length, so both ends
+    /// must lie within it. A feature at an angle needs a perpendicular datum
+    /// to stop the frame along the axis; without a clocking datum the frame
+    /// turns freely about the axis.
     fn fit_axial(
         &mut self,
         frame: &DrawingFeatureControlFrame,
@@ -1868,19 +1871,29 @@ impl Context<'_, '_> {
             return Err("composite position to a primary datum axis is not evaluated".into());
         }
         let direction = unit(direction).map_err(|e| e.to_string())?;
-        let (measured, nominal, clocked) = self.axis_frames(&frame.datums)?;
-        if length(cross(direction, nominal.z_axis)) > 1e-9 {
+        let (measured, nominal, stopped) = self.axis_frames(&frame.datums)?;
+        let p = nominal.coordinates_mm(origin).map_err(|e| e.to_string())?;
+        let d = nominal
+            .coordinates_mm(add(nominal.origin_mm, direction))
+            .map_err(|e| e.to_string())?;
+        let (p, d) = ([p.x, p.y, p.z], [d.x, d.y, d.z]);
+        let parallel = d[0].hypot(d[1]) <= 1e-9;
+        if !parallel && !stopped {
             return Err(
-                "position to a primary datum axis is evaluated for features parallel to it".into(),
+                "position at an angle to a primary datum axis needs a perpendicular datum to stop the frame along it"
+                    .into(),
             );
         }
-        let true_position = nominal.coordinates_mm(origin).map_err(|e| e.to_string())?;
-        let true_position = [true_position.x, true_position.y];
-        if !clocked && true_position[0].hypot(true_position[1]) > 1e-9 {
-            return Err(
-                "position off a primary datum axis needs a clocking datum parallel to it".into(),
-            );
-        }
+        // Directions square to the zone: x and y for a zone parallel to the
+        // axis, otherwise one square to the zone and the axis, and one in
+        // their plane.
+        let across = if parallel {
+            [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]
+        } else {
+            let a = unit(Vec3::new(-d[1], d[0], 0.0)).map_err(|e| e.to_string())?;
+            let b = cross(Vec3::new(d[0], d[1], d[2]), a);
+            [[a.x, a.y, a.z], [b.x, b.y, b.z]]
+        };
         let space = self.shift_space(&frame.datums, &measured, &nominal)?;
         let internal = limits.kind == FeatureOfSizeKind::Internal;
         let (mating, minimum_material) = if internal {
@@ -1916,12 +1929,19 @@ impl Context<'_, '_> {
                 let t = dot(subtract(p, feature_origin), feature_axis);
                 (lo.min(t), hi.max(t))
             });
-        let mut ends = [([0.0; 2], 0.0); 2];
+        let mut ends = [([0.0; 2], [0.0; 3]); 2];
         for (end, t) in ends.iter_mut().zip([lo, hi]) {
             let c = measured
                 .coordinates_mm(add(feature_origin, scale(feature_axis, t)))
                 .map_err(|e| e.to_string())?;
-            *end = ([c.x - true_position[0], c.y - true_position[1]], c.z);
+            let e = [c.x - p[0], c.y - p[1], c.z - p[2]];
+            let along = e[0] * d[0] + e[1] * d[1] + e[2] * d[2];
+            let q: [f64; 3] = std::array::from_fn(|i| p[i] + along * d[i]);
+            let off: [f64; 3] = std::array::from_fn(|i| e[i] - along * d[i]);
+            *end = (
+                across.map(|a| off[0] * a[0] + off[1] * a[1] + off[2] * a[2]),
+                q,
+            );
         }
         let size_conforms = if internal {
             size >= lower && minimum_size <= upper
@@ -1933,12 +1953,16 @@ impl Context<'_, '_> {
                 0.5 * (ends[0].0[0] + ends[1].0[0]),
                 0.5 * (ends[0].0[1] + ends[1].0[1]),
             ],
-            true_position,
+            true_position: [p[0], p[1]],
             bonus,
             size,
             size_conforms,
             space,
-            axial: Some(ends),
+            axial: Some(AxialMember {
+                ends,
+                across,
+                radius: 0.0,
+            }),
         })
     }
 }
@@ -1953,9 +1977,9 @@ struct PositionData {
     size_conforms: bool,
     /// Motions the frame's material boundaries allow.
     space: Rc<ShiftSpace>,
-    /// For a feature located to a primary datum axis: its axis ends' offsets
-    /// from true position and their positions along the datum axis.
-    axial: Option<[([f64; 2], f64); 2]>,
+    /// For a feature located to a primary datum axis: its axis ends'
+    /// offsets from its zone axis (radius unset).
+    axial: Option<AxialMember>,
 }
 
 /// Largest minus smallest value; zero for an empty sequence.

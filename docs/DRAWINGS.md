@@ -1173,30 +1173,43 @@ kind, in either order:
 
 - **Stop:** a plane perpendicular to A (a face) is a contacting plane held
   square to A's simulator. It fixes translation along A, and the frame origin
-  is where it meets the axis. Zones parallel to A do not depend on it.
+  is where it meets the axis. Zones parallel to A do not depend on it; a
+  feature at an angle to A needs it.
 - **Clock:** a plane parallel to A (a flat, or a slot or tab width) turns only
   about A's simulator axis, as a contacting plane or the width's mating
   center plane, and its normal gives the frame's x axis. A hole or pin
   parallel to A clocks it too: its mating envelope is held parallel to A's
-  simulator, and x runs from A's axis toward its axis. Without a clock, only
-  features coaxial with A can be located, since rotation about A is free.
+  simulator, and x runs from A's axis toward its axis. Without a clock the
+  frame turns freely about A (see below).
 
 The report lists a named frame B | A | C (axis, stop, clock) under
 `datum_frames` with z along the axis.
 
-**Position to a primary datum axis.** Position of a feature parallel to A is
+**Position to a primary datum axis.** Position of a feature located to A is
 measured from the related actual mating envelope's axis between the
 feature's measured ends, or the minimum-material envelope's at LMC. The zone
-is parallel to A's simulator axis at true position. Both ends must lie in it,
-so the deviation is twice the larger end offset, and a feature leaning
-relative to A is out by its worse end. A feature not parallel to A, or off
-A's axis with no clock, is reported.
+is a cylinder about the true position axis in the frame: parallel to A's
+simulator axis for a bore or a bolt circle, or at its basic angle for a
+cross hole or an inclined hole. Both ends must lie in it, so the deviation
+is twice the larger end offset from the zone axis, and a feature leaning
+relative to its zone is out by its worse end. A feature at an angle to A
+needs a stop to place it along A, and is reported without one.
+
+Without a clock, rotation about A is not constrained: the frame turns freely
+about A's simulator axis, and controls with the same datum references turn
+together (the simultaneous requirement), even regardless of material
+boundary. A pattern of cross holes or a bolt circle turned as a whole is at
+true position; one hole turned against the others is not. The turn is
+reported as `datum_shift_rotation_rad`, with `datum_shift_limit_mm` zero
+when A is regardless of material boundary.
 
 Referenced at MMB or LMB, A's simulator may translate and tilt: each end of
 its axis, at the datum feature's measured extent, floats within half the
 feature's departure from the boundary (the same clearance as a secondary
 axis). This is exact for a datum feature of perfect form; form error does
-not restrict the motion further. For a common axis A-B the ends span both
+not restrict the motion further. Tilting A carries the frame about its
+origin, so a zone at an angle to A also rises or falls along A by the tilt
+times its distance from the axis. For a common axis A-B the ends span both
 members, and the axis must pass within each member's own clearance of that
 member's axis at both ends of the member's measured length. A tight member
 therefore holds the axis near it while a loose one lets it tilt away.
@@ -1402,7 +1415,10 @@ primary axis stopped by the face and clocked by the slot, the turned and
 moved pattern shares one axis shift and turn in 0.24 s. Clocked instead by a
 Ø6.06 dowel hole at MMB 25 mm from the bore (A | B(MMB) | C(MMB)), the same
 pattern shares one translation and rotation in 0.18 s. All six cases have
-0.5 s budgets. 10,000 composite position controls in
+0.5 s budgets. 10,000 radial cross holes square to a bore at MMB, located
+A(MMB) | B with B the face that stops them and no clock, turned 1 mrad
+together, share one turn of the frame in 0.71 s (1 s budget: each hole's
+two envelope fits relinearize their turn). 10,000 composite position controls in
 100 patterns of 100 evaluate in 0.19 s (1 s budget). Ten patterns with a
 0.1 mm outlier fail their relating fit. 10,000 composite surface profiles on
 the same bores (720,000 points with nominals, 100 patterns of 7,200 points
@@ -1413,8 +1429,7 @@ regenerate the part once and project every point onto the named side face in
 0.59 s (2 s budget). One line profile of 1,000,000 points in 1,000 elements
 takes 0.20 s (1 s budget).
 
-**Not yet covered.** Datum shift of common planes; features at an angle to a
-primary datum axis; composite position to a primary datum axis; a tertiary
+**Not yet covered.** Datum shift of common planes; composite position to a primary datum axis; a tertiary
 hole or pin's form error limiting its rotational shift; a tertiary plane
 re-contacting as a shifting secondary width turns; common width datums; the separate requirement
 (`SEP REQT`); boundaries

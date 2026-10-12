@@ -103,6 +103,9 @@ pub(super) struct ShiftSpace {
     /// where the axis must pass (basic `[0, 0]`) within each member's
     /// clearance of that member's own axis, at both ends of its extent.
     pub axis_bounds: Vec<PinBoundary>,
+    /// A primary datum axis with no clocking datum: the frame turns freely
+    /// about it.
+    pub turn_free: bool,
 }
 
 /// A clocking hole or pin referenced at a material boundary: the boundary
@@ -287,27 +290,35 @@ fn motion_lp(members: &[PatternMember], space: &ShiftSpace) -> Motion {
     motion
 }
 
-/// A feature parallel to a primary datum axis: the offsets of its axis
-/// ends from true position with their positions along the datum axis, its
-/// true position relative to the axis (the lever arm for clocking), and its
-/// allowed zone radius.
+/// A feature located to a primary datum axis: each end of its axis as an
+/// offset from the nearest point of its zone axis (components along
+/// `across`, two unit vectors square to the zone) with that point in the
+/// frame, and its allowed zone radius. For a feature parallel to the datum
+/// axis `across` is the frame's x and y.
 #[derive(Clone, Copy, Debug)]
 pub(super) struct AxialMember {
-    pub ends: [([f64; 2], f64); 2],
-    pub lever: [f64; 2],
+    pub ends: [([f64; 2], [f64; 3]); 2],
+    pub across: [[f64; 3]; 2],
     pub radius: f64,
 }
 impl AxialMember {
-    /// Each end's offset from its zone axis after the datum axis ends (at
-    /// `span`) move by `motion.ends`, interpolated along the axis, and the
-    /// frame turns by `motion.angle` about the axis.
+    /// Each end's offset from its zone axis after the motion: the datum
+    /// axis ends (at `span`) move by `motion.ends`, which translates the zone
+    /// by their interpolation at its height and tilts it about the frame
+    /// origin, and the frame turns by `motion.angle` about the axis.
     fn residuals(&self, motion: AxisMotion, span: [f64; 2]) -> [[f64; 2]; 2] {
-        let turned = turn(self.lever, motion.angle);
-        self.ends.map(|(offset, z)| {
-            let t = motion.at(z, span);
+        let tilt = motion.tilt(span);
+        self.ends.map(|(offset, q)| {
+            let t = motion.at(q[2], span);
+            let turned = turn([q[0], q[1]], motion.angle);
+            let moved = [
+                t[0] + turned[0] - q[0],
+                t[1] + turned[1] - q[1],
+                -(tilt[0] * q[0] + tilt[1] * q[1]),
+            ];
             [
-                offset[0] - t[0] - (turned[0] - self.lever[0]),
-                offset[1] - t[1] - (turned[1] - self.lever[1]),
+                offset[0] - dot3(moved, self.across[0]),
+                offset[1] - dot3(moved, self.across[1]),
             ]
         })
     }
@@ -320,6 +331,33 @@ impl AxialMember {
     fn excess(&self, motion: AxisMotion, span: [f64; 2]) -> f64 {
         0.5 * self.deviation(motion, span) - self.radius
     }
+    /// Distance of the zone from the datum axis, the lever arm of a turn.
+    fn lever(&self) -> f64 {
+        self.ends
+            .iter()
+            .map(|(_, q)| q[0].hypot(q[1]))
+            .fold(0.0, f64::max)
+    }
+    /// The turn about the datum axis carrying the zone point farthest from
+    /// it onto the measured end there.
+    fn clocking(&self) -> f64 {
+        let [first, second] = self.ends;
+        let (offset, q) = if first.1[0].hypot(first.1[1]) >= second.1[0].hypot(second.1[1]) {
+            first
+        } else {
+            second
+        };
+        let [a, b] = self.across;
+        let end = [
+            q[0] + offset[0] * a[0] + offset[1] * b[0],
+            q[1] + offset[0] * a[1] + offset[1] * b[1],
+        ];
+        (q[0] * end[1] - q[1] * end[0]).atan2(q[0] * end[0] + q[1] * end[1])
+    }
+}
+
+fn dot3(a: [f64; 3], b: [f64; 3]) -> f64 {
+    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 }
 
 /// Motion of a frame on a primary datum axis: the offsets of the datum
@@ -339,6 +377,14 @@ impl AxisMotion {
             (1.0 - w) * self.ends[0][1] + w * self.ends[1][1],
         ]
     }
+    /// Change in the axis's direction per unit length along it.
+    fn tilt(&self, span: [f64; 2]) -> [f64; 2] {
+        let length = span[1] - span[0];
+        [
+            (self.ends[1][0] - self.ends[0][0]) / length,
+            (self.ends[1][1] - self.ends[0][1]) / length,
+        ]
+    }
     /// Largest movement of either end of the datum axis.
     pub fn translation(&self) -> f64 {
         self.ends[0][0]
@@ -348,9 +394,11 @@ impl AxisMotion {
     /// Size of the rotation: the axis's tilt combined with the turn about
     /// it, signed by the turn.
     pub fn rotation(&self, span: [f64; 2]) -> f64 {
-        let tilt = (self.ends[1][0] - self.ends[0][0]).hypot(self.ends[1][1] - self.ends[0][1])
-            / (span[1] - span[0]);
-        tilt.hypot(self.angle).copysign(self.angle)
+        let tilt = self.tilt(span);
+        tilt[0]
+            .hypot(tilt[1])
+            .hypot(self.angle)
+            .copysign(self.angle)
     }
 }
 
@@ -364,7 +412,11 @@ fn weight(z: f64, span: [f64; 2]) -> f64 {
 /// (`space.disk`) of the mating (or minimum-material) axis, which
 /// translates and tilts the axis; a clocking width at a material boundary
 /// turns the frame about the axis while its boundary pair stays clear of
-/// the measured faces. Exact for datum features of perfect form; form error
+/// the measured faces; without a clocking datum the frame turns freely,
+/// starting from the turn that clocks the member farthest from the axis.
+/// Tilting the axis carries the frame about its origin, which also moves a
+/// zone at an angle to the axis along it. Exact for datum features of
+/// perfect form; form error
 /// is not used to restrict the motion further. The same min-max as
 /// [`fit_motion`] in five variables, relinearized in the turn, with an
 /// active set started from the five worst members. O(iterations ·
@@ -374,21 +426,33 @@ pub(super) fn fit_axis_motion(members: &[AxialMember], space: &ShiftSpace) -> Ax
     let Some(span) = space.span else {
         return zero;
     };
-    if members.is_empty()
-        || (space.disk.is_none() && space.axis_bounds.is_empty() && space.rotation_fixed)
-    {
+    let turns = !space.rotation_fixed && members.iter().any(|m| m.lever() > 1e-9);
+    if members.is_empty() || (space.disk.is_none() && space.axis_bounds.is_empty() && !turns) {
         return zero;
     }
+    // A frame free to turn starts from the turn that clocks the member
+    // farthest from the axis onto its measurement.
+    let start = AxisMotion {
+        angle: if space.turn_free && turns {
+            members
+                .iter()
+                .max_by(|a, b| a.lever().total_cmp(&b.lever()))
+                .map_or(0.0, AxialMember::clocking)
+        } else {
+            0.0
+        },
+        ..zero
+    };
     let mut order: Vec<usize> = (0..members.len()).collect();
     order.sort_by(|&a, &b| {
         members[b]
-            .excess(zero, span)
-            .total_cmp(&members[a].excess(zero, span))
+            .excess(start, span)
+            .total_cmp(&members[a].excess(start, span))
     });
     let mut active: Vec<usize> = order.into_iter().take(5).collect();
     loop {
         let subset: Vec<AxialMember> = active.iter().map(|&i| members[i]).collect();
-        let motion = axis_motion_lp(&subset, space, span);
+        let motion = axis_motion_lp(&subset, space, span, start);
         let active_worst = subset
             .iter()
             .map(|m| m.excess(motion, span))
@@ -405,19 +469,21 @@ pub(super) fn fit_axis_motion(members: &[AxialMember], space: &ShiftSpace) -> Ax
     }
 }
 
-fn axis_motion_lp(members: &[AxialMember], space: &ShiftSpace, span: [f64; 2]) -> AxisMotion {
+fn axis_motion_lp(
+    members: &[AxialMember],
+    space: &ShiftSpace,
+    span: [f64; 2],
+    start: AxisMotion,
+) -> AxisMotion {
     let directions: Vec<[f64; 2]> = (0..SIDES)
         .map(|k| {
             let a = std::f64::consts::TAU * k as f64 / SIDES as f64;
             [a.cos(), a.sin()]
         })
         .collect();
-    let lever = members
-        .iter()
-        .map(|m| m.lever[0].hypot(m.lever[1]))
-        .fold(1.0, f64::max);
+    let lever = members.iter().map(AxialMember::lever).fold(1.0, f64::max);
     let limit = space.disk.unwrap_or(0.0);
-    let mut motion = AxisMotion::default();
+    let mut motion = start;
     for _ in 0..LINEARIZATIONS {
         // Variables: Δe0x, Δe0y, Δe1x, Δe1y, Δangle, z, then w ≥ |e| per
         // component and wa ≥ |angle|.
@@ -444,18 +510,25 @@ fn axis_motion_lp(members: &[AxialMember], space: &ShiftSpace, span: [f64; 2]) -
                 0.0,
             ]
         };
+        let length = span[1] - span[0];
         for m in members {
             let residuals = m.residuals(motion, span);
-            let turned = turn(m.lever, motion.angle);
-            let q = [-turned[1], turned[0]];
-            for ((_, z), e) in m.ends.iter().zip(residuals) {
-                let w = weight(*z, span);
+            for ((_, q), e) in m.ends.iter().zip(residuals) {
+                let w = weight(q[2], span);
+                let turned = turn([q[0], q[1]], motion.angle);
                 for u in &directions {
-                    let along = u[0] * q[0] + u[1] * q[1];
-                    push(
-                        row([-u[0], -u[1]], w, -along, -1.0),
-                        m.radius - u[0] * e[0] - u[1] * e[1],
-                    );
+                    // The residual's direction in the frame; its height
+                    // component sees the tilt about the origin.
+                    let g: [f64; 3] =
+                        std::array::from_fn(|i| u[0] * m.across[0][i] + u[1] * m.across[1][i]);
+                    let along = g[0] * -turned[1] + g[1] * turned[0];
+                    let lift = [g[2] * q[0] / length, g[2] * q[1] / length];
+                    let mut r = row([-g[0], -g[1]], w, -along, -1.0);
+                    r[0] -= lift[0];
+                    r[1] -= lift[1];
+                    r[2] += lift[0];
+                    r[3] += lift[1];
+                    push(r, m.radius - u[0] * e[0] - u[1] * e[1]);
                 }
             }
         }
@@ -676,7 +749,7 @@ impl Context<'_, '_> {
     /// extent, and a clocking width at a material boundary turns the frame
     /// about the axis, its boundary pair at the width's basic offset from the
     /// axis. A plane perpendicular to the axis only stops translation along
-    /// it, which leaves zones parallel to the axis in place.
+    /// it. Without a clocking datum the frame turns freely about the axis.
     fn axis_space(
         &mut self,
         datums: &[DrawingDatumReference],
@@ -705,6 +778,14 @@ impl Context<'_, '_> {
         if datums[0].members().nth(1).is_some() && limit > 0.0 {
             space.disk = None;
             space.axis_bounds = self.common_bounds(&datums[0], measured)?;
+        }
+        let clocked = simulators.iter().skip(1).any(|s| match s {
+            Simulator::Plane(_, normal, _) => dot(*normal, measured.z_axis).abs() < 0.5,
+            Simulator::Axis(..) => true,
+        });
+        if !clocked {
+            space.rotation_fixed = false;
+            space.turn_free = true;
         }
         for (datum, simulator) in datums.iter().zip(simulators).skip(1) {
             let (normal, width) = match simulator {

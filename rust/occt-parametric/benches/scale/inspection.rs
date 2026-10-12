@@ -1709,3 +1709,234 @@ pub(crate) fn coaxial_shift_case(definition: &FamilyDefinition, common: bool) ->
         },
     )
 }
+
+/// 10,000 radial holes square to a datum bore at MMB, stopped along it by a
+/// face and free to turn about it: every hole turned 1 mrad and half raised,
+/// half lowered 0.01 mm, sharing one turn of the frame.
+pub(crate) fn radial_case(definition: &FamilyDefinition) -> Outcome {
+    timed(
+        format!(
+            "inspection: {CONTROLS} radial position controls sharing a primary-axis frame turn"
+        ),
+        // Each hole's two envelope fits relinearize their 1 mrad turn.
+        Duration::from_secs(1),
+        Expectation::Required,
+        || {
+            // 100 nominal holes, 25 around at each of 4 heights, as the
+            // other cases share 100 hole datums.
+            const HOLES: usize = 100;
+            let angle = |h: usize| std::f64::consts::TAU * (h % 25) as f64 / 25.0;
+            let height = |h: usize| 5.0 + 10.0 * (h / 25) as f64;
+            let mut definition = definition.clone();
+            definition.datums = vec![
+                DatumDefinition {
+                    id: "bore".into(),
+                    kind: DatumKind::Axis {
+                        origin: literal([0.0; 3]),
+                        direction: VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, 1.0)),
+                    },
+                },
+                plane("stop", [0.0; 3], [0.0, 0.0, -1.0]),
+            ];
+            definition
+                .datums
+                .extend((0..HOLES).map(|h| DatumDefinition {
+                    id: format!("radial-{h}"),
+                    kind: DatumKind::Axis {
+                        origin: literal([0.0, 0.0, height(h)]),
+                        direction: VectorExpr::Literal(VectorQuantity::scalars(
+                            angle(h).cos(),
+                            angle(h).sin(),
+                            0.0,
+                        )),
+                    },
+                }));
+            let mut graph = InstanceGraph::new(&definition);
+            graph.add_base("part", HashMap::new(), "bench")?;
+            let limits = |lower, upper| DrawingSizeLimits {
+                kind: FeatureOfSizeKind::Internal,
+                lower: Quantity::length(lower, LengthUnit::Millimeter),
+                upper: Quantity::length(upper, LengthUnit::Millimeter),
+            };
+            let controls: Vec<DrawingFeatureControlFrame> = (0..CONTROLS)
+                .map(|i| DrawingFeatureControlFrame {
+                    pattern: None,
+                    unequal: None,
+                    surface: None,
+                    size_limits: Some(limits(2.9, 3.1)),
+                    datum_reference_frame: None,
+                    refinement: None,
+                    id: format!("radial-{i}"),
+                    attachment: attachment(&format!("radial-{}", i % HOLES)),
+                    characteristic: GeometricCharacteristic::Position,
+                    tolerance: Quantity::length(0.05, LengthUnit::Millimeter),
+                    display_unit: LengthUnit::Millimeter,
+                    precision: 2,
+                    zone: GeometricToleranceZone::Diameter,
+                    material: ToleranceMaterialCondition::Regardless,
+                    feature_of_size: true,
+                    datums: vec![
+                        DrawingDatumReference {
+                            datum_feature: "A".into(),
+                            boundary: DatumMaterialBoundary::Maximum,
+                            common_with: Vec::new(),
+                        },
+                        DrawingDatumReference {
+                            datum_feature: "B".into(),
+                            boundary: DatumMaterialBoundary::Regardless,
+                            common_with: Vec::new(),
+                        },
+                    ],
+                })
+                .collect();
+            let drawing = DrawingDefinition {
+                datum_reference_frames: Vec::new(),
+                datum_features: vec![
+                    DrawingDatumFeature {
+                        id: "A".into(),
+                        label: "A".into(),
+                        feature_of_size: true,
+                        attachment: attachment("bore"),
+                        size_kind: None,
+                        size_limits: Some(limits(9.9, 10.1)),
+                    },
+                    DrawingDatumFeature {
+                        id: "B".into(),
+                        label: "B".into(),
+                        feature_of_size: false,
+                        attachment: attachment("stop"),
+                        size_kind: None,
+                        size_limits: None,
+                    },
+                ],
+                feature_control_frames: controls,
+                surface_textures: Vec::new(),
+                parts_list: None,
+                balloons: Vec::new(),
+                releases: Vec::new(),
+                revision_table: None,
+                sheet: None,
+                id: "radial".into(),
+                title: "Radial".into(),
+                paper_size_mm: [1000.0, 1000.0],
+                guides: Vec::new(),
+                dimensions: Vec::new(),
+                notes: Vec::new(),
+                metadata: Default::default(),
+                views: vec![DrawingView {
+                    id: "top".into(),
+                    outputs: vec![InstanceOutputRef {
+                        instance: "part".into(),
+                        output: "body".into(),
+                    }],
+                    origin: VectorQuantity::lengths(0.0, 0.0, 0.0, LengthUnit::Millimeter),
+                    direction: VectorQuantity::scalars(0.0, 0.0, 1.0),
+                    x_axis: VectorQuantity::scalars(1.0, 0.0, 0.0),
+                    paper_origin_mm: [10.0, 100.0],
+                    scale: 1.0,
+                    show_hidden: false,
+                    kind: DrawingViewKind::Orthographic,
+                    detail: None,
+                    hatching: None,
+                    material_hatching: Default::default(),
+                }],
+            };
+            // Rings of 36 points of `radius` about the line through `base`
+            // along `axis` (square to z), at each distance along it.
+            let rings = |base: [f64; 3], axis: [f64; 3], radius: f64, along: &[f64]| {
+                let side = [-axis[1], axis[0], 0.0];
+                along
+                    .iter()
+                    .flat_map(|&s| {
+                        (0..36).map(move |k| {
+                            let (sin, cos) = (k as f64 * std::f64::consts::TAU / 36.0).sin_cos();
+                            [0, 1, 2].map(|j| {
+                                base[j]
+                                    + s * axis[j]
+                                    + radius * (cos * side[j] + sin * [0.0, 0.0, 1.0][j])
+                            })
+                        })
+                    })
+                    .collect::<Vec<_>>()
+            };
+            let datum_heights: Vec<f64> = (0..=50).map(|k| k as f64).collect();
+            let record = InspectionRecord {
+                uncertainty: None,
+                drawing: "radial".into(),
+                surface_textures: Vec::new(),
+                datum_features: vec![
+                    MeasuredFeature {
+                        nominals: Vec::new(),
+                        id: "A".into(),
+                        points_mm: datum_heights
+                            .iter()
+                            .flat_map(|&z| {
+                                (0..36).map(move |k| {
+                                    let (sin, cos) =
+                                        (k as f64 * std::f64::consts::TAU / 36.0).sin_cos();
+                                    [5.03 * cos, 5.03 * sin, z]
+                                })
+                            })
+                            .collect(),
+                    },
+                    MeasuredFeature {
+                        nominals: Vec::new(),
+                        id: "B".into(),
+                        points_mm: grid(100, |u, v| [40.0 * u - 20.0, 40.0 * v - 20.0, 0.0]),
+                    },
+                ],
+                controls: (0..CONTROLS)
+                    .map(|i| {
+                        let h = i % HOLES;
+                        let (sin, cos) = (angle(h) + 0.001).sin_cos();
+                        let lift = if (i / HOLES).is_multiple_of(2) {
+                            0.01
+                        } else {
+                            -0.01
+                        };
+                        MeasuredFeature {
+                            nominals: Vec::new(),
+                            id: format!("radial-{i}"),
+                            points_mm: rings(
+                                [0.0, 0.0, height(h) + lift],
+                                [cos, sin, 0.0],
+                                1.5,
+                                &[10.0, 20.0],
+                            ),
+                        }
+                    })
+                    .collect(),
+            };
+            let points: usize = record
+                .datum_features
+                .iter()
+                .chain(&record.controls)
+                .map(|m| m.points_mm.len())
+                .sum();
+            let report = drawing.evaluate_inspection(&graph, &record)?;
+            let mut turn = 0.0;
+            for control in &report.controls {
+                let ControlResult::Evaluated(m) = &control.result else {
+                    return Err(failure(format!(
+                        "{} was not evaluated: {:?}",
+                        control.control, control.result
+                    )));
+                };
+                if !m.conforms || (m.deviation_mm - 0.02).abs() > 1e-3 {
+                    return Err(failure(format!("{} measured {m:?}", control.control)));
+                }
+                turn = m.datum_shift_rotation_rad;
+            }
+            if (turn - 0.001).abs() > 1e-5 {
+                return Err(failure(format!("shared turn {turn}")));
+            }
+            Ok(format!(
+                "{} of {} conform with a shared {:.2} mrad frame turn, {} measured points",
+                report.controls.len(),
+                report.controls.len(),
+                turn * 1e3,
+                points
+            ))
+        },
+    )
+}
