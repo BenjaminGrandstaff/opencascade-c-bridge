@@ -701,6 +701,16 @@ impl Context<'_, '_> {
                 }
                 Simulator::Axis(..) => space.fixed.extend([[1.0, 0.0], [0.0, 1.0]]),
                 Simulator::Plane(point, normal, width) => {
+                    // Shift moves the frame within the primary's plane; a
+                    // datum tilted out of square with it would also move
+                    // along the primary.
+                    let tilted = || -> Result<bool, String> {
+                        let (_, n) = self.nominal_datum(&datum.datum_feature)?;
+                        Ok(dot(n, nominal.z_axis).abs() > 1e-9)
+                    };
+                    if shifts && tilted()? {
+                        return Err("datum shift of a datum plane at a basic angle to the primary other than 90° is not evaluated".into());
+                    }
                     let n = in_plane(*normal);
                     let length = n[0].hypot(n[1]);
                     let n = [n[0] / length, n[1] / length];

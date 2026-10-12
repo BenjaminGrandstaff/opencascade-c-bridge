@@ -1,4 +1,4 @@
-//! Ordered datum intent and a strictly nominal orthogonal-plane coordinate frame.
+//! Ordered datum intent and a strictly nominal three-plane coordinate frame.
 use super::*;
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -50,6 +50,8 @@ impl DrawingDatumCoordinateFrame {
 }
 impl ResolvedDrawingDatumReferenceFrame {
     /// Nominal model planes only: no fitted simulators, bonus tolerance or shift.
+    /// The planes may meet at any basic angles, provided they meet in a point
+    /// and the secondary is not parallel to the primary.
     pub fn nominal_planar_321(&self) -> Result<DrawingDatumCoordinateFrame, ModelError> {
         let [primary, secondary, tertiary] = self.datums.as_slice() else {
             return Err(ModelError::new(
@@ -59,15 +61,12 @@ impl ResolvedDrawingDatumReferenceFrame {
         let (p, z) = plane(primary)?;
         let (s, sn) = plane(secondary)?;
         let (t, tn) = plane(tertiary)?;
-        if [dot(z, sn), dot(z, tn), dot(sn, tn)]
-            .into_iter()
-            .any(|v| v.abs() > 1e-9)
-        {
+        let determinant = dot(z, cross(sn, tn));
+        if length(cross(z, sn)) < 1e-6 || determinant.abs() < 1e-6 {
             return Err(ModelError::new(
-                "nominal 3-2-1 requires mutually orthogonal planes",
+                "nominal 3-2-1 requires three planes meeting in a point, the secondary not parallel to the primary",
             ));
         }
-        let determinant = dot(z, cross(sn, tn));
         let sx = cross(tn, z);
         let ty = cross(z, sn);
         let a = dot(sn, subtract(s, p)) / determinant;

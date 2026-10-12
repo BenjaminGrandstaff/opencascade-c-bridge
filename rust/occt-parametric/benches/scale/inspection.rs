@@ -65,10 +65,17 @@ fn grid(count: usize, point: impl Fn(f64, f64) -> [f64; 3]) -> Vec<[f64; 3]> {
         .collect()
 }
 
-pub(crate) fn inspection_case(definition: &FamilyDefinition) -> Outcome {
+/// With `oblique`, datum B is a 45° bevel along the plate's left edge,
+/// tilted to A, in place of the square left face.
+pub(crate) fn inspection_case(definition: &FamilyDefinition, oblique: bool) -> Outcome {
     timed(
         format!(
-            "inspection: {CONTROLS} measured position controls + {SURFACE_POINTS}-point flatness"
+            "inspection: {CONTROLS} measured position controls + {SURFACE_POINTS}-point flatness{}",
+            if oblique {
+                ", secondary datum at 45° to A"
+            } else {
+                ""
+            }
         ),
         Duration::from_secs(1),
         Expectation::Required,
@@ -77,7 +84,12 @@ pub(crate) fn inspection_case(definition: &FamilyDefinition) -> Outcome {
             let side = 20.0 * HOLES_PER_SIDE as f64;
             definition.datums = vec![
                 plane("bottom", [0.0; 3], [0.0, 0.0, -1.0]),
-                plane("left", [0.0; 3], [-1.0, 0.0, 0.0]),
+                if oblique {
+                    let s = std::f64::consts::FRAC_1_SQRT_2;
+                    plane("left", [2.0, 0.0, 0.0], [-s, 0.0, -s])
+                } else {
+                    plane("left", [0.0; 3], [-1.0, 0.0, 0.0])
+                },
                 plane("front", [0.0; 3], [0.0, -1.0, 0.0]),
                 plane("top", [0.0, 0.0, 10.0], [0.0, 0.0, 1.0]),
             ];
@@ -225,7 +237,11 @@ pub(crate) fn inspection_case(definition: &FamilyDefinition) -> Outcome {
                 surface_textures: Vec::new(),
                 datum_features: vec![
                     datum("A", &|u, v| [side * u, side * v, 0.0]),
-                    datum("B", &|u, v| [0.0, side * u, 10.0 * v]),
+                    if oblique {
+                        datum("B", &|u, v| [2.0 - 2.0 * v, side * u, 2.0 * v])
+                    } else {
+                        datum("B", &|u, v| [0.0, side * u, 10.0 * v])
+                    },
                     datum("C", &|u, v| [side * u, 0.0, 10.0 * v]),
                 ],
                 controls: measured,

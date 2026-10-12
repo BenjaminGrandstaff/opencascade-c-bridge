@@ -447,15 +447,15 @@ fn zone_width(deviations: &[f64], center: f64) -> f64 {
 
 /// Unit frame whose first axis is `a` and whose second lies in the plane of
 /// `a` and `b`.
-fn orthonormal(a: Vec3, b: Vec3) -> Result<[Vec3; 3], String> {
+pub(super) fn orthonormal(a: Vec3, b: Vec3) -> Result<[Vec3; 3], String> {
     let a = unit(a).map_err(|e| e.to_string())?;
     let b = unit(subtract(b, scale(a, dot(a, b))))
-        .map_err(|_| "profile datum directions are parallel".to_string())?;
+        .map_err(|_| "datum directions are parallel".to_string())?;
     Ok([a, b, cross(a, b)])
 }
 
 /// Columns of the smallest rotation taking unit `from` onto unit `to`.
-fn minimal_rotation(from: Vec3, to: Vec3) -> [Vec3; 3] {
+pub(super) fn minimal_rotation(from: Vec3, to: Vec3) -> [Vec3; 3] {
     let axis = cross(from, to);
     let sine = length(axis);
     let angle = sine.atan2(dot(from, to));

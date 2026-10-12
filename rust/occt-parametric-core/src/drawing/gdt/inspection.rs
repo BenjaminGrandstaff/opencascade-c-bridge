@@ -14,6 +14,7 @@ pub mod fit;
 mod profile;
 mod shift;
 use fit::{Fit, circle_zone, cylinder_zone, fit_circle, fit_cylinder, fit_plane, fit_width};
+use profile::{minimal_rotation, orthonormal};
 use shift::{
     AxialMember, AxisMotion, Motion, PatternMember, ShiftSpace, fit_axis_motion, fit_motion,
 };
@@ -820,12 +821,14 @@ impl Context<'_, '_> {
             return Ok(simulators);
         }
         // A tertiary plane after a primary plane and a secondary axis only
-        // clocks rotation about that axis: its normal turns about A's normal.
+        // clocks rotation about that axis: its normal keeps its basic angle
+        // to A's and turns about it.
         if let [Simulator::Plane(_, primary, _), Simulator::Axis(..)] = simulators.as_slice() {
-            let (_, nominal) = self.nominal_datum(id)?;
-            let normal = unit(subtract(nominal, scale(*primary, dot(nominal, *primary))))
-                .map_err(|_| "tertiary datum plane is parallel to the primary".to_string())?;
             let primary = *primary;
+            let normal = self.carried(id, &datums[..1], &[primary])?;
+            if length(cross(normal, primary)) < 1e-6 {
+                return Err("tertiary datum plane is parallel to the primary".into());
+            }
             simulators.push(self.plane_simulator(&members, &union, normal, &[primary])?);
             return Ok(simulators);
         }
@@ -839,31 +842,83 @@ impl Context<'_, '_> {
                 Simulator::Axis(_, d, ..) => *d,
             })
             .collect();
-        let (_, nominal) = self.nominal_datum(id)?;
+        // Each simulator keeps its basic angles to the higher-precedence
+        // ones: a secondary turns only about the primary's normal, and a
+        // tertiary is fixed in orientation by both.
         let (normal, axes) = match planes.as_slice() {
             [] => {
+                let (_, nominal) = self.nominal_datum(id)?;
                 let (u, v) = perpendiculars(nominal);
                 (nominal, vec![u, v])
             }
-            [primary] => (
-                unit(subtract(nominal, scale(*primary, dot(nominal, *primary))))
-                    .map_err(|_| "secondary datum plane is parallel to the primary".to_string())?,
-                vec![*primary],
-            ),
+            [primary] => {
+                let normal = self.carried(id, prefix, &planes)?;
+                if length(cross(normal, *primary)) < 1e-6 {
+                    return Err("secondary datum plane is parallel to the primary".into());
+                }
+                (normal, vec![*primary])
+            }
             [primary, secondary, ..] => {
-                let n = cross(*primary, *secondary);
-                (
-                    if dot(n, nominal) < 0.0 {
-                        scale(n, -1.0)
-                    } else {
-                        n
-                    },
-                    Vec::new(),
-                )
+                let normal = self.carried(id, prefix, &planes)?;
+                if dot(normal, cross(*primary, *secondary)).abs() < 1e-6 {
+                    return Err(
+                        "tertiary datum plane is parallel to the line where the primary and secondary meet"
+                            .into(),
+                    );
+                }
+                (normal, Vec::new())
             }
         };
         simulators.push(self.plane_simulator(&members, points, normal, &axes)?);
         Ok(simulators)
+    }
+
+    /// Nominal normal of plane datum `id` carried by the rotation that takes
+    /// the nominal directions of the higher-precedence `datums` (plane
+    /// normals or axis directions) onto their simulators' `measured` ones:
+    /// the smallest rotation for one, the rotation of the frame they span for
+    /// two. Keeps the datum's basic angles to them.
+    fn carried(
+        &self,
+        id: &str,
+        datums: &[DrawingDatumReference],
+        measured: &[Vec3],
+    ) -> Result<Vec3, String> {
+        let (_, nominal) = self.nominal_datum(id)?;
+        let directions = datums
+            .iter()
+            .map(|d| {
+                match self.nominal(&self.features[d.datum_feature.as_str()].attachment.anchor)? {
+                    ResolvedDatum::Plane { normal, .. } => unit(normal).map_err(|e| e.to_string()),
+                    ResolvedDatum::Axis { direction, .. } => {
+                        unit(direction).map_err(|e| e.to_string())
+                    }
+                    _ => Err("datums must be planes or axes".into()),
+                }
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        let columns = match (directions.as_slice(), measured) {
+            ([from], [to, ..]) => minimal_rotation(*from, *to),
+            ([a, b, ..], [p, q, ..]) => {
+                let (from, to) = (orthonormal(*a, *b)?, orthonormal(*p, *q)?);
+                [0, 1, 2].map(|i| {
+                    let e = [
+                        Vec3::new(1.0, 0.0, 0.0),
+                        Vec3::new(0.0, 1.0, 0.0),
+                        Vec3::new(0.0, 0.0, 1.0),
+                    ][i];
+                    add(
+                        add(scale(to[0], dot(e, from[0])), scale(to[1], dot(e, from[1]))),
+                        scale(to[2], dot(e, from[2])),
+                    )
+                })
+            }
+            _ => return Ok(nominal),
+        };
+        Ok(add(
+            add(scale(columns[0], nominal.x), scale(columns[1], nominal.y)),
+            scale(columns[2], nominal.z),
+        ))
     }
 
     /// A contacting plane (constrained L∞) over `points`, or for a single
@@ -1538,11 +1593,13 @@ impl Context<'_, '_> {
         };
         let e = unit(subtract(reference, scale(a, dot(reference, a))))
             .unwrap_or_else(|_| perpendiculars(a).0);
-        let measured_e = match planes.get(1) {
-            Some(simulator) => simulator.plane_normal()?,
-            None => unit(subtract(e, scale(measured_a, dot(e, measured_a))))
-                .map_err(|e| e.to_string())?,
-        };
+        // A secondary at a basic angle to A: its normal's part square to A.
+        let measured_e = planes
+            .get(1)
+            .map_or(Ok(e), Simulator::plane_normal)
+            .and_then(|e| {
+                unit(subtract(e, scale(measured_a, dot(e, measured_a)))).map_err(|e| e.to_string())
+            })?;
         let normal = add(
             add(
                 scale(measured_a, dot(nominal, a)),

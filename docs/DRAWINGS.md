@@ -788,16 +788,18 @@ labels, explicit primary/secondary/tertiary precedence, material boundaries and
 current world-space nominal datum geometry. `resolve_datum_reference_frames(graph)`
 validates once and resolves all frames using an indexed datum-feature lookup.
 The returned `ResolvedDrawingDatumReferenceFrame::nominal_planar_321()` supports
-three mutually orthogonal plane datums at RFS. It intersects those planes for the
-origin, uses the primary normal for +Z, the orthogonalized secondary normal for
-+X, and their cross product for +Y. Reversing a tertiary normal does not reverse
+three plane datums at RFS meeting at any basic angles. It intersects those
+planes for the origin, uses the primary normal for +Z, the secondary normal's
+part square to it for +X, and their cross product for +Y. Reversing a tertiary normal does not reverse
 the right-handed axes. `DrawingDatumCoordinateFrame::coordinates_mm(point)`
 transforms world points into that frame in millimeters.
 
-The orthogonality bound is 1e-9 on unit-normal dot products. Intersection offsets
+The planes must meet in a point (the unit normals' triple product at least
+1e-6) with the secondary not parallel to the primary. Intersection offsets
 are evaluated relative to the primary plane origin to reduce cancellation far
 from the world origin. Non-finite results, partial frames, point/axis datums,
-nonorthogonal planes and material-boundary shift requests fail explicitly. This
+planes that do not meet in a point and material-boundary shift requests fail
+explicitly. This
 is a nominal coordinate utility over model planes, not a measured 3-2-1 simulator,
 fitted datum establishment or evidence of manufacturing conformity.
 
@@ -1011,10 +1013,23 @@ Datum simulators follow the precedence order:
 
 - **Primary plane:** the minimum-zone orientation, placed against the outermost
   measured points (constrained L∞).
-- **Secondary plane:** held perpendicular to the primary, free to rotate about
-  the primary normal.
-- **Tertiary plane:** fixed perpendicular to both and placed against its high
-  point.
+- **Secondary plane:** held at its basic angle to the primary, free to rotate
+  about the primary normal.
+- **Tertiary plane:** fixed at its basic angles to both and placed against its
+  high point.
+
+Basic angles need not be 90°. Each simulator starts from its nominal normal
+carried by the rotation that takes the higher-precedence datums' nominal
+directions onto their simulators': the smallest rotation for a primary alone,
+the rotation of the frame they span for two. A bevel at 45° to A can be a
+secondary, and a chamfer square to A at 45° to B a tertiary. A secondary
+parallel to the primary, or a tertiary whose normal lies in the plane of the
+primary's and secondary's (so it cannot place the origin along the line where
+they meet), is reported. Orientation zones use the secondary normal's part
+square to A. Datum shift at MMB/LMB moves the frame within A's plane, so it
+is evaluated only for widths square to A; a width tilted to A at a material
+boundary is reported. The same carried start orients a tertiary plane
+clocking a plane-axis frame at an angle to A.
 - **Axis datum feature of size (schema 135):** a datum feature with
   `feature_of_size: true`, an axis anchor and `size_kind` (`internal` or
   `external`) is simulated by the axis of its actual mating envelope. That is
@@ -1396,11 +1411,12 @@ and conforms.
 shared across controls. Time is O(controls · datums) plus the fit costs, and each
 fit is linear in its points per simplex pivot. The scale benchmark evaluates
 10,000 MMC position controls of 72 points each, plus a 100,000-point flatness
-surface, against one shared frame, in 0.19 s; and 1,000 cylindricity plus 1,000
+surface, against one shared frame, in 0.19 s, or in 0.22 s with datum B a
+bevel at 45° to A; and 1,000 cylindricity plus 1,000
 circularity controls (612,000 points) in 0.13 s. It also evaluates 1,000
 circular plus 1,000 total runout controls (471,600 points), with each of 100
 bore datum axes fitted once, in 0.03 s. Against 100 common datum axes from
-200 bore journals (511,200 points), the same controls take 0.037 s. All four
+200 bore journals (511,200 points), the same controls take 0.037 s. All five
 cases have 1 s budgets.
 Runout readings cost O(n log n) per control after the datum fit. 10,000
 position controls located A | B(MMB) | C from a center bore share one datum
@@ -1429,7 +1445,9 @@ regenerate the part once and project every point onto the named side face in
 0.59 s (2 s budget). One line profile of 1,000,000 points in 1,000 elements
 takes 0.20 s (1 s budget).
 
-**Not yet covered.** Datum shift of common planes; composite position to a primary datum axis; a tertiary
+**Not yet covered.** Datum shift of common planes; datum shift of widths
+tilted to the primary; an axis datum at an angle to a primary plane;
+composite position to a primary datum axis; a tertiary
 hole or pin's form error limiting its rotational shift; a tertiary plane
 re-contacting as a shifting secondary width turns; common width datums; the separate requirement
 (`SEP REQT`); boundaries

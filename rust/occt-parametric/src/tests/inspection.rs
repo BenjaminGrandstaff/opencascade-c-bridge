@@ -2489,6 +2489,195 @@ fn position_is_measured_at_an_angle_to_a_primary_datum_axis() {
     );
 }
 
+/// `plate` with a 45° bevel along its bottom-left edge (x + z = 2), and a
+/// drawing whose position control on the hole and perpendicularity of the
+/// right face are referenced to `frame`, with datum features D (the
+/// chamfer, square to A at 45° to B) and E (the bevel, at 45° to A).
+fn oblique_setup(frame: [&str; 3]) -> (FamilyDefinition, DrawingDefinition) {
+    let mut definition = plate();
+    let s = std::f64::consts::FRAC_1_SQRT_2;
+    definition
+        .datums
+        .push(plane("bevel", [2.0, 0.0, 0.0], [-s, 0.0, -s]));
+    let mut page = page();
+    for (id, anchor) in [("D", "chamfer"), ("E", "bevel")] {
+        let mut feature = page.datum_features[0].clone();
+        feature.id = id.into();
+        feature.label = id.into();
+        feature.attachment = attachment(anchor);
+        page.datum_features.push(feature);
+    }
+    page.datum_reference_frames[0].datums = frame
+        .iter()
+        .map(|id| DrawingDatumReference {
+            datum_feature: (*id).into(),
+            boundary: DatumMaterialBoundary::Regardless,
+            common_with: Vec::new(),
+        })
+        .collect();
+    page.feature_control_frames
+        .retain(|f| f.id == "position" || f.id == "perpendicular");
+    page.feature_control_frames[0].datums = page.datum_reference_frames[0].datums[..2].to_vec();
+    (definition, page)
+}
+
+/// The nominal plate measured with the chamfer and bevel moved out along
+/// their normals by `chamfer` and `bevel`, then the whole part turned by
+/// `turn` (radians about a fixed skew axis) and moved by `moved`.
+fn oblique_record(chamfer: f64, bevel: f64, turn: f64, moved: [f64; 3]) -> InspectionRecord {
+    let s = std::f64::consts::FRAC_1_SQRT_2;
+    let mut record = nominal_record();
+    record
+        .controls
+        .retain(|c| c.id == "position" || c.id == "perpendicular");
+    record.datum_features.push(measured(
+        "D",
+        grid(|u, v| {
+            [
+                55.0 + 5.0 * u + chamfer * s,
+                40.0 - 5.0 * u + chamfer * s,
+                10.0 * v,
+            ]
+        }),
+    ));
+    record.datum_features.push(measured(
+        "E",
+        grid(|u, v| [2.0 - 2.0 * v - bevel * s, 40.0 * u, 2.0 * v - bevel * s]),
+    ));
+    let k = {
+        let k = [1.0, 2.0, 3.0_f64];
+        let n = (k[0] * k[0] + k[1] * k[1] + k[2] * k[2]).sqrt();
+        k.map(|c| c / n)
+    };
+    let (sin, cos) = turn.sin_cos();
+    // Rodrigues' rotation about k, then the move.
+    let place = |p: [f64; 3]| {
+        let kxp = [
+            k[1] * p[2] - k[2] * p[1],
+            k[2] * p[0] - k[0] * p[2],
+            k[0] * p[1] - k[1] * p[0],
+        ];
+        let kdp = k[0] * p[0] + k[1] * p[1] + k[2] * p[2];
+        [0, 1, 2].map(|i| p[i] * cos + kxp[i] * sin + k[i] * kdp * (1.0 - cos) + moved[i])
+    };
+    for feature in record.datum_features.iter_mut().chain(&mut record.controls) {
+        for p in &mut feature.points_mm {
+            *p = place(*p);
+        }
+    }
+    record
+}
+
+#[test]
+fn datum_simulators_keep_their_basic_angles() {
+    // A | B | D: the chamfer at 45° to B, square to A, places the origin
+    // along B. Moved out 0.1 mm along its normal, it moves the origin
+    // 0.1·√2 along y, which the hole's position reads at twice that.
+    let (definition, page) = oblique_setup(["A", "B", "D"]);
+    let graph = graph_of(&definition);
+    let report = page
+        .evaluate_inspection(&graph, &oblique_record(0.0, 0.0, 0.0, [0.0; 3]))
+        .unwrap();
+    let m = evaluated(&report, "position");
+    assert!(m.deviation_mm < 1e-6, "{m:?}");
+    let report = page
+        .evaluate_inspection(&graph, &oblique_record(0.1, 0.0, 0.0, [0.0; 3]))
+        .unwrap();
+    let m = evaluated(&report, "position");
+    assert!(
+        (m.deviation_mm - 0.2 * 2.0_f64.sqrt()).abs() < 1e-6,
+        "{m:?}"
+    );
+    // A | E | C: the bevel at 45° to A is the secondary. Its simulator turns
+    // only about A's normal, keeping 45° to A, and places the origin along
+    // x.
+    let (definition, page) = oblique_setup(["A", "E", "C"]);
+    let graph = graph_of(&definition);
+    let report = page
+        .evaluate_inspection(&graph, &oblique_record(0.0, 0.1, 0.0, [0.0; 3]))
+        .unwrap();
+    let m = evaluated(&report, "position");
+    assert!(
+        (m.deviation_mm - 0.2 * 2.0_f64.sqrt()).abs() < 1e-6,
+        "{m:?}"
+    );
+    let f = &report.datum_frames[0].frame;
+    assert!(
+        (f.origin_mm.x - (2.0 - 0.1 * 2.0_f64.sqrt())).abs() < 1e-6
+            && (f.x_axis.x + 1.0).abs() < 1e-9,
+        "{f:?}"
+    );
+    // The whole part turned 3 mrad about a skew axis and moved: every
+    // simulator follows at its basic angle, so the part still measures at
+    // true position, and the right face stays square to A | E.
+    for frame in [["A", "B", "D"], ["A", "E", "C"]] {
+        let (definition, page) = oblique_setup(frame);
+        let graph = graph_of(&definition);
+        let report = page
+            .evaluate_inspection(&graph, &oblique_record(0.0, 0.0, 0.003, [0.5, -0.3, 0.2]))
+            .unwrap();
+        for id in ["position", "perpendicular"] {
+            let m = evaluated(&report, id);
+            assert!(m.deviation_mm < 1e-6, "{frame:?} {id} {m:?}");
+        }
+    }
+    // The bevel's normal lies in the plane of A's and B's, so as a tertiary
+    // it cannot place the origin along the line where A and B meet.
+    let (definition, page) = oblique_setup(["A", "B", "E"]);
+    let graph = graph_of(&definition);
+    let report = page
+        .evaluate_inspection(&graph, &oblique_record(0.0, 0.0, 0.0, [0.0; 3]))
+        .unwrap();
+    let result = &report
+        .controls
+        .iter()
+        .find(|c| c.control == "position")
+        .unwrap()
+        .result;
+    assert!(
+        matches!(result, ControlResult::NotEvaluated(r) if r.contains("meet")),
+        "{result:?}"
+    );
+    // Datum shift is not evaluated for a datum tilted out of square with
+    // the primary: here the bevel as one face of a 4 mm tab.
+    let (definition, mut page) = oblique_setup(["A", "E", "C"]);
+    page.datum_reference_frames[0].datums[1].boundary = DatumMaterialBoundary::Maximum;
+    let tab = page
+        .datum_features
+        .iter_mut()
+        .find(|f| f.id == "E")
+        .unwrap();
+    tab.feature_of_size = true;
+    tab.size_kind = Some(FeatureOfSizeKind::External);
+    tab.size_limits = Some(DrawingSizeLimits {
+        kind: FeatureOfSizeKind::External,
+        lower: Quantity::length(3.9, LengthUnit::Millimeter),
+        upper: Quantity::length(4.1, LengthUnit::Millimeter),
+    });
+    let mut record = oblique_record(0.0, 0.0, 0.0, [0.0; 3]);
+    let inward = 4.0 * std::f64::consts::FRAC_1_SQRT_2;
+    record
+        .datum_features
+        .last_mut()
+        .unwrap()
+        .points_mm
+        .extend(grid(|u, v| {
+            [2.0 - 2.0 * v + inward, 40.0 * u, 2.0 * v + inward]
+        }));
+    let graph = graph_of(&definition);
+    let report = page.evaluate_inspection(&graph, &record).unwrap();
+    let result = &report
+        .controls
+        .iter()
+        .find(|c| c.control == "position")
+        .unwrap()
+        .result;
+    assert!(
+        matches!(result, ControlResult::NotEvaluated(r) if r.contains("basic angle")),
+        "{result:?}"
+    );
+}
+
 /// `coaxial_page` located to the common axis D-E of two Ø9.9-10.1 bores on
 /// the hole axis, at `boundary`.
 fn common_shift_page(boundary: DatumMaterialBoundary) -> DrawingDefinition {
