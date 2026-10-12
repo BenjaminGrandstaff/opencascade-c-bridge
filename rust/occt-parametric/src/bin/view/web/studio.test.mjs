@@ -17,8 +17,8 @@ class Element {
   attachShadow(){this.shadowRoot=new Root();return this.shadowRoot;}
   matches(){return false;}
 }
-class Root {
-  constructor(){this.elements={};}
+class Root extends Element {
+  constructor(){super();this.elements={};}
   getElementById(id){return this.elements[id]??=new Element();}
   createElement(tag){return new Element(tag);}
   querySelector(id){return this.getElementById(id);}
@@ -31,8 +31,8 @@ const settle=async check=>{for(let i=0;i<40;i++){if(check())return;await new Pro
   const $=id=>document.getElementById(id);
   $('view-mode').value='annotated';
   let currentVersion=1, width=40, saved=40, selectedAnnotation=null, selectedScene=null, onSelect, component, releaseEdit;
-  let hold=true, failed=false;
-  const state=()=>({version:currentVersion,family:'block-family',model:'block.json',dirty:width!==saved,parameters:[{id:'width',kind:'scalar',value:40,unit:'mm'},{id:'height',kind:'scalar',value:25,unit:'mm'}]});
+  let hold=true, failed=false, undo=[], redo=[];
+  const state=()=>({version:currentVersion,family:'block-family',model:'block.json',dirty:width!==saved,undo_count:undo.length,redo_count:redo.length,parameters:[{id:'width',kind:'scalar',value:40,unit:'mm'},{id:'height',kind:'scalar',value:25,unit:'mm'}]});
   const annotation=()=>({id:'distance-width',kind:'dimension',status:failed?'failed':'passed',label:`${width} mm`,parameters:['width'],detail:{},targets:['AB']});
   const scenes=(id,accepted=true)=>({version:currentVersion,accepted,scenes:[{kind:'sketch',instance:id,feature:'profile',annotations:[annotation()]},{kind:'solid',instance:id,feature:'body',annotations:[{...annotation(),anchors:[[0,0,0],[40,0,0]]}]}]});
   const response=(body,ok=true)=>({ok,statusText:'rejected',json:async()=>body,text:async()=>'<div id="selection"></div>'});
@@ -49,10 +49,15 @@ const settle=async check=>{for(let i=0;i<40;i++){if(check())return;await new Pro
       const body=JSON.parse(options.body);
       if(body.set.width===100){failed=true;return response({error:'conflicting constraints',annotations:scenes('copy',false)},false);}
       if(hold)await new Promise(r=>{releaseEdit=r;});
-      width=body.set.width;currentVersion++;failed=false;return response(state());
+      undo.push(width);redo=[];width=body.set.width;currentVersion++;failed=false;return response(state());
+    }
+    if(path==='/api/undo'||path==='/api/redo'){
+      assert.equal(JSON.parse(options.body).version,currentVersion);
+      const from=path==='/api/undo'?undo:redo, to=path==='/api/undo'?redo:undo;
+      assert(from.length);to.push(width);width=from.pop();currentVersion++;failed=false;return response(state());
     }
     if(path==='/api/save'){saved=width;return response(state());}
-    if(path==='/api/revert'){width=saved;currentVersion++;failed=false;return response(state());}
+    if(path==='/api/revert'){undo=[];redo=[];width=saved;currentVersion++;failed=false;return response(state());}
     throw Error(`Unexpected API path ${path}`);
   };
   const renderer={draw(){},setSelection(){},setModel(){},setMarkers(){}};
@@ -100,4 +105,37 @@ const settle=async check=>{for(let i=0;i<40;i++){if(check())return;await new Pro
   assert($('annotation-message').textContent.includes('accepted model is unchanged'));
   await $('revert').emit('click');
   assert.equal(component.data.accepted,true);assert.equal(component.data.version,4);
+  assert.equal($('undo').disabled,true);assert.equal($('redo').disabled,true);
+  // Undo waits for the same pending edit queue as Save, then restores the saved model.
+  hold=true;releaseEdit=null;
+  vm.runInContext("queue({id:'width',set:80})",context);
+  const undoing=$('undo').emit('click');
+  await settle(()=>releaseEdit);
+  assert(!calls.some(([path])=>path==='/api/undo'));
+  assert.equal($('undo').disabled,true);
+  releaseEdit();await undoing;hold=false;
+  assert.equal(width,70);assert.equal($('save').disabled,true);assert.equal($('redo').disabled,false);
+  await $('redo').emit('click');assert.equal(width,80);assert.equal($('save').disabled,false);
+  await $('save').emit('click');assert.equal(saved,80);
+  // A keyboard shortcut in a text field keeps the browser's text undo.
+  let prevented=false;
+  document.activeElement={matches:()=>true};
+  await document.emit('keydown',{key:'z',ctrlKey:true,preventDefault(){prevented=true;}});
+  assert.equal(prevented,false);assert.equal(width,80);
+  document.activeElement={shadowRoot:{activeElement:{matches:()=>true}}};
+  await document.emit('keydown',{key:'z',metaKey:true,preventDefault(){prevented=true;}});
+  assert.equal(prevented,false);assert.equal(width,80);
+  document.activeElement=null;
+  await document.emit('keydown',{key:'z',metaKey:true,preventDefault(){prevented=true;}});
+  await settle(()=>width===70 && !$('redo').disabled);
+  assert.equal(prevented,true);assert.equal($('save').disabled,false);
+  await document.emit('keydown',{key:'z',metaKey:true,shiftKey:true});
+  await settle(()=>width===80 && !$('undo').disabled);
+  assert.equal($('save').disabled,true);
+  // Replies from before history navigation cannot paint the old geometry.
+  const before=component.data;
+  await vm.runInContext('previewCurrent({version:1,scenes:[]}, "late")',context);
+  await vm.runInContext('apply({version:1,family:"old"})',context);
+  assert.equal(component.data,before);assert.equal($('family').textContent,'block-family');
+
 });

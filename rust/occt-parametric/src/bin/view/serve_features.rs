@@ -191,15 +191,7 @@ impl Studio {
         let generated = build_solid(&document, &edit.output, &edit.features);
         if edit.apply {
             let (gltf, requirements, geometry) = generated?;
-            self.document = document;
-            self.gltf = gltf;
-            self.requirements = requirements;
-            self.output = Some(edit.output.clone());
-            self.annotations = None;
-            self.rejected_annotations = None;
-            self.version += 1;
-            self.dirty = true;
-            self.error = None;
+            self.accept(document, gltf, requirements, Some(edit.output.clone()))?;
             Ok(
                 json!({"applied":true,"output":edit.output,"geometry":geometry,"state":self.state()}),
             )

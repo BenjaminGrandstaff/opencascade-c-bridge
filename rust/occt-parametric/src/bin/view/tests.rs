@@ -392,6 +392,8 @@ fn studio_serves_the_page_and_model_and_applies_saves_and_follows_edits() {
     );
     assert_eq!(get(&mut studio, "/api/state").1["dirty"], false);
 
+    assert_eq!(get(&mut studio, "/api/state").1["undo_count"], 1);
+
     // Saves made elsewhere are followed once settled; broken ones are reported.
     let follow = |studio: &mut serve::Studio| {
         for _ in 0..4 {
@@ -405,6 +407,8 @@ fn studio_serves_the_page_and_model_and_applies_saves_and_follows_edits() {
         ParameterValue::Scalar(Quantity::length(3.0, LengthUnit::Millimeter));
     fs::write(&model, changed.to_json_pretty().unwrap()).unwrap();
     let state = follow(&mut studio);
+    assert_eq!(state["undo_count"], 0);
+    assert_eq!(state["redo_count"], 0);
     assert_eq!(
         (thickness(&state), state["version"].as_u64()),
         (3.0, Some(3))
@@ -1034,6 +1038,17 @@ fn sketch_drafts_are_guarded_previewed_verified_and_saved() {
     assert_eq!(post(&mut studio, &edit).status, 200);
     assert_eq!(fs::read_to_string(&model).unwrap(), original);
     assert_eq!(get(&mut studio, "/api/state").1["dirty"], true);
+    assert_eq!(history(&mut studio, "undo")["dirty"], false);
+    assert_eq!(
+        get(&mut studio, "/api/sketches").1["sketches"][0]["definition"],
+        expected
+    );
+    history(&mut studio, "redo");
+    assert_eq!(
+        get(&mut studio, "/api/sketches").1["sketches"][0]["definition"],
+        draft
+    );
+
     assert_eq!(
         post(&mut studio, &edit).status,
         422,
@@ -1457,6 +1472,23 @@ fn a_standalone_sketch_becomes_a_saved_solid_with_persistent_guarantees() {
     );
     let result: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
     assert_eq!(result["geometry"]["block"]["solids"], 1);
+    assert_eq!(get(&mut studio, "/api/state").1["undo_count"], 1);
+    assert_eq!(history(&mut studio, "undo")["dirty"], false);
+    assert_eq!(get(&mut studio, "/api/features").1["output"], "profile");
+    assert_eq!(
+        get(&mut studio, "/api/features").1["features"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    // Saving the restored sketch must not persist the undone solid guarantees.
+    assert_eq!(studio.handle("POST", "/api/save", b"{}").status, 200);
+    let restored = ModelDocument::from_json(&fs::read_to_string(&model).unwrap()).unwrap();
+    assert!(restored.family.requirements.is_empty());
+    assert_eq!(history(&mut studio, "redo")["dirty"], true);
+    assert_eq!(get(&mut studio, "/api/features").1["output"], "made-part");
+
     assert_eq!(studio.handle("POST", "/api/save", b"").status, 200);
     assert_eq!(studio.handle("POST", "/api/revert", b"").status, 200);
     assert_eq!(get(&mut studio, "/api/features").1["output"], "made-part");
@@ -1469,5 +1501,147 @@ fn a_standalone_sketch_becomes_a_saved_solid_with_persistent_guarantees() {
             .requirements
             .iter()
             .all(|r| r.priority == RequirementPriority::Required)
+    );
+}
+
+fn history(studio: &mut serve::Studio, direction: &str) -> serde_json::Value {
+    let version = get(studio, "/api/state").1["version"].clone();
+    let response = studio.handle(
+        "POST",
+        &format!("/api/{direction}"),
+        json!({"version":version}).to_string().as_bytes(),
+    );
+    assert_eq!(
+        response.status,
+        200,
+        "{}",
+        String::from_utf8_lossy(&response.body)
+    );
+    serde_json::from_slice(&response.body).unwrap()
+}
+
+#[test]
+fn history_tracks_saved_content_branches_and_rejected_edits() {
+    let directory = Directory::new();
+    let model = PathBuf::from(directory.model(&document()));
+    let mut studio = serve::Studio::load(&model, None).unwrap();
+    let original = fs::read_to_string(&model).unwrap();
+    let initial = get(&mut studio, "/api/state").1;
+    assert_eq!(initial["undo_count"], 0);
+    assert_eq!(
+        studio
+            .handle("POST", "/api/undo", br#"{"version":1}"#)
+            .status,
+        422
+    );
+    assert_eq!(
+        studio
+            .handle("POST", "/api/parameters", br#"{"set":{"thickness":7}}"#)
+            .status,
+        200
+    );
+    let edited = get(&mut studio, "/api/state").1;
+    assert_eq!(edited["undo_count"], 1);
+    // Rejected and no-op changes do not add history.
+    assert_eq!(
+        studio
+            .handle("POST", "/api/parameters", br#"{"set":{"thickness":100}}"#)
+            .status,
+        422
+    );
+    assert_eq!(
+        studio
+            .handle("POST", "/api/parameters", br#"{"set":{"thickness":7}}"#)
+            .status,
+        200
+    );
+    assert_eq!(get(&mut studio, "/api/state").1, edited);
+    assert_eq!(
+        studio
+            .handle("POST", "/api/undo", br#"{"version":1}"#)
+            .status,
+        422
+    );
+    assert_eq!(studio.handle("POST", "/api/undo", b"{}").status, 422);
+    assert_eq!(get(&mut studio, "/api/state").1, edited);
+    assert_eq!(studio.handle("POST", "/api/save", b"{}").status, 200);
+    let saved = fs::read_to_string(&model).unwrap();
+    let undone = history(&mut studio, "undo");
+    assert_eq!(thickness(&undone), 5.0);
+    assert_eq!(undone["dirty"], true);
+    assert_eq!(undone["redo_count"], 1);
+    assert_eq!(fs::read_to_string(&model).unwrap(), saved);
+    let redone = history(&mut studio, "redo");
+    assert_eq!(thickness(&redone), 7.0);
+    assert_eq!(redone["dirty"], false);
+    assert!(redone["version"].as_u64() > undone["version"].as_u64());
+    history(&mut studio, "undo");
+    assert_eq!(
+        studio
+            .handle("POST", "/api/parameters", br#"{"set":{"thickness":100}}"#)
+            .status,
+        422
+    );
+    assert_eq!(get(&mut studio, "/api/state").1["redo_count"], 1);
+    assert_eq!(
+        studio
+            .handle("POST", "/api/parameters", br#"{"set":{"thickness":6}}"#)
+            .status,
+        200
+    );
+    assert_eq!(get(&mut studio, "/api/state").1["redo_count"], 0);
+    // Revert and successful external reload reset history; failed reload keeps it.
+    fs::write(&model, "invalid").unwrap();
+    assert_eq!(studio.handle("POST", "/api/revert", b"{}").status, 500);
+    assert_eq!(get(&mut studio, "/api/state").1["undo_count"], 1);
+    fs::write(&model, original).unwrap();
+    assert_eq!(studio.handle("POST", "/api/revert", b"{}").status, 200);
+    let reset = get(&mut studio, "/api/state").1;
+    assert_eq!(reset["undo_count"], 0);
+    assert_eq!(reset["redo_count"], 0);
+    assert_eq!(reset["dirty"], false);
+}
+
+#[test]
+fn history_restores_instance_membership_and_placement_atomically() {
+    let directory = Directory::new();
+    let model = PathBuf::from(directory.model(&document()));
+    let mut studio = serve::Studio::load(&model, None).unwrap();
+    let original = get(&mut studio, "/api/instances").1;
+    assert_eq!(studio.handle("POST", "/api/instances", br#"{"add":{"source":"source","id":"extra","placement":{"translation_mm":[0,80,0],"rotation":null}}}"#).status, 200);
+    let added = get(&mut studio, "/api/instances").1;
+    history(&mut studio, "undo");
+    assert_eq!(
+        get(&mut studio, "/api/instances").1["instances"],
+        original["instances"]
+    );
+    history(&mut studio, "redo");
+    assert_eq!(
+        get(&mut studio, "/api/instances").1["instances"],
+        added["instances"]
+    );
+    let moved = get(&mut studio, "/api/instance?id=extra").1;
+    assert_eq!(
+        moved["placement"]["translation_mm"],
+        json!([0.0, 80.0, 0.0])
+    );
+    assert_eq!(
+        studio
+            .handle("POST", "/api/instances", br#"{"delete":"extra"}"#)
+            .status,
+        200
+    );
+    history(&mut studio, "undo");
+    let restored = get(&mut studio, "/api/instance?id=extra").1;
+    assert_eq!(restored["placement"], moved["placement"]);
+    assert_eq!(restored["parameters"], moved["parameters"]);
+    // A pattern placement refusal cannot append a snapshot or erase redo.
+    let before = get(&mut studio, "/api/state").1;
+    assert_eq!(studio.handle("POST", "/api/parameters", br#"{"instance":"member[1]","placement":{"translation_mm":[999,0,0],"rotation":null}}"#).status, 422);
+    assert_eq!(get(&mut studio, "/api/state").1, before);
+    history(&mut studio, "redo");
+    assert_eq!(
+        get(&mut studio, "/api/instances").1["instances"],
+        original["instances"]
     );
 }

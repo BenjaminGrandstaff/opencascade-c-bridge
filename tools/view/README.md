@@ -73,6 +73,25 @@ multi-parameter formulas; they do not silently invert a dimension expression.
 Native checks and geometry are shared with the standalone
 [dimension viewer](../model/VIEWER.md).
 
+### Undo and redo
+
+**Undo** and **Redo** restore applied sketch, solid, parameter, placement and
+instance edits together with the selected solid output and requirement checks.
+Use Ctrl/Cmd+Z to undo, Ctrl/Cmd+Shift+Z or Ctrl+Y to redo. Focused text fields,
+including sketch fields, keep their normal text undo. History navigation waits
+for queued parameter edits, and stale requests cannot overwrite a newer model.
+
+**Save** keeps session history. Undoing a saved edit makes the document unsaved;
+returning to the saved content clears that status. A new accepted edit after
+Undo discards redo; previews, rejected edits and unchanged parameter submissions
+do not. **Revert** and successful external file reloads clear history. Failed
+reloads retain the accepted model and history.
+
+History is temporary and bounded to 50 snapshots and 32 MB of serialized
+document/output data; older entries are dropped when either limit is reached. Meshes and native handles are
+regenerated on navigation rather than retained. Local sketch and solid drafts
+are separate: reload a draft after navigating history before applying it.
+
 ### Sketch geometry drafts
 
 In **Dimensions & sketches**, choose **Edit sketch geometry**, select a sketch
@@ -288,7 +307,8 @@ explicitly marked rejected-edit preview may show the failed candidate. Results a
 10,000-instance report is about 250 KB.
 
 **Revert** discards every unsaved change and reloads the file, so a deletion
-or any other edit can be undone until **Save**. The page needs no external files. The server listens only on
+or any other edit can be discarded. Undo/redo remains available after **Save**.
+The page needs no external files. The server listens only on
 127.0.0.1, accepts only `127.0.0.1` or `localhost` Host headers, and accepts
 edits only with the `X-OCCT-View` header that the page sends, which other
 sites' pages cannot add; it is a local editing tool, not something to expose.

@@ -224,13 +224,7 @@ impl Studio {
         let rejection = generated.as_ref().err().cloned();
         if edit.apply {
             let (gltf, requirements) = generated?;
-            self.document = document;
-            self.gltf = gltf;
-            self.requirements = requirements;
-            self.version += 1;
-            self.dirty = true;
-            self.error = None;
-            self.annotations = None;
+            self.accept(document, gltf, requirements, self.output.clone())?;
             Ok(json!({"applied": true, "state": self.state()}))
         } else {
             Ok(

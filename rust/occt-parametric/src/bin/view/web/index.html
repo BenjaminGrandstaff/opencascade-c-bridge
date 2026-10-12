@@ -34,7 +34,7 @@
     background: var(--bg); border: 1px solid var(--line); border-radius: 4px;
   }
   input[type=range] { width: 100%; accent-color: var(--accent); }
-  .actions { display: flex; gap: 8px; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; }
   button {
     flex: 1; padding: 6px 10px; font: inherit; border-radius: 4px; cursor: pointer;
     border: 1px solid var(--line); background: var(--bg); color: var(--text);
@@ -96,6 +96,8 @@
     <div class="muted" id="model"></div>
   </div>
   <div class="actions">
+    <button id="undo" disabled title="Undo applied model edit (Ctrl/Cmd+Z)">Undo</button>
+    <button id="redo" disabled title="Redo applied model edit (Ctrl/Cmd+Shift+Z)">Redo</button>
     <button class="primary" id="save" disabled>Save</button>
     <button id="revert" disabled title="Discard unsaved changes and reload the file">Revert</button>
     <button id="fit">Fit view</button>
@@ -182,14 +184,14 @@ const annotations = createAnnotationController({
       showSketch: feature => viewer.selectScene('sketch', feature),
       highlight: (ids, feature) => viewer.setGeometrySelection(ids, feature),
       ghost: (paths,feature) => viewer.setGhost(paths,feature), canvasMode:(mode,feature)=>viewer.setCanvasMode(mode,feature),
-      preview: data => annotations.preview(data, "Sketch draft preview — Apply to update the model."),
+      preview: data => previewCurrent(data, "Sketch draft preview — Apply to update the model."),
       applied: async next => { annotations.invalidate(); await apply(next); await refreshAnnotations(); },
       restore: async () => { annotations.invalidate(); await refreshAnnotations(); },
     });
     createSolidEditor({host:annotationRoot.querySelector('aside'),request:api,
       instance:()=>scope||instanceIds.values().next().value,
       showSketch:feature=>viewer.selectScene('sketch',feature),showSolid:feature=>viewer.selectScene('solid',feature),
-      preview:data=>annotations.preview(data,'Solid draft preview — Apply to update the model.'),
+      preview:data=>previewCurrent(data,'Solid draft preview — Apply to update the model.'),
       applied:async next=>{annotations.invalidate();await apply(next);await refreshAnnotations();},
       restore:async()=>{annotations.invalidate();await refreshAnnotations();},
     });
@@ -535,7 +537,7 @@ async function drainBatches() {
     if (error.details?.annotations) {
       $("view-mode").value = "annotated";
       await refreshAnnotations();
-      await annotations.preview(error.details.annotations);
+      await previewCurrent(error.details.annotations, "Edit rejected — accepted model is unchanged.");
     } else {
       annotations.invalidate();
       await refreshAnnotations();
@@ -775,9 +777,21 @@ function placementEditor(view) {
 }
 
 let rendered = "";
+function previewCurrent(data, message) {
+  // A slow preview must not replace geometry restored by Undo or another edit.
+  return data?.version === version ? annotations.preview(data, message) : Promise.resolve();
+}
+
+let historyBusy = false;
+function historyControls() {
+  $("undo").disabled = historyBusy || !(state?.undo_count > 0);
+  $("redo").disabled = historyBusy || !(state?.redo_count > 0);
+}
 async function apply(next) {
+  if (next.version < version) return;
   const first = version === 0;
   state = next;
+  historyControls();
   $("family").textContent = next.family;
   $("model").textContent = next.model;
   $("save").disabled = !next.dirty;
@@ -807,6 +821,7 @@ async function apply(next) {
 
 async function poll() {
   try {
+    if (historyBusy) { setTimeout(poll, 1000); return; }
     await apply(await api("/api/state"));
   } catch (error) {
     $("error").textContent = `Server not reachable: ${error.message}`;
@@ -814,7 +829,45 @@ async function poll() {
   setTimeout(poll, 1000);
 }
 
+async function navigateHistory(direction) {
+  if (historyBusy) return;
+  historyBusy = true;
+  historyControls();
+  try {
+    await flush();
+    if (!(state?.[`${direction}_count`] > 0)) return;
+    const next = await api(`/api/${direction}`, {
+      method: "POST", body: JSON.stringify({ version }),
+    });
+    editError = null;
+    annotations.invalidate();
+    await apply(next);
+    if (scope && !instanceIds.has(scope)) await setScope("");
+    else await loadInstanceView();
+  } catch (error) {
+    $("error").textContent = error.message;
+  } finally {
+    historyBusy = false;
+    historyControls();
+  }
+}
+for (const direction of ["undo", "redo"]) {
+  $(direction).addEventListener("click", () => navigateHistory(direction));
+}
+document.addEventListener("keydown", event => {
+  if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
+  const key = event.key.toLowerCase();
+  if (key !== "z" && key !== "y") return;
+  // Text fields, including the sketch shadow DOM, keep their native text undo.
+  let focused = document.activeElement;
+  while (focused?.shadowRoot?.activeElement) focused = focused.shadowRoot.activeElement;
+  if (focused?.matches("input, textarea, select") || focused?.isContentEditable) return;
+  event.preventDefault();
+  void navigateHistory(key === "y" || event.shiftKey ? "redo" : "undo");
+});
+
 $("save").addEventListener("click", async () => {
+  if (historyBusy) return;
   await flush();
   try {
     await apply(await api("/api/save", { method: "POST", body: "{}" }));
@@ -823,7 +876,9 @@ $("save").addEventListener("click", async () => {
   }
 });
 $("revert").addEventListener("click", async () => {
+  if (historyBusy) return;
   batches.length = 0;
+  await flush();
   try {
     editError = null;
     annotations.invalidate();

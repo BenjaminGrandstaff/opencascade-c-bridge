@@ -2,6 +2,8 @@
 //! family parameter defaults, saves them, and follows saves made elsewhere.
 #[path = "serve_features.rs"]
 mod features;
+#[path = "serve_history.rs"]
+mod history;
 #[path = "serve_sketch.rs"]
 mod sketch;
 use super::{POLL, stamp, view_data};
@@ -72,8 +74,9 @@ pub(super) struct Studio {
     rejected_annotations: Option<Value>,
     /// Incremented whenever `gltf` changes, so the page knows to refetch it.
     version: u64,
-    /// Unsaved parameter edits since the last load or save.
+    /// Whether the current document differs from the last load or save.
     dirty: bool,
+    history: history::History,
     error: Option<String>,
     seen: Option<(SystemTime, u64)>,
     pending: Option<(SystemTime, u64)>,
@@ -89,6 +92,7 @@ impl Studio {
             model: model.to_owned(),
             base_output: output.clone(),
             output,
+            history: history::History::new(&document)?,
             document,
             gltf,
             requirements,
@@ -134,8 +138,12 @@ impl Studio {
         let text = fs::read_to_string(&self.model).map_err(|e| e.to_string())?;
         let document = ModelDocument::from_json(&text).map_err(|e| e.to_string())?;
         let (gltf, requirements) = build(&document, self.base_output.as_deref())?;
+        let history = history::History::new(&document)?;
         self.output = self.base_output.clone();
         self.seen = stamp(&self.model);
+        self.history = history;
+        self.annotations = None;
+        self.rejected_annotations = None;
         self.document = document;
         self.gltf = gltf;
         self.requirements = requirements;
@@ -153,12 +161,7 @@ impl Studio {
             .and_then(|text| ModelDocument::from_json(&text))
             .map_err(|e| e.to_string())?;
         let (gltf, requirements) = build(&document, self.output.as_deref())?;
-        self.document = document.clone();
-        self.gltf = gltf;
-        self.requirements = requirements;
-        self.version += 1;
-        self.dirty = true;
-        self.error = None;
+        self.accept(document.clone(), gltf, requirements, self.output.clone())?;
         Ok(document)
     }
 
@@ -314,6 +317,8 @@ impl Studio {
             "dirty": self.dirty,
             "error": self.error,
             "parameters": parameters,
+            "undo_count": self.history.undo.len(),
+            "redo_count": self.history.redo.len(),
         })
     }
 
@@ -400,15 +405,29 @@ impl Studio {
                 }
             }
         }
-        let previous = (
-            self.document.clone(),
-            self.gltf.clone(),
-            self.requirements.clone(),
-            self.version,
-            self.dirty,
-        );
-        let document = match self.commit(document.clone()) {
-            Ok(document) => document,
+        // Reject pattern-derived placement changes before recording history.
+        let document = if edit.placement.is_some() {
+            document
+                .to_json_pretty()
+                .and_then(|text| ModelDocument::from_json(&text))
+                .map_err(|e| e.to_string())?
+        } else {
+            document
+        };
+        if let (Some(instance), Some(requested)) = (&edit.instance, &edit.placement) {
+            let node = document
+                .instances
+                .iter()
+                .find(|node| node.id() == instance)
+                .ok_or_else(|| format!("unknown instance '{instance}'"))?;
+            if !PlacementView::from(node.placement())?.close_to(requested) {
+                return Err(format!(
+                    "the placement of '{instance}' is set by its pattern; edit the pattern instead"
+                ));
+            }
+        }
+        match self.commit(document.clone()) {
+            Ok(_) => (),
             Err(error) => {
                 let id = edit
                     .instance
@@ -440,27 +459,6 @@ impl Studio {
                 return Err(error);
             }
         };
-        // Loading can re-derive placements (pattern members follow their rule),
-        // so a placement that did not stick is refused rather than ignored.
-        if let (Some(instance), Some(requested)) = (&edit.instance, &edit.placement) {
-            let node = document
-                .instances
-                .iter()
-                .find(|node| node.id() == instance)
-                .ok_or_else(|| format!("unknown instance '{instance}'"))?;
-            if !PlacementView::from(node.placement())?.close_to(requested) {
-                (
-                    self.document,
-                    self.gltf,
-                    self.requirements,
-                    self.version,
-                    self.dirty,
-                ) = previous;
-                return Err(format!(
-                    "the placement of '{instance}' is set by its pattern; edit the pattern instead"
-                ));
-            }
-        }
         Ok(())
     }
 
@@ -533,12 +531,13 @@ impl Studio {
         let mut temporary = self.model.clone().into_os_string();
         temporary.push(".occt-view-save");
         let temporary = PathBuf::from(temporary);
-        fs::write(&temporary, text + "\n").map_err(|e| e.to_string())?;
+        fs::write(&temporary, text.clone() + "\n").map_err(|e| e.to_string())?;
         fs::rename(&temporary, &self.model).map_err(|e| {
             let _ = fs::remove_file(&temporary);
             e.to_string()
         })?;
         self.seen = stamp(&self.model);
+        self.history.saved = text;
         self.dirty = false;
         Ok(())
     }
@@ -677,6 +676,12 @@ impl Studio {
                 }
                 Err(error) => Response::error(422, &error),
             },
+            ("POST", "/api/undo" | "/api/redo") => {
+                match self.navigate_history(body, path == "/api/redo") {
+                    Ok(()) => Response::json(200, &self.state()),
+                    Err(error) => Response::error(422, &error),
+                }
+            }
             ("POST", "/api/revert") => match self.reload() {
                 Ok(()) => Response::json(200, &self.state()),
                 Err(error) => Response::error(500, &error),
