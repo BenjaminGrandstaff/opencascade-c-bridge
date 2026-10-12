@@ -261,6 +261,8 @@ struct Context<'a, 'g> {
     /// Drawing views by ID: a line profile's elements are sections normal to
     /// its view direction.
     views: HashMap<&'a str, &'a DrawingView>,
+    /// Nominal points and outward normals by profile or runout control ID.
+    nominals: Nominals<'a>,
 }
 
 impl DrawingDefinition {
@@ -298,10 +300,10 @@ impl DrawingDefinition {
         let nominals = nominal_points(record, &measured_controls)?;
         if let Some(frame) = frames
             .iter()
-            .find(|f| nominals.contains_key(f.id.as_str()) && !f.characteristic.profile())
+            .find(|f| nominals.contains_key(f.id.as_str()) && !f.characteristic.nominal_surface())
         {
             return Err(ModelError::new(format!(
-                "nominal points apply to profile controls, not '{}'",
+                "nominal points apply to profile and runout controls, not '{}'",
                 frame.id
             )));
         }
@@ -315,6 +317,7 @@ impl DrawingDefinition {
             refinements: HashMap::new(),
             profiles: HashMap::new(),
             views: self.views.iter().map(|v| (v.id.as_str(), v)).collect(),
+            nominals,
         };
         // Simultaneous requirement: position controls with identical datum
         // references (features, precedence and boundaries) share one datum
@@ -379,9 +382,11 @@ impl DrawingDefinition {
                 profiles.entry(key).or_default().push(frame);
             }
         }
+        let nominals = std::mem::take(&mut context.nominals);
         for group in profiles.values() {
             context.profile_group(group, &measured_controls, &nominals);
         }
+        context.nominals = nominals;
         let mut controls = Vec::with_capacity(frames.len());
         for frame in &frames {
             let result = match measured_controls.get(frame.id.as_str()) {
@@ -562,7 +567,7 @@ fn nominal_points<'a>(
 ) -> Result<Nominals<'a>, ModelError> {
     if record.datum_features.iter().any(|f| !f.nominals.is_empty()) {
         return Err(ModelError::new(
-            "nominal points apply to profile controls, not datum features",
+            "nominal points apply to profile and runout controls, not datum features",
         ));
     }
     let mut map = HashMap::new();
@@ -1107,7 +1112,10 @@ impl Context<'_, '_> {
     /// radially; faces perpendicular to it, axially. Circular runout is the
     /// worst circular element (points sharing an axial position, or a radius
     /// for faces, within 1e-3 mm or 1e-6 of the span); total runout spans all
-    /// points. O(n log n) after the datum fit.
+    /// points. With nominal points (schema 140), any surface of revolution
+    /// about the datum axis, such as a cone, is indicated normal to its
+    /// nominal surface; see [`Self::surface_runout`]. O(n log n) after the
+    /// datum fit.
     fn runout(
         &mut self,
         frame: &DrawingFeatureControlFrame,
@@ -1128,6 +1136,9 @@ impl Context<'_, '_> {
                 "runout needs a datum axis from a measured cylindrical datum feature".into(),
             );
         };
+        if self.nominals.contains_key(frame.id.as_str()) {
+            return self.surface_runout(frame, points, tolerance, origin, axis);
+        }
         // The surface's relation to the datum axis is design intent: compare
         // nominal directions, not the measured (tilted) axis.
         let datum = frame

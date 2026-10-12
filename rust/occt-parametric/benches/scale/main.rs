@@ -168,8 +168,9 @@ fn main() -> ExitCode {
     outcomes.push(drawing::assembly_drawing_case(definition));
     outcomes.push(inspection::inspection_case(definition));
     outcomes.push(inspection::form_case(definition));
-    outcomes.push(inspection::runout_case(definition, false));
-    outcomes.push(inspection::runout_case(definition, true));
+    outcomes.push(inspection::runout_case(definition, false, false));
+    outcomes.push(inspection::runout_case(definition, false, true));
+    outcomes.push(inspection::runout_case(definition, true, false));
     outcomes.push(inspection::datum_shift_case(definition, false));
     outcomes.push(inspection::datum_shift_case(definition, true));
     outcomes.push(inspection::composite_case(definition));

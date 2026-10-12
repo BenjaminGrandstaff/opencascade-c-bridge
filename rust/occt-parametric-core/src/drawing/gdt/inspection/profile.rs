@@ -647,3 +647,99 @@ fn zone_fit(
     let all: Vec<usize> = (0..m).collect();
     solve(&all).map_err(|e| e.to_string())
 }
+
+impl Context<'_, '_> {
+    /// Runout of a surface of revolution about the datum axis, read along
+    /// the nominal normals: the nominal geometry is placed on the measured
+    /// datums (its rotation about the axis does not change a reading), and
+    /// each point reads its signed distance from its nominal point, as an
+    /// indicator held square to the surface. Circular elements are points
+    /// whose nominal points share an axial position and then a radius (each
+    /// within 1e-3 mm or 1e-6 of its span), so cones, spheres and faces all
+    /// form circles however far the measured surface wanders. The
+    /// datums need not fix the axial position: a shift along the axis moves
+    /// every reading of a circle together. O(n log n).
+    pub(super) fn surface_runout(
+        &mut self,
+        frame: &DrawingFeatureControlFrame,
+        points: &[Vec3],
+        tolerance: f64,
+        origin: Vec3,
+        axis: Vec3,
+    ) -> Result<ControlMeasurement, String> {
+        let alignment = self.profile_alignment(&frame.datums, false)?;
+        let targets = &self.nominals[frame.id.as_str()];
+        // (nominal axial position, nominal radius, reading).
+        let mut readings: Vec<(f64, f64, f64)> = points
+            .iter()
+            .zip(targets)
+            .map(|(&p, &target)| {
+                let (point, normal) = alignment.place(target);
+                let d = subtract(point, origin);
+                let along = dot(d, axis);
+                let radius = length(subtract(d, scale(axis, along)));
+                (along, radius, dot(subtract(p, point), normal))
+            })
+            .collect();
+        let range = |values: &mut dyn Iterator<Item = f64>| {
+            values.fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), v| {
+                (lo.min(v), hi.max(v))
+            })
+        };
+        let deviation = if frame.characteristic == GeometricCharacteristic::TotalRunout {
+            let (lo, hi) = range(&mut readings.iter().map(|r| r.2));
+            hi - lo
+        } else {
+            let mut worst: f64 = 0.0;
+            for section in groups(&mut readings, |r| r.0) {
+                for circle in groups(section, |r| r.1) {
+                    if circle.len() < 3 {
+                        return Err(
+                            "each circular runout element needs at least three points".into()
+                        );
+                    }
+                    let (lo, hi) = range(&mut circle.iter().map(|r| r.2));
+                    worst = worst.max(hi - lo);
+                }
+            }
+            worst
+        };
+        Ok(ControlMeasurement {
+            deviation_mm: deviation,
+            tolerance_mm: tolerance,
+            bonus_mm: 0.0,
+            actual_size_mm: None,
+            size_conforms: None,
+            conforms: deviation <= tolerance,
+            datum_shift_mm: 0.0,
+            datum_shift_limit_mm: 0.0,
+            refinement: None,
+            profile: None,
+        })
+    }
+}
+
+/// Sorts by `key` and splits where consecutive keys differ by more than
+/// 1e-3 mm or 1e-6 of the key span.
+fn groups<T>(items: &mut [T], key: impl Fn(&T) -> f64) -> Vec<&mut [T]> {
+    items.sort_by(|a, b| key(a).total_cmp(&key(b)));
+    let span = items.last().map_or(0.0, &key) - items.first().map_or(0.0, &key);
+    let gap = (1e-6 * span).max(1e-3);
+    let mut cuts = Vec::new();
+    for i in 1..items.len() {
+        if key(&items[i]) - key(&items[i - 1]) > gap {
+            cuts.push(i);
+        }
+    }
+    let mut out = Vec::with_capacity(cuts.len() + 1);
+    let mut rest = items;
+    let mut taken = 0;
+    for cut in cuts {
+        let (head, tail) = rest.split_at_mut(cut - taken);
+        out.push(head);
+        rest = tail;
+        taken = cut;
+    }
+    out.push(rest);
+    out
+}

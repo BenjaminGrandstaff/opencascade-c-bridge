@@ -87,6 +87,10 @@ impl GeometricCharacteristic {
     fn profile(self) -> bool {
         matches!(self, Self::ProfileLine | Self::ProfileSurface)
     }
+    /// Controls measured against nominal surface points and normals.
+    fn nominal_surface(self) -> bool {
+        self.profile() || matches!(self, Self::CircularRunout | Self::TotalRunout)
+    }
     fn diameter(self) -> bool {
         matches!(
             self,
@@ -183,10 +187,10 @@ pub struct DrawingFeatureControlFrame {
     /// the whole tolerance (all outside). Equal-bilateral when absent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub unequal: Option<Quantity>,
-    /// Faces of the attachment output that a profile control covers (schema
-    /// 140), resolved on the regenerated part to supply nominal points and
-    /// normals for measured points that lack them. Each pattern member names
-    /// its own faces.
+    /// Faces of the attachment output that a profile or runout control covers
+    /// (schema 140), resolved on the regenerated part to supply nominal points
+    /// and normals for measured points that lack them. Each pattern member
+    /// names its own faces.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub surface: Option<FaceSelector>,
     pub id: String,
@@ -388,9 +392,9 @@ fn validate_surface(
     let Some(surface) = &frame.surface else {
         return Ok(());
     };
-    if !frame.characteristic.profile() {
+    if !frame.characteristic.nominal_surface() {
         return Err(ModelError::new(
-            "a surface selector applies to profile controls",
+            "a surface selector applies to profile and runout controls",
         ));
     }
     let definition = graph.resolve(&frame.attachment.output.instance)?.definition;

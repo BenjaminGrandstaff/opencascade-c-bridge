@@ -1,10 +1,10 @@
-//! Nominal points and normals for measured profile controls, projected onto
+//! Nominal points and normals for measured profile and runout controls, projected onto
 //! the regenerated part's own faces (schema 140, ABI 69).
 use super::*;
 use crate::assembly::{rotate_by, transform_point};
 
 pub trait DrawingDefinitionInspection {
-    /// Fills the nominals of each measured profile control that names a
+    /// Fills the nominals of each measured profile or runout control that names a
     /// `surface` and was recorded without them: every measured point is
     /// projected onto the nearest of those faces of the attachment output,
     /// giving its nominal point and the outward normal there. Records that

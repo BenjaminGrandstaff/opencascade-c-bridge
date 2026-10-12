@@ -2038,7 +2038,7 @@ fn profile_records_and_unequal_zones_validate_render_and_round_trip() {
         .evaluate_inspection(&graph, &record)
         .unwrap_err()
         .message;
-    assert!(error.contains("profile controls"), "{error}");
+    assert!(error.contains("profile and runout controls"), "{error}");
     let json = serde_json::to_string(&record).unwrap();
     assert_eq!(
         serde_json::from_str::<InspectionRecord>(&json).unwrap(),
@@ -2309,7 +2309,7 @@ fn profile_surfaces_validate_and_round_trip() {
     let mut flat = page.clone();
     flat.feature_control_frames[0].characteristic = GeometricCharacteristic::Flatness;
     let error = flat.validate(&graph).unwrap_err().message;
-    assert!(error.contains("profile controls"), "{error}");
+    assert!(error.contains("profile and runout controls"), "{error}");
     let mut unknown = page.clone();
     unknown.feature_control_frames[0].surface = Some(FaceSelector::Named("missing".into()));
     let error = unknown.validate(&graph).unwrap_err().message;
@@ -2334,4 +2334,103 @@ fn profile_surfaces_validate_and_round_trip() {
         ModelDocument::from_json(&json).unwrap().drawings,
         document.drawings
     );
+}
+
+/// An external cone about `center` (shifted `axial` along +z): radius
+/// `8 + z·tan(half_angle)` at each of three heights, 36 points around, with
+/// nominal points on the Ø16-based cone about `HOLE` and outward normals.
+fn cone(
+    id: &str,
+    center: [f64; 2],
+    axial: f64,
+    half_angle: f64,
+    nominal_angle: f64,
+) -> MeasuredFeature {
+    let mut points = Vec::new();
+    let mut nominals = Vec::new();
+    for k in 0..36 {
+        let t = k as f64 * std::f64::consts::TAU / 36.0;
+        let (s, c) = t.sin_cos();
+        for z in [1.0, 5.0, 9.0] {
+            let r = 8.0 + (z - axial) * half_angle.tan();
+            points.push([center[0] + r * c, center[1] + r * s, z]);
+            let n = 8.0 + z * nominal_angle.tan();
+            let (sa, ca) = nominal_angle.sin_cos();
+            nominals.push(MeasuredNominal {
+                point_mm: [HOLE[0] + n * c, HOLE[1] + n * s, z],
+                normal: [ca * c, ca * s, -sa],
+            });
+        }
+    }
+    let mut m = measured(id, points);
+    m.nominals = nominals;
+    m
+}
+
+#[test]
+fn conical_runout_reads_normal_to_the_cone() {
+    let definition = plate();
+    let graph = graph_of(&definition);
+    let page = runout_page("hole", &["D"], Some(FeatureOfSizeKind::Internal));
+    let bore = cylinder([HOLE[0], HOLE[1], 0.0], [0.0, 0.0, 1.0], |_| 5.0);
+    let half = 30f64.to_radians();
+    let record = |cone_id: &dyn Fn(&str) -> MeasuredFeature| {
+        let mut record = runout_record(bore.clone(), Vec::new());
+        record.controls = vec![cone_id("circ"), cone_id("total")];
+        record
+    };
+    // A 0.02 mm eccentric cone reads 2 · 0.02 · cos 30° square to its face,
+    // not the 0.04 a radial indicator would.
+    let eccentric = [HOLE[0] + 0.02, HOLE[1]];
+    let report = page
+        .evaluate_inspection(&graph, &record(&|id| cone(id, eccentric, 0.0, half, half)))
+        .unwrap();
+    let expected = 0.04 * half.cos();
+    for id in ["circ", "total"] {
+        let m = evaluated(&report, id);
+        assert!((m.deviation_mm - expected).abs() < 1e-4, "{id}: {m:?}");
+    }
+    // Shifted 0.05 mm along the axis, every reading moves together.
+    let report = page
+        .evaluate_inspection(&graph, &record(&|id| cone(id, eccentric, 0.05, half, half)))
+        .unwrap();
+    assert!((evaluated(&report, "total").deviation_mm - expected).abs() < 1e-4);
+    // A cone ground 0.1° steep stays round (no circular runout) but its
+    // face walks away from the indicator along its length.
+    let steep = half + 0.1f64.to_radians();
+    let report = page
+        .evaluate_inspection(&graph, &record(&|id| cone(id, HOLE, 0.0, steep, half)))
+        .unwrap();
+    assert!(evaluated(&report, "circ").deviation_mm < 1e-4);
+    // Over 8 mm the radius drifts 8 · (tan 30.1° − tan 30°), read square to
+    // the face.
+    let total = evaluated(&report, "total");
+    let drift = 8.0 * (steep.tan() - half.tan()) * half.cos();
+    assert!((total.deviation_mm - drift).abs() < 1e-5, "{total:?}");
+}
+
+#[test]
+fn runout_controls_take_surfaces_and_nominals() {
+    let definition = solid_plate();
+    let graph = graph_of(&definition);
+    let session = Session::new().unwrap();
+    // The bore wall itself, as a runout surface about the bore's datum axis,
+    // with nominals projected from the part: a round bore reads nothing.
+    let mut page = runout_page("hole", &["D"], Some(FeatureOfSizeKind::Internal));
+    for f in &mut page.feature_control_frames {
+        f.surface = Some(FaceSelector::Named("bore_wall".into()));
+    }
+    page.validate(&graph).unwrap();
+    let bore = cylinder([HOLE[0], HOLE[1], 0.0], [0.0, 0.0, 1.0], |_| 5.0);
+    let wall = cylinder([HOLE[0] + 0.01, HOLE[1], 0.0], [0.0, 0.0, 1.0], |_| 5.0);
+    let report = page
+        .evaluate_inspection_on_model(&graph, &session, &runout_record(bore, wall))
+        .unwrap();
+    // The wall 0.01 mm off the datum bore reads 0.02.
+    assert!((evaluated(&report, "circ").deviation_mm - 0.02).abs() < 1e-5);
+    let mut flat = page.clone();
+    flat.feature_control_frames[0].characteristic = GeometricCharacteristic::Flatness;
+    flat.feature_control_frames[0].datums.clear();
+    let error = flat.validate(&graph).unwrap_err().message;
+    assert!(error.contains("profile and runout controls"), "{error}");
 }

@@ -1077,6 +1077,7 @@ Supported controls:
 | Position (diameter zone, axis normal to primary plane) | Twice the radial offset of the related actual mating envelope from true position, in the measured frame: three planes (3-2-1) or a plane-axis frame (schema 137), after any datum shift |
 | Circular runout (schema 135) | Full indicator movement about the datum axis, for the worst circular element. On a surface coaxial with the datum axis, the reading is radial and elements are points sharing an axial position. On a face perpendicular to it, the reading is axial and elements are points sharing a radius. Elements group within 1e-3 mm or 1e-6 of the span; each needs at least three points |
 | Total runout (schema 135) | The same readings over all points of the surface |
+| Runout of a surface of revolution with nominals (schema 140) | Readings square to the nominal surface: each point's signed distance from its nominal point along the nominal normal, with the nominal geometry placed on the measured datums. Circles are points whose nominal points share an axial position and then a radius, so cones, spheres and faces all work |
 | Composite position (schema 138) | Upper segment: position as above. Lower segment: the pattern's true positions translate, and rotate about A's normal unless a refinement datum after the primary is a plane, as one rigid group minimizing the largest excess over the refined zones; each feature's deviation from that fit |
 | Profile of a surface (schema 139) | Twice the largest distance, along the nominal normals, of any point from the zone center, after the rigid motions the datums leave free are fitted; a pattern's surfaces move together |
 | Composite profile of a surface (schema 139) | Upper segment as above. Lower segment: the same fit with every translation free and the refinement datums constraining orientation only |
@@ -1167,13 +1168,13 @@ control may carry its nominal surface point and outward normal in
 ```
 
 There must be exactly one nominal per point, with finite values and a nonzero
-normal (it is normalized). Nominals on datum features or non-profile controls
-fail the record. A profile anchored on a plane datum may omit them: each point
+normal (it is normalized). Runout controls accept them too (see below).
+Nominals on datum features or other controls fail the record. A profile anchored on a plane datum may omit them: each point
 is then compared with its projection onto that plane. Other anchors need them,
 or a `surface` on the control.
 
-**Profile against the model (schema 140, ABI 69).** A profile control may name
-the faces it covers with `surface`, a `FaceSelector` on its attachment output,
+**Profile against the model (schema 140, ABI 69).** A profile or runout
+control may name the faces it covers with `surface`, a `FaceSelector` on its attachment output,
 such as a family's named face reference. Only face references of that
 instance's family may be named, and pattern members each name their own
 faces:
@@ -1184,8 +1185,8 @@ faces:
 ```
 
 `DrawingDefinitionInspection::project_profile_nominals(graph, session,
-record)` fills the nominals of every measured profile control that names a
-surface and was recorded without them. Each attachment instance is
+record)` fills the nominals of every measured profile or runout control that
+names a surface and was recorded without them. Each attachment instance is
 regenerated once at its own parameters, the selector picks its faces there,
 and every measured point is moved into the instance's local coordinates
 (undoing its placement and enclosing frames) and projected onto the nearest
@@ -1294,7 +1295,7 @@ shift about a datum axis; common width datums; the separate requirement
 enlarged by geometric tolerances; simultaneous-contact common axis simulators,
 common axes after a primary plane, composites beyond two segments,
 reporting n× patterns as one frame on drawings, measured datum targets,
-profile datums at a material boundary, conical runout surfaces, and
+profile datums at a material boundary, and
 straightness. Measurement uncertainty is not modeled.
 
 ## Surface texture (schema 71)

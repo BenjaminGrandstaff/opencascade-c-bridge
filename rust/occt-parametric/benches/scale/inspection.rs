@@ -258,6 +258,33 @@ const FORM_CONTROLS: usize = 1_000;
 /// Points on a hole of radius 3 about `center`: `sections` circles of
 /// `per_section` points between z = 1 and 9, with a radial taper across the
 /// length and `lobes`-lobed waviness of the given amplitude.
+/// An external 30° cone (radius 3 + z·tan 30°) about `nominal` shifted `e`
+/// in x: 3 sections of 72 points, with nominal points and outward normals.
+fn cone(nominal: [f64; 2], e: f64, id: String) -> MeasuredFeature {
+    let half = 30f64.to_radians();
+    let (sa, ca) = half.sin_cos();
+    let (points_mm, nominals) = (0..3)
+        .flat_map(|s| (0..72).map(move |k| (s, k)))
+        .map(|(s, k)| {
+            let z = 1.0 + 4.0 * s as f64;
+            let (sin, cos) = (k as f64 * std::f64::consts::TAU / 72.0).sin_cos();
+            let r = 3.0 + z * half.tan();
+            (
+                [nominal[0] + e + r * cos, nominal[1] + r * sin, z],
+                MeasuredNominal {
+                    point_mm: [nominal[0] + r * cos, nominal[1] + r * sin, z],
+                    normal: [ca * cos, ca * sin, -sa],
+                },
+            )
+        })
+        .unzip();
+    MeasuredFeature {
+        id,
+        points_mm,
+        nominals,
+    }
+}
+
 fn bore(
     [x, y]: [f64; 2],
     sections: usize,
@@ -425,10 +452,15 @@ pub(crate) fn form_case(definition: &FamilyDefinition) -> Outcome {
 /// 0.06 mm, over its 0.05 mm tolerance.
 /// With `common`, each datum is the common axis D-J of two coaxial bore
 /// journals (200 envelope fits), through their envelope-axis midpoints.
-pub(crate) fn runout_case(definition: &FamilyDefinition, common: bool) -> Outcome {
+pub(crate) fn runout_case(definition: &FamilyDefinition, common: bool, conical: bool) -> Outcome {
     timed(
         format!(
-            "inspection: {FORM_CONTROLS} circular + {FORM_CONTROLS} total runout controls on 100 fitted {} axes",
+            "inspection: {FORM_CONTROLS} circular + {FORM_CONTROLS} total runout controls{} on 100 fitted {} axes",
+            if conical {
+                " on 30° cones with nominals"
+            } else {
+                ""
+            },
             if common { "common datum" } else { "datum" }
         ),
         Duration::from_secs(1),
@@ -540,10 +572,18 @@ pub(crate) fn runout_case(definition: &FamilyDefinition, common: bool) -> Outcom
                     material_hatching: Default::default(),
                 }],
             };
-            let eccentric = |i: usize| {
+            let eccentric = |i: usize, id: String| {
                 let [x, y] = hole_center(i % holes);
                 let e = if i.is_multiple_of(10) { 0.03 } else { 0.01 };
-                bore([x + e, y], 3, 72, 0.0, 0.0)
+                if conical {
+                    cone([x, y], e, id)
+                } else {
+                    MeasuredFeature {
+                        nominals: Vec::new(),
+                        id,
+                        points_mm: bore([x + e, y], 3, 72, 0.0, 0.0),
+                    }
+                }
             };
             let record = InspectionRecord {
                 drawing: "runout".into(),
@@ -567,16 +607,8 @@ pub(crate) fn runout_case(definition: &FamilyDefinition, common: bool) -> Outcom
                     }))
                     .collect(),
                 controls: (0..FORM_CONTROLS)
-                    .map(|i| MeasuredFeature {
-                        nominals: Vec::new(),
-                        id: format!("circular-{i}"),
-                        points_mm: eccentric(i),
-                    })
-                    .chain((0..FORM_CONTROLS).map(|i| MeasuredFeature {
-                        nominals: Vec::new(),
-                        id: format!("total-{i}"),
-                        points_mm: eccentric(i),
-                    }))
+                    .map(|i| eccentric(i, format!("circular-{i}")))
+                    .chain((0..FORM_CONTROLS).map(|i| eccentric(i, format!("total-{i}"))))
                     .collect(),
             };
             let report = drawing.evaluate_inspection(&graph, &record)?;
@@ -588,10 +620,15 @@ pub(crate) fn runout_case(definition: &FamilyDefinition, common: bool) -> Outcom
                         control.control, control.result
                     )));
                 };
+                // Twice the eccentricity, read square to a cone's face.
                 let expected = if (i % FORM_CONTROLS).is_multiple_of(10) {
                     0.06
                 } else {
                     0.02
+                } * if conical {
+                    30f64.to_radians().cos()
+                } else {
+                    1.0
                 };
                 if (m.deviation_mm - expected).abs() > 1e-6
                     || m.conforms == (i % FORM_CONTROLS).is_multiple_of(10)
