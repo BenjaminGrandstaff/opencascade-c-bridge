@@ -9,16 +9,51 @@
 #include "bridge_internal.hpp"
 
 #include <BRepAdaptor_Surface.hxx>
+#include <BRepBndLib.hxx>
+#include <BRepBuilderAPI_MakeEdge.hxx>
+#include <BRep_Builder.hxx>
+#include <Bnd_Box.hxx>
 #include <BRepGProp.hxx>
 #include <GProp_GProps.hxx>
 #include <IFSelect_ReturnStatus.hxx>
 #include <Interface_InterfaceModel.hxx>
 #include <STEPCAFControl_Reader.hxx>
 #include <STEPControl_Reader.hxx>
+#include <STEPCAFControl_Writer.hxx>
+#include <StepAP242_DraughtingModelItemAssociation.hxx>
 #include <StepAP242_GeometricItemSpecificUsage.hxx>
+#include <StepBasic_ConversionBasedUnitAndLengthUnit.hxx>
+#include <StepBasic_HArray1OfNamedUnit.hxx>
+#include <StepBasic_MeasureWithUnit.hxx>
+#include <StepBasic_SiUnitAndLengthUnit.hxx>
+#include <StepData_StepModel.hxx>
 #include <StepDimTol_Datum.hxx>
+#include <StepDimTol_GeometricTolerance.hxx>
+#include <StepGeom_Axis2Placement.hxx>
+#include <StepGeom_Axis2Placement3d.hxx>
+#include <StepGeom_CartesianPoint.hxx>
+#include <StepGeom_Direction.hxx>
+#include <StepGeom_GeomRepContextAndGlobUnitAssCtxAndGlobUncertaintyAssCtx.hxx>
+#include <StepRepr_GlobalUnitAssignedContext.hxx>
+#include <StepRepr_HArray1OfRepresentationItem.hxx>
 #include <StepRepr_ShapeAspect.hxx>
 #include <StepRepr_ShapeAspectRelationship.hxx>
+#include <StepShape_ShapeRepresentation.hxx>
+#include <StepVisual_CameraModelD3.hxx>
+#include <StepVisual_CoordinatesList.hxx>
+#include <StepVisual_DraughtingCallout.hxx>
+#include <StepVisual_DraughtingModel.hxx>
+#include <StepVisual_PlanarBox.hxx>
+#include <StepVisual_TessellatedAnnotationOccurrence.hxx>
+#include <StepVisual_TessellatedCurveSet.hxx>
+#include <StepVisual_TessellatedGeometricSet.hxx>
+#include <StepVisual_ViewVolume.hxx>
+#include <TColStd_HArray1OfReal.hxx>
+#include <TColgp_HArray1OfXYZ.hxx>
+#include <TopoDS_Compound.hxx>
+#include <XCAFDoc_View.hxx>
+#include <XCAFDoc_ViewTool.hxx>
+#include <XCAFView_Object.hxx>
 #include <TransferBRep.hxx>
 #include <Transfer_TransientProcess.hxx>
 #include <XSControl_TransferReader.hxx>
@@ -264,15 +299,110 @@ std::vector<int> tolerance_modifiers(uint32_t bits) {
     return modifiers;
 }
 
+bool finite3(const double value[3]) {
+    return std::isfinite(value[0]) && std::isfinite(value[1]) && std::isfinite(value[2]);
+}
+
+gp_XYZ xyz(const double value[3]) {
+    return gp_XYZ(value[0], value[1], value[2]);
+}
+
+// A drawn segment of a presentation polyline.
+struct Segment {
+    gp_XYZ start;
+    gp_XYZ end;
+};
+
+// The segments of a presentation's polylines, without those too short to
+// make an edge.
+std::vector<Segment> segments(const occt_bridge_step_presentation_t& presentation) {
+    std::vector<Segment> result;
+    size_t first = 0;
+    for (size_t polyline = 0; polyline < presentation.polyline_count; ++polyline) {
+        const size_t count = presentation.polyline_points[polyline];
+        for (size_t index = first + 1; index < first + count; ++index) {
+            const gp_XYZ start = xyz(presentation.points + 3 * (index - 1));
+            const gp_XYZ end = xyz(presentation.points + 3 * index);
+            if ((end - start).Modulus() > 1e-6) {
+                result.push_back({start, end});
+            }
+        }
+        first += count;
+    }
+    return result;
+}
+
+const char* presentation_error(const occt_bridge_step_presentation_t& presentation) {
+    if (presentation.name == nullptr || presentation.name[0] == '\0') {
+        return "presentations need nonempty names";
+    }
+    if (presentation.points == nullptr || presentation.polyline_points == nullptr || presentation.polyline_count == 0) {
+        return "presentations need polylines";
+    }
+    size_t total = 0;
+    for (size_t polyline = 0; polyline < presentation.polyline_count; ++polyline) {
+        if (presentation.polyline_points[polyline] < 2) {
+            return "presentation polylines need at least two points";
+        }
+        total += presentation.polyline_points[polyline];
+    }
+    if (total != presentation.point_count) {
+        return "presentation polylines must use every point once";
+    }
+    for (size_t index = 0; index < presentation.point_count; ++index) {
+        if (!finite3(presentation.points + 3 * index)) {
+            return "presentation points must be finite";
+        }
+    }
+    if (!finite3(presentation.origin) || !finite3(presentation.normal) || !finite3(presentation.x_direction)) {
+        return "an annotation plane must be finite";
+    }
+    const gp_XYZ normal = xyz(presentation.normal);
+    const gp_XYZ x = xyz(presentation.x_direction);
+    if (std::abs(normal.Modulus() - 1.0) > 1e-9 || std::abs(x.Modulus() - 1.0) > 1e-9
+        || std::abs(normal.Dot(x)) > 1e-9) {
+        return "an annotation plane needs a unit normal and a unit x direction in the plane";
+    }
+    if (segments(presentation).empty()) {
+        return "a presentation needs a segment at least 1e-6 mm long";
+    }
+    return nullptr;
+}
+
+// The presentation as line edges, one per segment, which OCCT's writer
+// tessellates point for point.
+TopoDS_Compound presentation_shape(const occt_bridge_step_presentation_t& presentation) {
+    BRep_Builder builder;
+    TopoDS_Compound compound;
+    builder.MakeCompound(compound);
+    for (const Segment& segment : segments(presentation)) {
+        builder.Add(compound, BRepBuilderAPI_MakeEdge(gp_Pnt(segment.start), gp_Pnt(segment.end)).Edge());
+    }
+    return compound;
+}
+
+template <typename Object>
+void present(const Handle(Object)& object, const occt_bridge_step_presentation_t* presentation) {
+    if (presentation == nullptr) {
+        return;
+    }
+    object->SetPresentation(presentation_shape(*presentation), text(presentation->name));
+    object->SetPlane(gp_Ax2(
+        gp_Pnt(xyz(presentation->origin)), gp_Dir(xyz(presentation->normal)), gp_Dir(xyz(presentation->x_direction))));
+    object->SetPointTextAttach(gp_Pnt(xyz(presentation->origin)));
+}
+
 TDF_Label add_datum(
     const Handle(XCAFDoc_DimTolTool)& tool,
     const TDF_LabelSequence& faces,
-    const char* label,
+    const occt_bridge_step_datum_t& written,
     int position,
     const std::vector<int>& modifiers) {
     const TDF_Label datum = tool->AddDatum();
     Handle(XCAFDimTolObjects_DatumObject) object = new XCAFDimTolObjects_DatumObject;
-    object->SetName(text(label));
+    object->SetName(text(written.label));
+    // OCCT writes the presentation of a label's first datum only.
+    present(object, written.presentation);
     if (position > 0) {
         object->SetPosition(position);
     }
@@ -642,6 +772,264 @@ uint32_t tolerance_losses(
     return losses;
 }
 
+const char* view_error(const occt_bridge_step_view_t& view, const occt_bridge_step_pmi_t& pmi) {
+    if (view.name == nullptr || view.name[0] == '\0') {
+        return "views need nonempty names";
+    }
+    if (!finite3(view.direction) || !finite3(view.up)) {
+        return "a view's direction and up must be finite";
+    }
+    const gp_XYZ direction = xyz(view.direction);
+    const gp_XYZ up = xyz(view.up);
+    if (direction.Modulus() <= 1e-12 || up.Modulus() <= 1e-12
+        || direction.Crossed(up).Modulus() <= 1e-9 * direction.Modulus() * up.Modulus()) {
+        return "a view's direction and up must be nonzero and not parallel";
+    }
+    if ((view.datum_count != 0 && view.datums == nullptr) || (view.tolerance_count != 0 && view.tolerances == nullptr)) {
+        return "view annotation arrays are missing";
+    }
+    std::set<size_t> seen;
+    for (size_t index = 0; index < view.datum_count; ++index) {
+        if (view.datums[index] >= pmi.datum_count) {
+            return "a view shows an unknown datum";
+        }
+        if (pmi.datums[view.datums[index]].presentation == nullptr) {
+            return "a view shows only annotations with presentations";
+        }
+        if (!seen.insert(view.datums[index]).second) {
+            return "a view shows an annotation at most once";
+        }
+    }
+    seen.clear();
+    for (size_t index = 0; index < view.tolerance_count; ++index) {
+        if (view.tolerances[index] >= pmi.tolerance_count) {
+            return "a view shows an unknown tolerance";
+        }
+        if (pmi.tolerances[view.tolerances[index]].presentation == nullptr) {
+            return "a view shows only annotations with presentations";
+        }
+        if (!seen.insert(view.tolerances[index]).second) {
+            return "a view shows an annotation at most once";
+        }
+    }
+    return nullptr;
+}
+
+// The view's look direction and its up made square to it, both unit.
+std::pair<gp_Dir, gp_Dir> camera_axes(const occt_bridge_step_view_t& view) {
+    const gp_Dir direction(xyz(view.direction));
+    const gp_XYZ up = xyz(view.up);
+    return {direction, gp_Dir(up - direction.XYZ() * up.Dot(direction.XYZ()))};
+}
+
+Handle(StepGeom_CartesianPoint) step_point(const gp_XYZ& value) {
+    Handle(TColStd_HArray1OfReal) coordinates = new TColStd_HArray1OfReal(1, 3);
+    for (int index = 1; index <= 3; ++index) {
+        coordinates->SetValue(index, value.Coord(index));
+    }
+    Handle(StepGeom_CartesianPoint) point = new StepGeom_CartesianPoint;
+    point->Init(text(""), coordinates);
+    return point;
+}
+
+Handle(StepGeom_Direction) step_direction(const gp_Dir& value) {
+    Handle(TColStd_HArray1OfReal) ratios = new TColStd_HArray1OfReal(1, 3);
+    for (int index = 1; index <= 3; ++index) {
+        ratios->SetValue(index, value.Coord(index));
+    }
+    Handle(StepGeom_Direction) direction = new StepGeom_Direction;
+    direction->Init(text(""), ratios);
+    return direction;
+}
+
+// A parallel camera looking along the view's direction at the center of
+// bounds, framing a sphere around them. OCCT reads the view direction as the
+// placement's axis and up as the axis crossed with its x direction.
+Handle(StepVisual_CameraModelD3) camera(const occt_bridge_step_view_t& view, const Bnd_Box& bounds) {
+    gp_XYZ center(0.0, 0.0, 0.0);
+    double radius = 1.0;
+    if (!bounds.IsVoid()) {
+        const gp_XYZ low = bounds.CornerMin().XYZ();
+        const gp_XYZ high = bounds.CornerMax().XYZ();
+        center = 0.5 * (low + high);
+        radius = std::max(radius, 0.5 * (high - low).Modulus());
+    }
+    const auto [direction, up] = camera_axes(view);
+    const gp_XYZ eye = center - 2.0 * radius * direction.XYZ();
+    Handle(StepGeom_Axis2Placement3d) system = new StepGeom_Axis2Placement3d;
+    system->Init(text(""), step_point(eye), Standard_True, step_direction(direction), Standard_True,
+                 step_direction(gp_Dir(up.XYZ().Crossed(direction.XYZ()))));
+    Handle(StepGeom_Axis2Placement3d) origin = new StepGeom_Axis2Placement3d;
+    origin->Init(text(""), step_point(gp_XYZ(0.0, 0.0, 0.0)), Standard_False, nullptr, Standard_False, nullptr);
+    StepGeom_Axis2Placement placement;
+    placement.SetValue(origin);
+    Handle(StepVisual_PlanarBox) window = new StepVisual_PlanarBox;
+    window->Init(text(""), 2.0 * radius, 2.0 * radius, placement);
+    Handle(StepVisual_ViewVolume) volume = new StepVisual_ViewVolume;
+    volume->Init(StepVisual_copParallel, step_point(eye), 2.0 * radius, 0.0, Standard_False, 4.0 * radius,
+                 Standard_False, Standard_False, window);
+    Handle(StepVisual_CameraModelD3) result = new StepVisual_CameraModelD3;
+    result->Init(text(view.name), system, volume);
+    return result;
+}
+
+// Bounds of the placed components and the presentations; each distinct part
+// is measured once.
+Bnd_Box view_bounds(const occt_bridge_step_pmi_t& pmi, const std::vector<const TopoDS_Shape*>& shapes) {
+    Bnd_Box bounds;
+    std::unordered_map<const TopoDS_TShape*, Bnd_Box> parts;
+    for (const TopoDS_Shape* shape : shapes) {
+        auto found = parts.find(shape->TShape().get());
+        if (found == parts.end()) {
+            Bnd_Box local;
+            BRepBndLib::Add(shape->Located(TopLoc_Location()), local, Standard_False);
+            found = parts.emplace(shape->TShape().get(), local).first;
+        }
+        if (!found->second.IsVoid()) {
+            bounds.Add(found->second.Transformed(shape->Location().Transformation()));
+        }
+    }
+    const auto add = [&](const occt_bridge_step_presentation_t* presentation) {
+        for (size_t index = 0; presentation != nullptr && index < presentation->point_count; ++index) {
+            bounds.Add(gp_Pnt(xyz(presentation->points + 3 * index)));
+        }
+    };
+    for (size_t index = 0; index < pmi.datum_count; ++index) {
+        add(pmi.datums[index].presentation);
+    }
+    for (size_t index = 0; index < pmi.tolerance_count; ++index) {
+        add(pmi.tolerances[index].presentation);
+    }
+    return bounds;
+}
+
+// The first length unit of a representation context.
+Handle(StepBasic_NamedUnit) length_unit(const Handle(StepRepr_RepresentationContext)& context) {
+    Handle(StepBasic_HArray1OfNamedUnit) units;
+    if (const auto complex = Handle(StepGeom_GeomRepContextAndGlobUnitAssCtxAndGlobUncertaintyAssCtx)::DownCast(context);
+        !complex.IsNull()) {
+        units = complex->Units();
+    } else if (const auto assigned = Handle(StepRepr_GlobalUnitAssignedContext)::DownCast(context); !assigned.IsNull()) {
+        units = assigned->Units();
+    }
+    for (int index = 1; !units.IsNull() && index <= units->Length(); ++index) {
+        const Handle(StepBasic_NamedUnit)& unit = units->Value(index);
+        if (unit->IsKind(STANDARD_TYPE(StepBasic_SiUnitAndLengthUnit))
+            || unit->IsKind(STANDARD_TYPE(StepBasic_ConversionBasedUnitAndLengthUnit))) {
+            return unit;
+        }
+    }
+    return nullptr;
+}
+
+constexpr const char* kPresentationLink = "PMI representation to presentation link";
+
+// The segments of a callout's tessellated curves.
+std::vector<Segment> callout_segments(const Handle(StepVisual_DraughtingCallout)& callout) {
+    std::vector<Segment> result;
+    for (int content = 1; content <= callout->NbContents(); ++content) {
+        const auto occurrence = callout->ContentsValue(content).TessellatedAnnotationOccurrence();
+        if (occurrence.IsNull()) {
+            continue;
+        }
+        const auto set = Handle(StepVisual_TessellatedGeometricSet)::DownCast(occurrence->Item());
+        if (set.IsNull() || set->Items().IsNull()) {
+            continue;
+        }
+        for (const auto& item : *set->Items()) {
+            const auto curves = Handle(StepVisual_TessellatedCurveSet)::DownCast(item);
+            if (curves.IsNull() || curves->CoordList().IsNull() || curves->Curves().IsNull()) {
+                continue;
+            }
+            const Handle(TColgp_HArray1OfXYZ) points = curves->CoordList()->Points();
+            for (const auto& curve : *curves->Curves()) {
+                for (int index = 2; !curve.IsNull() && index <= curve->Length(); ++index) {
+                    const int a = curve->Value(index - 1);
+                    const int b = curve->Value(index);
+                    if (points.IsNull() || a < points->Lower() || a > points->Upper() || b < points->Lower()
+                        || b > points->Upper()) {
+                        continue;
+                    }
+                    result.push_back({points->Value(a), points->Value(b)});
+                }
+            }
+        }
+    }
+    return result;
+}
+
+bool same_point(const gp_XYZ& first, const gp_XYZ& second) {
+    return close(first.X(), second.X()) && close(first.Y(), second.Y()) && close(first.Z(), second.Z());
+}
+
+bool same_segments(const std::vector<Segment>& written, const std::vector<Segment>& read) {
+    if (written.size() != read.size()) {
+        return false;
+    }
+    for (size_t index = 0; index < written.size(); ++index) {
+        if (!same_point(written[index].start, read[index].start) || !same_point(written[index].end, read[index].end)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// What the file holds of presentations and views: each linked callout's
+// segments by name, and each camera's callout names.
+struct ReadPresentations {
+    std::map<std::string, std::vector<std::vector<Segment>>> callouts;
+    std::map<std::string, std::set<std::string>> views;
+};
+
+ReadPresentations read_presentations(const Handle(Interface_InterfaceModel)& model) {
+    ReadPresentations result;
+    for (int index = 1; index <= model->NbEntities(); ++index) {
+        const Handle(Standard_Transient)& entity = model->Value(index);
+        if (const auto link = Handle(StepAP242_DraughtingModelItemAssociation)::DownCast(entity); !link.IsNull()) {
+            // OCCT's reader lowercases the names of links it has followed.
+            if (link->Name().IsNull() || !link->Name()->IsSameString(text(kPresentationLink), Standard_False)
+                || link->Definition().Value().IsNull()) {
+                continue;
+            }
+            for (int item = 1; item <= link->NbIdentifiedItem(); ++item) {
+                const auto callout = Handle(StepVisual_DraughtingCallout)::DownCast(link->IdentifiedItemValue(item));
+                if (!callout.IsNull()) {
+                    result.callouts[name_of(callout->Name())].push_back(callout_segments(callout));
+                }
+            }
+        } else if (const auto drawing = Handle(StepVisual_DraughtingModel)::DownCast(entity); !drawing.IsNull()) {
+            std::vector<std::string> cameras;
+            std::set<std::string> callouts;
+            for (int item = 1; item <= drawing->NbItems(); ++item) {
+                const Handle(StepRepr_RepresentationItem) value = drawing->ItemsValue(item);
+                if (const auto camera = Handle(StepVisual_CameraModelD3)::DownCast(value); !camera.IsNull()) {
+                    cameras.push_back(name_of(camera->Name()));
+                } else if (const auto callout = Handle(StepVisual_DraughtingCallout)::DownCast(value);
+                           !callout.IsNull()) {
+                    callouts.insert(name_of(callout->Name()));
+                }
+            }
+            for (const std::string& camera : cameras) {
+                result.views[camera].insert(callouts.begin(), callouts.end());
+            }
+        }
+    }
+    return result;
+}
+
+uint32_t presentation_losses(const occt_bridge_step_presentation_t* presentation, const ReadPresentations& read) {
+    if (presentation == nullptr) {
+        return 0;
+    }
+    const auto found = read.callouts.find(presentation->name);
+    const std::vector<Segment> written = segments(*presentation);
+    const bool same = found != read.callouts.end()
+        && std::any_of(found->second.begin(), found->second.end(), [&](const std::vector<Segment>& callout) {
+               return same_segments(written, callout);
+           });
+    return same ? 0u : OCCT_BRIDGE_PMI_LOST_PRESENTATION;
+}
+
 // Closes a reading document however verification ends.
 struct ReadDocument {
     Handle(XCAFApp_Application) application = XCAFApp_Application::GetApplication();
@@ -693,6 +1081,45 @@ const char* pmi_error(const occt_bridge_step_pmi_t& pmi, const std::vector<const
             return error;
         }
     }
+    std::vector<std::string> names;
+    const auto presentation = [&](const occt_bridge_step_presentation_t* value) -> const char* {
+        if (value == nullptr) {
+            return nullptr;
+        }
+        if (const char* error = presentation_error(*value)) {
+            return error;
+        }
+        names.push_back(value->name);
+        return nullptr;
+    };
+    for (size_t index = 0; index < pmi.datum_count; ++index) {
+        if (const char* error = presentation(pmi.datums[index].presentation)) {
+            return error;
+        }
+    }
+    for (size_t index = 0; index < pmi.tolerance_count; ++index) {
+        if (const char* error = presentation(pmi.tolerances[index].presentation)) {
+            return error;
+        }
+    }
+    std::sort(names.begin(), names.end());
+    if (std::adjacent_find(names.begin(), names.end()) != names.end()) {
+        return "presentation names must be unique";
+    }
+    if (pmi.view_count != 0 && pmi.views == nullptr) {
+        return "PMI views are missing";
+    }
+    names.clear();
+    for (size_t index = 0; index < pmi.view_count; ++index) {
+        if (const char* error = view_error(pmi.views[index], pmi)) {
+            return error;
+        }
+        names.push_back(pmi.views[index].name);
+    }
+    std::sort(names.begin(), names.end());
+    if (std::adjacent_find(names.begin(), names.end()) != names.end()) {
+        return "view names must be unique";
+    }
     return nullptr;
 }
 
@@ -734,6 +1161,7 @@ void add_pmi(
             object->SetZoneModifier(XCAFDimTolObjects_GeomToleranceZoneModif_Projected);
             object->SetValueOfZoneModifier(tolerance.projected_mm);
         }
+        present(object, tolerance.presentation);
         XCAFDoc_GeomTolerance::Set(label)->SetObject(object);
         tool->SetGeomTolerance(labels_of(tolerance.target), label);
         // Each reference is its own datum label carrying its compartment and
@@ -744,7 +1172,7 @@ void add_pmi(
             const TDF_Label datum = add_datum(
                 tool,
                 datum_faces[entry.datum],
-                pmi.datums[entry.datum].label,
+                pmi.datums[entry.datum],
                 static_cast<int>(entry.compartment) + 1,
                 datum_modifiers(entry));
             tool->SetDatumToGeomTol(datum, label);
@@ -752,7 +1180,7 @@ void add_pmi(
     }
     for (size_t index = 0; index < pmi.datum_count; ++index) {
         if (!referenced[index]) {
-            add_datum(tool, datum_faces[index], pmi.datums[index].label, 0, {});
+            add_datum(tool, datum_faces[index], pmi.datums[index], 0, {});
         }
     }
     for (size_t index = 0; index < pmi.size_count; ++index) {
@@ -773,10 +1201,85 @@ void add_pmi(
     }
 }
 
+void finish_pmi(
+    STEPCAFControl_Writer& writer,
+    const occt_bridge_step_pmi_t& pmi,
+    const std::vector<const TopoDS_Shape*>& shapes) {
+    const Handle(Interface_InterfaceModel) model = writer.Writer().WS()->Model();
+    Handle(StepRepr_RepresentationContext) context;
+    std::vector<Handle(StepVisual_DraughtingModel)> drawings;
+    std::vector<Handle(StepDimTol_GeometricTolerance)> tolerances;
+    std::map<std::string, Handle(StepVisual_DraughtingCallout)> callouts;
+    for (int index = 1; index <= model->NbEntities(); ++index) {
+        const Handle(Standard_Transient)& entity = model->Value(index);
+        if (const auto shape = Handle(StepShape_ShapeRepresentation)::DownCast(entity);
+            !shape.IsNull() && context.IsNull()) {
+            context = shape->ContextOfItems();
+        } else if (const auto drawing = Handle(StepVisual_DraughtingModel)::DownCast(entity); !drawing.IsNull()) {
+            drawings.push_back(drawing);
+        } else if (const auto tolerance = Handle(StepDimTol_GeometricTolerance)::DownCast(entity);
+                   !tolerance.IsNull()) {
+            tolerances.push_back(tolerance);
+        } else if (const auto callout = Handle(StepVisual_DraughtingCallout)::DownCast(entity); !callout.IsNull()) {
+            callouts.emplace(name_of(callout->Name()), callout);
+        }
+    }
+    if (context.IsNull()) {
+        return;
+    }
+    // OCCT 7.9 takes the presentation model's context and the tolerance
+    // values' unit from the first size dimension it writes: without one the
+    // context is missing, which fails the write, and values are in metres.
+    for (const auto& drawing : drawings) {
+        if (drawing->ContextOfItems().IsNull()) {
+            drawing->SetContextOfItems(context);
+        }
+    }
+    if (const Handle(StepBasic_NamedUnit) unit = length_unit(context); !unit.IsNull()) {
+        StepBasic_Unit length;
+        length.SetValue(unit);
+        for (const auto& tolerance : tolerances) {
+            if (!tolerance->Magnitude().IsNull()) {
+                tolerance->Magnitude()->SetUnitComponent(length);
+            }
+        }
+    }
+    if (pmi.view_count == 0) {
+        return;
+    }
+    // Each view is a draughting model holding its camera and the callouts
+    // it shows, as OCCT's reader expects of a saved view.
+    const Bnd_Box bounds = view_bounds(pmi, shapes);
+    for (size_t index = 0; index < pmi.view_count; ++index) {
+        const occt_bridge_step_view_t& view = pmi.views[index];
+        std::vector<Handle(StepRepr_RepresentationItem)> items{camera(view, bounds)};
+        const auto show = [&](const occt_bridge_step_presentation_t* presentation) {
+            if (const auto found = callouts.find(presentation->name); found != callouts.end()) {
+                items.push_back(found->second);
+            }
+        };
+        for (size_t entry = 0; entry < view.datum_count; ++entry) {
+            show(pmi.datums[view.datums[entry]].presentation);
+        }
+        for (size_t entry = 0; entry < view.tolerance_count; ++entry) {
+            show(pmi.tolerances[view.tolerances[entry]].presentation);
+        }
+        Handle(StepRepr_HArray1OfRepresentationItem) array =
+            new StepRepr_HArray1OfRepresentationItem(1, static_cast<int>(items.size()));
+        for (size_t item = 0; item < items.size(); ++item) {
+            array->SetValue(static_cast<int>(item) + 1, items[item]);
+        }
+        Handle(StepVisual_DraughtingModel) drawing = new StepVisual_DraughtingModel;
+        drawing->Init(text(view.name), array, context);
+        model->AddWithRefs(drawing);
+    }
+}
+
 bool verify_pmi(const char* path, occt_bridge_step_pmi_t& pmi, const std::vector<const TopoDS_Shape*>& shapes) {
     STEPCAFControl_Reader reader;
     reader.SetGDTMode(Standard_True);
     reader.SetNameMode(Standard_True);
+    reader.SetViewMode(Standard_True);
     if (reader.ReadFile(path) != IFSelect_RetDone) {
         return false;
     }
@@ -790,6 +1293,7 @@ bool verify_pmi(const char* path, occt_bridge_step_pmi_t& pmi, const std::vector
     ComponentFaces faces(shapes);
 
     const std::multimap<std::string, Prints> datums_by_name = read_datums(reader.Reader());
+    const ReadPresentations presentations = read_presentations(reader.Reader().WS()->Model());
     std::vector<Prints> datum_prints;
     datum_prints.reserve(pmi.datum_count);
     for (size_t index = 0; index < pmi.datum_count; ++index) {
@@ -800,7 +1304,8 @@ bool verify_pmi(const char* path, occt_bridge_step_pmi_t& pmi, const std::vector
             return same_faces(datum_prints.back(), entry.second);
         });
         if (pmi.out_datum_losses != nullptr) {
-            pmi.out_datum_losses[index] = found ? 0u : OCCT_BRIDGE_PMI_LOST_ITEM;
+            pmi.out_datum_losses[index] = found ? presentation_losses(datum.presentation, presentations)
+                                                : OCCT_BRIDGE_PMI_LOST_ITEM;
         }
     }
 
@@ -825,6 +1330,7 @@ bool verify_pmi(const char* path, occt_bridge_step_pmi_t& pmi, const std::vector
         }
         if (chosen != SIZE_MAX) {
             tolerances[chosen].claimed = true;
+            best |= presentation_losses(tolerance.presentation, presentations);
         }
         if (pmi.out_tolerance_losses != nullptr) {
             pmi.out_tolerance_losses[index] = best;
@@ -864,6 +1370,45 @@ bool verify_pmi(const char* path, occt_bridge_step_pmi_t& pmi, const std::vector
         }
         if (pmi.out_size_losses != nullptr) {
             pmi.out_size_losses[index] = best;
+        }
+    }
+
+    // Views: the camera's name, direction and up as OCCT's reader makes the
+    // view, and its callouts from the file's draughting models.
+    const Handle(XCAFDoc_ViewTool) view_tool = XCAFDoc_DocumentTool::ViewTool(read.document->Main());
+    TDF_LabelSequence view_labels;
+    view_tool->GetViewLabels(view_labels);
+    std::multimap<std::string, Handle(XCAFView_Object)> cameras;
+    for (const TDF_Label& label : view_labels) {
+        Handle(XCAFDoc_View) attribute;
+        if (label.FindAttribute(XCAFDoc_View::GetID(), attribute) && !attribute->GetObject().IsNull()) {
+            cameras.emplace(name_of(attribute->GetObject()->Name()), attribute->GetObject());
+        }
+    }
+    for (size_t index = 0; index < pmi.view_count; ++index) {
+        const occt_bridge_step_view_t& view = pmi.views[index];
+        const auto [begin, end] = cameras.equal_range(view.name);
+        const auto shown = presentations.views.find(view.name);
+        uint32_t losses = OCCT_BRIDGE_PMI_VIEW_LOST;
+        if (begin != end && shown != presentations.views.end()) {
+            const auto [direction, up] = camera_axes(view);
+            const bool same = std::any_of(begin, end, [&](const auto& entry) {
+                return entry.second->ViewDirection().IsEqual(direction, 1e-7)
+                    && entry.second->UpDirection().IsEqual(up, 1e-7);
+            });
+            losses = same ? 0u : OCCT_BRIDGE_PMI_VIEW_LOST_CAMERA;
+        }
+        if (pmi.out_view_losses != nullptr) {
+            pmi.out_view_losses[index] = losses;
+        }
+        const auto lost = [&](const occt_bridge_step_presentation_t* presentation) -> uint8_t {
+            return shown == presentations.views.end() || shown->second.count(presentation->name) == 0 ? 1 : 0;
+        };
+        for (size_t entry = 0; view.out_datums_lost != nullptr && entry < view.datum_count; ++entry) {
+            view.out_datums_lost[entry] = lost(pmi.datums[view.datums[entry]].presentation);
+        }
+        for (size_t entry = 0; view.out_tolerances_lost != nullptr && entry < view.tolerance_count; ++entry) {
+            view.out_tolerances_lost[entry] = lost(pmi.tolerances[view.tolerances[entry]].presentation);
         }
     }
     return true;

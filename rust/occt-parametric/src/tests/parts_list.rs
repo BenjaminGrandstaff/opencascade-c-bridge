@@ -74,6 +74,7 @@ fn page(members: &[String]) -> DrawingDefinition {
     outputs.extend(members.iter().take(2).map(|m| output(m)));
     outputs.push(output("steel_plate"));
     DrawingDefinition {
+        annotation_views: Vec::new(),
         datum_reference_frames: Vec::new(),
         datum_features: Vec::new(),
         feature_control_frames: Vec::new(),

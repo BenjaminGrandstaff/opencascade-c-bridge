@@ -13,6 +13,7 @@
 #include <XCAFDoc_ColorTool.hxx>
 #include <XCAFDoc_DocumentTool.hxx>
 #include <XCAFDoc_ShapeTool.hxx>
+#include <XCAFDoc_ViewTool.hxx>
 #include <TopExp_Explorer.hxx>
 #include <gp_Trsf.hxx>
 
@@ -287,13 +288,29 @@ void pmi(occt_bridge_session_t* session, const std::string& file) {
     const size_t front[] = {faces.front};
     const size_t sides[] = {faces.left, faces.right};
     const size_t pin_side[] = {0};
+    // Presentations in the plane above the plate, facing up: a box with a
+    // diagonal, and a three-point leader.
+    const double box_points[] = {0, 0, 30, 20, 0, 30, 20, 8, 30, 0, 8, 30, 0, 0, 30, 0, 0, 30, 20, 8, 30};
+    const uint32_t box_polylines[] = {5, 2};
+    const double leader_points[] = {40, 10, 30, 45, 15, 30, 60, 15, 30};
+    const uint32_t leader_polylines[] = {3};
+    const auto drawn = [&](const char* name, bool box, double x) {
+        occt_bridge_step_presentation_t presentation{
+            name, box ? box_points : leader_points, box ? 7u : 3u, box ? box_polylines : leader_polylines,
+            box ? 2u : 1u, {x, 0, 30}, {0, 0, 1}, {1, 0, 0}};
+        return presentation;
+    };
+    const occt_bridge_step_presentation_t datum_a = drawn("datum A", true, 0);
+    const occt_bridge_step_presentation_t datum_e = drawn("datum E", false, 40);
+    const occt_bridge_step_presentation_t flatness = drawn("flatness", false, 40);
+    const occt_bridge_step_presentation_t holes = drawn("hole position", true, 0);
     const occt_bridge_step_datum_t datums[] = {
-        {"A", {0, bottom, 1}},
-        {"B", {0, left, 1}},
-        {"C", {0, front, 1}},
-        {"D", {1, pin_side, 1}},
+        {"A", {0, bottom, 1}, &datum_a},
+        {"B", {0, left, 1}, nullptr},
+        {"C", {0, front, 1}, nullptr},
+        {"D", {1, pin_side, 1}, nullptr},
         // No tolerance references E; it still reads back.
-        {"E", {0, top, 1}},
+        {"E", {0, top, 1}, &datum_e},
     };
     const occt_bridge_step_datum_reference_t abc[] = {
         {0, 0, OCCT_BRIDGE_DATUM_RFS, 0},
@@ -306,12 +323,13 @@ void pmi(occt_bridge_session_t* session, const std::string& file) {
     };
     const occt_bridge_step_datum_reference_t pin_axis[] = {{3, 0, OCCT_BRIDGE_DATUM_RFS, 0}};
     occt_bridge_step_tolerance_t tolerances[] = {
-        {{0, top, 1}, OCCT_BRIDGE_GDT_FLATNESS, 0.05, 0, OCCT_BRIDGE_MATERIAL_RFS, OCCT_BRIDGE_GDT_FREE_STATE, 0, nullptr, 0},
-        {{0, faces.holes.data(), 2}, OCCT_BRIDGE_GDT_POSITION, 0.2, 1, OCCT_BRIDGE_MATERIAL_MMC, 0, 0, abc, 3},
-        {{0, faces.holes.data(), 2}, OCCT_BRIDGE_GDT_POSITION, 0.4, 1, OCCT_BRIDGE_MATERIAL_RFS, 0, 15, abc, 1},
+        {{0, top, 1}, OCCT_BRIDGE_GDT_FLATNESS, 0.05, 0, OCCT_BRIDGE_MATERIAL_RFS, OCCT_BRIDGE_GDT_FREE_STATE, 0, nullptr, 0,
+            &flatness},
+        {{0, faces.holes.data(), 2}, OCCT_BRIDGE_GDT_POSITION, 0.2, 1, OCCT_BRIDGE_MATERIAL_MMC, 0, 0, abc, 3, &holes},
+        {{0, faces.holes.data(), 2}, OCCT_BRIDGE_GDT_POSITION, 0.4, 1, OCCT_BRIDGE_MATERIAL_RFS, 0, 15, abc, 1, nullptr},
         {{0, top, 1}, OCCT_BRIDGE_GDT_PERPENDICULARITY, 0.07, 0, OCCT_BRIDGE_MATERIAL_RFS,
-            OCCT_BRIDGE_GDT_TANGENT_PLANE | OCCT_BRIDGE_GDT_STATISTICAL, 0, common, 2},
-        {{1, pin_side, 1}, OCCT_BRIDGE_GDT_TOTAL_RUNOUT, 0.03, 0, OCCT_BRIDGE_MATERIAL_RFS, 0, 0, pin_axis, 1},
+            OCCT_BRIDGE_GDT_TANGENT_PLANE | OCCT_BRIDGE_GDT_STATISTICAL, 0, common, 2, nullptr},
+        {{1, pin_side, 1}, OCCT_BRIDGE_GDT_TOTAL_RUNOUT, 0.03, 0, OCCT_BRIDGE_MATERIAL_RFS, 0, 0, pin_axis, 1, nullptr},
     };
     occt_bridge_step_size_t sizes[] = {
         {{0, faces.holes.data(), 2}, OCCT_BRIDGE_STEP_SIZE_DIAMETER, 9.9, 10.2},
@@ -320,7 +338,22 @@ void pmi(occt_bridge_session_t* session, const std::string& file) {
     uint32_t datum_losses[5] = {9, 9, 9, 9, 9};
     uint32_t tolerance_losses[5] = {9, 9, 9, 9, 9};
     uint32_t size_losses[2] = {9, 9};
-    occt_bridge_step_pmi_t pmi{datums, 5, tolerances, 5, sizes, 2, datum_losses, tolerance_losses, size_losses};
+    // Two saved views: looking down on both datums and both drawn
+    // tolerances, and from the front on the hole position alone.
+    const size_t top_datums[] = {0, 4};
+    const size_t top_tolerances[] = {0, 1};
+    const size_t front_tolerances[] = {1};
+    uint8_t top_datums_lost[2] = {9, 9};
+    uint8_t top_tolerances_lost[2] = {9, 9};
+    uint8_t front_tolerances_lost[1] = {9};
+    const occt_bridge_step_view_t views[] = {
+        {"TOP", {0, 0, -1}, {0, 2, 0}, top_datums, 2, top_tolerances, 2, top_datums_lost, top_tolerances_lost},
+        // Up need not be square to the direction.
+        {"FRONT", {0, 1, 0}, {0, 0.5, 1}, nullptr, 0, front_tolerances, 1, nullptr, front_tolerances_lost},
+    };
+    uint32_t view_losses[2] = {9, 9};
+    occt_bridge_step_pmi_t pmi{
+        datums, 5, tolerances, 5, sizes, 2, datum_losses, tolerance_losses, size_losses, views, 2, view_losses};
     size_t parts = 0;
     check(occt_bridge_step_save_assembly_pmi(
               session, file.c_str(), "fixture", nullptr, 0, components, nullptr, 2, nullptr, 0, &pmi, &parts)
@@ -333,6 +366,43 @@ void pmi(occt_bridge_session_t* session, const std::string& file) {
             && tolerance_losses[4] == 0, "tolerances read back");
     check(tolerance_losses[2] == OCCT_BRIDGE_PMI_LOST_PROJECTED, "only the projected zone is lost");
     check(size_losses[0] == 0 && size_losses[1] == 0, "sizes read back");
+    check(view_losses[0] == 0 && view_losses[1] == 0, "views read back with their cameras");
+    check(top_datums_lost[0] == 0 && top_datums_lost[1] == 0 && top_tolerances_lost[0] == 0
+            && top_tolerances_lost[1] == 0 && front_tolerances_lost[0] == 0,
+        "views show their annotations");
+    {
+        Handle(XCAFApp_Application) application = XCAFApp_Application::GetApplication();
+        Handle(TDocStd_Document) document;
+        application->NewDocument("MDTV-XCAF", document);
+        STEPCAFControl_Reader reader;
+        reader.SetGDTMode(Standard_True);
+        reader.SetViewMode(Standard_True);
+        check(reader.ReadFile(file.c_str()) == IFSelect_RetDone && reader.Transfer(document), "read views");
+        TDF_LabelSequence read_views;
+        XCAFDoc_DocumentTool::ViewTool(document->Main())->GetViewLabels(read_views);
+        check(read_views.Length() == 2, "two saved views");
+        application->Close(document);
+    }
+
+    // Tolerances without size dimensions keep their millimetre values,
+    // which OCCT's writer alone would write in metres.
+    const occt_bridge_step_view_t flat_view{"TOP", {0, 0, -1}, {0, 1, 0}, nullptr, 0, top_tolerances, 1, nullptr, nullptr};
+    uint32_t alone_losses[1] = {9};
+    uint32_t alone_view[1] = {9};
+    occt_bridge_step_pmi_t alone{
+        nullptr, 0, tolerances, 1, nullptr, 0, nullptr, alone_losses, nullptr, &flat_view, 1, alone_view};
+    check(occt_bridge_step_save_assembly_pmi(
+              session, file.c_str(), "fixture", nullptr, 0, components, nullptr, 2, nullptr, 0, &alone, nullptr)
+            == OCCT_BRIDGE_OK && alone_losses[0] == 0 && alone_view[0] == 0,
+        "a tolerance alone reads back with its value and view");
+    occt_bridge_step_tolerance_t undrawn = tolerances[3];
+    uint32_t undrawn_losses[1] = {9};
+    occt_bridge_step_pmi_t plain{
+        datums, 3, &undrawn, 1, nullptr, 0, nullptr, undrawn_losses, nullptr, nullptr, 0, nullptr};
+    check(occt_bridge_step_save_assembly_pmi(
+              session, file.c_str(), "fixture", nullptr, 0, components, nullptr, 2, nullptr, 0, &plain, nullptr)
+            == OCCT_BRIDGE_OK && undrawn_losses[0] == 0,
+        "an undrawn tolerance alone reads back with its value");
 
     // Invalid PMI writes nothing.
     (void)std::remove(file.c_str());
@@ -343,35 +413,60 @@ void pmi(occt_bridge_session_t* session, const std::string& file) {
     };
     occt_bridge_step_tolerance_t unknown = tolerances[0];
     unknown.characteristic = 12;
-    refused({datums, 4, &unknown, 1, nullptr, 0, nullptr, nullptr, nullptr}, "unknown characteristic");
+    refused({datums, 4, &unknown, 1, nullptr, 0, nullptr, nullptr, nullptr, nullptr, 0, nullptr}, "unknown characteristic");
     const occt_bridge_step_datum_reference_t secondary_only[] = {{1, 1, OCCT_BRIDGE_DATUM_RFS, 0}};
     occt_bridge_step_tolerance_t gap = tolerances[3];
     gap.datums = secondary_only;
     gap.datum_count = 1;
-    refused({datums, 4, &gap, 1, nullptr, 0, nullptr, nullptr, nullptr}, "secondary without a primary");
+    refused({datums, 4, &gap, 1, nullptr, 0, nullptr, nullptr, nullptr, nullptr, 0, nullptr}, "secondary without a primary");
     occt_bridge_step_tolerance_t foreign = tolerances[0];
     foreign.datums = pin_axis;
     foreign.datum_count = 1;
-    refused({datums, 4, &foreign, 1, nullptr, 0, nullptr, nullptr, nullptr}, "datum on another part");
+    refused({datums, 4, &foreign, 1, nullptr, 0, nullptr, nullptr, nullptr, nullptr, 0, nullptr}, "datum on another part");
     const occt_bridge_step_datum_t twice[] = {datums[0], datums[0]};
-    refused({twice, 2, nullptr, 0, nullptr, 0, nullptr, nullptr, nullptr}, "repeated datum label");
-    const occt_bridge_step_datum_t shared[] = {datums[0], {"A", {1, pin_side, 1}}};
-    refused({shared, 2, nullptr, 0, nullptr, 0, nullptr, nullptr, nullptr}, "one label on two parts");
+    refused({twice, 2, nullptr, 0, nullptr, 0, nullptr, nullptr, nullptr, nullptr, 0, nullptr}, "repeated datum label");
+    const occt_bridge_step_datum_t shared[] = {datums[0], {"A", {1, pin_side, 1}, nullptr}};
+    refused({shared, 2, nullptr, 0, nullptr, 0, nullptr, nullptr, nullptr, nullptr, 0, nullptr}, "one label on two parts");
     occt_bridge_step_size_t flat = sizes[0];
     flat.target = {0, top, 1};
-    refused({nullptr, 0, nullptr, 0, &flat, 1, nullptr, nullptr, nullptr}, "diameter on a plane");
+    refused({nullptr, 0, nullptr, 0, &flat, 1, nullptr, nullptr, nullptr, nullptr, 0, nullptr}, "diameter on a plane");
     occt_bridge_step_size_t three = sizes[1];
     const size_t three_faces[] = {faces.left, faces.right, faces.top};
     three.target = {0, three_faces, 3};
-    refused({nullptr, 0, nullptr, 0, &three, 1, nullptr, nullptr, nullptr}, "width over three faces");
+    refused({nullptr, 0, nullptr, 0, &three, 1, nullptr, nullptr, nullptr, nullptr, 0, nullptr}, "width over three faces");
     occt_bridge_step_size_t across = sizes[1];
     const size_t square[] = {faces.left, faces.front};
     across.target = {0, square, 2};
-    refused({nullptr, 0, nullptr, 0, &across, 1, nullptr, nullptr, nullptr}, "width between square planes");
+    refused({nullptr, 0, nullptr, 0, &across, 1, nullptr, nullptr, nullptr, nullptr, 0, nullptr}, "width between square planes");
     const size_t beyond[] = {99};
     occt_bridge_step_tolerance_t missing = tolerances[0];
     missing.target = {0, beyond, 1};
-    refused({nullptr, 0, &missing, 1, nullptr, 0, nullptr, nullptr, nullptr}, "face beyond the plate's");
+    refused({nullptr, 0, &missing, 1, nullptr, 0, nullptr, nullptr, nullptr, nullptr, 0, nullptr}, "face beyond the plate's");
+    const occt_bridge_step_view_t bare{"TOP", {0, 0, -1}, {0, 1, 0}, nullptr, 0, front_tolerances, 1, nullptr, nullptr};
+    refused({nullptr, 0, tolerances, 2, nullptr, 0, nullptr, nullptr, nullptr, &bare, 1, nullptr},
+        "view of an annotation without a presentation");
+    const occt_bridge_step_view_t level{"TOP", {0, 0, -1}, {0, 0, 2}, nullptr, 0, nullptr, 0, nullptr, nullptr};
+    refused({nullptr, 0, nullptr, 0, nullptr, 0, nullptr, nullptr, nullptr, &level, 1, nullptr}, "up along the view");
+    const occt_bridge_step_view_t two_views[] = {views[0], views[0]};
+    refused({datums, 5, tolerances, 2, nullptr, 0, nullptr, nullptr, nullptr, two_views, 2, nullptr},
+        "repeated view name");
+    occt_bridge_step_tolerance_t same_name = tolerances[1];
+    same_name.presentation = &flatness;
+    occt_bridge_step_tolerance_t named_twice[] = {tolerances[0], same_name};
+    refused({datums, 3, named_twice, 2, nullptr, 0, nullptr, nullptr, nullptr, nullptr, 0, nullptr},
+        "repeated presentation name");
+    occt_bridge_step_presentation_t short_count = flatness;
+    short_count.point_count = 2;
+    occt_bridge_step_tolerance_t miscounted = tolerances[0];
+    miscounted.presentation = &short_count;
+    refused({nullptr, 0, &miscounted, 1, nullptr, 0, nullptr, nullptr, nullptr, nullptr, 0, nullptr},
+        "polylines not using every point");
+    occt_bridge_step_presentation_t tilted = flatness;
+    tilted.normal[0] = 1;
+    occt_bridge_step_tolerance_t off_plane = tolerances[0];
+    off_plane.presentation = &tilted;
+    refused({nullptr, 0, &off_plane, 1, nullptr, 0, nullptr, nullptr, nullptr, nullptr, 0, nullptr},
+        "annotation plane without a unit normal");
     check(std::fopen(file.c_str(), "r") == nullptr, "nothing written");
     check(occt_bridge_step_save_assembly_pmi(
               session, file.c_str(), "fixture", nullptr, 0, components, nullptr, 2, nullptr, 0, nullptr, nullptr)

@@ -1625,13 +1625,86 @@ OCCT 7.9 limits:
 - Its writer shares one `DATUM` entity per label across the whole file, so a
   label may name only one datum in an export. Labels are already unique
   within a drawing.
-- It writes no saved views, so annotation views are not yet exchanged.
+- Its writer takes the unit of tolerance values, and the context of its
+  presentation model, from the first size dimension it writes. Without one,
+  tolerance values are written in metres (so they were reported lost before
+  ABI 71), and a file with presentations fails to write. The bridge now sets
+  both from the part's own context before writing.
+- It writes no saved views; the bridge writes them itself (see
+  [Annotation views](#annotation-views-schema-145-abi-71)).
+- Its STEP translators share process-wide state, and concurrent writes from
+  independent sessions failed spuriously. Every STEP read and write in the
+  bridge now holds one process-wide lock.
 
 At scale, a 400-hole plate's datums, flat top and 400 position controls with
 their sizes are written and verified in one export in about 1.9 s, as are the
 same holes under one 400× control. Two regenerations of the plate (the
 graph's and the local one) take 1.2 s of that, and the AP242 write and
 read-back 0.5 s.
+
+## Annotation views (schema 145, ABI 71)
+
+ASME Y14.41 organizes a dataset's annotations into saved views: a named view
+direction and the annotations it shows, drawn in 3D on the model.
+`DrawingDefinition.annotation_views` holds them as `DrawingAnnotationView`:
+
+- `id`, and `name`: the exchanged view name, 1–64 printable ASCII
+  characters, unique within the drawing.
+- `direction` (toward the viewer) and `x_axis` (image right), perpendicular,
+  as for drawing views; image up is `direction × x_axis`.
+- `scale` (default 1): the size of the annotations it presents. At 1 a frame
+  is as large in model millimetres as on the sheet.
+- `datum_features` and `feature_control_frames` it shows, by ID. Listing one
+  member of an n× pattern shows the pattern.
+
+```json
+{"id": "top", "name": "TOP GD&T",
+ "direction": {"x": {"value": 0.0, "dimension": "scalar"},
+               "y": {"value": 0.0, "dimension": "scalar"},
+               "z": {"value": 1.0, "dimension": "scalar"}},
+ "x_axis": {"x": {"value": 1.0, "dimension": "scalar"},
+            "y": {"value": 0.0, "dimension": "scalar"},
+            "z": {"value": 0.0, "dimension": "scalar"}},
+ "datum_features": ["A", "B"], "feature_control_frames": ["flat", "bore"]}
+```
+
+Each annotation a view shows gets a 3D presentation in the plane of the
+first view that shows it. The plane passes through the annotation's anchor
+and faces that view's viewer. The leader, box, symbols and text use the
+sheet layout, with the attachment's `offset_mm` measured along the view's
+right and up and multiplied by its `scale`. Text is drawn in a built-in
+single-stroke gothic letter set (capitals, digits and GD&T punctuation) at
+the drawing's lettering height, so presentations do not depend on fonts. An
+n× pattern draws its first member's frame with `nX` above it. A composite
+frame's top segment carries the outline, characteristic, leader and top
+row; each lower segment carries its own row. Size limits are not drawn on
+sheets, so they have no presentation.
+
+`export_step_pmi` writes each presentation as an AP242 tessellated
+annotation, linked to its datum or tolerance and lying in its annotation
+plane. It writes each view as a draughting model holding a parallel camera
+and the annotations the view shows. The camera looks along the view toward
+the centre of the export and its presentations, framing them. On read-back:
+
+- each item's presentation must match polyline segment for segment, or it
+  reports `presentation` lost;
+- OCCT's reader must make a view of each name with the same direction and
+  up, or the view's report gives `lost: view` or `lost: camera`;
+- each view must show the annotations it lists, or they appear in its
+  `lost_annotations`.
+
+Listed annotations that were skipped appear in the view's `omitted`.
+`verified()` now also needs every view read back intact, and `complete()`
+needs nothing omitted.
+
+The views carry no clipping planes or per-view model visibility: every
+view shows the whole export.
+
+At scale, the 400-hole plate's three datums, flat top and 400 position
+controls (or one 400× control) are drawn in a top view showing everything
+and an isometric view of the datums and flat top. The 400 drawn controls
+write and verify in 2.5 s, of which the AP242 write and read-back take
+1.8 s (0.5 s without presentations); the one 400× control takes 1.9 s.
 
 ## Surface texture (schema 71)
 

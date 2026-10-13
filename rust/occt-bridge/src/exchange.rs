@@ -11,6 +11,58 @@ pub(crate) fn path_to_c_string(path: &Path) -> Result<CString, BridgeError> {
     })
 }
 
+/// A presentation's name and flattened points, which its raw form points
+/// into.
+struct PresentationBuffers {
+    name: CString,
+    points: Vec<f64>,
+    counts: Vec<u32>,
+    origin: [f64; 3],
+    normal: [f64; 3],
+    x_direction: [f64; 3],
+}
+
+impl PresentationBuffers {
+    fn new(presentation: &StepPresentation<'_>) -> Result<Self, BridgeError> {
+        let xyz = |v: Vec3| [v.x, v.y, v.z];
+        let mut counts = Vec::with_capacity(presentation.polylines.len());
+        for polyline in presentation.polylines {
+            counts.push(u32::try_from(polyline.len()).map_err(|_| BridgeError {
+                status: 1,
+                category: "invalid argument".into(),
+                message: "a presentation polyline has too many points".into(),
+                diagnostics: Vec::new(),
+            })?);
+        }
+        Ok(Self {
+            name: text_to_c_string(presentation.name, "presentation name")?,
+            points: presentation
+                .polylines
+                .iter()
+                .flatten()
+                .flat_map(|point| xyz(*point))
+                .collect(),
+            counts,
+            origin: xyz(presentation.origin),
+            normal: xyz(presentation.normal),
+            x_direction: xyz(presentation.x_direction),
+        })
+    }
+
+    fn raw(&self) -> RawStepPresentation {
+        RawStepPresentation {
+            name: self.name.as_ptr(),
+            points: self.points.as_ptr(),
+            point_count: self.points.len() / 3,
+            polyline_points: self.counts.as_ptr(),
+            polyline_count: self.counts.len(),
+            origin: self.origin,
+            normal: self.normal,
+            x_direction: self.x_direction,
+        }
+    }
+}
+
 fn text_to_c_string(text: &str, what: &str) -> Result<CString, BridgeError> {
     CString::new(text).map_err(|_| BridgeError {
         status: 1,
@@ -195,13 +247,45 @@ impl Session {
             .iter()
             .map(|datum| text_to_c_string(datum.label, "datum label"))
             .collect::<Result<Vec<_>, _>>()?;
+        // Presentation buffers first, then the raw presentations pointing
+        // into them, then the items pointing at those.
+        let buffers = |presentation: &Option<StepPresentation<'_>>| {
+            presentation
+                .as_ref()
+                .map(PresentationBuffers::new)
+                .transpose()
+        };
+        let datum_buffers = pmi
+            .datums
+            .iter()
+            .map(|datum| buffers(&datum.presentation))
+            .collect::<Result<Vec<_>, _>>()?;
+        let tolerance_buffers = pmi
+            .tolerances
+            .iter()
+            .map(|tolerance| buffers(&tolerance.presentation))
+            .collect::<Result<Vec<_>, _>>()?;
+        let raw_presentations = |buffers: &[Option<PresentationBuffers>]| {
+            buffers
+                .iter()
+                .map(|buffers| buffers.as_ref().map(PresentationBuffers::raw))
+                .collect::<Vec<_>>()
+        };
+        let datum_presentations = raw_presentations(&datum_buffers);
+        let tolerance_presentations = raw_presentations(&tolerance_buffers);
+        let pointer = |raw: &Option<RawStepPresentation>| {
+            raw.as_ref()
+                .map_or(std::ptr::null(), |raw| raw as *const RawStepPresentation)
+        };
         let datums = pmi
             .datums
             .iter()
             .zip(&labels)
-            .map(|(datum, label)| RawStepDatum {
+            .zip(&datum_presentations)
+            .map(|((datum, label), presentation)| RawStepDatum {
                 label: label.as_ptr(),
                 target: targets(&datum.target),
+                presentation: pointer(presentation),
             })
             .collect::<Vec<_>>();
         let material = |material: StepMaterial| match material {
@@ -229,7 +313,8 @@ impl Session {
             .tolerances
             .iter()
             .zip(&references)
-            .map(|(tolerance, references)| RawStepTolerance {
+            .zip(&tolerance_presentations)
+            .map(|((tolerance, references), presentation)| RawStepTolerance {
                 target: targets(&tolerance.target),
                 characteristic: tolerance.characteristic as i32,
                 value_mm: tolerance.value_mm,
@@ -241,6 +326,7 @@ impl Session {
                 projected_mm: tolerance.projected_mm.unwrap_or(0.0),
                 datums: references.as_ptr(),
                 datum_count: references.len(),
+                presentation: pointer(presentation),
             })
             .collect::<Vec<_>>();
         let sizes = pmi
@@ -259,6 +345,41 @@ impl Session {
         let mut datum_losses = vec![0u32; datums.len()];
         let mut tolerance_losses = vec![0u32; tolerances.len()];
         let mut size_losses = vec![0u32; sizes.len()];
+        let view_names = pmi
+            .views
+            .iter()
+            .map(|view| text_to_c_string(view.name, "view name"))
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut view_datums_lost = pmi
+            .views
+            .iter()
+            .map(|view| vec![0u8; view.datums.len()])
+            .collect::<Vec<_>>();
+        let mut view_tolerances_lost = pmi
+            .views
+            .iter()
+            .map(|view| vec![0u8; view.tolerances.len()])
+            .collect::<Vec<_>>();
+        let views = pmi
+            .views
+            .iter()
+            .zip(&view_names)
+            .zip(view_datums_lost.iter_mut().zip(&mut view_tolerances_lost))
+            .map(
+                |((view, name), (datums_lost, tolerances_lost))| RawStepView {
+                    name: name.as_ptr(),
+                    direction: [view.direction.x, view.direction.y, view.direction.z],
+                    up: [view.up.x, view.up.y, view.up.z],
+                    datums: view.datums.as_ptr(),
+                    datum_count: view.datums.len(),
+                    tolerances: view.tolerances.as_ptr(),
+                    tolerance_count: view.tolerances.len(),
+                    out_datums_lost: datums_lost.as_mut_ptr(),
+                    out_tolerances_lost: tolerances_lost.as_mut_ptr(),
+                },
+            )
+            .collect::<Vec<_>>();
+        let mut view_losses = vec![0u32; views.len()];
         let mut raw_pmi = RawStepPmi {
             datums: datums.as_ptr(),
             datum_count: datums.len(),
@@ -269,10 +390,14 @@ impl Session {
             out_datum_losses: datum_losses.as_mut_ptr(),
             out_tolerance_losses: tolerance_losses.as_mut_ptr(),
             out_size_losses: size_losses.as_mut_ptr(),
+            views: views.as_ptr(),
+            view_count: views.len(),
+            out_view_losses: view_losses.as_mut_ptr(),
         };
-        // SAFETY: The strings, the node, component, membership, face and PMI
-        // buffers outlive the call; the loss buffers hold one entry per item
-        // and the output count is writable.
+        // SAFETY: The strings, the node, component, membership, face, PMI,
+        // presentation and view buffers outlive the call; the loss buffers
+        // hold one entry per item, view or view index, and the output count
+        // is writable.
         self.check(unsafe {
             occt_bridge_step_save_assembly_pmi(
                 self.raw.as_ptr(),
@@ -299,15 +424,28 @@ impl Session {
                     modifiers: bits & 16 != 0,
                     projected: bits & 32 != 0,
                     datums: bits & 64 != 0,
+                    presentation: bits & 128 != 0,
                 })
                 .collect()
         };
+        drop(views);
+        let views = view_losses
+            .into_iter()
+            .zip(view_datums_lost.into_iter().zip(view_tolerances_lost))
+            .map(|(bits, (datums, tolerances))| StepViewLoss {
+                view: bits & 1 != 0,
+                camera: bits & 2 != 0,
+                datums: datums.into_iter().map(|lost| lost != 0).collect(),
+                tolerances: tolerances.into_iter().map(|lost| lost != 0).collect(),
+            })
+            .collect();
         Ok((
             parts,
             Some(StepPmiVerification {
                 datums: losses(datum_losses),
                 tolerances: losses(tolerance_losses),
                 sizes: losses(size_losses),
+                views,
             }),
         ))
     }

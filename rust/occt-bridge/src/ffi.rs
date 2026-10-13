@@ -2,7 +2,7 @@
 
 use super::*;
 
-pub(crate) const ABI_VERSION: u32 = 70;
+pub(crate) const ABI_VERSION: u32 = 71;
 
 #[repr(C)]
 #[derive(Default)]
@@ -98,9 +98,22 @@ pub(crate) struct RawStepPmiFaces {
 }
 
 #[repr(C)]
+pub(crate) struct RawStepPresentation {
+    pub(crate) name: *const std::os::raw::c_char,
+    pub(crate) points: *const f64,
+    pub(crate) point_count: usize,
+    pub(crate) polyline_points: *const u32,
+    pub(crate) polyline_count: usize,
+    pub(crate) origin: [f64; 3],
+    pub(crate) normal: [f64; 3],
+    pub(crate) x_direction: [f64; 3],
+}
+
+#[repr(C)]
 pub(crate) struct RawStepDatum {
     pub(crate) label: *const std::os::raw::c_char,
     pub(crate) target: RawStepPmiFaces,
+    pub(crate) presentation: *const RawStepPresentation,
 }
 
 #[repr(C)]
@@ -122,6 +135,7 @@ pub(crate) struct RawStepTolerance {
     pub(crate) projected_mm: f64,
     pub(crate) datums: *const RawStepDatumReference,
     pub(crate) datum_count: usize,
+    pub(crate) presentation: *const RawStepPresentation,
 }
 
 #[repr(C)]
@@ -143,6 +157,22 @@ pub(crate) struct RawStepPmi {
     pub(crate) out_datum_losses: *mut u32,
     pub(crate) out_tolerance_losses: *mut u32,
     pub(crate) out_size_losses: *mut u32,
+    pub(crate) views: *const RawStepView,
+    pub(crate) view_count: usize,
+    pub(crate) out_view_losses: *mut u32,
+}
+
+#[repr(C)]
+pub(crate) struct RawStepView {
+    pub(crate) name: *const std::os::raw::c_char,
+    pub(crate) direction: [f64; 3],
+    pub(crate) up: [f64; 3],
+    pub(crate) datums: *const usize,
+    pub(crate) datum_count: usize,
+    pub(crate) tolerances: *const usize,
+    pub(crate) tolerance_count: usize,
+    pub(crate) out_datums_lost: *mut u8,
+    pub(crate) out_tolerances_lost: *mut u8,
 }
 
 #[repr(C)]

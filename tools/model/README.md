@@ -43,7 +43,10 @@ Add `"step_pmi": "<drawing id>"` to write that drawing's GD&T into
 `parts.step` as AP242 semantic PMI on the faces its attachments name; the
 report's `pmi` then says whether every item read back (`verified`), whether
 anything was skipped or is not representable (`complete`), and lists each
-item. See [Semantic PMI](../../docs/DRAWINGS.md#semantic-pmi-on-persistent-faces-schema-144-abi-70).
+item. The drawing's `annotation_views` are written as saved views, and the
+report's `views` lists what each shows and anything that did not read back.
+See [Semantic PMI](../../docs/DRAWINGS.md#semantic-pmi-on-persistent-faces-schema-144-abi-70)
+and [Annotation views](../../docs/DRAWINGS.md#annotation-views-schema-145-abi-71).
 
 Use the complete examples here for valid model structure: [bracket](bracket.request.json),
 [enclosure](enclosure.request.json), [shaft](shaft.request.json), and

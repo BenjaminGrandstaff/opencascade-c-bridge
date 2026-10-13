@@ -1,13 +1,14 @@
 //! Semantic AP242 PMI at scale: drawing GD&T on a 400-hole plate written on
-//! persistent faces and verified by reading the file back.
+//! persistent faces, drawn in two saved annotation views, and verified by
+//! reading the file back.
 
 use super::*;
 use occt_parametric::{
-    CoordinateAxis, DatumMaterialBoundary, DrawingDatumFeature, DrawingDatumReference,
-    DrawingDefinition, DrawingFeatureControlFrame, DrawingGdtAttachment, DrawingSizeLimits,
-    DrawingView, DrawingViewKind, Extremum, FeatureOfSizeKind, GeometricCharacteristic,
-    GeometricToleranceZone, InstanceOutputRef, NamedReference, OutputSet, PmiItemKind,
-    ReferenceTarget, ToleranceMaterialCondition,
+    CoordinateAxis, DatumMaterialBoundary, DrawingAnnotationView, DrawingDatumFeature,
+    DrawingDatumReference, DrawingDefinition, DrawingFeatureControlFrame, DrawingGdtAttachment,
+    DrawingSizeLimits, DrawingView, DrawingViewKind, Extremum, FeatureOfSizeKind,
+    GeometricCharacteristic, GeometricToleranceZone, InstanceOutputRef, NamedReference, OutputSet,
+    PmiItemKind, ReferenceTarget, ToleranceMaterialCondition,
 };
 use std::collections::BTreeMap;
 
@@ -130,7 +131,8 @@ fn attachment(anchor: &str, faces: &str) -> DrawingGdtAttachment {
 }
 
 /// Datums A, B, C, a flat top and a position control with size limits on
-/// every hole: one control each, or one 400× pattern.
+/// every hole: one control each, or one 400× pattern. A top view shows them
+/// all and an isometric view the datums and the flat top.
 fn drawing(pattern: bool) -> DrawingDefinition {
     let datum = |id: &str, anchor: &str, faces: &str| DrawingDatumFeature {
         id: id.into(),
@@ -194,7 +196,33 @@ fn drawing(pattern: bool) -> DrawingDefinition {
         }
         frames.push(position);
     }
+    let view = |id: &str, direction: [f64; 3], x_axis: [f64; 3], frames: Vec<String>| {
+        DrawingAnnotationView {
+            id: id.into(),
+            name: id.to_uppercase(),
+            direction: VectorQuantity::scalars(direction[0], direction[1], direction[2]),
+            x_axis: VectorQuantity::scalars(x_axis[0], x_axis[1], x_axis[2]),
+            scale: 1.0,
+            datum_features: vec!["A".into(), "B".into(), "C".into()],
+            feature_control_frames: frames,
+        }
+    };
+    let annotation_views = vec![
+        view(
+            "top",
+            [0.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0],
+            frames.iter().map(|f| f.id.clone()).collect(),
+        ),
+        view(
+            "iso",
+            [1.0, -1.0, 1.0],
+            [1.0, 1.0, 0.0],
+            vec!["flat".into()],
+        ),
+    ];
     DrawingDefinition {
+        annotation_views,
         datum_reference_frames: Vec::new(),
         datum_features: vec![
             datum("A", "bottom", "bottom_face"),
@@ -235,9 +263,9 @@ fn drawing(pattern: bool) -> DrawingDefinition {
     }
 }
 
-/// The plate's GD&T written as AP242 PMI and read back: 400 position
-/// controls and sizes on their own hole walls, or one 400× pattern control
-/// and one size over all of them.
+/// The plate's GD&T written as AP242 PMI with its presentations and saved
+/// views, and read back: 400 position controls and sizes on their own hole
+/// walls, or one 400× pattern control and one size over all of them.
 pub(crate) fn pmi_case(definition: &FamilyDefinition, pattern: bool) -> Outcome {
     let holes = SIDE * SIDE;
     let name = if pattern {
@@ -281,14 +309,19 @@ pub(crate) fn pmi_case(definition: &FamilyDefinition, pattern: bool) -> Outcome 
             .filter(|i| i.kind == PmiItemKind::Size)
             .count();
         let expected = if pattern { (2, 1) } else { (holes + 1, holes) };
-        if !report.complete() || (tolerances, sizes) != expected {
+        let shown = report
+            .views
+            .iter()
+            .map(|v| v.annotations.len())
+            .sum::<usize>();
+        if !report.complete() || (tolerances, sizes) != expected || shown != holes + 8 {
             return Err(failure(format!(
-                "{tolerances} tolerances, {sizes} sizes, complete {}",
+                "{tolerances} tolerances, {sizes} sizes, {shown} shown, complete {}",
                 report.complete()
             )));
         }
         Ok(format!(
-            "{tolerances} tolerances, {sizes} sizes, 3 datums verified; export and read-back {:.3} s",
+            "{tolerances} tolerances, {sizes} sizes, 3 datums and 2 views verified; export and read-back {:.3} s",
             export.as_secs_f64()
         ))
     })

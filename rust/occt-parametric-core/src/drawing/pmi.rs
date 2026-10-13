@@ -3,6 +3,12 @@
 //! faces their attachments name, and the report of what read back.
 use super::*;
 use gdt::composite;
+pub mod views;
+use views::AnnotationPlane;
+pub use views::{
+    AnnotationViewAxes, DrawingAnnotationView, PlannedView, PmiPresentation, PmiViewLoss,
+    PmiViewReport,
+};
 
 /// What a PMI item is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
@@ -28,6 +34,8 @@ pub enum PmiProperty {
     Modifiers,
     ProjectedZone,
     Datums,
+    /// The annotation's 3D presentation, polyline for polyline.
+    Presentation,
     ContinuousFeature,
     DynamicProfile,
     UnequalZone,
@@ -73,19 +81,28 @@ pub struct PmiExchangeReport {
     pub items: Vec<PmiExchangeItem>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub skipped: Vec<PmiSkipped>,
+    /// Saved annotation views (schema 145).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub views: Vec<PmiViewReport>,
 }
 
 impl PmiExchangeReport {
-    /// Every exported item read back with nothing lost.
+    /// Every exported item and view read back with nothing lost.
     pub fn verified(&self) -> bool {
         self.items.iter().all(|item| item.lost.is_empty())
+            && self
+                .views
+                .iter()
+                .all(|view| view.lost.is_none() && view.lost_annotations.is_empty())
     }
 
-    /// Verified, and nothing was skipped or left unrepresented.
+    /// Verified, and nothing was skipped, omitted from a view or left
+    /// unrepresented.
     pub fn complete(&self) -> bool {
         self.verified()
             && self.skipped.is_empty()
             && self.items.iter().all(|item| item.unrepresented.is_empty())
+            && self.views.iter().all(|view| view.omitted.is_empty())
     }
 }
 
@@ -101,6 +118,8 @@ pub struct PlannedDatum<'a> {
     pub id: &'a str,
     pub label: &'a str,
     pub target: PmiTarget<'a>,
+    /// In the plane of the first annotation view that shows the feature.
+    pub presentation: Option<PmiPresentation>,
 }
 
 /// A datum reference: an index into [`PmiPlan::datums`] in compartment 0
@@ -128,6 +147,9 @@ pub struct PlannedTolerance<'a> {
     pub projected_mm: Option<f64>,
     pub datums: Vec<PlannedReference>,
     pub unrepresented: Vec<PmiProperty>,
+    /// In the plane of the first annotation view that shows the frame or a
+    /// pattern member: the whole frame, or a composite segment's own row.
+    pub presentation: Option<PmiPresentation>,
 }
 
 /// Size limits of a feature of size; its kind (diameter or width) follows
@@ -147,6 +169,7 @@ pub struct PmiPlan<'a> {
     pub tolerances: Vec<PlannedTolerance<'a>>,
     pub sizes: Vec<PlannedSize<'a>>,
     pub skipped: Vec<PmiSkipped>,
+    pub views: Vec<PlannedView<'a>>,
 }
 
 fn skip(skipped: &mut Vec<PmiSkipped>, id: &str, reason: impl Into<String>) {
@@ -167,7 +190,9 @@ impl DrawingDefinition {
     /// their faces; each composite segment becomes a tolerance of its own.
     /// The rest are skipped with a reason: no faces, an output not exported,
     /// or a datum reference that is skipped or lies on another output.
-    /// O(features + frames · segments).
+    /// Annotations an annotation view shows are drawn as 3D presentations,
+    /// and the views list the planned items they show. O(features + frames ·
+    /// segments + view entries + presentation linework).
     pub fn pmi_plan<'a>(
         &'a self,
         graph: &InstanceGraph<'_>,
@@ -175,7 +200,27 @@ impl DrawingDefinition {
     ) -> Result<PmiPlan<'a>, ModelError> {
         self.validate(graph)?;
         let mut plan = PmiPlan::default();
+        let lettering = DrawingLettering::for_sheet(self.sheet.as_ref());
+        // The first view showing each datum feature and frame sets its plane.
+        let mut feature_view: HashMap<&str, usize> = HashMap::new();
+        let mut frame_view: HashMap<&str, usize> = HashMap::new();
+        for (index, view) in self.annotation_views.iter().enumerate() {
+            for id in &view.datum_features {
+                feature_view.entry(id.as_str()).or_insert(index);
+            }
+            for id in &view.feature_control_frames {
+                frame_view.entry(id.as_str()).or_insert(index);
+            }
+        }
+        let plane = |view: usize, attachment: &DrawingGdtAttachment| {
+            AnnotationPlane::new(
+                &self.annotation_views[view],
+                datum_origin(graph, &attachment.anchor)?,
+            )
+        };
         let mut datum_index = HashMap::new();
+        // Planned tolerances of each frame ID.
+        let mut frame_tolerances: HashMap<&str, std::ops::Range<usize>> = HashMap::new();
         for feature in &self.datum_features {
             let attachment = &feature.attachment;
             let Some(faces) = &attachment.faces else {
@@ -190,11 +235,23 @@ impl DrawingDefinition {
                 output: &attachment.output,
                 faces: vec![faces],
             };
+            let presentation = match feature_view.get(feature.id.as_str()) {
+                Some(&view) => {
+                    let mut d = gdt::scratch(lettering);
+                    gdt::draw_datum_feature(feature, [0.0, 0.0], attachment.offset_mm, &mut d);
+                    Some(
+                        plane(view, attachment)?
+                            .presentation(format!("datum {}", feature.label), &d)?,
+                    )
+                }
+                None => None,
+            };
             datum_index.insert(feature.id.as_str(), plan.datums.len());
             plan.datums.push(PlannedDatum {
                 id: &feature.id,
                 label: &feature.label,
                 target: target.clone(),
+                presentation,
             });
             if let Some(limits) = &feature.size_limits {
                 let (lower_mm, upper_mm) = limits_mm(limits)?;
@@ -208,6 +265,11 @@ impl DrawingDefinition {
         }
         let resolved =
             gdt::effective_frames(&self.feature_control_frames, &self.datum_reference_frames)?;
+        let features: HashMap<_, _> = self
+            .datum_features
+            .iter()
+            .map(|f| (f.id.as_str(), f))
+            .collect();
         // Pattern members on one output, in drawing order of their first.
         let mut groups: Vec<Vec<usize>> = Vec::new();
         let mut grouped: HashMap<(&str, &InstanceOutputRef), usize> = HashMap::new();
@@ -259,6 +321,40 @@ impl DrawingDefinition {
                     .collect(),
             };
             let segments = composite::segments(&resolved[members[0]]);
+            // The pattern's frame is the first member's, drawn with n× above
+            // it when the pattern has several.
+            let view = frames
+                .iter()
+                .filter_map(|f| frame_view.get(f.id.as_str()).copied())
+                .min();
+            let mut presentations: Vec<Option<PmiPresentation>> = vec![None; segments.len()];
+            if let Some(view) = view {
+                let mut drawn = vec![gdt::scratch(lettering); segments.len()];
+                let offset = attachment.offset_mm;
+                gdt::draw_frame(
+                    &resolved[members[0]],
+                    &features,
+                    [0.0, 0.0],
+                    offset,
+                    &mut drawn,
+                )?;
+                if frames.len() > 1 {
+                    drawn[0].gdt_labels.push(DrawingLabel {
+                        position_mm: [offset[0], offset[1] + 8.0 * segments.len() as f64 + 2.0],
+                        text: format!("{}X", frames.len()),
+                        stack: None,
+                        height_mm: lettering.notes,
+                    });
+                }
+                let plane = plane(view, attachment)?;
+                for (segment, d) in drawn.iter().enumerate() {
+                    let name = match segment {
+                        0 => format!("frame {}", first.id),
+                        _ => format!("frame {} segment {}", first.id, segment + 1),
+                    };
+                    presentations[segment] = Some(plane.presentation(name, d)?);
+                }
+            }
             let mut tolerances = Vec::with_capacity(segments.len());
             let mut problem = None;
             for (segment, control) in segments.iter().enumerate() {
@@ -319,6 +415,7 @@ impl DrawingDefinition {
                         .transpose()?,
                     datums,
                     unrepresented,
+                    presentation: presentations[segment].take(),
                 });
             }
             if let Some(reason) = problem {
@@ -326,6 +423,10 @@ impl DrawingDefinition {
                     skip(&mut plan.skipped, &frame.id, reason.clone());
                 }
                 continue;
+            }
+            let range = plan.tolerances.len()..plan.tolerances.len() + tolerances.len();
+            for frame in &frames {
+                frame_tolerances.insert(&frame.id, range.clone());
             }
             plan.tolerances.extend(tolerances);
             if let Some(limits) = &first.size_limits {
@@ -337,6 +438,40 @@ impl DrawingDefinition {
                     upper_mm,
                 });
             }
+        }
+        for view in &self.annotation_views {
+            let mut planned = PlannedView {
+                id: &view.id,
+                name: &view.name,
+                axes: view.axes()?,
+                datums: Vec::new(),
+                tolerances: Vec::new(),
+                annotations: Vec::new(),
+                omitted: Vec::new(),
+            };
+            for id in &view.datum_features {
+                match datum_index.get(id.as_str()) {
+                    Some(&datum) => {
+                        planned.datums.push(datum);
+                        planned.annotations.push(id);
+                    }
+                    None => planned.omitted.push(id),
+                }
+            }
+            // A pattern shows once, however many members the view lists.
+            let mut shown = HashSet::new();
+            for id in &view.feature_control_frames {
+                match frame_tolerances.get(id.as_str()) {
+                    Some(range) => {
+                        if shown.insert(range.start) {
+                            planned.tolerances.extend(range.clone());
+                        }
+                        planned.annotations.push(id);
+                    }
+                    None => planned.omitted.push(id),
+                }
+            }
+            plan.views.push(planned);
         }
         Ok(plan)
     }

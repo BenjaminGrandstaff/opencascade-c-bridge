@@ -16,6 +16,15 @@
 
 using namespace occt_bridge_internal;
 
+namespace occt_bridge_internal {
+
+std::mutex& step_mutex() {
+    static std::mutex mutex;
+    return mutex;
+}
+
+}  // namespace occt_bridge_internal
+
 namespace {
 
 /* Checks, optionally heals, and stores an imported shape. */
@@ -87,6 +96,7 @@ occt_bridge_status_t occt_bridge_step_save(
         if (value == nullptr) {
             return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "shape was not found");
         }
+        const std::lock_guard<std::mutex> step_lock(step_mutex());
         STEPControl_Writer writer;
         if (writer.Transfer(*value, STEPControl_AsIs) != IFSelect_RetDone) {
             return fail(session, OCCT_BRIDGE_IO_ERROR, "failed to transfer shape to STEP");
@@ -110,6 +120,7 @@ occt_bridge_status_t occt_bridge_step_load(
         if (path == nullptr || path[0] == '\0') {
             return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "path is empty");
         }
+        const std::lock_guard<std::mutex> step_lock(step_mutex());
         STEPControl_Reader reader;
         if (reader.ReadFile(path) != IFSelect_RetDone) {
             return fail(session, OCCT_BRIDGE_IO_ERROR, "failed to read STEP file");

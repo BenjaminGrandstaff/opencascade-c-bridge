@@ -41,6 +41,7 @@ pub(crate) fn parts_list_case(definition: &'static FamilyDefinition, nested: boo
                 })
                 .collect();
             let drawing = DrawingDefinition {
+                annotation_views: Vec::new(),
                 datum_reference_frames: Vec::new(),
                 datum_features: Vec::new(),
                 feature_control_frames: Vec::new(),
