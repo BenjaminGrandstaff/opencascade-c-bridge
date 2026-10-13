@@ -2646,3 +2646,62 @@ fn drawn_arc_and_periodic_spline_build_native_curves_and_reject_fixed_radius_con
         original_mesh
     );
 }
+
+#[test]
+fn drawn_ellipse_slot_and_polygon_profiles_extrude_to_their_analytic_volumes() {
+    let directory = Directory::new();
+    let mut value = serde_json::to_value(sketch_block_document()).unwrap();
+    value["instances"][0]["base"]["id"] = json!("part");
+    let document = ModelDocument::from_json(&value.to_string()).unwrap();
+    let model = PathBuf::from(directory.model(&document));
+    let mut studio = serve::Studio::load(&model, Some("body".into())).unwrap();
+    let baseline = get(&mut studio, "/api/sketches").1["sketches"][0]["definition"].clone();
+    let mm =
+        |value: f64| json!({"literal":{"value":value,"dimension":"length","unit":"millimeter"}});
+    for (kind, expected_volume) in [
+        ("ellipse", 400.0 * std::f64::consts::PI),
+        ("slot", 400.0 + 40.0 * std::f64::consts::PI),
+        ("polygon", 3000.0 * (std::f64::consts::PI / 3.0).sin()),
+    ] {
+        let mut draft = baseline.clone();
+        for (id, x, y) in [
+            ("center", 0.0, 0.0),
+            ("axis", 10.0, 0.0),
+            ("minor", 0.0, 4.0),
+        ] {
+            draft["points"]
+                .as_array_mut()
+                .unwrap()
+                .push(json!({"id":id,"x":mm(x),"y":mm(y),"fixed":true}));
+        }
+        match kind {
+            "ellipse" => {
+                draft["ellipses"] =
+                    json!([{"id":"outline","center":"center","major":"axis","minor":"minor"}])
+            }
+            "slot" => {
+                draft["shapes"] = json!([{"slot":{"id":"outline","start":"center","end":"axis","radius":mm(2.0)}}])
+            }
+            _ => {
+                draft["shapes"] = json!([{"polygon":{"id":"outline","center":"center","vertex":"axis","sides":6}}])
+            }
+        }
+        draft["profile"] = json!(["outline"]);
+        let (status, result) = edit_definition(&mut studio, "profile", draft, true);
+        assert_eq!(status, 200, "{kind}: {result}");
+        let features = get(&mut studio, "/api/features").1;
+        let response = studio.handle("POST", "/api/features", json!({
+            "version":features["version"],"instance":"part","expected":features["features"],
+            "action":"add","features":[{"id":"volume-probe","operation":{"extrude":{"input":"profile","direction":point(0.0,0.0,10.0)}}}],
+            "output":"volume-probe","apply":false
+        }).to_string().as_bytes());
+        let preview: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+        assert_eq!(response.status, 200, "{kind}: {preview}");
+        assert_eq!(preview["can_apply"], true, "{kind}: {preview}");
+        let volume = preview["geometry"]["part"]["volume_mm3"].as_f64().unwrap();
+        assert!(
+            (volume - expected_volume).abs() < 1e-6,
+            "{kind}: {volume} != {expected_volume}"
+        );
+    }
+}

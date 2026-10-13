@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {snapPosition,drawPrimitive,primitiveGhost,nextId,createCanvasTools,arcEnd} from './canvas-tools.mjs';
+import {snapPosition,drawPrimitive,primitiveGhost,nextId,createCanvasTools,arcEnd,ellipseMinor} from './canvas-tools.mjs';
 const empty=()=>({points:[],lines:[],circles:[],constraints:[],profile:[]});
 const click=(x,y,point=null)=>({xy:[x,y],point});
 
@@ -37,6 +37,24 @@ test('closed native spline definitions repeat the first reference and protect ed
   assert.throws(()=>drawPrimitive(source,'spline',[...points,points[0]],{closed:true}),/distinct/);
   assert.throws(()=>drawPrimitive({...source,region_edits:[{}]},'spline',points,{closed:true,profile:true}),/profile controls/);
   assert.equal(nextId({...source,curve_operations:[{split:{before:'S1',after:'S2'}}]},'S'),'S3');
+});
+test('ellipses project a free minor width perpendicular to a rotated major axis without moving picked points',()=>{
+  const clicks=[click(1,2),click(4,6),click(1,7)];
+  const minor=ellipseMinor(clicks);assert(Math.abs((minor.xy[0]-1)*3+(minor.xy[1]-2)*4)<1e-9);
+  const d=drawPrimitive(empty(),'ellipse',clicks,{profile:true}).definition;assert.deepEqual(d.profile,['E1']);assert.equal(d.ellipses[0].minor,'P3');
+  assert.throws(()=>ellipseMinor([click(0,0),click(5,0),click(2,3,'old')]),/perpendicular/);
+  assert.throws(()=>ellipseMinor([click(0,0),click(5,0),click(0,6)]),/exceed/);
+  const ghost=primitiveGhost('ellipse',clicks.slice(0,2),clicks[2]);assert.equal(ghost.length,65);assert(Math.abs(ghost[0][0]-4)<1e-9);assert(Math.abs(ghost[16][0]-minor.xy[0])<1e-9);
+});
+test('slots and polygons save parametric shortcuts with closed boundary names and exact guides',()=>{
+  const source=empty(),slot=drawPrimitive(source,'slot',[click(0,0),click(10,0),click(20,3)],{profile:true}).definition;
+  assert.deepEqual(slot.shapes[0].slot,{id:'Slot1',start:'P1',end:'P2',radius:{literal:{value:3,dimension:'length',unit:'millimeter'}}});assert.equal(slot.points.length,2);assert.deepEqual(slot.profile,['Slot1']);
+  const polygon=drawPrimitive(source,'polygon',[click(0,0),click(4,0)],{sides:5,profile:true}).definition;assert.equal(polygon.shapes[0].polygon.sides,5);assert.deepEqual(polygon.profile,['Polygon1']);assert.equal(source.points.length,0);
+  assert.throws(()=>drawPrimitive(source,'slot',[click(0,0),click(10,0),click(5,0)]),/positive width/);
+  assert.throws(()=>drawPrimitive(source,'polygon',[click(0,0),click(4,0)],{sides:3.5}),/integer/);
+  assert.throws(()=>drawPrimitive({...source,holes:[['hole']]},'slot',[click(0,0),click(10,0),click(5,3)],{profile:true}),/profile controls/);
+  const ghost=primitiveGhost('slot',[click(0,0),click(10,0)],click(5,3));assert.equal(ghost.length,67);assert(Math.abs(Math.min(...ghost.map(p=>p[0]))+3)<1e-9);assert(Math.abs(Math.max(...ghost.map(p=>p[0]))-13)<1e-9);
+  assert.equal(primitiveGhost('polygon',[click(0,0)],click(4,0),{sides:5}).length,6);
 });
 class Element{constructor(tag){this.tagName=tag;this.children=[];this.value='';}append(...items){this.children.push(...items);}setAttribute(k,v){this[k]=v;}}
 const all=e=>[e,...e.children.flatMap(all)];
