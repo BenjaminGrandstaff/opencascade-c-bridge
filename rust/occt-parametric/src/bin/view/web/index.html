@@ -154,6 +154,7 @@ let report = null;
 let annotationRoot = null;
 let linked = [];
 let sketchEditor = null;
+let sketchCreator = null;
 let assemblySelected = null;
 const annotations = createAnnotationController({
   request: id => api(`/api/annotations?id=${encodeURIComponent(id)}`),
@@ -178,7 +179,9 @@ const annotations = createAnnotationController({
       onCanvasCancel:()=>sketchEditor?.canvasCancel(),
       onPoint: (id, scene) => sketchEditor?.selectGeometry(id, scene),
       onGeometry: (id, scene) => sketchEditor?.selectGeometry(id, scene),
-      onClear: () => sketchEditor?.clearSelection(),
+      onClear: () => {sketchEditor?.clearSelection();sketchCreator?.cancelPick();},
+      isFacePicking:()=>Boolean(sketchCreator?.picking),
+      onFacePick:hit=>sketchCreator?.pickFace(hit),
     });
     sketchEditor = createSketchEditor({host: annotationRoot.querySelector('aside'), request: api,
       instance: () => scope || instanceIds.values().next().value,
@@ -196,9 +199,11 @@ const annotations = createAnnotationController({
       applied:async next=>{annotations.invalidate();await apply(next);await refreshAnnotations();},
       restore:async()=>{annotations.invalidate();await refreshAnnotations();},
     });
-    createSketchCreator({host:annotationRoot.querySelector('aside'),request:api,
+    sketchCreator = createSketchCreator({host:annotationRoot.querySelector('aside'),request:api,
       instance:()=>scope||instanceIds.values().next().value,
       showSketch:feature=>viewer.selectScene('sketch',feature),
+      showSolid:feature=>viewer.selectScene('solid',feature),
+      highlightFace:(face,feature)=>viewer.setFaceSelection(face,feature),currentVersion:()=>version,
       preview:data=>previewCurrent(data,'New sketch preview — Apply to create the profile.'),
       applied:async next=>{annotations.invalidate();await apply(next);await refreshAnnotations();},
       restore:async()=>{annotations.invalidate();await refreshAnnotations();},
@@ -863,6 +868,7 @@ for (const direction of ["undo", "redo"]) {
   $(direction).addEventListener("click", () => navigateHistory(direction));
 }
 document.addEventListener("keydown", event => {
+  if (event.key === "Escape") sketchCreator?.cancelPick();
   if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
   const key = event.key.toLowerCase();
   if (key !== "z" && key !== "y") return;

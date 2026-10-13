@@ -100,12 +100,26 @@ in millimeters. XY, XZ and YZ planes support a signed offset along their
 displayed normal. Starter points are fixed; use **Edit sketch geometry** to
 change coordinates, unfix points, draw more geometry or add dimensions afterward.
 
-For **Planar face**, choose a support feature and one of the six family-axis
-normal directions. The native semantic selector must resolve exactly one planar
-face across every instance/variant; missing, ambiguous or curved support rejects
-the draft. Local zero follows the face area center, and the signed offset follows
-its oriented normal. The profile is not clipped to the support boundary.
-Rotated-face selectors and datum planes remain available through the model APIs.
+Choose **Pick support face in 3D**, orbit to the desired surface, then click
+it. The picked face is highlighted, and the panel shows its native normal and
+area center. A click picks the nearest visible triangle; orbit drags do not
+pick, and Escape cancels even while the accepted view is loading. Picking works
+on tilted planar faces as well as primary faces. Curved surfaces are refused.
+
+The face index is a version-local mesh hint and is never saved in the sketch.
+The server derives a unique normal selector where possible, or follows a
+unique ancestral face through native feature history. This distinguishes
+parallel faces such as a pocket floor and the outer top surface, while allowing
+source dimensions to change. If neither query uniquely identifies the picked
+face, a strict center anchor is used and clearly shown in the panel: moving
+that support requires picking again. Stale or preview geometry cannot bind a
+new creation draft. Preview/Apply still verify the attachment in all variants.
+
+Alternatively, for **Planar face**, choose a support feature and one of the six
+family-axis normal directions. The selector must resolve exactly one planar
+face across every instance/variant. Local zero follows the face area center,
+and the signed offset follows its oriented normal. The profile is not clipped
+to the support boundary. Datum planes remain available through the model APIs.
 
 **Preview new sketch** leaves the accepted model and file unchanged.
 **Apply verified new sketch** regenerates all variants, verifies valid, nonempty

@@ -1,5 +1,7 @@
 //! `--serve`: a localhost page that renders the model with WebGL, edits
 //! family parameter defaults, saves them, and follows saves made elsewhere.
+#[path = "serve_face_pick.rs"]
+mod face_pick;
 #[path = "serve_features.rs"]
 mod features;
 #[path = "serve_history.rs"]
@@ -638,6 +640,10 @@ impl Studio {
                 "text/javascript",
                 include_str!("web/sketch-create.mjs"),
             ),
+            ("POST", "/api/sketch-face-pick") => match self.pick_support_face(body) {
+                Ok(data) => Response::json(200, &data),
+                Err(error) => Response::error(422, &error),
+            },
             ("POST", "/api/sketch-create") => match self.sketch_create(body) {
                 Ok(data) => Response::json(200, &data),
                 Err(error) => Response::error(422, &error),

@@ -45,3 +45,41 @@ test('new sketch preview is guarded and read-only; rejection retains fields for 
  reject=false;await button(host,'Apply verified new sketch').onclick();assert.deepEqual(accepted,{version:4});
  delete globalThis.document;delete globalThis.Option;
 });
+
+test('picked arbitrary planar frames are authored without mesh indices and cleared for primary planes',()=>{
+ const v=values=>({literal:Object.fromEntries(['x','y','z'].map((k,i)=>[k,{value:values[i],dimension:'scalar',unit:null}]))});
+ const picked={face_support:{input:'tilted',face:{normal_aligned:{direction:v([.707,0,.707]),minimum_dot:{literal:{value:.999999,dimension:'scalar',unit:null}}}}},x_axis:v([0,1,0]),y_axis:v([-.707,0,.707])};
+ const s=newSketchDefinition({id:'p',plane:'face',support:'tilted',face:'picked',picked,offset:2});
+ assert.deepEqual(s.x_axis,picked.x_axis);assert.deepEqual(s.face_support.face,picked.face_support.face);
+ assert.equal(s.face_support.offset.literal.value,2);assert(!JSON.stringify(s).includes('face_index'));
+ const xy=newSketchDefinition({id:'p',plane:'xy',picked});
+ assert.deepEqual(coords(xy.x_axis),[1,0,0]);assert.equal(xy.face_support,undefined);
+});
+test('face picking rejects preview/stale clicks, handles cancellation and preserves the creation draft',async()=>{
+ globalThis.document={createElement:tag=>new Element(tag)};globalThis.Option=class extends Element{constructor(text,value){super('option');this.textContent=text;this.value=value;}};
+ const host=new Element('div'),calls=[],highlights=[];let version=3,resolvePick,restoring=null;
+ const axes=newSketchDefinition({id:'temp'});
+ const pick={version:3,instance:'part',face_support:{input:'body',face:{normal_aligned:{direction:axes.y_axis,minimum_dot:{literal:{value:1,dimension:'scalar',unit:null}}}}},normal:[0,1,0],origin_mm:[10,20,30],x_axis:axes.x_axis,y_axis:axes.y_axis,binding:'history'};
+ const creator=createSketchCreator({host,instance:()=> 'part',currentVersion:()=>version,highlightFace:(...v)=>highlights.push(v),preview:async()=>{},applied:async()=>{},restore:async()=>{if(restoring)await restoring;},request:async(path,options)=>{
+  if(path==='/api/features')return {version:3,features:[{id:'body',operation:{box:{}}}],output:'body'};
+  if(path==='/api/sketch-face-pick'){calls.push(JSON.parse(options.body));return new Promise(r=>resolvePick=r);}
+  calls.push(JSON.parse(options.body));return {can_apply:true};
+ }});
+ await button(host,'New sketch').onclick();await button(host,'Pick support face in 3D').onclick();assert(creator.picking);
+ await creator.pickFace({accepted:false,version:3,instance:'part',output:'body',face:2});
+ await creator.pickFace({accepted:true,version:2,instance:'part',output:'body',face:2});
+ assert.equal(calls.length,0);
+ const pending=creator.pickFace({accepted:true,version:3,instance:'part',output:'body',face:2});
+ creator.cancelPick();resolvePick(pick);await pending;assert(!creator.picking);assert(!control(host,'Face normal').value.includes('picked'));
+ await button(host,'Pick support face in 3D').onclick();
+ const choosing=creator.pickFace({accepted:true,version:3,instance:'part',output:'body',face:4});resolvePick(pick);await choosing;
+ assert.equal(control(host,'Face normal').value,'picked');assert.deepEqual(highlights.at(-1),[4,'body']);
+ await button(host,'Preview new sketch').onclick();
+ assert.deepEqual(calls.at(-1).definition.face_support.face,pick.face_support.face);
+ assert(!('face' in calls.at(-1)));assert.equal(calls.at(-1).definition.face_support.input,'body');
+ let releaseRestore;restoring=new Promise(r=>releaseRestore=r);
+ const arming=button(host,'Pick support face in 3D').onclick();
+ assert(creator.picking);creator.cancelPick();releaseRestore();await arming;
+ assert(!creator.picking,'Escape during accepted-view loading must prevent late arming');
+ delete globalThis.document;delete globalThis.Option;
+});

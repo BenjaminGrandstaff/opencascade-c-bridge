@@ -1888,3 +1888,191 @@ fn primitive_only_families_can_create_their_first_authored_sketch() {
     assert_eq!(sketches["sketches"].as_array().unwrap().len(), 1);
     assert_eq!(sketches["sketches"][0]["feature"], "new-profile");
 }
+
+fn pick_face(
+    studio: &mut serve::Studio,
+    instance: &str,
+    output: &str,
+    face: usize,
+) -> (u16, serde_json::Value) {
+    let version = get(studio, "/api/state").1["version"].clone();
+    let response = studio.handle(
+        "POST",
+        "/api/sketch-face-pick",
+        json!({"version":version,"instance":instance,"output":output,"face":face})
+            .to_string()
+            .as_bytes(),
+    );
+    (
+        response.status,
+        serde_json::from_slice(&response.body).unwrap(),
+    )
+}
+fn horizontal_mesh_face(studio: &mut serve::Studio, instance: &str, z: f64) -> usize {
+    let data = get(studio, &format!("/api/annotations?id={instance}")).1;
+    let scene = data["scenes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["kind"] == "solid")
+        .unwrap();
+    scene["mesh"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|triangle| {
+            triangle["points"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|p| (p[2].as_f64().unwrap() - z).abs() < 1e-7)
+        })
+        .unwrap()["face"]
+        .as_u64()
+        .unwrap() as usize
+}
+fn definition_on_pick(pick: &serde_json::Value) -> SketchDefinition {
+    let mut definition = serde_json::to_value(starter_sketch()).unwrap();
+    for key in ["face_support", "x_axis", "y_axis"] {
+        definition[key] = pick[key].clone();
+    }
+    serde_json::from_value(definition).unwrap()
+}
+
+#[test]
+fn direct_face_picks_are_read_only_versioned_and_follow_parameter_changes() {
+    let directory = Directory::new();
+    let model = PathBuf::from(directory.model(&sketch_block_document()));
+    let mut studio = serve::Studio::load(&model, Some("body".into())).unwrap();
+    let face = horizontal_mesh_face(&mut studio, "block", 10.0);
+    let before = get(&mut studio, "/api/state").1;
+    let (status, pick) = pick_face(&mut studio, "block", "body", face);
+    assert_eq!(status, 200, "{pick}");
+    assert_eq!(pick["binding"], "normal");
+    assert_eq!(pick["origin_mm"], json!([20.0, 12.5, 10.0]));
+    assert_eq!(get(&mut studio, "/api/state").1, before);
+    assert!(pick["face_support"].get("face_index").is_none());
+    assert_eq!(pick_face(&mut studio, "block", "body", usize::MAX).0, 422);
+    let definition = definition_on_pick(&pick);
+    let mut edit = new_sketch_request(&mut studio, &definition);
+    edit["apply"] = json!(true);
+    assert_eq!(create_sketch(&mut studio, &edit).0, 200);
+    let response = studio.handle(
+        "POST",
+        "/api/sketch-face-pick",
+        json!({"version":before["version"],"instance":"block","output":"body","face":face})
+            .to_string()
+            .as_bytes(),
+    );
+    assert_eq!(response.status, 422);
+    assert_eq!(
+        studio
+            .handle("POST", "/api/parameters", br#"{"set":{"depth":18}}"#)
+            .status,
+        200
+    );
+    let data = get(&mut studio, "/api/annotations?id=block").1;
+    let sketch = data["scenes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["kind"] == "sketch" && s["feature"] == "new-profile")
+        .unwrap();
+    assert!((sketch["face_support"]["origin_mm"][2].as_f64().unwrap() - 18.0).abs() < 1e-8);
+}
+
+#[test]
+fn picking_a_pocket_floor_uses_history_to_distinguish_parallel_faces() {
+    let directory = Directory::new();
+    let request: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../tools/model/face-pocket.request.json"
+    ))
+    .unwrap();
+    let document = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+    let model = PathBuf::from(directory.model(&document));
+    let mut studio = serve::Studio::load(&model, Some("body".into())).unwrap();
+    let instance = get(&mut studio, "/api/instances").1["instances"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let face = horizontal_mesh_face(&mut studio, &instance, 15.0);
+    let (status, pick) = pick_face(&mut studio, &instance, "body", face);
+    assert_eq!(status, 200, "{pick}");
+    assert_eq!(pick["binding"], "history", "{pick}");
+    assert!((pick["origin_mm"][2].as_f64().unwrap() - 15.0).abs() < 1e-8);
+    let mut edit = new_sketch_request(&mut studio, &definition_on_pick(&pick));
+    edit["instance"] = json!(instance);
+    edit["apply"] = json!(true);
+    let (status, result) = create_sketch(&mut studio, &edit);
+    assert_eq!(status, 200, "{result}");
+    // Source height and cutter placement move together; the selected floor follows.
+    assert_eq!(
+        studio
+            .handle("POST", "/api/parameters", br#"{"set":{"height":30}}"#)
+            .status,
+        200
+    );
+    let data = get(&mut studio, &format!("/api/annotations?id={instance}")).1;
+    let sketch = data["scenes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["kind"] == "sketch" && s["feature"] == "new-profile")
+        .unwrap();
+    assert!(
+        (sketch["face_support"]["origin_mm"][2].as_f64().unwrap() - 25.0).abs() < 1e-8,
+        "{sketch}"
+    );
+}
+
+#[test]
+fn picked_rotated_planes_produce_valid_frames_and_curved_faces_are_refused() {
+    let directory = Directory::new();
+    let mut document = sketch_block_document();
+    document.family.features.push(FeatureDefinition {
+        id: "tilted".into(),
+        operation: FeatureOperation::Rotate {
+            input: "body".into(),
+            origin: point(0.0, 0.0, 0.0),
+            axis: VectorExpr::Literal(VectorQuantity::scalars(0.0, 1.0, 0.0)),
+            angle_radians: ScalarExpr::Literal(Quantity::scalar(std::f64::consts::FRAC_PI_4)),
+        },
+    });
+    document.family.features.push(FeatureDefinition {
+        id: "curved".into(),
+        operation: FeatureOperation::Cylinder {
+            origin: point(0.0, 0.0, 0.0),
+            axis: VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, 1.0)),
+            radius: ScalarExpr::Literal(Quantity::length(8.0, LengthUnit::Millimeter)),
+            height: ScalarExpr::Literal(Quantity::length(20.0, LengthUnit::Millimeter)),
+        },
+    });
+    let model = PathBuf::from(directory.model(&document));
+    let mut studio = serve::Studio::load(&model, Some("tilted".into())).unwrap();
+    let before = get(&mut studio, "/api/state").1;
+    let mut tilted = None;
+    for face in 0..6 {
+        let (status, pick) = pick_face(&mut studio, "block", "tilted", face);
+        assert_eq!(status, 200, "{pick}");
+        if pick["normal"][0].as_f64().unwrap().abs() > 0.5
+            && pick["normal"][2].as_f64().unwrap().abs() > 0.5
+        {
+            tilted = Some(pick);
+            break;
+        }
+    }
+    let mut curved_refused = false;
+    for face in 0..3 {
+        let (status, pick) = pick_face(&mut studio, "block", "curved", face);
+        if status == 422 {
+            assert!(pick["error"].as_str().unwrap().contains("planar"));
+            curved_refused = true;
+        }
+    }
+    assert!(curved_refused);
+    assert_eq!(get(&mut studio, "/api/state").1, before);
+    let mut request = new_sketch_request(&mut studio, &definition_on_pick(&tilted.unwrap()));
+    request["apply"] = json!(true);
+    let (status, result) = create_sketch(&mut studio, &request);
+    assert_eq!(status, 200, "{result}");
+}

@@ -171,4 +171,21 @@ if(sketchScene){
  if(point){elements.viewport.emit('pointerdown',{target:{closest:selector=>selector==='[data-point]'?{dataset:{point}}:null}});assert.equal(picks.at(-1)[0],point);}
  interactive.destroy();
 }
+const solidForPick=data.scenes.find(s=>s.kind==='solid'&&s.mesh?.length);
+if(solidForPick){
+ const facePicks=[],interactive=context.window.createOcctAnnotatedViewer(context.document,data,()=>{}, {
+  isFacePicking:()=>true,onFacePick:hit=>facePicks.push(hit),
+ });
+ interactive.selectScene('solid',solidForPick.feature);
+ const triangle=solidForPick.mesh[0],center=triangle.points[0].map((_,i)=>triangle.points.reduce((sum,p)=>sum+p[i],0)/3),screen=interactive.project(center);
+ const event={clientX:screen[0],clientY:screen[1],button:0,target:{closest:()=>null}};
+ elements.viewport.emit('pointerdown',event);elements.viewport.emit('pointerup',event);
+ assert.equal(facePicks.length,1);assert.equal(facePicks[0].output,solidForPick.feature);
+ assert(solidForPick.mesh.some(t=>t.face===facePicks[0].face),'click resolves a visible native mesh face');
+ interactive.setFaceSelection(facePicks[0].face,solidForPick.feature);
+ assert(elements.overlay.children.some(e=>e.attributes.fill==='#edb362'),'picked face is highlighted in the software renderer');
+ elements.viewport.emit('pointerdown',event);elements.viewport.emit('pointermove',{clientX:event.clientX+30,clientY:event.clientY+10});elements.viewport.emit('pointerup',event);
+ assert.equal(facePicks.length,1,'orbit drag must not pick a face');
+ interactive.destroy();
+}
 console.log('PASS viewer scene navigation, label selection, related controls, orbit/pan/zoom, visibility and failed states');
