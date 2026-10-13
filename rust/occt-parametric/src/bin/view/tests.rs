@@ -2964,3 +2964,49 @@ fn spline_pole_count_edits_regenerate_all_modes_and_preserve_points() {
         assert_eq!(history(&mut studio, "undo")["dirty"], false);
     }
 }
+
+#[test]
+fn exact_rational_refinement_preserves_native_solid_volume_across_parameters() {
+    let mut volumes = Vec::new();
+    for source in [
+        include_str!("../../../../../tools/model/rational-spline-cap.request.json"),
+        include_str!("../../../../../tools/model/rational-spline-refinement.request.json"),
+    ] {
+        let mut cases = Vec::new();
+        for (radius, weight) in [
+            (10.0, std::f64::consts::FRAC_1_SQRT_2),
+            (15.0, 1.2),
+            (7.0, 0.35),
+        ] {
+            let directory = Directory::new();
+            let mut request: serde_json::Value = serde_json::from_str(source).unwrap();
+            request["model"]["family"]["parameters"][0]["default"]["scalar"]["value"] =
+                json!(radius);
+            request["model"]["family"]["parameters"][1]["default"]["scalar"]["value"] =
+                json!(weight);
+            assert_eq!(
+                request["model"]["schema_version"],
+                json!(CURRENT_SCHEMA_VERSION)
+            );
+            let document = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+            let model = PathBuf::from(directory.model(&document));
+            let mut studio = serve::Studio::load(&model, Some("body".into())).unwrap();
+            let before = get(&mut studio, "/api/state").1;
+            let features = get(&mut studio, "/api/features").1;
+            let response = studio.handle("POST", "/api/features", json!({
+                "version":features["version"],"instance":"part","expected":features["features"],
+                "action":"add","features":[{"id":"volume-probe","operation":{"extrude":{"input":"profile","direction":point(0.0,0.0,8.0)}}}],
+                "output":"volume-probe","apply":false
+            }).to_string().as_bytes());
+            let preview: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+            assert_eq!(response.status, 200, "{preview}");
+            assert_eq!(preview["can_apply"], true, "{preview}");
+            cases.push(preview["geometry"]["part"]["volume_mm3"].as_f64().unwrap());
+            assert_eq!(get(&mut studio, "/api/state").1, before);
+        }
+        volumes.push(cases);
+    }
+    for (original, refined) in volumes[0].iter().zip(&volumes[1]) {
+        assert!((original - refined).abs() < 1e-7, "{original} != {refined}");
+    }
+}

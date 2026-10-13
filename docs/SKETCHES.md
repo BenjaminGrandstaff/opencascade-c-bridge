@@ -106,6 +106,25 @@ mode, and pole count. Basis, point-list, and weight changes apply together when
 updating the spline. Native Preview/Apply checks domain endpoints, continuity,
 closure, constraints, and dependent features before accepting the result.
 
+**Preserve curve shape** provides exact rational knot insertion and degree
+elevation for clamped B-splines with fixed authored poles. **Insert knot preserving
+shape** inserts one internal knot occurrence, up to the current degree's
+multiplicity. **Elevate degree preserving shape** raises the degree through
+adjacent rational Bezier spans; the span boundaries retain their geometry and
+may have higher knot multiplicity. The curve parameter domain remains unchanged.
+
+Refinement creates fixed named poles from homogeneous combinations of the
+source coordinate and weight expressions. Parameter and formula drivers remain
+live; original named points and constraints stay in the sketch. Generated
+coordinates contain copied expressions, so later literal edits to unused source
+points do not change the refined curve. New poles can be edited independently.
+Periodic/non-clamped splines, projected poles, and free solver-controlled poles
+are refused because this path cannot guarantee their solved geometry. Refinement
+is bounded to 256 poles and a 1 MB draft expression budget. Native Preview/Apply
+checks every draft; undo/redo and Save use the existing model format (schema 145).
+See `tools/model/rational-spline-refinement.request.json` for a parameter-driven
+rational cap after degree elevation.
+
 ## Added constraints
 
 | JSON variant | Meaning |

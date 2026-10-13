@@ -1,4 +1,5 @@
 import {profileIds} from './profile-controls.mjs';
+import {refineSpline} from './spline-refinement.mjs';
 const scalar=value=>({literal:{value,dimension:'scalar',unit:null}});
 export function editSplineBasis(spline,{degree,knots,multiplicities,mode,endpoints},knownPoints){
   if(!spline.basis)throw new Error('Basis controls require an explicit B-spline.');
@@ -126,6 +127,20 @@ export function createSplineControls({host,definition,parameters=[],changed,mess
           const current=withBasis(editSpline(spline,{points:points.value.split(',').map(id=>id.trim()),weights:weightsEdited?weights:undefined},profileIds(definition,'points')));
           const next=resizeSplinePoles(current,{action,index:String(position.value).trim()?Number(position.value)-1:NaN,point:point.value},profileIds(definition,'points'));
           const index=definition.splines.indexOf(spline);if(index<0)throw new Error('Spline changed. Reload its controls.');definition.splines[index]=next;changed();message('Pole count and uniform basis updated in the draft. Preview checks the reshaped curve and dependent solids.');
+        }catch(error){message(error.message);}};group.append(button);
+      }
+    }
+    if(explicit){
+      const group=document.createElement('fieldset'),legend=document.createElement('legend');legend.textContent='Preserve curve shape';group.append(legend);form.append(group);
+      const note=document.createElement('p');note.textContent='Exact rational knot insertion and degree elevation support clamped splines with fixed authored poles. New poles retain coordinate and weight parameter expressions. Original points and constraints remain. Elevation uses adjacent Bezier spans.';group.append(note);
+      function field(label,value){const row=document.createElement('label');row.textContent=label;const e=document.createElement('input');e.type='number';e.step='any';e.value=String(value);e.setAttribute('aria-label',label);row.append(e);group.append(row);return e;}
+      const knot=field('Knot to insert',(spline.basis.knots[0]+spline.basis.knots.at(-1))/2),degree=field('Elevated spline degree',spline.basis.degree+1);degree.step='1';
+      for(const [action,text]of [['insert_knot','Insert knot preserving shape'],['elevate_degree','Elevate degree preserving shape']]){
+        const button=document.createElement('button');button.textContent=text;button.onclick=()=>{try{
+          const current=withBasis(editSpline(spline,{points:points.value.split(',').map(id=>id.trim()),weights:weightsEdited?weights:undefined},profileIds(definition,'points')));
+          const staged=structuredClone(definition),index=definition.splines.indexOf(spline);if(index<0)throw new Error('Spline changed. Reload its controls.');staged.splines[index]=current;
+          const next=refineSpline(staged,spline.id,{action,knot:String(knot.value).trim()?Number(knot.value):NaN,degree:String(degree.value).trim()?Number(degree.value):NaN});
+          Object.assign(definition,next);changed();message('Exact spline refinement added to the draft. Preview checks the curve, constraints and dependent solids.');
         }catch(error){message(error.message);}};group.append(button);
       }
     }

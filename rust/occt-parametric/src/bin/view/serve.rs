@@ -628,6 +628,11 @@ impl Studio {
                 "text/javascript",
                 include_str!("web/shape-controls.mjs"),
             ),
+            ("GET", "/spline-refinement.mjs") => Response::text(
+                200,
+                "text/javascript",
+                include_str!("web/spline-refinement.mjs"),
+            ),
             ("GET", "/spline-controls.mjs") => Response::text(
                 200,
                 "text/javascript",
