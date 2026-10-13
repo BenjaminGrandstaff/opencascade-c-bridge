@@ -2824,3 +2824,65 @@ fn spline_pole_and_weight_edits_preserve_basis_and_reject_invalid_weights() {
         original_mesh
     );
 }
+
+#[test]
+fn spline_basis_edits_regenerate_all_modes_and_reject_inconsistent_multiplicities() {
+    for (source, mode) in [
+        (
+            include_str!("../../../../../tools/model/rational-spline-cap.request.json"),
+            "clamped",
+        ),
+        (
+            include_str!("../../../../../tools/model/periodic-spline-pad.request.json"),
+            "periodic",
+        ),
+        (
+            include_str!("../../../../../tools/model/non-clamped-spline-cap.request.json"),
+            "non_clamped",
+        ),
+    ] {
+        let directory = Directory::new();
+        let request: serde_json::Value = serde_json::from_str(source).unwrap();
+        let document = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+        let model = PathBuf::from(directory.model(&document));
+        let mut studio = serve::Studio::load(&model, Some("body".into())).unwrap();
+        let baseline = get(&mut studio, "/api/sketches").1["sketches"][0].clone();
+        let feature = baseline["feature"].as_str().unwrap();
+        let mut draft = baseline["definition"].clone();
+        let basis = &mut draft["splines"][0]["basis"];
+        if mode == "clamped" {
+            basis["degree"] = json!(1);
+            basis["knots"] = json!([0.0, 0.5, 1.0]);
+            basis["multiplicities"] = json!([2, 1, 2]);
+        } else if mode == "periodic" {
+            basis["degree"] = json!(2);
+        } else {
+            for knot in basis["knots"].as_array_mut().unwrap() {
+                *knot = json!(knot.as_f64().unwrap() * 2.0);
+            }
+        }
+        let before = get(&mut studio, "/api/state").1;
+        let (status, preview) = edit_definition(&mut studio, feature, draft.clone(), false);
+        assert_eq!(status, 200, "{mode}: {preview}");
+        assert_eq!(preview["can_apply"], true, "{mode}: {preview}");
+        assert_eq!(get(&mut studio, "/api/state").1, before);
+        let (status, result) = edit_definition(&mut studio, feature, draft.clone(), true);
+        assert_eq!(status, 200, "{mode}: {result}");
+        let applied = get(&mut studio, "/api/sketches").1["sketches"][0]["definition"].clone();
+        assert_eq!(
+            applied["splines"][0]["basis"]["weights"],
+            baseline["definition"]["splines"][0]["basis"]["weights"]
+        );
+        assert_eq!(
+            applied["splines"][0]["endpoints"],
+            baseline["definition"]["splines"][0]["endpoints"]
+        );
+        let accepted = get(&mut studio, "/api/state").1;
+        let mesh = studio.handle("GET", "/api/model.gltf", b"").body;
+        draft["splines"][0]["basis"]["multiplicities"][0] = json!(0);
+        assert_eq!(edit_definition(&mut studio, feature, draft, true).0, 422);
+        assert_eq!(get(&mut studio, "/api/state").1, accepted);
+        assert_eq!(studio.handle("GET", "/api/model.gltf", b"").body, mesh);
+        assert_eq!(history(&mut studio, "undo")["dirty"], false);
+    }
+}

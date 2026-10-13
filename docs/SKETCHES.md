@@ -77,9 +77,11 @@ change is required.
 **Spline points & weights** edits authored splines by name or an armed canvas
 selection. Interpolated splines accept ordered named-point lists and a closed
 toggle that repeats the first reference automatically. Explicit B-splines allow
-replacing or reordering poles while keeping the pole count, degree, knot vector,
-multiplicities, periodic/non-clamped mode, and endpoint references. Basis/count
-changes remain in the full definition. **Edit point** focuses the existing
+replacing or reordering poles while keeping the pole count. **Native B-spline
+basis** edits degree, unique knots, multiplicities, and clamped/periodic/non-clamped
+mode; non-clamped mode also selects separate native endpoint point references.
+Adding or removing poles and converting interpolation to an explicit basis
+remain in the full definition. **Edit point** focuses the existing
 coordinate controls; shared or formula-driven point definitions remain authored.
 
 Explicit weights accept positive scalar values or compatible parameters, and
@@ -90,6 +92,14 @@ and generated conic splines continue to use their source or shortcut controls.
 Preview/Apply regenerates the native curve and dependent features, rejects
 invalid or open face boundaries, and retains existing constraints and model
 history. This uses the current model format.
+
+Basis edits redefine the curve; they do not perform geometry-preserving degree
+elevation or knot insertion. Knot values must be finite and strictly increasing,
+and each needs a positive integer multiplicity. Clamped ends have degree + 1
+multiplicity; periodic ends match. The multiplicity sum must agree with degree,
+mode, and pole count. Basis, point-list, and weight changes apply together when
+updating the spline. Native Preview/Apply checks domain endpoints, continuity,
+closure, constraints, and dependent features before accepting the result.
 
 ## Added constraints
 
