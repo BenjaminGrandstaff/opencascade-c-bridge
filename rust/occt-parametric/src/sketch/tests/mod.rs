@@ -153,3 +153,5 @@ fn arc_profile(clockwise: bool) -> SketchDefinition {
 }
 
 mod reliability;
+
+mod weighted_points;

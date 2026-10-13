@@ -107,27 +107,60 @@ updating the spline. Native Preview/Apply checks domain endpoints, continuity,
 closure, constraints, and dependent features before accepting the result.
 
 **Preserve curve shape** provides exact rational knot insertion and degree
-elevation for clamped, periodic, and non-clamped B-splines with fixed authored
-poles. **Insert knot preserving shape** inserts one internal knot occurrence, up to the current degree's
+elevation for clamped, periodic, and non-clamped B-splines. Authored poles may
+be fixed or solver-controlled, and stable projected point references remain
+linked to their sources. **Insert knot preserving shape** inserts one internal
+knot occurrence, up to the current degree's
 multiplicity. **Elevate degree preserving shape** uses OpenCascade degree
 elevation, retaining native continuity through the corresponding knot
 multiplicities. Non-clamped degree elevation first segments the native active
 interval, discarding inactive outer knots; the non-clamped mode and endpoint
 references remain authored. The curve parameter domain remains unchanged.
 
-Refinement creates fixed named poles from homogeneous combinations of the
-source coordinate and weight expressions. Parameter and formula drivers remain
-live; original named points and constraints stay in the sketch. Generated
-coordinates contain copied expressions, so later literal edits to unused source
-points do not change the refined curve. New poles can be edited independently.
-Projected poles and free solver-controlled poles are refused because this path
-cannot guarantee their solved geometry. Refinement is bounded to 256 poles and a 1 MB draft expression budget. Native Preview/Apply
-checks every draft; undo/redo and Save use the existing model format (schema 145).
+Refinement of fixed authored poles creates fixed named poles from homogeneous
+combinations of their coordinate and weight expressions. Parameter and formula
+drivers remain live. Coordinates contain copied expressions, so later literal
+edits to unused source points do not change those independent refined poles.
+
+When a combination includes a free, derived, or projected point, refinement
+creates a `weighted_point` link instead. Its target is a dependent coordinate,
+evaluated from solved source points, and adds no solver unknowns or equations.
+Constraints on geometry using the target still drive the original source points;
+chained links flatten to their independent sources. Original points, constraints,
+projections and endpoint references remain authored. Linked pole controls show
+their sources instead of editable seed coordinates. Clicking a weighted label or
+**Highlight weighted point sources** highlights its dependency points. Linked
+poles cannot be dragged independently.
+
+Refinement is bounded to 256 poles and a 1 MB draft expression budget. Native
+Preview/Apply checks every draft; undo/redo and Save use schema 146. ABI remains
+72. Projected curves themselves continue to use their source controls; this
+refinement path edits authored splines referencing projected points.
 See `tools/model/rational-spline-refinement.request.json` for a parameter-driven
 rational cap after degree elevation. The read-only `/api/spline-refine` endpoint
 returns bounded native coefficient matrices, guarded by the current model
 version; it changes neither accepted geometry nor history. ABI 72 adds the
 corresponding bridge and Rust APIs. Rebuild native and Rust consumers together.
+
+## Weighted dependent points (schema 146)
+
+`weighted_point: {point, terms: [{point, weight}, ...]}` defines the target's
+coordinates as `sum(weight * source) / sum(weight)` using current solved sketch
+points. Weights are positive finite dimensionless expressions; their parameter
+dependencies participate in regeneration. The target must be an authored
+non-fixed point. Its stored coordinates are placeholders, excluded from solver
+variables and warm starts. Source coordinates may be fixed, solved, projected,
+or other weighted dependent points. Each target has exactly one definition;
+self references and cycles are rejected. There are 1–256 source terms per link,
+a maximum dependency depth of 256, and at most 4096 flattened independent source
+references per target.
+
+Weighted links are shown as constructed constraints and introduce no redundant
+equality rows. Other constraints involving dependent points differentiate through
+the source references, preserving source free motion and constraint diagnosis.
+The [linked rational cap](../tools/model/linked-spline-refinement.request.json)
+elevates a spline whose middle pole is positioned by dimensions; changing those
+dimensions or its rational weight updates the dependent refined poles.
 
 ## Added constraints
 

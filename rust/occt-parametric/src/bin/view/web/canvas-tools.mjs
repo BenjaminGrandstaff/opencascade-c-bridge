@@ -161,6 +161,7 @@ export function createCanvasTools({host,getDraft,setDraft,changed,message,ghost,
         if(mode==='drag'){
           if(!event.point){message('Choose a free authored point to drag.');return true;}
           const p=getDraft().points.find(p=>p.id===event.point);
+          if((getDraft().constraints??[]).some(c=>c.weighted_point?.point===event.point)){message('This point follows a weighted link. Edit its source points or weights.');return true;}
           if(!p||p.fixed||!p.x?.literal||!p.y?.literal){message('This point is fixed, generated, or formula-driven. Use its driving controls instead.');return true;}
           gesture={point:p.id,start:event.position};return true;
         }

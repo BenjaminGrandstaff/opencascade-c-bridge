@@ -71,14 +71,14 @@ test('pole count controls include staged weights and reject invalid removals wit
  field(host,'Control pole position').value='2';click(host,'Remove control pole');assert.equal(changes,2);assert.match(messages.at(-1),/degree \+ 1/);assert.equal(d.points.length,known.length);
  delete globalThis.document;delete globalThis.Option;
 });
-test('exact refinement form updates fixed pole expressions atomically and retains the draft on unsupported input',()=>{
+test('exact refinement form updates fixed pole expressions atomically and retains the draft on invalid input',()=>{
  globalThis.document={createElement:tag=>new Element(tag)};globalThis.Option=class extends Element{constructor(text,value){super('option');this.value=value;}};
  const mm=value=>({literal:{value,dimension:'length',unit:'millimeter'}}),d={points:['a','b','c'].map((id,i)=>({id,x:mm(i),y:mm(i===1?2:0),fixed:true})),splines:[structuredClone(explicit)]},host=new Element('div'),messages=[];let changes=0;
  const render=()=>{host.replaceChildren();createSplineControls({host,definition:d,changed:()=>{changes++;render();},message:m=>messages.push(m)});};render();
  field(host,'Knot to insert').value='1';click(host,'Insert knot preserving shape');assert.equal(changes,0);assert.match(messages.at(-1),/inside/);
  field(host,'Knot to insert').value='.5';click(host,'Insert knot preserving shape');assert.equal(changes,1);assert.equal(d.splines[0].points.length,4);assert.equal(d.points.length,5);
  field(host,'Elevated spline degree').value='3';click(host,'Elevate degree preserving shape');assert.equal(changes,2);assert.equal(d.splines[0].basis.degree,3);assert.equal(d.splines[0].points.length,7);
- d.points.find(p=>p.id===d.splines[0].points[1]).fixed=false;render();const snapshot=structuredClone(d);click(host,'Insert knot preserving shape');assert.equal(changes,2);assert.deepEqual(d,snapshot);assert.match(messages.at(-1),/fixed authored/);
+ d.points.find(p=>p.id===d.splines[0].points[1]).fixed=false;render();field(host,'Knot to insert').value='.25';click(host,'Insert knot preserving shape');assert.equal(changes,3);assert(d.constraints.some(c=>c.weighted_point));const snapshot=structuredClone(d);field(host,'Knot to insert').value='0';click(host,'Insert knot preserving shape');assert.equal(changes,3);assert.deepEqual(d,snapshot);
  delete globalThis.document;delete globalThis.Option;
 });
 

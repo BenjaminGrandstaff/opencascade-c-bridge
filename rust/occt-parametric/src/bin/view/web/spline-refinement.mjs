@@ -20,7 +20,8 @@ export function refineSpline(definition,splineId,{action,knot,degree,transformat
   if(!basis)throw new Error('Exact refinement requires an explicit B-spline.');
   if(!transformation&&(basis.periodic||basis.non_clamped))throw new Error('Native refinement is required for periodic and non-clamped bases.');
   const poles=source.points.map(id=>definition.points?.find(p=>p.id===id));
-  if(poles.some(p=>!p||!p.fixed))throw new Error('Exact refinement requires fixed authored poles; free or projected poles need their native solved geometry.');
+  const known=profileIds(definition,'points');
+  if(source.points.some(id=>!known.includes(id)))throw new Error('Choose known named points for the spline.');
   const p=basis.degree,n=poles.length,periodic=Boolean(basis.periodic),nonClamped=Boolean(basis.non_clamped);
   if(!Number.isInteger(p)||p<1||p>25||n<p+1||n>256||basis.knots.length<2||basis.knots.length!==basis.multiplicities.length||basis.knots.some((k,i)=>!Number.isFinite(k)||i>0&&k<=basis.knots[i-1])||basis.multiplicities.some((m,i)=>!Number.isInteger(m)||m<1||m>(i===0||i===basis.knots.length-1?p+1:p))||periodic&&nonClamped||!periodic&&!nonClamped&&(basis.multiplicities[0]!==p+1||basis.multiplicities.at(-1)!==p+1)||periodic&&(basis.multiplicities[0]!==basis.multiplicities.at(-1)||basis.multiplicities[0]>p)||basis.multiplicities.reduce((a,b)=>a+b,0)!==n+(periodic?basis.multiplicities.at(-1):p+1))throw new Error('Use a valid basis with at most 256 control poles.');
   if(nonClamped&&(!source.endpoints||[source.endpoints.start,source.endpoints.end].some(id=>!profileIds(definition,'points').includes(id)||source.points.includes(id))))throw new Error('Keep known native endpoint references separate from control poles.');
@@ -56,7 +57,13 @@ export function refineSpline(definition,splineId,{action,knot,degree,transformat
     if(original!==null){newWeights.push(structuredClone(weights[original]));return source.points[original];}
     const weighted=terms.map(({c,i})=>multiply(scalar(c),structuredClone(weights[i]))),weight=sum(weighted);
     const coordinate=axis=>{const numerator=sum(terms.map(({i},j)=>multiply(weighted[j],structuredClone(poles[i][axis]))));return unit(weight)?numerator:{divide:[numerator,weight]};};
-    const id=name();next.points.push({id,x:coordinate('x'),y:coordinate('y'),fixed:true});newWeights.push(weight);return id;
+    const id=name(),linked=terms.some(({i})=>!poles[i]?.fixed);
+    if(linked){
+      const zero=()=>({literal:{value:0,dimension:'length',unit:'millimeter'}});
+      (next.points??=[]).push({id,x:zero(),y:zero(),fixed:false});
+      (next.constraints??=[]).push({weighted_point:{point:id,terms:terms.map(({i},j)=>({point:source.points[i],weight:weighted[j]}))}});
+    }else next.points.push({id,x:coordinate('x'),y:coordinate('y'),fixed:true});
+    newWeights.push(weight);return id;
   });
   const unique=[...new Set(knots)];Object.assign(spline.basis,{degree:target,knots:unique,multiplicities:unique.map(k=>knots.filter(u=>u===k).length),weights:weights.every(unit)?[]:newWeights});
   if(JSON.stringify(next).length>1000000)throw new Error('Refinement exceeds the expression-size limit.');

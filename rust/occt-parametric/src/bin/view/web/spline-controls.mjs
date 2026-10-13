@@ -132,7 +132,7 @@ export function createSplineControls({host,definition,parameters=[],changed,mess
     }
     if(explicit){
       const group=document.createElement('fieldset'),legend=document.createElement('legend');legend.textContent='Preserve curve shape';group.append(legend);form.append(group);
-      const note=document.createElement('p');note.textContent='Native OpenCascade knot insertion and degree elevation preserve clamped, periodic and non-clamped curves with fixed authored poles. New poles retain parameter expressions. Original points, constraints and native endpoint references remain.';group.append(note);
+      const note=document.createElement('p');note.textContent='Native OpenCascade refinement preserves all three basis modes. New poles follow solver-controlled and projected point sources through weighted links. Fixed pole expressions, original constraints and native endpoint references remain.';group.append(note);
       function field(label,value){const row=document.createElement('label');row.textContent=label;const e=document.createElement('input');e.type='number';e.step='any';e.value=String(value);e.setAttribute('aria-label',label);row.append(e);group.append(row);return e;}
       const knot=field('Knot to insert',(spline.basis.knots[0]+spline.basis.knots.at(-1))/2),degree=field('Elevated spline degree',spline.basis.degree+1);degree.step='1';
       for(const [action,text]of [['insert_knot','Insert knot preserving shape'],['elevate_degree','Elevate degree preserving shape']]){
@@ -142,7 +142,6 @@ export function createSplineControls({host,definition,parameters=[],changed,mess
           const options={action,knot:String(knot.value).trim()?Number(knot.value):NaN,degree:String(degree.value).trim()?Number(degree.value):NaN};
           const snapshot=JSON.stringify(definition);
           if(requestRefinement){
-            if(current.points.some(id=>!staged.points?.some(p=>p.id===id&&p.fixed)))throw new Error('Exact refinement requires fixed authored poles; free or projected poles need their native solved geometry.');
             options.transformation=await requestRefinement(current,options);
             if(JSON.stringify(definition)!==snapshot)throw new Error('Spline draft changed. Retry refinement on the current draft.');
           }

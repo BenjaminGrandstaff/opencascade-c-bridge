@@ -488,6 +488,14 @@ pub(super) fn sketch_scene(
                 ],
                 None,
             ),
+            SketchConstraint::WeightedPoint { point, terms } => (
+                "WEIGHTED",
+                std::iter::once(point.clone())
+                    .chain(terms.iter().map(|t| t.point.clone()))
+                    .collect(),
+                vec![point.clone()],
+                None,
+            ),
             SketchConstraint::Midpoint { point, line } => (
                 "MID",
                 vec![point.clone(), line.clone()],
@@ -907,6 +915,16 @@ pub(super) fn sketch_scene(
             control_names = linked.into_iter().collect();
         }
         match constraint {
+            SketchConstraint::WeightedPoint { point, terms } => {
+                let mut linked = std::iter::once(point.as_str())
+                    .chain(terms.iter().map(|t| t.point.as_str()))
+                    .flat_map(|id| point_controls[id].iter().cloned())
+                    .collect::<BTreeSet<_>>();
+                for term in terms {
+                    linked.extend(term.weight.parameter_names().into_iter().map(str::to_owned));
+                }
+                control_names = linked.into_iter().collect();
+            }
             SketchConstraint::Concentric { first, second } => {
                 control_names = [first, second]
                     .into_iter()

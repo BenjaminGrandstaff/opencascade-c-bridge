@@ -173,6 +173,7 @@ impl SketchDefinition {
                 "sketch face support requires a source feature",
             ));
         }
+        self.weighted_point_order()?;
         let point_ids = self.validate_points()?;
         let line_ids = self.validate_lines(&point_ids)?;
         let entity_ids = self.validate_curves(&point_ids, &line_ids)?;
@@ -729,6 +730,22 @@ impl SketchConstraint {
                 .ok_or_else(|| ModelError::new(format!("unknown sketch line '{id}'")))
         };
         match self {
+            Self::WeightedPoint {
+                point: target,
+                terms,
+            } => {
+                point(target)?;
+                if terms.is_empty() || terms.len() > 256 || terms.iter().any(|t| t.point == *target)
+                {
+                    return Err(ModelError::new(
+                        "weighted point needs 1–256 source terms separate from its target",
+                    ));
+                }
+                for term in terms {
+                    point(&term.point)?;
+                }
+                Ok(())
+            }
             Self::Radius { .. }
             | Self::Diameter { .. }
             | Self::EqualRadius { .. }
@@ -811,6 +828,16 @@ impl SketchConstraint {
 
     fn validate(&self, parameters: &HashMap<String, ParameterValue>) -> Result<(), ModelError> {
         match self {
+            Self::WeightedPoint { terms, .. } => {
+                for term in terms {
+                    if scalar(&term.weight, parameters, Dimension::Scalar)? <= 0. {
+                        return Err(ModelError::new(
+                            "weighted point weights must be positive finite scalars",
+                        ));
+                    }
+                }
+                Ok(())
+            }
             Self::Angle { value, .. } => {
                 let angle = scalar(value, parameters, Dimension::Scalar)?;
                 if angle.abs() > std::f64::consts::PI {

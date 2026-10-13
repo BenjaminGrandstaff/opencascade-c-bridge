@@ -380,9 +380,21 @@ pub enum SketchCircleTangency {
     Internal,
 }
 
+/// Positive scalar weight on a named solved point (schema 146).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct SketchWeightedPointTerm {
+    pub point: String,
+    pub weight: ScalarExpr,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SketchConstraint {
+    /// Target is the normalized positive weighted sum of named solved points.
+    WeightedPoint {
+        point: String,
+        terms: Vec<SketchWeightedPointTerm>,
+    },
     /// Signed angle from the first directed line to the second, in radians.
     Angle {
         first: String,
@@ -1207,6 +1219,83 @@ impl SketchDefinition {
         Ok(result)
     }
 
+    /// Deterministic evaluation order for directional weighted-point definitions.
+    /// Targets are dependent coordinates, never additional solver unknowns.
+    pub fn weighted_point_order(&self) -> Result<Vec<usize>, ModelError> {
+        let links = self
+            .constraints
+            .iter()
+            .enumerate()
+            .filter_map(|(i, c)| {
+                if let SketchConstraint::WeightedPoint { point, terms } = c {
+                    Some((i, point, terms))
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        if links.is_empty() {
+            return Ok(Vec::new());
+        }
+        let free = self
+            .points
+            .iter()
+            .filter(|p| !p.fixed)
+            .map(|p| p.id.as_str())
+            .collect::<HashSet<_>>();
+        let mut targets = HashMap::new();
+        for (local, (_, point, _)) in links.iter().enumerate() {
+            if targets.insert(point.as_str(), local).is_some() {
+                return Err(ModelError::new("weighted point targets must be unique"));
+            }
+            if !free.contains(point.as_str()) {
+                return Err(ModelError::new(
+                    "weighted point target must be an authored non-fixed point",
+                ));
+            }
+        }
+        let mut counts = vec![0usize; links.len()];
+        let mut outgoing = vec![Vec::new(); links.len()];
+        let mut depth = vec![0usize; links.len()];
+        for (local, (_, _, terms)) in links.iter().enumerate() {
+            let sources = terms
+                .iter()
+                .filter_map(|t| targets.get(t.point.as_str()).copied())
+                .collect::<HashSet<_>>();
+            counts[local] = sources.len();
+            for source in sources {
+                outgoing[source].push(local);
+            }
+        }
+        let mut ready = counts
+            .iter()
+            .enumerate()
+            .filter_map(|(i, &count)| (count == 0).then_some(i))
+            .collect::<std::collections::VecDeque<_>>();
+        let mut order = Vec::new();
+        while let Some(source) = ready.pop_front() {
+            order.push(links[source].0);
+            for &target in &outgoing[source] {
+                depth[target] = depth[target].max(depth[source] + 1);
+                if depth[target] > 256 {
+                    return Err(ModelError::new(
+                        "weighted point dependency depth exceeds 256",
+                    ));
+                }
+                counts[target] -= 1;
+                if counts[target] == 0 {
+                    ready.push_back(target);
+                }
+            }
+        }
+        if order.len() != links.len() {
+            return Err(ModelError::new(
+                "weighted point dependencies must be acyclic",
+            ));
+        }
+        Ok(order)
+    }
+
     pub fn collect_parameters<'a>(&'a self, names: &mut HashSet<&'a str>) {
         for projection in &self.projections {
             collect_edge_selector_parameters(&projection.edge, names);
@@ -1299,6 +1388,11 @@ impl SketchDefinition {
             }
         }
         for constraint in &self.constraints {
+            if let SketchConstraint::WeightedPoint { terms, .. } = constraint {
+                for term in terms {
+                    collect_scalar_parameters(&term.weight, names);
+                }
+            }
             if let SketchConstraint::Distance { value, .. }
             | SketchConstraint::HorizontalDistance { value, .. }
             | SketchConstraint::VerticalDistance { value, .. }

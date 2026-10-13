@@ -94,6 +94,11 @@ export function createSketchEditor({ host, request, instance, preview, applied, 
     for (const point of draft.points ?? []) {
       const row = document.createElement('fieldset'); row.dataset.editPoint = point.id;
       const title = document.createElement('legend'); title.textContent = point.id; row.append(title);
+      const dependency=(draft.constraints??[]).find(c=>c.weighted_point?.point===point.id)?.weighted_point;
+      if(dependency){
+        const note=document.createElement('p');note.textContent=`Computed weighted point from ${dependency.terms.map(t=>t.point).join(', ')}. Edit its sources or weighted constraint.`;row.append(note);
+        row.append(button('Highlight weighted point sources',()=>highlight([point.id,...dependency.terms.map(t=>t.point)],feature)));content.append(row);continue;
+      }
       for (const axis of ['x','y']) {
         const q = point[axis]?.literal;
         if (q?.unit === 'millimeter') row.append(input(`${axis.toUpperCase()} (mm)`, q.value, value => point[axis] = length(value), 'number'));
@@ -172,7 +177,7 @@ export function createSketchEditor({ host, request, instance, preview, applied, 
     canvasUp(event){if(!busy&&draft&&event.scene.feature===feature)return canvasTools.up(event).catch(error=>message(error.message));},
     canvasCancel(){generation++;canvasTools.cancel();if(dragInFlight)message('Drag canceled. Current draft retained.');},
     selectGeometry(id, scene) {if(busy || !draft || scene.feature !== feature)return false;if(profileControls?.pick(id)||shapeControls?.pick(id)||splineControls?.pick(id))return true;return constraintControls?.pick(id) ?? false;},
-    selectConstraint(annotation, scene) {if(busy || !draft || scene.feature !== feature)return;if(annotation?.detail?.constraint && !constraintControls?.selectAnnotation(annotation))message('This label has no matching supported constraint in the draft. Preview your changes or use the constraint list.');},
+    selectConstraint(annotation, scene) {if(busy || !draft || scene.feature !== feature)return;const link=annotation?.detail?.constraint?.weighted_point;if(link){highlight([link.point,...link.terms.map(t=>t.point)],feature);focusPoint(link.point);return;}if(annotation?.detail?.constraint && !constraintControls?.selectAnnotation(annotation))message('This label has no matching supported constraint in the draft. Preview your changes or use the constraint list.');},
     clearSelection() {cancelGeometryPicks();constraintControls?.clear();},
     selectPoint(id, scene) {
     if (busy || !draft || scene.feature !== feature) return;

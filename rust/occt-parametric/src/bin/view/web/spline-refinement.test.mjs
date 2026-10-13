@@ -6,7 +6,8 @@ const expr=(e,parameters)=>e.literal?.value??(e.parameter?parameters[e.parameter
 const fixture=()=>({points:[{id:'a',x:{parameter:'radius'},y:literal(0,'length'),fixed:true},{id:'b',x:{parameter:'radius'},y:{parameter:'radius'},fixed:true},{id:'c',x:literal(0,'length'),y:{parameter:'radius'},fixed:true}],splines:[{id:'curve',points:['a','b','c'],basis:{degree:2,knots:[0,1],multiplicities:[3,3],weights:[literal(1),{parameter:'weight'},literal(1)]}}],constraints:[{distance:{first:'a',second:'c',value:{parameter:'distance'}}}]});
 // Independent de Boor evaluation in homogeneous coordinates.
 function sample(def,u,parameters){const s=def.splines[0],b=s.basis,p=b.degree,U=b.knots.flatMap((v,i)=>Array(b.multiplicities[i]).fill(v)),k=u===U[s.points.length]?s.points.length-1:U.findLastIndex(v=>v<=u),d=[];
- for(let j=0;j<=p;j++){const i=k-p+j,point=def.points.find(t=>t.id===s.points[i]),w=b.weights?.length?expr(b.weights[i],parameters):1;d.push([expr(point.x,parameters)*w,expr(point.y,parameters)*w,w]);}
+ function position(id){const link=def.constraints?.find(c=>c.weighted_point?.point===id)?.weighted_point;if(link){const weights=link.terms.map(t=>expr(t.weight,parameters)),total=weights.reduce((a,b)=>a+b,0);return link.terms.reduce((xy,t,i)=>{const q=position(t.point);return xy.map((v,j)=>v+weights[i]/total*q[j]);},[0,0]);}const point=def.points.find(t=>t.id===id);return [expr(point.x,parameters),expr(point.y,parameters)];}
+ for(let j=0;j<=p;j++){const i=k-p+j,xy=position(s.points[i]),w=b.weights?.length?expr(b.weights[i],parameters):1;d.push([xy[0]*w,xy[1]*w,w]);}
  for(let r=1;r<=p;r++)for(let j=p;j>=r;j--){const i=k-p+j,a=(u-U[i])/(U[i+p-r+1]-U[i]);d[j]=d[j].map((v,c)=>(1-a)*d[j-1][c]+a*v);}
  return d[p].slice(0,2).map(v=>v/d[p][2]);}
 function sameCurve(before,after){for(const parameters of [{radius:10,weight:Math.SQRT1_2},{radius:15,weight:1.2},{radius:7,weight:.35}])for(let i=0;i<=100;i++){const s=before.splines[0],U=s.basis.knots.flatMap((k,j)=>Array(s.basis.multiplicities[j]).fill(k)),u=U[s.basis.degree]+(U[s.points.length]-U[s.basis.degree])*i/100,a=sample(before,u,parameters),b=sample(after,u,parameters);a.forEach((v,j)=>assert(Math.abs(v-b[j])<1e-10,`${u}: ${a} != ${b}`));}}
@@ -25,7 +26,7 @@ test('unsupported or invalid refinements leave the definition unchanged',()=>{
  for(const knot of [NaN,0,1,2])assert.throws(()=>refineSpline(before,'curve',{action:'insert_knot',knot}),/inside/);
  for(const degree of [2,2.5,26,NaN])assert.throws(()=>refineSpline(before,'curve',{action:'elevate_degree',degree}),/Elevated degree/);
  const inserted=refineSpline(refineSpline(before,'curve',{action:'insert_knot',knot:.5}),'curve',{action:'insert_knot',knot:.5});assert.throws(()=>refineSpline(inserted,'curve',{action:'insert_knot',knot:.5}),/multiplicity/);
- const free=fixture();free.points[1].fixed=false;assert.throws(()=>refineSpline(free,'curve',{action:'insert_knot',knot:.5}),/fixed authored/);
+ const free=fixture();free.points[1].fixed=false;const linked=refineSpline(free,'curve',{action:'insert_knot',knot:.5});assert.equal(linked.constraints.filter(c=>c.weighted_point).length,2);assert.equal(linked.points.at(-1).fixed,false);
  for(const mode of ['periodic','non_clamped']){const d=fixture();d.splines[0].basis[mode]=true;assert.throws(()=>refineSpline(d,'curve',{action:'insert_knot',knot:.5}),/clamped/);}
  assert.deepEqual(before,snapshot);
 });
@@ -41,4 +42,12 @@ test('native non-clamped transformation preserves active domain, rational driver
  const transformation={degree:2,knots:[0,1,2,2.5,3,4,5],multiplicities:[1,1,1,1,1,1,1],coefficients:[[1,0,0],[.25,.75,0],[0,.75,.25],[0,0,1]]};
  const next=refineSpline(before,'curve',{action:'insert_knot',knot:2.5,transformation});sameCurve(before,next);assert.deepEqual(next.splines[0].endpoints,before.splines[0].endpoints);assert.equal(next.splines[0].basis.non_clamped,true);
  const bad=structuredClone(transformation);bad.coefficients[1][0]=-.25;assert.throws(()=>refineSpline(before,'curve',{action:'insert_knot',knot:2.5,transformation:bad}),/inconsistent/);
+});
+
+test('chained free-pole refinement keeps original controls and generates live weighted links',()=>{
+ const before=fixture();before.points[1].fixed=false;const snapshot=structuredClone(before);let next=refineSpline(before,'curve',{action:'insert_knot',knot:.5});next=refineSpline(next,'curve',{action:'elevate_degree',degree:3});sameCurve(before,next);assert.deepEqual(before,snapshot);assert.deepEqual(next.points.slice(0,3),before.points);assert(next.constraints.filter(c=>c.weighted_point).length>2);assert(next.points.slice(3).every(p=>!p.fixed));
+});
+test('projected pole references remain live dependencies, with unknown names rejected',()=>{
+ const before=fixture();before.projections=[{id:'source',input:'block',kind:'line'}];before.splines[0].points=['source:start','b','source:end'];const next=refineSpline(before,'curve',{action:'insert_knot',knot:.5});assert.deepEqual(next.projections,before.projections);assert.equal(next.constraints.filter(c=>c.weighted_point).length,2);assert.deepEqual(next.constraints.at(-2).weighted_point.terms.map(t=>t.point),['source:start','b']);assert.deepEqual(next.constraints.at(-1).weighted_point.terms.map(t=>t.point),['b','source:end']);assert(next.points.slice(3).every(p=>!p.fixed));
+ before.splines[0].points[0]='missing';assert.throws(()=>refineSpline(before,'curve',{action:'insert_knot',knot:.5}),/known named/);
 });

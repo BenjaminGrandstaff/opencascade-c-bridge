@@ -20,6 +20,7 @@ pub(super) struct SketchProblem<'a> {
     native: Session,
     derivative_fallbacks: std::cell::Cell<usize>,
     spline_tangents: HashMap<(&'a str, &'a str), &'a str>,
+    weighted_points: HashMap<&'a str, Vec<(&'a str, f64)>>,
     pattern_links: Vec<patterns::PatternLink<'a>>,
 }
 
@@ -39,7 +40,44 @@ impl<'a> SketchProblem<'a> {
         variables: HashMap<&'a str, usize>,
         fixed: HashMap<&'a str, SketchPoint2>,
     ) -> Result<Self, ModelError> {
+        let mut weighted_points: HashMap<&str, Vec<(&str, f64)>> = HashMap::new();
+        for index in sketch.weighted_point_order()? {
+            let SketchConstraint::WeightedPoint { point, terms } = &sketch.constraints[index]
+            else {
+                unreachable!()
+            };
+            let weights = terms
+                .iter()
+                .map(|t| scalar(&t.weight, parameters, Dimension::Scalar))
+                .collect::<Result<Vec<_>, _>>()?;
+            let scale = weights.iter().copied().fold(0_f64, f64::max);
+            let sum = weights.iter().map(|w| w / scale).sum::<f64>();
+            let mut flattened = std::collections::BTreeMap::new();
+            for (term, weight) in terms.iter().zip(weights) {
+                let coefficient = (weight / scale) / sum;
+                if let Some(sources) = weighted_points.get(term.point.as_str()) {
+                    for &(source, value) in sources {
+                        *flattened.entry(source).or_insert(0.) += coefficient * value;
+                    }
+                } else {
+                    *flattened.entry(term.point.as_str()).or_insert(0.) += coefficient;
+                }
+            }
+            if flattened.len() > 4096 {
+                return Err(ModelError::new(
+                    "weighted point exceeds 4096 independent source references",
+                ));
+            }
+            weighted_points.insert(
+                point.as_str(),
+                flattened
+                    .into_iter()
+                    .filter(|&(_, v)| v != 0.)
+                    .collect::<Vec<_>>(),
+            );
+        }
         Ok(Self {
+            weighted_points,
             sketch,
             parameters,
             variables,
@@ -59,12 +97,38 @@ impl<'a> SketchProblem<'a> {
 }
 
 impl SketchProblem<'_> {
+    fn weighted_point(
+        &self,
+        terms: &[SketchWeightedPointTerm],
+        values: &[f64],
+    ) -> Result<SketchPoint2, ModelError> {
+        let weights = terms
+            .iter()
+            .map(|t| scalar(&t.weight, self.parameters, Dimension::Scalar))
+            .collect::<Result<Vec<_>, _>>()?;
+        let scale = weights.iter().copied().fold(0_f64, f64::max);
+        let sum = weights.iter().map(|w| w / scale).sum::<f64>();
+        let mut target = SketchPoint2 { x: 0., y: 0. };
+        for (term, weight) in terms.iter().zip(weights) {
+            let p = self.point(&term.point, values);
+            let coefficient = (weight / scale) / sum;
+            target.x += coefficient * p.x;
+            target.y += coefficient * p.y;
+        }
+        if !target.x.is_finite() || !target.y.is_finite() {
+            return Err(ModelError::new("weighted point target must be finite"));
+        }
+        Ok(target)
+    }
     fn equations(&self) -> impl Iterator<Item = Equation<'_>> {
         self.sketch
             .constraints
             .iter()
             .enumerate()
-            .filter(|(_, constraint)| !self.sketch.spline_tangency(constraint))
+            .filter(|(_, constraint)| {
+                !self.sketch.spline_tangency(constraint)
+                    && !matches!(constraint, SketchConstraint::WeightedPoint { .. })
+            })
             .map(|(index, c)| Equation::Constraint(index, c))
             .chain(self.sketch.arcs.iter().map(Equation::Arc))
             .chain(self.sketch.ellipses.iter().map(Equation::Ellipse))
@@ -789,6 +853,15 @@ impl SketchProblem<'_> {
     }
 
     fn point(&self, id: &str, values: &[f64]) -> SketchPoint2 {
+        if let Some(terms) = self.weighted_points.get(id) {
+            let mut p = SketchPoint2 { x: 0., y: 0. };
+            for &(source, weight) in terms {
+                let q = self.point(source, values);
+                p.x += weight * q.x;
+                p.y += weight * q.y;
+            }
+            return p;
+        }
         self.variables.get(id).map_or_else(
             || self.fixed[id],
             |index| SketchPoint2 {
@@ -1189,6 +1262,11 @@ impl SketchProblem<'_> {
                 let b = self.point(self.center_point(second), values);
                 residuals.extend([a.x - b.x, a.y - b.y]);
             }
+            SketchConstraint::WeightedPoint { point, terms } => {
+                let target = self.weighted_point(terms, values)?;
+                let p = self.point(point, values);
+                residuals.extend([p.x - target.x, p.y - target.y]);
+            }
             SketchConstraint::Midpoint { point, line } => {
                 let p = self.point(point, values);
                 let (a, b) = self.line(line, values);
@@ -1443,6 +1521,9 @@ impl SketchProblem<'_> {
             SketchConstraint::Concentric { first, second } => {
                 vec![self.center_point(first), self.center_point(second)]
             }
+            SketchConstraint::WeightedPoint { point, terms } => std::iter::once(point.as_str())
+                .chain(terms.iter().map(|t| t.point.as_str()))
+                .collect(),
             SketchConstraint::Midpoint { point, line }
             | SketchConstraint::PointLineDistance { point, line, .. } => {
                 let l = self.lines[line.as_str()];
@@ -1556,7 +1637,20 @@ impl SketchProblem<'_> {
     }
 
     fn point_columns(&self, points: Vec<&str>) -> Vec<usize> {
-        let mut columns = points
+        let mut source_points = Vec::new();
+        let mut pending = points;
+        let mut seen = HashSet::new();
+        while let Some(point) = pending.pop() {
+            if !seen.insert(point) {
+                continue;
+            }
+            if let Some(terms) = self.weighted_points.get(point) {
+                pending.extend(terms.iter().map(|&(p, _)| p));
+            } else {
+                source_points.push(point);
+            }
+        }
+        let mut columns = source_points
             .into_iter()
             .filter_map(|point| self.variables.get(point))
             .flat_map(|&index| [index, index + 1])
@@ -1836,7 +1930,21 @@ impl SketchDefinitionSolvingInternal for SketchDefinition {
         let mut values = Vec::new();
         let mut variables = HashMap::new();
         let mut fixed = HashMap::new();
+        let dependent = self
+            .constraints
+            .iter()
+            .filter_map(|c| {
+                if let SketchConstraint::WeightedPoint { point, .. } = c {
+                    Some(point.as_str())
+                } else {
+                    None
+                }
+            })
+            .collect::<HashSet<_>>();
         for point in &self.points {
+            if dependent.contains(point.id.as_str()) {
+                continue;
+            }
             let mut value = SketchPoint2 {
                 x: scalar(&point.x, parameters, Dimension::Length)?,
                 y: scalar(&point.y, parameters, Dimension::Length)?,
@@ -1954,26 +2062,16 @@ impl SketchDefinitionSolvingInternal for SketchDefinition {
         let jacobian = problem.jacobian_labeled(&values, Some((&mut sources, &mut structural)))?;
         let (conditioned, _) = equilibrated(&jacobian, true);
         let rank = conditioned.normal_matrix().rank(PIVOT_TOLERANCE);
-        let mut points = self
+        let points = self
             .points
             .iter()
-            .filter(|point| point.fixed)
-            .map(|point| (point.id.clone(), problem.fixed[point.id.as_str()]))
+            .map(|p| (p.id.clone(), problem.point(&p.id, &values)))
             .collect::<HashMap<_, _>>();
-        for (id, index) in &problem.variables {
-            points.insert(
-                (*id).to_owned(),
-                SketchPoint2 {
-                    x: values[*index],
-                    y: values[*index + 1],
-                },
-            );
-        }
         self.validate_curve_geometry(&points)?;
         let coordinates = self
             .points
             .iter()
-            .filter(|p| !p.fixed)
+            .filter(|p| problem.variables.contains_key(p.id.as_str()))
             .flat_map(|p| {
                 [
                     SketchFreeCoordinate {

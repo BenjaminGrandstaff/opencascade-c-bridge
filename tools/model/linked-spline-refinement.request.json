@@ -1,0 +1,501 @@
+{
+  "schema": "occb-model-view-v1",
+  "model": {
+    "schema_version": 146,
+    "family": {
+      "id": "linked-spline-refinement",
+      "version": 1,
+      "parameters": [
+        {
+          "id": "radius",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 10,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 5,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 20,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "middle_weight",
+          "parameter_type": {
+            "scalar": "scalar"
+          },
+          "default": {
+            "scalar": {
+              "value": 0.7071067811865476,
+              "dimension": "scalar",
+              "unit": null
+            }
+          },
+          "minimum": {
+            "value": 0.2,
+            "dimension": "scalar",
+            "unit": null
+          },
+          "maximum": {
+            "value": 2,
+            "dimension": "scalar",
+            "unit": null
+          }
+        },
+        {
+          "id": "height",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 8,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 2,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 30,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        }
+      ],
+      "derived_parameters": [],
+      "derived_vector_parameters": [],
+      "constraints": [],
+      "requirements": [
+        {
+          "id": "body-valid",
+          "version": 1,
+          "kind": "validation",
+          "priority": "required",
+          "statement": "equal-radius mounting plate is valid",
+          "rule": {
+            "shape_valid": {
+              "output": "body"
+            }
+          },
+          "provenance": "Illustrative dimensions",
+          "traces": [
+            {
+              "feature": "body"
+            }
+          ]
+        }
+      ],
+      "datums": [],
+      "features": [
+        {
+          "id": "profile",
+          "operation": {
+            "sketch_face": {
+              "sketch": {
+                "id": "rational-spline-cap",
+                "origin": {
+                  "literal": {
+                    "x": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    },
+                    "y": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                },
+                "x_axis": {
+                  "literal": {
+                    "x": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "y_axis": {
+                  "literal": {
+                    "x": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "points": [
+                  {
+                    "id": "a",
+                    "x": {
+                      "parameter": "radius"
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "b",
+                    "x": {
+                      "literal": {
+                        "value": 2,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 3,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": false
+                  },
+                  {
+                    "id": "c",
+                    "x": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "parameter": "radius"
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "curve_refined_1",
+                    "x": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": false
+                  },
+                  {
+                    "id": "curve_refined_2",
+                    "x": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": false
+                  }
+                ],
+                "lines": [
+                  {
+                    "id": "chord",
+                    "start": "c",
+                    "end": "a"
+                  }
+                ],
+                "circles": [],
+                "profile": [
+                  "curve",
+                  "chord"
+                ],
+                "constraints": [
+                  {
+                    "horizontal_distance": {
+                      "first": "a",
+                      "second": "b",
+                      "value": {
+                        "literal": {
+                          "value": 0,
+                          "dimension": "length",
+                          "unit": "millimeter"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "vertical_distance": {
+                      "first": "a",
+                      "second": "b",
+                      "value": {
+                        "parameter": "radius"
+                      }
+                    }
+                  },
+                  {
+                    "weighted_point": {
+                      "point": "curve_refined_1",
+                      "terms": [
+                        {
+                          "point": "a",
+                          "weight": {
+                            "literal": {
+                              "value": 0.3333333333333333,
+                              "dimension": "scalar",
+                              "unit": null
+                            }
+                          }
+                        },
+                        {
+                          "point": "b",
+                          "weight": {
+                            "multiply": [
+                              {
+                                "literal": {
+                                  "value": 0.6666666666666667,
+                                  "dimension": "scalar",
+                                  "unit": null
+                                }
+                              },
+                              {
+                                "parameter": "middle_weight"
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "weighted_point": {
+                      "point": "curve_refined_2",
+                      "terms": [
+                        {
+                          "point": "b",
+                          "weight": {
+                            "multiply": [
+                              {
+                                "literal": {
+                                  "value": 0.6666666666666666,
+                                  "dimension": "scalar",
+                                  "unit": null
+                                }
+                              },
+                              {
+                                "parameter": "middle_weight"
+                              }
+                            ]
+                          }
+                        },
+                        {
+                          "point": "c",
+                          "weight": {
+                            "literal": {
+                              "value": 0.33333333333333337,
+                              "dimension": "scalar",
+                              "unit": null
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                ],
+                "arcs": [],
+                "splines": [
+                  {
+                    "id": "curve",
+                    "points": [
+                      "a",
+                      "curve_refined_1",
+                      "curve_refined_2",
+                      "c"
+                    ],
+                    "basis": {
+                      "degree": 3,
+                      "knots": [
+                        0,
+                        1
+                      ],
+                      "multiplicities": [
+                        4,
+                        4
+                      ],
+                      "weights": [
+                        {
+                          "literal": {
+                            "value": 1,
+                            "dimension": "scalar",
+                            "unit": null
+                          }
+                        },
+                        {
+                          "add": [
+                            {
+                              "literal": {
+                                "value": 0.3333333333333333,
+                                "dimension": "scalar",
+                                "unit": null
+                              }
+                            },
+                            {
+                              "multiply": [
+                                {
+                                  "literal": {
+                                    "value": 0.6666666666666667,
+                                    "dimension": "scalar",
+                                    "unit": null
+                                  }
+                                },
+                                {
+                                  "parameter": "middle_weight"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "add": [
+                            {
+                              "multiply": [
+                                {
+                                  "literal": {
+                                    "value": 0.6666666666666666,
+                                    "dimension": "scalar",
+                                    "unit": null
+                                  }
+                                },
+                                {
+                                  "parameter": "middle_weight"
+                                }
+                              ]
+                            },
+                            {
+                              "literal": {
+                                "value": 0.33333333333333337,
+                                "dimension": "scalar",
+                                "unit": null
+                              }
+                            }
+                          ]
+                        },
+                        {
+                          "literal": {
+                            "value": 1,
+                            "dimension": "scalar",
+                            "unit": null
+                          }
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "body",
+          "operation": {
+            "extrude": {
+              "input": "profile",
+              "direction": {
+                "components": {
+                  "x": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "y": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "z": {
+                    "parameter": "height"
+                  }
+                }
+              },
+              "extent": "distance"
+            }
+          }
+        }
+      ]
+    },
+    "instances": [
+      {
+        "base": {
+          "id": "part",
+          "overrides": {},
+          "provenance": "Exact rational quadratic B-spline quarter-circle cap"
+        }
+      }
+    ]
+  },
+  "outputs": [
+    {
+      "instance": "part",
+      "output": "body"
+    },
+    {
+      "instance": "part",
+      "output": "profile"
+    }
+  ],
+  "sketches": true
+}

@@ -77,7 +77,7 @@ pub use sketch::{
     SketchProjectionJunction, SketchProjectionKind, SketchRegion, SketchRegionDiscovery,
     SketchRegionEdit, SketchShape, SketchSolution, SketchSolverReport, SketchSpline,
     SketchSplineCircleContact, SketchSplineEndpoints, SketchSupportPlanes, SketchTermination,
-    SketchText, SketchTextAlign, SketchTextOutlines, SketchTrimBound,
+    SketchText, SketchTextAlign, SketchTextOutlines, SketchTrimBound, SketchWeightedPointTerm,
 };
 pub use solve::PlacementSolution;
 

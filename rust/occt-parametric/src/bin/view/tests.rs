@@ -2971,6 +2971,7 @@ fn exact_rational_refinement_preserves_native_solid_volume_across_parameters() {
     for source in [
         include_str!("../../../../../tools/model/rational-spline-cap.request.json"),
         include_str!("../../../../../tools/model/rational-spline-refinement.request.json"),
+        include_str!("../../../../../tools/model/linked-spline-refinement.request.json"),
     ] {
         let mut cases = Vec::new();
         for (radius, weight) in [
@@ -3006,8 +3007,10 @@ fn exact_rational_refinement_preserves_native_solid_volume_across_parameters() {
         }
         volumes.push(cases);
     }
-    for (original, refined) in volumes[0].iter().zip(&volumes[1]) {
-        assert!((original - refined).abs() < 1e-7, "{original} != {refined}");
+    for cases in &volumes[1..] {
+        for (original, refined) in volumes[0].iter().zip(cases) {
+            assert!((original - refined).abs() < 1e-7, "{original} != {refined}");
+        }
     }
 }
 
@@ -3088,4 +3091,69 @@ fn native_spline_refinement_route_is_read_only_versioned_and_bounded() {
             document.to_json_pretty().unwrap()
         );
     }
+}
+
+#[test]
+fn weighted_point_drafts_follow_solver_controls_and_reject_invalid_links_without_mutation() {
+    let directory = Directory::new();
+    let request: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../tools/model/linked-spline-refinement.request.json"
+    ))
+    .unwrap();
+    let document = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+    let model = PathBuf::from(directory.model(&document));
+    let mut studio = serve::Studio::load(&model, Some("body".into())).unwrap();
+    let baseline = get(&mut studio, "/api/sketches").1["sketches"][0]["definition"].clone();
+    let state = get(&mut studio, "/api/state").1;
+    for cycle in [false, true] {
+        let mut invalid = baseline.clone();
+        if cycle {
+            let target = invalid["constraints"][2]["weighted_point"]["point"].clone();
+            invalid["constraints"][2]["weighted_point"]["terms"][0]["point"] = target;
+        } else {
+            invalid["constraints"][2]["weighted_point"]["terms"][0]["weight"] =
+                json!({"literal":{"value":0.0,"dimension":"scalar","unit":null}});
+        }
+        assert_eq!(
+            edit_definition(&mut studio, "profile", invalid, true).0,
+            422
+        );
+        assert_eq!(get(&mut studio, "/api/state").1, state);
+    }
+    let version = get(&mut studio, "/api/sketches").1["version"].clone();
+    let target = baseline["splines"][0]["points"][1].clone();
+    let response=studio.handle("POST","/api/sketch-drag",json!({"version":version,"instance":"part","feature":"profile","expected":baseline,"definition":baseline,"point":target,"target":[0.,0.]}).to_string().as_bytes());
+    assert_eq!(response.status, 422);
+    assert_eq!(get(&mut studio, "/api/state").1, state);
+    let mut draft = baseline.clone();
+    draft["constraints"][1]["vertical_distance"]["value"] =
+        json!({"literal":{"value":12.0,"dimension":"length","unit":"millimeter"}});
+    let (status, preview) = edit_definition(&mut studio, "profile", draft.clone(), false);
+    assert_eq!(status, 200, "{preview}");
+    assert_eq!(preview["can_apply"], true, "{preview}");
+    assert_eq!(get(&mut studio, "/api/state").1, state);
+    assert_eq!(edit_definition(&mut studio, "profile", draft, true).0, 200);
+    let annotations = get(&mut studio, "/api/annotations?id=part").1;
+    let scene = annotations["scenes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["kind"] == "sketch")
+        .unwrap();
+    assert_eq!(scene["solver"]["free_degrees"], 0);
+    assert!((scene["points"]["b"][1].as_f64().unwrap() - 12.).abs() < 1e-9);
+    let name = target.as_str().unwrap();
+    let weight = std::f64::consts::FRAC_1_SQRT_2;
+    assert!(
+        (scene["points"][name][1].as_f64().unwrap() - 24. * weight / (1. + 2. * weight)).abs()
+            < 1e-9
+    );
+    assert!(
+        scene["annotations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|a| a["label"] == "WEIGHTED")
+    );
+    assert_eq!(history(&mut studio, "undo")["dirty"], false);
 }
