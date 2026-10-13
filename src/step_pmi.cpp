@@ -28,7 +28,16 @@
 #include <StepBasic_SiUnitAndLengthUnit.hxx>
 #include <StepData_StepModel.hxx>
 #include <StepDimTol_Datum.hxx>
+#include <StepBasic_LengthMeasureWithUnit.hxx>
+#include <StepBasic_MeasureValueMember.hxx>
+#include <StepBasic_PlaneAngleMeasureWithUnit.hxx>
 #include <StepDimTol_GeometricTolerance.hxx>
+#include <StepDimTol_GeometricToleranceTarget.hxx>
+#include <StepDimTol_ProjectedZoneDefinition.hxx>
+#include <StepDimTol_RunoutZoneDefinition.hxx>
+#include <StepDimTol_RunoutZoneOrientation.hxx>
+#include <StepDimTol_ToleranceZone.hxx>
+#include <StepRepr_HArray1OfShapeAspect.hxx>
 #include <StepGeom_Axis2Placement.hxx>
 #include <StepGeom_Axis2Placement3d.hxx>
 #include <StepGeom_CartesianPoint.hxx>
@@ -739,7 +748,9 @@ uint32_t tolerance_losses(
     }
     const int zone = tolerance.diameter == 1 ? XCAFDimTolObjects_GeomToleranceTypeValue_Diameter
                                              : XCAFDimTolObjects_GeomToleranceTypeValue_None;
-    if (read.type_of_value != zone) {
+    const bool projected = tolerance.projected_mm > 0.0;
+    const bool read_projected = read.zone == XCAFDimTolObjects_GeomToleranceZoneModif_Projected;
+    if (read.type_of_value != zone || (!read_projected && read.zone != XCAFDimTolObjects_GeomToleranceZoneModif_None)) {
         losses |= OCCT_BRIDGE_PMI_LOST_ZONE;
     }
     const int material = tolerance.material == OCCT_BRIDGE_MATERIAL_MMC ? XCAFDimTolObjects_GeomToleranceMatReqModif_M
@@ -751,8 +762,6 @@ uint32_t tolerance_losses(
     if (read.modifiers != tolerance_modifiers(tolerance.modifiers)) {
         losses |= OCCT_BRIDGE_PMI_LOST_MODIFIERS;
     }
-    const bool projected = tolerance.projected_mm > 0.0;
-    const bool read_projected = read.zone == XCAFDimTolObjects_GeomToleranceZoneModif_Projected;
     if (projected != read_projected || (projected && !close(read.zone_value, tolerance.projected_mm))) {
         losses |= OCCT_BRIDGE_PMI_LOST_PROJECTED;
     }
@@ -1209,6 +1218,7 @@ void finish_pmi(
     Handle(StepRepr_RepresentationContext) context;
     std::vector<Handle(StepVisual_DraughtingModel)> drawings;
     std::vector<Handle(StepDimTol_GeometricTolerance)> tolerances;
+    std::vector<Handle(StepDimTol_RunoutZoneDefinition)> runouts;
     std::map<std::string, Handle(StepVisual_DraughtingCallout)> callouts;
     for (int index = 1; index <= model->NbEntities(); ++index) {
         const Handle(Standard_Transient)& entity = model->Value(index);
@@ -1222,11 +1232,14 @@ void finish_pmi(
             tolerances.push_back(tolerance);
         } else if (const auto callout = Handle(StepVisual_DraughtingCallout)::DownCast(entity); !callout.IsNull()) {
             callouts.emplace(name_of(callout->Name()), callout);
+        } else if (const auto runout = Handle(StepDimTol_RunoutZoneDefinition)::DownCast(entity); !runout.IsNull()) {
+            runouts.push_back(runout);
         }
     }
     if (context.IsNull()) {
         return;
     }
+    const Handle(StepBasic_NamedUnit) unit = length_unit(context);
     // OCCT 7.9 takes the presentation model's context and the tolerance
     // values' unit from the first size dimension it writes: without one the
     // context is missing, which fails the write, and values are in metres.
@@ -1235,14 +1248,71 @@ void finish_pmi(
             drawing->SetContextOfItems(context);
         }
     }
-    if (const Handle(StepBasic_NamedUnit) unit = length_unit(context); !unit.IsNull()) {
-        StepBasic_Unit length;
+    StepBasic_Unit length;
+    if (!unit.IsNull()) {
         length.SetValue(unit);
         for (const auto& tolerance : tolerances) {
             if (!tolerance->Magnitude().IsNull()) {
                 tolerance->Magnitude()->SetUnitComponent(length);
             }
         }
+    }
+    // OCCT 7.9 writes every diameter zone with a runout zone definition whose
+    // angle is the zone modifier's value, and never a projected zone. None
+    // of these tolerances has a runout zone, so each such definition goes:
+    // a projected tolerance's (its angle is the projected height) becomes a
+    // projected zone definition bounded by the toleranced feature.
+    if (!runouts.empty() && !unit.IsNull()) {
+        std::set<const Standard_Transient*> removed;
+        std::vector<Handle(StepDimTol_ProjectedZoneDefinition)> projected;
+        for (const auto& runout : runouts) {
+            removed.insert(runout.get());
+            const Handle(StepDimTol_RunoutZoneOrientation) orientation = runout->Orientation();
+            if (orientation.IsNull() || orientation->Angle().IsNull()) {
+                continue;
+            }
+            removed.insert(orientation.get());
+            removed.insert(orientation->Angle().get());
+            const double height = orientation->Angle()->ValueComponent();
+            const Handle(StepDimTol_ToleranceZone) zone = runout->Zone();
+            if (!(height > 0.0) || zone.IsNull() || zone->NbDefiningTolerances() == 0) {
+                continue;
+            }
+            const auto tolerance = zone->DefiningToleranceValue(1).GeometricTolerance();
+            Handle(StepRepr_ShapeAspect) feature =
+                tolerance.IsNull() ? Handle(StepRepr_ShapeAspect)() : tolerance->TolerancedShapeAspect().ShapeAspect();
+            if (feature.IsNull()) {
+                feature = zone;
+            }
+            Handle(StepRepr_HArray1OfShapeAspect) boundaries = new StepRepr_HArray1OfShapeAspect(1, 1);
+            boundaries->SetValue(1, feature);
+            Handle(StepBasic_MeasureValueMember) value = new StepBasic_MeasureValueMember;
+            value->SetName("LENGTH_MEASURE");
+            value->SetReal(height);
+            Handle(StepBasic_LengthMeasureWithUnit) measure = new StepBasic_LengthMeasureWithUnit;
+            measure->Init(value, length);
+            Handle(StepDimTol_ProjectedZoneDefinition) definition = new StepDimTol_ProjectedZoneDefinition;
+            definition->Init(zone, boundaries, feature, measure);
+            projected.push_back(definition);
+        }
+        std::vector<Handle(Standard_Transient)> kept;
+        kept.reserve(static_cast<size_t>(model->NbEntities()));
+        for (int index = 1; index <= model->NbEntities(); ++index) {
+            if (removed.count(model->Value(index).get()) == 0) {
+                kept.push_back(model->Value(index));
+            }
+        }
+        model->ClearEntities();
+        for (const auto& entity : kept) {
+            model->AddEntity(entity);
+        }
+        // OCCT's reference walk skips a projected zone's length, so it is
+        // added on its own.
+        for (const auto& definition : projected) {
+            model->AddWithRefs(definition->ProjectionLength());
+            model->AddWithRefs(definition);
+        }
+        writer.Writer().WS()->ComputeGraph(Standard_True);
     }
     if (pmi.view_count == 0) {
         return;

@@ -19,6 +19,8 @@
 
 #include <cmath>
 #include <cstdio>
+#include <fstream>
+#include <iterator>
 #include <set>
 #include <string>
 #include <vector>
@@ -255,8 +257,7 @@ PlateFaces plate_faces(occt_bridge_session_t* session, occt_bridge_shape_id_t pl
 }
 
 // A plate with two holes and a pin with a datum of its own, written with
-// datums, tolerances and sizes that all read back, except the projected zone
-// OCCT's AP242 writer does not write.
+// datums, tolerances and sizes that all read back.
 void pmi(occt_bridge_session_t* session, const std::string& file) {
     occt_bridge_shape_id_t box = 0;
     occt_bridge_shape_id_t first_hole = 0;
@@ -364,7 +365,20 @@ void pmi(occt_bridge_session_t* session, const std::string& file) {
     }
     check(tolerance_losses[0] == 0 && tolerance_losses[1] == 0 && tolerance_losses[3] == 0
             && tolerance_losses[4] == 0, "tolerances read back");
-    check(tolerance_losses[2] == OCCT_BRIDGE_PMI_LOST_PROJECTED, "only the projected zone is lost");
+    check(tolerance_losses[2] == 0, "the projected zone reads back");
+    {
+        // One projected zone, and none of the runout zones OCCT's writer
+        // gives every diameter zone.
+        std::ifstream stream(file);
+        const std::string text((std::istreambuf_iterator<char>(stream)), std::istreambuf_iterator<char>());
+        size_t projected = 0;
+        for (size_t at = text.find("PROJECTED_ZONE_DEFINITION("); at != std::string::npos;
+             at = text.find("PROJECTED_ZONE_DEFINITION(", at + 1)) {
+            ++projected;
+        }
+        check(projected == 1 && text.find("RUNOUT_ZONE_DEFINITION(") == std::string::npos,
+            "one projected zone and no runout zones written");
+    }
     check(size_losses[0] == 0 && size_losses[1] == 0, "sizes read back");
     check(view_losses[0] == 0 && view_losses[1] == 0, "views read back with their cameras");
     check(top_datums_lost[0] == 0 && top_datums_lost[1] == 0 && top_tolerances_lost[0] == 0

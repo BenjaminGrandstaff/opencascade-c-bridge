@@ -8,7 +8,7 @@ tracks status and order.
 
 | Layer | Version | State |
 |---|---|---|
-| C ABI (`src/`, `include/`) | ABI 74 | Stable; exact version match required |
+| C ABI (`src/`, `include/`) | ABI 73 | Stable; exact version match required |
 | `occt-types` (shared value types) | — | No native dependency |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI; re-exports `occt-types` |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
@@ -17,7 +17,7 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 6/6, bridge 160 + first-use integration 1 (+1 doc test), recipes 3, parametric core 41 + kernel 710 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 8 + view command 69 + viewer Node 151 + branch command 2 + model command 90, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 157 + first-use integration 1 (+1 doc test), recipes 3, parametric core 36 + kernel 710 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 8 + view command 56 + viewer Node 114 + branch command 2 + model command 90, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -26,6 +26,15 @@ tracks status and order.
 
 ## Done
 
+- Projected tolerance zones in AP242 exchange (schema 145 and ABI 71
+  unchanged). OCCT 7.9's writer drops projected zones. It also gives every
+  diameter zone a runout zone definition, which its reader then reports as
+  a runout modifier on position and other diameter-zone controls. The bridge
+  now replaces each of those definitions before writing: a projected zone
+  definition carrying the height for an Ⓟ control, and nothing otherwise.
+  Verification counts a stray zone modifier as a lost zone. Ⓟ controls now
+  read back intact. See
+  [Semantic PMI](docs/DRAWINGS.md#semantic-pmi-on-persistent-faces-schema-144-abi-70).
 - Linked sketch pattern authoring (schema 149, ABI 74 unchanged): typed mirror,
   linear and circular recipes support multiple authored/generated source curves,
   shared mirror points, count, spacing/angle drivers and retained formulas.
@@ -2564,13 +2573,12 @@ scopes and inspected repo capabilities, not a full conformity audit.
    feature, dynamic profile and translation modifiers (schema 143), and
    measurement uncertainty simulated from the measurement itself.
 3. **3D manufacturing annotations and exchange** — [Y14.41](https://www.asme.org/codes-standards/find-codes-standards/y14-41-digital-product-definition-data-practices):
-   dataset authority and revision rules, section and clipped annotation
-   views, and exchange of projected zones, which OCCT's AP242 writer drops.
-   Drawing GD&T attached to persistent faces exports as verified semantic
+   dataset authority and revision rules, and section and clipped
+   annotation views. Drawing GD&T attached to persistent faces exports as verified semantic
    AP242 PMI (schema 144, ABI 70); continuous feature, dynamic profile,
    unequal zones and composite relations are reported as unrepresented.
    Annotation views export as verified saved views of 3D presentations
-   (schema 145, ABI 71).
+   (schema 145, ABI 71), and projected zones now exchange too.
 4. **Standards-backed thread specifications** — [B1.1](https://www.asme.org/codes-standards/find-codes-standards/b1-1-unified-inch-screw-threads-un-unr-thread-form):
    thread limits/classes, fit validation and standard representations. Live drawing
    callouts now show recorded intent, and basic-profile thread geometry can be

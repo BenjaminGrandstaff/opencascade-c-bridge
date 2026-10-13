@@ -278,11 +278,9 @@ fn drawing_gdt_exports_as_verified_ap242_pmi_on_its_faces() {
     let lower = item(&report, "first", 1);
     assert_eq!(lower.unrepresented, vec![PmiProperty::CompositeRelation]);
     assert!(lower.lost.is_empty(), "{lower:?}");
-    // OCCT's AP242 writer drops projected zones; the read-back shows it.
-    assert_eq!(
-        item(&report, "projected", 0).lost,
-        vec![PmiProperty::ProjectedZone]
-    );
+    // The projected zone, which OCCT's writer drops, is written by the
+    // bridge and reads back.
+    assert_eq!(item(&report, "projected", 0).lost, Vec::new());
     // The bore diameter and the width W, each read back.
     let sizes: Vec<_> = report
         .items
@@ -298,23 +296,12 @@ fn drawing_gdt_exports_as_verified_ap242_pmi_on_its_faces() {
             reason: "no persistent faces".into(),
         }]
     );
-    assert!(!report.verified() && !report.complete());
-    std::fs::remove_file(&path).unwrap();
-
-    // Without the projected zone, every exported item reads back.
-    let mut clean = page.clone();
-    clean.feature_control_frames.retain(|f| f.id != "projected");
-    let report = clean
-        .export_step_pmi(
-            &graph,
-            &session,
-            &generation,
-            &path,
-            "plate",
-            &OutputSet::AllWithOutput("body".into()),
-        )
-        .unwrap();
-    assert!(report.verified(), "{report:#?}");
+    // Every exported item reads back; the skipped angularity leaves it
+    // incomplete.
+    assert!(report.verified() && !report.complete(), "{report:#?}");
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert_eq!(text.matches("PROJECTED_ZONE_DEFINITION(").count(), 1);
+    assert!(!text.contains("RUNOUT_ZONE_DEFINITION("));
     std::fs::remove_file(&path).unwrap();
 }
 

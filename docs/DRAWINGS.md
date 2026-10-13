@@ -1620,8 +1620,14 @@ labels only for datums that tolerances reference.
 
 OCCT 7.9 limits:
 
-- Its writer drops projected tolerance zones, so a control with Ⓟ reports
-  `projected_zone` lost.
+- Its writer drops projected tolerance zones. It also writes every
+  diameter zone with a runout zone definition whose angle is the zone
+  modifier's value, which its reader turns into a runout modifier. Before
+  writing, the bridge replaces each such definition: an Ⓟ control's
+  becomes a projected zone definition with its height in the part's length
+  unit, bounded by the toleranced feature, and the others are removed. A
+  zone modifier read back on a control that has none counts as `zone`
+  lost.
 - Its writer shares one `DATUM` entity per label across the whole file, so a
   label may name only one datum in an export. Labels are already unique
   within a drawing.
