@@ -1653,6 +1653,28 @@ integration of the exact curve (1e-6), and rejected `rho` and points. 500
 
 ## Trimming between points and crossings (schema 126 / ABI 64)
 
+The live model studio exposes these operations under **Edit sketch geometry →
+Load sketch draft → Trim & offset**. Choose a curve, then choose each bound as
+its start/end, a named point, or an exact crossing with another curve. A crossing
+uses a nearby named hint point to select the intended intersection. Trimming
+keeps the directed span; it does not remove the clicked span automatically.
+Parameter-fraction trimming is available separately.
+
+**Offset outer profile** accepts signed millimeters or a length parameter, with
+round or intersection joins. Existing formulas are retained when editing an
+operation until explicitly replaced. The list supports editing and removing
+saved trims and offsets; corner treatments remain in place. New trims are
+inserted before corner treatments and offsets. These controls edit the main
+outer profile; additional regions, hole boundaries, and other advanced edits
+remain available in the full definition.
+
+All edits remain in a local draft. **Preview draft** regenerates the native
+profile and dependent features; **Apply verified draft** repeats regeneration
+and required checks against the current model. A broken contour or invalid
+offset cannot replace the accepted model. Source points and constraints remain
+authored, and applied changes participate in studio undo/redo and Save. These
+controls use the existing model format.
+
 `trim_between` keeps the part of a profile entity from one bound to another
 along the entity's direction:
 

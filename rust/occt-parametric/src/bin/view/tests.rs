@@ -2356,3 +2356,101 @@ fn picked_curved_edges_import_exact_rational_splines() {
         "{ring}"
     );
 }
+
+#[test]
+fn profile_offsets_preview_apply_and_reject_broken_trim_without_mutation() {
+    let directory = Directory::new();
+    let mut value = serde_json::to_value(sketch_block_document()).unwrap();
+    value["instances"][0]["base"]["id"] = json!("part");
+    let document = ModelDocument::from_json(&value.to_string()).unwrap();
+    let model = PathBuf::from(directory.model(&document));
+    let mut studio = serve::Studio::load(&model, Some("body".into())).unwrap();
+    let baseline = get(&mut studio, "/api/sketches").1["sketches"][0]["definition"].clone();
+    let state = get(&mut studio, "/api/state").1;
+    let original_mesh = studio.handle("GET", "/api/model.gltf", b"").body;
+    let mut draft = baseline.clone();
+    draft["profile_operations"] = json!([{"offset":{"distance":{"literal":{"value":2,"dimension":"length","unit":"millimeter"}},"join":"intersection"}}]);
+    let (status, preview) = edit_definition(&mut studio, "profile", draft.clone(), false);
+    assert_eq!(status, 200, "{preview}");
+    assert_eq!(preview["can_apply"], true, "{preview}");
+    assert_eq!(get(&mut studio, "/api/state").1, state);
+    assert_eq!(
+        studio.handle("GET", "/api/model.gltf", b"").body,
+        original_mesh
+    );
+    let (status, result) = edit_definition(&mut studio, "profile", draft.clone(), true);
+    assert_eq!(status, 200, "{result}");
+    assert_ne!(
+        studio.handle("GET", "/api/model.gltf", b"").body,
+        original_mesh
+    );
+    let accepted = get(&mut studio, "/api/sketches").1["sketches"][0]["definition"].clone();
+    assert_eq!(accepted["points"], baseline["points"]);
+    assert_eq!(accepted["constraints"], baseline["constraints"]);
+    let entity = baseline["profile"][0].as_str().unwrap();
+    draft["profile_operations"] = json!([{"trim":{"entity":entity,"first":{"literal":{"value":0.2,"dimension":"scalar","unit":null}},"last":{"literal":{"value":0.8,"dimension":"scalar","unit":null}}}}]);
+    let accepted_state = get(&mut studio, "/api/state").1;
+    let accepted_mesh = studio.handle("GET", "/api/model.gltf", b"").body;
+    let (status, result) = edit_definition(&mut studio, "profile", draft, true);
+    assert_eq!(status, 422, "{result}");
+    assert_eq!(get(&mut studio, "/api/state").1, accepted_state);
+    assert_eq!(
+        studio.handle("GET", "/api/model.gltf", b"").body,
+        accepted_mesh
+    );
+    assert_eq!(history(&mut studio, "undo")["dirty"], false);
+    assert_eq!(
+        studio.handle("GET", "/api/model.gltf", b"").body,
+        original_mesh
+    );
+    assert_eq!(history(&mut studio, "redo")["dirty"], true);
+}
+
+#[test]
+fn exact_crossing_trim_edits_regenerate_keyhole_solid_and_keep_constraints() {
+    let directory = Directory::new();
+    let mut request: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../tools/model/keyhole-tag.request.json"
+    ))
+    .unwrap();
+    request["model"]["instances"][0]["base"]["id"] = json!("part");
+    let document = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+    let model = PathBuf::from(directory.model(&document));
+    let mut studio = serve::Studio::load(&model, None).unwrap();
+    let sketch = get(&mut studio, "/api/sketches").1["sketches"][0].clone();
+    let mut draft = sketch["definition"].clone();
+    // The existing named point at the leg's start is also an exact trim bound.
+    let entity = draft["profile_operations"][0]["trim_between"]["entity"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let start = draft["lines"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|l| l["id"] == entity)
+        .unwrap()["start"]
+        .clone();
+    draft["profile_operations"][0]["trim_between"]["from"] = json!({"point":{"point":start}});
+    let (status, preview) = edit_definition(
+        &mut studio,
+        sketch["feature"].as_str().unwrap(),
+        draft.clone(),
+        false,
+    );
+    assert_eq!(status, 200, "{preview}");
+    assert_eq!(preview["can_apply"], true, "{preview}");
+    let (status, result) = edit_definition(
+        &mut studio,
+        sketch["feature"].as_str().unwrap(),
+        draft,
+        true,
+    );
+    assert_eq!(status, 200, "{result}");
+    let applied = get(&mut studio, "/api/sketches").1["sketches"][0]["definition"].clone();
+    assert_eq!(applied["constraints"], sketch["definition"]["constraints"]);
+    assert_eq!(
+        applied["profile_operations"][1]["trim_between"],
+        sketch["definition"]["profile_operations"][1]["trim_between"]
+    );
+}

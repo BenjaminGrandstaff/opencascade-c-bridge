@@ -645,6 +645,11 @@ impl Studio {
             ("GET", "/sketch-links.mjs") => {
                 Response::text(200, "text/javascript", include_str!("web/sketch-links.mjs"))
             }
+            ("GET", "/profile-controls.mjs") => Response::text(
+                200,
+                "text/javascript",
+                include_str!("web/profile-controls.mjs"),
+            ),
             ("POST", "/api/sketch-source-view") => match self.sketch_source_view(body) {
                 Ok(data) => Response::json(200, &data),
                 Err(error) => Response::error(422, &error),
