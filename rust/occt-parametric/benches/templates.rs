@@ -578,6 +578,7 @@ fn main() {
     }
     gdt.feature_control_frames = (0..10_000)
         .map(|i| DrawingFeatureControlFrame {
+            modifiers: Vec::new(),
             projected: None,
             tangent_plane: false,
             pattern: None,
@@ -605,16 +606,19 @@ fn main() {
             feature_of_size: true,
             datums: vec![
                 DrawingDatumReference {
+                    translation: false,
                     datum_feature: "primary".into(),
                     boundary: DatumMaterialBoundary::Regardless,
                     common_with: Vec::new(),
                 },
                 DrawingDatumReference {
+                    translation: false,
                     datum_feature: "secondary".into(),
                     boundary: DatumMaterialBoundary::Maximum,
                     common_with: Vec::new(),
                 },
                 DrawingDatumReference {
+                    translation: false,
                     datum_feature: "tertiary".into(),
                     boundary: DatumMaterialBoundary::Least,
                     common_with: Vec::new(),
@@ -738,6 +742,7 @@ fn main() {
             datums: references
                 .iter()
                 .map(|r| DrawingDatumReference {
+                    translation: false,
                     datum_feature: r.datum_feature.clone(),
                     boundary: DatumMaterialBoundary::Regardless,
                     common_with: Vec::new(),

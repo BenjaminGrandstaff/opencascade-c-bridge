@@ -89,7 +89,9 @@ pub(super) struct ShiftSpace {
     /// Largest radial translation of a secondary axis datum.
     pub disk: Option<f64>,
     /// In-plane unit directions along which the frame cannot translate.
-    pub fixed: Vec<[f64; 2]>,
+    /// Each with the translation along it the frame must take (nonzero
+    /// only where a datum locates the frame at its measured place).
+    pub fixed: Vec<([f64; 2], f64)>,
     pub rotation_fixed: bool,
     pub widths: Vec<WidthBoundary>,
     /// Largest translation of the frame origin the boundaries allow with the
@@ -215,9 +217,13 @@ fn motion_lp(members: &[PatternMember], space: &ShiftSpace) -> Motion {
         for sign in [1.0, -1.0] {
             push([0.0, 0.0, sign, 0.0, 0.0, 0.0, 0.0], step);
         }
-        for f in &space.fixed {
+        for (f, target) in &space.fixed {
+            let along = f[0] * motion.t[0] + f[1] * motion.t[1];
             for sign in [1.0, -1.0] {
-                push([sign * f[0], sign * f[1], 0.0, 0.0, 0.0, 0.0, 0.0], 0.0);
+                push(
+                    [sign * f[0], sign * f[1], 0.0, 0.0, 0.0, 0.0, 0.0],
+                    sign * (target - along),
+                );
             }
         }
         if let Some(limit) = space.disk {
@@ -654,9 +660,15 @@ impl Context<'_, '_> {
         measured: &DrawingDatumCoordinateFrame,
         nominal: &DrawingDatumCoordinateFrame,
     ) -> Result<Rc<ShiftSpace>, String> {
-        let key: SimulatorKey = datums
+        let key: SpaceKey = datums
             .iter()
-            .map(|d| (d.members().map(str::to_owned).collect(), d.boundary))
+            .map(|d| {
+                (
+                    d.members().map(str::to_owned).collect(),
+                    d.boundary,
+                    d.translation,
+                )
+            })
             .collect();
         if let Some(cached) = self.spaces.get(&key) {
             return cached.clone();
@@ -682,8 +694,41 @@ impl Context<'_, '_> {
         let in_plane = |n: Vec3| [dot(n, measured.x_axis), dot(n, measured.y_axis)];
         let mut space = ShiftSpace::default();
         let mut locating = Vec::new();
+        // A secondary hole or pin freed by ▷ no longer locates the frame; a
+        // tertiary face then locates it along its normal.
+        let mut free_secondary = false;
         for (i, (datum, simulator)) in datums.iter().zip(&simulators).enumerate().skip(1) {
             let shifts = datum.boundary != DatumMaterialBoundary::Regardless;
+            // ▷ frees a boundary from its basic location. At RFS the
+            // simulators already engage the feature where it is.
+            if shifts && datum.translation {
+                match simulator {
+                    // A secondary hole or pin no longer locates the frame.
+                    Simulator::Axis(..) if i == 1 => {
+                        free_secondary = true;
+                        continue;
+                    }
+                    // A tertiary width after a fixed secondary no longer
+                    // locates along its normal.
+                    Simulator::Plane(_, _, Some(_))
+                        if i == 2 && !axis_frame && space.rotation_fixed =>
+                    {
+                        continue;
+                    }
+                    _ => {
+                        return Err(
+                            "a translation modifier is evaluated on a secondary hole or pin, or a tertiary width after a fixed secondary, at a material boundary"
+                                .into(),
+                        );
+                    }
+                }
+            }
+            if free_secondary && (shifts || matches!(simulator, Simulator::Axis(..))) {
+                return Err(
+                    "after a translated secondary hole or pin, a tertiary face regardless of material boundary locates the frame"
+                        .into(),
+                );
+            }
             match simulator {
                 Simulator::Axis(origin, ..) if i == 2 => {
                     // A tertiary hole or pin clocks the plane-axis frame.
@@ -699,7 +744,7 @@ impl Context<'_, '_> {
                     space.disk = Some(*limit);
                     space.limit += limit;
                 }
-                Simulator::Axis(..) => space.fixed.extend([[1.0, 0.0], [0.0, 1.0]]),
+                Simulator::Axis(..) => space.fixed.extend([([1.0, 0.0], 0.0), ([0.0, 1.0], 0.0)]),
                 Simulator::Plane(point, normal, width) => {
                     // Shift moves the frame within the primary's plane; a
                     // datum tilted out of square with it would also move
@@ -719,7 +764,19 @@ impl Context<'_, '_> {
                             return Err("after a secondary width datum at a material boundary, the tertiary datum must be a width at a material boundary".into());
                         }
                         if !axis_frame {
-                            space.fixed.push(n);
+                            space.fixed.push((n, 0.0));
+                        } else if free_secondary {
+                            // The face's departure from its basic place
+                            // along its normal.
+                            let (origin, _) = self.nominal_datum(&datum.datum_feature)?;
+                            let along = |frame: &DrawingDatumCoordinateFrame, p: Vec3| {
+                                frame
+                                    .coordinates_mm(p)
+                                    .map(|c| n[0] * c.x + n[1] * c.y)
+                                    .map_err(|e| e.to_string())
+                            };
+                            let departure = along(measured, *point)? - along(nominal, origin)?;
+                            space.fixed.push((n, departure));
                         }
                         space.rotation_fixed |= axis_frame || i == 1;
                         continue;
@@ -798,6 +855,12 @@ impl Context<'_, '_> {
             space.turn_free = true;
         }
         for (datum, simulator) in datums.iter().zip(simulators).skip(1) {
+            if datum.translation && datum.boundary != DatumMaterialBoundary::Regardless {
+                return Err(
+                    "a translation modifier is not evaluated on datums after a primary datum axis"
+                        .into(),
+                );
+            }
             let (normal, width) = match simulator {
                 Simulator::Plane(_, normal, width) => (normal, width),
                 Simulator::Axis(origin, ..) => {

@@ -720,7 +720,7 @@ material modifiers, both exports, shared regeneration and native handle cleanup.
 Feature-of-size flags and geometric controls are manufacturing declarations.
 Anchors locate leaders on selected solid outputs; they do not identify persistent
 faces or establish datum simulators. Targets,
-free-state, statistical, continuous-feature, translation and dynamic-profile modifiers and semantic PMI exchange remain
+and semantic PMI exchange remain
 on the roadmap; measured simulators, bonus tolerance and zone evaluation for a
 supported subset are described in [Measured inspection](#measured-inspection-schema-68). References: [ASME Y14.5 scope and contents](https://www.asme.org/getmedia/da2ff89e-067b-4160-8e2e-53e6c7da1d3b/17707.pdf)
 and [NIST datum-system model](https://nvlpubs.nist.gov/nistpubs/jres/104/4/html/j44mac.htm).
@@ -816,6 +816,25 @@ Schema 142 adds two modifiers:
 "projected": {"height": {"value": 20, "dimension": "length", "unit": "millimeter"},
               "from": "top"}
 ```
+
+Schema 143 adds `modifiers`, a list drawn after the tolerance in the order
+given, each at most once:
+
+- `free_state` (Ⓕ): the tolerance applies with the part unrestrained. It is a
+  declaration, and points are taken as measured.
+- `statistical` (⟨ST⟩, a hexagon): a statistical tolerance, judged on process
+  data. A single part's measurement is not evaluated against it, so the
+  control is reported as not evaluated.
+- `continuous_feature` (CF), on features of size only: interrupted surfaces
+  form one feature, and their measured points are taken together as one
+  measured feature.
+- `dynamic_profile` (△), on profile controls only: the zone may grow or
+  shrink uniformly, so it controls form and orientation but not size.
+
+Each datum reference may also set `translation: true` (▷, drawn after the
+label and any material boundary modifier). The datum feature simulator is
+then free to translate from its basic location to engage the feature. The
+primary reference has no basic location and may not translate.
 
 SVG and DXF show one shared characteristic cell 8 mm tall per segment, an 8 mm
 row per segment and a stepped right edge where row widths differ. The same leader attaches the
@@ -1145,6 +1164,7 @@ Supported controls:
 | Cylindricity | Radial width between the narrowest coaxial cylinders, axis free to shift and tilt from the anchor's nominal axis; at least six points |
 | Parallelism, perpendicularity, angularity (planar zone) | Zone width at the basic orientation to the measured datums; with a single datum, rotation about its normal stays free. With Ⓣ (schema 142), the points are first projected onto their tangent plane: the minimum-zone orientation placed against the outermost points, like a primary datum simulator |
 | Position (diameter zone, axis normal to primary plane) | Twice the radial offset of the related actual mating envelope from true position, in the measured frame: three planes (3-2-1) or a plane-axis frame (schema 137), after any datum shift |
+| Profile with a dynamic zone (schema 143, △) | The same fit with one more free motion, a uniform offset of the zone along every normal, so the zone width is the spread of the deviations. `profile.offset_mm` reports the offset, and deviations are measured from the offset zone |
 | Position in a projected zone (schema 142, Ⓟ) | The axis of the unrelated actual mating envelope (free to tilt; the minimum-material envelope's at LMC), extended beyond the part: twice the larger offset from true position where it enters and leaves the zone. Datum shift and composite fits treat the two ends as members of the pattern. Frames on a primary datum axis are reported |
 | Circular runout (schema 135) | Full indicator movement about the datum axis, for the worst circular element. On a surface coaxial with the datum axis, the reading is radial and elements are points sharing an axial position. On a face perpendicular to it, the reading is axial and elements are points sharing a radius. Elements group within 1e-3 mm or 1e-6 of the span; each needs at least three points |
 | Total runout (schema 135) | The same readings over all points of the surface |
@@ -1289,6 +1309,19 @@ the larger end displacement as `datum_shift_mm` and, as
 the datum length) combined with the turn about A, signed by the turn
 (positive counterclockwise about A's direction). Composite position to a
 primary datum axis is reported.
+
+**Translation modifier ▷ (schema 143).** A datum at MMB or LMB sits at its
+basic location relative to the higher-precedence datums, and ▷ frees it:
+
+- **Tertiary width after a fixed secondary**, in a three-plane frame: it no
+  longer locates along its normal, which is then free.
+- **Secondary hole or pin**, in a plane-axis frame: it no longer locates the
+  frame. A tertiary face at RFS then locates it along the face's normal, at
+  its measured departure from its basic place, and still clocks it.
+
+Other uses at a material boundary are reported. At RFS the simulators already
+engage the feature where it is (contacting planes, mating envelopes), so ▷
+changes nothing there. `datum_shift_limit_mm` leaves out freed directions.
 
 `datum_shift_limit_mm` is the largest origin translation the boundaries allow
 with the frame square to its mating envelopes: the bore's radial limit plus
@@ -1491,7 +1524,8 @@ two envelope fits relinearize their turn). 10,000 composite position controls in
 0.1 mm outlier fail their relating fit. With a Ø0.15 segment to A | B between
 the two (three segments), they evaluate in 0.29 s (1 s budget). 10,000 composite surface profiles on
 the same bores (720,000 points with nominals, 100 patterns of 7,200 points
-fitted as rigid groups) take 0.18 s (1 s budget), and one 1,000,000-point
+fitted as rigid groups) take 0.18 s, or 0.19 s with dynamic upper zones (△)
+(1 s budgets), and one 1,000,000-point
 surface profile with all six motions free takes 0.30 s (2 s budget). 1,000
 profiles recorded without nominals on bands of a cylinder (1,000,000 points)
 regenerate the part once and project every point onto the named side face in

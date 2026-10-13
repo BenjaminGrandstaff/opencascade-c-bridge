@@ -32,6 +32,9 @@ struct Alignment {
     rotations: Vec<Vec3>,
     /// A point on a free rotation axis that a datum fixes, if any.
     pivot: Option<Vec3>,
+    /// A dynamic profile (△): the zone also offsets uniformly along the
+    /// normals.
+    offset: bool,
 }
 impl Alignment {
     /// The free motions that keep a section plane normal to unit `normal` in
@@ -88,11 +91,15 @@ impl Alignment {
 
 /// Result of moving one group's measured points within their free motions.
 struct ProfileFit {
-    /// Signed deviation of each point along its nominal normal.
+    /// Signed deviation of each point along its nominal normal, less any
+    /// uniform zone offset.
     deviations: Vec<f64>,
     translation: f64,
     rotation: f64,
     elements: usize,
+    /// The dynamic zone's outward offset (largest magnitude over line
+    /// elements).
+    offset: f64,
 }
 
 /// Each member control's ID and measurement (or reason it was not evaluated).
@@ -174,7 +181,8 @@ impl Context<'_, '_> {
             .iter()
             .flat_map(|m| std::iter::repeat_n(m.center, m.range.len()))
             .collect();
-        let upper = self.profile_alignment(&first.datums, false)?;
+        let mut upper = self.profile_alignment(&first.datums, false)?;
+        upper.offset = first.modifiers.contains(&ToleranceModifier::DynamicProfile);
         let upper_fit = self.fit_members(&members, &points, &targets, &centers, &upper)?;
         // Each lower segment: its own fit, oriented only by its datums.
         let mut lower = Vec::new();
@@ -234,6 +242,7 @@ impl Context<'_, '_> {
                             translation_mm: upper_fit.translation,
                             rotation_rad: upper_fit.rotation,
                             elements: upper_fit.elements,
+                            offset_mm: upper_fit.offset,
                         }),
                         uncertainty_mm: 0.0,
                         indeterminate: false,
@@ -264,6 +273,7 @@ impl Context<'_, '_> {
             translation: 0.0,
             rotation: 0.0,
             elements: 0,
+            offset: 0.0,
         };
         for member in members {
             let view = self
@@ -301,6 +311,9 @@ impl Context<'_, '_> {
                 }
                 fit.translation = fit.translation.max(element_fit.translation);
                 fit.rotation = fit.rotation.max(element_fit.rotation);
+                if element_fit.offset.abs() > fit.offset.abs() {
+                    fit.offset = element_fit.offset;
+                }
                 fit.elements += 1;
             }
         }
@@ -385,6 +398,7 @@ impl Context<'_, '_> {
             translations: Vec::new(),
             rotations,
             pivot: pairs.iter().find(|p| p.4).map(|p| p.2),
+            offset: false,
         };
         // Translation constraints as orthonormal rows `q·τ = b`.
         let mut rows: Vec<(Vec3, f64)> = Vec::new();
@@ -504,18 +518,25 @@ fn fit_profile(
         Vec3::new(0.0, 1.0, 0.0),
         Vec3::new(0.0, 0.0, 1.0),
     ];
-    let k = alignment.translations.len() + alignment.rotations.len();
+    let motions = alignment.translations.len() + alignment.rotations.len();
+    let k = motions + usize::from(alignment.offset);
+    // Uniform outward offset of a dynamic zone, subtracted from deviations.
+    let mut offset = 0.0;
     for _ in 0..if k == 0 { 0 } else { MAX_LINEARIZATIONS } {
         let residuals: Vec<f64> = moved
             .iter()
             .zip(&targets)
             .zip(centers)
-            .map(|((&p, &t), c)| deviation(p, t) - c)
+            .map(|((&p, &t), c)| deviation(p, t) - offset - c)
             .collect();
         // Gradient of each residual: n·t for a translation, ((p−o)×n)·r for
-        // a rotation, the latter per radian times `size` (unit-scale columns).
+        // a rotation, the latter per radian times `size` (unit-scale
+        // columns), and -1 for the zone's offset.
         let gradient = |i: usize, column: usize| -> f64 {
             let (p, n) = (moved[i], targets[i].1);
+            if column == motions {
+                return -1.0;
+            }
             match alignment.translations.get(column) {
                 Some(&t) => dot(n, t),
                 None => {
@@ -531,7 +552,12 @@ fn fit_profile(
         let step = zone_fit(&residuals, &columns, &gradient)?;
         let mut delta = Vec3::new(0.0, 0.0, 0.0);
         let mut omega = Vec3::new(0.0, 0.0, 0.0);
+        let mut moved_offset = 0.0;
         for (&column, &value) in columns.iter().zip(&step) {
+            if column == motions {
+                moved_offset = value;
+                continue;
+            }
             match alignment.translations.get(column) {
                 Some(&t) => delta = add(delta, scale(t, value)),
                 None => {
@@ -553,7 +579,8 @@ fn fit_profile(
         }
         pivot = add(pivot, delta);
         translated = add(translated, delta);
-        if length(delta) + angle * size < 1e-12 * size {
+        offset += moved_offset;
+        if length(delta) + angle * size + moved_offset.abs() < 1e-12 * size {
             break;
         }
     }
@@ -562,8 +589,9 @@ fn fit_profile(
         deviations: moved
             .iter()
             .zip(&targets)
-            .map(|(&p, &t)| deviation(p, t))
+            .map(|(&p, &t)| deviation(p, t) - offset)
             .collect(),
+        offset,
         translation: length(translated),
         rotation: (0.5 * (trace - 1.0)).clamp(-1.0, 1.0).acos(),
         elements: 1,

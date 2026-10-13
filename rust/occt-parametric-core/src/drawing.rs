@@ -29,6 +29,7 @@ pub use gdt::{
     DrawingSizeLimits, FeatureOfSizeKind, GeometricCharacteristic, GeometricToleranceAllowance,
     GeometricToleranceZone, PositionSampleEvaluation, PositionToleranceAxis,
     ResolvedDrawingDatumReference, ResolvedDrawingDatumReferenceFrame, ToleranceMaterialCondition,
+    ToleranceModifier,
 };
 pub use gdt::{
     DrawingSurfaceTexture, MaterialRemoval, RoughnessLimits, RoughnessParameter, RoughnessUnit,

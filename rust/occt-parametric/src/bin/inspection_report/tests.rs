@@ -137,6 +137,7 @@ fn fixture() -> ModelDocument {
             datums: ["A", "B", "C"]
                 .into_iter()
                 .map(|id| DrawingDatumReference {
+                    translation: false,
                     datum_feature: id.into(),
                     boundary: DatumMaterialBoundary::Regardless,
                     common_with: Vec::new(),
@@ -145,6 +146,7 @@ fn fixture() -> ModelDocument {
         });
     page.feature_control_frames
         .push(DrawingFeatureControlFrame {
+            modifiers: Vec::new(),
             projected: None,
             tangent_plane: false,
             pattern: None,

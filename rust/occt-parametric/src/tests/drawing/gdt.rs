@@ -28,6 +28,7 @@ fn gdt_page() -> DrawingDefinition {
     }
     page.feature_control_frames
         .push(DrawingFeatureControlFrame {
+            modifiers: Vec::new(),
             projected: None,
             tangent_plane: false,
             pattern: None,
@@ -55,16 +56,19 @@ fn gdt_page() -> DrawingDefinition {
             feature_of_size: true,
             datums: vec![
                 DrawingDatumReference {
+                    translation: false,
                     datum_feature: "primary".into(),
                     boundary: DatumMaterialBoundary::Regardless,
                     common_with: Vec::new(),
                 },
                 DrawingDatumReference {
+                    translation: false,
                     datum_feature: "secondary".into(),
                     boundary: DatumMaterialBoundary::Maximum,
                     common_with: Vec::new(),
                 },
                 DrawingDatumReference {
+                    translation: false,
                     datum_feature: "tertiary".into(),
                     boundary: DatumMaterialBoundary::Least,
                     common_with: Vec::new(),
@@ -512,6 +516,86 @@ fn projected_and_tangent_plane_modifiers_render_and_validate() {
             1 => position.tangent_plane = true,
             2 => position.projected.as_mut().unwrap().height.value = 0.0,
             _ => position.projected.as_mut().unwrap().from = Some("origin".into()),
+        }
+        assert!(
+            invalid
+                .generate(&graph, &session, DrawingRenderOptions::default())
+                .is_err(),
+            "case {case}"
+        );
+    }
+    assert_eq!(session.shape_count().unwrap(), 0);
+}
+#[test]
+fn value_modifiers_and_datum_translation_render_and_validate() {
+    let definition = family_with_datums();
+    let mut graph = InstanceGraph::new(&definition);
+    graph.add_base("part", HashMap::new(), "test").unwrap();
+    let session = Session::new().unwrap();
+    let mut page = gdt_page();
+    {
+        let f = &mut page.feature_control_frames[0];
+        f.modifiers = vec![
+            ToleranceModifier::FreeState,
+            ToleranceModifier::Statistical,
+            ToleranceModifier::ContinuousFeature,
+        ];
+        f.datums[2].translation = true;
+    }
+    let mut profile = page.feature_control_frames[0].clone();
+    profile.id = "profile".into();
+    profile.characteristic = GeometricCharacteristic::ProfileSurface;
+    profile.zone = GeometricToleranceZone::Characteristic;
+    profile.material = ToleranceMaterialCondition::Regardless;
+    profile.feature_of_size = false;
+    profile.modifiers = vec![ToleranceModifier::DynamicProfile];
+    profile.datums.truncate(1);
+    page.feature_control_frames.push(profile);
+    let generated = page
+        .generate(&graph, &session, DrawingRenderOptions::default())
+        .unwrap();
+    for text in ["F", "ST", "CF"] {
+        assert!(
+            generated.gdt_labels.iter().any(|l| l.text == text),
+            "{text}"
+        );
+    }
+    assert_eq!(
+        generated
+            .gdt_lines
+            .iter()
+            .map(|l| l.points_mm.len())
+            .sum::<usize>(),
+        crate::drawing::gdt::vertex_count(
+            &page.datum_features,
+            &page.feature_control_frames,
+            &page.datum_reference_frames
+        )
+        .unwrap()
+    );
+    let mut document = ModelDocument::from_graph(&graph);
+    document.drawings.push(page.clone());
+    let json = document.to_json_pretty().unwrap();
+    for field in [
+        "\"translation\": true",
+        "\"dynamic_profile\"",
+        "\"free_state\"",
+    ] {
+        assert!(json.contains(field), "{field}");
+    }
+    assert_eq!(ModelDocument::from_json(&json).unwrap(), document);
+    // △ belongs to profile, CF to features of size; a modifier appears
+    // once; the primary datum has no basic place to translate from.
+    for case in 0..4 {
+        let mut invalid = page.clone();
+        let [position, profile] = invalid.feature_control_frames.as_mut_slice() else {
+            unreachable!()
+        };
+        match case {
+            0 => position.modifiers.push(ToleranceModifier::DynamicProfile),
+            1 => profile.modifiers.push(ToleranceModifier::ContinuousFeature),
+            2 => position.modifiers.push(ToleranceModifier::FreeState),
+            _ => position.datums[0].translation = true,
         }
         assert!(
             invalid

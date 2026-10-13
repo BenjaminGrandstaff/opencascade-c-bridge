@@ -66,6 +66,7 @@ fn control(
     datums: &[&str],
 ) -> DrawingFeatureControlFrame {
     DrawingFeatureControlFrame {
+        modifiers: Vec::new(),
         projected: None,
         tangent_plane: false,
         pattern: None,
@@ -86,6 +87,7 @@ fn control(
         datums: datums
             .iter()
             .map(|d| DrawingDatumReference {
+                translation: false,
                 datum_feature: (*d).into(),
                 boundary: DatumMaterialBoundary::Regardless,
                 common_with: Vec::new(),
@@ -133,6 +135,7 @@ pub(super) fn page() -> DrawingDefinition {
             datums: ["A", "B", "C"]
                 .iter()
                 .map(|d| DrawingDatumReference {
+                    translation: false,
                     datum_feature: (*d).into(),
                     boundary: DatumMaterialBoundary::Regardless,
                     common_with: Vec::new(),
@@ -732,6 +735,7 @@ fn runout_page(
             datums: ["A", "D"]
                 .iter()
                 .map(|d| DrawingDatumReference {
+                    translation: false,
                     datum_feature: (*d).into(),
                     boundary: DatumMaterialBoundary::Regardless,
                     common_with: Vec::new(),
@@ -840,6 +844,7 @@ fn axis_datums_use_the_mating_envelope_for_holes_and_shafts() {
             .push(DrawingDatumReferenceFrame {
                 id: "D-only".into(),
                 datums: vec![DrawingDatumReference {
+                    translation: false,
                     datum_feature: "D".into(),
                     boundary: DatumMaterialBoundary::Regardless,
                     common_with: Vec::new(),
@@ -986,6 +991,7 @@ fn common_page() -> DrawingDefinition {
     page.datum_reference_frames = vec![DrawingDatumReferenceFrame {
         id: "FB".into(),
         datums: vec![DrawingDatumReference {
+            translation: false,
             datum_feature: "A2".into(),
             boundary: DatumMaterialBoundary::Regardless,
             common_with: vec!["B".into()],
@@ -1464,6 +1470,7 @@ fn slot_setup(kind: FeatureOfSizeKind) -> (FamilyDefinition, DrawingDefinition) 
     page.datum_reference_frames = vec![DrawingDatumReferenceFrame {
         id: "C-only".into(),
         datums: vec![DrawingDatumReference {
+            translation: false,
             datum_feature: "C".into(),
             boundary: DatumMaterialBoundary::Regardless,
             common_with: Vec::new(),
@@ -2041,6 +2048,7 @@ fn axis_clocking_setup(
         id: "B-A-C".into(),
         datums: ["B", "A", "C"]
             .map(|id| DrawingDatumReference {
+                translation: false,
                 datum_feature: id.into(),
                 boundary: DatumMaterialBoundary::Regardless,
                 common_with: Vec::new(),
@@ -2553,6 +2561,7 @@ fn oblique_setup(frame: [&str; 3]) -> (FamilyDefinition, DrawingDefinition) {
     page.datum_reference_frames[0].datums = frame
         .iter()
         .map(|id| DrawingDatumReference {
+            translation: false,
             datum_feature: (*id).into(),
             boundary: DatumMaterialBoundary::Regardless,
             common_with: Vec::new(),
@@ -3110,6 +3119,109 @@ fn a_tangent_plane_orients_only_the_high_points() {
     assert!(
         (m.deviation_mm - 0.025).abs() < 1e-9 && !m.conforms,
         "{m:?}"
+    );
+}
+
+#[test]
+fn a_translation_modifier_frees_a_boundary_from_its_basic_location() {
+    use DatumMaterialBoundary::{Maximum, Regardless};
+    // A | B(slot, RFS) | C(slot, MMB): C clears its 7.9 boundary by 0.05 mm,
+    // so a pattern 0.2 mm off along C's normal reads 2 · 0.15 mm. With ▷ C
+    // only orients, which B already does, and the pattern is in place.
+    let (definition, page) = width_frame_setup(Regardless, Maximum);
+    let graph = graph_of(&definition);
+    let record = width_frame_record(0.0, [0.0, 0.2]);
+    let m = evaluated(&page.evaluate_inspection(&graph, &record).unwrap(), "hole0");
+    assert!((m.deviation_mm - 0.3).abs() < 1e-4, "{m:?}");
+    let mut translated = page.clone();
+    for frame in &mut translated.feature_control_frames {
+        frame.datums[2].translation = true;
+    }
+    let report = translated.evaluate_inspection(&graph, &record).unwrap();
+    for i in 0..4 {
+        let m = evaluated(&report, &format!("hole{i}"));
+        assert!(m.deviation_mm < 1e-6, "{m:?}");
+        assert!((m.datum_shift_mm - 0.2).abs() < 1e-6, "{m:?}");
+    }
+    // B still locates along x.
+    let report = translated
+        .evaluate_inspection(&graph, &width_frame_record(0.0, [0.03, 0.2]))
+        .unwrap();
+    assert!((evaluated(&report, "hole0").deviation_mm - 0.06).abs() < 1e-4);
+    // A | B(bore, MMB ▷) | C: the bore no longer locates, C still fixes y.
+    let (definition, mut page) = shift_setup(Maximum);
+    let graph = graph_of(&definition);
+    let record = shift_record(10.0, [[0.2, 0.0]; 4]);
+    let m = evaluated(&page.evaluate_inspection(&graph, &record).unwrap(), "hole0");
+    assert!((m.deviation_mm - 0.3).abs() < 1e-4, "{m:?}");
+    for frame in &mut page.feature_control_frames {
+        frame.datums[1].translation = true;
+    }
+    let report = page.evaluate_inspection(&graph, &record).unwrap();
+    assert!(evaluated(&report, "hole0").deviation_mm < 1e-6);
+    let report = page
+        .evaluate_inspection(&graph, &shift_record(10.0, [[0.0, 0.2]; 4]))
+        .unwrap();
+    assert!((evaluated(&report, "hole0").deviation_mm - 0.4).abs() < 1e-4);
+    // C measured 0.1 mm proud of its basic place carries the frame with it.
+    let mut record = shift_record(10.0, [[0.0, -0.1]; 4]);
+    for p in &mut record.datum_features[2].points_mm {
+        p[1] -= 0.1;
+    }
+    let report = page.evaluate_inspection(&graph, &record).unwrap();
+    assert!(evaluated(&report, "hole0").deviation_mm < 1e-6);
+    // After a secondary width at a boundary the tertiary turns with it;
+    // translating it as well is reported.
+    let (definition, mut page) = width_frame_setup(Maximum, Maximum);
+    let graph = graph_of(&definition);
+    for frame in &mut page.feature_control_frames {
+        frame.datums[2].translation = true;
+    }
+    let report = page
+        .evaluate_inspection(&graph, &width_frame_record(0.0, [0.0; 2]))
+        .unwrap();
+    assert!(
+        matches!(
+            &report.controls[0].result,
+            ControlResult::NotEvaluated(r) if r.contains("translation modifier")
+        ),
+        "{:?}",
+        report.controls[0]
+    );
+}
+
+#[test]
+fn a_dynamic_profile_zone_grows_or_shrinks_with_the_surface() {
+    let bow = |z: f64| 0.02 * (std::f64::consts::PI * z / 10.0).sin();
+    // The right face 0.03 mm proud and bowed 0.02 mm, located to A | B: the
+    // fixed zone reads 2 · 0.05 mm, the dynamic zone only the bow.
+    let face = |out: f64| right_face(move |z| out + bow(z));
+    let fixed = right_profile(GeometricCharacteristic::ProfileSurface, &["A", "B"]);
+    let mut dynamic = fixed.clone();
+    dynamic.modifiers = vec![ToleranceModifier::DynamicProfile];
+    let m = evaluated(
+        &profile_report(vec![fixed], vec![face(0.03)]),
+        "right_profile",
+    );
+    assert!((m.deviation_mm - 0.1).abs() < 1e-9 && !m.conforms, "{m:?}");
+    let m = evaluated(
+        &profile_report(vec![dynamic.clone()], vec![face(0.03)]),
+        "right_profile",
+    );
+    assert!((m.deviation_mm - 0.02).abs() < 1e-9 && m.conforms, "{m:?}");
+    let profile = m.profile.unwrap();
+    assert!((profile.offset_mm - 0.04).abs() < 1e-9, "{profile:?}");
+    // A statistical tolerance is not judged on one part.
+    let mut statistical = dynamic;
+    statistical.modifiers = vec![ToleranceModifier::Statistical];
+    let report = profile_report(vec![statistical], vec![face(0.0)]);
+    assert!(
+        matches!(
+            &report.controls[0].result,
+            ControlResult::NotEvaluated(r) if r.contains("statistical")
+        ),
+        "{:?}",
+        report.controls[0]
     );
 }
 

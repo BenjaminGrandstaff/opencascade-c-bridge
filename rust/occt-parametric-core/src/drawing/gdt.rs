@@ -154,6 +154,10 @@ pub struct DrawingDatumReference {
     /// nominally coplanar planes or coaxial axes.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub common_with: Vec<String>,
+    /// Translation modifier (schema 143, ▷): the datum feature simulator
+    /// is free to translate from its basic location to engage the feature.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub translation: bool,
 }
 impl DrawingDatumReference {
     /// The compartment's datum features: `datum_feature`, then `common_with`.
@@ -203,6 +207,10 @@ pub struct DrawingFeatureControlFrame {
     /// zone, not every point of the surface.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub tangent_plane: bool,
+    /// Further modifiers (schema 143), drawn after the tolerance in the
+    /// order given.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub modifiers: Vec<ToleranceModifier>,
     pub id: String,
     pub attachment: DrawingGdtAttachment,
     pub characteristic: GeometricCharacteristic,
@@ -216,6 +224,23 @@ pub struct DrawingFeatureControlFrame {
     pub feature_of_size: bool,
     #[serde(default)]
     pub datums: Vec<DrawingDatumReference>,
+}
+/// Tolerance modifiers without a value (schema 143).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ToleranceModifier {
+    /// Ⓕ: the tolerance applies with the part in its free state. A
+    /// declaration: points are taken as measured.
+    FreeState,
+    /// ⟨ST⟩: a statistical tolerance, judged on process data; a single
+    /// part's measurement is not evaluated against it.
+    Statistical,
+    /// CF: interrupted surfaces are one continuous feature of size; their
+    /// measured points are taken together.
+    ContinuousFeature,
+    /// △: a dynamic profile zone, free to grow or shrink uniformly, so it
+    /// controls form and orientation but not size.
+    DynamicProfile,
 }
 /// Where a projected tolerance zone lies (schema 142): from a plane of the
 /// part, the face the mating part seats on, `height` along that plane's
@@ -311,6 +336,14 @@ fn unequal_text(frame: &DrawingFeatureControlFrame) -> Result<Option<String>, Mo
         "{value:.precision$}",
         precision = frame.precision as usize
     )))
+}
+/// Room a modifier takes after the tolerance value, mm.
+fn modifier_width(m: ToleranceModifier) -> f64 {
+    match m {
+        ToleranceModifier::Statistical => 9.0,
+        ToleranceModifier::ContinuousFeature => 7.0,
+        ToleranceModifier::FreeState | ToleranceModifier::DynamicProfile => 6.0,
+    }
 }
 /// Displayed Ⓟ height, in the tolerance's display unit and precision.
 fn projected_text(frame: &DrawingFeatureControlFrame) -> Result<Option<String>, ModelError> {
@@ -450,6 +483,22 @@ fn validate_modifiers(
             ));
         }
     }
+    let mut seen = HashSet::new();
+    for modifier in &frame.modifiers {
+        if !seen.insert(*modifier) {
+            return Err(ModelError::new("a tolerance modifier is repeated"));
+        }
+        let applies = match modifier {
+            ToleranceModifier::FreeState | ToleranceModifier::Statistical => true,
+            ToleranceModifier::ContinuousFeature => frame.feature_of_size,
+            ToleranceModifier::DynamicProfile => frame.characteristic.profile(),
+        };
+        if !applies {
+            return Err(ModelError::new(
+                "continuous feature applies to features of size and dynamic profile to profile controls",
+            ));
+        }
+    }
     if frame.tangent_plane
         && !matches!(
             frame.characteristic,
@@ -498,6 +547,11 @@ fn validate_references(
     datums: &[DrawingDatumReference],
     index: &HashMap<&str, &DrawingDatumFeature>,
 ) -> Result<(), ModelError> {
+    if datums.first().is_some_and(|d| d.translation) {
+        return Err(ModelError::new(
+            "the primary datum reference has no basic location to translate from",
+        ));
+    }
     let mut references = HashSet::new();
     for reference in datums {
         if reference.common_with.len() > 2 {
@@ -777,7 +831,8 @@ fn cell_widths(
                 .ok()
                 .flatten()
                 .map_or(0.0, |h| 7.0 + h.len() as f64 * 2.0)
-            + if f.tangent_plane { 6.0 } else { 0.0 },
+            + if f.tangent_plane { 6.0 } else { 0.0 }
+            + f.modifiers.iter().map(|m| modifier_width(*m)).sum::<f64>(),
     ];
     cells.extend(f.datums.iter().map(|r| {
         4.0 + r.label(index).len() as f64 * 3.0
@@ -786,6 +841,7 @@ fn cell_widths(
             } else {
                 0.0
             }
+            + if r.translation { 6.0 } else { 0.0 }
     }));
     cells
 }
@@ -832,6 +888,46 @@ fn append_row(
     if f.tangent_plane {
         circle(d, [mx, p[1] + 4.0], 2.3, 0.0, std::f64::consts::TAU);
         text(d, [mx - 1.1, p[1] + 3.0], "T".into());
+        mx += 6.0;
+    }
+    for m in &f.modifiers {
+        let y = p[1] + 4.0;
+        match m {
+            ToleranceModifier::FreeState => {
+                circle(d, [mx, y], 2.3, 0.0, std::f64::consts::TAU);
+                text(d, [mx - 1.1, y - 1.0], "F".into());
+            }
+            ToleranceModifier::Statistical => {
+                line(
+                    d,
+                    vec![
+                        [mx - 2.3, y],
+                        [mx - 1.0, y + 2.3],
+                        [mx + 4.0, y + 2.3],
+                        [mx + 5.3, y],
+                        [mx + 4.0, y - 2.3],
+                        [mx - 1.0, y - 2.3],
+                        [mx - 2.3, y],
+                    ],
+                );
+                text(d, [mx - 0.6, y - 1.0], "ST".into());
+            }
+            ToleranceModifier::ContinuousFeature => {
+                text(d, [mx - 1.5, y - 1.5], "CF".into());
+            }
+            ToleranceModifier::DynamicProfile => {
+                line(
+                    d,
+                    vec![
+                        [mx - 2.0, y - 1.7],
+                        [mx + 2.0, y - 1.7],
+                        [mx, y + 2.0],
+                        [mx - 2.0, y - 1.7],
+                    ],
+                );
+            }
+        }
+        mx += modifier_width(*m);
     }
     for (i, width) in cells.iter().enumerate().skip(1) {
         if i > 1 || first_divider {
@@ -841,11 +937,26 @@ fn append_row(
         if let Some(r) = f.datums.get(i - 1) {
             let label = r.label(index);
             text(d, [x + 2.0, p[1] + 2.5], label.clone());
+            let mut after = x + label.len() as f64 * 3.0 + 5.0;
             if r.boundary != DatumMaterialBoundary::Regardless {
                 modifier(
                     d,
-                    [x + label.len() as f64 * 3.0 + 5.0, p[1] + 4.0],
+                    [after, p[1] + 4.0],
                     r.boundary == DatumMaterialBoundary::Maximum,
+                );
+                after += 6.0;
+            }
+            if r.translation {
+                // ▷: an open triangle pointing right.
+                let y = p[1] + 4.0;
+                line(
+                    d,
+                    vec![
+                        [after - 2.0, y - 2.0],
+                        [after + 2.0, y],
+                        [after - 2.0, y + 2.0],
+                        [after - 2.0, y - 2.0],
+                    ],
                 );
             }
         }
@@ -907,6 +1018,16 @@ fn row_vertices(f: &DrawingFeatureControlFrame) -> usize {
         + if f.unequal.is_some() { 33 } else { 0 }
         + if f.projected.is_some() { 33 } else { 0 }
         + if f.tangent_plane { 33 } else { 0 }
+        + f.modifiers
+            .iter()
+            .map(|m| match m {
+                ToleranceModifier::FreeState => 33,
+                ToleranceModifier::Statistical => 7,
+                ToleranceModifier::ContinuousFeature => 0,
+                ToleranceModifier::DynamicProfile => 4,
+            })
+            .sum::<usize>()
+        + 4 * f.datums.iter().filter(|r| r.translation).count()
         + 33 * f
             .datums
             .iter()

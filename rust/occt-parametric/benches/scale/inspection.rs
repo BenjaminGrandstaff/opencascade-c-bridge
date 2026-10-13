@@ -9,6 +9,7 @@ use occt_parametric::{
     DrawingView, DrawingViewKind, FeatureOfSizeKind, GeometricCharacteristic,
     GeometricToleranceZone, InspectionRecord, InstanceOutputRef, MeasuredFeature, MeasuredNominal,
     MeasurementUncertainty, NamedReference, ReferenceTarget, ToleranceMaterialCondition,
+    ToleranceModifier,
 };
 
 const HOLES_PER_SIDE: usize = 10;
@@ -118,12 +119,14 @@ pub(crate) fn inspection_case(definition: &FamilyDefinition, variant: Inspected)
             let mut graph = InstanceGraph::new(&definition);
             graph.add_base("part", HashMap::new(), "bench")?;
             let reference = |id: &str| DrawingDatumReference {
+                translation: false,
                 datum_feature: id.into(),
                 boundary: DatumMaterialBoundary::Regardless,
                 common_with: Vec::new(),
             };
             let mut controls: Vec<DrawingFeatureControlFrame> = (0..CONTROLS)
                 .map(|i| DrawingFeatureControlFrame {
+                    modifiers: Vec::new(),
                     projected: None,
                     tangent_plane: false,
                     pattern: None,
@@ -367,6 +370,7 @@ pub(crate) fn form_case(definition: &FamilyDefinition) -> Outcome {
             graph.add_base("part", HashMap::new(), "bench")?;
             let holes = HOLES_PER_SIDE * HOLES_PER_SIDE;
             let control = |i: usize, cylindricity: bool| DrawingFeatureControlFrame {
+                modifiers: Vec::new(),
                 projected: None,
                 tangent_plane: false,
                 pattern: None,
@@ -531,6 +535,7 @@ pub(crate) fn runout_case(definition: &FamilyDefinition, common: bool, conical: 
                     .collect::<String>()
             };
             let control = |i: usize, total: bool| DrawingFeatureControlFrame {
+                modifiers: Vec::new(),
                 projected: None,
                 tangent_plane: false,
                 pattern: None,
@@ -553,6 +558,7 @@ pub(crate) fn runout_case(definition: &FamilyDefinition, common: bool, conical: 
                 material: ToleranceMaterialCondition::Regardless,
                 feature_of_size: false,
                 datums: vec![DrawingDatumReference {
+                    translation: false,
                     datum_feature: format!("D{}", i % holes),
                     boundary: DatumMaterialBoundary::Regardless,
                     common_with: if common {
@@ -774,6 +780,7 @@ pub(crate) fn datum_shift_case(definition: &FamilyDefinition, frame: ShiftFrame)
             let mut graph = InstanceGraph::new(&definition);
             graph.add_base("part", HashMap::new(), "bench")?;
             let reference = |id: &str, boundary| DrawingDatumReference {
+                translation: false,
                 datum_feature: id.into(),
                 boundary,
                 common_with: Vec::new(),
@@ -785,6 +792,7 @@ pub(crate) fn datum_shift_case(definition: &FamilyDefinition, frame: ShiftFrame)
             };
             let controls: Vec<DrawingFeatureControlFrame> = (0..CONTROLS)
                 .map(|i| DrawingFeatureControlFrame {
+                    modifiers: Vec::new(),
                     projected: None,
                     tangent_plane: false,
                     pattern: None,
@@ -1107,12 +1115,14 @@ pub(crate) fn composite_case(definition: &FamilyDefinition, three: bool) -> Outc
             let mut graph = InstanceGraph::new(&definition);
             graph.add_base("part", HashMap::new(), "bench")?;
             let reference = |id: &str| DrawingDatumReference {
+                translation: false,
                 datum_feature: id.into(),
                 boundary: DatumMaterialBoundary::Regardless,
                 common_with: Vec::new(),
             };
             let controls: Vec<DrawingFeatureControlFrame> = (0..CONTROLS)
                 .map(|i| DrawingFeatureControlFrame {
+                    modifiers: Vec::new(),
                     projected: None,
                     tangent_plane: false,
                     pattern: Some(format!("P{}", i / holes)),
@@ -1266,9 +1276,15 @@ fn bore_profile(id: String, nominal: [f64; 2], p: [f64; 2]) -> MeasuredFeature {
 /// A orienting only, so each pattern's 7,200 points move as one rigid group.
 /// Every pattern sits 0.03, 0.01 mm off and turned 0.5 mrad; every tenth
 /// also has one bore 0.1 mm off its neighbours, failing its relating fit.
-pub(crate) fn profile_case(definition: &FamilyDefinition) -> Outcome {
+///
+/// With `dynamic`, the upper segment's zone is dynamic (△), free to grow or
+/// shrink with the bores.
+pub(crate) fn profile_case(definition: &FamilyDefinition, dynamic: bool) -> Outcome {
     timed(
-        format!("inspection: {CONTROLS} composite surface profiles in 100 patterns"),
+        format!(
+            "inspection: {CONTROLS} composite surface profiles in 100 patterns{}",
+            if dynamic { ", dynamic upper zones" } else { "" }
+        ),
         Duration::from_secs(1),
         Expectation::Required,
         || {
@@ -1278,12 +1294,18 @@ pub(crate) fn profile_case(definition: &FamilyDefinition) -> Outcome {
             let mut graph = InstanceGraph::new(&definition);
             graph.add_base("part", HashMap::new(), "bench")?;
             let reference = |id: &str| DrawingDatumReference {
+                translation: false,
                 datum_feature: id.into(),
                 boundary: DatumMaterialBoundary::Regardless,
                 common_with: Vec::new(),
             };
             let controls: Vec<DrawingFeatureControlFrame> = (0..CONTROLS)
                 .map(|i| DrawingFeatureControlFrame {
+                    modifiers: if dynamic {
+                        vec![ToleranceModifier::DynamicProfile]
+                    } else {
+                        Vec::new()
+                    },
                     projected: None,
                     tangent_plane: false,
                     pattern: Some(format!("P{}", i / holes)),
@@ -1388,6 +1410,7 @@ pub(crate) fn profile_surface_case(definition: &FamilyDefinition) -> Outcome {
             let drawing = abc_drawing(
                 "surface",
                 vec![DrawingFeatureControlFrame {
+                    modifiers: Vec::new(),
                     projected: None,
                     tangent_plane: false,
                     pattern: None,
@@ -1473,6 +1496,7 @@ pub(crate) fn profile_projection_case(definition: &FamilyDefinition) -> Outcome 
             graph.add_base("part", HashMap::new(), "bench")?;
             let controls = (0..PROFILES)
                 .map(|i| DrawingFeatureControlFrame {
+                    modifiers: Vec::new(),
                     projected: None,
                     tangent_plane: false,
                     pattern: None,
@@ -1558,6 +1582,7 @@ pub(crate) fn profile_line_case(definition: &FamilyDefinition) -> Outcome {
             let drawing = abc_drawing(
                 "rows",
                 vec![DrawingFeatureControlFrame {
+                    modifiers: Vec::new(),
                     projected: None,
                     tangent_plane: false,
                     pattern: None,
@@ -1651,6 +1676,7 @@ pub(crate) fn coaxial_shift_case(definition: &FamilyDefinition, common: bool) ->
             };
             let controls: Vec<DrawingFeatureControlFrame> = (0..CONTROLS)
                 .map(|i| DrawingFeatureControlFrame {
+                    modifiers: Vec::new(),
                     projected: None,
                     tangent_plane: false,
                     pattern: None,
@@ -1669,6 +1695,7 @@ pub(crate) fn coaxial_shift_case(definition: &FamilyDefinition, common: bool) ->
                     material: ToleranceMaterialCondition::Regardless,
                     feature_of_size: true,
                     datums: vec![DrawingDatumReference {
+                        translation: false,
                         datum_feature: "A".into(),
                         boundary: DatumMaterialBoundary::Maximum,
                         common_with: if common { vec!["E".into()] } else { Vec::new() },
@@ -1844,6 +1871,7 @@ pub(crate) fn radial_case(definition: &FamilyDefinition) -> Outcome {
             };
             let controls: Vec<DrawingFeatureControlFrame> = (0..CONTROLS)
                 .map(|i| DrawingFeatureControlFrame {
+                    modifiers: Vec::new(),
                     projected: None,
                     tangent_plane: false,
                     pattern: None,
@@ -1863,11 +1891,13 @@ pub(crate) fn radial_case(definition: &FamilyDefinition) -> Outcome {
                     feature_of_size: true,
                     datums: vec![
                         DrawingDatumReference {
+                            translation: false,
                             datum_feature: "A".into(),
                             boundary: DatumMaterialBoundary::Maximum,
                             common_with: Vec::new(),
                         },
                         DrawingDatumReference {
+                            translation: false,
                             datum_feature: "B".into(),
                             boundary: DatumMaterialBoundary::Regardless,
                             common_with: Vec::new(),

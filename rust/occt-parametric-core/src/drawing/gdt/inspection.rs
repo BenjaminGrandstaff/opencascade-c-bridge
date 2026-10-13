@@ -212,6 +212,9 @@ pub struct ProfileMeasurement {
     pub rotation_rad: f64,
     /// Line elements fitted separately (profile of a line), or 1.
     pub elements: usize,
+    /// Uniform outward offset of a dynamic profile zone (△, schema 143);
+    /// zero otherwise. Deviations are measured from the offset zone.
+    pub offset_mm: f64,
 }
 
 /// A composite control's feature-relating segment: the pattern may translate,
@@ -314,6 +317,8 @@ type Simulators = Vec<Simulator>;
 type Nominals<'a> = HashMap<&'a str, Vec<(Vec3, Vec3)>>;
 /// A datum precedence prefix: each compartment's members and boundary.
 type SimulatorKey = Vec<(Vec<String>, DatumMaterialBoundary)>;
+/// A shift space also depends on which references may translate (▷).
+type SpaceKey = Vec<(Vec<String>, DatumMaterialBoundary, bool)>;
 impl Simulator {
     fn plane_normal(&self) -> Result<Vec3, String> {
         match self {
@@ -361,7 +366,7 @@ struct Context<'a, 'g> {
     /// requirement).
     axial_shifts: HashMap<String, AxisMotion>,
     /// Motions each datum precedence's material boundaries allow.
-    spaces: HashMap<SimulatorKey, Result<Rc<ShiftSpace>, String>>,
+    spaces: HashMap<SpaceKey, Result<Rc<ShiftSpace>, String>>,
     /// Composite lower-segment results by control ID, fitted per pattern.
     /// Each composite position control's lower segments, top to bottom.
     refinements: HashMap<String, Vec<RefinementMeasurement>>,
@@ -1361,6 +1366,12 @@ impl Context<'_, '_> {
         frame: &DrawingFeatureControlFrame,
         points: &[Vec3],
     ) -> Result<ControlMeasurement, String> {
+        if frame.modifiers.contains(&ToleranceModifier::Statistical) {
+            return Err(
+                "a statistical tolerance is judged on process data, not one part's measurement"
+                    .into(),
+            );
+        }
         if let Some(result) = self.profiles.get(frame.id.as_str()) {
             return result.clone();
         }
