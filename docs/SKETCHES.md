@@ -13,6 +13,29 @@ geometry. A sole ellipse, circle or closed spline can supply a closed profile.
 Mixed geometry needs an explicit profile. Length expressions normalize to mm;
 angle expressions are dimensionless **radians**.
 
+The live studio's **Canvas tool** menu draws arcs and interpolated splines into
+the local sketch draft. For an arc, click its center, start point, then end
+direction. A free end is projected onto the start radius; a reused authored
+endpoint must already lie on that radius. **Clockwise arc** selects traversal.
+Full circles use the separate circle tool.
+
+For a spline, click distinct interpolation points and choose **Finish spline**.
+An open spline needs at least two points; **Close spline** needs at least three
+and repeats the first point reference, producing the native periodic curve.
+**Use new closed curve / rectangle as outer profile** can make a closed spline
+the face boundary. Open curves remain construction geometry until explicitly
+included in a profile. Existing region/profile edits require choosing the new
+outline through the profile controls instead.
+
+The spline drawing guide connects interpolation points; **Preview draft**
+builds and displays the native B-spline and regenerates dependent solids. Arc
+guides follow their selected radius and direction. Escape or changing tools
+cancels unfinished input without adding points; completed geometry remains in
+the draft until verified Apply. Coordinate snapping and **Fix new points** use
+the same rules as the existing line and circle tools. Explicit control-pole
+bases and rational weights remain available in the full definition. The model
+format is unchanged.
+
 ## Added constraints
 
 | JSON variant | Meaning |

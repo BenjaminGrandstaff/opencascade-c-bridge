@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {snapPosition,drawPrimitive,primitiveGhost,nextId,createCanvasTools} from './canvas-tools.mjs';
+import {snapPosition,drawPrimitive,primitiveGhost,nextId,createCanvasTools,arcEnd} from './canvas-tools.mjs';
 const empty=()=>({points:[],lines:[],circles:[],constraints:[],profile:[]});
 const click=(x,y,point=null)=>({xy:[x,y],point});
 
@@ -21,6 +21,23 @@ test('drawing names stay stable, reuse picked points, and create closed constrai
   assert.throws(()=>drawPrimitive({...source,holes:[['hole']]},'circle',[click(0,0),click(2,0)],{profile:true}),/profile controls/);
   assert.equal(primitiveGhost('circle',[click(0,0)],click(2,0)).length,65);
 });
+test('arc construction projects free ends to the radius and never moves an off-radius picked point',()=>{
+  const source=empty(),arc=drawPrimitive(source,'arc',[click(0,0),click(5,0),click(0,9)],{clockwise:true}).definition;
+  assert.equal(arc.arcs[0].clockwise,true);assert.equal(arc.points[2].y.literal.value,5);assert.equal(source.points.length,0);
+  assert.throws(()=>arcEnd([click(0,0),click(5,0),click(0,9,'existing')]),/picked endpoint/);
+  assert.throws(()=>arcEnd([click(0,0),click(5,0),click(8,0)]),/distinct/);
+  const ccw=primitiveGhost('arc',[click(0,0),click(5,0)],click(0,9));assert.equal(ccw.length,65);assert(Math.abs(ccw.at(-1)[1]-5)<1e-10);assert(ccw[20][1]>0);
+  const cw=primitiveGhost('arc',[click(0,0),click(5,0)],click(0,9),{clockwise:true});assert(cw[20][1]<0);
+});
+test('closed native spline definitions repeat the first reference and protect edited profiles',()=>{
+  const source=empty(),points=[click(0,0),click(6,0),click(6,5),click(0,5)],d=drawPrimitive(source,'spline',points,{closed:true,profile:true}).definition;
+  assert.deepEqual(d.splines[0].points,['P1','P2','P3','P4','P1']);assert.deepEqual(d.profile,['S1']);assert.equal(source.points.length,0);
+  assert.equal(drawPrimitive(source,'spline',points).definition.profile.length,0);
+  assert.throws(()=>drawPrimitive(source,'spline',[click(0,0),click(6,0)],{closed:true}),/at least 3/);
+  assert.throws(()=>drawPrimitive(source,'spline',[...points,points[0]],{closed:true}),/distinct/);
+  assert.throws(()=>drawPrimitive({...source,region_edits:[{}]},'spline',points,{closed:true,profile:true}),/profile controls/);
+  assert.equal(nextId({...source,curve_operations:[{split:{before:'S1',after:'S2'}}]},'S'),'S3');
+});
 class Element{constructor(tag){this.tagName=tag;this.children=[];this.value='';}append(...items){this.children.push(...items);}setAttribute(k,v){this[k]=v;}}
 const all=e=>[e,...e.children.flatMap(all)];
 test('canvas gestures cancel unfinished drawings and retain completed local ghosts until native preview',async()=>{
@@ -34,5 +51,17 @@ test('canvas gestures cancel unfinished drawings and retain completed local ghos
  select.value='drag';select.onchange();assert.equal(tools.down(event(0,0,'P1')),true); // Fixed point: no drag.
  await tools.up(event(4,4));assert.equal(drags.length,0);
  d.points[0].fixed=false;tools.down(event(0,0,'P1'));await tools.up(event(4,4));assert.deepEqual(drags,[['P1',[4,4]]]);
+ delete globalThis.document;delete globalThis.Option;
+});
+test('multi-click arc/spline gestures stage points, cancel safely and finish only valid spline inputs',()=>{
+ globalThis.document={createElement:tag=>new Element(tag)};globalThis.Option=class extends Element{constructor(text,value){super('option');this.value=value;}};
+ let d=empty(),renders=0;const host=new Element('div'),messages=[];
+ const tools=createCanvasTools({host,getDraft:()=>d,setDraft:value=>d=value,changed:()=>renders++,message:m=>messages.push(m),ghost(){},dragPoint:async()=>{}});
+ const field=name=>all(host).find(e=>e['aria-label']===name),select=field('Canvas tool'),finish=all(host).find(e=>e.textContent==='Finish spline');
+ const event=(x,y)=>({position:[x,y],tolerance:0,scene:{points:{}},shiftKey:false});
+ select.value='arc';select.onchange();tools.down(event(0,0));tools.down(event(0,0));tools.down(event(5,0));assert.equal(d.points.length,0);tools.down(event(0,9));assert.equal(d.arcs.length,1);assert.equal(renders,1);
+ select.value='spline';select.onchange();tools.down(event(10,10));tools.down(event(15,10));assert.equal(d.splines?.length??0,0);assert.equal(finish.disabled,false);
+ field('Close spline').checked=true;field('Close spline').onchange();assert.equal(finish.disabled,true);tools.down(event(15,15));assert.equal(finish.disabled,false);tools.cancel();assert.equal(finish.disabled,true);
+ tools.down(event(10,10));tools.down(event(15,10));tools.down(event(15,15));finish.onclick();assert.equal(d.splines.length,1);assert.equal(d.splines[0].points[0],d.splines[0].points.at(-1));assert.equal(renders,2);
  delete globalThis.document;delete globalThis.Option;
 });

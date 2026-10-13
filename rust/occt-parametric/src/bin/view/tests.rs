@@ -2566,3 +2566,83 @@ fn source_edits_and_seed_selected_region_edits_keep_other_regions_and_reject_los
     assert_eq!(get(&mut studio, "/api/state").1, accepted);
     assert_eq!(studio.handle("GET", "/api/model.gltf", b"").body, mesh);
 }
+
+#[test]
+fn drawn_arc_and_periodic_spline_build_native_curves_and_reject_fixed_radius_conflicts() {
+    let directory = Directory::new();
+    let mut value = serde_json::to_value(sketch_block_document()).unwrap();
+    value["instances"][0]["base"]["id"] = json!("part");
+    let document = ModelDocument::from_json(&value.to_string()).unwrap();
+    let model = PathBuf::from(directory.model(&document));
+    let mut studio = serve::Studio::load(&model, Some("body".into())).unwrap();
+    let baseline = get(&mut studio, "/api/sketches").1["sketches"][0]["definition"].clone();
+    let original_mesh = studio.handle("GET", "/api/model.gltf", b"").body;
+    let mm =
+        |value: f64| json!({"literal":{"value":value,"dimension":"length","unit":"millimeter"}});
+    let mut draft = baseline.clone();
+    for (id, x, y) in [
+        ("center", 10.0, 10.0),
+        ("start", 15.0, 10.0),
+        ("end", 10.0, 15.0),
+        ("s0", 5.0, 5.0),
+        ("s1", 20.0, 5.0),
+        ("s2", 20.0, 18.0),
+        ("s3", 5.0, 18.0),
+    ] {
+        draft["points"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({"id":id,"x":mm(x),"y":mm(y),"fixed":true}));
+    }
+    draft["arcs"] =
+        json!([{"id":"arc","center":"center","start":"start","end":"end","clockwise":true}]);
+    draft["splines"] = json!([{"id":"spline","points":["s0","s1","s2","s3","s0"]}]);
+    draft["profile"] = json!(["spline"]);
+    let before = get(&mut studio, "/api/state").1;
+    let (status, preview) = edit_definition(&mut studio, "profile", draft.clone(), false);
+    assert_eq!(status, 200, "{preview}");
+    assert_eq!(preview["can_apply"], true, "{preview}");
+    assert_eq!(get(&mut studio, "/api/state").1, before);
+    let (status, result) = edit_definition(&mut studio, "profile", draft.clone(), true);
+    assert_eq!(status, 200, "{result}");
+    assert_ne!(
+        studio.handle("GET", "/api/model.gltf", b"").body,
+        original_mesh
+    );
+    let annotations = get(&mut studio, "/api/annotations?id=part").1;
+    let sketch = annotations["scenes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["kind"] == "sketch" && s["feature"] == "profile")
+        .unwrap();
+    let spline = sketch["entities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["id"] == "spline")
+        .unwrap();
+    let samples = spline["points"].as_array().unwrap();
+    assert!(samples.len() > 5, "{spline}");
+    assert_eq!(samples.first(), samples.last());
+    // Native interpolation follows the curve rather than the click polygon.
+    assert!(
+        samples.iter().any(|p| p[1].as_f64().unwrap() < 5.0),
+        "{spline}"
+    );
+    let accepted = get(&mut studio, "/api/state").1;
+    draft["points"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|p| p["id"] == "end")
+        .unwrap()["y"] = mm(16.0);
+    let (status, result) = edit_definition(&mut studio, "profile", draft, true);
+    assert_eq!(status, 422, "{result}");
+    assert_eq!(get(&mut studio, "/api/state").1, accepted);
+    assert_eq!(history(&mut studio, "undo")["dirty"], false);
+    assert_eq!(
+        studio.handle("GET", "/api/model.gltf", b"").body,
+        original_mesh
+    );
+}
