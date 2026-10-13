@@ -50,6 +50,7 @@ add_library(
     src/step_pmi.cpp
     src/projection.cpp
     src/curve_export.cpp
+    src/spline_refinement.cpp
     src/curve_intersections.cpp
     src/line_spline_intersections.cpp
     src/mesh.cpp

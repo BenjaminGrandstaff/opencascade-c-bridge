@@ -12,6 +12,8 @@ mod sketch;
 mod sketch_create;
 #[path = "serve_sketch_links.rs"]
 mod sketch_links;
+#[path = "serve_spline_refinement.rs"]
+mod spline_refinement;
 use super::{POLL, stamp, view_data};
 use occt_bridge::Session;
 use occt_parametric::prelude::*;
@@ -684,6 +686,10 @@ impl Studio {
             ("GET", "/api/sketches") => match self.sketches() {
                 Ok(data) => Response::json(200, &data),
                 Err(error) => Response::error(422, &error),
+            },
+            ("POST", "/api/spline-refine") => match self.spline_refine(body) {
+                Ok(data) => Response::json(200, &data),
+                Err(error) => Response::json(422, &json!({"error":error})),
             },
             ("POST", "/api/sketch") => match self.sketch_edit(body) {
                 Ok(data) => Response::json(200, &data),

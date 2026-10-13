@@ -79,7 +79,15 @@ export function createSketchEditor({ host, request, instance, preview, applied, 
       beginPicking:beginGeometryPick});
     shapeControls=createShapeControls({host:content,definition:draft,parameters,initialSelection:shapeControls?.selected,changed:render,message,highlight:ids=>highlight(ids,feature),
       beginPicking:beginGeometryPick});
-    splineControls=createSplineControls({host:content,definition:draft,parameters,initialSelection:splineControls?.selected,changed:render,message,focusPoint,highlight:ids=>highlight(ids,feature),beginPicking:beginGeometryPick});
+    splineControls=createSplineControls({host:content,definition:draft,parameters,initialSelection:splineControls?.selected,changed:render,message,focusPoint,highlight:ids=>highlight(ids,feature),beginPicking:beginGeometryPick,requestRefinement:async(spline,options)=>{
+      if(busy)throw new Error('Wait for the current native request.');
+      busy=true;content.inert=true;canvasMount.inert=true;launch.disabled=true;
+      const turn=generation,source=draft;
+      try{const result=await request('/api/spline-refine',{method:'POST',body:JSON.stringify({version,basis:spline.basis,pole_count:spline.points.length,...options})});
+        if(turn!==generation||source!==draft||(currentVersion()!==null&&currentVersion()!==result.version))throw new Error('Model changed. Reload the sketch draft.');
+        return result;}
+      finally{busy=false;content.inert=false;canvasMount.inert=false;launch.disabled=false;}
+    }});
     constraintControls = createConstraintControls({host:content, definition:draft, parameters,
       initialSelection:constraintControls?.selection ?? [], initialType:constraintControls?.type ?? 'horizontal',
       changed:render, message, highlight:ids=>highlight(ids, feature)});

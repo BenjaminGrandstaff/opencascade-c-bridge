@@ -81,3 +81,13 @@ test('exact refinement form updates fixed pole expressions atomically and retain
  d.points.find(p=>p.id===d.splines[0].points[1]).fixed=false;render();const snapshot=structuredClone(d);click(host,'Insert knot preserving shape');assert.equal(changes,2);assert.deepEqual(d,snapshot);assert.match(messages.at(-1),/fixed authored/);
  delete globalThis.document;delete globalThis.Option;
 });
+
+test('async native refinement waits for a valid reply and cannot overwrite a changed draft',async()=>{
+ globalThis.document={createElement:tag=>new Element(tag)};globalThis.Option=class extends Element{constructor(text,value){super('option');this.value=value;}};
+ const mm=value=>({literal:{value,dimension:'length',unit:'millimeter'}}),d={points:['a','b','c'].map((id,i)=>({id,x:mm(i),y:mm(i===1?2:0),fixed:true})),splines:[structuredClone(explicit)]},host=new Element('div'),messages=[];let changes=0,resolve;
+ const transform={degree:2,knots:[0,.5,1],multiplicities:[3,1,3],coefficients:[[1,0,0],[.5,.5,0],[0,.5,.5],[0,0,1]]};
+ createSplineControls({host,definition:d,changed:()=>changes++,message:m=>messages.push(m),requestRefinement:()=>new Promise(r=>resolve=r)});
+ const pending=click(host,'Insert knot preserving shape');assert.equal(changes,0);assert.equal(d.splines[0].points.length,3);d.points[0].x=mm(7);resolve(transform);await pending;assert.equal(changes,0);assert.equal(d.points[0].x.literal.value,7);assert.match(messages.at(-1),/draft changed/);
+ const fresh=new Element('div');createSplineControls({host:fresh,definition:d,changed:()=>changes++,message:m=>messages.push(m),requestRefinement:async()=>transform});await click(fresh,'Insert knot preserving shape');assert.equal(changes,1);assert.equal(d.splines[0].points.length,4);
+ delete globalThis.document;delete globalThis.Option;
+});

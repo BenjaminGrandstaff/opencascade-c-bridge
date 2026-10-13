@@ -73,7 +73,7 @@ export function resizeSplinePoles(spline,{action,index,point},knownPoints){
   return editSplineBasis(next,{degree,knots,multiplicities,mode,endpoints:next.endpoints},knownPoints);
 }
 
-export function createSplineControls({host,definition,parameters=[],changed,message,highlight=()=>{},focusPoint=()=>{},beginPicking=()=>{},initialSelection=null}){
+export function createSplineControls({host,definition,parameters=[],changed,message,highlight=()=>{},focusPoint=()=>{},beginPicking=()=>{},initialSelection=null,requestRefinement=null}){
   const splines=definition.splines??[];let selected=splines.some(s=>s.id===initialSelection)?initialSelection:splines[0]?.id,picking=false;
   if(!splines.length)return {get selected(){return null;},pick:()=>false,cancelPick(){}};
   const section=document.createElement('section'),title=document.createElement('h3');title.textContent='Spline points & weights';
@@ -132,14 +132,21 @@ export function createSplineControls({host,definition,parameters=[],changed,mess
     }
     if(explicit){
       const group=document.createElement('fieldset'),legend=document.createElement('legend');legend.textContent='Preserve curve shape';group.append(legend);form.append(group);
-      const note=document.createElement('p');note.textContent='Exact rational knot insertion and degree elevation support clamped splines with fixed authored poles. New poles retain coordinate and weight parameter expressions. Original points and constraints remain. Elevation uses adjacent Bezier spans.';group.append(note);
+      const note=document.createElement('p');note.textContent='Native OpenCascade knot insertion and degree elevation preserve clamped, periodic and non-clamped curves with fixed authored poles. New poles retain parameter expressions. Original points, constraints and native endpoint references remain.';group.append(note);
       function field(label,value){const row=document.createElement('label');row.textContent=label;const e=document.createElement('input');e.type='number';e.step='any';e.value=String(value);e.setAttribute('aria-label',label);row.append(e);group.append(row);return e;}
       const knot=field('Knot to insert',(spline.basis.knots[0]+spline.basis.knots.at(-1))/2),degree=field('Elevated spline degree',spline.basis.degree+1);degree.step='1';
       for(const [action,text]of [['insert_knot','Insert knot preserving shape'],['elevate_degree','Elevate degree preserving shape']]){
-        const button=document.createElement('button');button.textContent=text;button.onclick=()=>{try{
+        const button=document.createElement('button');button.textContent=text;button.onclick=async()=>{try{
           const current=withBasis(editSpline(spline,{points:points.value.split(',').map(id=>id.trim()),weights:weightsEdited?weights:undefined},profileIds(definition,'points')));
           const staged=structuredClone(definition),index=definition.splines.indexOf(spline);if(index<0)throw new Error('Spline changed. Reload its controls.');staged.splines[index]=current;
-          const next=refineSpline(staged,spline.id,{action,knot:String(knot.value).trim()?Number(knot.value):NaN,degree:String(degree.value).trim()?Number(degree.value):NaN});
+          const options={action,knot:String(knot.value).trim()?Number(knot.value):NaN,degree:String(degree.value).trim()?Number(degree.value):NaN};
+          const snapshot=JSON.stringify(definition);
+          if(requestRefinement){
+            if(current.points.some(id=>!staged.points?.some(p=>p.id===id&&p.fixed)))throw new Error('Exact refinement requires fixed authored poles; free or projected poles need their native solved geometry.');
+            options.transformation=await requestRefinement(current,options);
+            if(JSON.stringify(definition)!==snapshot)throw new Error('Spline draft changed. Retry refinement on the current draft.');
+          }
+          const next=refineSpline(staged,spline.id,options);
           Object.assign(definition,next);changed();message('Exact spline refinement added to the draft. Preview checks the curve, constraints and dependent solids.');
         }catch(error){message(error.message);}};group.append(button);
       }

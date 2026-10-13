@@ -15,10 +15,12 @@ mod inspection;
 mod mesh;
 mod operations;
 mod projection;
+mod refinement;
 mod session;
 mod types;
 
 use ffi::*;
+pub use refinement::*;
 pub use session::*;
 pub use types::*;
 

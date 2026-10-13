@@ -15,16 +15,22 @@ function insert(rows,knots,degree,value){
   for(let i=k-degree+1;i<=k-s;i++){const t=(value-knots[i])/(knots[i+degree]-knots[i]);next[i]=blend(rows[i-1],rows[i],t);}
   return {rows:next,knots:[...knots.slice(0,k+1),value,...knots.slice(k+1)]};
 }
-export function refineSpline(definition,splineId,{action,knot,degree}){
+export function refineSpline(definition,splineId,{action,knot,degree,transformation}){
   const source=definition.splines?.find(s=>s.id===splineId),basis=source?.basis;
-  if(!basis||basis.periodic||basis.non_clamped)throw new Error('Exact refinement currently requires a clamped explicit B-spline.');
+  if(!basis)throw new Error('Exact refinement requires an explicit B-spline.');
+  if(!transformation&&(basis.periodic||basis.non_clamped))throw new Error('Native refinement is required for periodic and non-clamped bases.');
   const poles=source.points.map(id=>definition.points?.find(p=>p.id===id));
   if(poles.some(p=>!p||!p.fixed))throw new Error('Exact refinement requires fixed authored poles; free or projected poles need their native solved geometry.');
-  const p=basis.degree,n=poles.length;
-  if(!Number.isInteger(p)||p<1||p>25||n<p+1||n>256||basis.knots.length<2||basis.knots.length!==basis.multiplicities.length||basis.knots.some((k,i)=>!Number.isFinite(k)||i>0&&k<=basis.knots[i-1])||basis.multiplicities.some((m,i)=>!Number.isInteger(m)||m<1||m>(i===0||i===basis.knots.length-1?p+1:p))||basis.multiplicities[0]!==p+1||basis.multiplicities.at(-1)!==p+1||basis.multiplicities.reduce((a,b)=>a+b,0)!==n+p+1)throw new Error('Use a valid clamped basis with at most 256 control poles.');
+  const p=basis.degree,n=poles.length,periodic=Boolean(basis.periodic),nonClamped=Boolean(basis.non_clamped);
+  if(!Number.isInteger(p)||p<1||p>25||n<p+1||n>256||basis.knots.length<2||basis.knots.length!==basis.multiplicities.length||basis.knots.some((k,i)=>!Number.isFinite(k)||i>0&&k<=basis.knots[i-1])||basis.multiplicities.some((m,i)=>!Number.isInteger(m)||m<1||m>(i===0||i===basis.knots.length-1?p+1:p))||periodic&&nonClamped||!periodic&&!nonClamped&&(basis.multiplicities[0]!==p+1||basis.multiplicities.at(-1)!==p+1)||periodic&&(basis.multiplicities[0]!==basis.multiplicities.at(-1)||basis.multiplicities[0]>p)||basis.multiplicities.reduce((a,b)=>a+b,0)!==n+(periodic?basis.multiplicities.at(-1):p+1))throw new Error('Use a valid basis with at most 256 control poles.');
+  if(nonClamped&&(!source.endpoints||[source.endpoints.start,source.endpoints.end].some(id=>!profileIds(definition,'points').includes(id)||source.points.includes(id))))throw new Error('Keep known native endpoint references separate from control poles.');
   if(basis.weights?.length&&basis.weights.length!==n)throw new Error('Each pole needs one weight.');
   let rows=poles.map((_,i)=>poles.map((_,j)=>i===j?1:0)),knots=basis.knots.flatMap((k,i)=>Array(basis.multiplicities[i]).fill(k)),target=p;
-  if(action==='insert_knot'){
+  if(transformation){
+    const t=transformation,expected=action==='insert_knot'?p:degree;
+    if(!['insert_knot','elevate_degree'].includes(action)||t.degree!==expected||!Array.isArray(t.coefficients)||!t.coefficients.length||t.coefficients.length>256||action==='insert_knot'&&t.coefficients.length!==n+1||action==='elevate_degree'&&(!Number.isInteger(degree)||degree<=p||degree>25)||t.coefficients.some(row=>!Array.isArray(row)||row.length!==n||row.some(v=>!Number.isFinite(v)||v<0)||Math.abs(row.reduce((a,b)=>a+b,0)-1)>1e-10)||!Array.isArray(t.knots)||t.knots.length<2||t.knots.some((k,i)=>!Number.isFinite(k)||i>0&&k<=t.knots[i-1])||!Array.isArray(t.multiplicities)||t.multiplicities.length!==t.knots.length||t.multiplicities.some((m,i)=>!Number.isInteger(m)||m<1||m>t.degree+(!periodic&&(i===0||i===t.knots.length-1)?1:0))||t.multiplicities.reduce((a,b)=>a+b,0)!==t.coefficients.length+(periodic?t.multiplicities.at(-1):t.degree+1))throw new Error('Native refinement returned an inconsistent transformation.');
+    rows=t.coefficients;target=t.degree;knots=t.knots.flatMap((k,i)=>Array(t.multiplicities[i]).fill(k));
+  }else if(action==='insert_knot'){
     if(!Number.isFinite(knot)||knot<=knots[0]||knot>=knots.at(-1))throw new Error('Insert a finite knot strictly inside the curve domain.');
     ({rows,knots}=insert(rows,knots,p,knot));
   }else if(action==='elevate_degree'){

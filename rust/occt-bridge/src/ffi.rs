@@ -2,7 +2,7 @@
 
 use super::*;
 
-pub(crate) const ABI_VERSION: u32 = 71;
+pub(crate) const ABI_VERSION: u32 = 72;
 
 #[repr(C)]
 #[derive(Default)]
@@ -1126,4 +1126,35 @@ unsafe extern "C" {
         angular_deflection_radians: f64,
         binary: c_int,
     ) -> RawStatus;
+}
+
+#[repr(C)]
+pub(crate) struct RawBSplineBasis {
+    pub degree: i32,
+    pub periodic: i32,
+    pub pole_count: usize,
+    pub knot_count: usize,
+    pub knots: *const f64,
+    pub multiplicities: *const i32,
+}
+#[repr(C)]
+pub(crate) struct RawBSplineRefinement {
+    pub degree: i32,
+    pub pole_count: usize,
+    pub knot_count: usize,
+    pub knots: *mut f64,
+    pub multiplicities: *mut i32,
+    pub coefficients: *mut f64,
+    pub knot_capacity: usize,
+    pub coefficient_capacity: usize,
+}
+unsafe extern "C" {
+    pub(crate) fn occt_bridge_bspline_refine(
+        session: *mut c_void,
+        basis: *const RawBSplineBasis,
+        action: i32,
+        knot: f64,
+        target_degree: i32,
+        out_result: *mut RawBSplineRefinement,
+    ) -> i32;
 }

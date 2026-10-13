@@ -3010,3 +3010,82 @@ fn exact_rational_refinement_preserves_native_solid_volume_across_parameters() {
         assert!((original - refined).abs() < 1e-7, "{original} != {refined}");
     }
 }
+
+#[test]
+fn native_spline_refinement_route_is_read_only_versioned_and_bounded() {
+    for source in [
+        include_str!("../../../../../tools/model/rational-spline-cap.request.json"),
+        include_str!("../../../../../tools/model/periodic-spline-pad.request.json"),
+        include_str!("../../../../../tools/model/non-clamped-spline-cap.request.json"),
+    ] {
+        let directory = Directory::new();
+        let request: serde_json::Value = serde_json::from_str(source).unwrap();
+        let document = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+        let model = PathBuf::from(directory.model(&document));
+        let mut studio = serve::Studio::load(&model, Some("body".into())).unwrap();
+        let sketches = get(&mut studio, "/api/sketches").1;
+        let spline = &sketches["sketches"][0]["definition"]["splines"][0];
+        let basis = &spline["basis"];
+        let count = spline["points"].as_array().unwrap().len();
+        let degree = basis["degree"].as_i64().unwrap();
+        let state = get(&mut studio, "/api/state").1;
+        let mesh = studio.handle("GET", "/api/model.gltf", b"").body;
+        for action in ["insert_knot", "elevate_degree"] {
+            let edit = json!({"version":sketches["version"],"basis":basis,"pole_count":count,"action":action,"knot":if basis["non_clamped"]==true {2.5} else {0.5},"degree":degree+1});
+            let response = studio.handle("POST", "/api/spline-refine", edit.to_string().as_bytes());
+            let result: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+            assert_eq!(response.status, 200, "{result}");
+            assert_eq!(result["version"], sketches["version"]);
+            assert_eq!(
+                result["degree"],
+                if action == "insert_knot" {
+                    degree
+                } else {
+                    degree + 1
+                }
+            );
+            let rows = result["coefficients"].as_array().unwrap();
+            if action == "insert_knot" {
+                assert_eq!(rows.len(), count + 1);
+            }
+            for row in rows {
+                let values = row.as_array().unwrap();
+                assert_eq!(values.len(), count);
+                assert!(values.iter().all(|v| v.as_f64().unwrap() >= 0.));
+                assert!(
+                    (values.iter().map(|v| v.as_f64().unwrap()).sum::<f64>() - 1.).abs() < 1e-12
+                );
+            }
+            for invalid in [
+                json!({"version":0}),
+                if action == "insert_knot" {
+                    json!({"knot":1e100})
+                } else {
+                    json!({"degree":26})
+                },
+                json!({"pole_count":257}),
+            ] {
+                let mut rejected = edit.clone();
+                for (key, value) in invalid.as_object().unwrap() {
+                    rejected[key] = value.clone();
+                }
+                assert_eq!(
+                    studio
+                        .handle(
+                            "POST",
+                            "/api/spline-refine",
+                            rejected.to_string().as_bytes()
+                        )
+                        .status,
+                    422
+                );
+            }
+            assert_eq!(get(&mut studio, "/api/state").1, state);
+            assert_eq!(studio.handle("GET", "/api/model.gltf", b"").body, mesh);
+        }
+        assert_eq!(
+            fs::read_to_string(model).unwrap(),
+            document.to_json_pretty().unwrap()
+        );
+    }
+}

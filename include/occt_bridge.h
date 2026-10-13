@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define OCCT_BRIDGE_ABI_VERSION 71u
+#define OCCT_BRIDGE_ABI_VERSION 72u
 #define OCCT_BRIDGE_INVALID_SHAPE_ID UINT64_C(0)
 
 #if defined(_WIN32) && defined(OCCT_BRIDGE_BUILD_SHARED)
@@ -41,6 +41,30 @@ enum {
     OCCT_BRIDGE_HISTORY_GENERATED = 1,
     OCCT_BRIDGE_HISTORY_MODIFIED = 2
 };
+
+/* ABI 72: bounded, geometry-preserving B-spline basis transformation.
+ * Coefficients are row-major [output pole][input pole] in homogeneous space.
+ * Caller supplies >=514 knot slots and >=256*input_pole_count coefficients.
+ * No shapes are created; input poles are limited to 256. action: 0 insert one
+ * internal knot occurrence, 1 elevate to target_degree. Outputs valid on OK. */
+typedef struct occt_bridge_bspline_basis {
+    int32_t degree;
+    int32_t periodic;
+    size_t pole_count;
+    size_t knot_count;
+    const double* knots;
+    const int32_t* multiplicities;
+} occt_bridge_bspline_basis_t;
+typedef struct occt_bridge_bspline_refinement {
+    int32_t degree;
+    size_t pole_count;
+    size_t knot_count;
+    double* knots;
+    int32_t* multiplicities;
+    double* coefficients;
+    size_t knot_capacity;
+    size_t coefficient_capacity;
+} occt_bridge_bspline_refinement_t;
 
 typedef struct occt_bridge_vec3 {
     double x;
@@ -1566,6 +1590,11 @@ typedef struct {
     occt_bridge_vec3_t point;
     double weight;
 } occt_bridge_bezier_pole_t;
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_bspline_refine(
+    occt_bridge_session_t* session,
+    const occt_bridge_bspline_basis_t* basis,
+    int32_t action, double knot, int32_t target_degree,
+    occt_bridge_bspline_refinement_t* out_result);
 OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_edge_bezier_poles(
     occt_bridge_session_t* session,
     occt_bridge_shape_id_t edge,

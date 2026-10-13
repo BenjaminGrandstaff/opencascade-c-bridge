@@ -3,10 +3,12 @@
 A small, stable C ABI over Open Cascade (OCCT), designed to be wrapped safely
 from Rust and other languages. Open Cascade C++ objects never cross the ABI.
 
-The current C ABI version is **61**.
+The current C ABI version is **72**.
 
 ## Current API
 
+- Exact B-spline knot insertion and degree elevation coefficient transforms,
+  preserving rational expressions across clamped, periodic, and non-clamped bases
 - Opaque, independently owned sessions
 - Integer shape handles scoped to a session
 - History-preserving duplicate handles for transactional geometry reuse
