@@ -2499,3 +2499,70 @@ fn profile_corners_regenerate_and_reject_oversized_treatments_without_mutation()
     assert_eq!(studio.handle("GET", "/api/model.gltf", b"").body, original);
     assert_eq!(history(&mut studio, "redo")["dirty"], true);
 }
+
+#[test]
+fn source_edits_and_seed_selected_region_edits_keep_other_regions_and_reject_lost_references() {
+    let directory = Directory::new();
+    let request: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../tools/model/edited-regions.request.json"
+    ))
+    .unwrap();
+    let document = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+    let model = PathBuf::from(directory.model(&document));
+    let mut studio = serve::Studio::load(&model, Some("body".into())).unwrap();
+    let data = get(&mut studio, "/api/sketches").1;
+    let baseline = data["sketches"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["feature"] == "profile")
+        .unwrap()["definition"]
+        .clone();
+    let mm =
+        |value: f64| json!({"literal":{"value":value,"dimension":"length","unit":"millimeter"}});
+    let mut draft = baseline.clone();
+    draft["curve_operations"][0]["extend_to"]["limit"] = mm(55.0);
+    draft["region_edits"].as_array_mut().unwrap().push(json!({"seed":"extra-pick","operations":[{"offset":{"distance":mm(0.5),"join":"intersection"}}]}));
+    let before = get(&mut studio, "/api/state").1;
+    let (status, preview) = edit_definition(&mut studio, "profile", draft.clone(), false);
+    assert_eq!(status, 200, "{preview}");
+    assert_eq!(preview["can_apply"], true, "{preview}");
+    assert_eq!(get(&mut studio, "/api/state").1, before);
+    let (status, result) = edit_definition(&mut studio, "profile", draft.clone(), true);
+    assert_eq!(status, 200, "{result}");
+    let applied = get(&mut studio, "/api/sketches").1;
+    let current = applied["sketches"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["feature"] == "profile")
+        .unwrap()["definition"]
+        .clone();
+    assert_eq!(
+        current["curve_operations"][1],
+        baseline["curve_operations"][1]
+    );
+    assert_eq!(current["region_edits"][0], baseline["region_edits"][0]);
+    let accepted = get(&mut studio, "/api/state").1;
+    let mesh = studio.handle("GET", "/api/model.gltf", b"").body;
+    // Removing the split leaves explicit references to its named pieces.
+    draft["curve_operations"].as_array_mut().unwrap().pop();
+    let (status, result) = edit_definition(&mut studio, "profile", draft, true);
+    assert_eq!(status, 422, "{result}");
+    assert_eq!(get(&mut studio, "/api/state").1, accepted);
+    assert_eq!(studio.handle("GET", "/api/model.gltf", b"").body, mesh);
+    // A seed on the outer circle cannot select a bounded material cell.
+    let mut ring = applied["sketches"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["feature"] == "ring_profile")
+        .unwrap()["definition"]
+        .clone();
+    let invalid_seed = ring["circles"][0]["rim"].clone();
+    ring["region_discovery"]["seeds"] = json!([invalid_seed]);
+    let (status, result) = edit_definition(&mut studio, "ring_profile", ring, true);
+    assert_eq!(status, 422, "{result}");
+    assert_eq!(get(&mut studio, "/api/state").1, accepted);
+    assert_eq!(studio.handle("GET", "/api/model.gltf", b"").body, mesh);
+}

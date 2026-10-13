@@ -12,7 +12,7 @@ export function availableSources(features, sketch) {
   return features.filter(f=>!blocked.has(f.id));
 }
 export function requireConstructionProfile(draft){
-  if(!draft.profile?.length&&!draft.region_discovery?.curves?.length)
+  if(!draft.profile?.length&&!draft.region_discovery?.entities?.length)
     throw Error('Set an explicit outer profile or discovery curve list before adding construction references.');
 }
 export function attachPickedFace(draft,pick){

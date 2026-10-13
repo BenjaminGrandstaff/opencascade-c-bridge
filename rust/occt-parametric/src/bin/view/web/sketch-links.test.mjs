@@ -14,7 +14,7 @@ test('projected references are selectable for typed constraints without unstable
  assert.deepEqual(geometryIds(d,'lines'),['AB','ref']);assert(geometryIds(d,'points').includes('ref:start'));assert(!geometryIds(d,'points').some(id=>id.includes('pole')));
  assert.deepEqual(makeConstraint(d,'coincident',{first:'A',second:'ref:start'}),{coincident:{first:'A',second:'ref:start'}});
  assert.throws(()=>requireConstructionProfile({profile:[]}),/explicit/);requireConstructionProfile({profile:['AB']});
- requireConstructionProfile({region_discovery:{curves:['AB']}});
+ requireConstructionProfile({region_discovery:{entities:['AB']}});
 });
 class Element{constructor(tag){this.tagName=tag;this.children=[];this.value='';}append(...e){this.children.push(...e);}setAttribute(k,v){this[k]=v;}}
 const all=e=>[e,...e.children.flatMap(all)];

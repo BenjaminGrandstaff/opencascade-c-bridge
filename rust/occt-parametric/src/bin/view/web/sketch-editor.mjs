@@ -70,7 +70,7 @@ export function createSketchEditor({ host, request, instance, preview, applied, 
     content.replaceChildren();
     const note = document.createElement('p'); note.textContent = `Family-wide edit · ${feature}. Coordinates are sketch-local. Free point coordinates are solver starting positions; constraints determine the solved shape.`; content.append(note);
     links.render(content);
-    profileControls=createProfileControls({host:content,definition:draft,parameters,initialType:profileControls?.type,changed:render,message,highlight:ids=>highlight(ids,feature),
+    profileControls=createProfileControls({host:content,definition:draft,parameters,initialType:profileControls?.type,initialScope:profileControls?.scope,initialSeed:profileControls?.seed,changed:render,message,highlight:ids=>highlight(ids,feature),
       beginPicking:()=>{links.cancel();canvasTools.selectMode();showSketch(feature);beginPicking();}});
     constraintControls = createConstraintControls({host:content, definition:draft, parameters,
       initialSelection:constraintControls?.selection ?? [], initialType:constraintControls?.type ?? 'horizontal',

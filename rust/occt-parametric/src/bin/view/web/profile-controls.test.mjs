@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {profileIds,makeProfileOperation,createProfileControls} from './profile-controls.mjs';
+import {profileIds,makeProfileOperation,createProfileControls,makeCurveOperation,replaceSplitBoundaryReferences,updateDiscoverySelection} from './profile-controls.mjs';
 const mm=value=>({literal:{value,dimension:'length',unit:'millimeter'}});
 const scalar=value=>({literal:{value,dimension:'scalar',unit:null}});
 const definition={points:[{id:'A'},{id:'B'}],lines:[{id:'leg'}],circles:[{id:'head'}],profile:['leg','head']};
@@ -29,6 +29,23 @@ test('corner operations retain expressions and reject nonpositive or wrongly dim
   assert.deepEqual(makeProfileOperation('chamfer',{point:'B',incoming:mm(2),outgoing:mm(3)}),{chamfer:{point:'B',incoming:mm(2),outgoing:mm(3)}});
   assert.throws(()=>makeProfileOperation('fillet',{point:'A',radius:mm(0)}),/positive/);
   assert.throws(()=>makeProfileOperation('chamfer',{point:'B',incoming:mm(2),outgoing:scalar(3)}),/units/);
+});
+test('source operations keep exact bounds and formulas; split references cover every explicit boundary',()=>{
+  const d=structuredClone(definition),split={entity:'leg',at:{point:{point:'A'}},before:'leg-a',after:'leg-b'};
+  assert.deepEqual(makeCurveOperation('split',split,d),{split});
+  assert.throws(()=>makeCurveOperation('split',{...split,before:'head'},d),/unused/);
+  assert.throws(()=>makeCurveOperation('split',{...split,at:'start'},d),/interior/);
+  const formula={parameter:'limit'};assert.deepEqual(makeCurveOperation('extend_to',{entity:'leg',end:'end',target:'head',limit:formula},d).extend_to.limit,formula);
+  assert.throws(()=>makeCurveOperation('extend_to',{entity:'leg',end:'end',target:'leg',limit:mm(1)},d),/different/);
+  assert.throws(()=>makeCurveOperation('extend_to',{entity:'leg',end:'end',target:'head',limit:mm(0)},d),/exceed/);
+  d.holes=[['leg']];d.regions=[{profile:['leg'],holes:[['head']]}];d.region_discovery={entities:['leg'],seeds:['A']};replaceSplitBoundaryReferences(d,split);
+  assert.deepEqual(d.profile,['leg-a','leg-b','head']);assert.deepEqual(d.regions[0].profile,['leg-a','leg-b']);assert.deepEqual(d.region_discovery.entities,['leg-a','leg-b']);assert.deepEqual(d.region_discovery.seeds,['A']);
+});
+test('discovery selection requires explicit all-cells intent and preserves named material references',()=>{
+  const d={...definition,region_discovery:{entities:['leg'],seeds:['A']}};
+  assert.throws(()=>updateDiscoverySelection(d,{mode:'selected',seeds:[],entities:[],merge_adjacent:true}),/at least/);
+  updateDiscoverySelection(d,{mode:'selected',seeds:['B','B'],entities:['head'],merge_adjacent:true});assert.deepEqual(d.region_discovery,{entities:['head'],seeds:['B'],merge_adjacent:true});
+  updateDiscoverySelection(d,{mode:'all',seeds:[],entities:[],merge_adjacent:false});assert.deepEqual(d.region_discovery.seeds,[]);
 });
 class Element{
   constructor(tag){this.tagName=tag;this.children=[];this.value='';}
@@ -64,5 +81,26 @@ test('armed canvas picks fill only the requested field, cancel safely, and inser
   choose(host,'Profile operation','chamfer');click(host,'Pick corner point on canvas');controls.pick('B');
   const incoming=field(host,'Incoming distance (mm)');incoming.value='2';incoming.oninput();click(host,'Add profile operation');
   assert.equal(d.profile_operations[1].chamfer.incoming.literal.value,2);assert(d.profile_operations[2].offset);assert.equal(changes,2);
+  delete globalThis.document;delete globalThis.Option;
+});
+test('forms edit source operations and seed-specific operations without changing other regions',()=>{
+  globalThis.document={createElement:tag=>new Element(tag)};globalThis.Option=class extends Element{constructor(text,value){super('option');this.textContent=text;this.value=value;}};
+  const d=structuredClone(definition),host=new Element('div');d.region_edits=[{seed:'A',operations:[{offset:{distance:{parameter:'wall'},join:'arc'}}]}];let changes=0;
+  const render=()=>{host.replaceChildren();return createProfileControls({host,definition:d,changed:()=>{changes++;render();},message:()=>{}});};let controls=render();
+  choose(host,'Profile operation','split');choose(host,'Source curve','leg');choose(host,'Split point','B');
+  for(const [label,value] of [['Before piece name','leg-a'],['After piece name','leg-b']]){const e=field(host,label);e.value=value;e.onchange();}
+  click(host,'Add profile operation');assert.equal(d.curve_operations[0].split.after,'leg-b');assert.equal(d.profile[0],'leg-a');
+  click(host,'Region 1.1. offset · A');click(host,'Update profile operation');assert.deepEqual(d.region_edits[0].operations[0].offset.distance,{parameter:'wall'});
+  choose(host,'Profile operation','fillet');choose(host,'Boundary target','region');choose(host,'Region seed','B');choose(host,'Corner point','A');click(host,'Add profile operation');assert.equal(d.region_edits[1].seed,'B');assert.equal(changes,3);
+  click(host,'Remove region operation 2.1');assert.equal(d.region_edits.length,1);
+  delete globalThis.document;delete globalThis.Option;
+});
+test('canvas discovery seeds stage a selection until its explicit update',()=>{
+  globalThis.document={createElement:tag=>new Element(tag)};globalThis.Option=class extends Element{constructor(text,value){super('option');this.textContent=text;this.value=value;}};
+  const d={...definition,region_discovery:{entities:['leg'],seeds:[],merge_adjacent:false}},host=new Element('div');let changes=0;
+  const controls=createProfileControls({host,definition:d,changed:()=>changes++,message:()=>{}});
+  click(host,'Pick discovery seed on canvas');controls.pick('B');assert.deepEqual(d.region_discovery.seeds,[]);
+  assert.equal(field(host,'Region selection mode').value,'selected');assert.equal(field(host,'Selected region seeds (comma separated)').value,'B');
+  click(host,'Update region selection');assert.deepEqual(d.region_discovery.seeds,['B']);assert.equal(changes,1);
   delete globalThis.document;delete globalThis.Option;
 });

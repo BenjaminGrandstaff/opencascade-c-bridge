@@ -1654,7 +1654,7 @@ integration of the exact curve (1e-6), and rejected `rho` and points. 500
 ## Trimming between points and crossings (schema 126 / ABI 64)
 
 The live model studio exposes these operations under **Edit sketch geometry →
-Load sketch draft → Trim, corners & offset**. Choose a curve, then choose each bound as
+Load sketch draft → Curve & region edits**. Choose a curve, then choose each bound as
 its start/end, a named point, or an exact crossing with another curve. A crossing
 uses a nearby named hint point to select the intended intersection. Trimming
 keeps the directed span; it does not remove the clicked span automatically.
@@ -1672,9 +1672,9 @@ positive radius; **Chamfer profile corner** accepts independent positive incomin
 and outgoing distances measured along the directed profile traversal. Both use
 a named corner, selectable on the canvas, and preserve parameter/formula values.
 New trims are inserted before corner treatments and offsets; new corner
-treatments precede offsets. These controls edit the main
-outer profile; additional regions, hole boundaries, and other advanced edits
-remain available in the full definition.
+treatments precede offsets. Trims edit the main outer profile; corner and
+offset operations can instead target a seed-selected material region and its
+hole boundaries. Explicit boundary definitions remain in the full definition.
 
 All edits remain in a local draft. **Preview draft** regenerates the native
 profile and dependent features; **Apply verified draft** repeats regeneration
@@ -1926,6 +1926,35 @@ one face with a hole, removes all internal divider edges and extrudes it in
 0.19 s (10 s budget).
 
 ## Geometry editing (schema 132 / ABI 68)
+
+The live studio's **Curve & region edits** controls expose **Split source
+curve** and **Extend to curve crossing** with named geometry selectors and
+canvas picks. Splits accept an interior named point or an exact crossing plus
+hint, and save two explicit piece names. **Use split pieces in explicit
+boundaries** replaces the source in outer profiles, holes, additional regions,
+and explicit discovery entity lists. Source constraints retain their original
+references. Removing a split or renaming its pieces requires repairing any
+references before Apply; Preview rejects lost references.
+
+Extension chooses the source end, target curve, positive search limit in
+millimeters or a length parameter, and an optional named crossing hint. Existing
+formulas remain intact when editing. Source operations appear in their recorded
+order and can be edited or removed.
+
+For fillets, chamfers, and offsets, **Boundary target → Material region at
+seed** selects a face strictly containing a named interior point, including
+additional and discovered regions and their hole boundaries. Region operations
+can be edited or removed individually; removing the last operation also removes
+its empty entry. Changing a seed shared by several operations requires a new
+entry rather than silently retargeting the other operations.
+
+Sketches already configured for discovery expose **Discovered region
+selection**. Choose seed points, an optional explicit arrangement curve list,
+and whether to merge adjacent cells. Canvas seed picks stage the selection until
+**Update region selection**. Selecting all bounded cells is explicit because it
+can fill inner cells. Converting explicit profiles to discovery remains in the
+full definition. All these changes use the existing guarded Preview/Apply flow
+and studio history, without a model schema change.
 
 `curve_operations` runs on exact solved source curves before constructing
 profiles or discovering cells. Constraints remain attached to authored
