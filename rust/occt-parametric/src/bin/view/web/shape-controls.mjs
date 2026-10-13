@@ -52,14 +52,14 @@ export function createShapeControls({host,definition,parameters=[],changed,messa
     const number=tool.integer?original:tool.angle?dimensionNumber(original,'angle'):tool.dimension==='length'?dimensionNumber(original,'length'):original?.literal?.dimension==='scalar'?original.literal.value:null;
     const row=document.createElement('label');row.textContent=tool.label;
     const input=document.createElement('input');input.type='number';input.step=tool.integer?'1':'any';input.value=number??(kind==='conic'?.5:kind==='slot'?1:0);input.setAttribute('aria-label',tool.label);
-    input.disabled=source!=='literal';input.oninput=()=>edited=true;row.append(input);
+    input.disabled=row.hidden=source!=='literal';input.oninput=()=>edited=true;row.append(input);
     if(!tool.integer){
       const label=document.createElement('label');label.textContent='Shape driving value';const driver=document.createElement('select');driver.setAttribute('aria-label','Shape driving value');
       const choices=[['literal','Entered value'],...parameters.filter(p=>p.parameter_type?.scalar===tool.dimension).map(p=>[`parameter:${p.id}`,`Parameter: ${p.id}`])];
       if(tool.optional)choices.push(['default',tool.defaultLabel]);if(original&&!original.literal&&!original.parameter)choices.push(['preserve','Keep existing formula']);
       if(source.startsWith('parameter:')&&!choices.some(([id])=>id===source))choices.push([source,`Existing parameter: ${original.parameter}`]);
       for(const [id,text]of choices)driver.append(new Option(text,id));driver.value=source;
-      driver.onchange=()=>{source=driver.value;input.disabled=source!=='literal';};label.append(driver);form.append(label);
+      driver.onchange=()=>{source=driver.value;input.disabled=row.hidden=source!=='literal';};label.append(driver);form.append(label);
     }
     form.append(row);
     if(initialSource==='preserve'){const hint=document.createElement('p');hint.textContent='The existing formula stays intact until you explicitly replace it.';form.append(hint);}
