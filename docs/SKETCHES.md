@@ -52,6 +52,28 @@ curve / rectangle as outer profile**, or stay construction geometry. The canvas
 shows only the options for the active tool. Preview verifies the solved curves,
 closure, dependent solids, and requirements before Apply.
 
+**Shape parameters** edits existing shortcut definitions: slot radius, polygon
+side count, rectangle angle, and conic rho. Choose the shape by name or arm
+**Select shape from canvas** and click one of its generated boundary curves.
+Escape cancels this selection. Ordinary geometry clicks continue to serve the
+dimension/constraint tools.
+
+Length and scalar fields accept entered values or compatible family parameters.
+Existing formulas and literal unit metadata remain intact until explicitly
+replaced. Rectangle angles display degrees and save native scalar radians;
+**Axis aligned** removes the optional angle while keeping the opposite corner
+points. It changes the rectangle's axes, rather than rigidly rotating those
+points. **Default rho (0.5)** removes the optional conic expression. Polygon
+side count is a literal integer from 3 to 1000, matching the existing format.
+
+Updates preserve the shortcut's name and point references. Reducing polygon
+side count can remove generated vertices and edges; Preview/Apply rejects edits
+that leave references to those names. Radius and rho limits are validated before
+changing the draft, with native regeneration verifying parameter/formula values
+and dependent solids. Ellipse axes continue to use named-point coordinates and
+dimension controls. Applied edits participate in undo/redo and Save; no schema
+change is required.
+
 ## Added constraints
 
 | JSON variant | Meaning |

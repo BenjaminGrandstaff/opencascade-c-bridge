@@ -2705,3 +2705,65 @@ fn drawn_ellipse_slot_and_polygon_profiles_extrude_to_their_analytic_volumes() {
         );
     }
 }
+
+#[test]
+fn shape_parameter_edits_track_parameters_and_reject_lost_polygon_references() {
+    let directory = Directory::new();
+    let mut value = serde_json::to_value(sketch_block_document()).unwrap();
+    value["instances"][0]["base"]["id"] = json!("part");
+    let sketch = &mut value["family"]["features"][0]["operation"]["sketch_face"]["sketch"];
+    sketch["shapes"] = json!([{"slot":{"id":"slot","start":"A","end":"B","radius":{"multiply":[{"parameter":"depth"},{"literal":{"value":0.2,"dimension":"scalar","unit":null}}]}}}]);
+    sketch["profile"] = json!(["slot"]);
+    let document = ModelDocument::from_json(&value.to_string()).unwrap();
+    let model = PathBuf::from(directory.model(&document));
+    let mut studio = serve::Studio::load(&model, Some("body".into())).unwrap();
+    let baseline = get(&mut studio, "/api/sketches").1["sketches"][0]["definition"].clone();
+    let mut draft = baseline.clone();
+    draft["shapes"][0]["slot"]["radius"] = json!({"parameter":"depth"});
+    let before = get(&mut studio, "/api/state").1;
+    let (status, preview) = edit_definition(&mut studio, "profile", draft.clone(), false);
+    assert_eq!(status, 200, "{preview}");
+    assert_eq!(preview["can_apply"], true, "{preview}");
+    assert_eq!(get(&mut studio, "/api/state").1, before);
+    let (status, result) = edit_definition(&mut studio, "profile", draft.clone(), true);
+    assert_eq!(status, 200, "{result}");
+    let response = studio.handle("POST", "/api/parameters", br#"{"set":{"depth":12}}"#);
+    assert_eq!(
+        response.status,
+        200,
+        "{}",
+        String::from_utf8_lossy(&response.body)
+    );
+    let data = get(&mut studio, "/api/annotations?id=part").1;
+    let scene = data["scenes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["kind"] == "sketch" && s["feature"] == "profile")
+        .unwrap();
+    assert!((scene["points"]["slot:start_right"][1].as_f64().unwrap() + 12.0).abs() < 1e-8);
+    let accepted = get(&mut studio, "/api/state").1;
+    draft["shapes"][0]["slot"]["radius"] =
+        json!({"literal":{"value":0,"dimension":"length","unit":"millimeter"}});
+    assert_eq!(edit_definition(&mut studio, "profile", draft, true).0, 422);
+    assert_eq!(get(&mut studio, "/api/state").1, accepted);
+    let mut polygon = baseline;
+    polygon["shapes"] = json!([{"polygon":{"id":"poly","center":"A","vertex":"B","sides":6}}]);
+    polygon["profile"] = json!([
+        "poly:side0",
+        "poly:side1",
+        "poly:side2",
+        "poly:side3",
+        "poly:side4",
+        "poly:side5"
+    ]);
+    let (status, result) = edit_definition(&mut studio, "profile", polygon.clone(), true);
+    assert_eq!(status, 200, "{result}");
+    let accepted = get(&mut studio, "/api/state").1;
+    let mesh = studio.handle("GET", "/api/model.gltf", b"").body;
+    polygon["shapes"][0]["polygon"]["sides"] = json!(4);
+    let (status, result) = edit_definition(&mut studio, "profile", polygon, true);
+    assert_eq!(status, 422, "{result}");
+    assert_eq!(get(&mut studio, "/api/state").1, accepted);
+    assert_eq!(studio.handle("GET", "/api/model.gltf", b"").body, mesh);
+}
