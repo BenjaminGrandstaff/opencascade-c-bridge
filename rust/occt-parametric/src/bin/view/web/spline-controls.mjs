@@ -24,7 +24,7 @@ export function editSpline(spline,{points,closed=false,weights},knownPoints){
   const next=structuredClone(spline);
   if(!Array.isArray(points)||points.some(id=>!id||!knownPoints.includes(id)))throw new Error('Choose known named points for the spline.');
   if(spline.basis){
-    if(points.length!==spline.points.length)throw new Error('Keep the explicit pole count. Adding or removing poles belongs in the full definition.');
+    if(points.length!==spline.points.length)throw new Error('Keep the explicit pole count. Use Insert control pole or Remove control pole to change the count.');
     if(spline.endpoints&&points.some(id=>id===spline.endpoints.start||id===spline.endpoints.end))throw new Error('Native endpoint references must remain separate from control poles.');
     next.points=[...points];
     if(weights!==undefined){
@@ -42,6 +42,34 @@ export function editSpline(spline,{points,closed=false,weights},knownPoints){
     next.points=closed?[...ids,ids[0]]:ids;
   }
   return next;
+}
+
+export function resizeSplinePoles(spline,{action,index,point},knownPoints){
+  if(!spline.basis)throw new Error('Pole count controls require an explicit B-spline.');
+  const mode=spline.basis.periodic?'periodic':spline.basis.non_clamped?'non_clamped':'clamped';
+  editSplineBasis(spline,{...spline.basis,mode,endpoints:spline.endpoints},knownPoints);
+  if(!['insert','remove'].includes(action)||!Number.isInteger(index)||index<0||index>spline.points.length-(action==='remove'?1:0))throw new Error('Choose a valid pole position.');
+  const next=structuredClone(spline),degree=spline.basis.degree;
+  if(action==='insert'){
+    if(!knownPoints.includes(point)||spline.endpoints&&[spline.endpoints.start,spline.endpoints.end].includes(point))throw new Error('Choose a known control point separate from native endpoints.');
+    next.points.splice(index,0,point);if(next.basis.weights?.length)next.basis.weights.splice(index,0,scalar(1));
+  }else{
+    next.points.splice(index,1);if(next.basis.weights?.length)next.basis.weights.splice(index,1);
+  }
+  const count=next.points.length;
+  if(count<degree+1)throw new Error('Keep at least degree + 1 control poles.');
+  let start=spline.basis.knots[0],end=spline.basis.knots.at(-1),knots,multiplicities;
+  if(mode==='non_clamped'){
+    const expanded=spline.basis.knots.flatMap((k,i)=>Array(spline.basis.multiplicities[i]).fill(k));
+    start=expanded[degree];end=expanded[spline.points.length];
+    const step=(end-start)/(count-degree);
+    knots=Array.from({length:count+degree+1},(_,i)=>start+(i-degree)*step);multiplicities=knots.map(()=>1);
+  }else{
+    const spans=mode==='periodic'?count:count-degree;
+    knots=Array.from({length:spans+1},(_,i)=>start+(end-start)*i/spans);
+    multiplicities=knots.map((_,i)=>mode==='clamped'&&(i===0||i===spans)?degree+1:1);
+  }
+  return editSplineBasis(next,{degree,knots,multiplicities,mode,endpoints:next.endpoints},knownPoints);
 }
 
 export function createSplineControls({host,definition,parameters=[],changed,message,highlight=()=>{},focusPoint=()=>{},beginPicking=()=>{},initialSelection=null}){
@@ -85,6 +113,21 @@ export function createSplineControls({host,definition,parameters=[],changed,mess
       const valueRow=document.createElement('label');valueRow.textContent=`Weight ${i+1}`;const input=document.createElement('input');input.type='number';input.step='any';input.value=number;input.setAttribute('aria-label',valueRow.textContent);input.disabled=valueRow.hidden=source!=='literal';valueRow.append(input);form.append(valueRow);
       const literal=()=>scalar(String(input.value).trim()?Number(input.value):NaN);
       input.oninput=()=>{weights[i]=literal();weightsEdited=true;};driver.onchange=()=>{source=driver.value;input.disabled=valueRow.hidden=source!=='literal';weights[i]=source==='preserve'?structuredClone(original):source.startsWith('parameter:')?{parameter:source.slice(10)}:literal();weightsEdited=true;};
+    }
+    if(explicit){
+      const group=document.createElement('fieldset'),legend=document.createElement('legend');legend.textContent='Add or remove control poles';group.append(legend);form.append(group);
+      const note=document.createElement('p');note.textContent='Count changes rebuild uniform knots over the current curve parameter domain and reshape the curve. Inserted poles use unit weight. Existing point definitions and constraints remain in the sketch.';group.append(note);
+      const label=document.createElement('label');label.textContent='Control point to insert';const point=document.createElement('select');point.setAttribute('aria-label',label.textContent);
+      for(const id of profileIds(definition,'points').filter(id=>![spline.endpoints?.start,spline.endpoints?.end].includes(id)))point.append(new Option(id,id));label.append(point);group.append(label);
+      const row=document.createElement('label');row.textContent='Control pole position';const position=document.createElement('input');position.type='number';position.min='1';position.max=String(ids.length+1);position.step='1';position.value=String(ids.length+1);position.setAttribute('aria-label',row.textContent);row.append(position);group.append(row);
+      const hint=document.createElement('p');hint.textContent='Positions start at 1. Insert before this position, or remove the pole at this position.';group.append(hint);
+      for(const [action,text]of [['insert','Insert control pole'],['remove','Remove control pole']]){
+        const button=document.createElement('button');button.textContent=text;button.onclick=()=>{try{
+          const current=withBasis(editSpline(spline,{points:points.value.split(',').map(id=>id.trim()),weights:weightsEdited?weights:undefined},profileIds(definition,'points')));
+          const next=resizeSplinePoles(current,{action,index:String(position.value).trim()?Number(position.value)-1:NaN,point:point.value},profileIds(definition,'points'));
+          const index=definition.splines.indexOf(spline);if(index<0)throw new Error('Spline changed. Reload its controls.');definition.splines[index]=next;changed();message('Pole count and uniform basis updated in the draft. Preview checks the reshaped curve and dependent solids.');
+        }catch(error){message(error.message);}};group.append(button);
+      }
     }
     if(explicit){const reset=document.createElement('button');reset.textContent='Use unit weights';reset.onclick=()=>{
       try{const next=withBasis(editSpline(spline,{points:points.value.split(',').map(id=>id.trim()),weights:spline.points.map(()=>scalar(1))},profileIds(definition,'points')));next.basis.weights=[];definition.splines[definition.splines.indexOf(spline)]=next;changed();message('Unit weights set in the draft. Preview checks the changed curve.');}catch(error){message(error.message);}};form.append(reset);}

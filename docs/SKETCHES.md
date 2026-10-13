@@ -80,8 +80,13 @@ toggle that repeats the first reference automatically. Explicit B-splines allow
 replacing or reordering poles while keeping the pole count. **Native B-spline
 basis** edits degree, unique knots, multiplicities, and clamped/periodic/non-clamped
 mode; non-clamped mode also selects separate native endpoint point references.
-Adding or removing poles and converting interpolation to an explicit basis
-remain in the full definition. **Edit point** focuses the existing
+**Insert control pole** and **Remove control pole** change the count at a
+one-based position and rebuild uniform knots over the current active parameter
+domain. The degree and basis mode stay fixed; removal requires at least degree + 1
+poles. Inserted poles have unit weight; surviving weight expressions move with
+their poles. Existing sketch points and constraints remain authored. Count
+changes reshape the curve and require native Preview/Apply. Converting
+interpolation to an explicit basis remains in the full definition. **Edit point** focuses the existing
 coordinate controls; shared or formula-driven point definitions remain authored.
 
 Explicit weights accept positive scalar values or compatible parameters, and

@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {editSpline,editSplineBasis,createSplineControls} from './spline-controls.mjs';
+import {editSpline,editSplineBasis,resizeSplinePoles,createSplineControls} from './spline-controls.mjs';
 const scalar=value=>({literal:{value,dimension:'scalar',unit:null}}),basis={degree:2,knots:[0,1],multiplicities:[3,3]},explicit={id:'curve',points:['a','b','c'],basis:{...basis,weights:[scalar(1),{parameter:'weight'},scalar(1)]}},known=['a','b','c','d','start','end'];
 test('spline edits preserve basis, identity and endpoints while validating weights and closure',()=>{
  const weights=[scalar(1),{multiply:[{parameter:'weight'},scalar(2)]},scalar(1)],next=editSpline(explicit,{points:['a','d','c'],weights},known);
@@ -41,5 +41,33 @@ test('basis form applies degree and knot edits atomically with weights, and reta
  createSplineControls({host,definition:d,changed:()=>changes++,message:m=>messages.push(m)});
  field(host,'Spline degree').value='1';field(host,'Unique knots (comma separated)').value='0, .5, 1';field(host,'Knot multiplicities (comma separated)').value='2, 1, 2';click(host,'Update spline definition');assert.equal(d.splines[0].basis.degree,1);assert.deepEqual(d.splines[0].basis.weights,explicit.basis.weights);
  const fresh=new Element('div');createSplineControls({host:fresh,definition:d,changed:()=>changes++,message:m=>messages.push(m)});field(fresh,'Unique knots (comma separated)').value='0, , 1';click(fresh,'Update spline definition');assert.equal(changes,1);assert(messages.at(-1).includes('increasing'));
+ delete globalThis.document;delete globalThis.Option;
+});
+
+test('pole insertion and removal preserve drivers and rebuild all basis modes over the active domain',()=>{
+ const inserted=resizeSplinePoles(explicit,{action:'insert',index:1,point:'d'},known);
+ assert.deepEqual(inserted.points,['a','d','b','c']);assert.deepEqual(inserted.basis.knots,[0,.5,1]);assert.deepEqual(inserted.basis.multiplicities,[3,1,3]);
+ assert.deepEqual(inserted.basis.weights,[scalar(1),scalar(1),{parameter:'weight'},scalar(1)]);
+ assert.deepEqual(resizeSplinePoles(inserted,{action:'remove',index:1},known),explicit);
+ assert.throws(()=>resizeSplinePoles(explicit,{action:'remove',index:1},known),/degree \+ 1/);
+ assert.throws(()=>resizeSplinePoles(explicit,{action:'insert',index:4,point:'d'},known),/position/);
+ assert.throws(()=>resizeSplinePoles(explicit,{action:'insert',index:1,point:'missing'},known),/known/);
+ for(const mode of ['periodic','non_clamped']){
+  const source=editSplineBasis(explicit,{degree:2,knots:mode==='periodic'?[0,1,2,3]:[0,1,2,3,4,5],multiplicities:mode==='periodic'?[1,1,1,1]:[1,1,1,1,1,1],mode,endpoints:{start:'start',end:'end'}},known);source.basis.weights=[];
+  const result=resizeSplinePoles(source,{action:'insert',index:1,point:'d'},known);assert.deepEqual(result.basis.weights,[]);assert.equal(result.basis.degree,2);
+  if(mode==='periodic'){assert.deepEqual(result.basis.knots,[0,.75,1.5,2.25,3]);assert.equal(result.basis.periodic,true);}
+  else{assert.deepEqual(result.basis.knots,[1,1.5,2,2.5,3,3.5,4]);assert.deepEqual(result.endpoints,source.endpoints);assert.throws(()=>resizeSplinePoles(source,{action:'insert',index:1,point:'start'},known),/separate/);}
+ }
+ assert.deepEqual(explicit.points,['a','b','c']);
+});
+test('pole count controls include staged weights and reject invalid removals without changing the draft',()=>{
+ globalThis.document={createElement:tag=>new Element(tag)};globalThis.Option=class extends Element{constructor(text,value){super('option');this.value=value;}};
+ const d={points:known.map(id=>({id})),splines:[structuredClone(explicit)]},host=new Element('div'),messages=[];let changes=0;
+ const render=()=>{host.replaceChildren();createSplineControls({host,definition:d,changed:()=>{changes++;render();},message:m=>messages.push(m)});};render();
+ field(host,'Control point to insert').value='d';field(host,'Control pole position').value='2';
+ field(host,'Weight 2 source').value='literal';field(host,'Weight 2 source').onchange();field(host,'Weight 2').value='1.5';field(host,'Weight 2').oninput();
+ click(host,'Insert control pole');assert.deepEqual(d.splines[0].points,['a','d','b','c']);assert.equal(d.splines[0].basis.weights[2].literal.value,1.5);assert.equal(changes,1);
+ field(host,'Control pole position').value='2';click(host,'Remove control pole');assert.deepEqual(d.splines[0].points,['a','b','c']);assert.equal(changes,2);
+ field(host,'Control pole position').value='2';click(host,'Remove control pole');assert.equal(changes,2);assert.match(messages.at(-1),/degree \+ 1/);assert.equal(d.points.length,known.length);
  delete globalThis.document;delete globalThis.Option;
 });

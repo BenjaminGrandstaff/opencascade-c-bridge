@@ -2886,3 +2886,81 @@ fn spline_basis_edits_regenerate_all_modes_and_reject_inconsistent_multiplicitie
         assert_eq!(history(&mut studio, "undo")["dirty"], false);
     }
 }
+
+#[test]
+fn spline_pole_count_edits_regenerate_all_modes_and_preserve_points() {
+    for (source, mode) in [
+        (
+            include_str!("../../../../../tools/model/rational-spline-cap.request.json"),
+            "clamped",
+        ),
+        (
+            include_str!("../../../../../tools/model/periodic-spline-pad.request.json"),
+            "periodic",
+        ),
+        (
+            include_str!("../../../../../tools/model/non-clamped-spline-cap.request.json"),
+            "non_clamped",
+        ),
+    ] {
+        let directory = Directory::new();
+        let request: serde_json::Value = serde_json::from_str(source).unwrap();
+        let document = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+        let model = PathBuf::from(directory.model(&document));
+        let mut studio = serve::Studio::load(&model, Some("body".into())).unwrap();
+        let baseline = get(&mut studio, "/api/sketches").1["sketches"][0].clone();
+        let feature = baseline["feature"].as_str().unwrap();
+        let mut draft = baseline["definition"].clone();
+        let spline = &mut draft["splines"][0];
+        let pole = spline["points"][1].clone();
+        spline["points"].as_array_mut().unwrap().insert(1, pole);
+        spline["basis"]["weights"].as_array_mut().unwrap().insert(
+            1,
+            json!({"literal":{"value":1.0,"dimension":"scalar","unit":null}}),
+        );
+        let basis = &mut spline["basis"];
+        if mode == "clamped" {
+            basis["knots"] = json!([0.0, 0.5, 1.0]);
+            basis["multiplicities"] = json!([3, 1, 3]);
+        } else if mode == "periodic" {
+            basis["knots"] = json!([0.0, 0.8, 1.6, 2.4, 3.2, 4.0]);
+            basis["multiplicities"] = json!([1, 1, 1, 1, 1, 1]);
+        } else {
+            basis["knots"] = json!([1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0]);
+            basis["multiplicities"] = json!([1, 1, 1, 1, 1, 1, 1]);
+        }
+        let before = get(&mut studio, "/api/state").1;
+        let (status, preview) = edit_definition(&mut studio, feature, draft.clone(), false);
+        assert_eq!(status, 200, "{mode}: {preview}");
+        assert_eq!(preview["can_apply"], true, "{mode}: {preview}");
+        assert_eq!(get(&mut studio, "/api/state").1, before);
+        let (status, result) = edit_definition(&mut studio, feature, draft.clone(), true);
+        assert_eq!(status, 200, "{mode}: {result}");
+        let applied = get(&mut studio, "/api/sketches").1["sketches"][0]["definition"].clone();
+        assert_eq!(applied["splines"], draft["splines"]);
+        assert_eq!(applied["points"], baseline["definition"]["points"]);
+        assert_eq!(
+            applied["constraints"],
+            baseline["definition"]["constraints"]
+        );
+        assert_eq!(
+            applied["splines"][0]["endpoints"],
+            baseline["definition"]["splines"][0]["endpoints"]
+        );
+        let accepted = get(&mut studio, "/api/state").1;
+        let mesh = studio.handle("GET", "/api/model.gltf", b"").body;
+        draft["splines"][0]["basis"]["multiplicities"][0] = json!(0);
+        assert_eq!(edit_definition(&mut studio, feature, draft, true).0, 422);
+        assert_eq!(get(&mut studio, "/api/state").1, accepted);
+        assert_eq!(studio.handle("GET", "/api/model.gltf", b"").body, mesh);
+        let (status, removed) =
+            edit_definition(&mut studio, feature, baseline["definition"].clone(), true);
+        assert_eq!(status, 200, "{mode}: {removed}");
+        history(&mut studio, "undo");
+        assert_eq!(
+            get(&mut studio, "/api/sketches").1["sketches"][0]["definition"]["splines"],
+            applied["splines"]
+        );
+        assert_eq!(history(&mut studio, "undo")["dirty"], false);
+    }
+}
