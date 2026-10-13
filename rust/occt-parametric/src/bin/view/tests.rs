@@ -2454,3 +2454,48 @@ fn exact_crossing_trim_edits_regenerate_keyhole_solid_and_keep_constraints() {
         sketch["definition"]["profile_operations"][1]["trim_between"]
     );
 }
+
+#[test]
+fn profile_corners_regenerate_and_reject_oversized_treatments_without_mutation() {
+    let directory = Directory::new();
+    let mut value = serde_json::to_value(sketch_block_document()).unwrap();
+    value["instances"][0]["base"]["id"] = json!("part");
+    let document = ModelDocument::from_json(&value.to_string()).unwrap();
+    let model = PathBuf::from(directory.model(&document));
+    let mut studio = serve::Studio::load(&model, Some("body".into())).unwrap();
+    let baseline = get(&mut studio, "/api/sketches").1["sketches"][0]["definition"].clone();
+    let state = get(&mut studio, "/api/state").1;
+    let original = studio.handle("GET", "/api/model.gltf", b"").body;
+    let mm =
+        |value: f64| json!({"literal":{"value":value,"dimension":"length","unit":"millimeter"}});
+    let mut draft = baseline.clone();
+    draft["profile_operations"] = json!([
+        {"fillet":{"point":"A","radius":mm(2.0)}},
+        {"chamfer":{"point":"B","incoming":mm(2.0),"outgoing":mm(3.0)}}
+    ]);
+    let (status, preview) = edit_definition(&mut studio, "profile", draft.clone(), false);
+    assert_eq!(status, 200, "{preview}");
+    assert_eq!(preview["can_apply"], true, "{preview}");
+    assert_eq!(get(&mut studio, "/api/state").1, state);
+    let (status, result) = edit_definition(&mut studio, "profile", draft.clone(), true);
+    assert_eq!(status, 200, "{result}");
+    let accepted = get(&mut studio, "/api/sketches").1["sketches"][0]["definition"].clone();
+    assert_eq!(accepted["points"], baseline["points"]);
+    assert_eq!(accepted["constraints"], baseline["constraints"]);
+    let mesh = studio.handle("GET", "/api/model.gltf", b"").body;
+    assert_ne!(mesh, original);
+    let accepted_state = get(&mut studio, "/api/state").1;
+    for invalid in [
+        json!({"fillet":{"point":"A","radius":mm(1000.0)}}),
+        json!({"chamfer":{"point":"B","incoming":mm(1000.0),"outgoing":mm(1000.0)}}),
+    ] {
+        draft["profile_operations"] = json!([invalid]);
+        let (status, result) = edit_definition(&mut studio, "profile", draft.clone(), true);
+        assert_eq!(status, 422, "{result}");
+        assert_eq!(get(&mut studio, "/api/state").1, accepted_state);
+        assert_eq!(studio.handle("GET", "/api/model.gltf", b"").body, mesh);
+    }
+    assert_eq!(history(&mut studio, "undo")["dirty"], false);
+    assert_eq!(studio.handle("GET", "/api/model.gltf", b"").body, original);
+    assert_eq!(history(&mut studio, "redo")["dirty"], true);
+}

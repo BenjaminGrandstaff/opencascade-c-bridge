@@ -30,6 +30,16 @@ function expression(value, dimension) {
   return null; // Native expression validation is authoritative.
 }
 export function makeProfileOperation(type, fields) {
+  if(type==='fillet'||type==='chamfer'){
+    if(!fields.point?.trim())throw new Error('Choose a profile corner point.');
+    const data={point:fields.point};
+    for(const key of type==='fillet'?['radius']:['incoming','outgoing']){
+      const value=expression(fields[key],'length');
+      if(value!==null&&value<=0)throw new Error('Corner distances must be positive.');
+      data[key]=structuredClone(fields[key]);
+    }
+    return {[type]:data};
+  }
   if(type==='offset'){
     expression(fields.distance,'length');
     if(!['arc','intersection'].includes(fields.join))throw new Error('Choose an offset join.');
@@ -56,13 +66,14 @@ export function makeProfileOperation(type, fields) {
   return {trim_between:{entity:fields.entity,from,to}};
 }
 
-export function createProfileControls({host,definition,parameters=[],changed,message,highlight=()=>{},initialType='trim_between'}){
-  let type=['trim_between','trim','offset'].includes(initialType)?initialType:'trim_between',editing=null,values={};
+export function createProfileControls({host,definition,parameters=[],changed,message,highlight=()=>{},beginPicking=()=>{},initialType='trim_between'}){
+  const supported=['trim_between','trim','fillet','chamfer','offset'];
+  let type=supported.includes(initialType)?initialType:'trim_between',editing=null,values={},picking=null;
   const section=document.createElement('section');section.className='profile-tools';
-  const heading=document.createElement('h3');heading.textContent='Trim & offset';
+  const heading=document.createElement('h3');heading.textContent='Trim, corners & offset';
   const note=document.createElement('p');note.textContent='Edits derive the outer profile after solving; source geometry and constraints stay authored. Trim keeps the directed span. Positive offset expands a closed profile. Additional regions and holes use the advanced definition.';
   const select=document.createElement('select');select.setAttribute('aria-label','Profile operation');
-  for(const [id,label] of [['trim_between','Trim to points / crossings'],['trim','Trim by parameter fractions'],['offset','Offset outer profile']])select.append(new Option(label,id));
+  for(const [id,label] of [['trim_between','Trim to points / crossings'],['trim','Trim by parameter fractions'],['fillet','Fillet profile corner'],['chamfer','Chamfer profile corner'],['offset','Offset outer profile']])select.append(new Option(label,id));
   const form=document.createElement('div'),list=document.createElement('div');section.append(heading,note,select,form,list);host.append(section);
   function options(label,choices,value,change){
     const row=document.createElement('label');row.textContent=label;
@@ -72,6 +83,10 @@ export function createProfileControls({host,definition,parameters=[],changed,mes
     input.onchange=()=>change(input.value);row.append(input);form.append(row);return input;
   }
   const ids=(group)=>[['','Choose geometry'],...profileIds(definition,group).map(id=>[id,id])];
+  function pickButton(label,group,set,exclude=null){
+    const button=document.createElement('button');button.textContent=`Pick ${label} on canvas`;
+    button.onclick=()=>{beginPicking();picking={label,group,set,exclude};message(`Click ${group==='points'?'a named point':'a curve'} for ${label}. Escape cancels.`);};form.append(button);
+  }
   function valueControl(label,key,dimension){
     const preserved=values[key],number=dimension==='length'?dimensionNumber(preserved,'length'):preserved?.literal?.value;
     let source=preserved?.parameter?`parameter:${preserved.parameter}`:number!==null&&number!==undefined?'literal':'preserve';
@@ -88,22 +103,42 @@ export function createProfileControls({host,definition,parameters=[],changed,mes
     options(`${label} bound`,[['start','Curve start'],['end','Curve end'],['point','Named point'],['crossing','Exact crossing']],kind,next=>{
       values[key]=next==='point'?{point:{point:''}}:next==='crossing'?{crossing:{curve:'',near:''}}:next;renderForm();
     });
-    if(kind==='point')options(`${label} point`,ids('points'),b.point.point,next=>{b.point.point=next;highlight([values.entity,next]);});
+    if(kind==='point'){
+      options(`${label} point`,ids('points'),b.point.point,next=>{b.point.point=next;highlight([values.entity,next]);});
+      pickButton(`${label.toLowerCase()} point`,'points',id=>b.point.point=id);
+    }
     if(kind==='crossing'){
       options(`${label} crossing curve`,ids('curves').filter(([id])=>id!==values.entity),b.crossing.curve,next=>{b.crossing.curve=next;highlight([values.entity,next]);});
       options(`${label} hint point`,ids('points'),b.crossing.near,next=>b.crossing.near=next);
+      pickButton(`${label.toLowerCase()} crossing curve`,'curves',id=>b.crossing.curve=id,values.entity);
+      pickButton(`${label.toLowerCase()} hint point`,'points',id=>b.crossing.near=id);
     }
   }
   function reset(next,index=null){
-    type=next;editing=index;select.value=type;
+    picking=null;type=next;editing=index;select.value=type;
     values=index!==null?structuredClone(definition.profile_operations[index][type]):type==='offset'?{distance:{literal:{value:1,dimension:'length',unit:'millimeter'}},join:'arc'}:
+      type==='fillet'?{point:'',radius:{literal:{value:1,dimension:'length',unit:'millimeter'}}}:
+      type==='chamfer'?{point:'',incoming:{literal:{value:1,dimension:'length',unit:'millimeter'}},outgoing:{literal:{value:1,dimension:'length',unit:'millimeter'}}}:
       type==='trim'?{entity:profileIds(definition,'curves')[0]??'',first:{literal:{value:0,dimension:'scalar',unit:null}},last:{literal:{value:1,dimension:'scalar',unit:null}}}:
       {entity:profileIds(definition,'curves')[0]??'',from:'start',to:'end'};
     if(type==='offset')values.join??='arc';renderForm();
   }
   function renderForm(){
+    picking=null;
     form.replaceChildren();
-    if(type!=='offset')options('Trim curve',ids('curves'),values.entity,next=>{values.entity=next;highlight([next]);renderForm();});
+    if(type==='trim'||type==='trim_between'){
+      options('Trim curve',ids('curves'),values.entity,next=>{values.entity=next;highlight([next]);renderForm();});
+      pickButton('trim curve','curves',id=>values.entity=id);
+    }
+    if(type==='fillet'||type==='chamfer'){
+      options('Corner point',ids('points'),values.point,next=>{values.point=next;highlight([next]);});
+      pickButton('corner point','points',id=>values.point=id);
+      if(type==='fillet')valueControl('Fillet radius (mm)','radius','length');
+      else{
+        const hint=document.createElement('p');hint.textContent='Incoming and outgoing distances follow the directed profile traversal.';form.append(hint);
+        valueControl('Incoming distance (mm)','incoming','length');valueControl('Outgoing distance (mm)','outgoing','length');
+      }
+    }
     if(type==='trim_between'){boundControl('From','from');boundControl('To','to');}
     if(type==='trim'){valueControl('First fraction','first','scalar');valueControl('Last fraction','last','scalar');}
     if(type==='offset'){
@@ -115,7 +150,7 @@ export function createProfileControls({host,definition,parameters=[],changed,mes
       const op=makeProfileOperation(type,values),ops=definition.profile_operations??=[];
       if(editing===null){
         // Source trims must precede offsets and corner edits.
-        const boundary=ops.findIndex(op=>op.offset||op.fillet||op.chamfer);
+        const boundary=ops.findIndex(op=>type==='fillet'||type==='chamfer'?op.offset:op.offset||op.fillet||op.chamfer);
         ops.splice(type!=='offset'&&boundary>=0?boundary:ops.length,0,op);
       }else ops[editing]=op;
       changed();message('Profile operation updated in the draft. Preview checks closure and dependent solids.');
@@ -125,10 +160,21 @@ export function createProfileControls({host,definition,parameters=[],changed,mes
   for(const [index,op] of (definition.profile_operations??[]).entries()){
     const key=Object.keys(op)[0],data=op[key],row=document.createElement('div');
     const edit=document.createElement('button');edit.textContent=`${index+1}. ${key} · ${data.entity??data.point??'outer profile'}`;
-    edit.disabled=!['trim','trim_between','offset'].includes(key);edit.onclick=()=>{reset(key,index);highlight(data.entity?[data.entity]:[]);};
+    edit.disabled=!supported.includes(key);edit.onclick=()=>{reset(key,index);highlight(data.entity?[data.entity]:data.point?[data.point]:[]);};
     const remove=document.createElement('button');remove.textContent=`Remove profile operation ${index+1}`;remove.onclick=()=>{definition.profile_operations.splice(index,1);changed();message('Profile operation removed from the draft. Preview before applying.');};
     row.append(edit,remove);list.append(row);
   }
   select.onchange=()=>reset(select.value);reset(type);
-  return {get type(){return type;}};
+  return {
+    get type(){return type;},
+    cancelPick(){if(picking){picking=null;message('Profile pick canceled. Form values retained.');}},
+    pick(id){
+      if(!picking)return false;
+      if(id===picking.exclude||!profileIds(definition,picking.group).includes(id)){
+        message(`Choose ${picking.group==='points'?'a named point':'a different named curve'} for ${picking.label}.`);return true;
+      }
+      const label=picking.label;picking.set(id);renderForm();highlight([values.entity??values.point,id].filter(Boolean));
+      message(`Selected ${id} for ${label}. Add or update the operation, then Preview.`);return true;
+    },
+  };
 }

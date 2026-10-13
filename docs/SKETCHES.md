@@ -1654,17 +1654,25 @@ integration of the exact curve (1e-6), and rejected `rho` and points. 500
 ## Trimming between points and crossings (schema 126 / ABI 64)
 
 The live model studio exposes these operations under **Edit sketch geometry →
-Load sketch draft → Trim & offset**. Choose a curve, then choose each bound as
+Load sketch draft → Trim, corners & offset**. Choose a curve, then choose each bound as
 its start/end, a named point, or an exact crossing with another curve. A crossing
 uses a nearby named hint point to select the intended intersection. Trimming
 keeps the directed span; it does not remove the clicked span automatically.
-Parameter-fraction trimming is available separately.
+Parameter-fraction trimming is available separately. **Pick … on canvas** fills
+the requested curve, named point, crossing curve, or hint field. It switches
+the canvas to selection mode; Escape cancels the pick without changing form
+values. A picked crossing curve still uses the exact native intersection nearest
+the named hint point. Ordinary clicks continue to select constraint geometry.
 
 **Offset outer profile** accepts signed millimeters or a length parameter, with
 round or intersection joins. Existing formulas are retained when editing an
 operation until explicitly replaced. The list supports editing and removing
-saved trims and offsets; corner treatments remain in place. New trims are
-inserted before corner treatments and offsets. These controls edit the main
+saved trims, offsets, fillets, and chamfers. **Fillet profile corner** accepts a
+positive radius; **Chamfer profile corner** accepts independent positive incoming
+and outgoing distances measured along the directed profile traversal. Both use
+a named corner, selectable on the canvas, and preserve parameter/formula values.
+New trims are inserted before corner treatments and offsets; new corner
+treatments precede offsets. These controls edit the main
 outer profile; additional regions, hole boundaries, and other advanced edits
 remain available in the full definition.
 

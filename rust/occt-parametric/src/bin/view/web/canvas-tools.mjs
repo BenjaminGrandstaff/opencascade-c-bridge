@@ -66,6 +66,7 @@ export function createCanvasTools({host,getDraft,setDraft,changed,message,ghost,
   function snap(event){return snapPosition(event.position,gesture?{...getDraft(),points:getDraft().points.filter(p=>p.id!==gesture.point)}:getDraft(),event.scene.points,grid,event.tolerance);}
   return {
     get mode(){return mode;},cancel,reviewed,
+    selectMode(){cancel();mode='select';select.value=mode;modeChanged(mode);},
     down(event){
       if(mode==='select'||event.shiftKey)return false;
       try{
