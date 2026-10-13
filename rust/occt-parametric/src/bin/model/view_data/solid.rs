@@ -68,6 +68,7 @@ pub(super) fn solid_scene(
         })
         .collect::<Vec<_>>();
     let mut lines = Vec::new();
+    let mut edges = Vec::new();
     for edge in session
         .subshapes(shape, ShapeType::Edge)
         .stage("visualization")?
@@ -76,6 +77,7 @@ pub(super) fn solid_scene(
         let points = session
             .edge_sample_points(&edge, edge_samples)
             .stage("visualization")?;
+        edges.push(json!({"edge":lines.len(),"line":lines.len()}));
         lines.push(points.into_iter().map(point).collect::<Vec<_>>());
     }
     let mut annotations = Vec::new();
@@ -282,6 +284,7 @@ pub(super) fn solid_scene(
         "bounds": [min,max],
         "mesh": mesh,
         "lines": lines,
+        "edges": edges,
         "parameters": controls,
         "annotations": annotations,
         "coordinate_system": "family-local mm",

@@ -10,6 +10,8 @@ mod history;
 mod sketch;
 #[path = "serve_sketch_create.rs"]
 mod sketch_create;
+#[path = "serve_sketch_links.rs"]
+mod sketch_links;
 use super::{POLL, stamp, view_data};
 use occt_bridge::Session;
 use occt_parametric::prelude::*;
@@ -640,6 +642,17 @@ impl Studio {
                 "text/javascript",
                 include_str!("web/sketch-create.mjs"),
             ),
+            ("GET", "/sketch-links.mjs") => {
+                Response::text(200, "text/javascript", include_str!("web/sketch-links.mjs"))
+            }
+            ("POST", "/api/sketch-source-view") => match self.sketch_source_view(body) {
+                Ok(data) => Response::json(200, &data),
+                Err(error) => Response::error(422, &error),
+            },
+            ("POST", "/api/sketch-edge-pick") => match self.sketch_edge_pick(body) {
+                Ok(data) => Response::json(200, &data),
+                Err(error) => Response::error(422, &error),
+            },
             ("POST", "/api/sketch-face-pick") => match self.pick_support_face(body) {
                 Ok(data) => Response::json(200, &data),
                 Err(error) => Response::error(422, &error),

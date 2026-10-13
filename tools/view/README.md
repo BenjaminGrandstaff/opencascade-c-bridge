@@ -147,6 +147,35 @@ Free-point coordinates are solver starting positions, so constraints may move
 them. Edit the outer profile's curve names to include new boundary geometry.
 Removing a referenced point requires repairing its references in the same draft.
 
+The **Support & projected references** section changes an existing draft's
+attachment or adds linked geometry. Choose a **Source feature**, then **Reattach
+to picked face** or **Project picked edge**. The viewer temporarily shows that
+accepted source output so you can orbit and click it; source inspection does not
+apply a model edit. Known downstream features and the edited sketch are excluded
+from the list, and native validation rejects remaining dependency cycles.
+
+Reattachment replaces the face support and frame while preserving sketch-local
+point coordinates, geometry, constraints and the existing offset expression.
+It clears a previous datum-plane attachment. Preview checks downstream solids
+and requirements before Apply, and Undo restores the previous attachment.
+
+Edge clicks select visible outlines and highlight the chosen edge. Saved links
+use semantic extrema, authored curve ancestry or a clearly reported strict
+center anchor; topology indices are not stored. Straight edges become linked
+lines. Curved edges use exact rational B-spline import, not sampled sketch
+geometry. Preview rejects collapsed or unsupported projections. Source dimension
+changes regenerate projected geometry together with constraints and solids.
+
+Projection names appear in curve selectors, and stable generated endpoints such
+as `reference:start` and `reference:end` appear in point selectors. The references
+can drive typed constraints and remain fixed to their source. To use a projection
+as boundary geometry, include its name in **Outer profile**. Adding construction
+references requires an explicit profile or discovery curve list so an implicit
+boundary is not changed by the new geometry. **Remove projection** only removes
+the link from the draft; repair any referencing constraints or boundaries before
+applying. Local drafts, Preview/Apply, Save and Undo/Redo retain their usual
+behavior. Escape cancels pending or active source picks.
+
 The **Dimensions & constraints** panel creates and edits relationships through
 geometry selectors and numeric fields. Choose a constraint type, then click
 points or curves in the view (click again to deselect), or use the geometry lists.

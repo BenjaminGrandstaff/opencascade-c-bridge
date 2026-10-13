@@ -179,16 +179,22 @@ const annotations = createAnnotationController({
       onCanvasCancel:()=>sketchEditor?.canvasCancel(),
       onPoint: (id, scene) => sketchEditor?.selectGeometry(id, scene),
       onGeometry: (id, scene) => sketchEditor?.selectGeometry(id, scene),
-      onClear: () => {sketchEditor?.clearSelection();sketchCreator?.cancelPick();},
-      isFacePicking:()=>Boolean(sketchCreator?.picking),
-      onFacePick:hit=>sketchCreator?.pickFace(hit),
+      onClear: () => {sketchEditor?.clearSelection();sketchEditor?.cancelLinkPick();sketchCreator?.cancelPick();},
+      isFacePicking:()=>Boolean(sketchEditor?.facePicking||sketchCreator?.picking),
+      isEdgePicking:()=>Boolean(sketchEditor?.edgePicking),
+      onEdgePick:hit=>sketchEditor?.pickEdge(hit),
+      onFacePick:hit=>sketchEditor?.facePicking?sketchEditor.pickFace(hit):sketchCreator?.pickFace(hit),
     });
     sketchEditor = createSketchEditor({host: annotationRoot.querySelector('aside'), request: api,
       instance: () => scope || instanceIds.values().next().value,
-      showSketch: feature => viewer.selectScene('sketch', feature),
+      showSolid:feature=>viewer.selectScene('solid',feature),
+      highlightFace:(face,feature)=>viewer.setFaceSelection(face,feature),
+      highlightEdge:(edge,feature)=>viewer.setEdgeSelection(edge,feature),
+      beginPicking:()=>sketchCreator?.cancelPick(),currentVersion:()=>version,
+      showSketch: feature => {if(viewer.scene.kind!=='sketch'||viewer.scene.feature!==feature)viewer.selectScene('sketch',feature);},
       highlight: (ids, feature) => viewer.setGeometrySelection(ids, feature),
       ghost: (paths,feature) => viewer.setGhost(paths,feature), canvasMode:(mode,feature)=>viewer.setCanvasMode(mode,feature),
-      preview: data => previewCurrent(data, "Sketch draft preview — Apply to update the model."),
+      preview: (data,message) => previewCurrent(data, message??"Sketch draft preview — Apply to update the model."),
       applied: async next => { annotations.invalidate(); await apply(next); await refreshAnnotations(); },
       restore: async () => { annotations.invalidate(); await refreshAnnotations(); },
     });
@@ -203,6 +209,7 @@ const annotations = createAnnotationController({
       instance:()=>scope||instanceIds.values().next().value,
       showSketch:feature=>viewer.selectScene('sketch',feature),
       showSolid:feature=>viewer.selectScene('solid',feature),
+      beginPicking:()=>sketchEditor?.cancelLinkPick(),
       highlightFace:(face,feature)=>viewer.setFaceSelection(face,feature),currentVersion:()=>version,
       preview:data=>previewCurrent(data,'New sketch preview — Apply to create the profile.'),
       applied:async next=>{annotations.invalidate();await apply(next);await refreshAnnotations();},
@@ -868,7 +875,7 @@ for (const direction of ["undo", "redo"]) {
   $(direction).addEventListener("click", () => navigateHistory(direction));
 }
 document.addEventListener("keydown", event => {
-  if (event.key === "Escape") sketchCreator?.cancelPick();
+  if (event.key === "Escape") {sketchCreator?.cancelPick();sketchEditor?.cancelLinkPick();}
   if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
   const key = event.key.toLowerCase();
   if (key !== "z" && key !== "y") return;

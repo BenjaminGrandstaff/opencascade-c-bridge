@@ -2076,3 +2076,283 @@ fn picked_rotated_planes_produce_valid_frames_and_curved_faces_are_refused() {
     let (status, result) = create_sketch(&mut studio, &request);
     assert_eq!(status, 200, "{result}");
 }
+
+fn link_document() -> ModelDocument {
+    let request: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../tools/model/face-pocket.request.json"
+    ))
+    .unwrap();
+    let mut document = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+    let mut editable = starter_sketch();
+    editable.id = "editable".into();
+    editable.face_support = Some(SketchFaceSupport {
+        input: "block".into(),
+        face: FaceSelector::NormalAligned {
+            direction: VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, -1.0)),
+            minimum_dot: ScalarExpr::Literal(Quantity::scalar(0.999999)),
+        },
+        offset: ScalarExpr::Parameter("support_offset".into()),
+    });
+    document.family.features.push(FeatureDefinition {
+        id: "editable".into(),
+        operation: FeatureOperation::SketchFace {
+            sketch: Box::new(editable),
+        },
+    });
+    document
+}
+fn source_view(studio: &mut serve::Studio, output: &str) -> serde_json::Value {
+    let version = get(studio, "/api/state").1["version"].clone();
+    let response = studio.handle(
+        "POST",
+        "/api/sketch-source-view",
+        json!({"version":version,"instance":"part","output":output})
+            .to_string()
+            .as_bytes(),
+    );
+    assert_eq!(
+        response.status,
+        200,
+        "{}",
+        String::from_utf8_lossy(&response.body)
+    );
+    serde_json::from_slice(&response.body).unwrap()
+}
+fn edit_definition(
+    studio: &mut serve::Studio,
+    feature: &str,
+    definition: serde_json::Value,
+    apply: bool,
+) -> (u16, serde_json::Value) {
+    let data = get(studio, "/api/sketches").1;
+    let expected = data["sketches"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["feature"] == feature)
+        .unwrap()["definition"]
+        .clone();
+    let response=studio.handle("POST","/api/sketch",json!({"version":data["version"],"instance":"part","feature":feature,"expected":expected,"definition":definition,"apply":apply}).to_string().as_bytes());
+    (
+        response.status,
+        serde_json::from_slice(&response.body).unwrap(),
+    )
+}
+fn editable_definition(studio: &mut serve::Studio) -> serde_json::Value {
+    get(studio, "/api/sketches").1["sketches"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["feature"] == "editable")
+        .unwrap()["definition"]
+        .clone()
+}
+
+#[test]
+fn existing_sketch_reattaches_without_changing_local_geometry_or_offset_expression() {
+    let directory = Directory::new();
+    let document = link_document();
+    let model = PathBuf::from(directory.model(&document));
+    let mut studio = serve::Studio::load(&model, Some("body".into())).unwrap();
+    let before = get(&mut studio, "/api/state").1;
+    let source = source_view(&mut studio, "block");
+    assert_eq!(source["accepted"], true);
+    assert_eq!(source["source_view"], true);
+    let face = source["scenes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["kind"] == "solid")
+        .unwrap()["mesh"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| {
+            t["points"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|p| (p[2].as_f64().unwrap() - 20.0).abs() < 1e-8)
+        })
+        .unwrap()["face"]
+        .as_u64()
+        .unwrap() as usize;
+    let (status, pick) = pick_face(&mut studio, "part", "block", face);
+    assert_eq!(status, 200, "{pick}");
+    assert_eq!(get(&mut studio, "/api/state").1, before);
+    let original = editable_definition(&mut studio);
+    let mut draft = original.clone();
+    draft["face_support"] = pick["face_support"].clone();
+    draft["face_support"]["offset"] = original["face_support"]["offset"].clone();
+    draft["datum_plane"] = serde_json::Value::Null;
+    draft["x_axis"] = pick["x_axis"].clone();
+    draft["y_axis"] = pick["y_axis"].clone();
+    let (status, preview) = edit_definition(&mut studio, "editable", draft.clone(), false);
+    assert_eq!(status, 200, "{preview}");
+    assert_eq!(preview["can_apply"], true);
+    assert_eq!(get(&mut studio, "/api/state").1, before);
+    assert_eq!(
+        edit_definition(&mut studio, "editable", draft.clone(), true).0,
+        200
+    );
+    assert_eq!(
+        editable_definition(&mut studio)["points"],
+        original["points"]
+    );
+    assert_eq!(
+        editable_definition(&mut studio)["face_support"]["offset"],
+        original["face_support"]["offset"]
+    );
+    history(&mut studio, "undo");
+    assert_eq!(editable_definition(&mut studio), original);
+    history(&mut studio, "redo");
+    assert_eq!(editable_definition(&mut studio), draft);
+    assert_eq!(studio.handle("POST", "/api/save", b"{}").status, 200);
+    let saved = ModelDocument::from_json(&fs::read_to_string(&model).unwrap()).unwrap();
+    assert_eq!(saved.family.requirements, document.family.requirements);
+    assert_eq!(saved.schema_version, document.schema_version);
+}
+
+#[test]
+fn picked_edge_projection_tracks_source_dimensions_and_rejects_cycles() {
+    let directory = Directory::new();
+    let model = PathBuf::from(directory.model(&link_document()));
+    let mut studio = serve::Studio::load(&model, Some("body".into())).unwrap();
+    let before = get(&mut studio, "/api/state").1;
+    let source = source_view(&mut studio, "tool");
+    let scene = source["scenes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["kind"] == "solid")
+        .unwrap();
+    let edge = scene["edges"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| {
+            scene["lines"][e["line"].as_u64().unwrap() as usize]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|p| {
+                    (p[1].as_f64().unwrap() - 14.0).abs() < 1e-8
+                        && (p[2].as_f64().unwrap() - 15.0).abs() < 1e-8
+                })
+        })
+        .unwrap()["edge"]
+        .clone();
+    let response=studio.handle("POST","/api/sketch-edge-pick",json!({"version":before["version"],"instance":"part","output":"tool","edge":edge,"id":"reference"}).to_string().as_bytes());
+    let pick: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+    assert_eq!(response.status, 200, "{pick}");
+    assert_eq!(pick["projection"]["kind"], "line");
+    assert_ne!(pick["binding"], "anchored_center");
+    assert_eq!(get(&mut studio, "/api/state").1, before);
+    let mut definition = editable_definition(&mut studio);
+    definition["projections"] = json!([pick["projection"]]);
+    let (status, result) = edit_definition(&mut studio, "editable", definition, true);
+    assert_eq!(status, 200, "{result}");
+    assert_eq!(
+        studio
+            .handle("POST", "/api/parameters", br#"{"set":{"pocket_width":24}}"#)
+            .status,
+        200
+    );
+    let data = get(&mut studio, "/api/annotations?id=part").1;
+    let sketch = data["scenes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["kind"] == "sketch" && s["feature"] == "editable")
+        .unwrap();
+    let a = sketch["points"]["reference:start"][0].as_f64().unwrap();
+    let b = sketch["points"]["reference:end"][0].as_f64().unwrap();
+    assert!(((a - b).abs() - 24.0).abs() < 1e-8, "{sketch}");
+    history(&mut studio, "undo");
+    let data = get(&mut studio, "/api/sketches").1;
+    let mut cycle = data["sketches"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["feature"] == "profile")
+        .unwrap()["definition"]
+        .clone();
+    cycle["projections"] = json!([pick["projection"]]);
+    cycle["projections"][0]["input"] = json!("body");
+    let before = get(&mut studio, "/api/state").1;
+    assert_eq!(edit_definition(&mut studio, "profile", cycle, true).0, 422);
+    assert_eq!(get(&mut studio, "/api/state").1, before);
+}
+
+#[test]
+fn picked_curved_edges_import_exact_rational_splines() {
+    let directory = Directory::new();
+    let mut document = link_document();
+    document.family.features.push(FeatureDefinition {
+        id: "cylinder".into(),
+        operation: FeatureOperation::Cylinder {
+            origin: point(0.0, 0.0, 0.0),
+            axis: VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, 1.0)),
+            radius: ScalarExpr::Literal(Quantity::length(5.0, LengthUnit::Millimeter)),
+            height: ScalarExpr::Literal(Quantity::length(10.0, LengthUnit::Millimeter)),
+        },
+    });
+    let model = PathBuf::from(directory.model(&document));
+    let mut studio = serve::Studio::load(&model, Some("body".into())).unwrap();
+    let source = source_view(&mut studio, "cylinder");
+    let scene = source["scenes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["kind"] == "solid")
+        .unwrap();
+    let edge = scene["edges"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| {
+            scene["lines"][e["line"].as_u64().unwrap() as usize]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|p| (p[2].as_f64().unwrap() - 10.0).abs() < 1e-8)
+        })
+        .unwrap()["edge"]
+        .clone();
+    let version = get(&mut studio, "/api/state").1["version"].clone();
+    let response = studio.handle(
+        "POST",
+        "/api/sketch-edge-pick",
+        json!({"version":version,"instance":"part","output":"cylinder","edge":edge,"id":"ring"})
+            .to_string()
+            .as_bytes(),
+    );
+    let pick: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+    assert_eq!(response.status, 200, "{pick}");
+    assert_eq!(pick["projection"]["kind"], "spline");
+    let mut definition = editable_definition(&mut studio);
+    definition["projections"] = json!([pick["projection"]]);
+    let (status, result) = edit_definition(&mut studio, "editable", definition, true);
+    assert_eq!(status, 200, "{result}");
+    let data = get(&mut studio, "/api/annotations?id=part").1;
+    let sketch = data["scenes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["kind"] == "sketch" && s["feature"] == "editable")
+        .unwrap();
+    let ring = sketch["entities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["id"] == "ring")
+        .unwrap();
+    assert!(
+        ring["bspline"]["evaluated_weights"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|w| (w.as_f64().unwrap() - 1.0).abs() > 1e-3),
+        "{ring}"
+    );
+}

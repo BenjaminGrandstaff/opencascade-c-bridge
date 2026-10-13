@@ -39,7 +39,7 @@ export function newSketchDefinition({id,shape='rectangle',width=20,height=12,pla
   return definition;
 }
 
-export function createSketchCreator({host,request,instance,preview,applied,restore,showSketch=()=>{},showSolid=()=>{},highlightFace=()=>{},currentVersion=()=>null}){
+export function createSketchCreator({host,request,instance,preview,applied,restore,showSketch=()=>{},showSolid=()=>{},highlightFace=()=>{},currentVersion=()=>null,beginPicking=()=>{}}){
   let data=null,busy=false,values,picking=false,pickGeneration=0;
   const section=document.createElement('section');section.className='linked-edit sketch-create';
   const launch=document.createElement('button');launch.textContent='New sketch';
@@ -66,7 +66,7 @@ export function createSketchCreator({host,request,instance,preview,applied,resto
     if(values.shape==='rectangle')field('Height (mm)','number',values.height,value=>values.height=value);
     select('Sketch plane',[['xy','XY (normal +Z)'],['xz','XZ (normal −Y)'],['yz','YZ (normal +X)'],['face','Planar face']],values.plane,value=>{values.plane=value;if(value!=='face'){values.picked=null;values.face='+z';cancelPick();}});
     content.append(button('Pick support face in 3D',async()=>{
-      const turn=++pickGeneration;picking=true;
+      beginPicking();const turn=++pickGeneration;picking=true;
       try{await restore();}catch(error){if(turn===pickGeneration)cancelPick();throw error;}
       if(turn!==pickGeneration||!data)return;
       values.plane='face';render();showSolid(data.output);

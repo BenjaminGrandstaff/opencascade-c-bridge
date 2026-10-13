@@ -28,7 +28,14 @@ export const constraintTools = {
 };
 export function geometryIds(definition, group) {
   const groups = {round:['circles','arcs'],centered:['circles','arcs','ellipses'],curves:['lines','circles','arcs','ellipses','splines']};
-  return (groups[group] ?? [group]).flatMap(key => (definition[key] ?? []).map(e => e.id));
+  const keys=groups[group]??[group],ids=keys.flatMap(key=>(definition[key]??[]).map(e=>e.id));
+  const kindGroup={line:'lines',circle:'circles',arc:'arcs',ellipse:'ellipses',spline:'splines',chain:'splines'};
+  const suffixes={line:['start','end'],circle:['center','rim'],arc:['center','start','end'],ellipse:['center','major','minor'],spline:['start','end'],chain:['start','end']};
+  for(const p of definition.projections??[]){
+    if(group==='points')ids.push(...(suffixes[p.kind]??[]).map(key=>`${p.id}:${key}`));
+    else if(keys.includes(kindGroup[p.kind]))ids.push(p.id);
+  }
+  return [...new Set(ids)];
 }
 export function dimensionNumber(expression, dimension) {
   const q = expression?.literal;
