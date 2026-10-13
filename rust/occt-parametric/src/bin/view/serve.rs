@@ -6,6 +6,8 @@ mod features;
 mod history;
 #[path = "serve_sketch.rs"]
 mod sketch;
+#[path = "serve_sketch_create.rs"]
+mod sketch_create;
 use super::{POLL, stamp, view_data};
 use occt_bridge::Session;
 use occt_parametric::prelude::*;
@@ -631,6 +633,15 @@ impl Studio {
                 "text/javascript",
                 include_str!("web/sketch-editor.mjs"),
             ),
+            ("GET", "/sketch-create.mjs") => Response::text(
+                200,
+                "text/javascript",
+                include_str!("web/sketch-create.mjs"),
+            ),
+            ("POST", "/api/sketch-create") => match self.sketch_create(body) {
+                Ok(data) => Response::json(200, &data),
+                Err(error) => Response::error(422, &error),
+            },
             ("GET", "/api/sketches") => match self.sketches() {
                 Ok(data) => Response::json(200, &data),
                 Err(error) => Response::error(422, &error),

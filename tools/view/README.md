@@ -92,6 +92,31 @@ document/output data; older entries are dropped when either limit is reached. Me
 regenerated on navigation rather than retained. Local sketch and solid drafts
 are separate: reload a draft after navigating history before applying it.
 
+### Create a sketch
+
+Choose **New sketch** in **Dimensions & sketches**. Give the new feature a
+unique name, choose a centered rectangle or circle, and enter its dimensions
+in millimeters. XY, XZ and YZ planes support a signed offset along their
+displayed normal. Starter points are fixed; use **Edit sketch geometry** to
+change coordinates, unfix points, draw more geometry or add dimensions afterward.
+
+For **Planar face**, choose a support feature and one of the six family-axis
+normal directions. The native semantic selector must resolve exactly one planar
+face across every instance/variant; missing, ambiguous or curved support rejects
+the draft. Local zero follows the face area center, and the signed offset follows
+its oriented normal. The profile is not clipped to the support boundary.
+Rotated-face selectors and datum planes remain available through the model APIs.
+
+**Preview new sketch** leaves the accepted model and file unchanged.
+**Apply verified new sketch** regenerates all variants, verifies valid, nonempty
+face geometry, retains all existing requirements and keeps the current solid
+output visible. The new profile then
+appears in **Edit sketch geometry** and **Sketch to solid**, where it can become
+an extrusion, boss or pocket. Undo/redo includes creation and downstream edits;
+**Save** writes the feature graph. New sketches append to the feature list:
+without an explicit `--output`, a restart or Revert uses the latest saved feature
+as the default output, including a sketch that has not yet been extruded.
+
 ### Sketch geometry drafts
 
 In **Dimensions & sketches**, choose **Edit sketch geometry**, select a sketch

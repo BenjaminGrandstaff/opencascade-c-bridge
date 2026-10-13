@@ -1645,3 +1645,246 @@ fn history_restores_instance_membership_and_placement_atomically() {
         original["instances"]
     );
 }
+
+fn starter_sketch() -> SketchDefinition {
+    let mm = |v| ScalarExpr::Literal(Quantity::length(v, LengthUnit::Millimeter));
+    serde_json::from_value(json!({
+        "id":"new-profile","acceptance":"solved","origin":point(0.0,0.0,0.0),
+        "x_axis":VectorExpr::Literal(VectorQuantity::scalars(1.0,0.0,0.0)),
+        "y_axis":VectorExpr::Literal(VectorQuantity::scalars(0.0,1.0,0.0)),
+        "points":[{"id":"C","x":mm(0.0),"y":mm(0.0),"fixed":true},{"id":"R","x":mm(5.0),"y":mm(0.0),"fixed":true}],
+        "lines":[],"circles":[{"id":"circle","center":"C","rim":"R"}],"profile":["circle"],"constraints":[]
+    })).unwrap()
+}
+fn new_sketch_request(
+    studio: &mut serve::Studio,
+    definition: &SketchDefinition,
+) -> serde_json::Value {
+    let data = get(studio, "/api/features").1;
+    json!({"version":data["version"],"instance":"block","expected":data["features"],"feature":"new-profile","definition":definition,"apply":false})
+}
+fn create_sketch(studio: &mut serve::Studio, edit: &serde_json::Value) -> (u16, serde_json::Value) {
+    let response = studio.handle("POST", "/api/sketch-create", edit.to_string().as_bytes());
+    (
+        response.status,
+        serde_json::from_slice(&response.body).unwrap(),
+    )
+}
+fn sketch_block_document() -> ModelDocument {
+    let request: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../tools/model/sketch-block.request.json"
+    ))
+    .unwrap();
+    ModelDocument::from_json(&request["model"].to_string()).unwrap()
+}
+
+#[test]
+fn new_sketch_preview_apply_save_and_history_keep_the_existing_solid() {
+    let directory = Directory::new();
+    let document = sketch_block_document();
+    let model = PathBuf::from(directory.model(&document));
+    let original = fs::read_to_string(&model).unwrap();
+    let mut studio = serve::Studio::load(&model, None).unwrap();
+    let before = get(&mut studio, "/api/state").1;
+    let gltf = studio.handle("GET", "/api/model.gltf", b"").body;
+    let mut edit = new_sketch_request(&mut studio, &starter_sketch());
+    let (status, preview) = create_sketch(&mut studio, &edit);
+    assert_eq!(status, 200, "{preview}");
+    assert_eq!(preview["can_apply"], true);
+    assert!(
+        preview["annotations"]["scenes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|s| s["feature"] == "new-profile" && s["kind"] == "sketch")
+    );
+    assert_eq!(get(&mut studio, "/api/state").1, before);
+    assert_eq!(studio.handle("GET", "/api/model.gltf", b"").body, gltf);
+    assert_eq!(fs::read_to_string(&model).unwrap(), original);
+    edit["apply"] = json!(true);
+    let (status, applied) = create_sketch(&mut studio, &edit);
+    assert_eq!(status, 200, "{applied}");
+    assert_eq!(get(&mut studio, "/api/features").1["output"], "body");
+    assert_eq!(studio.handle("GET", "/api/model.gltf", b"").body, gltf);
+    assert_eq!(applied["state"]["undo_count"], 1);
+    assert_eq!(create_sketch(&mut studio, &edit).0, 422);
+    history(&mut studio, "undo");
+    assert_eq!(
+        get(&mut studio, "/api/features").1["features"],
+        edit["expected"]
+    );
+    history(&mut studio, "redo");
+    assert_eq!(studio.handle("POST", "/api/save", b"{}").status, 200);
+    let saved = ModelDocument::from_json(&fs::read_to_string(&model).unwrap()).unwrap();
+    assert_eq!(
+        saved.family.features.len(),
+        document.family.features.len() + 1
+    );
+    assert_eq!(saved.family.requirements, document.family.requirements);
+    assert_eq!(saved.family.version, document.family.version + 1);
+    assert_eq!(saved.schema_version, document.schema_version);
+}
+
+#[test]
+fn created_face_support_tracks_source_height_and_rejects_bad_or_stale_supports() {
+    let directory = Directory::new();
+    let mut document = sketch_block_document();
+    document.instances.push(InstanceNode::Clone {
+        id: "thin".into(),
+        source: "block".into(),
+        overrides: HashMap::from([(
+            "depth".into(),
+            ParameterValue::Scalar(Quantity::length(5.0, LengthUnit::Millimeter)),
+        )]),
+        placement: Default::default(),
+        frame: None,
+        provenance: "test".into(),
+    });
+    let model = PathBuf::from(directory.model(&document));
+    let mut studio = serve::Studio::load(&model, Some("body".into())).unwrap();
+    let mut definition = starter_sketch();
+    definition.face_support = Some(SketchFaceSupport {
+        input: "body".into(),
+        face: FaceSelector::NormalAligned {
+            direction: VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, 1.0)),
+            minimum_dot: ScalarExpr::Literal(Quantity::scalar(0.999999)),
+        },
+        offset: ScalarExpr::Literal(Quantity::length(2.0, LengthUnit::Millimeter)),
+    });
+    let mut edit = new_sketch_request(&mut studio, &definition);
+    let (status, preview) = create_sketch(&mut studio, &edit);
+    assert_eq!(status, 200, "{preview}");
+    assert_eq!(preview["can_apply"], true);
+    let support = |data: &serde_json::Value| {
+        data["scenes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["feature"] == "new-profile" && s["kind"] == "sketch")
+            .unwrap()["face_support"]
+            .clone()
+    };
+    assert_eq!(
+        support(&preview["annotations"])["origin_mm"],
+        json!([20.0, 12.5, 12.0])
+    );
+    let before = get(&mut studio, "/api/state").1;
+    for apply in [false, true] {
+        let mut bad = edit.clone();
+        bad["definition"]["face_support"]["input"] = json!("missing");
+        bad["apply"] = json!(apply);
+        assert_ne!(create_sketch(&mut studio, &bad).1["can_apply"], true);
+        assert_eq!(get(&mut studio, "/api/state").1, before);
+    }
+    let mut bad = edit.clone();
+    bad["expected"] = json!([]);
+    bad["apply"] = json!(true);
+    assert_eq!(create_sketch(&mut studio, &bad).0, 422);
+    edit["apply"] = json!(true);
+    assert_eq!(create_sketch(&mut studio, &edit).0, 200);
+    assert_eq!(
+        studio
+            .handle("POST", "/api/parameters", br#"{"set":{"depth":12}}"#)
+            .status,
+        200
+    );
+    let annotations = get(&mut studio, "/api/annotations?id=block").1;
+    assert!((support(&annotations)["origin_mm"][2].as_f64().unwrap() - 14.0).abs() < 1e-9);
+    assert!(
+        (support(&get(&mut studio, "/api/annotations?id=thin").1)["origin_mm"][2]
+            .as_f64()
+            .unwrap()
+            - 7.0)
+            .abs()
+            < 1e-9
+    );
+    history(&mut studio, "undo");
+    assert_eq!(
+        support(&get(&mut studio, "/api/annotations?id=block").1)["origin_mm"],
+        json!([20.0, 12.5, 12.0])
+    );
+}
+
+#[test]
+fn new_sketch_rejects_empty_duplicate_ambiguous_and_curved_supports() {
+    let directory = Directory::new();
+    let mut document = sketch_block_document();
+    document.family.features.push(FeatureDefinition {
+        id: "curved-source".into(),
+        operation: FeatureOperation::Cylinder {
+            origin: point(0.0, 0.0, 0.0),
+            axis: VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, 1.0)),
+            radius: ScalarExpr::Literal(Quantity::length(8.0, LengthUnit::Millimeter)),
+            height: ScalarExpr::Literal(Quantity::length(20.0, LengthUnit::Millimeter)),
+        },
+    });
+    let model = PathBuf::from(directory.model(&document));
+    let mut studio = serve::Studio::load(&model, Some("body".into())).unwrap();
+    let before = get(&mut studio, "/api/state").1;
+    let mut empty = starter_sketch();
+    empty.profile.clear();
+    empty.points.clear();
+    empty.circles.clear();
+    let mut request = new_sketch_request(&mut studio, &empty);
+    request["apply"] = json!(true);
+    assert_eq!(create_sketch(&mut studio, &request).0, 422);
+    let mut request = new_sketch_request(&mut studio, &starter_sketch());
+    request["feature"] = json!("body");
+    request["apply"] = json!(true);
+    assert_eq!(create_sketch(&mut studio, &request).0, 422);
+    let mut definition = starter_sketch();
+    let top = FaceSelector::NormalAligned {
+        direction: VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, 1.0)),
+        minimum_dot: ScalarExpr::Literal(Quantity::scalar(0.999999)),
+    };
+    let bottom = FaceSelector::NormalAligned {
+        direction: VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, -1.0)),
+        minimum_dot: ScalarExpr::Literal(Quantity::scalar(0.999999)),
+    };
+    for (input, face) in [
+        ("body", FaceSelector::Union(vec![top, bottom])),
+        (
+            "curved-source",
+            FaceSelector::LargestArea {
+                planar_only: false,
+                allow_ties: false,
+                relative_tolerance: ScalarExpr::Literal(Quantity::scalar(1e-9)),
+            },
+        ),
+    ] {
+        definition.face_support = Some(SketchFaceSupport {
+            input: input.into(),
+            face,
+            offset: ScalarExpr::Literal(Quantity::length(0.0, LengthUnit::Millimeter)),
+        });
+        let mut request = new_sketch_request(&mut studio, &definition);
+        let (status, preview) = create_sketch(&mut studio, &request);
+        assert_eq!(status, 200, "{preview}");
+        assert_eq!(preview["can_apply"], false);
+        request["apply"] = json!(true);
+        assert_eq!(create_sketch(&mut studio, &request).0, 422);
+        assert_eq!(get(&mut studio, "/api/state").1, before);
+    }
+}
+
+#[test]
+fn primitive_only_families_can_create_their_first_authored_sketch() {
+    let directory = Directory::new();
+    let model = PathBuf::from(directory.model(&document()));
+    let mut studio = serve::Studio::load(&model, None).unwrap();
+    assert!(
+        get(&mut studio, "/api/sketches").1["sketches"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    let mut request = new_sketch_request(&mut studio, &starter_sketch());
+    request["instance"] = json!("source");
+    request["apply"] = json!(true);
+    let (status, result) = create_sketch(&mut studio, &request);
+    assert_eq!(status, 200, "{result}");
+    assert_eq!(get(&mut studio, "/api/features").1["output"], "bracket");
+    let sketches = get(&mut studio, "/api/sketches").1;
+    assert_eq!(sketches["sketches"].as_array().unwrap().len(), 1);
+    assert_eq!(sketches["sketches"][0]["feature"], "new-profile");
+}
