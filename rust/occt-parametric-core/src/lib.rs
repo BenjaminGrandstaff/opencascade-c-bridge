@@ -37,6 +37,7 @@ pub mod quantity;
 pub mod regeneration;
 #[doc(hidden)]
 pub mod revisions;
+pub mod screw_threads;
 #[doc(hidden)]
 pub mod sheet_metal;
 #[doc(hidden)]
@@ -64,6 +65,10 @@ pub use assembly::{
     ClosedMotionOptions, ClosedMotionResult, JointBranchEquivalence, JointBranchSearchOptions,
     JointBranchSearchResult, JointBranchSearchStatus, JointMotionSolution, JointMotionStatus,
     JointSeedAxis, JointSolution, JointSolveOptions, JointVariable,
+};
+pub use screw_threads::{
+    UnifiedClass, UnifiedFit, UnifiedLimits, UnifiedSeries, UnifiedThread, UnifiedThreadSpec,
+    unified_fit,
 };
 pub use sketch::{
     ResolvedSketch, ResolvedSketches, SketchAcceptance, SketchArc, SketchBSplineBasis,

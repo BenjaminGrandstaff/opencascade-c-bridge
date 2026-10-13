@@ -361,6 +361,7 @@ fn thread_dimensions(
         internal,
         left_handed,
         runout,
+        ..
     } = &feature.operation
     else {
         return Ok(());

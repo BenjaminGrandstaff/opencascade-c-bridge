@@ -853,7 +853,11 @@ nested lists that follow sub-assembly frames with hierarchical item numbers.
 [Modeled threads](docs/THREADS.md) cut ISO 68-1 basic-profile 60° threads into rods
 and holes, external or internal, either hand, with parameter-driven diameter,
 pitch and length. Schema 84 adds the `thread` feature; the native ABI is
-unchanged.
+unchanged. Schema 152 lets threads and tapped holes name an ASME B1.1
+Unified series and class, checked against the standard sizes, the
+designation and the class's limits of size, with fit checks between
+external and internal threads
+([Unified classes](docs/THREADS.md#unified-inch-classes-asme-b11-schema-152)).
 
 
 [Signed skin offsets](docs/OFFSETS.md) expand or contract a part using native joined

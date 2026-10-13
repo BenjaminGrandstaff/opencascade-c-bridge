@@ -202,6 +202,7 @@ fn callout_family(finish: HoleFinish, extent: HoleExtent) -> FamilyDefinition {
             extent,
             finish,
             thread: Some(Box::new(ThreadSpecification {
+                unified: None,
                 designation: "M5x0.8".into(),
                 nominal_diameter: ScalarExpr::Literal(Quantity::length(
                     5.0,

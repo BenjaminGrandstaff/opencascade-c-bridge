@@ -28,6 +28,16 @@ tracks status and order.
 
 ## Done
 
+- Unified inch thread classes (schema 152; ABI 76 unchanged). A modeled
+  thread or tapped-hole callout may name a B1.1 series (UNC, UNF, UNEF, UN,
+  UNS) and class (1A, 2A, 3A, 1B, 2B). Regeneration checks the size against
+  the standard series, the class against the side, a tapped hole's
+  designation against the standard one, and its bore against the class's
+  minor-diameter limits. `UnifiedThread::limits` gives limits of size from
+  B1.1's published tolerance formulas. They match published 2A and 2B
+  tables for ten sizes except four values one rounding step off.
+  `unified_fit` checks an external thread against an internal one. See
+  [Unified classes](docs/THREADS.md#unified-inch-classes-asme-b11-schema-152).
 - Dataset identification and authority (schema 151, ABI 76). A drawing's
   `dataset` gives the product identifier, the responsible organization and
   whether the model, the drawing or both govern. When the model governs,
@@ -2602,10 +2612,13 @@ scopes and inspected repo capabilities, not a full conformity audit.
    (schema 145, ABI 71), including section and clipped views (schema 150,
    ABI 75), and projected zones now exchange too.
 4. **Standards-backed thread specifications** — [B1.1](https://www.asme.org/codes-standards/find-codes-standards/b1-1-unified-inch-screw-threads-un-unr-thread-form):
-   thread limits/classes, fit validation and standard representations. Live drawing
-   callouts now show recorded intent, and basic-profile thread geometry can be
-   modeled (schema 84); nominal drill catalogs and thread strings still do not
-   verify compliance or engagement/strength.
+   Unified classes 1A–2B with limits of size, designation and bore checks,
+   and fit checks exist (schema 152). Remaining: class 3B, metric ISO 965
+   classes, drawing callouts and inspection against the limits, thread
+   representations in drawings, and engagement/strength. Live drawing
+   callouts show recorded intent, and basic-profile thread geometry can be
+   modeled (schema 84); metric callouts and drill catalogs are not yet
+   checked against a standard.
 5. **Manufacturing surface texture** — [B46.1](https://www.asme.org/codes-standards/about-standards/technology-highlights/advanced-manufacturing):
    requirements attached to persistent faces rather than leader anchors, the
    16% rule and filtering for measured readings, and Y14.36 symbol placement

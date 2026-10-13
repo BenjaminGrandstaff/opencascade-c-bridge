@@ -418,6 +418,34 @@ fn validate_thread(
     if pitch <= 0.0 {
         return Err(ModelError::new("thread pitch must be positive"));
     }
+    if let Some(unified) = &thread.unified {
+        let standard = unified.thread(nominal, pitch, true)?;
+        let mut designation = standard.designation();
+        if thread.handedness == ThreadHandedness::Left {
+            designation.push_str("-LH");
+        }
+        if thread.designation != designation {
+            return Err(ModelError::new(format!(
+                "thread designation '{}' must be the standard '{designation}'",
+                thread.designation
+            )));
+        }
+        // The drilled bore is the internal thread's minor diameter.
+        let engagement = unified
+            .length_of_engagement
+            .as_ref()
+            .map(|length| scalar(length, parameters, Dimension::Length).map(|mm| mm / 25.4))
+            .transpose()?;
+        let limits = standard.limits(engagement)?;
+        if let Some([minimum, maximum]) = limits.minor_in {
+            let bore = diameter / 25.4;
+            if bore < minimum - 1e-9 || bore > maximum + 1e-9 {
+                return Err(ModelError::new(format!(
+                    "a {designation} bore must be {minimum:.4}-{maximum:.4} in (its minor diameter), not {bore:.4} in"
+                )));
+            }
+        }
+    }
     Ok(())
 }
 

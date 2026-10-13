@@ -24,6 +24,7 @@ fn thread(input: &str, internal: bool, left_handed: bool) -> FeatureDefinition {
     FeatureDefinition {
         id: "body".into(),
         operation: FeatureOperation::Thread {
+            unified: None,
             input: input.into(),
             origin: mm(0.0, 0.0, 5.0),
             axis: up(),
@@ -382,4 +383,28 @@ fn invalid_runouts_and_blind_taps_without_room_fail_cleanly() {
             assert!(session.is_valid(built.shape("body").unwrap()).unwrap());
         }
     }
+}
+
+#[test]
+fn unified_threads_must_be_a_standard_size_on_their_side() {
+    let session = Session::new().unwrap();
+    let mut family = threaded(false, false);
+    let FeatureOperation::Thread { unified, .. } =
+        &mut family.features.last_mut().unwrap().operation
+    else {
+        panic!("thread feature");
+    };
+    // M10 × 1.5 is no Unified pitch.
+    *unified = Some(UnifiedThreadSpec {
+        series: UnifiedSeries::Uns,
+        class: UnifiedClass::TwoA,
+        rounded_root: false,
+        length_of_engagement: None,
+    });
+    let error = part(&family).regenerate(&session).err().unwrap().message;
+    assert!(
+        error.contains("whole or half number of threads per inch"),
+        "{error}"
+    );
+    assert_eq!(session.shape_count().unwrap(), 0);
 }

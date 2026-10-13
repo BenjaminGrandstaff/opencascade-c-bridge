@@ -97,6 +97,10 @@ and handle cleanup against a 10-second budget.
 
 ## Modeled tapped holes (schema 113)
 
+A callout may also name a Unified class (schema 152), which checks its
+designation and the bore against the class's minor-diameter limits; see
+[Unified inch classes](THREADS.md#unified-inch-classes-asme-b11-schema-152).
+
 A hole's `thread` callout can cut its thread. Add `modeled`, optionally with a
 `length`:
 

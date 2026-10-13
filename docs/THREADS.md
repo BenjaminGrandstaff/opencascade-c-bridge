@@ -70,11 +70,62 @@ fail without leaking handles. A 100-turn M10×1.5 thread with a ten-pitch
 runout is a required scale case (12 s budget). Modeled tapped holes take the
 same `runout`; see [modeled tapped holes](HOLES.md#modeled-tapped-holes-schema-113).
 
+## Unified inch classes (ASME B1.1, schema 152)
+
+A modeled thread or a tapped hole's `thread` callout may name the Unified
+series and class it represents:
+
+```json
+"unified": {"series": "unc", "class": "2B"}
+```
+
+- `series`: `unc`, `unf` or `unef` (the diameter and pitch must be a
+  standard size of that series), `un` (any whole or half pitch on a
+  standard diameter), or `uns` (any diameter, whole or half threads per
+  inch).
+- `class`: `1A`, `2A` or `3A` for external threads and `1B` or `2B` for
+  internal ones; it must match the thread's side. Class 3B is not
+  supported.
+- `rounded_root` (external only) names the UNR root in the designation.
+- `length_of_engagement` (optional) widens the pitch-diameter tolerance for
+  long engagements; the standard tables use the basic major diameter.
+
+On a tapped hole, the callout's `designation` must be the standard one,
+such as `1/4-20 UNC-2B`, or `1/4-20 UNC-2B-LH` when left-handed. The
+drilled bore, which becomes the thread's minor diameter, must lie within
+the class's minor-diameter limits. A #7 tap drill (0.201 in) passes for
+1/4-20 UNC-2B (0.196–0.207 in); a 0.190 in bore fails. Modeled threads keep
+the basic profile, which the class limits bound.
+
+`UnifiedThread::limits` gives the limits of size in inches, each as minimum
+and maximum: the major diameter (external, or the internal minimum), the
+pitch diameter, the internal minor diameter and the allowance.
+`unified_fit` pairs an external and an internal thread and returns the
+least and greatest pitch-diameter clearance and the least major-diameter
+clearance; `assembles()` holds when neither least clearance is negative.
+
+The limits follow B1.1's tolerance formulas as published by calculators
+that reproduce its tables. Listed in `screw_threads.rs`, they are checked
+against published 2A and 2B tables for ten UNC and UNF sizes from #0 to
+1 in, and against 1A and 3A values for 1/4-20. Four values lie one
+rounding step from the tables, on rounding boundaries:
+
+- #4-48 2A maximum pitch diameter: 0.0978 (table 0.0979);
+- #2-64 2B maximum minor diameter: 0.0752 (table 0.0753);
+- #10-24 2B maximum minor diameter: 0.155 (table 0.156);
+- 1/4-20 2B maximum pitch diameter: 0.2223 (table 0.2224).
+
+The standard sizes come from the Unified Thread Standard size table:
+#0 to 4 in coarse, #0 to 1-1/2 in fine and #12 to 1 in extra-fine. Other
+UNEF sizes must use `uns`. External minor diameters, which B1.1 gives only
+for reference, are not computed. A check costs O(standard sizes), at most
+34 comparisons.
+
 ## Not yet included
 
 - Chamfered thread starts on external threads (holes can use a countersink).
-- Tolerance classes, truncated or rounded roots (ISO 965, ASME B1.1 classes)
-  and fit checks; the profile is the basic profile.
+- Metric (ISO 965) tolerance classes, class 3B, and truncated or rounded
+  roots in the modeled geometry; the profile is the basic profile.
 - Tapered (pipe) threads, multi-start threads and non-60° forms (ACME,
   buttress).
 - Runout at the thread start; runout only fades the end.

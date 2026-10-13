@@ -323,15 +323,21 @@ pub(crate) fn execute_feature<'session>(
             internal,
             left_handed,
             runout,
+            unified,
         } => {
+            let major_diameter = scalar(major_diameter, parameters, Dimension::Length)?;
+            let pitch = scalar(pitch, parameters, Dimension::Length)?;
+            if let Some(unified) = unified {
+                unified.thread(major_diameter, pitch, *internal)?;
+            }
             return threads::execute_thread(
                 session,
                 shape(shapes, input)?,
                 threads::ThreadGeometry {
                     origin: vector(origin, parameters, Dimension::Length)?,
                     axis: vector(axis, parameters, Dimension::Scalar)?,
-                    major_diameter: scalar(major_diameter, parameters, Dimension::Length)?,
-                    pitch: scalar(pitch, parameters, Dimension::Length)?,
+                    major_diameter,
+                    pitch,
                     length: scalar(length, parameters, Dimension::Length)?,
                     internal: *internal,
                     left_handed: *left_handed,

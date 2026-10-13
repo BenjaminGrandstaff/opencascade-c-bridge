@@ -66,6 +66,12 @@ pub struct ThreadSpecification {
     pub handedness: ThreadHandedness,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub modeled: Option<ModeledThread>,
+    /// A Unified (ASME B1.1) internal class (schema 152): the nominal
+    /// diameter and pitch must be a size of its series, the designation must
+    /// be the standard one (`1/4-20 UNC-2B`, with `-LH` when left-handed),
+    /// and the bore must lie within the class's minor-diameter limits.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unified: Option<crate::screw_threads::UnifiedThreadSpec>,
 }
 
 /// Cuts an ISO 68-1 basic-profile internal thread of the callout's nominal
@@ -352,6 +358,12 @@ pub enum FeatureOperation {
         left_handed: bool,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         runout: Option<ScalarExpr>,
+        /// A Unified (ASME B1.1) series and class the thread represents
+        /// (schema 152): the major diameter and pitch must be a size of its
+        /// series and the class must match the side. The cut profile stays
+        /// the basic profile.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        unified: Option<crate::screw_threads::UnifiedThreadSpec>,
     },
     /// An open helical wire about the axis through the length-valued `origin`
     /// along the dimensionless `axis`, starting at `origin + radius * start`

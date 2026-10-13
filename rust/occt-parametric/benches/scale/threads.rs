@@ -30,6 +30,7 @@ fn threaded_rod_with_runout(
         FeatureDefinition {
             id: "body".into(),
             operation: FeatureOperation::Thread {
+                unified: None,
                 input: "rod".into(),
                 origin: mm(0.0, 0.0, 5.0),
                 axis: VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, 1.0)),
@@ -144,6 +145,7 @@ pub(crate) fn tapped_hole_case(definition: &FamilyDefinition) -> Outcome {
                         bottom: HoleBottom::Flat,
                         finish: HoleFinish::Plain,
                         thread: Some(Box::new(ThreadSpecification {
+                            unified: None,
                             designation: "M10x1.5".into(),
                             nominal_diameter: length(10.0),
                             pitch: length(1.5),

@@ -65,6 +65,7 @@ pub(super) fn threaded_hole_features_case() -> Outcome {
         "thread-recorded hole",
         10_000,
         Some(Box::new(ThreadSpecification {
+            unified: None,
             designation: "custom internal thread".into(),
             nominal_diameter: ScalarExpr::Literal(Quantity::length(1.5, LengthUnit::Millimeter)),
             pitch: ScalarExpr::Parameter("thread_pitch".into()),

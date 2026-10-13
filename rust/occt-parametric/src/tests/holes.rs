@@ -630,6 +630,7 @@ fn schema_twenty_nine_round_trips_holes_and_migrates_existing_features() {
 
 fn thread_spec() -> ThreadSpecification {
     ThreadSpecification {
+        unified: None,
         designation: "custom internal thread".into(),
         nominal_diameter: length_expr(3.0),
         pitch: length_expr(0.5),
@@ -1530,4 +1531,56 @@ fn shallow_wide_recesses_can_end_at_a_smaller_internal_cavity_face() {
         );
         assert_eq!(session.shape_count().unwrap(), 0);
     }
+}
+
+#[test]
+fn unified_tapped_holes_check_designation_and_bore_limits() {
+    let session = Session::new().unwrap();
+    let tapped = |designation: &str, handedness, class, bore_in: f64| {
+        let mut definition = threaded_bore(ThreadSpecification {
+            designation: designation.into(),
+            nominal_diameter: length_expr(6.35),
+            pitch: length_expr(1.27),
+            handedness,
+            modeled: None,
+            unified: Some(UnifiedThreadSpec {
+                series: UnifiedSeries::Unc,
+                class,
+                rounded_root: false,
+                length_of_engagement: None,
+            }),
+        });
+        let diameter = definition
+            .parameters
+            .iter_mut()
+            .find(|parameter| parameter.id == "diameter")
+            .unwrap();
+        diameter.default = ParameterValue::Scalar(Quantity::length(bore_in, LengthUnit::Inch));
+        part(&definition).regenerate(&session).map(|_| ())
+    };
+    use UnifiedClass::{TwoA, TwoB};
+    // A #7 tap drill (0.201 in) lies within 1/4-20 UNC-2B's minor diameter.
+    tapped("1/4-20 UNC-2B", ThreadHandedness::Right, TwoB, 0.201).unwrap();
+    tapped("1/4-20 UNC-2B-LH", ThreadHandedness::Left, TwoB, 0.201).unwrap();
+    let error = |designation, handedness, class, bore| {
+        tapped(designation, handedness, class, bore)
+            .unwrap_err()
+            .message
+    };
+    assert!(
+        error("1/4-20 UNC", ThreadHandedness::Right, TwoB, 0.201)
+            .contains("must be the standard '1/4-20 UNC-2B'")
+    );
+    assert!(
+        error("1/4-20 UNC-2B", ThreadHandedness::Left, TwoB, 0.201).contains("'1/4-20 UNC-2B-LH'")
+    );
+    assert!(
+        error("1/4-20 UNC-2B", ThreadHandedness::Right, TwoB, 0.190)
+            .contains("bore must be 0.1960-0.2070 in")
+    );
+    assert!(
+        error("1/4-20 UNC-2A", ThreadHandedness::Right, TwoA, 0.201)
+            .contains("is for external threads")
+    );
+    assert_eq!(session.shape_count().unwrap(), 0);
 }
