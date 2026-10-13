@@ -71,12 +71,79 @@ pub struct InspectionRecord {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MeasurementUncertainty {
+    #[serde(default)]
     pub expanded_mm: f64,
     #[serde(default)]
     pub rule: DecisionRule,
     /// U by control ID where it differs from `expanded_mm`.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub controls: BTreeMap<String, f64>,
+    /// Task-specific simulation of the probing contribution, combined in
+    /// quadrature with the supplied U (the other contributions).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub simulation: Option<UncertaintySimulation>,
+}
+
+/// Monte Carlo estimate of each control's uncertainty from its own
+/// measurement (in the manner of ISO 15530-4): every measured point, datum
+/// and feature alike, is perturbed by independent normal errors of standard
+/// uncertainty `point_mm` in each coordinate, the whole record is evaluated
+/// again, and U is `coverage` times the standard deviation of each control's
+/// deviation over the trials (the largest over a composite's segments).
+/// Deterministic for a given `seed`. Costs `trials` further evaluations.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UncertaintySimulation {
+    pub point_mm: f64,
+    #[serde(default = "UncertaintySimulation::default_trials")]
+    pub trials: u32,
+    #[serde(default = "UncertaintySimulation::default_coverage")]
+    pub coverage: f64,
+    #[serde(default)]
+    pub seed: u64,
+}
+
+impl UncertaintySimulation {
+    fn default_trials() -> u32 {
+        32
+    }
+    fn default_coverage() -> f64 {
+        2.0
+    }
+}
+
+/// SplitMix64 with Box–Muller normal samples: a small deterministic source
+/// for simulated probing errors.
+struct Normal {
+    state: u64,
+    spare: Option<f64>,
+}
+impl Normal {
+    fn new(seed: u64) -> Self {
+        Self {
+            state: seed,
+            spare: None,
+        }
+    }
+    fn uniform(&mut self) -> f64 {
+        self.state = self.state.wrapping_add(0x9E37_79B9_7F4A_7C15);
+        let mut z = self.state;
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        z ^= z >> 31;
+        // In (0, 1]: 53 random bits.
+        ((z >> 11) + 1) as f64 / (1u64 << 53) as f64
+    }
+    fn sample(&mut self) -> f64 {
+        if let Some(v) = self.spare.take() {
+            return v;
+        }
+        let (u, v) = (self.uniform(), self.uniform());
+        let r = (-2.0 * u.ln()).sqrt();
+        let (s, c) = (std::f64::consts::TAU * v).sin_cos();
+        self.spare = Some(r * s);
+        r * c
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -387,12 +454,87 @@ impl DrawingDefinition {
     /// O(controls · datums + Σ fit cost), each fit O(linearizations · pivots ·
     /// points); memory is O(points). Record errors (unknown IDs, non-finite or
     /// too many points) fail the call; unsupported controls are reported.
+    /// Simulated expanded uncertainty by control ID (see
+    /// [`UncertaintySimulation`]). Controls not evaluated in every trial get
+    /// none. O(trials · evaluation).
+    fn simulate_uncertainty(
+        &self,
+        graph: &InstanceGraph<'_>,
+        record: &InspectionRecord,
+        simulation: &UncertaintySimulation,
+    ) -> Result<HashMap<String, f64>, ModelError> {
+        let mut normal = Normal::new(simulation.seed);
+        let trials = simulation.trials as usize;
+        // Per control, each segment's deviations over the trials.
+        let mut deviations: HashMap<String, Vec<Vec<f64>>> = HashMap::new();
+        let mut complete: HashMap<String, usize> = HashMap::new();
+        for _ in 0..trials {
+            let mut perturbed = record.clone();
+            perturbed.uncertainty = None;
+            for feature in perturbed
+                .datum_features
+                .iter_mut()
+                .chain(&mut perturbed.controls)
+            {
+                for p in &mut feature.points_mm {
+                    for c in p.iter_mut() {
+                        *c += simulation.point_mm * normal.sample();
+                    }
+                }
+            }
+            let report = self.evaluate_validated(graph, &perturbed)?;
+            for control in report.controls {
+                let ControlResult::Evaluated(m) = control.result else {
+                    continue;
+                };
+                let mut segments = vec![m.deviation_mm];
+                let mut next = m.refinement.as_ref();
+                while let Some(r) = next {
+                    segments.push(r.deviation_mm);
+                    next = r.refinement.as_deref();
+                }
+                let entry = deviations.entry(control.control.clone()).or_default();
+                entry.resize_with(segments.len(), Vec::new);
+                for (values, d) in entry.iter_mut().zip(segments) {
+                    values.push(d);
+                }
+                *complete.entry(control.control).or_default() += 1;
+            }
+        }
+        Ok(deviations
+            .into_iter()
+            .filter(|(id, _)| complete[id] == trials)
+            .map(|(id, segments)| {
+                let spread = segments
+                    .iter()
+                    .filter(|values| values.len() > 1)
+                    .map(|values| {
+                        let n = values.len() as f64;
+                        let mean = values.iter().sum::<f64>() / n;
+                        (values.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / (n - 1.0)).sqrt()
+                    })
+                    .fold(0.0, f64::max);
+                (id, simulation.coverage * spread)
+            })
+            .collect())
+    }
+
     pub fn evaluate_inspection(
         &self,
         graph: &InstanceGraph<'_>,
         record: &InspectionRecord,
     ) -> Result<InspectionReport, ModelError> {
         self.validate(graph)?;
+        self.evaluate_validated(graph, record)
+    }
+
+    /// [`Self::evaluate_inspection`] for a drawing already validated
+    /// against `graph`.
+    fn evaluate_validated(
+        &self,
+        graph: &InstanceGraph<'_>,
+        record: &InspectionRecord,
+    ) -> Result<InspectionReport, ModelError> {
         if record.drawing != self.id {
             return Err(ModelError::new(
                 "inspection record names a different drawing",
@@ -428,7 +570,24 @@ impl DrawingDefinition {
                     "measurement uncertainty names unknown control '{id}'"
                 )));
             }
+            if let Some(simulation) = &uncertainty.simulation
+                && (!valid(simulation.point_mm)
+                    || !(2..=1000).contains(&simulation.trials)
+                    || !(simulation.coverage.is_finite() && simulation.coverage > 0.0))
+            {
+                return Err(ModelError::new(
+                    "uncertainty simulation needs a finite nonnegative point uncertainty, 2 to 1000 trials and a positive coverage factor",
+                ));
+            }
         }
+        let simulated = match record
+            .uncertainty
+            .as_ref()
+            .and_then(|u| u.simulation.as_ref())
+        {
+            Some(simulation) => self.simulate_uncertainty(graph, record, simulation)?,
+            None => HashMap::new(),
+        };
         let nominals = nominal_points(record, &measured_controls)?;
         if let Some(frame) = frames
             .iter()
@@ -553,7 +712,9 @@ impl DrawingDefinition {
                                 .get(frame.id.as_str())
                                 .copied()
                                 .unwrap_or(uncertainty.expanded_mm);
-                            m.decide(uncertainty.rule, u);
+                            let simulated =
+                                simulated.get(frame.id.as_str()).copied().unwrap_or(0.0);
+                            m.decide(uncertainty.rule, u.hypot(simulated));
                         }
                         ControlResult::Evaluated(m)
                     }

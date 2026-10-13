@@ -1467,6 +1467,28 @@ allowed zone, so the measurement alone proves neither outcome. Composite lower
 segments are decided the same way. Size conformance and surface texture
 readings are kept as measured. The decision is one O(1) pass per control.
 
+**Simulated uncertainty.** `uncertainty.simulation` estimates each control's U
+from its own measurement, by task-specific Monte Carlo simulation in the
+manner of ISO 15530-4:
+
+```json
+"uncertainty": {"rule": "guarded_acceptance",
+                "simulation": {"point_mm": 0.001, "trials": 32, "coverage": 2, "seed": 7}}
+```
+
+Each trial perturbs every measured point, datum and feature alike, by
+independent normal errors of standard uncertainty `point_mm` in each
+coordinate, and evaluates the whole record again. The simulated U is
+`coverage` (default 2) times the standard deviation of the control's
+deviation over the trials, the largest over a composite's segments. It
+combines in quadrature with the supplied U (`expanded_mm`, now defaulting to
+zero, or the control's override), which stands for the other contributions
+such as temperature and machine geometry. So U follows the task: its datum
+fits, point count, fit lever arms and the evaluation itself. A deterministic
+SplitMix64/Box-Muller sequence from `seed` makes it repeatable. `trials` runs
+from 2 to 1000 (default 32), and controls not evaluated in every trial get
+no simulated part. The cost is `trials` further evaluations of the record.
+
 **Report results.** Each control has one of three results:
 - `Evaluated`: deviation, tolerance, bonus, actual size and conformance.
 - `NotMeasured`: the record has no points for the control.
@@ -1496,7 +1518,10 @@ shared across controls. Time is O(controls · datums) plus the fit costs, and ea
 fit is linear in its points per simplex pivot. The scale benchmark evaluates
 10,000 MMC position controls of 72 points each, plus a 100,000-point flatness
 surface, against one shared frame, in 0.19 s, or in 0.22 s with datum B a
-bevel at 45° to A, or in 0.28 s with every zone projected 10 mm (Ⓟ); and 1,000 cylindricity plus 1,000
+bevel at 45° to A, or in 0.28 s with every zone projected 10 mm (Ⓟ). With
+uncertainty simulated over 32 trials, 1,000 controls and a 10,000-point
+flatness take 1.7 s (3 s budget): about 53 ms a trial, as noisy points
+take the fits about 2.5 times the pivots of exact ones; and 1,000 cylindricity plus 1,000
 circularity controls (612,000 points) in 0.13 s. It also evaluates 1,000
 circular plus 1,000 total runout controls (471,600 points), with each of 100
 bore datum axes fitted once, in 0.03 s. Against 100 common datum axes from
@@ -1542,8 +1567,9 @@ enlarged by geometric tolerances; common axes of more than two members or
 after a primary plane,
 reporting n× patterns as one frame on drawings, measured datum targets,
 profile datums at a material boundary, and
-straightness. Uncertainty is supplied, not estimated from the points or the
-fit (for example by task-specific simulation).
+straightness. Simulated uncertainty covers isotropic, uncorrelated probing
+error only. Correlated machine errors, form-dependent sampling error and
+temperature are supplied as `expanded_mm`.
 
 ## Surface texture (schema 71)
 

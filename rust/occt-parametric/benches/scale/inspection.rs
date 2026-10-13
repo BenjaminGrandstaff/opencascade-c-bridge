@@ -9,7 +9,7 @@ use occt_parametric::{
     DrawingView, DrawingViewKind, FeatureOfSizeKind, GeometricCharacteristic,
     GeometricToleranceZone, InspectionRecord, InstanceOutputRef, MeasuredFeature, MeasuredNominal,
     MeasurementUncertainty, NamedReference, ReferenceTarget, ToleranceMaterialCondition,
-    ToleranceModifier,
+    ToleranceModifier, UncertaintySimulation,
 };
 
 const HOLES_PER_SIDE: usize = 10;
@@ -75,20 +75,32 @@ pub(crate) enum Inspected {
     Oblique,
     /// Every position zone is projected 10 mm beyond A (Ⓟ).
     Projected,
+    /// 1,000 controls and a 10,000-point surface, with uncertainty
+    /// simulated over 32 trials of 1 µm probing error.
+    Simulated,
 }
 
 pub(crate) fn inspection_case(definition: &FamilyDefinition, variant: Inspected) -> Outcome {
     let oblique = variant == Inspected::Oblique;
+    let simulated = variant == Inspected::Simulated;
+    let (count, surface) = if simulated {
+        (CONTROLS / 10, SURFACE_POINTS / 10)
+    } else {
+        (CONTROLS, SURFACE_POINTS)
+    };
     timed(
         format!(
-            "inspection: {CONTROLS} measured position controls + {SURFACE_POINTS}-point flatness{}",
+            "inspection: {count} measured position controls + {surface}-point flatness{}",
             match variant {
                 Inspected::Square => "",
                 Inspected::Oblique => ", secondary datum at 45° to A",
                 Inspected::Projected => ", projected zones",
+                Inspected::Simulated => ", uncertainty simulated over 32 trials",
             }
         ),
-        Duration::from_secs(1),
+        // Noisy trial points take the fits about 2.5 times the pivots of
+        // the exact measurement.
+        Duration::from_secs(if simulated { 3 } else { 1 }),
         Expectation::Required,
         || {
             let mut definition = definition.clone();
@@ -124,7 +136,7 @@ pub(crate) fn inspection_case(definition: &FamilyDefinition, variant: Inspected)
                 boundary: DatumMaterialBoundary::Regardless,
                 common_with: Vec::new(),
             };
-            let mut controls: Vec<DrawingFeatureControlFrame> = (0..CONTROLS)
+            let mut controls: Vec<DrawingFeatureControlFrame> = (0..count)
                 .map(|i| DrawingFeatureControlFrame {
                     modifiers: Vec::new(),
                     projected: None,
@@ -226,7 +238,7 @@ pub(crate) fn inspection_case(definition: &FamilyDefinition, variant: Inspected)
                 id: id.into(),
                 points_mm: grid(400, point),
             };
-            let mut measured: Vec<MeasuredFeature> = (0..CONTROLS)
+            let mut measured: Vec<MeasuredFeature> = (0..count)
                 .map(|i| {
                     // Every tenth hole is 0.1 mm off position, beyond its bonus.
                     let [x, y] = hole_center(i % (HOLES_PER_SIDE * HOLES_PER_SIDE));
@@ -247,7 +259,7 @@ pub(crate) fn inspection_case(definition: &FamilyDefinition, variant: Inspected)
             measured.push(MeasuredFeature {
                 nominals: Vec::new(),
                 id: "flat".into(),
-                points_mm: grid(SURFACE_POINTS, |u, v| {
+                points_mm: grid(surface, |u, v| {
                     [
                         side * u,
                         side * v,
@@ -256,7 +268,17 @@ pub(crate) fn inspection_case(definition: &FamilyDefinition, variant: Inspected)
                 }),
             });
             let record = InspectionRecord {
-                uncertainty: None,
+                uncertainty: simulated.then(|| MeasurementUncertainty {
+                    expanded_mm: 0.0,
+                    rule: DecisionRule::SimpleAcceptance,
+                    controls: Default::default(),
+                    simulation: Some(UncertaintySimulation {
+                        point_mm: 0.001,
+                        trials: 32,
+                        coverage: 2.0,
+                        seed: 7,
+                    }),
+                }),
                 drawing: "inspected".into(),
                 surface_textures: Vec::new(),
                 datum_features: vec![
@@ -276,7 +298,13 @@ pub(crate) fn inspection_case(definition: &FamilyDefinition, variant: Inspected)
                 let ControlResult::Evaluated(m) = &control.result else {
                     return Err(failure(format!("{} was not evaluated", control.control)));
                 };
-                let expected = i == CONTROLS || i % 10 != 0;
+                let expected = i == count || i % 10 != 0;
+                if simulated && !(m.uncertainty_mm > 0.0 && m.uncertainty_mm < 0.01) {
+                    return Err(failure(format!(
+                        "{} simulated U {}",
+                        control.control, m.uncertainty_mm
+                    )));
+                }
                 if m.conforms != expected {
                     return Err(failure(format!(
                         "{} conformance {}",
@@ -288,7 +316,7 @@ pub(crate) fn inspection_case(definition: &FamilyDefinition, variant: Inspected)
             Ok(format!(
                 "{conforming} of {} conform, {} measured points",
                 report.controls.len(),
-                CONTROLS * 72 + SURFACE_POINTS + 1200
+                count * 72 + surface + 1200
             ))
         },
     )
@@ -1197,6 +1225,7 @@ pub(crate) fn composite_case(definition: &FamilyDefinition, three: bool) -> Outc
                     expanded_mm: 0.001,
                     rule: DecisionRule::GuardedAcceptance,
                     controls: Default::default(),
+                    simulation: None,
                 }),
                 drawing: "composite".into(),
                 surface_textures: Vec::new(),

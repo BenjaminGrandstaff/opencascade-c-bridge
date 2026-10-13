@@ -17,7 +17,7 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 154 + first-use integration 1 (+1 doc test), recipes 3, parametric core 35 + kernel 679 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 8 + view command 27 + viewer Node 19 + branch command 2 + model command 89, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 154 + first-use integration 1 (+1 doc test), recipes 3, parametric core 35 + kernel 680 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 8 + view command 33 + viewer Node 19 + branch command 2 + model command 89, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -25,6 +25,16 @@ tracks status and order.
 | Scale benchmarks | Last full suite: 194 Rust cases plus 5 model-command cases and a 10,000-face Python matcher. Sketch authoring integration rechecked 60 sketch cases and 60 MCP cases within budget. | `tools/bench/run.sh` |
 
 ## Done
+
+- Simulated measurement uncertainty (schema 143 and ABI 69 unchanged). An
+  inspection record's uncertainty may carry a `simulation`: every measured
+  point is perturbed by seeded normal probing error, the record is
+  evaluated again for each trial, and each control's U is the coverage
+  factor times its deviation's standard deviation. It is combined in
+  quadrature with any supplied U and applied by the decision rules. 1,000
+  position controls and a 10,000-point flatness over 32 trials take 1.7 s
+  (3 s budget; noisy trial points take the fits about 2.5 times the
+  pivots of exact ones).
 
 - Free state, statistical, continuous feature, dynamic profile and
   translation modifiers (schema 143, ABI 69 unchanged). Controls carry a
@@ -2329,7 +2339,9 @@ scopes and inspected repo capabilities, not a full conformity audit.
    bounded SVG approximation for curves SVG cannot represent. Direct deviations
    and limits render stacked values.
 2. **Structured GD&T** — [Y14.5](https://www.asme.org/codes-standards/find-codes-standards/y14-5-dimensioning-tolerancing):
-   estimating measurement uncertainty from the measurement itself. Measured planar datum frames, flatness,
+   the listed gaps are closed; remaining refinements (straightness, datum
+   targets, the separate requirement, common widths, boundaries enlarged by
+   geometric tolerances, and others in docs/DRAWINGS.md) are smaller. Measured planar datum frames, flatness,
    circularity, cylindricity, planar orientation zones and position with
    MMC/LMC bonus are evaluated (schema 68), and cylindrical datum features of
    size with circular and total runout (schema 135), common datums A-B
@@ -2351,7 +2363,8 @@ scopes and inspected repo capabilities, not a full conformity audit.
    composites of any number of segments (schema 141), and simultaneous
    common datum axis simulators, and projected tolerance zones and
    tangent planes (schema 142), and free state, statistical, continuous
-   feature, dynamic profile and translation modifiers (schema 143).
+   feature, dynamic profile and translation modifiers (schema 143), and
+   measurement uncertainty simulated from the measurement itself.
 3. **3D manufacturing annotations and exchange** — [Y14.41](https://www.asme.org/codes-standards/find-codes-standards/y14-41-digital-product-definition-data-practices):
    structured PMI attached to persistent geometry, annotation views, dataset
    authority and revision rules, and verified semantic PMI exchange. Geometry

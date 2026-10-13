@@ -3987,6 +3987,7 @@ fn uncertain(expanded: f64, rule: DecisionRule) -> Option<MeasurementUncertainty
         expanded_mm: expanded,
         rule,
         controls: BTreeMap::new(),
+        simulation: None,
     })
 }
 
@@ -4032,6 +4033,68 @@ fn decision_rules_apply_the_expanded_uncertainty() {
     exact.controls.insert("top_profile".into(), 0.0);
     let m = decided(0.045, Some(exact));
     assert!(m.conforms && !m.indeterminate && m.uncertainty_mm == 0.0);
+}
+
+#[test]
+fn uncertainty_is_simulated_from_the_measurement() {
+    use DecisionRule::*;
+    let simulated = |supplied: f64, point: f64, seed: u64, rule| {
+        let mut u = uncertain(supplied, rule).unwrap();
+        u.simulation = Some(UncertaintySimulation {
+            point_mm: point,
+            trials: 64,
+            coverage: 2.0,
+            seed,
+        });
+        Some(u)
+    };
+    // Without probing error every trial repeats the measurement: only the
+    // supplied U remains.
+    let m = decided(0.02, simulated(0.02, 0.0, 1, SimpleAcceptance));
+    assert_eq!(m.uncertainty_mm, 0.02);
+    // With 2 µm per coordinate the profile's deviation spreads; the same
+    // seed repeats it exactly, and twice the error about doubles it.
+    let u = decided(0.02, simulated(0.0, 0.002, 1, SimpleAcceptance)).uncertainty_mm;
+    assert!(u > 0.001 && u < 0.02, "{u}");
+    assert_eq!(
+        decided(0.02, simulated(0.0, 0.002, 1, SimpleAcceptance)).uncertainty_mm,
+        u
+    );
+    assert_ne!(
+        decided(0.02, simulated(0.0, 0.002, 2, SimpleAcceptance)).uncertainty_mm,
+        u
+    );
+    let doubled = decided(0.02, simulated(0.0, 0.004, 1, SimpleAcceptance)).uncertainty_mm;
+    assert!(doubled / u > 1.5 && doubled / u < 2.5, "{u} {doubled}");
+    // A supplied U for the other contributions combines in quadrature.
+    let combined = decided(0.02, simulated(0.01, 0.002, 1, SimpleAcceptance)).uncertainty_mm;
+    assert!((combined - 0.01_f64.hypot(u)).abs() < 1e-12, "{combined}");
+    // Guarded acceptance applies it: 0.096 mm against 0.1 is inside alone
+    // but not with the simulated U.
+    assert!(decided(0.048, None).conforms);
+    let m = decided(0.048, simulated(0.0, 0.002, 1, GuardedAcceptance));
+    assert!(!m.conforms && m.indeterminate, "{m:?}");
+    // Settings are checked.
+    let (definition, _) = shift_setup(DatumMaterialBoundary::Regardless);
+    let graph = graph_of(&definition);
+    let mut page = page();
+    page.feature_control_frames = vec![top_profile(0.1, &["A"])];
+    let mut record = nominal_record();
+    record.controls = vec![top(|_| 10.0)];
+    for bad in [(0.002, 1, 2.0), (-0.001, 32, 2.0), (0.002, 32, 0.0)] {
+        let mut u = uncertain(0.0, SimpleAcceptance).unwrap();
+        u.simulation = Some(UncertaintySimulation {
+            point_mm: bad.0,
+            trials: bad.1,
+            coverage: bad.2,
+            seed: 0,
+        });
+        record.uncertainty = Some(u);
+        assert!(
+            page.evaluate_inspection(&graph, &record).is_err(),
+            "{bad:?}"
+        );
+    }
 }
 
 #[test]

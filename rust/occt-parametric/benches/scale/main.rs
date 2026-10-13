@@ -170,6 +170,7 @@ fn main() -> ExitCode {
         inspection::Inspected::Square,
         inspection::Inspected::Oblique,
         inspection::Inspected::Projected,
+        inspection::Inspected::Simulated,
     ] {
         outcomes.push(inspection::inspection_case(definition, variant));
     }

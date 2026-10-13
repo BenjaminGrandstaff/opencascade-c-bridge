@@ -17,7 +17,7 @@ pub use inspection::{
     InspectionReport, MAX_INSPECTION_POINTS, MeasuredDatumAxis, MeasuredDatumFrame,
     MeasuredDatumWidth, MeasuredFeature, MeasuredNominal, MeasuredTexture, MeasurementUncertainty,
     ProfileMeasurement, RefinementMeasurement, TextureInspection, TextureMeasurement,
-    TextureResult,
+    TextureResult, UncertaintySimulation,
 };
 pub use position::{
     DrawingPositionMeasurement, DrawingPositionMeasurementResult, PositionSampleEvaluation,

@@ -19,7 +19,7 @@ pub use gdt::{
     InspectionReport, MAX_INSPECTION_POINTS, MeasuredDatumAxis, MeasuredDatumFrame,
     MeasuredDatumWidth, MeasuredFeature, MeasuredNominal, MeasuredTexture, MeasurementUncertainty,
     ProfileMeasurement, RefinementMeasurement, TextureInspection, TextureMeasurement,
-    TextureResult,
+    TextureResult, UncertaintySimulation,
 };
 pub use gdt::{
     DatumMaterialBoundary, DatumPrecedence, DrawingCompositeRefinement,
