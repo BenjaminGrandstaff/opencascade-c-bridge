@@ -1720,6 +1720,49 @@ and an isometric section view of the datums and flat top. The 400 drawn controls
 write and verify in 2.5 s, of which the AP242 write and read-back take
 1.8 s (0.5 s without presentations); the one 400× control takes 1.9 s.
 
+## Dataset identification and authority (schema 151, ABI 76)
+
+ASME Y14.41 asks a dataset to identify the product it defines, its
+revision, and whether the model, the drawing or both govern. A drawing's
+optional `dataset` states this:
+
+- `identifier`: the part or dataset number, and `organization`: who is
+  responsible for it and signs its approvals. Each is 1–64 printable ASCII
+  characters.
+- `authority`: `model` (the model and its annotations are the definition; a
+  drawing is for reference), `model_and_drawing` (a reduced-content drawing
+  completes the model), or `drawing` (the model is for reference).
+
+```json
+{"identifier": "PLT-1001", "organization": "Example Works", "authority": "model"}
+```
+
+The dataset's revision is the drawing's latest release (see
+[Releases](#releases-and-revision-tables-schema-90)). One
+revision rule is enforced: when the model governs (`model` or
+`model_and_drawing`), every release must name the `model_revision` it
+releases, so each dataset revision traces to the model content it covers.
+`ModelDocument::drawing_release_status` then says whether the model has
+changed since the latest release.
+
+`export_step_pmi` writes the dataset on the export's root product:
+
+- the identifier as the product's ID;
+- the authority as its product definition's description, such as
+  `authority: model`;
+- when released, the revision as the product definition formation's ID,
+  with the release description;
+- each approval of that release as an approved AP242 `APPROVAL` with its
+  date, approver (a person of the organization) and role, assigned to the
+  formation.
+
+OCCT's reader keeps none of this, so the read-back checks the file's own
+entities. The report's `dataset` gives the identifier, authority and
+revision, and lists in `lost` whichever of `identifier`, `revision`,
+`authority` and `approvals` did not read back. `verified()` needs none
+lost. The `occt-model` response's `pmi.release` adds the drawing's release
+status against the document's revision ledger.
+
 ## Surface texture (schema 71)
 
 `DrawingDefinition.surface_textures` holds stable-ID `DrawingSurfaceTexture`

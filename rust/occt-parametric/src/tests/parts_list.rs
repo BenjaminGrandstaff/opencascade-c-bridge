@@ -75,6 +75,7 @@ fn page(members: &[String]) -> DrawingDefinition {
     outputs.push(output("steel_plate"));
     DrawingDefinition {
         annotation_views: Vec::new(),
+        dataset: None,
         datum_reference_frames: Vec::new(),
         datum_features: Vec::new(),
         feature_control_frames: Vec::new(),

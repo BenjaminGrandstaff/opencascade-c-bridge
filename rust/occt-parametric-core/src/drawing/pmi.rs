@@ -84,6 +84,9 @@ pub struct PmiExchangeReport {
     /// Saved annotation views (schema 145).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub views: Vec<PmiViewReport>,
+    /// Dataset identification (schema 151).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dataset: Option<PmiDatasetReport>,
 }
 
 impl PmiExchangeReport {
@@ -94,6 +97,10 @@ impl PmiExchangeReport {
                 .views
                 .iter()
                 .all(|view| view.lost.is_none() && view.lost_annotations.is_empty())
+            && self
+                .dataset
+                .as_ref()
+                .is_none_or(|dataset| dataset.lost.is_empty())
     }
 
     /// Verified, and nothing was skipped, omitted from a view or left
@@ -170,6 +177,39 @@ pub struct PmiPlan<'a> {
     pub sizes: Vec<PlannedSize<'a>>,
     pub skipped: Vec<PmiSkipped>,
     pub views: Vec<PlannedView<'a>>,
+    pub dataset: Option<PlannedDataset<'a>>,
+}
+
+/// The dataset identification to write: the drawing's dataset with its
+/// latest release, if any.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PlannedDataset<'a> {
+    pub dataset: &'a DrawingDataset,
+    pub release: Option<&'a DrawingRelease>,
+}
+
+/// What of the dataset identification did not read back.
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum PmiDatasetProperty {
+    Identifier,
+    Revision,
+    Authority,
+    Approvals,
+}
+
+/// The exported dataset identification and what reading it back recovered.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct PmiDatasetReport {
+    pub identifier: String,
+    pub authority: DatasetAuthority,
+    /// The latest release's revision; none while unreleased.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revision: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub lost: Vec<PmiDatasetProperty>,
 }
 
 fn skip(skipped: &mut Vec<PmiSkipped>, id: &str, reason: impl Into<String>) {
@@ -478,6 +518,10 @@ impl DrawingDefinition {
             }
             plan.views.push(planned);
         }
+        plan.dataset = self.dataset.as_ref().map(|dataset| PlannedDataset {
+            dataset,
+            release: self.releases.last(),
+        });
         Ok(plan)
     }
 }

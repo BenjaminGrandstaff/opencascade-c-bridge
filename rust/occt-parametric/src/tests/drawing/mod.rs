@@ -43,6 +43,7 @@ fn family_with_datums() -> FamilyDefinition {
 fn drawing() -> DrawingDefinition {
     DrawingDefinition {
         annotation_views: Vec::new(),
+        dataset: None,
         datum_reference_frames: Vec::new(),
         datum_features: Vec::new(),
         feature_control_frames: Vec::new(),
@@ -108,6 +109,7 @@ fn slice_definition(
 ) -> DrawingDefinition {
     DrawingDefinition {
         annotation_views: Vec::new(),
+        dataset: None,
         datum_reference_frames: Vec::new(),
         datum_features: Vec::new(),
         feature_control_frames: Vec::new(),

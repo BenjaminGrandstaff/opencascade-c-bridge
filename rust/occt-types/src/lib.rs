@@ -439,6 +439,27 @@ pub struct StepView<'a> {
     pub clipping_planes: &'a [StepClippingPlane],
 }
 
+/// A sign-off on a dataset's release; `date` is `YYYY-MM-DD`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct StepApproval<'a> {
+    pub role: &'a str,
+    pub name: &'a str,
+    pub date: &'a str,
+}
+
+/// Identification of the exported dataset on the root product: its ID, the
+/// authority statement, and when released, the revision with its
+/// description and approvals by people of `organization`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct StepDataset<'a> {
+    pub identifier: &'a str,
+    pub organization: &'a str,
+    pub authority: &'a str,
+    pub revision: Option<&'a str>,
+    pub description: Option<&'a str>,
+    pub approvals: &'a [StepApproval<'a>],
+}
+
 /// Semantic PMI for [`Session::save_step_assembly_pmi`].
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct StepPmi<'a> {
@@ -446,6 +467,22 @@ pub struct StepPmi<'a> {
     pub tolerances: &'a [StepTolerance<'a>],
     pub sizes: &'a [StepSize<'a>],
     pub views: &'a [StepView<'a>],
+    pub dataset: Option<StepDataset<'a>>,
+}
+
+/// What of a dataset's identification did not read back.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct StepDatasetLoss {
+    pub identifier: bool,
+    pub revision: bool,
+    pub authority: bool,
+    pub approvals: bool,
+}
+
+impl StepDatasetLoss {
+    pub fn is_none(&self) -> bool {
+        *self == Self::default()
+    }
 }
 
 /// What reading a written PMI item back did not recover: the whole item, or
@@ -498,6 +535,7 @@ pub struct StepPmiVerification {
     pub tolerances: Vec<StepPmiLoss>,
     pub sizes: Vec<StepPmiLoss>,
     pub views: Vec<StepViewLoss>,
+    pub dataset: Option<StepDatasetLoss>,
 }
 
 /// How a swept profile turns as it follows its path.

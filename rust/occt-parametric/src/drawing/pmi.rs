@@ -6,9 +6,9 @@ use super::*;
 use crate::assembly::InstanceGraphStepWrite;
 use crate::selection::{Features, resolve_face_selector};
 use occt_bridge::{
-    StepCharacteristic, StepClippingPlane, StepDatum, StepDatumReference, StepMaterial, StepPmi,
-    StepPmiFaces, StepPmiLoss, StepPresentation, StepSize, StepSizeKind, StepTolerance,
-    StepToleranceModifiers, StepView,
+    StepApproval, StepCharacteristic, StepClippingPlane, StepDataset, StepDatum,
+    StepDatumReference, StepMaterial, StepPmi, StepPmiFaces, StepPmiLoss, StepPresentation,
+    StepSize, StepSizeKind, StepTolerance, StepToleranceModifiers, StepView,
 };
 use std::path::Path;
 
@@ -373,11 +373,34 @@ impl DrawingStepPmi for DrawingDefinition {
                 clipping_planes: planes,
             })
             .collect::<Vec<_>>();
+        let approvals = plan
+            .dataset
+            .as_ref()
+            .and_then(|planned| planned.release)
+            .map_or_else(Vec::new, |release| {
+                release
+                    .approvals
+                    .iter()
+                    .map(|approval| StepApproval {
+                        role: &approval.role,
+                        name: &approval.name,
+                        date: &approval.date,
+                    })
+                    .collect()
+            });
         let pmi = StepPmi {
             datums: &step_datums,
             tolerances: &step_tolerances,
             sizes: &step_sizes,
             views: &step_views,
+            dataset: plan.dataset.as_ref().map(|planned| StepDataset {
+                identifier: &planned.dataset.identifier,
+                organization: &planned.dataset.organization,
+                authority: planned.dataset.authority.statement(),
+                revision: planned.release.map(|release| release.revision.as_str()),
+                description: planned.release.map(|release| release.description.as_str()),
+                approvals: &approvals,
+            }),
         };
         let (parts, verification) = graph.write_step(
             session,
@@ -479,11 +502,30 @@ impl DrawingStepPmi for DrawingDefinition {
                 }
             })
             .collect();
+        let dataset = plan
+            .dataset
+            .as_ref()
+            .zip(verification.dataset.as_ref())
+            .map(|(planned, loss)| PmiDatasetReport {
+                identifier: planned.dataset.identifier.clone(),
+                authority: planned.dataset.authority,
+                revision: planned.release.map(|release| release.revision.clone()),
+                lost: [
+                    (loss.identifier, PmiDatasetProperty::Identifier),
+                    (loss.revision, PmiDatasetProperty::Revision),
+                    (loss.authority, PmiDatasetProperty::Authority),
+                    (loss.approvals, PmiDatasetProperty::Approvals),
+                ]
+                .into_iter()
+                .filter_map(|(lost, property)| lost.then_some(property))
+                .collect(),
+            });
         Ok(PmiExchangeReport {
             parts,
             items,
             skipped: plan.skipped,
             views,
+            dataset,
         })
     }
 }

@@ -2,7 +2,7 @@
 
 use super::*;
 
-pub(crate) const ABI_VERSION: u32 = 74;
+pub(crate) const ABI_VERSION: u32 = 76;
 
 #[repr(C)]
 #[derive(Default)]
@@ -160,6 +160,26 @@ pub(crate) struct RawStepPmi {
     pub(crate) views: *const RawStepView,
     pub(crate) view_count: usize,
     pub(crate) out_view_losses: *mut u32,
+    pub(crate) dataset: *const RawStepDataset,
+}
+
+#[repr(C)]
+pub(crate) struct RawStepApproval {
+    pub(crate) role: *const std::os::raw::c_char,
+    pub(crate) name: *const std::os::raw::c_char,
+    pub(crate) date: *const std::os::raw::c_char,
+}
+
+#[repr(C)]
+pub(crate) struct RawStepDataset {
+    pub(crate) identifier: *const std::os::raw::c_char,
+    pub(crate) organization: *const std::os::raw::c_char,
+    pub(crate) authority: *const std::os::raw::c_char,
+    pub(crate) revision: *const std::os::raw::c_char,
+    pub(crate) description: *const std::os::raw::c_char,
+    pub(crate) approvals: *const RawStepApproval,
+    pub(crate) approval_count: usize,
+    pub(crate) out_losses: *mut u32,
 }
 
 #[repr(C)]

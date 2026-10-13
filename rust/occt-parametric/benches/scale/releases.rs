@@ -38,6 +38,7 @@ pub(crate) fn release_case(definition: &'static FamilyDefinition) -> Outcome {
             let mut document = ModelDocument::from_graph(&graph);
             document.drawings.push(DrawingDefinition {
                 annotation_views: Vec::new(),
+                dataset: None,
                 datum_reference_frames: Vec::new(),
                 datum_features: Vec::new(),
                 feature_control_frames: Vec::new(),

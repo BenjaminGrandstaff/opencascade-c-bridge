@@ -576,3 +576,98 @@ fn section_views_export_their_clipping_planes() {
     many.annotation_views[1].clipping_planes = vec![plane; 17];
     assert!(error(many).contains("more than 16 clipping planes"));
 }
+
+#[test]
+fn datasets_carry_identification_revision_and_approvals() {
+    let definition = drilled_plate();
+    let mut graph = InstanceGraph::new(&definition);
+    graph.add_base("part", HashMap::new(), "test").unwrap();
+    let session = Session::new().unwrap();
+    let generation = graph.regenerate_all(&session).unwrap();
+    let path = std::env::temp_dir().join(format!("occb-pmi-dataset-{}.step", std::process::id()));
+    let export = |page: &DrawingDefinition| {
+        page.export_step_pmi(
+            &graph,
+            &session,
+            &generation,
+            &path,
+            "plate",
+            &OutputSet::AllWithOutput("body".into()),
+        )
+    };
+    let mut page = viewed_page();
+    page.dataset = Some(DrawingDataset {
+        identifier: "PLT-1001".into(),
+        organization: "Example Works".into(),
+        authority: DatasetAuthority::Model,
+    });
+
+    // Unreleased: the identifier and authority, and no revision.
+    let report = export(&page).unwrap();
+    assert!(report.verified(), "{report:#?}");
+    let dataset = report.dataset.as_ref().unwrap();
+    assert_eq!(
+        (dataset.identifier.as_str(), dataset.revision.as_ref()),
+        ("PLT-1001", None)
+    );
+
+    // The model governs, so each release must name the model revision it
+    // releases.
+    let approval = |role: &str, name: &str, date: &str| DrawingApproval {
+        role: role.into(),
+        name: name.into(),
+        date: date.into(),
+    };
+    page.releases = vec![DrawingRelease {
+        revision: "A".into(),
+        description: "Initial release".into(),
+        date: "2026-09-01".into(),
+        approvals: vec![approval("APPROVED", "M. Ortiz", "2026-09-01")],
+        model_revision: None,
+    }];
+    let error = page.validate(&graph).unwrap_err().message;
+    assert!(
+        error.contains("release 'A' must name the model revision"),
+        "{error}"
+    );
+    page.releases[0].model_revision = Some("r1".into());
+    page.releases.push(DrawingRelease {
+        revision: "B".into(),
+        description: "Bore positions tightened".into(),
+        date: "2026-10-02".into(),
+        approvals: vec![
+            approval("CHECKED", "R. Lee", "2026-10-01"),
+            approval("APPROVED", "M. Ortiz", "2026-10-02"),
+        ],
+        model_revision: Some("r2".into()),
+    });
+    page.validate(&graph).unwrap();
+    // The latest release is written: its revision, description and
+    // approvals on the root product.
+    let report = export(&page).unwrap();
+    assert!(report.verified(), "{report:#?}");
+    assert_eq!(
+        report.dataset.as_ref().unwrap().revision.as_deref(),
+        Some("B")
+    );
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert!(text.contains("PRODUCT('PLT-1001'"));
+    assert!(text.contains("PRODUCT_DEFINITION_FORMATION('B','Bore positions tightened'"));
+    assert!(text.contains("'authority: model'"));
+    assert_eq!(text.matches("APPROVAL_DATE_TIME(").count(), 2);
+    std::fs::remove_file(&path).unwrap();
+
+    // A drawing-governed dataset needs no model revisions.
+    page.dataset.as_mut().unwrap().authority = DatasetAuthority::Drawing;
+    page.releases[0].model_revision = None;
+    page.validate(&graph).unwrap();
+    let mut blank = page.clone();
+    blank.dataset.as_mut().unwrap().identifier = " ".into();
+    assert!(
+        blank
+            .validate(&graph)
+            .unwrap_err()
+            .message
+            .contains("dataset identifier")
+    );
+}

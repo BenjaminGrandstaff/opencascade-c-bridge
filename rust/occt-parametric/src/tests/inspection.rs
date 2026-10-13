@@ -132,6 +132,7 @@ pub(super) fn page() -> DrawingDefinition {
     };
     DrawingDefinition {
         annotation_views: Vec::new(),
+        dataset: None,
         datum_reference_frames: vec![DrawingDatumReferenceFrame {
             id: "ABC".into(),
             datums: ["A", "B", "C"]

@@ -173,6 +173,9 @@ fn step_pmi_writes_drawing_gdt_on_faces_and_reports_the_read_back() {
                 "precision":2,"zone":"diameter","material":"maximum","feature_of_size":true,
                 "size_limits":{"kind":"internal","lower":length(4.9),"upper":length(5.1)},
                 "datums":[{"datum_feature":"A"}]}],
+            "dataset":{"identifier":"BRK-200","organization":"Example Works","authority":"drawing"},
+            "releases":[{"revision":"A","description":"Initial release","date":"2026-10-01",
+                "approvals":[{"role":"APPROVED","name":"M. Ortiz","date":"2026-10-01"}]}],
             "annotation_views":[{"id":"iso","name":"ISO GD&T",
                 "direction":{"x":{"value":1.0,"dimension":"scalar"},"y":{"value":-1.0,"dimension":"scalar"},"z":{"value":1.0,"dimension":"scalar"}},
                 "x_axis":{"x":{"value":1.0,"dimension":"scalar"},"y":{"value":1.0,"dimension":"scalar"},"z":{"value":0.0,"dimension":"scalar"}},
@@ -202,6 +205,12 @@ fn step_pmi_writes_drawing_gdt_on_faces_and_reports_the_read_back() {
         pmi["report"]["views"],
         json!([{"id":"iso","name":"ISO GD&T","annotations":["A","bore"]}])
     );
+    assert_eq!(
+        pmi["report"]["dataset"],
+        json!({"identifier":"BRK-200","authority":"drawing","revision":"A"})
+    );
+    // The release names no model revision and the model has no ledger.
+    assert_eq!(pmi["release"], json!({"status":"untracked","revision":"A"}));
     assert!(dir.0.join("pmi/parts.step").exists());
 
     value["step_pmi"] = json!("missing");

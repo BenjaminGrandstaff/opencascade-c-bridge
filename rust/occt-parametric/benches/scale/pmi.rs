@@ -4,11 +4,12 @@
 
 use super::*;
 use occt_parametric::{
-    AnnotationClippingPlane, CoordinateAxis, DatumMaterialBoundary, DrawingAnnotationView,
-    DrawingDatumFeature, DrawingDatumReference, DrawingDefinition, DrawingFeatureControlFrame,
-    DrawingGdtAttachment, DrawingSizeLimits, DrawingView, DrawingViewKind, Extremum,
-    FeatureOfSizeKind, GeometricCharacteristic, GeometricToleranceZone, InstanceOutputRef,
-    NamedReference, OutputSet, PmiItemKind, ReferenceTarget, ToleranceMaterialCondition,
+    AnnotationClippingPlane, CoordinateAxis, DatasetAuthority, DatumMaterialBoundary,
+    DrawingAnnotationView, DrawingDataset, DrawingDatumFeature, DrawingDatumReference,
+    DrawingDefinition, DrawingFeatureControlFrame, DrawingGdtAttachment, DrawingSizeLimits,
+    DrawingView, DrawingViewKind, Extremum, FeatureOfSizeKind, GeometricCharacteristic,
+    GeometricToleranceZone, InstanceOutputRef, NamedReference, OutputSet, PmiItemKind,
+    ReferenceTarget, ToleranceMaterialCondition,
 };
 use std::collections::BTreeMap;
 
@@ -230,6 +231,11 @@ fn drawing(pattern: bool) -> DrawingDefinition {
     }];
     DrawingDefinition {
         annotation_views,
+        dataset: Some(DrawingDataset {
+            identifier: "PLATE-400".into(),
+            organization: "Bench".into(),
+            authority: DatasetAuthority::Model,
+        }),
         datum_reference_frames: Vec::new(),
         datum_features: vec![
             datum("A", "bottom", "bottom_face"),
@@ -328,7 +334,7 @@ pub(crate) fn pmi_case(definition: &FamilyDefinition, pattern: bool) -> Outcome 
             )));
         }
         Ok(format!(
-            "{tolerances} tolerances, {sizes} sizes, 3 datums and 2 views verified; export and read-back {:.3} s",
+            "{tolerances} tolerances, {sizes} sizes, 3 datums, 2 views and the dataset verified; export and read-back {:.3} s",
             export.as_secs_f64()
         ))
     })

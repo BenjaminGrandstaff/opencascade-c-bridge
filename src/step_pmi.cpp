@@ -20,7 +20,25 @@
 #include <STEPCAFControl_Reader.hxx>
 #include <STEPControl_Reader.hxx>
 #include <STEPCAFControl_Writer.hxx>
+#include <StepAP214_AppliedApprovalAssignment.hxx>
+#include <StepAP214_ApprovalItem.hxx>
+#include <StepAP214_HArray1OfApprovalItem.hxx>
 #include <StepAP242_DraughtingModelItemAssociation.hxx>
+#include <StepBasic_Approval.hxx>
+#include <StepBasic_ApprovalDateTime.hxx>
+#include <StepBasic_ApprovalPersonOrganization.hxx>
+#include <StepBasic_ApprovalRole.hxx>
+#include <StepBasic_ApprovalStatus.hxx>
+#include <StepBasic_CalendarDate.hxx>
+#include <StepBasic_DateTimeSelect.hxx>
+#include <StepBasic_Organization.hxx>
+#include <StepBasic_Person.hxx>
+#include <StepBasic_PersonAndOrganization.hxx>
+#include <StepBasic_PersonOrganizationSelect.hxx>
+#include <StepBasic_Product.hxx>
+#include <StepBasic_ProductDefinition.hxx>
+#include <StepBasic_ProductDefinitionFormation.hxx>
+#include <StepRepr_NextAssemblyUsageOccurrence.hxx>
 #include <StepAP242_GeometricItemSpecificUsage.hxx>
 #include <StepBasic_ConversionBasedUnitAndLengthUnit.hxx>
 #include <StepBasic_HArray1OfNamedUnit.hxx>
@@ -90,6 +108,10 @@
 #include <XCAFDoc_ShapeTool.hxx>
 
 #include <algorithm>
+#include <array>
+#include <cstdlib>
+#include <cstring>
+#include <optional>
 #include <cmath>
 #include <map>
 #include <set>
@@ -1102,6 +1124,223 @@ bool same_planes(const occt_bridge_step_view_t& view, const std::vector<gp_Pln>&
     return true;
 }
 
+bool nonempty(const char* text) {
+    return text != nullptr && text[0] != '\0';
+}
+
+// A YYYY-MM-DD calendar date as {year, month, day}, or nothing.
+std::optional<std::array<int, 3>> iso_date(const char* text) {
+    if (text == nullptr || std::strlen(text) != 10 || text[4] != '-' || text[7] != '-') {
+        return std::nullopt;
+    }
+    for (const int index : {0, 1, 2, 3, 5, 6, 8, 9}) {
+        if (text[index] < '0' || text[index] > '9') {
+            return std::nullopt;
+        }
+    }
+    const int year = std::atoi(text);
+    const int month = std::atoi(text + 5);
+    const int day = std::atoi(text + 8);
+    const bool leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+    static constexpr int kDays[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+    if (year < 1 || month < 1 || month > 12 || day < 1 || day > kDays[month - 1] + (month == 2 && leap ? 1 : 0)) {
+        return std::nullopt;
+    }
+    return std::array<int, 3>{year, month, day};
+}
+
+const char* dataset_error(const occt_bridge_step_dataset_t& dataset) {
+    if (!nonempty(dataset.identifier) || !nonempty(dataset.organization) || !nonempty(dataset.authority)) {
+        return "a dataset needs an identifier, an organization and an authority";
+    }
+    if (!nonempty(dataset.revision) && dataset.approval_count != 0) {
+        return "an unreleased dataset has no approvals";
+    }
+    if (dataset.description != nullptr && dataset.description[0] == '\0') {
+        return "a revision description must be nonempty when given";
+    }
+    if (dataset.approval_count != 0 && dataset.approvals == nullptr) {
+        return "dataset approvals are missing";
+    }
+    for (size_t index = 0; index < dataset.approval_count; ++index) {
+        const auto& approval = dataset.approvals[index];
+        if (!nonempty(approval.role) || !nonempty(approval.name) || !iso_date(approval.date)) {
+            return "approvals need a role, a name and a YYYY-MM-DD date";
+        }
+    }
+    return nullptr;
+}
+
+// The product definition no assembly uses: the export's root, or null when
+// there is not exactly one.
+Handle(StepBasic_ProductDefinition) root_definition(const Handle(Interface_InterfaceModel)& model) {
+    std::set<const Standard_Transient*> used;
+    std::vector<Handle(StepBasic_ProductDefinition)> definitions;
+    for (int index = 1; index <= model->NbEntities(); ++index) {
+        const Handle(Standard_Transient)& entity = model->Value(index);
+        if (const auto usage = Handle(StepRepr_NextAssemblyUsageOccurrence)::DownCast(entity); !usage.IsNull()) {
+            used.insert(usage->RelatedProductDefinition().get());
+        } else if (const auto definition = Handle(StepBasic_ProductDefinition)::DownCast(entity);
+                   !definition.IsNull()) {
+            definitions.push_back(definition);
+        }
+    }
+    Handle(StepBasic_ProductDefinition) root;
+    for (const auto& definition : definitions) {
+        if (used.count(definition.get()) == 0) {
+            if (!root.IsNull()) {
+                return nullptr;
+            }
+            root = definition;
+        }
+    }
+    return root;
+}
+
+// Identification and approvals of the dataset on the root product, as
+// AP242 product data management: the product's ID, the formation's ID and
+// description for the revision, the definition's description for the
+// authority, and per approval an approved APPROVAL with its date, approver
+// and role, assigned to the formation.
+void write_dataset(const Handle(Interface_InterfaceModel)& model, const occt_bridge_step_dataset_t& dataset) {
+    const Handle(StepBasic_ProductDefinition) root = root_definition(model);
+    if (root.IsNull() || root->Formation().IsNull() || root->Formation()->OfProduct().IsNull()) {
+        return;
+    }
+    const Handle(StepBasic_ProductDefinitionFormation) formation = root->Formation();
+    formation->OfProduct()->SetId(text(dataset.identifier));
+    root->SetDescription(text(dataset.authority));
+    if (!nonempty(dataset.revision)) {
+        return;
+    }
+    formation->SetId(text(dataset.revision));
+    if (dataset.description != nullptr) {
+        formation->SetDescription(text(dataset.description));
+    }
+    Handle(StepBasic_Organization) organization = new StepBasic_Organization;
+    organization->Init(Standard_False, nullptr, text(dataset.organization), text(""));
+    std::map<std::string, Handle(StepBasic_PersonAndOrganization)> people;
+    for (size_t index = 0; index < dataset.approval_count; ++index) {
+        const auto& entry = dataset.approvals[index];
+        auto& person = people[entry.name];
+        if (person.IsNull()) {
+            Handle(StepBasic_Person) who = new StepBasic_Person;
+            who->Init(text(entry.name), Standard_True, text(entry.name), Standard_False, nullptr, Standard_False,
+                      nullptr, Standard_False, nullptr, Standard_False, nullptr);
+            person = new StepBasic_PersonAndOrganization;
+            person->Init(who, organization);
+        }
+        Handle(StepBasic_ApprovalStatus) status = new StepBasic_ApprovalStatus;
+        status->Init(text("approved"));
+        Handle(StepBasic_Approval) approval = new StepBasic_Approval;
+        approval->Init(status, text(entry.role));
+        const auto [year, month, day] = *iso_date(entry.date);
+        Handle(StepBasic_CalendarDate) date = new StepBasic_CalendarDate;
+        date->Init(year, day, month);
+        StepBasic_DateTimeSelect when;
+        when.SetValue(date);
+        Handle(StepBasic_ApprovalDateTime) dated = new StepBasic_ApprovalDateTime;
+        dated->Init(when, approval);
+        Handle(StepBasic_ApprovalRole) role = new StepBasic_ApprovalRole;
+        role->Init(text(entry.role));
+        StepBasic_PersonOrganizationSelect signer;
+        signer.SetValue(person);
+        Handle(StepBasic_ApprovalPersonOrganization) signature = new StepBasic_ApprovalPersonOrganization;
+        signature->Init(signer, approval, role);
+        Handle(StepAP214_HArray1OfApprovalItem) items = new StepAP214_HArray1OfApprovalItem(1, 1);
+        StepAP214_ApprovalItem item;
+        item.SetValue(formation);
+        items->SetValue(1, item);
+        Handle(StepAP214_AppliedApprovalAssignment) assignment = new StepAP214_AppliedApprovalAssignment;
+        assignment->Init(approval, items);
+        model->AddWithRefs(dated);
+        model->AddWithRefs(signature);
+        model->AddWithRefs(assignment);
+    }
+}
+
+// An approval as read: role, approver and date.
+using ReadApproval = std::tuple<std::string, std::string, std::array<int, 3>>;
+
+uint32_t dataset_losses(const Handle(Interface_InterfaceModel)& model, const occt_bridge_step_dataset_t& dataset) {
+    const Handle(StepBasic_ProductDefinition) root = root_definition(model);
+    if (root.IsNull() || root->Formation().IsNull() || root->Formation()->OfProduct().IsNull()) {
+        return OCCT_BRIDGE_DATASET_LOST_IDENTIFIER | OCCT_BRIDGE_DATASET_LOST_REVISION
+            | OCCT_BRIDGE_DATASET_LOST_AUTHORITY | OCCT_BRIDGE_DATASET_LOST_APPROVALS;
+    }
+    const Handle(StepBasic_ProductDefinitionFormation) formation = root->Formation();
+    uint32_t losses = 0;
+    if (name_of(formation->OfProduct()->Id()) != dataset.identifier) {
+        losses |= OCCT_BRIDGE_DATASET_LOST_IDENTIFIER;
+    }
+    if (name_of(root->Description()) != dataset.authority) {
+        losses |= OCCT_BRIDGE_DATASET_LOST_AUTHORITY;
+    }
+    const bool released = nonempty(dataset.revision);
+    if (released
+        && (name_of(formation->Id()) != dataset.revision
+            || (dataset.description != nullptr && name_of(formation->Description()) != dataset.description))) {
+        losses |= OCCT_BRIDGE_DATASET_LOST_REVISION;
+    }
+    // Approvals assigned to the root formation, with their dates and signers.
+    std::set<const Standard_Transient*> assigned;
+    std::map<const Standard_Transient*, std::array<int, 3>> dates;
+    std::multimap<const Standard_Transient*, std::pair<std::string, std::string>> signers;
+    for (int index = 1; index <= model->NbEntities(); ++index) {
+        const Handle(Standard_Transient)& entity = model->Value(index);
+        if (const auto assignment = Handle(StepAP214_AppliedApprovalAssignment)::DownCast(entity);
+            !assignment.IsNull()) {
+            for (int item = 1; item <= assignment->NbItems(); ++item) {
+                if (assignment->ItemsValue(item).Value() == formation) {
+                    assigned.insert(assignment->AssignedApproval().get());
+                }
+            }
+        } else if (const auto dated = Handle(StepBasic_ApprovalDateTime)::DownCast(entity); !dated.IsNull()) {
+            const auto date = Handle(StepBasic_CalendarDate)::DownCast(dated->DateTime().Value());
+            if (!date.IsNull()) {
+                dates[dated->DatedApproval().get()] =
+                    std::array<int, 3>{date->YearComponent(), date->MonthComponent(), date->DayComponent()};
+            }
+        } else if (const auto signature = Handle(StepBasic_ApprovalPersonOrganization)::DownCast(entity);
+                   !signature.IsNull()) {
+            const auto person = signature->PersonOrganization().PersonAndOrganization();
+            const std::string who = person.IsNull() || person->ThePerson().IsNull()
+                ? std::string()
+                : name_of(person->ThePerson()->LastName());
+            const std::string role = signature->Role().IsNull() ? std::string() : name_of(signature->Role()->Role());
+            signers.emplace(signature->AuthorizedApproval().get(), std::make_pair(role, who));
+        }
+    }
+    std::vector<ReadApproval> read;
+    for (int index = 1; index <= model->NbEntities(); ++index) {
+        const auto approval = Handle(StepBasic_Approval)::DownCast(model->Value(index));
+        if (approval.IsNull() || assigned.count(approval.get()) == 0) {
+            continue;
+        }
+        if (approval->Status().IsNull() || name_of(approval->Status()->Name()) != "approved") {
+            read.emplace_back("", "", std::array<int, 3>{});
+            continue;
+        }
+        const auto [begin, end] = signers.equal_range(approval.get());
+        const auto date = dates.find(approval.get());
+        for (auto signer = begin; signer != end; ++signer) {
+            read.emplace_back(signer->second.first, signer->second.second,
+                              date == dates.end() ? std::array<int, 3>{} : date->second);
+        }
+    }
+    std::vector<ReadApproval> written;
+    for (size_t index = 0; released && index < dataset.approval_count; ++index) {
+        const auto& entry = dataset.approvals[index];
+        written.emplace_back(entry.role, entry.name, *iso_date(entry.date));
+    }
+    std::sort(read.begin(), read.end());
+    std::sort(written.begin(), written.end());
+    if (read != written) {
+        losses |= OCCT_BRIDGE_DATASET_LOST_APPROVALS;
+    }
+    return losses;
+}
+
 // Closes a reading document however verification ends.
 struct ReadDocument {
     Handle(XCAFApp_Application) application = XCAFApp_Application::GetApplication();
@@ -1191,6 +1430,11 @@ const char* pmi_error(const occt_bridge_step_pmi_t& pmi, const std::vector<const
     std::sort(names.begin(), names.end());
     if (std::adjacent_find(names.begin(), names.end()) != names.end()) {
         return "view names must be unique";
+    }
+    if (pmi.dataset != nullptr) {
+        if (const char* error = dataset_error(*pmi.dataset)) {
+            return error;
+        }
     }
     return nullptr;
 }
@@ -1376,6 +1620,9 @@ void finish_pmi(
             model->AddWithRefs(definition);
         }
         writer.Writer().WS()->ComputeGraph(Standard_True);
+    }
+    if (pmi.dataset != nullptr) {
+        write_dataset(model, *pmi.dataset);
     }
     if (pmi.view_count == 0) {
         return;
@@ -1563,6 +1810,9 @@ bool verify_pmi(const char* path, occt_bridge_step_pmi_t& pmi, const std::vector
         for (size_t entry = 0; view.out_tolerances_lost != nullptr && entry < view.tolerance_count; ++entry) {
             view.out_tolerances_lost[entry] = lost(pmi.tolerances[view.tolerances[entry]].presentation);
         }
+    }
+    if (pmi.dataset != nullptr && pmi.dataset->out_losses != nullptr) {
+        *pmi.dataset->out_losses = dataset_losses(reader.Reader().WS()->Model(), *pmi.dataset);
     }
     return true;
 }

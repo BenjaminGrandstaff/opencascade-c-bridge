@@ -45,6 +45,8 @@ report's `pmi` then says whether every item read back (`verified`), whether
 anything was skipped or is not representable (`complete`), and lists each
 item. The drawing's `annotation_views` are written as saved views, and the
 report's `views` lists what each shows and anything that did not read back.
+A drawing `dataset` is written on the root product and reported in the
+report's `dataset`; `pmi.release` gives the drawing's release status.
 See [Semantic PMI](../../docs/DRAWINGS.md#semantic-pmi-on-persistent-faces-schema-144-abi-70)
 and [Annotation views](../../docs/DRAWINGS.md#annotation-views-schema-145-abi-71).
 

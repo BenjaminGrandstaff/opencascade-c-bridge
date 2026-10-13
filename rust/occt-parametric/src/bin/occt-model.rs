@@ -246,6 +246,16 @@ fn build_internal(
     // Exclusive creation prevents overwriting previous accepted builds. On any
     // write failure remove only the directory this invocation created.
     fs::create_dir(destination).map_err(|e| failure("publication", e))?;
+    // Whether the drawing's latest release still covers the model, by the
+    // document's revision ledger.
+    let pmi = pmi
+        .map(|drawing| {
+            document
+                .drawing_release_status(&drawing.id)
+                .map(|status| (drawing, status))
+        })
+        .transpose()
+        .map_err(|e| model_failure("validation", e))?;
     let published = publish(
         &request.outputs,
         request.step.then_some(pmi),
@@ -301,7 +311,7 @@ fn build_internal(
 #[allow(clippy::too_many_arguments)]
 fn publish(
     outputs: &[InstanceOutputRef],
-    step: Option<Option<&DrawingDefinition>>,
+    step: Option<Option<(&DrawingDefinition, DrawingReleaseStatus)>>,
     stl: bool,
     previews: bool,
     destination: &Path,
@@ -313,6 +323,7 @@ fn publish(
     write_report: bool,
 ) -> Result<(), Failure> {
     let selected = OutputSet::Explicit(outputs.to_vec());
+    let stepped = step.is_some();
     match step {
         None => {}
         Some(None) => {
@@ -326,7 +337,7 @@ fn publish(
                 )
                 .map_err(|e| model_failure("export", e))?;
         }
-        Some(Some(drawing)) => {
+        Some(Some((drawing, release))) => {
             let report = drawing
                 .export_step_pmi(
                     graph,
@@ -339,13 +350,14 @@ fn publish(
                 .map_err(|e| model_failure("export", e))?;
             value["pmi"] = json!({
                 "drawing": drawing.id,
+                "release": release,
                 "verified": report.verified(),
                 "complete": report.complete(),
                 "report": report,
             });
         }
     }
-    if step.is_some() {
+    if stepped {
         value["artifacts"]["step"] = json!("parts.step");
     }
     for (index, output) in outputs.iter().enumerate() {

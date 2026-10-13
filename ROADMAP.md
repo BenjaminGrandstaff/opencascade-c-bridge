@@ -8,6 +8,8 @@ tracks status and order.
 
 | Layer | Version | State |
 |---|---|---|
+| C ABI (`src/`, `include/`) | ABI 76 | Stable; exact version match required |
+| C ABI (`src/`, `include/`) | ABI 72 | Stable; exact version match required |
 | C ABI (`src/`, `include/`) | ABI 73 | Stable; exact version match required |
 | `occt-types` (shared value types) | — | No native dependency |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI; re-exports `occt-types` |
@@ -26,6 +28,16 @@ tracks status and order.
 
 ## Done
 
+- Dataset identification and authority (schema 151, ABI 76). A drawing's
+  `dataset` gives the product identifier, the responsible organization and
+  whether the model, the drawing or both govern. When the model governs,
+  every release must name the model revision it releases. `export_step_pmi`
+  writes the identifier, authority statement, latest release revision and
+  its approvals (AP242 approvals with dates, approvers and roles) on the
+  root product, and verifies them from the file's entities. `occt-model`
+  responses report the drawing's release status against the revision
+  ledger. See
+  [Dataset identification](docs/DRAWINGS.md#dataset-identification-and-authority-schema-151-abi-76).
 - Section and clipped annotation views (schema 150, ABI 75). An annotation
   view may list up to 16 `clipping_planes`, each with an origin, a normal
   and a kept side as for section drawing views. They are written as an
@@ -2579,7 +2591,11 @@ scopes and inspected repo capabilities, not a full conformity audit.
    feature, dynamic profile and translation modifiers (schema 143), and
    measurement uncertainty simulated from the measurement itself.
 3. **3D manufacturing annotations and exchange** — [Y14.41](https://www.asme.org/codes-standards/find-codes-standards/y14-41-digital-product-definition-data-practices):
-   dataset authority and revision rules. Drawing GD&T attached to persistent faces exports as verified semantic
+   the listed gaps are closed; remaining refinements are per-view part
+   visibility, size dimensions drawn in 3D, and checking against Y14.41's
+   own rules, which no public source provided. Dataset identification,
+   authority and the model-revision rule exchange with the PMI (schema 151,
+   ABI 76). Drawing GD&T attached to persistent faces exports as verified semantic
    AP242 PMI (schema 144, ABI 70); continuous feature, dynamic profile,
    unequal zones and composite relations are reported as unrepresented.
    Annotation views export as verified saved views of 3D presentations

@@ -23,6 +23,7 @@ pub(crate) fn assembly_drawing_case(definition: &'static FamilyDefinition) -> Ou
             )?;
             let drawing = DrawingDefinition {
                 annotation_views: Vec::new(),
+                dataset: None,
                 datum_reference_frames: Vec::new(),
                 datum_features: Vec::new(),
                 feature_control_frames: Vec::new(),
@@ -100,6 +101,7 @@ pub(crate) fn drawing_case(definition: &'static FamilyDefinition) -> Outcome {
             graph.add_base("part", HashMap::new(), "bench")?;
             let drawing = DrawingDefinition {
                 annotation_views: Vec::new(),
+                dataset: None,
                 datum_reference_frames: Vec::new(),
                 datum_features: Vec::new(),
                 feature_control_frames: Vec::new(),

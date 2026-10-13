@@ -35,13 +35,15 @@ pub use gdt::{
     DrawingSurfaceTexture, MaterialRemoval, RoughnessLimits, RoughnessParameter, RoughnessUnit,
     STANDARD_CUTOFFS_MM, SurfaceLay, Waviness,
 };
+pub mod dataset;
+pub use dataset::{DatasetAuthority, DrawingDataset};
 pub mod parts_list;
 pub mod pmi;
 pub use pmi::{
-    AnnotationClippingPlane, AnnotationViewAxes, DrawingAnnotationView, PlannedDatum,
-    PlannedReference, PlannedSize, PlannedTolerance, PlannedView, PmiExchangeItem,
-    PmiExchangeReport, PmiItemKind, PmiPlan, PmiPresentation, PmiProperty, PmiSkipped, PmiTarget,
-    PmiViewLoss, PmiViewReport,
+    AnnotationClippingPlane, AnnotationViewAxes, DrawingAnnotationView, PlannedDataset,
+    PlannedDatum, PlannedReference, PlannedSize, PlannedTolerance, PlannedView, PmiDatasetProperty,
+    PmiDatasetReport, PmiExchangeItem, PmiExchangeReport, PmiItemKind, PmiPlan, PmiPresentation,
+    PmiProperty, PmiSkipped, PmiTarget, PmiViewLoss, PmiViewReport,
 };
 pub mod releases;
 pub mod strokes;
@@ -157,6 +159,10 @@ pub struct DrawingDefinition {
     pub datum_features: Vec<DrawingDatumFeature>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub feature_control_frames: Vec<DrawingFeatureControlFrame>,
+    /// The product this drawing's dataset defines, and which of the model
+    /// and drawing governs it (schema 151).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dataset: Option<DrawingDataset>,
     /// Saved views of the GD&T on the model (schema 145).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub annotation_views: Vec<DrawingAnnotationView>,
@@ -489,6 +495,7 @@ impl DrawingDefinition {
         pmi::views::validate(self)?;
         parts_list::validate(self, &views, graph)?;
         releases::validate(self)?;
+        dataset::validate(self)?;
         let mut ids = HashSet::new();
         for note in &self.notes {
             if note.id.is_empty() || !ids.insert(&note.id) || !finite_pair(note.position_mm) {

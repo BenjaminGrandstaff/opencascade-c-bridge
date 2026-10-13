@@ -3,7 +3,7 @@
 A small, stable C ABI over Open Cascade (OCCT), designed to be wrapped safely
 from Rust and other languages. Open Cascade C++ objects never cross the ABI.
 
-The current C ABI version is **72**.
+The current C ABI version is **74**.
 
 ## Current API
 
@@ -41,8 +41,9 @@ The current C ABI version is **72**.
   BREP validity inspection
 - BREP persistence, STEP import/export, and configurable ASCII/binary STL export
 - STEP AP242 semantic GD&T (datums, tolerances, size limits) on part faces,
-  with 3D presentations in saved annotation and section views, verified by
-  reading the written file back (ABI 75)
+  with 3D presentations in saved annotation and section views and the
+  dataset's identification, revision and approvals, verified by reading the
+  written file back (ABI 76)
 - Per-session result validation (on by default) for booleans, fillets,
   chamfers, offsets, hollowing, sewing, and STEP and BREP import, with
   optional shape healing that carries operation history, fuzzy booleans,
@@ -377,8 +378,9 @@ drawings and assembly motion workflows. GD&T attachments may name the persistent
 then write the drawing's GD&T as verified AP242 PMI on those faces; see
 [Semantic PMI](docs/DRAWINGS.md#semantic-pmi-on-persistent-faces-schema-144-abi-70).
 Schema 145 adds annotation views, which export as AP242 saved views of the
-annotations drawn in 3D, and schema 150 lets them be section or clipped
-views; see
+annotations drawn in 3D, schema 150 lets them be section or clipped
+views, and schema 151 adds dataset identification and authority
+([dataset](docs/DRAWINGS.md#dataset-identification-and-authority-schema-151-abi-76)); see
 [Annotation views](docs/DRAWINGS.md#annotation-views-schema-145-abi-71).
 
 Continuous joint path checks handle translations, unwrapped rotations, and

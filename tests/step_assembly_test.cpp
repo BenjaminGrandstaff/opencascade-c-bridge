@@ -357,8 +357,17 @@ void pmi(occt_bridge_session_t* session, const std::string& file) {
         {"FRONT", {0, 1, 0}, {0, 0.5, 1}, nullptr, 0, front_tolerances, 1, nullptr, front_tolerances_lost, section, 2},
     };
     uint32_t view_losses[2] = {9, 9};
+    // Released at revision B with two approvals; the model is the authority.
+    const occt_bridge_step_approval_t approvals[] = {
+        {"CHECKED", "R. Lee", "2026-10-01"},
+        {"APPROVED", "M. Ortiz", "2026-10-02"},
+    };
+    uint32_t dataset_lost = 99;
+    const occt_bridge_step_dataset_t dataset{
+        "PLT-1001", "Example Works", "authority: model", "B", "Hole positions tightened", approvals, 2,
+        &dataset_lost};
     occt_bridge_step_pmi_t pmi{
-        datums, 5, tolerances, 5, sizes, 2, datum_losses, tolerance_losses, size_losses, views, 2, view_losses};
+        datums, 5, tolerances, 5, sizes, 2, datum_losses, tolerance_losses, size_losses, views, 2, view_losses, &dataset};
     size_t parts = 0;
     check(occt_bridge_step_save_assembly_pmi(
               session, file.c_str(), "fixture", nullptr, 0, components, nullptr, 2, nullptr, 0, &pmi, &parts)
@@ -385,6 +394,15 @@ void pmi(occt_bridge_session_t* session, const std::string& file) {
     }
     check(size_losses[0] == 0 && size_losses[1] == 0, "sizes read back");
     check(view_losses[0] == 0 && view_losses[1] == 0, "views read back with their cameras");
+    check(dataset_lost == 0, "the dataset's identification and approvals read back");
+    {
+        std::ifstream stream(file);
+        const std::string text((std::istreambuf_iterator<char>(stream)), std::istreambuf_iterator<char>());
+        check(text.find("PRODUCT('PLT-1001'") != std::string::npos
+                && text.find("PRODUCT_DEFINITION_FORMATION('B','Hole positions tightened'") != std::string::npos
+                && text.find("APPROVAL_ROLE('CHECKED')") != std::string::npos,
+            "the root product carries the dataset");
+    }
     check(top_datums_lost[0] == 0 && top_datums_lost[1] == 0 && top_tolerances_lost[0] == 0
             && top_tolerances_lost[1] == 0 && front_tolerances_lost[0] == 0,
         "views show their annotations");
@@ -412,7 +430,7 @@ void pmi(occt_bridge_session_t* session, const std::string& file) {
     uint32_t alone_losses[1] = {9};
     uint32_t alone_view[1] = {9};
     occt_bridge_step_pmi_t alone{
-        nullptr, 0, tolerances, 1, nullptr, 0, nullptr, alone_losses, nullptr, &flat_view, 1, alone_view};
+        nullptr, 0, tolerances, 1, nullptr, 0, nullptr, alone_losses, nullptr, &flat_view, 1, alone_view, nullptr};
     check(occt_bridge_step_save_assembly_pmi(
               session, file.c_str(), "fixture", nullptr, 0, components, nullptr, 2, nullptr, 0, &alone, nullptr)
             == OCCT_BRIDGE_OK && alone_losses[0] == 0 && alone_view[0] == 0,
@@ -420,7 +438,7 @@ void pmi(occt_bridge_session_t* session, const std::string& file) {
     occt_bridge_step_tolerance_t undrawn = tolerances[3];
     uint32_t undrawn_losses[1] = {9};
     occt_bridge_step_pmi_t plain{
-        datums, 3, &undrawn, 1, nullptr, 0, nullptr, undrawn_losses, nullptr, nullptr, 0, nullptr};
+        datums, 3, &undrawn, 1, nullptr, 0, nullptr, undrawn_losses, nullptr, nullptr, 0, nullptr, nullptr};
     check(occt_bridge_step_save_assembly_pmi(
               session, file.c_str(), "fixture", nullptr, 0, components, nullptr, 2, nullptr, 0, &plain, nullptr)
             == OCCT_BRIDGE_OK && undrawn_losses[0] == 0,
@@ -435,67 +453,77 @@ void pmi(occt_bridge_session_t* session, const std::string& file) {
     };
     occt_bridge_step_tolerance_t unknown = tolerances[0];
     unknown.characteristic = 12;
-    refused({datums, 4, &unknown, 1, nullptr, 0, nullptr, nullptr, nullptr, nullptr, 0, nullptr}, "unknown characteristic");
+    refused({datums, 4, &unknown, 1, nullptr, 0, nullptr, nullptr, nullptr, nullptr, 0, nullptr, nullptr}, "unknown characteristic");
     const occt_bridge_step_datum_reference_t secondary_only[] = {{1, 1, OCCT_BRIDGE_DATUM_RFS, 0}};
     occt_bridge_step_tolerance_t gap = tolerances[3];
     gap.datums = secondary_only;
     gap.datum_count = 1;
-    refused({datums, 4, &gap, 1, nullptr, 0, nullptr, nullptr, nullptr, nullptr, 0, nullptr}, "secondary without a primary");
+    refused({datums, 4, &gap, 1, nullptr, 0, nullptr, nullptr, nullptr, nullptr, 0, nullptr, nullptr}, "secondary without a primary");
     occt_bridge_step_tolerance_t foreign = tolerances[0];
     foreign.datums = pin_axis;
     foreign.datum_count = 1;
-    refused({datums, 4, &foreign, 1, nullptr, 0, nullptr, nullptr, nullptr, nullptr, 0, nullptr}, "datum on another part");
+    refused({datums, 4, &foreign, 1, nullptr, 0, nullptr, nullptr, nullptr, nullptr, 0, nullptr, nullptr}, "datum on another part");
     const occt_bridge_step_datum_t twice[] = {datums[0], datums[0]};
-    refused({twice, 2, nullptr, 0, nullptr, 0, nullptr, nullptr, nullptr, nullptr, 0, nullptr}, "repeated datum label");
+    refused({twice, 2, nullptr, 0, nullptr, 0, nullptr, nullptr, nullptr, nullptr, 0, nullptr, nullptr}, "repeated datum label");
     const occt_bridge_step_datum_t shared[] = {datums[0], {"A", {1, pin_side, 1}, nullptr}};
-    refused({shared, 2, nullptr, 0, nullptr, 0, nullptr, nullptr, nullptr, nullptr, 0, nullptr}, "one label on two parts");
+    refused({shared, 2, nullptr, 0, nullptr, 0, nullptr, nullptr, nullptr, nullptr, 0, nullptr, nullptr}, "one label on two parts");
     occt_bridge_step_size_t flat = sizes[0];
     flat.target = {0, top, 1};
-    refused({nullptr, 0, nullptr, 0, &flat, 1, nullptr, nullptr, nullptr, nullptr, 0, nullptr}, "diameter on a plane");
+    refused({nullptr, 0, nullptr, 0, &flat, 1, nullptr, nullptr, nullptr, nullptr, 0, nullptr, nullptr}, "diameter on a plane");
     occt_bridge_step_size_t three = sizes[1];
     const size_t three_faces[] = {faces.left, faces.right, faces.top};
     three.target = {0, three_faces, 3};
-    refused({nullptr, 0, nullptr, 0, &three, 1, nullptr, nullptr, nullptr, nullptr, 0, nullptr}, "width over three faces");
+    refused({nullptr, 0, nullptr, 0, &three, 1, nullptr, nullptr, nullptr, nullptr, 0, nullptr, nullptr}, "width over three faces");
     occt_bridge_step_size_t across = sizes[1];
     const size_t square[] = {faces.left, faces.front};
     across.target = {0, square, 2};
-    refused({nullptr, 0, nullptr, 0, &across, 1, nullptr, nullptr, nullptr, nullptr, 0, nullptr}, "width between square planes");
+    refused({nullptr, 0, nullptr, 0, &across, 1, nullptr, nullptr, nullptr, nullptr, 0, nullptr, nullptr}, "width between square planes");
     const size_t beyond[] = {99};
     occt_bridge_step_tolerance_t missing = tolerances[0];
     missing.target = {0, beyond, 1};
-    refused({nullptr, 0, &missing, 1, nullptr, 0, nullptr, nullptr, nullptr, nullptr, 0, nullptr}, "face beyond the plate's");
+    refused({nullptr, 0, &missing, 1, nullptr, 0, nullptr, nullptr, nullptr, nullptr, 0, nullptr, nullptr}, "face beyond the plate's");
     const occt_bridge_step_view_t bare{
         "TOP", {0, 0, -1}, {0, 1, 0}, nullptr, 0, front_tolerances, 1, nullptr, nullptr, nullptr, 0};
-    refused({nullptr, 0, tolerances, 2, nullptr, 0, nullptr, nullptr, nullptr, &bare, 1, nullptr},
+    refused({nullptr, 0, tolerances, 2, nullptr, 0, nullptr, nullptr, nullptr, &bare, 1, nullptr, nullptr},
         "view of an annotation without a presentation");
     const occt_bridge_step_view_t level{
         "TOP", {0, 0, -1}, {0, 0, 2}, nullptr, 0, nullptr, 0, nullptr, nullptr, nullptr, 0};
-    refused({nullptr, 0, nullptr, 0, nullptr, 0, nullptr, nullptr, nullptr, &level, 1, nullptr}, "up along the view");
+    refused({nullptr, 0, nullptr, 0, nullptr, 0, nullptr, nullptr, nullptr, &level, 1, nullptr, nullptr}, "up along the view");
     const occt_bridge_step_clipping_plane_t long_normal[] = {{{0, 0, 0}, {0, 2, 0}}};
     occt_bridge_step_view_t loose = views[1];
     loose.clipping_planes = long_normal;
     loose.clipping_plane_count = 1;
-    refused({datums, 5, tolerances, 2, nullptr, 0, nullptr, nullptr, nullptr, &loose, 1, nullptr},
+    refused({datums, 5, tolerances, 2, nullptr, 0, nullptr, nullptr, nullptr, &loose, 1, nullptr, nullptr},
         "clipping plane without a unit normal");
+    occt_bridge_step_dataset_t unreleased = dataset;
+    unreleased.revision = nullptr;
+    refused({datums, 5, tolerances, 2, nullptr, 0, nullptr, nullptr, nullptr, nullptr, 0, nullptr, &unreleased},
+        "approvals on an unreleased dataset");
+    const occt_bridge_step_approval_t undated[] = {{"APPROVED", "M. Ortiz", "2026-02-30"}};
+    occt_bridge_step_dataset_t misdated = dataset;
+    misdated.approvals = undated;
+    misdated.approval_count = 1;
+    refused({datums, 5, tolerances, 2, nullptr, 0, nullptr, nullptr, nullptr, nullptr, 0, nullptr, &misdated},
+        "approval on an impossible date");
     const occt_bridge_step_view_t two_views[] = {views[0], views[0]};
-    refused({datums, 5, tolerances, 2, nullptr, 0, nullptr, nullptr, nullptr, two_views, 2, nullptr},
+    refused({datums, 5, tolerances, 2, nullptr, 0, nullptr, nullptr, nullptr, two_views, 2, nullptr, nullptr},
         "repeated view name");
     occt_bridge_step_tolerance_t same_name = tolerances[1];
     same_name.presentation = &flatness;
     occt_bridge_step_tolerance_t named_twice[] = {tolerances[0], same_name};
-    refused({datums, 3, named_twice, 2, nullptr, 0, nullptr, nullptr, nullptr, nullptr, 0, nullptr},
+    refused({datums, 3, named_twice, 2, nullptr, 0, nullptr, nullptr, nullptr, nullptr, 0, nullptr, nullptr},
         "repeated presentation name");
     occt_bridge_step_presentation_t short_count = flatness;
     short_count.point_count = 2;
     occt_bridge_step_tolerance_t miscounted = tolerances[0];
     miscounted.presentation = &short_count;
-    refused({nullptr, 0, &miscounted, 1, nullptr, 0, nullptr, nullptr, nullptr, nullptr, 0, nullptr},
+    refused({nullptr, 0, &miscounted, 1, nullptr, 0, nullptr, nullptr, nullptr, nullptr, 0, nullptr, nullptr},
         "polylines not using every point");
     occt_bridge_step_presentation_t tilted = flatness;
     tilted.normal[0] = 1;
     occt_bridge_step_tolerance_t off_plane = tolerances[0];
     off_plane.presentation = &tilted;
-    refused({nullptr, 0, &off_plane, 1, nullptr, 0, nullptr, nullptr, nullptr, nullptr, 0, nullptr},
+    refused({nullptr, 0, &off_plane, 1, nullptr, 0, nullptr, nullptr, nullptr, nullptr, 0, nullptr, nullptr},
         "annotation plane without a unit normal");
     check(std::fopen(file.c_str(), "r") == nullptr, "nothing written");
     check(occt_bridge_step_save_assembly_pmi(

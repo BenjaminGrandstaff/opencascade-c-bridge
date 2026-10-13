@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define OCCT_BRIDGE_ABI_VERSION 74u
+#define OCCT_BRIDGE_ABI_VERSION 76u
 #define OCCT_BRIDGE_INVALID_SHAPE_ID UINT64_C(0)
 
 #if defined(_WIN32) && defined(OCCT_BRIDGE_BUILD_SHARED)
@@ -1518,6 +1518,38 @@ typedef struct occt_bridge_step_view {
 #define OCCT_BRIDGE_PMI_VIEW_LOST_CAMERA 2u
 #define OCCT_BRIDGE_PMI_VIEW_LOST_CLIPPING 4u
 
+/* A sign-off on the dataset's release (ABI 76): a role such as "APPROVED",
+ * the approver's name and the ISO date YYYY-MM-DD, all nonempty. */
+typedef struct occt_bridge_step_approval {
+    const char* role;
+    const char* name;
+    const char* date;
+} occt_bridge_step_approval_t;
+
+/* Identification of the exported dataset (ABI 76), written on the root
+ * product: identifier as its product ID, authority as its product
+ * definition's description (which of the model and a drawing governs), and
+ * when released, revision as its product definition formation ID with that
+ * revision's description and approvals by people of organization. revision
+ * is null or empty for an unreleased dataset, which has no approvals. All
+ * text is nonempty where given. out_losses, when not null, gets the
+ * OCCT_BRIDGE_DATASET_LOST_* bits of what did not read back. */
+typedef struct occt_bridge_step_dataset {
+    const char* identifier;
+    const char* organization;
+    const char* authority;
+    const char* revision;
+    const char* description;
+    const occt_bridge_step_approval_t* approvals;
+    size_t approval_count;
+    uint32_t* out_losses;
+} occt_bridge_step_dataset_t;
+
+#define OCCT_BRIDGE_DATASET_LOST_IDENTIFIER 1u
+#define OCCT_BRIDGE_DATASET_LOST_REVISION 2u
+#define OCCT_BRIDGE_DATASET_LOST_AUTHORITY 4u
+#define OCCT_BRIDGE_DATASET_LOST_APPROVALS 8u
+
 /* PMI to write and, in the out arrays (each null or one entry per item),
  * what reading the file back did not recover: LOST_ITEM when no unclaimed
  * item of the same label, characteristic or size kind on the same faces
@@ -1536,6 +1568,8 @@ typedef struct occt_bridge_step_pmi {
     const occt_bridge_step_view_t* views;
     size_t view_count;
     uint32_t* out_view_losses;
+    /* May be null (ABI 76). */
+    const occt_bridge_step_dataset_t* dataset;
 } occt_bridge_step_pmi_t;
 
 /* occt_bridge_step_save_assembly_tree written as AP242 with the semantic

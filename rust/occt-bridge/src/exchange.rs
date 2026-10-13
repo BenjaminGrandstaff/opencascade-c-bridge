@@ -395,6 +395,55 @@ impl Session {
             )
             .collect::<Vec<_>>();
         let mut view_losses = vec![0u32; views.len()];
+        // Dataset strings, then the raw approvals and dataset pointing at
+        // them.
+        let dataset_text = pmi
+            .dataset
+            .as_ref()
+            .map(|dataset| {
+                let optional =
+                    |text: Option<&str>, what| text.map(|t| text_to_c_string(t, what)).transpose();
+                Ok::<_, BridgeError>((
+                    text_to_c_string(dataset.identifier, "dataset identifier")?,
+                    text_to_c_string(dataset.organization, "dataset organization")?,
+                    text_to_c_string(dataset.authority, "dataset authority")?,
+                    optional(dataset.revision, "dataset revision")?,
+                    optional(dataset.description, "revision description")?,
+                    dataset
+                        .approvals
+                        .iter()
+                        .map(|approval| {
+                            Ok::<_, BridgeError>([
+                                text_to_c_string(approval.role, "approval role")?,
+                                text_to_c_string(approval.name, "approver name")?,
+                                text_to_c_string(approval.date, "approval date")?,
+                            ])
+                        })
+                        .collect::<Result<Vec<_>, _>>()?,
+                ))
+            })
+            .transpose()?;
+        let raw_approvals = dataset_text.as_ref().map_or_else(Vec::new, |text| {
+            text.5
+                .iter()
+                .map(|[role, name, date]| RawStepApproval {
+                    role: role.as_ptr(),
+                    name: name.as_ptr(),
+                    date: date.as_ptr(),
+                })
+                .collect()
+        });
+        let mut dataset_losses = 0u32;
+        let raw_dataset = dataset_text.as_ref().map(|text| RawStepDataset {
+            identifier: text.0.as_ptr(),
+            organization: text.1.as_ptr(),
+            authority: text.2.as_ptr(),
+            revision: text.3.as_ref().map_or(std::ptr::null(), |t| t.as_ptr()),
+            description: text.4.as_ref().map_or(std::ptr::null(), |t| t.as_ptr()),
+            approvals: raw_approvals.as_ptr(),
+            approval_count: raw_approvals.len(),
+            out_losses: &mut dataset_losses,
+        });
         let mut raw_pmi = RawStepPmi {
             datums: datums.as_ptr(),
             datum_count: datums.len(),
@@ -408,6 +457,9 @@ impl Session {
             views: views.as_ptr(),
             view_count: views.len(),
             out_view_losses: view_losses.as_mut_ptr(),
+            dataset: raw_dataset
+                .as_ref()
+                .map_or(std::ptr::null(), |raw| raw as *const RawStepDataset),
         };
         // SAFETY: The strings, the node, component, membership, face, PMI,
         // presentation and view buffers outlive the call; the loss buffers
@@ -462,6 +514,12 @@ impl Session {
                 tolerances: losses(tolerance_losses),
                 sizes: losses(size_losses),
                 views,
+                dataset: raw_dataset.map(|_| StepDatasetLoss {
+                    identifier: dataset_losses & 1 != 0,
+                    revision: dataset_losses & 2 != 0,
+                    authority: dataset_losses & 4 != 0,
+                    approvals: dataset_losses & 8 != 0,
+                }),
             }),
         ))
     }

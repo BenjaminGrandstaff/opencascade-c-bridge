@@ -41,6 +41,7 @@ fn fixture() -> (ModelDocument, DrawingDefinition) {
     graph.add_base("part", HashMap::new(), "test").unwrap();
     let drawing = DrawingDefinition {
         annotation_views: Vec::new(),
+        dataset: None,
         datum_reference_frames: Vec::new(),
         datum_features: Vec::new(),
         feature_control_frames: Vec::new(),
