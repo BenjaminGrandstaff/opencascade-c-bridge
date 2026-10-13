@@ -628,6 +628,11 @@ impl Studio {
                 "text/javascript",
                 include_str!("web/shape-controls.mjs"),
             ),
+            ("GET", "/spline-controls.mjs") => Response::text(
+                200,
+                "text/javascript",
+                include_str!("web/spline-controls.mjs"),
+            ),
             ("POST", "/api/sketch-drag") => match self.sketch_drag(body) {
                 Ok(data) => Response::json(200, &data),
                 Err(error) => Response::error(422, &error),

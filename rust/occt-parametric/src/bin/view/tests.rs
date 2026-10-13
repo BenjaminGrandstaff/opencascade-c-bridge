@@ -2767,3 +2767,60 @@ fn shape_parameter_edits_track_parameters_and_reject_lost_polygon_references() {
     assert_eq!(get(&mut studio, "/api/state").1, accepted);
     assert_eq!(studio.handle("GET", "/api/model.gltf", b"").body, mesh);
 }
+
+#[test]
+fn spline_pole_and_weight_edits_preserve_basis_and_reject_invalid_weights() {
+    let directory = Directory::new();
+    let request: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../tools/model/rational-spline-cap.request.json"
+    ))
+    .unwrap();
+    let document = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+    let model = PathBuf::from(directory.model(&document));
+    let mut studio = serve::Studio::load(&model, Some("body".into())).unwrap();
+    let baseline = get(&mut studio, "/api/sketches").1["sketches"][0]["definition"].clone();
+    let original_mesh = studio.handle("GET", "/api/model.gltf", b"").body;
+    let scalar = |value: f64| json!({"literal":{"value":value,"dimension":"scalar","unit":null}});
+    let mut draft = baseline.clone();
+    let mut pole = draft["points"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["id"] == "b")
+        .unwrap()
+        .clone();
+    pole["id"] = json!("alternate-b");
+    pole["x"] = json!({"literal":{"value":12,"dimension":"length","unit":"millimeter"}});
+    draft["points"].as_array_mut().unwrap().push(pole);
+    draft["splines"][0]["points"][1] = json!("alternate-b");
+    draft["splines"][0]["basis"]["weights"][1] = scalar(1.2);
+    let before = get(&mut studio, "/api/state").1;
+    let (status, preview) = edit_definition(&mut studio, "profile", draft.clone(), false);
+    assert_eq!(status, 200, "{preview}");
+    assert_eq!(preview["can_apply"], true, "{preview}");
+    assert_eq!(get(&mut studio, "/api/state").1, before);
+    let (status, result) = edit_definition(&mut studio, "profile", draft.clone(), true);
+    assert_eq!(status, 200, "{result}");
+    let applied = get(&mut studio, "/api/sketches").1["sketches"][0]["definition"].clone();
+    assert_eq!(
+        applied["splines"][0]["basis"]["knots"],
+        baseline["splines"][0]["basis"]["knots"]
+    );
+    assert_eq!(
+        applied["splines"][0]["basis"]["multiplicities"],
+        baseline["splines"][0]["basis"]["multiplicities"]
+    );
+    assert_eq!(applied["constraints"], baseline["constraints"]);
+    let mesh = studio.handle("GET", "/api/model.gltf", b"").body;
+    assert_ne!(mesh, original_mesh);
+    let accepted = get(&mut studio, "/api/state").1;
+    draft["splines"][0]["basis"]["weights"][1] = scalar(0.0);
+    assert_eq!(edit_definition(&mut studio, "profile", draft, true).0, 422);
+    assert_eq!(get(&mut studio, "/api/state").1, accepted);
+    assert_eq!(studio.handle("GET", "/api/model.gltf", b"").body, mesh);
+    assert_eq!(history(&mut studio, "undo")["dirty"], false);
+    assert_eq!(
+        studio.handle("GET", "/api/model.gltf", b"").body,
+        original_mesh
+    );
+}

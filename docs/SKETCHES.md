@@ -74,6 +74,23 @@ and dependent solids. Ellipse axes continue to use named-point coordinates and
 dimension controls. Applied edits participate in undo/redo and Save; no schema
 change is required.
 
+**Spline points & weights** edits authored splines by name or an armed canvas
+selection. Interpolated splines accept ordered named-point lists and a closed
+toggle that repeats the first reference automatically. Explicit B-splines allow
+replacing or reordering poles while keeping the pole count, degree, knot vector,
+multiplicities, periodic/non-clamped mode, and endpoint references. Basis/count
+changes remain in the full definition. **Edit point** focuses the existing
+coordinate controls; shared or formula-driven point definitions remain authored.
+
+Explicit weights accept positive scalar values or compatible parameters, and
+unchanged weights retain their formulas. **Use unit weights** restores the
+native implicit all-ones representation. Weights apply by pole position, so
+reordering the point list leaves weight positions in place. Projection imports
+and generated conic splines continue to use their source or shortcut controls.
+Preview/Apply regenerates the native curve and dependent features, rejects
+invalid or open face boundaries, and retains existing constraints and model
+history. This uses the current model format.
+
 ## Added constraints
 
 | JSON variant | Meaning |
