@@ -41,6 +41,9 @@ struct MeasuredPoints {
     controls: Vec<MeasuredFeature>,
     #[serde(default)]
     surface_textures: Vec<MeasuredTexture>,
+    /// Measured diameters of Unified threads and tapped holes.
+    #[serde(default)]
+    threads: Vec<MeasuredThread>,
     /// Expanded uncertainty and decision rule for the group's controls.
     #[serde(default)]
     uncertainty: Option<MeasurementUncertainty>,
@@ -57,12 +60,21 @@ struct Summary {
     controls_not_evaluated: usize,
     /// Evaluated controls within U of a limit, also counted above.
     controls_indeterminate: usize,
+    /// Measured threads, omitted when none were measured.
+    #[serde(skip_serializing_if = "is_zero")]
+    threads_conforming: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    threads_nonconforming: usize,
+}
+fn is_zero(count: &usize) -> bool {
+    *count == 0
 }
 impl Summary {
     fn failed(&self) -> bool {
         self.dimensions_outside_limits != 0
             || self.positions_outside_zone != 0
             || self.controls_nonconforming != 0
+            || self.threads_nonconforming != 0
     }
     fn add(&mut self, report: &DrawingReport) {
         for result in &report.dimensions {
@@ -92,6 +104,13 @@ impl Summary {
                 TextureResult::NotMeasured => {}
             }
         }
+        for thread in &report.threads {
+            if thread.conforms {
+                self.threads_conforming += 1;
+            } else {
+                self.threads_nonconforming += 1;
+            }
+        }
         for result in &report.positions {
             if result.evaluation.samples_within_zone {
                 self.positions_within_zone += 1;
@@ -110,6 +129,9 @@ struct DrawingReport {
     controls: Vec<ControlInspection>,
     /// Measured surface textures only, counted with the controls.
     surface_textures: Vec<TextureInspection>,
+    /// Measured threads against their Unified class limits.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    threads: Vec<ThreadInspection>,
 }
 #[derive(Serialize)]
 struct Report {
@@ -190,7 +212,7 @@ fn evaluate(document: &ModelDocument, setup: &Setup) -> Result<Report, Box<dyn E
         let drawing = index
             .get(request.drawing.as_str())
             .ok_or_else(|| format!("unknown measurement drawing '{}'", request.drawing))?;
-        let (controls, surface_textures) = match &request.points {
+        let (controls, surface_textures, threads) = match &request.points {
             Some(points) => {
                 let record = InspectionRecord {
                     uncertainty: points.uncertainty.clone(),
@@ -198,6 +220,7 @@ fn evaluate(document: &ModelDocument, setup: &Setup) -> Result<Report, Box<dyn E
                     datum_features: points.datum_features.clone(),
                     controls: points.controls.clone(),
                     surface_textures: points.surface_textures.clone(),
+                    threads: points.threads.clone(),
                 };
                 // Profile surfaces need the regenerated part for nominals;
                 // other drawings never start the kernel.
@@ -225,9 +248,10 @@ fn evaluate(document: &ModelDocument, setup: &Setup) -> Result<Report, Box<dyn E
                         .into_iter()
                         .filter(|t| t.result != TextureResult::NotMeasured)
                         .collect(),
+                    inspection.threads,
                 )
             }
-            None => (Vec::new(), Vec::new()),
+            None => (Vec::new(), Vec::new(), Vec::new()),
         };
         let report = DrawingReport {
             drawing: request.drawing.clone(),
@@ -235,6 +259,7 @@ fn evaluate(document: &ModelDocument, setup: &Setup) -> Result<Report, Box<dyn E
             positions: drawing.evaluate_position_measurements(&graph, &request.positions)?,
             controls,
             surface_textures,
+            threads,
         };
         summary.add(&report);
         drawings.push(report);

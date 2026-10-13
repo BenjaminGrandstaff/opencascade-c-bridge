@@ -13,6 +13,7 @@ use crate::assembly::{add, length, scale, unit};
 pub mod fit;
 mod profile;
 mod shift;
+mod threads;
 use fit::{
     Fit, circle_zone, cylinder_zone, fit_circle, fit_common_cylinder, fit_cylinder, fit_plane,
     fit_width,
@@ -22,6 +23,7 @@ use shift::{
     AxialMember, AxisMotion, Motion, PatternMember, ShiftSpace, fit_axis_motion, fit_motion,
 };
 use std::rc::Rc;
+pub use threads::{MeasuredThread, ThreadDiameter, ThreadDiameterCheck, ThreadInspection};
 
 /// Upper bound on measured points in one record, which bounds memory and time.
 pub const MAX_INSPECTION_POINTS: usize = 10_000_000;
@@ -59,6 +61,10 @@ pub struct InspectionRecord {
     /// Measured roughness values by drawing surface texture ID.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub surface_textures: Vec<MeasuredTexture>,
+    /// Measured diameters of threads and tapped holes that name a Unified
+    /// class, checked against the class's limits of size.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub threads: Vec<MeasuredThread>,
     /// Measurement uncertainty and the decision rule that applies it to every
     /// evaluated control; without it, results use simple acceptance.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -352,6 +358,8 @@ pub struct InspectionReport {
     pub controls: Vec<ControlInspection>,
     /// One entry per surface texture requirement, in drawing order.
     pub surface_textures: Vec<TextureInspection>,
+    /// One entry per measured thread, in record order.
+    pub threads: Vec<ThreadInspection>,
 }
 
 impl InspectionReport {
@@ -365,6 +373,7 @@ impl InspectionReport {
                 .surface_textures
                 .iter()
                 .all(|t| matches!(&t.result, TextureResult::Evaluated(m) if m.conforms))
+            && self.threads.iter().all(|t| t.conforms)
     }
 }
 
@@ -769,6 +778,13 @@ impl DrawingDefinition {
             }
         }
         let surface_textures = self.inspect_textures(&record.surface_textures, &mut total)?;
+        let (rule, u) = record
+            .uncertainty
+            .as_ref()
+            .map_or((DecisionRule::SimpleAcceptance, 0.0), |uncertainty| {
+                (uncertainty.rule, uncertainty.expanded_mm)
+            });
+        let threads = threads::inspect_threads(graph, &record.threads, rule, u)?;
         Ok(InspectionReport {
             drawing: self.id.clone(),
             datum_frames,
@@ -776,6 +792,7 @@ impl DrawingDefinition {
             datum_widths,
             controls,
             surface_textures,
+            threads,
         })
     }
 

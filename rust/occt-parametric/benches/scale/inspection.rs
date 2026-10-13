@@ -8,8 +8,9 @@ use occt_parametric::{
     DrawingFeatureControlFrame, DrawingGdtAttachment, DrawingProjectedZone, DrawingSizeLimits,
     DrawingView, DrawingViewKind, FeatureOfSizeKind, GeometricCharacteristic,
     GeometricToleranceZone, InspectionRecord, InstanceOutputRef, MeasuredFeature, MeasuredNominal,
-    MeasurementUncertainty, NamedReference, ReferenceTarget, ToleranceMaterialCondition,
-    ToleranceModifier, UncertaintySimulation,
+    MeasuredThread, MeasurementUncertainty, NamedReference, ReferenceTarget,
+    ToleranceMaterialCondition, ToleranceModifier, UncertaintySimulation, UnifiedClass,
+    UnifiedSeries, UnifiedThreadSpec,
 };
 
 const HOLES_PER_SIDE: usize = 10;
@@ -271,6 +272,7 @@ pub(crate) fn inspection_case(definition: &FamilyDefinition, variant: Inspected)
                 }),
             });
             let record = InspectionRecord {
+                threads: Vec::new(),
                 uncertainty: simulated.then(|| MeasurementUncertainty {
                     expanded_mm: 0.0,
                     rule: DecisionRule::SimpleAcceptance,
@@ -495,6 +497,7 @@ pub(crate) fn form_case(definition: &FamilyDefinition) -> Outcome {
                 }))
                 .collect();
             let record = InspectionRecord {
+                threads: Vec::new(),
                 uncertainty: None,
                 drawing: "round".into(),
                 surface_textures: Vec::new(),
@@ -670,6 +673,7 @@ pub(crate) fn runout_case(definition: &FamilyDefinition, common: bool, conical: 
                 }
             };
             let record = InspectionRecord {
+                threads: Vec::new(),
                 uncertainty: None,
                 drawing: "runout".into(),
                 surface_textures: Vec::new(),
@@ -984,6 +988,7 @@ pub(crate) fn datum_shift_case(definition: &FamilyDefinition, frame: ShiftFrame)
                 .map(|(d, t, z)| [bore[0] + d, bore[1] + t, z])
                 .collect();
             let record = InspectionRecord {
+                threads: Vec::new(),
                 uncertainty: None,
                 drawing: "shifted".into(),
                 surface_textures: Vec::new(),
@@ -1232,6 +1237,7 @@ pub(crate) fn composite_case(definition: &FamilyDefinition, three: bool) -> Outc
                 points_mm: grid(400, point),
             };
             let record = InspectionRecord {
+                threads: Vec::new(),
                 uncertainty: Some(MeasurementUncertainty {
                     expanded_mm: 0.001,
                     rule: DecisionRule::GuardedAcceptance,
@@ -1391,6 +1397,7 @@ pub(crate) fn profile_case(definition: &FamilyDefinition, dynamic: bool) -> Outc
                 points_mm: grid(400, point),
             };
             let record = InspectionRecord {
+                threads: Vec::new(),
                 uncertainty: None,
                 drawing: "profile".into(),
                 surface_textures: Vec::new(),
@@ -1472,6 +1479,7 @@ pub(crate) fn profile_surface_case(definition: &FamilyDefinition) -> Outcome {
                 }],
             );
             let record = InspectionRecord {
+                threads: Vec::new(),
                 uncertainty: None,
                 drawing: "surface".into(),
                 surface_textures: Vec::new(),
@@ -1559,6 +1567,7 @@ pub(crate) fn profile_projection_case(definition: &FamilyDefinition) -> Outcome 
                 .collect();
             let drawing = abc_drawing("bands", controls);
             let record = InspectionRecord {
+                threads: Vec::new(),
                 uncertainty: None,
                 drawing: "bands".into(),
                 surface_textures: Vec::new(),
@@ -1644,6 +1653,7 @@ pub(crate) fn profile_line_case(definition: &FamilyDefinition) -> Outcome {
                 }],
             );
             let record = InspectionRecord {
+                threads: Vec::new(),
                 uncertainty: None,
                 drawing: "rows".into(),
                 surface_textures: Vec::new(),
@@ -1802,6 +1812,7 @@ pub(crate) fn coaxial_shift_case(definition: &FamilyDefinition, common: bool) ->
             };
             let datum_heights: Vec<f64> = (0..=50).map(|k| k as f64).collect();
             let record = InspectionRecord {
+                threads: Vec::new(),
                 uncertainty: None,
                 drawing: "coaxial".into(),
                 surface_textures: Vec::new(),
@@ -2021,6 +2032,7 @@ pub(crate) fn radial_case(definition: &FamilyDefinition) -> Outcome {
             };
             let datum_heights: Vec<f64> = (0..=50).map(|k| k as f64).collect();
             let record = InspectionRecord {
+                threads: Vec::new(),
                 uncertainty: None,
                 drawing: "radial".into(),
                 surface_textures: Vec::new(),
@@ -2096,6 +2108,93 @@ pub(crate) fn radial_case(definition: &FamilyDefinition) -> Outcome {
                 report.controls.len(),
                 turn * 1e3,
                 points
+            ))
+        },
+    )
+}
+
+/// 10,000 measured 1/4-20 UNC-2B tapped holes: 100 per instance on 100
+/// instances, every tenth with an oversize pitch diameter, judged under
+/// guarded acceptance.
+pub(crate) fn thread_case(definition: &FamilyDefinition) -> Outcome {
+    timed(
+        "inspection: 10000 measured Unified tapped holes on 100 instances".to_owned(),
+        Duration::from_secs(1),
+        Expectation::Required,
+        || {
+            const PER_PART: usize = 100;
+            let mut definition = hole_plate(definition);
+            let mm =
+                |value: f64| ScalarExpr::Literal(Quantity::length(value, LengthUnit::Millimeter));
+            definition
+                .features
+                .extend((0..PER_PART).map(|h| FeatureDefinition {
+                    id: format!("tapped-{h}"),
+                    operation: FeatureOperation::Hole {
+                        input: "body".into(),
+                        position: literal([1.0 + h as f64, 1.0, 1.0]),
+                        axis: VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, -1.0)),
+                        diameter: mm(0.201 * 25.4),
+                        extent: HoleExtent::ThroughAll,
+                        bottom: HoleBottom::Flat,
+                        finish: HoleFinish::Plain,
+                        thread: Some(Box::new(ThreadSpecification {
+                            designation: "1/4-20 UNC-2B".into(),
+                            nominal_diameter: mm(6.35),
+                            pitch: mm(1.27),
+                            handedness: ThreadHandedness::Right,
+                            modeled: None,
+                            unified: Some(UnifiedThreadSpec {
+                                series: UnifiedSeries::Unc,
+                                class: UnifiedClass::TwoB,
+                                rounded_root: false,
+                                length_of_engagement: None,
+                            }),
+                        })),
+                    },
+                }));
+            let mut graph = InstanceGraph::new(&definition);
+            graph.add_base("part", HashMap::new(), "bench")?;
+            for i in 1..PER_PART {
+                graph.add_base(format!("part-{i}"), HashMap::new(), "bench")?;
+            }
+            let drawing = abc_drawing("threads", Vec::new());
+            let threads = (0..PER_PART * PER_PART)
+                .map(|t| MeasuredThread {
+                    instance: match t / PER_PART {
+                        0 => "part".into(),
+                        i => format!("part-{i}"),
+                    },
+                    feature: format!("tapped-{}", t % PER_PART),
+                    pitch_diameter_mm: if t % 10 == 9 { 0.2230 } else { 0.2200 } * 25.4,
+                    major_diameter_mm: Some(0.2510 * 25.4),
+                    minor_diameter_mm: Some(0.201 * 25.4),
+                })
+                .collect();
+            let record = InspectionRecord {
+                drawing: "threads".into(),
+                datum_features: Vec::new(),
+                controls: Vec::new(),
+                surface_textures: Vec::new(),
+                threads,
+                uncertainty: Some(MeasurementUncertainty {
+                    expanded_mm: 0.002,
+                    rule: DecisionRule::GuardedAcceptance,
+                    controls: Default::default(),
+                    simulation: None,
+                }),
+            };
+            let report = drawing.evaluate_inspection(&graph, &record)?;
+            let failing = report.threads.iter().filter(|t| !t.conforms).count();
+            if report.threads.len() != PER_PART * PER_PART || failing != PER_PART * PER_PART / 10 {
+                return Err(failure(format!(
+                    "{} threads, {failing} failing",
+                    report.threads.len()
+                )));
+            }
+            Ok(format!(
+                "{} threads judged, {failing} oversize",
+                report.threads.len()
             ))
         },
     )

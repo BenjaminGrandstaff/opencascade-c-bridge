@@ -1811,6 +1811,10 @@ instrument settings are not modeled.
 A scale benchmark generates one drawing with 10,000 texture symbols and exports
 it as SVG and DXF.
 
+A record's `threads` list checks measured thread diameters against Unified
+class limits; see
+[Inspecting threads](THREADS.md#inspecting-threads-against-the-limits).
+
 ## Parts lists and balloons (schema 87)
 
 `DrawingDefinition.parts_list` draws a bill of materials for the instances the

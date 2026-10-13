@@ -204,6 +204,7 @@ fn main() -> ExitCode {
     outcomes.push(inspection::coaxial_shift_case(definition, false));
     outcomes.push(inspection::coaxial_shift_case(definition, true));
     outcomes.push(inspection::radial_case(definition));
+    outcomes.push(inspection::thread_case(definition));
     outcomes.push(inspection::composite_case(definition, false));
     outcomes.push(inspection::composite_case(definition, true));
     outcomes.push(inspection::profile_case(definition, false));

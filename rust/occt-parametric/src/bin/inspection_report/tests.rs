@@ -524,3 +524,52 @@ fn guarded_acceptance_counts_indeterminate_controls() {
     assert_eq!(detail["uncertainty_mm"], 0.002);
     assert_eq!(detail["indeterminate"], true);
 }
+
+#[test]
+fn measured_threads_count_against_their_class_limits() {
+    let mut document = fixture();
+    let length = |value: f64| ScalarExpr::Literal(mm(value));
+    document.family.features.push(FeatureDefinition {
+        id: "tapped".into(),
+        operation: FeatureOperation::Hole {
+            input: "body".into(),
+            position: VectorExpr::Literal(point(5.0, 10.0, 30.0)),
+            axis: VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, -1.0)),
+            diameter: length(0.201 * 25.4),
+            extent: HoleExtent::ThroughAll,
+            bottom: HoleBottom::Flat,
+            finish: HoleFinish::Plain,
+            thread: Some(Box::new(ThreadSpecification {
+                designation: "1/4-20 UNC-2B".into(),
+                nominal_diameter: length(6.35),
+                pitch: length(1.27),
+                handedness: ThreadHandedness::Right,
+                modeled: None,
+                unified: Some(UnifiedThreadSpec {
+                    series: UnifiedSeries::Unc,
+                    class: UnifiedClass::TwoB,
+                    rounded_root: false,
+                    length_of_engagement: None,
+                }),
+            })),
+        },
+    });
+    let group = |pitch_in: f64| {
+        json!({"schema":"occb-inspection-setup-v1","drawings":[{"drawing":"page","points":{
+            "threads":[{"instance":"part","feature":"tapped","pitch_diameter_mm":pitch_in * 25.4}]}}]})
+    };
+    let directory = Directory::new();
+    let args = inputs(&directory, &document, &group(0.2200));
+    assert!(!run(&args).unwrap());
+    let result: Value = serde_json::from_str(&fs::read_to_string(&args[2]).unwrap()).unwrap();
+    assert_eq!(result["summary"]["threads_conforming"], 1);
+    let thread = &result["drawings"][0]["threads"][0];
+    assert_eq!(thread["designation"], "1/4-20 UNC-2B");
+    assert_eq!(thread["diameters"][0]["diameter"], "pitch");
+
+    let directory = Directory::new();
+    let args = inputs(&directory, &document, &group(0.2230));
+    assert!(run(&args).unwrap());
+    let result: Value = serde_json::from_str(&fs::read_to_string(&args[2]).unwrap()).unwrap();
+    assert_eq!(result["summary"]["threads_nonconforming"], 1);
+}

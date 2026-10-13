@@ -121,11 +121,46 @@ UNEF sizes must use `uns`. External minor diameters, which B1.1 gives only
 for reference, are not computed. A check costs O(standard sizes), at most
 34 comparisons.
 
+### Inspecting threads against the limits
+
+An `InspectionRecord` may list measured `threads`: each names an `instance`
+and its `feature` (a `thread` feature or a threaded `hole` with a Unified
+class), with the measured `pitch_diameter_mm` (for example by the three-wire
+method) and optional `major_diameter_mm` and `minor_diameter_mm`:
+
+```json
+"threads": [{"instance": "part", "feature": "tapped", "pitch_diameter_mm": 5.588,
+             "minor_diameter_mm": 5.105}]
+```
+
+The report's `threads` gives each thread's standard designation and, per
+measured diameter, its limits in millimetres (absent where B1.1 sets none)
+and whether it conforms. Measurements are decided under the record's
+`uncertainty` rule with its `expanded_mm`, as for GD&T controls: guarded
+acceptance needs the value U inside its limits, guarded rejection rejects
+only beyond U outside them. `InspectionReport::conforms()` needs every
+measured thread to conform. Unknown features, features without a Unified
+class, repeated threads and nonpositive or nonfinite values fail the record.
+The `occt-inspection-report` command accepts the same list in a group's
+`points` and counts `threads_conforming` and `threads_nonconforming`.
+
+Each measured thread resolves its instance's parameters and finds its
+feature, so a record costs O(threads · (parameters + features)). A required scale case judges 10,000
+measured tapped holes, 100 on each of 100 instances.
+
+Gauging (GO/NO-GO, B1.3 gauging systems) and functional-size checks are not
+modeled; the checks are of measured diameters against the limits.
+
 ## Not yet included
 
 - Chamfered thread starts on external threads (holes can use a countersink).
-- Metric (ISO 965) tolerance classes, class 3B, and truncated or rounded
-  roots in the modeled geometry; the profile is the basic profile.
+- Metric (ISO 965) tolerance classes and class 3B. Their fundamental
+  deviations, tolerances and 3B minor diameters are tabulated in the
+  standards with rounding the published formulas do not reproduce (for
+  example the g deviation for a 2 mm pitch is 38 µm against the formula's
+  37), and no public source of the full tables was found.
+- Truncated or rounded roots in the modeled geometry; the profile is the
+  basic profile.
 - Tapered (pipe) threads, multi-start threads and non-60° forms (ACME,
   buttress).
 - Runout at the thread start; runout only fades the end.

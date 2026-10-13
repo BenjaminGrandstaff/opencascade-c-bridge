@@ -28,6 +28,14 @@ tracks status and order.
 
 ## Done
 
+- Thread inspection against Unified limits (schema 152 and ABI 76
+  unchanged). Inspection records may list measured pitch, major and minor
+  diameters of threads and tapped holes that name a Unified class. Each is
+  judged against the class's limits under the record's decision rule and
+  uncertainty, and `occt-inspection-report` counts conforming and
+  nonconforming threads. 10,000 measured tapped holes are a required scale
+  case. See
+  [Inspecting threads](docs/THREADS.md#inspecting-threads-against-the-limits).
 - Unified inch thread classes (schema 152; ABI 76 unchanged). A modeled
   thread or tapped-hole callout may name a B1.1 series (UNC, UNF, UNEF, UN,
   UNS) and class (1A, 2A, 3A, 1B, 2B). Regeneration checks the size against
@@ -2613,6 +2621,11 @@ scopes and inspected repo capabilities, not a full conformity audit.
    ABI 75), and projected zones now exchange too.
 4. **Standards-backed thread specifications** — [B1.1](https://www.asme.org/codes-standards/find-codes-standards/b1-1-unified-inch-screw-threads-un-unr-thread-form):
    Unified classes 1A–2B with limits of size, designation and bore checks,
+   fit checks and inspection of measured diameters exist (schema 152).
+   Remaining: thread representations in drawings and engagement/strength.
+   Class 3B and metric ISO 965 classes need the standards' own tables, which
+   no public source provided. Live drawing
+   and fit checks exist (schema 152). Remaining: class 3B, metric ISO 965
    and fit checks exist (schema 152). Remaining: class 3B, metric ISO 965
    classes, drawing callouts and inspection against the limits, thread
    representations in drawings, and engagement/strength. Live drawing

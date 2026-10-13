@@ -17,9 +17,10 @@ pub mod guides;
 pub use gdt::{
     ControlInspection, ControlMeasurement, ControlResult, DecisionRule, InspectionRecord,
     InspectionReport, MAX_INSPECTION_POINTS, MeasuredDatumAxis, MeasuredDatumFrame,
-    MeasuredDatumWidth, MeasuredFeature, MeasuredNominal, MeasuredTexture, MeasurementUncertainty,
-    ProfileMeasurement, RefinementMeasurement, TextureInspection, TextureMeasurement,
-    TextureResult, UncertaintySimulation,
+    MeasuredDatumWidth, MeasuredFeature, MeasuredNominal, MeasuredTexture, MeasuredThread,
+    MeasurementUncertainty, ProfileMeasurement, RefinementMeasurement, TextureInspection,
+    TextureMeasurement, TextureResult, ThreadDiameter, ThreadDiameterCheck, ThreadInspection,
+    UncertaintySimulation,
 };
 pub use gdt::{
     DatumMaterialBoundary, DatumPrecedence, DrawingCompositeRefinement,

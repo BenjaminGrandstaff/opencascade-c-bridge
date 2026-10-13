@@ -241,6 +241,7 @@ fn measured(id: &str, points_mm: Vec<[f64; 3]>) -> MeasuredFeature {
 /// Exact datum and feature surfaces of the nominal plate.
 pub(super) fn nominal_record() -> InspectionRecord {
     InspectionRecord {
+        threads: Vec::new(),
         uncertainty: None,
         drawing: "plate".into(),
         surface_textures: Vec::new(),
@@ -572,6 +573,7 @@ fn size_limits_validate_persist_and_inspection_records_round_trip() {
             .is_none()
     );
     let record = InspectionRecord {
+        threads: Vec::new(),
         uncertainty: None,
         drawing: "plate".into(),
         surface_textures: Vec::new(),
@@ -645,6 +647,7 @@ fn round_page() -> DrawingDefinition {
 
 fn round_record(round: Vec<[f64; 3]>, straight: Vec<[f64; 3]>) -> InspectionRecord {
     InspectionRecord {
+        threads: Vec::new(),
         uncertainty: None,
         drawing: "plate".into(),
         surface_textures: Vec::new(),
@@ -766,6 +769,7 @@ fn runout_page(
 
 fn runout_record(datum: Vec<[f64; 3]>, surface: Vec<[f64; 3]>) -> InspectionRecord {
     InspectionRecord {
+        threads: Vec::new(),
         uncertainty: None,
         drawing: "plate".into(),
         surface_textures: Vec::new(),
@@ -1038,6 +1042,7 @@ fn common_datum_axis_contracts_both_journal_simulators_together() {
         |_| 8.0,
     );
     let record = InspectionRecord {
+        threads: Vec::new(),
         uncertainty: None,
         drawing: "plate".into(),
         surface_textures: Vec::new(),
@@ -1081,6 +1086,7 @@ fn common_datum_axis_contracts_both_journal_simulators_together() {
         |_| 8.0,
     );
     let record = InspectionRecord {
+        threads: Vec::new(),
         uncertainty: None,
         drawing: "plate".into(),
         surface_textures: Vec::new(),
@@ -1130,6 +1136,7 @@ fn common_datum_plane_contacts_both_pads_at_once() {
     // The common simulator's minimum-zone orientation rises 0.01 mm per
     // 40 mm, so a perfectly flat top reads 60 · 0.00025 = 0.015 mm.
     let record = InspectionRecord {
+        threads: Vec::new(),
         uncertainty: None,
         drawing: "plate".into(),
         surface_textures: Vec::new(),
@@ -1264,6 +1271,7 @@ fn shift_setup(boundary: DatumMaterialBoundary) -> (FamilyDefinition, DrawingDef
 /// holes displaced by `offsets[i]` from their true positions.
 fn shift_record(bore: f64, offsets: [[f64; 2]; 4]) -> InspectionRecord {
     InspectionRecord {
+        threads: Vec::new(),
         uncertainty: None,
         drawing: "plate".into(),
         surface_textures: Vec::new(),
@@ -1896,6 +1904,7 @@ fn coaxial_page(boundary: DatumMaterialBoundary, ids: &[&str]) -> DrawingDefinit
 /// z = 10 and z = 20.
 fn coaxial_record(bore: f64, ends: &[[f64; 2]]) -> InspectionRecord {
     InspectionRecord {
+        threads: Vec::new(),
         uncertainty: None,
         drawing: "plate".into(),
         surface_textures: Vec::new(),
@@ -2410,6 +2419,7 @@ fn cross_setup(
 /// own axis (in the plate's plane) by `side[i]`.
 fn cross_record(bore: f64, turn: f64, lift: [f64; 2], side: [f64; 2]) -> InspectionRecord {
     InspectionRecord {
+        threads: Vec::new(),
         uncertainty: None,
         drawing: "plate".into(),
         surface_textures: Vec::new(),
@@ -2749,6 +2759,7 @@ fn common_shift_page(boundary: DatumMaterialBoundary) -> DrawingDefinition {
 /// axis, and a Ø16 counterbore over z 12-22 offset `offset` in x.
 fn common_shift_record(d: f64, e: f64, offset: f64) -> InspectionRecord {
     InspectionRecord {
+        threads: Vec::new(),
         uncertainty: None,
         drawing: "plate".into(),
         surface_textures: Vec::new(),
@@ -4140,4 +4151,119 @@ fn guarded_decisions_cover_composite_segments_and_validate() {
         serde_json::from_str::<InspectionRecord>(&json).unwrap(),
         record
     );
+}
+
+/// The plate with a 1/4-20 UNC-2B tapped hole, and its record with no
+/// measured points.
+fn tapped_plate() -> FamilyDefinition {
+    let mut definition = plate();
+    let mm = |value: f64| ScalarExpr::Literal(Quantity::length(value, LengthUnit::Millimeter));
+    definition.features.push(FeatureDefinition {
+        id: "tapped".into(),
+        operation: FeatureOperation::Hole {
+            input: "body".into(),
+            position: VectorExpr::Literal(VectorQuantity::lengths(
+                10.0,
+                10.0,
+                10.0,
+                LengthUnit::Millimeter,
+            )),
+            axis: VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, -1.0)),
+            diameter: mm(0.201 * 25.4),
+            extent: HoleExtent::ThroughAll,
+            bottom: HoleBottom::Flat,
+            finish: HoleFinish::Plain,
+            thread: Some(Box::new(ThreadSpecification {
+                designation: "1/4-20 UNC-2B".into(),
+                nominal_diameter: mm(6.35),
+                pitch: mm(1.27),
+                handedness: ThreadHandedness::Right,
+                modeled: None,
+                unified: Some(UnifiedThreadSpec {
+                    series: UnifiedSeries::Unc,
+                    class: UnifiedClass::TwoB,
+                    rounded_root: false,
+                    length_of_engagement: None,
+                }),
+            })),
+        },
+    });
+    definition
+}
+
+#[test]
+fn measured_threads_are_judged_against_their_class_limits() {
+    let definition = tapped_plate();
+    let mut graph = InstanceGraph::new(&definition);
+    graph.add_base("part", HashMap::new(), "test").unwrap();
+    let page = page();
+    let inch = |value: f64| value * 25.4;
+    let measured = |feature: &str, pitch_in: f64, minor_in: Option<f64>| MeasuredThread {
+        instance: "part".into(),
+        feature: feature.into(),
+        pitch_diameter_mm: inch(pitch_in),
+        major_diameter_mm: Some(inch(0.2510)),
+        minor_diameter_mm: minor_in.map(inch),
+    };
+    let inspect = |threads: Vec<MeasuredThread>, uncertainty: Option<MeasurementUncertainty>| {
+        let mut record = nominal_record();
+        record.threads = threads;
+        record.uncertainty = uncertainty;
+        page.evaluate_inspection(&graph, &record)
+    };
+    // 1/4-20 UNC-2B: pitch diameter 0.2175-0.2224 in, minor 0.196-0.207 in,
+    // major at least 0.2500 in.
+    let report = inspect(vec![measured("tapped", 0.2200, Some(0.201))], None).unwrap();
+    let thread = &report.threads[0];
+    assert_eq!(thread.designation, "1/4-20 UNC-2B");
+    assert!(thread.conforms, "{thread:#?}");
+    let kinds: Vec<_> = thread.diameters.iter().map(|d| d.diameter).collect();
+    assert_eq!(
+        kinds,
+        [
+            ThreadDiameter::Major,
+            ThreadDiameter::Pitch,
+            ThreadDiameter::Minor
+        ]
+    );
+    let major = &thread.diameters[0];
+    assert!((major.minimum_mm.unwrap() - 6.35).abs() < 1e-9 && major.maximum_mm.is_none());
+    let pitch = &thread.diameters[1];
+    assert!((pitch.maximum_mm.unwrap() - inch(0.2223)).abs() < 1e-9);
+
+    // An oversize pitch diameter fails the thread and the report.
+    let report = inspect(vec![measured("tapped", 0.2230, None)], None).unwrap();
+    assert!(!report.threads[0].conforms && !report.conforms());
+    assert!(report.threads[0].diameters[1..].iter().all(|d| !d.conforms));
+
+    // 0.2220 in lies 0.0076 mm inside the 0.2223 in maximum: guarded
+    // acceptance proves it with U = 0.005 mm but not with U = 0.01 mm.
+    let guarded = |u: f64| {
+        let report = inspect(
+            vec![measured("tapped", 0.2220, None)],
+            Some(MeasurementUncertainty {
+                expanded_mm: u,
+                rule: DecisionRule::GuardedAcceptance,
+                controls: BTreeMap::new(),
+                simulation: None,
+            }),
+        )
+        .unwrap();
+        assert_eq!(report.threads[0].uncertainty_mm, u);
+        report.threads[0].conforms
+    };
+    assert!(guarded(0.005));
+    assert!(!guarded(0.01));
+
+    let error = |threads| inspect(threads, None).unwrap_err().message;
+    assert!(error(vec![measured("missing", 0.22, None)]).contains("has no feature 'missing'"));
+    assert!(error(vec![measured("body", 0.22, None)]).contains("not a thread or threaded hole"));
+    assert!(
+        error(vec![
+            measured("tapped", 0.22, None),
+            measured("tapped", 0.22, None)
+        ])
+        .contains("repeats a measured thread")
+    );
+    assert!(error(vec![measured("tapped", f64::NAN, None)]).contains("positive and finite"));
 }
