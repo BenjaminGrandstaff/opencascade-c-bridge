@@ -1,7 +1,7 @@
 //! Structured STEP export of generated instances.
 
 use super::*;
-use occt_bridge::{StepComponent, StepFaceColor, StepNode};
+use occt_bridge::{StepComponent, StepFaceColor, StepNode, StepPmi, StepPmiVerification};
 #[allow(unused_imports)]
 pub use occt_parametric_core::assembly::step_export::*;
 use std::path::Path;
@@ -68,9 +68,46 @@ impl InstanceGraphStepExport for InstanceGraph<'_> {
         outputs: &OutputSet,
     ) -> Result<usize, ModelError> {
         let outputs = self.generated_outputs(generation, outputs)?;
+        Ok(self
+            .write_step(
+                session,
+                generation,
+                path.as_ref(),
+                assembly_name,
+                &outputs,
+                None,
+            )?
+            .0)
+    }
+}
+
+pub(crate) trait InstanceGraphStepWrite {
+    /// [`InstanceGraphStepExport::export_step`] of resolved outputs, one
+    /// component each in order, with semantic PMI on their parts when given.
+    fn write_step(
+        &self,
+        session: &Session,
+        generation: &GraphRegeneration<'_>,
+        path: &Path,
+        assembly_name: &str,
+        outputs: &[InstanceOutputRef],
+        pmi: Option<&StepPmi<'_>>,
+    ) -> Result<(usize, StepPmiVerification), ModelError>;
+}
+
+impl InstanceGraphStepWrite for InstanceGraph<'_> {
+    fn write_step(
+        &self,
+        session: &Session,
+        generation: &GraphRegeneration<'_>,
+        path: &Path,
+        assembly_name: &str,
+        outputs: &[InstanceOutputRef],
+        pmi: Option<&StepPmi<'_>>,
+    ) -> Result<(usize, StepPmiVerification), ModelError> {
         let mut names = Vec::with_capacity(outputs.len());
         let mut colors = Vec::with_capacity(outputs.len());
-        for output in &outputs {
+        for output in outputs {
             let family = &self.resolve(&output.instance)?.definition.id;
             let representative = generation
                 .shared_from(&output.instance)
@@ -119,7 +156,7 @@ impl InstanceGraphStepExport for InstanceGraph<'_> {
                 });
             }
         }
-        let (frames, memberships) = self.step_frames(&outputs)?;
+        let (frames, memberships) = self.step_frames(outputs)?;
         let nodes = frames
             .iter()
             .map(|(id, parent, transform)| StepNode {
@@ -128,13 +165,27 @@ impl InstanceGraphStepExport for InstanceGraph<'_> {
                 transform: *transform,
             })
             .collect::<Vec<_>>();
-        Ok(session.save_step_assembly_tree(
-            path,
-            assembly_name,
-            &nodes,
-            &components,
-            &memberships,
-            &face_colors,
-        )?)
+        match pmi {
+            None => Ok((
+                session.save_step_assembly_tree(
+                    path,
+                    assembly_name,
+                    &nodes,
+                    &components,
+                    &memberships,
+                    &face_colors,
+                )?,
+                StepPmiVerification::default(),
+            )),
+            Some(pmi) => Ok(session.save_step_assembly_pmi(
+                path,
+                assembly_name,
+                &nodes,
+                &components,
+                &memberships,
+                &face_colors,
+                pmi,
+            )?),
+        }
     }
 }

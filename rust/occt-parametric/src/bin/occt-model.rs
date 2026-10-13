@@ -31,6 +31,11 @@ struct Request {
     edits: Vec<Edit>,
     #[serde(default = "yes")]
     step: bool,
+    /// Drawing whose GD&T the STEP file carries as semantic AP242 PMI on the
+    /// faces its attachments name (schema 144); the report's `pmi` lists
+    /// what was written, what read back and what was skipped.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    step_pmi: Option<String>,
     #[serde(default)]
     stl: bool,
     #[serde(default = "yes")]
@@ -173,6 +178,19 @@ fn build_internal(
         }
     }
     let document = request.model;
+    let pmi = match &request.step_pmi {
+        None => None,
+        Some(_) if !request.step => {
+            return Err(failure("request", "step_pmi needs a STEP export"));
+        }
+        Some(id) => Some(
+            document
+                .drawings
+                .iter()
+                .find(|drawing| &drawing.id == id)
+                .ok_or_else(|| failure("request", format!("unknown drawing '{id}'")))?,
+        ),
+    };
     let mut graph = document
         .instance_graph()
         .map_err(|e| model_failure("validation", e))?;
@@ -230,7 +248,7 @@ fn build_internal(
     fs::create_dir(destination).map_err(|e| failure("publication", e))?;
     let published = publish(
         &request.outputs,
-        request.step,
+        request.step.then_some(pmi),
         request.stl,
         request.preview,
         destination,
@@ -283,7 +301,7 @@ fn build_internal(
 #[allow(clippy::too_many_arguments)]
 fn publish(
     outputs: &[InstanceOutputRef],
-    step: bool,
+    step: Option<Option<&DrawingDefinition>>,
     stl: bool,
     previews: bool,
     destination: &Path,
@@ -294,16 +312,40 @@ fn publish(
     value: &mut Value,
     write_report: bool,
 ) -> Result<(), Failure> {
-    if step {
-        graph
-            .export_step(
-                session,
-                generation,
-                destination.join("parts.step"),
-                "AI model",
-                &OutputSet::Explicit(outputs.to_vec()),
-            )
-            .map_err(|e| model_failure("export", e))?;
+    let selected = OutputSet::Explicit(outputs.to_vec());
+    match step {
+        None => {}
+        Some(None) => {
+            graph
+                .export_step(
+                    session,
+                    generation,
+                    destination.join("parts.step"),
+                    "AI model",
+                    &selected,
+                )
+                .map_err(|e| model_failure("export", e))?;
+        }
+        Some(Some(drawing)) => {
+            let report = drawing
+                .export_step_pmi(
+                    graph,
+                    session,
+                    generation,
+                    destination.join("parts.step"),
+                    "AI model",
+                    &selected,
+                )
+                .map_err(|e| model_failure("export", e))?;
+            value["pmi"] = json!({
+                "drawing": drawing.id,
+                "verified": report.verified(),
+                "complete": report.complete(),
+                "report": report,
+            });
+        }
+    }
+    if step.is_some() {
         value["artifacts"]["step"] = json!("parts.step");
     }
     for (index, output) in outputs.iter().enumerate() {

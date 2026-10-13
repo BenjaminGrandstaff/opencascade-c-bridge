@@ -662,8 +662,9 @@ semantic diffs and merges; the order of a frame's `datums` array is significant.
 `DrawingDatumFeature` holds `id`, a unique one-to-three-letter uppercase `label`,
 excluding I/O/Q, `feature_of_size`, and a `DrawingGdtAttachment`. The attachment names a `view`,
 a selected `output: InstanceOutputRef`, an `anchor: DatumRef` on that instance,
-and `offset_mm` in paper coordinates. The output must belong to the selected
-view and be unsuppressed. Leaders follow the current world-space datum position;
+and `offset_mm` in paper coordinates, and optionally the persistent `faces`
+it annotates (see [Semantic PMI](#semantic-pmi-on-persistent-faces-schema-144-abi-70)).
+The output must belong to the selected view and be unsuppressed. Leaders follow the current world-space datum position;
 labels and frames retain fixed paper sizes through scales and detail offsets.
 Offsets must be finite and at least 8 mm long. Symbols use an open attachment
 triangle, leader and boxed datum label.
@@ -1570,6 +1571,67 @@ profile datums at a material boundary, and
 straightness. Simulated uncertainty covers isotropic, uncorrelated probing
 error only. Correlated machine errors, form-dependent sampling error and
 temperature are supplied as `expanded_mm`.
+
+## Semantic PMI on persistent faces (schema 144, ABI 70)
+
+A datum feature's or feature control frame's `attachment` may name `faces`:
+a `FaceSelector` over the attachment output's family face references, such
+as `{"named": "bore_wall"}`. These are the toleranced feature or datum
+feature itself, as ASME Y14.41 attaches product definition to model geometry,
+and they make the annotation semantic product manufacturing information. The
+leader `anchor` still places it on the sheet. A profile or runout control
+without a `surface` takes its measurement nominals from these faces.
+
+`DrawingStepPmi::export_step_pmi` writes outputs as `export_step` does, but in
+AP242 with the drawing's GD&T attached to those faces of each part:
+
+- each datum feature, by label;
+- each tolerance, with its characteristic, value, Ø zone, material condition,
+  free state, statistical and tangent-plane modifiers, projected zone height,
+  and its datum reference frame in compartment order, with common datums
+  (A-B), MMB/LMB boundaries and translation modifiers;
+- size limits, as a diameter over cylindrical faces or a width between two
+  parallel planes (a datum feature's and its own control's identical limits
+  become one size);
+- n× pattern members on one output, as one tolerance over all their faces;
+- each composite segment, as a tolerance of its own.
+
+The file is then read back with OCCT's AP242 reader and every item matched by
+kind and faces (part-local area and centroid). The returned
+`PmiExchangeReport` lists, per item, what the format cannot represent
+(continuous feature, dynamic profile, unequal zone, and how a composite's
+lower segment relates to the one above) and what did not read back. It also
+lists the annotations skipped and why: no faces, an output not exported, or a
+datum reference that is skipped or lies on another output. `verified()` holds
+when nothing was lost, and `complete()` when nothing was skipped or left
+unrepresented either. Faces that select nothing fail the export, naming the
+annotation.
+
+`occt-model` requests take `"step_pmi": "<drawing id>"` with `"step": true`.
+The response's `pmi` carries `verified`, `complete` and the report.
+
+Faces are selected on one local regeneration of each annotated instance,
+where its selectors are defined, and carried to the placed output by face
+index, since placement keeps topology. All selectors on an instance share one
+selection context, so its face centers are measured once, and a target
+shared by a tolerance and its size limits is resolved once. Datums are verified from the file's
+own `DATUM` and `DATUM_FEATURE` entities, because OCCT's reader makes datum
+labels only for datums that tolerances reference.
+
+OCCT 7.9 limits:
+
+- Its writer drops projected tolerance zones, so a control with Ⓟ reports
+  `projected_zone` lost.
+- Its writer shares one `DATUM` entity per label across the whole file, so a
+  label may name only one datum in an export. Labels are already unique
+  within a drawing.
+- It writes no saved views, so annotation views are not yet exchanged.
+
+At scale, a 400-hole plate's datums, flat top and 400 position controls with
+their sizes are written and verified in one export in about 1.9 s, as are the
+same holes under one 400× control. Two regenerations of the plate (the
+graph's and the local one) take 1.2 s of that, and the AP242 write and
+read-back 0.5 s.
 
 ## Surface texture (schema 71)
 

@@ -36,6 +36,11 @@ pub use gdt::{
     STANDARD_CUTOFFS_MM, SurfaceLay, Waviness,
 };
 pub mod parts_list;
+pub mod pmi;
+pub use pmi::{
+    PlannedDatum, PlannedReference, PlannedSize, PlannedTolerance, PmiExchangeItem,
+    PmiExchangeReport, PmiItemKind, PmiPlan, PmiProperty, PmiSkipped, PmiTarget,
+};
 pub mod releases;
 pub use guides::{DrawingGuide, DrawingGuideKind, DrawingGuideLine, DrawingGuideLineKind};
 pub use parts_list::{DrawingBalloon, DrawingPartsList, PartsListItem};

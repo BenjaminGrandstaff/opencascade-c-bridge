@@ -2,7 +2,7 @@
 
 use super::*;
 
-pub(crate) const ABI_VERSION: u32 = 69;
+pub(crate) const ABI_VERSION: u32 = 70;
 
 #[repr(C)]
 #[derive(Default)]
@@ -88,6 +88,61 @@ pub(crate) struct RawStepFaceColor {
     pub(crate) component: usize,
     pub(crate) face: usize,
     pub(crate) color: [f64; 3],
+}
+
+#[repr(C)]
+pub(crate) struct RawStepPmiFaces {
+    pub(crate) component: usize,
+    pub(crate) faces: *const usize,
+    pub(crate) face_count: usize,
+}
+
+#[repr(C)]
+pub(crate) struct RawStepDatum {
+    pub(crate) label: *const std::os::raw::c_char,
+    pub(crate) target: RawStepPmiFaces,
+}
+
+#[repr(C)]
+pub(crate) struct RawStepDatumReference {
+    pub(crate) datum: usize,
+    pub(crate) compartment: u32,
+    pub(crate) boundary: i32,
+    pub(crate) translation: i32,
+}
+
+#[repr(C)]
+pub(crate) struct RawStepTolerance {
+    pub(crate) target: RawStepPmiFaces,
+    pub(crate) characteristic: i32,
+    pub(crate) value_mm: f64,
+    pub(crate) diameter: i32,
+    pub(crate) material: i32,
+    pub(crate) modifiers: u32,
+    pub(crate) projected_mm: f64,
+    pub(crate) datums: *const RawStepDatumReference,
+    pub(crate) datum_count: usize,
+}
+
+#[repr(C)]
+pub(crate) struct RawStepSize {
+    pub(crate) target: RawStepPmiFaces,
+    pub(crate) kind: i32,
+    pub(crate) lower_mm: f64,
+    pub(crate) upper_mm: f64,
+}
+
+#[repr(C)]
+pub(crate) struct RawStepPmi {
+    pub(crate) datums: *const RawStepDatum,
+    pub(crate) datum_count: usize,
+    pub(crate) tolerances: *const RawStepTolerance,
+    pub(crate) tolerance_count: usize,
+    pub(crate) sizes: *const RawStepSize,
+    pub(crate) size_count: usize,
+    pub(crate) out_datum_losses: *mut u32,
+    pub(crate) out_tolerance_losses: *mut u32,
+    pub(crate) out_size_losses: *mut u32,
 }
 
 #[repr(C)]
@@ -492,6 +547,20 @@ unsafe extern "C" {
         component_count: usize,
         face_colors: *const RawStepFaceColor,
         face_color_count: usize,
+        out_part_count: *mut usize,
+    ) -> RawStatus;
+    pub(crate) fn occt_bridge_step_save_assembly_pmi(
+        session: *mut c_void,
+        path: *const std::os::raw::c_char,
+        assembly_name: *const std::os::raw::c_char,
+        nodes: *const RawStepNode,
+        node_count: usize,
+        components: *const RawStepComponent,
+        component_nodes: *const usize,
+        component_count: usize,
+        face_colors: *const RawStepFaceColor,
+        face_color_count: usize,
+        pmi: *mut RawStepPmi,
         out_part_count: *mut usize,
     ) -> RawStatus;
     pub(crate) fn occt_bridge_sweep(

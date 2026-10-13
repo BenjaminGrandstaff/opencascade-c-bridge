@@ -1,5 +1,5 @@
 /* Round-trips a STEP assembly through OCCT's XCAF reader: structure, shared
- * parts, names, and colors survive. */
+ * parts, names, colors, and semantic AP242 GD&T survive. */
 #include "occt_bridge.h"
 
 #include <Quantity_Color.hxx>
@@ -20,6 +20,7 @@
 #include <cstdio>
 #include <set>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -207,6 +208,176 @@ void nested(occt_bridge_session_t* session, const std::string& file) {
     (void)std::remove(file.c_str());
 }
 
+// Indices of a plate's faces: bottom, top, left (x = 0), right, front (y = 0)
+// and its holes, from their pull ranges and radii.
+struct PlateFaces {
+    size_t bottom = SIZE_MAX;
+    size_t top = SIZE_MAX;
+    size_t left = SIZE_MAX;
+    size_t right = SIZE_MAX;
+    size_t front = SIZE_MAX;
+    std::vector<size_t> holes;
+};
+
+PlateFaces plate_faces(occt_bridge_session_t* session, occt_bridge_shape_id_t plate) {
+    size_t count = 0;
+    occt_bridge_shape_face_radius_bounds(session, plate, 2, nullptr, 0, &count);
+    std::vector<occt_bridge_face_radius_bounds_t> radii(count);
+    std::vector<occt_bridge_face_pull_range_t> x(count);
+    std::vector<occt_bridge_face_pull_range_t> y(count);
+    std::vector<occt_bridge_face_pull_range_t> z(count);
+    check(occt_bridge_shape_face_radius_bounds(session, plate, 2, radii.data(), count, &count) == OCCT_BRIDGE_OK
+            && occt_bridge_shape_face_pull_ranges(session, plate, {1, 0, 0}, x.data(), count, &count) == OCCT_BRIDGE_OK
+            && occt_bridge_shape_face_pull_ranges(session, plate, {0, 1, 0}, y.data(), count, &count) == OCCT_BRIDGE_OK
+            && occt_bridge_shape_face_pull_ranges(session, plate, {0, 0, 1}, z.data(), count, &count) == OCCT_BRIDGE_OK,
+        "plate face analysis");
+    PlateFaces faces;
+    const auto at = [](const occt_bridge_face_pull_range_t& range, double value) {
+        return std::abs(range.minimum - value) < 1e-9 && std::abs(range.maximum - value) < 1e-9;
+    };
+    for (size_t index = 0; index < count; ++index) {
+        if (std::isfinite(radii[index].concave_radius)) {
+            faces.holes.push_back(index);
+        } else if (at(z[index], -1)) {
+            faces.bottom = index;
+        } else if (at(z[index], 1)) {
+            faces.top = index;
+        } else if (at(x[index], -1)) {
+            faces.left = index;
+        } else if (at(x[index], 1)) {
+            faces.right = index;
+        } else if (at(y[index], -1)) {
+            faces.front = index;
+        }
+    }
+    return faces;
+}
+
+// A plate with two holes and a pin with a datum of its own, written with
+// datums, tolerances and sizes that all read back, except the projected zone
+// OCCT's AP242 writer does not write.
+void pmi(occt_bridge_session_t* session, const std::string& file) {
+    occt_bridge_shape_id_t box = 0;
+    occt_bridge_shape_id_t first_hole = 0;
+    occt_bridge_shape_id_t second_hole = 0;
+    occt_bridge_shape_id_t drilled = 0;
+    occt_bridge_shape_id_t plate = 0;
+    occt_bridge_shape_id_t pin = 0;
+    check(occt_bridge_create_box(session, {0, 0, 0}, {100, 50, 20}, &box) == OCCT_BRIDGE_OK
+            && occt_bridge_create_cylinder(session, {30, 25, -1}, {0, 0, 1}, 5, 22, &first_hole) == OCCT_BRIDGE_OK
+            && occt_bridge_create_cylinder(session, {70, 25, -1}, {0, 0, 1}, 5, 22, &second_hole) == OCCT_BRIDGE_OK
+            && occt_bridge_cut(session, box, first_hole, &drilled) == OCCT_BRIDGE_OK
+            && occt_bridge_cut(session, drilled, second_hole, &plate) == OCCT_BRIDGE_OK
+            && occt_bridge_create_cylinder(session, {0, 0, 40}, {0, 0, 1}, 4, 30, &pin) == OCCT_BRIDGE_OK,
+        "PMI shapes");
+    const PlateFaces faces = plate_faces(session, plate);
+    check(faces.bottom != SIZE_MAX && faces.top != SIZE_MAX && faces.left != SIZE_MAX && faces.right != SIZE_MAX
+            && faces.front != SIZE_MAX && faces.holes.size() == 2,
+        "plate faces found");
+    if (failures != 0) {
+        return;
+    }
+    const occt_bridge_step_component_t components[] = {
+        {plate, "plate", "plate", 0, {0, 0, 0}},
+        {pin, "pin", "pin", 0, {0, 0, 0}},
+    };
+    const size_t bottom[] = {faces.bottom};
+    const size_t top[] = {faces.top};
+    const size_t left[] = {faces.left};
+    const size_t front[] = {faces.front};
+    const size_t sides[] = {faces.left, faces.right};
+    const size_t pin_side[] = {0};
+    const occt_bridge_step_datum_t datums[] = {
+        {"A", {0, bottom, 1}},
+        {"B", {0, left, 1}},
+        {"C", {0, front, 1}},
+        {"D", {1, pin_side, 1}},
+        // No tolerance references E; it still reads back.
+        {"E", {0, top, 1}},
+    };
+    const occt_bridge_step_datum_reference_t abc[] = {
+        {0, 0, OCCT_BRIDGE_DATUM_RFS, 0},
+        {1, 1, OCCT_BRIDGE_DATUM_MMB, 0},
+        {2, 2, OCCT_BRIDGE_DATUM_RFS, 1},
+    };
+    const occt_bridge_step_datum_reference_t common[] = {
+        {1, 0, OCCT_BRIDGE_DATUM_RFS, 0},
+        {2, 0, OCCT_BRIDGE_DATUM_RFS, 0},
+    };
+    const occt_bridge_step_datum_reference_t pin_axis[] = {{3, 0, OCCT_BRIDGE_DATUM_RFS, 0}};
+    occt_bridge_step_tolerance_t tolerances[] = {
+        {{0, top, 1}, OCCT_BRIDGE_GDT_FLATNESS, 0.05, 0, OCCT_BRIDGE_MATERIAL_RFS, OCCT_BRIDGE_GDT_FREE_STATE, 0, nullptr, 0},
+        {{0, faces.holes.data(), 2}, OCCT_BRIDGE_GDT_POSITION, 0.2, 1, OCCT_BRIDGE_MATERIAL_MMC, 0, 0, abc, 3},
+        {{0, faces.holes.data(), 2}, OCCT_BRIDGE_GDT_POSITION, 0.4, 1, OCCT_BRIDGE_MATERIAL_RFS, 0, 15, abc, 1},
+        {{0, top, 1}, OCCT_BRIDGE_GDT_PERPENDICULARITY, 0.07, 0, OCCT_BRIDGE_MATERIAL_RFS,
+            OCCT_BRIDGE_GDT_TANGENT_PLANE | OCCT_BRIDGE_GDT_STATISTICAL, 0, common, 2},
+        {{1, pin_side, 1}, OCCT_BRIDGE_GDT_TOTAL_RUNOUT, 0.03, 0, OCCT_BRIDGE_MATERIAL_RFS, 0, 0, pin_axis, 1},
+    };
+    occt_bridge_step_size_t sizes[] = {
+        {{0, faces.holes.data(), 2}, OCCT_BRIDGE_STEP_SIZE_DIAMETER, 9.9, 10.2},
+        {{0, sides, 2}, OCCT_BRIDGE_STEP_SIZE_WIDTH, 99.9, 100.1},
+    };
+    uint32_t datum_losses[5] = {9, 9, 9, 9, 9};
+    uint32_t tolerance_losses[5] = {9, 9, 9, 9, 9};
+    uint32_t size_losses[2] = {9, 9};
+    occt_bridge_step_pmi_t pmi{datums, 5, tolerances, 5, sizes, 2, datum_losses, tolerance_losses, size_losses};
+    size_t parts = 0;
+    check(occt_bridge_step_save_assembly_pmi(
+              session, file.c_str(), "fixture", nullptr, 0, components, nullptr, 2, nullptr, 0, &pmi, &parts)
+            == OCCT_BRIDGE_OK && parts == 2,
+        "save assembly PMI");
+    for (const uint32_t loss : datum_losses) {
+        check(loss == 0, "every datum reads back on its faces");
+    }
+    check(tolerance_losses[0] == 0 && tolerance_losses[1] == 0 && tolerance_losses[3] == 0
+            && tolerance_losses[4] == 0, "tolerances read back");
+    check(tolerance_losses[2] == OCCT_BRIDGE_PMI_LOST_PROJECTED, "only the projected zone is lost");
+    check(size_losses[0] == 0 && size_losses[1] == 0, "sizes read back");
+
+    // Invalid PMI writes nothing.
+    (void)std::remove(file.c_str());
+    const auto refused = [&](occt_bridge_step_pmi_t bad, const char* what) {
+        check(occt_bridge_step_save_assembly_pmi(
+                  session, file.c_str(), "fixture", nullptr, 0, components, nullptr, 2, nullptr, 0, &bad, nullptr)
+                == OCCT_BRIDGE_INVALID_ARGUMENT, what);
+    };
+    occt_bridge_step_tolerance_t unknown = tolerances[0];
+    unknown.characteristic = 12;
+    refused({datums, 4, &unknown, 1, nullptr, 0, nullptr, nullptr, nullptr}, "unknown characteristic");
+    const occt_bridge_step_datum_reference_t secondary_only[] = {{1, 1, OCCT_BRIDGE_DATUM_RFS, 0}};
+    occt_bridge_step_tolerance_t gap = tolerances[3];
+    gap.datums = secondary_only;
+    gap.datum_count = 1;
+    refused({datums, 4, &gap, 1, nullptr, 0, nullptr, nullptr, nullptr}, "secondary without a primary");
+    occt_bridge_step_tolerance_t foreign = tolerances[0];
+    foreign.datums = pin_axis;
+    foreign.datum_count = 1;
+    refused({datums, 4, &foreign, 1, nullptr, 0, nullptr, nullptr, nullptr}, "datum on another part");
+    const occt_bridge_step_datum_t twice[] = {datums[0], datums[0]};
+    refused({twice, 2, nullptr, 0, nullptr, 0, nullptr, nullptr, nullptr}, "repeated datum label");
+    const occt_bridge_step_datum_t shared[] = {datums[0], {"A", {1, pin_side, 1}}};
+    refused({shared, 2, nullptr, 0, nullptr, 0, nullptr, nullptr, nullptr}, "one label on two parts");
+    occt_bridge_step_size_t flat = sizes[0];
+    flat.target = {0, top, 1};
+    refused({nullptr, 0, nullptr, 0, &flat, 1, nullptr, nullptr, nullptr}, "diameter on a plane");
+    occt_bridge_step_size_t three = sizes[1];
+    const size_t three_faces[] = {faces.left, faces.right, faces.top};
+    three.target = {0, three_faces, 3};
+    refused({nullptr, 0, nullptr, 0, &three, 1, nullptr, nullptr, nullptr}, "width over three faces");
+    occt_bridge_step_size_t across = sizes[1];
+    const size_t square[] = {faces.left, faces.front};
+    across.target = {0, square, 2};
+    refused({nullptr, 0, nullptr, 0, &across, 1, nullptr, nullptr, nullptr}, "width between square planes");
+    const size_t beyond[] = {99};
+    occt_bridge_step_tolerance_t missing = tolerances[0];
+    missing.target = {0, beyond, 1};
+    refused({nullptr, 0, &missing, 1, nullptr, 0, nullptr, nullptr, nullptr}, "face beyond the plate's");
+    check(std::fopen(file.c_str(), "r") == nullptr, "nothing written");
+    check(occt_bridge_step_save_assembly_pmi(
+              session, file.c_str(), "fixture", nullptr, 0, components, nullptr, 2, nullptr, 0, nullptr, nullptr)
+            == OCCT_BRIDGE_INVALID_ARGUMENT, "missing PMI");
+}
+
 }  // namespace
 
 int run(const std::string& file) {
@@ -298,9 +469,10 @@ int run(const std::string& file) {
     application->Close(document);
     (void)std::remove(file.c_str());
     nested(session, file);
+    pmi(session, file);
     occt_bridge_session_destroy(session);
     if (failures == 0) {
-        (void)std::puts("PASS: STEP assembly structure, sub-assemblies, shared parts, names, and colors round-trip");
+        (void)std::puts("PASS: STEP assembly structure, sub-assemblies, shared parts, names, colors, and PMI round-trip");
     }
     return failures == 0 ? 0 : 1;
 }

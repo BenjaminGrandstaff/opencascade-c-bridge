@@ -42,6 +42,7 @@ mod mesh;
 mod motion;
 mod parts_list;
 mod persistent;
+mod pmi;
 mod primitives;
 mod releases;
 mod requirements;
@@ -141,6 +142,8 @@ fn main() -> ExitCode {
     outcomes.push(step_export::step_assembly_case(definition));
     outcomes.push(step_export::step_frames_case(definition));
     outcomes.push(step_export::draw_view_case(definition));
+    outcomes.push(pmi::pmi_case(definition, false));
+    outcomes.push(pmi::pmi_case(definition, true));
     outcomes.push(persistent::persistent_chain_case());
     outcomes.push(persistent::named_reference_case());
     outcomes.push(persistent::feature_colors_case());

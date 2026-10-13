@@ -37,6 +37,13 @@ pub struct DrawingGdtAttachment {
     pub output: InstanceOutputRef,
     pub anchor: DatumRef,
     pub offset_mm: [f64; 2],
+    /// The persistent faces of `output` that are the toleranced feature or
+    /// datum feature (schema 144). They make the annotation semantic product
+    /// manufacturing information: STEP export with PMI attaches it to these
+    /// faces. Each pattern member names its own. A profile or runout control
+    /// without a `surface` takes its nominals from them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub faces: Option<FaceSelector>,
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -89,7 +96,7 @@ impl GeometricCharacteristic {
         matches!(self, Self::ProfileLine | Self::ProfileSurface)
     }
     /// Controls measured against nominal surface points and normals.
-    fn nominal_surface(self) -> bool {
+    pub fn nominal_surface(self) -> bool {
         self.profile() || matches!(self, Self::CircularRunout | Self::TotalRunout)
     }
     fn diameter(self) -> bool {
@@ -402,6 +409,7 @@ pub fn validate(
             }
         }
         anchor(&feature.attachment, views, graph)?;
+        validate_faces(&feature.attachment, graph)?;
     }
     for frame in reference_frames {
         validate_references(&frame.datums, &index)?;
@@ -417,6 +425,7 @@ pub fn validate(
             ));
         }
         anchor(&frame.attachment, views, graph)?;
+        validate_faces(&frame.attachment, graph)?;
         number(frame)?;
         validate_control(frame)?;
         unequal_text(frame)?;
@@ -527,9 +536,28 @@ fn validate_surface(
             "a surface selector applies to profile and runout controls",
         ));
     }
-    let definition = graph.resolve(&frame.attachment.output.instance)?.definition;
+    face_names(surface, &frame.attachment, graph, "profile surface")
+}
+/// Attachment faces may name only face references of the output instance's
+/// family.
+fn validate_faces(
+    attachment: &DrawingGdtAttachment,
+    graph: &InstanceGraph<'_>,
+) -> Result<(), ModelError> {
+    match &attachment.faces {
+        Some(faces) => face_names(faces, attachment, graph, "attachment faces"),
+        None => Ok(()),
+    }
+}
+fn face_names(
+    selector: &FaceSelector,
+    attachment: &DrawingGdtAttachment,
+    graph: &InstanceGraph<'_>,
+    what: &str,
+) -> Result<(), ModelError> {
+    let definition = graph.resolve(&attachment.output.instance)?.definition;
     let mut names = Vec::new();
-    surface.names(&mut names);
+    selector.names(&mut names);
     for (name, _) in names {
         if !definition
             .references
@@ -537,7 +565,7 @@ fn validate_surface(
             .any(|r| r.name == name && matches!(r.target, ReferenceTarget::Faces(_)))
         {
             return Err(ModelError::new(format!(
-                "profile surface names unknown face reference '{name}'"
+                "{what} names unknown face reference '{name}'"
             )));
         }
     }
@@ -1034,7 +1062,7 @@ fn row_vertices(f: &DrawingFeatureControlFrame) -> usize {
             .filter(|r| r.boundary != DatumMaterialBoundary::Regardless)
             .count()
 }
-fn effective_frames<'a>(
+pub(crate) fn effective_frames<'a>(
     frames: &'a [DrawingFeatureControlFrame],
     reference_frames: &'a [DrawingDatumReferenceFrame],
 ) -> Result<Vec<std::borrow::Cow<'a, DrawingFeatureControlFrame>>, ModelError> {

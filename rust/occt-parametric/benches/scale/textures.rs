@@ -44,6 +44,7 @@ pub(crate) fn texture_case(definition: &FamilyDefinition) -> Outcome {
                         output: output.clone(),
                         anchor: DatumRef::new("part", "top"),
                         offset_mm: [10.0 + (i % 100) as f64 * 9.0, 10.0 + (i / 100) as f64 * 9.0],
+                        faces: None,
                     },
                     unit: RoughnessUnit::Micrometer,
                     roughness: RoughnessLimits {

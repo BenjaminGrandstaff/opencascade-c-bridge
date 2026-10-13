@@ -120,6 +120,7 @@ fn fixture() -> ModelDocument {
         output,
         anchor: DatumRef::new("part", "corner"),
         offset_mm: [30.0, 30.0],
+        faces: None,
     };
     for id in ["A", "B", "C"] {
         page.datum_features.push(DrawingDatumFeature {

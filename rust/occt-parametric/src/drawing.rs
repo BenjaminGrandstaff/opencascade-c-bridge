@@ -7,7 +7,9 @@ use std::collections::BTreeSet;
 mod curves;
 mod hatching;
 mod nominals;
+mod pmi;
 pub use nominals::DrawingDefinitionInspection;
+pub use pmi::DrawingStepPmi;
 
 mod slice;
 pub trait DrawingDefinitionRendering {

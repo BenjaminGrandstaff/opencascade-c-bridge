@@ -30,6 +30,7 @@ mod parts_list;
 mod patterns;
 mod persistent;
 mod placement_solving;
+mod pmi;
 mod primitives;
 mod regeneration;
 mod regions;

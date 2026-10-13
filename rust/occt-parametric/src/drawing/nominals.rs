@@ -51,7 +51,12 @@ impl DrawingDefinitionInspection for DrawingDefinition {
             let Some(frame) = frames.get(measured.id.as_str()) else {
                 continue;
             };
-            let Some(surface) = &frame.surface else {
+            let Some(surface) = frame.surface.as_ref().or(frame
+                .attachment
+                .faces
+                .as_ref()
+                .filter(|_| frame.characteristic.nominal_surface()))
+            else {
                 continue;
             };
             if !measured.nominals.is_empty() {

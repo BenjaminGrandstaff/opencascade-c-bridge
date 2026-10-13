@@ -5,7 +5,9 @@
  */
 
 #include "bridge_internal.hpp"
+#include "step_pmi.hpp"
 
+#include <DESTEP_Parameters.hxx>
 #include <IFSelect_ReturnStatus.hxx>
 #include <Quantity_Color.hxx>
 #include <STEPCAFControl_Writer.hxx>
@@ -249,19 +251,20 @@ std::pair<std::vector<TDF_Label>, std::vector<gp_Trsf>> add_nodes(
 }
 
 // Fills the document's assembly, sub-assemblies, components, and face
-// colors, and returns the number of distinct parts.
+// colors, and returns the number of distinct parts; component_parts receives
+// each component's part label.
 size_t build_assembly(
     const Handle(TDocStd_Document)& document,
     const char* assembly_name,
     const Tree& tree,
-    const std::vector<const TopoDS_Shape*>& shapes) {
+    const std::vector<const TopoDS_Shape*>& shapes,
+    std::vector<TDF_Label>& component_parts) {
     const Handle(XCAFDoc_ShapeTool) shape_tool = XCAFDoc_DocumentTool::ShapeTool(document->Main());
     const Handle(XCAFDoc_ColorTool) color_tool = XCAFDoc_DocumentTool::ColorTool(document->Main());
     const TDF_Label assembly = shape_tool->NewShape();
     set_name(assembly, assembly_name);
     const auto [node_labels, node_world] = add_nodes(shape_tool, assembly, tree);
     std::map<std::pair<const TopoDS_TShape*, TopAbs_Orientation>, TDF_Label> parts;
-    std::vector<TDF_Label> component_parts;
     component_parts.reserve(shapes.size());
     for (size_t index = 0; index < shapes.size(); ++index) {
         const auto& component = tree.components[index];
@@ -297,7 +300,6 @@ size_t build_assembly(
         set_name(shape_tool->AddComponent(parent, found->second, location), component.name);
     }
     apply_face_colors(shape_tool, color_tool, tree, component_parts, shapes);
-    shape_tool->UpdateAssemblies();
     return parts.size();
 }
 
@@ -306,6 +308,7 @@ occt_bridge_status_t save_tree(
     const char* path,
     const char* assembly_name,
     const Tree& tree,
+    occt_bridge_step_pmi_t* pmi,
     size_t* out_part_count) {
     if (out_part_count != nullptr) {
         *out_part_count = 0;
@@ -327,17 +330,37 @@ occt_bridge_status_t save_tree(
     if (const char* error = face_color_error(tree, shapes)) {
         return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, error);
     }
+    if (pmi != nullptr) {
+        if (const char* error = pmi_error(*pmi, shapes)) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, error);
+        }
+    }
     DocumentGuard guard{XCAFApp_Application::GetApplication(), {}};
     guard.application->NewDocument("MDTV-XCAF", guard.document);
-    const size_t parts = build_assembly(guard.document, assembly_name, tree, shapes);
+    std::vector<TDF_Label> component_parts;
+    const size_t parts = build_assembly(guard.document, assembly_name, tree, shapes, component_parts);
+    if (pmi != nullptr) {
+        add_pmi(guard.document, *pmi, component_parts, shapes);
+    }
+    XCAFDoc_DocumentTool::ShapeTool(guard.document->Main())->UpdateAssemblies();
     STEPCAFControl_Writer writer;
     writer.SetNameMode(Standard_True);
     writer.SetColorMode(Standard_True);
-    if (!writer.Transfer(guard.document, STEPControl_AsIs)) {
+    // Semantic GD&T needs AP242; plain exports stay AP214 as before.
+    DESTEP_Parameters parameters;
+    parameters.InitFromStatic();
+    if (pmi != nullptr) {
+        writer.SetDimTolMode(Standard_True);
+        parameters.WriteSchema = DESTEP_Parameters::WriteMode_StepSchema_AP242DIS;
+    }
+    if (!writer.Transfer(guard.document, parameters, STEPControl_AsIs)) {
         return fail(session, OCCT_BRIDGE_IO_ERROR, "failed to transfer the assembly to STEP");
     }
     if (writer.Write(path) != IFSelect_RetDone) {
         return fail(session, OCCT_BRIDGE_IO_ERROR, "failed to write STEP file");
+    }
+    if (pmi != nullptr && !verify_pmi(path, *pmi, shapes)) {
+        return fail(session, OCCT_BRIDGE_IO_ERROR, "failed to read the written STEP file back");
     }
     if (out_part_count != nullptr) {
         *out_part_count = parts;
@@ -358,7 +381,7 @@ occt_bridge_status_t occt_bridge_step_save_assembly(
     size_t* out_part_count) {
     return guarded(session, [&] {
         const Tree tree{nullptr, 0, components, nullptr, component_count, nullptr, 0};
-        return save_tree(session, path, assembly_name, tree, out_part_count);
+        return save_tree(session, path, assembly_name, tree, nullptr, out_part_count);
     });
 }
 
@@ -377,6 +400,31 @@ occt_bridge_status_t occt_bridge_step_save_assembly_tree(
     return guarded(session, [&] {
         const Tree tree{
             nodes, node_count, components, component_nodes, component_count, face_colors, face_color_count};
-        return save_tree(session, path, assembly_name, tree, out_part_count);
+        return save_tree(session, path, assembly_name, tree, nullptr, out_part_count);
+    });
+}
+
+// The tree export plus O(PMI items + their faces) labels, an AP242 transfer,
+// and one read of the written file to verify it.
+occt_bridge_status_t occt_bridge_step_save_assembly_pmi(
+    occt_bridge_session_t* session,
+    const char* path,
+    const char* assembly_name,
+    const occt_bridge_step_node_t* nodes,
+    size_t node_count,
+    const occt_bridge_step_component_t* components,
+    const size_t* component_nodes,
+    size_t component_count,
+    const occt_bridge_step_face_color_t* face_colors,
+    size_t face_color_count,
+    occt_bridge_step_pmi_t* pmi,
+    size_t* out_part_count) {
+    return guarded(session, [&] {
+        if (pmi == nullptr) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "PMI is missing");
+        }
+        const Tree tree{
+            nodes, node_count, components, component_nodes, component_count, face_colors, face_color_count};
+        return save_tree(session, path, assembly_name, tree, pmi, out_part_count);
     });
 }

@@ -49,7 +49,7 @@ pub use assembly::InstanceGraphMotion;
 pub use assembly::InstanceGraphRequirements;
 pub(crate) use assembly::InstanceGraphRequirementsInternal;
 pub use assembly::InstanceGraphStepExport;
-pub use drawing::{DrawingDefinitionInspection, DrawingDefinitionRendering};
+pub use drawing::{DrawingDefinitionInspection, DrawingDefinitionRendering, DrawingStepPmi};
 pub use features::PartInstanceHoles;
 pub use features::PartInstanceProjection;
 pub use features::PartInstanceSupport;
@@ -74,14 +74,15 @@ pub use sketch::SketchDefinitionSolving;
 /// `use occt_parametric::prelude::*;` when not glob-importing the crate.
 pub mod prelude {
     pub use super::{
-        DrawingDefinitionInspection, DrawingDefinitionRendering, InstanceGraphClosedMotion,
-        InstanceGraphContinuousMotion, InstanceGraphDrawView, InstanceGraphExport,
-        InstanceGraphMass, InstanceGraphMaterials, InstanceGraphMotion, InstanceGraphPatternEdits,
-        InstanceGraphRegeneration, InstanceGraphRequirements, InstanceGraphStepExport,
-        MeshExportDefinitionMeshExport, PartInstanceHoles, PartInstanceProjection,
-        PartInstanceRegeneration, PartInstanceSelection, PartInstanceSupport,
-        ResolvedInstanceRegeneration, SketchDefinitionChecks, SketchDefinitionEditing,
-        SketchDefinitionProfiles, SketchDefinitionSolving, TaggedSurfaceMeshExport,
+        DrawingDefinitionInspection, DrawingDefinitionRendering, DrawingStepPmi,
+        InstanceGraphClosedMotion, InstanceGraphContinuousMotion, InstanceGraphDrawView,
+        InstanceGraphExport, InstanceGraphMass, InstanceGraphMaterials, InstanceGraphMotion,
+        InstanceGraphPatternEdits, InstanceGraphRegeneration, InstanceGraphRequirements,
+        InstanceGraphStepExport, MeshExportDefinitionMeshExport, PartInstanceHoles,
+        PartInstanceProjection, PartInstanceRegeneration, PartInstanceSelection,
+        PartInstanceSupport, ResolvedInstanceRegeneration, SketchDefinitionChecks,
+        SketchDefinitionEditing, SketchDefinitionProfiles, SketchDefinitionSolving,
+        TaggedSurfaceMeshExport,
     };
 }
 

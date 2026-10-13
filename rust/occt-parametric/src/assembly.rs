@@ -22,7 +22,7 @@ pub use requirements::InstanceGraphRequirements;
 pub(crate) use requirements::InstanceGraphRequirementsInternal;
 mod step_export;
 pub use step_export::InstanceGraphStepExport;
-pub(crate) use step_export::{Rigid, compose, invert, rigid};
+pub(crate) use step_export::{InstanceGraphStepWrite, Rigid, compose, invert, rigid};
 #[cfg(test)]
 pub(crate) use step_export::{rigid_for_tests, srgb_for_tests};
 

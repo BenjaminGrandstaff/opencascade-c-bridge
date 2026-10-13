@@ -310,6 +310,130 @@ pub struct StepFaceColor {
     pub color: [f64; 3],
 }
 
+/// Faces `faces` (in [`Session::subshapes`] order) of component
+/// `component`'s part, which a semantic PMI item annotates.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct StepPmiFaces<'a> {
+    pub component: usize,
+    pub faces: &'a [usize],
+}
+
+/// A datum feature. A label names one datum in the whole file.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct StepDatum<'a> {
+    pub label: &'a str,
+    pub target: StepPmiFaces<'a>,
+}
+
+/// Material condition of a tolerance, or material boundary of a datum
+/// reference.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum StepMaterial {
+    #[default]
+    Regardless,
+    Maximum,
+    Least,
+}
+
+/// One datum of a tolerance's datum reference frame: an index into
+/// [`StepPmi::datums`], in compartment 0 (primary), 1 or 2. Several datums in
+/// one compartment form a common datum.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct StepDatumReference {
+    pub datum: usize,
+    pub compartment: u32,
+    pub boundary: StepMaterial,
+    pub translation: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StepCharacteristic {
+    Straightness,
+    Flatness,
+    Circularity,
+    Cylindricity,
+    ProfileLine,
+    ProfileSurface,
+    Parallelism,
+    Perpendicularity,
+    Angularity,
+    Position,
+    CircularRunout,
+    TotalRunout,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct StepToleranceModifiers {
+    pub free_state: bool,
+    pub statistical: bool,
+    pub tangent_plane: bool,
+}
+
+/// A geometric tolerance on its target faces.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct StepTolerance<'a> {
+    pub target: StepPmiFaces<'a>,
+    pub characteristic: StepCharacteristic,
+    pub value_mm: f64,
+    pub diameter: bool,
+    pub material: StepMaterial,
+    pub modifiers: StepToleranceModifiers,
+    /// Height of a projected tolerance zone.
+    pub projected_mm: Option<f64>,
+    pub datums: &'a [StepDatumReference],
+}
+
+/// A diameter over cylindrical faces of one radius, or a width between two
+/// parallel planar faces.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StepSizeKind {
+    Diameter,
+    Width,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct StepSize<'a> {
+    pub target: StepPmiFaces<'a>,
+    pub kind: StepSizeKind,
+    pub lower_mm: f64,
+    pub upper_mm: f64,
+}
+
+/// Semantic PMI for [`Session::save_step_assembly_pmi`].
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct StepPmi<'a> {
+    pub datums: &'a [StepDatum<'a>],
+    pub tolerances: &'a [StepTolerance<'a>],
+    pub sizes: &'a [StepSize<'a>],
+}
+
+/// What reading a written PMI item back did not recover: the whole item, or
+/// the listed properties of the item read on the same faces.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct StepPmiLoss {
+    pub item: bool,
+    pub value: bool,
+    pub zone: bool,
+    pub material: bool,
+    pub modifiers: bool,
+    pub projected: bool,
+    pub datums: bool,
+}
+
+impl StepPmiLoss {
+    pub fn is_none(&self) -> bool {
+        *self == Self::default()
+    }
+}
+
+/// One loss per written datum, tolerance and size, in input order.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct StepPmiVerification {
+    pub datums: Vec<StepPmiLoss>,
+    pub tolerances: Vec<StepPmiLoss>,
+    pub sizes: Vec<StepPmiLoss>,
+}
+
 /// How a swept profile turns as it follows its path.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum SweepOrientation {

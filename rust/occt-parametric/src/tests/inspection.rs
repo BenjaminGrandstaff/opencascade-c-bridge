@@ -55,10 +55,11 @@ pub(super) fn attachment(anchor: &str) -> DrawingGdtAttachment {
         },
         anchor: DatumRef::new("part", anchor),
         offset_mm: [20.0, 30.0],
+        faces: None,
     }
 }
 
-fn control(
+pub(super) fn control(
     id: &str,
     anchor: &str,
     characteristic: GeometricCharacteristic,

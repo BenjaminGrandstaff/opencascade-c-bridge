@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define OCCT_BRIDGE_ABI_VERSION 69u
+#define OCCT_BRIDGE_ABI_VERSION 70u
 #define OCCT_BRIDGE_INVALID_SHAPE_ID UINT64_C(0)
 
 #if defined(_WIN32) && defined(OCCT_BRIDGE_BUILD_SHARED)
@@ -1325,6 +1325,134 @@ OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_step_save_assembly_tree(
     size_t component_count,
     const occt_bridge_step_face_color_t* face_colors,
     size_t face_color_count,
+    size_t* out_part_count
+);
+
+/* Semantic product manufacturing information (ABI 70), written as AP242
+ * GD&T by occt_bridge_step_save_assembly_pmi. Every item names faces of one
+ * component's part, by index in occt_bridge_shape_subshapes order, so
+ * components sharing a part share its PMI. */
+typedef struct occt_bridge_step_pmi_faces {
+    size_t component;
+    const size_t* faces;
+    size_t face_count;
+} occt_bridge_step_pmi_faces_t;
+
+/* A datum feature labeled with nonempty UTF-8 text such as "A". A label names
+ * one datum in the whole file: OCCT's AP242 writer shares one datum entity
+ * per label, so labels must be unique across the export. */
+typedef struct occt_bridge_step_datum {
+    const char* label;
+    occt_bridge_step_pmi_faces_t target;
+} occt_bridge_step_datum_t;
+
+#define OCCT_BRIDGE_DATUM_RFS 0
+#define OCCT_BRIDGE_DATUM_MMB 1
+#define OCCT_BRIDGE_DATUM_LMB 2
+
+/* One datum of a tolerance's datum reference frame: datum indexes the
+ * datums array; compartment is 0 (primary), 1 or 2, and several datums in
+ * one compartment form a common datum such as A-B. translation (0 or 1) is
+ * the translation modifier. */
+typedef struct occt_bridge_step_datum_reference {
+    size_t datum;
+    uint32_t compartment;
+    int32_t boundary;
+    int32_t translation;
+} occt_bridge_step_datum_reference_t;
+
+#define OCCT_BRIDGE_GDT_STRAIGHTNESS 0
+#define OCCT_BRIDGE_GDT_FLATNESS 1
+#define OCCT_BRIDGE_GDT_CIRCULARITY 2
+#define OCCT_BRIDGE_GDT_CYLINDRICITY 3
+#define OCCT_BRIDGE_GDT_PROFILE_LINE 4
+#define OCCT_BRIDGE_GDT_PROFILE_SURFACE 5
+#define OCCT_BRIDGE_GDT_PARALLELISM 6
+#define OCCT_BRIDGE_GDT_PERPENDICULARITY 7
+#define OCCT_BRIDGE_GDT_ANGULARITY 8
+#define OCCT_BRIDGE_GDT_POSITION 9
+#define OCCT_BRIDGE_GDT_CIRCULAR_RUNOUT 10
+#define OCCT_BRIDGE_GDT_TOTAL_RUNOUT 11
+
+#define OCCT_BRIDGE_MATERIAL_RFS 0
+#define OCCT_BRIDGE_MATERIAL_MMC 1
+#define OCCT_BRIDGE_MATERIAL_LMC 2
+
+/* Tolerance modifier bits. */
+#define OCCT_BRIDGE_GDT_FREE_STATE 1u
+#define OCCT_BRIDGE_GDT_STATISTICAL 2u
+#define OCCT_BRIDGE_GDT_TANGENT_PLANE 4u
+
+/* A geometric tolerance of value_mm (finite, positive) on its target faces.
+ * diameter (0 or 1) gives a cylindrical zone; projected_mm, when positive,
+ * a projected zone of that height (0 for none). datums may be null when
+ * datum_count is 0. */
+typedef struct occt_bridge_step_tolerance {
+    occt_bridge_step_pmi_faces_t target;
+    int32_t characteristic;
+    double value_mm;
+    int32_t diameter;
+    int32_t material;
+    uint32_t modifiers;
+    double projected_mm;
+    const occt_bridge_step_datum_reference_t* datums;
+    size_t datum_count;
+} occt_bridge_step_tolerance_t;
+
+/* Size of a feature of size: a diameter over cylindrical faces of one radius,
+ * or a width between exactly two parallel planar faces. */
+#define OCCT_BRIDGE_STEP_SIZE_DIAMETER 0
+#define OCCT_BRIDGE_STEP_SIZE_WIDTH 1
+
+/* Limits 0 < lower_mm <= upper_mm, both finite. */
+typedef struct occt_bridge_step_size {
+    occt_bridge_step_pmi_faces_t target;
+    int32_t kind;
+    double lower_mm;
+    double upper_mm;
+} occt_bridge_step_size_t;
+
+/* Bits of what did not read back from the written file. */
+#define OCCT_BRIDGE_PMI_LOST_ITEM 1u
+#define OCCT_BRIDGE_PMI_LOST_VALUE 2u
+#define OCCT_BRIDGE_PMI_LOST_ZONE 4u
+#define OCCT_BRIDGE_PMI_LOST_MATERIAL 8u
+#define OCCT_BRIDGE_PMI_LOST_MODIFIERS 16u
+#define OCCT_BRIDGE_PMI_LOST_PROJECTED 32u
+#define OCCT_BRIDGE_PMI_LOST_DATUMS 64u
+
+/* PMI to write and, in the out arrays (each null or one entry per item),
+ * what reading the file back did not recover: LOST_ITEM when no unclaimed
+ * item of the same label, characteristic or size kind on the same faces
+ * (matched by part-local area and centroid) was read, otherwise the bits of
+ * the properties that differ. */
+typedef struct occt_bridge_step_pmi {
+    const occt_bridge_step_datum_t* datums;
+    size_t datum_count;
+    const occt_bridge_step_tolerance_t* tolerances;
+    size_t tolerance_count;
+    const occt_bridge_step_size_t* sizes;
+    size_t size_count;
+    uint32_t* out_datum_losses;
+    uint32_t* out_tolerance_losses;
+    uint32_t* out_size_losses;
+} occt_bridge_step_pmi_t;
+
+/* occt_bridge_step_save_assembly_tree written as AP242 with the semantic
+ * GD&T of pmi, then read back with OCCT's AP242 reader to fill pmi's loss
+ * arrays. Nothing is written on argument errors. */
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_step_save_assembly_pmi(
+    occt_bridge_session_t* session,
+    const char* path,
+    const char* assembly_name,
+    const occt_bridge_step_node_t* nodes,
+    size_t node_count,
+    const occt_bridge_step_component_t* components,
+    const size_t* component_nodes,
+    size_t component_count,
+    const occt_bridge_step_face_color_t* face_colors,
+    size_t face_color_count,
+    occt_bridge_step_pmi_t* pmi,
     size_t* out_part_count
 );
 

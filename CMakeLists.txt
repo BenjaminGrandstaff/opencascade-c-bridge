@@ -47,6 +47,7 @@ add_library(
     src/face_pull.cpp
     src/sweep.cpp
     src/step_assembly.cpp
+    src/step_pmi.cpp
     src/projection.cpp
     src/curve_export.cpp
     src/curve_intersections.cpp

@@ -113,3 +113,95 @@ fn migration_and_source_metadata_survive() {
             .unwrap();
     assert_eq!(saved, model);
 }
+
+#[test]
+fn step_pmi_writes_drawing_gdt_on_faces_and_reports_the_read_back() {
+    let dir = Directory::new();
+    let mut model = fixture();
+    let plane = |id: &str, z: f64, normal: f64| DatumDefinition {
+        id: id.into(),
+        kind: DatumKind::Plane {
+            origin: point(0.0, 0.0, z),
+            normal: VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, normal)),
+        },
+    };
+    model.family.datums = vec![
+        plane("bottom", 0.0, -1.0),
+        DatumDefinition {
+            id: "hole".into(),
+            kind: DatumKind::Axis {
+                origin: point(10.0, 18.0, 0.0),
+                direction: VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, 1.0)),
+            },
+        },
+    ];
+    model.family.references = vec![
+        NamedReference {
+            name: "bottom_face".into(),
+            target: ReferenceTarget::Faces(FaceSelector::AtExtreme {
+                axis: CoordinateAxis::Z,
+                extremum: Extremum::Minimum,
+                tolerance: mm(1e-6),
+            }),
+        },
+        NamedReference {
+            name: "first_bore".into(),
+            target: ReferenceTarget::Faces(FaceSelector::NearestCenter {
+                target: point(10.0, 18.0, 2.0),
+                maximum_distance: mm(1.0),
+            }),
+        },
+    ];
+    let attachment = |anchor: &str, faces: &str| {
+        json!({"view":"top","output":{"instance":"bracket","output":"body"},
+            "anchor":{"instance":"bracket","datum":anchor},"offset_mm":[10.0,10.0],
+            "faces":{"named":faces}})
+    };
+    let length = |v: f64| json!({"value":v,"dimension":"length","unit":"millimeter"});
+    model.drawings.push(
+        serde_json::from_value(json!({
+            "id":"sheet","title":"Bracket","paper_size_mm":[297.0,210.0],
+            "views":[{"id":"top","outputs":[{"instance":"bracket","output":"body"}],
+                "origin":{"x":length(0.0),"y":length(0.0),"z":length(0.0)},
+                "direction":{"x":{"value":0.0,"dimension":"scalar"},"y":{"value":0.0,"dimension":"scalar"},"z":{"value":1.0,"dimension":"scalar"}},
+                "x_axis":{"x":{"value":1.0,"dimension":"scalar"},"y":{"value":0.0,"dimension":"scalar"},"z":{"value":0.0,"dimension":"scalar"}},
+                "paper_origin_mm":[40.0,60.0],"scale":1.0,"show_hidden":false}],
+            "datum_features":[{"id":"A","label":"A","feature_of_size":false,
+                "attachment":attachment("bottom","bottom_face")}],
+            "feature_control_frames":[{"id":"bore","attachment":attachment("hole","first_bore"),
+                "characteristic":"position","tolerance":length(0.1),"display_unit":"millimeter",
+                "precision":2,"zone":"diameter","material":"maximum","feature_of_size":true,
+                "size_limits":{"kind":"internal","lower":length(4.9),"upper":length(5.1)},
+                "datums":[{"datum_feature":"A"}]}]
+        }))
+        .unwrap(),
+    );
+    let mut value = request(&model, json!([]));
+    value["step"] = json!(true);
+    value["step_pmi"] = json!("sheet");
+    let built = invoke(&dir, value.clone(), "pmi").unwrap();
+    let pmi = &built["pmi"];
+    assert_eq!(pmi["drawing"], "sheet");
+    assert_eq!(pmi["verified"], true, "{pmi:#}");
+    assert_eq!(pmi["complete"], true, "{pmi:#}");
+    let kinds: Vec<_> = pmi["report"]["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| (i["id"].as_str().unwrap(), i["kind"].as_str().unwrap()))
+        .collect();
+    assert_eq!(
+        kinds,
+        vec![("A", "datum"), ("bore", "tolerance"), ("bore", "size")]
+    );
+    assert!(dir.0.join("pmi/parts.step").exists());
+
+    value["step_pmi"] = json!("missing");
+    let error = invoke(&dir, value.clone(), "unknown").unwrap_err();
+    assert_eq!(error.stage, "request");
+    assert!(error.message.contains("unknown drawing 'missing'"));
+    value["step_pmi"] = json!("sheet");
+    value["step"] = json!(false);
+    let error = invoke(&dir, value, "no-step").unwrap_err();
+    assert!(error.message.contains("needs a STEP export"));
+}

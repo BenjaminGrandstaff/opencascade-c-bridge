@@ -12,7 +12,14 @@ pub(crate) struct Features<'a> {
     pub(crate) datums: HashMap<&'a str, &'a DatumDefinition>,
     /// The family's feature colors.
     pub(crate) colors: HashMap<&'a str, [f64; 3]>,
+    /// Subshape centers by shape handle id and subshape type, computed once
+    /// per context: handle ids are never reused, so every center-based
+    /// selector on one result shares one O(subshapes) measurement.
+    centers: CenterCache,
 }
+
+/// Subshape centers by shape handle id and subshape type.
+type CenterCache = std::cell::RefCell<HashMap<(u64, i32), std::rc::Rc<[Vec3]>>>;
 
 impl<'a> Features<'a> {
     pub(crate) fn new(family: &'a FamilyDefinition) -> Self {
@@ -29,7 +36,29 @@ impl<'a> Features<'a> {
                 .iter()
                 .map(|(feature, color)| (feature.as_str(), *color))
                 .collect(),
+            centers: Default::default(),
         }
+    }
+
+    /// Centers of mass of `shape`'s subshapes of `kind`, in
+    /// [`Session::subshapes`] order.
+    pub(crate) fn centers(
+        &self,
+        session: &Session,
+        shape: &Shape<'_>,
+        kind: ShapeType,
+    ) -> Result<std::rc::Rc<[Vec3]>, ModelError> {
+        let key = (shape.id(), kind as i32);
+        if let Some(centers) = self.centers.borrow().get(&key) {
+            return Ok(centers.clone());
+        }
+        let centers = session
+            .subshapes(shape, kind)?
+            .iter()
+            .map(|subshape| session.center_of_mass(subshape))
+            .collect::<Result<std::rc::Rc<[Vec3]>, _>>()?;
+        self.centers.borrow_mut().insert(key, centers.clone());
+        Ok(centers)
     }
 
     fn reference(&self, name: &str, kind: ReferenceUse) -> Result<&'a ReferenceTarget, ModelError> {
@@ -117,6 +146,7 @@ pub(crate) fn resolve_edge_selector<'session>(
             "edge",
             vector(target, parameters, Dimension::Length)?,
             scalar(maximum_distance, parameters, Dimension::Length)?,
+            definitions,
         )
         .map(|shape| vec![shape]),
         EdgeSelector::AtExtreme {
@@ -131,6 +161,7 @@ pub(crate) fn resolve_edge_selector<'session>(
             *axis,
             *extremum,
             scalar(tolerance, parameters, Dimension::Length)?,
+            definitions,
         ),
         EdgeSelector::Longest {
             allow_ties,
@@ -298,6 +329,7 @@ pub(crate) fn resolve_face_selector<'session>(
             "face",
             vector(target, parameters, Dimension::Length)?,
             scalar(maximum_distance, parameters, Dimension::Length)?,
+            definitions,
         )
         .map(|shape| vec![shape]),
         FaceSelector::AtExtreme {
@@ -312,6 +344,7 @@ pub(crate) fn resolve_face_selector<'session>(
             *axis,
             *extremum,
             scalar(tolerance, parameters, Dimension::Length)?,
+            definitions,
         ),
         FaceSelector::NormalAligned {
             direction,

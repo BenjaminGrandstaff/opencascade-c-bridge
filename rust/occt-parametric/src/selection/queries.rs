@@ -21,19 +21,7 @@ pub(crate) fn select_longest_edges<'session>(
     validate_relative_tolerance(relative_tolerance, "longest-edge selector")?;
     let count = session.subshape_count(shape, ShapeType::Edge)?;
     let mut candidates = Vec::with_capacity(count);
-    for index in 0..count {
-        let edge = match session.subshape(shape, ShapeType::Edge, index) {
-            Ok(edge) => edge,
-            Err(error) => {
-                cleanup_shapes(
-                    session,
-                    candidates
-                        .into_iter()
-                        .map(|item: (Shape<'session>, f64)| item.0),
-                );
-                return Err(error.into());
-            }
-        };
+    for edge in session.subshapes(shape, ShapeType::Edge)? {
         match session.edge_length(&edge) {
             Ok(length) => candidates.push((edge, length)),
             Err(error) => {
@@ -72,16 +60,8 @@ pub(crate) fn select_circular_edges_by_radius<'session>(
             "circular-edge radius range must be nonnegative and ordered",
         ));
     }
-    let count = session.subshape_count(shape, ShapeType::Edge)?;
     let mut selected = Vec::new();
-    for index in 0..count {
-        let edge = match session.subshape(shape, ShapeType::Edge, index) {
-            Ok(edge) => edge,
-            Err(error) => {
-                cleanup_shapes(session, selected);
-                return Err(error.into());
-            }
-        };
+    for edge in session.subshapes(shape, ShapeType::Edge)? {
         match session.edge_circle_radius(&edge) {
             Ok(Some(radius)) if (minimum..=maximum).contains(&radius) => selected.push(edge),
             Ok(_) => {
@@ -137,16 +117,12 @@ pub(crate) fn filter_edges<'session>(
     no_match_message: &str,
     mut matches: impl FnMut(usize, &Shape<'session>) -> Result<bool, ModelError>,
 ) -> Result<Vec<Shape<'session>>, ModelError> {
-    let count = session.subshape_count(shape, ShapeType::Edge)?;
     let mut selected = Vec::new();
-    for index in 0..count {
-        let edge = match session.subshape(shape, ShapeType::Edge, index) {
-            Ok(edge) => edge,
-            Err(error) => {
-                cleanup_shapes(session, selected);
-                return Err(error.into());
-            }
-        };
+    for (index, edge) in session
+        .subshapes(shape, ShapeType::Edge)?
+        .into_iter()
+        .enumerate()
+    {
         match matches(index, &edge) {
             Ok(true) => selected.push(edge),
             Ok(false) => {
@@ -290,21 +266,9 @@ pub(crate) fn select_largest_faces<'session>(
     relative_tolerance: f64,
 ) -> Result<Vec<Shape<'session>>, ModelError> {
     validate_relative_tolerance(relative_tolerance, "largest-face selector")?;
-    let count = session.subshape_count(shape, ShapeType::Face)?;
-    let mut candidates = Vec::with_capacity(count);
-    for index in 0..count {
-        let face = match session.subshape(shape, ShapeType::Face, index) {
-            Ok(face) => face,
-            Err(error) => {
-                cleanup_shapes(
-                    session,
-                    candidates
-                        .into_iter()
-                        .map(|item: (Shape<'session>, f64)| item.0),
-                );
-                return Err(error.into());
-            }
-        };
+    let faces = session.subshapes(shape, ShapeType::Face)?;
+    let mut candidates: Vec<(Shape<'session>, f64)> = Vec::with_capacity(faces.len());
+    for face in faces {
         if planar_only {
             match session.face_is_planar(&face) {
                 Ok(true) => {}
@@ -366,16 +330,8 @@ pub(crate) fn select_faces_by_normal<'session>(
         direction.y / magnitude,
         direction.z / magnitude,
     );
-    let count = session.subshape_count(shape, ShapeType::Face)?;
     let mut selected = Vec::new();
-    for index in 0..count {
-        let face = match session.subshape(shape, ShapeType::Face, index) {
-            Ok(face) => face,
-            Err(error) => {
-                cleanup_shapes(session, selected);
-                return Err(error.into());
-            }
-        };
+    for face in session.subshapes(shape, ShapeType::Face)? {
         let normal = match session.face_normal(&face) {
             Ok(normal) => normal,
             Err(error) => {
@@ -418,23 +374,15 @@ pub(crate) fn select_faces_adjacent_to_edges<'session>(
             "face adjacency requires {minimum_count} edges but selector resolved {edge_count}"
         )));
     }
-    let count = match session.subshape_count(shape, ShapeType::Face) {
-        Ok(count) => count,
+    let faces = match session.subshapes(shape, ShapeType::Face) {
+        Ok(faces) => faces,
         Err(error) => {
             cleanup_shapes(session, edges);
             return Err(error.into());
         }
     };
     let mut selected = Vec::new();
-    for index in 0..count {
-        let face = match session.subshape(shape, ShapeType::Face, index) {
-            Ok(face) => face,
-            Err(error) => {
-                cleanup_shapes(session, selected);
-                cleanup_shapes(session, edges);
-                return Err(error.into());
-            }
-        };
+    for face in faces {
         let mut adjacent_count = 0;
         for edge in &edges {
             match session.is_adjacent(shape, &face, edge) {
@@ -481,23 +429,15 @@ pub(crate) fn select_faces_tangent_to_faces<'session>(
             "face tangency requires {minimum_count} source faces but selector resolved {source_count}"
         )));
     }
-    let count = match session.subshape_count(shape, ShapeType::Face) {
-        Ok(count) => count,
+    let faces = match session.subshapes(shape, ShapeType::Face) {
+        Ok(faces) => faces,
         Err(error) => {
             cleanup_shapes(session, sources);
             return Err(error.into());
         }
     };
     let mut selected = Vec::new();
-    for index in 0..count {
-        let face = match session.subshape(shape, ShapeType::Face, index) {
-            Ok(face) => face,
-            Err(error) => {
-                cleanup_shapes(session, selected);
-                cleanup_shapes(session, sources);
-                return Err(error.into());
-            }
-        };
+    for face in faces {
         let tangent_count =
             match count_tangent_faces(session, shape, &face, &sources, angular_tolerance) {
                 Ok(count) => count,
@@ -596,36 +536,24 @@ pub(crate) fn select_nearest_center<'session>(
     kind: &str,
     target: Vec3,
     maximum_distance: f64,
+    definitions: &Features<'_>,
 ) -> Result<Shape<'session>, ModelError> {
     if maximum_distance < 0.0 {
         return Err(ModelError::new(
             "{kind} selector maximum distance must be nonnegative",
         ));
     }
-    let count = session.subshape_count(shape, shape_type)?;
-    let mut candidates: Vec<(Shape<'session>, f64)> = Vec::with_capacity(count);
-    for index in 0..count {
-        let candidate = match session.subshape(shape, shape_type, index) {
-            Ok(candidate) => candidate,
-            Err(error) => {
-                cleanup_shapes(session, candidates.into_iter().map(|item| item.0));
-                return Err(error.into());
-            }
-        };
-        let center = match session.center_of_mass(&candidate) {
-            Ok(center) => center,
-            Err(error) => {
-                let _ = session.remove(candidate);
-                cleanup_shapes(session, candidates.into_iter().map(|item| item.0));
-                return Err(error.into());
-            }
-        };
-        let distance = ((center.x - target.x).powi(2)
-            + (center.y - target.y).powi(2)
-            + (center.z - target.z).powi(2))
-        .sqrt();
-        candidates.push((candidate, distance));
-    }
+    let centers = definitions.centers(session, shape, shape_type)?;
+    let mut candidates: Vec<(usize, f64)> = centers
+        .iter()
+        .map(|center| {
+            ((center.x - target.x).powi(2)
+                + (center.y - target.y).powi(2)
+                + (center.z - target.z).powi(2))
+            .sqrt()
+        })
+        .enumerate()
+        .collect();
     if candidates.is_empty() {
         return Err(ModelError::new(format!(
             "{kind} selector found no candidates"
@@ -634,7 +562,6 @@ pub(crate) fn select_nearest_center<'session>(
     candidates.sort_by(|left, right| left.1.total_cmp(&right.1));
     let best_distance = candidates[0].1;
     if best_distance > maximum_distance {
-        cleanup_shapes(session, candidates.into_iter().map(|item| item.0));
         return Err(ModelError::new(format!(
             "nearest {kind} is {best_distance} mm away, beyond the {maximum_distance} mm limit"
         )));
@@ -644,16 +571,14 @@ pub(crate) fn select_nearest_center<'session>(
         .get(1)
         .is_some_and(|candidate| (candidate.1 - best_distance).abs() <= ambiguity_tolerance)
     {
-        cleanup_shapes(session, candidates.into_iter().map(|item| item.0));
         return Err(ModelError::new(format!(
             "nearest-{kind} selector is ambiguous at distance {best_distance} mm"
         )));
     }
-    let selected = candidates.remove(0).0;
-    cleanup_shapes(session, candidates.into_iter().map(|item| item.0));
-    Ok(selected)
+    Ok(session.subshape(shape, shape_type, candidates[0].0)?)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn select_at_extreme<'session>(
     session: &'session Session,
     shape: &Shape<'session>,
@@ -662,6 +587,7 @@ pub(crate) fn select_at_extreme<'session>(
     axis: CoordinateAxis,
     extremum: Extremum,
     tolerance: f64,
+    definitions: &Features<'_>,
 ) -> Result<Vec<Shape<'session>>, ModelError> {
     if tolerance < 0.0 {
         return Err(ModelError::new(format!(
@@ -673,28 +599,22 @@ pub(crate) fn select_at_extreme<'session>(
         Extremum::Minimum => bounds.min,
         Extremum::Maximum => bounds.max,
     });
-    let count = session.subshape_count(shape, shape_type)?;
+    let centers = definitions.centers(session, shape, shape_type)?;
     let mut selected = Vec::new();
-    for index in 0..count {
-        let candidate = match session.subshape(shape, shape_type, index) {
-            Ok(candidate) => candidate,
-            Err(error) => {
-                cleanup_shapes(session, selected);
-                return Err(error.into());
-            }
-        };
-        let center = match session.center_of_mass(&candidate) {
-            Ok(center) => center,
-            Err(error) => {
+    if centers
+        .iter()
+        .any(|center| (axis.component(*center) - target).abs() <= tolerance)
+    {
+        for (candidate, center) in session
+            .subshapes(shape, shape_type)?
+            .into_iter()
+            .zip(centers.iter())
+        {
+            if (axis.component(*center) - target).abs() <= tolerance {
+                selected.push(candidate);
+            } else {
                 let _ = session.remove(candidate);
-                cleanup_shapes(session, selected);
-                return Err(error.into());
             }
-        };
-        if (axis.component(center) - target).abs() <= tolerance {
-            selected.push(candidate);
-        } else {
-            let _ = session.remove(candidate);
         }
     }
     if selected.is_empty() {

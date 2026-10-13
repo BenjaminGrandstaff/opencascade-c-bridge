@@ -233,6 +233,7 @@ fn edit(request: PatchRequest, destination: &Path, preview: bool) -> Result<Valu
             outputs: request.outputs,
             edits: request.edits,
             step: request.step,
+            step_pmi: None,
             stl: request.stl,
             preview: request.preview,
         },

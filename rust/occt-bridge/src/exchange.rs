@@ -20,6 +20,15 @@ fn text_to_c_string(text: &str, what: &str) -> Result<CString, BridgeError> {
     })
 }
 
+/// The assembly inputs shared by the tree and PMI exports.
+#[derive(Clone, Copy)]
+struct StepTree<'a, 'shape, 'session> {
+    nodes: &'a [StepNode<'a>],
+    components: &'a [StepComponent<'shape, 'session>],
+    component_nodes: &'a [Option<usize>],
+    face_colors: &'a [StepFaceColor],
+}
+
 impl Session {
     /// Writes one named STEP assembly: a named component per entry, placed
     /// at its shape's location, referring to shared named and colored parts.
@@ -49,7 +58,54 @@ impl Session {
         component_nodes: &[Option<usize>],
         face_colors: &[StepFaceColor],
     ) -> Result<usize, BridgeError> {
-        let path = path_to_c_string(path.as_ref())?;
+        let tree = StepTree {
+            nodes,
+            components,
+            component_nodes,
+            face_colors,
+        };
+        Ok(self.save_tree(path.as_ref(), assembly_name, &tree, None)?.0)
+    }
+
+    /// [`Self::save_step_assembly_tree`] written as AP242 with the semantic
+    /// GD&T of `pmi` on part faces, then read back with OCCT's AP242 reader:
+    /// returns the number of parts and what each PMI item lost on the way.
+    #[allow(clippy::too_many_arguments)]
+    pub fn save_step_assembly_pmi(
+        &self,
+        path: impl AsRef<Path>,
+        assembly_name: &str,
+        nodes: &[StepNode<'_>],
+        components: &[StepComponent<'_, '_>],
+        component_nodes: &[Option<usize>],
+        face_colors: &[StepFaceColor],
+        pmi: &StepPmi<'_>,
+    ) -> Result<(usize, StepPmiVerification), BridgeError> {
+        let tree = StepTree {
+            nodes,
+            components,
+            component_nodes,
+            face_colors,
+        };
+        let (parts, verification) =
+            self.save_tree(path.as_ref(), assembly_name, &tree, Some(pmi))?;
+        Ok((parts, verification.unwrap_or_default()))
+    }
+
+    fn save_tree(
+        &self,
+        path: &Path,
+        assembly_name: &str,
+        tree: &StepTree<'_, '_, '_>,
+        pmi: Option<&StepPmi<'_>>,
+    ) -> Result<(usize, Option<StepPmiVerification>), BridgeError> {
+        let StepTree {
+            nodes,
+            components,
+            component_nodes,
+            face_colors,
+        } = *tree;
+        let path = path_to_c_string(path)?;
         let name = text_to_c_string(assembly_name, "assembly name")?;
         if !component_nodes.is_empty() && component_nodes.len() != components.len() {
             return Err(BridgeError {
@@ -103,29 +159,157 @@ impl Session {
                 color: entry.color,
             })
             .collect::<Vec<_>>();
+        let memberships = if memberships.is_empty() {
+            std::ptr::null()
+        } else {
+            memberships.as_ptr()
+        };
         let mut parts = 0;
-        // SAFETY: The strings and the node, component, membership, and face buffers
-        // outlive the call, and the output count is writable.
+        let Some(pmi) = pmi else {
+            // SAFETY: The strings and the node, component, membership, and face buffers
+            // outlive the call, and the output count is writable.
+            self.check(unsafe {
+                occt_bridge_step_save_assembly_tree(
+                    self.raw.as_ptr(),
+                    path.as_ptr(),
+                    name.as_ptr(),
+                    raw_nodes.as_ptr(),
+                    raw_nodes.len(),
+                    raw.as_ptr(),
+                    memberships,
+                    raw.len(),
+                    raw_faces.as_ptr(),
+                    raw_faces.len(),
+                    &mut parts,
+                )
+            })?;
+            return Ok((parts, None));
+        };
+        let targets = |target: &StepPmiFaces<'_>| RawStepPmiFaces {
+            component: target.component,
+            faces: target.faces.as_ptr(),
+            face_count: target.faces.len(),
+        };
+        let labels = pmi
+            .datums
+            .iter()
+            .map(|datum| text_to_c_string(datum.label, "datum label"))
+            .collect::<Result<Vec<_>, _>>()?;
+        let datums = pmi
+            .datums
+            .iter()
+            .zip(&labels)
+            .map(|(datum, label)| RawStepDatum {
+                label: label.as_ptr(),
+                target: targets(&datum.target),
+            })
+            .collect::<Vec<_>>();
+        let material = |material: StepMaterial| match material {
+            StepMaterial::Regardless => 0,
+            StepMaterial::Maximum => 1,
+            StepMaterial::Least => 2,
+        };
+        let references = pmi
+            .tolerances
+            .iter()
+            .map(|tolerance| {
+                tolerance
+                    .datums
+                    .iter()
+                    .map(|reference| RawStepDatumReference {
+                        datum: reference.datum,
+                        compartment: reference.compartment,
+                        boundary: material(reference.boundary),
+                        translation: i32::from(reference.translation),
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        let tolerances = pmi
+            .tolerances
+            .iter()
+            .zip(&references)
+            .map(|(tolerance, references)| RawStepTolerance {
+                target: targets(&tolerance.target),
+                characteristic: tolerance.characteristic as i32,
+                value_mm: tolerance.value_mm,
+                diameter: i32::from(tolerance.diameter),
+                material: material(tolerance.material),
+                modifiers: u32::from(tolerance.modifiers.free_state)
+                    | u32::from(tolerance.modifiers.statistical) << 1
+                    | u32::from(tolerance.modifiers.tangent_plane) << 2,
+                projected_mm: tolerance.projected_mm.unwrap_or(0.0),
+                datums: references.as_ptr(),
+                datum_count: references.len(),
+            })
+            .collect::<Vec<_>>();
+        let sizes = pmi
+            .sizes
+            .iter()
+            .map(|size| RawStepSize {
+                target: targets(&size.target),
+                kind: match size.kind {
+                    StepSizeKind::Diameter => 0,
+                    StepSizeKind::Width => 1,
+                },
+                lower_mm: size.lower_mm,
+                upper_mm: size.upper_mm,
+            })
+            .collect::<Vec<_>>();
+        let mut datum_losses = vec![0u32; datums.len()];
+        let mut tolerance_losses = vec![0u32; tolerances.len()];
+        let mut size_losses = vec![0u32; sizes.len()];
+        let mut raw_pmi = RawStepPmi {
+            datums: datums.as_ptr(),
+            datum_count: datums.len(),
+            tolerances: tolerances.as_ptr(),
+            tolerance_count: tolerances.len(),
+            sizes: sizes.as_ptr(),
+            size_count: sizes.len(),
+            out_datum_losses: datum_losses.as_mut_ptr(),
+            out_tolerance_losses: tolerance_losses.as_mut_ptr(),
+            out_size_losses: size_losses.as_mut_ptr(),
+        };
+        // SAFETY: The strings, the node, component, membership, face and PMI
+        // buffers outlive the call; the loss buffers hold one entry per item
+        // and the output count is writable.
         self.check(unsafe {
-            occt_bridge_step_save_assembly_tree(
+            occt_bridge_step_save_assembly_pmi(
                 self.raw.as_ptr(),
                 path.as_ptr(),
                 name.as_ptr(),
                 raw_nodes.as_ptr(),
                 raw_nodes.len(),
                 raw.as_ptr(),
-                if memberships.is_empty() {
-                    std::ptr::null()
-                } else {
-                    memberships.as_ptr()
-                },
+                memberships,
                 raw.len(),
                 raw_faces.as_ptr(),
                 raw_faces.len(),
+                &mut raw_pmi,
                 &mut parts,
             )
         })?;
-        Ok(parts)
+        let losses = |bits: Vec<u32>| {
+            bits.into_iter()
+                .map(|bits| StepPmiLoss {
+                    item: bits & 1 != 0,
+                    value: bits & 2 != 0,
+                    zone: bits & 4 != 0,
+                    material: bits & 8 != 0,
+                    modifiers: bits & 16 != 0,
+                    projected: bits & 32 != 0,
+                    datums: bits & 64 != 0,
+                })
+                .collect()
+        };
+        Ok((
+            parts,
+            Some(StepPmiVerification {
+                datums: losses(datum_losses),
+                tolerances: losses(tolerance_losses),
+                sizes: losses(size_losses),
+            }),
+        ))
     }
 
     pub fn save_brep(&self, shape: &Shape<'_>, path: impl AsRef<Path>) -> Result<(), BridgeError> {

@@ -38,6 +38,8 @@ The current C ABI version is **61**.
 - Tolerance-padded and exact bounds, surface area, volume, center-of-mass, and
   BREP validity inspection
 - BREP persistence, STEP import/export, and configurable ASCII/binary STL export
+- STEP AP242 semantic GD&T (datums, tolerances, size limits) on part faces,
+  verified by reading the written file back (ABI 70)
 - Per-session result validation (on by default) for booleans, fillets,
   chamfers, offsets, hollowing, sewing, and STEP and BREP import, with
   optional shape healing that carries operation history, fuzzy booleans,
@@ -367,7 +369,10 @@ reference zones with zone lookup, and Y14.2M thick/thin line weights
 disconnected material regions in SVG/DXF. Schema 59 adds datum-linked center marks, centerlines and section cutting-plane
 indicators in saved drawings and SVG/DXF exports. Schema 58 adds manufacturing dimension types, unit-aware tolerances, basic/reference
 notation and live hole callouts; see [Drawings](docs/DRAWINGS.md). Schema 57 combines the newer geometry and reference features with planar slice
-drawings and assembly motion workflows.
+drawings and assembly motion workflows. GD&T attachments may name the persistent faces they annotate
+(schema 144); `export_step_pmi` and the `occt-model` request field `step_pmi`
+then write the drawing's GD&T as verified AP242 PMI on those faces; see
+[Semantic PMI](docs/DRAWINGS.md#semantic-pmi-on-persistent-faces-schema-144-abi-70).
 
 Continuous joint path checks handle translations, unwrapped rotations, and
 nested frames, catching collisions between samples and reporting unresolved
