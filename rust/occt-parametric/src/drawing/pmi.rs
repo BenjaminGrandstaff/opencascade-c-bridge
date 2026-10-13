@@ -1,11 +1,14 @@
 //! STEP AP242 export of drawing GD&T as semantic PMI on the faces its
-//! attachments name (schema 144, ABI 70), verified by reading the file back.
+//! attachments name (schema 144, ABI 70), with the drawing's annotation
+//! views as saved views of 3D presentations (schema 145, ABI 71), verified
+//! by reading the file back.
 use super::*;
 use crate::assembly::InstanceGraphStepWrite;
 use crate::selection::{Features, resolve_face_selector};
 use occt_bridge::{
     StepCharacteristic, StepDatum, StepDatumReference, StepMaterial, StepPmi, StepPmiFaces,
-    StepPmiLoss, StepSize, StepSizeKind, StepTolerance, StepToleranceModifiers,
+    StepPmiLoss, StepPresentation, StepSize, StepSizeKind, StepTolerance, StepToleranceModifiers,
+    StepView,
 };
 use std::path::Path;
 
@@ -17,6 +20,11 @@ pub trait DrawingStepPmi {
     /// is attached to those faces of its part. The file is then read back
     /// and the report lists, per item, what the format cannot represent and
     /// what did not read back, and which annotations were skipped and why.
+    ///
+    /// Each annotation view becomes a saved view: a camera along its
+    /// direction framing the export, showing the 3D presentations of its
+    /// annotations, which lie in the plane of the first view that shows
+    /// them. The report says per view what did not read back.
     ///
     /// Faces are selected on one local regeneration per annotated instance,
     /// where its selectors are defined, and carried to the placed output by
@@ -82,6 +90,16 @@ fn material(material: ToleranceMaterialCondition) -> StepMaterial {
     }
 }
 
+fn presentation(presentation: &Option<PmiPresentation>) -> Option<StepPresentation<'_>> {
+    presentation.as_ref().map(|p| StepPresentation {
+        name: &p.name,
+        polylines: &p.polylines,
+        origin: p.origin,
+        normal: p.normal,
+        x_direction: p.x_direction,
+    })
+}
+
 fn lost(loss: &StepPmiLoss) -> Vec<PmiProperty> {
     [
         (loss.item, PmiProperty::Item),
@@ -91,6 +109,7 @@ fn lost(loss: &StepPmiLoss) -> Vec<PmiProperty> {
         (loss.modifiers, PmiProperty::Modifiers),
         (loss.projected, PmiProperty::ProjectedZone),
         (loss.datums, PmiProperty::Datums),
+        (loss.presentation, PmiProperty::Presentation),
     ]
     .into_iter()
     .filter_map(|(lost, property)| lost.then_some(property))
@@ -289,6 +308,7 @@ impl DrawingStepPmi for DrawingDefinition {
             .map(|(datum, resolved)| StepDatum {
                 label: datum.label,
                 target: faces(resolved),
+                presentation: presentation(&datum.presentation),
             })
             .collect::<Vec<_>>();
         let step_tolerances = plan
@@ -309,6 +329,7 @@ impl DrawingStepPmi for DrawingDefinition {
                 },
                 projected_mm: tolerance.projected_mm,
                 datums: references,
+                presentation: presentation(&tolerance.presentation),
             })
             .collect::<Vec<_>>();
         let step_sizes = sizes
@@ -324,10 +345,27 @@ impl DrawingStepPmi for DrawingDefinition {
                 upper_mm: size.upper_mm,
             })
             .collect::<Vec<_>>();
+        // STEP cameras look along the view, away from the viewer.
+        let step_views = plan
+            .views
+            .iter()
+            .map(|view| StepView {
+                name: view.name,
+                direction: Vec3::new(
+                    -view.axes.direction.x,
+                    -view.axes.direction.y,
+                    -view.axes.direction.z,
+                ),
+                up: view.axes.up,
+                datums: &view.datums,
+                tolerances: &view.tolerances,
+            })
+            .collect::<Vec<_>>();
         let pmi = StepPmi {
             datums: &step_datums,
             tolerances: &step_tolerances,
             sizes: &step_sizes,
+            views: &step_views,
         };
         let (parts, verification) = graph.write_step(
             session,
@@ -387,10 +425,51 @@ impl DrawingStepPmi for DrawingDefinition {
                 loss,
             ));
         }
+        let views = plan
+            .views
+            .iter()
+            .zip(&verification.views)
+            .map(|(view, loss)| {
+                let mut lost_annotations: Vec<String> = Vec::new();
+                let lost_ids = view
+                    .datums
+                    .iter()
+                    .zip(&loss.datums)
+                    .filter(|(_, lost)| **lost)
+                    .map(|(&datum, _)| plan.datums[datum].id)
+                    .chain(
+                        view.tolerances
+                            .iter()
+                            .zip(&loss.tolerances)
+                            .filter(|(_, lost)| **lost)
+                            .map(|(&tolerance, _)| plan.tolerances[tolerance].id),
+                    );
+                for id in lost_ids {
+                    if !lost_annotations.iter().any(|known| known == id) {
+                        lost_annotations.push(id.to_owned());
+                    }
+                }
+                PmiViewReport {
+                    id: view.id.to_owned(),
+                    name: view.name.to_owned(),
+                    annotations: view.annotations.iter().map(|id| (*id).to_owned()).collect(),
+                    omitted: view.omitted.iter().map(|id| (*id).to_owned()).collect(),
+                    lost: if loss.view {
+                        Some(PmiViewLoss::View)
+                    } else if loss.camera {
+                        Some(PmiViewLoss::Camera)
+                    } else {
+                        None
+                    },
+                    lost_annotations,
+                }
+            })
+            .collect();
         Ok(PmiExchangeReport {
             parts,
             items,
             skipped: plan.skipped,
+            views,
         })
     }
 }

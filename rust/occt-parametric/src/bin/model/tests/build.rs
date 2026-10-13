@@ -172,7 +172,11 @@ fn step_pmi_writes_drawing_gdt_on_faces_and_reports_the_read_back() {
                 "characteristic":"position","tolerance":length(0.1),"display_unit":"millimeter",
                 "precision":2,"zone":"diameter","material":"maximum","feature_of_size":true,
                 "size_limits":{"kind":"internal","lower":length(4.9),"upper":length(5.1)},
-                "datums":[{"datum_feature":"A"}]}]
+                "datums":[{"datum_feature":"A"}]}],
+            "annotation_views":[{"id":"iso","name":"ISO GD&T",
+                "direction":{"x":{"value":1.0,"dimension":"scalar"},"y":{"value":-1.0,"dimension":"scalar"},"z":{"value":1.0,"dimension":"scalar"}},
+                "x_axis":{"x":{"value":1.0,"dimension":"scalar"},"y":{"value":1.0,"dimension":"scalar"},"z":{"value":0.0,"dimension":"scalar"}},
+                "datum_features":["A"],"feature_control_frames":["bore"]}]
         }))
         .unwrap(),
     );
@@ -193,6 +197,10 @@ fn step_pmi_writes_drawing_gdt_on_faces_and_reports_the_read_back() {
     assert_eq!(
         kinds,
         vec![("A", "datum"), ("bore", "tolerance"), ("bore", "size")]
+    );
+    assert_eq!(
+        pmi["report"]["views"],
+        json!([{"id":"iso","name":"ISO GD&T","annotations":["A","bore"]}])
     );
     assert!(dir.0.join("pmi/parts.step").exists());
 

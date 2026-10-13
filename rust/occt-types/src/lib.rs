@@ -318,11 +318,27 @@ pub struct StepPmiFaces<'a> {
     pub faces: &'a [usize],
 }
 
+/// Graphical presentation of a PMI item: polylines in assembly coordinates
+/// drawn in an annotation plane. `name` is unique among the export's
+/// presentations.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct StepPresentation<'a> {
+    pub name: &'a str,
+    /// Each polyline has at least two points.
+    pub polylines: &'a [Vec<Vec3>],
+    pub origin: Vec3,
+    /// Unit normal of the annotation plane.
+    pub normal: Vec3,
+    /// Unit direction in the plane, square to `normal`.
+    pub x_direction: Vec3,
+}
+
 /// A datum feature. A label names one datum in the whole file.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct StepDatum<'a> {
     pub label: &'a str,
     pub target: StepPmiFaces<'a>,
+    pub presentation: Option<StepPresentation<'a>>,
 }
 
 /// Material condition of a tolerance, or material boundary of a datum
@@ -381,6 +397,7 @@ pub struct StepTolerance<'a> {
     /// Height of a projected tolerance zone.
     pub projected_mm: Option<f64>,
     pub datums: &'a [StepDatumReference],
+    pub presentation: Option<StepPresentation<'a>>,
 }
 
 /// A diameter over cylindrical faces of one radius, or a width between two
@@ -399,12 +416,25 @@ pub struct StepSize<'a> {
     pub upper_mm: f64,
 }
 
+/// A saved annotation view: a parallel camera looking along `direction`
+/// with `up` (not parallel to it), framing the whole export, that shows the
+/// datums and tolerances indexed, each of which has a presentation.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct StepView<'a> {
+    pub name: &'a str,
+    pub direction: Vec3,
+    pub up: Vec3,
+    pub datums: &'a [usize],
+    pub tolerances: &'a [usize],
+}
+
 /// Semantic PMI for [`Session::save_step_assembly_pmi`].
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct StepPmi<'a> {
     pub datums: &'a [StepDatum<'a>],
     pub tolerances: &'a [StepTolerance<'a>],
     pub sizes: &'a [StepSize<'a>],
+    pub views: &'a [StepView<'a>],
 }
 
 /// What reading a written PMI item back did not recover: the whole item, or
@@ -418,6 +448,8 @@ pub struct StepPmiLoss {
     pub modifiers: bool,
     pub projected: bool,
     pub datums: bool,
+    /// The item's presentation, polyline for polyline.
+    pub presentation: bool,
 }
 
 impl StepPmiLoss {
@@ -426,12 +458,33 @@ impl StepPmiLoss {
     }
 }
 
-/// One loss per written datum, tolerance and size, in input order.
+/// What reading a saved view back did not recover: the whole view, its
+/// camera's direction or up, and per index of [`StepView::datums`] and
+/// [`StepView::tolerances`] whether the view shows that annotation.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct StepViewLoss {
+    pub view: bool,
+    pub camera: bool,
+    pub datums: Vec<bool>,
+    pub tolerances: Vec<bool>,
+}
+
+impl StepViewLoss {
+    pub fn is_none(&self) -> bool {
+        !self.view
+            && !self.camera
+            && !self.datums.contains(&true)
+            && !self.tolerances.contains(&true)
+    }
+}
+
+/// One loss per written datum, tolerance, size and view, in input order.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct StepPmiVerification {
     pub datums: Vec<StepPmiLoss>,
     pub tolerances: Vec<StepPmiLoss>,
     pub sizes: Vec<StepPmiLoss>,
+    pub views: Vec<StepViewLoss>,
 }
 
 /// How a swept profile turns as it follows its path.

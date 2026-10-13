@@ -38,10 +38,12 @@ pub use gdt::{
 pub mod parts_list;
 pub mod pmi;
 pub use pmi::{
-    PlannedDatum, PlannedReference, PlannedSize, PlannedTolerance, PmiExchangeItem,
-    PmiExchangeReport, PmiItemKind, PmiPlan, PmiProperty, PmiSkipped, PmiTarget,
+    AnnotationViewAxes, DrawingAnnotationView, PlannedDatum, PlannedReference, PlannedSize,
+    PlannedTolerance, PlannedView, PmiExchangeItem, PmiExchangeReport, PmiItemKind, PmiPlan,
+    PmiPresentation, PmiProperty, PmiSkipped, PmiTarget, PmiViewLoss, PmiViewReport,
 };
 pub mod releases;
+pub mod strokes;
 pub use guides::{DrawingGuide, DrawingGuideKind, DrawingGuideLine, DrawingGuideLineKind};
 pub use parts_list::{DrawingBalloon, DrawingPartsList, PartsListItem};
 pub use releases::{DrawingApproval, DrawingRelease, DrawingReleaseStatus, DrawingRevisionTable};
@@ -154,6 +156,9 @@ pub struct DrawingDefinition {
     pub datum_features: Vec<DrawingDatumFeature>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub feature_control_frames: Vec<DrawingFeatureControlFrame>,
+    /// Saved views of the GD&T on the model (schema 145).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub annotation_views: Vec<DrawingAnnotationView>,
     /// Surface texture symbols (schema 71).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub surface_textures: Vec<DrawingSurfaceTexture>,
@@ -480,6 +485,7 @@ impl DrawingDefinition {
             graph,
         )?;
         gdt::texture::validate(&self.surface_textures, &views, graph)?;
+        pmi::views::validate(self)?;
         parts_list::validate(self, &views, graph)?;
         releases::validate(self)?;
         let mut ids = HashSet::new();

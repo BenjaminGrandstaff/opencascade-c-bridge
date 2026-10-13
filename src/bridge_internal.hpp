@@ -78,6 +78,11 @@ struct occt_bridge_session {
 
 namespace occt_bridge_internal {
 
+// OCCT 7.9's STEP translators share process-wide state (static parameters
+// and protocol caches), and concurrent writes in independent sessions fail
+// spuriously. Every STEP read and write holds this lock.
+std::mutex& step_mutex();
+
 // Exact finite line/spline root path, called after planarity/input-budget checks.
 occt_bridge_status_t line_spline_intersections(occt_bridge_session_t* session,
     const TopoDS_Edge& first, const TopoDS_Edge& second, size_t maximum_points,

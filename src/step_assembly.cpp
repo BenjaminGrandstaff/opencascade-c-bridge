@@ -335,6 +335,7 @@ occt_bridge_status_t save_tree(
             return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, error);
         }
     }
+    const std::lock_guard<std::mutex> step_lock(step_mutex());
     DocumentGuard guard{XCAFApp_Application::GetApplication(), {}};
     guard.application->NewDocument("MDTV-XCAF", guard.document);
     std::vector<TDF_Label> component_parts;
@@ -355,6 +356,9 @@ occt_bridge_status_t save_tree(
     }
     if (!writer.Transfer(guard.document, parameters, STEPControl_AsIs)) {
         return fail(session, OCCT_BRIDGE_IO_ERROR, "failed to transfer the assembly to STEP");
+    }
+    if (pmi != nullptr) {
+        finish_pmi(writer, *pmi, shapes);
     }
     if (writer.Write(path) != IFSelect_RetDone) {
         return fail(session, OCCT_BRIDGE_IO_ERROR, "failed to write STEP file");

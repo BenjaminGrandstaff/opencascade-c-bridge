@@ -382,3 +382,149 @@ fn pmi_skips_what_it_cannot_attach_and_refuses_broken_faces() {
     assert!(error.contains("flat"), "{error}");
     let _ = std::fs::remove_file(&path);
 }
+
+fn annotation_view(
+    id: &str,
+    direction: (f64, f64, f64),
+    datum_features: &[&str],
+    frames: &[&str],
+) -> DrawingAnnotationView {
+    DrawingAnnotationView {
+        id: id.into(),
+        name: id.to_uppercase(),
+        direction: VectorQuantity::scalars(direction.0, direction.1, direction.2),
+        x_axis: VectorQuantity::scalars(1.0, 0.0, 0.0),
+        scale: 1.0,
+        datum_features: datum_features.iter().map(|s| (*s).into()).collect(),
+        feature_control_frames: frames.iter().map(|s| (*s).into()).collect(),
+    }
+}
+
+/// A top view of datums A and B, the flat top, the bore pattern and the
+/// square end, and a front view at twice the size of W, the second bore
+/// (which shows its pattern), the flat top again and the angularity, which
+/// names no faces.
+fn viewed_page() -> DrawingDefinition {
+    let mut page = pmi_page();
+    page.feature_control_frames.retain(|f| f.id != "projected");
+    let mut front = annotation_view(
+        "front",
+        (0.0, -1.0, 0.0),
+        &["W"],
+        &["second", "flat", "angular"],
+    );
+    front.scale = 2.0;
+    page.annotation_views = vec![
+        annotation_view(
+            "top",
+            (0.0, 0.0, 1.0),
+            &["A", "B"],
+            &["flat", "first", "square"],
+        ),
+        front,
+    ];
+    page
+}
+
+#[test]
+fn annotation_views_export_as_saved_views_of_3d_presentations() {
+    let definition = drilled_plate();
+    let mut graph = InstanceGraph::new(&definition);
+    graph.add_base("part", HashMap::new(), "test").unwrap();
+    let page = viewed_page();
+    page.validate(&graph).unwrap();
+
+    // Each annotation lies in the plane of the first view showing it, at
+    // that view's scale; C appears in no view and has no presentation.
+    let plan = page.pmi_plan(&graph, |_| true).unwrap();
+    let datum = |id: &str| plan.datums.iter().find(|d| d.id == id).unwrap();
+    let a = datum("A").presentation.as_ref().unwrap();
+    assert_eq!(a.name, "datum A");
+    assert_eq!(
+        (a.normal, a.x_direction),
+        (Vec3::new(0.0, 0.0, 1.0), Vec3::new(1.0, 0.0, 0.0))
+    );
+    assert!(datum("C").presentation.is_none());
+    let w = datum("W").presentation.as_ref().unwrap();
+    assert_eq!(w.normal, Vec3::new(0.0, -1.0, 0.0));
+    // The label box starts at the anchor plus twice the sheet offset
+    // [20, 30]: right is +x and up is +z when looking along +y.
+    let corner = w.polylines[0][0];
+    let expected = Vec3::new(w.origin.x + 40.0, w.origin.y, w.origin.z + 60.0);
+    assert!(
+        (corner.x - expected.x).abs() < 1e-9
+            && (corner.y - expected.y).abs() < 1e-9
+            && (corner.z - expected.z).abs() < 1e-9,
+        "{corner:?} vs {expected:?}"
+    );
+    // The composite pattern: its frame with 2X over the top segment, and the
+    // lower segment's own row.
+    let segments: Vec<_> = plan
+        .tolerances
+        .iter()
+        .filter(|t| t.id == "first")
+        .map(|t| t.presentation.as_ref().unwrap())
+        .collect();
+    assert_eq!(segments.len(), 2);
+    assert_eq!(segments[0].name, "frame first");
+    assert_eq!(segments[1].name, "frame first segment 2");
+    assert!(segments[0].polylines.len() > segments[1].polylines.len());
+    let top = &plan.views[0];
+    assert_eq!(top.annotations, ["A", "B", "flat", "first", "square"]);
+    assert_eq!((top.datums.len(), top.tolerances.len()), (2, 4));
+    let front = &plan.views[1];
+    assert_eq!(front.annotations, ["W", "second", "flat"]);
+    assert_eq!(front.omitted, ["angular"]);
+    assert_eq!(front.axes.up, Vec3::new(0.0, 0.0, 1.0));
+
+    let session = Session::new().unwrap();
+    let generation = graph.regenerate_all(&session).unwrap();
+    let path = std::env::temp_dir().join(format!("occb-pmi-views-{}.step", std::process::id()));
+    let report = page
+        .export_step_pmi(
+            &graph,
+            &session,
+            &generation,
+            &path,
+            "plate",
+            &OutputSet::AllWithOutput("body".into()),
+        )
+        .unwrap();
+    assert!(report.verified(), "{report:#?}");
+    assert!(!report.complete());
+    assert_eq!(report.views.len(), 2);
+    assert_eq!(report.views[0].name, "TOP");
+    assert_eq!(report.views[1].omitted, ["angular"]);
+    assert!(
+        report
+            .views
+            .iter()
+            .all(|v| v.lost.is_none() && v.lost_annotations.is_empty())
+    );
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert_eq!(text.matches("CAMERA_MODEL_D3(").count(), 2);
+    assert!(text.contains("DRAUGHTING_CALLOUT('frame first segment 2'"));
+    std::fs::remove_file(&path).unwrap();
+}
+
+#[test]
+fn annotation_views_need_known_annotations_and_square_axes() {
+    let definition = drilled_plate();
+    let mut graph = InstanceGraph::new(&definition);
+    graph.add_base("part", HashMap::new(), "test").unwrap();
+    let error = |page: DrawingDefinition| page.validate(&graph).unwrap_err().message;
+    let mut page = viewed_page();
+    page.annotation_views[0]
+        .feature_control_frames
+        .push("missing".into());
+    assert!(error(page).contains("shows unknown feature control frame 'missing'"));
+    let mut page = viewed_page();
+    page.annotation_views[1].name = "TOP".into();
+    assert!(error(page).contains("unique name"));
+    let mut page = viewed_page();
+    page.annotation_views[0].x_axis = VectorQuantity::scalars(1.0, 0.0, 0.5);
+    assert!(error(page).contains("perpendicular"));
+    let mut page = viewed_page();
+    page.annotation_views[0].datum_features.push("A".into());
+    assert!(error(page).contains("twice"));
+}

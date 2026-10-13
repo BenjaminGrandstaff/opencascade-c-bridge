@@ -77,12 +77,15 @@ fn displayed(f: &DrawingFeatureControlFrame) -> Result<f64, ModelError> {
         .parse()
         .map_err(|_| ModelError::new("invalid displayed composite tolerance"))
 }
+/// Draws the composite into `d[0]`, or with one drawing per segment, the
+/// outline, characteristic and leader with the top row into `d[0]` and each
+/// lower row with the line above it into its own.
 pub fn append(
     f: &DrawingFeatureControlFrame,
     index: &HashMap<&str, &DrawingDatumFeature>,
     point: [f64; 2],
     p: [f64; 2],
-    d: &mut GeneratedDrawing,
+    d: &mut [GeneratedDrawing],
 ) -> Result<(), ModelError> {
     // Rows stack downward from the upper segment, the lowest at `p`; the
     // characteristic cell spans them all and the right edge steps.
@@ -104,17 +107,27 @@ pub fn append(
         outline.extend([[x + width(i), bottom], [x + width(i), bottom + 8.0]]);
     }
     outline.extend([[x, y + height], [x, y]]);
-    line(d, outline);
-    line(d, vec![[x + 8.0, y], [x + 8.0, y + height]]);
+    let split = d.len() > 1;
+    let at = |i: usize| if split { i } else { 0 };
+    line(&mut d[0], outline);
+    line(&mut d[0], vec![[x + 8.0, y], [x + 8.0, y + height]]);
     for i in 1..n {
         let top = y + 8.0 * (n - i) as f64;
-        line(d, vec![[x + 8.0, top], [x + width(i), top]]);
+        line(&mut d[at(i)], vec![[x + 8.0, top], [x + width(i), top]]);
     }
-    leader(d, point, p, false);
-    glyph(d, [x + 4.0, y + 0.5 * height], f.characteristic);
+    leader(&mut d[0], point, p, false);
+    glyph(&mut d[0], [x + 4.0, y + 0.5 * height], f.characteristic);
     for (i, (segment, value, cells)) in rows.iter().enumerate() {
         let bottom = y + 8.0 * (n - 1 - i) as f64;
-        append_row(segment, [x, bottom], value, cells, index, d, false);
+        append_row(
+            segment,
+            [x, bottom],
+            value,
+            cells,
+            index,
+            &mut d[at(i)],
+            false,
+        );
     }
     Ok(())
 }

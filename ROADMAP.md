@@ -8,16 +8,16 @@ tracks status and order.
 
 | Layer | Version | State |
 |---|---|---|
-| C ABI (`src/`, `include/`) | ABI 70 | Stable; exact version match required |
+| C ABI (`src/`, `include/`) | ABI 71 | Stable; exact version match required |
 | `occt-types` (shared value types) | — | No native dependency |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI; re-exports `occt-types` |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric-core` (kernel-free engineering layer) | Schema 144 | Definitions, documents, solving and checks without OCCT |
-| `occt-parametric` (kernel regeneration) | Schema 144 | Active development; re-exports the core API |
+| `occt-parametric-core` (kernel-free engineering layer) | Schema 145 | Definitions, documents, solving and checks without OCCT |
+| `occt-parametric` (kernel regeneration) | Schema 145 | Active development; re-exports the core API |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 154 + first-use integration 1 (+1 doc test), recipes 3, parametric core 35 + kernel 682 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 8 + view command 36 + viewer Node 19 + branch command 2 + model command 90, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 154 + first-use integration 1 (+1 doc test), recipes 3, parametric core 36 + kernel 684 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 8 + view command 39 + viewer Node 19 + branch command 2 + model command 90, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -26,6 +26,21 @@ tracks status and order.
 
 ## Done
 
+- Annotation views (schema 145, ABI 71). A drawing's `annotation_views`
+  name a view direction, image right, a scale and the datum features and
+  frames they show. `export_step_pmi` draws each shown annotation in 3D in
+  the plane of the first view that shows it, using the sheet layout and a
+  built-in single-stroke letter set. It writes these drawings as AP242
+  tessellated presentations and each view as a saved view (camera plus
+  annotations), which OCCT's writer cannot do itself. The read-back verifies
+  each presentation segment by segment and each view's camera and
+  annotations. Two OCCT 7.9 writer gaps are worked around: tolerance values
+  were written in metres when a file had no size dimension, and
+  presentations failed the write without one. STEP reads and writes now
+  share a process-wide lock, since OCCT's translators failed when sessions
+  wrote concurrently. The 400-hole plate's 400 drawn controls and two views
+  export and verify in 2.5 s. See
+  [Annotation views](docs/DRAWINGS.md#annotation-views-schema-145-abi-71).
 - Semantic PMI on persistent faces (schema 144, ABI 70). GD&T attachments
   may name the `faces` they annotate, and `export_step_pmi` writes a
   drawing's datums, tolerances (per composite segment, one per n× pattern)
@@ -2380,11 +2395,13 @@ scopes and inspected repo capabilities, not a full conformity audit.
    feature, dynamic profile and translation modifiers (schema 143), and
    measurement uncertainty simulated from the measurement itself.
 3. **3D manufacturing annotations and exchange** — [Y14.41](https://www.asme.org/codes-standards/find-codes-standards/y14-41-digital-product-definition-data-practices):
-   annotation views, dataset authority and revision rules, and exchange of
-   what OCCT's AP242 writer drops (projected zones, saved views). Drawing
-   GD&T attached to persistent faces now exports as verified semantic AP242
-   PMI (schema 144, ABI 70); continuous feature, dynamic profile, unequal
-   zones and composite relations are reported as unrepresented.
+   dataset authority and revision rules, section and clipped annotation
+   views, and exchange of projected zones, which OCCT's AP242 writer drops.
+   Drawing GD&T attached to persistent faces exports as verified semantic
+   AP242 PMI (schema 144, ABI 70); continuous feature, dynamic profile,
+   unequal zones and composite relations are reported as unrepresented.
+   Annotation views export as verified saved views of 3D presentations
+   (schema 145, ABI 71).
 4. **Standards-backed thread specifications** — [B1.1](https://www.asme.org/codes-standards/find-codes-standards/b1-1-unified-inch-screw-threads-un-unr-thread-form):
    thread limits/classes, fit validation and standard representations. Live drawing
    callouts now show recorded intent, and basic-profile thread geometry can be

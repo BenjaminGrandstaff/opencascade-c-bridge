@@ -804,27 +804,62 @@ pub fn append(
     let index: HashMap<_, _> = features.iter().map(|f| (f.id.as_str(), f)).collect();
     for f in features {
         let (point, p) = anchor(&f.attachment, views, graph)?;
-        let width = 4.0 + 3.0 * f.label.len() as f64;
-        rectangle(d, p, width);
-        text(d, [p[0] + 2.0, p[1] + 2.5], f.label.clone());
-        leader(d, point, [p[0] + width / 2.0, p[1]], true);
+        draw_datum_feature(f, point, p, d);
     }
     for f in effective_frames(frames, reference_frames)? {
-        append_frame(&f, &index, views, graph, d)?;
+        let (point, p) = anchor(&f.attachment, views, graph)?;
+        draw_frame(&f, &index, point, p, std::slice::from_mut(d))?;
     }
     Ok(())
 }
-fn append_frame(
+/// An empty drawing that collects GD&T linework and text alone.
+pub(crate) fn scratch(lettering: DrawingLettering) -> GeneratedDrawing {
+    GeneratedDrawing {
+        curves: Vec::new(),
+        gdt_lines: Vec::new(),
+        gdt_labels: Vec::new(),
+        sheet_lines: Vec::new(),
+        sheet_labels: Vec::new(),
+        id: String::new(),
+        title: String::new(),
+        paper_size_mm: [0.0, 0.0],
+        polylines: Vec::new(),
+        guides: Vec::new(),
+        hatches: Vec::new(),
+        labels: Vec::new(),
+        metadata: BTreeMap::new(),
+        generated_variants: 0,
+        lettering,
+        line_weights: None,
+        zones: None,
+    }
+}
+/// A datum feature symbol: its boxed label at `p` and a filled leader to
+/// `point`.
+pub(crate) fn draw_datum_feature(
+    f: &DrawingDatumFeature,
+    point: [f64; 2],
+    p: [f64; 2],
+    d: &mut GeneratedDrawing,
+) {
+    let width = 4.0 + 3.0 * f.label.len() as f64;
+    rectangle(d, p, width);
+    text(d, [p[0] + 2.0, p[1] + 2.5], f.label.clone());
+    leader(d, point, [p[0] + width / 2.0, p[1]], true);
+}
+/// A resolved frame at `p` with its leader to `point`, into `d[0]`; or with
+/// one drawing per composite segment, each segment's part into its own.
+pub(crate) fn draw_frame(
     f: &DrawingFeatureControlFrame,
     index: &HashMap<&str, &DrawingDatumFeature>,
-    views: &HashMap<&str, &DrawingView>,
-    graph: &InstanceGraph<'_>,
-    d: &mut GeneratedDrawing,
+    point: [f64; 2],
+    p: [f64; 2],
+    d: &mut [GeneratedDrawing],
 ) -> Result<(), ModelError> {
-    let (point, p) = anchor(&f.attachment, views, graph)?;
     if f.refinement.is_some() {
         return composite::append(f, index, point, p, d);
     }
+    let d = &mut d[0];
     let value = number(f)?;
     let cells = cell_widths(f, &value, index);
     rectangle(d, p, cells.iter().sum());

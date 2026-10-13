@@ -187,6 +187,7 @@ pub(crate) fn inspection_case(definition: &FamilyDefinition, variant: Inspected)
             flat.projected = None;
             controls.push(flat);
             let drawing = DrawingDefinition {
+                annotation_views: Vec::new(),
                 datum_reference_frames: vec![DrawingDatumReferenceFrame {
                     id: "ABC".into(),
                     datums: vec![reference("A"), reference("B"), reference("C")],
@@ -427,6 +428,7 @@ pub(crate) fn form_case(definition: &FamilyDefinition) -> Outcome {
                 datums: Vec::new(),
             };
             let drawing = DrawingDefinition {
+                annotation_views: Vec::new(),
                 datum_reference_frames: Vec::new(),
                 datum_features: Vec::new(),
                 feature_control_frames: (0..FORM_CONTROLS)
@@ -598,6 +600,7 @@ pub(crate) fn runout_case(definition: &FamilyDefinition, common: bool, conical: 
                 }],
             };
             let drawing = DrawingDefinition {
+                annotation_views: Vec::new(),
                 datum_reference_frames: Vec::new(),
                 datum_features: (0..holes)
                     .map(|h| (format!("D{h}"), label(h), h))
@@ -871,6 +874,7 @@ pub(crate) fn datum_shift_case(definition: &FamilyDefinition, frame: ShiftFrame)
                     size_limits: size,
                 };
             let drawing = DrawingDefinition {
+                annotation_views: Vec::new(),
                 datum_reference_frames: Vec::new(),
                 datum_features: vec![
                     feature("A", "bottom", None),
@@ -1070,6 +1074,7 @@ fn hole_plate(definition: &FamilyDefinition) -> FamilyDefinition {
 /// left and front planes.
 fn abc_drawing(id: &str, controls: Vec<DrawingFeatureControlFrame>) -> DrawingDefinition {
     DrawingDefinition {
+        annotation_views: Vec::new(),
         datum_reference_frames: Vec::new(),
         datum_features: [("A", "bottom"), ("B", "left"), ("C", "front")]
             .into_iter()
@@ -1733,6 +1738,7 @@ pub(crate) fn coaxial_shift_case(definition: &FamilyDefinition, common: bool) ->
                 })
                 .collect();
             let drawing = DrawingDefinition {
+                annotation_views: Vec::new(),
                 datum_reference_frames: Vec::new(),
                 datum_features: ["A", "E"]
                     .map(|id| DrawingDatumFeature {
@@ -1936,6 +1942,7 @@ pub(crate) fn radial_case(definition: &FamilyDefinition) -> Outcome {
                 })
                 .collect();
             let drawing = DrawingDefinition {
+                annotation_views: Vec::new(),
                 datum_reference_frames: Vec::new(),
                 datum_features: vec![
                     DrawingDatumFeature {

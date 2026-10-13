@@ -7,6 +7,7 @@
 
 #include "occt_bridge.h"
 
+#include <STEPCAFControl_Writer.hxx>
 #include <TDF_Label.hxx>
 #include <TDocStd_Document.hxx>
 #include <TopoDS_Shape.hxx>
@@ -24,6 +25,13 @@ void add_pmi(
     const Handle(TDocStd_Document)& document,
     const occt_bridge_step_pmi_t& pmi,
     const std::vector<TDF_Label>& component_parts,
+    const std::vector<const TopoDS_Shape*>& shapes);
+
+// Completes the transferred model before it is written: works around OCCT
+// 7.9 writer gaps and adds pmi's saved views.
+void finish_pmi(
+    STEPCAFControl_Writer& writer,
+    const occt_bridge_step_pmi_t& pmi,
     const std::vector<const TopoDS_Shape*>& shapes);
 
 // Reads path back with OCCT's AP242 reader and fills pmi's loss arrays;
