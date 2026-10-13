@@ -6,8 +6,8 @@ use gdt::composite;
 pub mod views;
 use views::AnnotationPlane;
 pub use views::{
-    AnnotationViewAxes, DrawingAnnotationView, PlannedView, PmiPresentation, PmiViewLoss,
-    PmiViewReport,
+    AnnotationClippingPlane, AnnotationViewAxes, DrawingAnnotationView, PlannedView,
+    PmiPresentation, PmiViewLoss, PmiViewReport,
 };
 
 /// What a PMI item is.
@@ -448,6 +448,11 @@ impl DrawingDefinition {
                 tolerances: Vec::new(),
                 annotations: Vec::new(),
                 omitted: Vec::new(),
+                clipping_planes: view
+                    .clipping_planes
+                    .iter()
+                    .map(AnnotationClippingPlane::kept_side)
+                    .collect::<Result<_, _>>()?,
             };
             for id in &view.datum_features {
                 match datum_index.get(id.as_str()) {

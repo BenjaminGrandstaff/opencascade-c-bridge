@@ -384,6 +384,7 @@ fn annotation_view(
         scale: 1.0,
         datum_features: datum_features.iter().map(|s| (*s).into()).collect(),
         feature_control_frames: frames.iter().map(|s| (*s).into()).collect(),
+        clipping_planes: Vec::new(),
     }
 }
 
@@ -514,4 +515,64 @@ fn annotation_views_need_known_annotations_and_square_axes() {
     let mut page = viewed_page();
     page.annotation_views[0].datum_features.push("A".into());
     assert!(error(page).contains("twice"));
+}
+
+#[test]
+fn section_views_export_their_clipping_planes() {
+    let definition = drilled_plate();
+    let mut graph = InstanceGraph::new(&definition);
+    graph.add_base("part", HashMap::new(), "test").unwrap();
+    // The front view becomes a section through the bores, keeping the far
+    // half, clipped above at mid-thickness.
+    let mut page = viewed_page();
+    page.annotation_views[1].clipping_planes = vec![
+        AnnotationClippingPlane {
+            origin: VectorQuantity::lengths(0.0, 20.0, 0.0, LengthUnit::Millimeter),
+            normal: VectorQuantity::scalars(0.0, 2.0, 0.0),
+            keep_positive: true,
+        },
+        AnnotationClippingPlane {
+            origin: VectorQuantity::lengths(0.0, 0.0, 0.5, LengthUnit::Centimeter),
+            normal: VectorQuantity::scalars(0.0, 0.0, 1.0),
+            keep_positive: false,
+        },
+    ];
+    page.validate(&graph).unwrap();
+    let plan = page.pmi_plan(&graph, |_| true).unwrap();
+    assert!(plan.views[0].clipping_planes.is_empty());
+    assert_eq!(
+        plan.views[1].clipping_planes,
+        vec![
+            (Vec3::new(0.0, 20.0, 0.0), Vec3::new(0.0, 1.0, 0.0)),
+            (Vec3::new(0.0, 0.0, 5.0), Vec3::new(0.0, 0.0, -1.0)),
+        ]
+    );
+
+    let session = Session::new().unwrap();
+    let generation = graph.regenerate_all(&session).unwrap();
+    let path = std::env::temp_dir().join(format!("occb-pmi-section-{}.step", std::process::id()));
+    let report = page
+        .export_step_pmi(
+            &graph,
+            &session,
+            &generation,
+            &path,
+            "plate",
+            &OutputSet::AllWithOutput("body".into()),
+        )
+        .unwrap();
+    assert!(report.verified(), "{report:#?}");
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert_eq!(text.matches("CAMERA_MODEL_D3_MULTI_CLIPPING(").count(), 1);
+    assert_eq!(text.matches("PLANE('FRONT clipping").count(), 2);
+    std::fs::remove_file(&path).unwrap();
+
+    let error = |page: DrawingDefinition| page.validate(&graph).unwrap_err().message;
+    let mut flat = page.clone();
+    flat.annotation_views[1].clipping_planes[0].normal = VectorQuantity::scalars(0.0, 0.0, 0.0);
+    assert!(error(flat).contains("axis must be finite and nonzero"));
+    let mut many = page.clone();
+    let plane = many.annotation_views[1].clipping_planes[0];
+    many.annotation_views[1].clipping_planes = vec![plane; 17];
+    assert!(error(many).contains("more than 16 clipping planes"));
 }

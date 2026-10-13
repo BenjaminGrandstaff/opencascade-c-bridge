@@ -1,7 +1,7 @@
 {
   "schema": "occb-model-view-v1",
   "model": {
-    "schema_version": 149,
+    "schema_version": 150,
     "family": {
       "id": "spline-tangent-pair",
       "version": 1,

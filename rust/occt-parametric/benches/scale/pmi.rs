@@ -4,11 +4,11 @@
 
 use super::*;
 use occt_parametric::{
-    CoordinateAxis, DatumMaterialBoundary, DrawingAnnotationView, DrawingDatumFeature,
-    DrawingDatumReference, DrawingDefinition, DrawingFeatureControlFrame, DrawingGdtAttachment,
-    DrawingSizeLimits, DrawingView, DrawingViewKind, Extremum, FeatureOfSizeKind,
-    GeometricCharacteristic, GeometricToleranceZone, InstanceOutputRef, NamedReference, OutputSet,
-    PmiItemKind, ReferenceTarget, ToleranceMaterialCondition,
+    AnnotationClippingPlane, CoordinateAxis, DatumMaterialBoundary, DrawingAnnotationView,
+    DrawingDatumFeature, DrawingDatumReference, DrawingDefinition, DrawingFeatureControlFrame,
+    DrawingGdtAttachment, DrawingSizeLimits, DrawingView, DrawingViewKind, Extremum,
+    FeatureOfSizeKind, GeometricCharacteristic, GeometricToleranceZone, InstanceOutputRef,
+    NamedReference, OutputSet, PmiItemKind, ReferenceTarget, ToleranceMaterialCondition,
 };
 use std::collections::BTreeMap;
 
@@ -132,7 +132,7 @@ fn attachment(anchor: &str, faces: &str) -> DrawingGdtAttachment {
 
 /// Datums A, B, C, a flat top and a position control with size limits on
 /// every hole: one control each, or one 400× pattern. A top view shows them
-/// all and an isometric view the datums and the flat top.
+/// all and an isometric section view the datums and the flat top.
 fn drawing(pattern: bool) -> DrawingDefinition {
     let datum = |id: &str, anchor: &str, faces: &str| DrawingDatumFeature {
         id: id.into(),
@@ -205,9 +205,10 @@ fn drawing(pattern: bool) -> DrawingDefinition {
             scale: 1.0,
             datum_features: vec!["A".into(), "B".into(), "C".into()],
             feature_control_frames: frames,
+            clipping_planes: Vec::new(),
         }
     };
-    let annotation_views = vec![
+    let mut annotation_views = vec![
         view(
             "top",
             [0.0, 0.0, 1.0],
@@ -221,6 +222,12 @@ fn drawing(pattern: bool) -> DrawingDefinition {
             vec!["flat".into()],
         ),
     ];
+    // The isometric view is a section through the middle row of holes.
+    annotation_views[1].clipping_planes = vec![AnnotationClippingPlane {
+        origin: VectorQuantity::lengths(0.0, 205.0, 0.0, LengthUnit::Millimeter),
+        normal: VectorQuantity::scalars(0.0, 1.0, 0.0),
+        keep_positive: true,
+    }];
     DrawingDefinition {
         annotation_views,
         datum_reference_frames: Vec::new(),

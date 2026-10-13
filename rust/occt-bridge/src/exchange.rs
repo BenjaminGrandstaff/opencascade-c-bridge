@@ -360,13 +360,26 @@ impl Session {
             .iter()
             .map(|view| vec![0u8; view.tolerances.len()])
             .collect::<Vec<_>>();
+        let view_planes = pmi
+            .views
+            .iter()
+            .map(|view| {
+                view.clipping_planes
+                    .iter()
+                    .map(|plane| RawStepClippingPlane {
+                        origin: [plane.origin.x, plane.origin.y, plane.origin.z],
+                        normal: [plane.normal.x, plane.normal.y, plane.normal.z],
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
         let views = pmi
             .views
             .iter()
-            .zip(&view_names)
+            .zip(view_names.iter().zip(&view_planes))
             .zip(view_datums_lost.iter_mut().zip(&mut view_tolerances_lost))
             .map(
-                |((view, name), (datums_lost, tolerances_lost))| RawStepView {
+                |((view, (name, planes)), (datums_lost, tolerances_lost))| RawStepView {
                     name: name.as_ptr(),
                     direction: [view.direction.x, view.direction.y, view.direction.z],
                     up: [view.up.x, view.up.y, view.up.z],
@@ -376,6 +389,8 @@ impl Session {
                     tolerance_count: view.tolerances.len(),
                     out_datums_lost: datums_lost.as_mut_ptr(),
                     out_tolerances_lost: tolerances_lost.as_mut_ptr(),
+                    clipping_planes: planes.as_ptr(),
+                    clipping_plane_count: planes.len(),
                 },
             )
             .collect::<Vec<_>>();
@@ -435,6 +450,7 @@ impl Session {
             .map(|(bits, (datums, tolerances))| StepViewLoss {
                 view: bits & 1 != 0,
                 camera: bits & 2 != 0,
+                clipping: bits & 4 != 0,
                 datums: datums.into_iter().map(|lost| lost != 0).collect(),
                 tolerances: tolerances.into_iter().map(|lost| lost != 0).collect(),
             })

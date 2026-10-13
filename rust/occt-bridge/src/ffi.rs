@@ -173,6 +173,14 @@ pub(crate) struct RawStepView {
     pub(crate) tolerance_count: usize,
     pub(crate) out_datums_lost: *mut u8,
     pub(crate) out_tolerances_lost: *mut u8,
+    pub(crate) clipping_planes: *const RawStepClippingPlane,
+    pub(crate) clipping_plane_count: usize,
+}
+
+#[repr(C)]
+pub(crate) struct RawStepClippingPlane {
+    pub(crate) origin: [f64; 3],
+    pub(crate) normal: [f64; 3],
 }
 
 #[repr(C)]

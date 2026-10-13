@@ -416,9 +416,19 @@ pub struct StepSize<'a> {
     pub upper_mm: f64,
 }
 
+/// A clipping plane of a saved view: the view shows the side `normal` (a
+/// unit vector) points into.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct StepClippingPlane {
+    pub origin: Vec3,
+    pub normal: Vec3,
+}
+
 /// A saved annotation view: a parallel camera looking along `direction`
 /// with `up` (not parallel to it), framing the whole export, that shows the
-/// datums and tolerances indexed, each of which has a presentation.
+/// datums and tolerances indexed, each of which has a presentation. A
+/// section or clipped view keeps only the region inside all of its
+/// `clipping_planes` (at most 16).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct StepView<'a> {
     pub name: &'a str,
@@ -426,6 +436,7 @@ pub struct StepView<'a> {
     pub up: Vec3,
     pub datums: &'a [usize],
     pub tolerances: &'a [usize],
+    pub clipping_planes: &'a [StepClippingPlane],
 }
 
 /// Semantic PMI for [`Session::save_step_assembly_pmi`].
@@ -465,6 +476,7 @@ impl StepPmiLoss {
 pub struct StepViewLoss {
     pub view: bool,
     pub camera: bool,
+    pub clipping: bool,
     pub datums: Vec<bool>,
     pub tolerances: Vec<bool>,
 }
@@ -473,6 +485,7 @@ impl StepViewLoss {
     pub fn is_none(&self) -> bool {
         !self.view
             && !self.camera
+            && !self.clipping
             && !self.datums.contains(&true)
             && !self.tolerances.contains(&true)
     }

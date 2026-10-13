@@ -26,6 +26,12 @@ tracks status and order.
 
 ## Done
 
+- Section and clipped annotation views (schema 150, ABI 75). An annotation
+  view may list up to 16 `clipping_planes`, each with an origin, a normal
+  and a kept side as for section drawing views. They are written as an
+  AP242 multi-clipping camera whose planes intersect, and the read-back
+  checks that OCCT recreates the same planes for the view. See
+  [Annotation views](docs/DRAWINGS.md#annotation-views-schema-145-abi-71).
 - Projected tolerance zones in AP242 exchange (schema 145 and ABI 71
   unchanged). OCCT 7.9's writer drops projected zones. It also gives every
   diameter zone a runout zone definition, which its reader then reports as
@@ -2573,12 +2579,12 @@ scopes and inspected repo capabilities, not a full conformity audit.
    feature, dynamic profile and translation modifiers (schema 143), and
    measurement uncertainty simulated from the measurement itself.
 3. **3D manufacturing annotations and exchange** — [Y14.41](https://www.asme.org/codes-standards/find-codes-standards/y14-41-digital-product-definition-data-practices):
-   dataset authority and revision rules, and section and clipped
-   annotation views. Drawing GD&T attached to persistent faces exports as verified semantic
+   dataset authority and revision rules. Drawing GD&T attached to persistent faces exports as verified semantic
    AP242 PMI (schema 144, ABI 70); continuous feature, dynamic profile,
    unequal zones and composite relations are reported as unrepresented.
    Annotation views export as verified saved views of 3D presentations
-   (schema 145, ABI 71), and projected zones now exchange too.
+   (schema 145, ABI 71), including section and clipped views (schema 150,
+   ABI 75), and projected zones now exchange too.
 4. **Standards-backed thread specifications** — [B1.1](https://www.asme.org/codes-standards/find-codes-standards/b1-1-unified-inch-screw-threads-un-unr-thread-form):
    thread limits/classes, fit validation and standard representations. Live drawing
    callouts now show recorded intent, and basic-profile thread geometry can be

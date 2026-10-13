@@ -48,7 +48,13 @@
 #include <StepRepr_ShapeAspect.hxx>
 #include <StepRepr_ShapeAspectRelationship.hxx>
 #include <StepShape_ShapeRepresentation.hxx>
+#include <StepGeom_Plane.hxx>
 #include <StepVisual_CameraModelD3.hxx>
+#include <StepVisual_CameraModelD3MultiClipping.hxx>
+#include <StepVisual_CameraModelD3MultiClippingInterectionSelect.hxx>
+#include <StepVisual_HArray1OfCameraModelD3MultiClippingInterectionSelect.hxx>
+#include <XCAFDoc_ClippingPlaneTool.hxx>
+#include <gp_Pln.hxx>
 #include <StepVisual_CoordinatesList.hxx>
 #include <StepVisual_DraughtingCallout.hxx>
 #include <StepVisual_DraughtingModel.hxx>
@@ -797,6 +803,15 @@ const char* view_error(const occt_bridge_step_view_t& view, const occt_bridge_st
     if ((view.datum_count != 0 && view.datums == nullptr) || (view.tolerance_count != 0 && view.tolerances == nullptr)) {
         return "view annotation arrays are missing";
     }
+    if (view.clipping_plane_count > 16 || (view.clipping_plane_count != 0 && view.clipping_planes == nullptr)) {
+        return "a view has at most 16 clipping planes";
+    }
+    for (size_t index = 0; index < view.clipping_plane_count; ++index) {
+        const auto& plane = view.clipping_planes[index];
+        if (!finite3(plane.origin) || !finite3(plane.normal) || std::abs(xyz(plane.normal).Modulus() - 1.0) > 1e-9) {
+            return "a clipping plane needs a finite origin and a unit normal";
+        }
+    }
     std::set<size_t> seen;
     for (size_t index = 0; index < view.datum_count; ++index) {
         if (view.datums[index] >= pmi.datum_count) {
@@ -877,8 +892,30 @@ Handle(StepVisual_CameraModelD3) camera(const occt_bridge_step_view_t& view, con
     Handle(StepVisual_ViewVolume) volume = new StepVisual_ViewVolume;
     volume->Init(StepVisual_copParallel, step_point(eye), 2.0 * radius, 0.0, Standard_False, 4.0 * radius,
                  Standard_False, Standard_False, window);
-    Handle(StepVisual_CameraModelD3) result = new StepVisual_CameraModelD3;
-    result->Init(text(view.name), system, volume);
+    if (view.clipping_plane_count == 0) {
+        Handle(StepVisual_CameraModelD3) result = new StepVisual_CameraModelD3;
+        result->Init(text(view.name), system, volume);
+        return result;
+    }
+    // The planes intersect: OCCT's reader reads a list of planes as their
+    // intersection, each keeping the side its normal points into.
+    Handle(StepVisual_HArray1OfCameraModelD3MultiClippingInterectionSelect) planes =
+        new StepVisual_HArray1OfCameraModelD3MultiClippingInterectionSelect(
+            1, static_cast<int>(view.clipping_plane_count));
+    for (size_t index = 0; index < view.clipping_plane_count; ++index) {
+        const auto& clipping = view.clipping_planes[index];
+        const gp_Ax3 axes(gp_Pnt(xyz(clipping.origin)), gp_Dir(xyz(clipping.normal)));
+        Handle(StepGeom_Axis2Placement3d) placement = new StepGeom_Axis2Placement3d;
+        placement->Init(text(""), step_point(axes.Location().XYZ()), Standard_True, step_direction(axes.Direction()),
+                        Standard_True, step_direction(axes.XDirection()));
+        Handle(StepGeom_Plane) plane = new StepGeom_Plane;
+        plane->Init(text((std::string(view.name) + " clipping " + std::to_string(index + 1)).c_str()), placement);
+        StepVisual_CameraModelD3MultiClippingInterectionSelect select;
+        select.SetValue(plane);
+        planes->SetValue(static_cast<int>(index) + 1, select);
+    }
+    Handle(StepVisual_CameraModelD3MultiClipping) result = new StepVisual_CameraModelD3MultiClipping;
+    result->Init(text(view.name), system, volume, planes);
     return result;
 }
 
@@ -1037,6 +1074,32 @@ uint32_t presentation_losses(const occt_bridge_step_presentation_t* presentation
                return same_segments(written, callout);
            });
     return same ? 0u : OCCT_BRIDGE_PMI_LOST_PRESENTATION;
+}
+
+// Whether the read planes are the view's clipping planes, one to one: the
+// same normal and each written origin on its plane.
+bool same_planes(const occt_bridge_step_view_t& view, const std::vector<gp_Pln>& read) {
+    if (read.size() != view.clipping_plane_count) {
+        return false;
+    }
+    std::vector<bool> used(read.size(), false);
+    for (size_t index = 0; index < view.clipping_plane_count; ++index) {
+        const auto& written = view.clipping_planes[index];
+        const gp_Dir normal(xyz(written.normal));
+        const gp_Pnt origin(xyz(written.origin));
+        bool found = false;
+        for (size_t candidate = 0; candidate < read.size() && !found; ++candidate) {
+            if (!used[candidate] && read[candidate].Axis().Direction().IsEqual(normal, 1e-7)
+                && read[candidate].Distance(origin) <= 1e-6 * (1.0 + origin.XYZ().Modulus())) {
+                used[candidate] = true;
+                found = true;
+            }
+        }
+        if (!found) {
+            return false;
+        }
+    }
+    return true;
 }
 
 // Closes a reading document however verification ends.
@@ -1448,11 +1511,28 @@ bool verify_pmi(const char* path, occt_bridge_step_pmi_t& pmi, const std::vector
     const Handle(XCAFDoc_ViewTool) view_tool = XCAFDoc_DocumentTool::ViewTool(read.document->Main());
     TDF_LabelSequence view_labels;
     view_tool->GetViewLabels(view_labels);
-    std::multimap<std::string, Handle(XCAFView_Object)> cameras;
+    const Handle(XCAFDoc_ClippingPlaneTool) clipping_tool =
+        XCAFDoc_DocumentTool::ClippingPlaneTool(read.document->Main());
+    struct ReadView {
+        Handle(XCAFView_Object) object;
+        std::vector<gp_Pln> planes;
+    };
+    std::multimap<std::string, ReadView> cameras;
     for (const TDF_Label& label : view_labels) {
         Handle(XCAFDoc_View) attribute;
         if (label.FindAttribute(XCAFDoc_View::GetID(), attribute) && !attribute->GetObject().IsNull()) {
-            cameras.emplace(name_of(attribute->GetObject()->Name()), attribute->GetObject());
+            ReadView entry{attribute->GetObject(), {}};
+            TDF_LabelSequence planes;
+            view_tool->GetRefClippingPlaneLabel(label, planes);
+            for (const TDF_Label& plane_label : planes) {
+                gp_Pln plane;
+                TCollection_ExtendedString plane_name;
+                Standard_Boolean capping = Standard_False;
+                if (clipping_tool->GetClippingPlane(plane_label, plane, plane_name, capping)) {
+                    entry.planes.push_back(plane);
+                }
+            }
+            cameras.emplace(name_of(entry.object->Name()), std::move(entry));
         }
     }
     for (size_t index = 0; index < pmi.view_count; ++index) {
@@ -1463,10 +1543,13 @@ bool verify_pmi(const char* path, occt_bridge_step_pmi_t& pmi, const std::vector
         if (begin != end && shown != presentations.views.end()) {
             const auto [direction, up] = camera_axes(view);
             const bool same = std::any_of(begin, end, [&](const auto& entry) {
-                return entry.second->ViewDirection().IsEqual(direction, 1e-7)
-                    && entry.second->UpDirection().IsEqual(up, 1e-7);
+                return entry.second.object->ViewDirection().IsEqual(direction, 1e-7)
+                    && entry.second.object->UpDirection().IsEqual(up, 1e-7);
             });
-            losses = same ? 0u : OCCT_BRIDGE_PMI_VIEW_LOST_CAMERA;
+            const bool clipped = std::any_of(begin, end, [&](const auto& entry) {
+                return same_planes(view, entry.second.planes);
+            });
+            losses = (same ? 0u : OCCT_BRIDGE_PMI_VIEW_LOST_CAMERA) | (clipped ? 0u : OCCT_BRIDGE_PMI_VIEW_LOST_CLIPPING);
         }
         if (pmi.out_view_losses != nullptr) {
             pmi.out_view_losses[index] = losses;

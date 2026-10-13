@@ -28,6 +28,38 @@ pub struct DrawingAnnotationView {
     /// Feature control frames shown, by ID; one member shows its pattern.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub feature_control_frames: Vec<String>,
+    /// Section and clipping planes (schema 150): the view keeps only the
+    /// region on the kept side of every plane, at most 16.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub clipping_planes: Vec<AnnotationClippingPlane>,
+}
+
+/// A cutting plane of an annotation view, as for section drawing views:
+/// the view keeps the side `normal` points into when `keep_positive`, and
+/// the other side otherwise.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct AnnotationClippingPlane {
+    pub origin: VectorQuantity,
+    pub normal: VectorQuantity,
+    pub keep_positive: bool,
+}
+
+impl AnnotationClippingPlane {
+    /// The plane's origin in millimetres and the unit normal into the side
+    /// the view keeps.
+    pub fn kept_side(&self) -> Result<(Vec3, Vec3), ModelError> {
+        let origin = self.origin.normalized(Dimension::Length)?;
+        if ![origin.x, origin.y, origin.z].iter().all(|v| v.is_finite()) {
+            return Err(ModelError::new("clipping plane origin must be finite"));
+        }
+        let normal = axis(self.normal)?;
+        let sign = if self.keep_positive { 1.0 } else { -1.0 };
+        Ok((
+            Vec3::new(origin.x, origin.y, origin.z),
+            Vec3::new(sign * normal.x, sign * normal.y, sign * normal.z),
+        ))
+    }
 }
 
 fn unit_scale() -> f64 {
@@ -102,6 +134,15 @@ pub(crate) fn validate(definition: &DrawingDefinition) -> Result<(), ModelError>
             )));
         }
         view.axes()?;
+        if view.clipping_planes.len() > 16 {
+            return Err(ModelError::new(format!(
+                "annotation view '{}' has more than 16 clipping planes",
+                view.id
+            )));
+        }
+        for plane in &view.clipping_planes {
+            plane.kept_side()?;
+        }
         if !view.scale.is_finite() || view.scale <= 0.0 {
             return Err(ModelError::new(format!(
                 "annotation view '{}' needs a positive finite scale",
@@ -228,6 +269,8 @@ pub struct PlannedView<'a> {
     pub annotations: Vec<&'a str>,
     /// Listed annotations the plan skipped.
     pub omitted: Vec<&'a str>,
+    /// Each plane's origin and its unit normal into the kept side.
+    pub clipping_planes: Vec<(Vec3, Vec3)>,
 }
 
 /// What of a saved view did not read back.
@@ -238,6 +281,8 @@ pub enum PmiViewLoss {
     View,
     /// The camera's direction or up.
     Camera,
+    /// Its clipping planes.
+    Clipping,
 }
 
 /// One exported saved view and what reading it back recovered.

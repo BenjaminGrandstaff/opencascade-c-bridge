@@ -6,9 +6,9 @@ use super::*;
 use crate::assembly::InstanceGraphStepWrite;
 use crate::selection::{Features, resolve_face_selector};
 use occt_bridge::{
-    StepCharacteristic, StepDatum, StepDatumReference, StepMaterial, StepPmi, StepPmiFaces,
-    StepPmiLoss, StepPresentation, StepSize, StepSizeKind, StepTolerance, StepToleranceModifiers,
-    StepView,
+    StepCharacteristic, StepClippingPlane, StepDatum, StepDatumReference, StepMaterial, StepPmi,
+    StepPmiFaces, StepPmiLoss, StepPresentation, StepSize, StepSizeKind, StepTolerance,
+    StepToleranceModifiers, StepView,
 };
 use std::path::Path;
 
@@ -345,11 +345,22 @@ impl DrawingStepPmi for DrawingDefinition {
                 upper_mm: size.upper_mm,
             })
             .collect::<Vec<_>>();
+        let planes = plan
+            .views
+            .iter()
+            .map(|view| {
+                view.clipping_planes
+                    .iter()
+                    .map(|&(origin, normal)| StepClippingPlane { origin, normal })
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
         // STEP cameras look along the view, away from the viewer.
         let step_views = plan
             .views
             .iter()
-            .map(|view| StepView {
+            .zip(&planes)
+            .map(|(view, planes)| StepView {
                 name: view.name,
                 direction: Vec3::new(
                     -view.axes.direction.x,
@@ -359,6 +370,7 @@ impl DrawingStepPmi for DrawingDefinition {
                 up: view.axes.up,
                 datums: &view.datums,
                 tolerances: &view.tolerances,
+                clipping_planes: planes,
             })
             .collect::<Vec<_>>();
         let pmi = StepPmi {
@@ -458,6 +470,8 @@ impl DrawingStepPmi for DrawingDefinition {
                         Some(PmiViewLoss::View)
                     } else if loss.camera {
                         Some(PmiViewLoss::Camera)
+                    } else if loss.clipping {
+                        Some(PmiViewLoss::Clipping)
                     } else {
                         None
                     },

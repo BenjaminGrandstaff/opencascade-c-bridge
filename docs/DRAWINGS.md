@@ -1662,6 +1662,10 @@ direction and the annotations it shows, drawn in 3D on the model.
   is as large in model millimetres as on the sheet.
 - `datum_features` and `feature_control_frames` it shows, by ID. Listing one
   member of an n× pattern shows the pattern.
+- `clipping_planes` (schema 150, ABI 75): up to 16 cutting planes, each an
+  `origin`, `normal` and `keep_positive` as for section drawing views. A
+  section or clipped view keeps only the region on the kept side of every
+  plane.
 
 ```json
 {"id": "top", "name": "TOP GD&T",
@@ -1703,12 +1707,16 @@ Listed annotations that were skipped appear in the view's `omitted`.
 `verified()` now also needs every view read back intact, and `complete()`
 needs nothing omitted.
 
-The views carry no clipping planes or per-view model visibility: every
-view shows the whole export.
+A view with clipping planes is written as a multi-clipping camera
+(`CAMERA_MODEL_D3_MULTI_CLIPPING`) whose planes intersect, each plane's
+normal pointing into the side the view keeps. On read-back, OCCT must
+recreate the same planes for the view, matched by normal and position, or
+the view reports `lost: clipping`. Views have no per-view model visibility:
+every view shows the whole export, clipped by its planes.
 
 At scale, the 400-hole plate's three datums, flat top and 400 position
 controls (or one 400× control) are drawn in a top view showing everything
-and an isometric view of the datums and flat top. The 400 drawn controls
+and an isometric section view of the datums and flat top. The 400 drawn controls
 write and verify in 2.5 s, of which the AP242 write and read-back take
 1.8 s (0.5 s without presentations); the one 400× control takes 1.9 s.
 

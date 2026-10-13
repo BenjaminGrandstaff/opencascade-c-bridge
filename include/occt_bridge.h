@@ -1482,13 +1482,22 @@ typedef struct occt_bridge_step_size {
  * points was read for it. */
 #define OCCT_BRIDGE_PMI_LOST_PRESENTATION 128u
 
+/* A clipping plane of a saved view (ABI 75): the view shows the side of the
+ * plane through origin that its unit normal points into. */
+typedef struct occt_bridge_step_clipping_plane {
+    double origin[3];
+    double normal[3];
+} occt_bridge_step_clipping_plane_t;
+
 /* A saved annotation view (ABI 71): an AP242 camera named name (nonempty,
  * unique among views) looking along direction with up, both finite, nonzero
  * and not parallel, framing every component and presentation in a parallel
  * projection. It shows the datums and tolerances indexed by datums and
  * tolerances (each with a presentation, at most once); the out arrays, each
  * null or one entry per index, get 1 when that item's annotation was not
- * read back in the view. */
+ * read back in the view. Since ABI 75 a section or clipped view keeps only
+ * the region inside all of its clipping_planes (at most 16; may be null when
+ * clipping_plane_count is 0). */
 typedef struct occt_bridge_step_view {
     const char* name;
     double direction[3];
@@ -1499,12 +1508,15 @@ typedef struct occt_bridge_step_view {
     size_t tolerance_count;
     uint8_t* out_datums_lost;
     uint8_t* out_tolerances_lost;
+    const occt_bridge_step_clipping_plane_t* clipping_planes;
+    size_t clipping_plane_count;
 } occt_bridge_step_view_t;
 
 /* Bits of what of a view did not read back: the whole view (no camera of its
- * name), or its camera's direction or up. */
+ * name), its camera's direction or up, or its clipping planes. */
 #define OCCT_BRIDGE_PMI_VIEW_LOST 1u
 #define OCCT_BRIDGE_PMI_VIEW_LOST_CAMERA 2u
+#define OCCT_BRIDGE_PMI_VIEW_LOST_CLIPPING 4u
 
 /* PMI to write and, in the out arrays (each null or one entry per item),
  * what reading the file back did not recover: LOST_ITEM when no unclaimed

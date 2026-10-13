@@ -38,9 +38,10 @@ pub use gdt::{
 pub mod parts_list;
 pub mod pmi;
 pub use pmi::{
-    AnnotationViewAxes, DrawingAnnotationView, PlannedDatum, PlannedReference, PlannedSize,
-    PlannedTolerance, PlannedView, PmiExchangeItem, PmiExchangeReport, PmiItemKind, PmiPlan,
-    PmiPresentation, PmiProperty, PmiSkipped, PmiTarget, PmiViewLoss, PmiViewReport,
+    AnnotationClippingPlane, AnnotationViewAxes, DrawingAnnotationView, PlannedDatum,
+    PlannedReference, PlannedSize, PlannedTolerance, PlannedView, PmiExchangeItem,
+    PmiExchangeReport, PmiItemKind, PmiPlan, PmiPresentation, PmiProperty, PmiSkipped, PmiTarget,
+    PmiViewLoss, PmiViewReport,
 };
 pub mod releases;
 pub mod strokes;
