@@ -12,12 +12,12 @@ tracks status and order.
 | `occt-types` (shared value types) | — | No native dependency |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI; re-exports `occt-types` |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric-core` (kernel-free engineering layer) | Schema 157 | Definitions, documents, solving and checks without OCCT |
-| `occt-parametric` (kernel regeneration) | Schema 157 | Active development; re-exports the core API |
+| `occt-parametric-core` (kernel-free engineering layer) | Schema 158 | Definitions, documents, solving and checks without OCCT |
+| `occt-parametric` (kernel regeneration) | Schema 158 | Active development; re-exports the core API |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 157 + first-use integration 1 (+1 doc test), recipes 3, parametric core 36 + kernel 710 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 8 + view command 56 + viewer Node 114 + branch command 2 + model command 90, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 157 + first-use integration 1 (+1 doc test), recipes 3, parametric core 44 + kernel 723 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 56 + viewer Node 114 + branch command 2 + model command 90, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -26,6 +26,13 @@ tracks status and order.
 
 ## Done
 
+- Approval workflow and content digests (schema 158; ABI 76 unchanged). A
+  drawing's `approval_workflow` orders the sign-off roles; releases are
+  pending until all have signed, and the title block shows the latest
+  released revision. `sign_release` adds each sign-off with a SHA-256 digest
+  of the drawing as signed, and `verify_approvals` reports later changes.
+  Digests are not identity-bound signatures. See
+  [Approval workflow](docs/DRAWINGS.md#approval-workflow-and-content-digests-schema-158).
 - Merged identical sub-assemblies (schema 157; ABI 76 unchanged). Nested
   parts lists with `merge_identical` list sibling sub-assemblies with the
   same contents as one row with their count. Rows beneath keep per-unit
@@ -2696,11 +2703,12 @@ scopes and inspected repo capabilities, not a full conformity audit.
    Rendering-material roughness is
    independent of these requirements.
 6. **Controlled drawing release and assembly lists** — [Y14.100](https://www.asme.org/codes-standards/find-codes-standards/engineering-drawing-practices):
-   approval workflow and signatures, and multi-sheet revision tables.
+   multi-sheet revision tables, and identity-bound electronic signatures.
    Release records with approvals, model revision links and status,
    revision tables (schema 90), change markers with a zone column (schema
-   156), and flat or nested parts lists with item balloons (schemas 87, 91)
-   that merge identical sub-assemblies (schema 157) exist.
+   156), approval workflows with content digests (schema 158), and flat or
+   nested parts lists with item balloons (schemas 87, 91) that merge
+   identical sub-assemblies (schema 157) exist.
 
 ## Later
 

@@ -13,6 +13,7 @@ pub mod assembly;
 pub mod change_impact;
 #[doc(hidden)]
 pub mod definition;
+pub mod digest;
 #[doc(hidden)]
 pub mod document;
 #[doc(hidden)]

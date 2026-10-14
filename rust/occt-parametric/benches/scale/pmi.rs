@@ -236,6 +236,7 @@ fn drawing(pattern: bool) -> DrawingDefinition {
             organization: "Bench".into(),
             authority: DatasetAuthority::Model,
         }),
+        approval_workflow: None,
         datum_reference_frames: Vec::new(),
         datum_features: vec![
             datum("A", "bottom", "bottom_face"),

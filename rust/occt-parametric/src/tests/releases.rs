@@ -7,6 +7,7 @@ fn approval(role: &str, name: &str, date: &str) -> DrawingApproval {
         role: role.into(),
         name: name.into(),
         date: date.into(),
+        digest: None,
     }
 }
 
@@ -28,6 +29,7 @@ fn sheet_drawing(revision: &str) -> DrawingDefinition {
     DrawingDefinition {
         annotation_views: Vec::new(),
         dataset: None,
+        approval_workflow: None,
         datum_reference_frames: Vec::new(),
         datum_features: Vec::new(),
         feature_control_frames: Vec::new(),
@@ -448,6 +450,160 @@ fn change_markers_draw_revision_symbols_and_fill_the_zone_column() {
         }
         assert!(bad.validate(&graph).is_err(), "case {case}");
     }
+    drop(graph);
+    assert_eq!(session.shape_count().unwrap(), 0);
+}
+
+#[test]
+fn approval_workflows_sign_in_order_and_digests_detect_later_changes() {
+    let family = block_family();
+    let mut graph = InstanceGraph::new(&family);
+    graph.add_base("part", HashMap::new(), "test").unwrap();
+    let session = Session::new().unwrap();
+    // The title block stays blank until a release is approved.
+    let mut drawing = sheet_drawing("");
+    drawing.approval_workflow = Some(DrawingApprovalWorkflow {
+        roles: vec!["CHECKED".into(), "APPROVED".into()],
+    });
+    let mut a = release("A", "2026-10-01", None);
+    a.approvals.clear();
+    drawing.releases = vec![a];
+    drawing.validate(&graph).unwrap();
+    let pending = |next: &str| DrawingReleaseState::Pending {
+        next_role: next.into(),
+    };
+    assert_eq!(drawing.release_state(0).unwrap(), pending("CHECKED"));
+    // Roles sign in the workflow's order, each on or after the last.
+    assert!(
+        drawing
+            .clone()
+            .sign_release("APPROVED", "A. Approver", "2026-10-01")
+            .is_err()
+    );
+    drawing
+        .sign_release("CHECKED", "R. Checker", "2026-09-30")
+        .unwrap();
+    assert_eq!(drawing.release_state(0).unwrap(), pending("APPROVED"));
+    assert!(drawing.latest_released().is_none());
+    let mut document = ModelDocument::from_graph(&graph);
+    document.drawings.push(drawing.clone());
+    assert_eq!(
+        document.drawing_release_status("block").unwrap(),
+        DrawingReleaseStatus::Pending {
+            revision: "A".into(),
+            next_role: "APPROVED".into(),
+            released: None,
+        }
+    );
+    let generated = drawing
+        .generate(&graph, &session, DrawingRenderOptions::default())
+        .unwrap();
+    assert!(generated.sheet_labels.iter().any(|l| l.text == "PENDING"));
+    assert!(
+        drawing
+            .clone()
+            .sign_release("APPROVED", "A. Approver", "2026-09-29")
+            .is_err()
+    );
+    drawing
+        .sign_release("APPROVED", "A. Approver", "2026-10-01")
+        .unwrap();
+    assert_eq!(
+        drawing.release_state(0).unwrap(),
+        DrawingReleaseState::Released
+    );
+    // The completed release becomes the title-block revision.
+    assert_eq!(drawing.sheet.as_ref().unwrap().revision, "A");
+    assert!(
+        drawing
+            .clone()
+            .sign_release("APPROVED", "B. Other", "2026-10-01")
+            .is_err()
+    );
+    let statuses = |d: &DrawingDefinition| {
+        d.verify_approvals()
+            .unwrap()
+            .into_iter()
+            .map(|v| v.status)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        statuses(&drawing),
+        [ApprovalDigestStatus::Valid, ApprovalDigestStatus::Valid]
+    );
+    let digests: Vec<&str> = drawing.releases[0]
+        .approvals
+        .iter()
+        .map(|a| a.digest.as_deref().unwrap())
+        .collect();
+    assert!(digests[0] != digests[1] && digests.iter().all(|d| d.len() == 64));
+    // Any later change to the drawing invalidates both sign-offs; altering
+    // the first sign-off invalidates it and the one that signed after it.
+    let mut moved = drawing.clone();
+    moved.views[0].paper_origin_mm = [61.0, 80.0];
+    assert_eq!(
+        statuses(&moved),
+        [ApprovalDigestStatus::Changed, ApprovalDigestStatus::Changed]
+    );
+    let mut forged = drawing.clone();
+    forged.releases[0].approvals[0].name = "Someone Else".into();
+    assert_eq!(
+        statuses(&forged),
+        [ApprovalDigestStatus::Changed, ApprovalDigestStatus::Changed]
+    );
+    let mut unsigned = drawing.clone();
+    unsigned.releases[0].approvals[1].digest = None;
+    assert_eq!(
+        statuses(&unsigned),
+        [ApprovalDigestStatus::Valid, ApprovalDigestStatus::Unsigned]
+    );
+    // A new revision is pending while the title block keeps the released one.
+    let mut b = release("B", "2026-10-08", None);
+    b.approvals.clear();
+    drawing.releases.push(b);
+    drawing.validate(&graph).unwrap();
+    assert_eq!(drawing.latest_released().unwrap().revision, "A");
+    // Only the latest release may be pending; roles follow the workflow;
+    // digests are 64 lowercase hex digits; the title block follows releases.
+    for case in 0..5 {
+        let mut bad = drawing.clone();
+        match case {
+            0 => bad.releases.push(release("C", "2026-10-09", None)),
+            1 => bad.releases[0].approvals.swap(0, 1),
+            2 => bad.releases[0].approvals[0].digest = Some("ABC".into()),
+            3 => bad.sheet.as_mut().unwrap().revision = "B".into(),
+            _ => bad.approval_workflow.as_mut().unwrap().roles.clear(),
+        }
+        assert!(bad.validate(&graph).is_err(), "case {case}");
+    }
+    // The workflow and digests persist (schema 158).
+    let mut document = ModelDocument::from_graph(&graph);
+    document.drawings.push(drawing.clone());
+    let json = document.to_json_pretty().unwrap();
+    assert!(json.contains("\"approval_workflow\"") && json.contains("\"digest\""));
+    let restored = ModelDocument::from_json(&json).unwrap();
+    assert_eq!(restored, document);
+    assert_eq!(statuses(&restored.drawings[0]).len(), 0);
+    assert_eq!(
+        statuses(&{
+            let mut released = restored.drawings[0].clone();
+            released.releases.pop();
+            released
+        }),
+        [ApprovalDigestStatus::Valid, ApprovalDigestStatus::Valid]
+    );
+    // Without a workflow any role may sign, and is still digested.
+    let mut free = sheet_drawing("A");
+    free.releases = vec![release("A", "2026-10-01", None)];
+    free.sign_release("QA", "Q. Auditor", "2026-10-01").unwrap();
+    assert_eq!(
+        statuses(&free),
+        [
+            ApprovalDigestStatus::Unsigned,
+            ApprovalDigestStatus::Unsigned,
+            ApprovalDigestStatus::Valid
+        ]
+    );
     drop(graph);
     assert_eq!(session.shape_count().unwrap(), 0);
 }

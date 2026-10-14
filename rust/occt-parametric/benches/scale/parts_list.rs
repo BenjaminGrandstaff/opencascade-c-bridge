@@ -43,6 +43,7 @@ pub(crate) fn parts_list_case(definition: &'static FamilyDefinition, nested: boo
             let drawing = DrawingDefinition {
                 annotation_views: Vec::new(),
                 dataset: None,
+                approval_workflow: None,
                 datum_reference_frames: Vec::new(),
                 datum_features: Vec::new(),
                 feature_control_frames: Vec::new(),
@@ -144,6 +145,7 @@ pub(crate) fn merged_case(definition: &'static FamilyDefinition) -> Outcome {
             let drawing = DrawingDefinition {
                 annotation_views: Vec::new(),
                 dataset: None,
+                approval_workflow: None,
                 datum_reference_frames: Vec::new(),
                 datum_features: Vec::new(),
                 feature_control_frames: Vec::new(),

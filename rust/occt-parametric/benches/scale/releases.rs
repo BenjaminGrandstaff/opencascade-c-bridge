@@ -2,11 +2,95 @@
 
 use super::*;
 use occt_parametric::{
-    DrawingApproval, DrawingChangeLeader, DrawingChangeMarker, DrawingDefinition, DrawingRelease,
-    DrawingReleaseStatus, DrawingRenderOptions, DrawingRevisionTable, DrawingSheet,
-    DrawingSheetOrientation, DrawingSheetSize, DrawingView, DrawingViewKind, InstanceOutputRef,
-    SheetZones,
+    ApprovalDigestStatus, DrawingApproval, DrawingApprovalWorkflow, DrawingChangeLeader,
+    DrawingChangeMarker, DrawingDefinition, DrawingRelease, DrawingReleaseStatus,
+    DrawingRenderOptions, DrawingRevisionTable, DrawingSheet, DrawingSheetOrientation,
+    DrawingSheetSize, DrawingView, DrawingViewKind, InstanceOutputRef, SheetZones,
 };
+
+/// 10,000 approved releases, each signed by one APPROVED role.
+fn released(count: usize) -> Vec<DrawingRelease> {
+    (0..count)
+        .map(|i| {
+            let date = format!(
+                "{:04}-{:02}-{:02}",
+                2000 + i / 336,
+                1 + (i / 28) % 12,
+                1 + i % 28
+            );
+            DrawingRelease {
+                revision: format!("R{i}"),
+                description: format!("Release {i}"),
+                date: date.clone(),
+                approvals: vec![DrawingApproval {
+                    role: "APPROVED".into(),
+                    name: "Approver".into(),
+                    date,
+                    digest: None,
+                }],
+                model_revision: None,
+                changes: Vec::new(),
+            }
+        })
+        .collect()
+}
+
+/// A three-role workflow signs the next release of a drawing with 10,000
+/// released revisions, each sign-off digesting the whole drawing, and the
+/// three digests are verified.
+pub(crate) fn workflow_case(definition: &'static FamilyDefinition) -> Outcome {
+    timed(
+        "releases: 3-role sign-off and verification after 10000 releases".into(),
+        Duration::from_secs(1),
+        Expectation::Required,
+        || {
+            let mut graph = InstanceGraph::new(definition);
+            graph.add_base("part", HashMap::new(), "bench")?;
+            let mut releases = released(10_000);
+            let roles = ["DRAWN", "CHECKED", "APPROVED"];
+            for release in &mut releases {
+                release.approvals = roles
+                    .iter()
+                    .map(|role| DrawingApproval {
+                        role: (*role).into(),
+                        name: "Signer".into(),
+                        date: release.date.clone(),
+                        digest: None,
+                    })
+                    .collect();
+            }
+            releases.push(DrawingRelease {
+                revision: "NEXT".into(),
+                description: "Next release".into(),
+                date: "2031-01-01".into(),
+                approvals: Vec::new(),
+                model_revision: None,
+                changes: Vec::new(),
+            });
+            let mut drawing = DrawingDefinition {
+                approval_workflow: Some(DrawingApprovalWorkflow {
+                    roles: roles.iter().map(|r| (*r).to_owned()).collect(),
+                }),
+                releases,
+                ..release_drawing()
+            };
+            drawing.validate(&graph)?;
+            for role in roles {
+                drawing.sign_release(role, "Signer", "2031-01-01")?;
+            }
+            let verified = drawing.verify_approvals()?;
+            if verified.len() != 3
+                || verified
+                    .iter()
+                    .any(|v| v.status != ApprovalDigestStatus::Valid)
+                || drawing.latest_released().map(|r| r.revision.as_str()) != Some("NEXT")
+            {
+                return Err(failure(format!("{verified:?}")));
+            }
+            Ok("3 sign-offs digested and verified over 10001 releases".into())
+        },
+    )
+}
 
 pub(crate) fn release_case(definition: &'static FamilyDefinition) -> Outcome {
     timed(
@@ -16,66 +100,11 @@ pub(crate) fn release_case(definition: &'static FamilyDefinition) -> Outcome {
         || {
             let mut graph = InstanceGraph::new(definition);
             graph.add_base("part", HashMap::new(), "bench")?;
-            let releases: Vec<_> = (0..10_000)
-                .map(|i| {
-                    let date = format!(
-                        "{:04}-{:02}-{:02}",
-                        2000 + i / 336,
-                        1 + (i / 28) % 12,
-                        1 + i % 28
-                    );
-                    DrawingRelease {
-                        revision: format!("R{i}"),
-                        description: format!("Release {i}"),
-                        date: date.clone(),
-                        approvals: vec![DrawingApproval {
-                            role: "APPROVED".into(),
-                            name: "Approver".into(),
-                            date,
-                        }],
-                        model_revision: None,
-                        changes: Vec::new(),
-                    }
-                })
-                .collect();
+            let releases = released(10_000);
             let mut document = ModelDocument::from_graph(&graph);
             document.drawings.push(DrawingDefinition {
-                annotation_views: Vec::new(),
-                dataset: None,
-                datum_reference_frames: Vec::new(),
-                datum_features: Vec::new(),
-                feature_control_frames: Vec::new(),
-                surface_textures: Vec::new(),
-                parts_list: None,
-                balloons: Vec::new(),
                 releases,
-                revision_table: None,
-                sheet: None,
-                id: "released".into(),
-                title: "Released".into(),
-                paper_size_mm: [420.0, 297.0],
-                guides: Vec::new(),
-                dimensions: Vec::new(),
-                notes: Vec::new(),
-                metadata: Default::default(),
-                views: vec![DrawingView {
-                    id: "top".into(),
-                    outputs: vec![InstanceOutputRef {
-                        instance: "part".into(),
-                        output: "body".into(),
-                    }],
-                    origin: VectorQuantity::lengths(0.0, 0.0, 0.0, LengthUnit::Millimeter),
-                    direction: VectorQuantity::scalars(0.0, 0.0, 1.0),
-                    x_axis: VectorQuantity::scalars(1.0, 0.0, 0.0),
-                    paper_origin_mm: [50.0, 50.0],
-                    scale: 1.0,
-                    show_hidden: false,
-                    kind: DrawingViewKind::Orthographic,
-                    detail: None,
-                    material_hatching: Default::default(),
-                    thread_representation: false,
-                    hatching: None,
-                }],
+                ..release_drawing()
             });
             document.instance_graph()?;
             let status = document.drawing_release_status("released")?;
@@ -138,6 +167,7 @@ pub(crate) fn change_case(definition: &FamilyDefinition) -> Outcome {
             let drawing = DrawingDefinition {
                 annotation_views: Vec::new(),
                 dataset: None,
+                approval_workflow: None,
                 datum_reference_frames: Vec::new(),
                 datum_features: Vec::new(),
                 feature_control_frames: Vec::new(),
@@ -213,4 +243,47 @@ pub(crate) fn change_case(definition: &FamilyDefinition) -> Outcome {
             Ok(format!("{symbols} symbols, {} kB SVG", svg.len() / 1024))
         },
     )
+}
+
+/// A one-view drawing with no releases.
+fn release_drawing() -> DrawingDefinition {
+    DrawingDefinition {
+        annotation_views: Vec::new(),
+        dataset: None,
+        approval_workflow: None,
+        datum_reference_frames: Vec::new(),
+        datum_features: Vec::new(),
+        feature_control_frames: Vec::new(),
+        surface_textures: Vec::new(),
+        parts_list: None,
+        balloons: Vec::new(),
+        releases: Vec::new(),
+        revision_table: None,
+        sheet: None,
+        id: "released".into(),
+        title: "Released".into(),
+        paper_size_mm: [420.0, 297.0],
+        guides: Vec::new(),
+        dimensions: Vec::new(),
+        notes: Vec::new(),
+        metadata: Default::default(),
+        views: vec![DrawingView {
+            id: "top".into(),
+            outputs: vec![InstanceOutputRef {
+                instance: "part".into(),
+                output: "body".into(),
+            }],
+            origin: VectorQuantity::lengths(0.0, 0.0, 0.0, LengthUnit::Millimeter),
+            direction: VectorQuantity::scalars(0.0, 0.0, 1.0),
+            x_axis: VectorQuantity::scalars(1.0, 0.0, 0.0),
+            paper_origin_mm: [50.0, 50.0],
+            scale: 1.0,
+            show_hidden: false,
+            kind: DrawingViewKind::Orthographic,
+            detail: None,
+            material_hatching: Default::default(),
+            thread_representation: false,
+            hatching: None,
+        }],
+    }
 }

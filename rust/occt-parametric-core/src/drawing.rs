@@ -52,7 +52,8 @@ pub mod thread_lines;
 pub use guides::{DrawingGuide, DrawingGuideKind, DrawingGuideLine, DrawingGuideLineKind};
 pub use parts_list::{DrawingBalloon, DrawingPartsList, PartsListItem};
 pub use releases::{
-    DrawingApproval, DrawingChangeLeader, DrawingChangeMarker, DrawingRelease,
+    ApprovalDigestStatus, ApprovalVerification, DrawingApproval, DrawingApprovalWorkflow,
+    DrawingChangeLeader, DrawingChangeMarker, DrawingRelease, DrawingReleaseState,
     DrawingReleaseStatus, DrawingRevisionTable,
 };
 pub mod sheets;
@@ -172,6 +173,9 @@ pub struct DrawingDefinition {
     /// and drawing governs it (schema 151).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dataset: Option<DrawingDataset>,
+    /// Ordered sign-off roles each release collects (schema 158).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub approval_workflow: Option<DrawingApprovalWorkflow>,
     /// Saved views of the GD&T on the model (schema 145).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub annotation_views: Vec<DrawingAnnotationView>,

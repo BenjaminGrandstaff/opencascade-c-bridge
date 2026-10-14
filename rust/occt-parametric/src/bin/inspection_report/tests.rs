@@ -61,6 +61,7 @@ fn fixture() -> ModelDocument {
     let mut page = DrawingDefinition {
         annotation_views: Vec::new(),
         dataset: None,
+        approval_workflow: None,
         id: "page".into(),
         title: "Inspection fixture".into(),
         paper_size_mm: [297.0, 210.0],

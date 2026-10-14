@@ -2037,6 +2037,62 @@ Symbols and leaders are annotation linework (`gdt_lines` and `gdt_labels`),
 and count exactly in the vertex budget: 4 vertices a symbol and 5 a leader.
 Markers of every release are drawn. A scale case draws 10,000 markers in 100
 releases, with zones listed for each, in about 0.01 s against a 1 s budget.
-Not yet included: approval workflow states, electronic signatures, and
-multi-sheet revision tables (Y14.35's drawing-level, sheet-level and
-all-sheets-same-revision methods).
+
+### Approval workflow and content digests (schema 158)
+
+`approval_workflow: { "roles": ["CHECKED", "APPROVED"] }` lists the sign-offs
+every release collects, in order (1–8 unique roles).
+
+- **States.** A release is `pending` until each role has signed, then
+  `released`. `DrawingDefinition::release_state(index)` reports which, and
+  for a pending release names the role awaited. Only the latest release may
+  be pending. Each release's approvals must be the workflow's roles in
+  order, dated in order.
+- **Title block and status.** The title block shows the latest released
+  revision, or stays blank until one is released. The revision table shows
+  `PENDING` in a pending release's APPROVED cell.
+  `ModelDocument::drawing_release_status` reports `pending`, with the role
+  awaited and the latest released revision. `latest_released()` returns that
+  release.
+- **Signing.** `sign_release(role, name, date)` adds a sign-off to the latest
+  release. With a workflow, the role must be the one awaited and the date must
+  be on or after the previous sign-off and on or before the release. A
+  release completed this way becomes the title-block revision. Without a
+  workflow, any role may sign.
+
+**Digests.** Each approval may carry a `digest`, which `sign_release` sets.
+It is the SHA-256 of the drawing's canonical JSON (keys sorted) at the
+moment of signing:
+
+- the releases up to this one, and this release's earlier sign-offs with
+  their digests;
+- this approval without its own digest;
+- the title-block revision left blank, since it follows the releases.
+
+Each digest therefore covers the sign-offs before it, and any later change
+to views, annotations, the sheet, model links or earlier approvals changes
+it. `approval_digest(release, approval)` computes the expected value.
+
+`verify_approvals()` checks the latest release's approvals:
+
+- `valid`: the drawing is as signed;
+- `changed`: the drawing or an earlier sign-off changed since;
+- `unsigned`: the approval carries no digest.
+
+Earlier releases signed earlier states of the drawing and are not checked.
+The digest covers the drawing, not the model; a release's
+`model_revision` link is the drawing's tie to the model's revision ledger.
+
+**What a digest is not.** A digest shows that content has not changed. It
+is not a cryptographic signature: it involves no key and does not prove who
+signed. Anyone can recompute it after an edit. Identity-bound electronic
+signatures (keys, certificates, signing services) are outside the document
+format.
+
+SHA-256 is implemented in `occt_parametric_core::digest`, checked against
+the FIPS 180-4 test vectors, so the core gains no cryptographic dependency.
+Each digest is O(drawing size). A scale case signs three roles on the next
+release of a drawing with 10,000 released revisions, then verifies them, in
+about 0.27 s against a 1 s budget. Not yet included: multi-sheet revision
+tables (Y14.35's drawing-level, sheet-level and all-sheets-same-revision
+methods).

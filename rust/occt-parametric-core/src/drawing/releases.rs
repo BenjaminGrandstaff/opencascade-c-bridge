@@ -13,6 +13,51 @@ pub struct DrawingApproval {
     pub name: String,
     /// ISO date (`YYYY-MM-DD`), on or before the release date.
     pub date: String,
+    /// SHA-256 of the drawing as this approval signed it (schema 158):
+    /// 64 lowercase hex digits from
+    /// [`DrawingDefinition::approval_digest`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub digest: Option<String>,
+}
+
+/// The sign-off roles every release collects, in order (schema 158). A
+/// release is released once each role has signed; until then it is pending.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct DrawingApprovalWorkflow {
+    pub roles: Vec<String>,
+}
+
+/// Where a release stands in the approval workflow.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case", tag = "state")]
+pub enum DrawingReleaseState {
+    Released,
+    /// Awaiting the sign-off of `next_role`.
+    Pending {
+        next_role: String,
+    },
+}
+
+/// Whether an approval's digest still matches the drawing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ApprovalDigestStatus {
+    /// The drawing is as the approval signed it.
+    Valid,
+    /// The drawing changed after the approval signed it.
+    Changed,
+    /// The approval carries no digest.
+    Unsigned,
+}
+
+/// One approval of the latest release, checked against the drawing.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct ApprovalVerification {
+    pub revision: String,
+    pub role: String,
+    pub name: String,
+    pub status: ApprovalDigestStatus,
 }
 
 /// A released revision of the drawing.
@@ -83,6 +128,13 @@ pub enum DrawingReleaseStatus {
     },
     /// The latest release names no model revision and none are recorded.
     Untracked { revision: String },
+    /// The latest release awaits `next_role` in the approval workflow;
+    /// `released` is the latest released revision, if any.
+    Pending {
+        revision: String,
+        next_role: String,
+        released: Option<String>,
+    },
 }
 
 const ROW_MM: f64 = 7.0;
@@ -288,6 +340,7 @@ pub fn validate(drawing: &DrawingDefinition) -> Result<(), ModelError> {
             return Err(ModelError::new("releases must be listed in date order"));
         }
         previous = Some(date);
+        let mut signed_before = None;
         for approval in &release.approvals {
             text_field(&approval.role, 40, "approval role")?;
             text_field(&approval.name, 40, "approver name")?;
@@ -298,6 +351,21 @@ pub fn validate(drawing: &DrawingDefinition) -> Result<(), ModelError> {
                     "approvals must be dated on or before their release",
                 ));
             }
+            if let Some(digest) = &approval.digest
+                && (digest.len() != 64
+                    || !digest
+                        .bytes()
+                        .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)))
+            {
+                return Err(ModelError::new(
+                    "approval digests must be 64 lowercase hexadecimal digits",
+                ));
+            }
+            // A workflow's sign-offs follow one another.
+            if drawing.approval_workflow.is_some() && signed_before.is_some_and(|d| signed < d) {
+                return Err(ModelError::new("workflow approvals must be in date order"));
+            }
+            signed_before = Some(signed);
         }
         if let Some(id) = &release.model_revision {
             text_field(id, 200, "model revision")?;
@@ -320,16 +388,232 @@ pub fn validate(drawing: &DrawingDefinition) -> Result<(), ModelError> {
             return Err(ModelError::new("revision table must fit on the paper"));
         }
     }
-    // The title block shows the latest release's revision.
-    if let (Some(sheet), Some(latest)) = (&drawing.sheet, drawing.releases.last())
-        && sheet.revision != latest.revision
-    {
-        return Err(ModelError::new(format!(
-            "title block revision '{}' must match the latest release '{}'",
-            sheet.revision, latest.revision
-        )));
+    if let Some(workflow) = &drawing.approval_workflow {
+        validate_workflow(drawing, workflow)?;
+    }
+    // The title block shows the latest released revision.
+    if let Some(sheet) = &drawing.sheet {
+        match drawing.latest_released() {
+            Some(latest) if sheet.revision != latest.revision => {
+                return Err(ModelError::new(format!(
+                    "title block revision '{}' must match the latest release '{}'",
+                    sheet.revision, latest.revision
+                )));
+            }
+            None if !drawing.releases.is_empty() && !sheet.revision.is_empty() => {
+                return Err(ModelError::new(
+                    "the title block revision must be empty until a release is approved",
+                ));
+            }
+            _ => {}
+        }
     }
     Ok(())
+}
+
+/// Each release's approvals follow the workflow's roles in order; every
+/// release but the latest has all of them. O(releases × roles).
+fn validate_workflow(
+    drawing: &DrawingDefinition,
+    workflow: &DrawingApprovalWorkflow,
+) -> Result<(), ModelError> {
+    if workflow.roles.is_empty() || workflow.roles.len() > 8 {
+        return Err(ModelError::new("an approval workflow needs 1-8 roles"));
+    }
+    let mut roles = HashSet::new();
+    for role in &workflow.roles {
+        text_field(role, 40, "workflow role")?;
+        if !roles.insert(role.as_str()) {
+            return Err(ModelError::new("approval workflow roles must be unique"));
+        }
+    }
+    let last = drawing.releases.len().saturating_sub(1);
+    for (index, release) in drawing.releases.iter().enumerate() {
+        let in_order = release.approvals.len() <= workflow.roles.len()
+            && release
+                .approvals
+                .iter()
+                .zip(&workflow.roles)
+                .all(|(approval, role)| approval.role == *role);
+        if !in_order {
+            return Err(ModelError::new(format!(
+                "release '{}' approvals must follow the workflow roles {} in order",
+                release.revision,
+                workflow.roles.join(", ")
+            )));
+        }
+        if index < last && release.approvals.len() < workflow.roles.len() {
+            return Err(ModelError::new(format!(
+                "release '{}' is still pending; only the latest release may await approval",
+                release.revision
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// Writes `value` as JSON with object keys sorted, so equal content gives
+/// equal bytes whatever map order serde_json was built with.
+fn canonical(value: &serde_json::Value, out: &mut String) {
+    match value {
+        serde_json::Value::Object(map) => {
+            let mut entries: Vec<_> = map.iter().collect();
+            entries.sort_unstable_by(|a, b| a.0.cmp(b.0));
+            out.push('{');
+            for (i, (key, item)) in entries.into_iter().enumerate() {
+                if i > 0 {
+                    out.push(',');
+                }
+                out.push_str(&serde_json::Value::String(key.clone()).to_string());
+                out.push(':');
+                canonical(item, out);
+            }
+            out.push('}');
+        }
+        serde_json::Value::Array(items) => {
+            out.push('[');
+            for (i, item) in items.iter().enumerate() {
+                if i > 0 {
+                    out.push(',');
+                }
+                canonical(item, out);
+            }
+            out.push(']');
+        }
+        scalar => out.push_str(&scalar.to_string()),
+    }
+}
+
+impl DrawingDefinition {
+    /// Where release `index` stands: released without a workflow, or once
+    /// every workflow role has signed it.
+    pub fn release_state(&self, index: usize) -> Result<DrawingReleaseState, ModelError> {
+        let release = self
+            .releases
+            .get(index)
+            .ok_or_else(|| ModelError::new("unknown release index"))?;
+        Ok(match &self.approval_workflow {
+            Some(workflow) if release.approvals.len() < workflow.roles.len() => {
+                DrawingReleaseState::Pending {
+                    next_role: workflow.roles[release.approvals.len()].clone(),
+                }
+            }
+            _ => DrawingReleaseState::Released,
+        })
+    }
+
+    /// The latest release that has been released (all of them without a
+    /// workflow; only the latest may be pending).
+    pub fn latest_released(&self) -> Option<&DrawingRelease> {
+        let last = self.releases.len().checked_sub(1)?;
+        match self.release_state(last) {
+            Ok(DrawingReleaseState::Released) => self.releases.last(),
+            _ => last.checked_sub(1).map(|i| &self.releases[i]),
+        }
+    }
+
+    /// The SHA-256 digest approval `approval` of release `release` signs:
+    /// the drawing's canonical JSON with only the releases up to that one,
+    /// its approvals up to this one, this approval's own digest left out,
+    /// and the title-block revision (which follows the releases) blank. So
+    /// each digest covers the sign-offs before it, and any later change to
+    /// views, annotations, sheet, links or earlier approvals changes it.
+    /// O(drawing size).
+    pub fn approval_digest(&self, release: usize, approval: usize) -> Result<String, ModelError> {
+        let mut signed = self.clone();
+        let target = signed
+            .releases
+            .get_mut(release)
+            .filter(|r| approval < r.approvals.len())
+            .ok_or_else(|| ModelError::new("unknown release approval"))?;
+        target.approvals.truncate(approval + 1);
+        target.approvals[approval].digest = None;
+        signed.releases.truncate(release + 1);
+        if let Some(sheet) = &mut signed.sheet {
+            sheet.revision.clear();
+        }
+        let value = serde_json::to_value(&signed)
+            .map_err(|error| ModelError::new(format!("approval digest: {error}")))?;
+        let mut text = String::new();
+        canonical(&value, &mut text);
+        Ok(crate::digest::sha256_hex(text.as_bytes()))
+    }
+
+    /// Signs the latest release as `role`, with this drawing's digest. With
+    /// a workflow, `role` must be the next one awaited; the approval must be
+    /// dated on or after the previous one and on or before the release. A
+    /// release completed this way becomes the title-block revision.
+    pub fn sign_release(&mut self, role: &str, name: &str, date: &str) -> Result<(), ModelError> {
+        let index = self
+            .releases
+            .len()
+            .checked_sub(1)
+            .ok_or_else(|| ModelError::new("there is no release to sign"))?;
+        if self.approval_workflow.is_some() {
+            match self.release_state(index)? {
+                DrawingReleaseState::Pending { next_role } if next_role == role => {}
+                DrawingReleaseState::Pending { next_role } => {
+                    return Err(ModelError::new(format!(
+                        "release '{}' awaits '{next_role}', not '{role}'",
+                        self.releases[index].revision
+                    )));
+                }
+                DrawingReleaseState::Released => {
+                    return Err(ModelError::new(format!(
+                        "release '{}' is already released",
+                        self.releases[index].revision
+                    )));
+                }
+            }
+        }
+        let mut signed = self.clone();
+        signed.releases[index].approvals.push(DrawingApproval {
+            role: role.to_owned(),
+            name: name.to_owned(),
+            date: date.to_owned(),
+            digest: None,
+        });
+        let approval = signed.releases[index].approvals.len() - 1;
+        let digest = signed.approval_digest(index, approval)?;
+        signed.releases[index].approvals[approval].digest = Some(digest);
+        let latest = signed.latest_released().map(|r| r.revision.clone());
+        if let (Some(sheet), Some(latest)) = (&mut signed.sheet, latest) {
+            sheet.revision = latest;
+        }
+        validate(&signed)?;
+        *self = signed;
+        Ok(())
+    }
+
+    /// Checks each approval of the latest release against this drawing.
+    /// Earlier releases signed earlier states of the drawing, so only the
+    /// latest is checked. O(approvals × drawing size).
+    pub fn verify_approvals(&self) -> Result<Vec<ApprovalVerification>, ModelError> {
+        let Some(index) = self.releases.len().checked_sub(1) else {
+            return Ok(Vec::new());
+        };
+        let release = &self.releases[index];
+        release
+            .approvals
+            .iter()
+            .enumerate()
+            .map(|(i, approval)| {
+                let status = match &approval.digest {
+                    None => ApprovalDigestStatus::Unsigned,
+                    Some(digest) if *digest == self.approval_digest(index, i)? => {
+                        ApprovalDigestStatus::Valid
+                    }
+                    Some(_) => ApprovalDigestStatus::Changed,
+                };
+                Ok(ApprovalVerification {
+                    revision: release.revision.clone(),
+                    role: approval.role.clone(),
+                    name: approval.name.clone(),
+                    status,
+                })
+            })
+            .collect()
+    }
 }
 
 /// Checks each release's model revision against the document ledger: it
@@ -378,6 +662,15 @@ impl ModelDocument {
             return Ok(DrawingReleaseStatus::Unreleased);
         };
         let revision = release.revision.clone();
+        if let DrawingReleaseState::Pending { next_role } =
+            drawing.release_state(drawing.releases.len() - 1)?
+        {
+            return Ok(DrawingReleaseStatus::Pending {
+                revision,
+                next_role,
+                released: drawing.latest_released().map(|r| r.revision.clone()),
+            });
+        }
         let latest = self.revisions.last().map(|r| r.metadata.id.clone());
         Ok(match (latest, &release.model_revision) {
             (None, None) => DrawingReleaseStatus::Untracked { revision },
@@ -489,30 +782,36 @@ pub fn append(drawing: &DrawingDefinition, out: &mut GeneratedDrawing) {
         }
     };
     let headers: Vec<String> = columns.iter().map(|(h, _)| (*h).to_owned()).collect();
-    let rows = std::iter::once(headers).chain(drawing.releases.iter().map(|release| {
-        let description = shorten(release.description.clone(), DESCRIPTION_CHARS);
-        // The approver in an APPROVED role, else the last sign-off.
-        let approved = release
-            .approvals
-            .iter()
-            .find(|a| a.role.eq_ignore_ascii_case("approved"))
-            .or(release.approvals.last())
-            .map_or_else(|| "—".to_owned(), |a| a.name.clone());
-        // Validation has placed every marker in a zone.
-        let zones = grid
-            .as_ref()
-            .filter(|_| table.zone_column)
-            .map(|grid| shorten(release_zones(release, grid).unwrap_or_default(), ZONE_CHARS));
-        zones
-            .into_iter()
-            .chain([
-                release.revision.clone(),
-                description,
-                release.date.clone(),
-                approved,
-            ])
-            .collect()
-    }));
+    let rows = std::iter::once(headers).chain(drawing.releases.iter().enumerate().map(
+        |(index, release)| {
+            let description = shorten(release.description.clone(), DESCRIPTION_CHARS);
+            // The approver in an APPROVED role, else the last sign-off; a
+            // release still awaiting a workflow sign-off is PENDING.
+            let approved = match drawing.release_state(index) {
+                Ok(DrawingReleaseState::Pending { .. }) => "PENDING".to_owned(),
+                _ => release
+                    .approvals
+                    .iter()
+                    .find(|a| a.role.eq_ignore_ascii_case("approved"))
+                    .or(release.approvals.last())
+                    .map_or_else(|| "—".to_owned(), |a| a.name.clone()),
+            };
+            // Validation has placed every marker in a zone.
+            let zones = grid
+                .as_ref()
+                .filter(|_| table.zone_column)
+                .map(|grid| shorten(release_zones(release, grid).unwrap_or_default(), ZONE_CHARS));
+            zones
+                .into_iter()
+                .chain([
+                    release.revision.clone(),
+                    description,
+                    release.date.clone(),
+                    approved,
+                ])
+                .collect()
+        },
+    ));
     for (row, values) in rows.enumerate() {
         let mut column_x = x;
         for (value, (_, width)) in values.into_iter().zip(columns.iter().copied()) {

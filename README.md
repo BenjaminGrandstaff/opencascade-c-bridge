@@ -846,7 +846,9 @@ Drawings record [releases and revision tables](docs/DRAWINGS.md#releases-and-rev
 dated revisions with approvals, links to the model's revision ledger, a status
 that flags model changes since the latest release, and a drawn revision table.
 Schema 90 adds them; schema 156 adds revision symbols marking each release's
-changes on the sheet, and a ZONE column listing their sheet zones.
+changes on the sheet, and a ZONE column listing their sheet zones;
+schema 158 adds ordered approval workflows, with SHA-256 content digests
+that show whether a drawing changed after each sign-off.
 
 Drawings can carry [parts lists and item balloons](docs/DRAWINGS.md#parts-lists-and-balloons-schema-87):
 shown instances group into numbered items by family, parameter values, output

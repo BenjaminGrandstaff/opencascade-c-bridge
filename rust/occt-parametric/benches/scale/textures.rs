@@ -74,6 +74,7 @@ fn textured(
     let drawing = DrawingDefinition {
         annotation_views: Vec::new(),
         dataset: None,
+        approval_workflow: None,
         datum_reference_frames: Vec::new(),
         datum_features: Vec::new(),
         feature_control_frames: Vec::new(),

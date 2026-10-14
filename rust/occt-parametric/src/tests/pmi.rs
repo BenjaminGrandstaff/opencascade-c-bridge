@@ -617,6 +617,7 @@ fn datasets_carry_identification_revision_and_approvals() {
         role: role.into(),
         name: name.into(),
         date: date.into(),
+        digest: None,
     };
     page.releases = vec![DrawingRelease {
         revision: "A".into(),
