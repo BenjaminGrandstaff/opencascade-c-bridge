@@ -21,7 +21,7 @@ export function attachPickedFace(draft,pick){
   draft.face_support=structuredClone(pick.face_support);draft.face_support.offset=offset;
   draft.datum_plane=null;draft.x_axis=structuredClone(pick.x_axis);draft.y_axis=structuredClone(pick.y_axis);
 }
-export function createSketchLinks({context,request,preview,showSolid,changed,message,addProjection,highlightFace=()=>{},highlightEdge=()=>{},beginPicking=()=>{},currentVersion=()=>null,highlight=()=>{},beginProjectionPicking=()=>{},detachProjection=async()=>{}}){
+export function createSketchLinks({context,request,preview,showSolid,changed,message,addProjection,highlightFace=()=>{},highlightEdge=()=>{},beginPicking=()=>{},currentVersion=()=>null,highlight=()=>{},beginProjectionPicking=()=>{},detachProjection=async()=>{},inspectDependencies=()=>{}}){
   let lastDraft=null,nameEdited=false,source='',name='reference',mode=null,turn=0,busy=false,ready=false,projectionPicking=false;const refinementHosts=new Map();
   function cancel(){const active=mode||projectionPicking;mode=null;projectionPicking=false;ready=false;turn++;highlightFace(null);highlightEdge(null);if(active)message('Source picking canceled. Sketch draft retained.');}
   async function start(next){
@@ -56,7 +56,7 @@ export function createSketchLinks({context,request,preview,showSolid,changed,mes
     const note=document.createElement('p');note.textContent='Links are family-wide. Coordinates stay sketch-local. Projections are construction references until included in the profile. Preview checks all downstream geometry and requirements.';section.append(note);
     if((c.draft.projections??[]).some(p=>['spline','chain'].includes(p.kind)))section.append(button('Select projected spline from canvas',()=>{beginProjectionPicking();cancel();projectionPicking=true;message('Click an exact projected spline or chain. Escape cancels.');}));
     for(const p of c.draft.projections??[]){
-      const row=document.createElement('div'),text=document.createElement('span');text.textContent=`${p.id} · ${p.input} · ${p.kind}`;row.append(text,button(`Remove projection ${p.id}`,()=>{cancel();context().draft.projections=context().draft.projections.filter(v=>v.id!==p.id);changed();message('Projection removed from draft. Repair any constraints or profile references before applying.');}));section.append(row);
+      const row=document.createElement('div'),text=document.createElement('span');text.textContent=`${p.id} · ${p.input} · ${p.kind}`;row.append(text,button(`Remove projection ${p.id}`,()=>{cancel();context().draft.projections=context().draft.projections.filter(v=>v.id!==p.id);changed();message('Projection removed from draft. Repair any constraints or profile references before applying.');}));row.append(button(`Review dependencies ${p.id}`,()=>{cancel();inspectDependencies(p.id);}));section.append(row);
       if(['spline','chain'].includes(p.kind))row.append(button(`Detach projected spline ${p.id}`,()=>detachProjection(p.id)));
       if(['spline','chain'].includes(p.kind))refinementHosts.set(p.id,createProjectionRefinementControls({host:section,projection:p,highlight,message,changed:next=>{
         cancel();const draft=context().draft,index=draft.projections.indexOf(p);if(index<0)throw new Error('Projection changed. Reload its controls.');draft.projections[index]=next;changed();

@@ -336,6 +336,14 @@ fn studio_serves_the_page_and_model_and_applies_saves_and_follows_edits() {
             .contains("./viewer.mjs")
     );
     assert_eq!(studio.handle("GET", "/viewer.mjs", b"").status, 200);
+    assert_eq!(
+        studio.handle("GET", "/sketch-dependencies.mjs", b"").status,
+        200
+    );
+    assert_eq!(
+        get(&mut studio, "/api/sketches").1["feature_dependencies"]["bracket"],
+        json!(["boss", "plate"])
+    );
     let (status, state) = get(&mut studio, "/api/state");
     assert_eq!(status, 200);
     assert_eq!(

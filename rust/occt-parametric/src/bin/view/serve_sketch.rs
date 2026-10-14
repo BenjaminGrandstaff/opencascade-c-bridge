@@ -22,8 +22,13 @@ impl Studio {
                 Some(json!({"feature": feature.id, "definition": sketch(&operation)?}))
             })
             .collect::<Vec<_>>();
+        let feature_dependencies = self
+            .document
+            .family
+            .feature_inputs()
+            .map_err(|e| e.to_string())?;
         Ok(
-            json!({"version": self.version, "family": self.document.family.id, "sketches": features, "parameters": self.document.family.parameters, "features":self.document.family.features}),
+            json!({"version": self.version, "family": self.document.family.id, "sketches": features, "parameters": self.document.family.parameters, "features":self.document.family.features,"feature_dependencies":feature_dependencies}),
         )
     }
 

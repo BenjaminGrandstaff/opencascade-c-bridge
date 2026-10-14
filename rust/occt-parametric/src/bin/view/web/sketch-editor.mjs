@@ -1,3 +1,4 @@
+import {createDependencyControls} from './sketch-dependencies.mjs';
 import {createSketchLinks,requireConstructionProfile} from "./sketch-links.mjs";
 import {createCanvasTools} from "./canvas-tools.mjs";
 import {createConstraintControls} from "./constraint-controls.mjs";
@@ -14,7 +15,7 @@ export function addElement(definition, collection, element) {
 }
 export function createSketchEditor({ host, request, instance, preview, applied, restore, showSketch = () => {}, highlight = () => {}, ghost = () => {}, canvasMode = () => {}, showSolid=()=>{}, highlightFace=()=>{}, highlightEdge=()=>{}, beginPicking=()=>{}, currentVersion=()=>null }) {
   let dragInFlight = false;
-  let baseline = null, draft = null, version = null, feature = null, busy = false, generation = 0, parameters = [], features = [], constraintControls = null, profileControls = null, shapeControls = null, splineControls = null;
+  let baseline = null, draft = null, version = null, feature = null, busy = false, generation = 0, parameters = [], features = [], featureDependencies = {}, constraintControls = null, profileControls = null, shapeControls = null, splineControls = null, dependencyControls = null;
   const panel = document.createElement('section');
   panel.className = 'linked-edit';
   const launch = document.createElement('button'); launch.textContent = 'Edit sketch geometry';
@@ -24,6 +25,7 @@ export function createSketchEditor({ host, request, instance, preview, applied, 
   const message = text => { status.textContent = text; };
   const links=createSketchLinks({context:()=>({draft,feature,version,features,instance:instance()}),
     request,preview,showSolid,highlightFace,highlightEdge,beginPicking:()=>{cancelGeometryPicks();beginPicking();},currentVersion,message,
+    inspectDependencies:id=>{beginGeometryPick();dependencyControls?.inspect(id);},
     detachProjection:async projection=>{
       if(busy)throw new Error('Wait for the current native request.');
       links.cancel();cancelGeometryPicks();
@@ -52,7 +54,7 @@ export function createSketchEditor({ host, request, instance, preview, applied, 
       finally{dragInFlight=false;busy=false;content.inert=false;canvasMount.inert=false;launch.disabled=false;}
     },
   });
-  function cancelGeometryPicks(){profileControls?.cancelPick();shapeControls?.cancelPick();splineControls?.cancelPick();}
+  function cancelGeometryPicks(){dependencyControls?.cancelPick();profileControls?.cancelPick();shapeControls?.cancelPick();splineControls?.cancelPick();}
   function beginGeometryPick(){links.cancel();cancelGeometryPicks();canvasTools.selectMode();showSketch(feature);beginPicking();}
   function focusPoint(id){const row=[...content.querySelectorAll('[data-edit-point]')].find(row=>row.dataset.editPoint===id);row?.scrollIntoView({block:'nearest'});row?.querySelector('input,textarea')?.focus();}
   function resetCanvas(){links.cancel();cancelGeometryPicks();generation++;canvasTools.reviewed();canvasMount.hidden=true;canvasMode('select');}
@@ -87,6 +89,7 @@ export function createSketchEditor({ host, request, instance, preview, applied, 
   function render() {
     content.replaceChildren();
     const note = document.createElement('p'); note.textContent = `Family-wide edit · ${feature}. Coordinates are sketch-local. Free point coordinates are solver starting positions; constraints determine the solved shape.`; content.append(note);
+    dependencyControls=createDependencyControls({host:content,definition:draft,features,feature,featureDependencies,initialSelection:dependencyControls?.selected,initialOpen:dependencyControls?.open,highlight:ids=>highlight(ids,feature),beginPicking:beginGeometryPick,message});
     links.render(content);
     profileControls=createProfileControls({host:content,definition:draft,parameters,initialType:profileControls?.type,initialScope:profileControls?.scope,initialSeed:profileControls?.seed,changed:render,message,highlight:ids=>highlight(ids,feature),
       beginPicking:beginGeometryPick});
@@ -150,7 +153,7 @@ export function createSketchEditor({ host, request, instance, preview, applied, 
     }
     content.append(constraints);
     const advanced = document.createElement('details'), at = document.createElement('summary'); at.textContent = 'Full definition (advanced geometry, regions and constraints)'; advanced.append(at, jsonEditor('Sketch definition', draft, value => { draft = value; render(); })); content.append(advanced);
-    content.append(button('Preview draft', () => submit(false)), button('Apply verified draft', () => submit(true)), button('Discard draft', async () => { generation++; baseline = draft = null; resetCanvas(); constraintControls = profileControls = shapeControls = splineControls = null; highlight([]); content.replaceChildren(); message('Draft discarded.'); await restore(); }));
+    content.append(button('Preview draft', () => submit(false)), button('Apply verified draft', () => submit(true)), button('Discard draft', async () => { generation++; baseline = draft = null; resetCanvas(); constraintControls = profileControls = shapeControls = splineControls = dependencyControls = null; highlight([]); content.replaceChildren(); message('Draft discarded.'); await restore(); }));
   }
   async function submit(apply) {
     if(links.busy)throw new Error("Wait for the source pick to finish.");
@@ -160,7 +163,7 @@ export function createSketchEditor({ host, request, instance, preview, applied, 
     message(apply ? 'Regenerating and checking requirements…' : 'Computing draft preview…');
     try {
       const response = await request('/api/sketch', {method:'POST', body:JSON.stringify({version, instance:instance(), feature, expected:baseline, definition:draft, apply})});
-      if (apply) { baseline = draft = null; resetCanvas(); constraintControls = profileControls = shapeControls = splineControls = null; highlight([]); content.replaceChildren(); await applied(response.state); message('Sketch applied. Save writes it to the model file.'); }
+      if (apply) { baseline = draft = null; resetCanvas(); constraintControls = profileControls = shapeControls = splineControls = dependencyControls = null; highlight([]); content.replaceChildren(); await applied(response.state); message('Sketch applied. Save writes it to the model file.'); }
       else { canvasTools.reviewed();await preview(response.annotations); showSketch(feature); message(response.can_apply ? 'Preview passes regeneration and required checks. Apply repeats the checks against the current model.' : `Draft cannot be applied: ${response.error}`); }
     } finally { busy = false; content.inert = false; canvasMount.inert = false; launch.disabled = false; }
   }
@@ -178,7 +181,7 @@ export function createSketchEditor({ host, request, instance, preview, applied, 
       for (const item of data.sketches) choice.append(new Option(item.feature, item.feature));
       content.append(choice, button('Load sketch draft', () => {
         const item = data.sketches.find(s => s.feature === choice.value);
-        canvasTools.reviewed(); canvasMount.hidden=false;parameters = data.parameters ?? [];features = data.features ?? [];links.cancel();constraintControls = profileControls = shapeControls = splineControls = null; highlight([]); version = data.version; feature = item.feature; baseline = structuredClone(item.definition); draft = structuredClone(baseline); showSketch(feature);canvasMode(canvasTools.mode,feature);render(); message('Draft loaded. Click sketch points or curves to select geometry for dimensions and constraints.');
+        canvasTools.reviewed(); canvasMount.hidden=false;parameters = data.parameters ?? [];features = data.features ?? [];featureDependencies=data.feature_dependencies??{};links.cancel();constraintControls = profileControls = shapeControls = splineControls = dependencyControls = null; highlight([]); version = data.version; feature = item.feature; baseline = structuredClone(item.definition); draft = structuredClone(baseline); showSketch(feature);canvasMode(canvasTools.mode,feature);render(); message('Draft loaded. Click sketch points or curves to select geometry for dimensions and constraints.');
       })); message('Choose a sketch. Loading replaces any previous local draft.');
     } catch (error) { message(error.message); }
   });
@@ -189,11 +192,12 @@ export function createSketchEditor({ host, request, instance, preview, applied, 
     canvasMove(event){return !busy&&draft&&event.scene.feature===feature ? canvasTools.move(event):false;},
     canvasUp(event){if(!busy&&draft&&event.scene.feature===feature)return canvasTools.up(event).catch(error=>message(error.message));},
     canvasCancel(){generation++;canvasTools.cancel();if(dragInFlight)message('Drag canceled. Current draft retained.');},
-    selectGeometry(id, scene) {if(busy || !draft || scene.feature !== feature)return false;if(links.pickProjection(id)||profileControls?.pick(id)||shapeControls?.pick(id)||splineControls?.pick(id))return true;return constraintControls?.pick(id) ?? false;},
+    selectGeometry(id, scene) {if(busy || !draft || scene.feature !== feature)return false;if(dependencyControls?.pick(id)||links.pickProjection(id)||profileControls?.pick(id)||shapeControls?.pick(id)||splineControls?.pick(id))return true;return constraintControls?.pick(id) ?? false;},
     selectConstraint(annotation, scene) {if(busy || !draft || scene.feature !== feature)return;const link=annotation?.detail?.constraint?.weighted_point;if(link){highlight([link.point,...link.terms.map(t=>t.point)],feature);focusPoint(link.point);return;}if(annotation?.detail?.constraint && !constraintControls?.selectAnnotation(annotation))message('This label has no matching supported constraint in the draft. Preview your changes or use the constraint list.');},
     clearSelection() {cancelGeometryPicks();constraintControls?.clear();},
     selectPoint(id, scene) {
     if (busy || !draft || scene.feature !== feature) return;
+    if(dependencyControls?.pick(id))return;
     focusPoint(id);
   }};
 }

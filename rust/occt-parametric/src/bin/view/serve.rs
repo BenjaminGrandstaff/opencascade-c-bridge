@@ -630,6 +630,11 @@ impl Studio {
                 "text/javascript",
                 include_str!("web/shape-controls.mjs"),
             ),
+            ("GET", "/sketch-dependencies.mjs") => Response::text(
+                200,
+                "text/javascript",
+                include_str!("web/sketch-dependencies.mjs"),
+            ),
             ("GET", "/projection-refinement.mjs") => Response::text(
                 200,
                 "text/javascript",

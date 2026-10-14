@@ -74,3 +74,20 @@ test('canceling an in-flight drag discards its late result and preserves the loc
  await find(host,'Preview draft').emit('click');assert.equal(calls[1].definition.points[0].x.literal.value,0);
  delete globalThis.document;delete globalThis.Option;
 });
+
+test('projection review and canvas dependency picks leave the sketch and constraint selection untouched',async()=>{
+ globalThis.document={createElement:tag=>new Element(tag)};
+ globalThis.Option=class extends Element{constructor(text,value){super('option');this.textContent=text;this.value=value;}};
+ try{
+ const source={id:'s',points:[{id:'A',x:length(0),y:length(0),fixed:true}],profile:['ref'],projections:[{id:'ref',kind:'spline',input:'source'}]},original=structuredClone(source),host=new Element('div'),calls=[],highlighted=[];
+ const editor=createSketchEditor({host,instance:()=> 'part',preview:async()=>{},applied:async()=>{},restore:async()=>{},highlight:ids=>highlighted.push(ids),request:async(path)=>{
+  calls.push(path);return {version:1,sketches:[{feature:'profile',definition:source}],features:[{id:'source',operation:{box:{}}},{id:'profile',operation:{sketch_face:{sketch:source}}},{id:'body',operation:{extrude:{input:'profile'}}}]};
+ }});
+ await find(host,'Edit sketch geometry').emit('click');all(host).find(e=>e['aria-label']==='Sketch to edit').value='profile';await find(host,'Load sketch draft').emit('click');
+ find(host,'Review dependencies ref').onclick();assert.deepEqual(highlighted.at(-1),['ref']);assert.equal(all(host).find(e=>e['aria-label']==='Inspect geometry dependencies').value,'ref');
+ find(host,'Inspect dependencies from canvas').onclick();assert.equal(editor.selectGeometry('ref:start',{feature:'profile'}),true);
+ assert.equal(all(host).find(e=>e['aria-label']==='Inspect geometry dependencies').value,'ref:start');assert(find(host,'Click sketch points or curves to select geometry. Selection order determines first and second.'));
+ find(host,'Inspect dependencies from canvas').onclick();editor.cancelLinkPick();assert.equal(all(host).find(e=>e['aria-label']==='Inspect geometry dependencies').value,'ref:start');
+ assert.deepEqual(calls,['/api/sketches']);assert.deepEqual(source,original);
+ }finally{delete globalThis.document;delete globalThis.Option;}
+});

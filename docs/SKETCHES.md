@@ -175,6 +175,32 @@ behavior. The [projected refinement example](../tools/model/projected-spline-ref
 refines a live chain with named junctions. Model documents migrate to schema 147;
 ABI stays at 72.
 
+## Geometry dependency inspection
+
+The live sketch editor's **Geometry dependencies** panel inspects the current
+local draft. Choose **Inspect geometry dependencies**, use **Inspect dependencies
+from canvas**, or click **Review dependencies** beside a projection. Inspection
+shows direct uses, further sources, direct consumers and further dependents.
+Highlight buttons locate related sketch geometry. Picking is one-shot and
+Escape cancels it without changing constraint selection or draft geometry.
+
+The reference graph includes authored curves and defining points, projection
+source features and named endpoints/junctions/crossings, weighted point sources,
+constraints, reference dimensions, shortcut shapes, pattern copies, split
+outputs, trims, regions, profile edits and downstream model features. Model feature paths use the kernel-free native
+feature-input graph, including named selectors and multi-profile features. Generated
+canvas references resolve on demand instead of expanding every pattern instance.
+Missing draft references remain visible as unresolved references. Text, parameter
+names and selector values are not treated as geometry IDs.
+
+Constraint entries describe authored references, not predicted solver motion.
+Editing any sketch definition regenerates its sketch feature and downstream
+model features, including construction geometry. Projection inspection explains
+which source relationship detach freezes and that sketch support remains linked.
+The view is read-only; native Preview/Apply remains authoritative. Lists display
+at most 100 entries per group with the total count. A 10,000-constraint graph
+build/traversal took about 27 ms in the Node check. Schema remains 147, ABI 72.
+
 ## Detach projected splines into authored geometry
 
 In **Support & projected references**, **Detach projected spline** resolves the

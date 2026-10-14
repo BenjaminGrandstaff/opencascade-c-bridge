@@ -17,7 +17,7 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 154 + first-use integration 1 (+1 doc test), recipes 3, parametric core 36 + kernel 689 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 8 + view command 48 + viewer Node 76 + branch command 2 + model command 90, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 154 + first-use integration 1 (+1 doc test), recipes 3, parametric core 36 + kernel 689 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 8 + view command 48 + viewer Node 85 + branch command 2 + model command 90, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -25,6 +25,13 @@ tracks status and order.
 | Scale benchmarks | Last full suite: 194 Rust cases plus 5 model-command cases and a 10,000-face Python matcher. Sketch authoring integration rechecked 60 sketch cases and 60 MCP cases within budget. | `tools/bench/run.sh` |
 
 ## Done
+
+- Read-only sketch dependency inspection: direct uses/consumers and transitive
+  source/dependent paths cover projection aliases, weighted points, generated
+  shapes/patterns, edited boundaries, constraints, profiles and downstream model
+  features. Canvas picks and projection review controls highlight references;
+  large lists are capped and generated references resolve lazily. Schema 147,
+  ABI 72. See [dependency inspection](docs/SKETCHES.md#geometry-dependency-inspection).
 
 - Detach exact projected splines/chains into authored spline drafts: fresh native
   draft resolution preserves rational poles/basis and named references. Source

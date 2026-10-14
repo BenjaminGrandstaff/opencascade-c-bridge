@@ -310,9 +310,12 @@ selected instance's geometry family-wide, retains sketch support links, and
 uses the existing version-guarded Preview/Apply path for all variants and
 requirements. Schema 147 and ABI 72 suffice. See
 [sketch detach](docs/SKETCHES.md#detach-projected-splines-into-authored-geometry).
-Further sketch editing should make dependencies visible before freezing or
-changing named reference geometry; live intersection consumers currently
-prevent detach rather than silently losing their source relationship.
+The viewer now inspects authored dependency paths before freezing or editing
+geometry, including named points, weighted links, patterns, constraints, profiles
+and downstream features. This reference graph does not predict solver motion.
+Live intersection consumers still prevent detach. Next, named detached references
+should be able to follow authored curves again with an explicit geometric link,
+so junction/crossing intent survives subsequent pole edits.
 
 
 Schema 72 adds ellipses, signed line angles in radians, circular radius and
