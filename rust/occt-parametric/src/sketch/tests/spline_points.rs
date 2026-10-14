@@ -514,3 +514,239 @@ fn periodic_spline_points_keep_parameter_positions_through_native_refinement() {
     }
     assert_eq!(native.shape_count().unwrap(), 0);
 }
+
+#[test]
+fn interpolated_links_follow_native_chord_domain_fit_edits_and_closed_seams() {
+    let native = Session::new().unwrap();
+    for closed in [false, true] {
+        let mut s = linked();
+        s.splines[0].basis = None;
+        if closed {
+            s.splines[0].points.push("a".into());
+        }
+        for (fraction, height) in [(0., 10.), (0.19, 13.), (0.73, 7.), (1., 15.)] {
+            s.points[1].y = length(height);
+            let parameters = HashMap::from([(
+                "fraction".into(),
+                ParameterValue::Scalar(Quantity::scalar(fraction)),
+            )]);
+            let result = s.solve(&parameters).unwrap();
+            assert!(result.solved);
+            assert_eq!(result.free_degrees, 0);
+            assert_eq!(result.redundant_equations, 0);
+            let wire = native
+                .create_curve_wire(
+                    &[CurveSegment::Spline {
+                        points: vec![
+                            Vec3::new(0., 0., 0.),
+                            Vec3::new(5., height, 0.),
+                            Vec3::new(10., 0., 0.),
+                        ],
+                        start_tangent: None,
+                        end_tangent: None,
+                        periodic: closed,
+                    }],
+                    closed,
+                )
+                .unwrap();
+            let expected = native.curve_point_at_fraction(&wire, fraction).unwrap();
+            let p = result.points["sample"];
+            assert!((p.x - expected.x).abs() < 1e-7 && (p.y - expected.y).abs() < 1e-7);
+            let checks = s.constraint_checks(&parameters, &result).unwrap();
+            assert!(checks[0].satisfied && !checks[0].by_construction);
+        }
+    }
+    // Unequal chord lengths place a fit point at its chord fraction, not its index.
+    let mut s = linked();
+    s.splines[0].basis = None;
+    s.points[1].x = length(2.);
+    let fraction = (104_f64).sqrt() / ((104_f64).sqrt() + (164_f64).sqrt());
+    let parameters = HashMap::from([(
+        "fraction".into(),
+        ParameterValue::Scalar(Quantity::scalar(fraction)),
+    )]);
+    let result = s.solve(&parameters).unwrap();
+    assert!((result.points["sample"].x - 2.).abs() < 1e-7);
+    assert!((result.points["sample"].y - 10.).abs() < 1e-7);
+}
+
+#[test]
+fn interpolated_links_drive_free_fit_points_and_feed_affine_links() {
+    let mut s = linked();
+    s.splines[0].basis = None;
+    s.points[1].fixed = false;
+    s.points.push(point("copy", 0., 0., false));
+    s.constraints.extend([
+        SketchConstraint::HorizontalDistance {
+            first: "a".into(),
+            second: "b".into(),
+            value: length(5.),
+        },
+        SketchConstraint::VerticalDistance {
+            first: "a".into(),
+            second: "sample".into(),
+            value: length(12.),
+        },
+        SketchConstraint::WeightedPoint {
+            point: "copy".into(),
+            terms: vec![SketchWeightedPointTerm {
+                point: "sample".into(),
+                weight: ScalarExpr::Literal(Quantity::scalar(1.)),
+            }],
+        },
+    ]);
+    let parameters = HashMap::from([(
+        "fraction".into(),
+        ParameterValue::Scalar(Quantity::scalar(0.5)),
+    )]);
+    let result = s.solve(&parameters).unwrap();
+    assert!(result.solved);
+    assert_eq!(result.free_degrees, 0);
+    assert!((result.points["b"].y - 12.).abs() < 1e-7);
+    assert!((result.points["copy"].y - 12.).abs() < 1e-7);
+    // Interpolated links still participate in the complete dependency DAG.
+    s.constraints.push(SketchConstraint::WeightedPoint {
+        point: "b".into(),
+        terms: vec![SketchWeightedPointTerm {
+            point: "copy".into(),
+            weight: ScalarExpr::Literal(Quantity::scalar(1.)),
+        }],
+    });
+    assert!(
+        s.validate_structure()
+            .unwrap_err()
+            .to_string()
+            .contains("acyclic")
+    );
+}
+
+#[test]
+fn interpolated_links_follow_endpoint_tangents_and_reject_tangent_cycles() {
+    let mut s = linked();
+    s.splines[0].basis = None;
+    s.points.push(point("tail", -4., -3., false));
+    s.lines.push(SketchLine {
+        id: "lead".into(),
+        start: "tail".into(),
+        end: "a".into(),
+    });
+    s.constraints.push(SketchConstraint::Tangent {
+        first: "lead".into(),
+        second: "curve".into(),
+        point: "a".into(),
+    });
+    let parameters = HashMap::from([(
+        "fraction".into(),
+        ParameterValue::Scalar(Quantity::scalar(0.23)),
+    )]);
+    let native = Session::new().unwrap();
+    for y in [-3., -8.] {
+        s.constraints.truncate(2);
+        s.constraints.extend([
+            SketchConstraint::HorizontalDistance {
+                first: "a".into(),
+                second: "tail".into(),
+                value: length(-4.),
+            },
+            SketchConstraint::VerticalDistance {
+                first: "a".into(),
+                second: "tail".into(),
+                value: length(y),
+            },
+        ]);
+        let result = s.solve(&parameters).unwrap();
+        assert!(result.solved);
+        let wire = native
+            .create_curve_wire(
+                &[CurveSegment::Spline {
+                    points: vec![
+                        Vec3::new(0., 0., 0.),
+                        Vec3::new(5., 10., 0.),
+                        Vec3::new(10., 0., 0.),
+                    ],
+                    start_tangent: Some(Vec3::new(4., -y, 0.)),
+                    end_tangent: None,
+                    periodic: false,
+                }],
+                false,
+            )
+            .unwrap();
+        let p = native.curve_point_at_fraction(&wire, 0.23).unwrap();
+        assert!(
+            (result.points["sample"].x - p.x).abs() < 1e-7
+                && (result.points["sample"].y - p.y).abs() < 1e-7
+        );
+    }
+    s.lines[0].start = "sample".into();
+    assert!(
+        s.validate_structure()
+            .unwrap_err()
+            .to_string()
+            .contains("acyclic")
+    );
+}
+
+#[test]
+fn thousand_distinct_interpolated_links_solve_within_budget() {
+    let mut s = linked();
+    s.splines[0].basis = None;
+    s.constraints.clear();
+    s.points.pop();
+    for i in 0..1000 {
+        let id = format!("q{i}");
+        s.points.push(point(&id, 0., 0., false));
+        s.constraints.push(SketchConstraint::SplinePoint {
+            point: id,
+            spline: "curve".into(),
+            fraction: ScalarExpr::Literal(Quantity::scalar(i as f64 / 999.)),
+        });
+    }
+    let now = std::time::Instant::now();
+    let result = s.solve(&HashMap::new()).unwrap();
+    eprintln!(
+        "1000 distinct interpolated point links: {:?}",
+        now.elapsed()
+    );
+    assert!(now.elapsed() < std::time::Duration::from_secs(2));
+    assert!(result.solved);
+    assert_eq!(result.free_degrees, 0);
+    assert_eq!(result.redundant_equations, 0);
+    assert!((result.points["q999"].x - 10.).abs() < 1e-7);
+}
+
+#[test]
+fn interpolated_links_bound_native_curve_cache_and_reject_missing_or_degenerate_sources() {
+    let mut s = linked();
+    s.splines[0].basis = None;
+    let params = HashMap::from([(
+        "fraction".into(),
+        ParameterValue::Scalar(Quantity::scalar(0.3)),
+    )]);
+    let mut bad = s.clone();
+    bad.splines[0].points[1] = "a".into();
+    assert!(bad.solve(&params).is_err());
+    let mut bad = s.clone();
+    bad.splines.clear();
+    assert!(bad.solve(&params).is_err());
+    s.constraints.clear();
+    s.points.pop();
+    let source = s.splines.pop().unwrap();
+    for i in 0..257 {
+        let mut curve = source.clone();
+        curve.id = format!("s{i}");
+        let id = format!("p{i}");
+        s.points.push(point(&id, 0., 0., false));
+        s.constraints.push(SketchConstraint::SplinePoint {
+            point: id,
+            spline: curve.id.clone(),
+            fraction: ScalarExpr::Literal(Quantity::scalar(0.3)),
+        });
+        s.splines.push(curve);
+    }
+    assert!(
+        s.solve(&params)
+            .unwrap_err()
+            .to_string()
+            .contains("256 source curves")
+    );
+}

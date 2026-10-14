@@ -75,7 +75,7 @@ impl SketchDefinition {
         }
         for constraint in &self.constraints {
             constraint.validate(parameters)?;
-            if constraint.dependent_point().is_some() {
+            if self.affine_point_link(constraint) {
                 self.point_link_terms(constraint, parameters)?;
             }
         }

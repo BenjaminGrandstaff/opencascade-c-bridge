@@ -1075,6 +1075,21 @@ impl Session {
         })?;
         Ok(out.into())
     }
+    /// Exact point at a normalized active parameter, following edge orientation.
+    /// Requires one edge; the fraction is not normalized arc length.
+    pub fn curve_point_at_fraction(
+        &self,
+        shape: &Shape<'_>,
+        fraction: f64,
+    ) -> Result<Vec3, BridgeError> {
+        self.validate_shape(shape)?;
+        let mut out = RawVec3::default();
+        // SAFETY: Validated session/shape and writable output vector.
+        self.check(unsafe {
+            occt_bridge_curve_point_at_fraction(self.raw.as_ptr(), shape.id, fraction, &mut out)
+        })?;
+        Ok(out.into())
+    }
     /// Located native active endpoints and unnormalized first derivatives,
     /// following edge orientation. Requires one edge or a one-edge wire.
     pub fn curve_end_data(

@@ -22,7 +22,13 @@ pub(super) struct SketchProblem<'a> {
     spline_tangents: HashMap<(&'a str, &'a str), &'a str>,
     weighted_points: HashMap<&'a str, Vec<(&'a str, f64)>>,
     pattern_links: Vec<patterns::PatternLink<'a>>,
+    spline_point_cache: std::cell::RefCell<HashMap<String, SplinePointCache>>,
     crossing_cache: std::cell::RefCell<HashMap<(String, String), CrossingCache>>,
+}
+
+struct SplinePointCache {
+    geometry: Vec<[f64; 2]>,
+    points: HashMap<u64, SketchPoint2>,
 }
 
 struct CrossingCache {
@@ -49,6 +55,9 @@ impl<'a> SketchProblem<'a> {
         let mut weighted_points: HashMap<&str, Vec<(&str, f64)>> = HashMap::new();
         for index in sketch.weighted_point_order()? {
             let constraint = &sketch.constraints[index];
+            if !sketch.affine_point_link(constraint) {
+                continue;
+            }
             let point = constraint.dependent_point().unwrap();
             let terms = sketch.point_link_terms(constraint, parameters)?;
             let weights = terms.iter().map(|(_, w)| *w).collect::<Vec<_>>();
@@ -79,6 +88,7 @@ impl<'a> SketchProblem<'a> {
             );
         }
         Ok(Self {
+            spline_point_cache: std::cell::RefCell::new(HashMap::new()),
             crossing_cache: std::cell::RefCell::new(HashMap::new()),
             weighted_points,
             sketch,
@@ -129,7 +139,8 @@ impl SketchProblem<'_> {
             .iter()
             .enumerate()
             .filter(|(_, constraint)| {
-                !self.sketch.spline_tangency(constraint) && constraint.dependent_point().is_none()
+                !self.sketch.spline_tangency(constraint)
+                    && !self.sketch.affine_point_link(constraint)
             })
             .map(|(index, c)| Equation::Constraint(index, c))
             .chain(self.sketch.arcs.iter().map(Equation::Arc))
@@ -313,6 +324,93 @@ impl SketchProblem<'_> {
         }
         refs
     }
+    fn interpolated_spline_point(
+        &self,
+        id: &str,
+        fraction: &ScalarExpr,
+        values: &[f64],
+    ) -> Result<SketchPoint2, ModelError> {
+        let spline = match self.entities[id] {
+            Entity::Spline(s) => s,
+            _ => unreachable!(),
+        };
+        let fraction = scalar(fraction, self.parameters, Dimension::Scalar)?;
+        let fraction = if spline.closed() && fraction == 1. {
+            0.
+        } else {
+            fraction
+        };
+        let key = fraction.to_bits();
+        let geometry = self
+            .spline_neighbor_refs(spline)
+            .iter()
+            .map(|id| {
+                let p = self.point(id, values);
+                [p.x, p.y]
+            })
+            .collect::<Vec<_>>();
+        if geometry.len() > 65536 {
+            return Err(ModelError::new(
+                "spline point cache exceeds 65536 source references",
+            ));
+        }
+        let cached = {
+            let cache = self.spline_point_cache.borrow();
+            cache
+                .get(id)
+                .filter(|c| c.geometry == geometry)
+                .and_then(|c| c.points.get(&key))
+                .copied()
+        };
+        if let Some(point) = cached {
+            return Ok(point);
+        }
+        {
+            let cache = self.spline_point_cache.borrow();
+            if !cache.contains_key(id) && cache.len() >= 256 {
+                return Err(ModelError::new(
+                    "spline point cache exceeds 256 source curves",
+                ));
+            }
+            let samples = cache
+                .iter()
+                .filter(|(name, c)| name.as_str() != id || c.geometry == geometry)
+                .map(|(_, c)| c.points.len())
+                .sum::<usize>();
+            if samples >= 10000 {
+                return Err(ModelError::new(
+                    "spline point cache exceeds 10000 parameter samples",
+                ));
+            }
+            let other_refs = cache
+                .iter()
+                .filter(|(name, _)| name.as_str() != id)
+                .map(|(_, c)| c.geometry.len())
+                .sum::<usize>();
+            if other_refs + geometry.len() > 65536 {
+                return Err(ModelError::new(
+                    "spline point cache exceeds 65536 source references",
+                ));
+            }
+        }
+        let curve = self.spline_curve(spline, values)?;
+        let p = self.native.curve_point_at_fraction(&curve, fraction)?;
+        let point = SketchPoint2 { x: p.x, y: p.y };
+        let mut cache = self.spline_point_cache.borrow_mut();
+        let entry = cache
+            .entry(id.to_owned())
+            .or_insert_with(|| SplinePointCache {
+                geometry: geometry.clone(),
+                points: HashMap::new(),
+            });
+        if entry.geometry != geometry {
+            entry.geometry = geometry;
+            entry.points.clear();
+        }
+        entry.points.insert(key, point);
+        Ok(point)
+    }
+
     fn spline_curve<'a>(
         &'a self,
         spline: &SketchSpline,
@@ -1445,6 +1543,17 @@ impl SketchProblem<'_> {
                 let p = self.point(point, values);
                 residuals.extend([p.x - target.x, p.y - target.y]);
             }
+            SketchConstraint::SplinePoint {
+                point,
+                spline,
+                fraction,
+            } if !self.sketch.affine_point_link(constraint) => {
+                let target = self
+                    .interpolated_spline_point(spline, fraction, values)
+                    .map_err(|e| e.context(&format!("interpolated spline point '{point}'")))?;
+                let p = self.point(point, values);
+                residuals.extend([p.x - target.x, p.y - target.y]);
+            }
             SketchConstraint::SplinePoint { point, .. } => {
                 let terms = self.sketch.point_link_terms(constraint, self.parameters)?;
                 let scale = terms.iter().map(|(_, w)| *w).fold(0_f64, f64::max);
@@ -2142,6 +2251,7 @@ impl SketchDefinitionSolvingInternal for SketchDefinition {
         let dependent = self
             .constraints
             .iter()
+            .filter(|c| self.affine_point_link(c))
             .filter_map(SketchConstraint::dependent_point)
             .collect::<HashSet<_>>();
         for point in &self.points {

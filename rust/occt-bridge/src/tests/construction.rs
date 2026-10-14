@@ -1408,3 +1408,51 @@ fn elliptical_arc_segments_are_exact_in_either_sense_and_axis_order() {
     }
     assert_eq!(session.shape_count().unwrap(), count);
 }
+
+#[test]
+fn curve_parameter_fraction_is_exact_located_bounded_and_single_edge() {
+    let s = Session::new().unwrap();
+    let wire = s
+        .create_curve_wire(
+            &[CurveSegment::Spline {
+                points: vec![
+                    Vec3::new(0., 0., 0.),
+                    Vec3::new(2., 10., 0.),
+                    Vec3::new(10., 0., 0.),
+                ],
+                start_tangent: None,
+                end_tangent: None,
+                periodic: false,
+            }],
+            false,
+        )
+        .unwrap();
+    let f = (104_f64).sqrt() / ((104_f64).sqrt() + (164_f64).sqrt());
+    let p = s.curve_point_at_fraction(&wire, f).unwrap();
+    assert!((p.x - 2.).abs() < 1e-9 && (p.y - 10.).abs() < 1e-9);
+    let (a, b, _, _) = s.curve_end_data(&wire).unwrap();
+    assert_eq!(s.curve_point_at_fraction(&wire, 0.).unwrap(), a);
+    assert_eq!(s.curve_point_at_fraction(&wire, 1.).unwrap(), b);
+    for f in [f64::NAN, f64::INFINITY, -0.01, 1.01] {
+        assert!(s.curve_point_at_fraction(&wire, f).is_err());
+    }
+    let moved = s.translate(&wire, Vec3::new(3., -2., 7.)).unwrap();
+    let q = s.curve_point_at_fraction(&moved, f).unwrap();
+    assert!((q.x - 5.).abs() < 1e-9 && (q.y - 8.).abs() < 1e-9 && (q.z - 7.).abs() < 1e-9);
+    let rectangle = s
+        .create_curve_wire(
+            &[
+                CurveSegment::Line {
+                    start: Vec3::new(0., 0., 0.),
+                    end: Vec3::new(1., 0., 0.),
+                },
+                CurveSegment::Line {
+                    start: Vec3::new(1., 0., 0.),
+                    end: Vec3::new(1., 1., 0.),
+                },
+            ],
+            false,
+        )
+        .unwrap();
+    assert!(s.curve_point_at_fraction(&rectangle, 0.5).is_err());
+}

@@ -10,6 +10,19 @@ impl SketchConstraint {
     }
 }
 impl SketchDefinition {
+    /// Affine links eliminate target coordinates. Interpolated splines instead
+    /// need native nonlinear equations because their knots move with fit points.
+    pub fn affine_point_link(&self, constraint: &SketchConstraint) -> bool {
+        match constraint {
+            SketchConstraint::WeightedPoint { .. } => true,
+            SketchConstraint::SplinePoint { spline, .. } => self
+                .splines
+                .iter()
+                .any(|s| s.id == *spline && s.basis.is_some()),
+            _ => false,
+        }
+    }
+
     pub fn point_link_sources<'a>(
         &'a self,
         constraint: &'a SketchConstraint,
@@ -26,15 +39,44 @@ impl SketchDefinition {
                     .ok_or_else(|| {
                         ModelError::new(format!("unknown spline point source '{spline}'"))
                     })?;
-                source.basis.as_ref().ok_or_else(|| {
-                    ModelError::new("spline point links require an explicit B-spline")
-                })?;
                 if source.points.contains(point) {
                     return Err(ModelError::new(
-                        "spline point target cannot be a source control pole",
+                        "spline point target cannot be a source fit point or control pole",
                     ));
                 }
-                Ok(source.points.iter().map(String::as_str).collect())
+                let mut refs = source.points.iter().map(String::as_str).collect::<Vec<_>>();
+                if source.basis.is_none() {
+                    // Tangent neighbors shape the interpolation and must participate
+                    // in cycle rejection, just like the fit points.
+                    for c in &self.constraints {
+                        if let SketchConstraint::Tangent {
+                            first,
+                            second,
+                            point,
+                        } = c
+                        {
+                            let neighbor = if *first == source.id {
+                                second
+                            } else if *second == source.id {
+                                first
+                            } else {
+                                continue;
+                            };
+                            if source.points.first() != Some(point)
+                                && source.points.last() != Some(point)
+                            {
+                                continue;
+                            }
+                            if let Some(l) = self.lines.iter().find(|l| l.id == *neighbor) {
+                                refs.extend([l.start.as_str(), l.end.as_str()]);
+                            }
+                            if let Some(a) = self.arcs.iter().find(|a| a.id == *neighbor) {
+                                refs.extend([a.center.as_str(), a.start.as_str(), a.end.as_str()]);
+                            }
+                        }
+                    }
+                }
+                Ok(refs)
             }
             _ => Ok(Vec::new()),
         }
@@ -74,7 +116,9 @@ impl SketchDefinition {
                         )
                         .collect(),
                 )?;
-                let b = source.basis.as_ref().unwrap();
+                let b = source.basis.as_ref().ok_or_else(|| {
+                    ModelError::new("interpolated spline links require native evaluation")
+                })?;
                 let fraction = scalar(fraction, parameters, Dimension::Scalar)?;
                 if !(0.0..=1.0).contains(&fraction) {
                     return Err(ModelError::new("spline point fraction must be in [0, 1]"));

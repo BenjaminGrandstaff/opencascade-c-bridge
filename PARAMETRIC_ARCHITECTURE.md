@@ -323,9 +323,13 @@ fractions 0 and 1 both identify the native seam. Schema 149 adds selected
 `crossing_point` constraints: exactly one native finite crossing must match a
 saved hint/radius window, independently of the target seed. Two solver equations
 tie the point to that selection; numeric candidate caches invalidate when source
-coordinates change. Ambiguity, loss and overlaps reject regeneration. Next,
-interpolated spline parameter links and controls for reviewing several crossing
-windows together should extend the existing intent.
+coordinates change. Ambiguity, loss and overlaps reject regeneration. ABI 73
+extends the same spline-point definition to native interpolated curves at schema
+149. Two solver coordinates and residuals per target follow the current chord-based
+parameterization and endpoint tangent neighbors; cached numeric samples invalidate
+on source movement. These nonlinear links participate in the same cycle checks
+and can feed affine links. Next, controls for reviewing several crossing windows
+together should make saved intersection intent easier to inspect.
 
 
 Schema 72 adds ellipses, signed line angles in radians, circular radius and

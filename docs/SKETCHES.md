@@ -178,20 +178,21 @@ ABI stays at 72.
 ## Saved named-point links (schema 148)
 
 `spline_point: {point, spline, fraction}` keeps an authored non-fixed point at a
-fraction in `[0, 1]` of the current explicit spline's active parameter domain.
+fraction in `[0, 1]` of the current spline's active parameter domain.
 Fractions accept scalar literals, parameters or expressions. This is a parameter
 fraction, not an arc-length fraction. The rational basis is evaluated again on
 regeneration, so pole moves, weight changes, knot edits and degree refinement
-update the point. Clamped, non-clamped and periodic explicit bases are supported;
-interpolated bases are currently rejected. End fractions use the active native
+update the point. Clamped, non-clamped and periodic explicit bases are supported.
+Interpolated splines are also supported through native evaluation (ABI 73).
+End fractions use the active native
 endpoints, including non-clamped curves. Periodic fractions 0 and 1 both name
 the native seam; fractions remain within `[0, 1]` and do not accept extra turns.
 The periodic evaluator extends the knot sequence using OCCT's seam multiplicity
 convention and wraps the control-pole/weight indices. Seam continuity remains
 that of the authored basis, including C0 seams.
 
-The point is a dependent coordinate with no extra solver unknown or equation.
-Constraints on it drive the original source poles. Links share the weighted-point
+For explicit splines, the point is a dependent coordinate with no extra solver
+unknown or equation. Constraints on it drive the original source poles. Links share the weighted-point
 dependency graph, with unique non-fixed targets, acyclic dependencies, a maximum
 depth of 256 and at most 4096 flattened independent sources. A target cannot also
 be a source control pole. Its saved coordinates are solver placeholders.
@@ -216,11 +217,38 @@ See the [named-point cap example](../tools/model/spline-point-links.request.json
 `location` drives a rational spline sample and a second point follows its crossing
 with a guide line. The spline-point link was introduced in schema 148; current example models
 use schema 149.
-ABI remains 72. The [periodic named-point example](../tools/model/periodic-spline-point-links.request.json)
+Explicit and periodic links require ABI 72. The [periodic named-point example](../tools/model/periodic-spline-point-links.request.json)
 adds a parameter-driven sample and coincident seam references to a periodic pad.
 Native checks cover degrees 1–25, nonuniform knots, rational weights, seam
 multiplicities, knot insertion and degree elevation. No format or ABI bump was
 needed for periodic support.
+
+### Interpolated spline parameter links (ABI 73)
+
+The same `spline_point` definition now accepts open and closed interpolated
+splines, without a model format change. All examples remain at schema 149.
+OCCT evaluates the exact curve at the saved fraction of its active native domain;
+this is neither a fit-point index fraction nor an arc-length fraction. Moving fit
+points changes the chord-based parameterization, so the point follows the rebuilt
+curve. Endpoint tangencies to lines or circular arcs participate in evaluation.
+Fractions 0 and 1 identify the same seam on a closed interpolation.
+
+Each interpolated link adds two target coordinates and two native solver
+residuals. Dimensions can drive free fit points or tangent neighbors through
+these equations. These links are reported as solved constraints, while explicit
+basis links remain by-construction constraints. Both modes share target uniqueness
+and dependency-cycle checks, including interpolation tangent neighbors. Affine
+weighted links can consume an interpolated linked point.
+
+Numeric samples are cached by source curve, actual fit/tangent coordinates and
+fraction; geometry changes invalidate samples. No native shape handles are kept
+in the cache. Limits are 256 source curves, 10,000 cached samples and 65,536
+source references per solve. A 1,000-target check covers distinct fractions and
+has a two-second budget. The viewer offers both interpolation and explicit curves
+in **Named point links**, with native Preview/Apply, drag protection, undo/redo
+and Save. Degenerate interpolation rejects the edit without replacing accepted
+geometry. See the [interpolated cap example](../tools/model/interpolated-spline-point-links.request.json):
+`fit_height` moves its middle fit point and `location` moves the named point.
 
 ## Selected crossing points (schema 149)
 

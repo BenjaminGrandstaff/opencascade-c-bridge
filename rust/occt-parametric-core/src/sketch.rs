@@ -1256,7 +1256,8 @@ impl SketchDefinition {
     }
 
     /// Deterministic evaluation order for weighted and spline-parameter point links.
-    /// Targets are dependent coordinates, never additional solver unknowns.
+    /// Includes nonlinear interpolated links for cycle validation; only affine
+    /// links eliminate solver coordinates.
     pub fn weighted_point_order(&self) -> Result<Vec<usize>, ModelError> {
         let links = self
             .constraints

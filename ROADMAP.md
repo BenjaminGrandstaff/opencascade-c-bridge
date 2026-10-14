@@ -8,7 +8,7 @@ tracks status and order.
 
 | Layer | Version | State |
 |---|---|---|
-| C ABI (`src/`, `include/`) | ABI 72 | Stable; exact version match required |
+| C ABI (`src/`, `include/`) | ABI 73 | Stable; exact version match required |
 | `occt-types` (shared value types) | — | No native dependency |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI; re-exports `occt-types` |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
@@ -17,7 +17,7 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 154 + first-use integration 1 (+1 doc test), recipes 3, parametric core 36 + kernel 703 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 8 + view command 51 + viewer Node 91 + branch command 2 + model command 90, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 157 + first-use integration 1 (+1 doc test), recipes 3, parametric core 36 + kernel 708 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 8 + view command 52 + viewer Node 92 + branch command 2 + model command 90, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -25,6 +25,15 @@ tracks status and order.
 | Scale benchmarks | Last full suite: 194 Rust cases plus 5 model-command cases and a 10,000-face Python matcher. Sketch authoring integration rechecked 60 sketch cases and 60 MCP cases within budget. | `tools/bench/run.sh` |
 
 ## Done
+
+- Interpolated spline parameter links (schema 149, ABI 73): the existing
+  `spline_point` definition now follows exact native open/closed interpolation,
+  including fit-point edits and endpoint tangent neighbors. Each target adds two
+  coordinates and two equations, allowing dimensions to drive free source
+  geometry. Shared cycle checks include tangent dependencies; numeric samples
+  invalidate on source movement and cache sizes are bounded. Viewer controls,
+  guarded Preview/Apply, drag protection, history and Save cover both spline
+  modes. See [interpolated links](docs/SKETCHES.md#interpolated-spline-parameter-links-abi-73).
 
 - Explicit selected crossing points (schema 149, ABI 72): saved sketch-local
   hint/radius windows select exactly one finite native intersection independently
@@ -42,7 +51,7 @@ tracks status and order.
   inspection and guarded Preview/Apply, undo/redo and Save. Periodic links now
   wrap their pole/weight indices and give identical seam positions at fractions
   0 and 1, matching OCCT across degrees, nonuniform knots, seam multiplicities
-  and native refinement. Interpolated spline parameter links remain future work.
+  and native refinement. Interpolated links are also available, as described above.
   A 1,000-link solve adds no unknowns and completed in about 20 ms in the integration check. See
   [named-point links](docs/SKETCHES.md#saved-named-point-links-schema-148).
 

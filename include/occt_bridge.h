@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define OCCT_BRIDGE_ABI_VERSION 72u
+#define OCCT_BRIDGE_ABI_VERSION 73u
 #define OCCT_BRIDGE_INVALID_SHAPE_ID UINT64_C(0)
 
 #if defined(_WIN32) && defined(OCCT_BRIDGE_BUILD_SHARED)
@@ -357,6 +357,12 @@ typedef struct occt_bridge_curve_segment {
     size_t weight_count;
     const double* weights;
 } occt_bridge_curve_segment_t;
+
+/* Exact point at a fraction in [0,1] of one edge's finite active parameter
+ * domain, following orientation and location. This is not arc length. */
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_curve_point_at_fraction(
+    occt_bridge_session_t* session, occt_bridge_shape_id_t shape,
+    double fraction, occt_bridge_vec3_t* point);
 
 /* Actual active-domain endpoints and first derivatives of one edge or a
  * one-edge wire, following edge orientation, in located world coordinates.

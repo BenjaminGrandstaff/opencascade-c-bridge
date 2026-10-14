@@ -1408,6 +1408,17 @@ static void elliptical_arcs(occt_bridge_session_t* session) {
     EXPECT(occt_bridge_trim_curve_between(session, circle, vec(0, 11, 0), vec(10, 0, 0), &out), GEOMETRY);
     EXPECT(occt_bridge_trim_curve_between(session, circle, vec(0, 10, 0), vec(10, 0, 0), &out), OK);
     occt_bridge_shape_release(session, out);
+    /* Active parameter evaluation (ABI 73). */
+    occt_bridge_vec3_t sample = vec(1, 1, 1);
+    EXPECT(occt_bridge_curve_point_at_fraction(NULL, circle, 0.5, &sample), ARG);
+    EXPECT(occt_bridge_curve_point_at_fraction(session, circle, 0.5, NULL), ARG);
+    EXPECT(occt_bridge_curve_point_at_fraction(session, unknown, 0.5, &sample), MISSING);
+    EXPECT_TRUE(sample.x == 0 && sample.y == 0 && sample.z == 0, "missing curve clears sample");
+    EXPECT(occt_bridge_curve_point_at_fraction(session, circle, NAN, &sample), ARG);
+    EXPECT(occt_bridge_curve_point_at_fraction(session, circle, -0.01, &sample), ARG);
+    EXPECT(occt_bridge_curve_point_at_fraction(session, circle, 1.01, &sample), ARG);
+    EXPECT(occt_bridge_curve_point_at_fraction(session, circle, 0.5, &sample), OK);
+    EXPECT_TRUE(fabs(sample.x + 10) < 1e-9 && fabs(sample.y) < 1e-9, "circle half parameter");
     /* Curvature vectors (ABI 65). */
     occt_bridge_vec3_t k = vec(1, 1, 1);
     EXPECT(occt_bridge_curve_curvature_at(NULL, circle, vec(10, 0, 0), &k), ARG);

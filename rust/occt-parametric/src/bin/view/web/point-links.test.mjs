@@ -44,3 +44,10 @@ test('selected crossing controls keep parameterized hints and radii until explic
  input('Crossing hint X (mm)').value='8';input('Crossing hint X (mm)').oninput();input('Crossing hint Y (mm)').value='5';input('Crossing search radius (mm)').value='3';input('Crossing search radius (mm)').oninput();find(host,'Link named point').onclick();assert.equal(pointLinks(next,'p')[0].crossing_point.near.literal.x.value,8);assert.equal(pointLinks(next,'p')[0].crossing_point.maximum_distance.literal.value,3);
  }finally{delete globalThis.document;delete globalThis.Option;}
 });
+
+test('interpolated splines are selectable and preserve fraction expressions and dependencies',()=>{
+ const d=definition();delete d.splines[0].basis;const next=linkNamedPoint(d,{point:'p',mode:'spline',spline:'curve',fraction:{parameter:'location'}});
+ assert.deepEqual(pointLinks(next,'p')[0].spline_point.fraction,{parameter:'location'});assert(dependencyReach(sketchDependencyGraph(next,{feature:'sketch'}),'geometry:a').includes('geometry:p'));
+ globalThis.document={createElement:tag=>new Element(tag)};globalThis.Option=class extends Element{constructor(text,value){super('option');this.textContent=text;this.value=value;}};
+ try{const host=new Element('div');createPointLinkControls({host,definition:next,changed(){},message(){}});assert(all(host).find(e=>e['aria-label']==='Point link spline').children.some(e=>e.value==='curve'));}finally{delete globalThis.document;delete globalThis.Option;}
+});

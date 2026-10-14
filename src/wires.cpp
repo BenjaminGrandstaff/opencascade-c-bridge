@@ -426,6 +426,39 @@ occt_bridge_status_t occt_bridge_create_curve_wire(
     });
 }
 
+occt_bridge_status_t occt_bridge_curve_point_at_fraction(
+    occt_bridge_session_t* session, occt_bridge_shape_id_t shape,
+    double fraction, occt_bridge_vec3_t* point) {
+    return guarded(session, [&] {
+        if (!point) return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "curve point output is null");
+        *point = {0., 0., 0.};
+        if (!std::isfinite(fraction) || fraction < 0. || fraction > 1.)
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "curve fraction must be in [0, 1]");
+        const auto* value = find_shape(session, shape);
+        if (!value) return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "curve shape was not found");
+        TopoDS_Edge edge;
+        if (value->ShapeType() == TopAbs_EDGE) edge = TopoDS::Edge(*value);
+        else if (value->ShapeType() == TopAbs_WIRE) {
+            TopExp_Explorer it(*value, TopAbs_EDGE);
+            if (!it.More()) return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "curve wire has no edge");
+            edge = TopoDS::Edge(it.Current()); it.Next();
+            if (it.More()) return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "curve point query requires one edge");
+        } else return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "curve point query requires an edge or wire");
+        Standard_Real first, last;
+        TopLoc_Location location;
+        Handle(Geom_Curve) curve = BRep_Tool::Curve(edge, location, first, last);
+        if (curve.IsNull() || !std::isfinite(first) || !std::isfinite(last))
+            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "edge has no finite native curve domain");
+        if (edge.Orientation() == TopAbs_REVERSED) fraction = 1. - fraction;
+        const double u = fraction == 0. ? first : fraction == 1. ? last : (1. - fraction) * first + fraction * last;
+        gp_Pnt p = curve->Value(u);
+        p.Transform(location.Transformation());
+        *point = {p.X(), p.Y(), p.Z()};
+        if (!finite(*point)) return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "curve point is not finite");
+        return succeed(session);
+    });
+}
+
 occt_bridge_status_t occt_bridge_curve_end_data(
     occt_bridge_session_t* session, occt_bridge_shape_id_t shape,
     occt_bridge_vec3_t* start, occt_bridge_vec3_t* end,
