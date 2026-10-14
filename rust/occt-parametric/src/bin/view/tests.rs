@@ -3693,3 +3693,74 @@ fn interpolated_named_links_preview_fit_edits_reject_degeneracy_and_save_history
         after["points"]["sample"]
     );
 }
+
+#[test]
+fn crossing_review_exports_native_resolved_windows_for_parameters_and_read_only_preview() {
+    let directory = Directory::new();
+    let request: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../tools/model/crossing-window-review.request.json"
+    ))
+    .unwrap();
+    let document = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+    let model = PathBuf::from(directory.model(&document));
+    let mut studio = serve::Studio::load(&model, Some("body".into())).unwrap();
+    let windows = |v: &serde_json::Value| -> Vec<serde_json::Value> {
+        v["scenes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["feature"] == "profile")
+            .unwrap()["annotations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|a| a["detail"]["crossing_window"].is_object())
+            .cloned()
+            .collect()
+    };
+    let before = get(&mut studio, "/api/annotations?id=part").1;
+    let rows = windows(&before);
+    assert_eq!(rows.len(), 2);
+    for (row, x) in rows.iter().zip([8.5, -8.5]) {
+        assert_eq!(row["status"], "passed");
+        assert_eq!(
+            row["detail"]["crossing_window"]["center"],
+            json!([x, 5., 0.])
+        );
+        assert_eq!(row["detail"]["crossing_window"]["radius"], 3.);
+        assert!(
+            row["detail"]["crossing_window"]["distance"]
+                .as_f64()
+                .unwrap()
+                < 3.
+        );
+    }
+    let response = studio.handle("POST", "/api/parameters", br#"{"set":{"guide_y":6}}"#);
+    assert_eq!(response.status, 200);
+    let moved = get(&mut studio, "/api/annotations?id=part").1;
+    for row in windows(&moved) {
+        assert_eq!(row["detail"]["crossing_window"]["center"][1], 6.);
+    }
+    let state = get(&mut studio, "/api/state").1;
+    let mut draft = get(&mut studio, "/api/sketches").1["sketches"][0]["definition"].clone();
+    draft["constraints"][0]["crossing_point"]["maximum_distance"] =
+        json!({"literal":{"value":0.15,"dimension":"length","unit":"inch"}});
+    let (status, result) = edit_definition(&mut studio, "profile", draft, false);
+    assert_eq!(status, 200, "{result}");
+    assert_eq!(result["can_apply"], true);
+    let rows = windows(&result["annotations"]);
+    assert!(
+        (rows[0]["detail"]["crossing_window"]["radius"]
+            .as_f64()
+            .unwrap()
+            - 3.81)
+            .abs()
+            < 1e-12
+    );
+    assert_eq!(get(&mut studio, "/api/state").1, state);
+    assert_eq!(get(&mut studio, "/api/annotations?id=part").1, moved);
+    assert_eq!(
+        studio.handle("GET", "/crossing-review.mjs", b"").status,
+        200
+    );
+}

@@ -194,6 +194,8 @@ const annotations = createAnnotationController({
       beginPicking:()=>sketchCreator?.cancelPick(),currentVersion:()=>version,
       showSketch: feature => {if(viewer.scene.kind!=='sketch'||viewer.scene.feature!==feature)viewer.selectScene('sketch',feature);},
       highlight: (ids, feature) => viewer.setGeometrySelection(ids, feature),
+      crossingWindows:(windows,feature)=>viewer.setCrossingWindows(windows,feature),
+      reviewScene:(feature,expectedVersion,acceptedOnly)=>viewer.data.version!==expectedVersion||(acceptedOnly&&(viewer.data.preview||viewer.data.source_view||viewer.data.accepted===false))?null:viewer.data.scenes.find(s=>s.kind==='sketch'&&s.feature===feature&&s.instance===(scope||instanceIds.values().next().value)),
       ghost: (paths,feature) => viewer.setGhost(paths,feature), canvasMode:(mode,feature)=>viewer.setCanvasMode(mode,feature),
       preview: (data,message) => previewCurrent(data, message??"Sketch draft preview — Apply to update the model."),
       applied: async next => { annotations.invalidate(); await apply(next); await refreshAnnotations(); },

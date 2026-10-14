@@ -91,3 +91,17 @@ test('projection review and canvas dependency picks leave the sketch and constra
  assert.deepEqual(calls,['/api/sketches']);assert.deepEqual(source,original);
  }finally{delete globalThis.document;delete globalThis.Option;}
 });
+
+test('crossing review clears edited windows, verifies previews and refuses unrelated native snapshots',async()=>{
+ globalThis.document={createElement:tag=>new Element(tag)};globalThis.Option=class extends Element{constructor(text,value){super('option');this.textContent=text;this.value=value;}};
+ try{const constraint={crossing_point:{point:'q',first:'circle',second:'guide',near:{parameter:'hint'},maximum_distance:{parameter:'radius'}}},source={id:'s',points:[{id:'a',x:length(0),y:length(0),fixed:true},{id:'q',x:length(8),y:length(5),fixed:false}],constraints:[constraint],profile:[]};
+ const scene=()=>({feature:'profile',annotations:[{status:'passed',parameters:['hint','radius'],detail:{constraint,crossing_window:{center:[8,5,0],radius:3,distance:0.6}}}]});let native=scene(),isPreview=false;const shown=[],host=new Element('div');
+ createSketchEditor({host,instance:()=> 'part',crossingWindows:w=>shown.push(w),reviewScene:(_,__,acceptedOnly)=>acceptedOnly&&isPreview?null:native,preview:async data=>{native=data.scenes[0];isPreview=true;},applied:async()=>{},restore:async()=>{},request:async path=>path==='/api/sketches'?{version:1,sketches:[{feature:'profile',definition:source}]}:{can_apply:true,annotations:{scenes:[scene()]}}});
+ await find(host,'Edit sketch geometry').emit('click');all(host).find(e=>e['aria-label']==='Sketch to edit').value='profile';await find(host,'Load sketch draft').emit('click');
+ let show=find(host,'Show matching crossing windows');assert(!show.disabled);show.onclick();assert.equal(shown.at(-1).length,1);
+ const coordinate=find(host,'X (mm)').children[0];coordinate.value='2';coordinate.emit('change');assert.deepEqual(shown.at(-1),[]);assert(find(host,'Show matching crossing windows').disabled);
+ await find(host,'Preview draft').emit('click');show=find(host,'Show matching crossing windows');assert(!show.disabled);show.onclick();assert.equal(shown.at(-1).length,1);
+ native=scene();show.onclick();assert.deepEqual(shown.at(-1),[]);assert(find(host,'Show matching crossing windows').disabled);
+ await find(host,'Discard draft').emit('click');assert.deepEqual(shown.at(-1),[]);
+ }finally{delete globalThis.document;delete globalThis.Option;}
+});

@@ -1226,6 +1226,22 @@ pub(super) fn sketch_scene(
             SketchConstraint::CurvatureContinuous { .. } => "mixed",
             _ => "mm",
         };
+        let crossing_window = if let SketchConstraint::CrossingPoint {
+            point,
+            near,
+            maximum_distance,
+            ..
+        } = constraint
+        {
+            let near = near.evaluate(parameters).stage("sketch")?;
+            let radius = maximum_distance.evaluate(parameters).stage("sketch")?.value;
+            let center = [near.x.value, near.y.value, 0.];
+            let target = point_map[point];
+            let distance = (target[0] - center[0]).hypot(target[1] - center[1]);
+            Some(json!({"center":center,"radius":radius,"distance":distance}))
+        } else {
+            None
+        };
         annotations.push(
             Annotation {
                 id: format!("constraint-{index}"),
@@ -1239,6 +1255,7 @@ pub(super) fn sketch_scene(
                     "constraint_index": index,
                     "constraint": constraint,
                     "angular_arc": angular_arc,
+                    "crossing_window": crossing_window,
                     "max_residual": check.max_residual,
                     "by_construction": check.by_construction,
                     "tolerance": 1e-9,

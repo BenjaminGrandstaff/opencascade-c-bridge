@@ -328,8 +328,12 @@ extends the same spline-point definition to native interpolated curves at schema
 149. Two solver coordinates and residuals per target follow the current chord-based
 parameterization and endpoint tangent neighbors; cached numeric samples invalidate
 on source movement. These nonlinear links participate in the same cycle checks
-and can feed affine links. Next, controls for reviewing several crossing windows
-together should make saved intersection intent easier to inspect.
+and can feed affine links. The viewer now reviews several saved crossing windows
+with native resolved values, bounded/filterable lists and separate search-area
+overlays. A draft/native-scene snapshot guard prevents showing stale resolved
+windows after edits; successful Preview refreshes that snapshot. The model format
+and native ABI stay unchanged. Next, canvas picking can create selected-crossing
+windows directly from visible geometry.
 
 
 Schema 72 adds ellipses, signed line angles in radians, circular radius and

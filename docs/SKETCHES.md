@@ -297,6 +297,29 @@ starts with a left-hand target seed but selects the right circle/guide crossing.
 guide outside the circle rejects the edit. Documents migrate to schema 149;
 all examples use 149, and ABI remains 72.
 
+### Review saved crossing windows
+
+The live sketch editor's **Saved crossing windows** panel lists selected crossings,
+their two source curves, linked parameter names, resolved hints and radii, and the
+selected point's distance from the hint. These values come from native annotation
+export in sketch-local millimeters, including parameter/expression and unit
+resolution. The panel does not evaluate model expressions in JavaScript.
+
+**Show matching crossing windows** draws purple search circles, center crosses and
+point names, while highlighting target points and source curves. Filter by point
+or curve name, show one window, or open its existing **Named point links** controls
+with **Inspect crossing**. Review actions do not change the draft or accepted
+model. Editing the draft clears the windows and requires a successful Preview
+before showing them again. Unrelated native views, model versions and rejected
+previews cannot authorize an old overlay. Apply, discard and annotation refresh
+clear overlays; sketch-tool ghosts remain separate.
+
+Rows and overlays are capped at 100; filtering reaches other saved crossings.
+A 10,000-crossing Node check built and filtered the panel in about 133 ms with a
+two-second budget. The [two-window example](../tools/model/crossing-window-review.request.json)
+selects opposite crossings of the same circle and guide using parameter-driven
+windows. Schema remains 149 and ABI remains 73.
+
 ## Geometry dependency inspection
 
 The live sketch editor's **Geometry dependencies** panel inspects the current

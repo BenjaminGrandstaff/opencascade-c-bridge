@@ -17,7 +17,7 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 157 + first-use integration 1 (+1 doc test), recipes 3, parametric core 36 + kernel 708 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 8 + view command 52 + viewer Node 92 + branch command 2 + model command 90, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 157 + first-use integration 1 (+1 doc test), recipes 3, parametric core 36 + kernel 708 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 8 + view command 53 + viewer Node 96 + branch command 2 + model command 90, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -25,6 +25,13 @@ tracks status and order.
 | Scale benchmarks | Last full suite: 194 Rust cases plus 5 model-command cases and a 10,000-face Python matcher. Sketch authoring integration rechecked 60 sketch cases and 60 MCP cases within budget. | `tools/bench/run.sh` |
 
 ## Done
+
+- Saved crossing-window review (schema 149, ABI 73 unchanged): the sketch editor
+  lists native resolved hints/radii, source curves and parameter drivers, and can
+  show one or multiple search areas with source highlights. Filtering and bounded
+  lists support large sketches. Draft changes and stale native views invalidate
+  overlays until a successful Preview; review actions do not edit model data.
+  See [window review](docs/SKETCHES.md#review-saved-crossing-windows).
 
 - Interpolated spline parameter links (schema 149, ABI 73): the existing
   `spline_point` definition now follows exact native open/closed interpolation,
