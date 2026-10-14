@@ -319,9 +319,13 @@ rational basis at a saved active-domain fraction, and share the weighted-point
 DAG without new solver variables. Viewer controls attach retained names to these
 links or seeded two-curve crossing constraints. Periodic links extend the knot
 sequence according to the native seam multiplicity and wrap pole/weight indices;
-fractions 0 and 1 both identify the native seam. Next, interpolated parameter
-links and explicit unique crossing selectors should extend this intent
-without relying on a solver seed to choose a branch.
+fractions 0 and 1 both identify the native seam. Schema 149 adds selected
+`crossing_point` constraints: exactly one native finite crossing must match a
+saved hint/radius window, independently of the target seed. Two solver equations
+tie the point to that selection; numeric candidate caches invalidate when source
+coordinates change. Ambiguity, loss and overlaps reject regeneration. Next,
+interpolated spline parameter links and controls for reviewing several crossing
+windows together should extend the existing intent.
 
 
 Schema 72 adds ellipses, signed line angles in radians, circular radius and

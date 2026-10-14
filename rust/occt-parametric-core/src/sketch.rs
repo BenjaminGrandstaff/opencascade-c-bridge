@@ -11,6 +11,7 @@ pub const RESIDUAL_TOLERANCE: f64 = 1e-9;
 pub const DIFFERENCE_STEP: f64 = 1e-6;
 pub const PIVOT_TOLERANCE: f64 = 1e-10;
 
+pub mod crossing_links;
 pub mod diagnosis;
 pub mod diagnostics;
 pub mod editing;
@@ -391,6 +392,14 @@ pub struct SketchWeightedPointTerm {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SketchConstraint {
+    /// Select exactly one finite native crossing in a sketch-local window.
+    CrossingPoint {
+        point: String,
+        first: String,
+        second: String,
+        near: VectorExpr,
+        maximum_distance: ScalarExpr,
+    },
     /// Directional point at a fraction of the current active spline domain.
     SplinePoint {
         point: String,
@@ -1410,6 +1419,15 @@ impl SketchDefinition {
             }
         }
         for constraint in &self.constraints {
+            if let SketchConstraint::CrossingPoint {
+                near,
+                maximum_distance,
+                ..
+            } = constraint
+            {
+                collect_vector_parameters(near, names);
+                collect_scalar_parameters(maximum_distance, names);
+            }
             if let SketchConstraint::SplinePoint { fraction, .. } = constraint {
                 collect_scalar_parameters(fraction, names);
             }

@@ -22,6 +22,12 @@ pub(super) struct SketchProblem<'a> {
     spline_tangents: HashMap<(&'a str, &'a str), &'a str>,
     weighted_points: HashMap<&'a str, Vec<(&'a str, f64)>>,
     pattern_links: Vec<patterns::PatternLink<'a>>,
+    crossing_cache: std::cell::RefCell<HashMap<(String, String), CrossingCache>>,
+}
+
+struct CrossingCache {
+    geometry: Vec<[f64; 2]>,
+    points: Vec<Vec3>,
 }
 
 #[derive(Clone, Copy)]
@@ -73,6 +79,7 @@ impl<'a> SketchProblem<'a> {
             );
         }
         Ok(Self {
+            crossing_cache: std::cell::RefCell::new(HashMap::new()),
             weighted_points,
             sketch,
             parameters,
@@ -781,6 +788,174 @@ impl SketchProblem<'_> {
 
     /// Length of a line, arc or circle in closed form, or of a full ellipse
     /// or spline measured on its native curve.
+    fn crossing_curve(&self, id: &str, values: &[f64]) -> Result<Shape<'_>, ModelError> {
+        let at = |id: &str| {
+            let p = self.point(id, values);
+            Vec3::new(p.x, p.y, 0.)
+        };
+        let normal = Vec3::new(0., 0., 1.);
+        Ok(match self.entities[id] {
+            Entity::Spline(s) => self.spline_curve(s, values)?,
+            Entity::Line(l) => self.native.create_curve_wire(
+                &[CurveSegment::Line {
+                    start: at(&l.start),
+                    end: at(&l.end),
+                }],
+                false,
+            )?,
+            Entity::Circle(c) => self.native.create_circle_wire(
+                at(&c.center),
+                normal,
+                line_length((self.point(&c.center, values), self.point(&c.rim, values))),
+            )?,
+            Entity::Arc(a) => {
+                let c = self.point(&a.center, values);
+                let start = self.point(&a.start, values);
+                let radius = line_length((c, start));
+                let angle = (start.y - c.y).atan2(start.x - c.x)
+                    + if a.clockwise { -1. } else { 1. } * self.arc_sweep(a, values) * 0.5;
+                self.native.create_curve_wire(
+                    &[CurveSegment::Arc {
+                        start: at(&a.start),
+                        middle: Vec3::new(
+                            c.x + radius * angle.cos(),
+                            c.y + radius * angle.sin(),
+                            0.,
+                        ),
+                        end: at(&a.end),
+                    }],
+                    false,
+                )?
+            }
+            Entity::Ellipse(e) => {
+                if let Some((start, end)) = e.arc_ends() {
+                    self.native.create_curve_wire(
+                        &[e.native_arc(
+                            [
+                                at(&e.center),
+                                at(&e.major),
+                                at(&e.minor),
+                                at(start),
+                                at(end),
+                            ],
+                            normal,
+                        )],
+                        false,
+                    )?
+                } else {
+                    let c = self.point(&e.center, values);
+                    let major = self.point(&e.major, values);
+                    let minor = self.point(&e.minor, values);
+                    let (ra, rb) = (line_length((c, major)), line_length((c, minor)));
+                    if ra <= f64::EPSILON || rb <= f64::EPSILON {
+                        return Err(ModelError::new(
+                            "selected crossing ellipse needs positive axes",
+                        ));
+                    }
+                    let axis = Vec3::new((major.x - c.x) / ra, (major.y - c.y) / ra, 0.);
+                    let (axis, ra, rb) = if ra >= rb {
+                        (axis, ra, rb)
+                    } else {
+                        (Vec3::new(-axis.y, axis.x, 0.), rb, ra)
+                    };
+                    self.native
+                        .create_ellipse_wire_axes(at(&e.center), normal, axis, ra, rb)?
+                }
+            }
+        })
+    }
+    fn selected_crossing(
+        &self,
+        first: &str,
+        second: &str,
+        near: &VectorExpr,
+        maximum_distance: &ScalarExpr,
+        values: &[f64],
+    ) -> Result<SketchPoint2, ModelError> {
+        let (first, second) = if first < second {
+            (first, second)
+        } else {
+            (second, first)
+        };
+        let key = (first.to_owned(), second.to_owned());
+        let geometry = self
+            .curve_refs(first)
+            .into_iter()
+            .chain(self.curve_refs(second))
+            .map(|id| {
+                let p = self.point(id, values);
+                [p.x, p.y]
+            })
+            .collect::<Vec<_>>();
+        let cached = {
+            let cache = self.crossing_cache.borrow();
+            cache
+                .get(&key)
+                .filter(|c| c.geometry == geometry)
+                .map(|c| c.points.clone())
+        };
+        let points = if let Some(points) = cached {
+            points
+        } else {
+            let cache = self.crossing_cache.borrow();
+            if !cache.contains_key(&key) && cache.len() >= 256 {
+                return Err(ModelError::new(
+                    "selected crossings exceed 256 distinct curve pairs",
+                ));
+            }
+            let retained = cache
+                .iter()
+                .filter(|(k, _)| **k != key)
+                .map(|(_, v)| v.geometry.len())
+                .sum::<usize>();
+            let candidates = cache
+                .iter()
+                .filter(|(k, _)| **k != key)
+                .map(|(_, v)| v.points.len())
+                .sum::<usize>();
+            if retained + geometry.len() > 65536 {
+                return Err(ModelError::new(
+                    "selected crossing cache exceeds its reference or candidate budget",
+                ));
+            }
+            drop(cache);
+            let a = self.crossing_curve(first, values)?;
+            let b = self.crossing_curve(second, values)?;
+            let points = self.native.planar_curve_intersections(&a, &b, 1000)?;
+            if candidates + points.len() > 10000 {
+                return Err(ModelError::new(
+                    "selected crossing cache exceeds its candidate budget",
+                ));
+            }
+
+            self.crossing_cache.borrow_mut().insert(
+                key,
+                CrossingCache {
+                    geometry,
+                    points: points.clone(),
+                },
+            );
+            points
+        };
+        let hint = vector(near, self.parameters, Dimension::Length)?;
+        let radius = scalar(maximum_distance, self.parameters, Dimension::Length)?;
+        let mut candidates = points
+            .iter()
+            .filter(|p| (p.x - hint.x).hypot(p.y - hint.y) <= radius);
+        let found = candidates.next().ok_or_else(|| {
+            ModelError::new("selected crossing found no crossing within maximum distance")
+        })?;
+        if candidates.next().is_some() {
+            return Err(ModelError::new(
+                "selected crossing matches multiple crossings within maximum distance",
+            ));
+        }
+        Ok(SketchPoint2 {
+            x: found.x,
+            y: found.y,
+        })
+    }
+
     fn curve_length(&self, id: &str, values: &[f64]) -> Result<f64, ModelError> {
         let native = |wire: Shape<'_>| -> Result<f64, ModelError> {
             let mut total = 0.0;
@@ -1257,6 +1432,19 @@ impl SketchProblem<'_> {
                 let b = self.point(self.center_point(second), values);
                 residuals.extend([a.x - b.x, a.y - b.y]);
             }
+            SketchConstraint::CrossingPoint {
+                point,
+                first,
+                second,
+                near,
+                maximum_distance,
+            } => {
+                let target = self
+                    .selected_crossing(first, second, near, maximum_distance, values)
+                    .map_err(|e| e.context(&format!("selected crossing point '{point}'")))?;
+                let p = self.point(point, values);
+                residuals.extend([p.x - target.x, p.y - target.y]);
+            }
             SketchConstraint::SplinePoint { point, .. } => {
                 let terms = self.sketch.point_link_terms(constraint, self.parameters)?;
                 let scale = terms.iter().map(|(_, w)| *w).fold(0_f64, f64::max);
@@ -1530,6 +1718,15 @@ impl SketchProblem<'_> {
             SketchConstraint::Concentric { first, second } => {
                 vec![self.center_point(first), self.center_point(second)]
             }
+            SketchConstraint::CrossingPoint {
+                point,
+                first,
+                second,
+                ..
+            } => std::iter::once(point.as_str())
+                .chain(self.curve_refs(first))
+                .chain(self.curve_refs(second))
+                .collect(),
             SketchConstraint::SplinePoint { point, .. } => std::iter::once(point.as_str())
                 .chain(self.sketch.point_link_sources(constraint).unwrap())
                 .collect(),

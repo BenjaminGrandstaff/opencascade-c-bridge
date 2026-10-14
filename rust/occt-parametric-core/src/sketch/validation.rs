@@ -177,6 +177,7 @@ impl SketchDefinition {
             ));
         }
         self.weighted_point_order()?;
+        self.validate_crossing_links()?;
         let point_ids = self.validate_points()?;
         let line_ids = self.validate_lines(&point_ids)?;
         let entity_ids = self.validate_curves(&point_ids, &line_ids)?;
@@ -733,7 +734,9 @@ impl SketchConstraint {
                 .ok_or_else(|| ModelError::new(format!("unknown sketch line '{id}'")))
         };
         match self {
-            Self::SplinePoint { point: target, .. } => point(target),
+            Self::CrossingPoint { point: target, .. } | Self::SplinePoint { point: target, .. } => {
+                point(target)
+            }
             Self::WeightedPoint {
                 point: target,
                 terms,
@@ -832,6 +835,23 @@ impl SketchConstraint {
 
     fn validate(&self, parameters: &HashMap<String, ParameterValue>) -> Result<(), ModelError> {
         match self {
+            Self::CrossingPoint {
+                near,
+                maximum_distance,
+                ..
+            } => {
+                if vector(near, parameters, Dimension::Length)?.z != 0. {
+                    return Err(ModelError::new(
+                        "crossing point hint must have sketch-local z equal to zero",
+                    ));
+                }
+                if scalar(maximum_distance, parameters, Dimension::Length)? <= 0. {
+                    return Err(ModelError::new(
+                        "crossing point maximum distance must be positive",
+                    ));
+                }
+                Ok(())
+            }
             Self::SplinePoint { fraction, .. } => {
                 let f = scalar(fraction, parameters, Dimension::Scalar)?;
                 if !(0.0..=1.0).contains(&f) {

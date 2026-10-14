@@ -205,6 +205,7 @@ pub(super) fn sketch_scene(
     let spline_defs: HashMap<_, _> = sketch.splines.iter().map(|s| (s.id.as_str(), s)).collect();
     let lines: HashMap<_, _> = sketch.lines.iter().map(|l| (l.id.as_str(), l)).collect();
     let ellipses: HashMap<_, _> = sketch.ellipses.iter().map(|e| (e.id.as_str(), e)).collect();
+    let source_entities = sketch.entities();
     let point_controls: HashMap<_, _> = sketch
         .points
         .iter()
@@ -486,6 +487,17 @@ pub(super) fn sketch_scene(
                     centers[first.as_str()].to_owned(),
                     centers[second.as_str()].to_owned(),
                 ],
+                None,
+            ),
+            SketchConstraint::CrossingPoint {
+                point,
+                first,
+                second,
+                ..
+            } => (
+                "SELECTED CROSSING",
+                vec![point.clone(), first.clone(), second.clone()],
+                vec![point.clone()],
                 None,
             ),
             SketchConstraint::SplinePoint { point, spline, .. } => (
@@ -921,6 +933,49 @@ pub(super) fn sketch_scene(
             control_names = linked.into_iter().collect();
         }
         match constraint {
+            SketchConstraint::CrossingPoint {
+                point,
+                first,
+                second,
+                near,
+                maximum_distance,
+            } => {
+                let mut linked = names(&json!([near, maximum_distance]))
+                    .into_iter()
+                    .collect::<BTreeSet<_>>();
+                linked.extend(point_controls[point.as_str()].iter().cloned());
+                for id in [first, second] {
+                    let refs: Vec<&str> = match source_entities[id.as_str()] {
+                        occt_parametric_core::sketch::Entity::Line(l) => vec![&l.start, &l.end],
+                        occt_parametric_core::sketch::Entity::Circle(c) => vec![&c.center, &c.rim],
+                        occt_parametric_core::sketch::Entity::Arc(a) => {
+                            vec![&a.center, &a.start, &a.end]
+                        }
+                        occt_parametric_core::sketch::Entity::Ellipse(e) => {
+                            std::iter::once(e.center.as_str())
+                                .chain([e.major.as_str(), e.minor.as_str()])
+                                .chain(e.arc_ends().into_iter().flat_map(|(a, b)| [a, b]))
+                                .collect()
+                        }
+                        occt_parametric_core::sketch::Entity::Spline(s) => {
+                            if let Some(b) = &s.basis {
+                                for w in &b.weights {
+                                    linked
+                                        .extend(w.parameter_names().into_iter().map(str::to_owned));
+                                }
+                            }
+                            s.points.iter().map(String::as_str).collect()
+                        }
+                    };
+                    for point in refs {
+                        linked.extend(point_controls[point].iter().cloned());
+                        if let Some(names) = dimension_point_controls.get(point) {
+                            linked.extend(names.iter().cloned());
+                        }
+                    }
+                }
+                control_names = linked.into_iter().collect();
+            }
             SketchConstraint::SplinePoint {
                 point,
                 spline,

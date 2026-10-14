@@ -214,12 +214,60 @@ variants and required checks. Applied links participate in undo/redo and Save.
 
 See the [named-point cap example](../tools/model/spline-point-links.request.json):
 `location` drives a rational spline sample and a second point follows its crossing
-with a guide line. Model documents migrate to schema 148; every example uses 148.
+with a guide line. The spline-point link was introduced in schema 148; current example models
+use schema 149.
 ABI remains 72. The [periodic named-point example](../tools/model/periodic-spline-point-links.request.json)
 adds a parameter-driven sample and coincident seam references to a periodic pad.
 Native checks cover degrees 1–25, nonuniform knots, rational weights, seam
 multiplicities, knot insertion and degree elevation. No format or ABI bump was
 needed for periodic support.
+
+## Selected crossing points (schema 149)
+
+`crossing_point: {point, first, second, near, maximum_distance}` selects exactly
+one native crossing of two distinct finite source curves inside a saved window.
+`near` is a sketch-local length vector with Z equal to zero;
+`maximum_distance` is a positive length expression. Both accept parameter and
+expression drivers. A missing crossing, more than one matching crossing, an
+overlap or an exhausted native budget rejects regeneration. The selector does
+not choose the nearest of several matches and does not rely on the target's
+solver seed to select a branch.
+
+Lines are finite segments. Circles, bounded circular and elliptical arcs, full
+ellipses, and interpolated or explicit clamped/non-clamped/periodic splines use
+native OCCT intersections. Existing projection materialization still resolves
+source links before solving. The target must be an authored non-fixed point,
+with one selected-crossing constraint and no directional point link on that same
+target. It cannot define either source curve directly, through weighted/spline
+point links or an interpolation tangent neighbor.
+
+This constraint has two solver coordinates and two equations to the selected
+native position. Other dimensions can drive free source geometry, while the
+saved window remains authoritative. Choosing a new window deliberately changes
+the branch. These equations differ from the existing seeded crossing tool's two
+`point_on_curve` memberships, which remain available.
+
+In **Named point links**, choose **At selected crossing**, two curves, hint X/Y
+and a search radius in millimeters. Existing hint/radius expressions are retained
+until replacement numbers are entered. Link changes stay in the draft; native
+Preview/Apply verifies all variants and required checks. Point rows highlight
+both sources; selecting the annotation opens its link controls. Independent
+point dragging is rejected. Undo/redo and Save retain the selected window.
+
+Native candidates are cached by curve pair and current source coordinates, so
+moving target seeds reuses the candidates while source edits invalidate them.
+Only numeric data is retained. Limits are 1,000 candidates per pair, 256 cached
+pairs, 65,536 cached source references and 10,000 cached candidates per solve;
+the native intersection span budget also applies. Excessive work is rejected
+without partial selection. A 1,000-target shared-pair solve is checked against a
+two-second budget.
+
+The [selected crossing pad](../tools/model/selected-crossing-pad.request.json)
+starts with a left-hand target seed but selects the right circle/guide crossing.
+`guide_y` moves the guide and hint together, `hint_x` chooses the side, and
+`search_radius` controls the window. A radius containing both crossings or a
+guide outside the circle rejects the edit. Documents migrate to schema 149;
+all examples use 149, and ABI remains 72.
 
 ## Geometry dependency inspection
 

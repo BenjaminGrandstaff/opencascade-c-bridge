@@ -1,7 +1,7 @@
 {
   "schema": "occb-model-view-v1",
   "model": {
-    "schema_version": 148,
+    "schema_version": 149,
     "family": {
       "id": "threaded-rod",
       "version": 1,

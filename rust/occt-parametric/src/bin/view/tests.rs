@@ -3455,7 +3455,7 @@ fn saved_spline_point_links_preview_follow_edits_reject_drag_and_survive_save_hi
     history(&mut studio, "redo");
     assert_eq!(studio.handle("POST", "/api/save", b"{}").status, 200);
     let saved = ModelDocument::from_json(&fs::read_to_string(&model).unwrap()).unwrap();
-    assert_eq!(saved.schema_version, 148);
+    assert_eq!(saved.schema_version, CURRENT_SCHEMA_VERSION);
     let mut reopened = serve::Studio::load(&model, Some("body".into())).unwrap();
     assert_eq!(
         scene(get(&mut reopened, "/api/annotations?id=part").1)["points"]["sample"],
@@ -3532,8 +3532,99 @@ fn periodic_named_point_links_follow_parameters_preview_the_seam_and_save() {
     history(&mut studio, "redo");
     assert_eq!(studio.handle("POST", "/api/save", b"{}").status, 200);
     let saved = ModelDocument::from_json(&fs::read_to_string(&model).unwrap()).unwrap();
-    assert_eq!(saved.schema_version, 148);
+    assert_eq!(saved.schema_version, CURRENT_SCHEMA_VERSION);
     let mut reopened = serve::Studio::load(&model, Some("body".into())).unwrap();
     let scene = scene(get(&mut reopened, "/api/annotations?id=part").1);
     assert_eq!(scene["points"]["sample"], scene["points"]["seam-end"]);
+}
+
+#[test]
+fn selected_crossing_drafts_keep_branch_reject_ambiguity_and_loss_and_save() {
+    let directory = Directory::new();
+    let request: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../tools/model/selected-crossing-pad.request.json"
+    ))
+    .unwrap();
+    let document = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+    let model = PathBuf::from(directory.model(&document));
+    let original = fs::read_to_string(&model).unwrap();
+    let mut studio = serve::Studio::load(&model, Some("body".into())).unwrap();
+    let scene = |view: serde_json::Value| {
+        view["scenes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["feature"] == "profile")
+            .unwrap()
+            .clone()
+    };
+    let before = scene(get(&mut studio, "/api/annotations?id=part").1);
+    assert!(before["points"]["crossing"][0].as_f64().unwrap() > 0.);
+    let state = get(&mut studio, "/api/state").1;
+    for body in [
+        br#"{"set":{"search_radius":30}}"#.as_slice(),
+        br#"{"set":{"guide_y":12}}"#.as_slice(),
+    ] {
+        let response = studio.handle("POST", "/api/parameters", body);
+        assert_eq!(
+            response.status,
+            422,
+            "{}",
+            String::from_utf8_lossy(&response.body)
+        );
+        assert_eq!(get(&mut studio, "/api/state").1, state);
+        assert_eq!(fs::read_to_string(&model).unwrap(), original);
+    }
+    let response = studio.handle("POST", "/api/parameters", br#"{"set":{"guide_y":6}}"#);
+    assert_eq!(
+        response.status,
+        200,
+        "{}",
+        String::from_utf8_lossy(&response.body)
+    );
+    let moved = scene(get(&mut studio, "/api/annotations?id=part").1);
+    assert!((moved["points"]["crossing"][0].as_f64().unwrap() - 8.).abs() < 1e-8);
+    let data = get(&mut studio, "/api/sketches").1;
+    let baseline = data["sketches"][0]["definition"].clone();
+    let state = get(&mut studio, "/api/state").1;
+    let drag = json!({"version":data["version"],"instance":"part","feature":"profile","expected":baseline,"definition":baseline,"point":"crossing","target":[-8.,6.]});
+    assert_eq!(
+        studio
+            .handle("POST", "/api/sketch-drag", drag.to_string().as_bytes())
+            .status,
+        422
+    );
+    let mut draft = baseline.clone();
+    draft["constraints"][0]["crossing_point"]["near"] = json!({"components":{"x":{"literal":{"value":-8.5,"dimension":"length","unit":"millimeter"}},"y":{"parameter":"guide_y"},"z":{"literal":{"value":0.,"dimension":"length","unit":"millimeter"}}}});
+    let (status, result) = edit_definition(&mut studio, "profile", draft.clone(), false);
+    assert_eq!(status, 200, "{result}");
+    assert_eq!(result["can_apply"], true);
+    assert!(
+        scene(result["annotations"].clone())["points"]["crossing"][0]
+            .as_f64()
+            .unwrap()
+            < 0.
+    );
+    assert_eq!(get(&mut studio, "/api/state").1, state);
+    assert_eq!(fs::read_to_string(&model).unwrap(), original);
+    let (status, result) = edit_definition(&mut studio, "profile", draft, true);
+    assert_eq!(status, 200, "{result}");
+    history(&mut studio, "undo");
+    assert!(
+        scene(get(&mut studio, "/api/annotations?id=part").1)["points"]["crossing"][0]
+            .as_f64()
+            .unwrap()
+            > 0.
+    );
+    history(&mut studio, "redo");
+    assert_eq!(studio.handle("POST", "/api/save", b"{}").status, 200);
+    let saved = ModelDocument::from_json(&fs::read_to_string(&model).unwrap()).unwrap();
+    assert_eq!(saved.schema_version, CURRENT_SCHEMA_VERSION);
+    let mut reopened = serve::Studio::load(&model, Some("body".into())).unwrap();
+    assert!(
+        scene(get(&mut reopened, "/api/annotations?id=part").1)["points"]["crossing"][0]
+            .as_f64()
+            .unwrap()
+            < 0.
+    );
 }

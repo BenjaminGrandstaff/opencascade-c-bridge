@@ -30,3 +30,17 @@ test('periodic explicit splines are linkable and selectable with inclusive seam 
  try{const host=new Element('div');createPointLinkControls({host,definition:d,changed(){},message(){}});const choice=all(host).find(e=>e['aria-label']==='Point link spline');assert(choice.children.some(e=>e.value==='curve'));assert(all(host).some(e=>e.textContent?.includes('fractions 0 and 1 name the same seam')));}
  finally{delete globalThis.document;delete globalThis.Option;}
 });
+
+test('selected crossing links retain hint expressions, replace seeded memberships and appear in dependencies',()=>{
+ const d=definition(),seeded=linkNamedPoint(d,{point:'p',mode:'crossing',first:'curve',second:'guide'}),near={components:{x:{parameter:'hint_x'},y:{parameter:'guide_y'},z:length(0)}},maximum_distance={parameter:'search_radius'};
+ const next=linkNamedPoint(seeded,{point:'p',mode:'selected_crossing',first:'curve',second:'guide',near,maximum_distance});assert.deepEqual(pointLinks(next,'p'),[{crossing_point:{point:'p',first:'curve',second:'guide',near,maximum_distance}}]);assert.equal(next.points[2].fixed,false);assert.deepEqual(next.constraints[0],d.constraints[0]);
+ const graph=sketchDependencyGraph(next,{feature:'sketch'});assert(dependencyReach(graph,'geometry:a').includes('geometry:p'));assert.equal(pointLinks(releasePointLink(next,'p'),'p').length,0);
+ const bad={point:'p',mode:'selected_crossing',first:'curve',second:'guide',near:{literal:{x:length(1).literal,y:length(2).literal,z:length(1).literal}},maximum_distance:length(2)};assert.throws(()=>linkNamedPoint(d,bad),/Z equal/);bad.near.literal.z=length(0).literal;bad.maximum_distance=length(0);assert.throws(()=>linkNamedPoint(d,bad),/positive/);
+});
+test('selected crossing controls keep parameterized hints and radii until explicitly replaced',()=>{
+ globalThis.document={createElement:tag=>new Element(tag)};globalThis.Option=class extends Element{constructor(text,value){super('option');this.textContent=text;this.value=value;}};
+ try{const near={components:{x:{parameter:'hint_x'},y:{parameter:'guide_y'},z:length(0)}},maximum_distance={parameter:'search_radius'},d=linkNamedPoint(definition(),{point:'p',mode:'selected_crossing',first:'curve',second:'guide',near,maximum_distance}),host=new Element('div');let next;
+ createPointLinkControls({host,definition:d,initialPoint:'p',changed:v=>next=v,message(){}});const input=label=>all(host).find(e=>e['aria-label']===label);assert.equal(input('Point link mode').value,'selected_crossing');find(host,'Link named point').onclick();assert.deepEqual(pointLinks(next,'p')[0].crossing_point.near,near);assert.deepEqual(pointLinks(next,'p')[0].crossing_point.maximum_distance,maximum_distance);
+ input('Crossing hint X (mm)').value='8';input('Crossing hint X (mm)').oninput();input('Crossing hint Y (mm)').value='5';input('Crossing search radius (mm)').value='3';input('Crossing search radius (mm)').oninput();find(host,'Link named point').onclick();assert.equal(pointLinks(next,'p')[0].crossing_point.near.literal.x.value,8);assert.equal(pointLinks(next,'p')[0].crossing_point.maximum_distance.literal.value,3);
+ }finally{delete globalThis.document;delete globalThis.Option;}
+});

@@ -54,7 +54,7 @@ impl Studio {
             .definition
             .constraints
             .iter()
-            .any(|c| c.dependent_point() == Some(edit.point.as_str()))
+            .any(|c| c.dependent_point() == Some(edit.point.as_str()) || matches!(c,occt_parametric::SketchConstraint::CrossingPoint{point,..} if point==&edit.point))
         {
             return Err(
                 "This point follows a saved point link. Edit its source geometry or link instead."

@@ -12,12 +12,12 @@ tracks status and order.
 | `occt-types` (shared value types) | — | No native dependency |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI; re-exports `occt-types` |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric-core` (kernel-free engineering layer) | Schema 148 | Definitions, documents, solving and checks without OCCT |
-| `occt-parametric` (kernel regeneration) | Schema 148 | Active development; re-exports the core API |
+| `occt-parametric-core` (kernel-free engineering layer) | Schema 149 | Definitions, documents, solving and checks without OCCT |
+| `occt-parametric` (kernel regeneration) | Schema 149 | Active development; re-exports the core API |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 154 + first-use integration 1 (+1 doc test), recipes 3, parametric core 36 + kernel 696 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 8 + view command 50 + viewer Node 89 + branch command 2 + model command 90, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 154 + first-use integration 1 (+1 doc test), recipes 3, parametric core 36 + kernel 703 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 8 + view command 51 + viewer Node 91 + branch command 2 + model command 90, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -25,6 +25,14 @@ tracks status and order.
 | Scale benchmarks | Last full suite: 194 Rust cases plus 5 model-command cases and a 10,000-face Python matcher. Sketch authoring integration rechecked 60 sketch cases and 60 MCP cases within budget. | `tools/bench/run.sh` |
 
 ## Done
+
+- Explicit selected crossing points (schema 149, ABI 72): saved sketch-local
+  hint/radius windows select exactly one finite native intersection independently
+  of the target seed. Loss, ambiguity, overlaps and exhausted budgets reject
+  regeneration. Viewer controls preserve expression drivers and offer guarded
+  Preview/Apply, history and Save. Numeric curve-pair caching invalidates on
+  source movement; 1,000 shared-pair targets pass a two-second budget. See
+  [selected crossings](docs/SKETCHES.md#selected-crossing-points-schema-149).
 
 - Saved spline-parameter point links (schema 148, ABI 72): named non-fixed
   points follow the current rational basis after pole/weight/knot/degree edits,
