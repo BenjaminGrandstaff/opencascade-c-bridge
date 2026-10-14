@@ -169,6 +169,18 @@ if(BUILD_TESTING)
     target_link_libraries(occt_bridge_step_assembly_test PRIVATE OpenCascadeCBridge::occt_bridge ${OCCT_BRIDGE_OCCT_LIBRARIES})
     add_test(NAME occt_bridge_step_assembly
         COMMAND occt_bridge_step_assembly_test ${CMAKE_CURRENT_BINARY_DIR}/step-assembly-test.step)
+
+    # Concurrent STEP reads and writes from independent sessions.
+    find_package(Threads REQUIRED)
+    add_executable(occt_bridge_step_concurrency_test tests/step_concurrency_test.c)
+    target_compile_options(
+        occt_bridge_step_concurrency_test PRIVATE
+        $<$<C_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic;-Werror>
+    )
+    target_link_libraries(occt_bridge_step_concurrency_test PRIVATE OpenCascadeCBridge::occt_bridge Threads::Threads)
+    add_test(NAME occt_bridge_step_concurrency
+        COMMAND occt_bridge_step_concurrency_test
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/bowtie_face.step ${CMAKE_CURRENT_BINARY_DIR})
 endif()
 
 install(

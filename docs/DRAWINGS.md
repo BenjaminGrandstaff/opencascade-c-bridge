@@ -1641,7 +1641,10 @@ OCCT 7.9 limits:
   [Annotation views](#annotation-views-schema-145-abi-71)).
 - Its STEP translators share process-wide state, and concurrent writes from
   independent sessions failed spuriously. Every STEP read and write in the
-  bridge now holds one process-wide lock.
+  bridge now holds one process-wide lock. Without it, stress runs crash,
+  drop assembly occurrences, and read a healed fixture as invalid; the
+  `occt_bridge_step_concurrency` C test races fresh processes to keep it so
+  (see the ROADMAP entry on intermittent STEP tests).
 
 At scale, a 400-hole plate's datums, flat top and 400 position controls with
 their sizes are written and verified in one export in about 1.9 s, as are the

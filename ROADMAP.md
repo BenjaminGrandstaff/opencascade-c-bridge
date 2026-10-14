@@ -17,7 +17,7 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 157 + first-use integration 1 (+1 doc test), recipes 3, parametric core 44 + kernel 724 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 56 + viewer Node 114 + branch command 2 + model command 90, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 6/6, bridge 157 + first-use integration 1 (+1 doc test), recipes 3, parametric core 44 + kernel 724 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 56 + viewer Node 114 + branch command 2 + model command 90, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -26,6 +26,23 @@ tracks status and order.
 
 ## Done
 
+- Intermittent STEP test failures explained and guarded (schema 159 and
+  ABI 76 unchanged). Both flakes in `Later` were unsynchronized OCCT STEP
+  translation, which shares process-wide state:
+  - `assembly_frames_export_as_step_sub_assemblies` wrote four STEP
+    assembly occurrences instead of five;
+  - `invalid_results_are_rejected_healed_or_allowed_by_option` read the
+    healed bowtie fixture as invalid.
+
+  Both predate the process-wide STEP lock added with annotation views
+  (schema 145). With the lock disabled in a scratch build, the STEP kernel
+  tests failed 95 of 100 parallel runs, 44 with the four-occurrence count.
+  A race program doing first STEP calls from 16 threads per fresh process
+  loaded the bowtie invalid or failed in 16 of 300 processes and crashed in
+  25. With the lock, 200 parallel test runs and 300 race processes passed.
+  The new `occt_bridge_step_concurrency` C test races 100 fresh processes of
+  16 threads; it caught the unlocked library in 19 of 20 runs and passed 30
+  of 30 with the lock, in about 2 s.
 - Multi-sheet revisions (schema 159; ABI 76 unchanged). Sheets sharing a
   drawing number state `same_revision`, where sheet 1 records the releases
   and every sheet shows its revision, or `per_sheet`, where each sheet is
@@ -2719,15 +2736,6 @@ scopes and inspected repo capabilities, not a full conformity audit.
    sub-assemblies (schema 157) exist.
 
 ## Later
-
-- Investigate intermittent `assembly_frames_export_as_step_sub_assemblies`:
-  one parallel test run during schema-131 verification wrote four rather
-  than five STEP assembly usage occurrences. The isolated test and complete
-  rerun passed; no STEP export code changed in this increment.
-- Investigate intermittent native STEP transfer/healing in
-  `invalid_results_are_rejected_healed_or_allowed_by_option`: one coverage run
-  rejected the bowtie STEP fixture with unorientable/self-intersecting diagnostics;
-  the full rerun passed. No native code changed in the GD&T increment.
 
 - General sheet-metal edge flanges, bend reliefs, hems, cutouts, bend tables,
   and unfolding edited solids beyond constant-width strips.

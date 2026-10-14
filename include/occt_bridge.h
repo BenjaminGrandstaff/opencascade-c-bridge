@@ -1290,7 +1290,9 @@ OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_brep_load(
 );
 
 /* STEP exchange. Geometry and topology are preserved; OCCT session handles,
- * operation history, and application metadata are not part of STEP files. */
+ * operation history, and application metadata are not part of STEP files.
+ * OCCT's STEP translators share process-wide state, so every STEP read and
+ * write, from any session or thread, runs under one process-wide lock. */
 OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_step_save(
     occt_bridge_session_t* session,
     occt_bridge_shape_id_t shape,
