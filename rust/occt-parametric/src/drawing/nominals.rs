@@ -114,14 +114,14 @@ impl DrawingDefinitionInspection for DrawingDefinition {
 
 /// A locally regenerated instance and the placements, innermost first, that
 /// carry its local coordinates into the model.
-struct Part<'definition, 'session> {
-    instance: PartInstance<'definition>,
-    generated: GeneratedResult<'session>,
+pub(super) struct Part<'definition, 'session> {
+    pub(super) instance: PartInstance<'definition>,
+    pub(super) generated: GeneratedResult<'session>,
     placements: Vec<NormalizedPlacement>,
 }
 
 impl<'definition, 'session> Part<'definition, 'session> {
-    fn new(
+    pub(super) fn new(
         graph: &InstanceGraph<'definition>,
         session: &'session Session,
         id: &str,
@@ -139,7 +139,7 @@ impl<'definition, 'session> Part<'definition, 'session> {
         })
     }
 
-    fn model(&self, point: Vec3) -> Vec3 {
+    pub(super) fn model(&self, point: Vec3) -> Vec3 {
         self.placements.iter().fold(point, transform_point)
     }
 
@@ -148,7 +148,7 @@ impl<'definition, 'session> Part<'definition, 'session> {
     }
 
     /// Inverse of [`Self::model`].
-    fn local(&self, point: Vec3) -> Vec3 {
+    pub(super) fn local(&self, point: Vec3) -> Vec3 {
         self.placements.iter().rev().fold(point, |p, placement| {
             let p = subtract(p, placement.translation);
             match placement.rotation {

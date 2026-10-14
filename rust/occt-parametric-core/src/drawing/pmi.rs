@@ -230,6 +230,7 @@ impl DrawingDefinition {
     /// their faces; each composite segment becomes a tolerance of its own.
     /// The rest are skipped with a reason: no faces, an output not exported,
     /// or a datum reference that is skipped or lies on another output.
+    /// Surface textures are always skipped.
     /// Annotations an annotation view shows are drawn as 3D presentations,
     /// and the views list the planned items they show. O(features + frames ·
     /// segments + view entries + presentation linework).
@@ -478,6 +479,14 @@ impl DrawingDefinition {
                     upper_mm,
                 });
             }
+        }
+        // OCCT 7.9's AP242 writer has no surface texture representation.
+        for texture in &self.surface_textures {
+            skip(
+                &mut plan.skipped,
+                &texture.id,
+                "surface texture: no AP242 representation",
+            );
         }
         for view in &self.annotation_views {
             let mut planned = PlannedView {

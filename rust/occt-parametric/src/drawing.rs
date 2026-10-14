@@ -8,8 +8,10 @@ mod curves;
 mod hatching;
 mod nominals;
 mod pmi;
+mod texture_faces;
 pub use nominals::DrawingDefinitionInspection;
 pub use pmi::DrawingStepPmi;
+pub use texture_faces::{DrawingSurfaceTextureFaces, SurfaceTextureFaces};
 
 mod slice;
 pub trait DrawingDefinitionRendering {
@@ -234,7 +236,30 @@ impl DrawingDefinitionRenderingInternal for DrawingDefinition {
             graph,
             &mut drawing,
         )?;
-        gdt::texture::append(&self.surface_textures, &views, graph, &mut drawing)?;
+        let landings = if self
+            .surface_textures
+            .iter()
+            .any(|t| t.attachment.faces.is_some())
+        {
+            self.surface_texture_faces(graph, session)?
+                .into_iter()
+                .map(|faces| {
+                    (faces.texture, {
+                        let [x, y, z] = faces.landing_mm;
+                        Vec3::new(x, y, z)
+                    })
+                })
+                .collect()
+        } else {
+            HashMap::new()
+        };
+        gdt::texture::append(
+            &self.surface_textures,
+            &views,
+            graph,
+            &landings,
+            &mut drawing,
+        )?;
         parts.append(self, &views, graph, &mut drawing)?;
         releases::append(self, &mut drawing);
         guides::append(&self.guides, &views, graph, &mut drawing)?;

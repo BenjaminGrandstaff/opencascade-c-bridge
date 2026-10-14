@@ -4,9 +4,10 @@
 use super::*;
 use occt_parametric::{
     DrawingDefinition, DrawingGdtAttachment, DrawingRenderOptions, DrawingSurfaceTexture,
-    DrawingView, DrawingViewKind, InspectionRecord, InstanceOutputRef, MaterialRemoval,
-    MeasuredProfile, MeasuredTexture, RoughnessLimits, RoughnessParameter, RoughnessUnit,
-    SurfaceLay, TextureAcceptance, TextureResult, Waviness,
+    DrawingSurfaceTextureFaces, DrawingView, DrawingViewKind, InspectionRecord, InstanceOutputRef,
+    MaterialRemoval, MeasuredProfile, MeasuredTexture, NamedReference, ReferenceTarget,
+    RoughnessLimits, RoughnessParameter, RoughnessUnit, SurfaceLay, TextureAcceptance,
+    TextureResult, Waviness,
 };
 
 const TEXTURES: usize = 10_000;
@@ -215,6 +216,91 @@ pub(crate) fn profile_case(definition: &FamilyDefinition) -> Outcome {
             }
             Ok(format!(
                 "{accepted} textures accepted from filtered profiles"
+            ))
+        },
+    )
+}
+
+/// 10,000 requirements on the bench part's six named faces: each face's
+/// requirements agree, their leaders land on the faces, and the drawing
+/// generates with one local regeneration of the part.
+pub(crate) fn face_case(definition: &FamilyDefinition) -> Outcome {
+    timed(
+        format!("surface textures {TEXTURES} on persistent faces: faces, landings, drawing"),
+        Duration::from_secs(1),
+        Expectation::Required,
+        || {
+            let session = Session::new().map_err(|error| failure(error.to_string()))?;
+            let (mut definition, mut drawing) =
+                textured(definition, TEXTURES, TextureAcceptance::MaxRule);
+            let names = ["x-min", "x-max", "y-min", "y-max", "z-min", "z-max"];
+            definition.references = names
+                .iter()
+                .enumerate()
+                .map(|(i, name)| NamedReference {
+                    name: (*name).into(),
+                    target: ReferenceTarget::Faces(FaceSelector::AtExtreme {
+                        axis: [CoordinateAxis::X, CoordinateAxis::Y, CoordinateAxis::Z][i / 2],
+                        extremum: if i % 2 == 0 {
+                            Extremum::Minimum
+                        } else {
+                            Extremum::Maximum
+                        },
+                        tolerance: ScalarExpr::Literal(Quantity::length(
+                            1e-6,
+                            LengthUnit::Millimeter,
+                        )),
+                    }),
+                })
+                .collect();
+            for (i, texture) in drawing.surface_textures.iter_mut().enumerate() {
+                let face = i % names.len();
+                texture.attachment.faces = Some(FaceSelector::Named(names[face].into()));
+                // One requirement per face, repeated in every texture on it.
+                texture.roughness = RoughnessLimits {
+                    parameter: RoughnessParameter::Ra,
+                    maximum: 0.8 * (face + 1) as f64,
+                    minimum: None,
+                };
+                texture.waviness = None;
+                texture.lay = None;
+                texture.material_removal = MaterialRemoval::Required;
+                texture.method = None;
+            }
+            let mut graph = InstanceGraph::new(&definition);
+            graph.add_base("part", HashMap::new(), "bench")?;
+            let faces = drawing.surface_texture_faces(&graph, &session)?;
+            let distinct: std::collections::BTreeSet<_> =
+                faces.iter().map(|f| f.faces.clone()).collect();
+            let generated = drawing.generate(
+                &graph,
+                &session,
+                DrawingRenderOptions {
+                    exact_curves: false,
+                    curve_tolerance_mm: 0.01,
+                    curve_samples: 8,
+                    maximum_vertices: 2_000_000,
+                },
+            )?;
+            if faces.len() != TEXTURES
+                || distinct.len() != names.len()
+                || generated.gdt_labels.len() < TEXTURES
+                || session
+                    .shape_count()
+                    .map_err(|error| failure(error.to_string()))?
+                    != 0
+            {
+                return Err(failure(format!(
+                    "{} textures on {} distinct face sets",
+                    faces.len(),
+                    distinct.len()
+                )));
+            }
+            Ok(format!(
+                "{} textures on {} faces, {} labels, no retained handles",
+                faces.len(),
+                distinct.len(),
+                generated.gdt_labels.len()
             ))
         },
     )

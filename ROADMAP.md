@@ -28,6 +28,14 @@ tracks status and order.
 
 ## Done
 
+- Surface textures on persistent faces (schema 155 and ABI 76 unchanged). A
+  texture attachment's `faces` now name the surface the requirement governs.
+  They are validated, and the drawing's leader lands on them, at the point
+  nearest the anchor. `surface_texture_faces` reports each texture's face
+  indices, area and landing point. It rejects a face governed by two
+  differing requirements. AP242 export lists textures as skipped, since
+  OCCT has no representation for them. See
+  [Textures on persistent faces](docs/DRAWINGS.md#textures-on-persistent-faces).
 - Surface texture acceptance and profile filtering (schema 155; ABI 76
   unchanged). A texture requirement's `acceptance` may invoke ISO 4288's
   16% rule, decided in stages (a first reading under 70% of the maximum,
@@ -2665,8 +2673,12 @@ scopes and inspected repo capabilities, not a full conformity audit.
    modeled (schema 84); metric callouts and drill catalogs are not yet
    checked against a standard.
 5. **Manufacturing surface texture** — [B46.1](https://www.asme.org/codes-standards/about-standards/technology-highlights/advanced-manufacturing):
-   requirements attached to persistent faces rather than leader anchors, and
    Y14.36 symbol placement checked against the standard, which no public
+   source provided, and AP242 exchange of textures, which OCCT 7.9 cannot
+   write. Drawing requirements, symbols and maximum-rule reading checks
+   exist (schema 71), and requirements govern persistent faces with leaders
+   landing on them; the 16% rule and Gaussian filtering of stylus
+   profiles to Ra, Rq, Rz and Rmax exist (schema 155). Short-wave (λs)
    source provided. Drawing requirements, symbols and maximum-rule reading
    checks exist (schema 71); the 16% rule and Gaussian filtering of stylus
    profiles to Ra, Rq, Rz and Rmax exist (schema 155). Short-wave (λs)

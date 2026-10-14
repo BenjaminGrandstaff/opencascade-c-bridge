@@ -292,3 +292,95 @@ fn the_sixteen_percent_rule_and_filtered_profiles_decide_textures() {
     record.surface_textures = vec![reading("basic", vec![], vec![short])];
     assert!(page.evaluate_inspection(&graph, &record).is_err());
 }
+
+#[test]
+fn textures_on_persistent_faces_govern_them_and_land_their_leaders() {
+    let definition = super::pmi::drilled_plate();
+    let mut graph = InstanceGraph::new(&definition);
+    graph.add_base("part", HashMap::new(), "test").unwrap();
+    let session = Session::new().unwrap();
+    let on = |id: &str, anchor: &str, face: &str| {
+        let mut t = texture(id, anchor);
+        t.attachment.faces = Some(FaceSelector::Named(face.into()));
+        t
+    };
+    let mut page = textured_page();
+    // The bore wall nearest the right datum's origin (60, 0, 0); a top face
+    // requirement repeated identically, as from a second view.
+    page.surface_textures = vec![
+        on("bore", "right", "first_wall"),
+        on("top", "top", "top_face"),
+        on("top-again", "top", "top_face"),
+        texture("loose", "bottom"),
+    ];
+    page.surface_textures[3].attachment.offset_mm = [70.0, -20.0];
+    let faces = page.surface_texture_faces(&graph, &session).unwrap();
+    assert_eq!(
+        faces.iter().map(|f| f.texture.as_str()).collect::<Vec<_>>(),
+        ["bore", "top", "top-again"]
+    );
+    let bore = &faces[0];
+    assert_eq!(bore.faces.len(), 1);
+    assert!((bore.area_mm2 - std::f64::consts::PI * 10.0 * 10.0).abs() < 1e-3);
+    let toward = [40.0, -20.0].map(|v: f64| v / 40f64.hypot(20.0));
+    let expected = [20.0 + 5.0 * toward[0], 20.0 + 5.0 * toward[1], 0.0];
+    for (got, want) in bore.landing_mm.iter().zip(expected) {
+        assert!((got - want).abs() < 1e-6, "{:?}", bore.landing_mm);
+    }
+    assert_eq!(faces[1].faces, faces[2].faces);
+    assert!((faces[1].area_mm2 - (60.0 * 40.0 - 2.0 * std::f64::consts::PI * 25.0)).abs() < 1e-3);
+    // The leader of the bore requirement starts on the bore, not the datum.
+    let generated = page
+        .generate(&graph, &session, DrawingRenderOptions::default())
+        .unwrap();
+    let view = &page.views[0];
+    let [x, y, z] = bore.landing_mm;
+    let landing = view
+        .paper(view.project(Vec3::new(x, y, z)).unwrap())
+        .unwrap();
+    assert!(generated.gdt_lines.iter().any(|line| {
+        line.points_mm
+            .iter()
+            .any(|p| (p[0] - landing[0]).hypot(p[1] - landing[1]) < 1e-9)
+    }));
+    // Textures are not exchanged as AP242 PMI.
+    let plan = page.pmi_plan(&graph, |_| true).unwrap();
+    assert_eq!(
+        plan.skipped
+            .iter()
+            .filter(|s| s.reason.starts_with("surface texture"))
+            .count(),
+        4
+    );
+    // Different requirements may not govern one face.
+    let mut conflicting = page.clone();
+    conflicting.surface_textures[2].roughness.maximum = 3.2;
+    let error = conflicting
+        .surface_texture_faces(&graph, &session)
+        .unwrap_err();
+    assert!(
+        error.message.contains("different requirements"),
+        "{error:?}"
+    );
+    assert!(
+        conflicting
+            .generate(&graph, &session, DrawingRenderOptions::default())
+            .is_err()
+    );
+    // Unknown face references fail validation; empty selections fail.
+    let mut unknown = page.clone();
+    unknown.surface_textures[0].attachment.faces = Some(FaceSelector::Named("missing".into()));
+    assert!(unknown.validate(&graph).is_err());
+    let mut empty = page.clone();
+    empty.surface_textures[0].attachment.faces = Some(FaceSelector::NearestCenter {
+        target: VectorExpr::Literal(VectorQuantity::lengths(
+            500.0,
+            0.0,
+            0.0,
+            LengthUnit::Millimeter,
+        )),
+        maximum_distance: ScalarExpr::Literal(Quantity::length(1.0, LengthUnit::Millimeter)),
+    });
+    assert!(empty.surface_texture_faces(&graph, &session).is_err());
+    assert_eq!(session.shape_count().unwrap(), 0);
+}

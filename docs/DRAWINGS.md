@@ -1602,7 +1602,8 @@ kind and faces (part-local area and centroid). The returned
 (continuous feature, dynamic profile, unequal zone, and how a composite's
 lower segment relates to the one above) and what did not read back. It also
 lists the annotations skipped and why: no faces, an output not exported, or a
-datum reference that is skipped or lies on another output. `verified()` holds
+datum reference that is skipped or lies on another output, and every surface
+texture, which AP242 export through OCCT cannot represent. `verified()` holds
 when nothing was lost, and `complete()` when nothing was skipped or left
 unrepresented either. Faces that select nothing fail the export, naming the
 annotation.
@@ -1793,9 +1794,38 @@ end; the bar grows to fit its notes. Symbols are vector strokes plus text in
 budget. Text positions use a 2 mm per character estimate; the layout follows
 Y14.36's arrangement but has not been checked against the standard's figures.
 Validation rejects repeated IDs, nonpositive or nonfinite values, a minimum at
-or above the maximum, a nonstandard cutoff, an invalid method and the usual
-attachment errors. Like GD&T anchors, a texture's anchor locates the leader;
-it does not select a persistent face.
+or above the maximum, a nonstandard cutoff, an invalid method, attachment
+`faces` naming anything but the output family's face references, and the
+usual attachment errors.
+
+### Textures on persistent faces
+
+A texture's `attachment` may name `faces`, a `FaceSelector` over the output
+family's face references (as GD&T attachments do since schema 144). They are
+the surface the requirement governs. The anchor still places the symbol, at
+`offset_mm` from the anchor's paper point. The leader, though, lands on the
+faces, at the point nearest the anchor datum's origin, so it touches the
+governed surface wherever the anchor lies.
+
+`DrawingSurfaceTextureFaces::surface_texture_faces(graph, session)` returns,
+in drawing order, each face-attached texture's output, governed face indices
+(ascending, valid on the placed output since placement keeps face order),
+their total area and the leader's landing point in model coordinates.
+Selections that select nothing fail. So does a face governed by two textures
+whose requirements differ: unit, roughness limits, cutoff, waviness, lay,
+material removal, method or acceptance. A requirement repeated identically,
+for example in a second view, is allowed.
+
+Faces are selected on one local regeneration per textured instance. Each
+distinct selector on an output is resolved once, and its textures' anchors are
+projected onto it in one batch. Drawing generation calls this only when some
+texture names faces. A scale benchmark draws 10,000 textures on a part's six
+named faces in about 0.12 s against a 1 s budget.
+
+Surface textures are not exchanged as AP242 PMI: OCCT 7.9's writer has no
+representation for them. `export_step_pmi` lists every texture under
+`skipped` with the reason `surface texture: no AP242 representation`, so
+`complete()` is false for drawings that have textures.
 
 ### Checking measured roughness
 

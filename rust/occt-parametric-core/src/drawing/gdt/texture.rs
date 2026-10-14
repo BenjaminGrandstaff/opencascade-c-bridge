@@ -119,6 +119,9 @@ pub struct Waviness {
 
 /// A surface texture requirement shown on a drawing, attached like a GD&T
 /// control: the leader points at the anchor datum on the selected output.
+/// When the attachment names persistent `faces`, they are the surface the
+/// requirement governs, and the leader lands on them at the point nearest
+/// the anchor.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct DrawingSurfaceTexture {
@@ -172,6 +175,7 @@ pub fn validate(
             return Err(ModelError::new("surface textures need unique nonempty IDs"));
         }
         anchor(&texture.attachment, views, graph)?;
+        validate_faces(&texture.attachment, graph)?;
         let limits = &texture.roughness;
         positive(limits.maximum, "maximum")?;
         if let Some(minimum) = limits.minimum {
@@ -260,16 +264,23 @@ fn below_bar(texture: &DrawingSurfaceTexture) -> String {
     below.join("  ")
 }
 
-/// Draws each symbol at its attachment's paper offset, with a leader from
-/// the anchored surface point to the symbol's vertex. O(textures).
+/// Draws each symbol at its attachment's paper offset from the anchor, with
+/// a leader to the symbol's vertex from the anchored point, or from the
+/// texture's `landings` point (model coordinates) on its faces when given.
+/// O(textures).
 pub fn append(
     textures: &[DrawingSurfaceTexture],
     views: &HashMap<&str, &DrawingView>,
     graph: &InstanceGraph<'_>,
+    landings: &HashMap<String, Vec3>,
     d: &mut GeneratedDrawing,
 ) -> Result<(), ModelError> {
     for texture in textures {
-        let (point, [x, y]) = anchor(&texture.attachment, views, graph)?;
+        let (mut point, [x, y]) = anchor(&texture.attachment, views, graph)?;
+        if let Some(landing) = landings.get(&texture.id) {
+            let view = views[texture.attachment.view.as_str()];
+            point = view.paper(view.project(*landing)?)?;
+        }
         let at = |p: [f64; 2]| [x + p[0], y + p[1]];
         leader(d, point, [x, y], false);
         line(d, vec![at(SHORT), [x, y], at(LONG)]);

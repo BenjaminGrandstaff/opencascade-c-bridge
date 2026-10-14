@@ -25,7 +25,7 @@ fn facing(name: &str, axis: CoordinateAxis, extremum: Extremum) -> NamedReferenc
 
 /// A 60 × 40 × 10 mm plate with Ø10 bores at x = 20 and 40, and a named
 /// reference for each face.
-fn drilled_plate() -> FamilyDefinition {
+pub(super) fn drilled_plate() -> FamilyDefinition {
     let mut definition = super::inspection::plate();
     let bore = |id: &str, x: f64| FeatureDefinition {
         id: id.into(),
