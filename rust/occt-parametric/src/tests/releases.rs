@@ -20,6 +20,7 @@ fn release(revision: &str, date: &str, model: Option<&str>) -> DrawingRelease {
             approval("APPROVED", "A. Approver", date),
         ],
         model_revision: model.map(Into::into),
+        changes: Vec::new(),
     }
 }
 
@@ -36,6 +37,7 @@ fn sheet_drawing(revision: &str) -> DrawingDefinition {
         releases: Vec::new(),
         revision_table: Some(DrawingRevisionTable {
             position_mm: [240.0, 260.0],
+            zone_column: false,
         }),
         sheet: Some(DrawingSheet {
             size: DrawingSheetSize::AnsiB,
@@ -324,5 +326,128 @@ fn standard_lettering_cuts_revision_cells_to_their_measured_width() {
             .iter()
             .any(|label| label.text == "REV" && label.height_mm == notes)
     );
+    assert_eq!(session.shape_count().unwrap(), 0);
+}
+
+fn marker(position_mm: [f64; 2], leader: Option<&str>) -> DrawingChangeMarker {
+    DrawingChangeMarker {
+        position_mm,
+        leader: leader.map(|view| DrawingChangeLeader {
+            view: view.into(),
+            anchor: DatumRef::new("part", "corner"),
+        }),
+    }
+}
+
+#[test]
+fn change_markers_draw_revision_symbols_and_fill_the_zone_column() {
+    let mut family = block_family();
+    family.datums.push(DatumDefinition {
+        id: "corner".into(),
+        kind: DatumKind::Point {
+            origin: VectorExpr::Literal(VectorQuantity::lengths(
+                0.0,
+                0.0,
+                0.0,
+                LengthUnit::Millimeter,
+            )),
+        },
+    });
+    let mut graph = InstanceGraph::new(&family);
+    graph.add_base("part", HashMap::new(), "test").unwrap();
+    let session = Session::new().unwrap();
+    let mut drawing = sheet_drawing("B");
+    drawing.sheet.as_mut().unwrap().zones = Some(SheetZones::Grid {
+        columns: 8,
+        rows: 4,
+    });
+    drawing.revision_table.as_mut().unwrap().zone_column = true;
+    let mut b = release("B", "2026-10-08", None);
+    // Two markers share a zone; the first points at the corner datum, which
+    // the top view puts at (60, 80) on the paper.
+    b.changes = vec![
+        marker([150.0, 200.0], Some("top")),
+        marker([300.0, 120.0], None),
+        marker([152.0, 202.0], None),
+    ];
+    drawing.releases = vec![release("A", "2026-10-01", None), b];
+    let grid = drawing.sheet.as_ref().unwrap().zone_grid().unwrap();
+    let (first, second) = (
+        grid.zone_at([150.0, 200.0]).unwrap(),
+        grid.zone_at([300.0, 120.0]).unwrap(),
+    );
+    assert_ne!(first, second);
+    let generated = drawing
+        .generate(&graph, &session, DrawingRenderOptions::default())
+        .unwrap();
+    let mut plain = drawing.clone();
+    plain.releases[1].changes.clear();
+    plain.revision_table.as_mut().unwrap().zone_column = false;
+    let without = plain
+        .generate(&graph, &session, DrawingRenderOptions::default())
+        .unwrap();
+    let count = |lines: &[DrawingPolyline]| lines.iter().map(|l| l.points_mm.len()).sum::<usize>();
+    // Three triangles of 4 vertices and one leader of 5; one more column line.
+    assert_eq!(
+        count(&generated.gdt_lines) - count(&without.gdt_lines),
+        3 * 4 + 5
+    );
+    assert_eq!(
+        count(&generated.sheet_lines) - count(&without.sheet_lines),
+        2
+    );
+    assert_eq!(
+        generated
+            .gdt_labels
+            .iter()
+            .filter(|l| l.text == "B")
+            .count(),
+        3
+    );
+    assert!(generated.gdt_lines.iter().any(|line| {
+        line.points_mm
+            .iter()
+            .any(|p| (p[0] - 60.0).hypot(p[1] - 80.0) < 1e-9)
+    }));
+    if let Some(directory) = std::env::var_os("OCCB_RELEASE_QA_DIR") {
+        std::fs::write(
+            std::path::Path::new(&directory).join("changes.svg"),
+            generated.to_svg(),
+        )
+        .unwrap();
+    }
+    let cells: Vec<&str> = generated
+        .sheet_labels
+        .iter()
+        .map(|l| l.text.as_str())
+        .collect();
+    let zones = format!("{first}, {second}");
+    for text in ["ZONE", zones.as_str(), "—"] {
+        assert!(cells.contains(&text), "{text} not in {cells:?}");
+    }
+    // Markers and the zone column persist (schema 156).
+    let mut document = ModelDocument::from_graph(&graph);
+    document.drawings.push(drawing.clone());
+    let json = document.to_json_pretty().unwrap();
+    assert!(json.contains("\"changes\"") && json.contains("\"zone_column\": true"));
+    assert_eq!(ModelDocument::from_json(&json).unwrap(), document);
+    assert_eq!(document.schema_version, CURRENT_SCHEMA_VERSION);
+
+    for case in 0..6 {
+        let mut bad = drawing.clone();
+        let changes = &mut bad.releases[1].changes;
+        match case {
+            // A zone column needs zones, and markers inside them.
+            0 => bad.sheet.as_mut().unwrap().zones = None,
+            1 => changes[1].position_mm = [6.0, 6.0],
+            2 => changes[1].position_mm = [500.0, 100.0],
+            // Leaders reach past their symbol, to a view showing the anchor.
+            3 => changes[0].position_mm = [62.0, 82.0],
+            4 => changes[0].leader.as_mut().unwrap().view = "side".into(),
+            _ => changes[0].leader.as_mut().unwrap().anchor = DatumRef::new("other", "corner"),
+        }
+        assert!(bad.validate(&graph).is_err(), "case {case}");
+    }
+    drop(graph);
     assert_eq!(session.shape_count().unwrap(), 0);
 }

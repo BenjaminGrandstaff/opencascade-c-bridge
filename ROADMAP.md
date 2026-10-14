@@ -9,13 +9,11 @@ tracks status and order.
 | Layer | Version | State |
 |---|---|---|
 | C ABI (`src/`, `include/`) | ABI 76 | Stable; exact version match required |
-| C ABI (`src/`, `include/`) | ABI 72 | Stable; exact version match required |
-| C ABI (`src/`, `include/`) | ABI 73 | Stable; exact version match required |
 | `occt-types` (shared value types) | — | No native dependency |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI; re-exports `occt-types` |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric-core` (kernel-free engineering layer) | Schema 149 | Definitions, documents, solving and checks without OCCT |
-| `occt-parametric` (kernel regeneration) | Schema 149 | Active development; re-exports the core API |
+| `occt-parametric-core` (kernel-free engineering layer) | Schema 156 | Definitions, documents, solving and checks without OCCT |
+| `occt-parametric` (kernel regeneration) | Schema 156 | Active development; re-exports the core API |
 
 | Quality gate | Result | Command |
 |---|---|---|
@@ -28,6 +26,12 @@ tracks status and order.
 
 ## Done
 
+- Change markers and zones (schema 156; ABI 76 unchanged). A release's
+  `changes` draw revision symbols (the revision in a delta) on the sheet,
+  with optional leaders to a datum in a view. A revision table's
+  `zone_column` lists each release's marker zones from the sheet's zone
+  grid. See
+  [Change markers and zones](docs/DRAWINGS.md#change-markers-and-zones-schema-156).
 - Surface textures on persistent faces (schema 155 and ABI 76 unchanged). A
   texture attachment's `faces` now name the surface the requirement governs.
   They are validated, and the drawing's leader lands on them, at the point
@@ -2686,11 +2690,11 @@ scopes and inspected repo capabilities, not a full conformity audit.
    Rendering-material roughness is
    independent of these requirements.
 6. **Controlled drawing release and assembly lists** — [Y14.100](https://www.asme.org/codes-standards/find-codes-standards/engineering-drawing-practices):
-   change zones and markers, approval workflow and signatures, merged
-   identical sub-assemblies, and multi-sheet revision tables. Release records
-   with approvals, model revision links and status, revision tables (schema
-   90), and flat or nested parts lists with item balloons (schemas 87, 91)
-   exist.
+   approval workflow and signatures, merged identical sub-assemblies, and
+   multi-sheet revision tables. Release records with approvals, model
+   revision links and status, revision tables (schema 90), change markers
+   with a zone column (schema 156), and flat or nested parts lists with
+   item balloons (schemas 87, 91) exist.
 
 ## Later
 

@@ -845,7 +845,8 @@ route overlays. See [helix viewer semantics](docs/HELIX.md#ai-example-and-linked
 Drawings record [releases and revision tables](docs/DRAWINGS.md#releases-and-revision-tables-schema-90):
 dated revisions with approvals, links to the model's revision ledger, a status
 that flags model changes since the latest release, and a drawn revision table.
-Schema 90 adds them.
+Schema 90 adds them; schema 156 adds revision symbols marking each release's
+changes on the sheet, and a ZONE column listing their sheet zones.
 
 Drawings can carry [parts lists and item balloons](docs/DRAWINGS.md#parts-lists-and-balloons-schema-87):
 shown instances group into numbered items by family, parameter values, output

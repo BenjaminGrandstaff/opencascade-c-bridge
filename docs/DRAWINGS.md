@@ -1979,7 +1979,41 @@ linework and counts exactly in the vertex budget. Parts lists are likewise
 refused when their rows would run off the paper.
 
 Validation is O(releases + approvals + model revisions). A scale case
-validates 10,000 releases with approvals and reports their status. Not yet
-included: per-revision change zones and change markers on the drawing,
-approval workflow states, electronic signatures, and multi-sheet revision
-tables.
+validates 10,000 releases with approvals and reports their status.
+
+### Change markers and zones (schema 156)
+
+A release's `changes` mark where it changed the drawing, as ASME Y14.35
+practice identifies changes: revision symbols in the field of the drawing
+and their zones in the revision table's ZONE column.
+
+```json
+"changes": [
+  { "position_mm": [150, 200], "leader": { "view": "top", "anchor": { "instance": "part", "datum": "corner" } } },
+  { "position_mm": [300, 120] }
+],
+"revision_table": { "position_mm": [240, 260], "zone_column": true }
+```
+
+- **Symbol.** Each marker draws the release's revision inside an apex-up
+  triangle (a delta) centred on `position_mm`. The triangle is at least 8 mm
+  on a side and grows to fit the revision at the notes lettering height. The
+  triangle is common US practice; the shape has not been checked against the
+  standard's own text. The whole symbol must lie on the paper.
+- **Leader.** An optional `leader` draws an arrow from the triangle's edge to
+  a datum's projection in a view. The datum must be on an unsuppressed
+  instance the view shows, and must lie at least 4 mm beyond the symbol's
+  corners.
+- **Zones.** With `zone_column`, the revision table gains a 24 mm ZONE column
+  before REV. Each release's row lists the distinct sheet zones of its
+  markers in marker order (`B3, C6`), or `—` when it has none. Lists longer
+  than ten characters are shortened with an ellipsis on the drawing only.
+  The sheet must have zones, and every marker must lie inside them.
+
+Symbols and leaders are annotation linework (`gdt_lines` and `gdt_labels`),
+and count exactly in the vertex budget: 4 vertices a symbol and 5 a leader.
+Markers of every release are drawn. A scale case draws 10,000 markers in 100
+releases, with zones listed for each, in about 0.01 s against a 1 s budget.
+Not yet included: approval workflow states, electronic signatures, and
+multi-sheet revision tables (Y14.35's drawing-level, sheet-level and
+all-sheets-same-revision methods).

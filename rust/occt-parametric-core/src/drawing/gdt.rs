@@ -681,14 +681,14 @@ fn validate_control(frame: &DrawingFeatureControlFrame) -> Result<(), ModelError
     }
     Ok(())
 }
-fn line(d: &mut GeneratedDrawing, p: Vec<[f64; 2]>) {
+pub(super) fn line(d: &mut GeneratedDrawing, p: Vec<[f64; 2]>) {
     d.gdt_lines.push(DrawingPolyline {
         points_mm: p,
         hidden: false,
         thin: true,
     });
 }
-fn text(d: &mut GeneratedDrawing, p: [f64; 2], value: String) {
+pub(super) fn text(d: &mut GeneratedDrawing, p: [f64; 2], value: String) {
     d.gdt_labels.push(DrawingLabel {
         position_mm: p,
         text: value,
@@ -703,7 +703,7 @@ fn rectangle(d: &mut GeneratedDrawing, p: [f64; 2], w: f64) {
         vec![[x, y], [x + w, y], [x + w, y + 8.0], [x, y + 8.0], [x, y]],
     );
 }
-fn leader(d: &mut GeneratedDrawing, point: [f64; 2], target: [f64; 2], closed: bool) {
+pub(super) fn leader(d: &mut GeneratedDrawing, point: [f64; 2], target: [f64; 2], closed: bool) {
     let delta = [target[0] - point[0], target[1] - point[1]];
     let n = delta[0].hypot(delta[1]);
     let u = [delta[0] / n, delta[1] / n];

@@ -51,7 +51,10 @@ pub mod strokes;
 pub mod thread_lines;
 pub use guides::{DrawingGuide, DrawingGuideKind, DrawingGuideLine, DrawingGuideLineKind};
 pub use parts_list::{DrawingBalloon, DrawingPartsList, PartsListItem};
-pub use releases::{DrawingApproval, DrawingRelease, DrawingReleaseStatus, DrawingRevisionTable};
+pub use releases::{
+    DrawingApproval, DrawingChangeLeader, DrawingChangeMarker, DrawingRelease,
+    DrawingReleaseStatus, DrawingRevisionTable,
+};
 pub mod sheets;
 pub use sheets::{
     DrawingLettering, DrawingSheet, DrawingSheetOrientation, DrawingSheetSize, DrawingZoneGrid,
@@ -501,6 +504,7 @@ impl DrawingDefinition {
         pmi::views::validate(self)?;
         parts_list::validate(self, &views, graph)?;
         releases::validate(self)?;
+        releases::validate_changes(self, &views, graph)?;
         dataset::validate(self)?;
         let mut ids = HashSet::new();
         for note in &self.notes {

@@ -624,6 +624,7 @@ fn datasets_carry_identification_revision_and_approvals() {
         date: "2026-09-01".into(),
         approvals: vec![approval("APPROVED", "M. Ortiz", "2026-09-01")],
         model_revision: None,
+        changes: Vec::new(),
     }];
     let error = page.validate(&graph).unwrap_err().message;
     assert!(
@@ -640,6 +641,7 @@ fn datasets_carry_identification_revision_and_approvals() {
             approval("APPROVED", "M. Ortiz", "2026-10-02"),
         ],
         model_revision: Some("r2".into()),
+        changes: Vec::new(),
     });
     page.validate(&graph).unwrap();
     // The latest release is written: its revision, description and

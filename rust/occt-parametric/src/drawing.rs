@@ -262,6 +262,7 @@ impl DrawingDefinitionRenderingInternal for DrawingDefinition {
         )?;
         parts.append(self, &views, graph, &mut drawing)?;
         releases::append(self, &mut drawing);
+        releases::append_changes(self, &views, graph, &mut drawing)?;
         guides::append(&self.guides, &views, graph, &mut drawing)?;
         drawing.polylines.extend(thread_lines);
         let context = dimensions::DimensionContext::new(&self.dimensions, graph)?;
