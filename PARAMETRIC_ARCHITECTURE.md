@@ -348,7 +348,13 @@ with sketch edits and leaves accepted state, files and history untouched. Radius
 edits reuse the current candidate snapshot and update hover feedback locally,
 including edits made while the query loads. Invalid radii block staging and
 clear the cursor overlay until corrected; target identity remains frozen during
-an active pick.
+an active pick. Drawing tools also reuse projected endpoint,
+junction and intersection point IDs when snapping. Native positions guide the
+cursor, while saved geometry keeps stable point references rather than fixed
+copies. A clicked point wins coincident-reference ties, and typed constraint
+controls expose the same names. Source parameter changes therefore move drawn
+consumers without an additional persisted format.
+
 
 
 Schema 72 adds ellipses, signed line angles in radians, circular radius and

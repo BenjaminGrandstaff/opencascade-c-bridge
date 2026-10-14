@@ -32,7 +32,7 @@ export function geometryIds(definition, group) {
   const kindGroup={line:'lines',circle:'circles',arc:'arcs',ellipse:'ellipses',spline:'splines',chain:'splines'};
   const suffixes={line:['start','end'],circle:['center','rim'],arc:['center','start','end'],ellipse:['center','major','minor'],spline:['start','end'],chain:['start','end']};
   for(const p of definition.projections??[]){
-    if(group==='points')ids.push(...(suffixes[p.kind]??[]).map(key=>`${p.id}:${key}`));
+    if(group==='points')ids.push(...(suffixes[p.kind]??[]).map(key=>`${p.id}:${key}`),...(p.junctions??[]).map(j=>`${p.id}:junction:${j.id}`),...(p.intersections??[]).map(i=>`${p.id}:intersection:${i.id}`));
     else if(keys.includes(kindGroup[p.kind]))ids.push(p.id);
   }
   return [...new Set(ids)];

@@ -1,3 +1,4 @@
+import {geometryIds} from './constraint-controls.mjs';
 const literal = value => ({literal:{value,dimension:'length',unit:'millimeter'}});
 const collections = ['points','lines','circles','arcs','ellipses','splines','shapes','texts','patterns','projections','measurements'];
 export function nextId(definition, prefix) {
@@ -5,13 +6,15 @@ export function nextId(definition, prefix) {
   for(const op of definition.curve_operations??[])if(op.split){used.add(op.split.before);used.add(op.split.after);}
   let i=1;while(used.has(`${prefix}${i}`))i++;return `${prefix}${i}`;
 }
-export function snapPosition(position, definition, solved={}, grid=1, tolerance=0) {
+export function snapPosition(position, definition, solved={}, grid=1, tolerance=0, preferredPoint=null) {
   if (!position.every(Number.isFinite) || !Number.isFinite(grid) || grid<0) throw new Error('Use finite coordinates and a nonnegative grid spacing.');
   let best=null;
-  for(const point of definition.points??[]){
-    const xy=solved[point.id] ?? (point.x?.literal?.unit==='millimeter'&&point.y?.literal?.unit==='millimeter'?[point.x.literal.value,point.y.literal.value]:null);
-    if(!xy)continue;const distance=Math.hypot(xy[0]-position[0],xy[1]-position[1]);
-    if(distance<=tolerance && (!best||distance<best.distance))best={id:point.id,xy:xy.slice(0,2),distance};
+  const authored=new Map((definition.points??[]).map(p=>[p.id,p]));
+  for(const id of geometryIds(definition,'points')){
+    const point=authored.get(id);
+    const xy=solved[id] ?? (point?.x?.literal?.unit==='millimeter'&&point?.y?.literal?.unit==='millimeter'?[point.x.literal.value,point.y.literal.value]:null);
+    if(!Array.isArray(xy)||xy.length<2||(!Number.isFinite(xy[0])||!Number.isFinite(xy[1])))continue;const distance=Math.hypot(xy[0]-position[0],xy[1]-position[1]);
+    if(distance<=tolerance && (!best||id===preferredPoint||(best.id!==preferredPoint&&distance<best.distance)))best={id,xy:xy.slice(0,2),distance};
   }
   return best?{point:best.id,xy:best.xy}:{point:null,xy:position.map(value=>grid?Math.round(value/grid)*grid:value)};
 }
@@ -42,9 +45,10 @@ export function ellipseMinor(clicks){
 }
 export function drawPrimitive(definition, kind, clicks, {fixed=true, profile=false,clockwise=false,closed=false,sides=6}={}) {
   const candidate=structuredClone(definition),created=[];
+  const reusablePoints=new Set(geometryIds(candidate,'points'));
   function point(click){
-    if(click.point && (candidate.points??[]).some(p=>p.id===click.point))return click.point;
-    const id=nextId(candidate,'P');(candidate.points??=[]).push({id,x:literal(click.xy[0]),y:literal(click.xy[1]),fixed});created.push(id);return id;
+    if(click.point && reusablePoints.has(click.point))return click.point;
+    const id=nextId(candidate,'P');(candidate.points??=[]).push({id,x:literal(click.xy[0]),y:literal(click.xy[1]),fixed});reusablePoints.add(id);created.push(id);return id;
   }
   function line(start,end){const id=nextId(candidate,'L');(candidate.lines??=[]).push({id,start,end});return id;}
   if(clicks.some(click=>!click.xy.every(Number.isFinite)))throw new Error('Drawing coordinates must be finite.');
@@ -140,13 +144,14 @@ export function createCanvasTools({host,getDraft,setDraft,changed,message,ghost,
   const sidesRow=input('Polygon sides (3–1000)','number',sides,value=>{sides=value;if(!Number.isInteger(value)||value<3||value>1000)message('A regular polygon needs 3 to 1000 integer sides.');});
   const finish=document.createElement('button');finish.textContent='Finish spline';finish.disabled=true;section.append(finish);
   const instructions=document.createElement('p');instructions.textContent='Arc: center, start, end direction. Ellipse: center, major-axis end, minor width. Slot: cap centers, then half-width. Polygon: center, first vertex. Spline: interpolation points, then Finish spline. Preview builds native geometry.';section.append(instructions);
+  const snapStatus=document.createElement('p');snapStatus.setAttribute('data-snap-status','');snapStatus.setAttribute('aria-live','polite');section.append(snapStatus);
   host.append(section);
   function paint(path=[]){ghost([...pendingPaths,...(path.length?[path]:[])]);}
-  function cancel(){clicks=[];gesture=null;finish.disabled=true;paint();}
+  function cancel(){clicks=[];gesture=null;snapStatus.textContent='';finish.disabled=true;paint();}
   function reviewed(){pendingPaths=[];cancel();}
   function showOptions(){clockwiseRow.hidden=mode!=='arc';closeRow.hidden=finish.hidden=mode!=='spline';sidesRow.hidden=mode!=='polygon';}showOptions();
   select.onchange=()=>{cancel();mode=select.value;showOptions();modeChanged(mode);message(mode==='select'?'Select geometry for dimensions and constraints.':`Canvas ${mode} tool active.`);};
-  function snap(event){return snapPosition(event.position,gesture?{...getDraft(),points:getDraft().points.filter(p=>p.id!==gesture.point)}:getDraft(),event.scene.points,grid,event.tolerance);}
+  function snap(event){const click=snapPosition(event.position,gesture?{...getDraft(),points:getDraft().points.filter(p=>p.id!==gesture.point)}:getDraft(),event.scene.points,grid,event.tolerance,event.point);const text=click.point?`Snap: ${click.point}`:'';if(snapStatus.textContent!==text)snapStatus.textContent=text;return click;}
   function commit(points){
     const result=drawPrimitive(getDraft(),mode,points,{fixed,profile,clockwise,closed,sides});
     setDraft(result.definition);pendingPaths.push(primitiveGhost(mode,points.slice(0,-1),points.at(-1),{clockwise,closed,sides}));cancel();changed();message('Geometry drawn into the draft. Preview to solve and check it.');
@@ -177,6 +182,6 @@ export function createCanvasTools({host,getDraft,setDraft,changed,message,ghost,
       }catch(error){message(error.message);return true;}
     },
     move(event){if(mode==='select'||event.shiftKey)return false;try{const cursor=snap(event);paint(gesture?[[...gesture.start,0],[...cursor.xy,0]]:primitiveGhost(mode,clicks,cursor,{clockwise,closed,sides}));}catch(error){message(error.message);}return true;},
-    async up(event){if(!gesture)return;const pending=gesture;gesture=null;const target=snapPosition(event.position,{...getDraft(),points:getDraft().points.filter(p=>p.id!==pending.point)},event.scene.points,grid,event.tolerance).xy;paint();if(Math.hypot(target[0]-pending.start[0],target[1]-pending.start[1])<1e-8)return;await dragPoint(pending.point,target);},
+    async up(event){if(!gesture)return;const pending=gesture;gesture=null;const target=snapPosition(event.position,{...getDraft(),points:getDraft().points.filter(p=>p.id!==pending.point)},event.scene.points,grid,event.tolerance,event.point).xy;paint();if(Math.hypot(target[0]-pending.start[0],target[1]-pending.start[1])<1e-8)return;await dragPoint(pending.point,target);},
   };
 }

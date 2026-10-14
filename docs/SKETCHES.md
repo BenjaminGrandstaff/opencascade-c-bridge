@@ -52,6 +52,24 @@ curve / rectangle as outer profile**, or stay construction geometry. The canvas
 shows only the options for the active tool. Preview verifies the solved curves,
 closure, dependent solids, and requirements before Apply.
 
+Canvas drawing snaps to declared projected point references as well as authored
+points: endpoints, named chain junctions and named intersections. Their positions
+come from native solved geometry. Drawing a line, circle, arc or spline at such a
+point reuses its stable reference instead of creating a fixed duplicate, so the
+new geometry follows later source parameter changes. **Fix new points** applies
+only to points actually created by the drawing operation.
+
+The canvas shows **Snap: point-name** while hovering a snap target. Clicking a
+specific point takes priority when references share the same position; otherwise
+the nearest declared point within screen tolerance wins, ahead of grid snapping.
+Unavailable or non-finite projected positions are skipped, and undeclared names
+from an older native view cannot become references in the draft. Named projected
+junctions and intersections are also available in typed constraint point lists.
+Native Preview/Apply verifies references, dependent geometry and requirements;
+losing a source reference rejects the edit. Save and history preserve these links.
+A scale check of 100 snaps over 10,000 declared projected points completed in
+about 265 ms. Model schema 149 and ABI 73 stay unchanged.
+
 **Shape parameters** edits existing shortcut definitions: slot radius, polygon
 side count, rectangle angle, and conic rho. Choose the shape by name or arm
 **Select shape from canvas** and click one of its generated boundary curves.

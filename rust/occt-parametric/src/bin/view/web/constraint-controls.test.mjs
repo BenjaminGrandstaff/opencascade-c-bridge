@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {makeConstraint,dimensionNumber,authoredConstraintIndex,createConstraintControls} from './constraint-controls.mjs';
+import {geometryIds,makeConstraint,dimensionNumber,authoredConstraintIndex,createConstraintControls} from './constraint-controls.mjs';
 const definition={points:[{id:'A'},{id:'B'}],lines:[{id:'AB'},{id:'CD'}],circles:[{id:'C1'},{id:'C2'}],arcs:[{id:'arc'}],splines:[{id:'spline'}],constraints:[]};
 const mm=value=>({literal:{value,dimension:'length',unit:'millimeter'}});
 
@@ -59,4 +59,10 @@ test('canvas picks feed typed forms; dimensions edit in degrees and formulas sta
   const source=label(host,'Driving value');source.value='parameter:width';source.onchange();button(host,'Update selected constraint').onclick();
   assert.deepEqual(d.constraints[1].distance.value,{parameter:'width'});assert.equal(changes,4);
   delete globalThis.document;delete globalThis.Option;
+});
+
+test('projected named junctions and intersections are available to typed point constraints',()=>{
+ const d={points:[{id:'authored'}],projections:[{id:'reference',kind:'chain',junctions:[{id:'mid'}],intersections:[{id:'cut'}]}]};
+ assert.deepEqual(geometryIds(d,'points'),['authored','reference:start','reference:end','reference:junction:mid','reference:intersection:cut']);
+ assert.deepEqual(makeConstraint(d,'distance',{first:'reference:junction:mid',second:'reference:intersection:cut'},mm(5)),{distance:{first:'reference:junction:mid',second:'reference:intersection:cut',value:mm(5)}});
 });
