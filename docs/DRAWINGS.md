@@ -1781,6 +1781,9 @@ requirements, drawn with the ASME Y14.36 symbol and attached like GD&T controls
   `prohibited` (circle in the V).
 - `method`: a production-method note such as `GRIND` (1–40 printable ASCII
   characters), and `all_around`: a circle at the symbol's corner.
+- `acceptance` (schema 155): `max_rule` (the default, not written) or
+  `sixteen_percent`, how inspection accepts measured readings. It is not
+  drawn in the symbol.
 
 The roughness value sits above the short leg, ending before the long leg. Any
 method, sampling length, waviness, lay or all-around turns on the extension bar:
@@ -1796,20 +1799,62 @@ it does not select a persistent face.
 
 ### Checking measured roughness
 
-An `InspectionRecord` may list `surface_textures: [{ "id", "values" }]`:
-readings in the requirement's parameter and unit (for example several Ra
-traces). The report's `surface_textures` evaluates each requirement by the
-maximum rule: every reading at or below the maximum and at or above any
-minimum, reporting the count, highest and lowest readings. Requirements
-without readings are `not_measured`, and `InspectionReport::conforms()` then
-fails. Unknown or repeated IDs, empty, negative or nonfinite readings fail the
-record; readings count toward `MAX_INSPECTION_POINTS`. The
-`occt-inspection-report` command accepts the same list inside a group's
-`points` and counts textures with the controls. The 16% rule, filtering and
-instrument settings are not modeled.
+An `InspectionRecord` may list `surface_textures: [{ "id", "values",
+"profiles" }]`: readings in the requirement's parameter and unit (for
+example several Ra traces), stylus profiles, or both. Each profile's
+parameter is computed and becomes a reading after the given values, in
+order. The report's `surface_textures` evaluates each requirement by its
+acceptance rule, reporting the count, highest and lowest readings, how many
+lie above the maximum and below the minimum, and any `profile_values` with
+the `cutoff_mm` used. Requirements without readings are `not_measured`, and
+`InspectionReport::conforms()` then fails. Unknown or repeated IDs, no
+readings, negative or nonfinite readings, and profiles that cannot be
+filtered fail the record. Readings and profile samples count toward
+`MAX_INSPECTION_POINTS`, and profile samples also toward
+`MAX_PROFILE_SAMPLES` (1,000,000). The `occt-inspection-report` command
+accepts the same list inside a group's `points` and counts textures with
+the controls.
+
+**Acceptance rules.** By the maximum rule every reading must be at or below
+the maximum and at or above any minimum. The 16% rule follows ISO 4288's
+staged procedure as Mitutoyo's public quick guide states it, with readings
+taken in order:
+
+1. A first reading below 70% of the maximum accepts the upper limit.
+2. Otherwise the first three readings accept it when none exceeds it.
+3. Otherwise, with twelve readings, at most two may exceed it. With more,
+   at most 16% may (rounded down, and never fewer than two).
+
+A minimum is decided the same way without the first step: the first three
+readings, then at most two of twelve below it. When the readings so far
+decide neither way, the result reports `readings_required` (3 or 12) and
+does not conform.
+
+**Profiles.** A `MeasuredProfile` is a primary profile from a stylus
+instrument: `heights_um` at equal `spacing_um`, after any short-wave (λs)
+filtering, which is not modeled. The cutoff λc is the requirement's
+`cutoff_mm`, or 0.8 mm when it names none. The spacing must divide the
+cutoff into 20–2,000 samples (ISO 3274's standard spacings give 160–1,667),
+and the profile must span six cutoffs: the evaluation length of five
+sampling lengths and half a cutoff of run-up and run-out at each end, as
+instruments trace them. Longer profiles are evaluated over their central
+five cutoffs.
+
+The mean line is the Gaussian filter of ASME B46.1 and ISO 16610-21, with
+weights exp(−π(x/αλc)²), α = √(ln 2/π), truncated at ±λc/2 to fit the
+run-up and normalized. The truncation passes 48.9% of a wave one cutoff
+long into the roughness, rather than the untruncated filter's 50%, and
+leaves a few parts in 10,000 of short waves in the mean line. On the
+roughness profile, Ra and Rq are the mean absolute and root-mean-square
+heights over the evaluation length. Each sampling length's peak-to-valley
+height is also taken: Rz is their mean, and Rmax the largest. A microinch
+requirement converts at 0.0254 µm per µin. Filtering costs about one
+operation per sample per sample in a cutoff, which the two limits bound.
 
 A scale benchmark generates one drawing with 10,000 texture symbols and exports
-it as SVG and DXF.
+it as SVG and DXF. Another filters 83 profiles at 2,000 samples per cutoff
+(996,000 samples, the record's budget) and accepts them by the 16% rule, in
+about 0.9 s against a 3 s budget.
 
 A record's `threads` list checks measured thread diameters against Unified
 class limits; see

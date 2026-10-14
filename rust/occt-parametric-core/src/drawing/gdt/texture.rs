@@ -78,6 +78,26 @@ pub enum MaterialRemoval {
     Prohibited,
 }
 
+/// How a set of roughness readings is accepted against its limits.
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum TextureAcceptance {
+    /// No reading may lie outside the limits.
+    #[default]
+    MaxRule,
+    /// ISO 4288's 16% rule: at most 16% of the readings may exceed the
+    /// maximum or fall below the minimum, decided in stages.
+    SixteenPercent,
+}
+
+impl TextureAcceptance {
+    fn is_max_rule(&self) -> bool {
+        *self == Self::MaxRule
+    }
+}
+
 /// Roughness limits. A single value is a maximum; with a minimum it is a
 /// range. Values use the requirement's unit.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
@@ -121,6 +141,10 @@ pub struct DrawingSurfaceTexture {
     /// The requirement applies all around the outline in the view.
     #[serde(default)]
     pub all_around: bool,
+    /// How measured readings are accepted (schema 155); the maximum rule
+    /// unless the drawing invokes the 16% rule.
+    #[serde(default, skip_serializing_if = "TextureAcceptance::is_max_rule")]
+    pub acceptance: TextureAcceptance,
 }
 
 /// B46.1 standard roughness sampling lengths (cutoffs), in millimeters.

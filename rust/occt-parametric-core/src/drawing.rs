@@ -17,10 +17,10 @@ pub mod guides;
 pub use gdt::{
     ControlInspection, ControlMeasurement, ControlResult, DecisionRule, InspectionRecord,
     InspectionReport, MAX_INSPECTION_POINTS, MeasuredDatumAxis, MeasuredDatumFrame,
-    MeasuredDatumWidth, MeasuredFeature, MeasuredNominal, MeasuredTexture, MeasuredThread,
-    MeasurementUncertainty, ProfileMeasurement, RefinementMeasurement, TextureInspection,
-    TextureMeasurement, TextureResult, ThreadDiameter, ThreadDiameterCheck, ThreadInspection,
-    UncertaintySimulation,
+    MeasuredDatumWidth, MeasuredFeature, MeasuredNominal, MeasuredProfile, MeasuredTexture,
+    MeasuredThread, MeasurementUncertainty, ProfileMeasurement, RefinementMeasurement,
+    TextureInspection, TextureMeasurement, TextureResult, ThreadDiameter, ThreadDiameterCheck,
+    ThreadInspection, UncertaintySimulation,
 };
 pub use gdt::{
     DatumMaterialBoundary, DatumPrecedence, DrawingCompositeRefinement,
@@ -34,7 +34,7 @@ pub use gdt::{
 };
 pub use gdt::{
     DrawingSurfaceTexture, MaterialRemoval, RoughnessLimits, RoughnessParameter, RoughnessUnit,
-    STANDARD_CUTOFFS_MM, SurfaceLay, Waviness,
+    STANDARD_CUTOFFS_MM, SurfaceLay, TextureAcceptance, Waviness,
 };
 pub mod dataset;
 pub use dataset::{DatasetAuthority, DrawingDataset};

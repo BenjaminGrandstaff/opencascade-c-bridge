@@ -15,10 +15,10 @@ pub use datums::{
 pub use inspection::{
     ControlInspection, ControlMeasurement, ControlResult, DecisionRule, InspectionRecord,
     InspectionReport, MAX_INSPECTION_POINTS, MeasuredDatumAxis, MeasuredDatumFrame,
-    MeasuredDatumWidth, MeasuredFeature, MeasuredNominal, MeasuredTexture, MeasuredThread,
-    MeasurementUncertainty, ProfileMeasurement, RefinementMeasurement, TextureInspection,
-    TextureMeasurement, TextureResult, ThreadDiameter, ThreadDiameterCheck, ThreadInspection,
-    UncertaintySimulation,
+    MeasuredDatumWidth, MeasuredFeature, MeasuredNominal, MeasuredProfile, MeasuredTexture,
+    MeasuredThread, MeasurementUncertainty, ProfileMeasurement, RefinementMeasurement,
+    TextureInspection, TextureMeasurement, TextureResult, ThreadDiameter, ThreadDiameterCheck,
+    ThreadInspection, UncertaintySimulation,
 };
 pub use position::{
     DrawingPositionMeasurement, DrawingPositionMeasurementResult, PositionSampleEvaluation,
@@ -27,7 +27,7 @@ pub use position::{
 pub use size::{DrawingSizeLimits, FeatureOfSizeKind, GeometricToleranceAllowance};
 pub use texture::{
     DrawingSurfaceTexture, MaterialRemoval, RoughnessLimits, RoughnessParameter, RoughnessUnit,
-    STANDARD_CUTOFFS_MM, SurfaceLay, Waviness,
+    STANDARD_CUTOFFS_MM, SurfaceLay, TextureAcceptance, Waviness,
 };
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]

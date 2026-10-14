@@ -12,6 +12,7 @@ use super::*;
 use crate::assembly::{add, length, scale, unit};
 pub mod fit;
 mod profile;
+pub mod roughness;
 mod shift;
 mod threads;
 use fit::{
@@ -19,6 +20,7 @@ use fit::{
     fit_width,
 };
 use profile::{minimal_rotation, orthonormal};
+pub use roughness::MeasuredProfile;
 use shift::{
     AxialMember, AxisMotion, Motion, PatternMember, ShiftSpace, fit_axis_motion, fit_motion,
 };
@@ -178,23 +180,42 @@ impl DecisionRule {
 }
 
 /// Roughness readings for one surface texture requirement, each in the
-/// requirement's parameter and unit (for example several Ra traces in µm).
+/// requirement's parameter and unit (for example several Ra traces in µm),
+/// and stylus profiles whose parameter the report computes. Profile readings
+/// follow the given values, in order.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MeasuredTexture {
     pub id: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub values: Vec<f64>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub profiles: Vec<MeasuredProfile>,
 }
 
-/// Measured roughness against a requirement by the maximum rule: every
-/// reading must be at or below the maximum and at or above any minimum.
+/// Measured roughness against a requirement under its acceptance rule. By
+/// the maximum rule every reading must lie within the limits; by the 16%
+/// rule a few may lie outside, and too few readings to decide are reported
+/// as `readings_required` and do not conform.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct TextureMeasurement {
+    pub acceptance: TextureAcceptance,
     pub readings: usize,
     pub highest: f64,
     pub lowest: f64,
     pub maximum: f64,
     pub minimum: Option<f64>,
+    /// The parameter computed from each profile, in order.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub profile_values: Vec<f64>,
+    /// The roughness sampling length the profiles were filtered with.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cutoff_mm: Option<f64>,
+    /// Readings above the maximum and below the minimum.
+    pub above_maximum: usize,
+    pub below_minimum: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub readings_required: Option<usize>,
     pub conforms: bool,
 }
 
@@ -797,17 +818,24 @@ impl DrawingDefinition {
     }
 
     /// Compares readings with each texture requirement. Unknown or repeated
-    /// IDs, empty or invalid readings, and the shared reading budget fail the
-    /// record. O(textures + readings).
+    /// IDs, empty or invalid readings, invalid profiles, and the shared
+    /// reading and profile budgets fail the record. O(textures + readings +
+    /// profile samples × samples per cutoff).
     fn inspect_textures(
         &self,
         measured: &[MeasuredTexture],
         total: &mut usize,
     ) -> Result<Vec<TextureInspection>, ModelError> {
-        let mut readings: HashMap<&str, &[f64]> = HashMap::with_capacity(measured.len());
+        let mut by_id: HashMap<&str, &MeasuredTexture> = HashMap::with_capacity(measured.len());
+        let mut samples = 0usize;
         for texture in measured {
-            *total = total.saturating_add(texture.values.len());
-            if *total > MAX_INSPECTION_POINTS {
+            let heights = texture.profiles.iter().map(|p| p.heights_um.len());
+            samples = heights.clone().fold(samples, usize::saturating_add);
+            *total = heights.fold(
+                total.saturating_add(texture.values.len()),
+                usize::saturating_add,
+            );
+            if *total > MAX_INSPECTION_POINTS || samples > roughness::MAX_PROFILE_SAMPLES {
                 return Err(ModelError::new(
                     "inspection record exceeds the measured-point budget",
                 ));
@@ -818,47 +846,89 @@ impl DrawingDefinition {
                     texture.id
                 )));
             }
-            if texture.values.is_empty()
+            if (texture.values.is_empty() && texture.profiles.is_empty())
                 || !texture.values.iter().all(|v| v.is_finite() && *v >= 0.0)
             {
                 return Err(ModelError::new(
                     "roughness readings must be nonempty, finite and nonnegative",
                 ));
             }
-            if readings
-                .insert(texture.id.as_str(), &texture.values)
-                .is_some()
-            {
+            if by_id.insert(texture.id.as_str(), texture).is_some() {
                 return Err(ModelError::new(
                     "inspection record repeats a surface texture",
                 ));
             }
         }
-        Ok(self
-            .surface_textures
+        self.surface_textures
             .iter()
-            .map(|texture| TextureInspection {
-                texture: texture.id.clone(),
-                result: match readings.get(texture.id.as_str()) {
-                    None => TextureResult::NotMeasured,
-                    Some(values) => {
-                        let highest = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
-                        let lowest = values.iter().copied().fold(f64::INFINITY, f64::min);
-                        let limits = &texture.roughness;
-                        TextureResult::Evaluated(TextureMeasurement {
-                            readings: values.len(),
-                            highest,
-                            lowest,
-                            maximum: limits.maximum,
-                            minimum: limits.minimum,
-                            conforms: highest <= limits.maximum
-                                && limits.minimum.is_none_or(|minimum| lowest >= minimum),
-                        })
-                    }
-                },
+            .map(|texture| {
+                Ok(TextureInspection {
+                    texture: texture.id.clone(),
+                    result: match by_id.get(texture.id.as_str()) {
+                        None => TextureResult::NotMeasured,
+                        Some(measured) => {
+                            TextureResult::Evaluated(texture_measurement(texture, measured)?)
+                        }
+                    },
+                })
             })
-            .collect())
+            .collect()
     }
+}
+
+/// Filters a texture's profiles and accepts all its readings by its rule.
+fn texture_measurement(
+    texture: &DrawingSurfaceTexture,
+    measured: &MeasuredTexture,
+) -> Result<TextureMeasurement, ModelError> {
+    let limits = &texture.roughness;
+    let cutoff = texture.cutoff_mm.unwrap_or(roughness::DEFAULT_CUTOFF_MM);
+    let profile_values = measured
+        .profiles
+        .iter()
+        .map(|p| roughness::profile_parameter(p, cutoff, limits.parameter, texture.unit))
+        .collect::<Result<Vec<_>, _>>()?;
+    let values: Vec<f64> = measured
+        .values
+        .iter()
+        .chain(&profile_values)
+        .copied()
+        .collect();
+    let above = |v: f64| v > limits.maximum;
+    let below = |v: f64| limits.minimum.is_some_and(|minimum| v < minimum);
+    let above_maximum = values.iter().filter(|v| above(**v)).count();
+    let below_minimum = values.iter().filter(|v| below(**v)).count();
+    let (conforms, readings_required) = match texture.acceptance {
+        TextureAcceptance::MaxRule => (above_maximum == 0 && below_minimum == 0, None),
+        TextureAcceptance::SixteenPercent => {
+            use roughness::Staged;
+            let upper = roughness::sixteen_percent(&values, above, Some(0.7 * limits.maximum));
+            let lower = match limits.minimum {
+                Some(_) => roughness::sixteen_percent(&values, below, None),
+                None => Staged::Accepted,
+            };
+            match (upper, lower) {
+                (Staged::Rejected, _) | (_, Staged::Rejected) => (false, None),
+                (Staged::Needs(a), Staged::Needs(b)) => (false, Some(a.max(b))),
+                (Staged::Needs(n), _) | (_, Staged::Needs(n)) => (false, Some(n)),
+                (Staged::Accepted, Staged::Accepted) => (true, None),
+            }
+        }
+    };
+    Ok(TextureMeasurement {
+        acceptance: texture.acceptance,
+        readings: values.len(),
+        highest: values.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+        lowest: values.iter().copied().fold(f64::INFINITY, f64::min),
+        maximum: limits.maximum,
+        minimum: limits.minimum,
+        cutoff_mm: (!profile_values.is_empty()).then_some(cutoff),
+        profile_values,
+        above_maximum,
+        below_minimum,
+        readings_required,
+        conforms,
+    })
 }
 
 /// Indexes finite measured points by feature ID within the shared point budget.

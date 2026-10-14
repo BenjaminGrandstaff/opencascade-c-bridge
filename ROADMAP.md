@@ -28,6 +28,14 @@ tracks status and order.
 
 ## Done
 
+- Surface texture acceptance and profile filtering (schema 155; ABI 76
+  unchanged). A texture requirement's `acceptance` may invoke ISO 4288's
+  16% rule, decided in stages (a first reading under 70% of the maximum,
+  three readings, then twelve), with `readings_required` reported until the
+  readings decide. Inspection records may supply stylus profiles, filtered
+  by the Gaussian profile filter at the requirement's cutoff (0.8 mm by
+  default) to Ra, Rq, Rz or Rmax over five sampling lengths. See
+  [Checking measured roughness](docs/DRAWINGS.md#checking-measured-roughness).
 - Conventional thread representation in drawings (schema 154; ABI 76
   unchanged). Views with `thread_representation` draw thread features and
   blind or modeled-length tapped holes by the ISO 6410-1 convention: root
@@ -2657,10 +2665,13 @@ scopes and inspected repo capabilities, not a full conformity audit.
    modeled (schema 84); metric callouts and drill catalogs are not yet
    checked against a standard.
 5. **Manufacturing surface texture** — [B46.1](https://www.asme.org/codes-standards/about-standards/technology-highlights/advanced-manufacturing):
-   requirements attached to persistent faces rather than leader anchors, the
-   16% rule and filtering for measured readings, and Y14.36 symbol placement
-   checked against the standard. Drawing requirements, symbols and maximum-rule
-   reading checks exist (schema 71). Rendering-material roughness is
+   requirements attached to persistent faces rather than leader anchors, and
+   Y14.36 symbol placement checked against the standard, which no public
+   source provided. Drawing requirements, symbols and maximum-rule reading
+   checks exist (schema 71); the 16% rule and Gaussian filtering of stylus
+   profiles to Ra, Rq, Rz and Rmax exist (schema 155). Short-wave (λs)
+   filtering, waviness evaluation and instrument settings are not modeled.
+   Rendering-material roughness is
    independent of these requirements.
 6. **Controlled drawing release and assembly lists** — [Y14.100](https://www.asme.org/codes-standards/find-codes-standards/engineering-drawing-practices):
    change zones and markers, approval workflow and signatures, merged

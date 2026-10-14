@@ -17,6 +17,7 @@ fn texture(id: &str, anchor: &str) -> DrawingSurfaceTexture {
         material_removal: MaterialRemoval::Any,
         method: None,
         all_around: false,
+        acceptance: TextureAcceptance::MaxRule,
     }
 }
 
@@ -118,9 +119,17 @@ fn textures_persist_in_schema_71_and_legacy_drawings_load_without_them() {
     let mut graph = InstanceGraph::new(&definition);
     graph.add_base("part", HashMap::new(), "test").unwrap();
     let mut document = ModelDocument::from_graph(&graph);
-    document.drawings.push(textured_page());
+    let mut page = textured_page();
+    page.surface_textures[1].acceptance = TextureAcceptance::SixteenPercent;
+    document.drawings.push(page);
     let json = document.to_json_pretty().unwrap();
     assert!(json.contains("\"surface_textures\"") && json.contains("\"perpendicular\""));
+    // The maximum rule is the default and is not written (schema 155).
+    assert_eq!(
+        json.matches("\"acceptance\": \"sixteen_percent\"").count(),
+        1
+    );
+    assert_eq!(json.matches("\"acceptance\"").count(), 1);
     let restored = ModelDocument::from_json(&json).unwrap();
     assert_eq!(restored, document);
     assert_eq!(restored.schema_version, CURRENT_SCHEMA_VERSION);
@@ -146,6 +155,7 @@ fn roughness_readings_conform_by_the_maximum_rule() {
     let reading = |id: &str, values: Vec<f64>| MeasuredTexture {
         id: id.into(),
         values,
+        profiles: vec![],
     };
     let mut record = nominal_record();
     record.surface_textures = vec![
@@ -185,4 +195,100 @@ fn roughness_readings_conform_by_the_maximum_rule() {
         record.surface_textures = bad;
         assert!(page.evaluate_inspection(&graph, &record).is_err());
     }
+}
+
+/// Six 0.8 mm sampling lengths of a 1 µm, 80 µm-wavelength sine at 0.5 µm
+/// spacing: Ra 2/π µm once the mean line is filtered out.
+fn stylus_trace() -> MeasuredProfile {
+    MeasuredProfile {
+        spacing_um: 0.5,
+        heights_um: (0..9_600)
+            .map(|i| {
+                let x = f64::from(i) * 0.5;
+                0.001 * x + (std::f64::consts::TAU * x / 80.0).sin()
+            })
+            .collect(),
+    }
+}
+
+#[test]
+fn the_sixteen_percent_rule_and_filtered_profiles_decide_textures() {
+    let definition = plate();
+    let mut graph = InstanceGraph::new(&definition);
+    graph.add_base("part", HashMap::new(), "test").unwrap();
+    let mut page = textured_page();
+    page.feature_control_frames = super::inspection::page().feature_control_frames;
+    page.datum_features = super::inspection::page().datum_features;
+    page.datum_reference_frames = super::inspection::page().datum_reference_frames;
+    for texture in &mut page.surface_textures {
+        texture.acceptance = TextureAcceptance::SixteenPercent;
+    }
+    let evaluate = |page: &DrawingDefinition, textures: Vec<MeasuredTexture>| {
+        let mut record = nominal_record();
+        record.surface_textures = textures;
+        let report = page.evaluate_inspection(&graph, &record).unwrap();
+        report
+            .surface_textures
+            .iter()
+            .filter_map(|t| match &t.result {
+                TextureResult::Evaluated(m) => Some((t.texture.clone(), m.clone())),
+                TextureResult::NotMeasured => None,
+            })
+            .collect::<HashMap<_, _>>()
+    };
+    let reading = |id: &str, values: Vec<f64>, profiles| MeasuredTexture {
+        id: id.into(),
+        values,
+        profiles,
+    };
+    // Ra 1.6 µm: a first reading over 70% of the limit needs two more, and
+    // one of three over it needs twelve.
+    let results = evaluate(
+        &page,
+        vec![
+            reading("basic", vec![1.5], vec![]),
+            reading("cast", vec![1.5, 1.7, 1.4], vec![]),
+        ],
+    );
+    assert_eq!(
+        (
+            results["basic"].readings_required,
+            results["basic"].conforms
+        ),
+        (Some(3), false)
+    );
+    assert_eq!(results["cast"].readings_required, Some(12));
+    assert_eq!(results["cast"].above_maximum, 1);
+    // A filtered stylus trace is a reading; Ra 0.64 µm accepts at once.
+    let results = evaluate(&page, vec![reading("basic", vec![], vec![stylus_trace()])]);
+    let basic = &results["basic"];
+    assert!((basic.profile_values[0] - 2.0 / std::f64::consts::PI).abs() < 1e-3);
+    assert_eq!((basic.cutoff_mm, basic.conforms), (Some(0.8), true));
+    // Rz 32-63 µin: one of twelve readings below the minimum is accepted by
+    // the 16% rule, but not by the maximum rule; three of twelve are not.
+    let mut machined = vec![40.0, 31.0, 45.0];
+    machined.extend([50.0; 9]);
+    let results = evaluate(&page, vec![reading("machined", machined.clone(), vec![])]);
+    assert_eq!(
+        (
+            results["machined"].below_minimum,
+            results["machined"].conforms
+        ),
+        (1, true)
+    );
+    let mut strict = page.clone();
+    strict.surface_textures[1].acceptance = TextureAcceptance::MaxRule;
+    let results = evaluate(&strict, vec![reading("machined", machined.clone(), vec![])]);
+    assert!(!results["machined"].conforms);
+    machined[5] = 20.0;
+    machined[6] = 30.0;
+    let results = evaluate(&page, vec![reading("machined", machined, vec![])]);
+    assert!(!results["machined"].conforms);
+    assert_eq!(results["machined"].readings_required, None);
+    // Profiles that cannot be filtered fail the record.
+    let mut record = nominal_record();
+    let mut short = stylus_trace();
+    short.heights_um.truncate(100);
+    record.surface_textures = vec![reading("basic", vec![], vec![short])];
+    assert!(page.evaluate_inspection(&graph, &record).is_err());
 }
