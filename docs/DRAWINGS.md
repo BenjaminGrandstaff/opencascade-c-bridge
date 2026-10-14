@@ -1937,8 +1937,31 @@ plain numbers and ignore frames.
 Grouping is O(shown instances × (parameters + frame depth)); validation
 indexes each view's shown instances once. Scale cases group 10,000 shown
 pattern members, flat and inside a sub-assembly, and validate 100 balloons.
-Not yet included: merging identical sub-assemblies into one row with a
-quantity, custom columns, and automatic balloon placement.
+
+**Merged sub-assemblies (schema 157).** With `"merge_identical": true` (which
+needs `nested`), sibling sub-assemblies with identical contents become one
+row whose quantity is their count, as a bill of materials lists one assembly
+used several times.
+
+- **Identical** means the same parts, with the same identity (family,
+  parameter values, output and material) and quantities. It also means the
+  same sub-assemblies, compared the same way with their counts. Order does not
+  matter, and merging works bottom-up, so identical hubs merge inside each
+  wheel before wheels are compared.
+- **Part numbers.** Frames with different part numbers are different parts
+  and never merge. Frames without part numbers merge on contents alone, and
+  the row shows the first frame's ID. Frames sharing a part number must have
+  identical contents anywhere in the list; otherwise listing and validation
+  fail and name both frames.
+- **Rows.** The merged row is the first frame's: its `frame`, plus the
+  others in `merged_frames`. Rows beneath it give quantities for one
+  sub-assembly, but their `instances` include every copy's, so a balloon on
+  any copy shows the merged row's number.
+
+Signatures are built once per frame, bottom-up, so merging adds O(rows ×
+depth) work. A scale case merges 1,000 sub-assemblies of ten parts each
+(10,000 instances, 2,000 frames) into four rows in about 0.02 s. Not yet
+included: custom columns and automatic balloon placement.
 
 ## Releases and revision tables (schema 90)
 

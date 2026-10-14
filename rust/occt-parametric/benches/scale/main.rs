@@ -224,6 +224,7 @@ fn main() -> ExitCode {
     outcomes.push(threads::thread_pattern_case(definition));
     outcomes.push(parts_list::parts_list_case(definition, false));
     outcomes.push(parts_list::parts_list_case(definition, true));
+    outcomes.push(parts_list::merged_case(definition));
     outcomes.push(releases::release_case(definition));
     outcomes.push(releases::change_case(definition));
     outcomes.push(textures::texture_case(definition));

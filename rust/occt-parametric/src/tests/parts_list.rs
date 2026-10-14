@@ -84,6 +84,7 @@ fn page(members: &[String]) -> DrawingDefinition {
             position_mm: [250.0, 280.0],
             part_numbers: BTreeMap::new(),
             nested: false,
+            merge_identical: false,
         }),
         balloons: vec![
             DrawingBalloon {
@@ -383,5 +384,157 @@ fn nested_lists_follow_sub_assembly_frames_with_hierarchical_numbers() {
     let json = document.to_json_pretty().unwrap();
     assert!(json.contains("\"nested\": true"));
     assert_eq!(ModelDocument::from_json(&json).unwrap(), document);
+    assert_eq!(session.shape_count().unwrap(), 0);
+}
+
+/// Wheels 1 and 2 each hold a plate and a hub frame with a wide block;
+/// wheel 3 holds only a plate.
+fn wheels(family: &FamilyDefinition) -> InstanceGraph<'_> {
+    let mut graph = InstanceGraph::new(family);
+    let wide = HashMap::from([(
+        "width".into(),
+        ParameterValue::Scalar(Quantity::length(25.0, LengthUnit::Millimeter)),
+    )]);
+    for n in 1..=3 {
+        graph
+            .add_frame(format!("wheel-{n}"), None, Placement::identity(), "test")
+            .unwrap();
+        graph
+            .add_base(format!("plate-{n}"), HashMap::new(), "test")
+            .unwrap();
+        graph
+            .set_instance_frame(&format!("plate-{n}"), Some(&format!("wheel-{n}")))
+            .unwrap();
+        if n < 3 {
+            graph
+                .add_frame(
+                    format!("hub-{n}"),
+                    Some(&format!("wheel-{n}")),
+                    Placement::identity(),
+                    "test",
+                )
+                .unwrap();
+            graph
+                .add_base(format!("block-{n}"), wide.clone(), "test")
+                .unwrap();
+            graph
+                .set_instance_frame(&format!("block-{n}"), Some(&format!("hub-{n}")))
+                .unwrap();
+        }
+    }
+    graph
+}
+
+#[test]
+fn identical_sub_assemblies_merge_into_one_row_with_their_count() {
+    let family = block_family();
+    let graph = wheels(&family);
+    let mut page = page(&[]);
+    // Copy 2 lists its hub before its plate; contents compare in any order.
+    page.views[0].outputs = ["plate-1", "block-1", "block-2", "plate-2", "plate-3"]
+        .map(output)
+        .to_vec();
+    page.balloons = vec![DrawingBalloon {
+        id: "copy".into(),
+        view: "top".into(),
+        instance: "block-2".into(),
+        anchor: None,
+        offset_mm: [10.0, 25.0],
+    }];
+    let list = page.parts_list.as_mut().unwrap();
+    list.nested = true;
+    list.merge_identical = true;
+    let rows = |page: &DrawingDefinition| {
+        page.parts_list_items(&graph)
+            .unwrap()
+            .into_iter()
+            .map(|i| (i.label, i.quantity, i.part, i.merged_frames, i.instances))
+            .collect::<Vec<_>>()
+    };
+    let strings = |values: &[&str]| values.iter().map(|v| (*v).to_owned()).collect::<Vec<_>>();
+    let row = |label: &str, quantity, part: &str, merged: &[&str], instances: &[&str]| {
+        (
+            label.to_owned(),
+            quantity,
+            part.to_owned(),
+            strings(merged),
+            strings(instances),
+        )
+    };
+    assert_eq!(
+        rows(&page),
+        [
+            row("1", 2, "wheel-1", &["wheel-2"], &[]),
+            // Parts under a merged sub-assembly count one copy but collect
+            // every copy's instances.
+            row(
+                "1.1",
+                1,
+                "BlockFamily / variant 1",
+                &[],
+                &["plate-1", "plate-2"]
+            ),
+            row("1.2", 1, "hub-1", &[], &[]),
+            row(
+                "1.2.1",
+                1,
+                "BlockFamily / variant 2",
+                &[],
+                &["block-1", "block-2"]
+            ),
+            row("2", 1, "wheel-3", &[], &[]),
+            row("2.1", 1, "BlockFamily / variant 1", &[], &["plate-3"]),
+        ]
+    );
+    // A balloon on the second copy shows the merged row's number.
+    let session = Session::new().unwrap();
+    let generated = page
+        .generate(&graph, &session, DrawingRenderOptions::default())
+        .unwrap();
+    let labels: Vec<&str> = generated
+        .gdt_labels
+        .iter()
+        .map(|l| l.text.as_str())
+        .collect();
+    assert_eq!(labels, ["1.2.1"]);
+    // Equal part numbers merge; different ones are different parts.
+    let numbers = &mut page.parts_list.as_mut().unwrap().part_numbers;
+    numbers.insert("wheel-1".into(), "WHL-1".into());
+    numbers.insert("wheel-2".into(), "WHL-1".into());
+    assert_eq!(rows(&page)[0].0, "1");
+    assert_eq!((rows(&page)[0].1, rows(&page)[0].2.as_str()), (2, "WHL-1"));
+    let mut distinct = page.clone();
+    distinct
+        .parts_list
+        .as_mut()
+        .unwrap()
+        .part_numbers
+        .insert("wheel-2".into(), "WHL-2".into());
+    assert_eq!(rows(&distinct).len(), 10);
+    // One part number on sub-assemblies with different contents fails.
+    let mut clash = page.clone();
+    clash
+        .parts_list
+        .as_mut()
+        .unwrap()
+        .part_numbers
+        .insert("wheel-3".into(), "WHL-1".into());
+    assert!(clash.parts_list_items(&graph).is_err());
+    assert!(clash.validate(&graph).is_err());
+    let mut flat = page.clone();
+    flat.parts_list.as_mut().unwrap().nested = false;
+    assert!(flat.validate(&graph).is_err());
+    // Without merging, each sub-assembly keeps its own row.
+    let mut separate = page.clone();
+    separate.parts_list.as_mut().unwrap().merge_identical = false;
+    assert_eq!(rows(&separate).len(), 10);
+    // The option persists (schema 157).
+    let mut document = ModelDocument::from_graph(&graph);
+    document.drawings.push(page);
+    let json = document.to_json_pretty().unwrap();
+    assert!(json.contains("\"merge_identical\": true"));
+    assert_eq!(ModelDocument::from_json(&json).unwrap(), document);
+    assert_eq!(document.schema_version, CURRENT_SCHEMA_VERSION);
+    drop(graph);
     assert_eq!(session.shape_count().unwrap(), 0);
 }

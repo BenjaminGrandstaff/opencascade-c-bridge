@@ -851,7 +851,8 @@ changes on the sheet, and a ZONE column listing their sheet zones.
 Drawings can carry [parts lists and item balloons](docs/DRAWINGS.md#parts-lists-and-balloons-schema-87):
 shown instances group into numbered items by family, parameter values, output
 and material, with optional part numbers. Schema 87 adds them; schema 91 adds
-nested lists that follow sub-assembly frames with hierarchical item numbers.
+nested lists that follow sub-assembly frames with hierarchical item numbers;
+schema 157 merges identical sub-assemblies into one row with a quantity.
 
 [Modeled threads](docs/THREADS.md) cut ISO 68-1 basic-profile 60° threads into rods
 and holes, external or internal, either hand, with parameter-driven diameter,

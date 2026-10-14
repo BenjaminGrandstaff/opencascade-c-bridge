@@ -20,6 +20,10 @@ pub struct DrawingPartsList {
     /// sub-frames indented beneath, numbered `1`, `1.1`, `1.1.1` (schema 91).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub nested: bool,
+    /// In a nested list, merge sibling sub-assemblies with identical
+    /// contents into one row with their count as its quantity (schema 157).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub merge_identical: bool,
 }
 
 /// An item balloon: a numbered circle with a leader to an instance in a view.
@@ -56,6 +60,9 @@ pub struct PartsListItem {
     pub material: Option<String>,
     /// The sub-assembly frame a row stands for; parts have none.
     pub frame: Option<String>,
+    /// Further identical sub-assembly frames merged into this row.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub merged_frames: Vec<String>,
     /// Instances in a part item, in order of first appearance; empty for
     /// sub-assembly rows.
     pub instances: Vec<String>,
@@ -76,6 +83,7 @@ impl DrawingDefinition {
         let list = self.parts_list.as_ref();
         let part_numbers = list.map(|list| &list.part_numbers);
         let nested = list.is_some_and(|list| list.nested);
+        let merge = nested && list.is_some_and(|list| list.merge_identical);
         let mut root = Level::default();
         let mut seen = HashSet::new();
         // Parameter value sets per family, in order of first appearance.
@@ -117,10 +125,16 @@ impl DrawingDefinition {
                     output: output.output.clone(),
                     material: material.clone(),
                     frame: None,
+                    merged_frames: Vec::new(),
                     instances: Vec::new(),
                 })
                 .add(&output.instance);
             }
+        }
+        if nested {
+            let number = |id: &str| part_numbers.and_then(|numbers| numbers.get(id)).cloned();
+            let mut numbered = HashMap::new();
+            root.merge(merge, &number, &mut numbered)?;
         }
         let mut items = Vec::new();
         root.flatten("", 0, part_numbers, &variants, &mut items);
@@ -154,13 +168,23 @@ struct Level {
 }
 
 enum Entry {
-    Part(PartsListItem),
-    Frame(String, Level),
+    Part(String, PartsListItem),
+    Frame(Frame),
+}
+
+/// A sub-assembly row: its frame, any identical frames merged into it, and
+/// the parts and sub-frames of one of them.
+struct Frame {
+    id: String,
+    merged: Vec<String>,
+    level: Level,
+    /// The level's content signature, set by `Level::merge`.
+    contents: String,
 }
 
 impl Entry {
     fn add(&mut self, instance: &str) {
-        if let Entry::Part(item) = self {
+        if let Entry::Part(_, item) = self {
             item.quantity += 1;
             item.instances.push(instance.to_owned());
         }
@@ -181,7 +205,7 @@ impl Level {
                 let index = match self.parts.get(&key) {
                     Some(&index) => index,
                     None => {
-                        self.entries.push(Entry::Part(make()));
+                        self.entries.push(Entry::Part(key.clone(), make()));
                         self.parts.insert(key, self.entries.len() - 1);
                         self.entries.len() - 1
                     }
@@ -192,16 +216,143 @@ impl Level {
                 let index = match self.frames.get(frame) {
                     Some(&index) => index,
                     None => {
-                        self.entries
-                            .push(Entry::Frame(frame.clone(), Level::default()));
+                        self.entries.push(Entry::Frame(Frame {
+                            id: frame.clone(),
+                            merged: Vec::new(),
+                            level: Level::default(),
+                            contents: String::new(),
+                        }));
                         self.frames.insert(frame.clone(), self.entries.len() - 1);
                         self.entries.len() - 1
                     }
                 };
-                let Entry::Frame(_, level) = &mut self.entries[index] else {
+                let Entry::Frame(frame) = &mut self.entries[index] else {
                     unreachable!("frame index holds a frame entry")
                 };
-                level.insert(rest, key, make)
+                frame.level.insert(rest, key, make)
+            }
+        }
+    }
+
+    /// Merges identical sibling sub-assemblies bottom-up when `merge` holds,
+    /// and returns this level's content signature: its parts with their
+    /// quantities and its sub-assemblies with their part numbers, contents
+    /// and counts, in any order. Frames with different part numbers never
+    /// merge; when merging, frames sharing a part number must have identical
+    /// contents, which `numbered` checks across the whole list. O(rows ×
+    /// depth) for the signatures.
+    fn merge(
+        &mut self,
+        merge: bool,
+        number: &impl Fn(&str) -> Option<String>,
+        numbered: &mut HashMap<String, (String, String)>,
+    ) -> Result<String, ModelError> {
+        let mut keys: HashMap<String, usize> = HashMap::new();
+        let mut kept: Vec<Entry> = Vec::with_capacity(self.entries.len());
+        for entry in std::mem::take(&mut self.entries) {
+            let Entry::Frame(mut frame) = entry else {
+                kept.push(entry);
+                continue;
+            };
+            let contents = frame.level.merge(merge, number, numbered)?;
+            frame.contents = contents.clone();
+            let part_number = number(&frame.id);
+            if let Some(part_number) = part_number.as_ref().filter(|_| merge) {
+                match numbered.get(part_number) {
+                    Some((other, signature)) if *signature != contents => {
+                        return Err(ModelError::new(format!(
+                            "sub-assemblies '{other}' and '{}' share part number '{part_number}' but differ",
+                            frame.id
+                        )));
+                    }
+                    Some(_) => {}
+                    None => {
+                        numbered.insert(part_number.clone(), (frame.id.clone(), contents.clone()));
+                    }
+                }
+            }
+            let key = format!("{}\u{1f}{contents}", part_number.unwrap_or_default());
+            match keys.get(&key).filter(|_| merge) {
+                Some(&index) => {
+                    let Entry::Frame(first) = &mut kept[index] else {
+                        unreachable!("merge key indexes a frame entry")
+                    };
+                    first.merged.push(frame.id);
+                    first.merged.append(&mut frame.merged);
+                    first.level.absorb(frame.level, number);
+                }
+                None => {
+                    keys.insert(key, kept.len());
+                    kept.push(Entry::Frame(frame));
+                }
+            }
+        }
+        self.entries = kept;
+        self.frames = self
+            .entries
+            .iter()
+            .enumerate()
+            .filter_map(|(index, entry)| match entry {
+                Entry::Frame(frame) => Some((frame.id.clone(), index)),
+                Entry::Part(..) => None,
+            })
+            .collect();
+        Ok(self.signature(number))
+    }
+
+    /// This level's content signature, from its frames' cached contents.
+    fn signature(&self, number: &impl Fn(&str) -> Option<String>) -> String {
+        let mut signature: Vec<String> = self
+            .entries
+            .iter()
+            .map(|entry| match entry {
+                Entry::Part(key, item) => format!("P{key}\u{1e}{}", item.quantity),
+                Entry::Frame(frame) => format!(
+                    "F{}\u{1e}{}\u{1e}{}",
+                    number(&frame.id).unwrap_or_default(),
+                    frame.contents,
+                    1 + frame.merged.len()
+                ),
+            })
+            .collect();
+        signature.sort_unstable();
+        signature.join("\u{1d}")
+    }
+
+    /// Adds an identical level's instances to this one's rows, matching
+    /// parts by identity and sub-assemblies by part number and contents
+    /// (unique after merging), so balloons on any copy find their row.
+    /// Quantities stay per sub-assembly.
+    fn absorb(&mut self, other: Level, number: &impl Fn(&str) -> Option<String>) {
+        let key = |frame: &Frame| {
+            format!(
+                "{}\u{1f}{}",
+                number(&frame.id).unwrap_or_default(),
+                frame.contents
+            )
+        };
+        let frames: HashMap<String, usize> = self
+            .entries
+            .iter()
+            .enumerate()
+            .filter_map(|(index, entry)| match entry {
+                Entry::Frame(frame) => Some((key(frame), index)),
+                Entry::Part(..) => None,
+            })
+            .collect();
+        for entry in other.entries {
+            let index = match &entry {
+                Entry::Part(part, _) => self.parts.get(part).copied(),
+                Entry::Frame(frame) => frames.get(&key(frame)).copied(),
+            };
+            match (entry, index.map(|i| &mut self.entries[i])) {
+                (Entry::Part(_, item), Some(Entry::Part(_, mine))) => {
+                    mine.instances.extend(item.instances);
+                }
+                (Entry::Frame(frame), Some(Entry::Frame(mine))) => {
+                    mine.level.absorb(frame.level, number);
+                }
+                _ => {}
             }
         }
     }
@@ -219,7 +370,7 @@ impl Level {
         for (position, entry) in self.entries.into_iter().enumerate() {
             let label = format!("{prefix}{}", position + 1);
             match entry {
-                Entry::Part(mut item) => {
+                Entry::Part(_, mut item) => {
                     // `part` held the parameter values until now.
                     let values = std::mem::take(&mut item.part);
                     let base = number(&item.family).unwrap_or_else(|| item.family.clone());
@@ -239,17 +390,20 @@ impl Level {
                     item.depth = depth;
                     out.push(item);
                 }
-                Entry::Frame(id, level) => {
+                Entry::Frame(Frame {
+                    id, merged, level, ..
+                }) => {
                     out.push(PartsListItem {
                         item: out.len() + 1,
                         label: label.clone(),
                         depth,
-                        quantity: 1,
+                        quantity: 1 + merged.len(),
                         part: number(&id).unwrap_or_else(|| id.clone()),
                         family: String::new(),
                         output: String::new(),
                         material: None,
                         frame: Some(id),
+                        merged_frames: merged,
                         instances: Vec::new(),
                     });
                     level.flatten(&format!("{label}."), depth + 1, part_numbers, variants, out);
@@ -268,6 +422,15 @@ pub fn validate(
     if let Some(list) = &drawing.parts_list {
         if !finite_pair(list.position_mm) {
             return Err(ModelError::new("parts list position must be finite"));
+        }
+        if list.merge_identical {
+            if !list.nested {
+                return Err(ModelError::new(
+                    "merging identical sub-assemblies needs a nested parts list",
+                ));
+            }
+            // Building the list checks shared sub-assembly part numbers.
+            drawing.parts_list_items(graph)?;
         }
         for (family, number) in &list.part_numbers {
             if number.trim().is_empty() || number.len() > 40 || family.is_empty() {

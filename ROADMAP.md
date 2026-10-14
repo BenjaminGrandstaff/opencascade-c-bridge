@@ -12,8 +12,8 @@ tracks status and order.
 | `occt-types` (shared value types) | — | No native dependency |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI; re-exports `occt-types` |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric-core` (kernel-free engineering layer) | Schema 156 | Definitions, documents, solving and checks without OCCT |
-| `occt-parametric` (kernel regeneration) | Schema 156 | Active development; re-exports the core API |
+| `occt-parametric-core` (kernel-free engineering layer) | Schema 157 | Definitions, documents, solving and checks without OCCT |
+| `occt-parametric` (kernel regeneration) | Schema 157 | Active development; re-exports the core API |
 
 | Quality gate | Result | Command |
 |---|---|---|
@@ -26,6 +26,12 @@ tracks status and order.
 
 ## Done
 
+- Merged identical sub-assemblies (schema 157; ABI 76 unchanged). Nested
+  parts lists with `merge_identical` list sibling sub-assemblies with the
+  same contents as one row with their count. Rows beneath keep per-unit
+  quantities and every copy's instances, so balloons resolve. Shared part
+  numbers on differing sub-assemblies are rejected. See
+  [Drawings](docs/DRAWINGS.md#parts-lists-and-balloons-schema-87).
 - Change markers and zones (schema 156; ABI 76 unchanged). A release's
   `changes` draw revision symbols (the revision in a delta) on the sheet,
   with optional leaders to a datum in a view. A revision table's
@@ -2690,11 +2696,11 @@ scopes and inspected repo capabilities, not a full conformity audit.
    Rendering-material roughness is
    independent of these requirements.
 6. **Controlled drawing release and assembly lists** — [Y14.100](https://www.asme.org/codes-standards/find-codes-standards/engineering-drawing-practices):
-   approval workflow and signatures, merged identical sub-assemblies, and
-   multi-sheet revision tables. Release records with approvals, model
-   revision links and status, revision tables (schema 90), change markers
-   with a zone column (schema 156), and flat or nested parts lists with
-   item balloons (schemas 87, 91) exist.
+   approval workflow and signatures, and multi-sheet revision tables.
+   Release records with approvals, model revision links and status,
+   revision tables (schema 90), change markers with a zone column (schema
+   156), and flat or nested parts lists with item balloons (schemas 87, 91)
+   that merge identical sub-assemblies (schema 157) exist.
 
 ## Later
 
