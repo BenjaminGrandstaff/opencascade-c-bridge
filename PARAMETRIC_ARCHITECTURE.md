@@ -303,6 +303,18 @@ definition.
 
 ## Constraint-solved sketches
 
+The live viewer can freeze an exact projected spline/chain into an authored
+rational spline draft using fresh native solved poles and basis data. Stable
+curve and point IDs preserve profile/constraint references. Detach freezes the
+selected instance's geometry family-wide, retains sketch support links, and
+uses the existing version-guarded Preview/Apply path for all variants and
+requirements. Schema 147 and ABI 72 suffice. See
+[sketch detach](docs/SKETCHES.md#detach-projected-splines-into-authored-geometry).
+Further sketch editing should make dependencies visible before freezing or
+changing named reference geometry; live intersection consumers currently
+prevent detach rather than silently losing their source relationship.
+
+
 Schema 72 adds ellipses, signed line angles in radians, circular radius and
 diameter dimensions, point symmetry and point-on-curve equations, including
 native interpolated spline projection. Saved `profile_operations` derive

@@ -175,6 +175,27 @@ behavior. The [projected refinement example](../tools/model/projected-spline-ref
 refines a live chain with named junctions. Model documents migrate to schema 147;
 ABI stays at 72.
 
+## Detach projected splines into authored geometry
+
+In **Support & projected references**, **Detach projected spline** resolves the
+current draft through OCCT and replaces a spline or chain projection with an
+exact authored rational spline. Degree, knots, weights and solved local pole
+coordinates are retained, including pending refinement recipes. The curve ID,
+start/end points, named junctions and named intersections retain their IDs so
+profiles, constraints and weighted point links remain connected.
+
+Detach is read-only until **Apply verified draft**. The resulting fixed poles
+appear in the authored spline controls; edit coordinates or unfix poles to drag.
+The command freezes geometry from the selected instance into family-wide literal
+coordinates. Source changes no longer reshape the detached curve. Sketch plane
+and support links remain active. Named junctions and crossings become independent
+fixed reference points; they do not recompute after editing the authored spline.
+Another live projection that references this curve for an intersection must have
+that intersection link removed first. Preview/Apply checks every family variant
+and required check; stale versions and failed solves leave accepted state intact.
+Applied detaches support undo/redo and Save, using existing schema 147 structures
+and ABI 72 without a format change.
+
 ## Weighted dependent points (schema 146)
 
 `weighted_point: {point, terms: [{point, weight}, ...]}` defines the target's

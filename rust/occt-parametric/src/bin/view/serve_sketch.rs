@@ -130,7 +130,134 @@ impl Studio {
         Ok(result)
     }
 
+    /// Freeze exact solved native poles into a local authored draft. No accepted
+    /// document, history entry, or file is changed by this command.
+    pub(super) fn sketch_detach_projection(&mut self, body: &[u8]) -> Result<Value, String> {
+        #[derive(serde::Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Detach {
+            version: u64,
+            instance: String,
+            feature: String,
+            expected: SketchDefinition,
+            definition: SketchDefinition,
+            projection: String,
+        }
+        let edit: Detach =
+            serde_json::from_slice(body).map_err(|e| format!("invalid detach: {e}"))?;
+        let projection = edit
+            .definition
+            .projections
+            .iter()
+            .find(|p| p.id == edit.projection)
+            .ok_or("unknown projection")?;
+        if !matches!(
+            projection.kind,
+            occt_parametric::SketchProjectionKind::Spline
+                | occt_parametric::SketchProjectionKind::Chain
+        ) {
+            return Err("Only exact spline and chain projections can be detached.".into());
+        }
+        if edit.definition.projections.iter().any(|p| {
+            p.id != edit.projection && p.intersections.iter().any(|i| i.other == edit.projection)
+        }) {
+            return Err("Another live projection uses this curve for an intersection. Remove that intersection link before detaching.".into());
+        }
+        let request = |definition: &SketchDefinition| json!({"version":edit.version,"instance":edit.instance,"feature":edit.feature,"expected":edit.expected,"definition":definition,"apply":false});
+        let resolved = self.sketch_edit_resolved(
+            &serde_json::to_vec(&request(&edit.definition)).map_err(|e| e.to_string())?,
+            true,
+        )?;
+        if resolved["can_apply"] != true {
+            return Err(format!(
+                "Projection draft failed verification: {}",
+                resolved["error"]
+            ));
+        }
+        let scene = resolved["annotations"]["scenes"]
+            .as_array()
+            .and_then(|scenes| {
+                scenes
+                    .iter()
+                    .find(|s| s["kind"] == "sketch" && s["feature"] == edit.feature)
+            })
+            .ok_or("Resolved projection has no sketch scene.")?;
+        if scene["solver"]["solved"] != true {
+            return Err("Projection sketch must solve before detaching.".into());
+        }
+        let curve = scene["entities"]
+            .as_array()
+            .and_then(|entities| entities.iter().find(|e| e["id"] == edit.projection))
+            .ok_or("Resolved projection has no exact curve.")?;
+        let spline: occt_parametric::SketchSpline = serde_json::from_value(json!({
+            "id":edit.projection,"points":curve["bspline"]["control_points"],
+            "basis":curve["bspline"]["basis"],"endpoints":curve["bspline"]["endpoints"]
+        }))
+        .map_err(|e| format!("Invalid native spline snapshot: {e}"))?;
+        let mut ids: HashSet<String> = spline.points.iter().cloned().collect();
+        ids.insert(format!("{}:start", edit.projection));
+        ids.insert(format!("{}:end", edit.projection));
+        ids.extend(
+            projection
+                .junctions
+                .iter()
+                .map(|j| format!("{}:junction:{}", edit.projection, j.id)),
+        );
+        ids.extend(
+            projection
+                .intersections
+                .iter()
+                .map(|i| format!("{}:intersection:{}", edit.projection, i.id)),
+        );
+        let mut definition = edit.definition.clone();
+        let mut ids: Vec<_> = ids.into_iter().collect();
+        ids.sort();
+        for id in ids {
+            if definition.points.iter().any(|p| p.id == id) {
+                return Err(format!(
+                    "Detached point '{id}' collides with an authored point."
+                ));
+            }
+            let coordinate = |axis| -> Result<occt_parametric::ScalarExpr, String> {
+                let value = scene["points"][&id][axis]
+                    .as_f64()
+                    .filter(|v| v.is_finite())
+                    .ok_or_else(|| format!("Missing native position for '{id}'."))?;
+                Ok(occt_parametric::ScalarExpr::Literal(
+                    occt_parametric::Quantity::length(value, LengthUnit::Millimeter),
+                ))
+            };
+            definition.points.push(occt_parametric::SketchPoint {
+                id: id.clone(),
+                x: coordinate(0)?,
+                y: coordinate(1)?,
+                fixed: true,
+            });
+        }
+        definition.projections.retain(|p| p.id != edit.projection);
+        definition.splines.push(spline);
+        let mut result = self
+            .sketch_edit(&serde_json::to_vec(&request(&definition)).map_err(|e| e.to_string())?)?;
+        if result["can_apply"] != true {
+            return Err(format!(
+                "Detached draft failed verification: {}",
+                result["error"]
+            ));
+        }
+        result["version"] = json!(self.version);
+        result["definition"] = json!(definition);
+        Ok(result)
+    }
+
     pub(super) fn sketch_edit(&mut self, body: &[u8]) -> Result<Value, String> {
+        self.sketch_edit_resolved(body, false)
+    }
+
+    fn sketch_edit_resolved(
+        &mut self,
+        body: &[u8],
+        resolve_unchanged: bool,
+    ) -> Result<Value, String> {
         #[derive(serde::Deserialize)]
         #[serde(deny_unknown_fields)]
         struct Edit {
@@ -165,7 +292,7 @@ impl Studio {
         if edit.expected.id != edit.definition.id {
             return Err("sketch identity must stay the same".into());
         }
-        if edit.expected == edit.definition {
+        if edit.expected == edit.definition && (!resolve_unchanged || edit.apply) {
             return Err("The sketch draft has no changes.".into());
         }
         for value in operation

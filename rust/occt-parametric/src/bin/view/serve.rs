@@ -692,6 +692,12 @@ impl Studio {
                 Ok(data) => Response::json(200, &data),
                 Err(error) => Response::error(422, &error),
             },
+            ("POST", "/api/sketch-detach-projection") => {
+                match self.sketch_detach_projection(body) {
+                    Ok(data) => Response::json(200, &data),
+                    Err(error) => Response::error(422, &error),
+                }
+            }
             ("POST", "/api/spline-refine") => match self.spline_refine(body) {
                 Ok(data) => Response::json(200, &data),
                 Err(error) => Response::json(422, &json!({"error":error})),

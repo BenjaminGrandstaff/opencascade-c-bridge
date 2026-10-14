@@ -24,6 +24,19 @@ export function createSketchEditor({ host, request, instance, preview, applied, 
   const message = text => { status.textContent = text; };
   const links=createSketchLinks({context:()=>({draft,feature,version,features,instance:instance()}),
     request,preview,showSolid,highlightFace,highlightEdge,beginPicking:()=>{cancelGeometryPicks();beginPicking();},currentVersion,message,
+    detachProjection:async projection=>{
+      if(busy)throw new Error('Wait for the current native request.');
+      links.cancel();cancelGeometryPicks();
+      busy=true;content.inert=true;canvasMount.inert=true;launch.disabled=true;
+      const turn=generation,source=draft,selectedInstance=instance();
+      message('Resolving exact projection geometry…');
+      try{
+        const result=await request('/api/sketch-detach-projection',{method:'POST',body:JSON.stringify({version,instance:selectedInstance,feature,expected:baseline,definition:draft,projection})});
+        if(turn!==generation||source!==draft||selectedInstance!==instance()||(currentVersion()!==null&&currentVersion()!==result.version))throw new Error('Model changed. Reload the sketch draft.');
+        draft=result.definition;render();await preview(result.annotations);showSketch(feature);highlight([projection],feature);
+        message('Projection detached into an authored spline draft. Poles are fixed and editable; unfix them to drag. Geometry is frozen from this instance; support remains linked. Preview and Apply verify the family.');
+      }finally{busy=false;content.inert=false;canvasMount.inert=false;launch.disabled=false;}
+    },
     highlight:ids=>highlight(ids,feature),beginProjectionPicking:beginGeometryPick,changed:render,addProjection:(definition,projection)=>{requireConstructionProfile(definition);addElement(definition,'projections',projection);}});
 
   const canvasTools = createCanvasTools({host:canvasMount, getDraft:()=>draft, setDraft:next=>draft=next,

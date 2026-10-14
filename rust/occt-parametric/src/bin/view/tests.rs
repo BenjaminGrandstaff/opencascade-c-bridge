@@ -3225,3 +3225,167 @@ fn projected_refinement_drafts_are_previewed_applied_undone_and_saved_with_live_
         assert_eq!(sketch.projections[0].input, "source");
     }
 }
+
+#[test]
+fn detach_projected_splines_freezes_exact_draft_geometry_and_preserves_history() {
+    for source in [
+        include_str!("../../../../../tools/model/projected-spline-pad.request.json"),
+        include_str!("../../../../../tools/model/projected-junction-pad.request.json"),
+        include_str!("../../../../../tools/model/projected-spline-intersection-pad.request.json"),
+    ] {
+        let directory = Directory::new();
+        let request: serde_json::Value = serde_json::from_str(source).unwrap();
+        let document = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+        let model = PathBuf::from(directory.model(&document));
+        let original = fs::read_to_string(&model).unwrap();
+        let mut studio = serve::Studio::load(&model, Some("body".into())).unwrap();
+        let data = get(&mut studio, "/api/sketches").1;
+        let baseline = data["sketches"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["feature"] == "profile")
+            .unwrap()["definition"]
+            .clone();
+        let state = get(&mut studio, "/api/state").1;
+        let mut draft = baseline.clone();
+        draft["projections"][0]["refinements"] = json!([{"elevate_degree":{"degree":4}},{"insert_knot":{"fraction":0.37,"multiplicity":2}}]);
+        let request = json!({"version":data["version"],"instance":"part","feature":"profile","expected":baseline,"definition":draft,"projection":"reference"});
+        let mut unchanged = request.clone();
+        unchanged["definition"] = baseline.clone();
+        let unchanged_response = studio.handle(
+            "POST",
+            "/api/sketch-detach-projection",
+            unchanged.to_string().as_bytes(),
+        );
+        assert_eq!(
+            unchanged_response.status,
+            200,
+            "{}",
+            String::from_utf8_lossy(&unchanged_response.body)
+        );
+        let mut conflicting = request.clone();
+        conflicting["expected"]["id"] = json!("changed");
+        assert_eq!(
+            studio
+                .handle(
+                    "POST",
+                    "/api/sketch-detach-projection",
+                    conflicting.to_string().as_bytes()
+                )
+                .status,
+            422
+        );
+        if baseline["projections"].as_array().unwrap().len() > 1 {
+            let mut dependent = request.clone();
+            let mut crossing = baseline["projections"][0]["intersections"][0].clone();
+            crossing["other"] = json!("reference");
+            dependent["definition"]["projections"][1]["intersections"] = json!([crossing]);
+            let rejected = studio.handle(
+                "POST",
+                "/api/sketch-detach-projection",
+                dependent.to_string().as_bytes(),
+            );
+            assert_eq!(rejected.status, 422);
+            assert!(String::from_utf8_lossy(&rejected.body).contains("Another live projection"));
+        }
+        let response = studio.handle(
+            "POST",
+            "/api/sketch-detach-projection",
+            request.to_string().as_bytes(),
+        );
+        let result: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+        assert_eq!(response.status, 200, "{result}");
+        assert_eq!(get(&mut studio, "/api/state").1, state);
+        assert_eq!(fs::read_to_string(&model).unwrap(), original);
+        let detached = result["definition"].clone();
+        assert!(
+            !detached["projections"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .any(|p| p["id"] == "reference")
+        );
+        assert_eq!(detached["splines"][0]["basis"]["degree"], 4);
+        assert_eq!(detached["profile"], baseline["profile"]);
+        assert_eq!(detached["constraints"], baseline["constraints"]);
+        let (_, preview) = edit_definition(&mut studio, "profile", draft, false);
+        let scene = |value: &serde_json::Value| {
+            value["annotations"]["scenes"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|s| s["feature"] == "profile")
+                .unwrap()
+                .clone()
+        };
+        let before = scene(&preview);
+        let after = scene(&result);
+        let entity = |value: &serde_json::Value| {
+            value["entities"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|e| e["id"] == "reference")
+                .unwrap()["bspline"]
+                .clone()
+        };
+        assert_eq!(entity(&before), entity(&after));
+        for point in detached["points"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|p| p["id"].as_str().unwrap().starts_with("reference:"))
+        {
+            let id = point["id"].as_str().unwrap();
+            assert_eq!(point["fixed"], true);
+            assert_eq!(before["points"][id], after["points"][id]);
+        }
+        let mut stale = request.clone();
+        stale["version"] = json!(u64::MAX);
+        assert_eq!(
+            studio
+                .handle(
+                    "POST",
+                    "/api/sketch-detach-projection",
+                    stale.to_string().as_bytes()
+                )
+                .status,
+            422
+        );
+        assert_eq!(get(&mut studio, "/api/state").1, state);
+        let (status, result) = edit_definition(&mut studio, "profile", detached.clone(), true);
+        assert_eq!(status, 200, "{result}");
+        history(&mut studio, "undo");
+        assert_eq!(get(&mut studio, "/api/state").1["dirty"], false);
+        history(&mut studio, "redo");
+        assert_eq!(studio.handle("POST", "/api/save", b"{}").status, 200);
+        let saved = ModelDocument::from_json(&fs::read_to_string(&model).unwrap()).unwrap();
+        assert_eq!(saved.schema_version, CURRENT_SCHEMA_VERSION);
+        let mut changed = saved.clone();
+        changed
+            .family
+            .parameters
+            .iter_mut()
+            .find(|p| p.id == "weight")
+            .unwrap()
+            .default = ParameterValue::Scalar(Quantity::scalar(1.4));
+        let mut moved_studio = serve::Studio::load(
+            &PathBuf::from(directory.model(&changed)),
+            Some("body".into()),
+        )
+        .unwrap();
+        let frozen = get(&mut moved_studio, "/api/annotations?id=part").1;
+        let frozen_scene = frozen["scenes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["feature"] == "profile")
+            .unwrap();
+        assert_eq!(entity(&after), entity(frozen_scene));
+        for id in entity(&after)["control_points"].as_array().unwrap() {
+            let id = id.as_str().unwrap();
+            assert_eq!(after["points"][id], frozen_scene["points"][id]);
+        }
+    }
+}
