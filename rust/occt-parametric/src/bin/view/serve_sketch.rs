@@ -50,8 +50,16 @@ impl Studio {
         if !edit.target.iter().all(|v| v.is_finite()) {
             return Err("Drag coordinates must be finite.".into());
         }
-        if edit.definition.constraints.iter().any(|c|matches!(c,occt_parametric::SketchConstraint::WeightedPoint{point,..} if point==&edit.point)) {
-            return Err("This point follows a weighted link. Edit its source points or weights.".into());
+        if edit
+            .definition
+            .constraints
+            .iter()
+            .any(|c| c.dependent_point() == Some(edit.point.as_str()))
+        {
+            return Err(
+                "This point follows a saved point link. Edit its source geometry or link instead."
+                    .into(),
+            );
         }
         let mut pinned = edit.definition.clone();
         let point = pinned

@@ -313,9 +313,13 @@ requirements. Schema 147 and ABI 72 suffice. See
 The viewer now inspects authored dependency paths before freezing or editing
 geometry, including named points, weighted links, patterns, constraints, profiles
 and downstream features. This reference graph does not predict solver motion.
-Live intersection consumers still prevent detach. Next, named detached references
-should be able to follow authored curves again with an explicit geometric link,
-so junction/crossing intent survives subsequent pole edits.
+Live intersection consumers still prevent detach. Schema 148 adds directional
+`spline_point` links: named points evaluate the current explicit non-periodic
+rational basis at a saved active-domain fraction, and share the weighted-point
+DAG without new solver variables. Viewer controls attach retained names to these
+links or seeded two-curve crossing constraints. Next, periodic/interpolated
+parameter links and explicit unique crossing selectors should extend this intent
+without relying on a solver seed to choose a branch.
 
 
 Schema 72 adds ellipses, signed line angles in radians, circular radius and

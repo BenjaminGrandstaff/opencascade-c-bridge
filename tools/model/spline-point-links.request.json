@@ -1,0 +1,447 @@
+{
+  "schema": "occb-model-view-v1",
+  "model": {
+    "schema_version": 148,
+    "family": {
+      "id": "spline-point-links",
+      "version": 1,
+      "parameters": [
+        {
+          "id": "radius",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 10,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 5,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 20,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "middle_weight",
+          "parameter_type": {
+            "scalar": "scalar"
+          },
+          "default": {
+            "scalar": {
+              "value": 0.7071067811865476,
+              "dimension": "scalar",
+              "unit": null
+            }
+          },
+          "minimum": {
+            "value": 0.2,
+            "dimension": "scalar",
+            "unit": null
+          },
+          "maximum": {
+            "value": 2,
+            "dimension": "scalar",
+            "unit": null
+          }
+        },
+        {
+          "id": "height",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 8,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 2,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 30,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "location",
+          "parameter_type": {
+            "scalar": "scalar"
+          },
+          "default": {
+            "scalar": {
+              "value": 0.37,
+              "dimension": "scalar",
+              "unit": null
+            }
+          },
+          "minimum": {
+            "value": 0,
+            "dimension": "scalar",
+            "unit": null
+          },
+          "maximum": {
+            "value": 1,
+            "dimension": "scalar",
+            "unit": null
+          }
+        }
+      ],
+      "derived_parameters": [],
+      "derived_vector_parameters": [],
+      "constraints": [],
+      "requirements": [
+        {
+          "id": "body-valid",
+          "version": 1,
+          "kind": "validation",
+          "priority": "required",
+          "statement": "Rational cap remains valid while named points follow curve edits",
+          "rule": {
+            "shape_valid": {
+              "output": "body"
+            }
+          },
+          "provenance": "Illustrative dimensions",
+          "traces": [
+            {
+              "feature": "body"
+            }
+          ]
+        }
+      ],
+      "datums": [],
+      "features": [
+        {
+          "id": "profile",
+          "operation": {
+            "sketch_face": {
+              "sketch": {
+                "id": "linked-rational-cap",
+                "origin": {
+                  "literal": {
+                    "x": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    },
+                    "y": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                },
+                "x_axis": {
+                  "literal": {
+                    "x": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "y_axis": {
+                  "literal": {
+                    "x": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "points": [
+                  {
+                    "id": "a",
+                    "x": {
+                      "parameter": "radius"
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "b",
+                    "x": {
+                      "parameter": "radius"
+                    },
+                    "y": {
+                      "parameter": "radius"
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "c",
+                    "x": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "parameter": "radius"
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "sample",
+                    "x": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": false
+                  },
+                  {
+                    "id": "guide-start",
+                    "x": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 5,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "guide-end",
+                    "x": {
+                      "parameter": "radius"
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 5,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "crossing",
+                    "x": {
+                      "literal": {
+                        "value": 8.660254037844386,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 5,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": false
+                  }
+                ],
+                "lines": [
+                  {
+                    "id": "chord",
+                    "start": "c",
+                    "end": "a"
+                  },
+                  {
+                    "id": "guide",
+                    "start": "guide-start",
+                    "end": "guide-end"
+                  }
+                ],
+                "circles": [],
+                "profile": [
+                  "curve",
+                  "chord"
+                ],
+                "constraints": [
+                  {
+                    "spline_point": {
+                      "point": "sample",
+                      "spline": "curve",
+                      "fraction": {
+                        "parameter": "location"
+                      }
+                    }
+                  },
+                  {
+                    "point_on_curve": {
+                      "point": "crossing",
+                      "curve": "curve"
+                    }
+                  },
+                  {
+                    "point_on_curve": {
+                      "point": "crossing",
+                      "curve": "guide"
+                    }
+                  }
+                ],
+                "arcs": [],
+                "splines": [
+                  {
+                    "id": "curve",
+                    "points": [
+                      "a",
+                      "b",
+                      "c"
+                    ],
+                    "basis": {
+                      "degree": 2,
+                      "knots": [
+                        0,
+                        1
+                      ],
+                      "multiplicities": [
+                        3,
+                        3
+                      ],
+                      "weights": [
+                        {
+                          "literal": {
+                            "value": 1,
+                            "dimension": "scalar",
+                            "unit": null
+                          }
+                        },
+                        {
+                          "parameter": "middle_weight"
+                        },
+                        {
+                          "literal": {
+                            "value": 1,
+                            "dimension": "scalar",
+                            "unit": null
+                          }
+                        }
+                      ]
+                    }
+                  }
+                ],
+                "measurements": [
+                  {
+                    "id": "sample-from-start",
+                    "measure": {
+                      "distance": {
+                        "first": "a",
+                        "second": "sample"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "body",
+          "operation": {
+            "extrude": {
+              "input": "profile",
+              "direction": {
+                "components": {
+                  "x": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "y": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "z": {
+                    "parameter": "height"
+                  }
+                }
+              },
+              "extent": "distance"
+            }
+          }
+        }
+      ]
+    },
+    "instances": [
+      {
+        "base": {
+          "id": "part",
+          "overrides": {},
+          "provenance": "Named rational spline sample and seeded curve crossing"
+        }
+      }
+    ]
+  },
+  "outputs": [
+    {
+      "instance": "part",
+      "output": "body"
+    },
+    {
+      "instance": "part",
+      "output": "profile"
+    }
+  ],
+  "sketches": true
+}

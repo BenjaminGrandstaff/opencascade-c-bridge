@@ -175,6 +175,44 @@ behavior. The [projected refinement example](../tools/model/projected-spline-ref
 refines a live chain with named junctions. Model documents migrate to schema 147;
 ABI stays at 72.
 
+## Saved named-point links (schema 148)
+
+`spline_point: {point, spline, fraction}` keeps an authored non-fixed point at a
+fraction in `[0, 1]` of the current explicit spline's active parameter domain.
+Fractions accept scalar literals, parameters or expressions. This is a parameter
+fraction, not an arc-length fraction. The rational basis is evaluated again on
+regeneration, so pole moves, weight changes, knot edits and degree refinement
+update the point. Clamped and non-clamped bases are supported; periodic and
+interpolated bases are currently rejected. End fractions use the active native
+endpoints, including non-clamped curves.
+
+The point is a dependent coordinate with no extra solver unknown or equation.
+Constraints on it drive the original source poles. Links share the weighted-point
+dependency graph, with unique non-fixed targets, acyclic dependencies, a maximum
+depth of 256 and at most 4096 flattened independent sources. A target cannot also
+be a source control pole. Its saved coordinates are solver placeholders.
+
+In the live editor, **Named point links** offers **At spline parameter** and
+**At two-curve crossing**. Choose an authored named point, including junction or
+intersection IDs retained by detach. Linking unfixes the point and replaces its
+weighted, spline-point or point-on-curve links; other dimensions remain active.
+Fraction controls preserve a parameter driver or existing expression. The
+computed point's row highlights its sources, and selecting its annotation opens
+its link controls. **Remove named point link** releases the point to the solver;
+its stored coordinates are seeds, not a frozen current position.
+
+A crossing uses two existing `point_on_curve` constraints. The solver starts at
+the point's saved coordinates, can move free source geometry, and may choose a
+different branch after large edits. Lines use their infinite supporting line;
+arc/ellipse/spline membership retains the native existing span behavior. This is
+not a unique nearest-intersection selector. Native Preview/Apply checks all model
+variants and required checks. Applied links participate in undo/redo and Save.
+
+See the [named-point cap example](../tools/model/spline-point-links.request.json):
+`location` drives a rational spline sample and a second point follows its crossing
+with a guide line. Model documents migrate to schema 148; every example uses 148.
+ABI remains 72.
+
 ## Geometry dependency inspection
 
 The live sketch editor's **Geometry dependencies** panel inspects the current
@@ -199,7 +237,7 @@ model features, including construction geometry. Projection inspection explains
 which source relationship detach freezes and that sketch support remains linked.
 The view is read-only; native Preview/Apply remains authoritative. Lists display
 at most 100 entries per group with the total count. A 10,000-constraint graph
-build/traversal took about 27 ms in the Node check. Schema remains 147, ABI 72.
+build/traversal took about 27 ms in the Node check. The dependency view uses the current model schema; ABI remains 72.
 
 ## Detach projected splines into authored geometry
 

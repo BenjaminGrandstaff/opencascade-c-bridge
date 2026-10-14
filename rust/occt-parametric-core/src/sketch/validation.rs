@@ -75,6 +75,9 @@ impl SketchDefinition {
         }
         for constraint in &self.constraints {
             constraint.validate(parameters)?;
+            if constraint.dependent_point().is_some() {
+                self.point_link_terms(constraint, parameters)?;
+            }
         }
         for text in &self.texts {
             if scalar(&text.height, parameters, Dimension::Length)? <= 0.0 {
@@ -730,6 +733,7 @@ impl SketchConstraint {
                 .ok_or_else(|| ModelError::new(format!("unknown sketch line '{id}'")))
         };
         match self {
+            Self::SplinePoint { point: target, .. } => point(target),
             Self::WeightedPoint {
                 point: target,
                 terms,
@@ -828,6 +832,13 @@ impl SketchConstraint {
 
     fn validate(&self, parameters: &HashMap<String, ParameterValue>) -> Result<(), ModelError> {
         match self {
+            Self::SplinePoint { fraction, .. } => {
+                let f = scalar(fraction, parameters, Dimension::Scalar)?;
+                if !(0.0..=1.0).contains(&f) {
+                    return Err(ModelError::new("spline point fraction must be in [0, 1]"));
+                }
+                Ok(())
+            }
             Self::WeightedPoint { terms, .. } => {
                 for term in terms {
                     if scalar(&term.weight, parameters, Dimension::Scalar)? <= 0. {
@@ -927,7 +938,7 @@ pub fn validate_curve_entities(profile: &[Entity<'_>]) -> Result<(), ModelError>
     Ok(())
 }
 
-fn validate_spline_points(
+pub(super) fn validate_spline_points(
     spline: &SketchSpline,
     point_ids: &HashSet<&str>,
 ) -> Result<(), ModelError> {

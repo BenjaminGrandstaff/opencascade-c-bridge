@@ -488,6 +488,12 @@ pub(super) fn sketch_scene(
                 ],
                 None,
             ),
+            SketchConstraint::SplinePoint { point, spline, .. } => (
+                "SPLINE POINT",
+                vec![point.clone(), spline.clone()],
+                vec![point.clone()],
+                None,
+            ),
             SketchConstraint::WeightedPoint { point, terms } => (
                 "WEIGHTED",
                 std::iter::once(point.clone())
@@ -915,6 +921,24 @@ pub(super) fn sketch_scene(
             control_names = linked.into_iter().collect();
         }
         match constraint {
+            SketchConstraint::SplinePoint {
+                point,
+                spline,
+                fraction,
+            } => {
+                let source = sketch.splines.iter().find(|s| s.id == *spline).unwrap();
+                let mut linked = std::iter::once(point.as_str())
+                    .chain(source.points.iter().map(String::as_str))
+                    .flat_map(|id| point_controls[id].iter().cloned())
+                    .collect::<BTreeSet<_>>();
+                linked.extend(fraction.parameter_names().into_iter().map(str::to_owned));
+                if let Some(b) = &source.basis {
+                    for weight in &b.weights {
+                        linked.extend(weight.parameter_names().into_iter().map(str::to_owned));
+                    }
+                }
+                control_names = linked.into_iter().collect();
+            }
             SketchConstraint::WeightedPoint { point, terms } => {
                 let mut linked = std::iter::once(point.as_str())
                     .chain(terms.iter().map(|t| t.point.as_str()))

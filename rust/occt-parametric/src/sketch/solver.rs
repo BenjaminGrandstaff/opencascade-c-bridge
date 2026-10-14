@@ -42,25 +42,21 @@ impl<'a> SketchProblem<'a> {
     ) -> Result<Self, ModelError> {
         let mut weighted_points: HashMap<&str, Vec<(&str, f64)>> = HashMap::new();
         for index in sketch.weighted_point_order()? {
-            let SketchConstraint::WeightedPoint { point, terms } = &sketch.constraints[index]
-            else {
-                unreachable!()
-            };
-            let weights = terms
-                .iter()
-                .map(|t| scalar(&t.weight, parameters, Dimension::Scalar))
-                .collect::<Result<Vec<_>, _>>()?;
+            let constraint = &sketch.constraints[index];
+            let point = constraint.dependent_point().unwrap();
+            let terms = sketch.point_link_terms(constraint, parameters)?;
+            let weights = terms.iter().map(|(_, w)| *w).collect::<Vec<_>>();
             let scale = weights.iter().copied().fold(0_f64, f64::max);
             let sum = weights.iter().map(|w| w / scale).sum::<f64>();
             let mut flattened = std::collections::BTreeMap::new();
-            for (term, weight) in terms.iter().zip(weights) {
+            for ((source, _), weight) in terms.iter().zip(weights) {
                 let coefficient = (weight / scale) / sum;
-                if let Some(sources) = weighted_points.get(term.point.as_str()) {
+                if let Some(sources) = weighted_points.get(source) {
                     for &(source, value) in sources {
                         *flattened.entry(source).or_insert(0.) += coefficient * value;
                     }
                 } else {
-                    *flattened.entry(term.point.as_str()).or_insert(0.) += coefficient;
+                    *flattened.entry(*source).or_insert(0.) += coefficient;
                 }
             }
             if flattened.len() > 4096 {
@@ -69,7 +65,7 @@ impl<'a> SketchProblem<'a> {
                 ));
             }
             weighted_points.insert(
-                point.as_str(),
+                point,
                 flattened
                     .into_iter()
                     .filter(|&(_, v)| v != 0.)
@@ -126,8 +122,7 @@ impl SketchProblem<'_> {
             .iter()
             .enumerate()
             .filter(|(_, constraint)| {
-                !self.sketch.spline_tangency(constraint)
-                    && !matches!(constraint, SketchConstraint::WeightedPoint { .. })
+                !self.sketch.spline_tangency(constraint) && constraint.dependent_point().is_none()
             })
             .map(|(index, c)| Equation::Constraint(index, c))
             .chain(self.sketch.arcs.iter().map(Equation::Arc))
@@ -1262,6 +1257,20 @@ impl SketchProblem<'_> {
                 let b = self.point(self.center_point(second), values);
                 residuals.extend([a.x - b.x, a.y - b.y]);
             }
+            SketchConstraint::SplinePoint { point, .. } => {
+                let terms = self.sketch.point_link_terms(constraint, self.parameters)?;
+                let scale = terms.iter().map(|(_, w)| *w).fold(0_f64, f64::max);
+                let sum = terms.iter().map(|(_, w)| w / scale).sum::<f64>();
+                let mut target = SketchPoint2 { x: 0., y: 0. };
+                for (id, w) in terms {
+                    let p = self.point(id, values);
+                    let c = (w / scale) / sum;
+                    target.x += c * p.x;
+                    target.y += c * p.y;
+                }
+                let p = self.point(point, values);
+                residuals.extend([p.x - target.x, p.y - target.y]);
+            }
             SketchConstraint::WeightedPoint { point, terms } => {
                 let target = self.weighted_point(terms, values)?;
                 let p = self.point(point, values);
@@ -1521,6 +1530,9 @@ impl SketchProblem<'_> {
             SketchConstraint::Concentric { first, second } => {
                 vec![self.center_point(first), self.center_point(second)]
             }
+            SketchConstraint::SplinePoint { point, .. } => std::iter::once(point.as_str())
+                .chain(self.sketch.point_link_sources(constraint).unwrap())
+                .collect(),
             SketchConstraint::WeightedPoint { point, terms } => std::iter::once(point.as_str())
                 .chain(terms.iter().map(|t| t.point.as_str()))
                 .collect(),
@@ -1933,13 +1945,7 @@ impl SketchDefinitionSolvingInternal for SketchDefinition {
         let dependent = self
             .constraints
             .iter()
-            .filter_map(|c| {
-                if let SketchConstraint::WeightedPoint { point, .. } = c {
-                    Some(point.as_str())
-                } else {
-                    None
-                }
-            })
+            .filter_map(SketchConstraint::dependent_point)
             .collect::<HashSet<_>>();
         for point in &self.points {
             if dependent.contains(point.id.as_str()) {

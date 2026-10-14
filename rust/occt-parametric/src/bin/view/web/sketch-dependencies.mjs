@@ -49,6 +49,7 @@ export function sketchDependencyGraph(definition,{features=[],feature='',feature
   for(const pattern of definition.patterns??[]){const [,data]=unwrap(pattern);consume(`pattern:${data.id}`,data);}
   for(const [index,constraint]of (definition.constraints??[]).entries()){
     const [kind,data]=unwrap(constraint),key=add(`constraint:${index}`,`Constraint ${index+1} · ${kind.replaceAll('_',' ')}`,'constraint');consume(key,constraint);
+    if(kind==='spline_point')link(resolve(data.point),resolve(data.spline));
     if(kind==='weighted_point')for(const term of data.terms??[])link(resolve(data.point),resolve(term.point));
   }
   for(const item of definition.measurements??[])consume(add(`measurement:${item.id}`,`${item.id} · reference dimension`,'measurement'),item.measure);

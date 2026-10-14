@@ -3397,3 +3397,68 @@ fn detach_projected_splines_freezes_exact_draft_geometry_and_preserves_history()
         }
     }
 }
+
+#[test]
+fn saved_spline_point_links_preview_follow_edits_reject_drag_and_survive_save_history() {
+    let directory = Directory::new();
+    let request: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../tools/model/spline-point-links.request.json"
+    ))
+    .unwrap();
+    let document = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+    let model = PathBuf::from(directory.model(&document));
+    let original = fs::read_to_string(&model).unwrap();
+    let mut studio = serve::Studio::load(&model, Some("body".into())).unwrap();
+    let state = get(&mut studio, "/api/state").1;
+    let data = get(&mut studio, "/api/sketches").1;
+    let baseline = data["sketches"][0]["definition"].clone();
+    let scene = |view: serde_json::Value| {
+        view["scenes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["feature"] == "profile")
+            .unwrap()
+            .clone()
+    };
+    let before = scene(get(&mut studio, "/api/annotations?id=part").1);
+    let drag = json!({"version":data["version"],"instance":"part","feature":"profile","expected":baseline,"definition":baseline,"point":"sample","target":[5.,5.]});
+    let response = studio.handle("POST", "/api/sketch-drag", drag.to_string().as_bytes());
+    assert_eq!(response.status, 422);
+    assert!(String::from_utf8_lossy(&response.body).contains("saved point link"));
+    let mut draft = baseline.clone();
+    draft["points"][1]["y"] =
+        json!({"literal":{"value":12.,"dimension":"length","unit":"millimeter"}});
+    let (status, result) = edit_definition(&mut studio, "profile", draft.clone(), false);
+    assert_eq!(status, 200, "{result}");
+    assert_eq!(result["can_apply"], true, "{result}");
+    let after = scene(result["annotations"].clone());
+    assert_ne!(before["points"]["sample"], after["points"]["sample"]);
+    assert_ne!(before["points"]["crossing"], after["points"]["crossing"]);
+    assert!((after["points"]["crossing"][1].as_f64().unwrap() - 5.).abs() < 1e-8);
+    assert_eq!(get(&mut studio, "/api/state").1, state);
+    assert_eq!(fs::read_to_string(&model).unwrap(), original);
+    let mut invalid = draft.clone();
+    invalid["constraints"][0]["spline_point"]["fraction"] =
+        json!({"literal":{"value":1.1,"dimension":"scalar","unit":null}});
+    assert_eq!(
+        edit_definition(&mut studio, "profile", invalid, true).0,
+        422
+    );
+    let (status, result) = edit_definition(&mut studio, "profile", draft, true);
+    assert_eq!(status, 200, "{result}");
+    history(&mut studio, "undo");
+    assert_eq!(
+        scene(get(&mut studio, "/api/annotations?id=part").1)["points"]["sample"],
+        before["points"]["sample"]
+    );
+    history(&mut studio, "redo");
+    assert_eq!(studio.handle("POST", "/api/save", b"{}").status, 200);
+    let saved = ModelDocument::from_json(&fs::read_to_string(&model).unwrap()).unwrap();
+    assert_eq!(saved.schema_version, 148);
+    let mut reopened = serve::Studio::load(&model, Some("body".into())).unwrap();
+    assert_eq!(
+        scene(get(&mut reopened, "/api/annotations?id=part").1)["points"]["sample"],
+        after["points"]["sample"]
+    );
+}

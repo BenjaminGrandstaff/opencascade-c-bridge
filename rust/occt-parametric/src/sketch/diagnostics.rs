@@ -601,7 +601,7 @@ impl SketchDefinitionChecks for SketchDefinition {
                     index,
                     max_residual: Some(residual),
                     satisfied: residual <= RESIDUAL_TOLERANCE,
-                    by_construction: matches!(constraint, SketchConstraint::WeightedPoint { .. }),
+                    by_construction: constraint.dependent_point().is_some(),
                 })
             })
             .collect()

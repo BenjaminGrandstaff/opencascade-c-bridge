@@ -20,6 +20,7 @@ pub mod profile;
 pub mod projections;
 pub mod shapes;
 pub mod solver;
+pub mod spline_links;
 pub mod validation;
 
 pub use diagnosis::{
@@ -390,6 +391,12 @@ pub struct SketchWeightedPointTerm {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SketchConstraint {
+    /// Directional point at a fraction of the current active spline domain.
+    SplinePoint {
+        point: String,
+        spline: String,
+        fraction: ScalarExpr,
+    },
     /// Target is the normalized positive weighted sum of named solved points.
     WeightedPoint {
         point: String,
@@ -1239,21 +1246,16 @@ impl SketchDefinition {
         Ok(result)
     }
 
-    /// Deterministic evaluation order for directional weighted-point definitions.
+    /// Deterministic evaluation order for weighted and spline-parameter point links.
     /// Targets are dependent coordinates, never additional solver unknowns.
     pub fn weighted_point_order(&self) -> Result<Vec<usize>, ModelError> {
         let links = self
             .constraints
             .iter()
             .enumerate()
-            .filter_map(|(i, c)| {
-                if let SketchConstraint::WeightedPoint { point, terms } = c {
-                    Some((i, point, terms))
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<_>>();
+            .filter_map(|(i, c)| c.dependent_point().map(|point| (i, point, c)))
+            .map(|(i, point, c)| Ok((i, point, self.point_link_sources(c)?)))
+            .collect::<Result<Vec<_>, ModelError>>()?;
         if links.is_empty() {
             return Ok(Vec::new());
         }
@@ -1265,10 +1267,10 @@ impl SketchDefinition {
             .collect::<HashSet<_>>();
         let mut targets = HashMap::new();
         for (local, (_, point, _)) in links.iter().enumerate() {
-            if targets.insert(point.as_str(), local).is_some() {
+            if targets.insert(*point, local).is_some() {
                 return Err(ModelError::new("weighted point targets must be unique"));
             }
-            if !free.contains(point.as_str()) {
+            if !free.contains(*point) {
                 return Err(ModelError::new(
                     "weighted point target must be an authored non-fixed point",
                 ));
@@ -1280,7 +1282,7 @@ impl SketchDefinition {
         for (local, (_, _, terms)) in links.iter().enumerate() {
             let sources = terms
                 .iter()
-                .filter_map(|t| targets.get(t.point.as_str()).copied())
+                .filter_map(|t| targets.get(*t).copied())
                 .collect::<HashSet<_>>();
             counts[local] = sources.len();
             for source in sources {
@@ -1408,6 +1410,9 @@ impl SketchDefinition {
             }
         }
         for constraint in &self.constraints {
+            if let SketchConstraint::SplinePoint { fraction, .. } = constraint {
+                collect_scalar_parameters(fraction, names);
+            }
             if let SketchConstraint::WeightedPoint { terms, .. } = constraint {
                 for term in terms {
                     collect_scalar_parameters(&term.weight, names);
