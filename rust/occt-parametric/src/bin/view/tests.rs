@@ -3764,3 +3764,142 @@ fn crossing_review_exports_native_resolved_windows_for_parameters_and_read_only_
         200
     );
 }
+
+#[test]
+fn native_crossing_candidate_queries_are_read_only_guarded_and_use_current_draft_geometry() {
+    let directory = Directory::new();
+    let request: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../tools/model/selected-crossing-pad.request.json"
+    ))
+    .unwrap();
+    let document = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+    let model = PathBuf::from(directory.model(&document));
+    let original = fs::read_to_string(&model).unwrap();
+    let mut studio = serve::Studio::load(&model, Some("body".into())).unwrap();
+    let data = get(&mut studio, "/api/sketches").1;
+    let state = get(&mut studio, "/api/state").1;
+    let annotations = get(&mut studio, "/api/annotations?id=part").1;
+    let baseline = data["sketches"][0]["definition"].clone();
+    let query = json!({"version":data["version"],"instance":"part","feature":"profile","expected":baseline,"definition":baseline,"first":"circle","second":"guide"});
+    let post = |studio: &mut serve::Studio, value: &serde_json::Value| {
+        let response = studio.handle(
+            "POST",
+            "/api/sketch-crossing-candidates",
+            value.to_string().as_bytes(),
+        );
+        (
+            response.status,
+            serde_json::from_slice::<serde_json::Value>(&response.body).unwrap(),
+        )
+    };
+    let now = std::time::Instant::now();
+    for _ in 0..10 {
+        let (status, result) = post(&mut studio, &query);
+        assert_eq!(status, 200, "{result}");
+        assert_eq!(result["complete"], true);
+        assert_eq!(result["points"].as_array().unwrap().len(), 2);
+        for p in result["points"].as_array().unwrap() {
+            assert!((p[0].as_f64().unwrap().abs() - 75_f64.sqrt()).abs() < 1e-8);
+            assert!((p[1].as_f64().unwrap() - 5.).abs() < 1e-8);
+        }
+    }
+    eprintln!(
+        "10 read-only native crossing snapshots: {:?}",
+        now.elapsed()
+    );
+    assert!(now.elapsed() < std::time::Duration::from_secs(2));
+    let mut draft = query.clone();
+    for i in [2, 3] {
+        draft["definition"]["points"][i]["y"] =
+            json!({"literal":{"value":6.,"dimension":"length","unit":"millimeter"}});
+    }
+    let (status, result) = post(&mut studio, &draft);
+    assert_eq!(status, 200, "{result}");
+    for p in result["points"].as_array().unwrap() {
+        assert!((p[0].as_f64().unwrap().abs() - 8.).abs() < 1e-8);
+        assert!((p[1].as_f64().unwrap() - 6.).abs() < 1e-8);
+    }
+    for (path, value) in [
+        (vec!["version"], json!(999)),
+        (vec!["instance"], json!("missing")),
+        (vec!["first"], json!("missing")),
+        (vec!["second"], json!("circle")),
+        (vec!["definition", "id"], json!("changed")),
+        (vec!["expected", "id"], json!("changed")),
+        (vec!["apply"], json!(true)),
+    ] {
+        let mut invalid = query.clone();
+        let mut target = &mut invalid;
+        for key in path {
+            target = &mut target[key];
+        }
+        *target = value;
+        assert_eq!(post(&mut studio, &invalid).0, 422);
+    }
+    let mut overlap = query.clone();
+    overlap["definition"]["lines"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"id":"duplicate","start":"guide-start","end":"guide-end"}));
+    overlap["first"] = json!("guide");
+    overlap["second"] = json!("duplicate");
+    assert_eq!(post(&mut studio, &overlap).0, 422);
+    let mut missed = query.clone();
+    missed["definition"]["constraints"] = json!([]);
+    missed["definition"]["points"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|p| p["id"] == "crossing")
+        .unwrap()["fixed"] = json!(true);
+    for (i, x) in [(2, -1.), (3, 1.)] {
+        missed["definition"]["points"][i]["x"] =
+            json!({"literal":{"value":x,"dimension":"length","unit":"millimeter"}});
+    }
+    let (status, result) = post(&mut studio, &missed);
+    assert_eq!(status, 200, "{result}");
+    assert_eq!(result["points"], json!([]));
+    assert_eq!(get(&mut studio, "/api/state").1, state);
+    assert_eq!(get(&mut studio, "/api/annotations?id=part").1, annotations);
+    assert_eq!(fs::read_to_string(&model).unwrap(), original);
+}
+
+#[test]
+fn native_crossing_candidate_queries_materialize_live_projected_splines() {
+    let directory = Directory::new();
+    let request: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../tools/model/projected-spline-refinement.request.json"
+    ))
+    .unwrap();
+    let document = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+    let model = PathBuf::from(directory.model(&document));
+    let mut studio = serve::Studio::load(&model, Some("body".into())).unwrap();
+    let data = get(&mut studio, "/api/sketches").1;
+    let baseline = data["sketches"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["feature"] == "profile")
+        .unwrap()["definition"]
+        .clone();
+    let state = get(&mut studio, "/api/state").1;
+    let mut draft = baseline.clone();
+    for (id, x) in [("probe-left", -100.), ("probe-right", 100.)] {
+        draft["points"].as_array_mut().unwrap().push(json!({"id":id,"x":{"literal":{"value":x,"dimension":"length","unit":"millimeter"}},"y":{"literal":{"value":10.,"dimension":"length","unit":"millimeter"}},"fixed":true}));
+    }
+    draft["lines"] = json!([{"id":"probe","start":"probe-left","end":"probe-right"}]);
+    let body = json!({"version":data["version"],"instance":"part","feature":"profile","expected":baseline,"definition":draft,"first":"reference","second":"probe"});
+    let response = studio.handle(
+        "POST",
+        "/api/sketch-crossing-candidates",
+        body.to_string().as_bytes(),
+    );
+    let result: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+    assert_eq!(response.status, 200, "{result}");
+    assert_eq!(result["complete"], true);
+    assert!(!result["points"].as_array().unwrap().is_empty(), "{result}");
+    for p in result["points"].as_array().unwrap() {
+        assert!((p[1].as_f64().unwrap() - 10.).abs() < 1e-7);
+    }
+    assert_eq!(get(&mut studio, "/api/state").1, state);
+}

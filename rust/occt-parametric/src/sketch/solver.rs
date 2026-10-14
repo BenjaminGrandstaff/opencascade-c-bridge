@@ -962,14 +962,12 @@ impl SketchProblem<'_> {
             }
         })
     }
-    fn selected_crossing(
+    fn crossing_candidates(
         &self,
         first: &str,
         second: &str,
-        near: &VectorExpr,
-        maximum_distance: &ScalarExpr,
         values: &[f64],
-    ) -> Result<SketchPoint2, ModelError> {
+    ) -> Result<Vec<Vec3>, ModelError> {
         let (first, second) = if first < second {
             (first, second)
         } else {
@@ -1035,6 +1033,17 @@ impl SketchProblem<'_> {
             );
             points
         };
+        Ok(points)
+    }
+    fn selected_crossing(
+        &self,
+        first: &str,
+        second: &str,
+        near: &VectorExpr,
+        maximum_distance: &ScalarExpr,
+        values: &[f64],
+    ) -> Result<SketchPoint2, ModelError> {
+        let points = self.crossing_candidates(first, second, values)?;
         let hint = vector(near, self.parameters, Dimension::Length)?;
         let radius = scalar(maximum_distance, self.parameters, Dimension::Length)?;
         let mut candidates = points
@@ -2196,6 +2205,17 @@ pub trait SketchDefinitionSolving {
         parameters: &HashMap<String, ParameterValue>,
     ) -> Result<SketchSolution, ModelError>;
 
+    /// Read-only exact finite crossings of two current solved sketch curves, in
+    /// sketch-local millimeters. Projections must already be materialized.
+    /// Rejects overlaps and exhausted native budgets; at most 1000 candidates.
+    /// This does not add constraints or verify downstream model requirements.
+    fn finite_curve_intersections(
+        &self,
+        parameters: &HashMap<String, ParameterValue>,
+        first: &str,
+        second: &str,
+    ) -> Result<Vec<SketchPoint2>, ModelError>;
+
     /// Warm start free points by stable point ID. New points use authored seeds,
     /// removed IDs are ignored, and fixed points always use the definition.
     fn solve_with_seed(
@@ -2211,6 +2231,36 @@ impl SketchDefinitionSolving for SketchDefinition {
         parameters: &HashMap<String, ParameterValue>,
     ) -> Result<SketchSolution, ModelError> {
         self.solve_internal(parameters, None)
+    }
+
+    fn finite_curve_intersections(
+        &self,
+        parameters: &HashMap<String, ParameterValue>,
+        first: &str,
+        second: &str,
+    ) -> Result<Vec<SketchPoint2>, ModelError> {
+        if let std::borrow::Cow::Owned(expanded) = self.with_pattern_copies(parameters)? {
+            return expanded.finite_curve_intersections(parameters, first, second);
+        }
+        let entities = self.entities();
+        if first == second || !entities.contains_key(first) || !entities.contains_key(second) {
+            return Err(ModelError::new(
+                "crossing query requires two distinct known curves",
+            ));
+        }
+        let solution = self.solve(parameters)?;
+        self.check_acceptance(&solution)?;
+        let fixed = self
+            .points
+            .iter()
+            .map(|p| (p.id.as_str(), solution.points[&p.id]))
+            .collect();
+        let problem = SketchProblem::new(self, parameters, HashMap::new(), fixed)?;
+        Ok(problem
+            .crossing_candidates(first, second, &[])?
+            .into_iter()
+            .map(|p| SketchPoint2 { x: p.x, y: p.y })
+            .collect())
     }
 
     fn solve_with_seed(

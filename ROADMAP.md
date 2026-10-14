@@ -17,7 +17,7 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 157 + first-use integration 1 (+1 doc test), recipes 3, parametric core 36 + kernel 708 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 8 + view command 53 + viewer Node 102 + branch command 2 + model command 90, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 157 + first-use integration 1 (+1 doc test), recipes 3, parametric core 36 + kernel 710 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 8 + view command 55 + viewer Node 106 + branch command 2 + model command 90, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -25,6 +25,14 @@ tracks status and order.
 | Scale benchmarks | Last full suite: 194 Rust cases plus 5 model-command cases and a 10,000-face Python matcher. Sketch authoring integration rechecked 60 sketch cases and 60 MCP cases within budget. | `tools/bench/run.sh` |
 
 ## Done
+
+- Native crossing-pick feedback (schema 149, ABI 73 unchanged): one read-only
+  curve-pair query supplies exact bounded candidates for all cursor positions.
+  Current solved geometry, including projected splines, reports unique, missing,
+  ambiguous or failed results before staging. Incomplete/stale/loading results
+  cannot stage a point. Queries share the saved selector's native curve builder,
+  finite intersections and budgets; full Preview/Apply remains required. See
+  [native picking feedback](docs/SKETCHES.md#native-feedback-while-picking).
 
 - Canvas-selected crossings (schema 149, ABI 73 unchanged): click two authored
   or projected source curves and a hint to stage a literal selected-crossing

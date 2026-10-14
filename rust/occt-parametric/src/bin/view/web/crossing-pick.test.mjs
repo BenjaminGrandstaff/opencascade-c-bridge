@@ -1,5 +1,5 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
-import {pickedCrossing,createCrossingPicker} from './crossing-pick.mjs';
+import {pickedCrossing,createCrossingPicker,crossingWindowFeedback} from './crossing-pick.mjs';
 const length=value=>({literal:{value,dimension:'length',unit:'millimeter'}});
 function definition(){return {points:[['a',-10,0],['b',10,0],['c',0,-10],['d',0,10],['existing',4,4]].map(([id,x,y])=>({id,x:length(x),y:length(y),fixed:true})),lines:[{id:'horizontal',start:'a',end:'b'},{id:'vertical',start:'c',end:'d'}],constraints:[{distance:{first:'a',second:'b',value:length(20)}}],profile:[]};}
 class Element{constructor(tag){this.tagName=tag;this.children=[];this.value='';}append(...nodes){for(const node of nodes)node.parentElement=this;this.children.push(...nodes);}setAttribute(k,v){this[k]=v;}}
@@ -27,4 +27,26 @@ test('dragging, cancellation, changed native views and stale contexts never stag
 }));
 test('existing targets and radius are captured at start and invalid options do not arm picking',()=>mock(()=>{
  const host=new Element('div');let result;const picker=createCrossingPicker({host,definition:definition(),changed:v=>result=v,message(){}});input(host,'Picked crossing search radius (mm)').value='';find(host,'Start crossing pick').onclick();assert(!picker.active);input(host,'Picked crossing search radius (mm)').value='3';input(host,'Picked crossing target').value='existing';find(host,'Start crossing pick').onclick();assert(input(host,'Picked crossing target').disabled);const scene={};for(const entity of ['horizontal','vertical',undefined]){const e={entity,scene,position:[0,0],tolerance:1};picker.down(e);picker.up(e);}assert.equal(result.points.length,5);assert.equal(result.constraints.at(-1).crossing_point.maximum_distance.literal.value,3);
+}));
+
+test('native numeric window feedback matches inclusive native distance semantics with bounded hover work',()=>{
+ assert.equal(crossingWindowFeedback([[3,4]],[0,0],5).kind,'unique');assert.equal(crossingWindowFeedback([[3,4]],[0,0],4.99).kind,'missing');assert.equal(crossingWindowFeedback([[-8,5],[8,5]],[0,5],9).kind,'ambiguous');assert.throws(()=>crossingWindowFeedback([[NaN,0]],[0,0],1));assert.throws(()=>crossingWindowFeedback(Array(1001).fill([0,0]),[0,0],1));
+ const points=Array.from({length:1000},(_,i)=>[i,0]),now=performance.now();for(let i=0;i<1000;i++)assert.equal(crossingWindowFeedback(points,[i,0],.2).kind,'unique');const elapsed=performance.now()-now;console.log(`1000 hovers over 1000 native candidates: ${elapsed.toFixed(1)} ms`);assert(elapsed<2000);
+});
+async function asyncMock(action){globalThis.document={createElement:tag=>new Element(tag)};globalThis.Option=class extends Element{constructor(text,value){super('option');this.textContent=text;this.value=value;}};try{await action();}finally{delete globalThis.document;delete globalThis.Option;}}
+const flush=()=>new Promise(resolve=>setImmediate(resolve));
+const snapshot=points=>({complete:true,first:'horizontal',second:'vertical',coordinate_system:'sketch-local millimeters',points});
+test('one native query serves every hover and blocks staging until a unique result is ready',async()=>asyncMock(async()=>{
+ const host=new Element('div'),scene={};let resolveQuery,queries=0,result;const picker=createCrossingPicker({host,definition:definition(),message(){},changed:v=>result=v,queryCandidates:()=>{queries++;return new Promise(resolve=>resolveQuery=resolve);}}),event=(entity,position=[0,0])=>({scene,entity,position,tolerance:1}),click=(entity,position)=>{picker.down(event(entity,position));picker.up(event(entity,position));};
+ find(host,'Start crossing pick').onclick();click('horizontal');click('vertical');assert.equal(queries,1);for(let i=0;i<100;i++)picker.move(event(undefined,[8.5,5]));click(undefined,[8.5,5]);assert.equal(result,undefined);resolveQuery(snapshot([[-8,5],[8,5]]));await flush();assert(all(host).some(e=>e.textContent?.startsWith('Native window: one finite')));click(undefined,[8.5,5]);assert(result);assert.equal(queries,1);
+}));
+test('missing and ambiguous windows remain unmodified, and incomplete or failed native responses never stage',async()=>asyncMock(async()=>{
+ const host=new Element('div'),scene={};let result,reply=snapshot([[-8,0],[8,0]]);const picker=createCrossingPicker({host,definition:definition(),message(){},changed:v=>result=v,queryCandidates:async()=>reply}),event=(entity,position=[0,0])=>({scene,entity,position,tolerance:1}),click=(entity,position)=>{picker.down(event(entity,position));picker.up(event(entity,position));},sources=async()=>{find(host,'Start crossing pick').onclick();click('horizontal');click('vertical');await flush();};
+ input(host,'Picked crossing search radius (mm)').value='10';await sources();click(undefined,[0,0]);assert.equal(result,undefined);assert(all(host).some(e=>e.textContent?.includes('2 finite crossings')));picker.move(event(undefined,[0,30]));click(undefined,[0,30]);assert.equal(result,undefined);assert(picker.active);picker.cancel();
+ reply={...snapshot([[0,0]]),complete:false};await sources();click(undefined,[0,0]);assert.equal(result,undefined);assert(all(host).some(e=>e.textContent?.includes('incomplete')));picker.cancel();
+ reply=null;await sources();assert(all(host).some(e=>e.textContent?.includes('Native crossing query failed')));assert.equal(result,undefined);
+}));
+test('late native responses cannot revive canceled picks or contaminate a new pair snapshot',async()=>asyncMock(async()=>{
+ const host=new Element('div'),scene={},requests=[];let result;const picker=createCrossingPicker({host,definition:definition(),message(){},changed:v=>result=v,queryCandidates:()=>new Promise(resolve=>requests.push(resolve))}),event=(entity)=>({scene,entity,position:[0,0],tolerance:1}),click=entity=>{picker.down(event(entity));picker.up(event(entity));},sources=()=>{find(host,'Start crossing pick').onclick();click('horizontal');click('vertical');};
+ sources();picker.cancel();sources();requests[0](snapshot([[0,0]]));await flush();click(undefined);assert.equal(result,undefined);assert(picker.active);requests[1](snapshot([[0,0]]));await flush();click(undefined);assert(result);assert(!picker.active);
 }));

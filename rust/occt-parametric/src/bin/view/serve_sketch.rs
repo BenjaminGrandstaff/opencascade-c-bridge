@@ -266,6 +266,61 @@ impl Studio {
         self.sketch_edit_resolved(body, false)
     }
 
+    pub(super) fn sketch_draft_document(
+        &self,
+        version: u64,
+        instance: &str,
+        feature_id: &str,
+        expected: &SketchDefinition,
+        definition: &SketchDefinition,
+        allow_unchanged: bool,
+    ) -> Result<ModelDocument, String> {
+        if version != self.version {
+            return Err("The model changed. Reload the sketch before applying this draft.".into());
+        }
+        if !primary_instances(&self.document)?.contains(instance) {
+            return Err("unknown editable instance".into());
+        }
+        let mut document = self.document.clone();
+        let feature = document
+            .family
+            .features
+            .iter_mut()
+            .find(|f| f.id == feature_id)
+            .ok_or("unknown sketch feature")?;
+        let mut operation = serde_json::to_value(&feature.operation).map_err(|e| e.to_string())?;
+        let original = sketch(&operation).ok_or("feature has no authored sketch")?;
+        let expected_value = serde_json::to_value(expected).map_err(|e| e.to_string())?;
+        if original != &expected_value {
+            return Err("Sketch definition changed. Reload before applying this draft.".into());
+        }
+        if expected.id != definition.id {
+            return Err("sketch identity must stay the same".into());
+        }
+        if expected == definition && !allow_unchanged {
+            return Err("The sketch draft has no changes.".into());
+        }
+        for value in operation
+            .as_object_mut()
+            .ok_or("invalid feature operation")?
+            .values_mut()
+        {
+            if let Some(target) = value.get_mut("sketch") {
+                *target = serde_json::to_value(definition).map_err(|e| e.to_string())?;
+            }
+        }
+        feature.operation = serde_json::from_value(operation).map_err(|e| e.to_string())?;
+        document.family.version = document
+            .family
+            .version
+            .checked_add(1)
+            .ok_or("family version overflow")?;
+        let document =
+            ModelDocument::from_json(&document.to_json_pretty().map_err(|e| e.to_string())?)
+                .map_err(|e| e.to_string())?;
+        Ok(document)
+    }
+
     fn sketch_edit_resolved(
         &mut self,
         body: &[u8],
@@ -283,49 +338,14 @@ impl Studio {
         }
         let edit: Edit =
             serde_json::from_slice(body).map_err(|e| format!("invalid sketch edit: {e}"))?;
-        if edit.version != self.version {
-            return Err("The model changed. Reload the sketch before applying this draft.".into());
-        }
-        if !primary_instances(&self.document)?.contains(&edit.instance) {
-            return Err("unknown editable instance".into());
-        }
-        let mut document = self.document.clone();
-        let feature = document
-            .family
-            .features
-            .iter_mut()
-            .find(|f| f.id == edit.feature)
-            .ok_or("unknown sketch feature")?;
-        let mut operation = serde_json::to_value(&feature.operation).map_err(|e| e.to_string())?;
-        let original = sketch(&operation).ok_or("feature has no authored sketch")?;
-        let expected = serde_json::to_value(&edit.expected).map_err(|e| e.to_string())?;
-        if original != &expected {
-            return Err("Sketch definition changed. Reload before applying this draft.".into());
-        }
-        if edit.expected.id != edit.definition.id {
-            return Err("sketch identity must stay the same".into());
-        }
-        if edit.expected == edit.definition && (!resolve_unchanged || edit.apply) {
-            return Err("The sketch draft has no changes.".into());
-        }
-        for value in operation
-            .as_object_mut()
-            .ok_or("invalid feature operation")?
-            .values_mut()
-        {
-            if let Some(target) = value.get_mut("sketch") {
-                *target = serde_json::to_value(&edit.definition).map_err(|e| e.to_string())?;
-            }
-        }
-        feature.operation = serde_json::from_value(operation).map_err(|e| e.to_string())?;
-        document.family.version = document
-            .family
-            .version
-            .checked_add(1)
-            .ok_or("family version overflow")?;
-        let document =
-            ModelDocument::from_json(&document.to_json_pretty().map_err(|e| e.to_string())?)
-                .map_err(|e| e.to_string())?;
+        let document = self.sketch_draft_document(
+            edit.version,
+            &edit.instance,
+            &edit.feature,
+            &edit.expected,
+            &edit.definition,
+            resolve_unchanged && !edit.apply,
+        )?;
         let output = self
             .output
             .clone()

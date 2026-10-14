@@ -387,3 +387,79 @@ fn selected_crossings_reject_excessive_pairs_and_candidates_without_partial_sele
     s.constraints = vec![selected("hit", "zigzag", "guide", 0.5, 0., 0.1)];
     assert!(s.solve(&HashMap::new()).is_err());
 }
+
+#[test]
+fn finite_crossing_queries_share_current_native_curve_semantics_without_editing_the_sketch() {
+    let mut s = crossing();
+    let before = serde_json::to_value(&s).unwrap();
+    let params = HashMap::new();
+    let mut points = s
+        .finite_curve_intersections(&params, "circle", "guide")
+        .unwrap();
+    points.sort_by(|a, b| a.x.total_cmp(&b.x));
+    assert_eq!(points.len(), 2);
+    assert!((points[0].x + 75_f64.sqrt()).abs() < 1e-8);
+    assert!((points[1].x - 75_f64.sqrt()).abs() < 1e-8);
+    assert_eq!(serde_json::to_value(&s).unwrap(), before);
+    for (a, b) in [("circle", "circle"), ("missing", "guide")] {
+        assert!(s.finite_curve_intersections(&params, a, b).is_err());
+    }
+    s.constraints.clear();
+    s.points.pop();
+    s.points[2].x = length(-1.);
+    s.points[3].x = length(1.);
+    assert!(
+        s.finite_curve_intersections(&params, "circle", "guide")
+            .unwrap()
+            .is_empty()
+    );
+    s.lines.push(line("duplicate", "a", "b"));
+    assert!(
+        s.finite_curve_intersections(&params, "guide", "duplicate")
+            .is_err()
+    );
+}
+
+#[test]
+fn finite_crossing_queries_handle_interpolation_and_explicit_periodic_splines() {
+    for mode in 0..3 {
+        let mut s = crossing();
+        s.constraints.clear();
+        s.points.pop();
+        s.circles.clear();
+        s.profile.clear();
+        s.points.extend([
+            point("left", -10., 0., true),
+            point("top", 0., 10., true),
+            point("bottom", 0., -10., true),
+        ]);
+        let mut curve = SketchSpline {
+            id: "source".into(),
+            points: vec!["left".into(), "top".into(), "rim".into()],
+            basis: None,
+            endpoints: None,
+        };
+        if mode == 1 {
+            curve.points.push("left".into());
+        }
+        if mode == 2 {
+            curve.points.push("bottom".into());
+            curve.basis = Some(SketchBSplineBasis {
+                degree: 3,
+                periodic: true,
+                non_clamped: false,
+                knots: vec![0., 1., 2., 3., 4.],
+                multiplicities: vec![1; 5],
+                weights: vec![],
+            });
+        }
+        s.splines.push(curve);
+        let points = s
+            .finite_curve_intersections(&HashMap::new(), "source", "guide")
+            .unwrap();
+        assert_eq!(points.len(), 2, "mode {mode}");
+        for p in points {
+            assert!((p.y - 5.).abs() < 1e-7);
+        }
+    }
+}

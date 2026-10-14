@@ -337,7 +337,14 @@ windows from two visible source curves and a sketch-local hint, with a cursor
 radius preview and new/existing named targets. Picking deliberately saves literal
 window values; native Preview/Apply remains authoritative for uniqueness and
 finite spans. Pick gestures are canceled by draft/tool changes and guarded
-against stale model versions and changed native scenes.
+against stale model versions and changed native scenes. A read-only candidate
+query now shares the saved selector's exact finite intersection implementation,
+materializes source projections when necessary, and computes one bounded numeric
+snapshot per picked pair. Cursor motion tests that snapshot locally, with no
+additional native requests. Loading, invalid, missing or ambiguous feedback cannot
+stage a point; a unique match still needs full Preview/Apply because the new
+constraint can change free geometry. The endpoint shares draft/version guards
+with sketch edits and leaves accepted state, files and history untouched.
 
 
 Schema 72 adds ellipses, signed line angles in radians, circular radius and

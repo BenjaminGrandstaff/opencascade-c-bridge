@@ -322,6 +322,34 @@ The [selected crossing example](../tools/model/selected-crossing-pad.request.jso
 provides a circle and guide for picking either branch. Model schema 149 and
 native ABI 73 stay unchanged.
 
+### Native feedback while picking
+
+After the second curve is picked, the viewer makes one guarded, read-only
+`POST /api/sketch-crossing-candidates` request for the current draft and selected
+instance. It solves the sketch, materializes live projections when needed, and
+uses the same exact finite-curve builder and intersection routine as saved
+selected-crossing constraints. The kernel's `finite_curve_intersections` method
+also exposes this bounded query to Rust callers. Overlaps and exhausted budgets
+return errors; a missing intersection returns an empty complete result.
+
+The response contains at most 1,000 exact candidate positions in sketch-local
+millimeters. Cursor motion filters these positions using the same inclusive
+Euclidean-distance test as the saved window selector. No hover makes a native
+request. The panel reports one match, no match, multiple matches, loading, or a
+native query error; candidate markers are capped at 100. A hint click can stage
+only when the current native snapshot contains exactly one match in the window.
+Loading, failed, incomplete, missing and ambiguous results leave the pick active
+without editing the draft. Cancel and restart to change the radius.
+
+Results belong to the current draft, instance, version, curve pair and native
+scene. Late responses after cancel, tool changes, draft changes or view changes
+cannot revive a pick or attach to a new one. Queries do not alter accepted state,
+history, files or annotation caches, and do not verify downstream requirements.
+Preview/Apply still repeats the full model checks after staging, since added or
+replaced constraints can move free geometry. A local check of 1,000 hovers over
+1,000 returned candidates took about 28 ms in total. The model schema and native
+ABI remain 149 and 73.
+
 ### Review saved crossing windows
 
 The live sketch editor's **Saved crossing windows** panel lists selected crossings,

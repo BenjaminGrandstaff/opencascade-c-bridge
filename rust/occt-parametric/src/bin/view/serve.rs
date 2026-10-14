@@ -10,6 +10,8 @@ mod history;
 mod sketch;
 #[path = "serve_sketch_create.rs"]
 mod sketch_create;
+#[path = "serve_sketch_crossings.rs"]
+mod sketch_crossings;
 #[path = "serve_sketch_links.rs"]
 mod sketch_links;
 #[path = "serve_spline_refinement.rs"]
@@ -710,6 +712,12 @@ impl Studio {
                 Ok(data) => Response::json(200, &data),
                 Err(error) => Response::error(422, &error),
             },
+            ("POST", "/api/sketch-crossing-candidates") => {
+                match self.sketch_crossing_candidates(body) {
+                    Ok(data) => Response::json(200, &data),
+                    Err(error) => Response::error(422, &error),
+                }
+            }
             ("POST", "/api/sketch-detach-projection") => {
                 match self.sketch_detach_projection(body) {
                     Ok(data) => Response::json(200, &data),
