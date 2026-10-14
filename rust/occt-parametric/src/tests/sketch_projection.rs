@@ -82,6 +82,7 @@ fn projection(kind: SketchProjectionKind, edge: EdgeSelector) -> SketchProjectio
     SketchProjection {
         junctions: Vec::new(),
         intersections: Vec::new(),
+        refinements: Vec::new(),
         id: "edge".into(),
         input: "source".into(),
         edge,
@@ -1460,5 +1461,164 @@ fn projected_line_spline_touch_drives_a_solid_and_rejects_missing_or_double_cont
     }
     drop(first);
     drop(edited);
+    assert_eq!(session.shape_count().unwrap(), 0);
+}
+
+#[test]
+fn source_linked_projection_refinements_preserve_volumes_and_stable_references_after_edits() {
+    for source in [
+        include_str!("../../../../tools/model/projected-spline-pad.request.json"),
+        include_str!("../../../../tools/model/projected-chain-pad.request.json"),
+        include_str!("../../../../tools/model/projected-junction-pad.request.json"),
+        include_str!("../../../../tools/model/projected-spline-intersection-pad.request.json"),
+    ] {
+        let request: serde_json::Value = serde_json::from_str(source).unwrap();
+        let original = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+        let mut refined = original.clone();
+        let target = profile(&mut refined.family);
+        for p in &mut target.projections {
+            if matches!(
+                p.kind,
+                SketchProjectionKind::Spline | SketchProjectionKind::Chain
+            ) {
+                p.refinements = vec![
+                    SketchProjectionRefinement::ElevateDegree { degree: 4 },
+                    SketchProjectionRefinement::InsertKnot {
+                        fraction: 0.37,
+                        multiplicity: 2,
+                    },
+                ];
+                p.refinements.extend(p.refinements.clone());
+            }
+        }
+        let session = Session::new().unwrap();
+        for weight in [0.8, 1.4] {
+            let mut before = part(&original.family);
+            let mut after = part(&refined.family);
+            for instance in [&mut before, &mut after] {
+                instance.overrides.insert(
+                    "weight".into(),
+                    ParameterValue::Scalar(Quantity::scalar(weight)),
+                );
+                instance.overrides.insert(
+                    "width".into(),
+                    ParameterValue::Scalar(Quantity::length(43., LengthUnit::Millimeter)),
+                );
+            }
+            let a = before.regenerate(&session).unwrap();
+            let b = after.regenerate(&session).unwrap();
+            let volume = session.volume(a.shape("body").unwrap()).unwrap();
+            let next = session.volume(b.shape("body").unwrap()).unwrap();
+            assert!((volume - next).abs() < 1e-7 * volume, "{volume} != {next}");
+            let old = before.resolved_sketches(&session, &a).unwrap();
+            let new = after.resolved_sketches(&session, &b).unwrap();
+            let old = &old["profile"].as_ref().unwrap().sketch;
+            let new = &new["profile"].as_ref().unwrap().sketch;
+            let parameters = after.resolved_parameters().unwrap();
+            let x = old.solve(&parameters).unwrap();
+            let y = new.solve(&parameters).unwrap();
+            for (id, p) in &x.points {
+                if !id.contains(":pole:") {
+                    let q = y.points[id];
+                    assert!((p.x - q.x).hypot(p.y - q.y) < 1e-7, "{id}");
+                }
+            }
+            for spline in &new.splines {
+                assert_eq!(spline.basis.as_ref().unwrap().degree, 4);
+            }
+            drop(a);
+            drop(b);
+            assert_eq!(session.shape_count().unwrap(), 0);
+        }
+    }
+}
+
+#[test]
+fn projected_refinement_reimports_changed_source_basis_without_reducing_its_degree() {
+    let request: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../tools/model/projected-spline-pad.request.json"
+    ))
+    .unwrap();
+    let original = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+    let mut changed = original.clone();
+    let FeatureOperation::SketchOpenWire { sketch } = &mut changed.family.features[0].operation
+    else {
+        panic!("source spline")
+    };
+    let basis = sketch.splines[0].basis.as_mut().unwrap();
+    basis.degree = 4;
+    basis.knots = vec![0., 3.];
+    basis.multiplicities = vec![5, 5];
+    let mut refined = changed.clone();
+    profile(&mut refined.family).projections[0].refinements = vec![
+        SketchProjectionRefinement::ElevateDegree { degree: 3 },
+        SketchProjectionRefinement::InsertKnot {
+            fraction: 0.5,
+            multiplicity: 1,
+        },
+    ];
+    let session = Session::new().unwrap();
+    let old = part(&original.family).regenerate(&session).unwrap();
+    let source = part(&changed.family).regenerate(&session).unwrap();
+    let next = part(&refined.family).regenerate(&session).unwrap();
+    let original_volume = session.volume(old.shape("body").unwrap()).unwrap();
+    let expected = session.volume(source.shape("body").unwrap()).unwrap();
+    let actual = session.volume(next.shape("body").unwrap()).unwrap();
+    assert!((original_volume - expected).abs() > 1e-3);
+    assert!((actual - expected).abs() < 1e-7 * expected);
+    let snapshots = part(&refined.family)
+        .resolved_sketches(&session, &next)
+        .unwrap();
+    let spline = &snapshots["profile"].as_ref().unwrap().sketch.splines[0];
+    assert_eq!(spline.basis.as_ref().unwrap().degree, 4);
+    assert_eq!(spline.points.len(), 6);
+    assert_eq!(profile(&mut refined.family).projections[0].input, "source");
+}
+#[test]
+fn projected_refinement_rejects_invalid_recipes_and_pole_budgets_without_handles() {
+    let request: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../tools/model/projected-spline-pad.request.json"
+    ))
+    .unwrap();
+    let original = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+    for operation in [
+        SketchProjectionRefinement::InsertKnot {
+            fraction: 0.,
+            multiplicity: 1,
+        },
+        SketchProjectionRefinement::InsertKnot {
+            fraction: 0.5,
+            multiplicity: 0,
+        },
+        SketchProjectionRefinement::ElevateDegree { degree: 26 },
+    ] {
+        let mut invalid = original.clone();
+        profile(&mut invalid.family).projections[0].refinements = vec![operation];
+        assert!(profile(&mut invalid.family).validate_structure().is_err());
+    }
+    let mut invalid = original.clone();
+    profile(&mut invalid.family).projections[0].refinements =
+        vec![SketchProjectionRefinement::InsertKnot {
+            fraction: 0.5,
+            multiplicity: 3,
+        }];
+    let session = Session::new().unwrap();
+    let error = part(&invalid.family).regenerate(&session).err().unwrap();
+    assert!(
+        error.message.contains("exceeds its current degree"),
+        "{error}"
+    );
+    assert_eq!(session.shape_count().unwrap(), 0);
+    let target = profile(&mut invalid.family);
+    target.projections[0].refinements =
+        vec![SketchProjectionRefinement::ElevateDegree { degree: 25 }];
+    target.projections[0].refinements.extend((1..32).map(|i| {
+        SketchProjectionRefinement::InsertKnot {
+            fraction: i as f64 / 32.,
+            multiplicity: 25,
+        }
+    }));
+    let error = part(&invalid.family).regenerate(&session).err().unwrap();
+    assert!(error.message.contains("256"), "{error}");
     assert_eq!(session.shape_count().unwrap(), 0);
 }

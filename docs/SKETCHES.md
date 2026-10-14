@@ -133,14 +133,47 @@ their sources instead of editable seed coordinates. Clicking a weighted label or
 poles cannot be dragged independently.
 
 Refinement is bounded to 256 poles and a 1 MB draft expression budget. Native
-Preview/Apply checks every draft; undo/redo and Save use schema 146. ABI remains
-72. Projected curves themselves continue to use their source controls; this
-refinement path edits authored splines referencing projected points.
+Preview/Apply checks every draft; undo/redo and Save use the current schema. ABI remains
+72. These pole controls edit authored splines referencing projected points.
+Projected spline and chain curves have their own live refinement recipes below.
 See `tools/model/rational-spline-refinement.request.json` for a parameter-driven
 rational cap after degree elevation. The read-only `/api/spline-refine` endpoint
 returns bounded native coefficient matrices, guarded by the current model
 version; it changes neither accepted geometry nor history. ABI 72 adds the
 corresponding bridge and Rust APIs. Rebuild native and Rust consumers together.
+
+## Source-linked projected refinement (schema 147)
+
+Spline and chain projections accept `refinements`, replayed in order after each
+fresh exact rational import. The source feature, semantic edge selector, stable
+start/end references, junctions and intersections remain linked. Refinement
+changes the basis representation while preserving the projected curve's geometry.
+Runtime interior `projection:pole:N` references remain unstable across source edits.
+
+- `elevate_degree: {degree}` sets a minimum degree from 1 through 25. A fresh
+  source already at or above the target keeps its higher degree.
+- `insert_knot: {fraction, multiplicity}` sets a minimum knot multiplicity at a
+  fraction strictly inside `(0, 1)` of the imported curve's active parameter
+  domain. Multiplicity defaults to 1 and must not exceed the current degree;
+  elevate first when requesting a higher multiplicity. Already-satisfied targets
+  are unchanged, so repeated targets are idempotent. Fractions are neither spatial
+  distances nor parameters of the original source edge.
+
+The **Support & projected references** panel exposes knot fraction, minimum
+multiplicity, and minimum degree controls for exact spline/chain projections.
+**Select projected spline from canvas** arms a one-shot selection and focuses
+its refinement panel. Add, remove, or clear operations in the draft; Native
+Preview/Apply verifies fresh source geometry and dependent solids. Applied edits
+participate in undo/redo and Save. Analytic line/circle/arc/ellipse projection
+kinds continue to use their original analytic controls.
+
+There are at most 32 operations per projection and 1024 per sketch. Each native
+transformation accepts at most 256 input/output poles; excessive requests fail
+without truncation or replacing accepted geometry. Unsupported source selectors,
+lost junctions/intersections, and invalid profiles retain their existing rejection
+behavior. The [projected refinement example](../tools/model/projected-spline-refinement.request.json)
+refines a live chain with named junctions. Model documents migrate to schema 147;
+ABI stays at 72.
 
 ## Weighted dependent points (schema 146)
 

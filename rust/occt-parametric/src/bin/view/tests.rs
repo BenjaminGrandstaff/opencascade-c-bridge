@@ -3157,3 +3157,71 @@ fn weighted_point_drafts_follow_solver_controls_and_reject_invalid_links_without
     );
     assert_eq!(history(&mut studio, "undo")["dirty"], false);
 }
+
+#[test]
+fn projected_refinement_drafts_are_previewed_applied_undone_and_saved_with_live_links() {
+    for source in [
+        include_str!("../../../../../tools/model/projected-spline-pad.request.json"),
+        include_str!("../../../../../tools/model/projected-chain-pad.request.json"),
+    ] {
+        let directory = Directory::new();
+        let request: serde_json::Value = serde_json::from_str(source).unwrap();
+        let document = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+        let model = PathBuf::from(directory.model(&document));
+        let original = fs::read_to_string(&model).unwrap();
+        let mut studio = serve::Studio::load(&model, Some("body".into())).unwrap();
+        let definitions = get(&mut studio, "/api/sketches").1;
+        let baseline = definitions["sketches"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["feature"] == "profile")
+            .unwrap()["definition"]
+            .clone();
+        let state = get(&mut studio, "/api/state").1;
+        let mut draft = baseline.clone();
+        draft["projections"][0]["refinements"] = json!([{"elevate_degree":{"degree":4}},{"insert_knot":{"fraction":0.37,"multiplicity":2}}]);
+        let (status, preview) = edit_definition(&mut studio, "profile", draft.clone(), false);
+        assert_eq!(status, 200, "{preview}");
+        assert_eq!(preview["can_apply"], true, "{preview}");
+        assert_eq!(get(&mut studio, "/api/state").1, state);
+        let (status, result) = edit_definition(&mut studio, "profile", draft, true);
+        assert_eq!(status, 200, "{result}");
+        let accepted = get(&mut studio, "/api/sketches").1;
+        let projection = &accepted["sketches"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["feature"] == "profile")
+            .unwrap()["definition"]["projections"][0];
+        assert_eq!(projection["input"], baseline["projections"][0]["input"]);
+        assert_eq!(projection["edge"], baseline["projections"][0]["edge"]);
+        assert_eq!(projection["refinements"].as_array().unwrap().len(), 2);
+        let accepted_state = get(&mut studio, "/api/state").1;
+        let mut invalid = baseline.clone();
+        invalid["projections"][0]["refinements"] =
+            json!([{"insert_knot":{"fraction":0.37,"multiplicity":25}}]);
+        assert_eq!(
+            edit_definition(&mut studio, "profile", invalid, true).0,
+            422
+        );
+        assert_eq!(get(&mut studio, "/api/state").1, accepted_state);
+        assert_eq!(fs::read_to_string(&model).unwrap(), original);
+        assert_eq!(history(&mut studio, "undo")["dirty"], false);
+        assert_eq!(history(&mut studio, "redo")["dirty"], true);
+        assert_eq!(studio.handle("POST", "/api/save", b"{}").status, 200);
+        let saved = ModelDocument::from_json(&fs::read_to_string(&model).unwrap()).unwrap();
+        assert_eq!(saved.schema_version, CURRENT_SCHEMA_VERSION);
+        let feature = saved
+            .family
+            .features
+            .iter()
+            .find(|f| f.id == "profile")
+            .unwrap();
+        let FeatureOperation::SketchFace { sketch } = &feature.operation else {
+            panic!("profile")
+        };
+        assert_eq!(sketch.projections[0].refinements.len(), 2);
+        assert_eq!(sketch.projections[0].input, "source");
+    }
+}

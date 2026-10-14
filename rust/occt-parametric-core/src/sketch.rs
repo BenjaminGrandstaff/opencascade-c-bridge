@@ -899,6 +899,23 @@ pub enum SketchProjectionKind {
     Chain,
 }
 
+/// Exact source-linked spline refinements replayed after each import (schema 147).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SketchProjectionRefinement {
+    /// Minimum multiplicity at a fraction strictly inside the imported domain.
+    InsertKnot {
+        fraction: f64,
+        #[serde(default = "projection_knot_multiplicity")]
+        multiplicity: i32,
+    },
+    /// Minimum degree; a source already at or above this degree is unchanged.
+    ElevateDegree { degree: i32 },
+}
+fn projection_knot_multiplicity() -> i32 {
+    1
+}
+
 /// A linked orthogonal projection of a semantic source edge, or a connected
 /// multi-edge selection for `Chain`.
 /// Generated point IDs are `id:start/end` for lines, `id:center/rim` for circles,
@@ -912,6 +929,9 @@ pub struct SketchProjection {
     pub input: String,
     pub edge: EdgeSelector,
     pub kind: SketchProjectionKind,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[schemars(length(max = 32))]
+    pub refinements: Vec<SketchProjectionRefinement>,
     /// Named fixed references to junctions between distinct selected edges.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[schemars(length(max = 1000))]

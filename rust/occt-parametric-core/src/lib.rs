@@ -74,10 +74,11 @@ pub use sketch::{
     SketchFreeMotion, SketchLine, SketchLineSide, SketchMeasure, SketchMeasurement,
     SketchOffsetJoin, SketchPattern, SketchPoint, SketchPoint2, SketchPointMotion,
     SketchProfileOperation, SketchProjection, SketchProjectionIntersection,
-    SketchProjectionJunction, SketchProjectionKind, SketchRegion, SketchRegionDiscovery,
-    SketchRegionEdit, SketchShape, SketchSolution, SketchSolverReport, SketchSpline,
-    SketchSplineCircleContact, SketchSplineEndpoints, SketchSupportPlanes, SketchTermination,
-    SketchText, SketchTextAlign, SketchTextOutlines, SketchTrimBound, SketchWeightedPointTerm,
+    SketchProjectionJunction, SketchProjectionKind, SketchProjectionRefinement, SketchRegion,
+    SketchRegionDiscovery, SketchRegionEdit, SketchShape, SketchSolution, SketchSolverReport,
+    SketchSpline, SketchSplineCircleContact, SketchSplineEndpoints, SketchSupportPlanes,
+    SketchTermination, SketchText, SketchTextAlign, SketchTextOutlines, SketchTrimBound,
+    SketchWeightedPointTerm,
 };
 pub use solve::PlacementSolution;
 

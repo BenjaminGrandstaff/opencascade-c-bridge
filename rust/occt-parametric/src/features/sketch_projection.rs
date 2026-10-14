@@ -6,6 +6,7 @@ use super::*;
 use crate::assembly::{dot, subtract};
 use occt_bridge::{AnalyticCurve, BezierSpan};
 mod intersections;
+mod refinement;
 
 pub(crate) fn materialize(
     session: &Session,
@@ -105,6 +106,7 @@ pub(crate) fn materialize(
             }
             let (poles, basis) = project_spans(&spans, &point)
                 .map_err(|e| e.context(&format!("sketch projection '{}'", projection.id)))?;
+            let (poles, basis) = refinement::refine(session, projection, parameters, poles, basis)?;
             imported_poles += poles.len();
             if imported_poles > 100000 {
                 return Err(ModelError::new(

@@ -6,6 +6,15 @@ impl SketchDefinition {
         if self.projections.len() > 1000 {
             return Err(ModelError::new("sketch projections exceed 1000"));
         }
+        if self
+            .projections
+            .iter()
+            .map(|p| p.refinements.len())
+            .sum::<usize>()
+            > 1024
+        {
+            return Err(ModelError::new("sketch projection refinements exceed 1024"));
+        }
         let mut resolved = self.clone();
         resolved.projections.clear();
         let mut junction_count = 0usize;
@@ -16,6 +25,39 @@ impl SketchDefinition {
             .map(|p| (p.id.as_str(), p.kind))
             .collect();
         for projection in &self.projections {
+            if projection.refinements.len() > 32
+                || !projection.refinements.is_empty()
+                    && !matches!(
+                        projection.kind,
+                        SketchProjectionKind::Spline | SketchProjectionKind::Chain
+                    )
+            {
+                return Err(ModelError::new(
+                    "refinement requires a spline/chain projection and at most 32 operations",
+                ));
+            }
+            for operation in &projection.refinements {
+                match operation {
+                    SketchProjectionRefinement::InsertKnot {
+                        fraction,
+                        multiplicity,
+                    } if !fraction.is_finite()
+                        || *fraction <= 0.
+                        || *fraction >= 1.
+                        || !(1..=25).contains(multiplicity) =>
+                    {
+                        return Err(ModelError::new(
+                            "projection knot fraction must be in (0, 1), with multiplicity 1–25",
+                        ));
+                    }
+                    SketchProjectionRefinement::ElevateDegree { degree }
+                        if !(1..=25).contains(degree) =>
+                    {
+                        return Err(ModelError::new("projection minimum degree must be 1–25"));
+                    }
+                    _ => {}
+                }
+            }
             intersection_count += projection.intersections.len();
             if projection.intersections.len() > 1000 || intersection_count > 10000 {
                 return Err(ModelError::new(

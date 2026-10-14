@@ -227,6 +227,7 @@ impl Studio {
             kind,
             junctions: Vec::new(),
             intersections: Vec::new(),
+            refinements: Vec::new(),
         };
         Ok(
             json!({"version":self.version,"instance":pick.instance,"projection":projection,"binding":binding,"length_mm":length,"center_mm":[centre.x,centre.y,centre.z]}),

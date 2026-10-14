@@ -37,3 +37,11 @@ test('source selection is read-only and cancellation discards a late load or pic
  const nextHost=new Element('div');links.render(nextHost);assert.equal(all(nextHost).find(e=>e['aria-label']==='Projection name').value,'reference-2');
  delete globalThis.document;delete globalThis.Option;
 });
+test('projected curve picks are armed, cancellable, and select the refinement panel without mutating links',async()=>{
+ globalThis.document={createElement:tag=>new Element(tag)};globalThis.Option=class extends Element{constructor(text,value){super('option');this.value=value;}};
+ const draft={profile:['ref'],projections:[{id:'ref',input:'plate',kind:'spline',edge:{all:true}}]},host=new Element('div'),highlights=[];let changes=0,picks=0;
+ const links=createSketchLinks({context:()=>({draft,feature:'sketch',features}),request:async()=>{},preview:async()=>{},changed:()=>changes++,message(){},highlight:ids=>highlights.push(ids),beginProjectionPicking:()=>picks++});links.render(host);
+ assert.equal(links.pickProjection('ref'),false);await button(host,'Select projected spline from canvas').onclick();assert.equal(picks,1);assert.equal(links.pickProjection('unknown'),true);assert.equal(links.pickProjection('ref'),true);assert.deepEqual(highlights,[['ref']]);assert.equal(links.pickProjection('ref'),false);assert.equal(changes,0);
+ await button(host,'Select projected spline from canvas').onclick();links.cancel();assert.equal(links.pickProjection('ref'),false);
+ delete globalThis.document;delete globalThis.Option;
+});
