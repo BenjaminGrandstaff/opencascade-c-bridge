@@ -1,0 +1,30 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';
+import {pickedCrossing,createCrossingPicker} from './crossing-pick.mjs';
+const length=value=>({literal:{value,dimension:'length',unit:'millimeter'}});
+function definition(){return {points:[['a',-10,0],['b',10,0],['c',0,-10],['d',0,10],['existing',4,4]].map(([id,x,y])=>({id,x:length(x),y:length(y),fixed:true})),lines:[{id:'horizontal',start:'a',end:'b'},{id:'vertical',start:'c',end:'d'}],constraints:[{distance:{first:'a',second:'b',value:length(20)}}],profile:[]};}
+class Element{constructor(tag){this.tagName=tag;this.children=[];this.value='';}append(...nodes){for(const node of nodes)node.parentElement=this;this.children.push(...nodes);}setAttribute(k,v){this[k]=v;}}
+const all=e=>[e,...e.children.flatMap(all)],find=(e,t)=>all(e).find(x=>x.textContent===t),input=(e,label)=>all(e).find(x=>x['aria-label']===label);
+function mock(action){globalThis.document={createElement:tag=>new Element(tag)};globalThis.Option=class extends Element{constructor(text,value){super('option');this.textContent=text;this.value=value;}};try{action();}finally{delete globalThis.document;delete globalThis.Option;}}
+test('picked crossings create a non-fixed named point and literal native window without mutation',()=>{
+ const d=definition(),before=structuredClone(d),result=pickedCrossing(d,{name:'hit',first:'horizontal',second:'vertical',position:[0.1,-0.2],radius:2});assert.deepEqual(d,before);assert.equal(result.point,'hit');assert.equal(result.definition.points.at(-1).fixed,false);assert.deepEqual(result.definition.constraints[0],d.constraints[0]);const c=result.definition.constraints.at(-1).crossing_point;assert.deepEqual(c.near.literal,{x:length(.1).literal,y:length(-.2).literal,z:length(0).literal});assert.deepEqual(c.maximum_distance,length(2));
+ const old=structuredClone(d);old.constraints.push({spline_point:{point:'existing',spline:'old',fraction:{parameter:'location'}}});const relink=pickedCrossing(old,{point:'existing',first:'horizontal',second:'vertical',position:[0,0],radius:1});assert.equal(relink.definition.points.length,d.points.length);assert.equal(relink.definition.points.at(-1).fixed,false);assert(!relink.definition.constraints.some(c=>c.spline_point));assert(old.constraints.some(c=>c.spline_point));
+});
+test('invalid picks, duplicate namespaces and source-defining targets reject atomically',()=>{
+ const d=definition();d.shapes=[{rectangle:{id:'Box',first:'a',second:'b'}}];const before=structuredClone(d),base={name:'hit',first:'horizontal',second:'vertical',position:[0,0],radius:2};
+ for(const patch of [{name:'a'},{name:'Box'},{name:' horizontal '},{radius:0},{radius:NaN},{position:[Infinity,0]},{position:[0,0,0]},{second:'horizontal'},{first:'missing'},{point:'a'},{point:'missing'}])assert.throws(()=>pickedCrossing(d,{...base,...patch}));assert.deepEqual(d,before);
+});
+test('canvas picker requires two distinct curves and a click hint, preserving drafts until completion',()=>mock(()=>{
+ const d=definition(),before=structuredClone(d),host=new Element('div'),scene={},shown=[],messages=[],modes=[];let result;
+ const picker=createCrossingPicker({host,definition:d,changed:(v,id)=>result={v,id},message:m=>messages.push(m),ghost:p=>shown.push(p),modeChanged:m=>modes.push(m)}),event=(entity,position=[0,0])=>({scene,entity,position,tolerance:1});
+ const click=(entity,position)=>{picker.down(event(entity,position));picker.up(event(entity,position));};find(host,'Start crossing pick').onclick();assert(picker.active);assert.equal(modes.at(-1),'crossing');click(undefined);assert.equal(result,undefined);click('horizontal');click('horizontal');assert(messages.at(-1).includes('different second'));click('vertical');picker.move(event(undefined,[.1,.2]));assert.equal(shown.at(-1)[0].length,65);assert.equal(result,undefined);click(undefined,[.1,.2]);assert(!picker.active);assert.equal(result.id,'Crossing1');assert.equal(result.v.constraints.at(-1).crossing_point.first,'horizontal');assert.deepEqual(shown.at(-1),[]);assert.equal(modes.at(-1),'select');assert.deepEqual(d,before);
+}));
+test('dragging, cancellation, changed native views and stale contexts never stage a link',()=>mock(()=>{
+ const d=definition(),host=new Element('div'),scene={},messages=[];let result,current=true;
+ const p=createCrossingPicker({host,definition:d,changed:v=>result=v,message:m=>messages.push(m),current:()=>current}),event=(entity,position=[0,0],s=scene)=>({scene:s,entity,position,tolerance:1});const start=()=>find(host,'Start crossing pick').onclick();
+ start();p.down(event('horizontal'));p.move(event('horizontal',[2,0]));p.up(event('horizontal',[0,0]));assert(messages.at(-1).includes('drag'));assert(!all(host).some(e=>e.textContent?.startsWith('First curve:')));assert.equal(result,undefined);
+ p.down(event('horizontal'));p.up(event('horizontal'));p.down(event('vertical',[0,0],{}));assert(!p.active);assert.equal(result,undefined);
+ start();current=false;p.down(event('horizontal'));assert(!p.active);assert.equal(result,undefined);current=true;start();find(host,'Cancel crossing pick').onclick();assert(!p.active);assert.equal(result,undefined);
+}));
+test('existing targets and radius are captured at start and invalid options do not arm picking',()=>mock(()=>{
+ const host=new Element('div');let result;const picker=createCrossingPicker({host,definition:definition(),changed:v=>result=v,message(){}});input(host,'Picked crossing search radius (mm)').value='';find(host,'Start crossing pick').onclick();assert(!picker.active);input(host,'Picked crossing search radius (mm)').value='3';input(host,'Picked crossing target').value='existing';find(host,'Start crossing pick').onclick();assert(input(host,'Picked crossing target').disabled);const scene={};for(const entity of ['horizontal','vertical',undefined]){const e={entity,scene,position:[0,0],tolerance:1};picker.down(e);picker.up(e);}assert.equal(result.points.length,5);assert.equal(result.constraints.at(-1).crossing_point.maximum_distance.literal.value,3);
+}));

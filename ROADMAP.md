@@ -17,7 +17,7 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 157 + first-use integration 1 (+1 doc test), recipes 3, parametric core 36 + kernel 708 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 8 + view command 53 + viewer Node 96 + branch command 2 + model command 90, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 157 + first-use integration 1 (+1 doc test), recipes 3, parametric core 36 + kernel 708 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 8 + view command 53 + viewer Node 102 + branch command 2 + model command 90, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -25,6 +25,13 @@ tracks status and order.
 | Scale benchmarks | Last full suite: 194 Rust cases plus 5 model-command cases and a 10,000-face Python matcher. Sketch authoring integration rechecked 60 sketch cases and 60 MCP cases within budget. | `tools/bench/run.sh` |
 
 ## Done
+
+- Canvas-selected crossings (schema 149, ABI 73 unchanged): click two authored
+  or projected source curves and a hint to stage a literal selected-crossing
+  window. The picker creates a named non-fixed target or relinks an existing
+  target, previews the cursor radius, and leaves verification to native
+  Preview/Apply. Drags, cancellation, stale views and tool changes cannot
+  complete an old pick. See [canvas crossing picks](docs/SKETCHES.md#pick-a-selected-crossing-from-the-canvas).
 
 - Saved crossing-window review (schema 149, ABI 73 unchanged): the sketch editor
   lists native resolved hints/radii, source curves and parameter drivers, and can

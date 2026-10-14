@@ -297,6 +297,31 @@ starts with a left-hand target seed but selects the right circle/guide crossing.
 guide outside the circle rejects the edit. Documents migrate to schema 149;
 all examples use 149, and ABI remains 72.
 
+### Pick a selected crossing from the canvas
+
+In **Pick crossing from canvas**, choose **New named point** and a unique name,
+or select an existing authored target to relink. Set a positive search radius
+in millimeters, then use **Start crossing pick**. Click the first source curve,
+a distinct second curve, and a hint near the intended crossing. Curves may be
+authored or projected; defining points and annotation labels are not curve picks.
+The orange cursor circle shows the proposed search area without snapping to a
+grid or claiming to be an exact intersection.
+
+The final click stages a `crossing_point` with a literal sketch-local hint and
+radius. New targets are non-fixed; relinking unfixes an existing target, replaces
+its prior point links, and retains other dimensions. Replacing a parameter-driven
+window this way deliberately replaces those window drivers with literals. The
+existing **Named point links** controls remain available for editing the result.
+
+No model change is applied by a pick. Native Preview must find exactly one finite
+intersection, and Apply repeats native validation and required checks. Ambiguous,
+lost or overlapping crossings reject the edit. Cancel, Escape, drags, switching
+tools, changed native scenes and stale model versions cannot complete an old
+pick. Draft edits cancel pending picks, and Apply/discard clear cursor overlays.
+The [selected crossing example](../tools/model/selected-crossing-pad.request.json)
+provides a circle and guide for picking either branch. Model schema 149 and
+native ABI 73 stay unchanged.
+
 ### Review saved crossing windows
 
 The live sketch editor's **Saved crossing windows** panel lists selected crossings,

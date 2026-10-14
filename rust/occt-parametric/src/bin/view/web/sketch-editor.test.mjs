@@ -105,3 +105,14 @@ test('crossing review clears edited windows, verifies previews and refuses unrel
  await find(host,'Discard draft').emit('click');assert.deepEqual(shown.at(-1),[]);
  }finally{delete globalThis.document;delete globalThis.Option;}
 });
+
+test('canvas crossing picks route through the sketch editor, stage locally and cancel on tool changes',async()=>{
+ globalThis.document={createElement:tag=>new Element(tag)};globalThis.Option=class extends Element{constructor(text,value){super('option');this.textContent=text;this.value=value;}};
+ try{const source={id:'s',points:[{id:'a',x:length(-10),y:length(0),fixed:true},{id:'b',x:length(10),y:length(0),fixed:true},{id:'c',x:length(0),y:length(-10),fixed:true},{id:'d',x:length(0),y:length(10),fixed:true}],lines:[{id:'h',start:'a',end:'b'},{id:'v',start:'c',end:'d'}],constraints:[],profile:[]},host=new Element('div'),calls=[],modes=[];
+ const editor=createSketchEditor({host,instance:()=> 'part',canvasMode:m=>modes.push(m),preview:async()=>{},applied:async()=>{},restore:async()=>{},request:async(path,opts)=>{if(path==='/api/sketches')return {version:4,sketches:[{feature:'profile',definition:source}]};calls.push(JSON.parse(opts.body));return {can_apply:true,annotations:{scenes:[]}};}});
+ await find(host,'Edit sketch geometry').emit('click');all(host).find(e=>e['aria-label']==='Sketch to edit').value='profile';await find(host,'Load sketch draft').emit('click');find(host,'Start crossing pick').onclick();assert.equal(modes.at(-1),'crossing');
+ const scene={feature:'profile',instance:'part',points:{}};for(const entity of ['h','v',undefined]){const e={scene,entity,version:4,position:[0,0],tolerance:1};assert(editor.canvasDown(e));await editor.canvasUp(e);}assert.equal(calls.length,0);assert.equal(source.points.length,4);
+ await find(host,'Preview draft').emit('click');assert.equal(calls[0].definition.points.at(-1).id,'Crossing1');assert.equal(calls[0].definition.constraints[0].crossing_point.first,'h');assert.equal(calls[0].expected.points.length,4);
+ find(host,'Start crossing pick').onclick();const tool=all(host).find(e=>e['aria-label']==='Canvas tool');tool.value='line';tool.onchange();assert.equal(modes.at(-1),'line');editor.canvasCancel();await find(host,'Preview draft').emit('click');assert.equal(calls[1].definition.points.length,5);
+ }finally{delete globalThis.document;delete globalThis.Option;}
+});

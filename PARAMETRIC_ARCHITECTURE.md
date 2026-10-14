@@ -332,8 +332,12 @@ and can feed affine links. The viewer now reviews several saved crossing windows
 with native resolved values, bounded/filterable lists and separate search-area
 overlays. A draft/native-scene snapshot guard prevents showing stale resolved
 windows after edits; successful Preview refreshes that snapshot. The model format
-and native ABI stay unchanged. Next, canvas picking can create selected-crossing
-windows directly from visible geometry.
+and native ABI stay unchanged. Canvas picking now stages selected-crossing
+windows from two visible source curves and a sketch-local hint, with a cursor
+radius preview and new/existing named targets. Picking deliberately saves literal
+window values; native Preview/Apply remains authoritative for uniqueness and
+finite spans. Pick gestures are canceled by draft/tool changes and guarded
+against stale model versions and changed native scenes.
 
 
 Schema 72 adds ellipses, signed line angles in radians, circular radius and
