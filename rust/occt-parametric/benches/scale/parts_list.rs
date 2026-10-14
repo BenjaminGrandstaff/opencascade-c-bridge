@@ -86,6 +86,7 @@ pub(crate) fn parts_list_case(definition: &'static FamilyDefinition, nested: boo
                     kind: DrawingViewKind::Orthographic,
                     detail: None,
                     material_hatching: Default::default(),
+                    thread_representation: false,
                     hatching: None,
                 }],
             };

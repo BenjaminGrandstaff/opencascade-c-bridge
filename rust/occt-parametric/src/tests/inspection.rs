@@ -200,6 +200,7 @@ pub(super) fn page() -> DrawingDefinition {
             detail: None,
             hatching: None,
             material_hatching: BTreeMap::new(),
+            thread_representation: false,
         }],
         dimensions: Vec::new(),
         guides: Vec::new(),

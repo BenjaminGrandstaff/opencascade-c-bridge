@@ -235,6 +235,7 @@ pub(crate) fn inspection_case(definition: &FamilyDefinition, variant: Inspected)
                     detail: None,
                     hatching: None,
                     material_hatching: Default::default(),
+                    thread_representation: false,
                 }],
             };
             let datum = |id: &str, point: &dyn Fn(f64, f64) -> [f64; 3]| MeasuredFeature {
@@ -468,6 +469,7 @@ pub(crate) fn form_case(definition: &FamilyDefinition) -> Outcome {
                     detail: None,
                     hatching: None,
                     material_hatching: Default::default(),
+                    thread_representation: false,
                 }],
             };
             // Out-of-tolerance holes taper 0.06 mm or have 0.02 mm lobes
@@ -657,6 +659,7 @@ pub(crate) fn runout_case(definition: &FamilyDefinition, common: bool, conical: 
                     detail: None,
                     hatching: None,
                     material_hatching: Default::default(),
+                    thread_representation: false,
                 }],
             };
             let eccentric = |i: usize, id: String| {
@@ -944,6 +947,7 @@ pub(crate) fn datum_shift_case(definition: &FamilyDefinition, frame: ShiftFrame)
                     detail: None,
                     hatching: None,
                     material_hatching: Default::default(),
+                    thread_representation: false,
                 }],
             };
             let circle = |[x, y]: [f64; 2], radius: f64| -> Vec<[f64; 3]> {
@@ -1127,6 +1131,7 @@ fn abc_drawing(id: &str, controls: Vec<DrawingFeatureControlFrame>) -> DrawingDe
             detail: None,
             hatching: None,
             material_hatching: Default::default(),
+            thread_representation: false,
         }],
     }
 }
@@ -1796,6 +1801,7 @@ pub(crate) fn coaxial_shift_case(definition: &FamilyDefinition, common: bool) ->
                     detail: None,
                     hatching: None,
                     material_hatching: Default::default(),
+                    thread_representation: false,
                 }],
             };
             // Rings of 36 points of `radius` about (x, y) at each height.
@@ -2010,6 +2016,7 @@ pub(crate) fn radial_case(definition: &FamilyDefinition) -> Outcome {
                     detail: None,
                     hatching: None,
                     material_hatching: Default::default(),
+                    thread_representation: false,
                 }],
             };
             // Rings of 36 points of `radius` about the line through `base`

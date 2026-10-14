@@ -58,6 +58,7 @@ pub(crate) fn assembly_drawing_case(definition: &'static FamilyDefinition) -> Ou
                     kind: DrawingViewKind::Orthographic,
                     detail: None,
                     material_hatching: Default::default(),
+                    thread_representation: false,
                     hatching: None,
                 }],
             };
@@ -121,6 +122,7 @@ pub(crate) fn drawing_case(definition: &'static FamilyDefinition) -> Outcome {
                 views: (0..1000)
                     .map(|index| DrawingView {
                         material_hatching: Default::default(),
+                        thread_representation: false,
                         hatching: None,
                         id: format!("view{index}"),
                         outputs: vec![InstanceOutputRef {

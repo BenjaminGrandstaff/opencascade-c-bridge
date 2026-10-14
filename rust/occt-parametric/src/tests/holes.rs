@@ -1641,3 +1641,40 @@ fn tapped_hole_engagement_must_develop_the_screw_strength() {
     );
     assert_eq!(session.shape_count().unwrap(), 0);
 }
+
+#[test]
+fn blind_tapped_holes_are_represented_to_their_depth() {
+    // The M3 × 0.5 callout on a blind bore entering at z = 10 for 4 mm.
+    let mut definition = bore(HoleExtent::Blind {
+        depth: ScalarExpr::Parameter("depth".into()),
+    });
+    if let FeatureOperation::Hole { thread, .. } = &mut definition.features[0].operation {
+        *thread = Some(Box::new(thread_spec()));
+    }
+    let mut graph = InstanceGraph::new(&definition);
+    graph.add_base("part", HashMap::new(), "test").unwrap();
+    let mut drawing = super::drawing::drawing();
+    drawing.dimensions.clear();
+    drawing.notes.clear();
+    let view = &mut drawing.views[0];
+    view.direction = VectorQuantity::scalars(0.0, -1.0, 0.0);
+    view.scale = 1.0;
+    view.paper_origin_mm = [0.0, 0.0];
+    view.thread_representation = true;
+    view.outputs[0].output = "hole".into();
+    let session = Session::new().unwrap();
+    let generated = drawing
+        .generate(&graph, &session, DrawingRenderOptions::default())
+        .unwrap();
+    let lines = &generated.polylines[generated.polylines.len() - 3..];
+    assert!(lines.iter().all(|line| line.thin && line.hidden));
+    // Hidden root lines at the 1.5 mm major radius, from z = 10 to 6.
+    let ends = |line: &DrawingPolyline| line.points_mm.clone();
+    let near = |a: [f64; 2], b: [f64; 2]| (a[0] - b[0]).abs() < 1e-9 && (a[1] - b[1]).abs() < 1e-9;
+    let first = ends(&lines[0]);
+    assert!(
+        near(first[0], [3.5, 10.0]) && near(first[1], [3.5, 6.0])
+            || near(first[0], [6.5, 10.0]) && near(first[1], [6.5, 6.0]),
+        "{lines:#?}"
+    );
+}

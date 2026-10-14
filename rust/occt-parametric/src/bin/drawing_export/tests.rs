@@ -69,6 +69,7 @@ fn fixture() -> (ModelDocument, DrawingDefinition) {
             kind: DrawingViewKind::Slice,
             detail: None,
             material_hatching: Default::default(),
+            thread_representation: false,
             hatching: None,
         }],
         guides: Vec::new(),

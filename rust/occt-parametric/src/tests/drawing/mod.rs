@@ -40,7 +40,7 @@ fn family_with_datums() -> FamilyDefinition {
     ];
     definition
 }
-fn drawing() -> DrawingDefinition {
+pub(super) fn drawing() -> DrawingDefinition {
     DrawingDefinition {
         annotation_views: Vec::new(),
         dataset: None,
@@ -71,6 +71,7 @@ fn drawing() -> DrawingDefinition {
             kind: DrawingViewKind::Orthographic,
             detail: None,
             material_hatching: Default::default(),
+            thread_representation: false,
             hatching: None,
         }],
         guides: Vec::new(),
@@ -137,6 +138,7 @@ fn slice_definition(
             kind: DrawingViewKind::Slice,
             detail: None,
             material_hatching: Default::default(),
+            thread_representation: false,
             hatching: None,
         }],
         guides: Vec::new(),

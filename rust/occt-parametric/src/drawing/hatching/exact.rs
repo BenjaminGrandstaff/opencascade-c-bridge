@@ -278,6 +278,7 @@ mod tests {
             kind: DrawingViewKind::Slice,
             detail: None,
             material_hatching: Default::default(),
+            thread_representation: false,
             hatching: Some(SectionHatching {
                 angle_radians: 0.0,
                 spacing_mm: 0.1,

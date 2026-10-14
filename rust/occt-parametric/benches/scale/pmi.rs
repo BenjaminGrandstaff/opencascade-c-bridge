@@ -268,6 +268,7 @@ fn drawing(pattern: bool) -> DrawingDefinition {
             detail: None,
             hatching: None,
             material_hatching: BTreeMap::new(),
+            thread_representation: false,
         }],
         dimensions: Vec::new(),
         guides: Vec::new(),

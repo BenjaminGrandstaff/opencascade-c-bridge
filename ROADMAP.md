@@ -28,6 +28,12 @@ tracks status and order.
 
 ## Done
 
+- Conventional thread representation in drawings (schema 154; ABI 76
+  unchanged). Views with `thread_representation` draw thread features and
+  blind or modeled-length tapped holes by the ISO 6410-1 convention: root
+  and thread-end lines in side views, dashed for internal threads outside
+  sections, and a three-quarter root circle in end views. See
+  [Drawing representation](docs/THREADS.md#drawing-representation-schema-154).
 - Thread engagement strength (schema 153; ABI 76 unchanged). A tapped hole's
   Unified spec may give the mating screw's and the part's tensile strengths.
   Regeneration then requires a length of engagement at least what B1.1's
@@ -2628,6 +2634,13 @@ scopes and inspected repo capabilities, not a full conformity audit.
    ABI 75), and projected zones now exchange too.
 4. **Standards-backed thread specifications** — [B1.1](https://www.asme.org/codes-standards/find-codes-standards/b1-1-unified-inch-screw-threads-un-unr-thread-form):
    Unified classes 1A–2B with limits of size, designation and bore checks,
+   fit checks and inspection of measured diameters exist (schema 152).
+   Engagement length for screw strength is checked (schema 153), and
+   drawings represent threads by the ISO 6410-1 convention (schema 154).
+   Remaining refinements: through-all tapped holes without a modeled length
+   and oblique views in drawings.
+   fit checks and inspection of measured diameters exist (schema 152).
+   Engagement length for screw strength is checked (schema 153). Remaining:
    fit checks and inspection of measured diameters exist (schema 152).
    Engagement length for screw strength is checked (schema 153). Remaining:
    thread representations in drawings.

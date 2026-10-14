@@ -136,6 +136,7 @@ mod tests {
             kind: DrawingViewKind::Slice,
             detail: None,
             material_hatching: Default::default(),
+            thread_representation: false,
             hatching: None,
         };
         // A left-handed basis and descending parameters select the same upper

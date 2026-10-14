@@ -103,6 +103,7 @@ pub(crate) fn texture_case(definition: &FamilyDefinition) -> Outcome {
                     detail: None,
                     hatching: None,
                     material_hatching: Default::default(),
+                    thread_representation: false,
                 }],
             };
             let generated = drawing.generate(

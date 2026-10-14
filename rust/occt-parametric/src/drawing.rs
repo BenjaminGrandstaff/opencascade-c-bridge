@@ -198,6 +198,12 @@ impl DrawingDefinitionRenderingInternal for DrawingDefinition {
                 sum.checked_add(count)
             })
             .ok_or_else(|| ModelError::new("drawing annotation vertex count overflow"))?;
+        let thread_lines = thread_lines::lines(&self.views, graph)?;
+        let added = thread_lines
+            .iter()
+            .map(|line| line.points_mm.len())
+            .try_fold(added, usize::checked_add)
+            .ok_or_else(|| ModelError::new("drawing annotation vertex count overflow"))?;
         *vertices = vertices
             .checked_add(added)
             .ok_or_else(|| ModelError::new("drawing vertex count overflow"))?;
@@ -232,6 +238,7 @@ impl DrawingDefinitionRenderingInternal for DrawingDefinition {
         parts.append(self, &views, graph, &mut drawing)?;
         releases::append(self, &mut drawing);
         guides::append(&self.guides, &views, graph, &mut drawing)?;
+        drawing.polylines.extend(thread_lines);
         let context = dimensions::DimensionContext::new(&self.dimensions, graph)?;
         for dimension in &self.dimensions {
             append_dimension(

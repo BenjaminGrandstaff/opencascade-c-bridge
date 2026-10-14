@@ -188,6 +188,29 @@ measured tapped holes, 100 on each of 100 instances.
 Gauging (GO/NO-GO, B1.3 gauging systems) and functional-size checks are not
 modeled; the checks are of measured diameters against the limits.
 
+## Drawing representation (schema 154)
+
+A drawing view with `"thread_representation": true` draws the threads of
+its outputs by the ISO 6410-1 convention instead of relying on the modeled
+thread's helical edges alone:
+
+- In a view square to the thread axis, two thin lines mark the roots: the
+  basic minor diameter (`D − 1.082532·P`) for external threads and the major
+  diameter for internal ones. A thin line across the crests marks the
+  thread end. Internal threads are dashed unless the view is a section.
+- In a view along the axis, three quarters of the root circle are drawn
+  with a thin line, open in the upper right quadrant. A tapped hole's circle
+  is dashed when its entry faces away from the viewer.
+- Views at other angles to the axis get no representation.
+
+It covers `thread` features and threaded holes that are ancestors of a
+viewed output. A hole's thread runs its modeled length, or its blind depth.
+Through-all and up-to holes without a modeled length are not drawn, nor are
+threads beneath a later translate, rotate, mirror, scale or pattern feature,
+whose placement their own definition no longer gives. The lines count
+exactly toward the drawing's vertex budget; the work is O(views · outputs ·
+features).
+
 ## Not yet included
 
 - Chamfered thread starts on external threads (holes can use a countersink).

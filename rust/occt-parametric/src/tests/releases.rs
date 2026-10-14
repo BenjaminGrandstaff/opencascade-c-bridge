@@ -67,6 +67,7 @@ fn sheet_drawing(revision: &str) -> DrawingDefinition {
             kind: DrawingViewKind::Orthographic,
             detail: None,
             material_hatching: Default::default(),
+            thread_representation: false,
             hatching: None,
         }],
         guides: Vec::new(),

@@ -48,6 +48,7 @@ pub use pmi::{
 };
 pub mod releases;
 pub mod strokes;
+pub mod thread_lines;
 pub use guides::{DrawingGuide, DrawingGuideKind, DrawingGuideLine, DrawingGuideLineKind};
 pub use parts_list::{DrawingBalloon, DrawingPartsList, PartsListItem};
 pub use releases::{DrawingApproval, DrawingRelease, DrawingReleaseStatus, DrawingRevisionTable};
@@ -101,6 +102,10 @@ pub struct DrawingView {
     /// Material-ID overrides: up to eight line families, or none to suppress fill.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub material_hatching: BTreeMap<String, Vec<SectionHatching>>,
+    /// Draws the threads and tapped holes of its outputs by convention
+    /// (schema 154); see `thread_lines`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub thread_representation: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]

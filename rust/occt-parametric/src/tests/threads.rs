@@ -409,3 +409,67 @@ fn unified_threads_must_be_a_standard_size_on_their_side() {
     );
     assert_eq!(session.shape_count().unwrap(), 0);
 }
+
+/// A drawing of the threaded part with a side view (looking along −y) and
+/// an end view (looking down z), both at 1:1 from the origin.
+fn thread_drawing() -> DrawingDefinition {
+    let mut drawing = super::drawing::drawing();
+    drawing.dimensions.clear();
+    drawing.notes.clear();
+    let mut side = drawing.views[0].clone();
+    side.id = "side".into();
+    side.direction = VectorQuantity::scalars(0.0, -1.0, 0.0);
+    side.scale = 1.0;
+    side.paper_origin_mm = [100.0, 50.0];
+    side.thread_representation = true;
+    let mut end = side.clone();
+    end.id = "end".into();
+    end.direction = VectorQuantity::scalars(0.0, 0.0, 1.0);
+    end.paper_origin_mm = [200.0, 50.0];
+    drawing.views = vec![side, end];
+    drawing
+}
+
+fn representation(internal: bool) -> Vec<DrawingPolyline> {
+    let family = threaded(internal, false);
+    let mut graph = InstanceGraph::new(&family);
+    graph.add_base("part", HashMap::new(), "test").unwrap();
+    let session = Session::new().unwrap();
+    let drawing = thread_drawing()
+        .generate(&graph, &session, DrawingRenderOptions::default())
+        .unwrap();
+    // The representation lines follow the views' own edges.
+    let lines = drawing.polylines;
+    lines[lines.len() - 4..].to_vec()
+}
+
+#[test]
+fn drawing_views_represent_threads_by_convention() {
+    let close = |a: [f64; 2], b: [f64; 2]| (a[0] - b[0]).abs() < 1e-9 && (a[1] - b[1]).abs() < 1e-9;
+    // External M10 × 1.5 from z = 5 to 20: root lines at the basic minor
+    // radius, the thread end across the crests, then 3/4 of the root circle.
+    let root = (MAJOR - 1.082_532 * PITCH) / 2.0;
+    let lines = representation(false);
+    assert!(
+        lines.iter().all(|line| line.thin && !line.hidden),
+        "{lines:#?}"
+    );
+    // Image right is +x, so the first side (along direction × axis) is left.
+    assert!(close(lines[0].points_mm[0], [100.0 - root, 55.0]));
+    assert!(close(lines[0].points_mm[1], [100.0 - root, 70.0]));
+    assert!(close(lines[1].points_mm[1], [100.0 + root, 70.0]));
+    assert!(close(lines[2].points_mm[0], [100.0 - MAJOR / 2.0, 70.0]));
+    assert!(close(lines[2].points_mm[1], [100.0 + MAJOR / 2.0, 70.0]));
+    let arc = &lines[3].points_mm;
+    assert_eq!(arc.len(), 25);
+    assert!(close(arc[0], [200.0, 50.0 + root]));
+    assert!(close(arc[24], [200.0 + root, 50.0]));
+    // An internal thread: roots at the major diameter, hidden from outside
+    // and from the far end of its axis.
+    let lines = representation(true);
+    assert!(
+        lines.iter().all(|line| line.thin && line.hidden),
+        "{lines:#?}"
+    );
+    assert!(close(lines[0].points_mm[0], [100.0 - MAJOR / 2.0, 55.0]));
+}
