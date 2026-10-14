@@ -17,7 +17,7 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 157 + first-use integration 1 (+1 doc test), recipes 3, parametric core 36 + kernel 710 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 8 + view command 55 + viewer Node 106 + branch command 2 + model command 90, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 157 + first-use integration 1 (+1 doc test), recipes 3, parametric core 36 + kernel 710 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 8 + view command 55 + viewer Node 109 + branch command 2 + model command 90, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -30,7 +30,9 @@ tracks status and order.
   curve-pair query supplies exact bounded candidates for all cursor positions.
   Current solved geometry, including projected splines, reports unique, missing,
   ambiguous or failed results before staging. Incomplete/stale/loading results
-  cannot stage a point. Queries share the saved selector's native curve builder,
+  cannot stage a point. The radius can be adjusted without reselecting curves or
+  querying again; invalid input blocks staging until corrected. Queries share the
+  saved selector's native curve builder,
   finite intersections and budgets; full Preview/Apply remains required. See
   [native picking feedback](docs/SKETCHES.md#native-feedback-while-picking).
 

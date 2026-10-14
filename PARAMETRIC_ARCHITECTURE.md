@@ -344,7 +344,11 @@ snapshot per picked pair. Cursor motion tests that snapshot locally, with no
 additional native requests. Loading, invalid, missing or ambiguous feedback cannot
 stage a point; a unique match still needs full Preview/Apply because the new
 constraint can change free geometry. The endpoint shares draft/version guards
-with sketch edits and leaves accepted state, files and history untouched.
+with sketch edits and leaves accepted state, files and history untouched. Radius
+edits reuse the current candidate snapshot and update hover feedback locally,
+including edits made while the query loads. Invalid radii block staging and
+clear the cursor overlay until corrected; target identity remains frozen during
+an active pick.
 
 
 Schema 72 adds ellipses, signed line angles in radians, circular radius and

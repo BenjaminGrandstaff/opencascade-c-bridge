@@ -339,7 +339,13 @@ request. The panel reports one match, no match, multiple matches, loading, or a
 native query error; candidate markers are capped at 100. A hint click can stage
 only when the current native snapshot contains exactly one match in the window.
 Loading, failed, incomplete, missing and ambiguous results leave the pick active
-without editing the draft. Cancel and restart to change the radius.
+without editing the draft. The radius remains editable during picking: changes
+reuse the same native candidates and immediately refresh the search circle and
+match feedback at the last cursor position. Target identity stays fixed until
+the pick is canceled or completed. Blank, zero, negative or non-finite radii hide
+the overlay and block staging until corrected. Edits made while candidates load
+use the latest value when the query completes; changing radius during a click
+requires a fresh click to stage. Radius edits also honor stale-view guards.
 
 Results belong to the current draft, instance, version, curve pair and native
 scene. Late responses after cancel, tool changes, draft changes or view changes

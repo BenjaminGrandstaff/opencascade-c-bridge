@@ -50,3 +50,22 @@ test('late native responses cannot revive canceled picks or contaminate a new pa
  const host=new Element('div'),scene={},requests=[];let result;const picker=createCrossingPicker({host,definition:definition(),message(){},changed:v=>result=v,queryCandidates:()=>new Promise(resolve=>requests.push(resolve))}),event=(entity)=>({scene,entity,position:[0,0],tolerance:1}),click=entity=>{picker.down(event(entity));picker.up(event(entity));},sources=()=>{find(host,'Start crossing pick').onclick();click('horizontal');click('vertical');};
  sources();picker.cancel();sources();requests[0](snapshot([[0,0]]));await flush();click(undefined);assert.equal(result,undefined);assert(picker.active);requests[1](snapshot([[0,0]]));await flush();click(undefined);assert(result);assert(!picker.active);
 }));
+
+test('live radius edits resolve ambiguity and stage only the latest valid radius from one native snapshot',async()=>asyncMock(async()=>{
+ const host=new Element('div'),scene={},definitionBefore=definition(),before=structuredClone(definitionBefore),shown=[];let result,queries=0;
+ const picker=createCrossingPicker({host,definition:definitionBefore,message(){},ghost:paths=>shown.push(paths),changed:v=>result=v,queryCandidates:async()=>{queries++;return snapshot([[-8,0],[8,0]]);}}),event=(entity,position=[-8,0])=>({scene,entity,position,tolerance:1}),click=entity=>{picker.down(event(entity));picker.up(event(entity));},radius=input(host,'Picked crossing search radius (mm)'),set=value=>{radius.value=value;radius.oninput();};
+ radius.value='20';find(host,'Start crossing pick').onclick();assert(!radius.disabled);click('horizontal');click('vertical');await flush();picker.move(event());assert(all(host).some(e=>e.textContent?.includes('2 finite crossings')));
+ set('1');assert(all(host).some(e=>e.textContent?.includes('one finite crossing')));assert.equal(queries,1);
+ for(const invalid of ['','0','-1','Infinity']){set(invalid);assert.deepEqual(shown.at(-1),[]);click();assert.equal(result,undefined);assert(picker.active);}
+ set('0.5');assert(all(host).some(e=>e.textContent?.includes('one finite crossing')));assert.deepEqual(definitionBefore,before);click();assert.equal(result.constraints.at(-1).crossing_point.maximum_distance.literal.value,.5);assert.equal(queries,1);
+}));
+test('radius edits made while candidates load survive late responses and remain blocked while invalid',async()=>asyncMock(async()=>{
+ const host=new Element('div'),scene={};let resolveQuery,result,queries=0;
+ const picker=createCrossingPicker({host,definition:definition(),message(){},changed:v=>result=v,queryCandidates:()=>{queries++;return new Promise(resolve=>resolveQuery=resolve);}}),event=entity=>({scene,entity,position:[8,0],tolerance:1}),click=entity=>{picker.down(event(entity));picker.up(event(entity));},radius=input(host,'Picked crossing search radius (mm)');
+ find(host,'Start crossing pick').onclick();click('horizontal');click('vertical');picker.move(event());radius.value='';radius.oninput();resolveQuery(snapshot([[-8,0],[8,0]]));await flush();assert(all(host).some(e=>e.textContent?.includes('Enter a positive finite crossing search radius')));click();assert.equal(result,undefined);
+ radius.value='0.25';radius.oninput();assert(all(host).some(e=>e.textContent?.includes('one finite crossing')));click();assert.equal(result.constraints.at(-1).crossing_point.maximum_distance.literal.value,.25);assert.equal(queries,1);
+}));
+test('radius edits invalidate pending click gestures and cannot reuse a stale native view',async()=>asyncMock(async()=>{
+ const host=new Element('div'),scene={};let result,current=true;const picker=createCrossingPicker({host,definition:definition(),message(){},changed:v=>result=v,current:()=>current,queryCandidates:async()=>snapshot([[0,0]])}),event=entity=>({scene,entity,position:[0,0],tolerance:1}),click=entity=>{picker.down(event(entity));picker.up(event(entity));},radius=input(host,'Picked crossing search radius (mm)');
+ find(host,'Start crossing pick').onclick();click('horizontal');click('vertical');await flush();picker.down(event());radius.value='1';radius.oninput();picker.up(event());assert.equal(result,undefined);assert(picker.active);current=false;radius.value='2';radius.oninput();assert(!picker.active);click();assert.equal(result,undefined);
+}));
