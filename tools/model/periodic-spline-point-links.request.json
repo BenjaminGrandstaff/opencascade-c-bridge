@@ -1,0 +1,483 @@
+{
+  "schema": "occb-model-view-v1",
+  "model": {
+    "schema_version": 148,
+    "family": {
+      "id": "periodic-spline-point-links",
+      "version": 1,
+      "parameters": [
+        {
+          "id": "half_width",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 10,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 5,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 20,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "half_depth",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 8,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 4,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 20,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "corner_weight",
+          "parameter_type": {
+            "scalar": "scalar"
+          },
+          "default": {
+            "scalar": {
+              "value": 1,
+              "dimension": "scalar",
+              "unit": null
+            }
+          },
+          "minimum": {
+            "value": 0.5,
+            "dimension": "scalar",
+            "unit": null
+          },
+          "maximum": {
+            "value": 2,
+            "dimension": "scalar",
+            "unit": null
+          }
+        },
+        {
+          "id": "height",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 8,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 2,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 30,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "location",
+          "parameter_type": {
+            "scalar": "scalar"
+          },
+          "default": {
+            "scalar": {
+              "value": 0.37,
+              "dimension": "scalar",
+              "unit": null
+            }
+          },
+          "minimum": {
+            "value": 0,
+            "dimension": "scalar",
+            "unit": null
+          },
+          "maximum": {
+            "value": 1,
+            "dimension": "scalar",
+            "unit": null
+          }
+        }
+      ],
+      "derived_parameters": [],
+      "derived_vector_parameters": [],
+      "constraints": [],
+      "requirements": [
+        {
+          "id": "body-valid",
+          "version": 1,
+          "kind": "validation",
+          "priority": "required",
+          "statement": "Periodic pad remains valid while linked points follow its basis",
+          "rule": {
+            "shape_valid": {
+              "output": "body"
+            }
+          },
+          "provenance": "Illustrative dimensions",
+          "traces": [
+            {
+              "feature": "body"
+            }
+          ]
+        }
+      ],
+      "datums": [],
+      "features": [
+        {
+          "id": "profile",
+          "operation": {
+            "sketch_face": {
+              "sketch": {
+                "id": "linked-periodic-boundary",
+                "origin": {
+                  "literal": {
+                    "x": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    },
+                    "y": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                },
+                "x_axis": {
+                  "literal": {
+                    "x": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "y_axis": {
+                  "literal": {
+                    "x": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "points": [
+                  {
+                    "id": "a",
+                    "x": {
+                      "parameter": "half_width"
+                    },
+                    "y": {
+                      "parameter": "half_depth"
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "b",
+                    "x": {
+                      "negate": {
+                        "parameter": "half_width"
+                      }
+                    },
+                    "y": {
+                      "parameter": "half_depth"
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "c",
+                    "x": {
+                      "negate": {
+                        "parameter": "half_width"
+                      }
+                    },
+                    "y": {
+                      "negate": {
+                        "parameter": "half_depth"
+                      }
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "d",
+                    "x": {
+                      "parameter": "half_width"
+                    },
+                    "y": {
+                      "negate": {
+                        "parameter": "half_depth"
+                      }
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "sample",
+                    "x": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": false
+                  },
+                  {
+                    "id": "seam-start",
+                    "x": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": false
+                  },
+                  {
+                    "id": "seam-end",
+                    "x": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": false
+                  }
+                ],
+                "lines": [],
+                "circles": [],
+                "profile": [
+                  "curve"
+                ],
+                "constraints": [
+                  {
+                    "spline_point": {
+                      "point": "sample",
+                      "spline": "curve",
+                      "fraction": {
+                        "parameter": "location"
+                      }
+                    }
+                  },
+                  {
+                    "spline_point": {
+                      "point": "seam-start",
+                      "spline": "curve",
+                      "fraction": {
+                        "literal": {
+                          "value": 0,
+                          "dimension": "scalar",
+                          "unit": null
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "spline_point": {
+                      "point": "seam-end",
+                      "spline": "curve",
+                      "fraction": {
+                        "literal": {
+                          "value": 1,
+                          "dimension": "scalar",
+                          "unit": null
+                        }
+                      }
+                    }
+                  }
+                ],
+                "arcs": [],
+                "splines": [
+                  {
+                    "id": "curve",
+                    "points": [
+                      "a",
+                      "b",
+                      "c",
+                      "d"
+                    ],
+                    "basis": {
+                      "periodic": true,
+                      "degree": 3,
+                      "knots": [
+                        0,
+                        1,
+                        2,
+                        3,
+                        4
+                      ],
+                      "multiplicities": [
+                        1,
+                        1,
+                        1,
+                        1,
+                        1
+                      ],
+                      "weights": [
+                        {
+                          "parameter": "corner_weight"
+                        },
+                        {
+                          "literal": {
+                            "value": 1,
+                            "dimension": "scalar",
+                            "unit": null
+                          }
+                        },
+                        {
+                          "literal": {
+                            "value": 1,
+                            "dimension": "scalar",
+                            "unit": null
+                          }
+                        },
+                        {
+                          "literal": {
+                            "value": 1,
+                            "dimension": "scalar",
+                            "unit": null
+                          }
+                        }
+                      ]
+                    }
+                  }
+                ],
+                "measurements": [
+                  {
+                    "id": "seam-gap",
+                    "measure": {
+                      "distance": {
+                        "first": "seam-start",
+                        "second": "seam-end"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "body",
+          "operation": {
+            "extrude": {
+              "input": "profile",
+              "direction": {
+                "components": {
+                  "x": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "y": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "z": {
+                    "parameter": "height"
+                  }
+                }
+              },
+              "extent": "distance"
+            }
+          }
+        }
+      ]
+    },
+    "instances": [
+      {
+        "base": {
+          "id": "part",
+          "overrides": {},
+          "provenance": "Periodic rational spline sample and coincident seam references"
+        }
+      }
+    ]
+  },
+  "outputs": [
+    {
+      "instance": "part",
+      "output": "body"
+    },
+    {
+      "instance": "part",
+      "output": "profile"
+    }
+  ],
+  "sketches": true
+}

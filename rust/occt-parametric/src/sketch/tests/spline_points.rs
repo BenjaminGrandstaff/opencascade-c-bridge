@@ -294,27 +294,223 @@ fn spline_point_basis_matches_native_across_degrees_multi_spans_and_knots() {
 
 #[test]
 fn one_thousand_spline_point_links_add_no_solver_unknowns_within_budget() {
-    let mut s = linked();
-    s.points.pop();
-    s.constraints.clear();
-    for i in 0..1000 {
-        let id = format!("sample-{i}");
-        s.points.push(point(&id, 0., 0., false));
-        s.constraints.push(SketchConstraint::SplinePoint {
-            point: id,
-            spline: "curve".into(),
-            fraction: ScalarExpr::Literal(Quantity::scalar(i as f64 / 999.)),
-        });
+    for periodic in [false, true] {
+        let mut s = linked();
+        s.points.pop();
+        s.constraints.clear();
+        if periodic {
+            s.points.push(point("d", 5., -10., true));
+            s.splines[0].points.push("d".into());
+            let basis = s.splines[0].basis.as_mut().unwrap();
+            basis.periodic = true;
+            basis.knots = vec![0., 1., 2., 3., 4.];
+            basis.multiplicities = vec![1; 5];
+            basis
+                .weights
+                .push(ScalarExpr::Literal(Quantity::scalar(1.)));
+        }
+        for i in 0..1000 {
+            let id = format!("sample-{i}");
+            s.points.push(point(&id, 0., 0., false));
+            s.constraints.push(SketchConstraint::SplinePoint {
+                point: id,
+                spline: "curve".into(),
+                fraction: ScalarExpr::Literal(Quantity::scalar(i as f64 / 999.)),
+            });
+        }
+        let parameters = HashMap::from([(
+            "weight".into(),
+            ParameterValue::Scalar(Quantity::scalar(0.7)),
+        )]);
+        let start = std::time::Instant::now();
+        let solution = s.solve(&parameters).unwrap();
+        assert!(solution.solved);
+        assert_eq!(solution.free_degrees, 0);
+        assert_eq!(solution.redundant_equations, 0);
+        assert_eq!(solution.points.len(), 1003 + usize::from(periodic));
+        assert!(start.elapsed() < std::time::Duration::from_secs(2));
+        if periodic {
+            assert_eq!(solution.points["sample-0"], solution.points["sample-999"]);
+        }
     }
-    let parameters = HashMap::from([(
-        "weight".into(),
+}
+
+#[test]
+fn periodic_spline_point_links_match_native_seam_and_nonuniform_rational_curves() {
+    let native = Session::new().unwrap();
+    for degree in [1, 2, 3, 7, 25] {
+        for seam in [1, degree] {
+            // Interior multiplicities vary; endpoint multiplicities match.
+            let interior = degree + 3;
+            let mults = std::iter::once(seam)
+                .chain((0..interior).map(|i| if i % 2 == 0 { degree.min(2) } else { 1 }))
+                .chain(std::iter::once(seam))
+                .collect::<Vec<_>>();
+            let count = (mults.iter().sum::<i32>() - seam) as usize;
+            let mut s = linked();
+            s.points = (0..count)
+                .map(|i| {
+                    let t = i as f64 / count as f64 * std::f64::consts::TAU;
+                    point(&format!("pole-{i}"), 10. * t.cos(), 7. * t.sin(), true)
+                })
+                .collect();
+            s.points.push(point("sample", 0., 0., false));
+            s.splines[0].points = (0..count).map(|i| format!("pole-{i}")).collect();
+            let b = s.splines[0].basis.as_mut().unwrap();
+            b.degree = degree;
+            b.periodic = true;
+            b.knots = (0..mults.len())
+                .map(|i| 3. + (i as f64).powi(2) / 5.)
+                .collect();
+            b.multiplicities = mults;
+            b.weights = (0..count)
+                .map(|i| ScalarExpr::Literal(Quantity::scalar(1. + i as f64 * 0.05)))
+                .collect();
+            let mut seam_point = None;
+            for fraction in [0., 1e-8, 0.05, 0.2, 0.37, 0.73, 1. - 1e-8, 1.] {
+                let parameters = HashMap::from([(
+                    "fraction".into(),
+                    ParameterValue::Scalar(Quantity::scalar(fraction)),
+                )]);
+                let solution = s.solve(&parameters).unwrap();
+                assert!(solution.solved);
+                assert_eq!(solution.free_degrees, 0);
+                let q = solution.points["sample"];
+                let spline = &s.splines[0];
+                let poles = spline
+                    .points
+                    .iter()
+                    .map(|id| {
+                        let p = solution.points[id];
+                        Vec3::new(p.x, p.y, 0.)
+                    })
+                    .collect();
+                let curve = native
+                    .create_curve_wire(
+                        &[spline
+                            .explicit_segment(
+                                poles,
+                                spline.basis.as_ref().unwrap().weights(&parameters).unwrap(),
+                            )
+                            .unwrap()],
+                        true,
+                    )
+                    .unwrap();
+                let closest = native
+                    .curve_closest_point(&curve, Vec3::new(q.x, q.y, 0.))
+                    .unwrap();
+                assert!(
+                    (closest.x - q.x).hypot(closest.y - q.y) < 1e-7,
+                    "degree {degree}, seam {seam}, fraction {fraction}, point {q:?}, native {closest:?}"
+                );
+                if fraction == 0. {
+                    let (start, end, _, _) = native.curve_end_data(&curve).unwrap();
+                    assert!(
+                        (start.x - q.x).hypot(start.y - q.y) < 1e-8,
+                        "native seam phase degree {degree}, seam {seam}: {q:?} != {start:?}"
+                    );
+                    assert!((end.x - q.x).hypot(end.y - q.y) < 1e-8);
+                    seam_point = Some(q);
+                }
+                if fraction == 1. {
+                    assert_eq!(Some(q), seam_point);
+                }
+            }
+            assert_eq!(native.shape_count().unwrap(), 0);
+        }
+    }
+}
+
+#[test]
+fn periodic_spline_points_keep_parameter_positions_through_native_refinement() {
+    let request: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../tools/model/periodic-spline-point-links.request.json"
+    ))
+    .unwrap();
+    let document = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+    let FeatureOperation::SketchFace { sketch } = &document.family.features[0].operation else {
+        panic!("sketch")
+    };
+    let mut parameters = document
+        .family
+        .parameters
+        .iter()
+        .map(|p| (p.id.clone(), p.default.clone()))
+        .collect::<HashMap<_, _>>();
+    parameters.insert(
+        "corner_weight".into(),
         ParameterValue::Scalar(Quantity::scalar(0.7)),
-    )]);
-    let start = std::time::Instant::now();
-    let solution = s.solve(&parameters).unwrap();
-    assert!(solution.solved);
-    assert_eq!(solution.free_degrees, 0);
-    assert_eq!(solution.redundant_equations, 0);
-    assert_eq!(solution.points.len(), 1003);
-    assert!(start.elapsed() < std::time::Duration::from_secs(2));
+    );
+    let native = Session::new().unwrap();
+    let mut sketch = sketch.clone();
+    for action in [
+        occt_bridge::BSplineRefinementAction::InsertKnot(1.37),
+        occt_bridge::BSplineRefinementAction::ElevateDegree(5),
+    ] {
+        let original = sketch.clone();
+        let solved = original.solve(&parameters).unwrap();
+        let source = &original.splines[0];
+        let b = source.basis.as_ref().unwrap();
+        let weights = b.weights(&parameters).unwrap();
+        let transformation = native
+            .refine_bspline(
+                &occt_bridge::BSplineBasis {
+                    degree: b.degree,
+                    periodic: true,
+                    pole_count: source.points.len(),
+                    knots: &b.knots,
+                    multiplicities: &b.multiplicities,
+                },
+                action,
+            )
+            .unwrap();
+        let mut new_weights = Vec::new();
+        let mut ids = Vec::new();
+        for (i, row) in transformation.coefficients.iter().enumerate() {
+            let id = format!("refined-{}-{i}", transformation.degree);
+            let weight = row.iter().zip(&weights).map(|(c, w)| c * w).sum::<f64>();
+            let coordinate = |axis: bool| {
+                row.iter()
+                    .zip(&weights)
+                    .zip(&source.points)
+                    .map(|((c, w), id)| {
+                        let p = solved.points[id];
+                        c * w * if axis { p.x } else { p.y }
+                    })
+                    .sum::<f64>()
+                    / weight
+            };
+            sketch
+                .points
+                .push(point(&id, coordinate(true), coordinate(false), true));
+            ids.push(id);
+            new_weights.push(ScalarExpr::Literal(Quantity::scalar(weight)));
+        }
+        let target = &mut sketch.splines[0];
+        target.points = ids;
+        let b = target.basis.as_mut().unwrap();
+        b.degree = transformation.degree;
+        b.knots = transformation.knots;
+        b.multiplicities = transformation.multiplicities;
+        b.weights = new_weights;
+        for fraction in [0., 0.05, 0.37, 0.75, 1. - 1e-8, 1.] {
+            parameters.insert(
+                "location".into(),
+                ParameterValue::Scalar(Quantity::scalar(fraction)),
+            );
+            let before = original.solve(&parameters).unwrap();
+            let after = sketch.solve(&parameters).unwrap();
+            assert!(after.solved);
+            assert_eq!(after.free_degrees, 0);
+            for id in ["sample", "seam-start", "seam-end"] {
+                let (a, b) = (before.points[id], after.points[id]);
+                assert!(
+                    (a.x - b.x).hypot(a.y - b.y) < 1e-8,
+                    "{id}, fraction {fraction}"
+                );
+            }
+            assert_eq!(after.points["seam-start"], after.points["seam-end"]);
+        }
+    }
+    assert_eq!(native.shape_count().unwrap(), 0);
 }

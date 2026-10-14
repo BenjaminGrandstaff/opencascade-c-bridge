@@ -26,14 +26,9 @@ impl SketchDefinition {
                     .ok_or_else(|| {
                         ModelError::new(format!("unknown spline point source '{spline}'"))
                     })?;
-                let basis = source.basis.as_ref().ok_or_else(|| {
+                source.basis.as_ref().ok_or_else(|| {
                     ModelError::new("spline point links require an explicit B-spline")
                 })?;
-                if basis.periodic {
-                    return Err(ModelError::new(
-                        "spline point links currently require a non-periodic basis",
-                    ));
-                }
                 if source.points.contains(point) {
                     return Err(ModelError::new(
                         "spline point target cannot be a source control pole",
@@ -86,26 +81,44 @@ impl SketchDefinition {
                 }
                 // Structural validation bounds degree, knot expansion and pole count.
                 let p = b.degree as usize;
-                let knots = b
+                let mut knots = b
                     .knots
                     .iter()
                     .zip(&b.multiplicities)
                     .flat_map(|(&k, &m)| std::iter::repeat_n(k, m as usize))
                     .collect::<Vec<_>>();
                 let n = source.points.len();
-                let (start, end) = (knots[p], knots[n]);
-                let u = if fraction == 1.0 {
+                if b.periodic {
+                    // OCCT extends the repeated sequence by degree+1-seam multiplicity
+                    // knots on either side and repeats the first control poles.
+                    let seam = b.multiplicities[0] as usize;
+                    let extension = p + 1 - seam;
+                    let period = b.knots.last().unwrap() - b.knots[0];
+                    let prefix = knots[n - extension..n].iter().map(|k| k - period);
+                    let suffix = knots[seam..seam + extension].iter().map(|k| k + period);
+                    knots = prefix.chain(knots.iter().copied()).chain(suffix).collect();
+                    if knots.iter().any(|k| !k.is_finite()) {
+                        return Err(ModelError::new(
+                            "periodic spline point knot extension must be finite",
+                        ));
+                    }
+                }
+                let effective_count = knots.len() - p - 1;
+                let (start, end) = (knots[p], knots[effective_count]);
+                let u = if b.periodic && fraction == 1.0 {
+                    start
+                } else if fraction == 1.0 {
                     end
                 } else {
                     start + fraction * (end - start)
                 };
                 let span = if u >= end {
-                    n - 1
+                    effective_count - 1
                 } else {
                     knots
                         .partition_point(|k| *k <= u)
                         .saturating_sub(1)
-                        .clamp(p, n - 1)
+                        .clamp(p, effective_count - 1)
                 };
                 let mut basis = vec![0.; p + 1];
                 let mut left = vec![0.; p + 1];
@@ -136,13 +149,13 @@ impl SketchDefinition {
                     .iter()
                     .enumerate()
                     .filter(|(_, c)| **c > 0.)
-                    .map(|(j, _)| weights[span - p + j])
+                    .map(|(j, _)| weights[(span - p + j) % n])
                     .fold(0_f64, f64::max);
                 let terms = basis
                     .into_iter()
                     .enumerate()
                     .filter_map(|(j, c)| {
-                        let i = span - p + j;
+                        let i = (span - p + j) % n;
                         let weight = c * (weights[i] / scale);
                         (weight > 0.).then_some((source.points[i].as_str(), weight))
                     })

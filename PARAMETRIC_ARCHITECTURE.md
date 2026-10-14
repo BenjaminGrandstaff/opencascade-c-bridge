@@ -314,11 +314,13 @@ The viewer now inspects authored dependency paths before freezing or editing
 geometry, including named points, weighted links, patterns, constraints, profiles
 and downstream features. This reference graph does not predict solver motion.
 Live intersection consumers still prevent detach. Schema 148 adds directional
-`spline_point` links: named points evaluate the current explicit non-periodic
+`spline_point` links: named points evaluate the current explicit
 rational basis at a saved active-domain fraction, and share the weighted-point
 DAG without new solver variables. Viewer controls attach retained names to these
-links or seeded two-curve crossing constraints. Next, periodic/interpolated
-parameter links and explicit unique crossing selectors should extend this intent
+links or seeded two-curve crossing constraints. Periodic links extend the knot
+sequence according to the native seam multiplicity and wrap pole/weight indices;
+fractions 0 and 1 both identify the native seam. Next, interpolated parameter
+links and explicit unique crossing selectors should extend this intent
 without relying on a solver seed to choose a branch.
 
 

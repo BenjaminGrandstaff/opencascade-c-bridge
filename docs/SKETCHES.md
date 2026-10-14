@@ -182,9 +182,13 @@ fraction in `[0, 1]` of the current explicit spline's active parameter domain.
 Fractions accept scalar literals, parameters or expressions. This is a parameter
 fraction, not an arc-length fraction. The rational basis is evaluated again on
 regeneration, so pole moves, weight changes, knot edits and degree refinement
-update the point. Clamped and non-clamped bases are supported; periodic and
+update the point. Clamped, non-clamped and periodic explicit bases are supported;
 interpolated bases are currently rejected. End fractions use the active native
-endpoints, including non-clamped curves.
+endpoints, including non-clamped curves. Periodic fractions 0 and 1 both name
+the native seam; fractions remain within `[0, 1]` and do not accept extra turns.
+The periodic evaluator extends the knot sequence using OCCT's seam multiplicity
+convention and wraps the control-pole/weight indices. Seam continuity remains
+that of the authored basis, including C0 seams.
 
 The point is a dependent coordinate with no extra solver unknown or equation.
 Constraints on it drive the original source poles. Links share the weighted-point
@@ -211,7 +215,11 @@ variants and required checks. Applied links participate in undo/redo and Save.
 See the [named-point cap example](../tools/model/spline-point-links.request.json):
 `location` drives a rational spline sample and a second point follows its crossing
 with a guide line. Model documents migrate to schema 148; every example uses 148.
-ABI remains 72.
+ABI remains 72. The [periodic named-point example](../tools/model/periodic-spline-point-links.request.json)
+adds a parameter-driven sample and coincident seam references to a periodic pad.
+Native checks cover degrees 1–25, nonuniform knots, rational weights, seam
+multiplicities, knot insertion and degree elevation. No format or ABI bump was
+needed for periodic support.
 
 ## Geometry dependency inspection
 

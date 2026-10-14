@@ -17,7 +17,7 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 154 + first-use integration 1 (+1 doc test), recipes 3, parametric core 36 + kernel 694 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 8 + view command 49 + viewer Node 88 + branch command 2 + model command 90, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 5/5, bridge 154 + first-use integration 1 (+1 doc test), recipes 3, parametric core 36 + kernel 696 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 8 + view command 50 + viewer Node 89 + branch command 2 + model command 90, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -31,9 +31,11 @@ tracks status and order.
   without additional solver unknowns. Shared dependency validation rejects
   cycles and self-references. Viewer controls reattach detached named points to
   spline parameters or seeded two-curve crossing constraints, with dependency
-  inspection and guarded Preview/Apply, undo/redo and Save. Periodic and
-  interpolated spline parameter links remain future work. A 1,000-link solve
-  adds no unknowns and completed in about 20 ms in the integration check. See
+  inspection and guarded Preview/Apply, undo/redo and Save. Periodic links now
+  wrap their pole/weight indices and give identical seam positions at fractions
+  0 and 1, matching OCCT across degrees, nonuniform knots, seam multiplicities
+  and native refinement. Interpolated spline parameter links remain future work.
+  A 1,000-link solve adds no unknowns and completed in about 20 ms in the integration check. See
   [named-point links](docs/SKETCHES.md#saved-named-point-links-schema-148).
 
 - Read-only sketch dependency inspection: direct uses/consumers and transitive

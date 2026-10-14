@@ -22,3 +22,11 @@ test('named point controls stage links locally and keep the current parameter dr
  const input=label=>all(host).find(e=>e['aria-label']===label);assert.equal(input('Spline fraction driver').value,'location');assert(controls.inspect('p'));find(host,'Link named point').onclick();assert.deepEqual(pointLinks(changed,'p')[0].spline_point.fraction,{parameter:'location'});assert.deepEqual(d.constraints[1].spline_point.fraction,{parameter:'location'});
  }finally{delete globalThis.document;delete globalThis.Option;}
 });
+
+test('periodic explicit splines are linkable and selectable with inclusive seam fractions',()=>{
+ const d=definition();d.points.push({id:'c',x:length(-10),y:length(0),fixed:true},{id:'d',x:length(0),y:length(-10),fixed:true});d.splines[0].points=['a','b','c','d'];d.splines[0].basis={periodic:true,degree:3,knots:[0,1,2,3,4],multiplicities:[1,1,1,1,1]};
+ for(const value of [0,1])assert.deepEqual(pointLinks(linkNamedPoint(d,{point:'p',mode:'spline',spline:'curve',fraction:scalar(value)}),'p')[0].spline_point.fraction,scalar(value));
+ globalThis.document={createElement:tag=>new Element(tag)};globalThis.Option=class extends Element{constructor(text,value){super('option');this.textContent=text;this.value=value;}};
+ try{const host=new Element('div');createPointLinkControls({host,definition:d,changed(){},message(){}});const choice=all(host).find(e=>e['aria-label']==='Point link spline');assert(choice.children.some(e=>e.value==='curve'));assert(all(host).some(e=>e.textContent?.includes('fractions 0 and 1 name the same seam')));}
+ finally{delete globalThis.document;delete globalThis.Option;}
+});
