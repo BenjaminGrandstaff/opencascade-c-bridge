@@ -4184,6 +4184,7 @@ fn tapped_plate() -> FamilyDefinition {
                     class: UnifiedClass::TwoB,
                     rounded_root: false,
                     length_of_engagement: None,
+                    strength: None,
                 }),
             })),
         },

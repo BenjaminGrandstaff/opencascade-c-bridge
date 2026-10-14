@@ -2149,6 +2149,7 @@ pub(crate) fn thread_case(definition: &FamilyDefinition) -> Outcome {
                                 class: UnifiedClass::TwoB,
                                 rounded_root: false,
                                 length_of_engagement: None,
+                                strength: None,
                             }),
                         })),
                     },

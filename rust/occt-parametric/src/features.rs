@@ -328,7 +328,13 @@ pub(crate) fn execute_feature<'session>(
             let major_diameter = scalar(major_diameter, parameters, Dimension::Length)?;
             let pitch = scalar(pitch, parameters, Dimension::Length)?;
             if let Some(unified) = unified {
-                unified.thread(major_diameter, pitch, *internal)?;
+                let standard = unified.thread(major_diameter, pitch, *internal)?;
+                let engagement = unified
+                    .length_of_engagement
+                    .as_ref()
+                    .map(|e| scalar(e, parameters, Dimension::Length))
+                    .transpose()?;
+                unified.check_strength(&standard, engagement)?;
             }
             return threads::execute_thread(
                 session,

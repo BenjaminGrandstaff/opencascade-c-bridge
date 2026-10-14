@@ -67,8 +67,8 @@ pub use assembly::{
     JointSeedAxis, JointSolution, JointSolveOptions, JointVariable,
 };
 pub use screw_threads::{
-    UnifiedClass, UnifiedFit, UnifiedLimits, UnifiedSeries, UnifiedThread, UnifiedThreadSpec,
-    unified_fit,
+    ThreadStrength, UnifiedClass, UnifiedEngagement, UnifiedFit, UnifiedLimits, UnifiedSeries,
+    UnifiedThread, UnifiedThreadSpec, unified_engagement, unified_fit,
 };
 pub use sketch::{
     ResolvedSketch, ResolvedSketches, SketchAcceptance, SketchArc, SketchBSplineBasis,

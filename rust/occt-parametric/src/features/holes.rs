@@ -436,6 +436,7 @@ fn validate_thread(
             .as_ref()
             .map(|length| scalar(length, parameters, Dimension::Length).map(|mm| mm / 25.4))
             .transpose()?;
+        unified.check_strength(&standard, engagement.map(|inches| inches * 25.4))?;
         let limits = standard.limits(engagement)?;
         if let Some([minimum, maximum]) = limits.minor_in {
             let bore = diameter / 25.4;

@@ -400,6 +400,7 @@ fn unified_threads_must_be_a_standard_size_on_their_side() {
         class: UnifiedClass::TwoA,
         rounded_root: false,
         length_of_engagement: None,
+        strength: None,
     });
     let error = part(&family).regenerate(&session).err().unwrap().message;
     assert!(

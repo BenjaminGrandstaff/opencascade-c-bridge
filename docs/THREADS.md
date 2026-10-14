@@ -121,6 +121,43 @@ UNEF sizes must use `uns`. External minor diameters, which B1.1 gives only
 for reference, are not computed. A check costs O(standard sizes), at most
 34 comparisons.
 
+### Engagement strength (schema 153)
+
+On a tapped hole (or an internal `thread` feature), `unified` may add
+`strength` with the tensile strengths in MPa of the mating screw and of the
+part, and optionally the screw's class (`2A` by default):
+
+```json
+"unified": {"series": "unc", "class": "2B",
+            "length_of_engagement": {"literal": {"value": 12, "dimension": "length", "unit": "millimeter"}},
+            "strength": {"screw_tensile_mpa": 830, "part_tensile_mpa": 310}}
+```
+
+Regeneration then requires `length_of_engagement` and fails when it is
+shorter than the engagement the joint needs for the screw to break before
+either thread strips, naming the required length. `unified_engagement`
+computes it with the formulas B1.1 publishes for the length of engagement,
+also given in FED-STD-H28/2 and Machinery's Handbook, from the standard
+limits of the two threads (all in inches; `D` major, `n` threads per inch):
+
+- tensile stress area `As = 0.7854(D − 0.9743/n)²`;
+- `Le = 2·As / (π·Kn·[1/2 + 0.57735·n·(Es − Kn)])`, the engagement over
+  which the screw's thread has twice `As` in shear, with `Kn` the internal
+  maximum minor and `Es` the external minimum pitch diameter;
+- per unit engagement, the screw's and the part's thread shear areas
+  `π·n·Kn·[1/(2n) + 0.57735(Es − Kn)]` and
+  `π·n·Ds·[1/(2n) + 0.57735(Ds − En)]` (`Ds` external minimum major, `En`
+  internal maximum pitch diameter), and `J` = (screw area × screw strength)
+  / (part area × part strength);
+- required engagement `max(Le, J·Le)`.
+
+For 3/8-16 UNC-2A in 2B this gives `As` = 0.0775 in² and `Le` = 0.269 in,
+the published worked values. With a 830 MPa screw in 310 MPa aluminium,
+`J` exceeds 1 and the hole needs `J·Le`. The check costs O(standard sizes),
+like the class check. It covers thread stripping against screw breakage only:
+no preload, fatigue, temperature or the strength reductions of short or
+partial threads.
+
 ### Inspecting threads against the limits
 
 An `InspectionRecord` may list measured `threads`: each names an `instance`

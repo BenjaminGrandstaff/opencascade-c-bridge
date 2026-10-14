@@ -365,6 +365,90 @@ pub fn unified_fit(
     })
 }
 
+/// Strength of an external thread engaged in an internal one, by the
+/// formulas B1.1 publishes for the length of engagement (as in FED-STD-H28/2
+/// and Machinery's Handbook), in inches and with the limits for a standard
+/// length of engagement. With `D` the basic major diameter and `n` threads
+/// per inch, the tensile stress area is `As = 0.7854(D − 0.9743/n)²`. The
+/// length over which the external thread's stripping area equals twice
+/// `As`, so the screw breaks before its thread strips, is
+/// `Le = 2·As / (π·Kn·[1/2 + 0.57735·n·(Es − Kn)])` with `Kn` the internal
+/// maximum minor and `Es` the external minimum pitch diameter. Per unit of
+/// engagement the external and internal threads have shear areas
+/// `π·n·Kn·[1/(2n) + 0.57735·(Es − Kn)]` and
+/// `π·n·Ds·[1/(2n) + 0.57735·(Ds − En)]`, with `Ds` the external minimum
+/// major and `En` the internal maximum pitch diameter. When the internal
+/// material is relatively weaker, `J = (external area · external tensile
+/// strength) / (internal area · internal tensile strength)` exceeds 1 and
+/// the internal thread needs `J·Le`.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct UnifiedEngagement {
+    pub tensile_stress_area_in2: f64,
+    /// `Le`: engagement for the screw to break before its thread strips.
+    pub screw_length_in: f64,
+    /// `J`.
+    pub strength_ratio: f64,
+    /// The engagement both threads need: `max(Le, J·Le)`.
+    pub required_length_in: f64,
+}
+
+/// The engagement `external` needs in `internal`, with the materials'
+/// tensile strengths in any one unit.
+pub fn unified_engagement(
+    external: &UnifiedThread,
+    internal: &UnifiedThread,
+    external_strength: f64,
+    internal_strength: f64,
+) -> Result<UnifiedEngagement, ModelError> {
+    if !(external_strength.is_finite()
+        && external_strength > 0.0
+        && internal_strength.is_finite()
+        && internal_strength > 0.0)
+    {
+        return Err(ModelError::new(
+            "tensile strengths must be positive and finite",
+        ));
+    }
+    // Pairing checks the classes, diameter and pitch.
+    unified_fit(external, internal, None)?;
+    let e = external.limits(None)?;
+    let i = internal.limits(None)?;
+    let n = external.threads_per_inch;
+    let d = external.diameter_in;
+    // B1.1 writes π/4 as 0.7854.
+    let stress_area = std::f64::consts::FRAC_PI_4 * (d - 0.9743 / n).powi(2);
+    let kn = i.minor_in.map_or(d, |minor| minor[1]);
+    let es = e.pitch_in[0];
+    let ds = e.major_in[0].unwrap_or(d);
+    let en = i.pitch_in[1];
+    let external_area = std::f64::consts::PI * n * kn * (0.5 / n + 0.57735 * (es - kn));
+    let internal_area = std::f64::consts::PI * n * ds * (0.5 / n + 0.57735 * (ds - en));
+    if external_area <= 0.0 || internal_area <= 0.0 {
+        return Err(ModelError::new("the threads' limits leave no shear area"));
+    }
+    let screw = 2.0 * stress_area / external_area;
+    let ratio = external_area * external_strength / (internal_area * internal_strength);
+    Ok(UnifiedEngagement {
+        tensile_stress_area_in2: stress_area,
+        screw_length_in: screw,
+        strength_ratio: ratio,
+        required_length_in: screw * ratio.max(1.0),
+    })
+}
+
+/// Materials of a tapped hole's mating screw and of the part, for checking
+/// that its length of engagement develops the screw's strength (schema
+/// 151). Strengths are tensile strengths in MPa.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ThreadStrength {
+    /// The mating external thread's class, `2A` when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub screw_class: Option<UnifiedClass>,
+    pub screw_tensile_mpa: f64,
+    pub part_tensile_mpa: f64,
+}
+
 /// A Unified thread specification on a modeled thread or tapped hole
 /// (schema 152): its series, class and root, and optionally the length of
 /// engagement its tolerances use. Regeneration checks the feature's
@@ -379,9 +463,59 @@ pub struct UnifiedThreadSpec {
     pub rounded_root: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub length_of_engagement: Option<ScalarExpr>,
+    /// On a tapped hole, materials for checking that `length_of_engagement`
+    /// develops the mating screw's strength (schema 153).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub strength: Option<ThreadStrength>,
 }
 
 impl UnifiedThreadSpec {
+    /// When `strength` is given, the engagement an internal `thread` needs
+    /// with its mating screw, failing when `engagement_mm` (the evaluated
+    /// `length_of_engagement`) is missing or shorter.
+    pub fn check_strength(
+        &self,
+        thread: &UnifiedThread,
+        engagement_mm: Option<f64>,
+    ) -> Result<Option<UnifiedEngagement>, ModelError> {
+        let Some(strength) = &self.strength else {
+            return Ok(None);
+        };
+        if !thread.class.internal() {
+            return Err(ModelError::new(
+                "thread strength checks apply to internal threads",
+            ));
+        }
+        let class = strength.screw_class.unwrap_or(UnifiedClass::TwoA);
+        let screw = UnifiedThread::new(
+            thread.diameter_in * MM_PER_INCH,
+            MM_PER_INCH / thread.threads_per_inch,
+            thread.series,
+            class,
+            false,
+        )?;
+        let engagement = unified_engagement(
+            &screw,
+            thread,
+            strength.screw_tensile_mpa,
+            strength.part_tensile_mpa,
+        )?;
+        let Some(available) = engagement_mm else {
+            return Err(ModelError::new(
+                "a thread strength check needs a length_of_engagement",
+            ));
+        };
+        let required = engagement.required_length_in * MM_PER_INCH;
+        if available + 1e-9 < required {
+            return Err(ModelError::new(format!(
+                "{} needs {required:.2} mm of engagement for a {} screw to break before the threads strip, not {available:.2} mm",
+                thread.designation(),
+                class.label()
+            )));
+        }
+        Ok(Some(engagement))
+    }
+
     /// The thread of a feature with `diameter_mm` and `pitch_mm` on the
     /// `internal` side.
     pub fn thread(
@@ -572,6 +706,33 @@ mod tests {
         assert!(long.pitch_in[1] - long.pitch_in[0] > 0.2164 - 0.2127);
     }
 
+    /// 3/8-16 UNC-2A in 2B: As = 0.0775 in² and Le ≈ 0.269 in, the
+    /// published worked values; a nut material of half the screw's strength
+    /// needs J·Le.
+    #[test]
+    fn engagement_develops_the_screw_strength() {
+        let screw = thread(0.375, 16.0, UnifiedSeries::Unc, UnifiedClass::TwoA);
+        let nut = thread(0.375, 16.0, UnifiedSeries::Unc, UnifiedClass::TwoB);
+        let e = screw.limits(None).unwrap();
+        let i = nut.limits(None).unwrap();
+        assert!(
+            (e.pitch_in[0] - 0.3287).abs() < 1e-9 && (i.minor_in.unwrap()[1] - 0.321).abs() < 1e-9
+        );
+        let same = unified_engagement(&screw, &nut, 1.0, 1.0).unwrap();
+        assert!((same.tensile_stress_area_in2 - 0.0775).abs() < 5e-5);
+        assert!((same.screw_length_in - 0.269).abs() < 5e-4, "{same:?}");
+        // The internal thread has more shear area, so equal materials need Le.
+        assert!(same.strength_ratio < 1.0);
+        assert_eq!(same.required_length_in, same.screw_length_in);
+        let soft = unified_engagement(&screw, &nut, 2.0, 1.0).unwrap();
+        assert!(soft.strength_ratio > 1.0);
+        assert!(
+            (soft.required_length_in - soft.strength_ratio * soft.screw_length_in).abs() < 1e-12
+        );
+        assert!(unified_engagement(&screw, &nut, 0.0, 1.0).is_err());
+        assert!(unified_engagement(&nut, &screw, 1.0, 1.0).is_err());
+    }
+
     #[test]
     fn designations_series_and_fits() {
         let bolt = thread(0.25, 20.0, UnifiedSeries::Unc, UnifiedClass::TwoA);
@@ -620,6 +781,7 @@ mod tests {
             class: UnifiedClass::TwoB,
             rounded_root: false,
             length_of_engagement: None,
+            strength: None,
         };
         assert!(
             spec.thread(6.35, 1.27, false)

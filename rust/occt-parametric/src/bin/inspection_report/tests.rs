@@ -550,6 +550,7 @@ fn measured_threads_count_against_their_class_limits() {
                     class: UnifiedClass::TwoB,
                     rounded_root: false,
                     length_of_engagement: None,
+                    strength: None,
                 }),
             })),
         },

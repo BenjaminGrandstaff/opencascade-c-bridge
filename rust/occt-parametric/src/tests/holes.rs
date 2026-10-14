@@ -1548,6 +1548,7 @@ fn unified_tapped_holes_check_designation_and_bore_limits() {
                 class,
                 rounded_root: false,
                 length_of_engagement: None,
+                strength: None,
             }),
         });
         let diameter = definition
@@ -1581,6 +1582,62 @@ fn unified_tapped_holes_check_designation_and_bore_limits() {
     assert!(
         error("1/4-20 UNC-2A", ThreadHandedness::Right, TwoA, 0.201)
             .contains("is for external threads")
+    );
+    assert_eq!(session.shape_count().unwrap(), 0);
+}
+
+#[test]
+fn tapped_hole_engagement_must_develop_the_screw_strength() {
+    let session = Session::new().unwrap();
+    // 3/8-16 UNC-2B in 310 MPa aluminium for a 830 MPa 2A screw.
+    let screw =
+        UnifiedThread::new(9.525, 1.5875, UnifiedSeries::Unc, UnifiedClass::TwoA, false).unwrap();
+    let nut =
+        UnifiedThread::new(9.525, 1.5875, UnifiedSeries::Unc, UnifiedClass::TwoB, false).unwrap();
+    let needed = unified_engagement(&screw, &nut, 830.0, 310.0).unwrap();
+    assert!(needed.strength_ratio > 1.0);
+    let required_mm = needed.required_length_in * 25.4;
+    let tapped = |engagement_mm: Option<f64>| {
+        let mut definition = threaded_bore(ThreadSpecification {
+            designation: "3/8-16 UNC-2B".into(),
+            nominal_diameter: length_expr(9.525),
+            pitch: length_expr(1.5875),
+            handedness: ThreadHandedness::Right,
+            modeled: None,
+            unified: Some(UnifiedThreadSpec {
+                series: UnifiedSeries::Unc,
+                class: UnifiedClass::TwoB,
+                rounded_root: false,
+                length_of_engagement: engagement_mm.map(length_expr),
+                strength: Some(ThreadStrength {
+                    screw_class: None,
+                    screw_tensile_mpa: 830.0,
+                    part_tensile_mpa: 310.0,
+                }),
+            }),
+        });
+        // A 0.3125 in (5/16, 7.9375 mm) tap drill.
+        let diameter = definition
+            .parameters
+            .iter_mut()
+            .find(|parameter| parameter.id == "diameter")
+            .unwrap();
+        diameter.default = ParameterValue::Scalar(Quantity::length(0.3125, LengthUnit::Inch));
+        part(&definition).regenerate(&session).map(|_| ())
+    };
+    tapped(Some(required_mm + 0.01)).unwrap();
+    let short = tapped(Some(required_mm - 0.5)).unwrap_err().message;
+    assert!(
+        short.contains(&format!(
+            "3/8-16 UNC-2B needs {required_mm:.2} mm of engagement for a 2A screw"
+        )),
+        "{short}"
+    );
+    assert!(
+        tapped(None)
+            .unwrap_err()
+            .message
+            .contains("needs a length_of_engagement")
     );
     assert_eq!(session.shape_count().unwrap(), 0);
 }

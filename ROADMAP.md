@@ -28,6 +28,13 @@ tracks status and order.
 
 ## Done
 
+- Thread engagement strength (schema 153; ABI 76 unchanged). A tapped hole's
+  Unified spec may give the mating screw's and the part's tensile strengths.
+  Regeneration then requires a length of engagement at least what B1.1's
+  published engagement formulas need for the screw to break before either
+  thread strips. `unified_engagement` reproduces the published 3/8-16 worked
+  values. See
+  [Engagement strength](docs/THREADS.md#engagement-strength-schema-153).
 - Thread inspection against Unified limits (schema 152 and ABI 76
   unchanged). Inspection records may list measured pitch, major and minor
   diameters of threads and tapped holes that name a Unified class. Each is
@@ -2621,6 +2628,10 @@ scopes and inspected repo capabilities, not a full conformity audit.
    ABI 75), and projected zones now exchange too.
 4. **Standards-backed thread specifications** — [B1.1](https://www.asme.org/codes-standards/find-codes-standards/b1-1-unified-inch-screw-threads-un-unr-thread-form):
    Unified classes 1A–2B with limits of size, designation and bore checks,
+   fit checks and inspection of measured diameters exist (schema 152).
+   Engagement length for screw strength is checked (schema 153). Remaining:
+   thread representations in drawings.
+   fit checks and inspection of measured diameters exist (schema 152).
    fit checks and inspection of measured diameters exist (schema 152).
    Remaining: thread representations in drawings and engagement/strength.
    Class 3B and metric ISO 965 classes need the standards' own tables, which
