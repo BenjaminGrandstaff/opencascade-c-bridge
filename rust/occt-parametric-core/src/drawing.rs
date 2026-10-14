@@ -59,7 +59,8 @@ pub use releases::{
 pub mod sheets;
 pub use sheets::{
     DrawingLettering, DrawingSheet, DrawingSheetOrientation, DrawingSheetSize, DrawingZoneGrid,
-    ProjectionConvention, SheetLettering, SheetLineWeights, SheetZones,
+    ProjectionConvention, SheetLettering, SheetLineWeights, SheetRevisionMethod, SheetRevisions,
+    SheetZones,
 };
 pub mod hatching;
 pub use hatching::SectionHatching;

@@ -2093,6 +2093,42 @@ SHA-256 is implemented in `occt_parametric_core::digest`, checked against
 the FIPS 180-4 test vectors, so the core gains no cryptographic dependency.
 Each digest is O(drawing size). A scale case signs three roles on the next
 release of a drawing with 10,000 released revisions, then verifies them, in
-about 0.27 s against a 1 s budget. Not yet included: multi-sheet revision
-tables (Y14.35's drawing-level, sheet-level and all-sheets-same-revision
-methods).
+about 0.27 s against a 1 s budget.
+
+### Multi-sheet revisions (schema 159)
+
+A multi-sheet drawing is a set of drawings whose sheets share a
+`drawing_number`, numbered 1 to `sheet_count`. A sheet's `revisions` states
+how the set is revised; every sheet of the drawing must state the same
+method and count, and all sheets must be in the document, each once.
+
+```json
+"sheet": { "drawing_number": "BLK-100", "sheet_number": 1, "sheet_count": 3, "revision": "A",
+           "revisions": { "method": "per_sheet", "status_table_mm": [300, 150] }, ... }
+```
+
+- **`same_revision`.** Every sheet shows the drawing's revision. Only sheet
+  1 records releases and a revision table. Every other sheet records none,
+  and its title block shows sheet 1's latest released revision, or stays
+  blank before the first release. Revising any sheet therefore revises the
+  whole drawing.
+- **`per_sheet`.** Each sheet keeps its own releases, revision table and
+  title-block revision. Sheet 1 may draw a SHEET / REV status table at
+  `status_table_mm`, listing each sheet's latest released revision, or `—`
+  for an unreleased sheet. The table has 16 mm columns and 7 mm rows, and
+  must fit on the paper.
+
+These follow the practices that ASME Y14.35 names: revising at the drawing
+level, at the sheet level, or with all sheets at the same revision. The
+mapping has not been checked against the standard's own text.
+
+The rules apply to whole documents (`ModelDocument` validation), since one
+sheet cannot see its siblings. Sheets without `revisions` keep the earlier,
+independent behaviour. The status table is drawn by
+`DrawingDefinition::generate_many`, which needs every sheet of the drawing
+in the batch. Generating sheet 1 alone, or a partial batch, fails. The
+table counts exactly in the vertex budget.
+
+Set checks are O(drawings). A scale case validates a 1,000-sheet
+same-revision drawing and generates a 30-sheet per-sheet drawing with its
+status table, in about 0.02 s against a 1 s budget.

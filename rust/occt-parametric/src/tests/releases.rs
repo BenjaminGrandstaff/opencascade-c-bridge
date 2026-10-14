@@ -52,6 +52,7 @@ fn sheet_drawing(revision: &str) -> DrawingDefinition {
             lettering: None,
             zones: None,
             line_weights: None,
+            revisions: None,
         }),
         id: "block".into(),
         title: "Block".into(),
@@ -604,6 +605,164 @@ fn approval_workflows_sign_in_order_and_digests_detect_later_changes() {
             ApprovalDigestStatus::Valid
         ]
     );
+    drop(graph);
+    assert_eq!(session.shape_count().unwrap(), 0);
+}
+
+/// Sheet `n` of a three-sheet drawing BLK-100, revised by `method`.
+fn sheet_of(n: u32, method: SheetRevisionMethod, revision: &str) -> DrawingDefinition {
+    let mut drawing = sheet_drawing(revision);
+    drawing.id = format!("block-{n}");
+    drawing.revision_table = None;
+    let sheet = drawing.sheet.as_mut().unwrap();
+    sheet.sheet_number = n;
+    sheet.sheet_count = 3;
+    sheet.revisions = Some(SheetRevisions {
+        method,
+        status_table_mm: None,
+    });
+    drawing
+}
+
+#[test]
+fn multi_sheet_drawings_share_one_revision_or_list_each_sheets() {
+    let family = block_family();
+    let mut graph = InstanceGraph::new(&family);
+    graph.add_base("part", HashMap::new(), "test").unwrap();
+    let document = |drawings: Vec<DrawingDefinition>| {
+        let mut document = ModelDocument::from_graph(&graph);
+        document.drawings = drawings;
+        document
+    };
+    let valid =
+        |drawings: &[DrawingDefinition]| document(drawings.to_vec()).instance_graph().is_ok();
+    // One revision for every sheet: sheet 1 records the releases.
+    let same = SheetRevisionMethod::SameRevision;
+    let mut first = sheet_of(1, same, "B");
+    first.releases = vec![
+        release("A", "2026-10-01", None),
+        release("B", "2026-10-08", None),
+    ];
+    first.revision_table = Some(DrawingRevisionTable {
+        position_mm: [240.0, 260.0],
+        zone_column: false,
+    });
+    let shared = vec![
+        first.clone(),
+        sheet_of(2, same, "B"),
+        sheet_of(3, same, "B"),
+    ];
+    assert!(valid(&shared));
+    for case in 0..6 {
+        let mut bad = shared.clone();
+        match case {
+            // Other sheets show sheet 1's revision and record no releases.
+            0 => bad[1].sheet.as_mut().unwrap().revision = "A".into(),
+            1 => bad[2].releases = vec![release("C", "2026-10-09", None)],
+            // Every sheet is present once, with one method and count.
+            2 => {
+                bad.pop();
+            }
+            3 => bad[2].sheet.as_mut().unwrap().sheet_number = 2,
+            4 => {
+                bad[1]
+                    .sheet
+                    .as_mut()
+                    .unwrap()
+                    .revisions
+                    .as_mut()
+                    .unwrap()
+                    .method = SheetRevisionMethod::PerSheet
+            }
+            _ => bad[1].sheet.as_mut().unwrap().sheet_count = 4,
+        }
+        assert!(!valid(&bad), "case {case}");
+    }
+    // Each sheet revised on its own; sheet 1 lists their revisions.
+    let per = SheetRevisionMethod::PerSheet;
+    let mut one = sheet_of(1, per, "A");
+    one.releases = vec![release("A", "2026-10-01", None)];
+    one.sheet
+        .as_mut()
+        .unwrap()
+        .revisions
+        .as_mut()
+        .unwrap()
+        .status_table_mm = Some([300.0, 150.0]);
+    let mut two = sheet_of(2, per, "B");
+    two.releases = vec![
+        release("A", "2026-10-01", None),
+        release("B", "2026-10-08", None),
+    ];
+    let three = sheet_of(3, per, "");
+    let sheets = vec![one.clone(), two, three];
+    assert!(valid(&sheets));
+    let session = Session::new().unwrap();
+    let generated = DrawingDefinition::generate_many(
+        &sheets,
+        &graph,
+        &session,
+        DrawingRenderOptions::default(),
+    )
+    .unwrap();
+    // The status table is appended last.
+    let labels = &generated[0].sheet_labels;
+    let cells: Vec<&str> = labels[labels.len() - 8..]
+        .iter()
+        .map(|l| l.text.as_str())
+        .collect();
+    assert_eq!(cells, ["SHEET", "REV", "1", "A", "2", "B", "3", "—"]);
+    let lines = |d: &GeneratedDrawing| {
+        d.sheet_lines
+            .iter()
+            .map(|l| l.points_mm.len())
+            .sum::<usize>()
+    };
+    let mut plain = sheets.clone();
+    plain[0]
+        .sheet
+        .as_mut()
+        .unwrap()
+        .revisions
+        .as_mut()
+        .unwrap()
+        .status_table_mm = None;
+    let without =
+        DrawingDefinition::generate_many(&plain, &graph, &session, DrawingRenderOptions::default())
+            .unwrap();
+    assert_eq!(lines(&generated[0]) - lines(&without[0]), 5 + 2 * 3 + 2);
+    // The table needs its sibling sheets in the batch.
+    assert!(
+        one.generate(&graph, &session, DrawingRenderOptions::default())
+            .is_err()
+    );
+    // Only sheet 1 of a per-sheet drawing has a status table.
+    let mut misplaced = sheets.clone();
+    misplaced[1]
+        .sheet
+        .as_mut()
+        .unwrap()
+        .revisions
+        .as_mut()
+        .unwrap()
+        .status_table_mm = Some([300.0, 150.0]);
+    assert!(!valid(&misplaced));
+    let mut wrong_method = shared.clone();
+    wrong_method[0]
+        .sheet
+        .as_mut()
+        .unwrap()
+        .revisions
+        .as_mut()
+        .unwrap()
+        .status_table_mm = Some([300.0, 150.0]);
+    assert!(!valid(&wrong_method));
+    // The revision method persists (schema 159).
+    let json = document(sheets).to_json_pretty().unwrap();
+    assert!(json.contains("\"per_sheet\"") && json.contains("\"status_table_mm\""));
+    let restored = ModelDocument::from_json(&json).unwrap();
+    assert_eq!(restored.drawings.len(), 3);
+    assert_eq!(restored.schema_version, CURRENT_SCHEMA_VERSION);
     drop(graph);
     assert_eq!(session.shape_count().unwrap(), 0);
 }

@@ -92,20 +92,27 @@ impl DrawingDefinitionRendering for DrawingDefinition {
             .collect::<BTreeSet<_>>()
             .into_iter()
             .collect::<Vec<_>>();
+        // Sheet status tables list the revisions of sibling sheets, which
+        // must be in the batch; their vertices are budgeted per sheet.
+        let statuses = releases::sheet_statuses(definitions)?;
         let generation = graph.regenerate_instances_current(session, &instances)?;
         let mut vertices = 0;
         let mut hatching = hatching::materials::MaterialCache::new(graph);
         definitions
             .iter()
             .map(|definition| {
-                definition.generate_from(
+                let mut drawing = definition.generate_from(
                     graph,
                     session,
                     &generation,
                     options,
                     &mut vertices,
                     &mut hatching,
-                )
+                )?;
+                if let Some(rows) = statuses.get(&definition.id) {
+                    releases::append_sheet_status(definition, rows, &mut drawing);
+                }
+                Ok(drawing)
             })
             .collect()
     }

@@ -391,6 +391,7 @@ pub fn validate(drawing: &DrawingDefinition) -> Result<(), ModelError> {
     if let Some(workflow) = &drawing.approval_workflow {
         validate_workflow(drawing, workflow)?;
     }
+    validate_sheet_revisions(drawing)?;
     // The title block shows the latest released revision.
     if let Some(sheet) = &drawing.sheet {
         match drawing.latest_released() {
@@ -686,8 +687,223 @@ impl ModelDocument {
     }
 }
 
+const STATUS_COLUMNS_MM: [f64; 2] = [16.0, 16.0];
+
+/// Sheet 1's status table position, when it has one.
+fn status_table(drawing: &DrawingDefinition) -> Option<(&DrawingSheet, [f64; 2])> {
+    let sheet = drawing.sheet.as_ref()?;
+    Some((sheet, sheet.revisions.as_ref()?.status_table_mm?))
+}
+
+/// The sheet's own revision rules and status table placement.
+/// O(sheets).
+fn validate_sheet_revisions(drawing: &DrawingDefinition) -> Result<(), ModelError> {
+    let Some(sheet) = &drawing.sheet else {
+        return Ok(());
+    };
+    let Some(revisions) = &sheet.revisions else {
+        return Ok(());
+    };
+    if sheet.sheet_count == 0 || sheet.sheet_count > 1_000 || sheet.sheet_number > sheet.sheet_count
+    {
+        return Err(ModelError::new(
+            "a revised sheet needs 1-1000 sheets and a sheet number among them",
+        ));
+    }
+    if let Some([x, top]) = revisions.status_table_mm {
+        if revisions.method != SheetRevisionMethod::PerSheet || sheet.sheet_number != 1 {
+            return Err(ModelError::new(
+                "only sheet 1 of a per-sheet revised drawing has a status table",
+            ));
+        }
+        let [width, height] = drawing.effective_paper_size_mm();
+        let bottom = top - ROW_MM * (sheet.sheet_count as f64 + 1.0);
+        if !finite_pair([x, top])
+            || x < 0.0
+            || bottom < 0.0
+            || x + STATUS_COLUMNS_MM.iter().sum::<f64>() > width
+            || top > height
+        {
+            return Err(ModelError::new("sheet status table must fit on the paper"));
+        }
+    }
+    Ok(())
+}
+
+/// Checks the sheets of each multi-sheet drawing in `drawings` together:
+/// every sheet sharing a drawing number states the same revision method
+/// and sheet count, and all sheets are present, numbered once each. With
+/// the same revision on every sheet, only sheet 1 records releases and a
+/// revision table, and every other title block shows sheet 1's latest
+/// released revision. O(drawings).
+pub fn validate_sheet_sets(drawings: &[DrawingDefinition]) -> Result<(), ModelError> {
+    for (number, set) in sheet_sets(drawings) {
+        let first = set[0].sheet.as_ref().expect("sheet sets hold sheets");
+        let (method, count) = (
+            first.revisions.as_ref().map(|r| r.method),
+            first.sheet_count,
+        );
+        let mut numbers = HashSet::new();
+        for drawing in &set {
+            let sheet = drawing.sheet.as_ref().expect("sheet sets hold sheets");
+            if sheet.revisions.as_ref().map(|r| r.method) != method || sheet.sheet_count != count {
+                return Err(ModelError::new(format!(
+                    "the sheets of drawing '{number}' must state one revision method and sheet count"
+                )));
+            }
+            if !numbers.insert(sheet.sheet_number) {
+                return Err(ModelError::new(format!(
+                    "drawing '{number}' repeats sheet {}",
+                    sheet.sheet_number
+                )));
+            }
+        }
+        if numbers.len() != count as usize {
+            return Err(ModelError::new(format!(
+                "drawing '{number}' has {} of its {count} sheets",
+                numbers.len()
+            )));
+        }
+        if method == Some(SheetRevisionMethod::SameRevision) {
+            let lead = set
+                .iter()
+                .find(|d| d.sheet.as_ref().is_some_and(|s| s.sheet_number == 1))
+                .expect("sheet 1 is present");
+            let revision = lead
+                .latest_released()
+                .map_or("", |release| release.revision.as_str());
+            for drawing in &set {
+                let sheet = drawing.sheet.as_ref().expect("sheet sets hold sheets");
+                if sheet.sheet_number == 1 {
+                    continue;
+                }
+                if !drawing.releases.is_empty() || drawing.revision_table.is_some() {
+                    return Err(ModelError::new(format!(
+                        "sheet {} of drawing '{number}' shares sheet 1's revision; only sheet 1 records releases",
+                        sheet.sheet_number
+                    )));
+                }
+                if sheet.revision != revision {
+                    return Err(ModelError::new(format!(
+                        "sheet {} of drawing '{number}' must show revision '{revision}'",
+                        sheet.sheet_number
+                    )));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Drawings with revised sheets, grouped by drawing number in order of
+/// first appearance.
+fn sheet_sets(drawings: &[DrawingDefinition]) -> Vec<(&str, Vec<&DrawingDefinition>)> {
+    let mut index: HashMap<&str, usize> = HashMap::new();
+    let mut sets: Vec<(&str, Vec<&DrawingDefinition>)> = Vec::new();
+    for drawing in drawings {
+        let Some(sheet) = drawing.sheet.as_ref().filter(|s| s.revisions.is_some()) else {
+            continue;
+        };
+        let number = sheet.drawing_number.as_str();
+        match index.get(number) {
+            Some(&i) => sets[i].1.push(drawing),
+            None => {
+                index.insert(number, sets.len());
+                sets.push((number, vec![drawing]));
+            }
+        }
+    }
+    sets
+}
+
+/// Each sheet's current revision, by sheet number, for every drawing in
+/// `drawings` with a status table; the table's sheets must all be in
+/// `drawings`. A sheet's revision is its latest released one, or `—`.
+/// O(drawings).
+pub fn sheet_statuses(
+    drawings: &[DrawingDefinition],
+) -> Result<HashMap<String, Vec<(u32, String)>>, ModelError> {
+    let mut statuses = HashMap::new();
+    for (number, set) in sheet_sets(drawings) {
+        let Some(lead) = set.iter().find(|d| status_table(d).is_some()) else {
+            continue;
+        };
+        let count = lead.sheet.as_ref().map_or(0, |s| s.sheet_count) as usize;
+        let mut rows: Vec<(u32, String)> = set
+            .iter()
+            .filter_map(|d| {
+                let sheet = d.sheet.as_ref()?;
+                Some((
+                    sheet.sheet_number,
+                    d.latest_released()
+                        .map_or_else(|| "—".to_owned(), |r| r.revision.clone()),
+                ))
+            })
+            .collect();
+        rows.sort_unstable_by_key(|(sheet, _)| *sheet);
+        rows.dedup_by_key(|(sheet, _)| *sheet);
+        if rows.len() != count {
+            return Err(ModelError::new(format!(
+                "the sheet status table of '{}' needs all {count} sheets of drawing '{number}'",
+                lead.id
+            )));
+        }
+        statuses.insert(lead.id.clone(), rows);
+    }
+    Ok(statuses)
+}
+
+/// Draws sheet 1's SHEET / REV status table with the sheet linework.
+pub fn append_sheet_status(
+    drawing: &DrawingDefinition,
+    rows: &[(u32, String)],
+    out: &mut GeneratedDrawing,
+) {
+    let Some((_, [x, top])) = status_table(drawing) else {
+        return;
+    };
+    let width: f64 = STATUS_COLUMNS_MM.iter().sum();
+    let bottom = top - ROW_MM * (rows.len() + 1) as f64;
+    let thin = |points_mm| DrawingPolyline {
+        points_mm,
+        hidden: false,
+        thin: true,
+    };
+    out.sheet_lines.push(thin(vec![
+        [x, top],
+        [x + width, top],
+        [x + width, bottom],
+        [x, bottom],
+        [x, top],
+    ]));
+    for row in 1..=rows.len() {
+        let y = top - ROW_MM * row as f64;
+        out.sheet_lines.push(thin(vec![[x, y], [x + width, y]]));
+    }
+    let middle = x + STATUS_COLUMNS_MM[0];
+    out.sheet_lines
+        .push(thin(vec![[middle, top], [middle, bottom]]));
+    let cells = std::iter::once(["SHEET".to_owned(), "REV".to_owned()]).chain(
+        rows.iter()
+            .map(|(sheet, revision)| [sheet.to_string(), revision.clone()]),
+    );
+    for (row, values) in cells.enumerate() {
+        for (column, value) in values.into_iter().enumerate() {
+            out.sheet_labels.push(DrawingLabel {
+                position_mm: [
+                    x + 1.5 + STATUS_COLUMNS_MM[0] * column as f64,
+                    top - ROW_MM * (row as f64 + 1.0) + 2.0,
+                ],
+                text: value,
+                stack: None,
+                height_mm: out.lettering.notes,
+            });
+        }
+    }
+}
+
 /// Outer rectangle 5, row separators 2 each, column separators 2 each;
-/// each change symbol 4, and its leader 5.
+/// each change symbol 4, and its leader 5; a sheet status table likewise.
 pub fn vertex_count(drawing: &DrawingDefinition) -> usize {
     let table = drawing.revision_table.as_ref().map_or(0, |t| {
         5 + 2 * drawing.releases.len() + 2 * (columns(t).len() - 1)
@@ -698,6 +914,9 @@ pub fn vertex_count(drawing: &DrawingDefinition) -> usize {
         .flat_map(|r| &r.changes)
         .map(|m| if m.leader.is_some() { 9 } else { 4 })
         .fold(table, usize::saturating_add)
+        .saturating_add(
+            status_table(drawing).map_or(0, |(sheet, _)| 5 + 2 * sheet.sheet_count as usize + 2),
+        )
 }
 
 /// Draws each release's revision symbols, with their leaders, as

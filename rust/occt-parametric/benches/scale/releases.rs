@@ -5,7 +5,8 @@ use occt_parametric::{
     ApprovalDigestStatus, DrawingApproval, DrawingApprovalWorkflow, DrawingChangeLeader,
     DrawingChangeMarker, DrawingDefinition, DrawingRelease, DrawingReleaseStatus,
     DrawingRenderOptions, DrawingRevisionTable, DrawingSheet, DrawingSheetOrientation,
-    DrawingSheetSize, DrawingView, DrawingViewKind, InstanceOutputRef, SheetZones,
+    DrawingSheetSize, DrawingView, DrawingViewKind, InstanceOutputRef, SheetRevisionMethod,
+    SheetRevisions, SheetZones,
 };
 
 /// 10,000 approved releases, each signed by one APPROVED role.
@@ -193,6 +194,7 @@ pub(crate) fn change_case(definition: &FamilyDefinition) -> Outcome {
                         rows: 12,
                     }),
                     line_weights: None,
+                    revisions: None,
                 }),
                 id: "changed".into(),
                 title: "Changed".into(),
@@ -286,4 +288,75 @@ fn release_drawing() -> DrawingDefinition {
             hatching: None,
         }],
     }
+}
+
+/// Sheet `n` of `count` of drawing MS-1, revised by `method`.
+fn sheet(n: u32, count: u32, method: SheetRevisionMethod, revision: &str) -> DrawingDefinition {
+    DrawingDefinition {
+        id: format!("sheet-{n}"),
+        paper_size_mm: [1117.6, 863.6],
+        sheet: Some(DrawingSheet {
+            size: DrawingSheetSize::AnsiE,
+            orientation: DrawingSheetOrientation::Landscape,
+            drawing_number: "MS-1".into(),
+            revision: revision.into(),
+            sheet_number: n,
+            sheet_count: count,
+            projection: None,
+            lettering: None,
+            zones: None,
+            line_weights: None,
+            revisions: Some(SheetRevisions {
+                method,
+                status_table_mm: None,
+            }),
+        }),
+        ..release_drawing()
+    }
+}
+
+/// 1,000 sheets sharing one revision validate as a document, and a 30-sheet
+/// per-sheet drawing generates with sheet 1's status table.
+pub(crate) fn sheet_set_case(definition: &'static FamilyDefinition) -> Outcome {
+    timed(
+        "releases: 1000 same-revision sheets validated, 30-sheet status table".into(),
+        Duration::from_secs(1),
+        Expectation::Required,
+        || {
+            let mut graph = InstanceGraph::new(definition);
+            graph.add_base("part", HashMap::new(), "bench")?;
+            let same = SheetRevisionMethod::SameRevision;
+            let mut sheets: Vec<_> = (1..=1_000).map(|n| sheet(n, 1_000, same, "R9")).collect();
+            sheets[0].releases = released(10);
+            let mut document = ModelDocument::from_graph(&graph);
+            document.drawings = sheets;
+            document.instance_graph()?;
+            let per = SheetRevisionMethod::PerSheet;
+            let mut batch: Vec<_> = (1..=30)
+                .map(|n| {
+                    let mut drawing = sheet(n, 30, per, &format!("R{}", n - 1));
+                    drawing.releases = released(n as usize);
+                    drawing
+                })
+                .collect();
+            batch[0]
+                .sheet
+                .as_mut()
+                .and_then(|s| s.revisions.as_mut())
+                .expect("sheet revisions")
+                .status_table_mm = Some([20.0, 830.0]);
+            let session = Session::new().map_err(|error| failure(error.to_string()))?;
+            let generated = DrawingDefinition::generate_many(
+                &batch,
+                &graph,
+                &session,
+                DrawingRenderOptions::default(),
+            )?;
+            let labels = &generated[0].sheet_labels;
+            if labels.last().map(|l| l.text.as_str()) != Some("R29") {
+                return Err(failure("status table missing its last sheet".into()));
+            }
+            Ok("1000 sheets validated; 30-row status table drawn".into())
+        },
+    )
 }

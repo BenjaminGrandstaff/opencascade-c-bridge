@@ -23,7 +23,7 @@ pub struct GenerationRecord {
     pub last_error: Option<String>,
 }
 
-pub const CURRENT_SCHEMA_VERSION: u32 = 158;
+pub const CURRENT_SCHEMA_VERSION: u32 = 159;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ModelDocument {
@@ -281,6 +281,7 @@ impl ModelDocument {
             drawing.validate_cached(graph, &mut resolutions, &mut features, &materials)?;
             crate::drawing::releases::validate_model_links(drawing, &self.revisions)?;
         }
+        crate::drawing::releases::validate_sheet_sets(&self.drawings)?;
         Ok(())
     }
 

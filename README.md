@@ -848,7 +848,9 @@ that flags model changes since the latest release, and a drawn revision table.
 Schema 90 adds them; schema 156 adds revision symbols marking each release's
 changes on the sheet, and a ZONE column listing their sheet zones;
 schema 158 adds ordered approval workflows, with SHA-256 content digests
-that show whether a drawing changed after each sign-off.
+that show whether a drawing changed after each sign-off; schema 159 revises
+multi-sheet drawings at one shared revision or sheet by sheet, with a sheet
+status table.
 
 Drawings can carry [parts lists and item balloons](docs/DRAWINGS.md#parts-lists-and-balloons-schema-87):
 shown instances group into numbered items by family, parameter values, output

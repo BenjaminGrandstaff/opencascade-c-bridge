@@ -86,6 +86,32 @@ pub struct DrawingSheet {
     /// uniform legacy widths.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub line_weights: Option<SheetLineWeights>,
+    /// How the sheets sharing this drawing number are revised (schema 159).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revisions: Option<SheetRevisions>,
+}
+
+/// The revision practice of a multi-sheet drawing. Every sheet of the
+/// drawing states the same method.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SheetRevisions {
+    pub method: SheetRevisionMethod,
+    /// Top-left corner of sheet 1's SHEET / REV status table, listing each
+    /// sheet's current revision; per-sheet revision only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status_table_mm: Option<[f64; 2]>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SheetRevisionMethod {
+    /// Every sheet shows the drawing's revision; sheet 1 records the
+    /// releases and revision table, and a change to any sheet revises all.
+    SameRevision,
+    /// Each sheet keeps its own releases and revision; sheet 1 may list
+    /// every sheet's revision in a status table.
+    PerSheet,
 }
 
 /// Lettering preset. `Standard` takes inch-sheet heights from the DOD-STD-100D
