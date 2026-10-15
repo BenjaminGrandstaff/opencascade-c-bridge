@@ -1,3 +1,4 @@
+import {captureGeneratedPoints,bindGeneratedPoints} from './generated-points.mjs';
 import {createCrossingPicker} from './crossing-pick.mjs';
 import {createCrossingReview} from './crossing-review.mjs';
 import {createPointLinkControls} from './point-links.mjs';
@@ -18,7 +19,7 @@ export function addElement(definition, collection, element) {
 }
 export function createSketchEditor({ host, request, instance, preview, applied, restore, showSketch = () => {}, highlight = () => {}, ghost = () => {}, crossingWindows = () => {}, reviewScene = () => null, canvasMode = () => {}, showSolid=()=>{}, highlightFace=()=>{}, highlightEdge=()=>{}, beginPicking=()=>{}, currentVersion=()=>null }) {
   let dragInFlight = false;
-  let baseline = null, draft = null, version = null, feature = null, busy = false, generation = 0, parameters = [], features = [], featureDependencies = {}, constraintControls = null, profileControls = null, shapeControls = null, splineControls = null, dependencyControls = null, pointLinkControls = null, crossingReview = null, crossingPicker = null, reviewSnapshot = null;
+  let baseline = null, draft = null, version = null, feature = null, busy = false, generation = 0, parameters = [], features = [], featureDependencies = {}, constraintControls = null, profileControls = null, shapeControls = null, splineControls = null, dependencyControls = null, pointLinkControls = null, crossingReview = null, crossingPicker = null, reviewSnapshot = null, generatedSnapshot = null;
   const panel = document.createElement('section');
   panel.className = 'linked-edit';
   const launch = document.createElement('button'); launch.textContent = 'Edit sketch geometry';
@@ -62,7 +63,7 @@ export function createSketchEditor({ host, request, instance, preview, applied, 
   function cancelGeometryPicks(){crossingPicker?.cancel();dependencyControls?.cancelPick();profileControls?.cancelPick();shapeControls?.cancelPick();splineControls?.cancelPick();}
   function beginGeometryPick(){links.cancel();cancelGeometryPicks();canvasTools.selectMode();showSketch(feature);beginPicking();}
   function focusPoint(id){const row=[...content.querySelectorAll('[data-edit-point]')].find(row=>row.dataset.editPoint===id);row?.scrollIntoView({block:'nearest'});row?.querySelector('input,textarea')?.focus();}
-  function resetCanvas(){crossingWindows([],feature);reviewSnapshot=null;links.cancel();cancelGeometryPicks();generation++;canvasTools.reviewed();canvasMount.hidden=true;canvasMode('select');}
+  function resetCanvas(){crossingWindows([],feature);reviewSnapshot=null;generatedSnapshot=null;links.cancel();cancelGeometryPicks();generation++;canvasTools.reviewed();canvasMount.hidden=true;canvasMode('select');}
   function button(text, action) {
     const b = document.createElement('button'); b.textContent = text;
     b.addEventListener('click', async () => {
@@ -93,6 +94,7 @@ export function createSketchEditor({ host, request, instance, preview, applied, 
     }); row.append(control); return row;
   }
   function render() {
+    bindGeneratedPoints(draft,generatedSnapshot);
     crossingPicker?.cancel();
     content.replaceChildren();
     const note = document.createElement('p'); note.textContent = `Family-wide edit · ${feature}. Coordinates are sketch-local. Free point coordinates are solver starting positions; constraints determine the solved shape.`; content.append(note);
@@ -180,7 +182,7 @@ export function createSketchEditor({ host, request, instance, preview, applied, 
     try {
       const response = await request('/api/sketch', {method:'POST', body:JSON.stringify({version, instance:instance(), feature, expected:baseline, definition:draft, apply})});
       if (apply) { baseline = draft = null; resetCanvas(); constraintControls = profileControls = shapeControls = splineControls = dependencyControls = pointLinkControls = crossingReview = crossingPicker = null; highlight([]); content.replaceChildren(); await applied(response.state); message('Sketch applied. Save writes it to the model file.'); }
-      else { canvasTools.reviewed();await preview(response.annotations); showSketch(feature); if(response.can_apply)captureReview(false);else reviewSnapshot=null;crossingReview?.refresh(); message(response.can_apply ? 'Preview passes regeneration and required checks. Apply repeats the checks against the current model.' : `Draft cannot be applied: ${response.error}`); }
+      else { canvasTools.reviewed();await preview(response.annotations); showSketch(feature); if(response.can_apply){generatedSnapshot=captureGeneratedPoints(draft,response.generated_points??[]);bindGeneratedPoints(draft,generatedSnapshot);captureReview(false);render();}else{reviewSnapshot=null;crossingReview?.refresh();} message(response.can_apply ? 'Preview passes regeneration and required checks. Apply repeats the checks against the current model.' : `Draft cannot be applied: ${response.error}`); }
     } finally { busy = false; content.inert = false; canvasMount.inert = false; launch.disabled = false; }
   }
   launch.addEventListener('click', async () => {
@@ -197,7 +199,7 @@ export function createSketchEditor({ host, request, instance, preview, applied, 
       for (const item of data.sketches) choice.append(new Option(item.feature, item.feature));
       content.append(choice, button('Load sketch draft', () => {
         const item = data.sketches.find(s => s.feature === choice.value);
-        canvasTools.reviewed(); canvasMount.hidden=false;parameters = data.parameters ?? [];features = data.features ?? [];featureDependencies=data.feature_dependencies??{};links.cancel();constraintControls = profileControls = shapeControls = splineControls = dependencyControls = pointLinkControls = crossingReview = crossingPicker = null; highlight([]); version = data.version; feature = item.feature; baseline = structuredClone(item.definition); draft = structuredClone(baseline); showSketch(feature);captureReview(true);canvasMode(canvasTools.mode,feature);render(); message('Draft loaded. Click sketch points or curves to select geometry for dimensions and constraints.');
+        canvasTools.reviewed(); canvasMount.hidden=false;parameters = data.parameters ?? [];features = data.features ?? [];featureDependencies=data.feature_dependencies??{};links.cancel();constraintControls = profileControls = shapeControls = splineControls = dependencyControls = pointLinkControls = crossingReview = crossingPicker = null; highlight([]); version = data.version; feature = item.feature; baseline = structuredClone(item.definition); draft = structuredClone(baseline); generatedSnapshot=captureGeneratedPoints(draft,item.generated_points??[]);showSketch(feature);captureReview(true);canvasMode(canvasTools.mode,feature);render(); message('Draft loaded. Click sketch points or curves to select geometry for dimensions and constraints.');
       })); message('Choose a sketch. Loading replaces any previous local draft.');
     } catch (error) { message(error.message); }
   });

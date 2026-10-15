@@ -3994,3 +3994,89 @@ fn drawing_to_projected_named_points_follows_source_edits_without_frozen_duplica
         moved["points"]["reference:junction:right"]
     );
 }
+
+#[test]
+fn generated_point_catalogues_and_drawn_consumers_survive_source_edits_and_save() {
+    let directory = Directory::new();
+    let request: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../tools/model/slotted-plate.request.json"
+    ))
+    .unwrap();
+    let mut value = request["model"].clone();
+    value["instances"][0]["base"]["id"] = json!("part");
+    value["family"]["features"][0]["operation"]["sketch_face"]["sketch"]["patterns"] = json!([
+        {"linear":{"id":"row","entities":["outline:side1"],"direction":"outline:side0","spacing":{"literal":{"value":5,"dimension":"length","unit":"millimeter"}},"count":3}}
+    ]);
+    let document = ModelDocument::from_json(&value.to_string()).unwrap();
+    let model = PathBuf::from(directory.model(&document));
+    let original = fs::read_to_string(&model).unwrap();
+    let mut studio = serve::Studio::load(&model, Some("body".into())).unwrap();
+    assert_eq!(
+        studio.handle("GET", "/generated-points.mjs", b"").status,
+        200
+    );
+    let metadata = get(&mut studio, "/api/sketches").1["sketches"][0].clone();
+    let names = metadata["generated_points"].as_array().unwrap();
+    assert!(names.contains(&json!("row:2:outline:corner1")));
+    assert!(names.contains(&json!("lower_slot:end_left")));
+    let mut draft = metadata["definition"].clone();
+    draft["lines"] =
+        json!([{"id":"snapped-guide","start":"row:2:outline:corner1","end":"outline:corner3"}]);
+    let state = get(&mut studio, "/api/state").1;
+    let (status, result) = edit_definition(&mut studio, "profile", draft.clone(), false);
+    assert_eq!(status, 200, "{result}");
+    assert_eq!(result["can_apply"], true);
+    assert_eq!(result["generated_points"], metadata["generated_points"]);
+    assert_eq!(get(&mut studio, "/api/state").1, state);
+    assert_eq!(fs::read_to_string(&model).unwrap(), original);
+    let (status, result) = edit_definition(&mut studio, "profile", draft.clone(), true);
+    assert_eq!(status, 200, "{result}");
+    history(&mut studio, "undo");
+    history(&mut studio, "redo");
+    let response = studio.handle("POST", "/api/parameters", br#"{"set":{"width":65}}"#);
+    assert_eq!(
+        response.status,
+        200,
+        "{}",
+        String::from_utf8_lossy(&response.body)
+    );
+    let scene = |v: serde_json::Value| {
+        v["scenes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["feature"] == "profile")
+            .unwrap()
+            .clone()
+    };
+    let moved = scene(get(&mut studio, "/api/annotations?id=part").1);
+    let line = moved["entities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["id"] == "snapped-guide")
+        .unwrap();
+    assert_eq!(line["points"][0], moved["points"]["row:2:outline:corner1"]);
+    assert!((line["points"][0][0].as_f64().unwrap() - 75.).abs() < 1e-7);
+    let saved = get(&mut studio, "/api/sketches").1["sketches"][0]["definition"].clone();
+    assert_eq!(saved["points"], metadata["definition"]["points"]);
+    assert!(saved.get("generated_points").is_none());
+    let mut invalid = saved.clone();
+    invalid["patterns"][0]["linear"]["count"] = json!(2);
+    let stable = get(&mut studio, "/api/state").1;
+    assert_eq!(
+        edit_definition(&mut studio, "profile", invalid, true).0,
+        422
+    );
+    assert_eq!(get(&mut studio, "/api/state").1, stable);
+    assert_eq!(studio.handle("POST", "/api/save", b"{}").status, 200);
+    let mut reopened = serve::Studio::load(&model, Some("body".into())).unwrap();
+    assert_eq!(
+        get(&mut reopened, "/api/sketches").1["sketches"][0]["definition"],
+        saved
+    );
+    assert_eq!(
+        scene(get(&mut reopened, "/api/annotations?id=part").1)["points"]["row:2:outline:corner1"],
+        moved["points"]["row:2:outline:corner1"]
+    );
+}

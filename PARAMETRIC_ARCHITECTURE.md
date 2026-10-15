@@ -353,7 +353,14 @@ junction and intersection point IDs when snapping. Native positions guide the
 cursor, while saved geometry keeps stable point references rather than fixed
 copies. A clicked point wins coincident-reference ties, and typed constraint
 controls expose the same names. Source parameter changes therefore move drawn
-consumers without an additional persisted format.
+consumers without an additional persisted format. Generated shape and pattern points
+now share that drawing path through a kernel-free structural catalogue. The
+catalogue follows native expansion budgets, chained copies and mirror sharing;
+only stable projection aliases participate in copied sources. Read-only load/
+Preview metadata stays outside saved definitions. Generator and source-curve
+edits invalidate local names until successful Preview, while ordinary appended
+geometry retains valid references. The next extension for this workflow is
+similarly authoritative generated-curve selection for dimensions and editing.
 
 
 

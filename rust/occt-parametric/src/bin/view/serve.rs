@@ -632,6 +632,11 @@ impl Studio {
                 "text/javascript",
                 include_str!("web/shape-controls.mjs"),
             ),
+            ("GET", "/generated-points.mjs") => Response::text(
+                200,
+                "text/javascript",
+                include_str!("web/generated-points.mjs"),
+            ),
             ("GET", "/crossing-pick.mjs") => Response::text(
                 200,
                 "text/javascript",

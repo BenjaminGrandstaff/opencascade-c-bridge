@@ -19,6 +19,7 @@ pub mod geometry;
 pub mod patterns;
 pub mod profile;
 pub mod projections;
+mod references;
 pub mod shapes;
 pub mod solver;
 pub mod spline_links;

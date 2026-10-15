@@ -12,16 +12,19 @@ fn sketch(operation: &Value) -> Option<&Value> {
 
 impl Studio {
     pub(super) fn sketches(&self) -> Result<Value, String> {
-        let features = self
-            .document
-            .family
-            .features
-            .iter()
-            .filter_map(|feature| {
-                let operation = serde_json::to_value(&feature.operation).ok()?;
-                Some(json!({"feature": feature.id, "definition": sketch(&operation)?}))
-            })
-            .collect::<Vec<_>>();
+        let mut features = Vec::new();
+        for feature in &self.document.family.features {
+            let operation = serde_json::to_value(&feature.operation).map_err(|e| e.to_string())?;
+            let Some(value) = sketch(&operation) else {
+                continue;
+            };
+            let definition: SketchDefinition =
+                serde_json::from_value(value.clone()).map_err(|e| e.to_string())?;
+            let generated_points = definition
+                .generated_point_references()
+                .map_err(|e| e.to_string())?;
+            features.push(json!({"feature":feature.id,"definition":value,"generated_points":generated_points}));
+        }
         let feature_dependencies = self
             .document
             .family
@@ -391,7 +394,7 @@ impl Studio {
             Ok(json!({"applied": true, "state": self.state()}))
         } else {
             Ok(
-                json!({"applied": false, "can_apply": rejection.is_none(), "error": rejection, "annotations": annotations}),
+                json!({"applied": false, "can_apply": rejection.is_none(), "error": rejection, "annotations": annotations,"generated_points":edit.definition.generated_point_references().map_err(|e|e.to_string())?}),
             )
         }
     }

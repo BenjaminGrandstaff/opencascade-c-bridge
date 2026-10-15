@@ -70,6 +70,22 @@ losing a source reference rejects the edit. Save and history preserve these link
 A scale check of 100 snaps over 10,000 declared projected points completed in
 about 265 ms. Model schema 149 and ABI 73 stay unchanged.
 
+Generated rectangle corners, slot endpoints, polygon vertices and mirror/linear/
+circular pattern points are also available to drawing and typed point constraints.
+The kernel-free `SketchDefinition::generated_point_references()` catalogue uses
+the same structural expansion and point budgets as native validation; the viewer
+receives it as read-only `generated_points` metadata on sketch load and Preview.
+It includes chained pattern copies and shared mirror-point rules, and excludes
+unstable projection poles. Positions still come from the native solved scene.
+Drawing saves the generated ID directly, so source edits move its consumers.
+
+Changing a generator recipe or an existing source curve invalidates the local
+catalogue until a successful **Preview draft** refreshes it. Adding ordinary
+geometry preserves the previously verified names. Missing native coordinates
+cannot snap, and removing a referenced generated point rejects Preview/Apply.
+The catalogue never enters the saved definition. A scale check of 100 snaps over
+10,000 generated references took about 93 ms; schema 149 and ABI 73 are unchanged.
+
 **Shape parameters** edits existing shortcut definitions: slot radius, polygon
 side count, rectangle angle, and conic rho. Choose the shape by name or arm
 **Select shape from canvas** and click one of its generated boundary curves.

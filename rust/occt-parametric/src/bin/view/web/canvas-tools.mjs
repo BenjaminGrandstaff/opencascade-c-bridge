@@ -44,8 +44,8 @@ export function ellipseMinor(clicks){
   return {point:minor.point,xy:minor.point?minor.xy:[center.xy[0]+v[0]*width,center.xy[1]+v[1]*width]};
 }
 export function drawPrimitive(definition, kind, clicks, {fixed=true, profile=false,clockwise=false,closed=false,sides=6}={}) {
+  const reusablePoints=new Set(geometryIds(definition,'points'));
   const candidate=structuredClone(definition),created=[];
-  const reusablePoints=new Set(geometryIds(candidate,'points'));
   function point(click){
     if(click.point && reusablePoints.has(click.point))return click.point;
     const id=nextId(candidate,'P');(candidate.points??=[]).push({id,x:literal(click.xy[0]),y:literal(click.xy[1]),fixed});reusablePoints.add(id);created.push(id);return id;

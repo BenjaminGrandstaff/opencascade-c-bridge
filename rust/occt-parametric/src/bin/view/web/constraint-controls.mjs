@@ -1,3 +1,4 @@
+import {generatedPointIds} from './generated-points.mjs';
 // Typed authoring controls; native validation and solving remain authoritative.
 const pair = group => [['first', group], ['second', group]];
 export const constraintTools = {
@@ -35,6 +36,7 @@ export function geometryIds(definition, group) {
     if(group==='points')ids.push(...(suffixes[p.kind]??[]).map(key=>`${p.id}:${key}`),...(p.junctions??[]).map(j=>`${p.id}:junction:${j.id}`),...(p.intersections??[]).map(i=>`${p.id}:intersection:${i.id}`));
     else if(keys.includes(kindGroup[p.kind]))ids.push(p.id);
   }
+  if(group==='points')ids.push(...generatedPointIds(definition));
   return [...new Set(ids)];
 }
 export function dimensionNumber(expression, dimension) {

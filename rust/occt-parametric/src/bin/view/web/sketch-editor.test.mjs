@@ -116,3 +116,26 @@ test('canvas crossing picks route through the sketch editor, stage locally and c
  find(host,'Start crossing pick').onclick();const tool=all(host).find(e=>e['aria-label']==='Canvas tool');tool.value='line';tool.onchange();assert.equal(modes.at(-1),'line');editor.canvasCancel();await find(host,'Preview draft').emit('click');assert.equal(calls[1].definition.points.length,5);
  }finally{delete globalThis.document;delete globalThis.Option;}
 });
+
+test('editor loads generated point metadata and refreshes stale constraint choices only after Preview',async()=>{
+ globalThis.document={createElement:tag=>new Element(tag)};
+ globalThis.Option=class extends Element{constructor(text,value){super('option');this.textContent=text;this.value=value;}};
+ try{
+  const source={id:'s',points:[{id:'a',x:length(0),y:length(0),fixed:true},{id:'c',x:length(10),y:length(5),fixed:true}],lines:[],shapes:[{rectangle:{id:'rect',first:'a',opposite:'c'}}]};
+  const host=new Element('div'),calls=[];
+  createSketchEditor({host,instance:()=> 'part',preview:async()=>{},applied:async()=>{},restore:async()=>{},request:async(path,options)=>{
+   if(path==='/api/sketches')return {version:1,sketches:[{feature:'profile',definition:source,generated_points:['rect:corner1','rect:corner3']}]};
+   calls.push(JSON.parse(options.body));return {can_apply:true,annotations:{},generated_points:['fresh:corner1']};
+  }});
+  await find(host,'Edit sketch geometry').emit('click');
+  all(host).find(e=>e['aria-label']==='Sketch to edit').value='profile';
+  await find(host,'Load sketch draft').emit('click');
+  const choosePointTool=()=>{const tool=all(host).find(e=>e['aria-label']==='Constraint type');tool.value='distance';tool.onchange();};
+  const has=id=>all(host).some(e=>e.tagName==='option'&&e.value===id);
+  choosePointTool();assert(has('rect:corner1'));
+  const input=find(host,'Sketch definition').children[0],next=structuredClone(source);next.shapes[0].rectangle.angle={literal:{value:.1,dimension:'scalar',unit:null}};
+  input.value=JSON.stringify(next);input.emit('change');choosePointTool();assert(!has('rect:corner1'));
+  await find(host,'Preview draft').emit('click');choosePointTool();assert(has('fresh:corner1'));
+  assert(!JSON.stringify(calls[0].definition).includes('generated_points'));assert.deepEqual(source.shapes,[{rectangle:{id:'rect',first:'a',opposite:'c'}}]);
+ }finally{delete globalThis.document;delete globalThis.Option;}
+});
