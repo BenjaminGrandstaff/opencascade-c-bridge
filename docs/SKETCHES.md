@@ -1681,9 +1681,14 @@ The native `occt_bridge_create_face_with_holes` builds the face directly,
 without booleans, and reorients inner wires as holes. It requires each hole to
 be coplanar, strictly inside the outer loop, not nested, and more than 1e-7 mm
 from the boundary and the other holes. Pairwise checks are bounding-box
-filtered. The face must be valid, with area equal to the outer area minus the
-hole areas (relative 1e-7). Circle holes use exact circles; equal-radius
-ellipses would force slow numeric extrema in these checks.
+filtered. The outer face and each hole on its own must pass OCCT's shape
+check, and the result must hold exactly those wires, with area equal to the
+outer area minus the hole areas (relative 1e-7). Together these make the face
+valid by construction. Since schema 160 the result is not passed through
+OCCT's whole-face check again: that check tests every pair of wires, which
+took 2 s at 1,000 holes and grows with their square. A face with the maximum
+10,000 holes now builds in about 2.6 s. Circle holes use exact circles;
+equal-radius ellipses would force slow numeric extrema in these checks.
 
 **Validation and limits.** Pattern IDs must be nonempty, unique and free of
 `:`. Each pattern copies 1–1000 distinct entities, counts are 2–1000, and a

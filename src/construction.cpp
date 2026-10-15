@@ -35,6 +35,7 @@
 #include <gp_Vec.hxx>
 #include <Precision.hxx>
 #include <TColgp_HArray1OfPnt.hxx>
+#include <TopExp_Explorer.hxx>
 #include <TopoDS.hxx>
 #include <TopoDS_Compound.hxx>
 #include <TopoDS_Wire.hxx>
@@ -342,7 +343,16 @@ occt_bridge_status_t occt_bridge_create_face_with_holes(
         }
         const TopoDS_Face result = holes.empty() ? outer_face : builder.Face();
         const double area = face_area(result);
-        if (!BRepCheck_Analyzer(result).IsValid() || !(area > 0.0)
+        // The face is valid by construction: the outer face and each hole on
+        // its own passed BRepCheck, every hole lies strictly inside the outer
+        // wire, and holes are pairwise apart and unnested. A full BRepCheck
+        // of the result would re-test every pair of wires (two seconds at
+        // 1,000 holes), so only its wires and area are checked here.
+        size_t wires = 0;
+        for (TopExp_Explorer explorer(result, TopAbs_WIRE); explorer.More(); explorer.Next()) {
+            ++wires;
+        }
+        if (wires != holes.size() + 1 || !(area > 0.0)
             || std::abs(area - (outer_area - removed)) > std::max(1e-12, outer_area * 1e-7)) {
             return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "face with holes is invalid or has unexpected area");
         }

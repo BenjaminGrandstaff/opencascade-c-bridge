@@ -22,6 +22,7 @@ fn spec(turns: &[f64]) -> SheetMetalDefinition {
                 inside_radius: length(3.0),
             })
             .collect(),
+        cutouts: Vec::new(),
     }
 }
 fn definition(sheet: SheetMetalDefinition) -> FamilyDefinition {
@@ -257,4 +258,127 @@ fn allowance_drawings_validate_and_export() {
         std::fs::write("/tmp/occb-sheet-flat.dxf", drawing.to_dxf()).unwrap();
         std::fs::write("/tmp/occb-sheet-flat.svg", drawing.to_svg()).unwrap();
     }
+}
+
+fn cutout(id: &str, flange: usize, shape: SheetMetalCutoutShape) -> SheetMetalCutout {
+    SheetMetalCutout {
+        id: id.into(),
+        flange,
+        along: length(10.0),
+        across: length(5.0),
+        shape,
+    }
+}
+
+#[test]
+fn cutouts_cut_folded_flanges_and_their_flat_blank_alike() {
+    let session = Session::new().unwrap();
+    let quarter = std::f64::consts::FRAC_PI_2;
+    let mut sheet = spec(&[quarter, -quarter]);
+    sheet.cutouts = vec![
+        cutout(
+            "notch",
+            0,
+            SheetMetalCutoutShape::Rectangle {
+                length: length(6.0),
+                width: length(3.0),
+            },
+        ),
+        cutout(
+            "hole",
+            1,
+            SheetMetalCutoutShape::Circle {
+                diameter: length(4.0),
+            },
+        ),
+        cutout(
+            "slot",
+            2,
+            SheetMetalCutoutShape::Slot {
+                length: length(8.0),
+                width: length(4.0),
+            },
+        ),
+    ];
+    // Each bend allows pi/2 * (3 + 0.5 * 2) on the blank.
+    let allowance = quarter * 4.0;
+    let metrics = sheet.flat_pattern(&HashMap::new(), 0.5).unwrap();
+    let centers: Vec<[f64; 2]> = metrics.cutouts.iter().map(|c| c.center_mm).collect();
+    assert_eq!(centers[0], [10.0, 5.0]);
+    assert!((centers[1][0] - (30.0 + allowance)).abs() < 1e-12);
+    assert!((centers[2][0] - (50.0 + 2.0 * allowance)).abs() < 1e-12);
+    // Folded and flat lose the same cut-out area through the 2 mm sheet.
+    let pi = std::f64::consts::PI;
+    let removed = (18.0 + pi * 4.0 + (16.0 + pi * 4.0)) * 2.0;
+    let full = (60.0 + 2.0 * allowance) * 20.0;
+    let family = definition(sheet.clone());
+    let generated = part(&family).regenerate(&session).unwrap();
+    for id in ["folded", "flat"] {
+        let shape = generated.shape(id).unwrap();
+        assert!(session.is_valid(shape).unwrap());
+        assert_eq!(session.shape_type(shape).unwrap(), ShapeType::Solid);
+        let volume = session.volume(shape).unwrap();
+        assert!((volume - (full - removed)).abs() < 1e-6, "{id}: {volume}");
+    }
+    // The hole is on the second flange, which the first bend turns down to
+    // run from (24, 0, -4): its center is 2 mm from the nearest material.
+    let probe = session
+        .create_sphere(Vec3::new(24.0, 5.0, -14.0), 0.01)
+        .unwrap();
+    let clearance = session
+        .distance(generated.shape("folded").unwrap(), &probe)
+        .unwrap()
+        .distance;
+    assert!((clearance - 1.99).abs() < 1e-6, "{clearance}");
+    // The blank's drawing outlines each cutout.
+    let drawing = metrics.drawing("bracket").unwrap();
+    // Outline, two bend lines, then each cutout closed: the rectangle in 5
+    // points, the circle in two 32-chord arcs, the slot in two lines and
+    // two arcs.
+    assert_eq!(drawing.polylines.len(), 1 + 2 + 3);
+    let counts: Vec<usize> = drawing.polylines[3..]
+        .iter()
+        .map(|p| p.points_mm.len())
+        .collect();
+    assert_eq!(counts, [5, 65, 67]);
+    for cutout in &drawing.polylines[3..] {
+        assert_eq!(cutout.points_mm.first(), cutout.points_mm.last());
+    }
+    if let Some(directory) = std::env::var_os("OCCB_SHEET_QA_DIR") {
+        std::fs::write(
+            std::path::Path::new(&directory).join("cutouts.svg"),
+            drawing.to_svg(),
+        )
+        .unwrap();
+    }
+    // Cutouts stay inside their flange's straight region and the width,
+    // name an existing flange, and have unique IDs; slots are not short.
+    for case in 0..6 {
+        let mut bad = sheet.clone();
+        match case {
+            0 => bad.cutouts[1].along = length(1.0),
+            1 => bad.cutouts[1].across = length(9.0),
+            2 => bad.cutouts[1].flange = 3,
+            3 => bad.cutouts[2].id = "hole".into(),
+            4 => {
+                bad.cutouts[2].shape = SheetMetalCutoutShape::Slot {
+                    length: length(3.0),
+                    width: length(4.0),
+                }
+            }
+            _ => bad.cutouts[0].along = length(18.0),
+        }
+        assert!(
+            bad.flat_pattern(&HashMap::new(), 0.5).is_err(),
+            "case {case}"
+        );
+    }
+    // Cutouts persist (schema 160).
+    let json = serde_json::to_string(&family).unwrap();
+    assert!(json.contains("\"cutouts\"") && json.contains("\"slot\""));
+    let restored: FamilyDefinition = serde_json::from_str(&json).unwrap();
+    assert_eq!(restored, family);
+    drop(probe);
+    drop(generated);
+    assert_eq!(session.shape_count().unwrap(), 0);
 }

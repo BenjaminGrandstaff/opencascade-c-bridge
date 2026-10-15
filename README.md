@@ -421,7 +421,8 @@ and printing-overhang checks. See [Mesh hand-off](docs/MESH_HANDOFF.md) for APIs
 units, external tetrahedral meshing, and screening limits. Schema 45 adds
 folded sheet-metal strips with exact circular bends and linked flat patterns
 using an explicit neutral factor, with flat-pattern drawings for SVG and DXF;
-see [Sheet metal](docs/SHEET_METAL.md). It also adds frozen Carr Lane V1 tap-drill
+schema 160 adds circle, rectangle and slot cutouts through flanges, cut
+alike in the folded sheet and its blank; see [Sheet metal](docs/SHEET_METAL.md). It also adds frozen Carr Lane V1 tap-drill
 and socket-head counterbore catalogs in metric and inch sizes; see
 [Hole-size catalog](docs/HOLE_SIZE_CATALOG.md).
 

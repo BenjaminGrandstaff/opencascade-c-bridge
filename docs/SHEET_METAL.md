@@ -67,17 +67,62 @@ std::fs::write("bracket.dxf", metrics.drawing("bracket")?.to_dxf())?;
 Independent DXF parsing of a two-bend blank found no errors or repairs, and
 SVG rendering verified the outline, bend lines, and thickness/K metadata.
 
+## Cutouts (schema 160)
+
+`SheetMetalDefinition.cutouts` lists holes and openings through flanges:
+
+```json
+"cutouts": [
+  { "id": "hole", "flange": 1, "along": 10, "across": 5, "shape": { "kind": "circle", "diameter": 4 } },
+  { "id": "slot", "flange": 2, "along": 10, "across": 5, "shape": { "kind": "slot", "length": 8, "width": 4 } }
+]
+```
+
+- **Placement.** `flange` counts flanges from 0 at the origin. `along` is the
+  center's distance on the midplane from the flange's start tangent point,
+  and `across` its distance from the origin edge of the width.
+- **Shapes.** A `circle` has a `diameter`. A `rectangle` has a `length`
+  along the flange and a `width` across it. A `slot` is an obround with that
+  `length` overall and semicircular ends of `width`; it must be at least as
+  long as it is wide.
+- **Validation.** All are length expressions, so parameters drive them. A
+  cutout must lie strictly inside its flange's straight region (not into a
+  bend) and inside the width. IDs are unique, and a sheet has at most 10,000
+  cutouts.
+
+**Folded sheet.** Each cutout is a prism square to its flange, a little
+thicker than the sheet, and all are cut in one boolean. The result must be
+one valid solid.
+
+**Flat blank.** A cutout's center lies at its flange's start on the blank
+plus `along`. The flange start is the earlier flanges plus their bend
+allowances at the blank's K, so the blank moves cutouts with K exactly as it
+moves bend lines. `FlatPatternMetrics.cutouts` lists each center, and the
+flat-pattern drawing outlines them (arcs in 32 chords per half circle). The
+blank solid is built as a face with the cutouts as holes, pushed through the
+thickness, with no boolean. Cutouts that overlap, which one face cannot hold
+as separate holes, fall back to a boolean cut.
+
+Folded and blank volumes both drop by the cut-out area times the thickness.
+A test checks that, the blank centers including the bend allowances, and
+that a hole's center in the folded sheet lies its radius from the nearest
+material.
+
 ## Scale
 
 Evaluation is linear in the number of flanges, and accumulated dimensions are
 checked for overflow before any kernel call. The scale suite builds 1,000
 folded brackets with linked blanks in one part, edits their shared thickness,
-and checks every analytic volume and that all handles are released.
+and checks every analytic volume and that all handles are released. Another
+cuts 1,000 holes through ten flanges and their blank in about 4 s against a
+10 s budget, and checks the exact removed volume. Most of that time is the
+folded sheet's single boolean.
 
 ## Limits
 
 This is a single constant-width strip whose bends all share one axis direction.
-Edge flanges on other edges, bend reliefs, hems, cutouts, corner treatments,
+Edge flanges on other edges, bend reliefs, hems, cutouts across bends,
+corner treatments,
 K-factor or bend tables, springback, and mold-line (outside setback) dimensioning
 are not supported. Flange lengths are measured on the midplane between tangent
 points.

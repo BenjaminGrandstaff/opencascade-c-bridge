@@ -12,12 +12,12 @@ tracks status and order.
 | `occt-types` (shared value types) | — | No native dependency |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI; re-exports `occt-types` |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric-core` (kernel-free engineering layer) | Schema 159 | Definitions, documents, solving and checks without OCCT |
-| `occt-parametric` (kernel regeneration) | Schema 159 | Active development; re-exports the core API |
+| `occt-parametric-core` (kernel-free engineering layer) | Schema 160 | Definitions, documents, solving and checks without OCCT |
+| `occt-parametric` (kernel regeneration) | Schema 160 | Active development; re-exports the core API |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 6/6, bridge 157 + first-use integration 1 (+1 doc test), recipes 3, parametric core 44 + kernel 724 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 56 + viewer Node 114 + branch command 2 + model command 90, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 6/6, bridge 157 + first-use integration 1 (+1 doc test), recipes 3, parametric core 44 + kernel 725 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 56 + viewer Node 114 + branch command 2 + model command 90, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -26,6 +26,14 @@ tracks status and order.
 
 ## Done
 
+- Sheet-metal cutouts (schema 160; ABI 76 unchanged). A sheet's circle,
+  rectangle and slot cutouts sit on a flange's straight region. Each is cut
+  square to that flange in the folded solid, in one boolean, and placed on
+  the blank after the earlier flanges and bend allowances. The blank is
+  built as a face with holes, with no boolean, and its drawing outlines
+  them. The bridge's face-with-holes check no longer reruns OCCT's
+  quadratic whole-face check, which its own checks already cover; 10,000
+  holes build in 2.6 s. See [Sheet metal](docs/SHEET_METAL.md#cutouts-schema-160).
 - Intermittent STEP test failures explained and guarded (schema 159 and
   ABI 76 unchanged). Both flakes in `Later` were unsynchronized OCCT STEP
   translation, which shares process-wide state:
@@ -2737,8 +2745,9 @@ scopes and inspected repo capabilities, not a full conformity audit.
 
 ## Later
 
-- General sheet-metal edge flanges, bend reliefs, hems, cutouts, bend tables,
-  and unfolding edited solids beyond constant-width strips.
+- General sheet-metal edge flanges, bend reliefs, hems, cutouts across
+  bends, bend tables, and unfolding edited solids beyond constant-width
+  strips (cutouts within flanges exist, schema 160).
 - Hole-catalog tolerance classes and optional under-head countersink relief.
 - Wing structure beyond solid printed segments: hollow shells with internal
   ribs, alignment pins independent of the spar, twist-exact hinge lines, and

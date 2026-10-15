@@ -1,4 +1,5 @@
-//! Constant-width flange strips with circular bends and explicit neutral factors.
+//! Constant-width flange strips with circular bends and explicit neutral
+//! factors, and cutouts through their flanges (schema 160).
 use super::*;
 use crate::assembly::{cross, dot, scale};
 use occt_types::WireSegment;
@@ -20,6 +21,122 @@ pub struct SheetMetalDefinition {
     /// Straight tangent-to-tangent lengths. One more flange than bend.
     pub flanges: Vec<ScalarExpr>,
     pub bends: Vec<SheetMetalBend>,
+    /// Holes, rectangles and slots through flanges (schema 160).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cutouts: Vec<SheetMetalCutout>,
+}
+
+/// A cutout through one flange, cut square to it in the folded sheet and in
+/// its flat blank.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SheetMetalCutout {
+    pub id: String,
+    /// The flange, counted from 0 at the sheet's origin.
+    pub flange: usize,
+    /// Center distance along the flange's midplane from its start tangent
+    /// point.
+    pub along: ScalarExpr,
+    /// Center distance across the width from the origin edge.
+    pub across: ScalarExpr,
+    pub shape: SheetMetalCutoutShape,
+}
+
+/// A cutout's outline; lengths run along the flange and widths across it.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case", tag = "kind")]
+pub enum SheetMetalCutoutShape {
+    Circle {
+        diameter: ScalarExpr,
+    },
+    Rectangle {
+        length: ScalarExpr,
+        width: ScalarExpr,
+    },
+    /// An obround: `length` overall, with semicircular ends of `width`.
+    Slot {
+        length: ScalarExpr,
+        width: ScalarExpr,
+    },
+}
+
+/// A cutout with its dimensions evaluated, in millimeters.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", tag = "kind")]
+pub enum CutoutOutline {
+    Circle { diameter: f64 },
+    Rectangle { length: f64, width: f64 },
+    Slot { length: f64, width: f64 },
+}
+
+impl CutoutOutline {
+    /// Half extents along and across the flange.
+    pub fn half_extents(self) -> (f64, f64) {
+        match self {
+            Self::Circle { diameter } => (diameter * 0.5, diameter * 0.5),
+            Self::Rectangle { length, width } | Self::Slot { length, width } => {
+                (length * 0.5, width * 0.5)
+            }
+        }
+    }
+
+    /// Closed outline segments around `(along, across)` in flange
+    /// coordinates: lines as point pairs and arcs as start, middle and end.
+    pub fn segments(self, along: f64, across: f64) -> Vec<OutlineSegment> {
+        let (a, b) = self.half_extents();
+        let p = |u: f64, v: f64| [along + u, across + v];
+        match self {
+            Self::Circle { .. } => vec![
+                OutlineSegment::Arc(p(a, 0.0), p(0.0, a), p(-a, 0.0)),
+                OutlineSegment::Arc(p(-a, 0.0), p(0.0, -a), p(a, 0.0)),
+            ],
+            Self::Rectangle { .. } => vec![
+                OutlineSegment::Line(p(-a, -b), p(a, -b)),
+                OutlineSegment::Line(p(a, -b), p(a, b)),
+                OutlineSegment::Line(p(a, b), p(-a, b)),
+                OutlineSegment::Line(p(-a, b), p(-a, -b)),
+            ],
+            Self::Slot { .. } => {
+                // Straight sides between semicircles of radius b.
+                let straight = a - b;
+                if straight <= 0.0 {
+                    return Self::Circle { diameter: 2.0 * b }.segments(along, across);
+                }
+                vec![
+                    OutlineSegment::Line(p(-straight, -b), p(straight, -b)),
+                    OutlineSegment::Arc(p(straight, -b), p(a, 0.0), p(straight, b)),
+                    OutlineSegment::Line(p(straight, b), p(-straight, b)),
+                    OutlineSegment::Arc(p(-straight, b), p(-a, 0.0), p(-straight, -b)),
+                ]
+            }
+        }
+    }
+}
+
+/// One piece of a cutout outline in flange or blank coordinates.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum OutlineSegment {
+    Line([f64; 2], [f64; 2]),
+    Arc([f64; 2], [f64; 2], [f64; 2]),
+}
+
+/// An evaluated cutout on its flange.
+#[derive(Clone, Debug, PartialEq)]
+pub struct EvaluatedCutout {
+    pub id: String,
+    pub flange: usize,
+    pub along: f64,
+    pub across: f64,
+    pub outline: CutoutOutline,
+}
+
+/// A cutout's place on the flat blank: its center measured from the start of
+/// the blank and from its origin edge.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct FlatCutout {
+    pub id: String,
+    pub center_mm: [f64; 2],
+    pub outline: CutoutOutline,
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct FlatPatternMetrics {
@@ -30,6 +147,9 @@ pub struct FlatPatternMetrics {
     pub bend_allowances_mm: Vec<f64>,
     /// Centers of bend zones, measured from the start of the blank.
     pub bend_lines_mm: Vec<f64>,
+    /// Cutouts placed on the blank (schema 160).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cutouts: Vec<FlatCutout>,
 }
 fn positive(value: f64) -> Result<f64, ModelError> {
     if value.is_finite() && value > 0.0 {
@@ -119,6 +239,31 @@ impl FlatPatternMetrics {
             hidden: true,
             thin: true,
         }));
+        // Cutouts as closed polylines, arcs at 32 chords per half circle.
+        for cutout in &self.cutouts {
+            let [u, v] = cutout.center_mm;
+            let mut points = Vec::new();
+            for segment in cutout.outline.segments(u, v) {
+                match segment {
+                    OutlineSegment::Line(a, b) => {
+                        if points.is_empty() {
+                            points.push([x + a[0], y + a[1]]);
+                        }
+                        points.push([x + b[0], y + b[1]]);
+                    }
+                    OutlineSegment::Arc(a, m, b) => {
+                        let arc = arc_points(a, m, b, 32);
+                        let skip = usize::from(!points.is_empty());
+                        points.extend(arc.into_iter().skip(skip).map(|p| [x + p[0], y + p[1]]));
+                    }
+                }
+            }
+            polylines.push(DrawingPolyline {
+                points_mm: points,
+                hidden: false,
+                thin: false,
+            });
+        }
         Ok(GeneratedDrawing {
             curves: Vec::new(),
             gdt_lines: Vec::new(),
@@ -144,6 +289,38 @@ impl FlatPatternMetrics {
     }
 }
 
+/// Points along the circular arc through `a`, `m` and `b`, `chords` chords
+/// long, from `a` to `b`.
+pub fn arc_points(a: [f64; 2], m: [f64; 2], b: [f64; 2], chords: usize) -> Vec<[f64; 2]> {
+    // Circumcenter of the three points.
+    let d = 2.0 * (a[0] * (m[1] - b[1]) + m[0] * (b[1] - a[1]) + b[0] * (a[1] - m[1]));
+    let sq = |p: [f64; 2]| p[0] * p[0] + p[1] * p[1];
+    let cx = (sq(a) * (m[1] - b[1]) + sq(m) * (b[1] - a[1]) + sq(b) * (a[1] - m[1])) / d;
+    let cy = (sq(a) * (b[0] - m[0]) + sq(m) * (a[0] - b[0]) + sq(b) * (m[0] - a[0])) / d;
+    let r = (a[0] - cx).hypot(a[1] - cy);
+    let angle = |p: [f64; 2]| (p[1] - cy).atan2(p[0] - cx);
+    let (start, middle, end) = (angle(a), angle(m), angle(b));
+    let tau = std::f64::consts::TAU;
+    // Sweep from start through middle to end, in whichever sense holds it.
+    let ccw = |from: f64, to: f64| (to - from).rem_euclid(tau);
+    let sweep = if ccw(start, middle) < ccw(start, end) {
+        ccw(start, end)
+    } else {
+        -ccw(end, start)
+    };
+    // The ends are the given points exactly, so outlines close exactly.
+    (0..=chords)
+        .map(|i| match i {
+            0 => a,
+            i if i == chords => b,
+            i => {
+                let t = start + sweep * i as f64 / chords as f64;
+                [cx + r * t.cos(), cy + r * t.sin()]
+            }
+        })
+        .collect()
+}
+
 impl SheetMetalDefinition {
     pub fn collect_parameters<'a>(&'a self, names: &mut HashSet<&'a str>) {
         for vector in [&self.origin, &self.width_axis, &self.start_direction] {
@@ -158,6 +335,16 @@ impl SheetMetalDefinition {
         for bend in &self.bends {
             crate::regeneration::collect_scalar_parameters(&bend.angle_radians, names);
             crate::regeneration::collect_scalar_parameters(&bend.inside_radius, names);
+        }
+        for cutout in &self.cutouts {
+            let shape = match &cutout.shape {
+                SheetMetalCutoutShape::Circle { diameter } => vec![diameter],
+                SheetMetalCutoutShape::Rectangle { length, width }
+                | SheetMetalCutoutShape::Slot { length, width } => vec![length, width],
+            };
+            for expression in [&cutout.along, &cutout.across].into_iter().chain(shape) {
+                crate::regeneration::collect_scalar_parameters(expression, names);
+            }
         }
     }
 
@@ -211,6 +398,7 @@ impl SheetMetalDefinition {
                 Ok((angle, radius))
             })
             .collect::<Result<Vec<_>, ModelError>>()?;
+        let cutouts = self.evaluate_cutouts(parameters, &flanges, width)?;
         let result = EvaluatedSheet {
             origin,
             width_axis,
@@ -220,9 +408,83 @@ impl SheetMetalDefinition {
             thickness,
             flanges,
             bends,
+            cutouts,
         };
         result.metrics(0.5)?; // Reject overflowing accumulated dimensions before kernel calls.
         Ok(result)
+    }
+
+    /// Cutouts lie inside one flange's straight region and across the width,
+    /// with unique IDs. At most 10,000. O(cutouts).
+    fn evaluate_cutouts(
+        &self,
+        parameters: &HashMap<String, ParameterValue>,
+        flanges: &[f64],
+        width: f64,
+    ) -> Result<Vec<EvaluatedCutout>, ModelError> {
+        if self.cutouts.len() > 10_000 {
+            return Err(ModelError::new("a sheet has at most 10000 cutouts"));
+        }
+        let mut ids = HashSet::new();
+        self.cutouts
+            .iter()
+            .map(|cutout| {
+                if cutout.id.is_empty() || !ids.insert(cutout.id.as_str()) {
+                    return Err(ModelError::new("sheet cutouts need unique nonempty IDs"));
+                }
+                let length = |e: &ScalarExpr| scalar(e, parameters, Dimension::Length);
+                let outline = match &cutout.shape {
+                    SheetMetalCutoutShape::Circle { diameter } => CutoutOutline::Circle {
+                        diameter: positive(length(diameter)?)?,
+                    },
+                    SheetMetalCutoutShape::Rectangle { length: l, width: w } => {
+                        CutoutOutline::Rectangle {
+                            length: positive(length(l)?)?,
+                            width: positive(length(w)?)?,
+                        }
+                    }
+                    SheetMetalCutoutShape::Slot { length: l, width: w } => {
+                        let (l, w) = (positive(length(l)?)?, positive(length(w)?)?);
+                        if l < w {
+                            return Err(ModelError::new(format!(
+                                "slot cutout '{}' must be at least as long as it is wide",
+                                cutout.id
+                            )));
+                        }
+                        CutoutOutline::Slot { length: l, width: w }
+                    }
+                };
+                let flange = *flanges.get(cutout.flange).ok_or_else(|| {
+                    ModelError::new(format!(
+                        "cutout '{}' names flange {}, but the sheet has {}",
+                        cutout.id,
+                        cutout.flange,
+                        flanges.len()
+                    ))
+                })?;
+                let (along, across) = (length(&cutout.along)?, length(&cutout.across)?);
+                let (half_along, half_across) = outline.half_extents();
+                let inside = along.is_finite()
+                    && across.is_finite()
+                    && along - half_along > 0.0
+                    && along + half_along < flange
+                    && across - half_across > 0.0
+                    && across + half_across < width;
+                if !inside {
+                    return Err(ModelError::new(format!(
+                        "cutout '{}' must lie inside its flange's straight region and the sheet width",
+                        cutout.id
+                    )));
+                }
+                Ok(EvaluatedCutout {
+                    id: cutout.id.clone(),
+                    flange: cutout.flange,
+                    along,
+                    across,
+                    outline,
+                })
+            })
+            .collect()
     }
 
     /// Evaluates the blank without kernel handles. K is explicitly supplied:
@@ -245,6 +507,7 @@ pub struct EvaluatedSheet {
     pub thickness: f64,
     pub flanges: Vec<f64>,
     pub bends: Vec<(f64, f64)>,
+    pub cutouts: Vec<EvaluatedCutout>,
 }
 
 impl EvaluatedSheet {
@@ -257,7 +520,9 @@ impl EvaluatedSheet {
         let mut length = 0.0;
         let mut allowances = Vec::with_capacity(self.bends.len());
         let mut lines = Vec::with_capacity(self.bends.len());
+        let mut starts = Vec::with_capacity(self.flanges.len());
         for (index, flange) in self.flanges.iter().enumerate() {
+            starts.push(length);
             length += flange;
             if let Some((angle, radius)) = self.bends.get(index) {
                 let allowance = angle.abs() * (radius + neutral_factor * self.thickness);
@@ -275,6 +540,15 @@ impl EvaluatedSheet {
             neutral_factor,
             bend_allowances_mm: allowances,
             bend_lines_mm: lines,
+            cutouts: self
+                .cutouts
+                .iter()
+                .map(|cutout| FlatCutout {
+                    id: cutout.id.clone(),
+                    center_mm: [starts[cutout.flange] + cutout.along, cutout.across],
+                    outline: cutout.outline,
+                })
+                .collect(),
         })
     }
 }

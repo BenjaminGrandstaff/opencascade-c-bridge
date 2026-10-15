@@ -1,5 +1,7 @@
 use super::*;
-use occt_parametric::{SheetMetalBend, SheetMetalDefinition};
+use occt_parametric::{
+    SheetMetalBend, SheetMetalCutout, SheetMetalCutoutShape, SheetMetalDefinition,
+};
 pub(crate) fn sheet_case() -> Outcome {
     timed(
         "1000 sheet-metal brackets: folded/flat build and edit".into(),
@@ -30,6 +32,7 @@ pub(crate) fn sheet_case() -> Outcome {
                     };
                     2
                 ],
+                cutouts: Vec::new(),
             };
             let mut definition = block();
             definition.parameters = vec![ParameterDefinition {
@@ -95,6 +98,151 @@ pub(crate) fn sheet_case() -> Outcome {
                 return Err(failure("sheet handles retained".into()));
             }
             Ok("1000 folded brackets and linked blanks; exact volumes after thickness edit; no retained handles".into())
+        },
+    )
+}
+
+/// One sheet of ten 200 mm flanges and nine bends, 50 mm wide, with 100
+/// Ø4 holes in each flange: 1,000 cutouts cut from the folded sheet and its
+/// blank, each in one boolean.
+pub(crate) fn cutout_case() -> Outcome {
+    timed(
+        "sheet metal: 1000 cutouts through 10 flanges, folded and flat".into(),
+        ms(10_000),
+        Expectation::Required,
+        || {
+            let session = Session::new().map_err(|error| failure(error.to_string()))?;
+            let length =
+                |value| ScalarExpr::Literal(Quantity::length(value, LengthUnit::Millimeter));
+            let cutouts = (0..1_000)
+                .map(|i| SheetMetalCutout {
+                    id: format!("hole-{i}"),
+                    flange: i / 100,
+                    along: length(5.0 + 9.5 * ((i % 100) / 5) as f64),
+                    across: length(5.0 + 10.0 * (i % 5) as f64),
+                    shape: SheetMetalCutoutShape::Circle {
+                        diameter: length(4.0),
+                    },
+                })
+                .collect();
+            let sheet = SheetMetalDefinition {
+                origin: VectorExpr::Literal(VectorQuantity::lengths(
+                    0.0,
+                    0.0,
+                    0.0,
+                    LengthUnit::Millimeter,
+                )),
+                width_axis: VectorExpr::Literal(VectorQuantity::scalars(0.0, 1.0, 0.0)),
+                start_direction: VectorExpr::Literal(VectorQuantity::scalars(1.0, 0.0, 0.0)),
+                width: length(50.0),
+                thickness: length(2.0),
+                flanges: vec![length(200.0); 10],
+                bends: (0..9)
+                    .map(|i| SheetMetalBend {
+                        angle_radians: ScalarExpr::Literal(Quantity::scalar(if i % 2 == 0 {
+                            std::f64::consts::FRAC_PI_2
+                        } else {
+                            -std::f64::consts::FRAC_PI_2
+                        })),
+                        inside_radius: length(3.0),
+                    })
+                    .collect(),
+                cutouts,
+            };
+            let mut definition = block();
+            definition.features = vec![
+                FeatureDefinition {
+                    id: "folded".into(),
+                    operation: FeatureOperation::SheetMetal {
+                        definition: Box::new(sheet),
+                    },
+                },
+                FeatureDefinition {
+                    id: "flat".into(),
+                    operation: FeatureOperation::SheetMetalFlat {
+                        input: "folded".into(),
+                        neutral_factor: ScalarExpr::Literal(Quantity::scalar(0.5)),
+                    },
+                },
+            ];
+            definition.datums.clear();
+            definition.requirements.clear();
+            let part = PartInstance {
+                id: "part".into(),
+                definition: &definition,
+                overrides: HashMap::new(),
+                provenance: "bench".into(),
+            };
+            let generated = part.regenerate(&session)?;
+            let pi = std::f64::consts::PI;
+            let strip = (2000.0 + 9.0 * pi / 2.0 * 4.0) * 50.0 * 2.0;
+            let expected = strip - 1_000.0 * pi * 4.0 * 2.0;
+            for id in ["folded", "flat"] {
+                let shape = generated
+                    .shape(id)
+                    .ok_or_else(|| failure(format!("missing {id}")))?;
+                let volume = session
+                    .volume(shape)
+                    .map_err(|error| failure(error.to_string()))?;
+                if (volume - expected).abs() > 1e-4 * expected {
+                    return Err(failure(format!(
+                        "{id} volume {volume}, expected {expected}"
+                    )));
+                }
+            }
+            Ok("1000 holes cut from folded sheet and blank; exact removed volume".into())
+        },
+    )
+}
+
+/// A 500 mm square face with the API's maximum 10,000 Ø2 holes on a 5 mm
+/// grid, built without booleans. Its checks are box-filtered, so the cost
+/// stays near linear in the holes.
+pub(crate) fn face_holes_case() -> Outcome {
+    timed(
+        "face with 10000 holes built without booleans".into(),
+        ms(5_000),
+        Expectation::Required,
+        || {
+            let session = Session::new().map_err(|error| failure(error.to_string()))?;
+            let point = |x: f64, y: f64| Vec3::new(x, y, 0.0);
+            let line = |a: Vec3, b: Vec3| occt_bridge::WireSegment::Line { start: a, end: b };
+            let outer = session.create_segment_wire(
+                &[
+                    line(point(0.0, 0.0), point(500.0, 0.0)),
+                    line(point(500.0, 0.0), point(500.0, 500.0)),
+                    line(point(500.0, 500.0), point(0.0, 500.0)),
+                    line(point(0.0, 500.0), point(0.0, 0.0)),
+                ],
+                true,
+            )?;
+            let holes = (0..10_000)
+                .map(|i| {
+                    let (x, y) = (2.5 + 5.0 * (i % 100) as f64, 2.5 + 5.0 * (i / 100) as f64);
+                    session.create_segment_wire(
+                        &[
+                            occt_bridge::WireSegment::Arc {
+                                start: point(x + 1.0, y),
+                                middle: point(x, y + 1.0),
+                                end: point(x - 1.0, y),
+                            },
+                            occt_bridge::WireSegment::Arc {
+                                start: point(x - 1.0, y),
+                                middle: point(x, y - 1.0),
+                                end: point(x + 1.0, y),
+                            },
+                        ],
+                        true,
+                    )
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let face = session.create_face_with_holes(&outer, &holes.iter().collect::<Vec<_>>())?;
+            let area = session.surface_area(&face)?;
+            let expected = 250_000.0 - 10_000.0 * std::f64::consts::PI;
+            if (area - expected).abs() > 1e-6 * expected {
+                return Err(failure(format!("area {area}, expected {expected}")));
+            }
+            Ok("10000 holes; exact remaining area".into())
         },
     )
 }
