@@ -16,6 +16,7 @@ pub(crate) trait SheetMetalDefinitionUnfoldingInternal {
         session: &'a Session,
         parameters: &HashMap<String, ParameterValue>,
         neutral_factor: f64,
+        table: Option<&BendTable>,
     ) -> Result<Shape<'a>, ModelError>;
 }
 
@@ -64,9 +65,10 @@ impl SheetMetalDefinitionUnfoldingInternal for SheetMetalDefinition {
         session: &'a Session,
         parameters: &HashMap<String, ParameterValue>,
         neutral_factor: f64,
+        table: Option<&BendTable>,
     ) -> Result<Shape<'a>, ModelError> {
         let sheet = self.evaluate(parameters)?;
-        let metrics = sheet.metrics(neutral_factor)?;
+        let metrics = sheet.metrics_with(neutral_factor, table)?;
         let half = sheet.thickness * 0.5;
         let points = [
             (0.0, half),

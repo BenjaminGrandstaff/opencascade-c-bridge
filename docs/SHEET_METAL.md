@@ -108,6 +108,53 @@ A test checks that, the blank centers including the bend allowances, and
 that a hole's center in the folded sheet lies its radius from the nearest
 material.
 
+## Bend tables (schema 161)
+
+A shop that has measured its press brake can give the flat pattern a
+`bend_table` instead of relying on the neutral factor:
+
+```json
+"operation": { "sheet_metal_flat": {
+  "input": "folded",
+  "neutral_factor": 0.44,
+  "bend_table": {
+    "name": "AL-2",
+    "kind": "allowance",
+    "thickness_mm": 2.0,
+    "inside_radii_mm": [2.0, 3.0],
+    "angles_degrees": [45, 90, 135],
+    "values_mm": [[2.2, 4.3, 6.4], [3.0, 5.9, 8.8]]
+  }
+} }
+```
+
+- **Axes.** Rows follow `inside_radii_mm` and columns `angles_degrees`.
+  Both axes hold 1–256 strictly increasing values; radii are positive and
+  angles lie strictly between 0° and 180°. The angle is the bend's change of
+  direction (`angle_radians` in degrees, either sign), not the included
+  angle between the flanges.
+- **Kinds.** An `allowance` table gives the developed length of the bend
+  zone, which must be positive. A `deduction` table gives what the bend
+  takes off the sum of its flanges' outside mold-line lengths; the blank
+  uses the equivalent allowance `2 (r + t) tan(θ/2) − deduction`, which
+  must also be positive.
+- **Lookup.** Values interpolate bilinearly between the four surrounding
+  entries. A one-entry axis matches only its own value. A bend outside the
+  table (beyond 10⁻⁶ mm or 10⁻⁶°) is an error naming the bend, as is a sheet
+  whose thickness differs from `thickness_mm` by more than 10⁻⁶ mm. The
+  table is never extrapolated and never mixed with K: it must cover every
+  bend.
+- **Effect.** The table changes only the blank. Bend lines and cutout
+  centers move with its allowances, `FlatPatternMetrics.bend_table` names
+  it, and the drawing's metadata shows "Bend table" instead of the K
+  factor. `neutral_factor` is still required and validated but does not
+  affect a tabled blank. `SheetMetalDefinition::flat_pattern_with_table`
+  gives the metrics without kernel work.
+
+Editing the table rebuilds only the blank, like editing K. Validation is
+linear in the table's entries and each bend's lookup is two binary
+searches.
+
 ## Scale
 
 Evaluation is linear in the number of flanges, and accumulated dimensions are
@@ -116,13 +163,15 @@ folded brackets with linked blanks in one part, edits their shared thickness,
 and checks every analytic volume and that all handles are released. Another
 cuts 1,000 holes through ten flanges and their blank in about 4 s against a
 10 s budget, and checks the exact removed volume. Most of that time is the
-folded sheet's single boolean.
+folded sheet's single boolean. A third computes 100 blanks of 1,023 bends
+through a full 256 × 256 bend table, linear in radius and angle so every
+interpolated length is checked exactly, against a 1 s budget.
 
 ## Limits
 
 This is a single constant-width strip whose bends all share one axis direction.
 Edge flanges on other edges, bend reliefs, hems, cutouts across bends,
-corner treatments,
-K-factor or bend tables, springback, and mold-line (outside setback) dimensioning
+corner treatments, tables keyed by material or across thicknesses,
+springback, and mold-line (outside setback) dimensioning
 are not supported. Flange lengths are measured on the midplane between tangent
 points.

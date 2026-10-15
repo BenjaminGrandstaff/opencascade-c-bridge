@@ -119,6 +119,7 @@ pub(crate) fn execute_feature<'session>(
         FeatureOperation::SheetMetalFlat {
             input,
             neutral_factor,
+            bend_table,
         } => {
             let Some(FeatureDefinition {
                 operation: FeatureOperation::SheetMetal { definition },
@@ -133,6 +134,7 @@ pub(crate) fn execute_feature<'session>(
                 session,
                 parameters,
                 scalar(neutral_factor, parameters, Dimension::Scalar)?,
+                bend_table.as_deref(),
             );
         }
         FeatureOperation::Box { origin, size } => session.create_box(

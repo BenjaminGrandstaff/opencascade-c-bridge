@@ -213,6 +213,10 @@ pub enum FeatureOperation {
     SheetMetalFlat {
         input: String,
         neutral_factor: ScalarExpr,
+        /// Bend allowances from a shop's table instead of the neutral factor
+        /// (schema 161).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        bend_table: Option<Box<crate::sheet_metal::BendTable>>,
     },
     Box {
         origin: VectorExpr,

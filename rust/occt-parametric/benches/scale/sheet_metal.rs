@@ -1,6 +1,7 @@
 use super::*;
 use occt_parametric::{
-    SheetMetalBend, SheetMetalCutout, SheetMetalCutoutShape, SheetMetalDefinition,
+    BendTable, BendTableKind, SheetMetalBend, SheetMetalCutout, SheetMetalCutoutShape,
+    SheetMetalDefinition,
 };
 pub(crate) fn sheet_case() -> Outcome {
     timed(
@@ -57,6 +58,7 @@ pub(crate) fn sheet_case() -> Outcome {
                     operation: FeatureOperation::SheetMetalFlat {
                         input: format!("folded-{index}"),
                         neutral_factor: ScalarExpr::Literal(Quantity::scalar(0.5)),
+                        bend_table: None,
                     },
                 });
             }
@@ -162,6 +164,7 @@ pub(crate) fn cutout_case() -> Outcome {
                     operation: FeatureOperation::SheetMetalFlat {
                         input: "folded".into(),
                         neutral_factor: ScalarExpr::Literal(Quantity::scalar(0.5)),
+                        bend_table: None,
                     },
                 },
             ];
@@ -243,6 +246,78 @@ pub(crate) fn face_holes_case() -> Outcome {
                 return Err(failure(format!("area {area}, expected {expected}")));
             }
             Ok("10000 holes; exact remaining area".into())
+        },
+    )
+}
+
+/// A 1,024-flange blank through a full 256 × 256 bend table, 100 times.
+/// The table is linear in radius and angle, so bilinear interpolation must
+/// reproduce it exactly at every bend.
+pub(crate) fn bend_table_case() -> Outcome {
+    timed(
+        "sheet metal: 100 blanks of 1023 bends through a 256x256 bend table".into(),
+        ms(1_000),
+        Expectation::Required,
+        || {
+            let length =
+                |value| ScalarExpr::Literal(Quantity::length(value, LengthUnit::Millimeter));
+            let value = |radius: f64, degrees: f64| 1.0 + 0.5 * radius + 0.02 * degrees;
+            let radii: Vec<f64> = (1..=256).map(|i| i as f64 * 0.1).collect();
+            let angles: Vec<f64> = (1..=256).map(|i| i as f64 * 0.7).collect();
+            let table = BendTable {
+                name: "bench".into(),
+                kind: BendTableKind::Allowance,
+                thickness_mm: 1.0,
+                values_mm: radii
+                    .iter()
+                    .map(|r| angles.iter().map(|a| value(*r, *a)).collect())
+                    .collect(),
+                inside_radii_mm: radii,
+                angles_degrees: angles,
+            };
+            let bends: Vec<(f64, f64)> = (0..1023)
+                .map(|i| {
+                    let degrees = 1.0 + (i % 177) as f64;
+                    let sign = if i % 2 == 0 { 1.0 } else { -1.0 };
+                    (sign * degrees, 0.15 + (i % 250) as f64 * 0.1)
+                })
+                .collect();
+            let sheet = SheetMetalDefinition {
+                origin: VectorExpr::Literal(VectorQuantity::lengths(
+                    0.0,
+                    0.0,
+                    0.0,
+                    LengthUnit::Millimeter,
+                )),
+                width_axis: VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, 1.0)),
+                start_direction: VectorExpr::Literal(VectorQuantity::scalars(1.0, 0.0, 0.0)),
+                width: length(10.0),
+                thickness: length(1.0),
+                flanges: vec![length(1.0); 1024],
+                bends: bends
+                    .iter()
+                    .map(|(degrees, radius)| SheetMetalBend {
+                        angle_radians: ScalarExpr::Literal(Quantity::scalar(degrees.to_radians())),
+                        inside_radius: length(*radius),
+                    })
+                    .collect(),
+                cutouts: Vec::new(),
+            };
+            let expected = 1024.0
+                + bends
+                    .iter()
+                    .map(|(degrees, radius)| value(*radius, degrees.abs()))
+                    .sum::<f64>();
+            for _ in 0..100 {
+                let metrics = sheet.flat_pattern_with_table(&HashMap::new(), 0.5, &table)?;
+                if (metrics.length_mm - expected).abs() > 1e-6 {
+                    return Err(failure(format!(
+                        "bend-table blank length {} != {expected}",
+                        metrics.length_mm
+                    )));
+                }
+            }
+            Ok("1023 table bends per blank; exact bilinear lengths".into())
         },
     )
 }

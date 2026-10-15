@@ -1,8 +1,12 @@
 //! Constant-width flange strips with circular bends and explicit neutral
-//! factors, and cutouts through their flanges (schema 160).
+//! factors, cutouts through their flanges (schema 160), and bend tables
+//! (schema 161).
 use super::*;
 use crate::assembly::{cross, dot, scale};
 use occt_types::WireSegment;
+
+mod bend_table;
+pub use bend_table::*;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SheetMetalBend {
@@ -150,6 +154,10 @@ pub struct FlatPatternMetrics {
     /// Cutouts placed on the blank (schema 160).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub cutouts: Vec<FlatCutout>,
+    /// The bend table that gave the allowances instead of the neutral factor
+    /// (schema 161).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bend_table: Option<String>,
 }
 fn positive(value: f64) -> Result<f64, ModelError> {
     if value.is_finite() && value > 0.0 {
@@ -279,7 +287,10 @@ impl FlatPatternMetrics {
             labels: vec![],
             metadata: BTreeMap::from([
                 ("Thickness mm".into(), self.thickness_mm.to_string()),
-                ("Neutral factor K".into(), self.neutral_factor.to_string()),
+                match &self.bend_table {
+                    Some(table) => ("Bend table".into(), table.clone()),
+                    None => ("Neutral factor K".into(), self.neutral_factor.to_string()),
+                },
             ]),
             generated_variants: 0,
             lettering: DrawingLettering::default(),
@@ -496,6 +507,17 @@ impl SheetMetalDefinition {
     ) -> Result<FlatPatternMetrics, ModelError> {
         self.evaluate(parameters)?.metrics(neutral_factor)
     }
+
+    /// The blank with each bend's allowance from `table` (schema 161).
+    pub fn flat_pattern_with_table(
+        &self,
+        parameters: &HashMap<String, ParameterValue>,
+        neutral_factor: f64,
+        table: &BendTable,
+    ) -> Result<FlatPatternMetrics, ModelError> {
+        self.evaluate(parameters)?
+            .metrics_with(neutral_factor, Some(table))
+    }
 }
 
 pub struct EvaluatedSheet {
@@ -512,6 +534,20 @@ pub struct EvaluatedSheet {
 
 impl EvaluatedSheet {
     pub fn metrics(&self, neutral_factor: f64) -> Result<FlatPatternMetrics, ModelError> {
+        self.metrics_with(neutral_factor, None)
+    }
+
+    /// The blank's metrics, with allowances from `table` when given and from
+    /// the neutral factor otherwise. A table must cover every bend.
+    /// O(flanges × log table size + cutouts).
+    pub fn metrics_with(
+        &self,
+        neutral_factor: f64,
+        table: Option<&BendTable>,
+    ) -> Result<FlatPatternMetrics, ModelError> {
+        if let Some(table) = table {
+            table.validate()?;
+        }
         if !neutral_factor.is_finite() || !(0.0..=1.0).contains(&neutral_factor) {
             return Err(ModelError::new(
                 "sheet neutral factor must be finite in [0, 1]",
@@ -525,7 +561,10 @@ impl EvaluatedSheet {
             starts.push(length);
             length += flange;
             if let Some((angle, radius)) = self.bends.get(index) {
-                let allowance = angle.abs() * (radius + neutral_factor * self.thickness);
+                let allowance = match table {
+                    Some(table) => table.allowance(index, *angle, *radius, self.thickness)?,
+                    None => angle.abs() * (radius + neutral_factor * self.thickness),
+                };
                 lines.push(length + allowance * 0.5);
                 allowances.push(allowance);
                 length += allowance;
@@ -549,6 +588,7 @@ impl EvaluatedSheet {
                     outline: cutout.outline,
                 })
                 .collect(),
+            bend_table: table.map(|table| table.name.clone()),
         })
     }
 }

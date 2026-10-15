@@ -635,7 +635,9 @@ allowances, and bend lines without kernel work, and they export as a drawing.
 Evaluation is linear in flanges, and overflowing dimensions fail before kernel
 calls. Five tests cover analytic volumes for bends of each sign, incremental
 reuse when only K changes, distant and very small or large sheets,
-self-intersecting outlines, and drawing export. See [Sheet metal](docs/SHEET_METAL.md).
+self-intersecting outlines, and drawing export. Schema 161 lets the blank
+take each bend's allowance from a bend table, bilinear in inside radius and
+angle and never extrapolated, in place of K. See [Sheet metal](docs/SHEET_METAL.md).
 
 ## Draft features
 

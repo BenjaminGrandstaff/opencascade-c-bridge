@@ -422,7 +422,8 @@ units, external tetrahedral meshing, and screening limits. Schema 45 adds
 folded sheet-metal strips with exact circular bends and linked flat patterns
 using an explicit neutral factor, with flat-pattern drawings for SVG and DXF;
 schema 160 adds circle, rectangle and slot cutouts through flanges, cut
-alike in the folded sheet and its blank; see [Sheet metal](docs/SHEET_METAL.md). It also adds frozen Carr Lane V1 tap-drill
+alike in the folded sheet and its blank, and schema 161 adds bend tables
+of measured allowances or deductions in place of the neutral factor; see [Sheet metal](docs/SHEET_METAL.md). It also adds frozen Carr Lane V1 tap-drill
 and socket-head counterbore catalogs in metric and inch sizes; see
 [Hole-size catalog](docs/HOLE_SIZE_CATALOG.md).
 

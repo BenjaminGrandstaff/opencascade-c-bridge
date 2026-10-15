@@ -44,6 +44,7 @@ fn definition(sheet: SheetMetalDefinition) -> FamilyDefinition {
                 operation: FeatureOperation::SheetMetalFlat {
                     input: "folded".into(),
                     neutral_factor: ScalarExpr::Literal(Quantity::scalar(0.5)),
+                    bend_table: None,
                 },
             },
             FeatureDefinition {
@@ -380,5 +381,89 @@ fn cutouts_cut_folded_flanges_and_their_flat_blank_alike() {
     assert_eq!(restored, family);
     drop(probe);
     drop(generated);
+    assert_eq!(session.shape_count().unwrap(), 0);
+}
+#[test]
+fn bend_tables_replace_the_neutral_factor_on_the_blank() {
+    let session = Session::new().unwrap();
+    let quarter = std::f64::consts::FRAC_PI_2;
+    let mut sheet = spec(&[quarter, -quarter]);
+    sheet.cutouts = vec![cutout(
+        "hole",
+        2,
+        SheetMetalCutoutShape::Circle {
+            diameter: length(4.0),
+        },
+    )];
+    // 2 mm sheet, 3 mm radius: 5.2 mm at 90°, interpolated from 60° and 120°.
+    let table = BendTable {
+        name: "AL-2".into(),
+        kind: BendTableKind::Allowance,
+        thickness_mm: 2.0,
+        inside_radii_mm: vec![3.0],
+        angles_degrees: vec![60.0, 120.0],
+        values_mm: vec![vec![3.4, 7.0]],
+    };
+    let metrics = sheet
+        .flat_pattern_with_table(&HashMap::new(), 0.5, &table)
+        .unwrap();
+    for allowance in &metrics.bend_allowances_mm {
+        assert!((allowance - 5.2).abs() < 1e-12, "{allowance}");
+    }
+    assert!((metrics.length_mm - 70.4).abs() < 1e-12);
+    assert!((metrics.cutouts[0].center_mm[0] - 60.4).abs() < 1e-12);
+    let drawing = metrics.drawing("bracket").unwrap();
+    assert_eq!(drawing.metadata["Bend table"], "AL-2");
+    assert!(!drawing.metadata.contains_key("Neutral factor K"));
+
+    let mut family = definition(sheet);
+    let FeatureOperation::SheetMetalFlat { bend_table, .. } = &mut family.features[0].operation
+    else {
+        unreachable!()
+    };
+    *bend_table = Some(Box::new(table.clone()));
+    let mut instance = part(&family);
+    let first = instance.regenerate(&session).unwrap();
+    let flat = session.volume(first.shape("flat").unwrap()).unwrap();
+    let hole = std::f64::consts::PI * 4.0 * 2.0;
+    assert!((flat - (70.4 * 20.0 - hole)).abs() < 1e-6, "{flat}");
+
+    // A table for another thickness, or one that misses a bend, fails
+    // without replacing the accepted blank.
+    family.parameters.push(length_parameter("thickness", 2.0));
+    let FeatureOperation::SheetMetal { definition: folded } = &mut family.features[1].operation
+    else {
+        unreachable!()
+    };
+    folded.thickness = ScalarExpr::Parameter("thickness".into());
+    instance = part(&family);
+    let accepted = instance.regenerate(&session).unwrap();
+    instance.overrides.insert(
+        "thickness".into(),
+        ParameterValue::Scalar(Quantity::length(2.5, LengthUnit::Millimeter)),
+    );
+    let Err(error) = instance.regenerate_incremental(&session, &accepted) else {
+        panic!("a 2.5 mm sheet used the 2 mm table");
+    };
+    assert!(error.to_string().contains("is for 2 mm sheet"), "{error}");
+    let narrow = BendTable {
+        angles_degrees: vec![100.0, 120.0],
+        ..table
+    };
+    assert!(
+        spec(&[quarter])
+            .flat_pattern_with_table(&HashMap::new(), 0.5, &narrow)
+            .unwrap_err()
+            .to_string()
+            .contains("lies outside bend table 'AL-2'")
+    );
+
+    let mut graph = InstanceGraph::new(&family);
+    graph.add_base("part", HashMap::new(), "test").unwrap();
+    let document = ModelDocument::from_graph(&graph);
+    let json = document.to_json_pretty().unwrap();
+    assert!(json.contains("\"bend_table\""));
+    assert_eq!(ModelDocument::from_json(&json).unwrap(), document);
+    drop((first, accepted));
     assert_eq!(session.shape_count().unwrap(), 0);
 }

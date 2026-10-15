@@ -238,6 +238,7 @@ fn main() -> ExitCode {
     outcomes.push(sheet_metal::sheet_case());
     outcomes.push(sheet_metal::cutout_case());
     outcomes.push(sheet_metal::face_holes_case());
+    outcomes.push(sheet_metal::bend_table_case());
     outcomes.push(clearance_catalog_case());
     outcomes.push(carr_lane_catalog_case());
     outcomes.push(threaded_hole_features_case());
