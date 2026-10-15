@@ -51,3 +51,39 @@ test('interpolated splines are selectable and preserve fraction expressions and 
  globalThis.document={createElement:tag=>new Element(tag)};globalThis.Option=class extends Element{constructor(text,value){super('option');this.textContent=text;this.value=value;}};
  try{const host=new Element('div');createPointLinkControls({host,definition:next,changed(){},message(){}});assert(all(host).find(e=>e['aria-label']==='Point link spline').children.some(e=>e.value==='curve'));}finally{delete globalThis.document;delete globalThis.Option;}
 });
+
+test('generated and projected spline links preserve sources, drivers and verified metadata across edits',async()=>{
+ const {captureGeneratedPoints,bindGeneratedPoints}=await import('./generated-points.mjs');
+ const {geometryIds}=await import('./constraint-controls.mjs');
+ const d=definition();d.patterns=[{linear:{id:'row',entities:['curve'],count:3}}];d.projections=[{id:'reference',kind:'chain'}];
+ const snapshot=captureGeneratedPoints(d,[],{splines:['row:2:curve','skin']});bindGeneratedPoints(d,snapshot);
+ for(const spline of ['row:2:curve','skin','reference']){
+  const next=linkNamedPoint(d,{point:'p',mode:'spline',spline,fraction:{parameter:'location'}});
+  assert.equal(next.constraints.at(-1).spline_point.spline,spline);assert.equal(next.points[2].fixed,false);
+  assert.deepEqual(geometryIds(next,'splines'),['curve','reference','row:2:curve','skin']);
+  const released=releasePointLink(next,'p');assert(geometryIds(released,'splines').includes('row:2:curve'));
+  assert(dependencyReach(sketchDependencyGraph(next),'pattern:row').includes('geometry:p')||spline!=='row:2:curve');
+  assert(!('generated_curves' in next));
+ }
+ d.patterns[0].linear.count=2;assert.throws(()=>linkNamedPoint(d,{point:'p',mode:'spline',spline:'row:2:curve',fraction:scalar(.5)}),/known spline/);
+ assert.throws(()=>linkNamedPoint(d,{point:'p',mode:'spline',spline:'reference:pole:1',fraction:scalar(.5)}),/known spline/);
+});
+test('spline source choices use the catalogue and restore an existing generated link and fraction formula',async()=>{
+ const {captureGeneratedPoints,bindGeneratedPoints}=await import('./generated-points.mjs');
+ globalThis.document={createElement:tag=>new Element(tag)};globalThis.Option=class extends Element{constructor(text,value){super('option');this.textContent=text;this.value=value;}};
+ try{
+  const d=definition();d.patterns=[{linear:{id:'row',entities:['curve'],count:3}}];d.projections=[{id:'reference',kind:'spline'}];
+  bindGeneratedPoints(d,captureGeneratedPoints(d,[],{splines:['row:2:curve']}));
+  const formula={multiply:[{parameter:'location'},scalar(.5)]},linked=linkNamedPoint(d,{point:'p',mode:'spline',spline:'row:2:curve',fraction:formula}),host=new Element('div');let next;
+  createPointLinkControls({host,definition:linked,initialPoint:'p',changed:v=>next=v,message(){}});
+  const input=label=>all(host).find(e=>e['aria-label']===label);
+  assert.deepEqual(input('Point link spline').children.map(e=>e.value),['curve','reference','row:2:curve']);
+  assert.equal(input('Point link spline').value,'row:2:curve');assert.equal(input('Spline fraction driver').value,'expression');
+  find(host,'Link named point').onclick();assert.deepEqual(pointLinks(next,'p')[0].spline_point.fraction,formula);
+ }finally{delete globalThis.document;delete globalThis.Option;}
+});
+test('explicit endpoint aliases are protected from self-referential spline links',()=>{
+ const d=definition();d.splines[0].endpoints={start:'p',end:'b'};
+ assert.throws(()=>linkNamedPoint(d,{point:'p',mode:'spline',spline:'curve',fraction:scalar(.5)}),/source fit point or control pole/);
+ assert.equal(d.points[2].fixed,true);
+});

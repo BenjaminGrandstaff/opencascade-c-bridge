@@ -258,6 +258,25 @@ computed point's row highlights its sources, and selecting its annotation opens
 its link controls. **Remove named point link** releases the point to the solver;
 its stored coordinates are seeds, not a frozen current position.
 
+**At spline parameter** also accepts generated conics, spline copies from sketch
+patterns, and live projected spline/chain sources. The source menu uses the core
+curve catalogue; recipe/source edits require a successful Preview before stale
+generated names are offered again. The linked target remains an authored named
+point. Linking preserves other dimensions and the chosen fraction expression,
+unfixes the target, and stores the source ID directly. Removing a link leaves
+its point free with stored coordinates as solver seeds.
+
+Fractions refer to the selected curve's native parameter domain. A mirrored
+spline reverses traversal, so its fraction `t` corresponds to the reflected
+source at `1-t`. Linear/circular copies follow their native transforms; periodic
+fractions 0 and 1 share the seam. Projected links use the resolved native curve,
+including its refinements. Source control/endpoint self-links, missing sources,
+and invalid fractions reject Preview/Apply. Tests cover rational, interpolated
+and periodic copies, generated conics, reflected traversal, circular transforms,
+projection updates, history and Save/reopen. A check of 100 local link operations
+with 10,000 available generated spline sources took about 164 ms. Schema 149 and
+ABI 73 are unchanged.
+
 A crossing uses two existing `point_on_curve` constraints. The solver starts at
 the point's saved coordinates, can move free source geometry, and may choose a
 different branch after large edits. Lines use their infinite supporting line;

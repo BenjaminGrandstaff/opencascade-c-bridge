@@ -1,3 +1,4 @@
+import {inheritGeneratedReferences} from './generated-points.mjs';
 import {geometryIds,dimensionNumber} from './constraint-controls.mjs';
 const scalar=value=>({literal:{value,dimension:'scalar',unit:null}});
 export function pointLinks(definition,point){return (definition.constraints??[]).filter(c=>c.spline_point?.point===point||c.weighted_point?.point===point||c.point_on_curve?.point===point||c.crossing_point?.point===point);}
@@ -5,8 +6,9 @@ export function linkNamedPoint(definition,{point,mode,spline,fraction,first,seco
   const target=definition.points?.find(p=>p.id===point);if(!target)throw new Error('Choose an authored named point.');
   let constraints;
   if(mode==='spline'){
-    const source=definition.splines?.find(s=>s.id===spline);if(!source)throw new Error('Choose an authored spline.');
-    if(source.points.includes(point))throw new Error('A linked point cannot also be a source fit point or control pole.');
+    if(!geometryIds(definition,'splines').includes(spline))throw new Error('Choose a known spline.');
+    const source=definition.splines?.find(s=>s.id===spline);
+    if(source&&[...source.points,source.endpoints?.start,source.endpoints?.end].includes(point))throw new Error('A linked point cannot also be a source fit point or control pole.');
     if(!fraction||typeof fraction!=='object'||Array.isArray(fraction))throw new Error('Choose a fraction driver.');
     const literal=fraction.literal;if(literal&&(literal.dimension!=='scalar'||literal.unit!=null||!Number.isFinite(literal.value)||literal.value<0||literal.value>1))throw new Error('Use a spline parameter fraction from 0 to 1.');
     constraints=[{spline_point:{point,spline,fraction:structuredClone(fraction)}}];
@@ -27,19 +29,19 @@ export function linkNamedPoint(definition,{point,mode,spline,fraction,first,seco
   const next=structuredClone(definition),old=pointLinks(definition,point);
   next.constraints=(next.constraints??[]).filter((_,i)=>!old.includes(definition.constraints[i]));next.constraints.push(...constraints);
   next.points.find(p=>p.id===point).fixed=false;
-  return next;
+  inheritGeneratedReferences(definition,next);return next;
 }
 export function releasePointLink(definition,point){
   const old=pointLinks(definition,point);if(!old.length)throw new Error('This point has no saved link.');
-  const next=structuredClone(definition);next.constraints=next.constraints.filter((_,i)=>!old.includes(definition.constraints[i]));return next;
+  const next=structuredClone(definition);next.constraints=next.constraints.filter((_,i)=>!old.includes(definition.constraints[i]));inheritGeneratedReferences(definition,next);return next;
 }
 export function createPointLinkControls({host,definition,parameters=[],changed,message,highlight=()=>{},initialPoint=null,initialOpen=false}){
   const section=document.createElement('details'),heading=document.createElement('summary');heading.textContent='Named point links';section.open=initialOpen;section.append(heading);host.append(section);
-  const note=document.createElement('p');note.textContent='Keep a named point on an authored spline at a fixed parameter fraction, or constrain it to a two-curve crossing. Linking unfixes the point and replaces its existing point links. On periodic or closed interpolated splines, fractions 0 and 1 name the same seam. Fractions use the native parameter domain, not arc length. Other dimensions remain active. Crossings use the current point seed; lines use their supporting line. Preview checks the solved geometry and every model variant.';section.append(note);
+  const note=document.createElement('p');note.textContent='Keep a named point on an authored, projected or generated spline at a parameter fraction, or constrain it to a two-curve crossing. Linking unfixes the point and replaces its existing point links. On periodic or closed interpolated splines, fractions 0 and 1 name the same seam. Fractions use the native parameter domain, not arc length. Other dimensions remain active. Crossings use the current point seed; lines use their supporting line. Preview checks the solved geometry and every model variant.';section.append(note);
   const select=(label,choices)=>{const row=document.createElement('label');row.textContent=label;const e=document.createElement('select');e.setAttribute('aria-label',label);for(const [id,name]of choices)e.append(new Option(name,id));row.append(e);section.append(row);return e;};
   const point=select('Named point to link',(definition.points??[]).map(p=>[p.id,p.id]));if((definition.points??[]).some(p=>p.id===initialPoint))point.value=initialPoint;
   const mode=select('Point link mode',[['spline','At spline parameter'],['crossing','At two-curve crossing'],['selected_crossing','At selected crossing']]);
-  const spline=select('Point link spline',(definition.splines??[]).map(s=>[s.id,s.id]));
+  const spline=select('Point link spline',geometryIds(definition,'splines').map(id=>[id,id]));
   const driver=select('Spline fraction driver',[['literal','Number'],['expression','Existing expression'],...parameters.filter(p=>p.parameter_type?.scalar==='scalar').map(p=>[p.id,p.id])]);
   const row=document.createElement('label');row.textContent='Spline parameter fraction';const fraction=document.createElement('input');fraction.type='number';fraction.step='any';fraction.value='.5';fraction.setAttribute('aria-label',row.textContent);row.append(fraction);section.append(row);
   const curves=geometryIds(definition,'curves').map(id=>[id,id]),first=select('Crossing first curve',curves),second=select('Crossing second curve',curves);if(curves.length>1)second.value=curves[1][0];

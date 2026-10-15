@@ -365,8 +365,13 @@ controls use these authoritative names instead of reimplementing shape naming.
 Crossing-point clones preserve verified names, and split-piece names cannot
 shadow generated geometry. Native checks cover equal-length consumers and
 midpoint-driven copied-curve splits through source edits and Save/reopen.
-Edited boundary pieces remain distinct from solver source entities. Further
-work can extend spline-parameter point links to generated spline sources.
+Edited boundary pieces remain distinct from solver source entities. Spline-parameter point controls now also use the catalogue for generated conics
+and pattern copies, alongside declared projected splines/chains. Stable source
+IDs and fraction expressions survive linking/releasing clones without entering
+model metadata. Native evaluation preserves mirrored traversal, periodic seams,
+rational weights and source refinements, with source edits and save/history
+verified. A next authoring extension is creating linked sample points directly
+from curve picks.
 
 
 
