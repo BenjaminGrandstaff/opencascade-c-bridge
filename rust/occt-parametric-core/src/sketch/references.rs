@@ -1,11 +1,27 @@
-//! Structurally admissible generated point names, without solving coordinates.
+//! Structurally admissible generated names, without solving coordinates.
 use super::*;
+use std::collections::BTreeMap;
+
+/// Read-only structural inspection metadata, outside the persisted model format.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct SketchGeneratedReferences {
+    pub points: Vec<String>,
+    /// Curve names grouped by native kind: lines, circles, arcs, ellipses, splines.
+    pub curves: BTreeMap<String, Vec<String>>,
+}
 impl SketchDefinition {
     /// Generated shape/pattern point IDs that can be referenced by authored
     /// geometry and constraints. Projection poles are not stable authored IDs;
     /// only declared projection endpoints and named points participate in copies.
     /// Expansion uses the core shape/pattern budgets and never solves geometry.
     pub fn generated_point_references(&self) -> Result<Vec<String>, ModelError> {
+        Ok(self.generated_references()?.points)
+    }
+
+    /// Stable shape/pattern point and curve names, grouped by native curve kind.
+    /// Names refer to source geometry before profile edits; split/trim output
+    /// pieces are not solver entities. Expansion does not evaluate parameters.
+    pub fn generated_references(&self) -> Result<SketchGeneratedReferences, ModelError> {
         self.validate_structure()?;
         let seeded = if self.projections.is_empty() {
             std::borrow::Cow::Borrowed(self)
@@ -25,7 +41,32 @@ impl SketchDefinition {
             .map(|p| p.id.clone())
             .collect::<Vec<_>>();
         ids.sort();
-        Ok(ids)
+        let original_curves = seeded.entities();
+        let mut curves: BTreeMap<String, Vec<String>> =
+            ["lines", "circles", "arcs", "ellipses", "splines"]
+                .into_iter()
+                .map(|kind| (kind.to_string(), Vec::new()))
+                .collect();
+        for (id, entity) in expanded.entities() {
+            if original_curves.contains_key(id) {
+                continue;
+            }
+            let kind = match entity {
+                Entity::Line(_) => "lines",
+                Entity::Circle(_) => "circles",
+                Entity::Arc(_) => "arcs",
+                Entity::Ellipse(_) => "ellipses",
+                Entity::Spline(_) => "splines",
+            };
+            curves.get_mut(kind).unwrap().push(id.to_string());
+        }
+        for names in curves.values_mut() {
+            names.sort();
+        }
+        Ok(SketchGeneratedReferences {
+            points: ids,
+            curves,
+        })
     }
 }
 
@@ -116,6 +157,49 @@ mod tests {
                 .iter()
                 .any(|id| id.contains(":pole:") || id == "reference:start")
         );
+    }
+    #[test]
+    fn generated_curves_keep_native_kinds_and_chained_copy_names() {
+        let mut value = fixture();
+        value["circles"] = json!([{"id":"circle","center":"hc","rim":"hv"}]);
+        value["arcs"] = json!([{"id":"arc","center":"hc","start":"hv","end":"s1a"}]);
+        value["ellipses"] = json!([{"id":"ellipse","center":"hc","major":"hv","minor":"s1a"}]);
+        value["splines"] = json!([{"id":"spline","points":["hc","hv","s1a"],"degree":2}]);
+        value["patterns"] = json!([
+            {"linear":{"id":"row","entities":["outline:side1","circle","arc","ellipse","spline"],"direction":"outline:side0","spacing":{"parameter":"pitch"},"count":2}},
+            {"circular":{"id":"ring","entities":["row:1:ellipse"],"center":"a","count":2}}
+        ]);
+        let sketch: SketchDefinition = serde_json::from_value(value).unwrap();
+        let refs = sketch.generated_references().unwrap();
+        for (kind, name) in [
+            ("lines", "outline:side0"),
+            ("lines", "row:1:outline:side1"),
+            ("circles", "hex:circle"),
+            ("circles", "row:1:circle"),
+            ("arcs", "lower_slot:end_cap"),
+            ("arcs", "row:1:arc"),
+            ("ellipses", "row:1:ellipse"),
+            ("ellipses", "ring:1:row:1:ellipse"),
+            ("splines", "row:1:spline"),
+        ] {
+            assert!(
+                refs.curves[kind].contains(&name.to_string()),
+                "{kind}: {name}"
+            );
+        }
+        assert!(
+            !refs
+                .curves
+                .values()
+                .flatten()
+                .any(|id| ["circle", "arc", "ellipse", "spline"].contains(&id.as_str()))
+        );
+        assert!(
+            refs.curves
+                .values()
+                .all(|ids| ids.windows(2).all(|w| w[0] < w[1]))
+        );
+        assert_eq!(refs.points, sketch.generated_point_references().unwrap());
     }
     #[test]
     fn invalid_generators_and_expansion_budgets_reject_catalogues() {

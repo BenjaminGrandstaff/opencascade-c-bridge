@@ -20,10 +20,10 @@ impl Studio {
             };
             let definition: SketchDefinition =
                 serde_json::from_value(value.clone()).map_err(|e| e.to_string())?;
-            let generated_points = definition
-                .generated_point_references()
+            let generated = definition
+                .generated_references()
                 .map_err(|e| e.to_string())?;
-            features.push(json!({"feature":feature.id,"definition":value,"generated_points":generated_points}));
+            features.push(json!({"feature":feature.id,"definition":value,"generated_points":generated.points,"generated_curves":generated.curves}));
         }
         let feature_dependencies = self
             .document
@@ -393,8 +393,12 @@ impl Studio {
             self.accept(document, gltf, requirements, self.output.clone())?;
             Ok(json!({"applied": true, "state": self.state()}))
         } else {
+            let references = edit
+                .definition
+                .generated_references()
+                .map_err(|e| e.to_string())?;
             Ok(
-                json!({"applied": false, "can_apply": rejection.is_none(), "error": rejection, "annotations": annotations,"generated_points":edit.definition.generated_point_references().map_err(|e|e.to_string())?}),
+                json!({"applied": false, "can_apply": rejection.is_none(), "error": rejection, "annotations": annotations,"generated_points":references.points,"generated_curves":references.curves}),
             )
         }
     }

@@ -1,3 +1,4 @@
+import {captureGeneratedPoints,bindGeneratedPoints} from './generated-points.mjs';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {profileIds,makeProfileOperation,createProfileControls,makeCurveOperation,replaceSplitBoundaryReferences,updateDiscoverySelection} from './profile-controls.mjs';
@@ -20,6 +21,7 @@ test('native crossing trims, directed point bounds and signed offsets retain exp
 });
 test('trim selectors include stable projected crossings, shape boundaries and split pieces',()=>{
   const d={...definition,shapes:[{rectangle:{id:'box'}},{conic:{id:'conic'}}],projections:[{id:'ref',kind:'line',intersections:[{id:'cross'}]}],curve_operations:[{split:{before:'left',after:'right'}}]};
+  bindGeneratedPoints(d,captureGeneratedPoints(d,['box:corner1'],{lines:['box:side3'],splines:['conic']}));
   assert(profileIds(d,'curves').includes('box:side3'));assert(profileIds(d,'curves').includes('conic'));assert(profileIds(d,'curves').includes('right'));
   assert(profileIds(d,'points').includes('ref:intersection:cross'));assert(profileIds(d,'points').includes('box:corner1'));
 });

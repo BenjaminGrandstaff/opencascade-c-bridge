@@ -86,6 +86,24 @@ cannot snap, and removing a referenced generated point rejects Preview/Apply.
 The catalogue never enters the saved definition. A scale check of 100 snaps over
 10,000 generated references took about 93 ms; schema 149 and ABI 73 are unchanged.
 
+The same catalogue exposes generated **curves**, grouped as lines, circles,
+arcs, ellipses and splines. `SketchDefinition::generated_references()` returns
+both point IDs and curve IDs; sketch load and successful Preview include a
+read-only `generated_curves` object alongside `generated_points`. Typed
+constraints, canvas constraint selection, crossing tools, and curve/region
+editing selectors use these names. For example, an equal-length constraint can
+reference `row:2:outline:side1`, or that copied line can be split at a named
+midpoint. Both follow later source dimensions through native regeneration.
+
+Curve kinds restrict dimensions: slot caps appear in radius/arc controls,
+rectangle sides in line controls, and conics in spline/general curve controls.
+Generator/source edits require a fresh Preview for these names too. Crossing
+creation carries the verified catalogue across its local point-creation clone;
+split-piece names cannot shadow generated curves. Edited split/trim pieces
+remain boundary-edit references and are not added to solver constraint lists.
+100 curve-list queries over 10,000 generated references took about 78 ms.
+The persisted model and native ABI remain unchanged.
+
 **Shape parameters** edits existing shortcut definitions: slot radius, polygon
 side count, rectangle angle, and conic rho. Choose the shape by name or arm
 **Select shape from canvas** and click one of its generated boundary curves.

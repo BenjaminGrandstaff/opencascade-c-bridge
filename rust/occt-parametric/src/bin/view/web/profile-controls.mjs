@@ -3,17 +3,6 @@ import {geometryIds,dimensionNumber} from './constraint-controls.mjs';
 // These controls author native operations, never sampled browser geometry.
 export function profileIds(definition, group) {
   const ids=geometryIds(definition,group);
-  for(const shape of definition.shapes??[]){
-    const [kind,data]=Object.entries(shape)[0];
-    const suffixes=kind==='rectangle'?(group==='points'?['corner1','corner3']:['side0','side1','side2','side3']):
-      kind==='slot'?(group==='points'?['start_right','end_right','end_left','start_left']:['right','end_cap','left','start_cap']):
-      kind==='polygon'?(group==='points'?Array.from({length:data.sides-1},(_,i)=>`vertex${i+1}`):[...Array.from({length:data.sides},(_,i)=>`side${i}`),'circle']):[];
-    ids.push(...suffixes.map(s=>`${data.id}:${s}`));
-    if(kind==='conic'&&group==='curves')ids.push(data.id);
-  }
-  if(group==='points')for(const p of definition.projections??[]){
-    ids.push(...(p.intersections??[]).map(i=>`${p.id}:intersection:${i.id}`),...(p.junctions??[]).map(j=>`${p.id}:junction:${j.id}`));
-  }
   if(group==='curves'){
     for(const op of definition.curve_operations??[])if(op.split)ids.push(op.split.before,op.split.after);
     ids.push(...(definition.profile??[]),...(definition.holes??[]).flat(),...(definition.regions??[]).flatMap(r=>[...r.profile,...(r.holes??[]).flat()]),...(definition.region_discovery?.entities??[]));
@@ -80,7 +69,7 @@ export function makeCurveOperation(type,fields,definition,editing=null){
   if(!at?.point&&!at?.crossing)throw new Error('Split at an interior point or crossing.');
   // Reuse the native-bound contract and self-crossing guard.
   const bound=makeProfileOperation('trim_between',{entity:fields.entity,from:'start',to:at}).trim_between.to;
-  const reserved=profileIds({...definition,curve_operations:(definition.curve_operations??[]).filter((_,i)=>i!==editing),profile:[],holes:[],regions:[],region_discovery:null},'curves');
+  const reserved=[...geometryIds(definition,'curves'),...(definition.curve_operations??[]).filter((_,i)=>i!==editing).flatMap(op=>op.split?[op.split.before,op.split.after]:[])];
   if(!fields.before?.trim()||!fields.after?.trim()||fields.before===fields.after||[fields.before,fields.after].some(id=>reserved.includes(id)))throw new Error('Split pieces need two distinct unused names.');
   return {split:{entity:fields.entity,at:bound,before:fields.before,after:fields.after}};
 }

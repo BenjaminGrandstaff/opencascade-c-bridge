@@ -11,7 +11,7 @@ export function linkNamedPoint(definition,{point,mode,spline,fraction,first,seco
     const literal=fraction.literal;if(literal&&(literal.dimension!=='scalar'||literal.unit!=null||!Number.isFinite(literal.value)||literal.value<0||literal.value>1))throw new Error('Use a spline parameter fraction from 0 to 1.');
     constraints=[{spline_point:{point,spline,fraction:structuredClone(fraction)}}];
   }else if(mode==='crossing'||mode==='selected_crossing'){
-    const curves=geometryIds(definition,'curves');if(!curves.includes(first)||!curves.includes(second)||first===second)throw new Error('Choose two distinct authored or projected curves.');
+    const curves=geometryIds(definition,'curves');if(!curves.includes(first)||!curves.includes(second)||first===second)throw new Error('Choose two distinct known curves.');
     // A target used to define either curve would move its own source geometry.
     for(const group of ['lines','circles','arcs','ellipses','splines'])for(const curve of definition[group]??[])if([first,second].includes(curve.id)){
       const ids=group==='splines'?[...curve.points,curve.endpoints?.start,curve.endpoints?.end]:['start','end','center','rim','major','minor'].map(k=>curve[k]);

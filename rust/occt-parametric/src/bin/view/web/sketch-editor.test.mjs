@@ -124,8 +124,8 @@ test('editor loads generated point metadata and refreshes stale constraint choic
   const source={id:'s',points:[{id:'a',x:length(0),y:length(0),fixed:true},{id:'c',x:length(10),y:length(5),fixed:true}],lines:[],shapes:[{rectangle:{id:'rect',first:'a',opposite:'c'}}]};
   const host=new Element('div'),calls=[];
   createSketchEditor({host,instance:()=> 'part',preview:async()=>{},applied:async()=>{},restore:async()=>{},request:async(path,options)=>{
-   if(path==='/api/sketches')return {version:1,sketches:[{feature:'profile',definition:source,generated_points:['rect:corner1','rect:corner3']}]};
-   calls.push(JSON.parse(options.body));return {can_apply:true,annotations:{},generated_points:['fresh:corner1']};
+   if(path==='/api/sketches')return {version:1,sketches:[{feature:'profile',definition:source,generated_points:['rect:corner1','rect:corner3'],generated_curves:{lines:['rect:side0']}}]};
+   calls.push(JSON.parse(options.body));return {can_apply:true,annotations:{},generated_points:['fresh:corner1'],generated_curves:{arcs:['fresh:cap']}};
   }});
   await find(host,'Edit sketch geometry').emit('click');
   all(host).find(e=>e['aria-label']==='Sketch to edit').value='profile';
@@ -133,9 +133,11 @@ test('editor loads generated point metadata and refreshes stale constraint choic
   const choosePointTool=()=>{const tool=all(host).find(e=>e['aria-label']==='Constraint type');tool.value='distance';tool.onchange();};
   const has=id=>all(host).some(e=>e.tagName==='option'&&e.value===id);
   choosePointTool();assert(has('rect:corner1'));
+  const curveTool=all(host).find(e=>e['aria-label']==='Constraint type');curveTool.value='curve_length';curveTool.onchange();assert(has('rect:side0'));
   const input=find(host,'Sketch definition').children[0],next=structuredClone(source);next.shapes[0].rectangle.angle={literal:{value:.1,dimension:'scalar',unit:null}};
-  input.value=JSON.stringify(next);input.emit('change');choosePointTool();assert(!has('rect:corner1'));
+  input.value=JSON.stringify(next);input.emit('change');choosePointTool();assert(!has('rect:corner1'));assert(!has('rect:side0'));
   await find(host,'Preview draft').emit('click');choosePointTool();assert(has('fresh:corner1'));
+  const radius=all(host).find(e=>e['aria-label']==='Constraint type');radius.value='radius';radius.onchange();assert(has('fresh:cap'));
   assert(!JSON.stringify(calls[0].definition).includes('generated_points'));assert.deepEqual(source.shapes,[{rectangle:{id:'rect',first:'a',opposite:'c'}}]);
  }finally{delete globalThis.document;delete globalThis.Option;}
 });

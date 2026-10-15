@@ -359,8 +359,14 @@ catalogue follows native expansion budgets, chained copies and mirror sharing;
 only stable projection aliases participate in copied sources. Read-only load/
 Preview metadata stays outside saved definitions. Generator and source-curve
 edits invalidate local names until successful Preview, while ordinary appended
-geometry retains valid references. The next extension for this workflow is
-similarly authoritative generated-curve selection for dimensions and editing.
+geometry retains valid references. The catalogue also groups generated curves by native kind for typed
+constraints, canvas selection, crossing tools and curve/region edits. Profile
+controls use these authoritative names instead of reimplementing shape naming.
+Crossing-point clones preserve verified names, and split-piece names cannot
+shadow generated geometry. Native checks cover equal-length consumers and
+midpoint-driven copied-curve splits through source edits and Save/reopen.
+Edited boundary pieces remain distinct from solver source entities. Further
+work can extend spline-parameter point links to generated spline sources.
 
 
 

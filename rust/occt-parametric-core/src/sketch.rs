@@ -20,6 +20,7 @@ pub mod patterns;
 pub mod profile;
 pub mod projections;
 mod references;
+pub use references::SketchGeneratedReferences;
 pub mod shapes;
 pub mod solver;
 pub mod spline_links;

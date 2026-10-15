@@ -1,4 +1,4 @@
-import {generatedPointIds} from './generated-points.mjs';
+import {generatedPointIds,generatedCurveIds} from './generated-points.mjs';
 // Typed authoring controls; native validation and solving remain authoritative.
 const pair = group => [['first', group], ['second', group]];
 export const constraintTools = {
@@ -37,6 +37,7 @@ export function geometryIds(definition, group) {
     else if(keys.includes(kindGroup[p.kind]))ids.push(p.id);
   }
   if(group==='points')ids.push(...generatedPointIds(definition));
+  else ids.push(...generatedCurveIds(definition,keys));
   return [...new Set(ids)];
 }
 export function dimensionNumber(expression, dimension) {
@@ -51,7 +52,7 @@ export function makeConstraint(definition, type, fields, expression) {
   if (!tool) throw new Error('Unsupported constraint tool.');
   const data = {};
   for (const [key, group] of tool.fields) {
-    if (!geometryIds(definition, group).includes(fields[key])) throw new Error(`Choose an authored ${group} entity for ${key}.`);
+    if (!geometryIds(definition, group).includes(fields[key])) throw new Error(`Choose a known ${group} entity for ${key}.`);
     data[key] = fields[key];
   }
   if (data.first && data.first === data.second) throw new Error('Choose two distinct entities.');

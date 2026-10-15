@@ -12,9 +12,9 @@ test('typed dimensions and relationships use native entity roles and units',()=>
   assert.deepEqual(makeConstraint(definition,'circle_circle_tangent',{first:'C1',second:'C2',mode:'internal'}),{circle_circle_tangent:{first:'C1',second:'C2',mode:'internal'}});
   assert.equal(dimensionNumber({literal:{value:2,dimension:'length',unit:'inch'}},'length'),50.8);
   assert.equal(dimensionNumber({literal:{value:Math.PI/2,dimension:'scalar',unit:null}},'angle'),90);
-  assert.throws(()=>makeConstraint(definition,'horizontal',{line:'A'}),/authored/);
+  assert.throws(()=>makeConstraint(definition,'horizontal',{line:'A'}),/known/);
   assert.throws(()=>makeConstraint(definition,'coincident',{first:'A',second:'A'}),/distinct/);
-  assert.throws(()=>makeConstraint(definition,'radius',{curve:'AB'},mm(4)),/authored/);
+  assert.throws(()=>makeConstraint(definition,'radius',{curve:'AB'},mm(4)),/known/);
   assert.throws(()=>makeConstraint(definition,'radius',{curve:'C1'},mm(-1)),/positive/);
   assert.throws(()=>makeConstraint(definition,'distance',{first:'A',second:'B'},mm(NaN)),/finite/);
   assert.doesNotThrow(()=>makeConstraint(definition,'horizontal_distance',{first:'A',second:'B'},mm(-4)));

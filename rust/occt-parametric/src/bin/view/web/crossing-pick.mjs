@@ -1,10 +1,11 @@
+import {inheritGeneratedReferences} from './generated-points.mjs';
 import {geometryIds} from './constraint-controls.mjs';
 import {linkNamedPoint} from './point-links.mjs';
 const length=value=>({literal:{value,dimension:'length',unit:'millimeter'}});
 function geometryNames(definition){
  const used=new Set(['points','lines','circles','arcs','ellipses','splines','texts','patterns','projections','measurements'].flatMap(k=>(definition[k]??[]).map(e=>e.id)));
  for(const shape of definition.shapes??[])for(const value of Object.values(shape))if(value?.id)used.add(value.id);
- for(const id of geometryIds(definition,'points'))used.add(id);
+ for(const group of ['points','curves'])for(const id of geometryIds(definition,group))used.add(id);
  for(const p of definition.projections??[])for(const item of [...(p.intersections??[]),...(p.junctions??[])]){if(item.id)used.add(`${p.id}:${item.id}`);if(item.point)used.add(item.point);}
  for(const op of definition.curve_operations??[])if(op.split){used.add(op.split.before);used.add(op.split.after);}
  return used;
@@ -18,7 +19,7 @@ export function pickedCrossing(definition,{point,name,first,second,position,radi
  if(!Array.isArray(position)||position.length!==2||!position.every(Number.isFinite))throw new Error('Choose a finite sketch-local crossing hint.');
  if(!Number.isFinite(radius)||radius<=0)throw new Error('Use a positive finite crossing search radius.');
  let candidate=definition,target=point;
- if(!target){validateName(definition,name);target=name;candidate=structuredClone(definition);(candidate.points??=[]).push({id:target,x:length(position[0]),y:length(position[1]),fixed:false});}
+ if(!target){validateName(definition,name);target=name;candidate=structuredClone(definition);inheritGeneratedReferences(definition,candidate);(candidate.points??=[]).push({id:target,x:length(position[0]),y:length(position[1]),fixed:false});}
  const near={literal:{x:length(position[0]).literal,y:length(position[1]).literal,z:length(0).literal}};
  return {point:target,definition:linkNamedPoint(candidate,{point:target,mode:'selected_crossing',first,second,near,maximum_distance:length(radius)})};
 }
@@ -78,7 +79,7 @@ export function createCrossingPicker({host,definition,changed,message,beginPicki
   down(event){if(!pending)return false;if(!valid(event))return true;if(!Array.isArray(event.position)||!event.position.every(Number.isFinite))return true;gesture={position:[...event.position],entity:event.entity,travel:0,tolerance:Math.max((event.tolerance??0)*0.15,1e-9)};return true;},
   move(event){if(!pending)return;if(!valid(event))return;if(gesture&&event.position)gesture.travel=Math.max(gesture.travel,Math.hypot(event.position[0]-gesture.position[0],event.position[1]-gesture.position[1]));paint(event.position);},
   up(event){if(!pending||!gesture)return;const click=gesture;gesture=null;if(!valid(event))return;if(!Array.isArray(event.position)||!event.position.every(Number.isFinite))return;if(Math.max(click.travel,Math.hypot(event.position[0]-click.position[0],event.position[1]-click.position[1]))>click.tolerance){message('Use a click to pick a crossing; the drag did not change the draft.');return;}
-   if(pending.curves.length<2){const id=click.entity;if(!geometryIds(definition,'curves').includes(id)){message('Click an authored or projected source curve.');return;}if(pending.curves.includes(id)){message('Choose a different second curve.');return;}pending.scene=event.scene;pending.curves.push(id);highlight(pending.curves);update();message(status.textContent);if(pending.curves.length===2)void prepare(event);return;}
+   if(pending.curves.length<2){const id=click.entity;if(!geometryIds(definition,'curves').includes(id)){message('Click a known source curve.');return;}if(pending.curves.includes(id)){message('Choose a different second curve.');return;}pending.scene=event.scene;pending.curves.push(id);highlight(pending.curves);update();message(status.textContent);if(pending.curves.length===2)void prepare(event);return;}
    if(!Number.isFinite(pending.radius)||pending.radius<=0){paint(event.position);message('Use a positive finite crossing search radius before picking a hint.');return;}
    if(queryCandidates){paint(event.position);if(pending.queryStatus!=='ready'){message(pending.queryStatus==='loading'?'Wait for the native crossing query, then click again.':'Native crossings are unavailable. Cancel and restart after fixing the draft.');return;}const check=crossingWindowFeedback(pending.candidates,event.position,pending.radius);if(check.kind!=='unique'){message(feedback.textContent);return;}}
    try{const result=pickedCrossing(definition,{...pending,first:pending.curves[0],second:pending.curves[1],position:event.position});cancel();changed(result.definition,result.point);message(`Crossing '${result.point}' staged with a literal search window. Preview verifies a unique finite native crossing before Apply.`);}catch(e){message(e.message);}

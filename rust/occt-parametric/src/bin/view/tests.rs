@@ -4080,3 +4080,131 @@ fn generated_point_catalogues_and_drawn_consumers_survive_source_edits_and_save(
         moved["points"]["row:2:outline:corner1"]
     );
 }
+
+#[test]
+fn generated_curve_dimensions_and_splits_follow_source_edits() {
+    let directory = Directory::new();
+    let request: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../tools/model/slotted-plate.request.json"
+    ))
+    .unwrap();
+    let mut value = request["model"].clone();
+    value["instances"][0]["base"]["id"] = json!("part");
+    value["family"]["features"][0]["operation"]["sketch_face"]["sketch"]["patterns"] = json!([
+        {"linear":{"id":"row","entities":["outline:side1"],"direction":"outline:side0","spacing":{"literal":{"value":5,"dimension":"length","unit":"millimeter"}},"count":3}}
+    ]);
+    let document = ModelDocument::from_json(&value.to_string()).unwrap();
+    let model = PathBuf::from(directory.model(&document));
+    let original = fs::read_to_string(&model).unwrap();
+    let mut studio = serve::Studio::load(&model, Some("body".into())).unwrap();
+    let data = get(&mut studio, "/api/sketches").1;
+    let metadata = data["sketches"][0].clone();
+    assert!(
+        metadata["generated_curves"]["lines"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("row:2:outline:side1"))
+    );
+    assert!(
+        metadata["generated_curves"]["arcs"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("lower_slot:end_cap"))
+    );
+    assert!(
+        !metadata["generated_curves"]["lines"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("lower_slot:end_cap"))
+    );
+    let state = get(&mut studio, "/api/state").1;
+    let query = json!({"version":data["version"],"instance":"part","feature":"profile","expected":metadata["definition"],"definition":metadata["definition"],"first":"outline:side0","second":"outline:side1"});
+    let response = studio.handle(
+        "POST",
+        "/api/sketch-crossing-candidates",
+        query.to_string().as_bytes(),
+    );
+    let crossings: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+    assert_eq!(response.status, 200, "{crossings}");
+    assert_eq!(crossings["points"].as_array().unwrap().len(), 1);
+    let mut draft = metadata["definition"].clone();
+    let mm = |v: f64| json!({"literal":{"value":v,"dimension":"length","unit":"millimeter"}});
+    for (id, x, y, fixed) in [
+        ("guide-start", 0., -10., true),
+        ("guide-end", 40., -10., false),
+        ("cut", 90., 20., false),
+    ] {
+        draft["points"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({"id":id,"x":mm(x),"y":mm(y),"fixed":fixed}));
+    }
+    draft["lines"] = json!([{"id":"guide","start":"guide-start","end":"guide-end"}]);
+    draft["constraints"] = json!([
+        {"horizontal":{"line":"guide"}},
+        {"equal_length":{"first":"guide","second":"row:2:outline:side1"}},
+        {"midpoint":{"point":"cut","line":"row:2:outline:side1"}}
+    ]);
+    draft["curve_operations"] = json!([{ "split":{"entity":"row:2:outline:side1","at":{"point":{"point":"cut"}},"before":"copy-low","after":"copy-high"}}]);
+    let (status, result) = edit_definition(&mut studio, "profile", draft.clone(), false);
+    assert_eq!(status, 200, "{result}");
+    assert_eq!(result["can_apply"], true);
+    assert_eq!(result["generated_curves"], metadata["generated_curves"]);
+    assert!(
+        !result["generated_curves"]["lines"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("copy-low")),
+        "edited pieces are not solver curves"
+    );
+    assert_eq!(get(&mut studio, "/api/state").1, state);
+    assert_eq!(fs::read_to_string(&model).unwrap(), original);
+    let (status, result) = edit_definition(&mut studio, "profile", draft, true);
+    assert_eq!(status, 200, "{result}");
+    history(&mut studio, "undo");
+    history(&mut studio, "redo");
+    let response = studio.handle(
+        "POST",
+        "/api/parameters",
+        br#"{"set":{"height":45,"width":65}}"#,
+    );
+    assert_eq!(
+        response.status,
+        200,
+        "{}",
+        String::from_utf8_lossy(&response.body)
+    );
+    let scene = |v: serde_json::Value| {
+        v["scenes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["feature"] == "profile")
+            .unwrap()
+            .clone()
+    };
+    let moved = scene(get(&mut studio, "/api/annotations?id=part").1);
+    assert!((moved["points"]["guide-end"][0].as_f64().unwrap() - 45.).abs() < 1e-7);
+    assert!((moved["points"]["cut"][0].as_f64().unwrap() - 75.).abs() < 1e-7);
+    assert!((moved["points"]["cut"][1].as_f64().unwrap() - 22.5).abs() < 1e-7);
+    let saved = get(&mut studio, "/api/sketches").1["sketches"][0]["definition"].clone();
+    assert!(saved.get("generated_curves").is_none());
+    let mut invalid = saved.clone();
+    invalid["patterns"][0]["linear"]["count"] = json!(2);
+    let stable = get(&mut studio, "/api/state").1;
+    assert_eq!(
+        edit_definition(&mut studio, "profile", invalid, true).0,
+        422
+    );
+    assert_eq!(get(&mut studio, "/api/state").1, stable);
+    assert_eq!(studio.handle("POST", "/api/save", b"{}").status, 200);
+    let mut reopened = serve::Studio::load(&model, Some("body".into())).unwrap();
+    assert_eq!(
+        get(&mut reopened, "/api/sketches").1["sketches"][0]["definition"],
+        saved
+    );
+    assert_eq!(
+        scene(get(&mut reopened, "/api/annotations?id=part").1)["points"]["cut"],
+        moved["points"]["cut"]
+    );
+}
