@@ -4882,3 +4882,103 @@ fn exact_fraction_queries_resolve_interpolation_periodic_seams_conics_and_projec
         }
     }
 }
+
+#[test]
+fn reference_dimension_drafts_measure_generated_geometry_and_survive_history_and_save() {
+    let directory = Directory::new();
+    let mut request: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../tools/model/slotted-plate.request.json"
+    ))
+    .unwrap();
+    request["model"]["instances"][0]["base"]["id"] = json!("part");
+    let document = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+    let model = PathBuf::from(directory.model(&document));
+    let original = fs::read_to_string(&model).unwrap();
+    let mut studio = serve::Studio::load(&model, Some("body".into())).unwrap();
+    let scene = |data: serde_json::Value| {
+        data["scenes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["kind"] == "sketch" && s["feature"] == "profile")
+            .unwrap()
+            .clone()
+    };
+    let accepted = scene(get(&mut studio, "/api/annotations?id=part").1);
+    let state = get(&mut studio, "/api/state").1;
+    let mut draft = get(&mut studio, "/api/sketches").1["sketches"][0]["definition"].clone();
+    let constraints = draft["constraints"].clone();
+    draft["measurements"].as_array_mut().unwrap().push(json!({
+        "id":"width_reference", "measure":{"curve_length":{"curve":"outline:side0"}}
+    }));
+    let (status, preview) = edit_definition(&mut studio, "profile", draft.clone(), false);
+    assert_eq!(status, 200, "{preview}");
+    assert_eq!(preview["can_apply"], true);
+    let reviewed = scene(preview["annotations"].clone());
+    assert_eq!(reviewed["points"], accepted["points"]);
+    assert_eq!(reviewed["solver"], accepted["solver"]);
+    let measurement = |s: &serde_json::Value| {
+        s["annotations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|a| a["detail"]["measurement"]["id"] == "width_reference")
+            .unwrap()
+            .clone()
+    };
+    assert_eq!(measurement(&reviewed)["detail"]["value"], 80.0);
+    assert_eq!(measurement(&reviewed)["detail"]["driving"], false);
+    assert_eq!(get(&mut studio, "/api/state").1, state);
+    assert_eq!(fs::read_to_string(&model).unwrap(), original);
+    assert_eq!(
+        edit_definition(&mut studio, "profile", draft.clone(), true).0,
+        200
+    );
+    history(&mut studio, "undo");
+    assert_eq!(
+        get(&mut studio, "/api/sketches").1["sketches"][0]["definition"]["measurements"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    history(&mut studio, "redo");
+    let response = studio.handle("POST", "/api/parameters", br#"{"set":{"width":90}}"#);
+    assert_eq!(
+        response.status,
+        200,
+        "{}",
+        String::from_utf8_lossy(&response.body)
+    );
+    assert_eq!(
+        measurement(&scene(get(&mut studio, "/api/annotations?id=part").1))["detail"]["value"],
+        90.0
+    );
+    assert_eq!(
+        get(&mut studio, "/api/sketches").1["sketches"][0]["definition"]["constraints"],
+        constraints
+    );
+    assert_eq!(studio.handle("POST", "/api/save", b"{}").status, 200);
+    let mut studio = serve::Studio::load(&model, Some("body".into())).unwrap();
+    assert_eq!(
+        measurement(&scene(get(&mut studio, "/api/annotations?id=part").1))["detail"]["value"],
+        90.0
+    );
+    let stable = get(&mut studio, "/api/state").1;
+    let saved = fs::read_to_string(&model).unwrap();
+    draft = get(&mut studio, "/api/sketches").1["sketches"][0]["definition"].clone();
+    draft["measurements"][2]["measure"]["curve_length"]["curve"] = json!("missing:side0");
+    assert_eq!(edit_definition(&mut studio, "profile", draft, true).0, 422);
+    assert_eq!(get(&mut studio, "/api/state").1, stable);
+    assert_eq!(fs::read_to_string(&model).unwrap(), saved);
+    let mut draft = get(&mut studio, "/api/sketches").1["sketches"][0]["definition"].clone();
+    draft["measurements"].as_array_mut().unwrap().pop();
+    assert_eq!(edit_definition(&mut studio, "profile", draft, true).0, 200);
+    assert_eq!(
+        get(&mut studio, "/api/sketches").1["sketches"][0]["definition"]["measurements"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+}

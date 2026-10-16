@@ -22,6 +22,14 @@ fits the view. Solid rendering uses WebGL when available and an SVG surface
 fallback otherwise. Static SVGs preserve labels and metadata tooltips for export
 or clients that cannot run the interactive HTML.
 
+The live editor also authors reference dimensions: **Edit sketch geometry** →
+**Load sketch draft** → **Dimensions & constraints** → **Dimension behavior** →
+**Reference dimensions (measured)**. Name a readout, choose geometry and add it;
+Preview displays its native value without constraining the sketch. Select its
+label or reference-list entry to update it, or remove it from that list. Apply,
+Undo/Redo and Save use the same workflow as other sketch edits. See
+[reference dimensions](../../docs/SKETCHES.md#axis-distances-curve-lengths-and-reference-dimensions-schema-122).
+
 ## What is shown
 
 **Sketches:** native-sampled lines, circles, arcs and interpolated splines in

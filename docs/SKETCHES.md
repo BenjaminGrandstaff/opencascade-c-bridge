@@ -2096,6 +2096,33 @@ and sign conventions. `SketchDefinition::measure` returns them in order
 parenthesised `measured` dimensions with `driving: false`. Ids must be
 unique; there are at most 10,000.
 
+In the live sketch editor, open **Dimensions & constraints** and set
+**Dimension behavior** to **Reference dimensions (measured)**. Choose one of
+these ten dimension types, give it a unique **Reference name**, and select its
+geometry in the menus or on the canvas. **Add reference dimension** stages it
+in the draft; **Preview draft** measures the solved geometry and shows its
+parenthesised label. No target value or parameter is added. Angle readouts use
+radians, matching the native annotations.
+
+Select a reference label or its **Reference …** entry to edit its name, type
+or geometry; **Update reference dimension** replaces that measurement.
+**Remove reference …** removes it. Annotation selection checks the complete
+saved measurement, so a label from before a definition edit cannot silently
+select a changed measurement. Generated shape/pattern and declared projected
+references use the same native catalogue as driving dimensions. After changing
+a generator recipe, Preview refreshes that catalogue before choosing new
+references. Lost sources fail verification without replacing the accepted model.
+Preview/Apply, Undo/Redo and Save/reopen use the existing guarded edit flow.
+The editor adds no model fields: schema 149 and ABI 74 remain unchanged.
+
+The reference list uses O(M) controls for M measurements. Geometry menus and
+name validation scan the available geometry and measurements; they do no native
+solving or curve sampling. A local Node check with 1,000 points and 1,000
+reference dimensions built the controls in about 4.5 ms and validated 100 new
+measurements in about 19 ms (DOM stubs, excluding browser layout and native
+Preview). Native measurement performance remains covered by the scale cases
+below.
+
 The bridge's `occt_bridge_shape_edge_length` now integrates adaptively
 (`GCPnts_AbscissaPoint`, 1e-12) instead of with fixed-order Gauss points,
 which were off by up to 1.6% on full ellipses (48.563 mm read as 49.327 mm

@@ -66,3 +66,50 @@ test('projected named junctions and intersections are available to typed point c
  assert.deepEqual(geometryIds(d,'points'),['authored','reference:start','reference:end','reference:junction:mid','reference:intersection:cut']);
  assert.deepEqual(makeConstraint(d,'distance',{first:'reference:junction:mid',second:'reference:intersection:cut'},mm(5)),{distance:{first:'reference:junction:mid',second:'reference:intersection:cut',value:mm(5)}});
 });
+
+test('reference dimensions validate geometry and names without introducing drivers',async()=>{
+ const {makeMeasurement,authoredMeasurementIndex}=await import('./constraint-controls.mjs');
+ const {captureGeneratedPoints,bindGeneratedPoints}=await import('./generated-points.mjs');
+ const d=structuredClone(definition);d.shapes=[{rectangle:{id:'rect',first:'A',opposite:'B'}}];
+ bindGeneratedPoints(d,captureGeneratedPoints(d,['rect:corner1'],{lines:['rect:side0']}));
+ for(const [type,fields] of Object.entries({distance:{first:'A',second:'rect:corner1'},horizontal_distance:{first:'B',second:'A'},vertical_distance:{first:'A',second:'B'},point_line_distance:{point:'A',line:'rect:side0'},angle:{first:'AB',second:'rect:side0'},line_angle:{line:'AB'},arc_angle:{arc:'arc'},radius:{curve:'C1'},diameter:{curve:'arc'},curve_length:{curve:'spline'}})){
+  const m=makeMeasurement(d,'readout',type,{...fields,value:mm(999)});
+  assert.deepEqual(m,{id:'readout',measure:{[type]:fields}});
+ }
+ assert.throws(()=>makeMeasurement(d,'readout','horizontal',{line:'AB'}),/supported/);
+ for(const id of ['',' spaced','A','rect','rect:corner1','rect:side0'])assert.throws(()=>makeMeasurement(d,id,'line_angle',{line:'AB'}));
+ d.measurements=[makeMeasurement(d,'readout','line_angle',{line:'AB'})];
+ assert.throws(()=>makeMeasurement(d,'readout','line_angle',{line:'AB'}),/already/);
+ assert.doesNotThrow(()=>makeMeasurement(d,'readout','line_angle',{line:'AB'},0));
+ const old={detail:{measurement:structuredClone(d.measurements[0])}};
+ assert.equal(authoredMeasurementIndex(d,old),0);
+ d.measurements[0].measure={line_angle:{line:'CD'}};assert.equal(authoredMeasurementIndex(d,old),-1);
+ d.shapes[0].rectangle.opposite='A';assert.throws(()=>makeMeasurement(d,'lost','curve_length',{curve:'rect:side0'}),/known/);
+ assert.throws(()=>makeMeasurement(d,'bad','distance',{first:'A',second:'A'}),/distinct/);
+ assert.deepEqual(d.constraints,[]);
+});
+
+test('reference form supports canvas picks, annotation editing, mode switching and removal',()=>{
+ globalThis.document={createElement:tag=>new Element(tag)};
+ globalThis.Option=class extends Element{constructor(text,value){super('option');this.textContent=text;this.value=value;}};
+ try{
+  const d=structuredClone(definition),host=new Element('div'),messages=[];let changes=0;
+  const controls=createConstraintControls({host,definition:d,changed:()=>changes++,message:m=>messages.push(m)});
+  const behavior=all(host).find(e=>e['aria-label']==='Dimension behavior');behavior.value='reference';behavior.onchange();
+  assert.equal(controls.reference,true);assert.equal(controls.type,'distance');
+  assert(!all(host).some(e=>e.textContent==='Driving value'));
+  controls.pick('B');controls.pick('A');
+  let name=label(host,'Reference name');name.value='span';name.oninput();
+  button(host,'Add reference dimension').onclick();assert.equal(changes,1);
+  assert.deepEqual(d.measurements,[{id:'span',measure:{distance:{first:'B',second:'A'}}}]);assert.deepEqual(d.constraints,[]);
+  assert(controls.selectAnnotation({detail:{measurement:structuredClone(d.measurements[0])}}));
+  assert.equal(label(host,'Reference name').value,'span');
+  name=label(host,'Reference name');name.value='renamed';name.oninput();button(host,'Update reference dimension').onclick();assert.equal(d.measurements[0].id,'renamed');
+  const type=all(host).find(e=>e['aria-label']==='Constraint type');type.value='horizontal_distance';type.onchange();
+  assert.equal(label(host,'Reference name').value,'renamed');button(host,'Update reference dimension').onclick();
+  assert.equal(d.measurements.length,1);assert.deepEqual(d.measurements[0].measure,{horizontal_distance:{first:'B',second:'A'}});
+  behavior.value='driving';behavior.onchange();assert.equal(controls.reference,false);assert(label(host,'Driving value'));
+  const host2=new Element('div');createConstraintControls({host:host2,definition:d,initialReference:true,initialType:'curve_length',changed:()=>changes++,message:m=>messages.push(m)});
+  button(host2,'Remove reference renamed').onclick();assert.deepEqual(d.measurements,[]);assert.equal(changes,4);
+ }finally{delete globalThis.document;delete globalThis.Option;}
+});
