@@ -84,8 +84,44 @@ let diameter = socket(SocketHeadDimension::NormalClearance);
 
 Lookups follow the same contract as ISO 273 V1: exact keys within 1e-9 mm, no
 interpolation or nearest size, unsupported pairs fail regeneration and keep the
-previous accepted output, and V1 values never change. The booklet's optional
-60-degree countersink relief (column C) is not generated.
+previous accepted output, and V1 values never change.
+
+### Countersink relief (schema 164)
+
+The booklet's optional 60° countersink relief under the head (column C of
+page 9) is `SocketHeadDimension::CountersinkRelief`. Its 38 values sit in
+their own tables beside the V1 recess rows, which are unchanged, and were
+read from the printed page on 2026-10-15. A test checks spot values from
+each system, and that every relief exceeds its screw by 2–31%, fits inside
+its counterbore, and grows with size, which catches a misread digit.
+
+`HoleFinish::Counterbore` takes the relief as an optional `relief` diameter.
+The hole then gets a 60° included-angle cone at the counterbore's floor,
+narrowing into the bore, as the booklet draws it:
+
+```rust
+let finish = HoleFinish::Counterbore {
+    diameter: socket(SocketHeadDimension::CounterboreDiameter),
+    depth: socket(SocketHeadDimension::CounterboreDepth),
+    relief: Some(socket(SocketHeadDimension::CountersinkRelief)),
+};
+```
+
+- **No-op case.** A relief no wider than the bore cuts nothing, because the
+  bore already clears the fillet. Several normal-fit holes are like this:
+  M6's normal clearance and its relief are both 6.8 mm, and #10's #2 drill
+  (0.221 in) is wider than its 0.218 in relief. Close-fit holes get the cone.
+- **Validation.** The relief must be narrower than the counterbore, and in
+  a blind hole the cone must end above the bore's bottom.
+- **Callout.** The hole callout prints it as `; RELIEF Ø6.800 mm x 60°`.
+
+A test checks that an M6 close-fit hole loses exactly the cone's volume
+(0.2 mm of radius over 0.2 / tan 30° of depth) and that the normal-fit
+hole is unchanged. The counterbore and its cone are built as one revolved
+profile, with no boolean between them. The scale suite edits 100 relieved
+counterbores in one plate in 13.5 s against a 20 s budget. Each hole cuts
+the plate the previous holes left, so the cost follows the plate's face
+count: four faces per relieved hole against three per plain counterbore.
 
 ## Tolerance classes
 
@@ -96,7 +132,7 @@ of size, and measured diameters are judged against them. See
 
 ## Limits
 
-These catalogs choose nominal diameters and depths only. They do not select
+These catalogs choose nominal diameters, depths and reliefs only. They do not select
 manufacturing tolerances (a drawing dimension's tolerance class does),
 thread classes, or engagement lengths, and do not
 validate fit, strength, or machinability. A tap-drill expression does not

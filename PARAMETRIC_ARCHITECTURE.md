@@ -624,8 +624,9 @@ counterbore are all catalog-driven, including incremental edits and rollback.
 Schema 163 adds ISO 286 tolerance classes (H6–H13, h6–h13 to 500 mm) on
 drawing dimensions and hole callouts, from a frozen V1 table checked against
 the standard's generating formula; measured sizes are judged against their
-limits. The catalogs still do not choose a class or verify fit or standards
-compliance.
+limits. Schema 164 adds the socket-head countersink relief, as a catalog
+column and a 60° cone at a counterbore's floor. The catalogs still do not
+choose a class or verify fit or standards compliance.
 
 ## Sheet metal
 

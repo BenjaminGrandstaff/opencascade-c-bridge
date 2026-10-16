@@ -22,6 +22,7 @@ fn hole_callouts_follow_feature_edits_and_preserve_recess_depth_and_thread_inten
         HoleFinish::Counterbore {
             diameter: mm(6.0),
             depth: mm(2.0),
+            relief: None,
         },
         HoleExtent::Blind { depth: mm(8.0) },
     );
@@ -45,6 +46,29 @@ fn hole_callouts_follow_feature_edits_and_preserve_recess_depth_and_thread_inten
     assert_eq!(
         before.labels[0].text,
         "Ø4.000 mm DEPTH 8.000 mm; CBORE Ø6.000 DEPTH 2.000 mm; THREAD M5x0.8 (5.000 x 0.800 mm, LH)"
+    );
+    let mut relieved_definition = definition.clone();
+    let FeatureOperation::Hole {
+        finish: HoleFinish::Counterbore { relief, .. },
+        ..
+    } = &mut relieved_definition.features.last_mut().unwrap().operation
+    else {
+        unreachable!()
+    };
+    *relief = Some(mm(4.5));
+    let mut relieved_graph = InstanceGraph::new(&relieved_definition);
+    relieved_graph
+        .add_base("part", HashMap::new(), "test")
+        .unwrap();
+    let relieved = page
+        .generate(&relieved_graph, &session, DrawingRenderOptions::default())
+        .unwrap();
+    assert!(
+        relieved.labels[0]
+            .text
+            .contains("; CBORE Ø6.000 DEPTH 2.000 mm; RELIEF Ø4.500 mm x 60°; THREAD"),
+        "{}",
+        relieved.labels[0].text
     );
     graph
         .set_override(

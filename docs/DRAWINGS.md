@@ -320,7 +320,7 @@ let dimension = DrawingDimension {
 An optional `presentation.hole` references an unsuppressed instance and a `Hole`
 feature, and is valid only for diameter dimensions. Its current feature parameters
 supply the nominal bore diameter, blind depth or THRU indication, counterbore
-size/depth, countersink size/included angle, and recorded thread designation,
+size/depth and any relief (`; RELIEF Ø6.800 mm x 60°`, schema 164), countersink size/included angle, and recorded thread designation,
 nominal diameter, pitch and handedness. The datum pair locates the callout leader;
 when a Hole is referenced its feature diameter supplies the label instead of the
 leader's datum distance. Tolerance applies to the bore diameter; recess and thread

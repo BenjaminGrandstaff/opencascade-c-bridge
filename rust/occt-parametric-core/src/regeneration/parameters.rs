@@ -519,9 +519,16 @@ fn collect_hole_parameters<'a>(
     }
     match finish {
         HoleFinish::Plain => {}
-        HoleFinish::Counterbore { diameter, depth } => {
+        HoleFinish::Counterbore {
+            diameter,
+            depth,
+            relief,
+        } => {
             collect_scalar_parameters(diameter, names);
             collect_scalar_parameters(depth, names);
+            if let Some(relief) = relief {
+                collect_scalar_parameters(relief, names);
+            }
         }
         HoleFinish::Countersink {
             diameter,

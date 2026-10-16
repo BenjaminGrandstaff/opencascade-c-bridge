@@ -243,6 +243,7 @@ fn main() -> ExitCode {
     outcomes.push(carr_lane_catalog_case());
     outcomes.push(threaded_hole_features_case());
     outcomes.push(entry_hole_features_case(false));
+    outcomes.push(relieved_counterbore_case());
     outcomes.push(entry_hole_features_case(true));
     outcomes.push(large_sketch_case(false));
     outcomes.push(large_sketch_case(true));

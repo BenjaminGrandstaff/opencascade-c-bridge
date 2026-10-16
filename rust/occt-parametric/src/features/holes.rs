@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::assembly::{add, dot, scale, subtract, unit};
+use occt_bridge::WireSegment;
 
 pub(super) struct HoleSpec<'a> {
     pub position: &'a VectorExpr,
@@ -114,11 +115,70 @@ pub(super) fn execute_hole<'session>(
         HoleFinish::Counterbore {
             diameter,
             depth: recess_depth,
+            relief,
         } => {
             let recess_radius = scalar(diameter, parameters, Dimension::Length)? / 2.0;
             let recess_depth = scalar(recess_depth, parameters, Dimension::Length)?;
             check_recess(radius, recess_radius, recess_depth, extent, depth)?;
-            Some(session.create_cylinder(position, axis, recess_radius, recess_depth)?)
+            let relief_radius = relief
+                .as_ref()
+                .map(|relief| scalar(relief, parameters, Dimension::Length))
+                .transpose()?
+                .map(|diameter| diameter / 2.0);
+            match relief_radius {
+                // A relief no wider than the bore is already cleared by it.
+                Some(relief_radius) if relief_radius > radius => {
+                    // 60° included: the cone narrows by tan 30° per unit depth.
+                    let relief_depth =
+                        (relief_radius - radius) / (std::f64::consts::PI / 6.0).tan();
+                    if relief_radius >= recess_radius {
+                        return Err(ModelError::new(
+                            "counterbore relief must be narrower than the counterbore",
+                        ));
+                    }
+                    if matches!(extent, HoleExtent::Blind { .. })
+                        && recess_depth + relief_depth >= depth
+                    {
+                        return Err(ModelError::new(
+                            "counterbore relief must end above the blind bore's bottom",
+                        ));
+                    }
+                    // One revolved profile, wall to floor to 60° flank, so
+                    // no boolean joins the counterbore and the cone.
+                    let radial = perpendicular(axis);
+                    let at =
+                        |rho: f64, z: f64| add(position, add(scale(radial, rho), scale(axis, z)));
+                    let bottom = recess_depth + relief_depth;
+                    let points = [
+                        at(0.0, 0.0),
+                        at(recess_radius, 0.0),
+                        at(recess_radius, recess_depth),
+                        at(relief_radius, recess_depth),
+                        at(radius, bottom),
+                        at(0.0, bottom),
+                    ];
+                    let segments: Vec<WireSegment> = (0..points.len())
+                        .map(|i| WireSegment::Line {
+                            start: points[i],
+                            end: points[(i + 1) % points.len()],
+                        })
+                        .collect();
+                    let wire = session.create_segment_wire(&segments, true)?;
+                    let face = session.create_face_from_wire(&wire)?;
+                    Some(session.create_revolve_from_face(
+                        &face,
+                        position,
+                        axis,
+                        std::f64::consts::TAU,
+                    )?)
+                }
+                Some(relief_radius) if !(relief_radius.is_finite() && relief_radius > 0.0) => {
+                    return Err(ModelError::new(
+                        "counterbore relief diameter must be a positive finite length",
+                    ));
+                }
+                _ => Some(session.create_cylinder(position, axis, recess_radius, recess_depth)?),
+            }
         }
         HoleFinish::Countersink {
             diameter,
@@ -470,4 +530,14 @@ fn validate_hole_result(
         ));
     }
     Ok(())
+}
+
+/// A unit vector perpendicular to the unit vector `axis`.
+fn perpendicular(axis: Vec3) -> Vec3 {
+    let helper = if axis.x.abs() < 0.9 {
+        Vec3::new(1.0, 0.0, 0.0)
+    } else {
+        Vec3::new(0.0, 1.0, 0.0)
+    };
+    unit(subtract(helper, scale(axis, dot(helper, axis)))).expect("helper is not along axis")
 }

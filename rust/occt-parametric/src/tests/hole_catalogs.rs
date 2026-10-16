@@ -53,7 +53,8 @@ fn socket_recesses_preserve_manufacturer_precision_and_fit() {
             counterbore_diameter: mm(11.2),
             counterbore_depth: mm(6.0),
             normal_clearance: mm(6.8),
-            close_clearance: mm(6.4)
+            close_clearance: mm(6.4),
+            countersink_relief: mm(6.8),
         }
     );
     let imperial = carr_lane_socket_head_v1(HoleCatalogSystem::Inch, inch(5.0 / 16.0)).unwrap();
@@ -163,6 +164,7 @@ fn catalog_family() -> FamilyDefinition {
                 finish: HoleFinish::Counterbore {
                     diameter: socket(SocketHeadDimension::CounterboreDiameter),
                     depth: socket(SocketHeadDimension::CounterboreDepth),
+                    relief: None,
                 },
                 thread: None,
             },
@@ -222,5 +224,112 @@ fn catalog_expressions_drive_exact_holes_edits_and_round_trips() {
         document
     );
     drop((first, second));
+    assert_eq!(session.shape_count().unwrap(), 0);
+}
+#[test]
+fn countersink_reliefs_match_column_c_and_clear_every_screw() {
+    // Spot checks of printed column C.
+    for (nominal, expected) in [(1.6, 2.0), (8.0, 9.2), (12.0, 14.2), (48.0, 52.6)] {
+        let relief = carr_lane_socket_dimension_v1(
+            HoleCatalogSystem::Metric,
+            mm(nominal),
+            SocketHeadDimension::CountersinkRelief,
+        )
+        .unwrap();
+        assert_eq!(relief, mm(expected));
+    }
+    for (nominal, expected) in [(0.06, 0.074), (0.19, 0.218), (0.3125, 0.346), (2.0, 2.18)] {
+        let relief = carr_lane_socket_dimension_v1(
+            HoleCatalogSystem::Inch,
+            inch(nominal),
+            SocketHeadDimension::CountersinkRelief,
+        )
+        .unwrap();
+        assert_eq!(relief, mm(expected * 25.4));
+    }
+    // Every relief clears its screw by 2-31% (M2 is 2.6 mm) and fits inside
+    // its counterbore,
+    // which catches a misread digit.
+    let metric = [
+        1.6, 2.0, 2.5, 3.0, 4.0, 5.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 20.0, 24.0, 30.0, 36.0,
+        42.0, 48.0,
+    ];
+    let inches = [
+        0.06, 0.086, 0.112, 0.125, 0.138, 0.164, 0.19, 0.25, 0.3125, 0.375, 0.4375, 0.5, 0.625,
+        0.75, 0.875, 1.0, 1.25, 1.5, 1.75, 2.0,
+    ];
+    for (system, sizes, unit) in [
+        (HoleCatalogSystem::Metric, metric.as_slice(), 1.0),
+        (HoleCatalogSystem::Inch, inches.as_slice(), 25.4),
+    ] {
+        let mut last = 0.0;
+        for nominal in sizes {
+            let recess = carr_lane_socket_head_v1(system, mm(nominal * unit)).unwrap();
+            let relief = recess.countersink_relief.normalized().unwrap();
+            let ratio = relief / (nominal * unit);
+            assert!((1.02..1.31).contains(&ratio), "{nominal}: {ratio}");
+            assert!(relief < recess.counterbore_diameter.normalized().unwrap());
+            assert!(relief > last);
+            last = relief;
+        }
+    }
+}
+#[test]
+fn counterbore_reliefs_cut_a_sixty_degree_cone_at_the_floor() {
+    let session = Session::new().unwrap();
+    let socket = |dimension| ScalarExpr::CarrLaneSocketHeadV1 {
+        nominal_diameter: Box::new(ScalarExpr::Parameter("nominal".into())),
+        system: HoleCatalogSystem::Metric,
+        dimension,
+    };
+    let volume_with = |clearance, relief: Option<ScalarExpr>| {
+        let mut family = catalog_family();
+        let FeatureOperation::Hole {
+            diameter,
+            finish: HoleFinish::Counterbore { relief: slot, .. },
+            ..
+        } = &mut family.features[2].operation
+        else {
+            unreachable!()
+        };
+        *diameter = socket(clearance);
+        *slot = relief;
+        let part = PartInstance {
+            id: "part".into(),
+            definition: &family,
+            overrides: HashMap::new(),
+            provenance: "test".into(),
+        };
+        part.regenerate(&session).map(|generated| {
+            let shape = generated.shape("recess").unwrap();
+            assert!(session.is_valid(shape).unwrap());
+            session.volume(shape).unwrap()
+        })
+    };
+    let relief = Some(socket(SocketHeadDimension::CountersinkRelief));
+    // M6 close fit: a 6.4 mm bore under a 6.8 mm relief, so the cone is
+    // 0.2 / tan 30° deep below the 6 mm deep counterbore.
+    let plain = volume_with(SocketHeadDimension::CloseClearance, None).unwrap();
+    let relieved = volume_with(SocketHeadDimension::CloseClearance, relief.clone()).unwrap();
+    let (big, small) = (3.4_f64, 3.2_f64);
+    let depth = (big - small) / (std::f64::consts::PI / 6.0).tan();
+    let cone = std::f64::consts::PI * depth / 3.0 * (big * big + big * small + small * small)
+        - std::f64::consts::PI * small * small * depth;
+    assert!(
+        (plain - relieved - cone).abs() < 1e-7,
+        "{}",
+        plain - relieved
+    );
+    // M6 normal fit's 6.8 mm bore already clears the 6.8 mm relief.
+    let normal = volume_with(SocketHeadDimension::NormalClearance, None).unwrap();
+    assert_eq!(
+        volume_with(SocketHeadDimension::NormalClearance, relief).unwrap(),
+        normal
+    );
+    // A relief as wide as the counterbore, or a negative one, is rejected.
+    let mm_expr = |v| ScalarExpr::Literal(Quantity::length(v, LengthUnit::Millimeter));
+    for bad in [11.2, -1.0] {
+        assert!(volume_with(SocketHeadDimension::CloseClearance, Some(mm_expr(bad))).is_err());
+    }
     assert_eq!(session.shape_count().unwrap(), 0);
 }

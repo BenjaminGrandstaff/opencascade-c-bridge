@@ -12,12 +12,12 @@ tracks status and order.
 | `occt-types` (shared value types) | — | No native dependency |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI; re-exports `occt-types` |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric-core` (kernel-free engineering layer) | Schema 163 | Definitions, documents, solving and checks without OCCT |
-| `occt-parametric` (kernel regeneration) | Schema 163 | Active development; re-exports the core API |
+| `occt-parametric-core` (kernel-free engineering layer) | Schema 164 | Definitions, documents, solving and checks without OCCT |
+| `occt-parametric` (kernel regeneration) | Schema 164 | Active development; re-exports the core API |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 7/7, bridge 160 + first-use integration 1 (+1 doc test), recipes 3, parametric core 55 + kernel 731 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 66 + viewer Node 144 + branch command 2 + model command 90, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 7/7, bridge 160 + first-use integration 1 (+1 doc test), recipes 3, parametric core 55 + kernel 733 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 69 + viewer Node 151 + branch command 2 + model command 90, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -26,6 +26,16 @@ tracks status and order.
 
 ## Done
 
+- Socket-head countersink relief (schema 164; ABI 76 unchanged). The Carr
+  Lane catalog gains column C, the optional 60° relief under the head, and
+  a counterbore may take a relief diameter that cuts a 60° cone at its
+  floor into the bore. A relief no wider than the bore, as for several
+  normal-fit holes, cuts nothing. The counterbore and cone are one revolved
+  solid, with no boolean between them. Callouts print the relief. A scale
+  case edits 100 relieved counterbores in one plate in 13.5 s against a
+  20 s budget; each hole's cut follows the plate's face count, which a
+  relief raises by a third. See
+  [Countersink relief](docs/HOLE_SIZE_CATALOG.md#countersink-relief-schema-164).
 - ISO 286 tolerance classes (schema 163; ABI 76 unchanged). A diameter or
   linear dimension, including a live hole callout, may carry a tolerance
   class H6–H13 (holes) or h6–h13 (shafts). The label shows the class and
@@ -2773,8 +2783,7 @@ scopes and inspected repo capabilities, not a full conformity audit.
   hems, cutouts across bends, and unfolding edited solids beyond
   constant-width strips (cutouts within flanges exist, schema 160; bend
   tables, schema 161; open and rolled hems, schema 162).
-- Optional under-head countersink relief for socket-head holes, and
-  tolerance classes beyond H and h (H6–H13 and h6–h13 exist, schema 163).
+- Tolerance classes beyond H and h (H6–H13 and h6–h13 exist, schema 163).
 - Wing structure beyond solid printed segments: hollow shells with internal
   ribs, alignment pins independent of the spar, twist-exact hinge lines, and
   print-bed fit in arbitrary orientations.

@@ -429,6 +429,8 @@ and socket-head counterbore catalogs in metric and inch sizes; see
 [Hole-size catalog](docs/HOLE_SIZE_CATALOG.md). Schema 163 adds ISO 286
 tolerance classes (H6–H13 and h6–h13, to 500 mm) on drawing dimensions and
 hole callouts, which set the limits that measured sizes are judged by.
+Schema 164 adds the booklet's optional 60° countersink relief under socket
+heads, as a catalog dimension and a counterbore option.
 
 ABI 34 adds exact hidden-line projection, plane clipping, edge sampling, and
 bulk subshape traversal. Schema 41 adds driven frame joints with limits and
@@ -540,6 +542,10 @@ Both start at the supplied hole position along the axis, require a diameter
 larger than the bore, and must be shallower than a blind bore. Countersink depth
 is `(entry_radius - bore_radius) / tan(angle_radians / 2)`.
 The caller supplies the entry position; no surface is inferred.
+Schema 164 adds an optional counterbore `relief` diameter: a 60° countersink at
+the counterbore's floor, narrowing into the bore, that clears the fillet under
+a socket head. The Carr Lane catalog supplies it as
+`SocketHeadDimension::CountersinkRelief`.
 Schema 29 adds `Hole` operations referencing a
 named one-solid input. Position and diameter are length-valued; the nonzero
 axis is dimensionless and normalized. `HoleExtent::Blind { depth }` cuts a

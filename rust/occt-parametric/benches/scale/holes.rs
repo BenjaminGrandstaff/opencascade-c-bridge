@@ -86,12 +86,33 @@ pub(super) fn entry_hole_features_case(sink: bool) -> Outcome {
         HoleFinish::Counterbore {
             diameter,
             depth: ScalarExpr::Literal(Quantity::length(0.5, LengthUnit::Millimeter)),
+            relief: None,
         }
     };
     hole_case(
         finish,
         if sink { "countersink" } else { "counterbore" },
         15_000,
+        None,
+    )
+}
+
+/// Counterbores with a 1.4 mm 60° relief at the floor of each. Each hole
+/// cuts the plate left by the previous ones, so cost follows the plate's
+/// faces: four per relieved hole against three per plain counterbore, and
+/// the case runs about 30% longer (13.5 s measured), hence its own budget.
+pub(super) fn relieved_counterbore_case() -> Outcome {
+    hole_case(
+        HoleFinish::Counterbore {
+            diameter: ScalarExpr::Literal(Quantity::length(1.6, LengthUnit::Millimeter)),
+            depth: ScalarExpr::Literal(Quantity::length(0.5, LengthUnit::Millimeter)),
+            relief: Some(ScalarExpr::Literal(Quantity::length(
+                1.4,
+                LengthUnit::Millimeter,
+            ))),
+        },
+        "relieved counterbore",
+        20_000,
         None,
     )
 }
@@ -205,7 +226,16 @@ fn plate_volume(count: usize, radius: f64, finish: &HoleFinish) -> f64 {
     let entry_radius = 0.8;
     let extra = match finish {
         HoleFinish::Plain => 0.0,
-        HoleFinish::Counterbore { .. } => (entry_radius * entry_radius - radius * radius) * 0.5,
+        HoleFinish::Counterbore { relief, .. } => {
+            let counterbore = (entry_radius * entry_radius - radius * radius) * 0.5;
+            // A 0.7 mm radius 60° cone below it, less the bore it overlaps.
+            let cone = relief.as_ref().map_or(0.0, |_| {
+                let big = 0.7;
+                let depth = (big - radius) / (std::f64::consts::PI / 6.0).tan();
+                depth * (big * big + big * radius + radius * radius) / 3.0 - depth * radius * radius
+            });
+            counterbore + cone
+        }
         HoleFinish::Countersink { .. } => {
             let depth = entry_radius - radius; // included angle pi/2
             depth * (entry_radius * entry_radius + entry_radius * radius - 2.0 * radius * radius)

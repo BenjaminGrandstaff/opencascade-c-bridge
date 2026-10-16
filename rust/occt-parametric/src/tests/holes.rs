@@ -87,6 +87,7 @@ fn entry_recesses_remove_exact_volume_with_history_and_cleanup() {
             HoleFinish::Counterbore {
                 diameter: length_expr(4.0),
                 depth: length_expr(2.0),
+                relief: None,
             },
             6.0 * std::f64::consts::PI,
         ),
@@ -143,6 +144,7 @@ fn recess_parameter_edits_rebuild_and_invalid_edits_preserve_prior_output() {
             HoleFinish::Counterbore {
                 diameter: ScalarExpr::Parameter("entry_diameter".into()),
                 depth: ScalarExpr::Parameter("entry_depth".into()),
+                relief: None,
             }
         };
         let mut definition = finished_bore(
@@ -209,22 +211,27 @@ fn invalid_recess_dimensions_angles_and_units_fail_without_leaks() {
         HoleFinish::Counterbore {
             diameter: length_expr(2.0),
             depth: length_expr(1.0),
+            relief: None,
         },
         HoleFinish::Counterbore {
             diameter: length_expr(4.0),
             depth: length_expr(0.0),
+            relief: None,
         },
         HoleFinish::Counterbore {
             diameter: length_expr(4.0),
             depth: length_expr(4.0),
+            relief: None,
         },
         HoleFinish::Counterbore {
             diameter: scalar(4.0),
             depth: length_expr(1.0),
+            relief: None,
         },
         HoleFinish::Counterbore {
             diameter: length_expr(4.0),
             depth: scalar(1.0),
+            relief: None,
         },
         HoleFinish::Countersink {
             diameter: length_expr(1.0),
@@ -273,6 +280,7 @@ fn schema_thirty_round_trips_recesses_and_defaults_old_holes_to_plain() {
         HoleFinish::Counterbore {
             diameter: length_expr(4.0),
             depth: length_expr(2.0),
+            relief: None,
         },
         HoleFinish::Countersink {
             diameter: length_expr(4.0),
@@ -1088,6 +1096,7 @@ fn drill_points_combine_with_entry_recesses_and_follow_other_axes() {
             HoleFinish::Counterbore {
                 diameter: length_expr(4.0),
                 depth: length_expr(2.0),
+                relief: None,
             },
             6.0 * std::f64::consts::PI,
         ),
@@ -1247,6 +1256,7 @@ fn geometric_hole_recesses_stay_before_the_same_limit_and_points_require_blind_d
             HoleFinish::Counterbore {
                 diameter: length_expr(4.0),
                 depth: length_expr(2.0),
+                relief: None,
             },
         );
         {
@@ -1263,6 +1273,7 @@ fn geometric_hole_recesses_stay_before_the_same_limit_and_points_require_blind_d
             HoleFinish::Counterbore {
                 diameter: length_expr(4.0),
                 depth: length_expr(12.0),
+                relief: None,
             },
         );
         let error = part(&too_deep).regenerate(&session).err().unwrap();
@@ -1473,6 +1484,7 @@ fn shallow_wide_recesses_can_end_at_a_smaller_internal_cavity_face() {
             HoleFinish::Counterbore {
                 diameter: length_expr(4.0),
                 depth: length_expr(2.0),
+                relief: None,
             },
         );
         let blank = definition.features[1].operation.clone();

@@ -1,6 +1,6 @@
 //! Frozen Carr Lane Rev. 9/2021 numeric recommendations, verified 2026-10-03.
 //! https://www.carrlane.com/Portals/0/PDFs/CLM-Trig%20Booklet-ENG-v4-PM.pdf
-//! Printed pages 3–5 and 9. Fractions use exact rational inches; decimals retain
+//! Printed pages 3–5 and 9 (column C added 2026-10-15). Fractions use exact rational inches; decimals retain
 //! printed precision. Tap drills are the manufacturer's 75% theoretical cut
 //! thread recommendations. These are nominal recommendations, not tolerances.
 use super::*;
@@ -18,6 +18,9 @@ pub enum SocketHeadDimension {
     CounterboreDepth,
     NormalClearance,
     CloseClearance,
+    /// The optional 60° countersink relief under the head, column C
+    /// (schema 164).
+    CountersinkRelief,
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SocketHeadRecess {
@@ -25,6 +28,8 @@ pub struct SocketHeadRecess {
     pub counterbore_depth: Quantity,
     pub normal_clearance: Quantity,
     pub close_clearance: Quantity,
+    /// Diameter of the 60° countersink relief at the counterbore's floor.
+    pub countersink_relief: Quantity,
 }
 
 const METRIC_TAPS: [[f64; 3]; 28] = [
@@ -140,6 +145,53 @@ const INCH_RECESSES: [[f64; 5]; 20] = [
     [1.75, 2.75, 1.75, 1.8125, 1.78125],
     [2.0, 3.125, 2.0, 2.0625, 2.03125],
 ];
+/// Column C, the 60° countersink relief diameter, by the same nominal sizes
+/// as the recess tables (schema 164; added beside, not into, the V1 rows).
+/// Read from printed page 9 on 2026-10-15; inch values are printed decimals.
+const METRIC_RELIEFS: [[f64; 2]; 18] = [
+    [1.6, 2.0],
+    [2.0, 2.6],
+    [2.5, 3.1],
+    [3.0, 3.6],
+    [4.0, 4.7],
+    [5.0, 5.7],
+    [6.0, 6.8],
+    [8.0, 9.2],
+    [10.0, 11.2],
+    [12.0, 14.2],
+    [14.0, 16.2],
+    [16.0, 18.2],
+    [20.0, 22.4],
+    [24.0, 26.4],
+    [30.0, 33.4],
+    [36.0, 39.4],
+    [42.0, 45.6],
+    [48.0, 52.6],
+];
+
+const INCH_RELIEFS: [[f64; 2]; 20] = [
+    [0.06, 0.074],
+    [0.086, 0.102],
+    [0.112, 0.13],
+    [0.125, 0.145],
+    [0.138, 0.158],
+    [0.164, 0.188],
+    [0.19, 0.218],
+    [0.25, 0.278],
+    [0.3125, 0.346],
+    [0.375, 0.415],
+    [0.4375, 0.483],
+    [0.5, 0.552],
+    [0.625, 0.689],
+    [0.75, 0.828],
+    [0.875, 0.963],
+    [1.0, 1.1],
+    [1.25, 1.37],
+    [1.5, 1.64],
+    [1.75, 1.91],
+    [2.0, 2.18],
+];
+
 fn millimeters(value: Quantity) -> Result<f64, ModelError> {
     if value.dimension != Dimension::Length {
         return Err(ModelError::new("hole catalog inputs must be lengths"));
@@ -185,8 +237,8 @@ pub fn carr_lane_tap_drill_v1(
         .ok_or_else(|| ModelError::new("unsupported Carr Lane V1 nominal diameter/pitch pair"))?;
     Ok(Quantity::length(row[2] * scale, LengthUnit::Millimeter))
 }
-/// Nominal socket-head recess recommendations; the optional 60-degree
-/// under-head relief in the source table is separate and is not generated.
+/// Nominal socket-head recess recommendations, with the optional 60-degree
+/// under-head relief (schema 164).
 pub fn carr_lane_socket_head_v1(
     system: HoleCatalogSystem,
     nominal: Quantity,
@@ -202,7 +254,16 @@ pub fn carr_lane_socket_head_v1(
         .find(|row| (row[0] * scale - nominal).abs() <= 1e-9)
         .ok_or_else(|| ModelError::new("unsupported Carr Lane V1 socket-head nominal diameter"))?;
     let dimension = |column: usize| Quantity::length(row[column] * scale, LengthUnit::Millimeter);
+    let reliefs = match system {
+        HoleCatalogSystem::Metric => METRIC_RELIEFS.as_slice(),
+        HoleCatalogSystem::Inch => INCH_RELIEFS.as_slice(),
+    };
+    let relief = reliefs
+        .iter()
+        .find(|relief| relief[0] == row[0])
+        .expect("every recess row has a relief");
     Ok(SocketHeadRecess {
+        countersink_relief: Quantity::length(relief[1] * scale, LengthUnit::Millimeter),
         counterbore_diameter: dimension(1),
         counterbore_depth: dimension(2),
         normal_clearance: dimension(3),
@@ -220,6 +281,7 @@ pub fn carr_lane_socket_dimension_v1(
         SocketHeadDimension::CounterboreDepth => recess.counterbore_depth,
         SocketHeadDimension::NormalClearance => recess.normal_clearance,
         SocketHeadDimension::CloseClearance => recess.close_clearance,
+        SocketHeadDimension::CountersinkRelief => recess.countersink_relief,
     })
 }
 pub fn tap_scalar(

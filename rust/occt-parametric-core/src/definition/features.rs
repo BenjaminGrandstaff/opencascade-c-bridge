@@ -40,6 +40,11 @@ pub enum HoleFinish {
     Counterbore {
         diameter: ScalarExpr,
         depth: ScalarExpr,
+        /// Diameter of an optional 60° countersink at the counterbore's floor,
+        /// narrowing into the bore, that clears the fillet under a socket
+        /// head (schema 164). No wider than the bore, it cuts nothing.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        relief: Option<ScalarExpr>,
     },
     /// Included cone angle in scalar radians, strictly between zero and pi.
     Countersink {

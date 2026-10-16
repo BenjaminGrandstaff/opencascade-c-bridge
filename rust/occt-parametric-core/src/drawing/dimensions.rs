@@ -353,11 +353,23 @@ fn hole_label(
     }
     match finish {
         HoleFinish::Plain => {}
-        HoleFinish::Counterbore { diameter, depth } => text.push_str(&format!(
-            "; CBORE Ø{:.p$} DEPTH {:.p$} {unit}",
-            eval(diameter, Dimension::Length)?,
-            eval(depth, Dimension::Length)?
-        )),
+        HoleFinish::Counterbore {
+            diameter,
+            depth,
+            relief,
+        } => {
+            text.push_str(&format!(
+                "; CBORE Ø{:.p$} DEPTH {:.p$} {unit}",
+                eval(diameter, Dimension::Length)?,
+                eval(depth, Dimension::Length)?
+            ));
+            if let Some(relief) = relief {
+                text.push_str(&format!(
+                    "; RELIEF Ø{:.p$} {unit} x 60°",
+                    eval(relief, Dimension::Length)?
+                ));
+            }
+        }
         HoleFinish::Countersink {
             diameter,
             angle_radians,
