@@ -383,3 +383,47 @@ fn geometric_hole_viewer_measures_curved_limits_and_links_upstream_controls() {
         }
     }
 }
+
+#[test]
+fn sketch_scenes_carry_their_resolved_plane_in_model_space() {
+    let dir = Directory::new();
+    let mut request: Value = serde_json::from_str(include_str!(
+        "../../../../../../tools/model/sketch-advanced.request.json"
+    ))
+    .unwrap();
+    let frame_of = |request: &Value, name: &str| -> Value {
+        view_request(&dir, request.clone(), name).unwrap();
+        let data: Value = serde_json::from_str(
+            &fs::read_to_string(dir.0.join(format!("{name}/view.json"))).unwrap(),
+        )
+        .unwrap();
+        data["scenes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["feature"] == "profile" && s["kind"] == "sketch")
+            .unwrap()["frame"]
+            .clone()
+    };
+    // A sketch on its own axes keeps them.
+    let base = frame_of(&request, "base");
+    assert_eq!(base["origin_mm"], json!([0.0, 0.0, 0.0]));
+    assert_eq!(base["x_axis"], json!([1.0, 0.0, 0.0]));
+    assert_eq!(base["y_axis"], json!([0.0, 1.0, 0.0]));
+    // On a datum plane facing -y through (0, 7, 0), y is normal x x_axis.
+    let scalar = |v: f64| json!({"value": v, "dimension": "scalar", "unit": null});
+    let length = |v: f64| json!({"value": v, "dimension": "length", "unit": "millimeter"});
+    request["model"]["family"]["datums"] = json!([{
+        "id": "side",
+        "kind": {"plane": {
+            "origin": {"literal": {"x": length(0.0), "y": length(7.0), "z": length(0.0)}},
+            "normal": {"literal": {"x": scalar(0.0), "y": scalar(-1.0), "z": scalar(0.0)}}
+        }}
+    }]);
+    request["model"]["family"]["features"][0]["operation"]["sketch_face"]["sketch"]["datum_plane"] =
+        json!("side");
+    let datum = frame_of(&request, "datum");
+    assert_eq!(datum["origin_mm"], json!([0.0, 7.0, 0.0]));
+    assert_eq!(datum["x_axis"], json!([1.0, 0.0, 0.0]));
+    assert_eq!(datum["y_axis"], json!([0.0, 0.0, 1.0]));
+}

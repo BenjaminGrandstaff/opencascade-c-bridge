@@ -1,6 +1,7 @@
 # Sketch studio (plan)
 
-Status: proposed, awaiting approval. Nothing here is built yet.
+Status: approved 2026-10-15; being built phase by phase (see the table
+under "Building it").
 
 The sketch studio replaces the panel-driven sketch editor with sketching
 directly in the 3D model view. Each sketch is a layer on its own plane.
@@ -148,6 +149,16 @@ sketches with many thousands of entities.
 - **One place for each thing.** Tools in the toolbar, selection in the
   inspector, solver state in the status bar, advanced features in the
   drawer.
+
+## Built so far
+
+- **Phase 0.** Every sketch scene in the view data has a `frame`: the
+  sketch plane's `origin_mm`, `x_axis` and `y_axis` in family-local
+  millimetres. It comes from `SketchDefinition::resolved_frame`, with
+  datum planes and face supports resolved as the kernel resolves them, so
+  a client can place sketch-local points in 3D as
+  `origin + x·x_axis + y·y_axis`. Tests cover a sketch on its own axes, one
+  on a datum plane, and one attached to a face.
 
 ## Building it
 

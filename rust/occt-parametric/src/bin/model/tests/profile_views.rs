@@ -691,6 +691,24 @@ fn face_attached_sketch_view_reports_the_native_plane_and_keeps_local_coordinate
     );
     assert_eq!(sketch["face_support"]["normal"], json!([0.0, 0.0, 1.0]));
     assert_eq!(sketch["points"]["a"], json!([-10.0, -6.0, 0.0]));
+    // The resolved plane, for clients placing the sketch in 3D.
+    assert_eq!(sketch["frame"]["origin_mm"], json!([30.0, 20.0, 30.0]));
+    let axis = |name: &str| -> Vec<f64> {
+        sketch["frame"][name]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_f64().unwrap())
+            .collect()
+    };
+    let (x, y) = (axis("x_axis"), axis("y_axis"));
+    let normal = [
+        x[1] * y[2] - x[2] * y[1],
+        x[2] * y[0] - x[0] * y[2],
+        x[0] * y[1] - x[1] * y[0],
+    ];
+    assert!((normal[2] - 1.0).abs() < 1e-9, "{normal:?}");
+    assert!(x.iter().zip(&y).map(|(a, b)| a * b).sum::<f64>().abs() < 1e-9);
     assert!(sketch["profile_error"].is_null());
     let annotation = sketch["annotations"]
         .as_array()

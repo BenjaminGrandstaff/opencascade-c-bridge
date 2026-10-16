@@ -354,6 +354,21 @@ pub fn collect(
                         }
                     }
                 };
+                // The sketch plane in family-local millimetres, from the same
+                // resolution the kernel uses, so clients can place it in 3D.
+                let plane = match resolved_sketches.get(&feature.id) {
+                    Some(Ok(resolved)) => resolved.plane,
+                    _ => sketch
+                        .datum_plane
+                        .as_ref()
+                        .and_then(|id| part.definition.datums.iter().find(|d| &d.id == id))
+                        .and_then(|d| d.kind.evaluate(&parameters).ok()),
+                };
+                let frame = resolved.resolved_frame(&parameters, plane).ok().map(
+                    |(origin, x_axis, y_axis)| {
+                        json!({"origin_mm":point(origin),"x_axis":point(x_axis),"y_axis":point(y_axis)})
+                    },
+                );
                 match sketch_scene(
                     &session,
                     id,
@@ -366,7 +381,12 @@ pub fn collect(
                     projected,
                     &mut budget,
                 ) {
-                    Ok(scene) => scenes.push(scene),
+                    Ok(mut scene) => {
+                        if let Some(frame) = frame {
+                            scene["frame"] = frame;
+                        }
+                        scenes.push(scene)
+                    }
                     Err(error) if error.stage == "sketch" => scenes.push(json!({
                         "kind": "sketch",
                         "instance": id,
