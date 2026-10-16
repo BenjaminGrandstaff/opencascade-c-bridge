@@ -17,7 +17,7 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 6/6, bridge 160 + first-use integration 1 (+1 doc test), recipes 3, parametric core 41 + kernel 710 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 8 + view command 63 + viewer Node 137 + branch command 2 + model command 90, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 6/6, bridge 160 + first-use integration 1 (+1 doc test), recipes 3, parametric core 41 + kernel 710 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 8 + view command 65 + viewer Node 142 + branch command 2 + model command 90, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -25,6 +25,16 @@ tracks status and order.
 | Scale benchmarks | Last full suite: 194 Rust cases plus 5 model-command cases and a 10,000-face Python matcher. Sketch authoring integration rechecked 60 sketch cases and 60 MCP cases within budget. | `tools/bench/run.sh` |
 
 ## Done
+
+- Exact spline sample fractions (schema 149, ABI 74 unchanged): candidate review
+  accepts a typed fraction or start/midpoint/end parameter shortcuts and refreshes
+  the native marker before staging. Fraction edits clear stale candidates;
+  pending, failed and canceled queries cannot stage. Exact queries share the
+  solved source builder with nearest picks and retain explicit periodic seam
+  fraction 1. Checks cover generated, interpolated, periodic, conic and projected
+  sources, source edits and history/Save/reopen. A persistent benchmark of 25
+  exact queries with 10,000 extra fixed points passed in about 61 ms against a
+  300 ms budget. See [canvas samples](docs/SKETCHES.md#canvas-spline-samples-abi-74).
 
 - Spline sample candidate review (schema 149, ABI 74 unchanged): a native pick
   displays a marker, hint connector, coordinates and parameter fraction before

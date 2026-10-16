@@ -2226,6 +2226,16 @@ pub trait SketchDefinitionSolving {
         hint: SketchPoint2,
     ) -> Result<(f64, SketchPoint2), ModelError>;
 
+    /// Exact point at an inclusive normalized native parameter fraction of a
+    /// solved spline, including generated copies. Projections must be resolved.
+    /// This is a parameter fraction, not normalized arc length.
+    fn spline_point_at_fraction(
+        &self,
+        parameters: &HashMap<String, ParameterValue>,
+        spline: &str,
+        fraction: f64,
+    ) -> Result<SketchPoint2, ModelError>;
+
     /// Warm start free points by stable point ID. New points use authored seeds,
     /// removed IDs are ignored, and fixed points always use the definition.
     fn solve_with_seed(
@@ -2279,36 +2289,22 @@ impl SketchDefinitionSolving for SketchDefinition {
         spline: &str,
         hint: SketchPoint2,
     ) -> Result<(f64, SketchPoint2), ModelError> {
-        if !hint.x.is_finite() || !hint.y.is_finite() {
-            return Err(ModelError::new("sample hint must be finite"));
-        }
-        if let std::borrow::Cow::Owned(expanded) = self.with_pattern_copies(parameters)? {
-            return expanded.closest_spline_parameter(parameters, spline, hint);
-        }
-        let source = self
-            .splines
-            .iter()
-            .find(|s| s.id == spline)
-            .ok_or_else(|| ModelError::new("sample query requires a source spline"))?;
-        let solution = self.solve(parameters)?;
-        self.check_acceptance(&solution)?;
-        let fixed = self
-            .points
-            .iter()
-            .map(|p| (p.id.as_str(), solution.points[&p.id]))
-            .collect();
-        let problem = SketchProblem::new(self, parameters, HashMap::new(), fixed)?;
-        let curve = problem.spline_curve(source, &[])?;
-        let (fraction, point) = problem
-            .native
-            .curve_closest_fraction(&curve, Vec3::new(hint.x, hint.y, 0.))?;
-        Ok((
-            fraction,
-            SketchPoint2 {
-                x: point.x,
-                y: point.y,
-            },
-        ))
+        sample_solved_spline(self, parameters, spline, SplineSampleQuery::Closest(hint))
+    }
+
+    fn spline_point_at_fraction(
+        &self,
+        parameters: &HashMap<String, ParameterValue>,
+        spline: &str,
+        fraction: f64,
+    ) -> Result<SketchPoint2, ModelError> {
+        Ok(sample_solved_spline(
+            self,
+            parameters,
+            spline,
+            SplineSampleQuery::Fraction(fraction),
+        )?
+        .1)
     }
 
     fn solve_with_seed(
@@ -2318,6 +2314,66 @@ impl SketchDefinitionSolving for SketchDefinition {
     ) -> Result<SketchSolution, ModelError> {
         self.solve_internal(parameters, Some(seed))
     }
+}
+
+#[derive(Clone, Copy)]
+enum SplineSampleQuery {
+    Closest(SketchPoint2),
+    Fraction(f64),
+}
+
+/// One solved-source expansion and one native curve construction per query.
+/// Storage is O(expanded sketch); solve cost follows the existing sparse solver.
+fn sample_solved_spline(
+    sketch: &SketchDefinition,
+    parameters: &HashMap<String, ParameterValue>,
+    spline: &str,
+    query: SplineSampleQuery,
+) -> Result<(f64, SketchPoint2), ModelError> {
+    match query {
+        SplineSampleQuery::Closest(p) if !p.x.is_finite() || !p.y.is_finite() => {
+            return Err(ModelError::new("sample hint must be finite"));
+        }
+        SplineSampleQuery::Fraction(f) if !f.is_finite() || !(0. ..=1.).contains(&f) => {
+            return Err(ModelError::new(
+                "sample fraction must be finite and between 0 and 1",
+            ));
+        }
+        _ => {}
+    }
+    if let std::borrow::Cow::Owned(expanded) = sketch.with_pattern_copies(parameters)? {
+        return sample_solved_spline(&expanded, parameters, spline, query);
+    }
+    let source = sketch
+        .splines
+        .iter()
+        .find(|s| s.id == spline)
+        .ok_or_else(|| ModelError::new("sample query requires a source spline"))?;
+    let solution = sketch.solve(parameters)?;
+    sketch.check_acceptance(&solution)?;
+    let fixed = sketch
+        .points
+        .iter()
+        .map(|p| (p.id.as_str(), solution.points[&p.id]))
+        .collect();
+    let problem = SketchProblem::new(sketch, parameters, HashMap::new(), fixed)?;
+    let curve = problem.spline_curve(source, &[])?;
+    let (fraction, point) = match query {
+        SplineSampleQuery::Closest(hint) => problem
+            .native
+            .curve_closest_fraction(&curve, Vec3::new(hint.x, hint.y, 0.))?,
+        SplineSampleQuery::Fraction(fraction) => (
+            fraction,
+            problem.native.curve_point_at_fraction(&curve, fraction)?,
+        ),
+    };
+    Ok((
+        fraction,
+        SketchPoint2 {
+            x: point.x,
+            y: point.y,
+        },
+    ))
 }
 
 pub(crate) trait SketchDefinitionSolvingInternal {

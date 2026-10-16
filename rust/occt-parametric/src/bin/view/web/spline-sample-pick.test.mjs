@@ -74,3 +74,31 @@ test('the reviewed fraction displays rounded text but stages the exact native va
  const fraction=.4240532694205788,s=setup({query:async()=>({fraction,point:[3.123456789,4]})});s.button('Start spline sample pick').onclick();s.picker.down(s.event());await s.picker.up(s.event());
  assert(all(s.host).some(e=>e.textContent?.includes('fraction 0.42405327')));assert.equal(s.changes.length,0);s.button('Stage spline sample').onclick();assert.equal(s.changes[0][0].constraints[0].spline_point.fraction.literal.value,fraction);
  }finally{cleanup();}});
+
+test('exact fraction edits clear the old review and request one native point before staging',async()=>{try{
+ const requests=[],s=setup({query:async q=>{requests.push(q);return {fraction:q.fraction??.3,point:[(q.fraction??.3)*10,4]};}});s.button('Start spline sample pick').onclick();s.picker.down(s.event());await s.picker.up(s.event());
+ const input=all(s.host).find(e=>e['aria-label']==='Review sample fraction');assert.equal(input.value,'0.3');input.value='.25';input.oninput();assert.equal(requests.length,1);assert.equal(s.button('Stage spline sample').disabled,true);assert.deepEqual(s.paths.at(-1),[]);
+ await s.button('Update sample fraction').onclick();assert.deepEqual(requests[1],{spline:'row:1:curve',fraction:.25});assert.deepEqual(s.paths.at(-1),[[[2.5,4,0]]]);assert.equal(s.changes.length,0);
+ s.button('Stage spline sample').onclick();assert.equal(requests.length,2);assert.equal(s.changes[0][0].constraints[0].spline_point.fraction.literal.value,.25);
+ }finally{cleanup();}});
+test('invalid exact fractions cannot query or stage, and a corrected value can be reviewed',async()=>{try{
+ let queries=0;const s=setup({query:async q=>{queries++;return {fraction:q.fraction??.3,point:[3,4]};}});s.button('Start spline sample pick').onclick();s.picker.down(s.event());await s.picker.up(s.event());const input=all(s.host).find(e=>e['aria-label']==='Review sample fraction');
+ for(const value of ['','-0.1','1.1','NaN']){input.value=value;input.oninput();assert.equal(s.button('Update sample fraction').disabled,true);await s.button('Update sample fraction').onclick();s.button('Stage spline sample').onclick();assert.equal(s.changes.length,0);assert.equal(queries,1);}
+ input.value='.5';input.oninput();assert.equal(s.button('Update sample fraction').disabled,false);await s.button('Update sample fraction').onclick();assert.equal(s.button('Stage spline sample').disabled,false);
+ }finally{cleanup();}});
+test('start midpoint and end shortcuts request inclusive exact fractions and preserve seam end identity',async()=>{try{
+ const requests=[],s=setup({query:async q=>{requests.push(q);return {fraction:q.fraction??.3,point:q.fraction===0||q.fraction===1?[0,0]:[3,4]};}});s.button('Start spline sample pick').onclick();assert.equal(s.button('Sample midpoint (0.5)').disabled,true);s.picker.down(s.event());await s.picker.up(s.event());
+ for(const [button,fraction]of [['Sample start (0)',0],['Sample midpoint (0.5)',.5],['Sample end (1)',1]]){await s.button(button).onclick();assert.equal(requests.at(-1).fraction,fraction);assert.equal(s.button('Stage spline sample').disabled,false);}
+ s.button('Stage spline sample').onclick();assert.equal(s.changes[0][0].constraints[0].spline_point.fraction.literal.value,1);assert.equal(requests.length,4);
+ }finally{cleanup();}});
+test('Escape from fraction controls and stale scenes discard pending exact-fraction updates and block the old candidate',async()=>{try{
+ for(const cancel of [true,false]){
+  let release,valid=true;const s=setup({current:()=>valid,query:async q=>q.fraction===undefined?{fraction:.3,point:[3,4]}:new Promise(r=>release=r)});s.button('Start spline sample pick').onclick();s.picker.down(s.event());await s.picker.up(s.event());
+  const pending=s.button('Sample midpoint (0.5)').onclick();assert.equal(s.button('Stage spline sample').disabled,true);assert.equal(s.button('Sample end (1)').disabled,true);assert.deepEqual(s.paths.at(-1),[]);
+  if(cancel)all(s.host).find(e=>e.tagName==='details').onkeydown({key:'Escape',preventDefault(){},stopPropagation(){}});else valid=false;release({fraction:.5,point:[5,4]});await pending;assert.equal(s.changes.length,0);assert(!s.picker.active);
+ }
+ }finally{cleanup();}});
+test('an ambiguous click can use an explicit fraction, and a mismatched native response cannot stage',async()=>{try{
+ let count=0;const s=setup({query:async q=>{if(q.fraction===undefined)throw new Error('ambiguous');return {fraction:count++===0?q.fraction:.9,point:[5,4]};}});s.button('Start spline sample pick').onclick();s.picker.down(s.event());await s.picker.up(s.event());assert.equal(s.button('Stage spline sample').disabled,true);assert.equal(s.button('Sample midpoint (0.5)').disabled,false);
+ await s.button('Sample midpoint (0.5)').onclick();assert.equal(s.button('Stage spline sample').disabled,false);await s.button('Sample end (1)').onclick();assert.equal(s.button('Stage spline sample').disabled,true);assert.equal(s.changes.length,0);
+ }finally{cleanup();}});

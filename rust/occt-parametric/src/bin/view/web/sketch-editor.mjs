@@ -109,9 +109,9 @@ export function createSketchEditor({ host, request, instance, preview, applied, 
     },current:event=>event.version===version&&event.scene.instance===instance()&&reviewScene(feature,version,false)===event.scene&&(currentVersion()===null||currentVersion()===version),changed:(next,point)=>{draft=next;render();pointLinkControls?.inspect(point);highlight([point],feature);}});
     samplePicker=createSplineSamplePicker({host:content,definition:draft,ghost:paths=>ghost(paths,feature),initialOpen:samplePicker?.open,initialOptions:samplePicker?.options,beginPicking:beginGeometryPick,modeChanged:mode=>canvasMode(mode,feature),highlight:ids=>highlight(ids,feature),message,
       current:event=>reviewCurrent()&&event.version===version&&event.scene.instance===instance()&&reviewScene(feature,version,false)===event.scene,
-      query:async({spline,position,maximum_distance})=>{
+      query:async({spline,position,maximum_distance,fraction})=>{
         const turn=generation,source=draft,selectedInstance=instance(),selectedFeature=feature;
-        const result=await request('/api/sketch-spline-sample',{method:'POST',body:JSON.stringify({version,instance:selectedInstance,feature:selectedFeature,expected:baseline,definition:draft,spline,position,maximum_distance})});
+        const result=await request('/api/sketch-spline-sample',{method:'POST',body:JSON.stringify({version,instance:selectedInstance,feature:selectedFeature,expected:baseline,definition:draft,spline,position,maximum_distance,fraction})});
         if(turn!==generation||source!==draft||selectedInstance!==instance()||result.version!==version||result.instance!==selectedInstance||result.feature!==selectedFeature||result.spline!==spline||(currentVersion()!==null&&currentVersion()!==version))throw new Error('The model or draft changed. Restart the sample pick.');
         return result;
       },changed:(next,point,spline)=>{draft=next;render();pointLinkControls?.inspect(point);highlight([point,spline],feature);}});

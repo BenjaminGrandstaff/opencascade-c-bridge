@@ -774,3 +774,58 @@ pub(crate) fn large_spline_case() -> Outcome {
         },
     )
 }
+
+/// Twenty-five independent exact sample queries in a 10,000-point sketch.
+/// Each query validates/solves O(sketch) data and builds one source curve;
+/// source construction is shared with nearest queries and persisted links.
+pub(crate) fn spline_sample_queries_case() -> Outcome {
+    timed(
+        "exact spline samples: 25 queries, 10000 fixed construction points".into(),
+        ms(300),
+        Expectation::Required,
+        || {
+            let request: serde_json::Value = serde_json::from_str(include_str!(
+                "../../../../tools/model/spline-point-links.request.json"
+            ))
+            .map_err(|e| ModelError::new(e.to_string()))?;
+            let mut sketch: SketchDefinition = serde_json::from_value(
+                request["model"]["family"]["features"][0]["operation"]["sketch_face"]["sketch"]
+                    .clone(),
+            )
+            .map_err(|e| ModelError::new(e.to_string()))?;
+            let mm = |v| ScalarExpr::Literal(Quantity::length(v, LengthUnit::Millimeter));
+            for i in 0..10_000 {
+                sketch.points.push(SketchPoint {
+                    id: format!("padding-{i}"),
+                    x: mm(i as f64),
+                    y: mm(-100.),
+                    fixed: true,
+                });
+            }
+            let parameters = HashMap::from([
+                ("radius".into(), length(10.)),
+                (
+                    "middle_weight".into(),
+                    ParameterValue::Scalar(Quantity::scalar(0.5_f64.sqrt())),
+                ),
+                ("height".into(), length(8.)),
+                (
+                    "location".into(),
+                    ParameterValue::Scalar(Quantity::scalar(0.37)),
+                ),
+            ]);
+            for i in 0..25 {
+                let fraction = i as f64 / 24.;
+                let point = sketch
+                    .spline_point_at_fraction(&parameters, "curve", fraction)
+                    .map_err(|e| ModelError::new(e.to_string()))?;
+                if (point.x.hypot(point.y) - 10.).abs() > 1e-7 {
+                    return Err(ModelError::new(format!(
+                        "sample {fraction} left its rational circle"
+                    )));
+                }
+            }
+            Ok("25 exact native points on radius-10 curve; source sketch unchanged".into())
+        },
+    )
+}

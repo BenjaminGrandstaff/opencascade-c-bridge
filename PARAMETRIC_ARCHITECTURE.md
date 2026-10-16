@@ -381,7 +381,14 @@ shows a candidate point, hint connector, coordinates and fraction before an
 explicit staging action changes the draft. Staging reuses the native result,
 keeps its full precision, and rechecks scene/source validity. Reselection,
 failed queries, cancellation and Preview clear candidate feedback. Inactive
-pickers do not clear other tools' ghosts.
+pickers do not clear other tools' ghosts. Exact fraction updates and inclusive
+start/midpoint/end shortcuts now use that same solved native source builder,
+with no model/ABI change. Editing a fraction invalidates the previous candidate
+until native evaluation succeeds. Explicit periodic seam fraction 1 stays 1 in
+the link, while nearest-query seam aliases still canonicalize to zero. Typed
+updates and canceled/stale replies follow the same review guards. A persistent
+25-query benchmark with 10,000 construction points passed at about 61 ms within
+300 ms.
 
 
 

@@ -122,6 +122,9 @@ impl Outcome {
 }
 
 fn main() -> ExitCode {
+    if std::env::args().any(|arg| arg == "--spline-samples-only") {
+        return report(&[spline_sample_queries_case()]);
+    }
     let definition: &'static FamilyDefinition = Box::leak(Box::new(block()));
     let mut outcomes = Vec::new();
     // First, so freed memory from other cases cannot hide growth.
@@ -135,6 +138,7 @@ fn main() -> ExitCode {
     outcomes.push(curved_sketch_solver_case());
     outcomes.push(datum_sketch_wire_case());
     outcomes.push(spline_sketch_case());
+    outcomes.push(spline_sample_queries_case());
     outcomes.push(large_spline_case());
     outcomes.push(sweep::sweep_case());
     outcomes.push(primitives::round_primitive_case(false));

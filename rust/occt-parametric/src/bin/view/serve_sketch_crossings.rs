@@ -12,16 +12,16 @@ impl Studio {
             expected: SketchDefinition,
             definition: SketchDefinition,
             spline: String,
-            position: [f64; 2],
-            maximum_distance: f64,
+            position: Option<[f64; 2]>,
+            maximum_distance: Option<f64>,
+            fraction: Option<f64>,
         }
         let query: Query =
             serde_json::from_slice(body).map_err(|e| format!("invalid sample query: {e}"))?;
-        if !query.maximum_distance.is_finite()
-            || query.maximum_distance <= 0.
-            || !query.position.iter().all(|v| v.is_finite())
-        {
-            return Err("sample pick needs a finite hint and positive distance tolerance".into());
+        match (query.fraction,query.position,query.maximum_distance) {
+            (Some(f),None,None) if f.is_finite() && (0. ..=1.).contains(&f) => {},
+            (None,Some(p),Some(d)) if d.is_finite() && d>0. && p.iter().all(|v|v.is_finite()) => {},
+            _ => return Err("choose either a finite fraction from 0 to 1, or a finite hint and positive distance tolerance".into()),
         }
         let document = self.sketch_draft_document(
             query.version,
@@ -32,20 +32,30 @@ impl Studio {
             true,
         )?;
         let (sketch, parameters) = query_sketch(&document, &query.instance, &query.feature)?;
-        let (fraction, point) = sketch
-            .closest_spline_parameter(
-                &parameters,
-                &query.spline,
-                occt_parametric::SketchPoint2 {
-                    x: query.position[0],
-                    y: query.position[1],
-                },
-            )
-            .map_err(|e| e.to_string())?;
-        let distance = (point.x - query.position[0]).hypot(point.y - query.position[1]);
-        if distance > query.maximum_distance {
-            return Err("Pick closer to the source spline in the current native view.".into());
-        }
+        let (fraction, point, distance) = if let Some(fraction) = query.fraction {
+            let point = sketch
+                .spline_point_at_fraction(&parameters, &query.spline, fraction)
+                .map_err(|e| e.to_string())?;
+            (fraction, point, None)
+        } else {
+            let position = query.position.ok_or("missing sample hint")?;
+            let maximum_distance = query.maximum_distance.ok_or("missing pick tolerance")?;
+            let (fraction, point) = sketch
+                .closest_spline_parameter(
+                    &parameters,
+                    &query.spline,
+                    occt_parametric::SketchPoint2 {
+                        x: position[0],
+                        y: position[1],
+                    },
+                )
+                .map_err(|e| e.to_string())?;
+            let distance = (point.x - position[0]).hypot(point.y - position[1]);
+            if distance > maximum_distance {
+                return Err("Pick closer to the source spline in the current native view.".into());
+            }
+            (fraction, point, Some(distance))
+        };
         Ok(
             json!({"version":self.version,"instance":query.instance,"feature":query.feature,"spline":query.spline,"fraction":fraction,"point":[point.x,point.y],"distance":distance,"coordinate_system":"sketch-local millimeters"}),
         )

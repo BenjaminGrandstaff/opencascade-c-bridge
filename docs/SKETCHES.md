@@ -294,6 +294,21 @@ parameter driver. Displayed candidate numbers are rounded for readability;
 the full native fraction is retained. Preview and Apply still verify the
 resulting sketch and dependent model requirements.
 
+For precise placement, enter a value in **Review sample fraction** and choose
+**Update sample fraction**, or use **Sample start (0)**, **Sample midpoint (0.5)**
+and **Sample end (1)**. Each action evaluates the selected native source at the
+requested parameter and updates the marker before staging. Fraction edits clear
+the old candidate immediately; invalid values and pending/failed requests cannot
+stage it. Cursor motion and typing make no native queries. After an ambiguous
+nearest click, the selected source can still be sampled at an explicit fraction.
+
+The exact-fraction query preserves both inclusive endpoints. On a periodic or
+closed curve, explicit fractions 0 and 1 produce the same seam position while
+retaining the requested fraction in the saved link. The midpoint shortcut means
+half the native parameter interval, which need not be half the curve's length.
+New curve picks clear the selected source; exact updates reuse only the source
+from the current reviewed scene, and canceled/stale replies are discarded.
+
 Click again to replace the candidate. Beginning another pick immediately clears
 the old marker and disables staging, including if the new pick drags, hits a
 wrong curve kind, or fails its native query. Escape, tool changes, and Preview
@@ -318,6 +333,16 @@ closed seam aliases canonicalize to zero. Equally near distinct parameters
 (including self-intersecting branches) reject rather than guessing. A C0 knot
 can be sampled without a smooth tangent. Queries allow at most 1000 native
 extrema and leave accepted documents, history, annotations and files untouched.
+Exact sampling also uses `SketchDefinitionSolving::spline_point_at_fraction`.
+For `POST /api/sketch-spline-sample`, send either `position` plus
+`maximum_distance` for a nearest pick, or `fraction` alone for exact evaluation.
+Mixed modes and fractions outside [0,1] reject the query. Exact responses retain
+the supplied fraction and report `distance: null` because no hint was supplied.
+A release benchmark of 25 exact queries in a sketch with 10,000 extra fixed
+construction points took about 61 ms, within its 300 ms budget. Run it with
+`cargo bench --manifest-path rust/occt-parametric/Cargo.toml --bench scale -- --spline-samples-only`
+and the native library on `LD_LIBRARY_PATH`.
+
 A check of ten read-only native picks took about 21 ms. Rebuild the native bridge
 and Rust clients together for ABI 74; model schema 149 is unchanged.
 
