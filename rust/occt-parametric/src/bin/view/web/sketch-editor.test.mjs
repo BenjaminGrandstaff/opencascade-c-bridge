@@ -156,7 +156,8 @@ test('canvas spline samples query a reviewed private draft and stage the returne
   }});
   await find(host,'Edit sketch geometry').emit('click');all(host).find(e=>e['aria-label']==='Sketch to edit').value='profile';await find(host,'Load sketch draft').emit('click');
   find(host,'Start spline sample pick').onclick();editor.canvasDown(event);await editor.canvasUp(event);
-  assert.equal(calls[0].path,'/api/sketch-spline-sample');assert.deepEqual(calls[0].body.expected,source);assert.deepEqual(calls[0].body.definition,source);assert.deepEqual(inspected,['Sample1','curve']);
+  assert.equal(calls[0].path,'/api/sketch-spline-sample');assert.deepEqual(calls[0].body.expected,source);assert.deepEqual(calls[0].body.definition,source);assert.deepEqual(inspected,['curve']);assert.deepEqual(JSON.parse(find(host,'Sketch definition').children[0].value),source);
+  find(host,'Stage spline sample').onclick();assert.deepEqual(inspected,['Sample1','curve']);assert.equal(calls.length,1);
   await find(host,'Preview draft').emit('click');const draft=calls[1].body.definition;
   assert.equal(draft.points.at(-1).id,'Sample1');assert.equal(draft.points.at(-1).fixed,false);assert.equal(draft.constraints[0].spline_point.fraction.literal.value,.4);
   assert.equal(source.points.length,2);

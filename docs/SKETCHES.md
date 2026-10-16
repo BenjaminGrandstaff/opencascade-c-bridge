@@ -282,10 +282,24 @@ ABI 73 are unchanged.
 Open **Pick spline sample from canvas**, choose a new point name or an existing
 authored target, then **Start spline sample pick**. Click the source spline near
 the desired sample. The native query finds a unique closest parameter within
-the screen pick tolerance and stages a free point linked to that source at a
-literal fraction. **Named point links** opens on the staged target so its source
-and fraction can be inspected or changed to a parameter driver. Preview and
-Apply still verify the resulting sketch and dependent model requirements.
+the screen pick tolerance and shows a candidate marker, its coordinates, and
+its fraction. A short connector shows the correction from the clicked hint to
+the exact curve point. The draft stays unchanged during this review.
+
+Choose **Stage spline sample** to add or relink the named target using the
+reviewed native fraction. Staging makes no additional native query. The point
+remains free and saves a literal source link. **Named point links** opens on the
+staged target so its source and fraction can be inspected or changed to a
+parameter driver. Displayed candidate numbers are rounded for readability;
+the full native fraction is retained. Preview and Apply still verify the
+resulting sketch and dependent model requirements.
+
+Click again to replace the candidate. Beginning another pick immediately clears
+the old marker and disables staging, including if the new pick drags, hits a
+wrong curve kind, or fails its native query. Escape, tool changes, and Preview
+clear candidate feedback. Staging checks the current scene and source again,
+so a candidate cannot be used after the model or draft changes. Canceling an
+inactive picker leaves other drawing tools' ghosts untouched.
 
 The picker accepts authored splines, generated conics and pattern copies, and
 live projected splines/chains. A current native Preview is required after draft

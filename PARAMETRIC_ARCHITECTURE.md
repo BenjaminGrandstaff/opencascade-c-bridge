@@ -376,8 +376,12 @@ canonical closed seam; tied distinct parameters reject selection. A guarded
 read-only sketch query shares crossing-query projection resolution and the
 native spline builder. Picking requires the current reviewed scene, retains a
 literal source fraction, and discards canceled/stale replies. Preview/Apply
-remain authoritative for the saved link and family requirements. A next
-extension is native fraction feedback before staging a sample.
+remain authoritative for the saved link and family requirements. Picking now
+shows a candidate point, hint connector, coordinates and fraction before an
+explicit staging action changes the draft. Staging reuses the native result,
+keeps its full precision, and rechecks scene/source validity. Reselection,
+failed queries, cancellation and Preview clear candidate feedback. Inactive
+pickers do not clear other tools' ghosts.
 
 
 
