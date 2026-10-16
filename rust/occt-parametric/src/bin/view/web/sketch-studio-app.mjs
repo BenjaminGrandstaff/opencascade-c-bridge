@@ -7,6 +7,7 @@ import {
 import { PALETTE, layersFrom, nextFeatureName, planeLabel } from './sketch-studio-layers.mjs';
 import { localBounds, planeGrid, sketchPaths, sketchPoints } from './sketch-studio-overlay.mjs';
 import { installDrawing } from './sketch-studio-draw.mjs';
+import { installConstraints } from './sketch-studio-constrain.mjs';
 
 const SVG = 'http://www.w3.org/2000/svg';
 const format = (value) => Number(Number(value).toPrecision(6)).toString();
@@ -139,13 +140,29 @@ export function startStudio(document) {
       if (!scene) continue;
       const isActive = layer.feature === studio.active;
       const group = element('g', { class: isActive ? 'sketch active' : 'sketch inactive', 'data-feature': layer.feature }, overlay);
+      // The active sketch is colored by how solved each piece is; others
+      // keep their layer color.
+      const style = isActive ? studio.entityStyle?.(scene) : null;
+      const color = (state) => ({ free: 'var(--free)', fixed: 'var(--fixed)', conflict: 'var(--conflict)' })[state] ?? layer.color;
+      const entities = new Map((scene.entities ?? []).map((e) => [e.id, e]));
       for (const path of sketchPaths(scene, layer.frame, matrix, width, height)) {
-        if (path.d) element('path', { d: path.d, class: 'curve', stroke: layer.color, 'data-entity': path.id }, group);
+        if (!path.d) continue;
+        const look = style?.curve(entities.get(path.id));
+        element('path', {
+          d: path.d, class: look?.selected ? 'curve selected' : 'curve',
+          stroke: look?.selected ? 'var(--accent)' : look ? color(look.state) : layer.color,
+          'stroke-width': look?.selected ? 4 : 2, 'data-entity': path.id,
+        }, group);
       }
       if (isActive) {
         for (const point of sketchPoints(scene, layer.frame, matrix, width, height)) {
-          element('circle', { cx: point.xy[0], cy: point.xy[1], r: 3.5, class: 'point', fill: layer.color, 'data-point': point.id }, group);
+          const look = style?.point(point.id);
+          element('circle', {
+            cx: point.xy[0], cy: point.xy[1], r: look?.selected ? 5.5 : 3.5, class: 'point',
+            fill: look?.selected ? 'var(--accent)' : look ? color(look.state) : layer.color, 'data-point': point.id,
+          }, group);
         }
+        drawDimensionLabels(scene, layer.frame, matrix, width, height, group);
       }
     }
     for (const node of studio.decorate({ matrix, width, height, element })) overlay.append(node);
@@ -153,6 +170,23 @@ export function startStudio(document) {
     if (renderer) {
       empty.hidden = studio.layers.length > 0;
       empty.textContent = 'No sketches yet. Choose New sketch to start one on a plane or a face.';
+    }
+  }
+
+  /** Driving dimension values at their geometry (laid out in phase 4). */
+  function drawDimensionLabels(scene, frame, matrix, width, height, group) {
+    for (const annotation of scene.annotations ?? []) {
+      if (!/^constraint-\d+$/.test(annotation.id) || !/\d/.test(annotation.label ?? '')) continue;
+      const anchors = annotation.anchors ?? [];
+      if (!anchors.length) continue;
+      const center = [anchors.reduce((t, a) => t + a[0], 0) / anchors.length, anchors.reduce((t, a) => t + a[1], 0) / anchors.length];
+      const at = projectLocal(matrix, frame, center, width, height);
+      if (!at) continue;
+      const text = element('text', {
+        x: at[0], y: at[1] - 6, 'text-anchor': 'middle', 'font-size': 12, class: 'dimension',
+        fill: annotation.status === 'failed' ? 'var(--conflict)' : 'var(--ink)', 'paint-order': 'stroke', stroke: 'var(--view)', 'stroke-width': 3,
+      }, group);
+      text.textContent = annotation.label;
     }
   }
 
@@ -409,9 +443,12 @@ export function startStudio(document) {
   let drag = null;
   canvas.addEventListener('contextmenu', (event) => event.preventDefault());
   canvas.addEventListener('pointerdown', (event) => {
+    // Keep focus where it is (for example in a value box a tool opened).
+    event.preventDefault();
     canvas.setPointerCapture(event.pointerId);
-    const navigate = event.button !== 0 || event.shiftKey || event.altKey && event.ctrlKey;
-    if (!navigate && studio.tools.get(studio.tool)?.down?.(event)) {
+    // The active tool sees left clicks first; what it declines navigates
+    // (drag to orbit, Shift-drag or right-drag to pan).
+    if (event.button === 0 && studio.tools.get(studio.tool)?.down?.(event)) {
       drag = { tool: true };
       return;
     }
@@ -501,7 +538,12 @@ export function startStudio(document) {
     setTimeout(poll, 1000);
   }
 
+  studio.viewport = () => {
+    const [width, height] = size();
+    return { matrix: viewProjection(studio.camera, width / height), width, height };
+  };
   studio.drawing = installDrawing(studio, document);
+  installConstraints(studio, document);
   load()
     .then(() => say(studio.layers.length ? 'Choose a layer, then a tool. Drag to orbit, Shift-drag or right-drag to pan, scroll to zoom.' : 'No sketches yet. Choose New sketch.'))
     .catch((error) => say(error.message, true))

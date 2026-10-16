@@ -16,6 +16,7 @@ export const TOOLS = [
   { id: 'slot', label: 'Slot', key: 'O', hint: 'Click the two cap centres, then the width.' },
   { id: 'polygon', label: 'Polygon', key: 'G', hint: 'Click the centre, then a vertex.' },
   { id: 'point', label: 'Point', key: 'P', hint: 'Click to place a point.' },
+  { id: 'dimension', label: 'Dimension', key: 'D', hint: 'Click a line, circle or arc, or two points or lines, then type the value and press Enter.' },
 ];
 
 /** Clicks that finish each shape; splines finish on request. */

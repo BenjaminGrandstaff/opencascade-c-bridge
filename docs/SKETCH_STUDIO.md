@@ -197,6 +197,25 @@ sketches with many thousands of entities.
   Inference uses a uniform grid built once per draft, and drawing skips
   samples on straight runs; `tools/bench/sketch-studio.mjs` measures 0.1 ms
   per mouse move and 27 ms per overlay redraw at 10,000 lines.
+- **Phase 3.** The Select tool (V) picks points and curves on the active
+  sketch; Shift-click adds or removes. A bar beside the selection offers
+  the constraints it can take, generated from the classic editor's
+  constraint table (36 kinds, with options such as tangent side as
+  separate choices), natural ones first and dimensions last; Enter applies
+  the first. Two curves sharing one end get tangency at that end filled in.
+  The Dimension tool (D) measures what is clicked (a line's length, a
+  circle's diameter, an arc's radius, two points' distance, a point's
+  signed distance to a line, two lines' angle) and opens a value box at
+  the click, prefilled with the current value; it takes a number or a
+  parameter name. The active sketch is drawn by solve state: free geometry
+  (moved by a free motion of the solver) in blue, conflicting geometry
+  (touched by a conflicting or failed constraint) in red, the rest in the
+  ink color, with the selection highlighted. Free points with literal
+  coordinates drag, solved natively through `/api/sketch-drag`. The
+  inspector lists the selection's state, the draft constraints on it with
+  Remove buttons, and every constraint it can take. Kinds that need a
+  picking flow (crossing points, spline samples, weighted links) stay in
+  the classic editor until phase 4's Advanced drawer.
 
 ## Building it
 

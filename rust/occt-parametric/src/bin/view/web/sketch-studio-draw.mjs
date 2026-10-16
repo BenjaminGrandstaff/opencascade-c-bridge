@@ -348,9 +348,10 @@ export function installDrawing(studio, document) {
     studio.redraw();
   });
   for (const tool of TOOLS) {
-    if (tool.id === 'select') continue;
+    if (!CLICKS[tool.id]) continue;
     studio.tools.set(tool.id, {
-      down: (event) => event.button === 0 && click(event),
+      // Shift-drag pans while drawing.
+      down: (event) => event.button === 0 && !event.shiftKey && click(event),
       move: (event) => {
         cursor = inferAt(event);
         studio.redraw();
@@ -401,7 +402,7 @@ export function installDrawing(studio, document) {
     }
     if (event.key === 'Escape') {
       if (gesture) cancelGesture();
-      else setTool('select');
+      else studio.setTool('select');
       return true;
     }
     if ((event.key === 'x' || event.key === 'X') && studio.tool === 'arc') {
@@ -412,7 +413,7 @@ export function installDrawing(studio, document) {
     }
     const tool = TOOLS.find((t) => t.key.toLowerCase() === event.key.toLowerCase());
     if (tool) {
-      setTool(tool.id);
+      studio.setTool(tool.id);
       return true;
     }
     return false;
@@ -424,7 +425,7 @@ export function installDrawing(studio, document) {
     studio.fill(bar, TOOLS.map((tool) => html('button', {
       'aria-pressed': studio.tool === tool.id ? 'true' : 'false',
       title: `${tool.label} (${tool.key}) — ${tool.hint}`,
-      onclick: () => setTool(tool.id),
+      onclick: () => studio.setTool(tool.id),
     }, tool.label, html('kbd', {}, tool.key))));
     const extra = [];
     if (studio.tool === 'polygon') {
@@ -463,6 +464,11 @@ export function installDrawing(studio, document) {
       studio.say(`The draft of ${studio.draft.feature} is still open. Apply or discard it before drawing on ${layer.feature}.`);
     }
   };
+
+  // Shared with the constraint tools (phase 3).
+  studio.ensureDraft = draft;
+  studio.changeDraft = change;
+  studio.cancelGesture = cancelGesture;
 
   studio.renderToolbar();
   return { setTool, apply, discard, undo, redo, commit: (clicks) => { gesture = { tool: studio.tool, clicks: [] }; commit(clicks); } };

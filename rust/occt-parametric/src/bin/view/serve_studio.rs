@@ -17,6 +17,8 @@ const STUDIO_ASSETS: &[(&str, &str)] = studio_assets!(
     "sketch-studio-infer.mjs",
     "sketch-studio-tools.mjs",
     "sketch-studio-draw.mjs",
+    "sketch-studio-select.mjs",
+    "sketch-studio-constrain.mjs",
 );
 
 /// The studio page or one of its scripts, or `None` for other paths.

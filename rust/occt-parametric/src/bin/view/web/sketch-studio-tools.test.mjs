@@ -8,7 +8,7 @@ const click = (x, y, extra = {}) => ({ xy: [x, y], point: null, rules: [], ...ex
 test('every drawing tool has a key and a click count', () => {
   const keys = TOOLS.map((t) => t.key);
   assert.equal(new Set(keys).size, keys.length);
-  for (const tool of TOOLS.filter((t) => t.id !== 'select')) assert.ok(CLICKS[tool.id], tool.id);
+  for (const tool of TOOLS.filter((t) => !['select', 'dimension'].includes(t.id))) assert.ok(CLICKS[tool.id], tool.id);
 });
 
 test('lines get their inferred constraints and continue the chain from their end', () => {
