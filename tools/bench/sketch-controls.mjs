@@ -3,11 +3,12 @@
 import assert from 'node:assert/strict';
 import {performance} from 'node:perf_hooks';
 import {createConstraintControls,makeConstraint} from '../../rust/occt-parametric/src/bin/view/web/constraint-controls.mjs';
+import {createPatternControls,makePattern} from '../../rust/occt-parametric/src/bin/view/web/pattern-controls.mjs';
 import {createWeightedTermControls,validateWeightedTerms} from '../../rust/occt-parametric/src/bin/view/web/weighted-point-controls.mjs';
 import {captureGeneratedPoints,bindGeneratedPoints} from '../../rust/occt-parametric/src/bin/view/web/generated-points.mjs';
 class Element {
   constructor(){this.children=[];this.style={};}
-  append(...children){this.children.push(...children);}
+  append(...children){for(const child of children)child.parentElement=this;this.children.push(...children);}
   replaceChildren(...children){this.children=children;}
   setAttribute(key,value){this[key]=value;}
 }
@@ -44,3 +45,12 @@ assert.equal(host.children[0].children[1].children.length,10000);
 const weightedTime=performance.now()-start;
 console.log(`Weighted links: 256 rows / 10,000 source choices ${weightedTime.toFixed(1)} ms (budget 1,000 ms; DOM stubs)`);
 assert(weightedTime<1000,'Weighted source controls exceeded their scale budget.');
+
+start=performance.now();
+createPatternControls({host:new Element(),definition,changed:()=>{},message:()=>{}});
+const patternMenu=performance.now()-start;
+start=performance.now();
+for(let i=0;i<25;i++)assert.equal(makePattern(definition,'linear',{id:'new',entities:['line9999',generated[9999]],direction:'line0',count:1000,spacing:{literal:{value:10,dimension:'length',unit:'millimeter'}}}).linear.count,1000);
+const patternValidation=performance.now()-start;
+console.log(`Sketch patterns: 20,000-curve menu ${patternMenu.toFixed(1)} ms; 25 validations ${patternValidation.toFixed(1)} ms (budget 5,000 ms each)`);
+assert(patternMenu<5000&&patternValidation<5000,'Pattern authoring exceeded its scale budget.');

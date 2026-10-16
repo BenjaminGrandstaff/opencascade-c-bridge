@@ -5136,3 +5136,88 @@ fn weighted_authoring_drafts_follow_generated_points_and_parameter_weights_after
     assert_eq!(get(&mut studio, "/api/state").1, stable);
     assert_eq!(fs::read_to_string(&model).unwrap(), saved);
 }
+
+#[test]
+fn authored_pattern_drafts_generate_all_three_kinds_and_guard_dependent_references() {
+    for pattern in [
+        json!({"linear":{"id":"copies","entities":["curve"],"direction":"guide","spacing":{"literal":{"value":20.0,"dimension":"length","unit":"millimeter"}},"count":3}}),
+        json!({"circular":{"id":"copies","entities":["curve"],"center":"guide-start","count":4}}),
+        json!({"mirror":{"id":"copies","entities":["curve"],"axis":"guide"}}),
+        json!({"linear":{"id":"copies","entities":["outline:side0","outline:side1","outline:side2","outline:side3"],"direction":"pattern-axis","spacing":{"literal":{"value":100.0,"dimension":"length","unit":"millimeter"}},"count":2}}),
+    ] {
+        let directory = Directory::new();
+        let shape = pattern["linear"]["entities"][0] == "outline:side0";
+        let source = if shape {
+            include_str!("../../../../../tools/model/slotted-plate.request.json")
+        } else {
+            include_str!("../../../../../tools/model/spline-point-links.request.json")
+        };
+        let mut request: serde_json::Value = serde_json::from_str(source).unwrap();
+        request["model"]["instances"][0]["base"]["id"] = json!("part");
+        if shape {
+            request["model"]["family"]["features"][0]["operation"]["sketch_face"]["sketch"]["lines"] =
+                json!([{"id":"pattern-axis","start":"s1a","end":"s1b"}]);
+        }
+        let copy = if shape {
+            "copies:1:outline:side0"
+        } else {
+            "copies:1:curve"
+        };
+        let document = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+        let model = PathBuf::from(directory.model(&document));
+        let original = fs::read_to_string(&model).unwrap();
+        let mut studio = serve::Studio::load(&model, Some("body".into())).unwrap();
+        assert_eq!(
+            studio.handle("GET", "/pattern-controls.mjs", b"").status,
+            200
+        );
+        let mut draft = get(&mut studio, "/api/sketches").1["sketches"][0]["definition"].clone();
+        let constraints = draft["constraints"].clone();
+        draft["patterns"] = json!([pattern]);
+        draft["measurements"] =
+            json!([{"id":"copy_length","measure":{"curve_length":{"curve":copy}}}]);
+        let state = get(&mut studio, "/api/state").1;
+        let (status, preview) = edit_definition(&mut studio, "profile", draft.clone(), false);
+        assert_eq!(status, 200, "{pattern}: {preview}");
+        assert_eq!(preview["can_apply"], true, "{preview}");
+        assert_eq!(get(&mut studio, "/api/state").1, state);
+        assert_eq!(fs::read_to_string(&model).unwrap(), original);
+        assert!(
+            preview["generated_curves"][if shape { "lines" } else { "splines" }]
+                .as_array()
+                .unwrap()
+                .contains(&json!(copy))
+        );
+        let scene = preview["annotations"]["scenes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["kind"] == "sketch" && s["feature"] == "profile")
+            .unwrap();
+        assert!(scene["points"].get("copies:1:a").is_some());
+        assert!(
+            scene["annotations"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|a| a["detail"]["pattern"] == pattern)
+        );
+        assert_eq!(edit_definition(&mut studio, "profile", draft, true).0, 200);
+        history(&mut studio, "undo");
+        history(&mut studio, "redo");
+        assert_eq!(studio.handle("POST", "/api/save", b"{}").status, 200);
+        let mut studio = serve::Studio::load(&model, Some("body".into())).unwrap();
+        let mut draft = get(&mut studio, "/api/sketches").1["sketches"][0]["definition"].clone();
+        assert_eq!(draft["patterns"][0], pattern);
+        assert_eq!(draft["constraints"], constraints);
+        let stable = get(&mut studio, "/api/state").1;
+        draft["patterns"] = json!([]);
+        assert_eq!(
+            edit_definition(&mut studio, "profile", draft.clone(), true).0,
+            422
+        );
+        assert_eq!(get(&mut studio, "/api/state").1, stable);
+        draft["measurements"] = json!([]);
+        assert_eq!(edit_definition(&mut studio, "profile", draft, true).0, 200);
+    }
+}

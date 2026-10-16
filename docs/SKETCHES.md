@@ -1640,6 +1640,38 @@ also reverse weights and multiplicities and reflect knots. A half profile
 followed by its mirrored copies in reverse order therefore closes into one
 loop through the shared on-axis points.
 
+In the live editor, **Linked sketch patterns** creates mirror, linear and
+circular recipes. Select one or more **Pattern source curves** (including generated shortcut
+boundaries), choose the axis/direction line or center point, and
+set the count and driving value. Count includes the original. Circular patterns
+start with **Equal full turn**; explicit step angles are entered in degrees.
+Mirror patterns offer a multi-selection of shared on-axis points. Use the normal
+platform multi-select modifier to choose multiple source or shared-point entries.
+
+Existing recipes keep their name and type so references stay stable. Spacing
+and angle drivers accept entered values, compatible parameters or **Keep
+existing formula**. Pattern annotations open the matching recipe; changed recipes reject stale
+annotation matches. Whole shortcut names are not pattern entities: select their
+generated boundary curves. **Remove sketch pattern**
+stages deletion; Preview rejects dependent profiles, measurements or later
+patterns that lose required copies. Hole/profile selections remain separate.
+
+Sources may include verified earlier-pattern copies, generated shape boundaries
+and declared projections. A recipe cannot use its own or later copies.
+Generator edits invalidate the catalogue until successful Preview. Unavailable
+existing choices stay visible and selected, so updating a form cannot silently
+remove them. Preview refreshes generated IDs; Apply, Undo/Redo and Save/reopen
+use the existing edit guards. These are existing model variants: schema 149
+and ABI 74 stay unchanged.
+
+Catalogue filtering, recipe validation and menu construction use O(G + P + S)
+time/temporary space for geometry data G, up to 100 patterns P and up to 1,000
+selected sources S; selected IDs use sets instead of per-option list scans.
+The persistent `tools/bench/sketch-controls.mjs` case builds a 20,000-curve menu
+in about 49 ms and validates 25 maximum-count recipes in 1.30 s (5 s budgets;
+DOM stubs excluding browser layout and native generation). Native pattern
+expansion and solver scale cases continue to check generated geometry.
+
 **Holes.** Each hole is an ordered closed loop like `profile`: a single circle,
 ellipse or closed spline, or connected lines, arcs and splines. Hole entities
 cannot repeat across the profile or other holes. Holes need an explicit

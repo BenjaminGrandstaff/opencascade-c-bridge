@@ -4,7 +4,7 @@ import {addElement, length, createSketchEditor} from './sketch-editor.mjs';
 
 class Element {
   constructor(tag) { this.tagName=tag;this.children=[];this.handlers={};this.dataset={};this.style={};this.value=''; }
-  append(...nodes) {this.children.push(...nodes);}
+  append(...nodes) {for(const node of nodes)node.parentElement=this;this.children.push(...nodes);}
   prepend(...nodes) {this.children.unshift(...nodes);}
   replaceChildren(...nodes) {this.children=nodes;}
   setAttribute(name,value) {this[name]=value;}
