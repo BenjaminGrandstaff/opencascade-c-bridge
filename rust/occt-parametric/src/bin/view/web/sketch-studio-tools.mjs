@@ -2,20 +2,27 @@
 // each takes, and turning a finished gesture into draft geometry plus the
 // constraints inferred while drawing. Geometry itself comes from the
 // classic editor's `drawPrimitive`, unchanged.
-import { drawPrimitive } from './canvas-tools.mjs';
+import {ADDITIONAL,drawAdditional,additionalGhost} from './sketch-studio-primitives.mjs';
+import { drawPrimitive,primitiveGhost } from './canvas-tools.mjs';
 import { rulesToConstraints, tangentLineAt } from './sketch-studio-infer.mjs';
 
 export const TOOLS = [
   { id: 'select', label: 'Select', key: 'V', hint: 'Click geometry to select it. Drag to orbit.' },
   { id: 'line', label: 'Line', key: 'L', hint: 'Click points to chain lines; double-click or Escape ends the chain.' },
   { id: 'rectangle', label: 'Rectangle', key: 'R', hint: 'Click two opposite corners.' },
+  {id:'center_rectangle',label:'Center rect',key:'B',hint:'Click the center, then a corner. Typed width and height are full sizes.'},
   { id: 'circle', label: 'Circle', key: 'C', hint: 'Click the centre, then a point on the circle.' },
   { id: 'arc', label: 'Arc', key: 'A', hint: 'Click the centre, the start, then the end.' },
+  {id:'arc_three',label:'3-point arc',key:'J',hint:'Click start, a point the arc passes through, then end.'},
   { id: 'spline', label: 'Spline', key: 'S', hint: 'Click points; double-click or Enter finishes; clicking the first point closes it.' },
+  {id:'control_spline',label:'Control spline',key:'K',hint:'Click control poles; Enter or Finish commits. Set degree and optional positive weights.'},
   { id: 'ellipse', label: 'Ellipse', key: 'E', hint: 'Click the centre, a major-axis end, then the minor width.' },
+  {id:'elliptical_arc',label:'Ellipse arc',key:'U',hint:'Click center, major-axis end, minor width, then start and end directions. X flips the span.'},
+  {id:'conic',label:'Conic',key:'Q',hint:'Click start, tangent-line intersection, then end. Rho controls the conic family.'},
   { id: 'slot', label: 'Slot', key: 'O', hint: 'Click the two cap centres, then the width.' },
   { id: 'polygon', label: 'Polygon', key: 'G', hint: 'Click the centre, then a vertex.' },
   { id: 'point', label: 'Point', key: 'P', hint: 'Click to place a point.' },
+  {id:'text',label:'Text',key:'T',hint:'Set content and installed font, then click its baseline anchor. Native Preview builds glyph outlines.'},
   { id: 'dimension', label: 'Dimension', key: 'D', hint: 'Click a line, circle or arc, or two points or lines, then type the value and press Enter.' },
 ];
 
@@ -24,6 +31,12 @@ export const TOOLS = [
  * text colour, one per tool, each picturing the shape it draws.
  */
 export const ICONS = {
+  center_rectangle:'<rect x="3" y="6" width="18" height="12"/><path d="M9 12h6M12 9v6"/>',
+  arc_three:'<path d="M3 17Q12 -5 21 17"/><circle cx="3" cy="17" r="1.5"/><circle cx="12" cy="6" r="1.5"/><circle cx="21" cy="17" r="1.5"/>',
+  elliptical_arc:'<path d="M3 12a9 6 0 1 1 9 6"/><circle cx="3" cy="12" r="1.5"/>',
+  conic:'<path d="M3 18Q12 -6 21 18M3 18L12 3l9 15"/>',
+  text:'<path d="M4 5h16M12 5v15M8 20h8"/>',
+  control_spline:'<path d="M3 18L8 4l8 0 5 14M3 18C8 4 16 4 21 18"/><circle cx="8" cy="4" r="1.5"/><circle cx="16" cy="4" r="1.5"/>',
   select: '<path d="M6 3l12 9-5.5 1L16 20l-2.5 1-3-7L6 18z" fill="currentColor" stroke="none"/>',
   line: '<path d="M4 19L20 5"/><circle cx="4" cy="19" r="2" fill="currentColor"/><circle cx="20" cy="5" r="2" fill="currentColor"/>',
   rectangle: '<rect x="3.5" y="6" width="17" height="12"/>',
@@ -38,7 +51,7 @@ export const ICONS = {
 };
 
 /** Clicks that finish each shape; splines finish on request. */
-export const CLICKS = { point: 1, line: 2, rectangle: 2, circle: 2, polygon: 2, arc: 3, ellipse: 3, slot: 3, spline: Infinity };
+export const CLICKS = { point: 1, line: 2, rectangle: 2, circle: 2, polygon: 2, arc: 3, ellipse: 3, slot: 3, spline: Infinity,center_rectangle:2,arc_three:3,elliptical_arc:5,conic:3,text:1,control_spline:Infinity };
 
 const distance = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
 
@@ -87,7 +100,7 @@ function clickIds(tool, before, after, created, clicks) {
  * constraints are added. Returns the new definition, the created ids, the
  * added constraints, and for lines where the next line of a chain starts.
  */
-export function commitShape(definition, tool, clicks, { profile = false, sides = 6, closed = false, flip = false, auto = true, scene = {} } = {}) {
+export function commitShape(definition, tool, clicks, { profile = false, sides = 6, closed = false, flip = false, auto = true, scene = {}, ...extra } = {}) {
   if (!CLICKS[tool]) throw new Error('Choose a drawing tool.');
   let clockwise = false;
   if (tool === 'arc') {
@@ -95,14 +108,15 @@ export function commitShape(definition, tool, clicks, { profile = false, sides =
     const turn = (s[0] - c[0]) * (e[1] - c[1]) - (s[1] - c[1]) * (e[0] - c[0]);
     clockwise = (turn < 0) !== flip;
   }
-  const { definition: drawn, created } = drawPrimitive(
+  const additional=ADDITIONAL.has(tool)?drawAdditional(definition,tool,clicks,{profile,closed,flip,...extra}):null;
+  const { definition: drawn, created } = additional??drawPrimitive(
     definition, tool, clicks.map(({ xy, point }) => ({ xy, point: point ?? null })),
     { fixed: false, profile, clockwise, closed, sides },
   );
-  const ids = clickIds(tool, definition, drawn, created, clicks);
+  const ids = additional?.clickIds??clickIds(tool, definition, drawn, created, clicks);
   const boundary = created.filter((id) => !(drawn.points ?? []).some((p) => p.id === id));
   const shape = ['line', 'circle', 'arc'].includes(tool) ? boundary[0] : null;
-  const withIds = clicks.map((click, i) => ({ ...click, id: ids[i], rules: auto ? [...(click.rules ?? [])] : [] }));
+  const withIds = clicks.map((click, i) => ({ ...click, id: ids[i], rules: auto && !(tool==='elliptical_arc'&&i>=2&&!click.point) ? [...(click.rules ?? [])] : [] }));
   if (auto && tool === 'arc') {
     const line = tangentLineAt(drawn, scene, ids[1], clicks[0].xy);
     if (line) withIds[1].rules.push({ kind: 'tangent', line });
@@ -143,12 +157,15 @@ export function typedClick(tool, anchor, cursor, text) {
     const angle = distance(anchor.xy, cursor) > 1e-12 ? towards : 0;
     return { xy: [a0 + Math.cos(angle) * radius, a1 + Math.sin(angle) * radius], point: null, rules: [] };
   }
-  if (tool === 'rectangle') {
-    const [width, height] = values;
+  if (tool === 'rectangle'||tool==='center_rectangle') {
+    let [width, height] = values;
     if (!(width > 0) || !(height > 0) || values.length !== 2) return null;
+    if(tool==='center_rectangle'){width/=2;height/=2;}
     const sx = cursor[0] < a0 ? -1 : 1;
     const sy = cursor[1] < a1 ? -1 : 1;
     return { xy: [a0 + sx * width, a1 + sy * height], point: null, rules: [] };
   }
   return null;
 }
+
+export function studioGhost(tool,clicks,cursor,options={}){return ADDITIONAL.has(tool)?additionalGhost(tool,clicks,cursor,options):primitiveGhost(tool,clicks,cursor,options);}

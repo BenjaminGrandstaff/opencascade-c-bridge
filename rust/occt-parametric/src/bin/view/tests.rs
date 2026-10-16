@@ -5257,3 +5257,91 @@ fn sketch_studio_page_and_every_module_it_imports_are_served() {
     assert!(classic.contains("href=\"/studio\""));
     assert!(seen.contains("viewer.mjs"), "{seen:?}");
 }
+
+#[test]
+fn studio_primitive_gallery_regenerates_exact_curves_text_and_closed_control_splines() {
+    let directory = Directory::new();
+    let request: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../tools/model/studio-primitives.request.json"
+    ))
+    .unwrap();
+    let document = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+    let model = PathBuf::from(directory.model(&document));
+    let mut studio = serve::Studio::load(&model, Some("body".into())).unwrap();
+    assert_eq!(
+        studio
+            .handle("GET", "/sketch-studio-primitives.mjs", b"")
+            .status,
+        200
+    );
+    let data = get(&mut studio, "/api/annotations?id=part").1;
+    let scene = data["scenes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["kind"] == "sketch" && s["feature"] == "profile")
+        .unwrap();
+    assert_eq!(scene["solver"]["solved"], true);
+    for id in ["A1", "E1", "Conic1", "S1"] {
+        assert!(
+            scene["entities"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|e| e["id"] == id),
+            "{id}"
+        );
+    }
+    assert!(
+        scene["entities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|e| e["text"] == "Text1")
+    );
+    let constraints = scene["annotations"].as_array().unwrap();
+    assert!(constraints.iter().any(|a|a["detail"]["constraint"].get("midpoint").is_some() && a["status"]=="passed"));
+    let ellipse = scene["entities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["id"] == "E1")
+        .unwrap();
+    let points = ellipse["points"].as_array().unwrap();
+    for (p, xy) in [
+        (points.first().unwrap(), [45., 0.]),
+        (points.last().unwrap(), [40., 3.]),
+    ] {
+        assert!((p[0].as_f64().unwrap() - xy[0]).hypot(p[1].as_f64().unwrap() - xy[1]) < 1e-7);
+    }
+    let mut draft = get(&mut studio, "/api/sketches").1["sketches"][0]["definition"].clone();
+    let spline = draft["splines"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|s| s["id"] == "S1")
+        .unwrap();
+    let first = spline["points"][0].clone();
+    spline["points"].as_array_mut().unwrap().push(first);
+    spline["basis"]["knots"] = json!([0., 0.5, 1.]);
+    spline["basis"]["multiplicities"] = json!([4, 1, 4]);
+    spline["basis"]["weights"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"literal":{"value":1.,"dimension":"scalar","unit":null}}));
+    let state = get(&mut studio, "/api/state").1;
+    let (status, result) = edit_definition(&mut studio, "profile", draft.clone(), false);
+    assert_eq!(status, 200, "{result}");
+    assert_eq!(result["can_apply"], true, "{result}");
+    assert_eq!(get(&mut studio, "/api/state").1, state);
+    assert_eq!(edit_definition(&mut studio, "profile", draft, true).0, 200);
+    history(&mut studio, "undo");
+    history(&mut studio, "redo");
+    assert_eq!(studio.handle("POST", "/api/save", b"{}").status, 200);
+    let mut studio = serve::Studio::load(&model, Some("body".into())).unwrap();
+    let mut bad = get(&mut studio, "/api/sketches").1["sketches"][0]["definition"].clone();
+    let stable = get(&mut studio, "/api/state").1;
+    bad["texts"][0]["font"] = json!("Missing Studio Test Font 998877");
+    assert_eq!(edit_definition(&mut studio, "profile", bad, true).0, 422);
+    assert_eq!(get(&mut studio, "/api/state").1, stable);
+}

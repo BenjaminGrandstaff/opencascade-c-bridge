@@ -1,9 +1,8 @@
+import {geometryNames} from './geometry-names.mjs';
 import {geometryIds} from './constraint-controls.mjs';
 const literal = value => ({literal:{value,dimension:'length',unit:'millimeter'}});
-const collections = ['points','lines','circles','arcs','ellipses','splines','shapes','texts','patterns','projections','measurements'];
 export function nextId(definition, prefix) {
-  const used=new Set(collections.flatMap(key=>(definition[key]??[]).map(item=>item.id)));
-  for(const op of definition.curve_operations??[])if(op.split){used.add(op.split.before);used.add(op.split.after);}
+  const used=geometryNames(definition);
   let i=1;while(used.has(`${prefix}${i}`))i++;return `${prefix}${i}`;
 }
 export function snapPosition(position, definition, solved={}, grid=1, tolerance=0, preferredPoint=null) {

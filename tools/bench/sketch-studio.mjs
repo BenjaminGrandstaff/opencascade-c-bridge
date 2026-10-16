@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { performance } from 'node:perf_hooks';
 import { viewProjection } from '../../rust/occt-parametric/src/bin/view/web/viewer.mjs';
 import { basePlane, lookAt } from '../../rust/occt-parametric/src/bin/view/web/sketch-studio-plane.mjs';
+import {commitShape,studioGhost} from '../../rust/occt-parametric/src/bin/view/web/sketch-studio-tools.mjs';
 import { infer } from '../../rust/occt-parametric/src/bin/view/web/sketch-studio-infer.mjs';
 import { sketchPaths, sketchPoints } from '../../rust/occt-parametric/src/bin/view/web/sketch-studio-overlay.mjs';
 
@@ -57,3 +58,16 @@ console.log(`Sketch studio: ${build.toFixed(1)} ms first move (index build), ${p
   `${redraw.toFixed(1)} ms per overlay redraw (10,000 lines, 330,000 samples; budgets 16 ms per move, 500 ms per build and 100 ms per redraw)`);
 assert(perMove < 16 && build < 500, 'Studio snapping exceeded its budget (16 ms per move, 500 ms per index build).');
 assert(redraw < 100, 'Studio overlay exceeded its redraw budget.');
+
+// Largest explicit pole set; preview remains 65 samples and never calls native geometry.
+const clicks=Array.from({length:256},(_,i)=>({xy:[i,Math.sin(i/20)*10],point:null,rules:[]}));
+start=performance.now();
+for(let i=0;i<20;i++){
+ const result=commitShape(definition,'control_spline',clicks,{degree:5});
+ assert.equal(result.definition.splines.at(-1).points.length,256);
+ const ghost=studioGhost('control_spline',clicks.slice(0,-1),clicks.at(-1),{degree:5});
+ assert.equal(ghost.length,65);assert(ghost.flat().every(Number.isFinite));
+}
+const primitives=performance.now()-start;
+console.log(`Studio primitives: 20 maximum-pole spline commits/previews on 10,000 curves ${primitives.toFixed(1)} ms (budget 2,000 ms)`);
+assert(primitives<2000,'Maximum-pole studio primitive authoring exceeded its budget.');

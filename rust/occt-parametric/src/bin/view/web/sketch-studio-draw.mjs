@@ -1,7 +1,7 @@
 // Drawing in the sketch studio: the toolbar, gestures with live previews,
 // snapping and automatic constraints, typed values, and the draft that is
 // previewed natively and applied to the model.
-import { primitiveGhost } from './canvas-tools.mjs';
+import {studioGhost as primitiveGhost} from './sketch-studio-tools.mjs';
 import { newSketchDefinition } from './sketch-create.mjs';
 import { infer } from './sketch-studio-infer.mjs';
 import { pathData } from './sketch-studio-overlay.mjs';
@@ -35,7 +35,7 @@ export function installDrawing(studio, document) {
   let reference = null; // the last line or circle hovered, for parallel and equal snaps
   let typed = '';
   let lastClick = { time: 0, screen: [NaN, NaN] };
-  const options = { sides: 6, closed: false, flip: false };
+  const options = {sides:6,closed:false,flip:false,degree:3,weights:'',rho:.5,text:'Text',font:'Liberation Sans',style:'regular',height:5,angle:0,align:'start'};
   let previewTimer = 0;
   let previewTurn = 0;
 
@@ -262,7 +262,7 @@ export function installDrawing(studio, document) {
   }
 
   function finishSpline() {
-    if (gesture?.tool !== 'spline' || gesture.clicks.length < (options.closed ? 3 : 2)) return;
+    if (!['spline','control_spline'].includes(gesture?.tool) || gesture.clicks.length < (gesture.tool==='control_spline'?Math.max(options.degree+1,options.closed?3:2):options.closed?3:2)) return;
     commit(gesture.clicks);
   }
 
@@ -272,9 +272,9 @@ export function installDrawing(studio, document) {
     try {
       const profile = d.local && !(d.definition.profile ?? []).length;
       const result = commitShape(d.definition, tool, clicks, {
-        profile, sides: options.sides, closed: options.closed, flip: options.flip, auto, scene: studio.sceneOf(d.feature) ?? {},
+        ...options,profile,auto,scene: studio.sceneOf(d.feature) ?? {},
       });
-      const ghost = tool === 'point' ? [] : [primitiveGhost(tool, clicks.slice(0, -1), clicks.at(-1), { clockwise: false, closed: options.closed, sides: options.sides })];
+      const ghost = tool === 'point' ? [] : [primitiveGhost(tool, clicks.slice(0, -1), clicks.at(-1), {...options,clockwise:options.flip})];
       change(result.definition, ghost);
       const added = result.constraints.map((c) => Object.keys(c)[0].replaceAll('_', ' '));
       studio.say(`${TOOLS.find((t) => t.id === tool).label} drawn${added.length ? `, with ${added.join(', ')}` : ''}. Previewing…`);
@@ -304,18 +304,18 @@ export function installDrawing(studio, document) {
     lastClick = { time: now, screen: [event.clientX, event.clientY] };
     const tool = studio.tool;
     if (double && gesture) {
-      if (tool === 'spline') finishSpline();
+      if (['spline','control_spline'].includes(tool)) finishSpline();
       else if (tool === 'line') cancelGesture();
       return true;
     }
     gesture ??= { tool, clicks: [] };
     const next = { xy: result.xy, point: result.point, rules: result.rules };
-    if (tool === 'spline' && gesture.clicks.length >= 2 && result.point && result.point === gesture.clicks[0].point) {
+    if (['spline','control_spline'].includes(tool) && gesture.clicks.length >= 2 && result.point && result.point === gesture.clicks[0].point) {
       options.closed = true;
       finishSpline();
       return true;
     }
-    if (tool === 'spline' && !result.point && gesture.clicks.length >= 2) {
+    if (['spline','control_spline'].includes(tool) && !result.point && gesture.clicks.length >= 2) {
       const first = studio.toScreen(gesture.clicks[0].xy);
       if (first && Math.hypot(first[0] - (event.clientX - studio.viewBox().left), first[1] - (event.clientY - studio.viewBox().top)) < SNAP_PIXELS) {
         options.closed = true;
@@ -323,6 +323,7 @@ export function installDrawing(studio, document) {
         return true;
       }
     }
+    if(tool==='control_spline'&&gesture.clicks.length>=(options.closed?255:256)){studio.say('Finish the control spline: at most 256 poles including its closing pole.',true);return true;}
     gesture.clicks.push(next);
     if (gesture.clicks.length >= CLICKS[tool]) commit(gesture.clicks, !event.altKey);
     else studio.say(result.hint ? `Snapped ${result.hint}. ${nextPrompt(tool, gesture.clicks.length)}` : nextPrompt(tool, gesture.clicks.length));
@@ -331,11 +332,15 @@ export function installDrawing(studio, document) {
   }
 
   function nextPrompt(tool, count) {
+    if(tool==='control_spline')return `${count} control poles; degree ${options.degree} needs ${options.degree+1} or more. Enter finishes.`;
+    if(tool==='elliptical_arc')return ['','Click the major-axis end.','Click minor width.','Click the arc start direction.','Click the arc end direction.'][count];
+    if(tool==='conic')return count===1?'Click the intersection of end tangents.':'Click the conic end.';
+    if(tool==='arc_three')return count===1?'Click a point the arc passes through.':'Click the arc end.';
     if (tool === 'spline') return `${count} spline point${count === 1 ? '' : 's'}; double-click or Enter finishes.`;
     if (tool === 'arc') return count === 1 ? 'Click the arc start.' : 'Click the arc end (X flips the direction).';
     if (tool === 'ellipse') return count === 1 ? 'Click a major-axis end.' : 'Click the minor width.';
     if (tool === 'slot') return count === 1 ? 'Click the other cap centre.' : 'Click the width.';
-    if (['line', 'circle', 'rectangle', 'polygon'].includes(tool)) return 'Click the next point, or type a value and press Enter.';
+    if (['line', 'circle', 'rectangle','center_rectangle', 'polygon'].includes(tool)) return 'Click the next point, or type a value and press Enter.';
     return '';
   }
 
@@ -352,7 +357,7 @@ export function installDrawing(studio, document) {
     if (studio.tool === 'select' || !cursor) return nodes;
     const clicks = gesture?.clicks ?? [];
     if (CLICKS[studio.tool] && (clicks.length || studio.tool === 'point')) {
-      const ghost = primitiveGhost(studio.tool, clicks, cursor, { clockwise: options.flip, closed: options.closed, sides: options.sides });
+      const ghost = primitiveGhost(studio.tool, clicks, cursor, {...options,clockwise:options.flip});
       const data = pathData(ghost, layer.frame, matrix, width, height);
       if (data) nodes.push(element('path', { d: data, class: 'ghost' }));
     }
@@ -420,7 +425,8 @@ export function installDrawing(studio, document) {
           studio.say(`"${typed}" does not fit the ${gesture.tool} tool.`, true);
           typed = '';
         } else {
-          gesture.clicks.push(next);
+          if(tool==='control_spline'&&gesture.clicks.length>=(options.closed?255:256)){studio.say('Finish the control spline: at most 256 poles including its closing pole.',true);return true;}
+    gesture.clicks.push(next);
           if (gesture.clicks.length >= CLICKS[gesture.tool]) commit(gesture.clicks);
         }
         studio.redraw();
@@ -434,7 +440,7 @@ export function installDrawing(studio, document) {
       else studio.setTool('select');
       return true;
     }
-    if ((event.key === 'x' || event.key === 'X') && studio.tool === 'arc') {
+    if ((event.key === 'x' || event.key === 'X') && ['arc','elliptical_arc'].includes(studio.tool)) {
       options.flip = !options.flip;
       studio.renderToolbar();
       studio.redraw();
@@ -472,14 +478,19 @@ export function installDrawing(studio, document) {
         html('input', { type: 'number', min: 3, max: 1000, step: 1, value: options.sides, style: 'width:64px',
           onchange: (e) => { options.sides = Number(e.target.value); studio.redraw(); } })));
     }
-    if (studio.tool === 'spline') {
+    if (['spline','control_spline'].includes(studio.tool)) {
       extra.push(html('label', {},
         html('input', { type: 'checkbox', checked: options.closed, style: 'width:auto', onchange: (e) => { options.closed = e.target.checked; studio.redraw(); } }), 'Closed'),
       html('button', { onclick: finishSpline }, 'Finish'));
     }
-    if (studio.tool === 'arc') {
+    if (['arc','elliptical_arc'].includes(studio.tool)) {
       extra.push(html('button', { 'aria-pressed': options.flip ? 'true' : 'false', title: 'Take the longer way round (X)', onclick: () => { options.flip = !options.flip; studio.renderToolbar(); studio.redraw(); } }, 'Flip', html('kbd', {}, 'X')));
     }
+    const field=(label,key,type='number')=>html('label',{},label,html('input',{type,value:options[key],step:'any','aria-label':label,oninput:e=>{options[key]=type==='number'?(e.target.value.trim()?Number(e.target.value):NaN):e.target.value;studio.redraw();}}));
+    const choice=(label,key,values)=>html('label',{},label,html('select',{'aria-label':label,onchange:e=>{options[key]=e.target.value;studio.redraw();}},values.map(([value,text])=>html('option',{value,selected:options[key]===value},text))));
+    if(studio.tool==='control_spline')extra.push(field('Spline degree','degree'),field('Pole weights (optional)','weights','text'),html('p',{},'Degree 1–5. One positive weight per pole; empty uses 1. Closed joins at a C0 seam.'));
+    if(studio.tool==='conic')extra.push(field('Conic rho (0–1)','rho'),html('p',{},'Below 0.5: elliptic; 0.5: parabolic; above 0.5: hyperbolic.'));
+    if(studio.tool==='text')extra.push(field('Text content','text','text'),field('Font family','font','text'),choice('Text style','style',[['regular','Regular'],['bold','Bold'],['italic','Italic'],['bold_italic','Bold italic']]),field('Text height (mm)','height'),field('Text angle (degrees)','angle'),choice('Text alignment','align',[['start','Start'],['center','Center'],['end','End']]),html('p',{},'Fonts must be installed. Preview verifies the family and style; glyphs are native outlines.'));
     studio.fill(document.getElementById('tool-options'), extra);
 
     const d = studio.draft;

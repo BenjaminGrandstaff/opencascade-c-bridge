@@ -68,6 +68,9 @@
   .palette button[aria-pressed="true"] kbd { color: inherit; opacity: 0.75; }
   #tool-options { display: grid; gap: 6px; }
   #tool-options:empty { display: none; }
+  #tool-options label { flex-wrap: wrap; }
+  #tool-options input:not([type="checkbox"]), #tool-options select { width: 100%; min-width: 0; }
+  #tool-options p { margin: 2px 0; color: var(--muted); font-size: 12px; }
   #tool-options label { display: flex; gap: 6px; align-items: center; color: var(--muted); font-size: 12px; }
   #inspector { grid-area: inspector; border-left: 1px solid var(--line); }
   h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin: 4px 0 8px; }

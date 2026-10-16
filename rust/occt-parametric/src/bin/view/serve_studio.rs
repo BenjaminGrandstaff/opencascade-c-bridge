@@ -16,6 +16,7 @@ const STUDIO_ASSETS: &[(&str, &str)] = studio_assets!(
     "sketch-studio-overlay.mjs",
     "sketch-studio-infer.mjs",
     "sketch-studio-tools.mjs",
+    "sketch-studio-primitives.mjs",
     "sketch-studio-draw.mjs",
     "sketch-studio-select.mjs",
     "sketch-studio-constrain.mjs",

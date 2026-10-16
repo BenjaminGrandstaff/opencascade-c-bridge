@@ -87,9 +87,9 @@ at any view angle. Every tool shows a live preview, and Escape cancels.
 | Tool | Key | Mouse |
 |---|---|---|
 | Line | L | Click, click… chains lines; double-click or Escape ends the chain |
-| Rectangle | R | Two corners (Shift: from center) |
+| Rectangle | R | Two corners (B selects the center-rectangle tool) |
 | Circle | C | Center, then radius |
-| Arc | A | Center, start, end (or 3-point with Shift) |
+| Arc | A | Center, start, end (J selects the three-point tool) |
 | Spline | S | Points, double-click to finish; clicking the first point closes it |
 | Ellipse | E | Center, major-axis end, minor width |
 | Slot | O | Two cap centers, then width |
@@ -98,8 +98,42 @@ at any view angle. Every tool shows a live preview, and Escape cancels.
 | Dimension | D | Click one or two pieces of geometry, place the label, type a value |
 
 While a tool is active, a small field next to the cursor accepts typed
-lengths and angles (for example `20` then Tab, then `45` for a line), so
+lengths and angles (for example `20, 45` then Enter for a line), so
 exact values don't need a separate step.
+
+## Additional primitive tools
+
+The toolbar also authors these existing native definitions (schema 164 and ABI
+76 unchanged):
+
+| Tool | Key | Gesture and options |
+|---|---|---|
+| Center rect | B | Center, then corner. Typed width/height are full sizes. Four sides retain H/V constraints; a construction diagonal and midpoint keep the center relationship. |
+| 3-point arc | J | Start, a point the arc passes through, then end. The span includes the middle point, retained with native point-on-curve membership. Collinear clicks reject locally. |
+| Ellipse arc | U | Center, major-axis end, minor width, then start/end directions. End directions project onto the ellipse; snapped endpoints must already lie on it. X/Flip switches the directed span. |
+| Conic | Q | Start, intersection of the end tangents, then end. Set rho in (0,1): below 0.5 elliptic, 0.5 parabolic, above 0.5 hyperbolic. |
+| Control spline | K | Click poles, then Enter/Finish. Degree 1–5, at least degree+1 poles, maximum 256 including a closing pole. Optional positive weights, one per clicked pole, author a rational spline. Closed repeats the first pole with a C0 seam; it does not promise smooth periodicity. |
+| Text | T | Enter one-line text, installed font family/style, em height, baseline angle and start/center/end alignment; click the baseline anchor. Native Preview builds exact font outlines and rejects missing fonts. |
+
+Open arcs/conics remain construction geometry until selected into a profile;
+they do not replace an existing closed outline. New closed center rectangles
+and closed control splines can start a local sketch's outer profile. Text
+outlines participate in the sketch face output. Center rectangles' diagonal
+is excluded from their profile. Newly authored points stay free.
+
+Curve ghosts use at most 65 samples, with control-polygon guides bounded by 256 poles; control-spline ghosts evaluate the
+rational basis instead of connecting poles. Text shows an anchor until native
+Preview supplies glyph outlines. Ghosts are visual approximations; persisted
+curves retain exact native definitions. General knot/basis editing remains in
+the advanced spline controls. A gallery generated through the same commit paths
+is [studio-primitives.request.json](../tools/model/studio-primitives.request.json).
+
+Source names are reserved once per gesture, with per-prefix counters. Additional
+record authoring is O(G + N) time/space for existing geometry data G and at most
+256 new poles N; center rectangles also use the shared constant-size drawing
+helper. Ghost evaluation is O(N + 65·degree²). The persistent studio benchmark
+checks 20 degree-5, 256-pole commits and previews against 10,000 existing curves
+within a 2 s budget; it excludes native regeneration and browser layout.
 
 ## Automatic constraints
 
@@ -252,7 +286,7 @@ sketches with many thousands of entities.
 | New sketch on a picked face | Yes | Picked in the 3D view |
 | New sketch on a datum plane | No | Existing datum sketches show and edit; creating one needs the classic editor |
 | Point, line, rectangle, circle, arc, spline, ellipse, slot, polygon | Yes | Tool palette, with typed values and automatic constraints |
-| Text and conic shapes | Classic | Advanced drawer (form panels) |
+| Elliptical arcs, conics, text, three-point arcs, center rectangles, control splines | Yes | Native records, toolbar gestures and options |
 | Drag free points (solved) | Yes | Select tool |
 | Edit a point's coordinates and fixed flag | Yes | Inspector |
 | 36 typed constraints and dimensions with parameters | Yes | Selection bar, inspector, Dimension tool |

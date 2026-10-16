@@ -94,6 +94,13 @@ are separate: reload a draft after navigating history before applying it.
 
 ### Sketch studio
 
+The palette includes elliptical arcs (U), conics (Q), text (T), three-point
+arcs (J), center rectangles (B), and control splines (K). Control splines
+support degree 1–5 and optional positive rational weights; text uses installed
+fonts validated by native Preview. See the
+[primitive gestures](../../docs/SKETCH_STUDIO.md#additional-primitive-tools).
+
+
 `/studio` (also linked as "Sketch studio" from the viewer) sketches in the 3D
 view instead of a flat overlay:
 
