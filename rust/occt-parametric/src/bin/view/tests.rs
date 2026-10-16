@@ -5053,3 +5053,86 @@ fn advanced_relationship_drafts_restore_native_g2_and_seeded_contacts() {
         assert_eq!(fs::read_to_string(&model).unwrap(), saved);
     }
 }
+
+#[test]
+fn weighted_authoring_drafts_follow_generated_points_and_parameter_weights_after_save() {
+    let directory = Directory::new();
+    let mut request: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../tools/model/slotted-plate.request.json"
+    ))
+    .unwrap();
+    request["model"]["instances"][0]["base"]["id"] = json!("part");
+    request["model"]["family"]["parameters"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({
+            "id":"bias","parameter_type":{"scalar":"scalar"},
+            "default":{"scalar":{"value":2,"dimension":"scalar","unit":null}}
+        }));
+    let document = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+    let model = PathBuf::from(directory.model(&document));
+    let original = fs::read_to_string(&model).unwrap();
+    let mut studio = serve::Studio::load(&model, Some("body".into())).unwrap();
+    assert_eq!(
+        studio
+            .handle("GET", "/weighted-point-controls.mjs", b"")
+            .status,
+        200
+    );
+    let mut draft = get(&mut studio, "/api/sketches").1["sketches"][0]["definition"].clone();
+    let mm = |value| json!({"literal":{"value":value,"dimension":"length","unit":"millimeter"}});
+    draft["points"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"id":"average","x":mm(0),"y":mm(0),"fixed":false}));
+    let link = json!({"weighted_point":{"point":"average","terms":[
+        {"point":"a","weight":{"literal":{"value":1.0,"dimension":"scalar","unit":null}}},
+        {"point":"outline:corner1","weight":{"parameter":"bias"}}
+    ]}});
+    draft["constraints"]
+        .as_array_mut()
+        .unwrap()
+        .push(link.clone());
+    let state = get(&mut studio, "/api/state").1;
+    let (status, result) = edit_definition(&mut studio, "profile", draft.clone(), false);
+    assert_eq!(status, 200, "{result}");
+    assert_eq!(result["can_apply"], true);
+    assert_eq!(get(&mut studio, "/api/state").1, state);
+    assert_eq!(fs::read_to_string(&model).unwrap(), original);
+    assert_eq!(edit_definition(&mut studio, "profile", draft, true).0, 200);
+    let average = |data: serde_json::Value| {
+        data["scenes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["kind"] == "sketch" && s["feature"] == "profile")
+            .unwrap()["points"]["average"][0]
+            .as_f64()
+            .unwrap()
+    };
+    assert!((average(get(&mut studio, "/api/annotations?id=part").1) - 160.0 / 3.0).abs() < 1e-8);
+    history(&mut studio, "undo");
+    history(&mut studio, "redo");
+    let response = studio.handle(
+        "POST",
+        "/api/parameters",
+        br#"{"set":{"bias":3,"width":90}}"#,
+    );
+    assert_eq!(response.status, 200);
+    assert!((average(get(&mut studio, "/api/annotations?id=part").1) - 67.5).abs() < 1e-8);
+    assert_eq!(studio.handle("POST", "/api/save", b"{}").status, 200);
+    let mut studio = serve::Studio::load(&model, Some("body".into())).unwrap();
+    assert!((average(get(&mut studio, "/api/annotations?id=part").1) - 67.5).abs() < 1e-8);
+    let mut draft = get(&mut studio, "/api/sketches").1["sketches"][0]["definition"].clone();
+    assert_eq!(draft["constraints"].as_array().unwrap().last(), Some(&link));
+    let stable = get(&mut studio, "/api/state").1;
+    let saved = fs::read_to_string(&model).unwrap();
+    draft["constraints"]
+        .as_array_mut()
+        .unwrap()
+        .last_mut()
+        .unwrap()["weighted_point"]["terms"][1]["point"] = json!("lost:corner1");
+    assert_eq!(edit_definition(&mut studio, "profile", draft, true).0, 422);
+    assert_eq!(get(&mut studio, "/api/state").1, stable);
+    assert_eq!(fs::read_to_string(&model).unwrap(), saved);
+}

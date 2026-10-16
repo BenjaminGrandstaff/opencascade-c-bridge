@@ -17,7 +17,7 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 6/6, bridge 160 + first-use integration 1 (+1 doc test), recipes 3, parametric core 41 + kernel 710 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 8 + view command 67 + viewer Node 146 + branch command 2 + model command 90, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 6/6, bridge 160 + first-use integration 1 (+1 doc test), recipes 3, parametric core 41 + kernel 710 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 8 + view command 68 + viewer Node 148 + branch command 2 + model command 90, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -25,6 +25,17 @@ tracks status and order.
 | Scale benchmarks | Last full suite: 194 Rust cases plus 5 model-command cases and a 10,000-face Python matcher. Sketch authoring integration rechecked 60 sketch cases and 60 MCP cases within budget. | `tools/bench/run.sh` |
 
 ## Done
+
+- Weighted point authoring (schema 149, ABI 74 unchanged): Named point links
+  now adds/edits positive weighted source terms, parameter weights and retained
+  compound formulas. Weighted annotations open the recipe editor. Linking
+  unfixes the authored target, replaces its prior point links and preserves
+  other dimensions. Sources include verified generated/projected points.
+  A shared source datalist bounds the maximum 256-row editor with 10,000 choices
+  to about 32 ms in the persistent Node scale case. Native tests cover generated
+  sources, parameter updates, history, Save/reopen and atomic source loss.
+  See [weighted points](docs/SKETCHES.md#weighted-dependent-points-schema-146).
+
 
 - Advanced sketch relationship controls (schema 149, ABI 74 unchanged): typed
   symmetry, equal curve length, coradial, G2 continuity and seven seeded/analytic

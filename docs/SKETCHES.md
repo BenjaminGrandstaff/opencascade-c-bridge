@@ -579,6 +579,30 @@ self references and cycles are rejected. There are 1–256 source terms per link
 a maximum dependency depth of 256, and at most 4096 flattened independent source
 references per target.
 
+In the live editor, **Named point links** → **Weighted source points** adds or
+edits these links. Select an authored target, use **Add weighted source**, then
+choose each source point and a positive weight or scalar parameter. The source
+inputs share a suggestion list containing authored and declared generated or
+projected points. Typed names are checked before staging. **Remove weighted
+source N** removes a term; **Link named point** stages the complete recipe,
+unfixes the target and replaces its old point links while keeping other
+dimensions. Preview checks geometry, expression values and dependency cycles.
+
+Selecting a weighted annotation opens this editor. Existing compound weight
+formulas default to **Keep existing formula** and survive source-row edits;
+choose an entered weight or parameter to replace one explicitly. The full
+formula remains editable through the definition JSON. **Remove named point
+link** releases the target as a free point. Its stored coordinates remain
+solver seeds. Preview/Apply, Undo/Redo and Save/reopen use the normal edit guards.
+No model fields change: schema 149 and ABI 74 remain unchanged.
+
+Source validation uses O(G + T) time/space for G known points and T terms
+(T ≤ 256). The source inputs share one datalist, avoiding T copies of all G
+source options; weight-parameter menus use O(T × P) entries for P scalar
+parameters. The persistent `tools/bench/sketch-controls.mjs` case builds and
+validates 256 terms against 10,000 source choices in about 32 ms (1 s budget,
+DOM stubs excluding browser layout and native solving).
+
 Weighted links are shown as constructed constraints and introduce no redundant
 equality rows. Other constraints involving dependent points differentiate through
 the source references, preserving source free motion and constraint diagnosis.

@@ -12,7 +12,7 @@ test('crossing links use two native memberships and reject self-references, inva
  const d=definition(),before=structuredClone(d);const next=linkNamedPoint(d,{point:'p',mode:'crossing',first:'curve',second:'guide'});assert.deepEqual(pointLinks(next,'p'),[{point_on_curve:{point:'p',curve:'curve'}},{point_on_curve:{point:'p',curve:'guide'}}]);
  for(const options of [{point:'a',mode:'spline',spline:'curve',fraction:scalar(.5)},{point:'p',mode:'spline',spline:'curve',fraction:scalar(1.1)},{point:'p',mode:'crossing',first:'curve',second:'curve'},{point:'a',mode:'crossing',first:'curve',second:'guide'}])assert.throws(()=>linkNamedPoint(d,options));assert.deepEqual(d,before);
 });
-class Element{constructor(tag){this.tagName=tag;this.children=[];this.value='';}append(...e){for(const child of e)child.parentElement=this;this.children.push(...e);}setAttribute(k,v){this[k]=v;}}
+class Element{constructor(tag){this.tagName=tag;this.children=[];this.value='';}append(...e){for(const child of e)child.parentElement=this;this.children.push(...e);}setAttribute(k,v){this[k]=v;}replaceChildren(...e){this.children=[];this.append(...e);}}
 const all=e=>[e,...e.children.flatMap(all)],find=(e,t)=>all(e).find(c=>c.textContent===t);
 test('named point controls stage links locally and keep the current parameter driver visible',()=>{
  globalThis.document={createElement:tag=>new Element(tag)};globalThis.Option=class extends Element{constructor(text,value){super('option');this.textContent=text;this.value=value;}};
@@ -96,5 +96,31 @@ test('literal sample status is readable and keeps full stored fraction precision
   assert(find(host,'Follows curve at fraction 0.42405327.'));
   assert.equal(all(host).find(e=>e['aria-label']==='Spline parameter fraction').value,String(fraction));
   assert.equal(d.constraints.at(-1).spline_point.fraction.literal.value,fraction);
+ }finally{delete globalThis.document;delete globalThis.Option;}
+});
+
+test('weighted links preserve dimensions, replace point links and validate terms without mutating the draft',async()=>{
+ const {captureGeneratedPoints,bindGeneratedPoints}=await import('./generated-points.mjs');
+ const d=definition();d.shapes=[{rectangle:{id:'rect',first:'a',opposite:'b'}}];bindGeneratedPoints(d,captureGeneratedPoints(d,['rect:corner1']));
+ const terms=[{point:'a',weight:scalar(1)},{point:'rect:corner1',weight:{parameter:'bias'}}],next=linkNamedPoint(d,{point:'p',mode:'weighted',terms});
+ assert.equal(next.points[2].fixed,false);assert.deepEqual(next.constraints[0],d.constraints[0]);assert.deepEqual(pointLinks(next,'p'),[{weighted_point:{point:'p',terms}}]);assert.equal(d.constraints.length,1);
+ const replaced=linkNamedPoint(next,{point:'p',mode:'spline',spline:'curve',fraction:scalar(.5)});assert.equal(pointLinks(replaced,'p').length,1);assert(pointLinks(replaced,'p')[0].spline_point);
+ for(const bad of [[],Array(257).fill(terms[0]),[{point:'p',weight:scalar(1)}],[{point:'lost',weight:scalar(1)}],[{point:'a',weight:scalar(0)}],[{point:'a',weight:scalar(Infinity)}],[{point:'a',weight:length(1)}]])assert.throws(()=>linkNamedPoint(d,{point:'p',mode:'weighted',terms:bad}));
+ d.shapes[0].rectangle.opposite='a';assert.throws(()=>linkNamedPoint(d,{point:'p',mode:'weighted',terms}),/known source/);
+});
+
+test('weighted controls add and remove source rows and preserve formulas until replaced explicitly',()=>{
+ globalThis.document={createElement:tag=>new Element(tag)};globalThis.Option=class extends Element{constructor(text,value){super('option');this.textContent=text;this.value=value;}};
+ try{
+  const formula={multiply:[{parameter:'bias'},scalar(2)]},d=linkNamedPoint(definition(),{point:'p',mode:'weighted',terms:[{point:'a',weight:formula}]}),host=new Element('div');let next;
+  const controls=createPointLinkControls({host,definition:d,initialPoint:'p',parameters:[{id:'bias',parameter_type:{scalar:'scalar'}}],changed:v=>next=v,message(){}});
+  const input=label=>all(host).find(e=>e['aria-label']===label);assert.equal(input('Point link mode').value,'weighted');assert.equal(input('Weight driver 1').value,'preserve');
+  find(host,'Add weighted source').onclick();assert.equal(input('Weighted source point 2').value,'b');
+  assert(!all(host).find(e=>e.tagName==='datalist').children.some(e=>e.value==='p'));
+  input('Weight driver 2').value='parameter:bias';input('Weight driver 2').onchange();assert.equal(input('Source weight 2').parentElement.hidden,true);find(host,'Link named point').onclick();
+  assert.deepEqual(pointLinks(next,'p')[0].weighted_point.terms,[{point:'a',weight:formula},{point:'b',weight:{parameter:'bias'}}]);
+  input('Weight driver 1').value='literal';input('Weight driver 1').onchange();input('Source weight 1').value='3';input('Source weight 1').oninput();
+  find(host,'Remove weighted source 2').onclick();find(host,'Link named point').onclick();assert.deepEqual(pointLinks(next,'p')[0].weighted_point.terms,[{point:'a',weight:scalar(3)}]);
+  assert(controls.inspect('p'));assert.equal(input('Weight driver 1').value,'preserve');
  }finally{delete globalThis.document;delete globalThis.Option;}
 });

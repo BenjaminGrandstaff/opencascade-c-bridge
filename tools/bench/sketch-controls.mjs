@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict';
 import {performance} from 'node:perf_hooks';
 import {createConstraintControls,makeConstraint} from '../../rust/occt-parametric/src/bin/view/web/constraint-controls.mjs';
+import {createWeightedTermControls,validateWeightedTerms} from '../../rust/occt-parametric/src/bin/view/web/weighted-point-controls.mjs';
 import {captureGeneratedPoints,bindGeneratedPoints} from '../../rust/occt-parametric/src/bin/view/web/generated-points.mjs';
 class Element {
   constructor(){this.children=[];this.style={};}
@@ -32,3 +33,14 @@ createConstraintControls({host:new Element(),definition,initialType:'curvature_c
 const controls=performance.now()-start;
 console.log(`Sketch controls: 50 relationship validations ${validation.toFixed(1)} ms; 1,000-row editor ${controls.toFixed(1)} ms (10,000 authored + 10,000 generated curves; budget 5,000 ms each)`);
 assert(validation<5000&&controls<5000,'Sketch relationship controls exceeded their scale budget.');
+
+// Maximum weighted term count shares one source datalist instead of 256 copies.
+start=performance.now();
+const host=new Element(),terms=Array.from({length:256},(_,i)=>({point:`p${i+1}`,weight:{literal:{value:1,dimension:'scalar',unit:null}}}));
+const weighted=createWeightedTermControls({host,definition,message:()=>{}});
+weighted.load('p0',terms);
+assert.deepEqual(validateWeightedTerms(definition,'p0',weighted.terms),terms);
+assert.equal(host.children[0].children[1].children.length,10000);
+const weightedTime=performance.now()-start;
+console.log(`Weighted links: 256 rows / 10,000 source choices ${weightedTime.toFixed(1)} ms (budget 1,000 ms; DOM stubs)`);
+assert(weightedTime<1000,'Weighted source controls exceeded their scale budget.');

@@ -684,6 +684,11 @@ impl Studio {
                 Ok(data) => Response::json(200, &data),
                 Err(error) => Response::error(422, &error),
             },
+            ("GET", "/weighted-point-controls.mjs") => Response::text(
+                200,
+                "text/javascript; charset=utf-8",
+                include_str!("web/weighted-point-controls.mjs"),
+            ),
             ("GET", "/constraint-controls.mjs") => Response::text(
                 200,
                 "text/javascript",
