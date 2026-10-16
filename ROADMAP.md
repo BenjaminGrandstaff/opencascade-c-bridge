@@ -17,7 +17,7 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 7/7, bridge 160 + first-use integration 1 (+1 doc test), recipes 3, parametric core 55 + kernel 733 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 69 + viewer Node 151 + branch command 2 + model command 90, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 7/7, bridge 160 + first-use integration 1 (+1 doc test), recipes 3, parametric core 55 + kernel 733 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 70 + viewer Node 191 + branch command 2 + model command 91, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -26,6 +26,17 @@ tracks status and order.
 
 ## Done
 
+- Sketch studio (no schema or ABI change). `occt-view --serve` serves
+  `/studio`, a plane-layered 3D sketcher beside the classic editor: each
+  sketch is drawn on its plane in the model view (sketch scenes now carry
+  their resolved frame), with layers, Look at, and new sketches on base
+  planes or picked faces. A toolbar draws every shape with typed values and
+  automatic constraints (coincident, midpoint, on curve, horizontal,
+  vertical, parallel, perpendicular, equal, tangent); selections offer all
+  36 typed constraints; a Dimension tool takes values or parameters; the
+  sketch is colored by solve state; labels are laid out without overlaps;
+  and an Advanced drawer hosts the classic panels. Snapping costs 0.1 ms
+  per mouse move at 10,000 lines. See [Sketch studio](docs/SKETCH_STUDIO.md).
 - Socket-head countersink relief (schema 164; ABI 76 unchanged). The Carr
   Lane catalog gains column C, the optional 60° relief under the head, and
   a counterbore may take a relief diameter that cuts a 60° cone at its

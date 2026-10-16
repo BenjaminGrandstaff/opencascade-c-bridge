@@ -5252,5 +5252,8 @@ fn sketch_studio_page_and_every_module_it_imports_are_served() {
         }
     }
     assert!(seen.contains("sketch-studio-app.mjs"), "{seen:?}");
+    // The classic viewer links to the studio.
+    let classic = String::from_utf8(studio.handle("GET", "/", b"").body).unwrap();
+    assert!(classic.contains("href=\"/studio\""));
     assert!(seen.contains("viewer.mjs"), "{seen:?}");
 }

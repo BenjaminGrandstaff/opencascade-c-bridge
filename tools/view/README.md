@@ -92,6 +92,32 @@ document/output data; older entries are dropped when either limit is reached. Me
 regenerated on navigation rather than retained. Local sketch and solid drafts
 are separate: reload a draft after navigating history before applying it.
 
+### Sketch studio
+
+`/studio` (also linked as "Sketch studio" from the viewer) sketches in the 3D
+view instead of a flat overlay:
+
+- **Layers.** Every sketch is drawn on its plane next to the solid and
+  listed with its plane and free degrees. Click a layer to make it active;
+  `N` turns the camera square to it. New sketch starts one on XY, XZ or YZ
+  (with an offset) or on a face you click.
+- **Drawing.** The toolbar (keys `L R C A S E O G P`) draws lines, rectangles,
+  circles, arcs, splines, ellipses, slots, polygons and points. Type a value
+  during a gesture for an exact length, radius or size. Snapping adds the
+  constraints it implies (coincident, midpoint, on curve, horizontal,
+  vertical, parallel, perpendicular, equal, tangent); hold Alt to add none.
+- **Constraining.** With Select (`V`), click or Shift-click geometry; a bar
+  offers the constraints it can take and Enter applies the first. Dimension
+  (`D`) measures what you click and asks for a value or parameter. Free
+  geometry is blue, conflicting geometry red. Drag free points.
+- **Drafts.** Every change previews natively at once; Undo, Redo, Discard and
+  Apply act on the draft, then Save writes the file. `?` lists shortcuts, and
+  Advanced opens the classic panels (point links, patterns, projections,
+  curve and region edits, Sketch to solid).
+
+See [Sketch studio](../../docs/SKETCH_STUDIO.md) for the design and what still
+needs the classic editor.
+
 ### Create a sketch
 
 Choose **New sketch** in **Dimensions & sketches**. Give the new feature a

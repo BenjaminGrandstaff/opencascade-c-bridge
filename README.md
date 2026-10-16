@@ -432,6 +432,12 @@ hole callouts, which set the limits that measured sizes are judged by.
 Schema 164 adds the booklet's optional 60° countersink relief under socket
 heads, as a catalog dimension and a counterbore option.
 
+`occt-view --serve` also serves a sketch studio at `/studio`: every sketch is
+drawn on its plane in the 3D view as a layer; a toolbar draws every sketch
+shape with snapping that adds the obvious constraints; selections offer the
+constraints they can take; and labels are laid out without overlaps. See
+[Sketch studio](docs/SKETCH_STUDIO.md).
+
 ABI 34 adds exact hidden-line projection, plane clipping, edge sampling, and
 bulk subshape traversal. Schema 41 adds driven frame joints with limits and
 the API supports exact interference/clearance checks and sampled motion with

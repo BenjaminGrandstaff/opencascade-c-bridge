@@ -1,7 +1,8 @@
 # Sketch studio (plan)
 
-Status: approved 2026-10-15; being built phase by phase (see the table
-under "Building it").
+Status: built (phases 0–5, 2026-10-15). Open it with `occt-view --serve`
+at `/studio`, or from the "Sketch studio" link in the classic viewer. The
+classic sketch editor is unchanged and stays available.
 
 The sketch studio replaces the panel-driven sketch editor with sketching
 directly in the 3D model view. Each sketch is a layer on its own plane.
@@ -232,6 +233,33 @@ sketches with many thousands of entities.
   studio and its Apply reloads it. It needs the studio draft applied or
   discarded first, and its canvas picking (crossings, spline samples,
   faces, edges) still needs the classic viewer, linked from the drawer.
+- **Phase 5.** The studio gains model-level Undo and Redo (when no draft is
+  open), Save, a point inspector (x, y and fixed for one selected point),
+  and Sketch to solid in the Advanced drawer. The classic viewer links to
+  the studio. The parity review is below.
+
+## Parity with the classic editor
+
+| Capability | Studio | Notes |
+|---|---|---|
+| New sketch on XY, XZ or YZ with an offset | Yes | Layers panel |
+| New sketch on a picked face | Yes | Picked in the 3D view |
+| New sketch on a datum plane | No | Existing datum sketches show and edit; creating one needs the classic editor |
+| Point, line, rectangle, circle, arc, spline, ellipse, slot, polygon | Yes | Toolbar, with typed values and automatic constraints |
+| Text and conic shapes | Classic | Advanced drawer (form panels) |
+| Drag free points (solved) | Yes | Select tool |
+| Edit a point's coordinates and fixed flag | Yes | Inspector |
+| 36 typed constraints and dimensions with parameters | Yes | Selection bar, inspector, Dimension tool |
+| Remove constraints | Yes | Inspector |
+| Delete geometry | No | Not in either editor's canvas; the classic JSON fields can |
+| Crossing points, spline samples, weighted point links | Partly | Forms in the Advanced drawer; canvas picking needs the classic viewer |
+| Patterns, point links, projections, curve and region edits, profiles, dependencies | Yes | Advanced drawer hosts the classic panels |
+| Sketch to solid | Yes | Advanced drawer |
+| Preview, Apply, Undo, Redo, Save | Yes | Toolbar; Revert stays in the classic viewer |
+| Several instances | Partly | The studio edits the first editable instance's family sketches |
+
+Retiring the classic editor is a separate decision, to make with Codex,
+which maintains it.
 
 ## Building it
 

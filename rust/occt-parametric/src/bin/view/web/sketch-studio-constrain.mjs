@@ -359,15 +359,57 @@ export function installConstraints(studio, document) {
     studio.fill(host,
       html('h2', {}, `Selection (${studio.selection.length})`),
       html('ul', { class: 'inspector-list' }, rows),
+      pointEditor(def),
       html('h2', {}, `Constraints on it (${touching.length})`),
       touching.length ? html('ul', { class: 'inspector-list' }, constraints) : html('p', { style: 'color:var(--muted)' }, 'None.'),
       html('h2', {}, 'Add'),
       options.length
         ? html('div', { style: 'display:flex;flex-wrap:wrap;gap:4px' }, options.map((o) => html('button', { onclick: () => applySuggestion(o) }, o.label)))
-        : html('p', { style: 'color:var(--muted)' }, 'No constraint takes this selection. Select one to three items.'),
+        : html('p', { style: 'color:var(--muted)' }, studio.selection.length > 3
+          ? 'Constraints take one to three items; select fewer.'
+          : 'Nothing applies to this selection on its own. Shift-click more geometry to relate it.'),
       html('p', { style: 'color:var(--muted)' }, 'Shift-click adds to the selection. Enter applies the first suggestion; drag a free point to move it.'));
     return true;
   };
+
+  /**
+   * For one selected authored point with literal coordinates: its x and y
+   * (sketch-local millimetres, solver starting values unless fixed) and
+   * whether it is fixed.
+   */
+  function pointEditor(def) {
+    if (studio.selection.length !== 1 || !def) return null;
+    const point = (def.points ?? []).find((p) => p.id === studio.selection[0]);
+    if (!point?.x?.literal || !point?.y?.literal) return null;
+    const update = (change) => {
+      const draft = studio.ensureDraft();
+      if (!draft) {
+        studio.say(`Apply or discard the draft of ${studio.draft?.feature} first.`, true);
+        return;
+      }
+      const next = structuredClone(draft.definition);
+      change(next.points.find((p) => p.id === point.id));
+      studio.changeDraft(next);
+      studio.say(`${point.id} changed in the draft. Previewing…`);
+    };
+    const coordinate = (axis) => html('label', { style: 'display:grid;gap:3px;color:var(--muted);font-size:12px' }, `${axis.toUpperCase()} (mm)`,
+      html('input', {
+        type: 'number', step: 'any', value: point[axis].literal.value,
+        onchange: (event) => {
+          const value = Number(event.target.value);
+          if (!event.target.value.trim() || !Number.isFinite(value)) {
+            studio.say('Enter a finite coordinate.', true);
+            return;
+          }
+          update((p) => { p[axis] = { literal: { value, dimension: 'length', unit: 'millimeter' } }; });
+        },
+      }));
+    return html('div', { style: 'display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px' },
+      coordinate('x'), coordinate('y'),
+      html('label', { style: 'grid-column:span 2;display:flex;gap:6px;align-items:center' },
+        html('input', { type: 'checkbox', checked: Boolean(point.fixed), style: 'width:auto', onchange: (event) => update((p) => { p.fixed = event.target.checked; }) }),
+        'Fixed in place'));
+  }
 
   function removeConstraint(index) {
     const draft = studio.ensureDraft();

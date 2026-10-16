@@ -2,6 +2,7 @@
 // classic sketch editor's panels (point links, patterns, projections,
 // curve and region edits, dependencies, profiles) as they are.
 import { createSketchEditor } from './sketch-editor.mjs';
+import { createSolidEditor } from './solid-editor.mjs';
 import { TOOLS } from './sketch-studio-tools.mjs';
 
 export const SHORTCUTS = [
@@ -13,7 +14,7 @@ export const SHORTCUTS = [
   ['X', 'Flip an arc the longer way round'],
   ['Alt', 'Hold while drawing to add no automatic constraints'],
   ['Shift', 'Click to add to the selection; drag to pan'],
-  ['Ctrl+Z / Ctrl+Shift+Z', 'Undo and redo within the draft'],
+  ['Ctrl+Z / Ctrl+Shift+Z', 'Undo and redo in the draft, or the model when no draft is open'],
   ['?', 'Show or hide this help'],
 ];
 
@@ -59,7 +60,25 @@ export function installExtras(studio, document) {
       return;
     }
     const host = html('div');
-    studio.fill(drawer, header, intro, host);
+    const solids = html('div');
+    studio.fill(drawer, header, intro, solids, host);
+    const reloadAfter = async () => {
+      studio.previewScenes = {};
+      await studio.reload();
+    };
+    // Sketch to solid: extrude, revolve or cut from a sketch, as in the classic viewer.
+    createSolidEditor({
+      host: solids,
+      request: studio.api,
+      instance: () => studio.instance,
+      preview: async () => studio.say('Solid draft previewed; Apply updates the model and the 3D view.'),
+      applied: async () => {
+        await reloadAfter();
+        studio.say('Solid feature applied to the model.');
+      },
+      restore: async () => studio.refresh(),
+      showSketch: (feature) => { if (feature && feature !== studio.active) studio.activate(feature); },
+    });
     // The classic editor drives its own draft, previews and apply through
     // the same API; these adapters route its view requests to the studio.
     editor = createSketchEditor({

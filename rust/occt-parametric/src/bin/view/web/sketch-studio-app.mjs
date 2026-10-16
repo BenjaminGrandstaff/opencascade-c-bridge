@@ -92,6 +92,7 @@ export function startStudio(document) {
     ]);
     const first = studio.parsed === null;
     studio.version = state.version;
+    studio.modelState = state;
     studio.parsed = parseGltf(gltf);
     renderer?.setModel(studio.parsed);
     studio.scenes = annotations.scenes ?? [];
@@ -578,6 +579,10 @@ export function startStudio(document) {
     try {
       const state = await api('/api/state');
       if (state.version !== studio.version && !studio.busy) await load();
+      else if (state.dirty !== studio.modelState?.dirty) {
+        studio.modelState = state;
+        studio.renderToolbar?.();
+      }
     } catch (error) {
       say(error.message, true);
     }

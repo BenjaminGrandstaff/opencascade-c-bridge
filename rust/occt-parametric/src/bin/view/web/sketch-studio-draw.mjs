@@ -157,8 +157,33 @@ export function installDrawing(studio, document) {
     studio.refresh();
   }
 
+  /** Undo or redo a model change through the server's history. */
+  async function modelHistory(direction) {
+    try {
+      await studio.api(`/api/${direction}`, { method: 'POST', body: '{}' });
+      await studio.reload();
+      studio.say(direction === 'undo' ? 'Model change undone.' : 'Model change redone.');
+    } catch (error) {
+      studio.say(error.message, true);
+    }
+  }
+
+  async function save() {
+    try {
+      await studio.api('/api/save', { method: 'POST', body: '{}' });
+      await studio.reload();
+      studio.say('Model saved to its file.');
+    } catch (error) {
+      studio.say(`Save failed: ${error.message}`, true);
+    }
+  }
+
   function undo() {
     const d = studio.draft;
+    if (!d?.dirty) {
+      if (studio.modelState?.undo_count) modelHistory('undo');
+      return;
+    }
     if (!d?.undo.length) return;
     d.redo.push(d.definition);
     d.definition = d.undo.pop();
@@ -173,6 +198,10 @@ export function installDrawing(studio, document) {
 
   function redo() {
     const d = studio.draft;
+    if (!d?.dirty) {
+      if (studio.modelState?.redo_count) modelHistory('redo');
+      return;
+    }
     if (!d?.redo.length) return;
     d.undo.push(d.definition);
     d.definition = d.redo.pop();
@@ -446,10 +475,20 @@ export function installDrawing(studio, document) {
     const d = studio.draft;
     const actions = document.getElementById('draft-actions');
     studio.fill(actions,
-      html('button', { title: 'Undo (Ctrl+Z)', disabled: !d?.undo.length, onclick: undo }, 'Undo'),
-      html('button', { title: 'Redo (Ctrl+Shift+Z)', disabled: !d?.redo.length, onclick: redo }, 'Redo'),
+      html('button', {
+        title: d?.dirty ? 'Undo in the draft (Ctrl+Z)' : 'Undo the last change to the model (Ctrl+Z)',
+        disabled: d?.dirty ? !d.undo.length : !studio.modelState?.undo_count, onclick: undo,
+      }, 'Undo'),
+      html('button', {
+        title: d?.dirty ? 'Redo in the draft (Ctrl+Shift+Z)' : 'Redo a model change (Ctrl+Shift+Z)',
+        disabled: d?.dirty ? !d.redo.length : !studio.modelState?.redo_count, onclick: redo,
+      }, 'Redo'),
       html('button', { disabled: !d?.dirty, onclick: () => discard() }, 'Discard'),
-      html('button', { 'aria-pressed': d?.dirty && !d.error ? 'true' : 'false', disabled: !d?.dirty || d.previewing || Boolean(d.error), title: d?.error ?? 'Apply the draft to the model', onclick: apply }, 'Apply'));
+      html('button', { 'aria-pressed': d?.dirty && !d.error ? 'true' : 'false', disabled: !d?.dirty || d.previewing || Boolean(d.error), title: d?.error ?? 'Apply the draft to the model', onclick: apply }, 'Apply'),
+      html('button', {
+        title: studio.modelState?.dirty ? 'Write the model to its file' : 'The model file is up to date',
+        disabled: !studio.modelState?.dirty || Boolean(d?.dirty), onclick: save,
+      }, 'Save'));
   };
 
   studio.statusExtra = () => {
