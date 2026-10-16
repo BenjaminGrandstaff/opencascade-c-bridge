@@ -637,7 +637,8 @@ calls. Five tests cover analytic volumes for bends of each sign, incremental
 reuse when only K changes, distant and very small or large sheets,
 self-intersecting outlines, and drawing export. Schema 161 lets the blank
 take each bend's allowance from a bend table, bilinear in inside radius and
-angle and never extrapolated, in place of K. See [Sheet metal](docs/SHEET_METAL.md).
+angle and never extrapolated, in place of K. Schema 162 adds open and rolled
+hems at either end, expanded into the same flange-and-bend walk. See [Sheet metal](docs/SHEET_METAL.md).
 
 ## Draft features
 

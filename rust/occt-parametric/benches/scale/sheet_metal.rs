@@ -1,11 +1,11 @@
 use super::*;
 use occt_parametric::{
-    BendTable, BendTableKind, SheetMetalBend, SheetMetalCutout, SheetMetalCutoutShape,
-    SheetMetalDefinition,
+    BendTable, BendTableKind, HemSide, SheetMetalBend, SheetMetalCutout, SheetMetalCutoutShape,
+    SheetMetalDefinition, SheetMetalHem,
 };
 pub(crate) fn sheet_case() -> Outcome {
     timed(
-        "1000 sheet-metal brackets: folded/flat build and edit".into(),
+        "1000 hemmed sheet-metal brackets: folded/flat build and edit".into(),
         ms(15_000),
         Expectation::Required,
         || {
@@ -34,6 +34,12 @@ pub(crate) fn sheet_case() -> Outcome {
                     2
                 ],
                 cutouts: Vec::new(),
+                start_hem: None,
+                end_hem: Some(SheetMetalHem::Open {
+                    side: HemSide::Positive,
+                    gap: length(1.0),
+                    length: length(10.0),
+                }),
             };
             let mut definition = block();
             definition.parameters = vec![ParameterDefinition {
@@ -74,7 +80,8 @@ pub(crate) fn sheet_case() -> Outcome {
                 ParameterValue::Scalar(Quantity::length(3.0, LengthUnit::Millimeter)),
             );
             let second = part.regenerate_incremental(&session, &first)?;
-            let expected = (60.0 + std::f64::consts::PI * 4.5) * 30.0;
+            // Two quarter bends at midplane radius 4.5 and a hem at 2.
+            let expected = (70.0 + std::f64::consts::PI * (4.5 + 2.0)) * 30.0;
             for index in 0..1000 {
                 for kind in ["folded", "flat"] {
                     let shape = second
@@ -99,7 +106,7 @@ pub(crate) fn sheet_case() -> Outcome {
             {
                 return Err(failure("sheet handles retained".into()));
             }
-            Ok("1000 folded brackets and linked blanks; exact volumes after thickness edit; no retained handles".into())
+            Ok("1000 hemmed brackets and linked blanks; exact volumes after thickness edit; no retained handles".into())
         },
     )
 }
@@ -150,6 +157,8 @@ pub(crate) fn cutout_case() -> Outcome {
                     })
                     .collect(),
                 cutouts,
+                start_hem: None,
+                end_hem: None,
             };
             let mut definition = block();
             definition.features = vec![
@@ -302,6 +311,8 @@ pub(crate) fn bend_table_case() -> Outcome {
                     })
                     .collect(),
                 cutouts: Vec::new(),
+                start_hem: None,
+                end_hem: None,
             };
             let expected = 1024.0
                 + bends

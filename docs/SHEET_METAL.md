@@ -108,6 +108,39 @@ A test checks that, the blank centers including the bend allowances, and
 that a hole's center in the folded sheet lies its radius from the nearest
 material.
 
+## Hems (schema 162)
+
+`start_hem` and `end_hem` fold either end of the strip back on itself:
+
+```json
+"end_hem": { "kind": "open", "side": "positive", "gap": 1.0, "length": 10 },
+"start_hem": { "kind": "rolled", "side": "negative", "inside_radius": 1.0, "angle_radians": 4.712 }
+```
+
+- **Side.** `positive` folds onto the side of the adjacent flange that a
+  positive bend turns toward; `negative` onto the other side.
+- **Open hem.** A 180° bend with inside radius `gap / 2`, then a flange of
+  `length` running back alongside its flange, `gap` from it. The gap must be
+  at least a tenth of the thickness, so a cutout's cutter, which reaches
+  0.05 × thickness past the sheet, never touches the hem. A closed hem (no
+  gap) would make faces touch and is not a valid solid.
+- **Rolled hem.** A bend of `angle_radians` (more than π) at
+  `inside_radius`, ending in the roll with no flange. Past
+  `2π − acos(r / (r + t))` the roll's outside would re-enter its own
+  flange, so larger angles are rejected.
+- **Placement.** The origin stays the start of flange 0, heading along
+  `start_direction`; a start hem lies before it. Cutout flange numbers still
+  count the user's flanges from 0.
+- **Blank.** A hem is a bend like any other: its allowance at K, or from an
+  allowance bend table, which may list angles up to 360° (deduction tables
+  stay below 180°, where the outside setback is finite). The blank starts
+  at the start hem's free end, so cutouts and bend lines include its
+  allowance.
+
+Tests check exact folded and flat volumes with hems, the 1 mm gap of an
+open hem on each side by a probe at its center, a rolled start hem's extent
+and that it leaves flange 0 and its hole in place, and the rejected cases.
+
 ## Bend tables (schema 161)
 
 A shop that has measured its press brake can give the flat pattern a
@@ -130,7 +163,8 @@ A shop that has measured its press brake can give the flat pattern a
 
 - **Axes.** Rows follow `inside_radii_mm` and columns `angles_degrees`.
   Both axes hold 1–256 strictly increasing values; radii are positive and
-  angles lie strictly between 0° and 180°. The angle is the bend's change of
+  angles lie strictly between 0° and 180° for deductions and 0° and 360°
+  for allowances, which may cover hems. The angle is the bend's change of
   direction (`angle_radians` in degrees, either sign), not the included
   angle between the flanges.
 - **Kinds.** An `allowance` table gives the developed length of the bend
@@ -160,7 +194,7 @@ searches.
 Evaluation is linear in the number of flanges, and accumulated dimensions are
 checked for overflow before any kernel call. The scale suite builds 1,000
 folded brackets with linked blanks in one part, edits their shared thickness,
-and checks every analytic volume and that all handles are released. Another
+each with an open hem, and checks every analytic volume and that all handles are released. Another
 cuts 1,000 holes through ten flanges and their blank in about 4 s against a
 10 s budget, and checks the exact removed volume. Most of that time is the
 folded sheet's single boolean. A third computes 100 blanks of 1,023 bends
@@ -170,7 +204,8 @@ interpolated length is checked exactly, against a 1 s budget.
 ## Limits
 
 This is a single constant-width strip whose bends all share one axis direction.
-Edge flanges on other edges, bend reliefs, hems, cutouts across bends,
+Edge flanges on other edges, bend reliefs, closed and teardrop hems,
+cutouts across bends,
 corner treatments, tables keyed by material or across thicknesses,
 springback, and mold-line (outside setback) dimensioning
 are not supported. Flange lengths are measured on the midplane between tangent

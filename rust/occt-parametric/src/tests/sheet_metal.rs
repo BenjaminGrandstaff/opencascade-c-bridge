@@ -23,6 +23,8 @@ fn spec(turns: &[f64]) -> SheetMetalDefinition {
             })
             .collect(),
         cutouts: Vec::new(),
+        start_hem: None,
+        end_hem: None,
     }
 }
 fn definition(sheet: SheetMetalDefinition) -> FamilyDefinition {
@@ -466,4 +468,162 @@ fn bend_tables_replace_the_neutral_factor_on_the_blank() {
     assert_eq!(ModelDocument::from_json(&json).unwrap(), document);
     drop((first, accepted));
     assert_eq!(session.shape_count().unwrap(), 0);
+}
+fn open_hem(side: HemSide, gap: f64, length_mm: f64) -> SheetMetalHem {
+    SheetMetalHem::Open {
+        side,
+        gap: length(gap),
+        length: length(length_mm),
+    }
+}
+fn rolled_hem(side: HemSide, radius: f64, angle: f64) -> SheetMetalHem {
+    SheetMetalHem::Rolled {
+        side,
+        inside_radius: length(radius),
+        angle_radians: ScalarExpr::Literal(Quantity::scalar(angle)),
+    }
+}
+#[test]
+fn open_hems_fold_back_on_the_chosen_side_with_their_gap() {
+    let session = Session::new().unwrap();
+    let pi = std::f64::consts::PI;
+    // The second flange runs down -z at x = 24; a hem 1 mm open returns
+    // along it at midplane radius 1.5, so 3 mm away, on either side.
+    for (side, gap_center) in [(HemSide::Positive, 22.5), (HemSide::Negative, 25.5)] {
+        let mut sheet = spec(&[pi / 2.0]);
+        sheet.end_hem = Some(open_hem(side, 1.0, 10.0));
+        let midplane = 40.0 + pi / 2.0 * 4.0 + pi * 1.5 + 10.0;
+        let metrics = sheet.flat_pattern(&HashMap::new(), 0.5).unwrap();
+        assert!((metrics.length_mm - midplane).abs() < 1e-9);
+        assert_eq!(metrics.bend_allowances_mm.len(), 2);
+        let family = definition(sheet);
+        let generated = part(&family).regenerate(&session).unwrap();
+        for id in ["folded", "flat"] {
+            let shape = generated.shape(id).unwrap();
+            assert!(session.is_valid(shape).unwrap());
+            assert_eq!(session.shape_type(shape).unwrap(), ShapeType::Solid);
+            let volume = session.volume(shape).unwrap();
+            assert!((volume - midplane * 20.0).abs() < 1e-6, "{id}: {volume}");
+        }
+        // A probe centered in the gap clears both faces by half the gap.
+        let folded = generated.shape("folded").unwrap();
+        let probe = session
+            .create_sphere(Vec3::new(gap_center, 5.0, -20.0), 0.01)
+            .unwrap();
+        let clearance = session.distance(folded, &probe).unwrap().distance;
+        assert!((clearance - 0.49).abs() < 1e-6, "{side:?}: {clearance}");
+        let bounds = session.bounds(folded).unwrap();
+        // The fold's outside is 2.5 mm past the flange's end at z = -24.
+        assert!((bounds.min.z + 26.5).abs() < 1e-6, "{bounds:?}");
+        drop((probe, generated));
+    }
+    assert_eq!(session.shape_count().unwrap(), 0);
+}
+#[test]
+fn rolled_start_hems_keep_the_origin_and_shift_cutouts_on_the_blank() {
+    let session = Session::new().unwrap();
+    let pi = std::f64::consts::PI;
+    let mut sheet = spec(&[]);
+    sheet.start_hem = Some(rolled_hem(HemSide::Negative, 1.0, 1.5 * pi));
+    sheet.cutouts = vec![cutout(
+        "hole",
+        0,
+        SheetMetalCutoutShape::Circle {
+            diameter: length(4.0),
+        },
+    )];
+    // The roll's midplane radius is 2, so it adds 3 pi before flange 0.
+    let roll = 1.5 * pi * 2.0;
+    let metrics = sheet.flat_pattern(&HashMap::new(), 0.5).unwrap();
+    assert!((metrics.length_mm - (20.0 + roll)).abs() < 1e-9);
+    assert!((metrics.cutouts[0].center_mm[0] - (roll + 10.0)).abs() < 1e-9);
+    assert!((metrics.bend_lines_mm[0] - roll / 2.0).abs() < 1e-9);
+    metrics.drawing("rolled").unwrap();
+    let hole = pi * 4.0 * 2.0;
+    let family = definition(sheet.clone());
+    let generated = part(&family).regenerate(&session).unwrap();
+    for id in ["folded", "flat"] {
+        let shape = generated.shape(id).unwrap();
+        assert!(session.is_valid(shape).unwrap());
+        let volume = session.volume(shape).unwrap();
+        assert!(
+            (volume - ((20.0 + roll) * 20.0 - hole)).abs() < 1e-6,
+            "{id}: {volume}"
+        );
+    }
+    // Flange 0 still starts at the origin and runs to x = 20; the roll
+    // curls behind it on the side away from the sheet normal (-z), so up.
+    let bounds = session.bounds(generated.shape("folded").unwrap()).unwrap();
+    assert!((bounds.max.x - 20.0).abs() < 1e-6, "{bounds:?}");
+    assert!((bounds.min.x + 3.0).abs() < 1e-6, "{bounds:?}");
+    assert!((bounds.max.z - 5.0).abs() < 1e-6, "{bounds:?}");
+    assert!((bounds.min.z + 1.0).abs() < 1e-6, "{bounds:?}");
+    // The hole is still in flange 0, 10 mm from the origin.
+    let probe = session
+        .create_sphere(Vec3::new(10.0, 5.0, 0.0), 0.01)
+        .unwrap();
+    let clearance = session
+        .distance(generated.shape("folded").unwrap(), &probe)
+        .unwrap()
+        .distance;
+    assert!((clearance - 1.99).abs() < 1e-6, "{clearance}");
+
+    let mut graph = InstanceGraph::new(&family);
+    graph.add_base("part", HashMap::new(), "test").unwrap();
+    let document = ModelDocument::from_graph(&graph);
+    let json = document.to_json_pretty().unwrap();
+    assert!(json.contains("\"start_hem\"") && json.contains("\"rolled\""));
+    assert_eq!(ModelDocument::from_json(&json).unwrap(), document);
+    drop((probe, generated));
+    assert_eq!(session.shape_count().unwrap(), 0);
+}
+#[test]
+fn hems_that_close_or_reach_back_into_their_flange_are_rejected() {
+    let pi = std::f64::consts::PI;
+    // At r = 1, t = 2 the roll re-enters its flange past 2 pi - acos(1/3).
+    let limit = 2.0 * pi - (1.0f64 / 3.0).acos();
+    for hem in [
+        open_hem(HemSide::Positive, 0.19, 10.0),
+        open_hem(HemSide::Positive, 1.0, 0.0),
+        rolled_hem(HemSide::Positive, 1.0, pi),
+        rolled_hem(HemSide::Positive, 1.0, limit),
+        rolled_hem(HemSide::Negative, 0.0, 1.5 * pi),
+    ] {
+        let mut sheet = spec(&[pi / 2.0]);
+        sheet.end_hem = Some(hem.clone());
+        assert!(sheet.evaluate(&HashMap::new()).is_err(), "{hem:?}");
+    }
+    let mut sheet = spec(&[pi / 2.0]);
+    sheet.end_hem = Some(rolled_hem(HemSide::Positive, 1.0, limit - 0.01));
+    let session = Session::new().unwrap();
+    let family = definition(sheet);
+    let generated = part(&family).regenerate(&session).unwrap();
+    assert!(
+        session
+            .is_valid(generated.shape("folded").unwrap())
+            .unwrap()
+    );
+}
+#[test]
+fn allowance_tables_can_cover_hems() {
+    let pi = std::f64::consts::PI;
+    let mut sheet = spec(&[pi / 2.0]);
+    sheet.end_hem = Some(open_hem(HemSide::Positive, 1.0, 10.0));
+    // Rows: 0.5 mm (the hem's inside radius) and 3 mm.
+    let table = BendTable {
+        name: "hems".into(),
+        kind: BendTableKind::Allowance,
+        thickness_mm: 2.0,
+        inside_radii_mm: vec![0.5, 3.0],
+        angles_degrees: vec![90.0, 180.0],
+        values_mm: vec![vec![2.0, 4.1], vec![6.0, 12.0]],
+    };
+    let metrics = sheet
+        .flat_pattern_with_table(&HashMap::new(), 0.5, &table)
+        .unwrap();
+    let [bend, hem] = metrics.bend_allowances_mm[..] else {
+        panic!("two allowances");
+    };
+    assert!((bend - 6.0).abs() < 1e-9 && (hem - 4.1).abs() < 1e-9);
+    assert!((metrics.length_mm - 60.1).abs() < 1e-9);
 }

@@ -156,28 +156,10 @@ impl EvaluatedSheetUnfoldingInternal for EvaluatedSheet {
     fn flange_frames(&self) -> Vec<((f64, f64), f64)> {
         // The midplane walk of `boundary` at zero offset.
         let mut frames = Vec::with_capacity(self.flanges.len());
-        let mut point = (0.0, 0.0);
-        let mut angle: f64 = 0.0;
+        let mut at = self.start;
         for (index, flange) in self.flanges.iter().enumerate() {
-            frames.push((point, angle));
-            point = (
-                point.0 + flange * angle.cos(),
-                point.1 + flange * angle.sin(),
-            );
-            if let Some((turn, radius)) = self.bends.get(index) {
-                let sign = turn.signum();
-                let center_radius = radius + self.thickness * 0.5;
-                let left = (-angle.sin(), angle.cos());
-                let center = (
-                    point.0 + sign * center_radius * left.0,
-                    point.1 + sign * center_radius * left.1,
-                );
-                angle += turn;
-                point = (
-                    center.0 + sign * center_radius * angle.sin(),
-                    center.1 - sign * center_radius * angle.cos(),
-                );
-            }
+            frames.push(at);
+            at = advance(at, *flange, self.bends.get(index).copied(), self.thickness);
         }
         frames
     }
@@ -310,18 +292,20 @@ impl EvaluatedSheetUnfoldingInternal for EvaluatedSheet {
 
     fn boundary(&self, offset: f64) -> Vec<WireSegment> {
         let mut segments = Vec::with_capacity(self.flanges.len() + self.bends.len());
-        let mut point = (0.0, 0.0);
-        let mut angle: f64 = 0.0;
+        let (mut point, mut angle) = self.start;
         for (index, flange) in self.flanges.iter().enumerate() {
             let next = (
                 point.0 + flange * angle.cos(),
                 point.1 + flange * angle.sin(),
             );
             let left = (-angle.sin(), angle.cos());
-            segments.push(WireSegment::Line {
-                start: self.point((point.0 + offset * left.0, point.1 + offset * left.1)),
-                end: self.point((next.0 + offset * left.0, next.1 + offset * left.1)),
-            });
+            // A rolled hem's flange has no length and no edge.
+            if *flange > 0.0 {
+                segments.push(WireSegment::Line {
+                    start: self.point((point.0 + offset * left.0, point.1 + offset * left.1)),
+                    end: self.point((next.0 + offset * left.0, next.1 + offset * left.1)),
+                });
+            }
             point = next;
             if let Some((turn, radius)) = self.bends.get(index) {
                 let sign = turn.signum();

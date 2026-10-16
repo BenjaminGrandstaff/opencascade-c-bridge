@@ -1,6 +1,6 @@
 //! Constant-width flange strips with circular bends and explicit neutral
-//! factors, cutouts through their flanges (schema 160), and bend tables
-//! (schema 161).
+//! factors, cutouts through their flanges (schema 160), bend tables
+//! (schema 161), and hems at either end (schema 162).
 use super::*;
 use crate::assembly::{cross, dot, scale};
 use occt_types::WireSegment;
@@ -28,6 +28,107 @@ pub struct SheetMetalDefinition {
     /// Holes, rectangles and slots through flanges (schema 160).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub cutouts: Vec<SheetMetalCutout>,
+    /// A hem before the first flange, at `origin` (schema 162).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start_hem: Option<SheetMetalHem>,
+    /// A hem after the last flange (schema 162).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end_hem: Option<SheetMetalHem>,
+}
+
+/// Which side of its flange a hem folds onto: `positive` is the side a
+/// positive bend turns toward.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum HemSide {
+    Positive,
+    Negative,
+}
+
+/// A sheet end folded back on itself (schema 162).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case", tag = "kind")]
+pub enum SheetMetalHem {
+    /// Folded through 180° to run back along its flange, `gap` from it (at
+    /// least a tenth of the thickness), for `length`.
+    Open {
+        side: HemSide,
+        gap: ScalarExpr,
+        length: ScalarExpr,
+    },
+    /// Rolled through more than 180° at `inside_radius`, ending in the
+    /// roll. The roll may not reach back into its own flange.
+    Rolled {
+        side: HemSide,
+        inside_radius: ScalarExpr,
+        angle_radians: ScalarExpr,
+    },
+}
+
+impl SheetMetalHem {
+    fn expressions(&self) -> [&ScalarExpr; 2] {
+        match self {
+            Self::Open { gap, length, .. } => [gap, length],
+            Self::Rolled {
+                inside_radius,
+                angle_radians,
+                ..
+            } => [inside_radius, angle_radians],
+        }
+    }
+
+    /// The hem's straight length (zero for a roll), signed turn and inside
+    /// radius.
+    fn evaluate(
+        &self,
+        parameters: &HashMap<String, ParameterValue>,
+        thickness: f64,
+    ) -> Result<(f64, f64, f64), ModelError> {
+        let length = |e: &ScalarExpr| scalar(e, parameters, Dimension::Length);
+        let sign = |side: &HemSide| match side {
+            HemSide::Positive => 1.0,
+            HemSide::Negative => -1.0,
+        };
+        match self {
+            Self::Open {
+                side,
+                gap,
+                length: l,
+            } => {
+                let gap = positive(length(gap)?)?;
+                if gap < 0.1 * thickness {
+                    return Err(ModelError::new(
+                        "an open hem's gap must be at least a tenth of the sheet thickness",
+                    ));
+                }
+                Ok((
+                    positive(length(l)?)?,
+                    sign(side) * std::f64::consts::PI,
+                    gap * 0.5,
+                ))
+            }
+            Self::Rolled {
+                side,
+                inside_radius,
+                angle_radians,
+            } => {
+                let radius = positive(length(inside_radius)?)?;
+                let angle = scalar(angle_radians, parameters, Dimension::Scalar)?;
+                // Past this the roll's outer surface re-enters its flange.
+                let limit = std::f64::consts::TAU - (radius / (radius + thickness)).acos();
+                if !(angle.is_finite()
+                    && angle > std::f64::consts::PI + 1e-6
+                    && angle < limit - 1e-6)
+                {
+                    return Err(ModelError::new(format!(
+                        "a rolled hem's angle must lie between pi and {limit} radians, \
+                         where the roll would reach back into its flange"
+                    )));
+                }
+                Ok((0.0, sign(side) * angle, radius))
+            }
+        }
+    }
 }
 
 /// A cutout through one flange, cut square to it in the folded sheet and in
@@ -357,6 +458,11 @@ impl SheetMetalDefinition {
                 crate::regeneration::collect_scalar_parameters(expression, names);
             }
         }
+        for hem in self.start_hem.iter().chain(&self.end_hem) {
+            for expression in hem.expressions() {
+                crate::regeneration::collect_scalar_parameters(expression, names);
+            }
+        }
     }
 
     pub fn evaluate(
@@ -409,8 +515,26 @@ impl SheetMetalDefinition {
                 Ok((angle, radius))
             })
             .collect::<Result<Vec<_>, ModelError>>()?;
-        let cutouts = self.evaluate_cutouts(parameters, &flanges, width)?;
+        let mut cutouts = self.evaluate_cutouts(parameters, &flanges, width)?;
+        let (mut flanges, mut bends) = (flanges, bends);
+        let mut start = ((0.0, 0.0), 0.0);
+        if let Some(hem) = &self.start_hem {
+            let (length, turn, radius) = hem.evaluate(parameters, thickness)?;
+            // Walk the hem from a trial start, then shift it to end at the
+            // origin heading along the first flange.
+            let (end, _) = advance(((0.0, 0.0), -turn), length, Some((turn, radius)), thickness);
+            start = ((-end.0, -end.1), -turn);
+            flanges.insert(0, length);
+            bends.insert(0, (turn, radius));
+            cutouts.iter_mut().for_each(|cutout| cutout.flange += 1);
+        }
+        if let Some(hem) = &self.end_hem {
+            let (length, turn, radius) = hem.evaluate(parameters, thickness)?;
+            bends.push((turn, radius));
+            flanges.push(length);
+        }
         let result = EvaluatedSheet {
+            start,
             origin,
             width_axis,
             tangent,
@@ -520,13 +644,50 @@ impl SheetMetalDefinition {
     }
 }
 
+/// One step of a sheet's midplane walk in its (tangent, normal) plane:
+/// from `point` heading at `angle`, along a flange of `length` and then
+/// round `bend` (signed turn, inside radius) if any.
+pub fn advance(
+    (point, angle): ((f64, f64), f64),
+    length: f64,
+    bend: Option<(f64, f64)>,
+    thickness: f64,
+) -> ((f64, f64), f64) {
+    let point = (
+        point.0 + length * angle.cos(),
+        point.1 + length * angle.sin(),
+    );
+    let Some((turn, radius)) = bend else {
+        return (point, angle);
+    };
+    let sign = turn.signum();
+    let center_radius = radius + thickness * 0.5;
+    let center = (
+        point.0 - sign * center_radius * angle.sin(),
+        point.1 + sign * center_radius * angle.cos(),
+    );
+    let angle = angle + turn;
+    (
+        (
+            center.0 + sign * center_radius * angle.sin(),
+            center.1 - sign * center_radius * angle.cos(),
+        ),
+        angle,
+    )
+}
+
 pub struct EvaluatedSheet {
+    /// Where the midplane walk starts in the (tangent, normal) plane and its
+    /// heading: the origin heading along the tangent, unless a start hem
+    /// comes first.
+    pub start: ((f64, f64), f64),
     pub origin: Vec3,
     pub width_axis: Vec3,
     pub tangent: Vec3,
     pub normal: Vec3,
     pub width: f64,
     pub thickness: f64,
+    /// Flanges and bends including any hems; a rolled hem's flange is zero.
     pub flanges: Vec<f64>,
     pub bends: Vec<(f64, f64)>,
     pub cutouts: Vec<EvaluatedCutout>,

@@ -29,7 +29,8 @@ pub struct BendTable {
     pub thickness_mm: f64,
     /// Strictly increasing positive radii, 1–256 of them.
     pub inside_radii_mm: Vec<f64>,
-    /// Strictly increasing angles in (0, 180), 1–256 of them.
+    /// Strictly increasing angles, 1–256 of them, in (0, 360) for allowances
+    /// and (0, 180) for deductions.
     pub angles_degrees: Vec<f64>,
     /// One row per radius with one value per angle, in millimetres.
     pub values_mm: Vec<Vec<f64>>,
@@ -85,8 +86,17 @@ impl BendTable {
         if !increasing(&self.inside_radii_mm, 0.0, f64::INFINITY) {
             return fail("needs 1-256 strictly increasing positive inside radii");
         }
-        if !increasing(&self.angles_degrees, 0.0, 180.0) {
-            return fail("needs 1-256 strictly increasing angles between 0 and 180 degrees");
+        // Deductions need the outside setback, which 180° makes infinite;
+        // allowance tables may cover hems.
+        let most = match self.kind {
+            BendTableKind::Allowance => 360.0,
+            BendTableKind::Deduction => 180.0,
+        };
+        if !increasing(&self.angles_degrees, 0.0, most) {
+            return fail(
+                "needs 1-256 strictly increasing angles above 0 degrees and below 360 \
+                 (180 for deductions)",
+            );
         }
         if self.values_mm.len() != self.inside_radii_mm.len()
             || self
@@ -217,8 +227,14 @@ mod tests {
         let mut bad = table(BendTableKind::Allowance);
         bad.angles_degrees = vec![90.0, 45.0];
         assert!(bad.validate().is_err());
-        let mut bad = table(BendTableKind::Allowance);
+        let mut hems = table(BendTableKind::Allowance);
+        hems.angles_degrees = vec![45.0, 180.0];
+        assert!(hems.validate().is_ok());
+        let mut bad = table(BendTableKind::Deduction);
         bad.angles_degrees = vec![45.0, 180.0];
+        assert!(bad.validate().is_err());
+        let mut bad = table(BendTableKind::Allowance);
+        bad.angles_degrees = vec![45.0, 360.0];
         assert!(bad.validate().is_err());
         let mut bad = table(BendTableKind::Allowance);
         bad.values_mm[1].pop();
