@@ -223,6 +223,7 @@ geometry and paper coordinates remain millimeters. Angular labels use degrees.
 | `Limits { lower, upper }` | Nonnegative absolute limits containing nominal |
 | `Basic` | Nominal label enclosed in a rectangular box |
 | `Reference` | Entire label enclosed in parentheses |
+| `FitClass { class }` | ISO 286 tolerance class, `"H6"`–`"H13"` or `"h6"`–`"h13"` (schema 163) |
 
 Length tolerances use `Quantity::length` in any supported length unit. Angular
 values use `Quantity::scalar` in radians and are converted to degrees for display.
@@ -235,6 +236,38 @@ and DXF render deviations and limits as separate stacked values alongside the
 nominal/prefix and unit suffix. SVG includes the complete accessible label and
 DXF preserves it as a comment alongside the separate TEXT entities. Basic/reference dimensions cannot
 simultaneously carry direct tolerances in this enum.
+
+### Tolerance classes (schema 163)
+
+`FitClass` gives a size its limits from an ISO 286 tolerance class:
+
+```json
+"tolerance": { "fit_class": { "class": "H7" } }
+```
+
+H classes are for holes: the lower limit is the nominal size and the upper
+limit adds the standard tolerance IT of the grade. h classes are for shafts,
+with the upper limit at nominal and the lower limit IT below. The label
+shows the nominal, the class and both limits in the display unit, as
+`Ø4.000 H7 (4.012/4.000) mm`. A live hole callout uses the Hole feature's
+diameter as the nominal, so the limits follow edits to it. A class applies
+only to a size, meaning a diameter or a horizontal, vertical or aligned
+length. Radius and angular dimensions with one are rejected.
+
+The grades IT6–IT13 for sizes over 0 and up to 500 mm are a frozen V1
+table (`ToleranceClass::deviations_v1`). Its values come from the ISO 286-1
+table as [Wikipedia's IT Grade article](https://en.wikipedia.org/wiki/IT_Grade)
+reproduces it, checked on 2026-10-15. A test confirms each value lies
+within 10% of the standard's generating formula `k · i`, with
+`i = 0.45 ∛D + 0.001 D` µm at the geometric mean `D` of the size range,
+except the first range, which is the standard's own exception. That check
+catches transcription errors such as swapped digits. Published H7 limits of
++12 µm over 3–6 mm and +57 µm over 355–400 mm match.
+
+Each size range includes its upper limit (6 mm is in 3–6 mm), within 10⁻⁹ mm
+for unit roundoff. A size over 500 mm is an error, never an extrapolation.
+Other fundamental deviations (such as G, F or g6) and grades outside 6–13
+are not included. Like the hole catalogs, V1 values never change.
 
 ### Upright dimension label layout
 
@@ -948,8 +981,8 @@ without kernel handles.
 ## Dimensional measurement limits
 
 `DimensionTolerance.evaluate_measurement(nominal, measured)` checks a supplied
-nonnegative measurement against symmetric deviations, signed deviations or
-explicit limits. Lengths accept mixed units and return millimetre quantities;
+nonnegative measurement against symmetric deviations, signed deviations,
+explicit limits or a tolerance class's limits. Lengths accept mixed units and return millimetre quantities;
 angular values use scalar radians and return radians. Inputs are not rounded,
 wrapped or converted to absolute values. Limits must be finite, nonnegative
 and contain nominal; signed deviations must bracket zero.

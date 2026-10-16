@@ -426,7 +426,9 @@ alike in the folded sheet and its blank, and schema 161 adds bend tables
 of measured allowances or deductions in place of the neutral factor, and
 schema 162 adds open and rolled hems at either end; see [Sheet metal](docs/SHEET_METAL.md). It also adds frozen Carr Lane V1 tap-drill
 and socket-head counterbore catalogs in metric and inch sizes; see
-[Hole-size catalog](docs/HOLE_SIZE_CATALOG.md).
+[Hole-size catalog](docs/HOLE_SIZE_CATALOG.md). Schema 163 adds ISO 286
+tolerance classes (H6–H13 and h6–h13, to 500 mm) on drawing dimensions and
+hole callouts, which set the limits that measured sizes are judged by.
 
 ABI 34 adds exact hidden-line projection, plane clipping, edge sampling, and
 bulk subshape traversal. Schema 41 adds driven frame joints with limits and

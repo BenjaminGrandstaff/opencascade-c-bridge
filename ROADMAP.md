@@ -12,12 +12,12 @@ tracks status and order.
 | `occt-types` (shared value types) | — | No native dependency |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI; re-exports `occt-types` |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric-core` (kernel-free engineering layer) | Schema 162 | Definitions, documents, solving and checks without OCCT |
-| `occt-parametric` (kernel regeneration) | Schema 162 | Active development; re-exports the core API |
+| `occt-parametric-core` (kernel-free engineering layer) | Schema 163 | Definitions, documents, solving and checks without OCCT |
+| `occt-parametric` (kernel regeneration) | Schema 163 | Active development; re-exports the core API |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 7/7, bridge 160 + first-use integration 1 (+1 doc test), recipes 3, parametric core 52 + kernel 730 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 63 + viewer Node 137 + branch command 2 + model command 90, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 7/7, bridge 160 + first-use integration 1 (+1 doc test), recipes 3, parametric core 55 + kernel 731 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 66 + viewer Node 144 + branch command 2 + model command 90, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -26,6 +26,13 @@ tracks status and order.
 
 ## Done
 
+- ISO 286 tolerance classes (schema 163; ABI 76 unchanged). A diameter or
+  linear dimension, including a live hole callout, may carry a tolerance
+  class H6–H13 (holes) or h6–h13 (shafts). The label shows the class and
+  its limits, and measured sizes are judged against them. The IT6–IT13
+  grades to 500 mm are a frozen V1 table, each value checked against the
+  standard's generating formula; sizes beyond it are errors. Lookup is
+  O(1). See [Tolerance classes](docs/DRAWINGS.md#tolerance-classes-schema-163).
 - Sheet-metal hems (schema 162; ABI 76 unchanged). Either end of a strip
   may be hemmed: open hems fold 180° back alongside their flange at a gap of
   at least a tenth of the thickness; rolled hems curl past 180° and are
@@ -2766,7 +2773,8 @@ scopes and inspected repo capabilities, not a full conformity audit.
   hems, cutouts across bends, and unfolding edited solids beyond
   constant-width strips (cutouts within flanges exist, schema 160; bend
   tables, schema 161; open and rolled hems, schema 162).
-- Hole-catalog tolerance classes and optional under-head countersink relief.
+- Optional under-head countersink relief for socket-head holes, and
+  tolerance classes beyond H and h (H6–H13 and h6–h13 exist, schema 163).
 - Wing structure beyond solid printed segments: hollow shells with internal
   ribs, alignment pins independent of the spar, twist-exact hinge lines, and
   print-bed fit in arbitrary orientations.

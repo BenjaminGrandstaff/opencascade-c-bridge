@@ -9,7 +9,7 @@ pub mod text_layout;
 pub use dimensions::{
     DimensionMeasurementDisposition, DimensionMeasurementEvaluation, DimensionMeasurementLimits,
     DimensionPresentation, DimensionTolerance, DrawingDimensionMeasurement,
-    DrawingDimensionMeasurementResult,
+    DrawingDimensionMeasurementResult, ToleranceClass,
 };
 pub(crate) mod export;
 pub mod gdt;

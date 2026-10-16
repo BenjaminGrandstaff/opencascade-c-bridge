@@ -1,6 +1,8 @@
 //! Manufacturing dimension presentation; no GD&T or thread-fit certification.
 use super::*;
+pub mod iso286;
 pub mod measurement;
+pub use iso286::ToleranceClass;
 pub use measurement::{
     DimensionMeasurementDisposition, DimensionMeasurementEvaluation, DimensionMeasurementLimits,
     DrawingDimensionMeasurement, DrawingDimensionMeasurementResult,
@@ -25,6 +27,11 @@ pub enum DimensionTolerance {
     },
     Basic,
     Reference,
+    /// An ISO 286 tolerance class such as H7 or h6 on a size (a diameter or
+    /// linear dimension), with limits from the frozen V1 table (schema 163).
+    FitClass {
+        class: ToleranceClass,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
@@ -195,6 +202,20 @@ fn tolerance_text(d: &DrawingDimension, nominal: f64) -> Result<String, ModelErr
                 return Err(ModelError::new("dimension limits must contain nominal"));
             }
             format!("{hi:.p$}/{lo:.p$}")
+        }
+        DimensionTolerance::FitClass { class } => {
+            if matches!(
+                d.direction,
+                DimensionDirection::Radius | DimensionDirection::Angular { .. }
+            ) {
+                return Err(ModelError::new(
+                    "a tolerance class applies to a size: a diameter or linear dimension",
+                ));
+            }
+            let factor = d.presentation.length_unit.millimeter_factor();
+            let (lo, hi) = class.deviations_v1(nominal * factor)?;
+            let (lo, hi) = (nominal + lo / factor, nominal + hi / factor);
+            format!("{nominal:.p$} {class} ({hi:.p$}/{lo:.p$})")
         }
     };
     Ok(text)

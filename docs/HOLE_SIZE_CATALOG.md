@@ -87,10 +87,18 @@ interpolation or nearest size, unsupported pairs fail regeneration and keep the
 previous accepted output, and V1 values never change. The booklet's optional
 60-degree countersink relief (column C) is not generated.
 
+## Tolerance classes
+
+Since schema 163 a hole callout's diameter dimension may carry an ISO 286
+tolerance class such as H7 or H11. The drawing then shows the hole's limits
+of size, and measured diameters are judged against them. See
+[Tolerance classes](DRAWINGS.md#tolerance-classes-schema-163).
+
 ## Limits
 
 These catalogs choose nominal diameters and depths only. They do not select
-manufacturing tolerances, thread classes, or engagement lengths, and do not
+manufacturing tolerances (a drawing dimension's tolerance class does),
+thread classes, or engagement lengths, and do not
 validate fit, strength, or machinability. A tap-drill expression does not
 create `Hole.thread` metadata; record the thread separately. Explicit custom
 dimensions remain available.

@@ -144,6 +144,13 @@ impl DimensionTolerance {
             Self::Limits { lower, upper } => {
                 (normalize(*lower, dimension)?, normalize(*upper, dimension)?)
             }
+            Self::FitClass { class } => {
+                if dimension != Dimension::Length {
+                    return Err(ModelError::new("a tolerance class applies to a length"));
+                }
+                let (lower, upper) = class.deviations_v1(nominal)?;
+                (nominal + lower, nominal + upper)
+            }
         };
         if !lower.is_finite()
             || !upper.is_finite()

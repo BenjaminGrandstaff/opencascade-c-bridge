@@ -621,8 +621,11 @@ derived and resolved evaluation, dependency collection through every operand).
 Four tests check published values in both unit systems, rejection of unknown
 pairs and wrong dimensions, and a hole whose tap drill, clearance, and
 counterbore are all catalog-driven, including incremental edits and rollback.
-Manufacturing tolerance selection remains planned. The catalogs do not verify
-fit or standards compliance.
+Schema 163 adds ISO 286 tolerance classes (H6–H13, h6–h13 to 500 mm) on
+drawing dimensions and hole callouts, from a frozen V1 table checked against
+the standard's generating formula; measured sizes are judged against their
+limits. The catalogs still do not choose a class or verify fit or standards
+compliance.
 
 ## Sheet metal
 

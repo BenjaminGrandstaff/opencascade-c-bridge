@@ -181,3 +181,115 @@ fn geometry_driven_hole_callouts_preserve_the_face_limit_mode() {
         assert_eq!(session.shape_count().unwrap(), 0);
     }
 }
+#[test]
+fn tolerance_classes_set_callout_limits_and_judge_measured_sizes() {
+    let mm = |v| ScalarExpr::Literal(Quantity::length(v, LengthUnit::Millimeter));
+    let definition = callout_family(HoleFinish::Plain, HoleExtent::Blind { depth: mm(8.0) });
+    let mut graph = InstanceGraph::new(&definition);
+    graph.add_base("part", HashMap::new(), "test").unwrap();
+    let session = Session::new().unwrap();
+    let class = |text: &str| ToleranceClass::try_from(text.to_owned()).unwrap();
+    let mut page = callout_page();
+    page.dimensions[0].presentation.tolerance = DimensionTolerance::FitClass { class: class("H7") };
+    let generated = page
+        .generate(&graph, &session, DrawingRenderOptions::default())
+        .unwrap();
+    // H7 over 3-6 mm is 12 µm above the 4 mm bore.
+    assert!(
+        generated.labels[0]
+            .text
+            .starts_with("Ø4.000 H7 (4.012/4.000) mm DEPTH 8.000 mm"),
+        "{}",
+        generated.labels[0].text
+    );
+    let measure = |value: f64| DrawingDimensionMeasurement {
+        dimension: "manufactured".into(),
+        value: Quantity::length(value, LengthUnit::Millimeter),
+    };
+    let results = page
+        .evaluate_dimension_measurements(&graph, &[measure(4.010), measure(4.013), measure(3.999)])
+        .unwrap();
+    let dispositions: Vec<_> = results.iter().map(|r| r.evaluation.disposition).collect();
+    assert_eq!(
+        dispositions,
+        [
+            DimensionMeasurementDisposition::WithinLimits,
+            DimensionMeasurementDisposition::AboveUpperLimit,
+            DimensionMeasurementDisposition::BelowLowerLimit,
+        ]
+    );
+    let limits = results[0].evaluation.limits.unwrap();
+    assert!((limits.upper.value - 4.012).abs() < 1e-12);
+
+    // Inch callouts show the same limits converted.
+    let mut inch = page.clone();
+    inch.dimensions[0].presentation.length_unit = LengthUnit::Inch;
+    inch.dimensions[0].precision = 5;
+    let generated = inch
+        .generate(&graph, &session, DrawingRenderOptions::default())
+        .unwrap();
+    assert!(
+        generated.labels[0]
+            .text
+            .starts_with("Ø0.15748 H7 (0.15795/0.15748) in"),
+        "{}",
+        generated.labels[0].text
+    );
+
+    // A shaft class on a plain 5 mm linear dimension sits below nominal.
+    let annotated = annotated_family();
+    let mut plain_graph = InstanceGraph::new(&annotated);
+    plain_graph
+        .add_base("part", HashMap::new(), "test")
+        .unwrap();
+    let mut shaft = drawing();
+    shaft.dimensions = vec![manufactured_dimension(
+        DimensionDirection::Horizontal,
+        DimensionTolerance::FitClass { class: class("h6") },
+    )];
+    let generated = shaft
+        .generate(&plain_graph, &session, DrawingRenderOptions::default())
+        .unwrap();
+    let label = generated
+        .labels
+        .iter()
+        .find(|l| l.text.contains("h6"))
+        .unwrap();
+    assert_eq!(label.text, "5.000 h6 (5.000/4.992) mm");
+
+    // Radii and angles are not sizes; a hole over 500 mm is off the table.
+    for direction in [
+        DimensionDirection::Radius,
+        DimensionDirection::Angular {
+            vertex: DatumRef::new("part", "y"),
+        },
+    ] {
+        let mut bad = shaft.clone();
+        bad.dimensions[0].direction = direction;
+        assert!(
+            bad.generate(&plain_graph, &session, DrawingRenderOptions::default())
+                .is_err()
+        );
+    }
+    graph
+        .set_override(
+            "part",
+            "bore",
+            ParameterValue::Scalar(Quantity::length(501.0, LengthUnit::Millimeter)),
+        )
+        .unwrap();
+    let error = page
+        .evaluate_dimension_measurements(&graph, &[measure(501.0)])
+        .unwrap_err();
+    assert!(error.to_string().contains("up to 500 mm"), "{error}");
+
+    let mut document = ModelDocument::from_graph(&plain_graph);
+    document.drawings.push(shaft.clone());
+    let json = document.to_json_pretty().unwrap();
+    assert!(json.contains("\"class\": \"h6\""));
+    assert_eq!(ModelDocument::from_json(&json).unwrap(), document);
+    assert!(
+        ModelDocument::from_json(&json.replace("\"class\": \"h6\"", "\"class\": \"g6\"")).is_err()
+    );
+    assert_eq!(session.shape_count().unwrap(), 0);
+}
