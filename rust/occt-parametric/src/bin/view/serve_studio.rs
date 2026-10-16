@@ -2,24 +2,22 @@
 //! JSON API as the classic viewer; only the page and its scripts are new.
 use super::Response;
 
-const STUDIO_ASSETS: &[(&str, &str)] = &[
-    (
-        "/sketch-studio-app.mjs",
-        include_str!("web/sketch-studio-app.mjs"),
-    ),
-    (
-        "/sketch-studio-plane.mjs",
-        include_str!("web/sketch-studio-plane.mjs"),
-    ),
-    (
-        "/sketch-studio-layers.mjs",
-        include_str!("web/sketch-studio-layers.mjs"),
-    ),
-    (
-        "/sketch-studio-overlay.mjs",
-        include_str!("web/sketch-studio-overlay.mjs"),
-    ),
-];
+/// Each studio module, served at `/<name>` from `web/<name>`.
+macro_rules! studio_assets {
+    ($($name:literal),* $(,)?) => {
+        &[$((concat!("/", $name), include_str!(concat!("web/", $name)))),*]
+    };
+}
+
+const STUDIO_ASSETS: &[(&str, &str)] = studio_assets!(
+    "sketch-studio-app.mjs",
+    "sketch-studio-plane.mjs",
+    "sketch-studio-layers.mjs",
+    "sketch-studio-overlay.mjs",
+    "sketch-studio-infer.mjs",
+    "sketch-studio-tools.mjs",
+    "sketch-studio-draw.mjs",
+);
 
 /// The studio page or one of its scripts, or `None` for other paths.
 pub(super) fn asset(path: &str) -> Option<Response> {

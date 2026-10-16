@@ -26,11 +26,37 @@ export function pathData(points, frame, matrix, width, height) {
   return d;
 }
 
-/** Each entity of a sketch scene as screen path data. O(sampled points). */
+const simplified = new WeakMap();
+/**
+ * A curve's samples without the interior ones on a straight run (within
+ * 1e-9 of its span), cached per entity: a line's 33 samples become its two
+ * ends, while curved spans keep every sample. O(samples) once.
+ */
+export function simplify(entity) {
+  let points = simplified.get(entity);
+  if (points) return points;
+  const all = entity.points ?? [];
+  points = all.length <= 2 ? all : [all[0]];
+  if (all.length > 2) {
+    const span = Math.hypot(all.at(-1)[0] - all[0][0], all.at(-1)[1] - all[0][1]) || 1;
+    for (let i = 1; i < all.length - 1; i += 1) {
+      const a = points.at(-1);
+      const [b, c] = [all[i], all[i + 1]];
+      const cross = (b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0]);
+      const forward = (b[0] - a[0]) * (c[0] - b[0]) + (b[1] - a[1]) * (c[1] - b[1]) >= 0;
+      if (Math.abs(cross) > 1e-9 * span * span || !forward) points.push(b);
+    }
+    points.push(all.at(-1));
+  }
+  simplified.set(entity, points);
+  return points;
+}
+
+/** Each entity of a sketch scene as screen path data. O(drawn points). */
 export function sketchPaths(scene, frame, matrix, width, height) {
   return (scene.entities ?? []).map((entity) => ({
     id: entity.id,
-    d: pathData(entity.points, frame, matrix, width, height),
+    d: pathData(simplify(entity), frame, matrix, width, height),
   }));
 }
 

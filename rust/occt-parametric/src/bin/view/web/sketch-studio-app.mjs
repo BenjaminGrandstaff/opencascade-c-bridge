@@ -6,6 +6,7 @@ import {
 } from './sketch-studio-plane.mjs';
 import { PALETTE, layersFrom, nextFeatureName, planeLabel } from './sketch-studio-layers.mjs';
 import { localBounds, planeGrid, sketchPaths, sketchPoints } from './sketch-studio-overlay.mjs';
+import { installDrawing } from './sketch-studio-draw.mjs';
 
 const SVG = 'http://www.w3.org/2000/svg';
 const format = (value) => Number(Number(value).toPrecision(6)).toString();
@@ -41,6 +42,8 @@ export function startStudio(document) {
     instance: null,
     parsed: null,
     scenes: [],
+    /** Solved scenes of unapplied drafts, by feature; they replace the accepted ones. */
+    previewScenes: {},
     definitions: {},
     features: [],
     layers: [],
@@ -66,11 +69,13 @@ export function startStudio(document) {
     renderStatus();
   }
 
-  const sceneOf = (feature) => studio.scenes.find((s) => s.kind === 'sketch' && s.feature === feature);
+  const sceneOf = (feature) =>
+    studio.previewScenes[feature] ?? studio.scenes.find((s) => s.kind === 'sketch' && s.feature === feature);
   const activeLayer = () => studio.layers.find((layer) => layer.feature === studio.active) ?? null;
   studio.activeLayer = activeLayer;
   studio.sceneOf = sceneOf;
   studio.say = say;
+  studio.api = api;
 
   async function load() {
     const state = await api('/api/state');
@@ -496,6 +501,7 @@ export function startStudio(document) {
     setTimeout(poll, 1000);
   }
 
+  studio.drawing = installDrawing(studio, document);
   load()
     .then(() => say(studio.layers.length ? 'Choose a layer, then a tool. Drag to orbit, Shift-drag or right-drag to pan, scroll to zoom.' : 'No sketches yet. Choose New sketch.'))
     .catch((error) => say(error.message, true))

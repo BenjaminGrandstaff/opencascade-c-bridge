@@ -10,6 +10,8 @@ build="$root/build/bench"
 
 # Typed sketch authoring menus and validation; no native geometry required.
 node "$root/tools/bench/sketch-controls.mjs"
+# Sketch studio snapping, inference and overlay at 10,000 lines.
+node "$root/tools/bench/sketch-studio.mjs"
 
 cmake -S "$root" -B "$build" -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF >/dev/null
 cmake --build "$build" -j >/dev/null

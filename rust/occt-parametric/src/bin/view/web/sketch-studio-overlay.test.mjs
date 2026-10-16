@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { viewProjection } from './viewer.mjs';
 import { basePlane, lookAt } from './sketch-studio-plane.mjs';
 import {
-  MAX_GRID_LINES, localBounds, pathData, pixelsPerMm, planeGrid, sketchPaths, sketchPoints,
+  MAX_GRID_LINES, localBounds, pathData, pixelsPerMm, planeGrid, simplify, sketchPaths, sketchPoints,
 } from './sketch-studio-overlay.mjs';
 
 const frame = basePlane('xy');
@@ -49,4 +49,14 @@ test('the grid uses a round spacing and stays within its line budget', () => {
   assert.equal(grid.axes.length, 2);
   const huge = planeGrid(frame, matrix, 400, 400, { min: [-1e6, -1e6], max: [1e6, 1e6] });
   assert.ok(huge.lines.length <= 2 * (MAX_GRID_LINES + 1), `${huge.lines.length}`);
+});
+
+test('straight runs simplify to their ends while curves keep their samples', () => {
+  const line = { points: Array.from({ length: 33 }, (_, i) => [i, 2 * i, 0]) };
+  assert.deepEqual(simplify(line), [[0, 0, 0], [32, 64, 0]]);
+  assert.equal(simplify(line), simplify(line));
+  const arc = { points: Array.from({ length: 33 }, (_, i) => [Math.cos(i / 10), Math.sin(i / 10), 0]) };
+  assert.equal(simplify(arc).length, 33);
+  // A path that doubles back keeps its turning point.
+  assert.equal(simplify({ points: [[0, 0], [5, 0], [2, 0]] }).length, 3);
 });

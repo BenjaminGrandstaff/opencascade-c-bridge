@@ -108,9 +108,9 @@ holding Alt suppresses them.
 | lands on a circle or arc center | the center | coincident (concentric for circles) |
 | draws a line within 3° of horizontal or vertical | the axis direction | horizontal or vertical |
 | draws a line within 3° of parallel or perpendicular to a line it hovered | that direction | parallel or perpendicular |
-| starts an arc or spline at the end of a line or arc | the tangent direction | tangent |
+| starts an arc at the end of a line, centre on the line's normal | the tangent direction | tangent |
 | makes a length or radius equal (within 1%) to a hovered one | that size | equal length or equal radius |
-| lines up with a point it hovered, horizontally or vertically | the alignment | horizontal or vertical (point to point) |
+| lines up with a point it hovered, horizontally or vertically | the alignment | nothing (the schema has no point-to-point horizontal) |
 
 Rectangles keep their horizontal and vertical sides. Inference considers
 only geometry near the cursor through a spatial grid, so it stays fast in
@@ -174,6 +174,29 @@ sketches with many thousands of entities.
   Node tests cover plane math (ray hits, projection, look-at for all three
   planes, face picks), layer labels and the grid budget; a Rust test checks
   that the page and every module it imports are served.
+- **Phase 2.** The toolbar has every current shape (Line, Rectangle,
+  Circle, Arc, Spline, Ellipse, Slot, Polygon, Point) with keys, live
+  previews and per-tool options (polygon sides, closed spline and Finish,
+  arc Flip). Lines chain until a double-click or Escape. Typing a value
+  with a gesture open places the next click exactly: a line's length (and
+  angle), a circle's or polygon's radius, a rectangle's width and height.
+  While drawing, the cursor snaps to points (shared, so coincident), line
+  midpoints (midpoint) and curves (point on curve). Lines within 3° snap
+  horizontal, vertical, or parallel or perpendicular to the last line
+  hovered, and within 1% snap equal in length to it; circles and arcs snap
+  equal in radius to a hovered one; an arc started at a line's end with
+  its centre on the line's normal becomes tangent to it. A free end moves
+  onto these rules; an end snapped to a point keeps only rules that
+  already hold, so snapping never fights fixed geometry. Point alignment
+  snaps without a constraint, since the schema has no point-to-point
+  horizontal. Alt suppresses inference. New points are free, not fixed.
+  Each shape is added to a draft that is previewed natively at once (the
+  layer shows its solved free degrees); Undo and Redo work within the
+  draft; Apply sends it through `/api/sketch`, or `/api/sketch-create` for
+  a new layer, whose first closed shape becomes its profile.
+  Inference uses a uniform grid built once per draft, and drawing skips
+  samples on straight runs; `tools/bench/sketch-studio.mjs` measures 0.1 ms
+  per mouse move and 27 ms per overlay redraw at 10,000 lines.
 
 ## Building it
 
