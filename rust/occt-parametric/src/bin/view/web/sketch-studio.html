@@ -80,6 +80,21 @@
   #view svg .inactive { opacity: 0.35; }
   #view svg .point { stroke: var(--panel); stroke-width: 1.5; }
   #view svg .ghost { fill: none; stroke: var(--ghost); stroke-width: 2; stroke-dasharray: 6 4; }
+  #view svg .halo { fill: none; stroke: var(--view); stroke-width: 6; stroke-linejoin: round; stroke-linecap: round; }
+  #view svg .label rect { fill: var(--panel); stroke: var(--line); }
+  #view svg .label text, #view svg .badge text { font-size: 12px; fill: var(--ink); }
+  #view svg .label.glyph text { font-weight: 600; fill: var(--muted); }
+  #view svg .label.failed rect { stroke: var(--conflict); }
+  #view svg .label.failed text { fill: var(--conflict); }
+  #view svg .label.related rect { stroke: var(--accent); stroke-width: 2; }
+  #view svg .leader { stroke: var(--muted); stroke-width: 1; fill: none; }
+  #view svg .badge { pointer-events: all; cursor: help; }
+  #view svg .badge > rect { fill: var(--accent); }
+  #view svg .badge > text { fill: var(--accent-ink); font-weight: 600; }
+  #view svg .badge-list { display: none; }
+  #view svg .badge:hover .badge-list { display: inline; }
+  #view svg .badge-list rect { fill: var(--panel); stroke: var(--line); }
+  #view svg .badge-list text { font-size: 12px; fill: var(--ink); }
   #view .empty {
     position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); color: var(--muted);
     text-align: center; max-width: 320px; pointer-events: none;

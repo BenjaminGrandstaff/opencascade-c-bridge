@@ -216,6 +216,22 @@ sketches with many thousands of entities.
   Remove buttons, and every constraint it can take. Kinds that need a
   picking flow (crossing points, spline samples, weighted links) stay in
   the classic editor until phase 4's Advanced drawer.
+- **Phase 4.** Constraints on the active sketch are drawn as glyphs (H, V,
+  ∥, ⊥, T, =, ◎, M, ∈ and so on) and dimensions as their values, each in a
+  small box laid out so none overlap. A label tries a table of spots
+  around its geometry one label-size apart, nearest first, with a leader
+  when moved; dimensions are placed first; labels with no room fold into a
+  "+n" badge that lists them on hover. Conflicting labels are red and
+  labels of the selection are outlined. Layout uses a spatial hash of
+  placed boxes: 5,000 labels lay out in under 100 ms (a Node test). The
+  active sketch has an outline in the view color, so light geometry stays
+  visible over light faces. Look at now also fits the sketch. `?` shows
+  every shortcut. The Advanced button opens a drawer hosting the classic
+  sketch editor's panels unchanged (point links, patterns, projections,
+  curve and region edits, profiles, dependencies); its previews show in the
+  studio and its Apply reloads it. It needs the studio draft applied or
+  discarded first, and its canvas picking (crossings, spline samples,
+  faces, edges) still needs the classic viewer, linked from the drawer.
 
 ## Building it
 

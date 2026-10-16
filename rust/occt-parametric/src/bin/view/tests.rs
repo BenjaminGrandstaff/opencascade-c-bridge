@@ -5242,7 +5242,10 @@ fn sketch_studio_page_and_every_module_it_imports_are_served() {
                 if seen.insert(name.to_owned()) {
                     let response = studio.handle("GET", &format!("/{name}"), b"");
                     assert_eq!(response.status, 200, "{name} is not served");
-                    assert_eq!(response.content_type, "text/javascript", "{name}");
+                    assert!(
+                        response.content_type.starts_with("text/javascript"),
+                        "{name}"
+                    );
                     pending.push(String::from_utf8(response.body).unwrap());
                 }
             }

@@ -8,6 +8,8 @@ import { PALETTE, layersFrom, nextFeatureName, planeLabel } from './sketch-studi
 import { localBounds, planeGrid, sketchPaths, sketchPoints } from './sketch-studio-overlay.mjs';
 import { installDrawing } from './sketch-studio-draw.mjs';
 import { installConstraints } from './sketch-studio-constrain.mjs';
+import { layoutLabels, sketchLabels } from './sketch-studio-labels.mjs';
+import { installExtras } from './sketch-studio-extras.mjs';
 
 const SVG = 'http://www.w3.org/2000/svg';
 const format = (value) => Number(Number(value).toPrecision(6)).toString();
@@ -145,7 +147,13 @@ export function startStudio(document) {
       const style = isActive ? studio.entityStyle?.(scene) : null;
       const color = (state) => ({ free: 'var(--free)', fixed: 'var(--fixed)', conflict: 'var(--conflict)' })[state] ?? layer.color;
       const entities = new Map((scene.entities ?? []).map((e) => [e.id, e]));
-      for (const path of sketchPaths(scene, layer.frame, matrix, width, height)) {
+      const paths = sketchPaths(scene, layer.frame, matrix, width, height);
+      if (isActive) {
+        // An outline in the view color keeps light geometry visible over
+        // light faces and dark geometry over dark ones.
+        for (const path of paths) if (path.d) element('path', { d: path.d, class: 'halo' }, group);
+      }
+      for (const path of paths) {
         if (!path.d) continue;
         const look = style?.curve(entities.get(path.id));
         element('path', {
@@ -162,7 +170,7 @@ export function startStudio(document) {
             fill: look?.selected ? 'var(--accent)' : look ? color(look.state) : layer.color, 'data-point': point.id,
           }, group);
         }
-        drawDimensionLabels(scene, layer.frame, matrix, width, height, group);
+        drawLabels(scene, layer, matrix, width, height);
       }
     }
     for (const node of studio.decorate({ matrix, width, height, element })) overlay.append(node);
@@ -173,20 +181,51 @@ export function startStudio(document) {
     }
   }
 
-  /** Driving dimension values at their geometry (laid out in phase 4). */
-  function drawDimensionLabels(scene, frame, matrix, width, height, group) {
-    for (const annotation of scene.annotations ?? []) {
-      if (!/^constraint-\d+$/.test(annotation.id) || !/\d/.test(annotation.label ?? '')) continue;
-      const anchors = annotation.anchors ?? [];
-      if (!anchors.length) continue;
-      const center = [anchors.reduce((t, a) => t + a[0], 0) / anchors.length, anchors.reduce((t, a) => t + a[1], 0) / anchors.length];
-      const at = projectLocal(matrix, frame, center, width, height);
-      if (!at) continue;
-      const text = element('text', {
-        x: at[0], y: at[1] - 6, 'text-anchor': 'middle', 'font-size': 12, class: 'dimension',
-        fill: annotation.status === 'failed' ? 'var(--conflict)' : 'var(--ink)', 'paint-order': 'stroke', stroke: 'var(--view)', 'stroke-width': 3,
+  /**
+   * The active sketch's constraint glyphs and dimension values, laid out
+   * without overlaps; those with no room fold into a badge that lists them
+   * on hover.
+   */
+  function drawLabels(scene, layer, matrix, width, height) {
+    const definition = studio.draft?.feature === layer.feature ? studio.draft.definition : studio.definitions[layer.feature];
+    const labels = sketchLabels(scene, definition).flatMap((label) => {
+      const n = label.anchors.length;
+      const center = [label.anchors.reduce((t, a) => t + a[0], 0) / n, label.anchors.reduce((t, a) => t + a[1], 0) / n];
+      const at = projectLocal(matrix, layer.frame, center, width, height);
+      return at ? [{ ...label, at }] : [];
+    });
+    const { placed, badges } = layoutLabels(labels, width, height);
+    const group = element('g', { class: 'labels' }, overlay);
+    const selected = new Set(studio.selection ?? []);
+    for (const label of placed) {
+      const [x, y, w, h] = label.box;
+      const failed = label.status === 'failed';
+      const node = element('g', {
+        class: `label${label.dimension ? ' dimension' : ' glyph'}${failed ? ' failed' : ''}${label.targets.some((t) => selected.has(t)) ? ' related' : ''}`,
       }, group);
-      text.textContent = annotation.label;
+      if (label.leader) element('path', { d: `M${label.at[0].toFixed(1)} ${label.at[1].toFixed(1)}L${(x + w / 2).toFixed(1)} ${(y + h / 2).toFixed(1)}`, class: 'leader' }, node);
+      element('rect', { x, y, width: w, height: h, rx: 4 }, node);
+      const text = element('text', { x: x + w / 2, y: y + h / 2 + 4, 'text-anchor': 'middle' }, node);
+      text.textContent = label.text;
+      element('title', {}, node).textContent = label.title;
+    }
+    for (const badge of badges) {
+      const [x, y, w, h] = badge.box;
+      const node = element('g', { class: 'badge' }, group);
+      element('rect', { x, y, width: w, height: h, rx: 8 }, node);
+      const text = element('text', { x: x + w / 2, y: y + h / 2 + 4, 'text-anchor': 'middle' }, node);
+      text.textContent = `+${badge.labels.length}`;
+      // The folded labels, shown while the badge is hovered.
+      const list = element('g', { class: 'badge-list' }, node);
+      const lines = badge.labels.map((label) => label.title);
+      const listWidth = Math.min(360, 14 + 6.5 * Math.max(...lines.map((line) => line.length)));
+      const top = Math.max(0, Math.min(height - 18 * lines.length - 8, y + h + 4));
+      const left = Math.max(0, Math.min(width - listWidth, x));
+      element('rect', { x: left, y: top, width: listWidth, height: 18 * lines.length + 8, rx: 6 }, list);
+      lines.forEach((line, i) => {
+        const t = element('text', { x: left + 7, y: top + 17 + 18 * i }, list);
+        t.textContent = line;
+      });
     }
   }
 
@@ -386,6 +425,13 @@ export function startStudio(document) {
     const bounds = localBounds(sceneOf(layer.feature));
     const center = bounds ? [(bounds.min[0] + bounds.max[0]) / 2, (bounds.min[1] + bounds.max[1]) / 2] : [0, 0];
     studio.camera = lookAt(studio.camera, layer.frame, center);
+    if (bounds) {
+      // Fit the sketch: its half-diagonal (glTF metres) within the narrower
+      // half field of view, with a margin.
+      const radius = Math.max(1e-6, Math.hypot(bounds.max[0] - bounds.min[0], bounds.max[1] - bounds.min[1]) / 2000);
+      const half = Math.atan(Math.tan(Math.PI / 8) * Math.min(1, aspect()));
+      studio.camera = { ...studio.camera, distance: (radius / Math.sin(half)) * 1.15 };
+    }
     redraw();
   }
 
@@ -544,6 +590,7 @@ export function startStudio(document) {
   };
   studio.drawing = installDrawing(studio, document);
   installConstraints(studio, document);
+  installExtras(studio, document);
   load()
     .then(() => say(studio.layers.length ? 'Choose a layer, then a tool. Drag to orbit, Shift-drag or right-drag to pan, scroll to zoom.' : 'No sketches yet. Choose New sketch.'))
     .catch((error) => say(error.message, true))
