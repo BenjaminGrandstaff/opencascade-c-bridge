@@ -118,6 +118,11 @@ view instead of a flat overlay:
   offers the constraints it can take and Enter applies the first. Dimension
   (`D`) measures what you click and asks for a value or parameter. Free
   geometry is blue, conflicting geometry red. Drag free points.
+- **Planes.** New plane builds a datum plane offset or angled from a base
+  plane, on a picked face, midway between two picked faces, or through three
+  picked or typed points, with a live preview. Its values become parameters
+  that its inspector edits; Sketch on this plane starts a sketch on it. See
+  [Datum planes](../../docs/DATUM_PLANES.md).
 - **Drafts.** Every change previews natively at once; Undo, Redo, Discard and
   Apply act on the draft, then Save writes the file. `?` lists shortcuts, and
   Advanced opens the classic panels (point links, patterns, projections,

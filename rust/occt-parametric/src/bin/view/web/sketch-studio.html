@@ -9,6 +9,7 @@
     --bg: #f4f6f9; --panel: #ffffff; --ink: #1d2733; --muted: #5d6b7c; --line: #d9dee6;
     --accent: #2f6fdb; --accent-ink: #ffffff; --view: #e9edf2; --grid: #b9c3d0; --axis: #7d8ca0;
     --free: #2f6fdb; --fixed: #1d2733; --conflict: #cf222e; --pass: #1a7f37; --ghost: #c36d12;
+    --plane: #7a5bc7;
     color-scheme: light;
   }
   @media (prefers-color-scheme: dark) {
@@ -16,6 +17,7 @@
       --bg: #15191f; --panel: #1c2128; --ink: #e3e8ef; --muted: #98a4b3; --line: #2d343e;
       --accent: #6ea0ff; --accent-ink: #0b1220; --view: #20252d; --grid: #3a4350; --axis: #6b7889;
       --free: #6ea0ff; --fixed: #e3e8ef; --conflict: #ff7b72; --pass: #56d364; --ghost: #f0a35e;
+      --plane: #b39dff;
       color-scheme: dark;
     }
   }
@@ -23,6 +25,7 @@
     --bg: #15191f; --panel: #1c2128; --ink: #e3e8ef; --muted: #98a4b3; --line: #2d343e;
     --accent: #6ea0ff; --accent-ink: #0b1220; --view: #20252d; --grid: #3a4350; --axis: #6b7889;
     --free: #6ea0ff; --fixed: #e3e8ef; --conflict: #ff7b72; --pass: #56d364; --ghost: #f0a35e;
+      --plane: #b39dff;
     color-scheme: dark;
   }
   * { box-sizing: border-box; }
@@ -61,7 +64,8 @@
     font-size: 11px; line-height: 1.2; border-color: transparent; background: transparent;
   }
   .palette button:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 8%, transparent); }
-  .palette button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+  .palette button[aria-pressed="true"], .palette button[aria-pressed="true"]:hover:not(:disabled) {
+    background: var(--accent); color: var(--accent-ink); }
   .palette svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.6;
     stroke-linecap: round; stroke-linejoin: round; }
   .palette kbd { position: absolute; top: 2px; right: 4px; font-size: 9px; color: var(--muted); }
@@ -72,6 +76,15 @@
   #tool-options input:not([type="checkbox"]), #tool-options select { width: 100%; min-width: 0; }
   #tool-options p { margin: 2px 0; color: var(--muted); font-size: 12px; }
   #tool-options label { display: flex; gap: 6px; align-items: center; color: var(--muted); font-size: 12px; }
+  .form .palette { grid-template-columns: repeat(5, 1fr); margin: 0; }
+  .form .palette button { font-size: 10px; padding: 5px 1px 3px; }
+  .plane-icon svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.6;
+    stroke-linecap: round; stroke-linejoin: round; vertical-align: -3px; }
+  .point-row { display: grid; grid-template-columns: auto repeat(3, minmax(0, 1fr)) auto; gap: 3px; align-items: center; }
+  .point-row input { padding: 3px 4px; font-size: 12px; }
+  .point-row button { padding: 3px 6px; }
+  .point-row:not(:has(button)) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .form-error { margin: 0; color: var(--conflict); }
   #inspector { grid-area: inspector; border-left: 1px solid var(--line); }
   h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin: 4px 0 8px; }
   .layer {
@@ -98,6 +111,16 @@
   #view svg .inactive { opacity: 0.35; }
   #view svg .point { stroke: var(--panel); stroke-width: 1.5; }
   #view svg .ghost { fill: none; stroke: var(--ghost); stroke-width: 2; stroke-dasharray: 6 4; }
+  #view svg .datum-plane path { fill: color-mix(in srgb, var(--plane) 5%, transparent); stroke: var(--plane);
+    stroke-width: 1.2; stroke-dasharray: 8 4; }
+  #view svg .datum-plane.selected path { fill: color-mix(in srgb, var(--accent) 8%, transparent); stroke: var(--accent);
+    stroke-width: 2; stroke-dasharray: none; }
+  #view svg .datum-plane.preview path { fill: color-mix(in srgb, var(--ghost) 8%, transparent); stroke: var(--ghost);
+    stroke-width: 2; }
+  #view svg .datum-plane text { font-size: 12px; font-weight: 600; fill: var(--plane); }
+  #view svg .datum-plane.selected text { fill: var(--accent); }
+  #view svg .datum-plane.preview text { fill: var(--ghost); }
+  #view svg .plane-points circle { fill: var(--ghost); stroke: var(--panel); stroke-width: 1.5; }
   #view svg .halo { fill: none; stroke: var(--view); stroke-width: 6; stroke-linejoin: round; stroke-linecap: round; }
   #view svg .label rect { fill: var(--panel); stroke: var(--line); }
   #view svg .label text, #view svg .badge text { font-size: 12px; fill: var(--ink); }
@@ -151,6 +174,7 @@
     <div id="tools" role="toolbar" aria-orientation="vertical" aria-label="Sketch tools"></div>
     <div id="tool-options"></div>
   </section>
+  <section id="planes" aria-label="Datum planes"></section>
   <section id="layers" aria-label="Sketch layers"></section>
 </aside>
 <main id="view">

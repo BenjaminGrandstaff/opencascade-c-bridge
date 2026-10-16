@@ -17,7 +17,7 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 7/7, bridge 160 + first-use integration 1 (+1 doc test), recipes 3, parametric core 55 + kernel 737 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 71 + viewer Node 198 + branch command 2 + model command 92, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 7/7, bridge 160 + first-use integration 1 (+1 doc test), recipes 3, parametric core 55 + kernel 737 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 71 + viewer Node 205 + branch command 2 + model command 92, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -26,6 +26,14 @@ tracks status and order.
 
 ## Done
 
+- Planes in the sketch studio (schema 165; ABI 76 unchanged). A Planes panel
+  lists the model's datum planes and draws them in the view; New plane
+  builds any of the five constructed kinds from a base plane, one or two
+  picked faces, or three picked (corner-snapped) or typed points, with a
+  live preview through `POST /api/datum`. Each driving value becomes a
+  parameter named after the plane, edited in the plane's inspector (angles
+  in degrees); the plane and its sketches follow. Sketch on this plane
+  starts a sketch on it. See [Planes](docs/SKETCH_STUDIO.md#planes).
 - Constructed datum planes (schema 165; ABI 76 unchanged). Plane datums may
   be offset or angled from a base plane (XY, XZ, YZ or another plane), on a
   selected planar face, midway between two parallel faces, or through three

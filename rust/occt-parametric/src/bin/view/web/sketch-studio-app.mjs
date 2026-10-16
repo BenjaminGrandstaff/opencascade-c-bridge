@@ -2,7 +2,7 @@
 // layers, over the same server API the classic sketch editor uses.
 import { createRenderer, fitCamera, pan, parseGltf, ray, viewProjection } from './viewer.mjs';
 import {
-  basePlane, lookAt, pickFace, planeNormal, projectLocal, rayToLocal,
+  basePlane, lookAt, pickFace, planeNormal, project, projectLocal, rayToLocal, toGltf,
 } from './sketch-studio-plane.mjs';
 import { PALETTE, layersFrom, nextFeatureName, planeLabel } from './sketch-studio-layers.mjs';
 import { localBounds, planeGrid, sketchPaths, sketchPoints } from './sketch-studio-overlay.mjs';
@@ -10,6 +10,7 @@ import { installDrawing } from './sketch-studio-draw.mjs';
 import { installConstraints } from './sketch-studio-constrain.mjs';
 import { layoutLabels, sketchLabels } from './sketch-studio-labels.mjs';
 import { installExtras } from './sketch-studio-extras.mjs';
+import { installPlanes } from './sketch-studio-plane-panel.mjs';
 
 const SVG = 'http://www.w3.org/2000/svg';
 const format = (value) => Number(Number(value).toPrecision(6)).toString();
@@ -96,6 +97,9 @@ export function startStudio(document) {
     studio.parsed = parseGltf(gltf);
     renderer?.setModel(studio.parsed);
     studio.scenes = annotations.scenes ?? [];
+    studio.datums = state.datums ?? [];
+    studio.planes = annotations.datum_planes ?? [];
+    if (!studio.planes.some((plane) => plane.id === studio.selectedPlane)) studio.selectedPlane = null;
     studio.features = sketches.features ?? [];
     studio.definitions = Object.fromEntries((sketches.sketches ?? []).map((s) => [s.feature, s.definition]));
     studio.layers = layersFrom(studio.scenes, studio.definitions, studio.layers);
@@ -124,6 +128,9 @@ export function startStudio(document) {
     overlay.setAttribute('viewBox', `0 0 ${width} ${height}`);
     overlay.replaceChildren();
     const matrix = viewProjection(studio.camera, width / height);
+    studio.projectModel = (point) => project(matrix, toGltf(point), width, height);
+    // Datum planes sit under the sketches.
+    for (const node of studio.underlay?.({ matrix, width, height, element }) ?? []) overlay.append(node);
     const active = activeLayer();
     if (active?.frame) {
       const scene = sceneOf(active.feature);
@@ -298,9 +305,11 @@ export function startStudio(document) {
     const values = studio.newSketch;
     const field = (label, control) => html('label', {}, label, control);
     const name = html('input', { value: values.name, 'aria-label': 'Sketch name', oninput: (e) => { values.name = e.target.value; } });
+    const planes = (studio.planes ?? []).filter((p) => p.status === 'resolved').map((p) => [`datum:${p.id}`, `Plane ${p.id}`]);
     const plane = html('select', { 'aria-label': 'Sketch plane', onchange: (e) => { values.plane = e.target.value; values.picked = null; renderLayers(); } },
-      ...[['xy', 'XY (faces +Z)'], ['xz', 'XZ (faces −Y)'], ['yz', 'YZ (faces +X)'], ['face', 'A face of the model']]
+      ...[['xy', 'XY (faces +Z)'], ['xz', 'XZ (faces −Y)'], ['yz', 'YZ (faces +X)'], ['face', 'A face of the model'], ...planes]
         .map(([value, text]) => html('option', { value, selected: values.plane === value }, text)));
+    const onDatum = values.plane.startsWith('datum:');
     const offset = html('input', { type: 'number', step: 'any', value: values.offset, 'aria-label': 'Offset along the normal (mm)', oninput: (e) => { values.offset = Number(e.target.value); } });
     const pickNote = values.plane !== 'face'
       ? null
@@ -309,18 +318,24 @@ export function startStudio(document) {
         : html('button', { onclick: beginFacePick }, studio.picking ? 'Click a face in the view…' : 'Pick a face');
     return html('div', { class: 'form' },
       html('h2', { style: 'margin:0' }, 'New sketch'),
-      field('Name', name), field('Plane', plane), pickNote, field('Offset along the normal (mm)', offset),
+      field('Name', name), field('Plane', plane), pickNote, onDatum ? null : field('Offset along the normal (mm)', offset),
       html('div', { class: 'row' },
         html('button', { onclick: createLocalLayer }, 'Start sketch'),
         html('button', { onclick: () => { studio.newSketch = null; cancelFacePick(); renderLayers(); } }, 'Cancel')));
   }
 
-  function openNewSketch() {
+  function openNewSketch(plane = 'xy') {
     const taken = [...studio.features.map((f) => f.id), ...studio.layers.map((l) => l.feature)];
-    studio.newSketch = { name: nextFeatureName(taken), plane: 'xy', offset: 0, picked: null };
+    studio.newSketch = { name: nextFeatureName(taken), plane, offset: 0, picked: null };
     renderLayers();
     say('Choose a plane, or pick a face of the model, then Start sketch.');
   }
+  /** Opens New sketch on datum plane `id`. */
+  studio.newSketchOn = (id) => {
+    studio.selectedPlane = null;
+    openNewSketch(`datum:${id}`);
+    refresh();
+  };
 
   function createLocalLayer() {
     const values = studio.newSketch;
@@ -332,7 +347,10 @@ export function startStudio(document) {
       }
       if (!Number.isFinite(values.offset)) throw new Error('The offset must be a finite number.');
       let frame;
-      if (values.plane === 'face') {
+      const datum = values.plane.startsWith('datum:') ? studio.planes.find((p) => `datum:${p.id}` === values.plane) : null;
+      if (datum) {
+        frame = { origin_mm: datum.origin_mm, x_axis: datum.x_axis, y_axis: datum.y_axis };
+      } else if (values.plane === 'face') {
         if (!values.picked) throw new Error('Pick a face first.');
         const n = values.picked.normal;
         frame = {
@@ -344,10 +362,12 @@ export function startStudio(document) {
         frame = basePlane(values.plane, values.offset);
       }
       const layer = {
-        feature: name, frame, plane: values.plane === 'face' ? 'Face' : planeLabel(frame),
+        feature: name, frame, plane: datum ? `Plane ${datum.id}` : values.plane === 'face' ? 'Face' : planeLabel(frame),
         visible: true, color: PALETTE[studio.layers.length % PALETTE.length],
         error: null, freeDegrees: null, local: true,
-        create: { plane: values.plane, offset: values.offset, picked: values.picked },
+        create: datum
+          ? { plane: 'datum', datum: datum.id, frame }
+          : { plane: values.plane, offset: values.offset, picked: values.picked },
       };
       studio.layers.push(layer);
       studio.newSketch = null;
@@ -362,6 +382,7 @@ export function startStudio(document) {
   function renderInspector() {
     const host = $('inspector');
     const layer = activeLayer();
+    if (studio.renderPlaneInspector?.(host)) return;
     if (studio.renderSelection?.(host)) return;
     if (!layer) {
       fill(host, html('h2', {}, 'Inspector'), html('p', { style: 'color:var(--muted)' }, 'Select a layer to see its plane.'));
@@ -403,6 +424,7 @@ export function startStudio(document) {
   studio.renderStatus = renderStatus;
 
   function refresh() {
+    studio.renderPlanes?.();
     renderLayers();
     renderInspector();
     renderStatus();
@@ -495,7 +517,9 @@ export function startStudio(document) {
     canvas.setPointerCapture(event.pointerId);
     // The active tool sees left clicks first; what it declines navigates
     // (drag to orbit, Shift-drag or right-drag to pan).
-    if (event.button === 0 && studio.tools.get(studio.tool)?.down?.(event)) {
+    // While a face or point is being picked, clicks go to the pick.
+    const picking = studio.picking || studio.isPlanePicking?.();
+    if (event.button === 0 && !picking && studio.tools.get(studio.tool)?.down?.(event)) {
       drag = { tool: true };
       return;
     }
@@ -534,6 +558,7 @@ export function startStudio(document) {
     }
     const click = was && was.moved < 4 && event.button === 0;
     if (!click) return;
+    if (await studio.planePick?.(event)) return;
     if (studio.picking) {
       try {
         await pickFaceAt(event.clientX, event.clientY);
@@ -596,6 +621,7 @@ export function startStudio(document) {
   studio.drawing = installDrawing(studio, document);
   installConstraints(studio, document);
   installExtras(studio, document);
+  installPlanes(studio, document);
   load()
     .then(() => say(studio.layers.length ? 'Choose a layer, then a tool. Drag to orbit, Shift-drag or right-drag to pan, scroll to zoom.' : 'No sketches yet. Choose New sketch.'))
     .catch((error) => say(error.message, true))

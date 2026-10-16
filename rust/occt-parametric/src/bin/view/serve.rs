@@ -1,5 +1,7 @@
 //! `--serve`: a localhost page that renders the model with WebGL, edits
 //! family parameter defaults, saves them, and follows saves made elsewhere.
+#[path = "serve_datum.rs"]
+mod datum;
 #[path = "serve_face_pick.rs"]
 mod face_pick;
 #[path = "serve_features.rs"]
@@ -314,12 +316,19 @@ impl Studio {
                     occt_parametric::ParameterType::Choice(choices) => json!(choices),
                     _ => Value::Null,
                 };
-                json!({
+                let mut entry = json!({
                     "id": p.id, "kind": kind, "value": value, "unit": unit,
                     "minimum": p.minimum.map(|q| q.value),
                     "maximum": p.maximum.map(|q| q.value),
                     "choices": choices,
-                })
+                });
+                // Vector values for clients that edit them (the studio's
+                // three-point planes); `value` stays null for the others.
+                if let ParameterValue::Vector(v) = &p.default {
+                    entry["vector"] = json!([v.x.value, v.y.value, v.z.value]);
+                    entry["unit"] = json!(v.x.unit);
+                }
+                entry
             })
             .collect();
         json!({
@@ -329,6 +338,7 @@ impl Studio {
             "dirty": self.dirty,
             "error": self.error,
             "parameters": parameters,
+            "datums": self.document.family.datums,
             "undo_count": self.history.undo.len(),
             "redo_count": self.history.redo.len(),
         })
@@ -736,6 +746,10 @@ impl Studio {
                 Ok(data) => Response::json(200, &data),
                 Err(error) => Response::error(422, &error),
             },
+            ("POST", "/api/datum") => match self.datum_edit(body) {
+                Ok(data) => Response::json(200, &data),
+                Err(error) => Response::error(422, &error),
+            },
             ("POST", "/api/sketch-create") => match self.sketch_create(body) {
                 Ok(data) => Response::json(200, &data),
                 Err(error) => Response::error(422, &error),
@@ -954,6 +968,12 @@ fn value_from(id: &str, like: &ParameterValue, value: &Value) -> Result<Paramete
         }
         (ParameterValue::Boolean(_), Value::Bool(b)) => ParameterValue::Boolean(*b),
         (ParameterValue::Choice(_), Value::String(s)) => ParameterValue::Choice(s.clone()),
+        (ParameterValue::Vector(v), Value::Array(items)) if items.len() == 3 => {
+            let mut v = *v;
+            let number = |i: usize| items[i].as_f64().ok_or("invalid number");
+            (v.x.value, v.y.value, v.z.value) = (number(0)?, number(1)?, number(2)?);
+            ParameterValue::Vector(v)
+        }
         _ => return Err(format!("parameter '{id}' cannot take {value}")),
     })
 }

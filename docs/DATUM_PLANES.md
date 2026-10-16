@@ -82,3 +82,9 @@ The model command edits datums with `add_datum`, `replace_datum` and
 plane datum of an instance under `datum_planes`, with its definition, status,
 `origin_mm`, `normal`, and the in-plane `x_axis` and `y_axis` new sketches
 take; a failed plane carries its error, and so does every sketch on it.
+
+The [sketch studio](SKETCH_STUDIO.md#planes) creates the five kinds from the
+view: a base plane and value, a picked face or two, or three picked or typed
+points, with a live preview. Each driving value becomes a family parameter
+named after the plane (`<plane>_distance`, `<plane>_angle` in radians and
+shown in degrees, `<plane>_p1`…), which its inspector edits.

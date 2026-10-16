@@ -11,7 +11,7 @@ const format = (value) => Number(value.toPrecision(6)).toString();
  */
 export function planeLabel(frame, definition = null) {
   if (definition?.face_support) return 'Face';
-  if (definition?.datum_plane) return `Datum ${definition.datum_plane}`;
+  if (definition?.datum_plane) return `Plane ${definition.datum_plane}`;
   if (!frame) return 'Unresolved plane';
   const n = planeNormal(frame);
   for (const [axis, name, index] of [[[0, 0, 1], 'XY', 2], [[0, 1, 0], 'XZ', 1], [[1, 0, 0], 'YZ', 0]]) {

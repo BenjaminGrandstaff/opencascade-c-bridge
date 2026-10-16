@@ -15,6 +15,20 @@ const DOUBLE_CLICK_MS = 350;
 /** An empty sketch definition on a local layer's plane, for its first draft. */
 export function localDefinition(layer) {
   const create = layer.create;
+  if (create.plane === 'datum') {
+    // On a datum plane the kernel takes the origin and normal from the
+    // plane and keeps the x axis projected into it.
+    const vector = (v, dimension) => Object.fromEntries(['x', 'y', 'z'].map((key, i) => [key, {
+      value: v[i], dimension, unit: dimension === 'length' ? 'millimeter' : null,
+    }]));
+    return {
+      id: layer.feature, acceptance: 'solved', datum_plane: create.datum,
+      origin: { literal: vector(create.frame.origin_mm, 'length') },
+      x_axis: { literal: vector(create.frame.x_axis, 'scalar') },
+      y_axis: { literal: vector(create.frame.y_axis, 'scalar') },
+      points: [], lines: [], circles: [], profile: [], constraints: [],
+    };
+  }
   const definition = newSketchDefinition({
     id: layer.feature,
     shape: 'circle',

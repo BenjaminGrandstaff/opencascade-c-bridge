@@ -10,7 +10,7 @@ test('plane labels name the base plane and its offset, faces and datums', () => 
   const s = Math.SQRT1_2;
   assert.equal(planeLabel({ origin_mm: [0, 0, 0], x_axis: [s, s, 0], y_axis: [0, 0, 1] }), 'Inclined');
   assert.equal(planeLabel(basePlane('xy'), { face_support: {} }), 'Face');
-  assert.equal(planeLabel(basePlane('xy'), { datum_plane: 'side' }), 'Datum side');
+  assert.equal(planeLabel(basePlane('xy'), { datum_plane: 'side' }), 'Plane side');
   assert.equal(planeLabel(null), 'Unresolved plane');
 });
 

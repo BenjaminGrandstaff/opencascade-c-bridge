@@ -278,13 +278,37 @@ sketches with many thousands of entities.
   and Sketch to solid in the Advanced drawer. The classic viewer links to
   the studio. The parity review is below.
 
+## Planes
+
+The Planes panel, between the tool palette and the layers, lists the
+model's datum planes, each drawn in the view as a dashed outline with its
+name (the selected one in the accent color). New plane builds one of the
+five [constructed kinds](DATUM_PLANES.md), chosen from a row of icons:
+
+- **Offset** and **Angle**: a base plane (XY, XZ, YZ or another plane) and
+  a distance, or an angle about the base's x or y axis.
+- **On face**: click a flat face; the plane follows it at a distance.
+- **Midplane**: click two parallel faces.
+- **3 points**: click three points on the model (corners within 16 pixels
+  snap to the corner) or type them.
+
+The plane previews live (in the ghost color) through `POST /api/datum`, and
+Create plane adds it with the parameters that drive it. Selecting a plane
+shows how it is defined, where it resolves, and its driving parameters,
+which edit like any other parameter (angles in degrees); the plane and
+every sketch on it follow. From there, Sketch on this plane starts a sketch
+on it, Offset from it starts a new plane based on it, and Delete removes it
+when no sketch uses it. A plane that fails (its face is gone) is listed in
+red with the reason, and so is each sketch on it.
+
 ## Parity with the classic editor
 
 | Capability | Studio | Notes |
 |---|---|---|
 | New sketch on XY, XZ or YZ with an offset | Yes | Layers panel |
 | New sketch on a picked face | Yes | Picked in the 3D view |
-| New sketch on a datum plane | No | Existing datum sketches show and edit; creating one needs the classic editor |
+| New sketch on a datum plane | Yes | Planes panel or New sketch; the studio also creates the planes (below) |
+| Create datum planes | Studio only | Offset, angle, on face, midplane, three points; driven by parameters |
 | Point, line, rectangle, circle, arc, spline, ellipse, slot, polygon | Yes | Tool palette, with typed values and automatic constraints |
 | Elliptical arcs, conics, text, three-point arcs, center rectangles, control splines | Yes | Native records, toolbar gestures and options |
 | Drag free points (solved) | Yes | Select tool |
