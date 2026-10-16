@@ -319,7 +319,7 @@ impl<'session> FeatureBuild<'session> {
     }
 
     pub(crate) fn is_ready(&self, feature: &FeatureDefinition, definitions: &Features<'_>) -> bool {
-        dependencies_with_references(feature, &definitions.references)
+        dependencies_with_references(feature, &definitions.references, &definitions.datums)
             .iter()
             .all(|dependency| self.shapes.contains_key(*dependency))
     }
@@ -336,9 +336,10 @@ impl<'session> FeatureBuild<'session> {
         previous: Option<&GeneratedResult<'session>>,
     ) -> Result<(), ModelError> {
         let signature = feature_signature(datums, feature, &definitions.references, parameters)?;
-        let dependency_is_dirty = dependencies_with_references(feature, &definitions.references)
-            .iter()
-            .any(|dependency| self.dirty_features.contains(*dependency));
+        let dependency_is_dirty =
+            dependencies_with_references(feature, &definitions.references, &definitions.datums)
+                .iter()
+                .any(|dependency| self.dirty_features.contains(*dependency));
         let reusable = previous
             .filter(|previous| {
                 !dependency_is_dirty

@@ -29,6 +29,7 @@ use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
 mod continuous_motion;
+mod datum_planes;
 mod draft;
 mod drawing;
 mod expressions;
@@ -124,6 +125,9 @@ impl Outcome {
 fn main() -> ExitCode {
     if std::env::args().any(|arg| arg == "--spline-samples-only") {
         return report(&[spline_sample_queries_case()]);
+    }
+    if std::env::args().any(|arg| arg == "--datum-planes-only") {
+        return report(&[datum_planes::datum_plane_chain_case()]);
     }
     let definition: &'static FamilyDefinition = Box::leak(Box::new(block()));
     let mut outcomes = Vec::new();
@@ -229,6 +233,7 @@ fn main() -> ExitCode {
     outcomes.push(releases::workflow_case(definition));
     outcomes.push(releases::sheet_set_case(definition));
     outcomes.push(releases::change_case(definition));
+    outcomes.push(datum_planes::datum_plane_chain_case());
     outcomes.push(textures::texture_case(definition));
     outcomes.push(textures::profile_case(definition));
     outcomes.push(textures::face_case(definition));

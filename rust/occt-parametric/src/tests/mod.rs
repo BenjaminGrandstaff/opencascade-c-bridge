@@ -176,6 +176,8 @@ mod equal_radius_plate;
 
 mod face_sketch;
 
+mod datum_planes;
+
 mod sketch_projection;
 
 mod concentric_bushing;

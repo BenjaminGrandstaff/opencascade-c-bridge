@@ -109,11 +109,12 @@ impl FamilyDefinition {
     ) -> Result<std::collections::BTreeMap<&str, Vec<&str>>, ModelError> {
         validate_definition(self)?;
         let references = reference_map(self);
+        let datums = datum_index(&self.datums);
         Ok(self
             .features
             .iter()
             .map(|feature| {
-                let mut inputs = dependencies_with_references(feature, &references);
+                let mut inputs = dependencies_with_references(feature, &references, &datums);
                 inputs.sort_unstable();
                 inputs.dedup();
                 (feature.id.as_str(), inputs)
@@ -122,17 +123,26 @@ impl FamilyDefinition {
     }
 }
 
-/// Feature dependencies, including those of the named references it uses.
-/// O(selectors + used references).
+/// Feature dependencies, including those of the named references it uses
+/// and of the faces its sketch's datum plane is built on. O(selectors + used
+/// references + datum chain).
 pub fn dependencies_with_references<'a>(
     feature: &'a FeatureDefinition,
     references: &References<'a>,
+    datums: &HashMap<&str, &'a DatumDefinition>,
 ) -> Vec<&'a str> {
     let mut dependencies = feature.operation.dependencies();
     for (name, _) in feature.operation.reference_names() {
         if let Some(reference) = references.get(name) {
             reference.target.dependencies(&mut dependencies);
         }
+    }
+    if let FeatureOperation::SketchFace { sketch }
+    | FeatureOperation::SketchWire { sketch }
+    | FeatureOperation::SketchOpenWire { sketch } = &feature.operation
+        && let Some(id) = &sketch.datum_plane
+    {
+        datum_dependencies(datums, references, id, &mut dependencies);
     }
     dependencies
 }

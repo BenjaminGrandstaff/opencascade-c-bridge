@@ -72,6 +72,19 @@ pub enum Change {
         family: String,
         expected: Box<NamedReference>,
     },
+    AddDatum {
+        family: String,
+        datum: Box<DatumDefinition>,
+    },
+    ReplaceDatum {
+        family: String,
+        expected: Box<DatumDefinition>,
+        datum: Box<DatumDefinition>,
+    },
+    RemoveDatum {
+        family: String,
+        expected: Box<DatumDefinition>,
+    },
 }
 impl Change {
     fn family(&self) -> &str {
@@ -84,7 +97,10 @@ impl Change {
             | Self::AddRequirement { family, .. }
             | Self::AddReference { family, .. }
             | Self::ReplaceReference { family, .. }
-            | Self::RemoveReference { family, .. } => family,
+            | Self::RemoveReference { family, .. }
+            | Self::AddDatum { family, .. }
+            | Self::ReplaceDatum { family, .. }
+            | Self::RemoveDatum { family, .. } => family,
         }
     }
     fn identity(&self) -> (&str, &str) {
@@ -100,6 +116,8 @@ impl Change {
                 ("reference", &reference.name)
             }
             Self::RemoveReference { expected, .. } => ("reference", &expected.name),
+            Self::AddDatum { datum, .. } | Self::ReplaceDatum { datum, .. } => ("datum", &datum.id),
+            Self::RemoveDatum { expected, .. } => ("datum", &expected.id),
         }
     }
 }
@@ -321,6 +339,13 @@ fn apply(model: &mut ModelDocument, changes: &[Change]) -> Result<(), Failure> {
                 "replacement must preserve the reference name",
             ));
         }
+        if let Change::ReplaceDatum {
+            expected, datum, ..
+        } = change
+            && expected.id != datum.id
+        {
+            return Err(failure("patch", "replacement must preserve the datum ID"));
+        }
         groups.entry(change.family()).or_default().push(change);
     }
     for family in std::iter::once(&mut model.family).chain(&mut model.additional_families) {
@@ -477,6 +502,38 @@ fn apply_family(family: &mut FamilyDefinition, changes: &[&Change]) -> Result<bo
             changed = true;
         }
     }
+    for change in changes {
+        let (expected, replacement) = match change {
+            Change::ReplaceDatum {
+                expected, datum, ..
+            } => (expected.as_ref(), Some(datum.as_ref())),
+            Change::RemoveDatum { expected, .. } => (expected.as_ref(), None),
+            _ => continue,
+        };
+        let index = family
+            .datums
+            .iter()
+            .position(|d| d.id == expected.id)
+            .ok_or_else(|| failure("conflict", format!("datum '{}' is missing", expected.id)))?;
+        if &family.datums[index] != expected {
+            return Err(failure(
+                "conflict",
+                format!("datum '{}' differs from expected snapshot", expected.id),
+            ));
+        }
+        if let Some(datum) = replacement {
+            changed |= datum != expected;
+            family.datums[index] = datum.clone();
+        } else {
+            family.datums.remove(index);
+            changed = true;
+        }
+    }
+    let mut datum_ids = family
+        .datums
+        .iter()
+        .map(|d| d.id.clone())
+        .collect::<HashSet<_>>();
     let mut reference_names = family
         .references
         .iter()
@@ -513,6 +570,16 @@ fn apply_family(family: &mut FamilyDefinition, changes: &[&Change]) -> Result<bo
                 }
                 changed = true;
                 family.requirements.push(requirement.as_ref().clone());
+            }
+            Change::AddDatum { datum, .. } => {
+                if !datum_ids.insert(datum.id.clone()) {
+                    return Err(failure(
+                        "conflict",
+                        format!("datum '{}' already exists", datum.id),
+                    ));
+                }
+                changed = true;
+                family.datums.push(datum.as_ref().clone());
             }
             Change::AddReference { reference, .. } => {
                 if !reference_names.insert(reference.name.clone()) {

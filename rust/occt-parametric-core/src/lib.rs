@@ -67,6 +67,10 @@ pub use assembly::{
     JointBranchSearchResult, JointBranchSearchStatus, JointMotionSolution, JointMotionStatus,
     JointSeedAxis, JointSolution, JointSolveOptions, JointVariable,
 };
+pub use assembly::{
+    NoFaces, PlaneBase, PlaneFaces, StandInFaces, datum_chain, datum_dependencies, datum_index,
+    datum_reads_faces, plane_x_axis, project_into_plane, resolve_datum,
+};
 pub use screw_threads::{
     ThreadStrength, UnifiedClass, UnifiedEngagement, UnifiedFit, UnifiedLimits, UnifiedSeries,
     UnifiedThread, UnifiedThreadSpec, unified_engagement, unified_fit,

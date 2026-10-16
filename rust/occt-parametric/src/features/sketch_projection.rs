@@ -661,26 +661,26 @@ impl PartInstanceProjection for PartInstance<'_> {
                 FeatureOperation::SketchFace { sketch }
                 | FeatureOperation::SketchWire { sketch }
                 | FeatureOperation::SketchOpenWire { sketch }
-                    if sketch.face_support.is_some() || !sketch.projections.is_empty() =>
+                    if sketch.face_support.is_some()
+                        || !sketch.projections.is_empty()
+                        || sketch
+                            .datum_plane
+                            .as_deref()
+                            .is_some_and(|id| datum_reads_faces(&datums, id)) =>
                 {
                     sketch
                 }
                 _ => continue,
             };
             let resolve = || {
-                let plane = if sketch.face_support.is_some() {
-                    super::sketch_support::resolve(
-                        session,
-                        sketch,
-                        &parameters,
-                        &generated.shapes,
-                        &definitions,
-                    )?
-                } else {
-                    sketch_datum(&datums, &feature.operation)?
-                        .map(|d| d.kind.evaluate(&parameters))
-                        .transpose()?
-                };
+                sketch_datum(&datums, &feature.operation)?;
+                let plane = super::sketch_support::resolve(
+                    session,
+                    sketch,
+                    &parameters,
+                    &generated.shapes,
+                    &definitions,
+                )?;
                 let resolved = if sketch.projections.is_empty() {
                     sketch.as_ref().clone()
                 } else {

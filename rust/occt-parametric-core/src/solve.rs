@@ -254,7 +254,12 @@ impl<'definition> InstanceGraph<'definition> {
         let parameters = resolve_parameters(definition, &resolved.instance.overrides)?;
         Ok(Endpoint::Free {
             instance,
-            local: declaration.kind.evaluate(&parameters)?,
+            local: resolve_datum(
+                &datum_index(&definition.datums),
+                &declaration.id,
+                &parameters,
+                &NoFaces,
+            )?,
             frames: resolved
                 .frames
                 .iter()

@@ -12,12 +12,12 @@ tracks status and order.
 | `occt-types` (shared value types) | — | No native dependency |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI; re-exports `occt-types` |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric-core` (kernel-free engineering layer) | Schema 164 | Definitions, documents, solving and checks without OCCT |
-| `occt-parametric` (kernel regeneration) | Schema 164 | Active development; re-exports the core API |
+| `occt-parametric-core` (kernel-free engineering layer) | Schema 165 | Definitions, documents, solving and checks without OCCT |
+| `occt-parametric` (kernel regeneration) | Schema 165 | Active development; re-exports the core API |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 7/7, bridge 160 + first-use integration 1 (+1 doc test), recipes 3, parametric core 55 + kernel 733 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 71 + viewer Node 198 + branch command 2 + model command 91, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 7/7, bridge 160 + first-use integration 1 (+1 doc test), recipes 3, parametric core 55 + kernel 737 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 71 + viewer Node 198 + branch command 2 + model command 92, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -26,6 +26,17 @@ tracks status and order.
 
 ## Done
 
+- Constructed datum planes (schema 165; ABI 76 unchanged). Plane datums may
+  be offset or angled from a base plane (XY, XZ, YZ or another plane), on a
+  selected planar face, midway between two parallel faces, or through three
+  points, each fully defined by its references and parameter expressions.
+  Planes on faces resolve during regeneration and make their sketches
+  depend on the faces' features; each plane resolves once per regeneration,
+  so 500 sketches on a 500-deep chain regenerate and follow a height edit
+  in 0.3 s (2 s budget). Sketch x axes are projected into their planes.
+  The model command adds `add_datum`, `replace_datum` and `remove_datum`,
+  and view data lists resolved `datum_planes`, with failures carried to the
+  sketches on them. See [Datum planes](docs/DATUM_PLANES.md).
 - Studio primitive palette completion (schema 164, ABI 76 unchanged): elliptical
   arcs, conics, text, three-point arcs, center rectangles and explicit rational
   control splines now have gestures, icons, shortcuts, options and bounded

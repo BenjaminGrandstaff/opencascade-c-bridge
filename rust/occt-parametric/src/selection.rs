@@ -16,6 +16,10 @@ pub(crate) struct Features<'a> {
     /// per context: handle ids are never reused, so every center-based
     /// selector on one result shares one O(subshapes) measurement.
     centers: CenterCache,
+    /// Plane datums resolved in this context, by id. A context serves one
+    /// parameter set, and a face a plane reads belongs to an output that
+    /// never changes once generated, so each plane resolves at most once.
+    pub(crate) planes: std::cell::RefCell<HashMap<String, ResolvedDatum>>,
 }
 
 /// Subshape centers by shape handle id and subshape type.
@@ -37,6 +41,7 @@ impl<'a> Features<'a> {
                 .map(|(feature, color)| (feature.as_str(), *color))
                 .collect(),
             centers: Default::default(),
+            planes: Default::default(),
         }
     }
 

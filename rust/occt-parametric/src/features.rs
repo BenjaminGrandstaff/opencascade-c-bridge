@@ -230,13 +230,8 @@ pub(crate) fn execute_feature<'session>(
         FeatureOperation::SketchFace { sketch }
         | FeatureOperation::SketchWire { sketch }
         | FeatureOperation::SketchOpenWire { sketch } => {
-            let datum = if sketch.face_support.is_some() {
-                sketch_support::resolve(session, sketch, parameters, shapes, definitions)?
-            } else {
-                sketch_datum(datums, &feature.operation)?
-                    .map(|datum| datum.kind.evaluate(parameters))
-                    .transpose()?
-            };
+            sketch_datum(datums, &feature.operation)?;
+            let datum = sketch_support::resolve(session, sketch, parameters, shapes, definitions)?;
             let resolved;
             let sketch = if sketch.projections.is_empty() {
                 sketch.as_ref()

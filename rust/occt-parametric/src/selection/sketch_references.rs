@@ -29,13 +29,8 @@ fn resolved(
             ));
         }
     };
-    let plane = if sketch.face_support.is_some() {
-        crate::features::sketch_support::resolve(session, sketch, parameters, shapes, definitions)?
-    } else {
-        crate::regeneration::sketch_datum(&definitions.datums, &feature.operation)?
-            .map(|d| d.kind.evaluate(parameters))
-            .transpose()?
-    };
+    let plane =
+        crate::features::sketch_support::resolve(session, sketch, parameters, shapes, definitions)?;
     let sketch = if sketch.projections.is_empty() {
         sketch.as_ref().clone()
     } else {

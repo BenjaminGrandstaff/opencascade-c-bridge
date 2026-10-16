@@ -5,7 +5,8 @@ use super::*;
 
 impl SketchDefinition {
     /// O(expression size); resolves the same orthonormal frame for projection
-    /// and native profile construction. Attachment/datum planes are caller-resolved.
+    /// and native profile construction. Attachment/datum planes are caller-resolved;
+    /// a sketch x axis is projected into them.
     pub fn resolved_frame(
         &self,
         parameters: &HashMap<String, ParameterValue>,
@@ -16,11 +17,11 @@ impl SketchDefinition {
             self.datum_plane.is_some() || self.face_support.is_some(),
             datum,
         ) {
+            // Planes that turn or follow a face keep the sketch's x axis
+            // projected into them; an x axis along the normal is rejected.
             (true, Some(ResolvedDatum::Plane { origin, normal })) => {
-                if dot(x_axis, normal).abs() > 1e-9 {
-                    return Err(ModelError::new("sketch x axis must lie in its datum plane"));
-                }
-                (origin, unit(cross(normal, x_axis))?)
+                let x = crate::assembly::project_into_plane(x_axis, normal)?;
+                return Ok((origin, x, unit(cross(normal, x))?));
             }
             (true, _) => return Err(ModelError::new("sketch requires a resolved plane datum")),
             (false, _) => (

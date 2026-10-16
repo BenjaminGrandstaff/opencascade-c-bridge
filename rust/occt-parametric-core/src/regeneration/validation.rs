@@ -136,6 +136,40 @@ pub fn validate_definition(definition: &FamilyDefinition) -> Result<(), ModelErr
         "requirement ids must be nonempty, versioned, and unique",
     )?;
     validate_traces(definition, &feature_ids, &parameter_ids)?;
+    for datum in &definition.datums {
+        let Some((input, selectors)) = datum.kind.faces() else {
+            continue;
+        };
+        let mut used = vec![input];
+        let mut names = Vec::new();
+        for selector in selectors {
+            selector.dependencies(&mut used);
+            selector.names(&mut names);
+        }
+        if let Some(unknown) = used.iter().find(|id| !feature_ids.contains(*id)) {
+            return Err(ModelError::new(format!(
+                "datum '{}' references unknown output '{unknown}'",
+                datum.id
+            )));
+        }
+        for (name, kind) in names {
+            match references.get(name) {
+                Some(found) if found.target.kind() == kind => {}
+                Some(_) => {
+                    return Err(ModelError::new(format!(
+                        "datum '{}' uses named reference '{name}' as the wrong kind of topology",
+                        datum.id
+                    )));
+                }
+                None => {
+                    return Err(ModelError::new(format!(
+                        "datum '{}' uses unknown named reference '{name}'",
+                        datum.id
+                    )));
+                }
+            }
+        }
+    }
     assembly::validate_datums(definition)
 }
 

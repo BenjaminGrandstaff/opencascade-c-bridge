@@ -433,9 +433,10 @@ Schema 164 adds the booklet's optional 60° countersink relief under socket
 heads, as a catalog dimension and a counterbore option.
 
 `occt-view --serve` also serves a sketch studio at `/studio`: every sketch is
-drawn on its plane in the 3D view as a layer; a side palette of
-icon tools draws every sketch shape with snapping that adds the obvious constraints; selections offer the
-constraints they can take; and labels are laid out without overlaps. See
+drawn on its plane in the 3D view as a layer; a side palette of icon tools
+draws every sketch shape with snapping that adds the obvious constraints;
+selections offer the constraints they can take; and labels are laid out
+without overlaps. See
 [Sketch studio](docs/SKETCH_STUDIO.md).
 
 ABI 34 adds exact hidden-line projection, plane clipping, edge sampling, and
@@ -576,7 +577,11 @@ Schema 27 adds `SketchWire` feature outputs and
 optional sketch `datum_plane` references to family plane datums. A linked sketch
 uses the datum's origin and normal with its own perpendicular x-axis; the
 y-axis is normal cross x. Datum expressions and edits drive incremental
-regeneration. Older sketches keep their inline planes.
+regeneration. Older sketches keep their inline planes. Schema 165 adds
+constructed datum planes: offset or angled from a base plane, on a face,
+midway between two faces, or through three points, each fully defined by
+its references and parameters and following them on every regeneration
+([Datum planes](docs/DATUM_PLANES.md)).
 Schema 26 adds exact circle/arc sketch entities,
 implicit equal arc radii, tangent constraints at shared contact points, and
 explicit ordered profiles with construction geometry. Schema 25 line sketches

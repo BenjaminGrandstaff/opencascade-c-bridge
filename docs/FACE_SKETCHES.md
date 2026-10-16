@@ -34,8 +34,9 @@ sketches and downstream features.
 
 Local sketch zero is the selected face's area centre plus `offset` along its
 oriented normal. Offset defaults to zero millimetres and may be signed.
-`x_axis` remains an explicit dimensionless direction in family coordinates and
-must lie in the support plane; `y_axis` becomes `normal × x_axis`, normalized.
+`x_axis` remains an explicit dimensionless direction in family coordinates,
+projected into the support plane (schema 165; it must not be normal to it);
+`y_axis` becomes `normal × x_axis`, normalized.
 `origin` and the supplied `y_axis` are replaced by that resolved frame.
 `datum_plane` and `face_support` are mutually exclusive.
 

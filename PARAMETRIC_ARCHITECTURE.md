@@ -429,6 +429,10 @@ to a plane datum in the owning family. The datum supplies the origin and unit
 normal. The sketch's explicit x-axis must be perpendicular to that normal;
 the y-axis is normal cross x, preserving a deterministic right-handed frame.
 The inline origin/y-axis expressions are unused for linked sketches.
+Schema 165 projects the x-axis into the plane instead, so sketches keep a
+frame on planes that turn, and adds constructed datum planes (offset, angle,
+face, midplane and three-point) that resolve through chains of bases and
+faces during regeneration; see [Datum planes](docs/DATUM_PLANES.md).
 Missing or non-plane datums and incompatible axes are rejected. Datum lookup
 is indexed during definition validation and generation. Feature signatures
 include the referenced datum definition and its expression parameters, so

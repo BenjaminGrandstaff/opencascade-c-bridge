@@ -652,6 +652,16 @@ family named references. A replacement preserves the reference name. Geometry
 and reference changes can be submitted atomically when a curve/region identity
 intentionally changes. Requirements cannot be removed through these changes.
 
+`add_datum`, `replace_datum` and `remove_datum` edit family datums the same
+way. Besides `point`, `axis` and `plane`, a datum may be a constructed plane
+(schema 165): `offset_plane` (a base `xy`, `xz`, `yz` or `{"datum": id}`
+moved by `distance`), `angle_plane` (a base turned by `angle_radians` about an
+in-plane `hinge`), `face_plane` (one planar face of `input` selected by `face`,
+moved by `distance`), `midplane` (halfway between two parallel faces of
+`input`) and `three_point_plane`. Each is fully defined by its references and
+expressions; planes on faces follow those faces on every regeneration, and a
+sketch on any of them keeps its x axis projected into the plane.
+
 Focused diagnosis builds only the selected sketch and required source geometry;
 unrelated/downstream failures do not prevent source-sketch analysis. It does not
 certify the rest of the part or its requirements. Structurally invalid requests

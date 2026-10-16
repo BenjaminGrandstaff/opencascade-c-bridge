@@ -238,6 +238,7 @@ pub fn collect(
         annotations: options.maximum_annotations,
     };
     let mut scenes = Vec::new();
+    let mut datum_planes = Vec::new();
     let mut scene_ids = BTreeSet::new();
     for id in &ids {
         let part = graph.resolve(id).stage("resolution")?;
@@ -260,7 +261,8 @@ pub fn collect(
             .collect::<Vec<_>>();
         let needs_linked_sketches = sketches && part.definition.features.iter().any(|f| matches!(
             &f.operation, FeatureOperation::SketchFace { sketch } | FeatureOperation::SketchWire { sketch }
-                | FeatureOperation::SketchOpenWire { sketch } if sketch.face_support.is_some() || !sketch.projections.is_empty()));
+                | FeatureOperation::SketchOpenWire { sketch } if sketch.face_support.is_some() || !sketch.projections.is_empty()))
+            || sketches && part.definition.datums.iter().any(|d| d.kind.faces().is_some());
         let diagnostic = if !selected.is_empty() || needs_linked_sketches {
             Some(part.diagnostic_geometry(&session))
         } else {
@@ -333,6 +335,19 @@ pub fn collect(
                     linked.extend(source_controls.get(projection.input.as_str()).into_iter().flatten().cloned());
                     json!({"definition":projection,"source_parameters":linked,"status":"resolved"})
                 }).collect();
+                // A sketch whose datum plane fails shows that failure.
+                let reads_faces = sketch.datum_plane.as_deref().is_some_and(|plane| {
+                    datum_reads_faces(&datum_index(&part.definition.datums), plane)
+                });
+                let plane_error = match (resolved_sketches.get(&feature.id), diagnostic.as_ref()) {
+                    (Some(Err(error)), _) if reads_faces => Some(error.message.clone()),
+                    (None, Some(Err(error))) if reads_faces => Some(error.message.clone()),
+                    _ => None,
+                };
+                if let Some(error) = plane_error {
+                    scenes.push(json!({"kind":"sketch","instance":id,"feature":feature.id,"title":format!("{id}/{}",feature.id),"error":error,"annotations":[],"parameters":controls}));
+                    continue;
+                }
                 let resolved = if sketch.projections.is_empty() {
                     sketch.as_ref()
                 } else {
@@ -358,11 +373,15 @@ pub fn collect(
                 // resolution the kernel uses, so clients can place it in 3D.
                 let plane = match resolved_sketches.get(&feature.id) {
                     Some(Ok(resolved)) => resolved.plane,
-                    _ => sketch
-                        .datum_plane
-                        .as_ref()
-                        .and_then(|id| part.definition.datums.iter().find(|d| &d.id == id))
-                        .and_then(|d| d.kind.evaluate(&parameters).ok()),
+                    _ => sketch.datum_plane.as_ref().and_then(|id| {
+                        resolve_datum(
+                            &datum_index(&part.definition.datums),
+                            id,
+                            &parameters,
+                            &NoFaces,
+                        )
+                        .ok()
+                    }),
                 };
                 let frame = resolved.resolved_frame(&parameters, plane).ok().map(
                     |(origin, x_axis, y_axis)| {
@@ -400,6 +419,15 @@ pub fn collect(
                 }
             }
         }
+        if sketches && part.definition.datums.iter().any(|d| d.kind.is_plane()) {
+            datum_planes.extend(datum_plane_views(
+                &session,
+                &part,
+                id,
+                diagnostic.as_ref(),
+                &parameters,
+            ));
+        }
         if scenes.len() > options.maximum_scenes {
             return Err(failure("visualization", "scene budget exceeded"));
         }
@@ -410,12 +438,70 @@ pub fn collect(
             "select a shape output or provide a sketch feature",
         ));
     }
-    Ok(json!({
+    let mut view = json!({
         "schema": "occb-annotated-view-v1",
         "diagnostic": true,
         "coordinate_system": "family-local millimeters",
         "scenes": scenes,
-    }))
+    });
+    if !datum_planes.is_empty() {
+        view["datum_planes"] = json!(datum_planes);
+    }
+    Ok(view)
+}
+
+/// Every plane datum of one instance in family-local millimetres with an
+/// in-plane frame (the frame new sketches on it take), or its error. Planes
+/// on faces use the generated geometry when it is available.
+fn datum_plane_views(
+    session: &Session,
+    part: &PartInstance<'_>,
+    instance: &str,
+    diagnostic: Option<&Result<DiagnosticGeneration<'_>, ModelError>>,
+    parameters: &HashMap<String, ParameterValue>,
+) -> Vec<Value> {
+    let resolved = match diagnostic {
+        Some(Ok(diagnostic)) => part
+            .datum_planes(session, &diagnostic.generated)
+            .unwrap_or_default(),
+        _ => {
+            // Without geometry, planes on faces carry the regeneration's
+            // own failure, which names the face that did not resolve.
+            let failure = diagnostic.and_then(|d| d.as_ref().err());
+            let datums = datum_index(&part.definition.datums);
+            part.definition
+                .datums
+                .iter()
+                .filter(|d| d.kind.is_plane())
+                .map(|d| {
+                    let plane = resolve_datum(&datums, &d.id, parameters, &NoFaces);
+                    let plane = match (plane, failure) {
+                        (Err(_), Some(failure)) if datum_reads_faces(&datums, &d.id) => {
+                            Err(failure.clone())
+                        }
+                        (plane, _) => plane,
+                    };
+                    (d.id.clone(), plane)
+                })
+                .collect()
+        }
+    };
+    resolved
+        .into_iter()
+        .map(|(id, plane)| {
+            let definition = part.definition.datums.iter().find(|d| d.id == id);
+            match plane {
+                Ok(ResolvedDatum::Plane { origin, normal }) => {
+                    let x_axis = plane_x_axis(normal);
+                    let y_axis = cross(normal, x_axis);
+                    json!({"instance":instance,"id":id,"definition":definition,"status":"resolved",
+                        "origin_mm":point(origin),"normal":point(normal),"x_axis":point(x_axis),"y_axis":point(y_axis)})
+                }
+                Ok(_) => json!({"instance":instance,"id":id,"definition":definition,"status":"failed","error":"not a plane"}),
+                Err(error) => json!({"instance":instance,"id":id,"definition":definition,"status":"failed","error":error.message}),
+            }
+        })
+        .collect()
 }
 pub fn verification_result(scope: &str, r: &VerificationResult) -> Value {
     let measured = r.measured.map(|m| {

@@ -10,6 +10,8 @@ pub use balance::{BalancePosition, ChordReference, MaterialMassProperties};
 pub mod planform;
 pub use planform::{MeanAerodynamicChord, PlanformStation, SymmetricWingPlanform};
 pub mod configurations;
+pub mod datum_planes;
+pub use datum_planes::*;
 pub mod geometry;
 pub mod joints;
 pub mod mass_properties;
@@ -104,6 +106,41 @@ pub enum DatumKind {
         origin: VectorExpr,
         normal: VectorExpr,
     },
+    /// A plane moved along a base plane's normal by `distance` (schema 165).
+    OffsetPlane {
+        base: PlaneBase,
+        distance: ScalarExpr,
+    },
+    /// A base plane turned by `angle_radians` about `hinge`, a direction in
+    /// the base plane through its origin; positive turns the normal toward
+    /// hinge × normal (schema 165).
+    AnglePlane {
+        base: PlaneBase,
+        hinge: VectorExpr,
+        angle_radians: ScalarExpr,
+    },
+    /// The plane of the one planar face `face` selects on feature output
+    /// `input`, moved `distance` along its outward normal. It follows the
+    /// face as the model regenerates (schema 165).
+    FacePlane {
+        input: String,
+        face: Box<FaceSelector>,
+        distance: ScalarExpr,
+    },
+    /// The plane halfway between two parallel planar faces of `input`,
+    /// with the first face's normal (schema 165).
+    Midplane {
+        input: String,
+        first: Box<FaceSelector>,
+        second: Box<FaceSelector>,
+    },
+    /// The plane through three points, with normal (second - first) ×
+    /// (third - first) (schema 165).
+    ThreePointPlane {
+        first: VectorExpr,
+        second: VectorExpr,
+        third: VectorExpr,
+    },
 }
 
 /// A datum in model coordinates: millimeters and unit directions.
@@ -115,29 +152,22 @@ pub enum ResolvedDatum {
 }
 
 impl DatumKind {
+    /// Evaluates a datum that needs neither another datum nor model
+    /// geometry. Use [`resolve_datum`] for planes built on other datums or
+    /// on faces.
     pub fn evaluate(
         &self,
         parameters: &HashMap<String, ParameterValue>,
     ) -> Result<ResolvedDatum, ModelError> {
-        let point = |expression| vector(expression, parameters, Dimension::Length);
-        let direction =
-            |expression| vector(expression, parameters, Dimension::Scalar).and_then(unit);
-        Ok(match self {
-            Self::Point { origin } => ResolvedDatum::Point {
-                origin: point(origin)?,
+        self.resolve(
+            parameters,
+            &|id| {
+                Err(ModelError::new(format!(
+                    "plane is built on datum '{id}'; resolve it with the family's datums"
+                )))
             },
-            Self::Axis {
-                origin,
-                direction: axis,
-            } => ResolvedDatum::Axis {
-                origin: point(origin)?,
-                direction: direction(axis)?,
-            },
-            Self::Plane { origin, normal } => ResolvedDatum::Plane {
-                origin: point(origin)?,
-                normal: direction(normal)?,
-            },
-        })
+            &NoFaces,
+        )
     }
 }
 
@@ -176,10 +206,11 @@ pub fn validate_datums(definition: &FamilyDefinition) -> Result<(), ModelError> 
         return Ok(());
     }
     let parameters = resolve_parameters(definition, &HashMap::new())?;
+    let datums = datum_index(&definition.datums);
     for datum in &definition.datums {
-        datum
-            .kind
-            .evaluate(&parameters)
+        // Faces resolve only with geometry; a stand-in face still checks the
+        // expressions, base chains and cycles.
+        resolve_datum(&datums, &datum.id, &parameters, &StandInFaces)
             .map_err(|error| ModelError::new(format!("datum '{}': {}", datum.id, error.message)))?;
     }
     Ok(())
@@ -453,7 +484,12 @@ impl<'definition> InstanceGraph<'definition> {
                 ModelError::new(format!("unknown datum '{datum}' on instance '{instance}'"))
             })?;
         let parameters = resolve_parameters(definition, &resolved.instance.overrides)?;
-        let mut value = declaration.kind.evaluate(&parameters)?;
+        let mut value = resolve_datum(
+            &datum_index(&definition.datums),
+            &declaration.id,
+            &parameters,
+            &NoFaces,
+        )?;
         for placement in std::iter::once(resolved.placement).chain(resolved.frames) {
             value = value.transformed(&placement.normalized()?);
         }

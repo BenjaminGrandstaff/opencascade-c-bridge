@@ -261,7 +261,7 @@ fn variant(instance: &PartInstance<'_>) -> Result<Variant, ModelError> {
             feature.id.clone(),
             regeneration::feature_signature(&datums, feature, &references, &parameters)?,
         );
-        for dependency in dependencies_with_references(feature, &references) {
+        for dependency in dependencies_with_references(feature, &references, &datums) {
             downstream
                 .entry(dependency.into())
                 .or_default()

@@ -29,7 +29,8 @@ pub enum RegenerationState {
 pub struct FeatureSignature<'a> {
     pub feature: &'a FeatureDefinition,
     pub parameters: Vec<(&'a str, &'a ParameterValue)>,
-    pub datum: Option<&'a DatumDefinition>,
+    /// The sketch's datum and the datums it is built on, in order.
+    pub datum: Vec<&'a DatumDefinition>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub references: Vec<&'a NamedReference>,
 }
@@ -51,7 +52,7 @@ pub fn sketch_datum<'a>(
         .get(id.as_str())
         .copied()
         .ok_or_else(|| ModelError::new(format!("unknown sketch plane datum '{id}'")))?;
-    if !matches!(datum.kind, DatumKind::Plane { .. }) {
+    if !datum.kind.is_plane() {
         return Err(ModelError::new(format!(
             "sketch datum '{id}' must be a plane"
         )));
@@ -75,6 +76,22 @@ pub fn feature_signature(
         .into_iter()
         .filter_map(|(name, _)| references.get(name).copied())
         .collect::<Vec<_>>();
+    let chain = match sketch_datum(datums, &feature.operation)? {
+        Some(datum) => datum_chain(datums, &datum.id),
+        None => Vec::new(),
+    };
+    for datum in &chain {
+        datum.kind.collect_parameters(&mut names);
+        for selector in datum.kind.faces().map(|(_, s)| s).unwrap_or_default() {
+            let mut selector_names = Vec::new();
+            selector.names(&mut selector_names);
+            used.extend(
+                selector_names
+                    .into_iter()
+                    .filter_map(|(name, _)| references.get(name).copied()),
+            );
+        }
+    }
     used.sort_by(|a, b| a.name.cmp(&b.name));
     used.dedup_by(|a, b| a.name == b.name);
     for reference in &used {
@@ -86,15 +103,6 @@ pub fn feature_signature(
                 collect_edge_selector_parameters(selector, &mut names)
             }
         }
-    }
-    let datum = sketch_datum(datums, &feature.operation)?;
-    if let Some(DatumDefinition {
-        kind: DatumKind::Plane { origin, normal },
-        ..
-    }) = datum
-    {
-        collect_vector_parameters(origin, &mut names);
-        collect_vector_parameters(normal, &mut names);
     }
     let mut names = names.into_iter().collect::<Vec<_>>();
     names.sort_unstable();
@@ -110,7 +118,7 @@ pub fn feature_signature(
     serde_json::to_vec(&FeatureSignature {
         feature,
         parameters: values,
-        datum,
+        datum: chain,
         references: used,
     })
     .map_err(|error| ModelError::new(format!("create feature signature: {error}")))

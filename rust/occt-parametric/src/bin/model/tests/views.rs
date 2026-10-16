@@ -427,3 +427,126 @@ fn sketch_scenes_carry_their_resolved_plane_in_model_space() {
     assert_eq!(datum["x_axis"], json!([1.0, 0.0, 0.0]));
     assert_eq!(datum["y_axis"], json!([0.0, 0.0, 1.0]));
 }
+
+#[test]
+fn datum_planes_are_added_by_guarded_edits_and_reach_the_view_in_model_space() {
+    let dir = Directory::new();
+    let request: Value = serde_json::from_str(include_str!(
+        "../../../../../../tools/model/face-pocket.request.json"
+    ))
+    .unwrap();
+    let model = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+    let family = model.family.id.clone();
+    let length = |v: f64| json!({"value": v, "dimension": "length", "unit": "millimeter"});
+    let scalar = |v: f64| json!({"value": v, "dimension": "scalar", "unit": null});
+    let lid = json!({"id": "lid", "kind": {"face_plane": {
+        "input": "block",
+        "face": {"normal_aligned": {
+            "direction": {"literal": {"x": scalar(0.0), "y": scalar(0.0), "z": scalar(1.0)}},
+            "minimum_dot": {"literal": scalar(0.999999)}
+        }},
+        "distance": {"parameter": "lid_gap"}
+    }}});
+    let gap = json!({"id": "lid_gap", "parameter_type": {"scalar": "length"},
+        "default": {"scalar": length(4.0)}, "minimum": null, "maximum": null});
+    let front = json!({"id": "front", "kind": {"offset_plane": {"base": "xz", "distance": {"literal": length(3.0)}}}});
+    let commit = |changes: Value, name: &str| {
+        let p = dir.0.join(format!("{name}.json"));
+        fs::write(&p, json!({"schema":"occb-model-edit-v1","model":model,"changes":changes,
+            "outputs":[{"instance":"part","output":"body"}],
+            "revision":{"id":name,"author":"test","recorded_at":"test-time","message":"datum planes"},
+            "step":false,"preview":false}).to_string()).unwrap();
+        patch::run(&p.into_os_string(), &dir.0.join(name).into_os_string())
+    };
+    commit(
+        json!([
+            {"action":"add_parameter","family":family,"parameter":gap},
+            {"action":"add_datum","family":family,"datum":lid},
+            {"action":"add_datum","family":family,"datum":front},
+        ]),
+        "planes",
+    )
+    .unwrap();
+    let saved =
+        ModelDocument::from_json(&fs::read_to_string(dir.0.join("planes/model.json")).unwrap())
+            .unwrap();
+    assert_eq!(saved.family.datums.len(), 2);
+    // A replacement must match its expected snapshot and keep its id.
+    let moved = json!({"id": "front", "kind": {"offset_plane": {"base": "xz", "distance": {"literal": length(9.0)}}}});
+    assert!(
+        commit(
+            json!([{"action":"replace_datum","family":family,"expected":moved,"datum":moved}]),
+            "stale"
+        )
+        .is_err()
+    );
+    let mut view = request.clone();
+    view["model"] = serde_json::to_value(&saved).unwrap();
+    view_request(&dir, view, "view").unwrap();
+    let data: Value =
+        serde_json::from_str(&fs::read_to_string(dir.0.join("view/view.json")).unwrap()).unwrap();
+    let planes = data["datum_planes"].as_array().unwrap();
+    let plane = |id: &str| planes.iter().find(|p| p["id"] == id).unwrap().clone();
+    // The block is 60 × 40 × 20; the lid sits 4 mm over its top face.
+    assert_eq!(plane("lid")["status"], "resolved");
+    assert_eq!(plane("lid")["origin_mm"], json!([30.0, 20.0, 24.0]));
+    assert_eq!(plane("lid")["normal"], json!([0.0, 0.0, 1.0]));
+    assert_eq!(plane("lid")["x_axis"], json!([1.0, 0.0, 0.0]));
+    assert_eq!(plane("front")["origin_mm"], json!([0.0, -3.0, 0.0]));
+    assert_eq!(
+        plane("front")["definition"]["kind"]["offset_plane"]["base"],
+        "xz"
+    );
+    // A plane whose face is gone fails with the reason, and so does a
+    // sketch on it.
+    let mut broken = saved.clone();
+    let FeatureOperation::SketchFace { sketch } = &mut broken
+        .family
+        .features
+        .iter_mut()
+        .find(|f| f.id == "profile")
+        .unwrap()
+        .operation
+    else {
+        panic!()
+    };
+    sketch.face_support = None;
+    sketch.datum_plane = Some("lid".into());
+    let DatumKind::FacePlane { face, .. } = &mut broken.family.datums[0].kind else {
+        panic!()
+    };
+    **face = FaceSelector::NormalAligned {
+        direction: VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.6, 0.8)),
+        minimum_dot: ScalarExpr::Literal(Quantity::scalar(0.999)),
+    };
+    let mut view = request.clone();
+    view["model"] = serde_json::to_value(&broken).unwrap();
+    view["outputs"] = json!([{"instance": "part", "output": "block"}]);
+    view_request(&dir, view, "broken").unwrap();
+    let data: Value =
+        serde_json::from_str(&fs::read_to_string(dir.0.join("broken/view.json")).unwrap()).unwrap();
+    let lid = &data["datum_planes"][0];
+    assert_eq!(lid["status"], "failed");
+    assert!(
+        lid["error"].as_str().unwrap().contains("found no matches"),
+        "{lid}"
+    );
+    let profile = data["scenes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["feature"] == "profile")
+        .unwrap();
+    assert!(
+        profile["error"]
+            .as_str()
+            .unwrap()
+            .contains("found no matches"),
+        "{profile}"
+    );
+    // Models without plane datums keep their view unchanged.
+    view_request(&dir, request, "plain").unwrap();
+    let plain: Value =
+        serde_json::from_str(&fs::read_to_string(dir.0.join("plain/view.json")).unwrap()).unwrap();
+    assert!(plain.get("datum_planes").is_none());
+}
