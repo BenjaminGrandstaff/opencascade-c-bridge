@@ -370,8 +370,14 @@ and pattern copies, alongside declared projected splines/chains. Stable source
 IDs and fraction expressions survive linking/releasing clones without entering
 model metadata. Native evaluation preserves mirrored traversal, periodic seams,
 rational weights and source refinements, with source edits and save/history
-verified. A next authoring extension is creating linked sample points directly
-from curve picks.
+verified. ABI 74 adds a unique closest-parameter query for direct canvas creation of
+linked sample points. The finite native domain includes endpoints and a
+canonical closed seam; tied distinct parameters reject selection. A guarded
+read-only sketch query shares crossing-query projection resolution and the
+native spline builder. Picking requires the current reviewed scene, retains a
+literal source fraction, and discards canceled/stale replies. Preview/Apply
+remain authoritative for the saved link and family requirements. A next
+extension is native fraction feedback before staging a sample.
 
 
 

@@ -277,6 +277,36 @@ projection updates, history and Save/reopen. A check of 100 local link operation
 with 10,000 available generated spline sources took about 164 ms. Schema 149 and
 ABI 73 are unchanged.
 
+### Canvas spline samples (ABI 74)
+
+Open **Pick spline sample from canvas**, choose a new point name or an existing
+authored target, then **Start spline sample pick**. Click the source spline near
+the desired sample. The native query finds a unique closest parameter within
+the screen pick tolerance and stages a free point linked to that source at a
+literal fraction. **Named point links** opens on the staged target so its source
+and fraction can be inspected or changed to a parameter driver. Preview and
+Apply still verify the resulting sketch and dependent model requirements.
+
+The picker accepts authored splines, generated conics and pattern copies, and
+live projected splines/chains. A current native Preview is required after draft
+edits. One request runs per click; cursor movement makes no native queries.
+Drags, wrong curve kinds, distant hints, stale versions/scenes, canceled requests
+and late replies cannot stage a point. Escape, tool changes, loading a new draft,
+and Preview/Apply cancel pending picks. New names avoid existing geometry,
+including generated references, and advance to the next free `SampleN` name.
+
+`POST /api/sketch-spline-sample` shares draft/version guards and projection
+resolution with crossing queries. `SketchDefinitionSolving::closest_spline_parameter`
+uses the same solved source-curve builder as native spline constraints.
+`Session::curve_closest_fraction` and the C ABI return the closest point and an
+oriented fraction of the finite active parameter domain. Endpoints participate;
+closed seam aliases canonicalize to zero. Equally near distinct parameters
+(including self-intersecting branches) reject rather than guessing. A C0 knot
+can be sampled without a smooth tangent. Queries allow at most 1000 native
+extrema and leave accepted documents, history, annotations and files untouched.
+A check of ten read-only native picks took about 21 ms. Rebuild the native bridge
+and Rust clients together for ABI 74; model schema 149 is unchanged.
+
 A crossing uses two existing `point_on_curve` constraints. The solver starts at
 the point's saved coordinates, can move free source geometry, and may choose a
 different branch after large edits. Lines use their infinite supporting line;

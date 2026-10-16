@@ -2216,6 +2216,16 @@ pub trait SketchDefinitionSolving {
         second: &str,
     ) -> Result<Vec<SketchPoint2>, ModelError>;
 
+    /// Read-only unique closest parameter on a solved source spline, including
+    /// generated copies. Hint/result are sketch-local millimeters. Projections
+    /// must be materialized; equal nearest parameters reject the query.
+    fn closest_spline_parameter(
+        &self,
+        parameters: &HashMap<String, ParameterValue>,
+        spline: &str,
+        hint: SketchPoint2,
+    ) -> Result<(f64, SketchPoint2), ModelError>;
+
     /// Warm start free points by stable point ID. New points use authored seeds,
     /// removed IDs are ignored, and fixed points always use the definition.
     fn solve_with_seed(
@@ -2261,6 +2271,44 @@ impl SketchDefinitionSolving for SketchDefinition {
             .into_iter()
             .map(|p| SketchPoint2 { x: p.x, y: p.y })
             .collect())
+    }
+
+    fn closest_spline_parameter(
+        &self,
+        parameters: &HashMap<String, ParameterValue>,
+        spline: &str,
+        hint: SketchPoint2,
+    ) -> Result<(f64, SketchPoint2), ModelError> {
+        if !hint.x.is_finite() || !hint.y.is_finite() {
+            return Err(ModelError::new("sample hint must be finite"));
+        }
+        if let std::borrow::Cow::Owned(expanded) = self.with_pattern_copies(parameters)? {
+            return expanded.closest_spline_parameter(parameters, spline, hint);
+        }
+        let source = self
+            .splines
+            .iter()
+            .find(|s| s.id == spline)
+            .ok_or_else(|| ModelError::new("sample query requires a source spline"))?;
+        let solution = self.solve(parameters)?;
+        self.check_acceptance(&solution)?;
+        let fixed = self
+            .points
+            .iter()
+            .map(|p| (p.id.as_str(), solution.points[&p.id]))
+            .collect();
+        let problem = SketchProblem::new(self, parameters, HashMap::new(), fixed)?;
+        let curve = problem.spline_curve(source, &[])?;
+        let (fraction, point) = problem
+            .native
+            .curve_closest_fraction(&curve, Vec3::new(hint.x, hint.y, 0.))?;
+        Ok((
+            fraction,
+            SketchPoint2 {
+                x: point.x,
+                y: point.y,
+            },
+        ))
     }
 
     fn solve_with_seed(

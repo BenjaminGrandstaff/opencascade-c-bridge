@@ -1,3 +1,4 @@
+import {createSplineSamplePicker} from './spline-sample-pick.mjs';
 import {captureGeneratedPoints,bindGeneratedPoints} from './generated-points.mjs';
 import {createCrossingPicker} from './crossing-pick.mjs';
 import {createCrossingReview} from './crossing-review.mjs';
@@ -19,7 +20,7 @@ export function addElement(definition, collection, element) {
 }
 export function createSketchEditor({ host, request, instance, preview, applied, restore, showSketch = () => {}, highlight = () => {}, ghost = () => {}, crossingWindows = () => {}, reviewScene = () => null, canvasMode = () => {}, showSolid=()=>{}, highlightFace=()=>{}, highlightEdge=()=>{}, beginPicking=()=>{}, currentVersion=()=>null }) {
   let dragInFlight = false;
-  let baseline = null, draft = null, version = null, feature = null, busy = false, generation = 0, parameters = [], features = [], featureDependencies = {}, constraintControls = null, profileControls = null, shapeControls = null, splineControls = null, dependencyControls = null, pointLinkControls = null, crossingReview = null, crossingPicker = null, reviewSnapshot = null, generatedSnapshot = null;
+  let baseline = null, draft = null, version = null, feature = null, busy = false, generation = 0, parameters = [], features = [], featureDependencies = {}, constraintControls = null, profileControls = null, shapeControls = null, splineControls = null, dependencyControls = null, pointLinkControls = null, crossingReview = null, crossingPicker = null, samplePicker = null, reviewSnapshot = null, generatedSnapshot = null;
   const panel = document.createElement('section');
   panel.className = 'linked-edit';
   const launch = document.createElement('button'); launch.textContent = 'Edit sketch geometry';
@@ -46,7 +47,7 @@ export function createSketchEditor({ host, request, instance, preview, applied, 
     highlight:ids=>highlight(ids,feature),beginProjectionPicking:beginGeometryPick,changed:render,addProjection:(definition,projection)=>{requireConstructionProfile(definition);addElement(definition,'projections',projection);}});
 
   const canvasTools = createCanvasTools({host:canvasMount, getDraft:()=>draft, setDraft:next=>draft=next,
-    changed:render, message, ghost:paths=>ghost(paths,feature), modeChanged:mode=>{crossingPicker?.cancel();canvasMode(mode,feature);},
+    changed:render, message, ghost:paths=>ghost(paths,feature), modeChanged:mode=>{crossingPicker?.cancel();samplePicker?.cancel();canvasMode(mode,feature);},
     dragPoint:async(point,target)=>{
       const turn=++generation, selectedInstance=instance();
       dragInFlight=true;busy=true;content.inert=true;canvasMount.inert=true;launch.disabled=true;message('Solving drag with existing constraints…');
@@ -60,7 +61,7 @@ export function createSketchEditor({ host, request, instance, preview, applied, 
   });
   function captureReview(acceptedOnly){const scene=reviewScene(feature,version,acceptedOnly);reviewSnapshot=scene?{definition:JSON.stringify(draft),scene}:null;}
   function reviewCurrent(){return Boolean(draft&&reviewSnapshot&&JSON.stringify(draft)===reviewSnapshot.definition&&reviewScene(feature,version,false)===reviewSnapshot.scene&&(currentVersion()===null||currentVersion()===version));}
-  function cancelGeometryPicks(){crossingPicker?.cancel();dependencyControls?.cancelPick();profileControls?.cancelPick();shapeControls?.cancelPick();splineControls?.cancelPick();}
+  function cancelGeometryPicks(){samplePicker?.cancel();crossingPicker?.cancel();dependencyControls?.cancelPick();profileControls?.cancelPick();shapeControls?.cancelPick();splineControls?.cancelPick();}
   function beginGeometryPick(){links.cancel();cancelGeometryPicks();canvasTools.selectMode();showSketch(feature);beginPicking();}
   function focusPoint(id){const row=[...content.querySelectorAll('[data-edit-point]')].find(row=>row.dataset.editPoint===id);row?.scrollIntoView({block:'nearest'});row?.querySelector('input,textarea')?.focus();}
   function resetCanvas(){crossingWindows([],feature);reviewSnapshot=null;generatedSnapshot=null;links.cancel();cancelGeometryPicks();generation++;canvasTools.reviewed();canvasMount.hidden=true;canvasMode('select');}
@@ -95,7 +96,7 @@ export function createSketchEditor({ host, request, instance, preview, applied, 
   }
   function render() {
     bindGeneratedPoints(draft,generatedSnapshot);
-    crossingPicker?.cancel();
+    crossingPicker?.cancel();samplePicker?.cancel();
     content.replaceChildren();
     const note = document.createElement('p'); note.textContent = `Family-wide edit · ${feature}. Coordinates are sketch-local. Free point coordinates are solver starting positions; constraints determine the solved shape.`; content.append(note);
     dependencyControls=createDependencyControls({host:content,definition:draft,features,feature,featureDependencies,initialSelection:dependencyControls?.selected,initialOpen:dependencyControls?.open,highlight:ids=>highlight(ids,feature),beginPicking:beginGeometryPick,message});
@@ -106,6 +107,14 @@ export function createSketchEditor({ host, request, instance, preview, applied, 
       if(turn!==generation||source!==draft||selectedInstance!==instance()||result.version!==version||result.instance!==selectedInstance||result.feature!==selectedFeature||(currentVersion()!==null&&currentVersion()!==version))throw new Error('The model or draft changed. Restart the crossing pick.');
       return result;
     },current:event=>event.version===version&&event.scene.instance===instance()&&reviewScene(feature,version,false)===event.scene&&(currentVersion()===null||currentVersion()===version),changed:(next,point)=>{draft=next;render();pointLinkControls?.inspect(point);highlight([point],feature);}});
+    samplePicker=createSplineSamplePicker({host:content,definition:draft,initialOpen:samplePicker?.open,initialOptions:samplePicker?.options,beginPicking:beginGeometryPick,modeChanged:mode=>canvasMode(mode,feature),highlight:ids=>highlight(ids,feature),message,
+      current:event=>reviewCurrent()&&event.version===version&&event.scene.instance===instance()&&reviewScene(feature,version,false)===event.scene,
+      query:async({spline,position,maximum_distance})=>{
+        const turn=generation,source=draft,selectedInstance=instance(),selectedFeature=feature;
+        const result=await request('/api/sketch-spline-sample',{method:'POST',body:JSON.stringify({version,instance:selectedInstance,feature:selectedFeature,expected:baseline,definition:draft,spline,position,maximum_distance})});
+        if(turn!==generation||source!==draft||selectedInstance!==instance()||result.version!==version||result.instance!==selectedInstance||result.feature!==selectedFeature||result.spline!==spline||(currentVersion()!==null&&currentVersion()!==version))throw new Error('The model or draft changed. Restart the sample pick.');
+        return result;
+      },changed:(next,point,spline)=>{draft=next;render();pointLinkControls?.inspect(point);highlight([point,spline],feature);}});
     crossingReview=createCrossingReview({host:content,definition:draft,review:()=>reviewSnapshot?.scene,current:reviewCurrent,initialOpen:crossingReview?.open,initialFilter:crossingReview?.filter,show:windows=>crossingWindows(windows,feature),highlight:ids=>{showSketch(feature);highlight(ids,feature);},inspect:id=>pointLinkControls?.inspect(id),message});
     links.render(content);
     profileControls=createProfileControls({host:content,definition:draft,parameters,initialType:profileControls?.type,initialScope:profileControls?.scope,initialSeed:profileControls?.seed,changed:render,message,highlight:ids=>highlight(ids,feature),
@@ -171,7 +180,7 @@ export function createSketchEditor({ host, request, instance, preview, applied, 
     }
     content.append(constraints);
     const advanced = document.createElement('details'), at = document.createElement('summary'); at.textContent = 'Full definition (advanced geometry, regions and constraints)'; advanced.append(at, jsonEditor('Sketch definition', draft, value => { draft = value; render(); })); content.append(advanced);
-    content.append(button('Preview draft', () => submit(false)), button('Apply verified draft', () => submit(true)), button('Discard draft', async () => { generation++; baseline = draft = null; resetCanvas(); constraintControls = profileControls = shapeControls = splineControls = dependencyControls = pointLinkControls = crossingReview = crossingPicker = null; highlight([]); content.replaceChildren(); message('Draft discarded.'); await restore(); }));
+    content.append(button('Preview draft', () => submit(false)), button('Apply verified draft', () => submit(true)), button('Discard draft', async () => { generation++; baseline = draft = null; resetCanvas(); constraintControls = profileControls = shapeControls = splineControls = dependencyControls = pointLinkControls = crossingReview = crossingPicker = samplePicker = null; highlight([]); content.replaceChildren(); message('Draft discarded.'); await restore(); }));
   }
   async function submit(apply) {
     if(links.busy)throw new Error("Wait for the source pick to finish.");
@@ -181,7 +190,7 @@ export function createSketchEditor({ host, request, instance, preview, applied, 
     message(apply ? 'Regenerating and checking requirements…' : 'Computing draft preview…');
     try {
       const response = await request('/api/sketch', {method:'POST', body:JSON.stringify({version, instance:instance(), feature, expected:baseline, definition:draft, apply})});
-      if (apply) { baseline = draft = null; resetCanvas(); constraintControls = profileControls = shapeControls = splineControls = dependencyControls = pointLinkControls = crossingReview = crossingPicker = null; highlight([]); content.replaceChildren(); await applied(response.state); message('Sketch applied. Save writes it to the model file.'); }
+      if (apply) { baseline = draft = null; resetCanvas(); constraintControls = profileControls = shapeControls = splineControls = dependencyControls = pointLinkControls = crossingReview = crossingPicker = samplePicker = null; highlight([]); content.replaceChildren(); await applied(response.state); message('Sketch applied. Save writes it to the model file.'); }
       else { canvasTools.reviewed();await preview(response.annotations); showSketch(feature); if(response.can_apply){generatedSnapshot=captureGeneratedPoints(draft,response.generated_points??[],response.generated_curves??{});bindGeneratedPoints(draft,generatedSnapshot);captureReview(false);render();}else{reviewSnapshot=null;crossingReview?.refresh();} message(response.can_apply ? 'Preview passes regeneration and required checks. Apply repeats the checks against the current model.' : `Draft cannot be applied: ${response.error}`); }
     } finally { busy = false; content.inert = false; canvasMount.inert = false; launch.disabled = false; }
   }
@@ -199,17 +208,17 @@ export function createSketchEditor({ host, request, instance, preview, applied, 
       for (const item of data.sketches) choice.append(new Option(item.feature, item.feature));
       content.append(choice, button('Load sketch draft', () => {
         const item = data.sketches.find(s => s.feature === choice.value);
-        canvasTools.reviewed(); canvasMount.hidden=false;parameters = data.parameters ?? [];features = data.features ?? [];featureDependencies=data.feature_dependencies??{};links.cancel();constraintControls = profileControls = shapeControls = splineControls = dependencyControls = pointLinkControls = crossingReview = crossingPicker = null; highlight([]); version = data.version; feature = item.feature; baseline = structuredClone(item.definition); draft = structuredClone(baseline); generatedSnapshot=captureGeneratedPoints(draft,item.generated_points??[],item.generated_curves??{});showSketch(feature);captureReview(true);canvasMode(canvasTools.mode,feature);render(); message('Draft loaded. Click sketch points or curves to select geometry for dimensions and constraints.');
+        cancelGeometryPicks();canvasTools.reviewed(); canvasMount.hidden=false;parameters = data.parameters ?? [];features = data.features ?? [];featureDependencies=data.feature_dependencies??{};links.cancel();constraintControls = profileControls = shapeControls = splineControls = dependencyControls = pointLinkControls = crossingReview = crossingPicker = samplePicker = null; highlight([]); version = data.version; feature = item.feature; baseline = structuredClone(item.definition); draft = structuredClone(baseline); generatedSnapshot=captureGeneratedPoints(draft,item.generated_points??[],item.generated_curves??{});showSketch(feature);captureReview(true);canvasMode(canvasTools.mode,feature);render(); message('Draft loaded. Click sketch points or curves to select geometry for dimensions and constraints.');
       })); message('Choose a sketch. Loading replaces any previous local draft.');
     } catch (error) { message(error.message); }
   });
   return {
     get facePicking(){return links.facePicking;},get edgePicking(){return links.edgePicking;},
     pickFace:links.pickFace,pickEdge:links.pickEdge,cancelLinkPick(){links.cancel();cancelGeometryPicks();},
-    canvasDown(event){if(busy||!draft||event.scene.feature!==feature)return false;return crossingPicker?.active?crossingPicker.down(event):canvasTools.down(event);},
-    canvasMove(event){if(busy||!draft||event.scene.feature!==feature)return false;return crossingPicker?.active?crossingPicker.move(event):canvasTools.move(event);},
-    canvasUp(event){if(!busy&&draft&&event.scene.feature===feature){if(crossingPicker?.active)return crossingPicker.up(event);return canvasTools.up(event).catch(error=>message(error.message));}},
-    canvasCancel(){generation++;if(crossingPicker?.cancel())message('Crossing pick canceled. Draft unchanged.');canvasTools.cancel();if(dragInFlight)message('Drag canceled. Current draft retained.');},
+    canvasDown(event){if(busy||!draft||event.scene.feature!==feature)return false;return samplePicker?.active?samplePicker.down(event):crossingPicker?.active?crossingPicker.down(event):canvasTools.down(event);},
+    canvasMove(event){if(busy||!draft||event.scene.feature!==feature)return false;return samplePicker?.active?samplePicker.move(event):crossingPicker?.active?crossingPicker.move(event):canvasTools.move(event);},
+    canvasUp(event){if(!busy&&draft&&event.scene.feature===feature){if(samplePicker?.active)return samplePicker.up(event);if(crossingPicker?.active)return crossingPicker.up(event);return canvasTools.up(event).catch(error=>message(error.message));}},
+    canvasCancel(){generation++;if(samplePicker?.cancel())message('Sample pick canceled. Draft unchanged.');if(crossingPicker?.cancel())message('Crossing pick canceled. Draft unchanged.');canvasTools.cancel();if(dragInFlight)message('Drag canceled. Current draft retained.');},
     selectGeometry(id, scene) {if(busy || !draft || scene.feature !== feature)return false;if(dependencyControls?.pick(id)||links.pickProjection(id)||profileControls?.pick(id)||shapeControls?.pick(id)||splineControls?.pick(id))return true;return constraintControls?.pick(id) ?? false;},
     selectConstraint(annotation, scene) {if(busy || !draft || scene.feature !== feature)return;const crossingLink=annotation?.detail?.constraint?.crossing_point;if(crossingLink){pointLinkControls?.inspect(crossingLink.point);highlight([crossingLink.point,crossingLink.first,crossingLink.second],feature);return;}const splineLink=annotation?.detail?.constraint?.spline_point;if(splineLink){pointLinkControls?.inspect(splineLink.point);highlight([splineLink.point,splineLink.spline],feature);return;}const link=annotation?.detail?.constraint?.weighted_point;if(link){highlight([link.point,...link.terms.map(t=>t.point)],feature);focusPoint(link.point);return;}if(annotation?.detail?.constraint && !constraintControls?.selectAnnotation(annotation))message('This label has no matching supported constraint in the draft. Preview your changes or use the constraint list.');},
     clearSelection() {cancelGeometryPicks();constraintControls?.clear();},

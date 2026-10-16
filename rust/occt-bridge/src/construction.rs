@@ -1075,6 +1075,29 @@ impl Session {
         })?;
         Ok(out.into())
     }
+    /// Unique closest finite point and its oriented active-domain fraction.
+    /// Includes endpoints, canonicalizes a closed seam to zero and rejects
+    /// equally near distinct parameters. One edge; at most 1000 native extrema.
+    pub fn curve_closest_fraction(
+        &self,
+        shape: &Shape<'_>,
+        hint: Vec3,
+    ) -> Result<(f64, Vec3), BridgeError> {
+        self.validate_shape(shape)?;
+        let mut fraction = 0.;
+        let mut point = RawVec3::default();
+        // SAFETY: Valid session-owned shape and distinct writable outputs.
+        self.check(unsafe {
+            occt_bridge_curve_closest_fraction(
+                self.raw.as_ptr(),
+                shape.id,
+                hint.into(),
+                &mut fraction,
+                &mut point,
+            )
+        })?;
+        Ok((fraction, point.into()))
+    }
     /// Exact point at a normalized active parameter, following edge orientation.
     /// Requires one edge; the fraction is not normalized arc length.
     pub fn curve_point_at_fraction(

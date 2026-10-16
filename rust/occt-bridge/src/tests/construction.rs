@@ -1456,3 +1456,130 @@ fn curve_parameter_fraction_is_exact_located_bounded_and_single_edge() {
         .unwrap();
     assert!(s.curve_point_at_fraction(&rectangle, 0.5).is_err());
 }
+
+#[test]
+fn closest_parameter_fractions_are_exact_located_and_oriented() {
+    let session = Session::new().unwrap();
+    let curve = session
+        .create_curve_wire(
+            &[CurveSegment::BSpline {
+                non_clamped: false,
+                periodic: false,
+                degree: 2,
+                knots: vec![3., 7.],
+                multiplicities: vec![3, 3],
+                weights: vec![1., 0.5_f64.sqrt(), 1.],
+                poles: vec![
+                    Vec3::new(10., 0., 0.),
+                    Vec3::new(10., 10., 0.),
+                    Vec3::new(0., 10., 0.),
+                ],
+            }],
+            false,
+        )
+        .unwrap();
+    for fraction in [0., 0.13, 0.5, 0.81, 1.] {
+        let expected = session.curve_point_at_fraction(&curve, fraction).unwrap();
+        let (f, p) = session.curve_closest_fraction(&curve, expected).unwrap();
+        assert!((f - fraction).abs() < 1e-8);
+        assert!((p.x - expected.x).hypot(p.y - expected.y) < 1e-7);
+    }
+    let moved = session.translate(&curve, Vec3::new(3., -2., 7.)).unwrap();
+    let query = session.curve_point_at_fraction(&moved, 0.29).unwrap();
+    let (fraction, point) = session.curve_closest_fraction(&moved, query).unwrap();
+    assert!((fraction - 0.29).abs() < 1e-8 && (point.z - 7.).abs() < 1e-8);
+    assert!(
+        session
+            .curve_closest_fraction(&curve, Vec3::new(f64::NAN, 0., 0.))
+            .is_err()
+    );
+}
+#[test]
+fn closest_parameter_rejects_multiple_branches_and_allows_c0_knots() {
+    let session = Session::new().unwrap();
+    let curve = session
+        .create_curve_wire(
+            &[CurveSegment::BSpline {
+                non_clamped: false,
+                periodic: false,
+                degree: 1,
+                knots: vec![0., 1., 2., 3.],
+                multiplicities: vec![2, 1, 1, 2],
+                weights: vec![],
+                poles: vec![
+                    Vec3::new(-1., -1., 0.),
+                    Vec3::new(1., 1., 0.),
+                    Vec3::new(-1., 1., 0.),
+                    Vec3::new(1., -1., 0.),
+                ],
+            }],
+            false,
+        )
+        .unwrap();
+    assert!(
+        session
+            .curve_closest_fraction(&curve, Vec3::new(0., 0., 0.))
+            .is_err()
+    );
+    assert!(
+        session
+            .curve_closest_fraction(&curve, Vec3::new(-0.8, -0.75, 0.))
+            .is_ok()
+    );
+    let corner = session.curve_point_at_fraction(&curve, 1. / 3.).unwrap();
+    assert!((session.curve_closest_fraction(&curve, corner).unwrap().0 - 1. / 3.).abs() < 1e-8);
+}
+#[test]
+fn closest_parameter_canonicalizes_seams_and_rejects_nonunique_circle_center() {
+    let session = Session::new().unwrap();
+    let curve = session
+        .create_curve_wire(
+            &[CurveSegment::BSpline {
+                non_clamped: false,
+                periodic: true,
+                degree: 1,
+                knots: vec![0., 1., 2., 3.],
+                multiplicities: vec![1; 4],
+                weights: vec![],
+                poles: vec![
+                    Vec3::new(0., 0., 0.),
+                    Vec3::new(1., 0., 0.),
+                    Vec3::new(0., 1., 0.),
+                ],
+            }],
+            true,
+        )
+        .unwrap();
+    let seam = session.curve_point_at_fraction(&curve, 1.).unwrap();
+    assert_eq!(session.curve_closest_fraction(&curve, seam).unwrap().0, 0.);
+    let circle = session
+        .create_circle_wire(Vec3::new(0., 0., 0.), Vec3::new(0., 0., 1.), 10.)
+        .unwrap();
+    assert!(
+        session
+            .curve_closest_fraction(&circle, Vec3::new(0., 0., 0.))
+            .is_err()
+    );
+    let multi = session
+        .create_curve_wire(
+            &[
+                CurveSegment::Line {
+                    start: Vec3::new(0., 0., 0.),
+                    end: Vec3::new(1., 0., 0.),
+                },
+                CurveSegment::Line {
+                    start: Vec3::new(1., 0., 0.),
+                    end: Vec3::new(1., 1., 0.),
+                },
+            ],
+            false,
+        )
+        .unwrap();
+    assert!(
+        session
+            .curve_closest_fraction(&multi, Vec3::new(0., 0., 0.))
+            .is_err()
+    );
+    drop((curve, circle, multi));
+    assert_eq!(session.shape_count().unwrap(), 0);
+}

@@ -587,6 +587,50 @@ extern "C" {
             return store_shape(s, result, out);
         });
     }
+    occt_bridge_status_t occt_bridge_curve_closest_fraction(
+        occt_bridge_session_t* s, occt_bridge_shape_id_t id, occt_bridge_vec3_t hint,
+        double* fraction, occt_bridge_vec3_t* point) {
+        return guarded(s, [&] {
+            if (fraction == nullptr || point == nullptr) return fail(s, OCCT_BRIDGE_INVALID_ARGUMENT, "closest parameter outputs are null");
+            *fraction = 0.; *point = {0.,0.,0.};
+            if (!finite(hint)) return fail(s, OCCT_BRIDGE_INVALID_ARGUMENT, "closest parameter hint is not finite");
+            const auto* shape = find_shape(s, id);
+            if (!shape) return fail(s, OCCT_BRIDGE_SHAPE_NOT_FOUND, "parameter curve was not found");
+            if (shape->ShapeType() != TopAbs_EDGE && shape->ShapeType() != TopAbs_WIRE) return fail(s, OCCT_BRIDGE_INVALID_ARGUMENT, "parameter query requires an edge or wire");
+            const auto edge = single_edge(*shape);
+            if (edge.IsNull()) return fail(s, OCCT_BRIDGE_INVALID_ARGUMENT, "parameter query requires one edge");
+            double first, last;
+            const auto curve = BRep_Tool::Curve(edge, first, last);
+            if (curve.IsNull() || !std::isfinite(first) || !std::isfinite(last) || !(last > first)) return fail(s, OCCT_BRIDGE_INVALID_GEOMETRY, "parameter curve has no finite active span");
+            const gp_Pnt query = to_point(hint);
+            const bool reversed = edge.Orientation() == TopAbs_REVERSED;
+            const bool closed = curve->Value(first).Distance(curve->Value(last)) <= Precision::Confusion();
+            auto normalized = [&](double u) {
+                double f = std::clamp((u-first)/(last-first), 0., 1.);
+                if (reversed) f = 1.-f;
+                if (closed && (f < 1e-10 || f > 1.-1e-10)) f = 0.;
+                return f;
+            };
+            std::vector<std::pair<double,double>> candidates;
+            auto append = [&](double u) { candidates.emplace_back(normalized(u), curve->Value(u).Distance(query)); };
+            append(first); append(last);
+            GeomAPI_ProjectPointOnCurve projection(query, curve, first, last);
+            if (projection.NbPoints() > 1000) return fail(s, OCCT_BRIDGE_INVALID_GEOMETRY, "closest parameter exceeds 1000 native extrema");
+            if (closed && projection.NbPoints() == 0 && candidates[0].second > Precision::Confusion()) return fail(s, OCCT_BRIDGE_INVALID_GEOMETRY, "closed curve has no unique nearest parameter");
+            for (int i=1; i<=projection.NbPoints(); ++i) append(projection.Parameter(i));
+            const auto best = std::min_element(candidates.begin(), candidates.end(), [](const auto& a, const auto& b) { return a.second < b.second; });
+            if (!std::isfinite(best->second)) return fail(s, OCCT_BRIDGE_INVALID_GEOMETRY, "closest parameter projection failed");
+            for (const auto& candidate : candidates) {
+                if (std::abs(candidate.second-best->second) <= Precision::Confusion() && std::abs(candidate.first-best->first) > 1e-10) return fail(s, OCCT_BRIDGE_INVALID_GEOMETRY, "closest parameter is ambiguous; pick nearer one branch");
+            }
+            const double f = best->first;
+            const auto p = curve->Value(first+(reversed ? 1.-f : f)*(last-first));
+            const occt_bridge_vec3_t position = {p.X(),p.Y(),p.Z()};
+            if (!finite(position)) return fail(s, OCCT_BRIDGE_INVALID_GEOMETRY, "closest parameter point is not finite");
+            *fraction = f; *point = position;
+            return succeed(s);
+        });
+    }
     occt_bridge_status_t occt_bridge_curve_closest_data(
         occt_bridge_session_t* s, occt_bridge_shape_id_t id, occt_bridge_vec3_t point,
         occt_bridge_vec3_t* closest, occt_bridge_vec3_t* tangent) {

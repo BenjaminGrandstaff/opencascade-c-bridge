@@ -1419,6 +1419,18 @@ static void elliptical_arcs(occt_bridge_session_t* session) {
     EXPECT(occt_bridge_curve_point_at_fraction(session, circle, 1.01, &sample), ARG);
     EXPECT(occt_bridge_curve_point_at_fraction(session, circle, 0.5, &sample), OK);
     EXPECT_TRUE(fabs(sample.x + 10) < 1e-9 && fabs(sample.y) < 1e-9, "circle half parameter");
+    /* Closest normalized parameter (ABI 74). */
+    double fraction = 99;
+    EXPECT(occt_bridge_curve_closest_fraction(NULL, circle, vec(10,0,0), &fraction, &sample), ARG);
+    EXPECT(occt_bridge_curve_closest_fraction(session, circle, vec(10,0,0), NULL, &sample), ARG);
+    EXPECT(occt_bridge_curve_closest_fraction(session, circle, vec(10,0,0), &fraction, NULL), ARG);
+    EXPECT(occt_bridge_curve_closest_fraction(session, unknown, vec(10,0,0), &fraction, &sample), MISSING);
+    EXPECT_TRUE(fraction == 0 && sample.x == 0 && sample.y == 0 && sample.z == 0, "missing parameter curve clears outputs");
+    EXPECT(occt_bridge_curve_closest_fraction(session, circle, vec(NAN,0,0), &fraction, &sample), ARG);
+    EXPECT(occt_bridge_curve_closest_fraction(session, circle, vec(-10,0,0), &fraction, &sample), OK);
+    EXPECT_TRUE(fabs(fraction-0.5) < 1e-9, "circle closest fraction");
+    EXPECT(occt_bridge_curve_closest_fraction(session, circle, vec(0,0,0), &fraction, &sample), GEOMETRY);
+    EXPECT_TRUE(fraction == 0 && sample.x == 0 && sample.y == 0 && sample.z == 0, "ambiguous parameter clears outputs");
     /* Curvature vectors (ABI 65). */
     occt_bridge_vec3_t k = vec(1, 1, 1);
     EXPECT(occt_bridge_curve_curvature_at(NULL, circle, vec(10, 0, 0), &k), ARG);

@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define OCCT_BRIDGE_ABI_VERSION 73u
+#define OCCT_BRIDGE_ABI_VERSION 74u
 #define OCCT_BRIDGE_INVALID_SHAPE_ID UINT64_C(0)
 
 #if defined(_WIN32) && defined(OCCT_BRIDGE_BUILD_SHARED)
@@ -363,6 +363,14 @@ typedef struct occt_bridge_curve_segment {
 OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_curve_point_at_fraction(
     occt_bridge_session_t* session, occt_bridge_shape_id_t shape,
     double fraction, occt_bridge_vec3_t* point);
+
+/* Closest finite point and its oriented normalized parameter on one edge.
+ * Includes endpoints; rejects tied distinct parameters (1000-extrema budget).
+ * Coincident closed endpoints are one seam, canonicalized to fraction zero.
+ * No tangent is required. Outputs reset on failure; queries do not mutate. */
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_curve_closest_fraction(
+    occt_bridge_session_t* session, occt_bridge_shape_id_t shape,
+    occt_bridge_vec3_t hint, double* fraction, occt_bridge_vec3_t* point);
 
 /* Actual active-domain endpoints and first derivatives of one edge or a
  * one-edge wire, following edge orientation, in located world coordinates.

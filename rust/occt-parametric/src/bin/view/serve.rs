@@ -637,6 +637,16 @@ impl Studio {
                 "text/javascript",
                 include_str!("web/generated-points.mjs"),
             ),
+            ("GET", "/geometry-names.mjs") => Response::text(
+                200,
+                "text/javascript; charset=utf-8",
+                include_str!("web/geometry-names.mjs"),
+            ),
+            ("GET", "/spline-sample-pick.mjs") => Response::text(
+                200,
+                "text/javascript; charset=utf-8",
+                include_str!("web/spline-sample-pick.mjs"),
+            ),
             ("GET", "/crossing-pick.mjs") => Response::text(
                 200,
                 "text/javascript",
@@ -714,6 +724,10 @@ impl Studio {
                 Err(error) => Response::error(422, &error),
             },
             ("GET", "/api/sketches") => match self.sketches() {
+                Ok(data) => Response::json(200, &data),
+                Err(error) => Response::error(422, &error),
+            },
+            ("POST", "/api/sketch-spline-sample") => match self.sketch_spline_sample(body) {
                 Ok(data) => Response::json(200, &data),
                 Err(error) => Response::error(422, &error),
             },

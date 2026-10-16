@@ -154,6 +154,13 @@ if(BUILD_TESTING)
     target_link_libraries(occt_bridge_handle_transaction_test PRIVATE OpenCascadeCBridge::occt_bridge ${OCCT_BRIDGE_OCCT_LIBRARIES})
     add_test(NAME occt_bridge_handle_transactions COMMAND occt_bridge_handle_transaction_test)
 
+    add_executable(occt_bridge_curve_parameter_test tests/curve_parameter_test.cpp)
+    target_compile_features(occt_bridge_curve_parameter_test PRIVATE cxx_std_17)
+    target_compile_options(occt_bridge_curve_parameter_test PRIVATE $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic;-Werror>)
+    target_include_directories(occt_bridge_curve_parameter_test PRIVATE src ${OpenCASCADE_INCLUDE_DIR})
+    target_link_libraries(occt_bridge_curve_parameter_test PRIVATE OpenCascadeCBridge::occt_bridge ${OCCT_BRIDGE_OCCT_LIBRARIES})
+    add_test(NAME occt_bridge_curve_parameters COMMAND occt_bridge_curve_parameter_test)
+
     # Read STEP assemblies back through XCAF to verify structure, names, and colors.
     add_executable(occt_bridge_step_assembly_test tests/step_assembly_test.cpp)
     target_compile_features(occt_bridge_step_assembly_test PRIVATE cxx_std_17)

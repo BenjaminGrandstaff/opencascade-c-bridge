@@ -141,3 +141,27 @@ test('editor loads generated point metadata and refreshes stale constraint choic
   assert(!JSON.stringify(calls[0].definition).includes('generated_points'));assert.deepEqual(source.shapes,[{rectangle:{id:'rect',first:'a',opposite:'c'}}]);
  }finally{delete globalThis.document;delete globalThis.Option;}
 });
+
+test('canvas spline samples query a reviewed private draft and stage the returned parameter link',async()=>{
+ globalThis.document={createElement:tag=>new Element(tag)};globalThis.Option=class extends Element{constructor(text,value){super('option');this.textContent=text;this.value=value;}};
+ try{
+  const source={id:'s',points:[{id:'a',x:length(0),y:length(0),fixed:true},{id:'b',x:length(10),y:length(5),fixed:true}],splines:[{id:'curve',points:['a','b']}],constraints:[]};
+  const scene={kind:'sketch',feature:'profile',instance:'part'},event={entity:'curve',position:[4.1,2],tolerance:.5,scene,version:1};
+  const host=new Element('div'),calls=[];let inspected;
+  const editor=createSketchEditor({host,instance:()=> 'part',reviewScene:()=>scene,currentVersion:()=>1,preview:async()=>{},applied:async()=>{},restore:async()=>{},highlight:v=>inspected=v,request:async(path,options)=>{
+   if(path==='/api/sketches')return {version:1,sketches:[{feature:'profile',definition:source}]};
+   const body=JSON.parse(options.body);calls.push({path,body});
+   if(path==='/api/sketch-spline-sample')return {version:1,instance:'part',feature:'profile',spline:'curve',fraction:.4,point:[4,2]};
+   return {can_apply:true,annotations:{}};
+  }});
+  await find(host,'Edit sketch geometry').emit('click');all(host).find(e=>e['aria-label']==='Sketch to edit').value='profile';await find(host,'Load sketch draft').emit('click');
+  find(host,'Start spline sample pick').onclick();editor.canvasDown(event);await editor.canvasUp(event);
+  assert.equal(calls[0].path,'/api/sketch-spline-sample');assert.deepEqual(calls[0].body.expected,source);assert.deepEqual(calls[0].body.definition,source);assert.deepEqual(inspected,['Sample1','curve']);
+  await find(host,'Preview draft').emit('click');const draft=calls[1].body.definition;
+  assert.equal(draft.points.at(-1).id,'Sample1');assert.equal(draft.points.at(-1).fixed,false);assert.equal(draft.constraints[0].spline_point.fraction.literal.value,.4);
+  assert.equal(source.points.length,2);
+  // Editing the reviewed draft requires Preview before a new native pick.
+  const json=find(host,'Sketch definition').children[0],next=JSON.parse(json.value);next.points[0].x=length(1);json.value=JSON.stringify(next);json.emit('change');
+  find(host,'Start spline sample pick').onclick();editor.canvasDown(event);await editor.canvasUp(event);assert.equal(calls.length,2);
+ }finally{delete globalThis.document;delete globalThis.Option;}
+});

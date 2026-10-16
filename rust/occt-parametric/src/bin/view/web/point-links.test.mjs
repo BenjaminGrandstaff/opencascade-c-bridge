@@ -87,3 +87,14 @@ test('explicit endpoint aliases are protected from self-referential spline links
  assert.throws(()=>linkNamedPoint(d,{point:'p',mode:'spline',spline:'curve',fraction:scalar(.5)}),/source fit point or control pole/);
  assert.equal(d.points[2].fixed,true);
 });
+
+test('literal sample status is readable and keeps full stored fraction precision',()=>{
+ globalThis.document={createElement:tag=>new Element(tag)};globalThis.Option=class extends Element{constructor(text,value){super('option');this.textContent=text;this.value=value;}};
+ try{
+  const fraction=.4240532694205788,d=linkNamedPoint(definition(),{point:'p',mode:'spline',spline:'curve',fraction:scalar(fraction)}),host=new Element('div');
+  createPointLinkControls({host,definition:d,initialPoint:'p',changed(){},message(){}});
+  assert(find(host,'Follows curve at fraction 0.42405327.'));
+  assert.equal(all(host).find(e=>e['aria-label']==='Spline parameter fraction').value,String(fraction));
+  assert.equal(d.constraints.at(-1).spline_point.fraction.literal.value,fraction);
+ }finally{delete globalThis.document;delete globalThis.Option;}
+});

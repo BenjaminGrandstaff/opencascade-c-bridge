@@ -8,7 +8,7 @@ tracks status and order.
 
 | Layer | Version | State |
 |---|---|---|
-| C ABI (`src/`, `include/`) | ABI 73 | Stable; exact version match required |
+| C ABI (`src/`, `include/`) | ABI 74 | Stable; exact version match required |
 | `occt-types` (shared value types) | — | No native dependency |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI; re-exports `occt-types` |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
@@ -17,7 +17,7 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 5/5, bridge 157 + first-use integration 1 (+1 doc test), recipes 3, parametric core 41 + kernel 710 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 8 + view command 61 + viewer Node 124 + branch command 2 + model command 90, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 6/6, bridge 160 + first-use integration 1 (+1 doc test), recipes 3, parametric core 41 + kernel 710 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 8 + view command 63 + viewer Node 133 + branch command 2 + model command 90, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -25,6 +25,15 @@ tracks status and order.
 | Scale benchmarks | Last full suite: 194 Rust cases plus 5 model-command cases and a 10,000-face Python matcher. Sketch authoring integration rechecked 60 sketch cases and 60 MCP cases within budget. | `tools/bench/run.sh` |
 
 ## Done
+
+- Canvas spline samples (schema 149, ABI 74): click an authored, generated or
+  projected spline to stage a named point at its native closest parameter.
+  A read-only guarded query includes endpoints, canonicalizes closed seams,
+  and rejects ambiguous branches. New targets remain free and save a literal
+  `spline_point` link. Current Preview, version/source guards, cancellation and
+  late-response checks protect picking. Native tests cover orientation/location,
+  rational/interpolated/periodic/projected sources and history/Save/reopen.
+  Ten native pick queries took about 21 ms. See [canvas samples](docs/SKETCHES.md#canvas-spline-samples-abi-74).
 
 - Generated/projected spline-parameter links (schema 149, ABI 73 unchanged):
   named point controls offer core-catalogued spline copies, generated conics and

@@ -2,7 +2,7 @@
 
 use super::*;
 
-pub(crate) const ABI_VERSION: u32 = 73;
+pub(crate) const ABI_VERSION: u32 = 74;
 
 #[repr(C)]
 #[derive(Default)]
@@ -368,6 +368,13 @@ unsafe extern "C" {
         shape: u64,
         point: RawVec3,
         out: *mut RawVec3,
+    ) -> i32;
+    pub fn occt_bridge_curve_closest_fraction(
+        s: *mut c_void,
+        shape: u64,
+        hint: RawVec3,
+        fraction: *mut f64,
+        point: *mut RawVec3,
     ) -> i32;
     pub fn occt_bridge_curve_point_at_fraction(
         s: *mut c_void,
