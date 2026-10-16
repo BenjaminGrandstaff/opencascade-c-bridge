@@ -9,11 +9,22 @@ export const constraintTools = {
   perpendicular: {label:'Perpendicular lines', fields:pair('lines')},
   collinear: {label:'Collinear lines', fields:pair('lines')},
   equal_length: {label:'Equal line lengths', fields:pair('lines')},
+  equal_curve_length: {label:'Equal curve lengths', fields:pair('curves')},
+  coradial: {label:'Coradial circles / arcs', fields:pair('round'), hint:'The curves share a center and radius. They may have different arc spans.'},
+  symmetric: {label:'Symmetric points about line', fields:[...pair('points'),['axis','lines']], hint:'The points reflect across the infinite supporting line of the axis.'},
   equal_radius: {label:'Equal radii', fields:pair('round')},
   concentric: {label:'Concentric curves', fields:pair('centered')},
   midpoint: {label:'Point at midpoint', fields:[['point','points'],['line','lines']]},
   point_on_curve: {label:'Point on curve', fields:[['point','points'],['curve','curves']]},
   tangent: {label:'Tangent at shared point', fields:[...pair('curves'),['point','points']]},
+  curvature_continuous: {label:'Curvature continuity (G2)', fields:[...pair('curves'),['point','points']], hint:'Choose the shared named endpoint of both curves. G2 includes tangency; replace the tangent constraint at this joint to avoid redundancy.'},
+  line_spline_tangent: {label:'Line / spline contact tangency', fields:[['line','lines'],['spline','splines'],['point','points']], hint:'Choose a contact point seeded near the intended touch on the bounded spline and the infinite supporting line.'},
+  spline_spline_tangent: {label:'Spline / spline contact tangency', fields:[...pair('splines'),['point','points']], hint:'Choose two distinct bounded splines and a contact point seeded near their intended touch.'},
+  ellipse_ellipse_tangent: {label:'Ellipse / ellipse contact tangency', fields:[...pair('ellipses'),['point','points']], hint:'Choose two distinct full ellipses and a contact point seeded near their intended touch. Trimmed ellipses are unsupported for this relation.'},
+  spline_ellipse_tangent: {label:'Spline / ellipse contact tangency', fields:[['spline','splines'],['ellipse','ellipses'],['point','points']], hint:'Choose a bounded spline, a full ellipse and a contact point seeded near their intended touch.'},
+  spline_circle_tangent: {label:'Spline / circle or arc contact tangency', fields:[['spline','splines'],['circle','round'],['point','points']], hint:'Choose a bounded spline and a circle or arc. Seed the contact near the intended touch; arc contacts must stay inside the directed arc span.'},
+  ellipse_circle_tangent: {label:'Ellipse / circle or arc contact tangency', fields:[['ellipse','ellipses'],['circle','round'],['point','points']], hint:'Choose a full ellipse and a circle or arc. Seed the contact near the intended touch; arc contacts must stay inside the directed arc span.'},
+  line_ellipse_tangent: {label:'Line tangent to full ellipse', fields:[['line','lines'],['ellipse','ellipses']], options:{side:['left','right']}, hint:'Choose a full ellipse. Left/right is measured from the line’s start toward its end on its infinite supporting line.'},
   line_circle_tangent: {label:'Line tangent to circle / arc', fields:[['line','lines'],['circle','round']], options:{side:['left','right']}},
   circle_circle_tangent: {label:'Circle / arc tangency', fields:pair('round'), options:{mode:['external','internal']}},
   distance: {label:'Point distance', fields:pair('points'), dimension:'length', minimum:0},
@@ -47,6 +58,7 @@ export function dimensionNumber(expression, dimension) {
   const factor = {millimeter:1,centimeter:10,meter:1000,inch:25.4}[q.unit];
   return q.dimension === 'length' && factor ? q.value * factor : null;
 }
+// O(N) time and temporary space in geometry/catalogue data for at most three roles.
 export function makeConstraint(definition, type, fields, expression) {
   const tool = constraintTools[type];
   if (!tool) throw new Error('Unsupported constraint tool.');
@@ -148,6 +160,7 @@ export function createConstraintControls({host, definition, parameters=[], chang
       const note=document.createElement('p');note.textContent='Reference dimensions measure the solved sketch without constraining it. Preview to see their values on the drawing.';form.append(note);
       const row=document.createElement('label');row.textContent='Reference name';const input=document.createElement('input');input.setAttribute('aria-label','Reference name');input.value=name;input.oninput=()=>name=input.value;row.append(input);form.append(row);
     }
+    if(tool.hint){const hint=document.createElement('p');hint.textContent=tool.hint;form.append(hint);}
     if(type==='line_circle_tangent'||type==='circle_circle_tangent'||tool.dimension==='angle'){
       const hint=document.createElement('p');hint.textContent=type==='line_circle_tangent'?'Left/right is measured from the line’s start toward its end.':type==='circle_circle_tangent'?'Internal tangency places the second circle inside the first.':reference?'Reference angle values on the drawing are in radians.':'Angles are entered in degrees; positive angles turn counterclockwise.';form.append(hint);
     }
@@ -204,7 +217,7 @@ export function createConstraintControls({host, definition, parameters=[], chang
     get type(){return type;},
     get reference(){return reference;},
     pick(id){
-      if(!geometryIds(definition,'points').includes(id)&&!geometryIds(definition,'curves').includes(id)){message('Select authored sketch geometry. Generated and projected geometry is available through advanced controls.');return false;}
+      if(!geometryIds(definition,'points').includes(id)&&!geometryIds(definition,'curves').includes(id)){message('Select known sketch geometry. Preview generator edits to refresh generated references.');return false;}
       picked=picked.includes(id)?picked.filter(value=>value!==id):[...picked,id];
       highlight(picked);showSelection();
       const used=new Set();for(const [key,group] of constraintTools[type].fields){const match=picked.find(value=>geometryIds(definition,group).includes(value)&&!used.has(value));fields[key]=match ?? '';if(match)used.add(match);}

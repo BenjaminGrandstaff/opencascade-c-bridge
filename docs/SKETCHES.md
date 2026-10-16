@@ -2374,6 +2374,35 @@ the same point; adding both makes the tangency redundant.
 - Seeds must not put a spline pole on its end point, where the tangent is
   undefined.
 
+The live sketch editor exposes **Curvature continuity (G2)** under
+**Dimensions & constraints**. Select the two curves and their shared named
+endpoint, then add the relationship and Preview. Selecting a G2 annotation
+opens the authored constraint for editing. The form reminds you to replace
+an existing tangent at the same joint. It does not silently remove constraints;
+Preview reports invalid joints, conflicts and redundancy through the native
+solver before Apply.
+
+The same controls also offer **Symmetric points about line**, **Coradial
+circles / arcs**, **Equal curve lengths**, and the seven independent contact
+tangencies: line/spline, spline/spline, ellipse/ellipse, spline/ellipse,
+spline/circle-or-arc, ellipse/circle-or-arc, and line/full-ellipse. Contact
+forms distinguish a seeded contact point from a shared endpoint. Full-ellipse
+and directed-arc restrictions remain native validation rules; the form explains
+them without approximating the source curves. Line/ellipse uses the same
+left/right convention as line/circle. Canvas selections, typed entity menus,
+annotation editing, removal, Preview/Apply, history and Save use the existing
+workflow. Generated/projected names come from the verified native catalogue.
+These controls persist existing constraint variants, so schema 149 and ABI 74
+are unchanged.
+
+Relationship validation and menu building scan geometry/catalogue data for a
+constant number of roles (at most three); the relationship list uses O(C) rows
+for C constraints. `node tools/bench/sketch-controls.mjs`, included by
+`tools/bench/run.sh`, checks 50 validations with 10,000 authored plus 10,000
+generated curves, and a 1,000-row editor. A local run took about 1.43 s and
+81 ms respectively against 5 s budgets. It uses DOM stubs and excludes browser
+layout and native solving; the G2/contact scale cases measure native work.
+
 ABI 65 adds `occt_bridge_curve_curvature_at`
 (`Session::curve_curvature_at`): the curvature vector of a one-edge curve
 at its point nearest a query, from the native first and second derivatives

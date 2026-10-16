@@ -113,3 +113,40 @@ test('reference form supports canvas picks, annotation editing, mode switching a
   button(host2,'Remove reference renamed').onclick();assert.deepEqual(d.measurements,[]);assert.equal(changes,4);
  }finally{delete globalThis.document;delete globalThis.Option;}
 });
+
+test('advanced geometric relationships preserve native roles, options and contact seeds',async()=>{
+ const {constraintTools}=await import('./constraint-controls.mjs');
+ const d={...structuredClone(definition),ellipses:[{id:'E1'},{id:'E2'}],splines:[{id:'S1'},{id:'S2'}]};
+ const cases={
+  symmetric:{first:'A',second:'B',axis:'AB'},coradial:{first:'C1',second:'arc'},equal_curve_length:{first:'AB',second:'S1'},
+  curvature_continuous:{first:'AB',second:'S1',point:'A'},line_spline_tangent:{line:'AB',spline:'S1',point:'A'},
+  spline_spline_tangent:{first:'S1',second:'S2',point:'A'},ellipse_ellipse_tangent:{first:'E1',second:'E2',point:'A'},
+  spline_ellipse_tangent:{spline:'S1',ellipse:'E1',point:'A'},spline_circle_tangent:{spline:'S1',circle:'arc',point:'A'},
+  ellipse_circle_tangent:{ellipse:'E1',circle:'C1',point:'A'},line_ellipse_tangent:{line:'AB',ellipse:'E1',side:'right'},
+ };
+ for(const [type,fields]of Object.entries(cases)){
+  assert.deepEqual(makeConstraint(d,type,fields),{[type]:fields});
+  for(const [key]of constraintTools[type].fields)assert.throws(()=>makeConstraint(d,type,{...fields,[key]:'unknown'}),/known/);
+  if(fields.first)assert.throws(()=>makeConstraint(d,type,{...fields,second:fields.first}),/distinct/);
+ }
+ assert.throws(()=>makeConstraint(d,'line_ellipse_tangent',{line:'AB',ellipse:'E1',side:'inside'}),/side/);
+ assert.throws(()=>makeConstraint(d,'ellipse_circle_tangent',{ellipse:'arc',circle:'E1',point:'A'}),/known/);
+});
+
+test('advanced relations edit from native labels, retain picked roles and expose contact guidance',()=>{
+ globalThis.document={createElement:tag=>new Element(tag)};
+ globalThis.Option=class extends Element{constructor(text,value){super('option');this.textContent=text;this.value=value;}};
+ try{
+  const d=structuredClone(definition),host=new Element('div');let changes=0;
+  d.constraints=[{curvature_continuous:{first:'AB',second:'spline',point:'A'}}];
+  const controls=createConstraintControls({host,definition:d,changed:()=>changes++,message:()=>{}});
+  assert(controls.selectAnnotation({detail:{constraint_index:0,constraint:d.constraints[0]}}));
+  assert.equal(controls.type,'curvature_continuous');assert.deepEqual(controls.selection,['AB','spline','A']);
+  assert(all(host).some(e=>e.textContent?.includes('G2 includes tangency')));
+  button(host,'Update selected constraint').onclick();assert.equal(changes,1);assert.equal(d.constraints.length,1);
+  const type=all(host).find(e=>e['aria-label']==='Constraint type');type.value='line_spline_tangent';type.onchange();
+  assert.equal(label(host,'Line').value,'AB');assert.equal(label(host,'Spline').value,'spline');assert.equal(label(host,'Point').value,'A');
+  assert(all(host).some(e=>e.textContent?.includes('seeded near')));button(host,'Add dimension / constraint').onclick();
+  assert.deepEqual(d.constraints[1],{line_spline_tangent:{line:'AB',spline:'spline',point:'A'}});
+ }finally{delete globalThis.document;delete globalThis.Option;}
+});

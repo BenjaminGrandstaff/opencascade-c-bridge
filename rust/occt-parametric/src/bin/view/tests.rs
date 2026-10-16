@@ -4982,3 +4982,74 @@ fn reference_dimension_drafts_measure_generated_geometry_and_survive_history_and
         2
     );
 }
+
+#[test]
+fn advanced_relationship_drafts_restore_native_g2_and_seeded_contacts() {
+    for (name, kind) in [
+        ("g2-paddle", "curvature_continuous"),
+        ("ellipse-tangent-pair", "ellipse_ellipse_tangent"),
+        ("spline-tangent-pair", "spline_spline_tangent"),
+        ("spline-tangent-ellipse", "spline_ellipse_tangent"),
+    ] {
+        let directory = Directory::new();
+        let source = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join(format!("../../tools/model/{name}.request.json"));
+        let mut request: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(source).unwrap()).unwrap();
+        request["model"]["instances"][0]["base"]["id"] = json!("part");
+        let document = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+        let model = PathBuf::from(directory.model(&document));
+        let mut studio = serve::Studio::load(&model, Some("body".into())).unwrap();
+        let mut draft = get(&mut studio, "/api/sketches").1["sketches"][0]["definition"].clone();
+        let constraints = draft["constraints"].as_array_mut().unwrap();
+        let index = constraints
+            .iter()
+            .position(|c| c.get(kind).is_some())
+            .unwrap();
+        let relationship = constraints.remove(index);
+        let (status, result) = edit_definition(&mut studio, "profile", draft.clone(), true);
+        assert_eq!(status, 200, "{name}: {result}");
+        draft["constraints"]
+            .as_array_mut()
+            .unwrap()
+            .push(relationship.clone());
+        let state = get(&mut studio, "/api/state").1;
+        let (status, preview) = edit_definition(&mut studio, "profile", draft.clone(), false);
+        assert_eq!(status, 200, "{name}: {preview}");
+        assert_eq!(preview["can_apply"], true, "{name}: {preview}");
+        assert_eq!(get(&mut studio, "/api/state").1, state);
+        let scene = preview["annotations"]["scenes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["kind"] == "sketch" && s["feature"] == "profile")
+            .unwrap();
+        let annotation = scene["annotations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|a| a["detail"]["constraint"] == relationship)
+            .unwrap();
+        assert_eq!(annotation["status"], "passed", "{name}: {annotation}");
+        assert_eq!(edit_definition(&mut studio, "profile", draft, true).0, 200);
+        history(&mut studio, "undo");
+        history(&mut studio, "redo");
+        assert_eq!(studio.handle("POST", "/api/save", b"{}").status, 200);
+        let mut studio = serve::Studio::load(&model, Some("body".into())).unwrap();
+        let mut draft = get(&mut studio, "/api/sketches").1["sketches"][0]["definition"].clone();
+        assert_eq!(
+            draft["constraints"].as_array().unwrap().last().unwrap(),
+            &relationship
+        );
+        let stable = get(&mut studio, "/api/state").1;
+        let saved = fs::read_to_string(&model).unwrap();
+        draft["constraints"]
+            .as_array_mut()
+            .unwrap()
+            .last_mut()
+            .unwrap()[kind]["point"] = json!("missing-contact");
+        assert_eq!(edit_definition(&mut studio, "profile", draft, true).0, 422);
+        assert_eq!(get(&mut studio, "/api/state").1, stable);
+        assert_eq!(fs::read_to_string(&model).unwrap(), saved);
+    }
+}

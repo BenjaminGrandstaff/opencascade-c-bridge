@@ -8,6 +8,9 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 build="$root/build/bench"
 
+# Typed sketch authoring menus and validation; no native geometry required.
+node "$root/tools/bench/sketch-controls.mjs"
+
 cmake -S "$root" -B "$build" -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF >/dev/null
 cmake --build "$build" -j >/dev/null
 
