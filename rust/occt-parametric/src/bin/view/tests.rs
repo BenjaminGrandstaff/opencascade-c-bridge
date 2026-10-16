@@ -5221,3 +5221,33 @@ fn authored_pattern_drafts_generate_all_three_kinds_and_guard_dependent_referenc
         assert_eq!(edit_definition(&mut studio, "profile", draft, true).0, 200);
     }
 }
+
+#[test]
+fn sketch_studio_page_and_every_module_it_imports_are_served() {
+    let directory = Directory::new();
+    let model = PathBuf::from(directory.model(&document()));
+    let mut studio = serve::Studio::load(&model, None).unwrap();
+    let page = studio.handle("GET", "/studio", b"");
+    assert_eq!(page.status, 200);
+    assert!(page.content_type.starts_with("text/html"));
+    // Follow relative imports from the page through every module.
+    let mut pending = vec![String::from_utf8(page.body).unwrap()];
+    let mut seen = std::collections::BTreeSet::new();
+    while let Some(source) = pending.pop() {
+        for quote in ['\'', '"'] {
+            let marker = format!("from {quote}./");
+            for (index, _) in source.match_indices(&marker) {
+                let rest = &source[index + marker.len()..];
+                let name = &rest[..rest.find(quote).unwrap()];
+                if seen.insert(name.to_owned()) {
+                    let response = studio.handle("GET", &format!("/{name}"), b"");
+                    assert_eq!(response.status, 200, "{name} is not served");
+                    assert_eq!(response.content_type, "text/javascript", "{name}");
+                    pending.push(String::from_utf8(response.body).unwrap());
+                }
+            }
+        }
+    }
+    assert!(seen.contains("sketch-studio-app.mjs"), "{seen:?}");
+    assert!(seen.contains("viewer.mjs"), "{seen:?}");
+}

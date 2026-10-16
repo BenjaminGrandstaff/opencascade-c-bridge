@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sketch studio</title>
+<style>
+  :root {
+    --bg: #f4f6f9; --panel: #ffffff; --ink: #1d2733; --muted: #5d6b7c; --line: #d9dee6;
+    --accent: #2f6fdb; --accent-ink: #ffffff; --view: #e9edf2; --grid: #b9c3d0; --axis: #7d8ca0;
+    --free: #2f6fdb; --fixed: #1d2733; --conflict: #cf222e; --pass: #1a7f37; --ghost: #c36d12;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #15191f; --panel: #1c2128; --ink: #e3e8ef; --muted: #98a4b3; --line: #2d343e;
+      --accent: #6ea0ff; --accent-ink: #0b1220; --view: #20252d; --grid: #3a4350; --axis: #6b7889;
+      --free: #6ea0ff; --fixed: #e3e8ef; --conflict: #ff7b72; --pass: #56d364; --ghost: #f0a35e;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #15191f; --panel: #1c2128; --ink: #e3e8ef; --muted: #98a4b3; --line: #2d343e;
+    --accent: #6ea0ff; --accent-ink: #0b1220; --view: #20252d; --grid: #3a4350; --axis: #6b7889;
+    --free: #6ea0ff; --fixed: #e3e8ef; --conflict: #ff7b72; --pass: #56d364; --ghost: #f0a35e;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg); color: var(--ink); font: 13px/1.4 system-ui, sans-serif;
+    display: grid; grid-template-rows: auto 1fr auto; grid-template-columns: 230px 1fr 270px;
+    grid-template-areas: "bar bar bar" "layers view inspector" "status status status";
+  }
+  button, select, input { font: inherit; color: inherit; }
+  button {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 5px 9px;
+    cursor: pointer;
+  }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button:disabled { opacity: 0.45; cursor: default; }
+  button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  input, select {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 5px; padding: 4px 6px; width: 100%;
+  }
+  #bar {
+    grid-area: bar; display: flex; align-items: center; gap: 6px; padding: 6px 10px;
+    background: var(--panel); border-bottom: 1px solid var(--line); flex-wrap: wrap;
+  }
+  #bar h1 { font-size: 14px; margin: 0 10px 0 0; white-space: nowrap; }
+  #bar .group { display: flex; gap: 4px; padding-right: 8px; margin-right: 2px; border-right: 1px solid var(--line); }
+  #bar .group:last-child { border-right: 0; }
+  #bar .spacer { flex: 1; }
+  #bar kbd { font-size: 10px; color: var(--muted); margin-left: 3px; }
+  #layers, #inspector { background: var(--panel); overflow: auto; padding: 10px; }
+  #layers { grid-area: layers; border-right: 1px solid var(--line); }
+  #inspector { grid-area: inspector; border-left: 1px solid var(--line); }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin: 4px 0 8px; }
+  .layer {
+    display: grid; grid-template-columns: auto auto 1fr; align-items: center; gap: 6px;
+    padding: 6px; border-radius: 6px; cursor: pointer; border: 1px solid transparent;
+  }
+  .layer:hover { border-color: var(--line); }
+  .layer[aria-current="true"] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+  .layer input { width: auto; margin: 0; }
+  .layer .swatch { width: 10px; height: 10px; border-radius: 50%; }
+  .layer .name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .layer .meta { grid-column: 3; color: var(--muted); font-size: 12px; }
+  .layer .meta.error { color: var(--conflict); }
+  .form { display: grid; gap: 8px; margin-top: 10px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; }
+  .form label { display: grid; gap: 3px; color: var(--muted); font-size: 12px; }
+  .form .row { display: flex; gap: 6px; flex-wrap: wrap; }
+  #view { grid-area: view; position: relative; background: var(--view); min-width: 0; min-height: 0; overflow: hidden; }
+  #view canvas, #view svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  #view canvas { cursor: grab; touch-action: none; }
+  #view svg { pointer-events: none; }
+  #view svg .grid { stroke: var(--grid); stroke-width: 1; fill: none; }
+  #view svg .axis { stroke: var(--axis); stroke-width: 1.4; fill: none; }
+  #view svg .curve { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+  #view svg .inactive { opacity: 0.35; }
+  #view svg .point { stroke: var(--panel); stroke-width: 1.5; }
+  #view svg .ghost { fill: none; stroke: var(--ghost); stroke-width: 2; stroke-dasharray: 6 4; }
+  #view .empty {
+    position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); color: var(--muted);
+    text-align: center; max-width: 320px; pointer-events: none;
+  }
+  dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; margin: 0; }
+  dt { color: var(--muted); }
+  dd { margin: 0; overflow-wrap: anywhere; }
+  #status {
+    grid-area: status; display: flex; gap: 16px; padding: 5px 10px; background: var(--panel);
+    border-top: 1px solid var(--line); color: var(--muted); white-space: nowrap; overflow: hidden;
+  }
+  #status .message { color: var(--ink); overflow: hidden; text-overflow: ellipsis; }
+  #status .error { color: var(--conflict); }
+  [hidden] { display: none !important; }
+  @media (max-width: 760px) {
+    body { grid-template-columns: 1fr; grid-template-rows: auto auto 55vh auto auto;
+      grid-template-areas: "bar" "layers" "view" "inspector" "status"; }
+    #layers, #inspector { max-height: 30vh; border: 0; }
+  }
+</style>
+</head>
+<body>
+<header id="bar">
+  <h1>Sketch studio</h1>
+  <div class="group" id="tools" role="toolbar" aria-label="Sketch tools"></div>
+  <div class="group">
+    <button id="look-at" title="Look square at the active plane (N)">Look at<kbd>N</kbd></button>
+    <button id="fit" title="Fit the model in view (F)">Fit<kbd>F</kbd></button>
+  </div>
+  <div class="spacer"></div>
+  <div class="group" id="draft-actions"></div>
+  <a href="/" style="color: var(--muted)">Classic viewer</a>
+</header>
+<aside id="layers" aria-label="Sketch layers"></aside>
+<main id="view">
+  <canvas id="canvas" aria-label="3D model view"></canvas>
+  <svg id="overlay" aria-hidden="true"></svg>
+  <p class="empty" id="empty" hidden></p>
+</main>
+<aside id="inspector" aria-label="Inspector"></aside>
+<footer id="status" aria-live="polite"></footer>
+<script type="module">
+import { startStudio } from './sketch-studio-app.mjs';
+startStudio(document);
+</script>
+</body>
+</html>

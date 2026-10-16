@@ -159,6 +159,21 @@ sketches with many thousands of entities.
   a client can place sketch-local points in 3D as
   `origin + x·x_axis + y·y_axis`. Tests cover a sketch on its own axes, one
   on a datum plane, and one attached to a face.
+- **Phase 1.** `occt-view --serve` serves the studio at `/studio`, with a
+  "Classic viewer" link back. The model is drawn in 3D and every sketch
+  on its plane, with the active sketch's points and a grid whose spacing
+  (1, 2 or 5 × 10ⁿ mm) follows the zoom. The Layers panel lists each
+  sketch with its plane ("XY", "XZ @ y = -4", "Face", "Datum side"), its
+  free degrees and a visibility switch. Clicking a layer makes it active;
+  Look at (N) turns the camera square to it with its x axis to the right.
+  New sketch starts a local layer on XY, XZ or YZ with an offset, or on a
+  face picked in the view and resolved by `/api/sketch-face-pick`. The
+  layer reaches the model when its first closed shape is applied (phase 2).
+  The inspector shows the plane's origin and axes and the solver state.
+  The page follows edits made elsewhere by polling the model version.
+  Node tests cover plane math (ray hits, projection, look-at for all three
+  planes, face picks), layer labels and the grid budget; a Rust test checks
+  that the page and every module it imports are served.
 
 ## Building it
 

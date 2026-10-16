@@ -16,6 +16,8 @@ mod sketch_crossings;
 mod sketch_links;
 #[path = "serve_spline_refinement.rs"]
 mod spline_refinement;
+#[path = "serve_studio.rs"]
+mod studio;
 use super::{POLL, stamp, view_data};
 use occt_bridge::Session;
 use occt_parametric::prelude::*;
@@ -591,6 +593,11 @@ impl Studio {
     pub(super) fn handle(&mut self, method: &str, target: &str, body: &[u8]) -> Response {
         self.follow_disk();
         let (path, query) = target.split_once('?').unwrap_or((target, ""));
+        if method == "GET"
+            && let Some(response) = studio::asset(path)
+        {
+            return response;
+        }
         match (method, path) {
             ("GET", "/") => Response::text(200, "text/html; charset=utf-8", INDEX),
             ("GET", "/viewer.mjs") => Response::text(200, "text/javascript", VIEWER),

@@ -1,0 +1,37 @@
+//! The sketch studio page (`/studio`) and its modules. They use the same
+//! JSON API as the classic viewer; only the page and its scripts are new.
+use super::Response;
+
+const STUDIO_ASSETS: &[(&str, &str)] = &[
+    (
+        "/sketch-studio-app.mjs",
+        include_str!("web/sketch-studio-app.mjs"),
+    ),
+    (
+        "/sketch-studio-plane.mjs",
+        include_str!("web/sketch-studio-plane.mjs"),
+    ),
+    (
+        "/sketch-studio-layers.mjs",
+        include_str!("web/sketch-studio-layers.mjs"),
+    ),
+    (
+        "/sketch-studio-overlay.mjs",
+        include_str!("web/sketch-studio-overlay.mjs"),
+    ),
+];
+
+/// The studio page or one of its scripts, or `None` for other paths.
+pub(super) fn asset(path: &str) -> Option<Response> {
+    if path == "/studio" || path == "/studio/" {
+        return Some(Response::text(
+            200,
+            "text/html; charset=utf-8",
+            include_str!("web/sketch-studio.html"),
+        ));
+    }
+    STUDIO_ASSETS
+        .iter()
+        .find(|(name, _)| *name == path)
+        .map(|(_, body)| Response::text(200, "text/javascript", body))
+}
