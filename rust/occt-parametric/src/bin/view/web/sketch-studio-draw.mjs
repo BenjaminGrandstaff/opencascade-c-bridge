@@ -5,7 +5,7 @@ import { primitiveGhost } from './canvas-tools.mjs';
 import { newSketchDefinition } from './sketch-create.mjs';
 import { infer } from './sketch-studio-infer.mjs';
 import { pathData } from './sketch-studio-overlay.mjs';
-import { CLICKS, TOOLS, commitShape, typedClick } from './sketch-studio-tools.mjs';
+import { CLICKS, ICONS, TOOLS, commitShape, typedClick } from './sketch-studio-tools.mjs';
 
 /** Snap radius in screen pixels. */
 const SNAP_PIXELS = 8;
@@ -450,27 +450,37 @@ export function installDrawing(studio, document) {
 
   // ── Toolbar ──────────────────────────────────────────────────────────
   studio.renderToolbar = () => {
-    const bar = document.getElementById('tools');
-    studio.fill(bar, TOOLS.map((tool) => html('button', {
-      'aria-pressed': studio.tool === tool.id ? 'true' : 'false',
-      title: `${tool.label} (${tool.key}) — ${tool.hint}`,
-      onclick: () => studio.setTool(tool.id),
-    }, tool.label, html('kbd', {}, tool.key))));
+    // A side palette: each tool as its shape's icon over its name, in
+    // Edit (select, dimension) and Draw groups.
+    const button = (tool) => {
+      const icon = html('span', { 'aria-hidden': 'true' });
+      icon.innerHTML = `<svg viewBox="0 0 24 24">${ICONS[tool.id]}</svg>`;
+      return html('button', {
+        'aria-pressed': studio.tool === tool.id ? 'true' : 'false',
+        title: `${tool.label} (${tool.key}) — ${tool.hint}`,
+        onclick: () => studio.setTool(tool.id),
+      }, icon, tool.label, html('kbd', {}, tool.key));
+    };
+    const edit = TOOLS.filter((tool) => !CLICKS[tool.id]);
+    const draw = TOOLS.filter((tool) => CLICKS[tool.id]);
+    studio.fill(document.getElementById('tools'),
+      html('h2', {}, 'Edit'), html('div', { class: 'palette' }, edit.map(button)),
+      html('h2', {}, 'Draw'), html('div', { class: 'palette' }, draw.map(button)));
     const extra = [];
     if (studio.tool === 'polygon') {
-      extra.push(html('label', { style: 'display:flex;gap:4px;align-items:center' }, 'Sides',
+      extra.push(html('label', {}, 'Sides',
         html('input', { type: 'number', min: 3, max: 1000, step: 1, value: options.sides, style: 'width:64px',
           onchange: (e) => { options.sides = Number(e.target.value); studio.redraw(); } })));
     }
     if (studio.tool === 'spline') {
-      extra.push(html('label', { style: 'display:flex;gap:4px;align-items:center' },
+      extra.push(html('label', {},
         html('input', { type: 'checkbox', checked: options.closed, style: 'width:auto', onchange: (e) => { options.closed = e.target.checked; studio.redraw(); } }), 'Closed'),
       html('button', { onclick: finishSpline }, 'Finish'));
     }
     if (studio.tool === 'arc') {
       extra.push(html('button', { 'aria-pressed': options.flip ? 'true' : 'false', title: 'Take the longer way round (X)', onclick: () => { options.flip = !options.flip; studio.renderToolbar(); studio.redraw(); } }, 'Flip', html('kbd', {}, 'X')));
     }
-    if (extra.length) bar.append(html('span', { style: 'width:8px' }), ...extra);
+    studio.fill(document.getElementById('tool-options'), extra);
 
     const d = studio.draft;
     const actions = document.getElementById('draft-actions');

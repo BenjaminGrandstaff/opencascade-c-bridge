@@ -29,7 +29,7 @@
   html, body { height: 100%; margin: 0; }
   body {
     background: var(--bg); color: var(--ink); font: 13px/1.4 system-ui, sans-serif;
-    display: grid; grid-template-rows: auto 1fr auto; grid-template-columns: 230px 1fr 270px;
+    display: grid; grid-template-rows: auto 1fr auto; grid-template-columns: 236px 1fr 270px;
     grid-template-areas: "bar bar bar" "layers view inspector" "status status status";
   }
   button, select, input { font: inherit; color: inherit; }
@@ -52,8 +52,23 @@
   #bar .group:last-child { border-right: 0; }
   #bar .spacer { flex: 1; }
   #bar kbd { font-size: 10px; color: var(--muted); margin-left: 3px; }
-  #layers, #inspector { background: var(--panel); overflow: auto; padding: 10px; }
-  #layers { grid-area: layers; border-right: 1px solid var(--line); }
+  #side, #inspector { background: var(--panel); overflow: auto; padding: 10px; }
+  #side { grid-area: layers; border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 6px; }
+  #side > section + section { border-top: 1px solid var(--line); padding-top: 8px; }
+  .palette { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin-bottom: 8px; }
+  .palette button {
+    position: relative; display: grid; justify-items: center; gap: 2px; padding: 6px 2px 4px;
+    font-size: 11px; line-height: 1.2; border-color: transparent; background: transparent;
+  }
+  .palette button:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+  .palette button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+  .palette svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.6;
+    stroke-linecap: round; stroke-linejoin: round; }
+  .palette kbd { position: absolute; top: 2px; right: 4px; font-size: 9px; color: var(--muted); }
+  .palette button[aria-pressed="true"] kbd { color: inherit; opacity: 0.75; }
+  #tool-options { display: grid; gap: 6px; }
+  #tool-options:empty { display: none; }
+  #tool-options label { display: flex; gap: 6px; align-items: center; color: var(--muted); font-size: 12px; }
   #inspector { grid-area: inspector; border-left: 1px solid var(--line); }
   h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin: 4px 0 8px; }
   .layer {
@@ -112,14 +127,14 @@
   @media (max-width: 760px) {
     body { grid-template-columns: 1fr; grid-template-rows: auto auto 55vh auto auto;
       grid-template-areas: "bar" "layers" "view" "inspector" "status"; }
-    #layers, #inspector { max-height: 30vh; border: 0; }
+    #side, #inspector { max-height: 30vh; border: 0; }
+    .palette { grid-template-columns: repeat(6, 1fr); }
   }
 </style>
 </head>
 <body>
 <header id="bar">
   <h1>Sketch studio</h1>
-  <div class="group" id="tools" role="toolbar" aria-label="Sketch tools"></div>
   <div class="group">
     <button id="look-at" title="Look square at the active plane (N)">Look at<kbd>N</kbd></button>
     <button id="fit" title="Fit the model in view (F)">Fit<kbd>F</kbd></button>
@@ -128,7 +143,13 @@
   <div class="group" id="draft-actions"></div>
   <a href="/" style="color: var(--muted)">Classic viewer</a>
 </header>
-<aside id="layers" aria-label="Sketch layers"></aside>
+<aside id="side">
+  <section aria-label="Sketch tools">
+    <div id="tools" role="toolbar" aria-orientation="vertical" aria-label="Sketch tools"></div>
+    <div id="tool-options"></div>
+  </section>
+  <section id="layers" aria-label="Sketch layers"></section>
+</aside>
 <main id="view">
   <canvas id="canvas" aria-label="3D model view"></canvas>
   <svg id="overlay" aria-hidden="true"></svg>

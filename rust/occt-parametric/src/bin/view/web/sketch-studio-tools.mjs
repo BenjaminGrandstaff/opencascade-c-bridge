@@ -19,6 +19,24 @@ export const TOOLS = [
   { id: 'dimension', label: 'Dimension', key: 'D', hint: 'Click a line, circle or arc, or two points or lines, then type the value and press Enter.' },
 ];
 
+/**
+ * Toolbar icons: SVG markup for a 24 × 24 view box drawn with the current
+ * text colour, one per tool, each picturing the shape it draws.
+ */
+export const ICONS = {
+  select: '<path d="M6 3l12 9-5.5 1L16 20l-2.5 1-3-7L6 18z" fill="currentColor" stroke="none"/>',
+  line: '<path d="M4 19L20 5"/><circle cx="4" cy="19" r="2" fill="currentColor"/><circle cx="20" cy="5" r="2" fill="currentColor"/>',
+  rectangle: '<rect x="3.5" y="6" width="17" height="12"/>',
+  circle: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="1.3" fill="currentColor"/>',
+  arc: '<path d="M4 18A9 9 0 0 1 20 9"/><circle cx="12" cy="18" r="1.3" fill="currentColor"/>',
+  spline: '<path d="M3 17C7 3 11 21 15 9s4-4 6-3"/>',
+  ellipse: '<ellipse cx="12" cy="12" rx="9" ry="5.5"/>',
+  slot: '<rect x="3" y="8" width="18" height="8" rx="4"/>',
+  polygon: '<path d="M12 3.5l7.4 4.25v8.5L12 20.5l-7.4-4.25v-8.5z"/>',
+  point: '<circle cx="12" cy="12" r="3" fill="currentColor"/><path d="M12 4v3M12 17v3M4 12h3M17 12h3"/>',
+  dimension: '<path d="M4 6v12M20 6v12M4 12h16M7 9.5L4 12l3 2.5M17 9.5l3 2.5-3 2.5"/>',
+};
+
 /** Clicks that finish each shape; splines finish on request. */
 export const CLICKS = { point: 1, line: 2, rectangle: 2, circle: 2, polygon: 2, arc: 3, ellipse: 3, slot: 3, spline: Infinity };
 

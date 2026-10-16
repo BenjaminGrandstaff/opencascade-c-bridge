@@ -101,7 +101,8 @@ view instead of a flat overlay:
   listed with its plane and free degrees. Click a layer to make it active;
   `N` turns the camera square to it. New sketch starts one on XY, XZ or YZ
   (with an offset) or on a face you click.
-- **Drawing.** The toolbar (keys `L R C A S E O G P`) draws lines, rectangles,
+- **Drawing.** The tool palette on the left (an icon and name per tool;
+  keys `L R C A S E O G P`) draws lines, rectangles,
   circles, arcs, splines, ellipses, slots, polygons and points. Type a value
   during a gesture for an exact length, radius or size. Snapping adds the
   constraints it implies (coincident, midpoint, on curve, horizontal,

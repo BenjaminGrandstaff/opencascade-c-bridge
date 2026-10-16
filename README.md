@@ -433,8 +433,8 @@ Schema 164 adds the booklet's optional 60° countersink relief under socket
 heads, as a catalog dimension and a counterbore option.
 
 `occt-view --serve` also serves a sketch studio at `/studio`: every sketch is
-drawn on its plane in the 3D view as a layer; a toolbar draws every sketch
-shape with snapping that adds the obvious constraints; selections offer the
+drawn on its plane in the 3D view as a layer; a side palette of
+icon tools draws every sketch shape with snapping that adds the obvious constraints; selections offer the
 constraints they can take; and labels are laid out without overlaps. See
 [Sketch studio](docs/SKETCH_STUDIO.md).
 

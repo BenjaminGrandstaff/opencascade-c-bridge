@@ -41,20 +41,26 @@ the model version.
 
 ```
 ┌───────────────────────────────────────────────────────────────────────┐
-│ Toolbar: Select │ Line Rect Circle Arc Spline Ellipse Slot Polygon    │
-│          Point │ Dimension │ Constrain ▾ │ Trim … │ Undo Redo │ Apply │
+│ Sketch studio  Look at  Fit          Advanced ?  Undo Redo … Apply    │
 ├───────────────┬──────────────────────────────────────┬────────────────┤
-│ Layers        │                                      │ Inspector      │
-│ ● profile  XY │      3D model view                   │ (selection)    │
-│ ○ rib     YZ  │      active sketch plane gridded,    │  Line L3       │
-│ ○ boss  face7 │      other sketches dimmed           │  length 20 mm  │
-│ + New sketch  │                                      │  [Horizontal]  │
-│               │      ┌ contextual constraint bar ┐   │  [Fix]         │
-│               │      │ ∥  ⊥  =  ◎  tangent  …    │   │                │
+│ EDIT          │                                      │ Inspector      │
+│ Select  Dim   │      3D model view                   │ (selection)    │
+│ DRAW          │      active sketch plane gridded,    │  Line L3       │
+│ Line Rect Circ│      other sketches dimmed           │  length 20 mm  │
+│ Arc Spline …  │                                      │  [Horizontal]  │
+│ (tool options)│      ┌ contextual constraint bar ┐   │  [Fix]         │
+│ Layers        │      │ ∥  ⊥  =  ◎  tangent  …    │   │                │
+│ ● profile  XY │      └───────────────────────────┘   │                │
+│ + New sketch  │                                      │                │
 ├───────────────┴──────────────────────────────────────┴────────────────┤
 │ Status: 3 free degrees · solved · residual 2e-15 · snap: endpoint P4  │
 └───────────────────────────────────────────────────────────────────────┘
 ```
+
+- **Tools (left).** A palette of tools, each a button with the shape's
+  icon over its name and its key in the corner, in Edit (Select,
+  Dimension) and Draw groups; the chosen tool's options (polygon sides,
+  closed spline, arc flip) sit below it.
 
 - **Layers (left).** Every sketch in the model, with its plane (XY, XZ,
   YZ, a datum or a face), a visibility toggle and a color. One sketch is
@@ -87,7 +93,7 @@ at any view angle. Every tool shows a live preview, and Escape cancels.
 | Spline | S | Points, double-click to finish; clicking the first point closes it |
 | Ellipse | E | Center, major-axis end, minor width |
 | Slot | O | Two cap centers, then width |
-| Polygon | G | Center, then a vertex; side count in the toolbar |
+| Polygon | G | Center, then a vertex; side count under the tool palette |
 | Point | P | Click |
 | Dimension | D | Click one or two pieces of geometry, place the label, type a value |
 
@@ -245,7 +251,7 @@ sketches with many thousands of entities.
 | New sketch on XY, XZ or YZ with an offset | Yes | Layers panel |
 | New sketch on a picked face | Yes | Picked in the 3D view |
 | New sketch on a datum plane | No | Existing datum sketches show and edit; creating one needs the classic editor |
-| Point, line, rectangle, circle, arc, spline, ellipse, slot, polygon | Yes | Toolbar, with typed values and automatic constraints |
+| Point, line, rectangle, circle, arc, spline, ellipse, slot, polygon | Yes | Tool palette, with typed values and automatic constraints |
 | Text and conic shapes | Classic | Advanced drawer (form panels) |
 | Drag free points (solved) | Yes | Select tool |
 | Edit a point's coordinates and fixed flag | Yes | Inspector |

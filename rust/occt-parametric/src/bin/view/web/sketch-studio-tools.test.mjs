@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { CLICKS, TOOLS, commitShape, typedClick } from './sketch-studio-tools.mjs';
+import { CLICKS, ICONS, TOOLS, commitShape, typedClick } from './sketch-studio-tools.mjs';
 
 const empty = () => ({ id: 's', points: [], lines: [], circles: [], arcs: [], profile: [], constraints: [] });
 const click = (x, y, extra = {}) => ({ xy: [x, y], point: null, rules: [], ...extra });
@@ -80,4 +80,8 @@ test('typed values place the next click exactly', () => {
     assert.equal(typedClick(tool, anchor, [5, 5], text), null, `${tool} ${text}`);
   }
   assert.equal(typedClick('line', null, [5, 5], '3'), null);
+});
+
+test('every tool has an icon', () => {
+  for (const tool of TOOLS) assert.match(ICONS[tool.id] ?? '', /<(path|rect|circle|ellipse)/, tool.id);
 });
