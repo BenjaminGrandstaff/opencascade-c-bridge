@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define OCCT_BRIDGE_ABI_VERSION 82u
+#define OCCT_BRIDGE_ABI_VERSION 83u
 #define OCCT_BRIDGE_INVALID_SHAPE_ID UINT64_C(0)
 
 #if defined(_WIN32) && defined(OCCT_BRIDGE_BUILD_SHARED)
@@ -819,6 +819,19 @@ OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_make_solid_from_shells(
  * identity and unioned generated/modified ancestry. Targets are deduplicated.
  * Expected O(child topology + child history records/relations) time and memory. */
 OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_create_compound(
+    occt_bridge_session_t* session,
+    const occt_bridge_shape_id_t* shapes,
+    size_t shape_count,
+    occt_bridge_shape_id_t* out_shape
+);
+
+/* Fuses shapes that meet only along shared faces, or parts of faces, and
+ * never cross (ABI 83): OCCT's glue mode, several times faster than a general
+ * fuse, then coplanar and coaxial faces and edges merged so the seams between
+ * the pieces disappear. shape_count is 2 to 10000. Composed fuse and merge
+ * history from every input. Inputs that do cross give an undefined result
+ * that usually fails the result checks. */
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_fuse_glued(
     occt_bridge_session_t* session,
     const occt_bridge_shape_id_t* shapes,
     size_t shape_count,

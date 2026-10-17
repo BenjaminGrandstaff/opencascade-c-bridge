@@ -8,23 +8,34 @@ tracks status and order.
 
 | Layer | Version | State |
 |---|---|---|
-| C ABI (`src/`, `include/`) | ABI 82 | Stable; exact version match required |
+| C ABI (`src/`, `include/`) | ABI 83 | Stable; exact version match required |
 | `occt-types` (shared value types) | — | No native dependency |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI; re-exports `occt-types` |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric-core` (kernel-free engineering layer) | Schema 175 | Definitions, documents, solving and checks without OCCT |
-| `occt-parametric` (kernel regeneration) | Schema 175 | Active development; re-exports the core API |
+| `occt-parametric-core` (kernel-free engineering layer) | Schema 176 | Definitions, documents, solving and checks without OCCT |
+| `occt-parametric` (kernel regeneration) | Schema 176 | Active development; re-exports the core API |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 7/7, bridge 173 + first-use integration 1 (+1 doc test), recipes 3, parametric core 57 + kernel 778 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 94 + viewer Node 460 + branch command 2 + model command 94, MCP Python 13, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 7/7, bridge 174 + first-use integration 1 (+1 doc test), recipes 3, parametric core 57 + kernel 781 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 94 + viewer Node 460 + branch command 2 + model command 94, MCP Python 13, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
 | Coverage | Last recorded: 93.61% lines overall, test code excluded; C++ 94.13% lines, 87.40% branches, 100% functions; Rust 93.42% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | Last full suite: 194 Rust cases (197 with the parallel glTF, 1,000-part view and advanced sweep cases) plus 5 model-command cases and a 10,000-face Python matcher. Sketch authoring integration rechecked 60 sketch cases and 60 MCP cases within budget. | `tools/bench/run.sh` |
+| Scale benchmarks | Last full suite: 194 Rust cases (198 with the parallel glTF, 1,000-part view, advanced sweep and tray cases) plus 5 model-command cases and a 10,000-face Python matcher. Sketch authoring integration rechecked 60 sketch cases and 60 MCP cases within budget. | `tools/bench/run.sh` |
 
 ## Done
+
+- Sheet-metal edge flanges and bend reliefs (schema 176, ABI 83). Flanges
+  fold up from either width edge of any strip flange, over any stretch of
+  its straight region, at a signed angle and inside radius, with a leg.
+  Where they reach a bend, rectangular reliefs notch the whole bend zone.
+  The blank becomes a polygon with tabs and notches, following K or a bend
+  table. The folded sheet is built from width slabs and edge-flange strips
+  joined by a new glued fuse (`occt_bridge_fuse_glued`: OCCT glue mode
+  plus face merging). Folded and flat volumes agree exactly at K = 0.5. 500
+  trays with linked blanks build or rebuild in about 10 s each way. See
+  [edge flanges](docs/SHEET_METAL.md#edge-flanges-and-bend-reliefs-schema-175-abi-82).
 
 - Advanced sweeps (schema 175, ABI 82). Sweeps now take these options:
   - a twist about the path, linear or smooth;
@@ -3327,10 +3338,11 @@ scopes and inspected repo capabilities, not a full conformity audit.
 
 ## Later
 
-- General sheet-metal edge flanges, bend reliefs, closed and teardrop
-  hems, cutouts across bends, and unfolding edited solids beyond
-  constant-width strips (cutouts within flanges exist, schema 160; bend
-  tables, schema 161; open and rolled hems, schema 162).
+- Sheet-metal closed and teardrop hems, cutouts across bends, edge
+  flanges on edge flanges, and unfolding edited solids beyond strips with
+  edge flanges (cutouts within flanges exist, schema 160; bend tables,
+  schema 161; open and rolled hems, schema 162; edge flanges with bend
+  reliefs, schema 176).
 - Tolerance classes beyond H and h (H6–H13 and h6–h13 exist, schema 163).
 - Wing structure beyond solid printed segments: hollow shells with internal
   ribs, alignment pins independent of the spar, twist-exact hinge lines, and

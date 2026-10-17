@@ -141,6 +141,62 @@ Tests check exact folded and flat volumes with hems, the 1 mm gap of an
 open hem on each side by a probe at its center, a rolled start hem's extent
 and that it leaves flange 0 and its hole in place, and the rejected cases.
 
+## Edge flanges and bend reliefs (schema 176, ABI 83)
+
+`SheetMetalDefinition.edge_flanges` folds flanges up from the strip's width
+edges, as on a tray or a box:
+
+```json
+"edge_flanges": [
+  { "id": "wall", "flange": 1, "edge": "far", "start": 0, "length": 40,
+    "angle_radians": 1.5708, "inside_radius": 1, "height": 15, "relief_depth": 5 }
+]
+```
+
+- **Placement.** `flange` counts the strip's flanges from 0, as for
+  cutouts. `edge` is `origin` (the start of the width) or `far` (its end).
+  The edge flange runs `length` along the base flange from `start`, measured
+  like a cutout's `along`. It must stay inside the base flange's straight
+  region. Edge flanges on one edge of one flange may touch but not overlap.
+- **Bend and leg.** A bend of `angle_radians` (positive toward the side the
+  strip's positive bends turn to, magnitude below π) at `inside_radius`,
+  then a straight leg of `height`.
+- **Reliefs.** Where an edge flange reaches the end of its base flange and
+  a bend follows, `relief_depth` cuts a rectangular notch that deep from
+  its edge through the whole bend zone. The bend can then be formed without
+  tearing the corner. A relief needs a bend to reach, and reliefs from both
+  edges of one bend must leave material between them. Edge flanges on both
+  sides of one bend share the deeper relief.
+- **Flat blank.** Each edge flange unfolds as a tab off the blank's edge,
+  its bend allowance (at K, or from the bend table) and then its leg. Tabs
+  follow their base flange as K moves it. Reliefs are notches through the
+  bend zones. `FlatPatternMetrics` lists `edge_tabs` and `reliefs`.
+  `outline()` gives the blank's polygon, which the drawing outlines with
+  each tab's bend line dashed. The blank is that polygon with the cutouts
+  as holes, pushed through the thickness.
+- **Folded sheet.**
+  - The strip is built in slabs across its width: a slab inside a relief
+    leaves out the relieved bend, so the strip falls apart there into
+    separate chains of flanges.
+  - Each edge flange is a strip of its own, starting on the side face it
+    shares with its base flange.
+  - The pieces only touch, so one glued fuse joins them (ABI 83,
+    `occt_bridge_fuse_glued`). That is OCCT's glue mode followed by merging
+    coplanar and coaxial faces, so no seams remain.
+  - Cutouts are cut afterwards as before.
+
+At K = 0.5 the folded and flat volumes agree exactly. Tests check this for
+a tray with walls on both edges and four reliefs, against the analytic
+volume. The walls must also stand on the bends' side, 1 + 2 mm outside the
+width. A lip turning the other way, part way along a flange, follows a
+rolled start hem on the blank. Validation is tested for each error.
+
+At scale, 500 trays with two walls and four reliefs each, and their
+blanks, build in 10.4 s and rebuild after a thickness edit in 10.5 s (30 s
+budget). That is about 18 ms per folded tray and 3 ms per blank. The glued
+fuse took the folded tray from 43 ms, with a general fuse and relief cuts,
+to 18 ms.
+
 ## Bend tables (schema 161)
 
 A shop that has measured its press brake can give the flat pattern a
@@ -203,9 +259,10 @@ interpolated length is checked exactly, against a 1 s budget.
 
 ## Limits
 
-This is a single constant-width strip whose bends all share one axis direction.
-Edge flanges on other edges, bend reliefs, closed and teardrop hems,
-cutouts across bends,
+The strip itself is constant-width, with its bends sharing one axis
+direction; edge flanges fold about the perpendicular axis (schema 176).
+Edge flanges on edge flanges, cutouts in edge flanges, corner closures where
+edge flanges meet, closed and teardrop hems, cutouts across bends,
 corner treatments, tables keyed by material or across thicknesses,
 springback, and mold-line (outside setback) dimensioning
 are not supported. Flange lengths are measured on the midplane between tangent

@@ -2,7 +2,7 @@
 
 use super::*;
 
-pub(crate) const ABI_VERSION: u32 = 82;
+pub(crate) const ABI_VERSION: u32 = 83;
 
 #[repr(C)]
 #[derive(Default)]
@@ -880,6 +880,12 @@ unsafe extern "C" {
         out: *mut RawShapeId,
     ) -> RawStatus;
     pub(crate) fn occt_bridge_create_compound(
+        session: *mut c_void,
+        shapes: *const RawShapeId,
+        shape_count: usize,
+        out: *mut RawShapeId,
+    ) -> RawStatus;
+    pub(crate) fn occt_bridge_fuse_glued(
         session: *mut c_void,
         shapes: *const RawShapeId,
         shape_count: usize,

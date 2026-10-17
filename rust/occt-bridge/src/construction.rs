@@ -939,6 +939,23 @@ impl Session {
 
     /// Groups children without consuming them, retaining their identity and
     /// unioned operation histories. Indexed merge cost follows topology/relations.
+    /// Fuses 2 to 10,000 shapes that meet only along shared faces (or
+    /// parts of faces) and never cross, in OCCT's fast glue mode, then
+    /// merges coplanar and coaxial faces so no seams remain. Records
+    /// history from every input.
+    pub fn fuse_glued(&self, shapes: &[&Shape<'_>]) -> Result<Shape<'_>, BridgeError> {
+        for shape in shapes {
+            self.validate_shape(shape)?;
+        }
+        let ids: Vec<RawShapeId> = shapes.iter().map(|shape| shape.id).collect();
+        let mut fused = 0;
+        // SAFETY: The ID slice and output remain valid for the call.
+        self.check(unsafe {
+            occt_bridge_fuse_glued(self.raw.as_ptr(), ids.as_ptr(), ids.len(), &mut fused)
+        })?;
+        Ok(self.shape(fused))
+    }
+
     pub fn create_compound(&self, shapes: &[&Shape<'_>]) -> Result<Shape<'_>, BridgeError> {
         for shape in shapes {
             self.validate_shape(shape)?;

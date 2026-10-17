@@ -322,3 +322,33 @@ fn path_stations_measure_along_the_whole_wire() {
     assert!(start.x.abs() < 1e-12 && (along.x - 1.0).abs() < 1e-12);
     assert!(session.path_station(&path, 1.5).is_err());
 }
+
+#[test]
+fn glued_fuses_join_touching_solids_without_seams() {
+    let session = Session::new().unwrap();
+    // Three boxes side by side, and a smaller one on a part of a face.
+    let boxes = [
+        session
+            .create_box(Vec3::new(0.0, 0.0, 0.0), Vec3::new(10.0, 10.0, 10.0))
+            .unwrap(),
+        session
+            .create_box(Vec3::new(10.0, 0.0, 0.0), Vec3::new(10.0, 10.0, 10.0))
+            .unwrap(),
+        session
+            .create_box(Vec3::new(20.0, 0.0, 0.0), Vec3::new(10.0, 10.0, 10.0))
+            .unwrap(),
+        session
+            .create_box(Vec3::new(5.0, 10.0, 0.0), Vec3::new(4.0, 3.0, 10.0))
+            .unwrap(),
+    ];
+    let fused = session
+        .fuse_glued(&boxes.iter().collect::<Vec<_>>())
+        .unwrap();
+    assert_eq!(session.shape_type(&fused).unwrap(), ShapeType::Solid);
+    assert!(session.is_valid(&fused).unwrap());
+    assert!((session.volume(&fused).unwrap() - 3120.0).abs() < 1e-9);
+    // The bar's faces merged: 6 for the bar, 4 more for the bump (its
+    // base hides inside), the bar's side face split around it remains one.
+    assert_eq!(session.subshape_count(&fused, ShapeType::Face).unwrap(), 10);
+    assert!(session.fuse_glued(&[&boxes[0]]).is_err());
+}

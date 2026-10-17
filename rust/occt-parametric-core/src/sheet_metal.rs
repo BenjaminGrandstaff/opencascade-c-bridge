@@ -1,6 +1,7 @@
 //! Constant-width flange strips with circular bends and explicit neutral
 //! factors, cutouts through their flanges (schema 160), bend tables
-//! (schema 161), and hems at either end (schema 162).
+//! (schema 161), hems at either end (schema 162), and edge flanges with
+//! bend reliefs on the width edges (schema 176).
 use super::*;
 use crate::assembly::{cross, dot, scale};
 use occt_types::WireSegment;
@@ -34,6 +35,86 @@ pub struct SheetMetalDefinition {
     /// A hem after the last flange (schema 162).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub end_hem: Option<SheetMetalHem>,
+    /// Flanges folded up from the width edges of the strip's flanges
+    /// (schema 176).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub edge_flanges: Vec<SheetMetalEdgeFlange>,
+}
+
+/// A width edge of the strip: `origin` at the start of the width, `far` at
+/// its end.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SheetEdge {
+    Origin,
+    Far,
+}
+
+/// A flange folded up from a width edge of one of the strip's flanges
+/// (schema 176): over `length` of the base flange's straight region from
+/// `start` (measured like a cutout's `along`), a bend of `angle_radians`
+/// (positive toward the side the strip's positive bends turn to) at
+/// `inside_radius`, then a straight leg of `height`. Where it reaches the
+/// end of its base flange at a bend, `relief_depth` cuts a rectangular bend
+/// relief that deep into the strip from that edge, through the whole bend
+/// zone, so the bend can be formed without tearing.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SheetMetalEdgeFlange {
+    pub id: String,
+    /// The base flange, counted from 0 at the sheet's origin.
+    pub flange: usize,
+    pub edge: SheetEdge,
+    pub start: ScalarExpr,
+    pub length: ScalarExpr,
+    pub angle_radians: ScalarExpr,
+    pub inside_radius: ScalarExpr,
+    pub height: ScalarExpr,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub relief_depth: Option<ScalarExpr>,
+}
+
+/// An edge flange with its dimensions evaluated, in millimeters, on the
+/// sheet's internal flange numbering (a start hem counts as flange 0).
+#[derive(Clone, Debug, PartialEq)]
+pub struct EvaluatedEdgeFlange {
+    pub id: String,
+    pub flange: usize,
+    pub edge: SheetEdge,
+    pub start: f64,
+    pub length: f64,
+    pub angle: f64,
+    pub radius: f64,
+    pub height: f64,
+}
+
+/// A bend relief: a rectangular notch `depth` deep from `edge` through the
+/// whole zone of bend `bend` (internal numbering).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct EvaluatedRelief {
+    pub bend: usize,
+    pub edge: SheetEdge,
+    pub depth: f64,
+}
+
+/// An edge flange unfolded on the blank: the tab's extent along the blank
+/// and across it (from the strip's edge out to the tip), and its bend line.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct FlatEdgeTab {
+    pub id: String,
+    pub along_mm: [f64; 2],
+    /// Low and high `across` coordinates of the tab.
+    pub across_mm: [f64; 2],
+    /// `across` of the center of the tab's bend zone.
+    pub bend_line_mm: f64,
+    pub allowance_mm: f64,
+}
+
+/// A bend relief notch on the blank.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct FlatRelief {
+    pub along_mm: [f64; 2],
+    pub across_mm: [f64; 2],
 }
 
 /// Which side of its flange a hem folds onto: `positive` is the side a
@@ -259,6 +340,12 @@ pub struct FlatPatternMetrics {
     /// (schema 161).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bend_table: Option<String>,
+    /// Edge flanges unfolded as tabs off the blank's long edges (schema 176).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub edge_tabs: Vec<FlatEdgeTab>,
+    /// Bend relief notches (schema 176).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub reliefs: Vec<FlatRelief>,
 }
 fn positive(value: f64) -> Result<f64, ModelError> {
     if value.is_finite() && value > 0.0 {
@@ -301,6 +388,64 @@ pub fn reverse(segment: WireSegment) -> WireSegment {
     }
 }
 impl FlatPatternMetrics {
+    /// The blank's outline as a closed polygon (first point not repeated):
+    /// the strip's rectangle with tabs out from, and relief notches into,
+    /// its long edges. Tabs and notches on one edge do not overlap.
+    /// O(tabs + reliefs) after sorting.
+    pub fn outline(&self) -> Vec<[f64; 2]> {
+        let (length, width) = (self.length_mm, self.width_mm);
+        // Each feature on an edge: its along range and the edge's new y.
+        let mut low: Vec<([f64; 2], f64)> = Vec::new();
+        let mut high: Vec<([f64; 2], f64)> = Vec::new();
+        for tab in &self.edge_tabs {
+            if tab.across_mm[1] <= 0.0 {
+                low.push((tab.along_mm, tab.across_mm[0]));
+            } else {
+                high.push((tab.along_mm, tab.across_mm[1]));
+            }
+        }
+        for relief in &self.reliefs {
+            if relief.across_mm[0] <= 0.0 {
+                low.push((relief.along_mm, relief.across_mm[1]));
+            } else {
+                high.push((relief.along_mm, relief.across_mm[0]));
+            }
+        }
+        low.sort_by(|a, b| a.0[0].total_cmp(&b.0[0]));
+        high.sort_by(|a, b| b.0[0].total_cmp(&a.0[0]));
+        // Features meeting end to end (a tab beside a relief) agree only to
+        // rounding, so points this close are one point.
+        let tolerance = 1e-9 * (1.0 + length + width);
+        let mut points: Vec<[f64; 2]> = vec![[0.0, 0.0]];
+        let push = |p: [f64; 2], points: &mut Vec<[f64; 2]>| {
+            if points
+                .last()
+                .is_none_or(|q| (p[0] - q[0]).abs() + (p[1] - q[1]).abs() > tolerance)
+            {
+                points.push(p);
+            }
+        };
+        for ([x0, x1], y) in low {
+            for p in [[x0, 0.0], [x0, y], [x1, y], [x1, 0.0]] {
+                push(p, &mut points);
+            }
+        }
+        push([length, 0.0], &mut points);
+        push([length, width], &mut points);
+        for ([x0, x1], y) in high {
+            for p in [[x1, width], [x1, y], [x0, y], [x0, width]] {
+                push(p, &mut points);
+            }
+        }
+        push([0.0, width], &mut points);
+        if points.len() > 1
+            && points[points.len() - 1][0].abs() + points[points.len() - 1][1].abs() <= tolerance
+        {
+            points.pop();
+        }
+        points
+    }
+
     /// Blank outline and dashed bend centerlines in a millimeter drawing.
     /// Bend lines mark the center of the allowance zone, not bend extents.
     pub fn drawing(&self, id: &str) -> Result<GeneratedDrawing, ModelError> {
@@ -327,24 +472,32 @@ impl FlatPatternMetrics {
                 "invalid flat-pattern metrics or drawing id",
             ));
         }
-        let (x, y, length, width) = (10.0, 45.0, self.length_mm, self.width_mm);
-        let paper_size_mm = [(length + 20.0).max(100.0), width + 65.0];
+        let outline = self.outline();
+        let (below, above) = outline.iter().fold((0.0f64, 0.0f64), |(lo, hi), p| {
+            (lo.min(p[1]), hi.max(p[1] - self.width_mm))
+        });
+        let (x, y, length, width) = (10.0, 45.0 - below, self.length_mm, self.width_mm);
+        let paper_size_mm = [(length + 20.0).max(100.0), width + 65.0 - below + above];
         if paper_size_mm.iter().any(|value| !value.is_finite()) {
             return Err(ModelError::new("flat-pattern paper dimensions overflow"));
         }
+        let mut closed: Vec<[f64; 2]> = outline.iter().map(|p| [x + p[0], y + p[1]]).collect();
+        closed.push(closed[0]);
         let mut polylines = vec![DrawingPolyline {
-            points_mm: vec![
-                [x, y],
-                [x + length, y],
-                [x + length, y + width],
-                [x, y + width],
-                [x, y],
-            ],
+            points_mm: closed,
             hidden: false,
             thin: false,
         }];
         polylines.extend(self.bend_lines_mm.iter().map(|line| DrawingPolyline {
             points_mm: vec![[x + line, y], [x + line, y + width]],
+            hidden: true,
+            thin: true,
+        }));
+        polylines.extend(self.edge_tabs.iter().map(|tab| DrawingPolyline {
+            points_mm: vec![
+                [x + tab.along_mm[0], y + tab.bend_line_mm],
+                [x + tab.along_mm[1], y + tab.bend_line_mm],
+            ],
             hidden: true,
             thin: true,
         }));
@@ -463,6 +616,20 @@ impl SheetMetalDefinition {
                 crate::regeneration::collect_scalar_parameters(expression, names);
             }
         }
+        for flange in &self.edge_flanges {
+            for expression in [
+                &flange.start,
+                &flange.length,
+                &flange.angle_radians,
+                &flange.inside_radius,
+                &flange.height,
+            ]
+            .into_iter()
+            .chain(&flange.relief_depth)
+            {
+                crate::regeneration::collect_scalar_parameters(expression, names);
+            }
+        }
     }
 
     pub fn evaluate(
@@ -516,6 +683,7 @@ impl SheetMetalDefinition {
             })
             .collect::<Result<Vec<_>, ModelError>>()?;
         let mut cutouts = self.evaluate_cutouts(parameters, &flanges, width)?;
+        let mut edge_flanges = self.evaluate_edge_flanges(parameters, &flanges, width)?;
         let (mut flanges, mut bends) = (flanges, bends);
         let mut start = ((0.0, 0.0), 0.0);
         if let Some(hem) = &self.start_hem {
@@ -527,13 +695,20 @@ impl SheetMetalDefinition {
             flanges.insert(0, length);
             bends.insert(0, (turn, radius));
             cutouts.iter_mut().for_each(|cutout| cutout.flange += 1);
+            edge_flanges
+                .iter_mut()
+                .for_each(|(flange, _)| flange.flange += 1);
         }
         if let Some(hem) = &self.end_hem {
             let (length, turn, radius) = hem.evaluate(parameters, thickness)?;
             bends.push((turn, radius));
             flanges.push(length);
         }
+        let reliefs = relieve(&edge_flanges, &flanges, bends.len(), width)?;
+        let edge_flanges = edge_flanges.into_iter().map(|(flange, _)| flange).collect();
         let result = EvaluatedSheet {
+            edge_flanges,
+            reliefs,
             start,
             origin,
             width_axis,
@@ -622,6 +797,102 @@ impl SheetMetalDefinition {
             .collect()
     }
 
+    /// Edge flanges inside their base flange's straight region, not
+    /// overlapping on one edge, with unique IDs and valid bends; each with
+    /// its relief depth. At most 10,000. O(edge flanges log edge flanges).
+    fn evaluate_edge_flanges(
+        &self,
+        parameters: &HashMap<String, ParameterValue>,
+        flanges: &[f64],
+        width: f64,
+    ) -> Result<Vec<(EvaluatedEdgeFlange, Option<f64>)>, ModelError> {
+        if self.edge_flanges.len() > 10_000 {
+            return Err(ModelError::new("a sheet has at most 10000 edge flanges"));
+        }
+        let mut ids = HashSet::new();
+        let mut evaluated = self
+            .edge_flanges
+            .iter()
+            .map(|edge| {
+                if edge.id.is_empty() || !ids.insert(edge.id.as_str()) {
+                    return Err(ModelError::new(
+                        "sheet edge flanges need unique nonempty IDs",
+                    ));
+                }
+                let length = |e: &ScalarExpr| scalar(e, parameters, Dimension::Length);
+                let base = *flanges.get(edge.flange).ok_or_else(|| {
+                    ModelError::new(format!(
+                        "edge flange '{}' names flange {}, but the sheet has {}",
+                        edge.id,
+                        edge.flange,
+                        flanges.len()
+                    ))
+                })?;
+                let start = length(&edge.start)?;
+                let span = positive(length(&edge.length)?)?;
+                let tolerance = 1e-9 * (1.0 + base);
+                if !(start.is_finite() && start >= -tolerance && start + span <= base + tolerance) {
+                    return Err(ModelError::new(format!(
+                        "edge flange '{}' must lie along its base flange's straight region",
+                        edge.id
+                    )));
+                }
+                let angle = scalar(&edge.angle_radians, parameters, Dimension::Scalar)?;
+                if !angle.is_finite()
+                    || !(1e-6..std::f64::consts::PI - 1e-6).contains(&angle.abs())
+                {
+                    return Err(ModelError::new(format!(
+                        "edge flange '{}' bend angle must have magnitude between 1e-6 and pi−1e-6 radians",
+                        edge.id
+                    )));
+                }
+                let relief = edge
+                    .relief_depth
+                    .as_ref()
+                    .map(|depth| {
+                        let depth = positive(length(depth)?)?;
+                        if depth >= width {
+                            return Err(ModelError::new(format!(
+                                "edge flange '{}' relief must be shallower than the sheet width",
+                                edge.id
+                            )));
+                        }
+                        Ok(depth)
+                    })
+                    .transpose()?;
+                Ok((
+                    EvaluatedEdgeFlange {
+                        id: edge.id.clone(),
+                        flange: edge.flange,
+                        edge: edge.edge,
+                        start: start.max(0.0),
+                        length: span,
+                        angle,
+                        radius: positive(length(&edge.inside_radius)?)?,
+                        height: positive(length(&edge.height)?)?,
+                    },
+                    relief,
+                ))
+            })
+            .collect::<Result<Vec<_>, ModelError>>()?;
+        // Edge flanges on one edge of one flange may touch but not overlap.
+        evaluated.sort_by(|(a, _), (b, _)| {
+            (a.flange, a.edge == SheetEdge::Far, a.start)
+                .partial_cmp(&(b.flange, b.edge == SheetEdge::Far, b.start))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        for pair in evaluated.windows(2) {
+            let (a, b) = (&pair[0].0, &pair[1].0);
+            if a.flange == b.flange && a.edge == b.edge && b.start < a.start + a.length - 1e-9 {
+                return Err(ModelError::new(format!(
+                    "edge flanges '{}' and '{}' overlap on one edge",
+                    a.id, b.id
+                )));
+            }
+        }
+        Ok(evaluated)
+    }
+
     /// Evaluates the blank without kernel handles. K is explicitly supplied:
     /// allowance = |angle| * (inside_radius + K * thickness).
     pub fn flat_pattern(
@@ -676,6 +947,62 @@ pub fn advance(
     )
 }
 
+/// The reliefs edge flanges ask for: one per bend and edge that an edge
+/// flange with a relief depth reaches, the deepest asked for. Reliefs at one
+/// bend from both edges must leave material between them. O(edge flanges).
+fn relieve(
+    edge_flanges: &[(EvaluatedEdgeFlange, Option<f64>)],
+    flanges: &[f64],
+    bend_count: usize,
+    width: f64,
+) -> Result<Vec<EvaluatedRelief>, ModelError> {
+    let mut reliefs: Vec<EvaluatedRelief> = Vec::new();
+    for (edge, depth) in edge_flanges {
+        let Some(depth) = *depth else {
+            continue;
+        };
+        let tolerance = 1e-9 * (1.0 + flanges[edge.flange]);
+        let mut bends = Vec::new();
+        if edge.start <= tolerance && edge.flange > 0 {
+            bends.push(edge.flange - 1);
+        }
+        if edge.start + edge.length >= flanges[edge.flange] - tolerance && edge.flange < bend_count
+        {
+            bends.push(edge.flange);
+        }
+        if bends.is_empty() {
+            return Err(ModelError::new(format!(
+                "edge flange '{}' has a relief depth but reaches no bend",
+                edge.id
+            )));
+        }
+        for bend in bends {
+            match reliefs
+                .iter_mut()
+                .find(|r| r.bend == bend && r.edge == edge.edge)
+            {
+                Some(relief) => relief.depth = relief.depth.max(depth),
+                None => reliefs.push(EvaluatedRelief {
+                    bend,
+                    edge: edge.edge,
+                    depth,
+                }),
+            }
+        }
+    }
+    for relief in &reliefs {
+        let other = reliefs
+            .iter()
+            .find(|r| r.bend == relief.bend && r.edge != relief.edge);
+        if other.is_some_and(|other| other.depth + relief.depth >= width) {
+            return Err(ModelError::new(
+                "reliefs from both edges of a bend must leave material between them",
+            ));
+        }
+    }
+    Ok(reliefs)
+}
+
 pub struct EvaluatedSheet {
     /// Where the midplane walk starts in the (tangent, normal) plane and its
     /// heading: the origin heading along the tangent, unless a start hem
@@ -691,6 +1018,9 @@ pub struct EvaluatedSheet {
     pub flanges: Vec<f64>,
     pub bends: Vec<(f64, f64)>,
     pub cutouts: Vec<EvaluatedCutout>,
+    /// Edge flanges on the internal flange numbering (schema 176).
+    pub edge_flanges: Vec<EvaluatedEdgeFlange>,
+    pub reliefs: Vec<EvaluatedRelief>,
 }
 
 impl EvaluatedSheet {
@@ -733,7 +1063,55 @@ impl EvaluatedSheet {
         }
         positive(length)?;
         positive(length * self.width * self.thickness)?;
+        let edge_tabs = self
+            .edge_flanges
+            .iter()
+            .enumerate()
+            .map(|(index, edge)| {
+                let allowance = match table {
+                    Some(table) => table.allowance(
+                        self.bends.len() + index,
+                        edge.angle,
+                        edge.radius,
+                        self.thickness,
+                    )?,
+                    None => edge.angle.abs() * (edge.radius + neutral_factor * self.thickness),
+                };
+                let x0 = starts[edge.flange] + edge.start;
+                let reach = allowance + edge.height;
+                let (across_mm, bend_line_mm) = match edge.edge {
+                    SheetEdge::Far => (
+                        [self.width, self.width + reach],
+                        self.width + allowance * 0.5,
+                    ),
+                    SheetEdge::Origin => ([-reach, 0.0], -allowance * 0.5),
+                };
+                Ok(FlatEdgeTab {
+                    id: edge.id.clone(),
+                    along_mm: [x0, x0 + edge.length],
+                    across_mm,
+                    bend_line_mm,
+                    allowance_mm: allowance,
+                })
+            })
+            .collect::<Result<Vec<_>, ModelError>>()?;
+        let reliefs = self
+            .reliefs
+            .iter()
+            .map(|relief| {
+                let (line, half) = (lines[relief.bend], allowances[relief.bend] * 0.5);
+                FlatRelief {
+                    along_mm: [line - half, line + half],
+                    across_mm: match relief.edge {
+                        SheetEdge::Far => [self.width - relief.depth, self.width],
+                        SheetEdge::Origin => [0.0, relief.depth],
+                    },
+                }
+            })
+            .collect();
         Ok(FlatPatternMetrics {
+            edge_tabs,
+            reliefs,
             length_mm: length,
             width_mm: self.width,
             thickness_mm: self.thickness,

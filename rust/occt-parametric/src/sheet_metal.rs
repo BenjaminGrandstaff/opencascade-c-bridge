@@ -27,22 +27,33 @@ impl SheetMetalDefinitionUnfoldingInternal for SheetMetalDefinition {
         parameters: &HashMap<String, ParameterValue>,
     ) -> Result<Shape<'a>, ModelError> {
         let sheet = self.evaluate(parameters)?;
-        let left = sheet.boundary(sheet.thickness * 0.5);
-        let right = sheet.boundary(-sheet.thickness * 0.5);
-        let mut segments = left;
-        let end_left = end(*segments.last().expect("nonempty flanges"));
-        let end_right = end(*right.last().expect("nonempty flanges"));
-        segments.push(WireSegment::Line {
-            start: end_left,
-            end: end_right,
-        });
-        segments.extend(right.iter().rev().copied().map(reverse));
-        segments.push(WireSegment::Line {
-            start: start(*right.first().unwrap()),
-            end: start(*segments.first().unwrap()),
-        });
-        let solid = sheet.solid(session, &segments)?;
-        // Each cutout is cut square to its flange, at its midplane frame.
+        let solid = if sheet.edge_flanges.is_empty() && sheet.reliefs.is_empty() {
+            sheet.solid(session, &sheet.outline())?
+        } else {
+            // Slabs across the width, those inside a relief without its
+            // bend, and each edge flange as a strip of its own starting on
+            // the side face it shares: pieces that only touch, joined by one
+            // glued fuse with no cutting.
+            let mut pieces = sheet.slabs(session)?;
+            for edge in &sheet.edge_flanges {
+                let strip = sheet.edge_strip(edge);
+                pieces.push(strip.piece(session)?);
+            }
+            let solid = session.fuse_glued(&pieces.iter().collect::<Vec<_>>())?;
+            let volume = session.volume(&solid)?;
+            if session.shape_type(&solid)? != ShapeType::Solid
+                || !session.is_valid(&solid)?
+                || !volume.is_finite()
+                || volume <= 0.0
+            {
+                return Err(ModelError::new(
+                    "sheet edge flanges and reliefs did not make one valid solid",
+                ));
+            }
+            solid
+        };
+        // Each cutout is cut square to its flange, at its midplane frame,
+        // in one boolean.
         let frames = sheet.flange_frames();
         let cutters = sheet
             .cutouts
@@ -69,6 +80,11 @@ impl SheetMetalDefinitionUnfoldingInternal for SheetMetalDefinition {
     ) -> Result<Shape<'a>, ModelError> {
         let sheet = self.evaluate(parameters)?;
         let metrics = sheet.metrics_with(neutral_factor, table)?;
+        // Tabs and notches make the blank a polygon: always a face with
+        // its cutouts as holes.
+        if !metrics.edge_tabs.is_empty() || !metrics.reliefs.is_empty() {
+            return sheet.pierced_blank(session, &metrics);
+        }
         let half = sheet.thickness * 0.5;
         let points = [
             (0.0, half),
@@ -105,6 +121,24 @@ impl SheetMetalDefinitionUnfoldingInternal for SheetMetalDefinition {
 }
 pub(crate) trait EvaluatedSheetUnfoldingInternal {
     fn point(&self, point: (f64, f64)) -> Vec3;
+
+    /// The closed outline of the strip's cross-section: both faces and the
+    /// two ends.
+    fn outline(&self) -> Vec<WireSegment>;
+
+    /// An edge flange as a strip of its own: from the base flange's width
+    /// edge, a zero-length flange, its bend and its leg, extruded along the
+    /// base flange over the edge flange's length.
+    fn edge_strip(&self, edge: &EvaluatedEdgeFlange) -> EvaluatedSheet;
+
+    /// The strip as prisms across the width, split where reliefs start:
+    /// a slab inside a relief leaves out that bend, falling apart into the
+    /// chains of flanges between relieved bends. O(slabs × flanges).
+    fn slabs<'a>(&self, session: &'a Session) -> Result<Vec<Shape<'a>>, ModelError>;
+
+    /// The strip's prism without its own checks, as an internal piece of a
+    /// solid checked once whole.
+    fn piece<'a>(&self, session: &'a Session) -> Result<Shape<'a>, ModelError>;
 
     /// Each flange's midplane start point and direction angle in the sheet's
     /// (tangent, normal) plane.
@@ -151,6 +185,115 @@ impl EvaluatedSheetUnfoldingInternal for EvaluatedSheet {
             self.origin,
             add(scale(self.tangent, point.0), scale(self.normal, point.1)),
         )
+    }
+
+    fn outline(&self) -> Vec<WireSegment> {
+        let left = self.boundary(self.thickness * 0.5);
+        let right = self.boundary(-self.thickness * 0.5);
+        let mut segments = left;
+        let end_left = end(*segments.last().expect("nonempty flanges"));
+        let end_right = end(*right.last().expect("nonempty flanges"));
+        segments.push(WireSegment::Line {
+            start: end_left,
+            end: end_right,
+        });
+        segments.extend(right.iter().rev().copied().map(reverse));
+        segments.push(WireSegment::Line {
+            start: start(*right.first().unwrap()),
+            end: start(*segments.first().unwrap()),
+        });
+        segments
+    }
+
+    fn edge_strip(&self, edge: &EvaluatedEdgeFlange) -> EvaluatedSheet {
+        let ((x, y), angle) = self.flange_frames()[edge.flange];
+        let (cos, sin) = (angle.cos(), angle.sin());
+        let along = add(scale(self.tangent, cos), scale(self.normal, sin));
+        let normal = add(scale(self.tangent, -sin), scale(self.normal, cos));
+        let base = self.point((x + edge.start * cos, y + edge.start * sin));
+        let (origin, outward) = match edge.edge {
+            SheetEdge::Far => (
+                add(base, scale(self.width_axis, self.width)),
+                self.width_axis,
+            ),
+            SheetEdge::Origin => (base, scale(self.width_axis, -1.0)),
+        };
+        EvaluatedSheet {
+            start: ((0.0, 0.0), 0.0),
+            origin,
+            width_axis: along,
+            tangent: outward,
+            normal,
+            width: edge.length,
+            thickness: self.thickness,
+            flanges: vec![0.0, edge.height],
+            bends: vec![(edge.angle, edge.radius)],
+            cutouts: Vec::new(),
+            edge_flanges: Vec::new(),
+            reliefs: Vec::new(),
+        }
+    }
+
+    fn slabs<'a>(&self, session: &'a Session) -> Result<Vec<Shape<'a>>, ModelError> {
+        let width = self.width;
+        let mut cuts = vec![0.0, width];
+        for relief in &self.reliefs {
+            cuts.push(match relief.edge {
+                SheetEdge::Origin => relief.depth,
+                SheetEdge::Far => width - relief.depth,
+            });
+        }
+        cuts.sort_by(f64::total_cmp);
+        let tolerance = 1e-9 * (1.0 + width);
+        cuts.dedup_by(|a, b| (*a - *b).abs() <= tolerance);
+        let frames = self.flange_frames();
+        let mut pieces = Vec::new();
+        for pair in cuts.windows(2) {
+            let (low, high) = (pair[0], pair[1]);
+            let removed = |bend: usize| {
+                self.reliefs.iter().any(|relief| {
+                    relief.bend == bend
+                        && match relief.edge {
+                            SheetEdge::Origin => high <= relief.depth + tolerance,
+                            SheetEdge::Far => low >= width - relief.depth - tolerance,
+                        }
+                })
+            };
+            let mut first = 0;
+            for last in 0..self.flanges.len() {
+                if last + 1 < self.flanges.len() && !removed(last) {
+                    continue;
+                }
+                let bends = self.bends[first..last].to_vec();
+                let flanges = self.flanges[first..=last].to_vec();
+                // A rolled hem's empty flange cut off from its roll is nothing.
+                if !bends.is_empty() || flanges.iter().any(|f| *f > 0.0) {
+                    let chain = EvaluatedSheet {
+                        start: frames[first],
+                        origin: add(self.origin, scale(self.width_axis, low)),
+                        width_axis: self.width_axis,
+                        tangent: self.tangent,
+                        normal: self.normal,
+                        width: high - low,
+                        thickness: self.thickness,
+                        flanges,
+                        bends,
+                        cutouts: Vec::new(),
+                        edge_flanges: Vec::new(),
+                        reliefs: Vec::new(),
+                    };
+                    pieces.push(chain.piece(session)?);
+                }
+                first = last + 1;
+            }
+        }
+        Ok(pieces)
+    }
+
+    fn piece<'a>(&self, session: &'a Session) -> Result<Shape<'a>, ModelError> {
+        let wire = session.create_segment_wire(&self.outline(), true)?;
+        let face = session.create_face_from_wire(&wire)?;
+        Ok(session.create_prism_from_face(&face, scale(self.width_axis, self.width))?)
     }
 
     fn flange_frames(&self) -> Vec<((f64, f64), f64)> {
@@ -232,13 +375,12 @@ impl EvaluatedSheetUnfoldingInternal for EvaluatedSheet {
                 .collect();
             session.create_segment_wire(&segments, true)
         };
-        let (length, width) = (metrics.length_mm, metrics.width_mm);
-        let outer = wire(vec![
-            OutlineSegment::Line([0.0, 0.0], [length, 0.0]),
-            OutlineSegment::Line([length, 0.0], [length, width]),
-            OutlineSegment::Line([length, width], [0.0, width]),
-            OutlineSegment::Line([0.0, width], [0.0, 0.0]),
-        ])?;
+        let outline = metrics.outline();
+        let outer = wire(
+            (0..outline.len())
+                .map(|i| OutlineSegment::Line(outline[i], outline[(i + 1) % outline.len()]))
+                .collect(),
+        )?;
         let holes = metrics
             .cutouts
             .iter()

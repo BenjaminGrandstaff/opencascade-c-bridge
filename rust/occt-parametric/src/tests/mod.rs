@@ -44,6 +44,7 @@ mod rotating_motion;
 mod scaling;
 mod selection;
 mod sheet_metal;
+mod sheet_metal_edges;
 mod step_export;
 mod surface_texture;
 mod sweep;

@@ -1,7 +1,7 @@
 use super::*;
 use occt_parametric::{
-    BendTable, BendTableKind, HemSide, SheetMetalBend, SheetMetalCutout, SheetMetalCutoutShape,
-    SheetMetalDefinition, SheetMetalHem,
+    BendTable, BendTableKind, HemSide, SheetEdge, SheetMetalBend, SheetMetalCutout,
+    SheetMetalCutoutShape, SheetMetalDefinition, SheetMetalEdgeFlange, SheetMetalHem,
 };
 pub(crate) fn sheet_case() -> Outcome {
     timed(
@@ -40,6 +40,7 @@ pub(crate) fn sheet_case() -> Outcome {
                     gap: length(1.0),
                     length: length(10.0),
                 }),
+                edge_flanges: Vec::new(),
             };
             let mut definition = block();
             definition.parameters = vec![ParameterDefinition {
@@ -159,6 +160,7 @@ pub(crate) fn cutout_case() -> Outcome {
                 cutouts,
                 start_hem: None,
                 end_hem: None,
+                edge_flanges: Vec::new(),
             };
             let mut definition = block();
             definition.features = vec![
@@ -313,6 +315,7 @@ pub(crate) fn bend_table_case() -> Outcome {
                 cutouts: Vec::new(),
                 start_hem: None,
                 end_hem: None,
+                edge_flanges: Vec::new(),
             };
             let expected = 1024.0
                 + bends
@@ -329,6 +332,143 @@ pub(crate) fn bend_table_case() -> Outcome {
                 }
             }
             Ok("1023 table bends per blank; exact bilinear lengths".into())
+        },
+    )
+}
+
+/// 500 trays: a channel whose floor has walls on both width edges, relieved
+/// where they meet its two bends, with linked blanks; built, then rebuilt
+/// after a thickness edit. Each folded tray is one glued fuse of five
+/// pieces (three slabs, two walls). Measured 21 s: about 18 ms per folded
+/// tray (it was 43 ms with a general fuse and relief cuts) and 3 ms per
+/// blank.
+pub(crate) fn edge_flange_case() -> Outcome {
+    const COUNT: usize = 500;
+    timed(
+        format!(
+            "{COUNT} sheet-metal trays with edge flanges and reliefs: folded/flat build and edit"
+        ),
+        ms(30_000),
+        Expectation::Required,
+        || {
+            let session = Session::new().map_err(|error| failure(error.to_string()))?;
+            let length =
+                |value| ScalarExpr::Literal(Quantity::length(value, LengthUnit::Millimeter));
+            let half = std::f64::consts::FRAC_PI_2;
+            let wall = |edge: SheetEdge| SheetMetalEdgeFlange {
+                id: format!("{edge:?}"),
+                flange: 1,
+                edge,
+                start: length(0.0),
+                length: length(40.0),
+                angle_radians: ScalarExpr::Literal(Quantity::scalar(half)),
+                inside_radius: length(1.0),
+                height: length(15.0),
+                relief_depth: Some(length(5.0)),
+            };
+            let sheet = SheetMetalDefinition {
+                origin: VectorExpr::Literal(VectorQuantity::lengths(
+                    0.0,
+                    0.0,
+                    0.0,
+                    LengthUnit::Millimeter,
+                )),
+                width_axis: VectorExpr::Literal(VectorQuantity::scalars(0.0, 1.0, 0.0)),
+                start_direction: VectorExpr::Literal(VectorQuantity::scalars(1.0, 0.0, 0.0)),
+                width: length(30.0),
+                thickness: ScalarExpr::Parameter("thickness".into()),
+                flanges: vec![length(20.0), length(40.0), length(20.0)],
+                bends: vec![
+                    SheetMetalBend {
+                        angle_radians: ScalarExpr::Literal(Quantity::scalar(half)),
+                        inside_radius: length(3.0),
+                    };
+                    2
+                ],
+                cutouts: Vec::new(),
+                start_hem: None,
+                end_hem: None,
+                edge_flanges: vec![wall(SheetEdge::Origin), wall(SheetEdge::Far)],
+            };
+            let mut definition = block();
+            definition.parameters = vec![ParameterDefinition {
+                id: "thickness".into(),
+                parameter_type: ParameterType::Scalar(Dimension::Length),
+                default: ParameterValue::Scalar(Quantity::length(2.0, LengthUnit::Millimeter)),
+                minimum: None,
+                maximum: None,
+            }];
+            definition.features.clear();
+            definition.datums.clear();
+            definition.requirements.clear();
+            for index in 0..COUNT {
+                definition.features.push(FeatureDefinition {
+                    id: format!("folded-{index}"),
+                    operation: FeatureOperation::SheetMetal {
+                        definition: Box::new(sheet.clone()),
+                    },
+                });
+                definition.features.push(FeatureDefinition {
+                    id: format!("flat-{index}"),
+                    operation: FeatureOperation::SheetMetalFlat {
+                        input: format!("folded-{index}"),
+                        neutral_factor: ScalarExpr::Literal(Quantity::scalar(0.5)),
+                        bend_table: None,
+                    },
+                });
+            }
+            let mut part = PartInstance {
+                id: "part".into(),
+                definition: &definition,
+                overrides: HashMap::new(),
+                provenance: "bench".into(),
+            };
+            let started = Instant::now();
+            let first = part.regenerate(&session)?;
+            let build = started.elapsed();
+            part.overrides.insert(
+                "thickness".into(),
+                ParameterValue::Scalar(Quantity::length(3.0, LengthUnit::Millimeter)),
+            );
+            let started = Instant::now();
+            let second = part.regenerate_incremental(&session, &first)?;
+            let edit = started.elapsed();
+            // At t = 3: strip, two walls, four reliefs through quarter bends.
+            let (t, quarter) = (3.0, |r: f64| half * (r + 1.5));
+            let expected = (80.0 + 2.0 * quarter(3.0)) * 30.0 * t
+                + 2.0 * (quarter(1.0) + 15.0) * 40.0 * t
+                - 4.0 * quarter(3.0) * t * 5.0;
+            for index in [0, COUNT / 2, COUNT - 1] {
+                for kind in ["folded", "flat"] {
+                    let shape = second
+                        .shape(&format!("{kind}-{index}"))
+                        .ok_or_else(|| failure(format!("missing {kind}-{index}")))?;
+                    let volume = session
+                        .volume(shape)
+                        .map_err(|error| failure(error.to_string()))?;
+                    if (volume - expected).abs() > 1e-7 * expected {
+                        return Err(failure(format!(
+                            "{kind} tray volume {volume}, expected {expected}"
+                        )));
+                    }
+                }
+            }
+            if second.regeneration.rebuilt.len() != 2 * COUNT {
+                return Err(failure("trays were not all rebuilt".into()));
+            }
+            drop((first, second));
+            if session
+                .shape_count()
+                .map_err(|error| failure(error.to_string()))?
+                != 0
+            {
+                return Err(failure("sheet handles retained".into()));
+            }
+            Ok(format!(
+                "built in {:.2} s, rebuilt after a thickness edit in {:.2} s; exact volumes",
+                build.as_secs_f64(),
+                edit.as_secs_f64()
+            ))
         },
     )
 }

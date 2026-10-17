@@ -25,6 +25,7 @@ fn spec(turns: &[f64]) -> SheetMetalDefinition {
         cutouts: Vec::new(),
         start_hem: None,
         end_hem: None,
+        edge_flanges: Vec::new(),
     }
 }
 fn definition(sheet: SheetMetalDefinition) -> FamilyDefinition {
