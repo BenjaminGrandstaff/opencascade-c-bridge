@@ -17,7 +17,7 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 7/7, bridge 174 + first-use integration 1 (+1 doc test), recipes 3, parametric core 57 + kernel 781 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 94 + viewer Node 460 + branch command 2 + model command 94, MCP Python 13, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 7/7, bridge 174 + first-use integration 1 (+1 doc test), recipes 3, parametric core 57 + kernel 784 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 95 + viewer Node 462 + branch command 2 + model command 95, MCP Python 14, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -25,6 +25,22 @@ tracks status and order.
 | Scale benchmarks | Last full suite: 194 Rust cases (198 with the parallel glTF, 1,000-part view, advanced sweep and tray cases) plus 5 model-command cases and a 10,000-face Python matcher. Sketch authoring integration rechecked 60 sketch cases and 60 MCP cases within budget. | `tools/bench/run.sh` |
 
 ## Done
+
+- Hollow loft station diagnostics (schema 176 / ABI 83 unchanged): source
+  diagnosis now shares construction's exact planar-region validation, checking
+  coplanarity, strict outer-boundary clearance and disjoint/non-nested holes.
+  Per-station records retain outer/hole IDs and native remaining material area;
+  failed stations return `station_region` issues while other stations remain
+  inspectable. The editor displays areas/errors and AI inspection pages
+  `loft.stations`. Scratch regions are released, accepted geometry/history/disk
+  remain unchanged, and invalid track counts skip region indexing. Tests cover
+  outside, crossing, touching and wrong-plane holes, overlapping/nested/touching
+  tracks, and valid stations whose 3D tracks still cross: profile diagnosis
+  never substitutes for full solid validation. Kernel 784, model 95, viewer 95
+  and Node 462 pass. The 500-hollow diagnosis gate takes 1.06 s, and two
+  100-hole stations take 0.12 s, each against a 10 s budget with no retained
+  handles. See [station regions](docs/LOFTS.md#hollow-station-material-checks).
+
 
 - Sheet-metal edge flanges and bend reliefs (schema 176, ABI 83). Flanges
   fold up from either width edge of any strip flange, over any stretch of

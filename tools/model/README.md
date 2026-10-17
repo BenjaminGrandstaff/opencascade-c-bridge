@@ -125,6 +125,8 @@ feature-authoring coordinates; assembly placement is reported separately.
 Use `instance` plus `loft_feature` for isolated exact profile/correspondence
 diagnosis, including a failing loft. This reports paged source/aligned edge
 counts and alignment issues without constructing or certifying the solid.
+For hollow lofts, paged station records also validate native planar material
+regions and report remaining area, coplanarity and hole-clearance errors.
 
 [Guarded model edits](MCP.md#guarded-edits-and-revision-history) add/replace/remove
 features by family and stable ID, add new parameters/requirements/references,

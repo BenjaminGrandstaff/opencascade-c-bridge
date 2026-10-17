@@ -168,11 +168,11 @@ fn inspect(request: Inspection) -> Result<Value, Failure> {
             .map_err(|e| model_failure("loft_profiles", e))?;
         result["loft"] = json!({"feature":feature,"checks_passed":report.checks_passed,"solid_checked":false,
             "constrained":report.constrained,"coordinate_system":"family-local mm",
-            "profiles":page(&report.profiles,request.offset,request.limit),"issues":page(&report.issues,request.offset,request.limit)});
+            "profiles":page(&report.profiles,request.offset,request.limit),"stations":page(&report.stations,request.offset,request.limit),"issues":page(&report.issues,request.offset,request.limit)});
         result["geometry_generated"] =
             json!(!report.issues.iter().any(|i| i.code == "inspection_budget"));
         result["inventory_scope"] = json!(
-            "isolated loft source profiles; solid validity, hole containment and downstream requirements are not certified"
+            "isolated loft profiles and planar station regions; between-station containment, solid validity and downstream requirements are not certified"
         );
     }
     if let (Some(output), Some(session), Some(generation)) =

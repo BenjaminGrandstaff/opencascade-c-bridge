@@ -95,7 +95,7 @@ export function solidEditOutput(data,editing) {
   while(pending.length){const id=pending.pop();if(!id||seen.has(id))continue;seen.add(id);pending.push(...(data.dependencies?.[id]??[]));}
   return seen.has(editing.id)&&data.features.some(f=>f.id===data.output&&solidTarget(f))?data.output:editing.id;
 }
-export function createSolidEditor({host,request,instance,preview,applied,restore,showSketch=()=>{},showSolid=()=>{},initialProfile=()=>null,profileDirection=()=>null,profileAxis=()=>null,invalidatePreview=()=>{},pickSolidEdge=null,pickLoftAnchor=null,pickLoftSplit=null,pickHolePosition=null,pickLimitingFace=null,cancelLimitingFacePick=()=>{},started=()=>{},autoStart=false}) {
+export function createSolidEditor({host,request,instance,preview,applied,restore,showSketch=()=>{},showSolid=()=>{},initialProfile=()=>null,profileDirection=()=>null,profileAxis=()=>null,invalidatePreview=()=>{},pickSolidEdge=null,pickLoftAnchor=null,pickLoftSplit=null,pickHolePosition=null,pickLimitingFace=null,cancelLimitingFacePick=()=>{},started=()=>{},loftDiagnosed=()=>{},autoStart=false}) {
   let data=null,editing=null,busy=false,mode='new',id='',input='',target='',extent='distance',axis=[0,0,1],depth=10,source='literal',preserved=null;
   let kind='extrude',origin=[0,0,0],angle=360,axisSource='literal',savedRevolve=null,path='',orientation='corrected_frenet',binormal=[0,0,1],savedOrientation=null,sweepState=readSweepOptions(),loft={profiles:[],holes:[],ruled:false},loftStarted=false;
   let limitTarget='',limitFace='z:maximum',savedFace=null,limitDirectionSource='literal';
@@ -237,13 +237,17 @@ export function createSolidEditor({host,request,instance,preview,applied,restore
           const response=await request('/api/loft-profile-report',{method:'POST',body:JSON.stringify({version:data.version,instance:selectedInstance,operation})});
           if(turn!==formTurn||!data||kind!=='profile_loft'||selectedInstance!==instance())return;
           const canonical=value=>JSON.stringify(value,(_,v)=>v&&typeof v==='object'&&!Array.isArray(v)?Object.fromEntries(Object.entries(v).sort(([a],[b])=>a.localeCompare(b))):v);
-          const report=response.report;
-          if(response.version!==data.version||response.instance!==selectedInstance||canonical(response.operation)!==canonical(operation)||typeof report?.checks_passed!=='boolean'||report.solid_checked!==false||!Array.isArray(report.profiles)||report.profiles.length>8192||!Array.isArray(report.issues))throw Error('The loft profile report does not match this draft.');
+          const report=response.report,stations=report?.stations??[];
+          if(response.version!==data.version||response.instance!==selectedInstance||canonical(response.operation)!==canonical(operation)||typeof report?.checks_passed!=='boolean'||report.solid_checked!==false||!Array.isArray(report.profiles)||report.profiles.length>8192||!Array.isArray(report.issues)||!Array.isArray(stations)||stations.length>1000)throw Error('The loft profile report does not match this draft.');
           const note=document.createElement('p');note.textContent=report.checks_passed?'Profile checks pass. Preview still checks correspondence, twist, hole containment and the resulting solid.':'Profile checks found problems. Correct the listed profiles, then Preview the solid.';diagnosis.append(note);
           for(const item of report.issues){const row=document.createElement('p');row.textContent=item.message;diagnosis.append(row);}
           for(const p of report.profiles){
             const row=document.createElement('p');row.textContent=`${p.hole===null?'Outer':`Hole ${p.hole+1}`} station ${p.station+1} · ${p.profile}: ${p.source_edges??'?'} source → ${p.aligned_edges??'?'} aligned edges${p.reverse?' · reversed':''}. ${p.issues.map(i=>i.message).join(' ')}`;diagnosis.append(row);
           }
+          for(const s of stations){
+            const row=document.createElement('p');row.textContent=`Station ${s.station+1} material region · ${s.outer}: ${s.area_mm2===null?'invalid':`${Number(s.area_mm2.toFixed(6))} mm² with ${s.holes.length} hole${s.holes.length===1?'':'s'}`}. ${s.issues.map(i=>i.message).join(' ')}`;diagnosis.append(row);
+          }
+          loftDiagnosed(report);diagnosis.scrollIntoView?.({block:'nearest'});
           message('Profile diagnosis complete. Apply still performs full validation.');
         }catch(error){if(turn===formTurn&&data)message(error.message);}
       }),diagnosis);

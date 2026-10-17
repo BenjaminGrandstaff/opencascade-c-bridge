@@ -225,3 +225,29 @@ fn loft_inspection_reports_bad_correspondence_in_isolation_with_paging() {
         assert!(inspect_request(&dir, invalid, &format!("invalid-{mode}.json")).is_err());
     }
 }
+
+#[test]
+fn loft_station_inspection_pages_native_material_checks_even_when_the_loft_fails() {
+    let dir = Directory::new();
+    let mut model = view_example("hollow-loft")["model"].clone();
+    model["family"]["features"][0]["operation"]["profile_loft"]["holes"] =
+        json!([["upper-bore", "lower-bore"]]);
+    let request = json!({"schema":"occb-model-inspection-v1","model":model,"instance":"duct","loft_feature":"body","limit":1});
+    let result = inspect_request(&dir, request.clone(), "stations-first.json").unwrap();
+    assert_eq!(result["loft"]["checks_passed"], false);
+    assert_eq!(result["loft"]["solid_checked"], false);
+    assert_eq!(result["loft"]["stations"]["total"], 2);
+    assert_eq!(result["loft"]["stations"]["next_offset"], 1);
+    let first = &result["loft"]["stations"]["items"][0];
+    assert_eq!(first["station"], 0);
+    assert_eq!(first["outer"], "lower");
+    assert_eq!(first["area_mm2"], Value::Null);
+    assert_eq!(first["issues"][0]["code"], "station_region");
+    let mut next = request;
+    next["offset"] = json!(1);
+    let result = inspect_request(&dir, next, "stations-next.json").unwrap();
+    let second = &result["loft"]["stations"]["items"][0];
+    assert_eq!(second["station"], 1);
+    assert_eq!(second["outer"], "upper");
+    assert_eq!(second["issues"][0]["code"], "station_region");
+}

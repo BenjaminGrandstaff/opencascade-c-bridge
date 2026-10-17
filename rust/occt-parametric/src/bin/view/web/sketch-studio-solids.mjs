@@ -73,6 +73,7 @@ export function installStudioSolids(studio, document) {
     studio.fill(panel, html('header', {}, html('h2', {}, 'Sketch to solid'), html('button', {onclick: close}, 'Close')), host);
     panel.hidden = false;
     createSolidEditor({host, request, instance: () => studio.instance, autoStart: true,
+      loftDiagnosed: report => { if(current())studio.say(report.checks_passed?'Loft profile checks pass for this instance. Preview validates the solid.':'Loft profile checks found problems. Review the profile and station report.',!report.checks_passed); },
       started: (feature,output) => {
         if(current()&&feature?.operation.profile_loft&&feature.id===output){guides=loftTangentGuides({scenes:studio.scenes},studio.instance,output);seams=loftSeamGuides({scenes:studio.scenes},studio.instance,output);studio.redraw();}
       },

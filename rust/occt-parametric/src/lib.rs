@@ -54,8 +54,8 @@ pub use features::PartInstanceHoles;
 pub use features::PartInstanceProjection;
 pub use features::PartInstanceSupport;
 pub use features::{
-    LoftProfileCheck, LoftProfileIssue, LoftProfileReport, ResolvedLoftEndTangent,
-    ResolvedLoftProfileSeam, diagnose_loft_profiles,
+    LoftProfileCheck, LoftProfileIssue, LoftProfileReport, LoftStationRegionCheck,
+    ResolvedLoftEndTangent, ResolvedLoftProfileSeam, diagnose_loft_profiles,
 };
 pub use graph::InstanceGraphPatternEdits;
 pub use graph::InstanceGraphRegeneration;

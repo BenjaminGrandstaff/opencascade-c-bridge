@@ -1065,3 +1065,9 @@ change. The check builds source dependencies only, preserving the accepted solid
 it is useful while correcting a loft that cannot yet Preview. Passing profile
 checks still requires a successful solid Preview before Apply. See
 [loft profile diagnosis](LOFTS.md#read-only-profile-diagnosis).
+
+
+For hollow lofts, **Check loft profiles** also shows the native remaining
+material area at each station. Wrong-plane, outside, touching, overlapping or
+nested holes identify the failing station and its profile IDs. A valid station
+check still requires Preview to verify the hole tracks between sections.

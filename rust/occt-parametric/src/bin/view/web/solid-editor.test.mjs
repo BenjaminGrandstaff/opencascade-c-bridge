@@ -445,3 +445,14 @@ test('loft diagnosis sends the current formulas, displays edge counts and clears
  pending=button(host,'Check loft profiles').onclick();const late=reply();await button(host,'Close solid draft').onclick();resolve(late);await pending;assert.equal(diagnosis.children.length,0);
  }finally{delete globalThis.document;delete globalThis.Option;}
 });
+
+test('loft diagnosis shows native station material areas and hole errors while leaving Apply to solid validation',async()=>{
+ globalThis.document={createElement:tag=>new Element(tag)};globalThis.Option=class extends Element{constructor(text,value){super('option');this.textContent=text;this.value=value;}};
+ try{
+ const saved={id:'transition',operation:{profile_loft:{profiles:['profile','upper'],holes:[['a','b']],ruled:false}}},host=new Element('div');let apply=0;
+ createSolidEditor({host,instance:()=> 'part',preview:async()=>{},applied:async()=>apply++,restore:async()=>{},request:async(path,options)=>{if(!options)return {version:1,features:[...base,...['upper','a','b'].map(id=>({id,operation:{sketch_wire:{sketch:{}}}})),saved],output:'transition',parameters:[]};return {...JSON.parse(options.body),report:{checks_passed:false,solid_checked:false,profiles:[],issues:[],stations:[{station:0,outer:'profile',holes:['a'],area_mm2:150.79644737231,issues:[]},{station:1,outer:'upper',holes:['b'],area_mm2:null,issues:[{code:'station_region',message:"Inner profile 'b' must be coplanar and strictly contained."}]}]}};}});
+ await button(host,'Sketch to solid').onclick();await button(host,'Edit loft transition').onclick();await button(host,'Check loft profiles').onclick();
+ const diagnosis=all(host).find(e=>e['data-loft-profile-report']==='');assert(all(diagnosis).some(e=>e.textContent?.includes('Station 1 material region · profile: 150.796447 mm² with 1 hole.')));assert(all(diagnosis).some(e=>e.textContent?.includes("Station 2 material region · upper: invalid. Inner profile 'b'")));assert.equal(apply,0);
+ control(host,'Hole 1 at station 2').value='a';control(host,'Hole 1 at station 2').onchange();assert.equal(diagnosis.children.length,0);
+ }finally{delete globalThis.document;delete globalThis.Option;}
+});

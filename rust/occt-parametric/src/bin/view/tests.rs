@@ -7287,3 +7287,54 @@ fn studio_previews_path_planes_and_edits_advanced_sweeps() {
         String::from_utf8_lossy(&response.body)
     );
 }
+
+#[test]
+fn loft_station_diagnosis_identifies_invalid_draft_hole_planes_without_changing_the_solid() {
+    use serde_json::Value;
+    let request: Value = serde_json::from_str(include_str!(
+        "../../../../../tools/model/hollow-loft.request.json"
+    ))
+    .unwrap();
+    let document = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+    let directory = Directory::new();
+    let path = PathBuf::from(directory.model(&document));
+    let saved = fs::read_to_string(&path).unwrap();
+    let mut studio = serve::Studio::load(&path, Some("body".into())).unwrap();
+    let state = get(&mut studio, "/api/state").1;
+    let mesh = studio.handle("GET", "/api/model.gltf", b"").body;
+    let mut query = json!({"version":state["version"],"instance":"duct","operation":document.family.features[0].operation});
+    for valid in [true, false] {
+        if !valid {
+            query["operation"]["profile_loft"]["holes"] = json!([["upper-bore", "lower-bore"]]);
+        }
+        let response = studio.handle(
+            "POST",
+            "/api/loft-profile-report",
+            query.to_string().as_bytes(),
+        );
+        assert_eq!(
+            response.status,
+            200,
+            "{}",
+            String::from_utf8_lossy(&response.body)
+        );
+        let report: Value = serde_json::from_slice(&response.body).unwrap();
+        let report = &report["report"];
+        assert_eq!(report["checks_passed"], valid);
+        assert_eq!(report["solid_checked"], false);
+        assert_eq!(report["stations"].as_array().unwrap().len(), 2);
+        for (i, station) in report["stations"].as_array().unwrap().iter().enumerate() {
+            assert_eq!(station["station"], i);
+            if valid {
+                let expected = [48., 12.][i] * std::f64::consts::PI;
+                assert!((station["area_mm2"].as_f64().unwrap() - expected).abs() < 1e-7);
+            } else {
+                assert_eq!(station["area_mm2"], Value::Null);
+                assert_eq!(station["issues"][0]["code"], "station_region");
+            }
+        }
+    }
+    assert_eq!(get(&mut studio, "/api/state").1, state);
+    assert_eq!(studio.handle("GET", "/api/model.gltf", b"").body, mesh);
+    assert_eq!(fs::read_to_string(path).unwrap(), saved);
+}

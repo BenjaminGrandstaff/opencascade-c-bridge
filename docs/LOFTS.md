@@ -454,7 +454,7 @@ Each native aligned boundary remains limited to 128 edges.
 
 A passing report means the listed profile checks passed for this instance.
 It does **not** certify edge pairing, twist freedom, longitudinal fold-back,
-hole containment, final solid validity or family-wide requirements.
+between-station hole containment, final solid validity or family-wide requirements.
 `solid_checked` is always false. Preview and Apply retain all existing native
 solid and all-instance validation. Fields, new checks, model changes and Close
 invalidate pending editor reports.
@@ -462,8 +462,9 @@ invalidate pending editor reports.
 For AI use, pass `instance` and `loft_feature` to `occt_inspect_model` or
 `occt_inspect_build`. These options are mutually exclusive with `output` and
 `sketch_feature`; selectors still require `output`. The `loft` response has
-paged `profiles` and `issues`, `checks_passed`, `constrained`, and
-`solid_checked: false`. Normal inspection `offset`/`limit` apply to both pages.
+paged `profiles`, `stations` and `issues`, `checks_passed`, `constrained`, and
+`solid_checked: false`. Normal inspection `offset`/`limit` apply to profiles,
+station regions and global issues.
 For a previously accepted `partitioned-profile-loft` build, call
 `occt_inspect_build` with:
 
@@ -488,3 +489,39 @@ per-profile issue codes and zero retained handles. The recorded run is 0.70
 seconds against a 10-second budget. Browser checks cover mismatched counts,
 invalid anchor isolation, stale report clearing, canvas correction, preserved
 end strengths, Preview/Apply, undo/redo and Save.
+
+### Hollow station material checks
+
+For hollow lofts, profile diagnosis now runs the exact planar-region validator
+at each valid station. It verifies that each hole is coplanar with its outer
+profile, strictly inside with native boundary clearance, and separate from
+other holes. Touching, overlapping and nested holes fail. The same native
+region construction used by loft generation verifies one connected material
+face, the expected hole count and its area.
+
+The report's `stations` records contain zero-based `station`, `outer`, `holes`,
+`area_mm2` and `issues`. A valid station has an exact native material area and
+no issues. An invalid station has `area_mm2: null` and a `station_region` issue
+with the station and profile IDs. The remaining stations are still inspected;
+errors affect the overall `checks_passed`. Solid lofts have no station-region
+records. Invalid track counts retain the existing global `station_tracks`
+issue and skip region checks rather than indexing incomplete tracks.
+
+The studio displays each station's material area or geometry error. AI
+inspection returns a paged `loft.stations`, using the same `offset`/`limit` as
+its other pages. These checks use source geometry, so valid split/alignment
+changes preserve material area. Native temporary regions are released after
+measurement and original source profiles remain unchanged.
+
+Station checks do not construct the loft or certify the space between
+stations. Hole tracks may still cross each other or leave the outer loft
+between valid sections. `solid_checked` remains false, and Preview/Apply retain
+complete 3D containment, intersection, fold-back and requirement validation.
+Schema 176 / ABI 83 remain unchanged.
+
+The station scale cases exercise 500 two-station hollow diagnoses (1.06 s) and
+a pair of stations containing 100 holes each (0.12 s). Each has a 10-second
+budget and checks analytic material areas, station/profile counts and zero
+retained handles after every diagnosis. Pair screening is O(NH²) for N stations
+and H holes, with cached bounds before native pair distances; boolean/area work
+depends on native topology. Temporary regions are released at each station.

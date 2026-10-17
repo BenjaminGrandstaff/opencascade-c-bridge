@@ -18,6 +18,15 @@ pub struct LoftProfileCheck {
     pub reverse: bool,
     pub issues: Vec<LoftProfileIssue>,
 }
+/// Exact planar material remaining at an outer/hole station.
+#[derive(Clone, Debug, Serialize)]
+pub struct LoftStationRegionCheck {
+    pub station: usize,
+    pub outer: String,
+    pub holes: Vec<String>,
+    pub area_mm2: Option<f64>,
+    pub issues: Vec<LoftProfileIssue>,
+}
 #[derive(Clone, Debug, Serialize)]
 pub struct LoftProfileReport {
     pub constrained: bool,
@@ -25,6 +34,7 @@ pub struct LoftProfileReport {
     /// These checks do not construct or certify the resulting solid.
     pub solid_checked: bool,
     pub profiles: Vec<LoftProfileCheck>,
+    pub stations: Vec<LoftStationRegionCheck>,
     pub issues: Vec<LoftProfileIssue>,
 }
 fn issue(code: &'static str, message: impl Into<String>) -> LoftProfileIssue {
@@ -57,6 +67,7 @@ pub fn diagnose_loft_profiles(
             checks_passed: false,
             solid_checked: false,
             profiles: Vec::new(),
+            stations: Vec::new(),
             issues: vec![issue(
                 "inspection_budget",
                 "Profile diagnosis supports at most 8192 boundaries.",
@@ -122,12 +133,13 @@ impl GeneratedResult<'_> {
             checks_passed: false,
             solid_checked: false,
             profiles: Vec::new(),
+            stations: Vec::new(),
             issues: Vec::new(),
         };
-        if !(2..=if constrained { 64 } else { 1000 }).contains(&profiles.len())
-            || holes.len() > 100
-            || holes.iter().any(|h| h.len() != profiles.len())
-        {
+        let valid_tracks = (2..=if constrained { 64 } else { 1000 }).contains(&profiles.len())
+            && holes.len() <= 100
+            && holes.iter().all(|h| h.len() == profiles.len());
+        if !valid_tracks {
             report.issues.push(issue("station_tracks","Choose 2–64 constrained (2–1000 free) stations and at most 100 hole tracks with matching station counts."));
         }
         let tracks = std::iter::once(profiles)
@@ -231,6 +243,37 @@ impl GeneratedResult<'_> {
                 }
             }
         }
+        if valid_tracks && !holes.is_empty() {
+            for (station, outer) in profiles.iter().enumerate() {
+                let inner = holes
+                    .iter()
+                    .map(|track| track[station].clone())
+                    .collect::<Vec<_>>();
+                let mut check = LoftStationRegionCheck {
+                    station,
+                    outer: outer.clone(),
+                    holes: inner,
+                    area_mm2: None,
+                    issues: Vec::new(),
+                };
+                let result =
+                    super::super::regions::execute(session, outer, &check.holes, &self.shapes)
+                        .and_then(|region| session.surface_area(&region).map_err(ModelError::from));
+                match result {
+                    Ok(area) => check.area_mm2 = Some(area),
+                    Err(error) => check.issues.push(issue(
+                        "station_region",
+                        format!(
+                            "Station {} outer '{outer}', holes [{}]: {}",
+                            station + 1,
+                            check.holes.join(", "),
+                            error.message
+                        ),
+                    )),
+                }
+                report.stations.push(check);
+            }
+        }
         for (end, constraint) in [
             (false, start_constraint.as_deref()),
             (true, end_constraint.as_deref()),
@@ -266,8 +309,9 @@ impl GeneratedResult<'_> {
                 ));
             }
         }
-        report.checks_passed =
-            report.issues.is_empty() && report.profiles.iter().all(|p| p.issues.is_empty());
+        report.checks_passed = report.issues.is_empty()
+            && report.profiles.iter().all(|p| p.issues.is_empty())
+            && report.stations.iter().all(|s| s.issues.is_empty());
         Ok(report)
     }
 }
@@ -330,6 +374,7 @@ mod tests {
         assert!(r.checks_passed);
         assert!(!r.solid_checked);
         assert!(r.constrained);
+        assert!(r.stations.is_empty());
         assert_eq!(r.profiles.len(), 2);
         assert_eq!(
             (r.profiles[0].source_edges, r.profiles[0].aligned_edges),
@@ -348,6 +393,15 @@ mod tests {
         assert!(hollow.checks_passed);
         assert!(!hollow.constrained);
         assert_eq!(hollow.profiles.len(), 4);
+        assert_eq!(hollow.stations.len(), 2);
+        for (i, expected) in [48. * std::f64::consts::PI, 12. * std::f64::consts::PI]
+            .iter()
+            .enumerate()
+        {
+            assert_eq!(hollow.stations[i].station, i);
+            assert!(hollow.stations[i].issues.is_empty());
+            assert!((hollow.stations[i].area_mm2.unwrap() - expected).abs() < 1e-7);
+        }
         assert_eq!(
             (hollow.profiles[2].hole, hollow.profiles[2].station),
             (Some(0), 0)
@@ -382,6 +436,192 @@ mod tests {
                 .iter()
                 .all(|p| p.issues.iter().any(|i| i.code == "edge_count_mismatch"))
         );
+    }
+
+    #[test]
+    fn station_regions_isolate_non_coplanar_outside_and_touching_holes_before_lofting() {
+        for mode in ["outside", "crossing", "touching", "plane"] {
+            let mut data: serde_json::Value = serde_json::from_str(include_str!(
+                "../../../../tools/model/hollow-loft.request.json"
+            ))
+            .unwrap();
+            if mode == "outside" {
+                let parameter = data["model"]["family"]["parameters"]
+                    .as_array_mut()
+                    .unwrap()
+                    .iter_mut()
+                    .find(|p| p["id"] == "lower_bore_radius")
+                    .unwrap();
+                parameter["default"]["scalar"]["value"] = serde_json::json!(9.);
+            } else {
+                let origin = &mut data["model"]["family"]["features"][3]["operation"]["sketch_wire"]
+                    ["sketch"]["origin"]["literal"];
+                let axis = if mode == "plane" { "z" } else { "x" };
+                origin[axis]["value"] = serde_json::json!(match mode {
+                    "crossing" => 6.,
+                    "touching" => 4.,
+                    _ => 1.,
+                });
+            }
+            let original = data.clone();
+            let r = report(&data);
+            assert_eq!(data, original);
+            assert!(!r.checks_passed, "{mode}");
+            assert!(!r.solid_checked);
+            assert!(r.profiles.iter().all(|p| p.issues.is_empty()));
+            assert_eq!(r.stations[0].outer, "lower");
+            assert_eq!(r.stations[0].holes, ["lower-bore"]);
+            assert_eq!(r.stations[0].area_mm2, None);
+            assert_eq!(r.stations[0].issues[0].code, "station_region");
+            assert!(r.stations[0].issues[0].message.contains("lower-bore"));
+            assert!(r.stations[1].issues.is_empty());
+            assert!(r.stations[1].area_mm2.unwrap() > 0.);
+            let doc = ModelDocument::from_json(&data["model"].to_string()).unwrap();
+            let session = Session::new().unwrap();
+            assert!(
+                doc.instance_graph()
+                    .unwrap()
+                    .resolve("duct")
+                    .unwrap()
+                    .regenerate(&session)
+                    .is_err()
+            );
+            assert_eq!(session.shape_count().unwrap(), 0);
+        }
+    }
+    #[test]
+    fn station_regions_reject_overlapping_nested_and_touching_hole_tracks() {
+        for mode in ["overlap", "nested", "touch"] {
+            let mut data: serde_json::Value = serde_json::from_str(include_str!(
+                "../../../../tools/model/hollow-loft.request.json"
+            ))
+            .unwrap();
+            if mode == "touch" {
+                for p in data["model"]["family"]["parameters"]
+                    .as_array_mut()
+                    .unwrap()
+                {
+                    if ["lower_bore_radius", "upper_bore_radius"]
+                        .iter()
+                        .any(|id| p["id"] == *id)
+                    {
+                        p["default"]["scalar"]["value"] = serde_json::json!(1.);
+                    }
+                }
+            }
+            for (index, name) in [(3, "second-lower"), (4, "second-upper")] {
+                let mut copy = data["model"]["family"]["features"][index].clone();
+                copy["id"] = serde_json::json!(name);
+                let sketch = &mut copy["operation"]["sketch_wire"]["sketch"];
+                sketch["id"] = serde_json::json!(name);
+                if mode == "touch" {
+                    let (x, z) = if index == 3 { (1., 0.) } else { (1., 20.) };
+                    let vector = |x| serde_json::json!({"literal":{"x":{"value":x,"dimension":"length","unit":"millimeter"},"y":{"value":0.,"dimension":"length","unit":"millimeter"},"z":{"value":z,"dimension":"length","unit":"millimeter"}}});
+                    sketch["origin"] = vector(x);
+                    data["model"]["family"]["features"][index]["operation"]["sketch_wire"]["sketch"]
+                        ["origin"] = vector(-x);
+                } else if mode == "nested" {
+                    // Use a separate radius parameter so the two tracks remain distinct.
+                    let old = if index == 3 {
+                        "lower_bore_radius"
+                    } else {
+                        "upper_bore_radius"
+                    };
+                    copy = serde_json::from_str(&copy.to_string().replace(old, name)).unwrap();
+                    let mut parameter = data["model"]["family"]["parameters"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .find(|p| p["id"] == old)
+                        .unwrap()
+                        .clone();
+                    parameter["id"] = serde_json::json!(name);
+                    parameter["default"]["scalar"]["value"] =
+                        serde_json::json!(if index == 3 { 2. } else { 1. });
+                    data["model"]["family"]["parameters"]
+                        .as_array_mut()
+                        .unwrap()
+                        .push(parameter);
+                }
+                data["model"]["family"]["features"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(copy);
+            }
+            data["model"]["family"]["features"][0]["operation"]["profile_loft"]["holes"]
+                .as_array_mut()
+                .unwrap()
+                .push(serde_json::json!(["second-lower", "second-upper"]));
+            let r = report(&data);
+            assert!(!r.checks_passed, "{mode}");
+            assert!(r.profiles.iter().all(|p| p.issues.is_empty()));
+            for station in r.stations {
+                assert_eq!(station.holes.len(), 2);
+                assert_eq!(station.area_mm2, None);
+                assert_eq!(station.issues[0].code, "station_region");
+                assert!(station.issues[0].message.contains("another hole"));
+            }
+        }
+    }
+    #[test]
+    fn valid_station_regions_do_not_certify_crossing_hole_tracks_between_sections() {
+        let mut data: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../tools/model/hollow-loft.request.json"
+        ))
+        .unwrap();
+        for parameter in data["model"]["family"]["parameters"]
+            .as_array_mut()
+            .unwrap()
+        {
+            if ["lower_bore_radius", "upper_bore_radius"]
+                .iter()
+                .any(|id| parameter["id"] == *id)
+            {
+                parameter["default"]["scalar"]["value"] = serde_json::json!(0.5);
+            }
+        }
+        for (index, x, z, name) in [(3, -2., 0., "other-lower"), (4, 2., 20., "other-upper")] {
+            let origin = |x| serde_json::json!({"literal":{"x":{"value":x,"dimension":"length","unit":"millimeter"},"y":{"value":0.,"dimension":"length","unit":"millimeter"},"z":{"value":z,"dimension":"length","unit":"millimeter"}}});
+            data["model"]["family"]["features"][index]["operation"]["sketch_wire"]["sketch"]["origin"] =
+                origin(x);
+            let mut copy = data["model"]["family"]["features"][index].clone();
+            copy["id"] = serde_json::json!(name);
+            copy["operation"]["sketch_wire"]["sketch"]["id"] = serde_json::json!(name);
+            copy["operation"]["sketch_wire"]["sketch"]["origin"] = origin(-x);
+            data["model"]["family"]["features"]
+                .as_array_mut()
+                .unwrap()
+                .push(copy);
+        }
+        data["model"]["family"]["features"][0]["operation"]["profile_loft"]["holes"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!(["other-lower", "other-upper"]));
+        let r = report(&data);
+        assert!(r.checks_passed);
+        assert!(!r.solid_checked);
+        assert!(
+            r.stations
+                .iter()
+                .all(|s| s.area_mm2.is_some() && s.issues.is_empty())
+        );
+        let doc = ModelDocument::from_json(&data["model"].to_string()).unwrap();
+        let graph = doc.instance_graph().unwrap();
+        let session = Session::new().unwrap();
+        let error = graph
+            .resolve("duct")
+            .unwrap()
+            .regenerate(&session)
+            .err()
+            .unwrap();
+        assert!(
+            error.message.contains("overlap")
+                || error.message.contains("touch")
+                || error.message.contains("cross"),
+            "{}",
+            error.message
+        );
+        assert_eq!(session.shape_count().unwrap(), 0);
     }
     #[test]
     fn isolates_alignment_failures_from_other_profiles_and_checks_end_modes() {

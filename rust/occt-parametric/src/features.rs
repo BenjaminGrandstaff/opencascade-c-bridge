@@ -8,8 +8,8 @@ pub use holes::PartInstanceHoles;
 mod hollow;
 mod loft;
 pub use loft::{
-    LoftProfileCheck, LoftProfileIssue, LoftProfileReport, ResolvedLoftEndTangent,
-    ResolvedLoftProfileSeam, diagnose_loft_profiles,
+    LoftProfileCheck, LoftProfileIssue, LoftProfileReport, LoftStationRegionCheck,
+    ResolvedLoftEndTangent, ResolvedLoftProfileSeam, diagnose_loft_profiles,
 };
 mod patterns;
 mod primitives;

@@ -56,6 +56,25 @@ class McpTests(unittest.TestCase):
         self.assertEqual(next_page['items'][0]['profile'], 'upper')
         self.assertEqual(next_page['items'][0]['aligned_edges'], 4)
 
+    def test_loft_station_material_diagnosis_and_paging(self):
+        example = self.client.tool('occt_get_example', dict(name='hollow-loft'))['structuredContent']
+        request = dict(schema='occb-model-inspection-v1', model=example['model'], instance='duct', loft_feature='body', limit=1)
+        result = self.client.tool('occt_inspect_model', request)
+        self.assertFalse(result['isError'])
+        report = result['structuredContent']['loft']
+        self.assertTrue(report['checks_passed'])
+        self.assertEqual(report['stations']['total'], 2)
+        self.assertAlmostEqual(report['stations']['items'][0]['area_mm2'], 48 * math.pi)
+        request['model']['family']['features'][0]['operation']['profile_loft']['holes'] = [['upper-bore', 'lower-bore']]
+        request['offset'] = 1
+        result = self.client.tool('occt_inspect_model', request)
+        self.assertFalse(result['isError'])
+        report = result['structuredContent']['loft']
+        self.assertFalse(report['checks_passed'])
+        self.assertFalse(report['solid_checked'])
+        self.assertEqual(report['stations']['items'][0]['station'], 1)
+        self.assertEqual(report['stations']['items'][0]['issues'][0]['code'], 'station_region')
+
     def test_partitioned_loft_discovery_schema_and_native_visualization(self):
         schema = self.client.tool('occt_get_schema', dict(name='view'))['structuredContent']
         for name in ['constrained-loft', 'normal-profile-loft', 'aligned-profile-loft', 'partitioned-profile-loft']:

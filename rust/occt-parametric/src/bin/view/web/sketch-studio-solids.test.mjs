@@ -112,3 +112,12 @@ for(const purpose of ['start','split'])test(`loft canvas Escape and preview canc
  pending=f.button(`Pick outer station 1 ${purpose} in canvas`).onclick();await f.flush();assert(f.solids.anchorPicker.active);await f.button('Preview solid').onclick();await pending;assert.equal(f.solids.anchorPicker.source,null);assert.equal(f.panel.hidden,false);
  pending=f.button(`Pick outer station 1 ${purpose} in canvas`).onclick();await f.flush();f.solids.close();await pending;assert.equal(f.panel.hidden,true);assert.equal(f.solids.anchorPicker.source,null);
 });
+
+test('current loft diagnosis replaces old preview errors and late reports cannot replace newer status',async t=>{
+ const loft={id:'body',operation:{profile_loft:{profiles:['profile','upper'],holes:[],ruled:false}}};let pass=false,hold=false,resolve;
+ const f=setup(t,{api:(path,options)=>!options?{...graph(),features:[features()[0],{id:'upper',operation:{sketch_wire:{sketch:{}}}},loft]}:path==='/api/loft-profile-report'?(()=>{const reply={...JSON.parse(options.body),report:{checks_passed:pass,solid_checked:false,profiles:[],stations:[],issues:[]}};return hold?new Promise(r=>resolve=()=>r(reply)):reply;})():{...preview(),output:'body'}});
+ await f.open();await f.button('Edit loft body').onclick();f.studio.say('Old solid preview rejected',true);
+ await f.button('Check loft profiles').onclick();assert(f.studio.error);assert.match(f.studio.message,/checks found problems/);
+ pass=true;await f.button('Check loft profiles').onclick();assert.equal(f.studio.error,false);assert.match(f.studio.message,/checks pass for this instance/);
+ hold=true;const pending=f.button('Check loft profiles').onclick();await f.flush();const traversal=f.input('Outer station 2 traversal');traversal.value='reverse';traversal.onchange();f.studio.say('Newer edit',true);resolve();await pending;assert.equal(f.studio.message,'Newer edit');assert(f.studio.error);
+});

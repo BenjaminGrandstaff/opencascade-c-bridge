@@ -5,7 +5,10 @@ use crate::assembly::{add, cross, dot, length, scale};
 
 #[path = "loft_report.rs"]
 mod report;
-pub use report::{LoftProfileCheck, LoftProfileIssue, LoftProfileReport, diagnose_loft_profiles};
+pub use report::{
+    LoftProfileCheck, LoftProfileIssue, LoftProfileReport, LoftStationRegionCheck,
+    diagnose_loft_profiles,
+};
 
 const MAXIMUM_SECTIONS: usize = 1_000;
 const MAXIMUM_POINTS: usize = 10_000;

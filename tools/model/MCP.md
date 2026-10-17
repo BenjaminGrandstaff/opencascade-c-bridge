@@ -159,9 +159,11 @@ With `instance` and `loft_feature`, inspect the loft's source boundaries in
 isolation, even when its correspondence prevents constructing the solid.
 The paged `loft.profiles` contains station/track IDs, source/aligned edge counts,
 exact starts, reversal and stable issue codes. `loft.issues` contains global
-track/mode/end-condition problems. `checks_passed` applies only to these checks;
+track/mode/end-condition problems. Paged `loft.stations` checks hollow station
+coplanarity, strict containment and separate holes, reporting native material
+area or a `station_region` issue with profile IDs. `checks_passed` applies only to these checks;
 `solid_checked` is false. This mode is mutually exclusive with `output` and
-`sketch_feature`, and does not certify hole containment, fold-back, final solid
+`sketch_feature`, and does not certify between-station hole containment, fold-back, final solid
 validity or requirements. See [profile diagnosis](../../docs/LOFTS.md#read-only-profile-diagnosis).
 
 With `output`, the engine first regenerates and verifies the graph, refreshing
