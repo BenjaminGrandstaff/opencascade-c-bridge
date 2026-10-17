@@ -1298,9 +1298,23 @@ referenced at maximum or least material boundary (`"boundary": "maximum"` or
   and also locates the axis.
 
 The largest radial shift is half the envelope's departure from the boundary.
-A feature beyond its boundary is reported. The boundary does not include
-geometric tolerances that would enlarge it, such as perpendicularity to A at
-MMC.
+A feature beyond its boundary is reported.
+
+**Boundaries enlarged by geometric tolerances.** When the datum feature of
+size itself carries a geometric tolerance relative to the datums before it
+in the referencing frame (ASME Y14.5-2018 §7.11.4), its boundary is moved
+out of the material by that tolerance: a bore perpendicular to A within
+Ø0.04 at MMC, referenced A | B(MMB), has its virtual condition Ø9.86 as
+MMB instead of Ø9.9. The tolerance counts when its control is on a
+declared feature of size anchored where the datum feature is, can take a
+material condition (straightness, flatness, orientation, position), is not
+statistical, and names, in order, exactly the higher-precedence datum
+features (none for a primary datum, such as straightness of the derived
+median line). At the matching condition or regardless of size it is the
+virtual condition; at the opposite condition the worst-case boundary adds
+the size tolerance. When several controls count, the largest applies. The
+same holds for width datums (a slot's MMB narrows, its LMB widens) and the
+members of a common datum axis (their own form tolerances).
 
 The shift is a rigid motion within plane A: a translation of the frame
 origin and, where a width datum allows it, a rotation about A's normal.
@@ -1676,8 +1690,7 @@ tilted to the primary; an axis datum at an angle to a primary plane;
 composite position to a primary datum axis; a tertiary
 hole or pin's form error limiting its rotational shift; a tertiary plane
 re-contacting as a shifting secondary width turns; datum shift of a common
-width; boundaries
-enlarged by geometric tolerances; common axes of more than two members or
+width; common axes of more than two members or
 after a primary plane,
 reporting n× patterns as one frame on drawings, datum targets on axes
 or features of size,

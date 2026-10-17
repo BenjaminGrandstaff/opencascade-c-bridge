@@ -1639,6 +1639,93 @@ fn a_separate_requirement_lets_a_control_or_its_pattern_shift_alone() {
     assert!(!evaluated(&report, "hole1").conforms);
 }
 
+/// A control on datum feature B itself (the bore), Ø`tolerance` at
+/// `material` relative to `datums`.
+fn on_bore(
+    id: &str,
+    characteristic: GeometricCharacteristic,
+    tolerance: f64,
+    material: ToleranceMaterialCondition,
+    datums: &[&str],
+) -> DrawingFeatureControlFrame {
+    let mut f = control(id, "hole", characteristic, tolerance, datums);
+    f.zone = GeometricToleranceZone::Diameter;
+    f.feature_of_size = true;
+    f.material = material;
+    f.size_limits = Some(DrawingSizeLimits {
+        kind: FeatureOfSizeKind::Internal,
+        lower: Quantity::length(9.9, LengthUnit::Millimeter),
+        upper: Quantity::length(10.1, LengthUnit::Millimeter),
+    });
+    f
+}
+
+#[test]
+fn a_datum_features_own_tolerance_enlarges_its_boundary() {
+    use GeometricCharacteristic::{Perpendicularity, Position};
+    use ToleranceMaterialCondition::{Least, Maximum, Regardless};
+    let (definition, page) = shift_setup(DatumMaterialBoundary::Maximum);
+    let graph = graph_of(&definition);
+    let record = shift_record(9.92, [[0.05, 0.0]; 4]);
+    let limit = |extra: Vec<DrawingFeatureControlFrame>| {
+        let mut page = page.clone();
+        page.feature_control_frames.extend(extra);
+        let report = page.evaluate_inspection(&graph, &record).unwrap();
+        evaluated(&report, "hole0")
+    };
+    // Alone, the Ø9.92 bore is 0.01 from its Ø9.9 MMB.
+    assert!((limit(Vec::new()).datum_shift_limit_mm - 0.01).abs() < 1e-9);
+    // Perpendicular to A within Ø0.04 at MMC, the bore's MMB is its
+    // virtual condition Ø9.86: 0.03 of shift takes up most of the 0.05.
+    let m = limit(vec![on_bore(
+        "square",
+        Perpendicularity,
+        0.04,
+        Maximum,
+        &["A"],
+    )]);
+    assert!((m.datum_shift_limit_mm - 0.03).abs() < 1e-9, "{m:?}");
+    assert!((m.datum_shift_mm - 0.03).abs() < 1e-6, "{m:?}");
+    assert!((m.deviation_mm - 0.04).abs() < 1e-5, "{m:?}");
+    // Regardless of size it is the same worst-case boundary; at LMC the
+    // worst case adds the 0.2 size tolerance.
+    let rfs = limit(vec![on_bore(
+        "square",
+        Perpendicularity,
+        0.04,
+        Regardless,
+        &["A"],
+    )]);
+    assert!((rfs.datum_shift_limit_mm - 0.03).abs() < 1e-9, "{rfs:?}");
+    let lmc = limit(vec![on_bore(
+        "square",
+        Perpendicularity,
+        0.04,
+        Least,
+        &["A"],
+    )]);
+    assert!((lmc.datum_shift_limit_mm - 0.13).abs() < 1e-9, "{lmc:?}");
+    // Only a tolerance relative to the datums before B counts: a position
+    // to A and C is not B's boundary in A | B | C. The larger of two that
+    // count applies.
+    let other = limit(vec![on_bore(
+        "located",
+        Position,
+        0.1,
+        Maximum,
+        &["A", "C"],
+    )]);
+    assert!(
+        (other.datum_shift_limit_mm - 0.01).abs() < 1e-9,
+        "{other:?}"
+    );
+    let both = limit(vec![
+        on_bore("square", Perpendicularity, 0.04, Maximum, &["A"]),
+        on_bore("tilt", Perpendicularity, 0.06, Maximum, &["A"]),
+    ]);
+    assert!((both.datum_shift_limit_mm - 0.04).abs() < 1e-9, "{both:?}");
+}
+
 #[test]
 fn least_material_boundary_shift_uses_the_minimum_material_envelope() {
     let (definition, page) = shift_setup(DatumMaterialBoundary::Least);
@@ -2219,6 +2306,34 @@ fn a_common_width_of_forty_thousand_points_fits_quickly() {
     let turn = frame.x_axis.y.abs().max(frame.y_axis.x.abs());
     assert!((turn - 0.02 / 30.0).abs() < 2e-4, "{frame:?}");
     assert!(elapsed < 1.0, "{elapsed} s");
+}
+
+#[test]
+fn a_width_datums_own_tolerance_enlarges_its_boundary() {
+    use DatumMaterialBoundary::Maximum;
+    // Slot B perpendicular to A within 0.02 at MMC: its MMB is 7.88, so it
+    // may shift 0.06 where C, without one, still shifts 0.05.
+    let (definition, mut page) = width_frame_setup(Maximum, Maximum);
+    let graph = graph_of(&definition);
+    let mut square = control(
+        "square",
+        "xslot",
+        GeometricCharacteristic::Perpendicularity,
+        0.02,
+        &["A"],
+    );
+    square.feature_of_size = true;
+    square.material = ToleranceMaterialCondition::Maximum;
+    square.size_limits = Some(slot_limits());
+    page.feature_control_frames.push(square);
+    let report = page
+        .evaluate_inspection(&graph, &width_frame_record(0.0, [0.0; 2]))
+        .unwrap();
+    let m = evaluated(&report, "hole0");
+    assert!(
+        (m.datum_shift_limit_mm - 0.06_f64.hypot(0.05)).abs() < 1e-9,
+        "{m:?}"
+    );
 }
 
 #[test]

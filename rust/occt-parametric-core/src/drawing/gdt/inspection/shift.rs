@@ -795,8 +795,15 @@ impl Context<'_, '_> {
                         let c = measured.coordinates_mm(*point).map_err(|e| e.to_string())?;
                         n[0] * c.x + n[1] * c.y
                     };
-                    let (boundary, departure) =
-                        self.width_boundary(datum, *normal, *width, n, offset, measured)?;
+                    let (boundary, departure) = self.width_boundary(
+                        datum,
+                        &datums[..i],
+                        *normal,
+                        *width,
+                        n,
+                        offset,
+                        measured,
+                    )?;
                     if !axis_frame {
                         locating.push(departure);
                     }
@@ -854,7 +861,7 @@ impl Context<'_, '_> {
             space.rotation_fixed = false;
             space.turn_free = true;
         }
-        for (datum, simulator) in datums.iter().zip(simulators).skip(1) {
+        for (i, (datum, simulator)) in datums.iter().zip(simulators).enumerate().skip(1) {
             if datum.translation && datum.boundary != DatumMaterialBoundary::Regardless {
                 return Err(
                     "a translation modifier is not evaluated on datums after a primary datum axis"
@@ -884,7 +891,8 @@ impl Context<'_, '_> {
             let (origin, _) = self.nominal_datum(&datum.datum_feature)?;
             let offset = nominal.coordinates_mm(origin).map_err(|e| e.to_string())?.x;
             let n = [dot(*normal, measured.x_axis), dot(*normal, measured.y_axis)];
-            let (boundary, _) = self.width_boundary(datum, *normal, *width, n, offset, measured)?;
+            let (boundary, _) =
+                self.width_boundary(datum, &datums[..i], *normal, *width, n, offset, measured)?;
             space.widths.push(boundary);
             space.rotation_fixed = false;
         }
@@ -917,6 +925,7 @@ impl Context<'_, '_> {
                 direction,
                 &[],
                 datum.boundary,
+                &[],
             )?
             else {
                 unreachable!("axis simulator");
@@ -988,11 +997,13 @@ impl Context<'_, '_> {
 
     /// The boundary pair of a width datum feature of size and half its
     /// departure from the boundary at the mating orientation. Sizes come from
-    /// the feature's `size_limits`; geometric tolerances that would enlarge
-    /// the boundary are not included.
+    /// the feature's `size_limits`, moved out by the geometric tolerance on
+    /// the feature relative to `higher` (see [`Self::enlargement`]).
+    #[allow(clippy::too_many_arguments)]
     fn width_boundary(
         &self,
         datum: &DrawingDatumReference,
+        higher: &[DrawingDatumReference],
         normal: Vec3,
         mating: f64,
         in_plane: [f64; 2],
@@ -1006,6 +1017,15 @@ impl Context<'_, '_> {
         })?;
         let (lower, upper) = limits.bounds().map_err(|e| e.to_string())?;
         let internal = feature.kind() == Some(FeatureOfSizeKind::Internal);
+        // The boundary moves away from the material: a slot's MMB narrows
+        // and its LMB widens; a tab's the reverse.
+        let t = self.enlargement(feature, higher, datum.boundary);
+        let maximum = datum.boundary == DatumMaterialBoundary::Maximum;
+        let (lower, upper) = if internal == maximum {
+            (lower - t, upper)
+        } else {
+            (lower, upper + t)
+        };
         let (origin, nominal) = self.nominal_datum(id)?;
         let facing = if dot(normal, nominal) >= 0.0 {
             1.0
@@ -1031,7 +1051,6 @@ impl Context<'_, '_> {
             projected.push(([c.x, c.y], side));
             along.push(c.z);
         }
-        let maximum = datum.boundary == DatumMaterialBoundary::Maximum;
         let (size, departure) = if maximum {
             (
                 if internal { lower } else { upper },

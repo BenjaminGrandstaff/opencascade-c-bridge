@@ -17,7 +17,7 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 7/7, bridge 160 + first-use integration 1 (+1 doc test), recipes 3, parametric core 57 + kernel 749 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 77 + viewer Node 398 + branch command 2 + model command 92, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 7/7, bridge 160 + first-use integration 1 (+1 doc test), recipes 3, parametric core 57 + kernel 751 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 77 + viewer Node 398 + branch command 2 + model command 92, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -25,6 +25,14 @@ tracks status and order.
 | Scale benchmarks | Last full suite: 194 Rust cases plus 5 model-command cases and a 10,000-face Python matcher. Sketch authoring integration rechecked 60 sketch cases and 60 MCP cases within budget. | `tools/bench/run.sh` |
 
 ## Done
+
+- Datum boundaries enlarged by geometric tolerances (no schema or ABI
+  change). A datum feature of size referenced at MMB or LMB now takes its
+  boundary from its own tolerance relative to the higher-precedence datums
+  (its virtual condition, or the worst-case boundary at the opposite
+  condition), for bores, pins, slots and tabs: a Ø9.92 bore perpendicular
+  to A within Ø0.04 at MMC may shift 0.03 mm instead of 0.01. See
+  [datum shift](docs/DRAWINGS.md#measured-inspection-schema-68).
 
 - Common width datums (no schema or ABI change). Coplanar slot or tab
   width datum features named together (`A-B`) are now simulated by one
@@ -2988,8 +2996,7 @@ scopes and inspected repo capabilities, not a full conformity audit.
    bounded SVG approximation for curves SVG cannot represent. Direct deviations
    and limits render stacked values.
 2. **Structured GD&T** — [Y14.5](https://www.asme.org/codes-standards/find-codes-standards/y14-5-dimensioning-tolerancing):
-   the listed gaps are closed; remaining refinements (boundaries enlarged by
-   geometric tolerances, and others in docs/DRAWINGS.md) are smaller. Measured planar datum frames, flatness,
+   the listed gaps are closed; the remaining refinements, listed in docs/DRAWINGS.md, are smaller. Measured planar datum frames, flatness,
    circularity, cylindricity, planar orientation zones and position with
    MMC/LMC bonus are evaluated (schema 68), and cylindrical datum features of
    size with circular and total runout (schema 135), common datums A-B

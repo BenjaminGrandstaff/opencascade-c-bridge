@@ -454,9 +454,17 @@ pub struct MeasuredDatumAxis {
     pub mating_sizes_mm: Vec<f64>,
 }
 
+/// A geometric tolerance on a datum feature itself: its control's datum
+/// features in order, tolerance (mm) and material condition.
+type OwnTolerance = (Vec<String>, f64, ToleranceMaterialCondition);
+
 struct Context<'a, 'g> {
     graph: &'a InstanceGraph<'g>,
     features: HashMap<&'a str, &'a DrawingDatumFeature>,
+    /// Geometric tolerances on each datum feature of size itself, by
+    /// feature ID: the controls' datum features in order, tolerance (mm)
+    /// and material condition. They enlarge its material boundaries.
+    own_tolerances: HashMap<&'a str, Vec<OwnTolerance>>,
     measured_datums: HashMap<&'a str, Vec<Vec3>>,
     /// Simulator planes keyed by datum precedence prefix; each prefix is fitted once.
     simulators: HashMap<SimulatorKey, Result<Simulators, String>>,
@@ -662,9 +670,36 @@ impl DrawingDefinition {
                 frame.id
             )));
         }
+        // A datum feature's own derived-axis or center-plane tolerances: frames
+        // on a declared feature of size anchored where the feature is.
+        let mut own_tolerances: HashMap<&str, Vec<OwnTolerance>> = HashMap::new();
+        for feature in &self.datum_features {
+            if !feature.feature_of_size || feature.size_limits.is_none() {
+                continue;
+            }
+            for frame in &frames {
+                if frame.feature_of_size
+                    && frame.characteristic.material()
+                    && frame.attachment.anchor == feature.attachment.anchor
+                    && !frame.modifiers.contains(&ToleranceModifier::Statistical)
+                    && let Ok(tolerance) = frame.tolerance.normalized()
+                {
+                    let datums = frame
+                        .datums
+                        .iter()
+                        .flat_map(|d| d.members().map(str::to_owned))
+                        .collect();
+                    own_tolerances
+                        .entry(feature.id.as_str())
+                        .or_default()
+                        .push((datums, tolerance, frame.material));
+                }
+            }
+        }
         let mut context = Context {
             graph,
             features,
+            own_tolerances,
             measured_datums,
             simulators: HashMap::new(),
             positions: HashMap::new(),
@@ -1115,7 +1150,14 @@ impl Context<'_, '_> {
         let feature = self.features[id];
         if let ResolvedDatum::Axis { direction, .. } = self.nominal(&feature.attachment.anchor)? {
             let simulator = if let [(feature, points)] = members.as_slice() {
-                self.axis_simulator(feature, points, direction, &simulators, last.boundary)?
+                self.axis_simulator(
+                    feature,
+                    points,
+                    direction,
+                    &simulators,
+                    last.boundary,
+                    prefix,
+                )?
             } else {
                 self.common_axis(&members, direction, &simulators, last.boundary)?
             };
@@ -1466,7 +1508,7 @@ impl Context<'_, '_> {
         let mut envelopes = Vec::with_capacity(2);
         for (feature, points) in members {
             let Simulator::Axis(_, _, size, limit) =
-                self.axis_simulator(feature, points, nominal, &[], boundary)?
+                self.axis_simulator(feature, points, nominal, &[], boundary, &[])?
             else {
                 unreachable!("axis simulator");
             };
@@ -1491,6 +1533,46 @@ impl Context<'_, '_> {
         Ok(Simulator::Axis(origin, direction, sizes, largest))
     }
 
+    /// How far a geometric tolerance on datum feature of size `feature`
+    /// itself moves its material boundary out (ASME Y14.5-2018 §7.11.4): the
+    /// largest tolerance among its own controls whose datum features, in
+    /// order, are the higher-precedence datums `higher` (none for a primary
+    /// datum: form of the derived axis or center plane). Its tolerance at
+    /// the matching condition or regardless of size gives the virtual
+    /// condition; at the opposite condition, the worst-case boundary adds
+    /// the size tolerance. O(controls on the feature).
+    fn enlargement(
+        &self,
+        feature: &DrawingDatumFeature,
+        higher: &[DrawingDatumReference],
+        boundary: DatumMaterialBoundary,
+    ) -> f64 {
+        let Some(own) = self.own_tolerances.get(feature.id.as_str()) else {
+            return 0.0;
+        };
+        let size_tolerance = feature
+            .size_limits
+            .as_ref()
+            .and_then(|l| l.bounds().ok())
+            .map_or(0.0, |(lower, upper)| upper - lower);
+        let wanted: Vec<&str> = higher.iter().flat_map(|d| d.members()).collect();
+        own.iter()
+            .filter(|(datums, ..)| datums.iter().map(String::as_str).eq(wanted.iter().copied()))
+            .map(|&(_, tolerance, material)| {
+                let matching = match boundary {
+                    DatumMaterialBoundary::Regardless => return 0.0,
+                    DatumMaterialBoundary::Maximum => ToleranceMaterialCondition::Maximum,
+                    DatumMaterialBoundary::Least => ToleranceMaterialCondition::Least,
+                };
+                if material == ToleranceMaterialCondition::Regardless || material == matching {
+                    tolerance
+                } else {
+                    tolerance + size_tolerance
+                }
+            })
+            .fold(0.0, f64::max)
+    }
+
     /// Axis of the actual mating envelope of a cylindrical datum feature of
     /// size: the largest inscribed cylinder of a hole or the smallest
     /// circumscribed cylinder of a shaft. As primary the axis is free; after
@@ -1502,7 +1584,9 @@ impl Context<'_, '_> {
         nominal: Vec3,
         prefix: &[Simulator],
         boundary: DatumMaterialBoundary,
+        higher: &[DrawingDatumReference],
     ) -> Result<Simulator, String> {
+        let enlargement = self.enlargement(feature, higher, boundary);
         let kind = feature.kind().ok_or_else(|| {
             format!(
                 "axis datum feature '{}' needs a declared size kind (internal or external)",
@@ -1525,7 +1609,7 @@ impl Context<'_, '_> {
                     DatumMaterialBoundary::Maximum => (
                         origin,
                         direction,
-                        boundary_clearance(feature, kind, boundary, size)?,
+                        boundary_clearance(feature, kind, boundary, size, enlargement)?,
                     ),
                     DatumMaterialBoundary::Least => {
                         let opposite = if kind == FeatureOfSizeKind::Internal {
@@ -1538,7 +1622,13 @@ impl Context<'_, '_> {
                         (
                             origin,
                             direction,
-                            boundary_clearance(feature, kind, boundary, 2.0 * minimum)?,
+                            boundary_clearance(
+                                feature,
+                                kind,
+                                boundary,
+                                2.0 * minimum,
+                                enlargement,
+                            )?,
                         )
                     }
                 };
@@ -1581,7 +1671,7 @@ impl Context<'_, '_> {
                     .collect();
                 let (center, radius) = fit_circle(&projected, fit).map_err(|e| e.to_string())?;
                 let (center, limit) =
-                    self.datum_shift(feature, kind, boundary, &projected, center, radius)?;
+                    self.datum_shift(feature, kind, boundary, &projected, center, radius, enlargement)?;
                 let origin = add(*point, add(scale(u, center[0]), scale(v, center[1])));
                 Ok(Simulator::Axis(origin, *normal, vec![2.0 * radius], limit))
             }
@@ -1597,8 +1687,9 @@ impl Context<'_, '_> {
     /// mating envelope may float inside (hole) or outside (shaft) a boundary
     /// of its maximum material size. LMB: the minimum-material envelope
     /// floats against a boundary of its least material size and locates the
-    /// axis. Sizes come from the feature's `size_limits`; geometric tolerances
-    /// that would enlarge the boundary are not included.
+    /// axis. Sizes come from the feature's `size_limits`, moved out by
+    /// `enlargement`.
+    #[allow(clippy::too_many_arguments)]
     fn datum_shift(
         &self,
         feature: &DrawingDatumFeature,
@@ -1607,6 +1698,7 @@ impl Context<'_, '_> {
         projected: &[[f64; 2]],
         center: [f64; 2],
         radius: f64,
+        enlargement: f64,
     ) -> Result<([f64; 2], f64), String> {
         let (center, size) = match boundary {
             DatumMaterialBoundary::Regardless => return Ok((center, 0.0)),
@@ -1622,7 +1714,10 @@ impl Context<'_, '_> {
                 (center, 2.0 * radius)
             }
         };
-        Ok((center, boundary_clearance(feature, kind, boundary, size)?))
+        Ok((
+            center,
+            boundary_clearance(feature, kind, boundary, size, enlargement)?,
+        ))
     }
 
     fn measured_frame(
@@ -2367,13 +2462,15 @@ impl Context<'_, '_> {
 
 /// Half the departure of a datum feature of size from its material boundary:
 /// `size` is the actual mating size at MMB or the minimum-material size at
-/// LMB. Sizes come from the feature's `size_limits`; geometric tolerances
-/// that would enlarge the boundary are not included.
+/// LMB. The boundary is the feature's size limit moved out by `enlargement`,
+/// the geometric tolerance on the feature itself (see
+/// [`Context::enlargement`]).
 fn boundary_clearance(
     feature: &DrawingDatumFeature,
     kind: FeatureOfSizeKind,
     boundary: DatumMaterialBoundary,
     size: f64,
+    enlargement: f64,
 ) -> Result<f64, String> {
     let limits = feature.size_limits.as_ref().ok_or_else(|| {
         format!(
@@ -2384,12 +2481,15 @@ fn boundary_clearance(
     let (lower, upper) = limits.bounds().map_err(|e| e.to_string())?;
     let internal = kind == FeatureOfSizeKind::Internal;
     let maximum = boundary == DatumMaterialBoundary::Maximum;
-    let departure = match (maximum, internal) {
-        (true, true) => size - lower,
-        (true, false) => upper - size,
-        (false, true) => upper - size,
-        (false, false) => size - lower,
-    };
+    // A geometric tolerance on the feature moves its boundary away from the
+    // material by `enlargement` in every case.
+    let departure = enlargement
+        + match (maximum, internal) {
+            (true, true) => size - lower,
+            (true, false) => upper - size,
+            (false, true) => upper - size,
+            (false, false) => size - lower,
+        };
     if departure < -1e-9 {
         return Err(format!(
             "datum feature '{}' violates its {} material boundary",
