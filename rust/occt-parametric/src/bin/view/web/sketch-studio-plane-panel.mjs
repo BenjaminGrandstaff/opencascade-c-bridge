@@ -111,6 +111,7 @@ export function installPlanes(studio, document) {
   }
 
   function openForm(type = 'offset', base = 'xy') {
+    studio.cancelGesture?.();
     studio.selectedPlane = null;
     form = {
       type, name: nextPlaneName(), base, distance: 10, angle: 30, hinge: 'x',
@@ -278,6 +279,7 @@ export function installPlanes(studio, document) {
 
   // ── Picking faces and points ────────────────────────────────────────
   function beginPick(kind, index) {
+    studio.cancelGesture?.();
     form.picking = { kind, index };
     renderPlanes();
     studio.say(kind === 'face' ? 'Click a flat face of the model. Escape cancels.' : 'Click a point on the model; corners snap. Escape cancels.');

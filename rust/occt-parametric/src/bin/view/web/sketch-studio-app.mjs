@@ -12,6 +12,7 @@ import { installConstraints } from './sketch-studio-constrain.mjs';
 import { layoutLabels, sketchLabels } from './sketch-studio-labels.mjs';
 import { installExtras } from './sketch-studio-extras.mjs';
 import { installPlanes } from './sketch-studio-plane-panel.mjs';
+import {installPointPicking} from './sketch-studio-picks.mjs';
 import { installDelete } from './sketch-studio-delete.mjs';
 
 const SVG = 'http://www.w3.org/2000/svg';
@@ -351,6 +352,7 @@ export function startStudio(document) {
   }
 
   function openNewSketch(plane = 'xy') {
+    studio.cancelGesture?.();
     const taken = [...studio.features.map((f) => f.id), ...studio.layers.map((l) => l.feature)];
     studio.newSketch = { name: nextFeatureName(taken), plane, offset: 0, picked: null };
     renderLayers();
@@ -602,6 +604,7 @@ export function startStudio(document) {
     studio.tools.get(studio.tool)?.click?.(event);
   });
   canvas.addEventListener('pointercancel', () => {
+    studio.tools.get(studio.tool)?.cancel?.();
     drag = null;
     canvas.style.cursor = 'grab';
   });
@@ -659,6 +662,7 @@ export function startStudio(document) {
   installDelete(studio, document);
   installExtras(studio, document);
   installPlanes(studio, document);
+  installPointPicking(studio, document);
   load()
     .then(() => say(studio.layers.length ? 'Choose a layer, then a tool. Drag to orbit, Shift-drag or right-drag to pan, scroll to zoom.' : 'No sketches yet. Choose New sketch.'))
     .catch((error) => say(error.message, true))

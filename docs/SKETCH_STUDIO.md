@@ -202,6 +202,35 @@ do not become driving constraints. Dimensions generated internally by shapes
 can be displayed, but only a label matched to an authored driving constraint
 opens this editor. Use the shape's controls to edit its own definition.
 
+## Picking named points on the canvas
+
+**Named points** in the side panel opens either **Intersection point** or
+**Spline sample**. Both work on the active applied sketch, including a draft
+whose current Preview succeeded. Apply a new sketch first. Picks use the
+studio's sketch plane at any camera angle and native geometry queries.
+
+For an intersection, choose a new point name or an existing authored target and
+a search radius in millimetres. Start the pick, click two different source
+curves, then move near the intended crossing. The canvas shows the search ring,
+hint and finite native candidate markers. Click to stage only when exactly one
+candidate lies inside the window; missing or ambiguous windows leave the draft
+unchanged. Change the radius without reselecting the curves. The saved link
+retains the literal hint and radius for regeneration.
+
+For a spline sample, choose a name or existing target, start the pick, then
+click the source spline near the intended location. Review the native point and
+parameter fraction. Enter an exact fraction and update its marker, or use Start
+(0), Midpoint (0.5) or End (1), then **Stage spline sample**. These are parameter
+fractions, not arc-length fractions. Preview verifies the staged relation.
+
+Each staged link is one draft edit with Undo/Redo and Apply. Close, Escape,
+pointer cancellation, another tool, a layer change, reload or draft edit cancels
+the pick; late replies cannot restore markers or stage a point. Starting a new
+sketch, plane workflow or Advanced editing also ends the pick. Finish or cancel
+an active face/plane pick before starting a sketch point pick. Right-drag and
+Shift-drag remain camera navigation. Generated source curves use the verified
+catalogue; display-only glyphs and edited-curve names cannot be sources.
+
 ## Additional primitive tools
 
 The toolbar also authors these existing native definitions (schema 164 and ABI
@@ -448,7 +477,8 @@ Node tests delete from a 10,000-line chain in well under a second.
 | Edit driving dimensions | Studio inline | Double-click a label or Edit in the inspector; reference dimensions are read-only |
 | Remove constraints | Yes | Inspector |
 | Delete geometry | Studio only | Delete key or inspector, with dependents; see [Deleting](#deleting) |
-| Crossing points, spline samples, weighted point links | Partly | Forms in the Advanced drawer; canvas picking needs the classic viewer |
+| Crossing points and spline samples | Yes | Named points panel, native candidates, on-canvas markers and draft history |
+| Weighted point links | Forms | Advanced drawer |
 | Patterns, point links, projections, curve and region edits, profiles, dependencies | Yes | Advanced drawer hosts the classic panels |
 | Sketch to solid | Yes | Advanced drawer |
 | Preview, Apply, Undo, Redo, Save | Yes | Toolbar; Revert stays in the classic viewer |
