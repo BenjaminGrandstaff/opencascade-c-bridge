@@ -12,9 +12,14 @@ impl Studio {
             profile: String,
             position_mm: Option<[f64; 3]>,
             maximum_distance_mm: Option<f64>,
+            #[serde(default)]
+            split_points: Vec<occt_parametric::VectorExpr>,
         }
         let query: Query =
             serde_json::from_slice(body).map_err(|e| format!("invalid loft profile pick: {e}"))?;
+        if query.split_points.len() > 128 {
+            return Err("A profile supports at most 128 split points.".into());
+        }
         if query.version != self.version {
             return Err("Model changed. Pick the loft anchor again.".into());
         }
@@ -57,6 +62,25 @@ impl Studio {
             }
             _ => return Err("Choose a single-boundary closed planar profile.".into()),
         };
+        let partitioned;
+        let wire = if query.split_points.is_empty() {
+            wire
+        } else {
+            let part = graph.resolve(&query.instance).map_err(|e| e.to_string())?;
+            let parameters = part.resolved_parameters().map_err(|e| e.to_string())?;
+            let points = query
+                .split_points
+                .iter()
+                .map(|p| {
+                    occt_parametric::vector(p, &parameters, occt_parametric::Dimension::Length)
+                })
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|e| e.to_string())?;
+            partitioned = session
+                .partition_profile_wire(wire, &points)
+                .map_err(|e| e.to_string())?;
+            &partitioned
+        };
         let aligned = session
             .align_profile_wire(wire, None, false)
             .map_err(|e| e.to_string())?;
@@ -88,7 +112,7 @@ impl Studio {
             && session
                 .curve_point_at_fraction(&edges[0], 0.5)
                 .is_ok_and(|p| session.align_profile_wire(&aligned, Some(p), false).is_ok());
-        let mut data = json!({"version":self.version,"instance":query.instance,"profile":query.profile,"accepted":true,"coordinate_system":"family-local mm","continuous":continuous});
+        let mut data = json!({"version":self.version,"instance":query.instance,"profile":query.profile,"accepted":true,"coordinate_system":"family-local mm","continuous":continuous,"split_count":query.split_points.len()});
         if let Some(position) = query.position_mm {
             let hint = Vec3::new(position[0], position[1], position[2]);
             let anchor = if continuous {

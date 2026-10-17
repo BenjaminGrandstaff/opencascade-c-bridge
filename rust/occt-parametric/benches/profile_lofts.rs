@@ -92,4 +92,29 @@ fn main() {
         20. * std::f64::consts::PI * (64. - 32. + 16. * 13. / 35.),
         "aligned-profile",
     );
+    let mut request: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../tools/model/aligned-profile-loft.request.json"
+    ))
+    .unwrap();
+    let template: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../tools/model/partitioned-profile-loft.request.json"
+    ))
+    .unwrap();
+    let splits=template["model"]["family"]["features"][0]["operation"]["profile_loft"]["correspondence"]["lower"]["split_points"].clone();
+    let upper = serde_json::to_string(&splits)
+        .unwrap()
+        .replace("lower_radius", "upper_radius");
+    let mut upper: serde_json::Value = serde_json::from_str(&upper).unwrap();
+    for point in upper.as_array_mut().unwrap() {
+        point["components"]["z"] = serde_json::json!({"parameter":"height"});
+    }
+    let correspondence = &mut request["model"]["family"]["features"][0]["operation"]["profile_loft"]
+        ["correspondence"];
+    correspondence["lower"]["split_points"] = splits;
+    correspondence["upper"]["split_points"] = upper;
+    run(
+        &request.to_string(),
+        20. * std::f64::consts::PI * (64. - 32. + 16. * 13. / 35.),
+        "partitioned-profile",
+    );
 }

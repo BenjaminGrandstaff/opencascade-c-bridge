@@ -184,6 +184,10 @@ pub struct LoftProfileAlignment {
     pub start_point: Option<VectorExpr>,
     #[serde(default, skip_serializing_if = "is_false")]
     pub reverse: bool,
+    /// Exact family-space boundary partitions, applied before the start anchor (schema 172).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[schemars(length(max = 128))]
+    pub split_points: Vec<VectorExpr>,
 }
 
 /// An interior sample of a smooth radius law. Position is dimensionless and

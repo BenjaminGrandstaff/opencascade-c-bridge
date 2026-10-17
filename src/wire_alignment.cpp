@@ -37,6 +37,7 @@ occt_bridge_status_t occt_bridge_align_profile_wire(
         for (BRepTools_WireExplorer it(TopoDS::Wire(*source)); it.More(); it.Next()) {
             original.push_back(it.Current());
             copied.push_back(TopoDS::Edge(copy.ModifiedShape(it.Current())));
+            copied.back().Orientation(it.Current().Orientation());
         }
         if (original.empty() || original.size() > 128)
             return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "alignment supports 1-128 boundary edges");

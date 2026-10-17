@@ -6,9 +6,9 @@ export function createLoftAnchorPicker(studio,mode,viewRect=()=>({left:0,top:0})
  let session=null;
  const valid=s=>session===s&&s.current()&&s.version===studio.version&&s.instance===studio.instance&&!studio.modelPending;
  const cancel=()=>{const old=session;session=null;if(old){old.resolve(null);mode(false);studio.redraw();}};
- const matches=(s,d)=>d?.version===s.version&&d.instance===s.instance&&d.profile===s.profile&&d.accepted===true&&d.coordinate_system==='family-local mm';
+ const matches=(s,d)=>d?.version===s.version&&d.instance===s.instance&&d.profile===s.profile&&d.accepted===true&&d.coordinate_system==='family-local mm'&&(d.split_count??0)===s.splits.length;
  async function load(s){try{
-  const d=await studio.api('/api/loft-profile-pick',{method:'POST',body:JSON.stringify({version:s.version,instance:s.instance,profile:s.profile})});
+  const d=await studio.api('/api/loft-profile-pick',{method:'POST',body:JSON.stringify({version:s.version,instance:s.instance,profile:s.profile,...(s.splits.length?{split_points:s.splits}:{})})});
   if(!valid(s)){if(session===s)cancel();return;}
   if(!matches(s,d)||typeof d.continuous!=='boolean'||!point(d.origin_mm)||!point(d.normal)||Math.hypot(...d.normal)<1e-9||!Array.isArray(d.vertices)||d.vertices.length<1||d.vertices.length>256||!d.vertices.every(point)||!Array.isArray(d.lines)||d.lines.length<1||d.lines.length>128||d.lines.some(line=>!Array.isArray(line)||line.length<2||line.length>257||!line.every(point)))throw Error('The loft boundary does not match this model and profile.');
   s.source=d;
@@ -17,7 +17,7 @@ export function createLoftAnchorPicker(studio,mode,viewRect=()=>({left:0,top:0})
   s.bounds={min,max};s.diagonal=Math.hypot(...max.map((v,i)=>v-min[i]))*1000;
   studio.redraw();studio.say(d.continuous?'Click the amber profile boundary to place its seam. Drag to orbit; Fit frames it; Escape cancels.':'Click an amber profile corner to choose its start. Drag to orbit; Fit frames it; Escape cancels.');
  }catch(error){if(session!==s)return;session=null;mode(false);studio.redraw();s.reject(error);}}
- function pick(profile,current){cancel();return new Promise((resolve,reject)=>{const s={profile,current,version:studio.version,instance:studio.instance,resolve,reject,source:null,pending:false,picking:true};session=s;mode(true);studio.say('Loading the accepted loft profile…');load(s);});}
+ function pick(profile,current,splits=[]){cancel();return new Promise((resolve,reject)=>{const s={profile,current,splits:structuredClone(splits),version:studio.version,instance:studio.instance,resolve,reject,source:null,pending:false,picking:true};session=s;mode(true);studio.say('Loading the accepted loft profile…');load(s);});}
  function hit(s,event){
   const context=studio.viewport(),box=viewRect(),at=[event.clientX-box.left,event.clientY-box.top];let best=null;
   if(!s.source.continuous){
@@ -36,7 +36,7 @@ export function createLoftAnchorPicker(studio,mode,viewRect=()=>({left:0,top:0})
   if(s.source.continuous){const ray=studio.rayAt(event.clientX,event.clientY),origin=fromGltf(ray.origin),direction=directionFromGltf(ray.direction),denominator=dot(direction,s.source.normal);if(Math.abs(denominator)>1e-9){const t=dot(sub(s.source.origin_mm,origin),s.source.normal)/denominator;if(t>0)hint=add(origin,scale(direction,t));}}
   const tolerance=distance(hint,found.position)+s.diagonal*.005+1e-6;s.pending=true;
   try{
-   const d=await studio.api('/api/loft-profile-pick',{method:'POST',body:JSON.stringify({version:s.version,instance:s.instance,profile:s.profile,position_mm:hint,maximum_distance_mm:tolerance})});
+   const d=await studio.api('/api/loft-profile-pick',{method:'POST',body:JSON.stringify({version:s.version,instance:s.instance,profile:s.profile,...(s.splits.length?{split_points:s.splits}:{}),position_mm:hint,maximum_distance_mm:tolerance})});
    if(!valid(s)){if(session===s)cancel();return;}
    if(!matches(s,d)||!point(d.position_mm)||!Number.isFinite(d.distance_mm)||d.distance_mm<0||d.distance_mm>tolerance||distance(hint,d.position_mm)>tolerance+1e-7)throw Error('The picked anchor does not match this profile.');
    s.selected=[...d.position_mm];s.picking=false;mode(false);studio.redraw();s.resolve({profile:s.profile,position_mm:[...d.position_mm]});studio.say('Loft start selected at a fixed family-coordinate position. Preview checks every instance.');

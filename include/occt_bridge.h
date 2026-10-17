@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define OCCT_BRIDGE_ABI_VERSION 78u
+#define OCCT_BRIDGE_ABI_VERSION 79u
 #define OCCT_BRIDGE_INVALID_SHAPE_ID UINT64_C(0)
 
 #if defined(_WIN32) && defined(OCCT_BRIDGE_BUILD_SHARED)
@@ -658,6 +658,15 @@ OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_create_loft_from_wires(
     int ruled,
     occt_bridge_shape_id_t* out_shape
 );
+
+/* ABI 79: split an immutable valid closed planar wire at 1-128 distinct
+ * family-space boundary points (within 1e-6 mm). Existing vertices are no-ops;
+ * off-boundary/ambiguous points and more than 128 resulting edges are rejected.
+ * Retains exact curve geometry, traversal, seam and modified wire/edge history. */
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_partition_profile_wire(
+    occt_bridge_session_t* session, occt_bridge_shape_id_t input,
+    const occt_bridge_vec3_t* points, size_t point_count,
+    occt_bridge_shape_id_t* out_shape);
 
 /* ABI 78: choose a start anchor and/or reverse an immutable closed planar
  * wire (1-128 edges). Anchor must match a unique boundary vertex within 1e-6

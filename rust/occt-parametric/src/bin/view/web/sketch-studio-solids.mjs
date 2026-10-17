@@ -76,7 +76,7 @@ export function installStudioSolids(studio, document) {
       started: (feature,output) => {
         if(current()&&feature?.operation.profile_loft&&feature.id===output){guides=loftTangentGuides({scenes:studio.scenes},studio.instance,output);seams=loftSeamGuides({scenes:studio.scenes},studio.instance,output);studio.redraw();}
       },
-      pickLoftAnchor: profile => anchorPicker.pick(profile,current),
+      pickLoftAnchor: (profile,splits) => anchorPicker.pick(profile,current,splits),
       pickHolePosition: target => picker.pick(target,current,'hole'),
       pickSolidEdge: target => picker.pick(target,current,'edge'),
       pickLimitingFace: target => picker.pick(target,current),

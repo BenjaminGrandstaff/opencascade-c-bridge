@@ -154,3 +154,11 @@ by source profile ID and supports optional `start_point` length vectors and
 `reverse` flags. Manual correspondence requires a smooth end-constrained loft;
 unknown IDs or anchors off regenerated boundaries are errors. See
 [the supported anchor geometry](../../docs/LOFTS.md#profile-correspondence-schema-171-abi-78).
+
+`partitioned-profile-loft.request.json` (schema 172 / ABI 79) uses three exact
+`split_points` on a copied circle boundary to match a four-edge diamond. Both
+profile-normal end constraints remain enforced, and original source-edge
+ancestry reaches every generated wall. Split vectors support parameters and
+participate in incremental invalidation. All executable examples use schema 172.
+MCP exposes `partitioned-profile-loft`, `constrained-loft`, `normal-profile-loft`
+and `aligned-profile-loft` through `occt_get_example` and example resources.

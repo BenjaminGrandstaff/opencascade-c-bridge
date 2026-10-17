@@ -2,7 +2,7 @@
 
 use super::*;
 
-pub(crate) const ABI_VERSION: u32 = 78;
+pub(crate) const ABI_VERSION: u32 = 79;
 
 #[repr(C)]
 #[derive(Default)]
@@ -781,6 +781,13 @@ unsafe extern "C" {
         make_solid: c_int,
         ruled: c_int,
         out: *mut RawShapeId,
+    ) -> RawStatus;
+    pub(crate) fn occt_bridge_partition_profile_wire(
+        session: *mut c_void,
+        input: RawShapeId,
+        points: *const RawVec3,
+        point_count: usize,
+        out_shape: *mut RawShapeId,
     ) -> RawStatus;
     pub(crate) fn occt_bridge_align_profile_wire(
         session: *mut c_void,

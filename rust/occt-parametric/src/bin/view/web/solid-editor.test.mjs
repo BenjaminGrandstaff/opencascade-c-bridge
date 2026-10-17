@@ -369,3 +369,17 @@ test('canvas loft starts preserve formulas on cancel and reject stale replies be
  await button(host,'Preview solid').onclick();const alignment=calls.at(-1).features[0].operation.profile_loft.correspondence.upper;assert.equal(alignment.reverse,true);assert.deepEqual(alignment.start_point.components,{x:depth(0),y:depth(4),z:depth(20)});
  }finally{delete globalThis.document;delete globalThis.Option;}
 });
+
+test('loft split controls preserve formulas, add exact points, choose starts and follow station identities',async()=>{
+ globalThis.document={createElement:tag=>new Element(tag)};globalThis.Option=class extends Element{constructor(text,value){super('option');this.textContent=text;this.value=value;}};
+ try{
+ const saved={id:'transition',operation:{profile_loft:{profiles:['profile','middle','upper'],holes:[],ruled:false,start_constraint:{normal_to_profile:true,magnitude:depth(20)},correspondence:{middle:{split_points:[{parameter:'cut'}]}}}}};
+ const host=new Element('div'),calls=[],picks=[];createSolidEditor({host,instance:()=> 'part',pickLoftAnchor:async(profile,splits)=>{picks.push({profile,splits});return null;},preview:async()=>{},applied:async()=>{},restore:async()=>{},request:async(path,options)=>{if(!options)return {version:1,features:[...base,...['middle','upper'].map(id=>({id,operation:{sketch_wire:{sketch:{}}}})),saved],output:'transition',parameters:[]};calls.push(JSON.parse(options.body));return {can_apply:true};}});
+ await button(host,'Sketch to solid').onclick();await button(host,'Edit loft transition').onclick();await button(host,'Preview solid').onclick();assert.deepEqual(calls.at(-1).features,[saved]);
+ await button(host,'Add outer station 2 split point').onclick();for(const [key,value] of [['X','1'],['Y','2'],['Z','3']]){control(host,`Outer station 2 split 2 ${key} (mm)`).value=value;control(host,`Outer station 2 split 2 ${key} (mm)`).oninput();}
+ await button(host,'Preview solid').onclick();let c=calls.at(-1).features[0].operation.profile_loft.correspondence.middle;assert.deepEqual(c.split_points,[{parameter:'cut'},{components:{x:depth(1),y:depth(2),z:depth(3)}}]);
+ await button(host,'Use outer station 2 split 1 as start').onclick();await button(host,'Preview solid').onclick();c=calls.at(-1).features[0].operation.profile_loft.correspondence.middle;assert.deepEqual(c.start_point,{parameter:'cut'});
+ await button(host,'Remove outer station 2 split 2').onclick();await button(host,'Move station 2 later').onclick();await button(host,'Pick outer station 3 start in canvas').onclick();assert.deepEqual(picks.at(-1),{profile:'middle',splits:[{parameter:'cut'}]});
+ await button(host,'Preview solid').onclick();const op=calls.at(-1).features[0].operation.profile_loft;assert.deepEqual(op.profiles,['profile','upper','middle']);assert.deepEqual(op.correspondence.middle.split_points,[{parameter:'cut'}]);
+ }finally{delete globalThis.document;delete globalThis.Option;}
+});

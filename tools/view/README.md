@@ -638,3 +638,10 @@ snap to existing native vertices; supported periodic boundaries snap exactly to
 the curve. Confirmed picks use fixed family coordinates, and Preview validates
 all variants. Escape cancels the pick and keeps the draft. Schema 171 / ABI 78
 are unchanged. See [canvas starts](../../docs/LOFTS.md#canvas-starts-and-traversal-markers).
+
+Loft boundary split controls (schema 172 / ABI 79) refine copied source profiles
+into corresponding exact edges before applying start anchors and reversal.
+Add/remove XYZ split points, preserve formulas, or use a split expression as the
+start. Canvas start picking includes draft split vertices. Native constraints,
+all-variant validation, history and Save still apply. See
+[explicit partitions](../../docs/LOFTS.md#explicit-boundary-partitions-schema-172-abi-79).

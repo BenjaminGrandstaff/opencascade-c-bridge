@@ -1042,3 +1042,10 @@ the amber source; drag orbits; Escape cancels without losing the loft draft.
 A confirmed pick uses fixed family coordinates and replaces the existing anchor
 formula; cancellation preserves it. Preview verifies every instance before
 Apply. See [canvas starts and traversal markers](LOFTS.md#canvas-starts-and-traversal-markers).
+
+Schema 172 / ABI 79 adds **Add … split point** for each loft profile. Enter exact
+boundary XYZ coordinates or preserve saved formulas to create matching edge
+counts across sections. **Use … split … as start** copies its expression into
+the start anchor. The canvas picker includes these draft vertices. Source
+sketches remain unchanged; Preview checks all variants and all existing end
+constraints. See [boundary partitions](LOFTS.md#explicit-boundary-partitions-schema-172-abi-79).

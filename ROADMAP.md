@@ -8,16 +8,16 @@ tracks status and order.
 
 | Layer | Version | State |
 |---|---|---|
-| C ABI (`src/`, `include/`) | ABI 78 | Stable; exact version match required |
+| C ABI (`src/`, `include/`) | ABI 79 | Stable; exact version match required |
 | `occt-types` (shared value types) | — | No native dependency |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI; re-exports `occt-types` |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric-core` (kernel-free engineering layer) | Schema 171 | Definitions, documents, solving and checks without OCCT |
-| `occt-parametric` (kernel regeneration) | Schema 171 | Active development; re-exports the core API |
+| `occt-parametric-core` (kernel-free engineering layer) | Schema 172 | Definitions, documents, solving and checks without OCCT |
+| `occt-parametric` (kernel regeneration) | Schema 172 | Active development; re-exports the core API |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 7/7, bridge 165 + first-use integration 1 (+1 doc test), recipes 3, parametric core 57 + kernel 766 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 90 + viewer Node 446 + branch command 2 + model command 93, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 7/7, bridge 167 + first-use integration 1 (+1 doc test), recipes 3, parametric core 57 + kernel 769 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 91 + viewer Node 449 + branch command 2 + model command 93, MCP Python 12, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -25,6 +25,20 @@ tracks status and order.
 | Scale benchmarks | Last full suite: 194 Rust cases (195 with the parallel glTF case) plus 5 model-command cases and a 10,000-face Python matcher. Sketch authoring integration rechecked 60 sketch cases and 60 MCP cases within budget. | `tools/bench/run.sh` |
 
 ## Done
+
+- Explicit loft boundary partitions (schema 172, ABI 79): saved parameter-aware
+  split points refine exact copied curves before start/reversal alignment,
+  allowing different source edge counts to share ordered constrained topology.
+  Original edge ancestry composes through every generated fragment and bore;
+  original sketches remain unchanged. Native point/edge budgets, unique boundary
+  validation and all existing end-derivative/fold-back checks remain enforced.
+  The editor preserves split formulas and profile IDs, supports add/remove and
+  using a split expression as the start, and includes draft vertices in canvas
+  picks. All-instance Preview, history and Save retain these settings. The new
+  circle-to-diamond example is available through MCP with the advanced loft
+  examples. Existing reversed wire traversal is preserved during native copies.
+  The 1,000-regeneration partitioned-circle benchmark includes native seam/end
+  inspection, exact volume and released handles: 8.98 seconds / 10-second budget.
 
 - Loft canvas starts and traversal markers (schema 171, ABI 78 unchanged):
   native read-only seam inspection exposes exact aligned starts and short
@@ -48,7 +62,7 @@ tracks status and order.
   aligned-profile example and 1,000-regeneration benchmark cover this path
   (3.11 seconds against the existing 10-second budget).
   Existing vertex starts and full single-edge periodic seams are supported;
-  edge splitting remains future work.
+  explicit boundary splitting is now available in schema 172.
 
 - Loft end visualization (schema 170, ABI 77 unchanged): native annotations
   expose resolved end directions, full strengths and true one-third-strength

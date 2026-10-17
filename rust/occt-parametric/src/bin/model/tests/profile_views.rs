@@ -3015,6 +3015,7 @@ fn loft_viewer_exposes_resolved_native_end_derivatives_and_true_control_handle_l
         ("constrained-loft", "direction"),
         ("normal-profile-loft", "normal_to_profile"),
         ("aligned-profile-loft", "normal_to_profile"),
+        ("partitioned-profile-loft", "normal_to_profile"),
     ] {
         let request = view_example(example);
         view_request(&dir, request, example).unwrap();
@@ -3043,7 +3044,7 @@ fn loft_viewer_exposes_resolved_native_end_derivatives_and_true_control_handle_l
             let radius = if i == 0 { 8. } else { 4. };
             let (x, y) = (start[0].as_f64().unwrap(), start[1].as_f64().unwrap());
             assert!((x.hypot(y) - radius).abs() < 1e-7);
-            if example == "aligned-profile-loft" {
+            if example == "aligned-profile-loft" || example == "partitioned-profile-loft" {
                 assert!(x.abs() < 1e-7);
                 assert!((y - radius).abs() < 1e-7);
             }
@@ -3063,9 +3064,9 @@ fn loft_viewer_exposes_resolved_native_end_derivatives_and_true_control_handle_l
             let z1 = a["anchors"][1][2].as_f64().unwrap();
             assert!((z1 - z0 - 20. / 3.).abs() < 1e-7);
             if end == "start" {
-                assert_eq!(z0, 0.);
+                assert!(z0.abs() < 1e-7);
             } else {
-                assert_eq!(z1, 20.);
+                assert!((z1 - 20.).abs() < 1e-7);
             }
             assert!(
                 a["parameters"]

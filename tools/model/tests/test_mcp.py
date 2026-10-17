@@ -38,6 +38,23 @@ class McpTests(unittest.TestCase):
         self.assertEqual(len(self.client.call('tools/list')['result']['tools']), 8)
         self.assertEqual(self.client.call('initialize')['error']['code'], -32600)
 
+    def test_partitioned_loft_discovery_schema_and_native_visualization(self):
+        schema = self.client.tool('occt_get_schema', dict(name='view'))['structuredContent']
+        for name in ['constrained-loft', 'normal-profile-loft', 'aligned-profile-loft', 'partitioned-profile-loft']:
+            result = self.client.tool('occt_get_example', dict(name=name))
+            self.assertFalse(result['isError'])
+            jsonschema.validate(result['structuredContent'], schema)
+        result = self.client.tool('occt_visualize_model', result['structuredContent'])
+        self.assertFalse(result['isError'])
+        uri = result['structuredContent']['resources']['view.json']
+        data = json.loads(self.client.call('resources/read', dict(uri=uri))['result']['contents'][0]['text'])
+        solid = next(s for s in data['scenes'] if s['kind']=='solid' and s['feature']=='body')
+        self.assertTrue(solid['valid'])
+        seams = [a for a in solid['annotations'] if a.get('detail', {}).get('measurement')=='loft_profile_seam']
+        self.assertEqual(len(seams), 2)
+        self.assertEqual({a['detail']['profile'] for a in seams}, {'lower', 'upper'})
+        self.assertTrue(any(a['id']=='loft-start-tangent' for a in solid['annotations']))
+
     def test_discovery_schemas_and_complete_examples(self):
         tools = self.client.call('tools/list')['result']['tools']
         self.assertEqual({tool['name'] for tool in tools}, {'occt_get_schema', 'occt_get_example', 'occt_build', 'occt_inspect_model', 'occt_inspect_build', 'occt_edit_build', 'occt_preview_edit_build', 'occt_visualize_model'})
@@ -58,7 +75,7 @@ class McpTests(unittest.TestCase):
         with self.assertRaises(jsonschema.ValidationError):
             jsonschema.validate(bad, schema)
         resources = self.client.call('resources/list')['result']['resources']
-        self.assertEqual(len(resources), 87)
+        self.assertEqual(len(resources), 91)
         self.assertEqual(len(self.client.call('resources/templates/list')['result']['resourceTemplates']), 1)
         read = self.client.call('resources/read', dict(uri='occt://schema/request'))['result']['contents'][0]
         self.assertEqual(json.loads(read['text']), schema)

@@ -6931,3 +6931,114 @@ fn loft_canvas_picks_snap_exact_corners_and_periodic_boundaries_without_editing_
         assert_eq!(fs::read_to_string(&model).unwrap(), file);
     }
 }
+
+#[test]
+fn loft_partitions_pick_new_vertices_validate_all_variants_and_survive_save_and_history() {
+    let directory = Directory::new();
+    let request: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../tools/model/partitioned-profile-loft.request.json"
+    ))
+    .unwrap();
+    let mut document = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+    document.instances.push(InstanceNode::Clone {
+        id: "wide".into(),
+        source: "block".into(),
+        overrides: HashMap::from([(
+            "lower_radius".into(),
+            ParameterValue::Scalar(Quantity::length(10., LengthUnit::Millimeter)),
+        )]),
+        placement: Default::default(),
+        frame: None,
+        provenance: "test".into(),
+    });
+    let model = PathBuf::from(directory.model(&document));
+    let mut studio = serve::Studio::load(&model, Some("body".into())).unwrap();
+    assert_eq!(
+        studio.handle("GET", "/solid-loft-splits.mjs", b"").status,
+        200
+    );
+    let data = get(&mut studio, "/api/features").1;
+    let state = get(&mut studio, "/api/state").1;
+    let feature = data["features"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["id"] == "body")
+        .unwrap()
+        .clone();
+    let splits =
+        feature["operation"]["profile_loft"]["correspondence"]["lower"]["split_points"].clone();
+    let mut query = json!({"version":data["version"],"instance":"block","profile":"lower","split_points":splits});
+    let response = studio.handle(
+        "POST",
+        "/api/loft-profile-pick",
+        query.to_string().as_bytes(),
+    );
+    assert_eq!(
+        response.status,
+        200,
+        "{}",
+        String::from_utf8_lossy(&response.body)
+    );
+    let source: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+    assert_eq!(source["continuous"], false);
+    assert_eq!(source["split_count"], 3);
+    assert_eq!(source["vertices"].as_array().unwrap().len(), 4);
+    query["position_mm"] = json!([0., 8.001, 0.]);
+    query["maximum_distance_mm"] = json!(0.01);
+    let response = studio.handle(
+        "POST",
+        "/api/loft-profile-pick",
+        query.to_string().as_bytes(),
+    );
+    assert_eq!(response.status, 200);
+    let chosen: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+    assert!((chosen["position_mm"][1].as_f64().unwrap() - 8.).abs() < 1e-7);
+    assert_eq!(get(&mut studio, "/api/state").1, state);
+    let q = |n| json!({"literal":{"value":n,"dimension":"length","unit":"millimeter"}});
+    let mut invalid = feature.clone();
+    invalid["operation"]["profile_loft"]["correspondence"]["lower"]["split_points"][0] =
+        json!({"components":{"x":q(0.),"y":q(8.),"z":q(0.)}});
+    let mut edit = json!({"version":data["version"],"instance":"block","expected":data["features"],"action":"replace","features":[invalid],"output":"body","apply":false});
+    let response = studio.handle("POST", "/api/features", edit.to_string().as_bytes());
+    let rejected: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+    assert_eq!(rejected["can_apply"], false, "{rejected}");
+    assert!(rejected.get("gltf").is_none());
+    edit["apply"] = json!(true);
+    assert_ne!(
+        studio
+            .handle("POST", "/api/features", edit.to_string().as_bytes())
+            .status,
+        200
+    );
+    assert_eq!(get(&mut studio, "/api/state").1, state);
+    edit["features"][0] = feature;
+    for id in ["lower", "upper"] {
+        edit["features"][0]["operation"]["profile_loft"]["correspondence"][id]["reverse"] =
+            json!(true);
+    }
+    edit["apply"] = json!(false);
+    let response = studio.handle("POST", "/api/features", edit.to_string().as_bytes());
+    let preview: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+    assert_eq!(preview["can_apply"], true, "{preview}");
+    for id in ["block", "wide"] {
+        assert!(preview["geometry"][id]["volume_mm3"].as_f64().unwrap() > 0.);
+    }
+    edit["apply"] = json!(true);
+    assert_eq!(
+        studio
+            .handle("POST", "/api/features", edit.to_string().as_bytes())
+            .status,
+        200
+    );
+    history(&mut studio, "undo");
+    history(&mut studio, "redo");
+    assert_eq!(studio.handle("POST", "/api/save", b"").status, 200);
+    let saved = ModelDocument::from_json(&fs::read_to_string(&model).unwrap()).unwrap();
+    assert_eq!(saved.schema_version, CURRENT_SCHEMA_VERSION);
+    let expected: FeatureDefinition = serde_json::from_value(edit["features"][0].clone()).unwrap();
+    assert_eq!(
+        saved.family.features.iter().find(|f| f.id == "body"),
+        Some(&expected)
+    );
+}

@@ -231,6 +231,7 @@ fn constrained_hollow_lofts_interpolate_both_tracks_without_losing_wall_history(
         correspondence.insert(
             id.into(),
             LoftProfileAlignment {
+                split_points: Vec::new(),
                 reverse,
                 start_point: Some(VectorExpr::Components {
                     x: ScalarExpr::Literal(Quantity::length(0., LengthUnit::Millimeter)),
@@ -267,6 +268,61 @@ fn constrained_hollow_lofts_interpolate_both_tracks_without_losing_wall_history(
                 .history_count(body, &edge, HistoryRelation::Generated)
                 .unwrap()
                 > 0
+        );
+    }
+}
+
+#[test]
+fn exact_partitions_work_for_outer_and_bore_tracks_with_original_wall_history() {
+    let template: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../tools/model/partitioned-profile-loft.request.json"
+    ))
+    .unwrap();
+    let mut value = serde_json::to_value(document()).unwrap();
+    let loft = &mut value["family"]["features"][0]["operation"]["profile_loft"];
+    loft["ruled"] = serde_json::json!(false);
+    for key in ["start_constraint", "end_constraint"] {
+        loft[key] =
+            template["model"]["family"]["features"][0]["operation"]["profile_loft"][key].clone();
+    }
+    let splits = &template["model"]["family"]["features"][0]["operation"]["profile_loft"]["correspondence"]
+        ["lower"]["split_points"];
+    for (id, radius, upper) in [
+        ("lower", "lower_radius", false),
+        ("upper", "upper_radius", true),
+        ("lower-bore", "lower_bore_radius", false),
+        ("upper-bore", "upper_bore_radius", true),
+    ] {
+        let mut points: serde_json::Value =
+            serde_json::from_str(&splits.to_string().replace("lower_radius", radius)).unwrap();
+        if upper {
+            for p in points.as_array_mut().unwrap() {
+                p["components"]["z"] = serde_json::json!({"parameter":"height"});
+            }
+        }
+        loft["correspondence"][id] = serde_json::json!({"split_points":points});
+    }
+    let doc = ModelDocument::from_json(&value.to_string()).unwrap();
+    let session = Session::new().unwrap();
+    let generated = part(&doc).regenerate(&session).unwrap();
+    let body = generated.shape("body").unwrap();
+    let expected = 20. * std::f64::consts::PI * (64. - 32. + 16. * 13. / 35.) * 0.75;
+    assert!((session.volume(body).unwrap() - expected).abs() < 1e-4);
+    for id in ["lower", "lower-bore"] {
+        assert_eq!(
+            session
+                .subshape_count(generated.shape(id).unwrap(), ShapeType::Edge)
+                .unwrap(),
+            1
+        );
+        let edge = session
+            .subshape(generated.shape(id).unwrap(), ShapeType::Edge, 0)
+            .unwrap();
+        assert_eq!(
+            session
+                .history_count(body, &edge, HistoryRelation::Generated)
+                .unwrap(),
+            4
         );
     }
 }

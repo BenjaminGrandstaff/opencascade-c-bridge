@@ -758,6 +758,7 @@ fn independent_correspondence_parameter_invalidates_loft_without_rebuilding_prof
     correspondence.insert(
         "lower".into(),
         LoftProfileAlignment {
+            split_points: Vec::new(),
             start_point: Some(VectorExpr::Components {
                 x: ScalarExpr::Literal(Quantity::length(0., LengthUnit::Millimeter)),
                 y: ScalarExpr::Parameter("anchor".into()),
@@ -769,6 +770,7 @@ fn independent_correspondence_parameter_invalidates_loft_without_rebuilding_prof
     correspondence.insert(
         "upper".into(),
         LoftProfileAlignment {
+            split_points: Vec::new(),
             start_point: Some(VectorExpr::Components {
                 x: ScalarExpr::Literal(Quantity::length(0., LengthUnit::Millimeter)),
                 y: ScalarExpr::Multiply(
@@ -871,4 +873,146 @@ fn loft_seam_inspection_matches_exact_anchors_traversal_and_parameters_without_r
     );
     drop(generated);
     assert_eq!(session.shape_count().unwrap(), 0);
+}
+
+#[test]
+fn partitioned_loft_matches_different_edge_counts_and_preserves_native_profiles_and_history() {
+    let request: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../tools/model/partitioned-profile-loft.request.json"
+    ))
+    .unwrap();
+    let mut family = ModelDocument::from_json(&request["model"].to_string())
+        .unwrap()
+        .family;
+    let session = Session::new().unwrap();
+    {
+        let generated = part(&family).regenerate(&session).unwrap();
+        assert_eq!(
+            session
+                .subshape_count(generated.shape("lower").unwrap(), ShapeType::Edge)
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            session
+                .subshape_count(generated.shape("upper").unwrap(), ShapeType::Edge)
+                .unwrap(),
+            4
+        );
+        let edge = session
+            .subshape(generated.shape("lower").unwrap(), ShapeType::Edge, 0)
+            .unwrap();
+        assert_eq!(
+            session
+                .history_count(
+                    generated.shape("body").unwrap(),
+                    &edge,
+                    HistoryRelation::Generated
+                )
+                .unwrap(),
+            4
+        );
+        assert!(session.is_valid(generated.shape("body").unwrap()).unwrap());
+        let parameters = part(&family).resolved_parameters().unwrap();
+        let handles = session.shape_count().unwrap();
+        let seams = generated
+            .loft_profile_seams(&session, &family.features[0].operation, &parameters)
+            .unwrap();
+        assert!(seams[0].points[0].x.abs() < 1e-7);
+        assert!((seams[0].points[0].y - 8.).abs() < 1e-7);
+        assert_eq!(
+            generated
+                .loft_end_tangents(&session, &family.features[0].operation, &parameters)
+                .unwrap()
+                .len(),
+            2
+        );
+        assert_eq!(session.shape_count().unwrap(), handles);
+    }
+    assert_eq!(session.shape_count().unwrap(), 0);
+    let original = family.clone();
+    for invalid in ["missing", "outside", "duplicate", "dimension"] {
+        family = original.clone();
+        let FeatureOperation::ProfileLoft { correspondence, .. } =
+            &mut family.features[0].operation
+        else {
+            panic!()
+        };
+        let splits = &mut correspondence.get_mut("lower").unwrap().split_points;
+        match invalid {
+            "missing" => splits.clear(),
+            "outside" => splits[0] = point(0., 9., 0.),
+            "duplicate" => splits.push(splits[0].clone()),
+            _ => splits[0] = direction(0., 8., 0.),
+        }
+        assert!(part(&family).regenerate(&session).is_err(), "{invalid}");
+        assert_eq!(session.shape_count().unwrap(), 0);
+    }
+    assert_eq!(
+        serde_json::from_str::<FamilyDefinition>(&serde_json::to_string(&original).unwrap())
+            .unwrap(),
+        original
+    );
+}
+
+#[test]
+fn split_formulas_invalidate_only_the_loft_and_invalid_edits_keep_the_accepted_result() {
+    let request: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../tools/model/aligned-profile-loft.request.json"
+    ))
+    .unwrap();
+    let mut family = ModelDocument::from_json(&request["model"].to_string())
+        .unwrap()
+        .family;
+    let mut parameter = length_parameter("split_y", 8.);
+    parameter.minimum = None;
+    family.parameters.push(parameter);
+    let FeatureOperation::ProfileLoft { correspondence, .. } = &mut family.features[0].operation
+    else {
+        panic!()
+    };
+    for (id, factor, z) in [
+        (
+            "lower",
+            1.,
+            ScalarExpr::Literal(Quantity::length(0., LengthUnit::Millimeter)),
+        ),
+        ("upper", 0.5, ScalarExpr::Parameter("height".into())),
+    ] {
+        let alignment = correspondence.get_mut(id).unwrap();
+        alignment.start_point = None;
+        alignment.split_points = vec![VectorExpr::Components {
+            x: ScalarExpr::Literal(Quantity::length(0., LengthUnit::Millimeter)),
+            y: ScalarExpr::Multiply(
+                Box::new(ScalarExpr::Parameter("split_y".into())),
+                Box::new(ScalarExpr::Literal(Quantity::scalar(factor))),
+            ),
+            z,
+        }];
+    }
+    let session = Session::new().unwrap();
+    let accepted = part(&family).regenerate(&session).unwrap();
+    let volume = session.volume(accepted.shape("body").unwrap()).unwrap();
+    let mut edited = part(&family);
+    edited.overrides.insert(
+        "split_y".into(),
+        ParameterValue::Scalar(Quantity::length(-8., LengthUnit::Millimeter)),
+    );
+    let changed = edited.regenerate_incremental(&session, &accepted).unwrap();
+    assert_eq!(changed.regeneration.rebuilt, ["body"]);
+    assert!(changed.regeneration.reused.contains(&"lower".into()));
+    assert!(changed.regeneration.reused.contains(&"upper".into()));
+    assert!((session.volume(changed.shape("body").unwrap()).unwrap() - volume).abs() < 1e-5);
+    drop(changed);
+    let handles = session.shape_count().unwrap();
+    edited.overrides.insert(
+        "split_y".into(),
+        ParameterValue::Scalar(Quantity::length(9., LengthUnit::Millimeter)),
+    );
+    assert!(edited.regenerate_incremental(&session, &accepted).is_err());
+    assert_eq!(session.shape_count().unwrap(), handles);
+    assert_eq!(
+        session.volume(accepted.shape("body").unwrap()).unwrap(),
+        volume
+    );
 }

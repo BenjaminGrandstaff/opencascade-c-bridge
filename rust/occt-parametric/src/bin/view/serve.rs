@@ -659,6 +659,11 @@ impl Studio {
                 "text/javascript",
                 include_str!("web/solid-loft-constraints.mjs"),
             ),
+            ("GET", "/solid-loft-splits.mjs") => Response::text(
+                200,
+                "text/javascript",
+                include_str!("web/solid-loft-splits.mjs"),
+            ),
             ("GET", "/solid-loft-correspondence.mjs") => Response::text(
                 200,
                 "text/javascript",

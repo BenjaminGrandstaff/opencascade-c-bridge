@@ -665,6 +665,32 @@ impl Session {
         Ok(self.shape(result))
     }
 
+    /// Exact boundary splits at family-space points; retains curve geometry and ancestry.
+    pub fn partition_profile_wire<'a>(
+        &'a self,
+        input: &Shape<'_>,
+        points: &[Vec3],
+    ) -> Result<Shape<'a>, BridgeError> {
+        self.validate_shape(input)?;
+        let points = points
+            .iter()
+            .copied()
+            .map(RawVec3::from)
+            .collect::<Vec<_>>();
+        let mut result = 0;
+        // SAFETY: input is session-owned; the point slice and output live through the call.
+        self.check(unsafe {
+            occt_bridge_partition_profile_wire(
+                self.raw.as_ptr(),
+                input.id,
+                points.as_ptr(),
+                points.len(),
+                &mut result,
+            )
+        })?;
+        Ok(self.shape(result))
+    }
+
     /// Reorder/reverse a closed planar boundary, preserving exact curves and ancestry.
     pub fn align_profile_wire<'a>(
         &'a self,

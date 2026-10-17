@@ -442,3 +442,221 @@ fn exact_periodic_seams_preserve_curves_volume_and_original_edge_history() {
     }
     assert_eq!(s.shape_count().unwrap(), 0);
 }
+
+#[test]
+fn exact_profile_partitions_match_circle_to_polygon_without_changing_sources_or_end_constraints() {
+    let s = Session::new().unwrap();
+    {
+        let circle = s
+            .create_circle_wire(Vec3::new(0., 0., 0.), Vec3::new(0., 0., 1.), 2.)
+            .unwrap();
+        let diamond = s
+            .create_polyline_wire(
+                &[
+                    Vec3::new(2., 0., 10.),
+                    Vec3::new(0., 2., 10.),
+                    Vec3::new(-2., 0., 10.),
+                    Vec3::new(0., -2., 10.),
+                ],
+                true,
+            )
+            .unwrap();
+        let source = s.subshape(&circle, ShapeType::Edge, 0).unwrap();
+        let bounds = s.exact_bounds(&circle).unwrap();
+        let split = s
+            .partition_profile_wire(
+                &circle,
+                &[
+                    Vec3::new(0., 2., 0.),
+                    Vec3::new(-2., 0., 0.),
+                    Vec3::new(0., -2., 0.),
+                ],
+            )
+            .unwrap();
+        assert_eq!(s.subshape_count(&split, ShapeType::Edge).unwrap(), 4);
+        let face = s.create_face_from_wire(&split).unwrap();
+        assert!((s.surface_area(&face).unwrap() - 4. * std::f64::consts::PI).abs() < 1e-7);
+        let t = Vec3::new(0., 0., 10.);
+        let loft = s
+            .create_constrained_loft(&[&split, &diamond], Some(t), Some(t))
+            .unwrap();
+        assert!(s.is_valid(&loft).unwrap());
+        assert!(s.volume(&loft).unwrap() > 80.);
+        let loft = s.compose_history(&loft, &split).unwrap();
+        assert_eq!(
+            s.history_count(&loft, &source, HistoryRelation::Generated)
+                .unwrap(),
+            4
+        );
+        assert_eq!(s.exact_bounds(&circle).unwrap(), bounds);
+        assert_eq!(s.subshape_count(&circle, ShapeType::Edge).unwrap(), 1);
+        for reverse in [false, true] {
+            let a = s
+                .align_profile_wire(&split, Some(Vec3::new(0., 2., 0.)), reverse)
+                .unwrap();
+            let b = s
+                .align_profile_wire(&diamond, Some(Vec3::new(0., 2., 10.)), reverse)
+                .unwrap();
+            assert!(
+                s.create_constrained_loft(&[&a, &b], Some(t), Some(t))
+                    .is_ok()
+            );
+        }
+    }
+    assert_eq!(s.shape_count().unwrap(), 0);
+}
+
+#[test]
+fn boundary_partition_preserves_reversed_lines_and_ellipses_and_rejects_bad_points() {
+    let s = Session::new().unwrap();
+    {
+        let square = s
+            .create_polyline_wire(
+                &[
+                    Vec3::new(0., 0., 0.),
+                    Vec3::new(2., 0., 0.),
+                    Vec3::new(2., 2., 0.),
+                    Vec3::new(0., 2., 0.),
+                ],
+                true,
+            )
+            .unwrap();
+        for reverse in [false, true] {
+            let square = s.align_profile_wire(&square, None, reverse).unwrap();
+            let again = s.align_profile_wire(&square, None, false).unwrap();
+            let original = s.subshape(&square, ShapeType::Edge, 0).unwrap();
+            let preserved = s.subshape(&again, ShapeType::Edge, 0).unwrap();
+            assert_eq!(
+                s.curve_point_at_fraction(&original, 0.).unwrap(),
+                s.curve_point_at_fraction(&preserved, 0.).unwrap()
+            );
+            assert_eq!(
+                s.curve_point_at_fraction(&original, 1.).unwrap(),
+                s.curve_point_at_fraction(&preserved, 1.).unwrap()
+            );
+            let split = s
+                .partition_profile_wire(
+                    &square,
+                    &[
+                        Vec3::new(1., 0., 0.),
+                        Vec3::new(2., 1., 0.),
+                        Vec3::new(0., 0., 0.),
+                    ],
+                )
+                .unwrap();
+            assert_eq!(s.subshape_count(&split, ShapeType::Edge).unwrap(), 6);
+            assert!(
+                (s.surface_area(&s.create_face_from_wire(&split).unwrap())
+                    .unwrap()
+                    - 4.)
+                    .abs()
+                    < 1e-7
+            );
+            let e = s.subshape(&split, ShapeType::Edge, 0).unwrap();
+            let p = s.curve_point_at_fraction(&e, 1.).unwrap();
+            assert!(
+                if reverse {
+                    (p.y - 2.).abs() < 1e-7
+                } else {
+                    (p.x - 1.).abs() < 1e-7
+                },
+                "reverse={reverse} p={p:?}"
+            );
+        }
+        let ellipse = s
+            .create_ellipse_wire_axes(
+                Vec3::new(0., 0., 0.),
+                Vec3::new(0., 0., 1.),
+                Vec3::new(1., 0., 0.),
+                4.,
+                2.,
+            )
+            .unwrap();
+        let split = s
+            .partition_profile_wire(
+                &ellipse,
+                &[
+                    Vec3::new(0., 2., 0.),
+                    Vec3::new(-4., 0., 0.),
+                    Vec3::new(0., -2., 0.),
+                ],
+            )
+            .unwrap();
+        assert!(
+            (s.surface_area(&s.create_face_from_wire(&split).unwrap())
+                .unwrap()
+                - 8. * std::f64::consts::PI)
+                .abs()
+                < 1e-7
+        );
+        let spline = s
+            .create_curve_wire(
+                &[CurveSegment::Spline {
+                    points: (0..8)
+                        .map(|i| {
+                            let a = std::f64::consts::TAU * f64::from(i) / 8.;
+                            Vec3::new(3. * a.cos(), 3. * a.sin(), 0.)
+                        })
+                        .collect(),
+                    start_tangent: None,
+                    end_tangent: None,
+                    periodic: true,
+                }],
+                true,
+            )
+            .unwrap();
+        let at = s.curve_point_at_fraction(&spline, 0.37).unwrap();
+        let divided = s.partition_profile_wire(&spline, &[at]).unwrap();
+        assert_eq!(s.subshape_count(&divided, ShapeType::Edge).unwrap(), 2);
+        assert!(
+            (s.surface_area(&s.create_face_from_wire(&divided).unwrap())
+                .unwrap()
+                - s.surface_area(&s.create_face_from_wire(&spline).unwrap())
+                    .unwrap())
+            .abs()
+                < 1e-6
+        );
+        let circle = s
+            .create_circle_wire(Vec3::new(0., 0., 0.), Vec3::new(0., 0., 1.), 2.)
+            .unwrap();
+        let excessive = (1..=128)
+            .map(|i| {
+                let a = std::f64::consts::TAU * f64::from(i) / 129.;
+                Vec3::new(2. * a.cos(), 2. * a.sin(), 0.)
+            })
+            .collect::<Vec<_>>();
+        assert!(s.partition_profile_wire(&circle, &excessive).is_err());
+        for points in [
+            vec![],
+            vec![Vec3::new(9., 0., 0.)],
+            vec![Vec3::new(1., 0., 0.), Vec3::new(1., 0., 0.)],
+            vec![Vec3::new(f64::NAN, 0., 0.)],
+            vec![Vec3::new(1., 0., 1.)],
+        ] {
+            assert!(s.partition_profile_wire(&square, &points).is_err());
+        }
+        let nonplanar = s
+            .create_polyline_wire(
+                &[
+                    Vec3::new(0., 0., 0.),
+                    Vec3::new(2., 0., 0.),
+                    Vec3::new(2., 2., 1.),
+                    Vec3::new(0., 2., 0.),
+                ],
+                true,
+            )
+            .unwrap();
+        assert!(
+            s.partition_profile_wire(&nonplanar, &[Vec3::new(0., 0., 0.)])
+                .is_err()
+        );
+        let open = s
+            .create_polyline_wire(&[Vec3::new(0., 0., 0.), Vec3::new(2., 0., 0.)], false)
+            .unwrap();
+        assert!(
+            s.partition_profile_wire(&open, &[Vec3::new(1., 0., 0.)])
+                .is_err()
+        );
+    }
+    assert_eq!(s.shape_count().unwrap(), 0);
+}

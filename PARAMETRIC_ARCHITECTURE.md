@@ -2148,3 +2148,16 @@ picks author fixed length coordinates, with no retained topology indices. Versio
 instance, draft and form guards reject late results. Preview cancels pending picks
 and validates the authored anchor across every instance. No model schema or ABI
 change is needed (171 / 78).
+
+Schema 172 / ABI 79 add explicit boundary partitions to loft correspondence.
+Length-vector `split_points` resolve against family parameters and refine copied
+native curves before start/reversal alignment. No source topology indices are
+persisted. Unique exact boundary locations, existing-vertex no-ops, distinct
+requests and 128-edge/point limits are enforced natively. Construction and seam
+inspection share the same partition/alignment operation; composed histories map
+an original source edge through every fragment to the generated walls, including
+hole subtraction. Split parameters invalidate the loft without rebuilding
+unaffected sources. The station editor preserves formulas and profile identities,
+and read-only canvas snapshots include draft partitions. Preview still validates
+every variant before Apply/history/Save. End derivative verification and forward
+span checks remain unchanged; topology is explicitly authored rather than guessed.

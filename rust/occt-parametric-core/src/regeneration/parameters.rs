@@ -23,7 +23,7 @@ pub fn collect_operation_parameters<'a>(
             ..
         } => {
             for alignment in correspondence.values() {
-                if let Some(point) = &alignment.start_point {
+                for point in alignment.start_point.iter().chain(&alignment.split_points) {
                     collect_vector_parameters(point, names);
                 }
             }

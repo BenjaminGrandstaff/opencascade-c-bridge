@@ -163,8 +163,9 @@ The current supported range is 2–64 distinct closed planar sections, matching
 ordered edge topology at every station, at most 128 edges per section and 100,000
 combined compatible section poles. Corresponding wire edges and seams must be
 authored in corresponding order. Unlike unconstrained lofts, this mode does not
-automatically split or reorder edges. Changing a circle into a four-edge square
-therefore requires compatible authored section topology first.
+automatically split or reorder edges. Schema 172 adds explicit `split_points`
+to make the resulting section topology compatible while retaining exact curves;
+see [explicit boundary partitions](#explicit-boundary-partitions-schema-172-abi-79).
 
 Ruled lofts cannot carry these constraints. A terminal direction must cross its
 profile plane. Each span must progress monotonically along a common longitudinal
@@ -279,8 +280,9 @@ The anchor is a family-space length vector, supporting parameter expressions.
 For a boundary with multiple edges it must match a unique existing vertex within
 1e-6 mm. For a single full periodic edge, such as a circle or ellipse, any point
 on that curve can move the seam exactly within the same tolerance. This does
-not split edges or approximate curves. Arbitrary starts on nonperiodic closed
-splines and interior points of multi-edge boundaries are rejected.
+not approximate curves. Anchors alone do not split edges; use `split_points` to
+create boundary vertices before alignment. Starts at interior points of a
+multi-edge boundary still require a matching partition vertex.
 
 At least one start/end constraint is required; free or ruled lofts reject manual
 correspondence because their automatic compatibility step could undo the saved
@@ -335,3 +337,67 @@ samples in `anchors`. The read-only `/api/loft-profile-pick` endpoint returns a
 bounded accepted boundary snapshot, or an exact snapped point for a finite hint
 and positive distance tolerance. Both require the current version and instance.
 These additions keep model schema 171 and ABI 78 unchanged.
+
+## Explicit boundary partitions (schema 172, ABI 79)
+
+A constrained loft can now match different source edge counts using exact
+`correspondence[profile_id].split_points`. These are length-valued family-space
+vectors, supporting the same parameters and formulas as start anchors. They
+split copied boundary edges before the saved start and reversal are applied.
+The original sketches keep their original curves and topology.
+
+For example, one split point on a circle creates two exact arc edges:
+
+```json
+"correspondence": {
+  "lower": {
+    "split_points": [{
+      "components": {
+        "x": {"literal":{"value":0,"dimension":"length","unit":"millimeter"}},
+        "y": {"parameter":"lower_radius"},
+        "z": {"literal":{"value":0,"dimension":"length","unit":"millimeter"}}
+      }
+    }]
+  }
+}
+```
+
+The [circle-to-diamond example](../tools/model/partitioned-profile-loft.request.json)
+uses three cardinal split points to match a single-edge circle to a four-edge
+polygon. Both ends retain profile-normal directions and parameter-linked
+strengths. Original circle edges retain all four generated wall faces. Splits
+also work independently on explicit hole tracks, with ancestry composed through
+partitioning, alignment, lofting and subtraction.
+
+Each profile accepts at most 128 distinct split points and 128 resulting edges.
+A point must lie within 1e-6 mm of a unique native boundary curve location.
+An existing vertex is already a partition and is retained. Duplicate requests,
+off-boundary or ambiguous points, wrong dimensions and edge-budget overflow fail.
+Splits are ordered along the native curves, preserving traversal and the
+original seam; they do not approximate curves. A start anchor can reference a
+new partition vertex. Resulting station edge counts and correspondence must
+still match; this does not automatically choose pairings between sections.
+All existing derivative, fold-back, valid-solid and bore-containment checks apply.
+Free and ruled lofts continue to reject explicit correspondence.
+
+In **Edit loft**, choose **Add … split point**, enter XYZ family millimetres, or
+retain an existing formula. **Use … split … as start** copies that point's
+expression into the start anchor. Editing a copied literal split later requires
+choosing the start again. Station reordering keeps splits attached to profile
+IDs; removal prunes their entries. The canvas start picker shows the draft's
+exact split vertices and snaps to them. Preview checks every instance before
+Apply; Save and undo/redo preserve the split expressions. Parameter changes
+invalidate the loft even when its source sketches are reused.
+
+`Session::partition_profile_wire` wraps the immutable native partition operation.
+Native alignment also now preserves the orientation of already-reversed copied
+edges. Construction and seam inspection use the same partition/alignment helper.
+The read-only `/api/loft-profile-pick` accepts optional draft `split_points`,
+resolves them for the selected instance, and publishes their derived vertices
+without editing the document. Constrained, normal and aligned examples are also
+available through MCP, alongside `partitioned-profile-loft`.
+
+The `partitioned-profile` scale case refines both circular stations into four
+exact arcs. It checks 1,000 regenerations, analytic volume, native seam/end
+inspection, unchanged source edge counts and released handles against the
+existing 10-second budget (8.98 seconds in the recorded run).

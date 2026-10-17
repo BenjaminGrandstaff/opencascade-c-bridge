@@ -19,7 +19,7 @@ test('continuous picks use the profile plane and accept only a verified native s
  const pending=f.picker.pick('profile',f.current);await flush();await f.picker.click({button:0,clientX:75,clientY:50});assert.deepEqual((await pending).position_mm,[500,0,0]);assert.deepEqual(f.calls[1].body.position_mm,[500,0,0]);
 });
 test('wrong boundary snapshots and nonfinite data reject before picking',async()=>{
- for(const delta of [{instance:'other'},{profile:'other'},{normal:[0,0,0]},{vertices:[[NaN,0,0]]},{lines:[[[0,0,0]]]}]){
+ for(const delta of [{instance:'other'},{profile:'other'},{split_count:1},{normal:[0,0,0]},{vertices:[[NaN,0,0]]},{lines:[[[0,0,0]]]}]){
   const f=fixture(()=>({...snapshot(),...delta}));await assert.rejects(f.picker.pick('profile',f.current),/does not match/);assert.equal(f.picker.active,false);
  }
 });
@@ -35,4 +35,11 @@ test('native snap rejections keep picking available and all candidate overlays a
  let reject=true;const f=fixture(body=>!body.position_mm?snapshot():reject?{...picked(),position_mm:[999,999,999]}:picked());const pending=f.picker.pick('profile',f.current);await flush();await f.picker.click(click);assert(f.picker.active);assert.match(f.messages.at(-1),/rejected/);
  const context={matrix,width:100,height:100,element:(tag,attrs)=>({tag,attrs})};assert(f.studio.decorate(context).length>0);assert(f.studio.decorate(context).every(n=>n.attrs['pointer-events']==='none'));
  reject=false;await f.picker.click(click);await pending;f.picker.cancel();assert.deepEqual(f.studio.decorate(context),[]);
+});
+
+test('draft split formulas are fixed per pick and mismatched partition replies cannot place a start',async()=>{
+ const formula=[{parameter:'cut'}],source={...snapshot(),split_count:1};let wrong=true;
+ const f=fixture(body=>body.position_mm?{...picked(),split_count:wrong?0:1}:source);
+ const pending=f.picker.pick('profile',f.current,formula);formula[0].parameter='changed';await flush();assert.deepEqual(f.calls[0].body.split_points,[{parameter:'cut'}]);
+ await f.picker.click(click);assert(f.picker.active);wrong=false;await f.picker.click(click);assert.deepEqual(await pending,{profile:'profile',position_mm:[0,0,0]});assert.deepEqual(f.calls.at(-1).body.split_points,[{parameter:'cut'}]);
 });

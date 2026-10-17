@@ -103,9 +103,9 @@ impl GeneratedResult<'_> {
                         ));
                     }
                 };
-                let (anchor, reverse) = resolved.get(id).copied().unwrap_or((None, false));
-                // This shares the construction operation, including traversal and exact periodic seams.
-                let aligned = session.align_profile_wire(wire, anchor, reverse)?;
+                let alignment = resolved.get(id);
+                let reverse = alignment.is_some_and(|c| c.reverse);
+                let aligned = align_profile(session, wire, alignment)?;
                 let edge = session.subshape(&aligned, ShapeType::Edge, 0)?;
                 let points = (0..=4)
                     .map(|i| session.curve_point_at_fraction(&edge, f64::from(i) * 0.02))
@@ -312,7 +312,13 @@ pub(crate) fn execute<'session>(
     })
 }
 
-type Correspondence = HashMap<String, (Option<Vec3>, bool)>;
+#[derive(Default)]
+pub(crate) struct ResolvedAlignment {
+    anchor: Option<Vec3>,
+    reverse: bool,
+    splits: Vec<Vec3>,
+}
+type Correspondence = HashMap<String, ResolvedAlignment>;
 
 pub(crate) fn resolve_correspondence(
     values: &std::collections::BTreeMap<String, LoftProfileAlignment>,
@@ -321,19 +327,45 @@ pub(crate) fn resolve_correspondence(
     values
         .iter()
         .map(|(id, value)| {
+            if value.split_points.len() > 128 {
+                return Err(ModelError::new(
+                    "loft profiles support at most 128 split points",
+                ));
+            }
             Ok((
                 id.clone(),
-                (
-                    value
+                ResolvedAlignment {
+                    anchor: value
                         .start_point
                         .as_ref()
-                        .map(|point| vector(point, parameters, Dimension::Length))
+                        .map(|p| vector(p, parameters, Dimension::Length))
                         .transpose()?,
-                    value.reverse,
-                ),
+                    reverse: value.reverse,
+                    splits: value
+                        .split_points
+                        .iter()
+                        .map(|p| vector(p, parameters, Dimension::Length))
+                        .collect::<Result<Vec<_>, _>>()?,
+                },
             ))
         })
         .collect()
+}
+
+/// Shared by construction and native seam inspection, retaining all original edge ancestry.
+fn align_profile<'a>(
+    session: &'a Session,
+    wire: &Shape<'_>,
+    value: Option<&ResolvedAlignment>,
+) -> Result<Shape<'a>, ModelError> {
+    let default = ResolvedAlignment::default();
+    let c = value.unwrap_or(&default);
+    if c.splits.is_empty() {
+        return Ok(session.align_profile_wire(wire, c.anchor, c.reverse)?);
+    }
+    let partitioned = session.partition_profile_wire(wire, &c.splits)?;
+    let aligned = session.align_profile_wire(&partitioned, c.anchor, c.reverse)?;
+    Ok(session.compose_history(&aligned, &partitioned)?)
 }
 
 /// Linear profile/topology indexing; native curve compatibility and surface
@@ -511,13 +543,10 @@ fn execute_simple_profiles_constrained<'a>(
     }
     let mut aligned = Vec::new();
     for (id, wire) in profiles.iter().zip(&wires) {
-        if let Some(&(anchor, reverse)) = correspondence.get(id) {
+        if let Some(alignment) = correspondence.get(id) {
             aligned.push(Some(
-                session
-                    .align_profile_wire(wire, anchor, reverse)
-                    .map_err(|e| {
-                        ModelError::from(e).context(&format!("loft profile {id} alignment"))
-                    })?,
+                align_profile(session, wire, Some(alignment))
+                    .map_err(|e| e.context(&format!("loft profile {id} alignment")))?,
             ));
         } else {
             aligned.push(None);

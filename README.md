@@ -753,6 +753,9 @@ native derivative checks, exact section curves, and studio controls.
 adds exact per-profile start anchors and traversal reversal for constrained smooth
 lofts, including hole tracks (schema 171, ABI 78). The studio also displays
 resolved seam starts/traversal arrows and supports exact canvas anchor picks.
+[Explicit boundary partitions](docs/LOFTS.md#explicit-boundary-partitions-schema-172-abi-79)
+match different source edge counts without approximating curves or losing end
+constraints (schema 172, ABI 79).
 
 [Saved-profile lofts](docs/LOFTS.md) build solid transitions directly from sketch
 faces and closed wires, including native circles, ellipses, arcs and splines.
