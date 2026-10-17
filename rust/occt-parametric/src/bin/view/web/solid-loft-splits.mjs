@@ -15,13 +15,23 @@ export function createLoftSplitControls(saved=[]){
  const expression=p=>p.source==='preserve'?p.saved:point(p.values);
  return {
   definition:()=>validateSplitPoints(points.map(expression)),
-  render(label,{select,number,render,button,content,invalidate},useStart){
+  render(label,{select,number,render,button,content,invalidate,pickSplit,checkpoint,message,profile},useStart){
    for(const [i,p] of points.entries()){
     const prefix=`${label} split ${i+1}`;
     if(p.saved)select(`${prefix} source`,[['preserve','Keep existing split formula'],['literal','Entered split point']],p.source,value=>{p.source=value;render();});
     if(p.source==='literal')for(const [j,key] of ['X','Y','Z'].entries())number(`${prefix} ${key} (mm)`,p.values[j],value=>p.values[j]=value);
     content.append(button(`Use ${prefix.toLowerCase()} as start`,()=>{invalidate();useStart(structuredClone(expression(p)));render();}));
     content.append(button(`Remove ${prefix.toLowerCase()}`,()=>{invalidate();points.splice(i,1);render();}));
+   }
+   if(pickSplit){
+    const pick=button(`Pick ${label.toLowerCase()} split in canvas`,async()=>{
+     invalidate();const current=checkpoint();
+     const picked=await pickSplit(validateSplitPoints(points.map(expression)));
+     if(!current()||!picked)return;
+     if(picked.profile!==profile||!Array.isArray(picked.position_mm)||picked.position_mm.length!==3||!picked.position_mm.every(Number.isFinite))throw Error('The picked loft split does not match this profile.');
+     if(points.length>=128)throw Error('A loft profile supports at most 128 split points.');
+     invalidate();points.push({source:'literal',values:[...picked.position_mm]});render();message('Split selected at fixed family coordinates. Preview checks every instance.');
+    });pick.disabled=points.length>=128;content.append(pick);
    }
    const add=button(`Add ${label.toLowerCase()} split point`,()=>{if(points.length>=128)throw Error('A loft profile supports at most 128 split points.');invalidate();points.push({source:'literal',values:[0,0,0]});render();});add.disabled=points.length>=128;content.append(add);
   }

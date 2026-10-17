@@ -383,3 +383,19 @@ test('loft split controls preserve formulas, add exact points, choose starts and
  await button(host,'Preview solid').onclick();const op=calls.at(-1).features[0].operation.profile_loft;assert.deepEqual(op.profiles,['profile','upper','middle']);assert.deepEqual(op.correspondence.middle.split_points,[{parameter:'cut'}]);
  }finally{delete globalThis.document;delete globalThis.Option;}
 });
+
+test('canvas splits append fixed coordinates, preserve formulas and ignore canceled, stale or wrong-profile picks',async()=>{
+ globalThis.document={createElement:tag=>new Element(tag)};globalThis.Option=class extends Element{constructor(text,value){super('option');this.textContent=text;this.value=value;}};
+ try{
+ const saved={id:'transition',operation:{profile_loft:{profiles:['profile','upper'],holes:[],ruled:false,start_constraint:{normal_to_profile:true,magnitude:depth(20)},correspondence:{upper:{start_point:{parameter:'anchor'},split_points:[{parameter:'cut'}]}}}}};
+ const host=new Element('div'),calls=[],picks=[];let resolve;
+ createSolidEditor({host,instance:()=> 'part',pickLoftSplit:(profile,splits)=>{picks.push({profile,splits});return new Promise(r=>resolve=r);},preview:async()=>{},applied:async()=>{},restore:async()=>{},request:async(path,options)=>{if(!options)return {version:1,features:[...base,{id:'upper',operation:{sketch_wire:{sketch:{}}}},saved],output:'transition',parameters:[]};calls.push(JSON.parse(options.body));return {can_apply:true};}});
+ await button(host,'Sketch to solid').onclick();await button(host,'Edit loft transition').onclick();
+ let pending=button(host,'Pick outer station 2 split in canvas').onclick();resolve(null);await pending;await button(host,'Preview solid').onclick();assert.deepEqual(calls.at(-1).features,[saved]);
+ pending=button(host,'Pick outer station 2 split in canvas').onclick();control(host,'Outer station 2 traversal').value='reverse';control(host,'Outer station 2 traversal').onchange();resolve({profile:'upper',position_mm:[1,2,20]});await pending;assert.equal(control(host,'Outer station 2 split 2 X (mm)'),undefined);
+ pending=button(host,'Pick outer station 2 split in canvas').onclick();resolve({profile:'wrong',position_mm:[1,2,20]});await pending;assert.equal(control(host,'Outer station 2 split 2 X (mm)'),undefined);
+ pending=button(host,'Pick outer station 2 split in canvas').onclick();assert.deepEqual(picks.at(-1),{profile:'upper',splits:[{parameter:'cut'}]});resolve({profile:'upper',position_mm:[1,2,20]});await pending;
+ await button(host,'Preview solid').onclick();const c=calls.at(-1).features[0].operation.profile_loft.correspondence.upper;assert.deepEqual(c.start_point,{parameter:'anchor'});assert.deepEqual(c.split_points,[{parameter:'cut'},{components:{x:depth(1),y:depth(2),z:depth(20)}}]);
+ await button(host,'Use outer station 2 split 2 as start').onclick();await button(host,'Preview solid').onclick();assert.deepEqual(calls.at(-1).features[0].operation.profile_loft.correspondence.upper.start_point,c.split_points[1]);
+ }finally{delete globalThis.document;delete globalThis.Option;}
+});

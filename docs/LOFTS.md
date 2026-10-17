@@ -401,3 +401,34 @@ The `partitioned-profile` scale case refines both circular stations into four
 exact arcs. It checks 1,000 regenerations, analytic volume, native seam/end
 inspection, unchanged source edge counts and released handles against the
 existing 10-second budget (8.98 seconds in the recorded run).
+
+### Pick new boundary splits in the studio
+
+**Pick … split in canvas** selects a new point anywhere on a profile boundary,
+including the interiors of lines, arcs and spline edges in multi-edge wires.
+The amber boundary is a bounded display snapshot; the click is projected onto
+native trimmed curves and verified with the exact partitioner. Existing corners,
+already-authored split vertices, ambiguous curve hits and edge-budget overflow
+are rejected. Picks near displayed corners snap to those exact vertices before
+validation, avoiding tiny duplicate cuts caused by pixel rounding. Drag orbits,
+Fit frames the profile, and Escape cancels the pick.
+
+A successful pick appends a fixed family-coordinate length expression while
+preserving the existing split and start formulas. It can then be chosen with
+**Use … split … as start**. Parameter-dependent variants still require Preview:
+a fixed point that leaves another instance's boundary prevents Apply. Editing
+fields, Preview, closing the editor or changing the model/instance cancels a
+pending pick; late responses cannot modify the draft. Apply, undo/redo and Save
+use the existing correspondence definition. Schema 172 and ABI 79 are unchanged.
+
+The read-only `/api/loft-profile-pick` query accepts `purpose: "split"` to snap
+curve interiors; omitted `purpose` retains start-anchor behavior. Responses echo
+this purpose as well as the model version, instance, profile and draft split
+count. Snapshot generation is bounded to 128 edges with 65 samples each (257
+samples for a single continuous edge); there are no native requests on hover.
+
+The `tools/bench/loft-picker.mjs` gate exercises the maximum 128-edge / 8,320-sample
+split snapshot. The recorded run takes 0.76 ms per hover and 1.8 ms per overlay
+redraw against 16/100 ms budgets, and asserts one snapshot request with no hover
+requests. Browser verification covers duplicate rejection/retry, retained
+formulas and end strengths, valid Preview, Apply, undo/redo, Save and reload.

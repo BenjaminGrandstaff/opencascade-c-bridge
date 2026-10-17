@@ -104,11 +104,11 @@ test('opening an accepted loft shows native guides without requiring a no-change
  f.input('Start loft strength source').value='literal';f.input('Start loft strength source').onchange();assert(!f.studio.decorate(context).some(n=>n.attrs?.['data-loft-tangent']));
 });
 
-test('loft canvas Escape and preview cancel pending anchor picks while keeping the solid form',async t=>{
+for(const purpose of ['start','split'])test(`loft canvas Escape and preview cancel pending ${purpose} picks while keeping the solid form`,async t=>{
  const loft={id:'body',operation:{profile_loft:{profiles:['profile','upper'],holes:[],ruled:false,start_constraint:{normal_to_profile:true,magnitude:mm(6)}}}};
- const source={version:1,instance:'part',profile:'profile',accepted:true,coordinate_system:'family-local mm',continuous:false,origin_mm:[0,0,0],normal:[0,0,1],vertices:[[0,0,0]],lines:[[[0,0,0],[1,0,0]]]};
+ const source={version:1,instance:'part',profile:'profile',accepted:true,coordinate_system:'family-local mm',purpose,continuous:purpose==='split',origin_mm:[0,0,0],normal:[0,0,1],vertices:[[0,0,0]],lines:[[[0,0,0],[1,0,0]]]};
  const f=setup(t,{api:(path,options)=>!options?{...graph(),features:[features()[0],{id:'upper',operation:{sketch_wire:{sketch:{}}}},loft]}:path==='/api/loft-profile-pick'?source:{...preview(),output:'body'}});await f.open();await f.button('Edit loft body').onclick();
- let pending=f.button('Pick outer station 1 start in canvas').onclick();await f.flush();assert(f.solids.anchorPicker.active);assert.equal(f.studio.tool,'solid-loft-anchor');f.studio.onKey({key:'Escape'});await pending;assert.equal(f.panel.hidden,false);assert.equal(f.solids.anchorPicker.source,null);
- pending=f.button('Pick outer station 1 start in canvas').onclick();await f.flush();assert(f.solids.anchorPicker.active);await f.button('Preview solid').onclick();await pending;assert.equal(f.solids.anchorPicker.source,null);assert.equal(f.panel.hidden,false);
- pending=f.button('Pick outer station 1 start in canvas').onclick();await f.flush();f.solids.close();await pending;assert.equal(f.panel.hidden,true);assert.equal(f.solids.anchorPicker.source,null);
+ let pending=f.button(`Pick outer station 1 ${purpose} in canvas`).onclick();await f.flush();assert(f.solids.anchorPicker.active);assert.equal(f.studio.tool,'solid-loft-anchor');f.studio.onKey({key:'Escape'});await pending;assert.equal(f.panel.hidden,false);assert.equal(f.solids.anchorPicker.source,null);
+ pending=f.button(`Pick outer station 1 ${purpose} in canvas`).onclick();await f.flush();assert(f.solids.anchorPicker.active);await f.button('Preview solid').onclick();await pending;assert.equal(f.solids.anchorPicker.source,null);assert.equal(f.panel.hidden,false);
+ pending=f.button(`Pick outer station 1 ${purpose} in canvas`).onclick();await f.flush();f.solids.close();await pending;assert.equal(f.panel.hidden,true);assert.equal(f.solids.anchorPicker.source,null);
 });

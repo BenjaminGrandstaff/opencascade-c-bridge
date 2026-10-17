@@ -39,7 +39,7 @@ export function createLoftCorrespondenceControls(loft){
    }
    return Object.keys(result).length?{correspondence:Object.fromEntries(Object.entries(result))}:{correspondence:undefined};
   },
-  render(id,label,{select,number,render,button,content,pickAnchor,invalidate,checkpoint,message}){
+  render(id,label,{select,number,render,button,content,pickAnchor,pickSplit,invalidate,checkpoint,message}){
    if(!id)return;
    const s=state(id);
    select(`${label} traversal`,[['forward','Original'],['reverse','Reversed']],s.reverse?'reverse':'forward',value=>s.reverse=value==='reverse');
@@ -53,7 +53,7 @@ export function createLoftCorrespondenceControls(loft){
     invalidate();s.values=[...picked.position_mm];s.source='literal';render();message('Start anchor selected at fixed family coordinates. Preview checks every instance.');
    }));
    if(s.source==='literal')for(const [i,key] of ['X','Y','Z'].entries())number(`${label} start ${key} (mm)`,s.values[i],value=>s.values[i]=value);
-   s.splits.render(label,{select,number,render,button,content,invalidate},expr=>{s.saved={...s.saved,start_point:expr};s.source='preserve';});
+   s.splits.render(label,{select,number,render,button,content,invalidate,checkpoint,message,pickSplit:pickSplit?points=>pickSplit(id,points):null,profile:id},expr=>{s.saved={...s.saved,start_point:expr};s.source='preserve';});
   }
  };
 }

@@ -1,12 +1,21 @@
-//! Read-only exact boundary snapshots and snapped anchors; no topology indices are saved.
+//! Read-only exact boundary snapshots and snapped start/split points; no topology indices are saved.
 use super::*;
 use occt_bridge::{ShapeType, Vec3};
 
 impl Studio {
     pub(super) fn loft_profile_pick(&self, body: &[u8]) -> Result<Value, String> {
+        #[derive(Default, PartialEq, serde::Deserialize, serde::Serialize)]
+        #[serde(rename_all = "snake_case")]
+        enum Purpose {
+            #[default]
+            Start,
+            Split,
+        }
         #[derive(serde::Deserialize)]
         #[serde(deny_unknown_fields)]
         struct Query {
+            #[serde(default)]
+            purpose: Purpose,
             version: u64,
             instance: String,
             profile: String,
@@ -17,7 +26,9 @@ impl Studio {
         }
         let query: Query =
             serde_json::from_slice(body).map_err(|e| format!("invalid loft profile pick: {e}"))?;
-        if query.split_points.len() > 128 {
+        if query.split_points.len() > 128
+            || query.purpose == Purpose::Split && query.split_points.len() == 128
+        {
             return Err("A profile supports at most 128 split points.".into());
         }
         if query.version != self.version {
@@ -107,17 +118,18 @@ impl Studio {
                 }
             }
         }
-        // The same native aligner decides whether a continuous nonvertex seam is supported.
-        let continuous = edges.len() == 1
-            && session
-                .curve_point_at_fraction(&edges[0], 0.5)
-                .is_ok_and(|p| session.align_profile_wire(&aligned, Some(p), false).is_ok());
-        let mut data = json!({"version":self.version,"instance":query.instance,"profile":query.profile,"accepted":true,"coordinate_system":"family-local mm","continuous":continuous,"split_count":query.split_points.len()});
+        // Splits accept interiors of every edge; starts use the native seam support check.
+        let continuous = query.purpose == Purpose::Split
+            || edges.len() == 1
+                && session
+                    .curve_point_at_fraction(&edges[0], 0.5)
+                    .is_ok_and(|p| session.align_profile_wire(&aligned, Some(p), false).is_ok());
+        let mut data = json!({"version":self.version,"instance":query.instance,"profile":query.profile,"accepted":true,"coordinate_system":"family-local mm","continuous":continuous,"purpose":query.purpose,"split_count":query.split_points.len()});
         if let Some(position) = query.position_mm {
             let hint = Vec3::new(position[0], position[1], position[2]);
             let anchor = if continuous {
                 session
-                    .curve_closest_point(&edges[0], hint)
+                    .curve_closest_point(&aligned, hint)
                     .map_err(|e| e.to_string())?
             } else {
                 *vertices
@@ -131,18 +143,40 @@ impl Studio {
             };
             let distance = (anchor.x - hint.x).hypot((anchor.y - hint.y).hypot(anchor.z - hint.z));
             if distance > query.maximum_distance_mm.ok_or("Missing pick tolerance.")? {
-                return Err("Pick closer to a supported boundary start.".into());
+                return Err("Pick closer to the supported profile boundary.".into());
             }
-            let _verified = session
-                .align_profile_wire(&aligned, Some(anchor), false)
-                .map_err(|e| e.to_string())?;
+            if query.purpose == Purpose::Split {
+                if vertices
+                    .iter()
+                    .any(|v| (v.x - anchor.x).hypot((v.y - anchor.y).hypot(v.z - anchor.z)) <= 1e-6)
+                {
+                    return Err(
+                        "Choose a new boundary point away from existing corners and splits.".into(),
+                    );
+                }
+                // The exact partitioner also rejects ambiguous hits and excessive edge counts.
+                let _verified = session
+                    .partition_profile_wire(&aligned, &[anchor])
+                    .map_err(|e| e.to_string())?;
+            } else {
+                let _verified = session
+                    .align_profile_wire(&aligned, Some(anchor), false)
+                    .map_err(|e| e.to_string())?;
+            }
             data["position_mm"] = json!(to_array(anchor));
             data["distance_mm"] = json!(distance);
         } else {
             let mut lines = Vec::new();
             for edge in &edges {
                 let points = session
-                    .edge_sample_points(edge, if continuous { 257 } else { 65 })
+                    .edge_sample_points(
+                        edge,
+                        if continuous && edges.len() == 1 {
+                            257
+                        } else {
+                            65
+                        },
+                    )
                     .map_err(|e| e.to_string())?;
                 lines.push(points.into_iter().map(to_array).collect::<Vec<_>>());
             }

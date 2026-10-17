@@ -12,6 +12,7 @@ build="$root/build/bench"
 node "$root/tools/bench/sketch-controls.mjs"
 # Sketch studio snapping, inference and overlay at 10,000 lines.
 node "$root/tools/bench/sketch-studio.mjs"
+node "$root/tools/bench/loft-picker.mjs"
 
 cmake -S "$root" -B "$build" -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF >/dev/null
 cmake --build "$build" -j >/dev/null

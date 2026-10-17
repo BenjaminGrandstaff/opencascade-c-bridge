@@ -17,7 +17,7 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 7/7, bridge 167 + first-use integration 1 (+1 doc test), recipes 3, parametric core 57 + kernel 769 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 91 + viewer Node 449 + branch command 2 + model command 93, MCP Python 12, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 7/7, bridge 167 + first-use integration 1 (+1 doc test), recipes 3, parametric core 57 + kernel 769 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 92 + viewer Node 455 + branch command 2 + model command 93, MCP Python 12, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -25,6 +25,21 @@ tracks status and order.
 | Scale benchmarks | Last full suite: 194 Rust cases (195 with the parallel glTF case) plus 5 model-command cases and a 10,000-face Python matcher. Sketch authoring integration rechecked 60 sketch cases and 60 MCP cases within budget. | `tools/bench/run.sh` |
 
 ## Done
+
+- Loft canvas boundary splits (schema 172 / ABI 79 unchanged): **Pick … split
+  in canvas** snaps new points onto exact native trimmed curves, including
+  multi-edge profiles with saved draft partitions. Existing corners/splits,
+  ambiguous hits and edge-budget overflow fail before a point is returned.
+  The editor appends fixed family coordinates while retaining existing formulas;
+  all-instance Preview gates Apply. Purpose/version/profile/partition guards
+  discard stale replies, and Escape, fields, Preview and Close cancel picks.
+  Native snapshots are bounded, with no hover requests. Viewer Rust 92 and
+  viewer Node 455 pass, including immutable native queries and editor lifecycle;
+  the sketch performance gate initially passes (offset guide 49.9 ms / 100 ms),
+  with subsequent unchanged offset runs varying to 103–128 ms on the shared host.
+  Thresholds remain unchanged. The maximum 128-edge picker gate
+  measures 0.76 ms per hover / 1.8 ms per redraw (16/100 ms budgets), with one
+  snapshot request. Browser Apply/history/Save checks pass. See [canvas splits](docs/LOFTS.md#pick-new-boundary-splits-in-the-studio).
 
 - Explicit loft boundary partitions (schema 172, ABI 79): saved parameter-aware
   split points refine exact copied curves before start/reversal alignment,

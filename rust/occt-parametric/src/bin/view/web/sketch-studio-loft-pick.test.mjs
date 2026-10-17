@@ -43,3 +43,26 @@ test('draft split formulas are fixed per pick and mismatched partition replies c
  const pending=f.picker.pick('profile',f.current,formula);formula[0].parameter='changed';await flush();assert.deepEqual(f.calls[0].body.split_points,[{parameter:'cut'}]);
  await f.picker.click(click);assert(f.picker.active);wrong=false;await f.picker.click(click);assert.deepEqual(await pending,{profile:'profile',position_mm:[0,0,0]});assert.deepEqual(f.calls.at(-1).body.split_points,[{parameter:'cut'}]);
 });
+
+test('split picks use all boundary segments, send immutable draft partitions and require split-purpose replies',async()=>{
+ let wrong=true;
+ const f=fixture(body=>body.position_mm?{...picked(),purpose:wrong?'start':'split',split_count:1,position_mm:[500,0,0]}:{...snapshot(),purpose:'split',split_count:1,continuous:true});
+ f.studio.rayAt=()=>({origin:[.5,1,0],direction:[0,-1,0]});
+ const splits=[{parameter:'cut'}],pending=f.picker.pick('profile',f.current,splits,'split');splits.length=0;await flush();
+ assert.equal(f.calls[0].body.purpose,'split');assert.deepEqual(f.calls[0].body.split_points,[{parameter:'cut'}]);
+ assert.match(f.messages.at(-1),/new point/);
+ await f.picker.click({button:0,clientX:75,clientY:50});assert(f.picker.active);assert.match(f.messages.at(-1),/split rejected/);
+ wrong=false;await f.picker.click({button:0,clientX:75,clientY:50});assert.deepEqual(await pending,{profile:'profile',position_mm:[500,0,0]});assert.equal(f.calls.at(-1).body.purpose,'split');
+});
+test('split snapshots cannot silently fall back to start picking and late split snaps are discarded',async()=>{
+ const bad=fixture(()=>snapshot());await assert.rejects(bad.picker.pick('profile',bad.current,[],'split'),/does not match/);
+ let resolve;const f=fixture(body=>body.position_mm?new Promise(r=>resolve=r):{...snapshot(),purpose:'split',continuous:true});
+ const pending=f.picker.pick('profile',f.current,[],'split');await flush();const response=f.picker.click(click);f.expire();resolve({...picked(),purpose:'split'});await response;assert.equal(await pending,null);
+});
+
+test('split picking prioritizes exact displayed vertices over pixel-rounded plane hints',async()=>{
+ const f=fixture(body=>body.position_mm?(()=>{throw Error('Choose a new point');})():{...snapshot(),purpose:'split',continuous:true});
+ f.studio.rayAt=()=>({origin:[.001,1,.001],direction:[0,-1,0]});
+ const pending=f.picker.pick('profile',f.current,[],'split');await flush();await f.picker.click({button:0,clientX:50.1,clientY:50.1});
+ assert.deepEqual(f.calls.at(-1).body.position_mm,[0,0,0]);assert(f.picker.active);assert.match(f.messages.at(-1),/new point/);f.picker.cancel();assert.equal(await pending,null);
+});

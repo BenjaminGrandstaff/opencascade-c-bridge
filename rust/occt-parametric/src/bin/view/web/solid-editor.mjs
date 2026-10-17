@@ -94,7 +94,7 @@ export function solidEditOutput(data,editing) {
   while(pending.length){const id=pending.pop();if(!id||seen.has(id))continue;seen.add(id);pending.push(...(data.dependencies?.[id]??[]));}
   return seen.has(editing.id)&&data.features.some(f=>f.id===data.output&&solidTarget(f))?data.output:editing.id;
 }
-export function createSolidEditor({host,request,instance,preview,applied,restore,showSketch=()=>{},showSolid=()=>{},initialProfile=()=>null,profileDirection=()=>null,profileAxis=()=>null,invalidatePreview=()=>{},pickSolidEdge=null,pickLoftAnchor=null,pickHolePosition=null,pickLimitingFace=null,cancelLimitingFacePick=()=>{},started=()=>{},autoStart=false}) {
+export function createSolidEditor({host,request,instance,preview,applied,restore,showSketch=()=>{},showSolid=()=>{},initialProfile=()=>null,profileDirection=()=>null,profileAxis=()=>null,invalidatePreview=()=>{},pickSolidEdge=null,pickLoftAnchor=null,pickLoftSplit=null,pickHolePosition=null,pickLimitingFace=null,cancelLimitingFacePick=()=>{},started=()=>{},autoStart=false}) {
   let data=null,editing=null,busy=false,mode='new',id='',input='',target='',extent='distance',axis=[0,0,1],depth=10,source='literal',preserved=null;
   let kind='extrude',origin=[0,0,0],angle=360,axisSource='literal',savedRevolve=null,path='',orientation='corrected_frenet',binormal=[0,0,1],savedOrientation=null,loft={profiles:[],holes:[],ruled:false},loftStarted=false;
   let limitTarget='',limitFace='z:maximum',savedFace=null,limitDirectionSource='literal';
@@ -209,7 +209,7 @@ export function createSolidEditor({host,request,instance,preview,applied,restore
       const change=next=>{invalidate();loft=next;render();};
       select('Loft surfaces',[['smooth','Smooth'],['ruled','Ruled (straight between sections)']],loft.ruled?'ruled':'smooth',value=>loft.ruled=value==='ruled');
       const choices=[['','Choose profile'],...profiles.map(f=>[f.id,f.id])];
-      const correspondenceControls={select,number,render,button,content,pickAnchor:pickLoftAnchor,invalidate,message,checkpoint:()=>{const turn=formTurn;return ()=>turn===formTurn&&Boolean(data)&&kind==='profile_loft';}};
+      const correspondenceControls={select,number,render,button,content,pickAnchor:pickLoftAnchor,pickSplit:pickLoftSplit,invalidate,message,checkpoint:()=>{const turn=formTurn;return ()=>turn===formTurn&&Boolean(data)&&kind==='profile_loft';}};
       const stationAction=(label,action,index,disabled)=>{const e=button(label,()=>change(editLoftStations(loft,action,index)));e.disabled=disabled;return e;};
       for(const [i,id] of loft.profiles.entries()){
         const heading=document.createElement('h4');heading.textContent=`Loft station ${i+1}`;content.append(heading);

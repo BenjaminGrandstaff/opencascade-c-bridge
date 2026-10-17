@@ -1049,3 +1049,11 @@ counts across sections. **Use … split … as start** copies its expression int
 the start anchor. The canvas picker includes these draft vertices. Source
 sketches remain unchanged; Preview checks all variants and all existing end
 constraints. See [boundary partitions](LOFTS.md#explicit-boundary-partitions-schema-172-abi-79).
+
+
+**Pick … split in canvas** adds an exact native boundary point to a loft profile
+without entering XYZ coordinates. It supports multi-edge boundaries and retains
+existing formulas. Existing corners/splits and ambiguous hits are rejected.
+Picked points use fixed family coordinates; Preview must validate every instance
+before Apply. Escape cancels, and field/model changes discard pending picks.
+See [canvas boundary splits](LOFTS.md#pick-new-boundary-splits-in-the-studio).
