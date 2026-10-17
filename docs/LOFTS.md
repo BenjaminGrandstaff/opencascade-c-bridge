@@ -185,3 +185,40 @@ history, incremental parameter rebuilding, persistence, and rejected constraints
 including a bad strength on another family variant. The profile-loft benchmark
 checks 1,000 unconstrained and 1,000 constrained regenerations against separate
 10-second budgets.
+
+## Normal to profile (schema 170)
+
+A loft end can derive its direction from the terminal outer section instead of
+saving a fixed vector:
+
+```json
+"start_constraint": {
+  "normal_to_profile": true,
+  "magnitude": {"parameter": "height"}
+}
+```
+
+The same form works for `end_constraint`. Supply exactly one of `direction` or
+`normal_to_profile: true`, plus a positive length-valued magnitude. Existing
+schema-169 explicit direction constraints load unchanged. The ABI remains 77.
+See [the normal-profile example](../tools/model/normal-profile-loft.request.json).
+
+The direction comes from the generated planar section's native normal. Its sign
+is chosen using the adjacent section's area center, following increasing station
+order at both ends. Reversing station order reverses the forward normals.
+Profile plane edits and parameter changes therefore update the direction during
+regeneration. Coincident centers or an adjacent center lying in the terminal
+plane give no unambiguous forward normal and are rejected. Explicit hole tracks
+use their outer station's normal, consistent with their required coplanarity.
+
+In the studio, select **Normal to profile** for either end condition. Direction
+component inputs are hidden, and the strength can still use an entered value or
+length parameter. Existing strength formulas remain preserved. Switching back to
+**Tangent direction** restores the entered direction draft; **Free** removes the
+end constraint. Native derivative verification, station interpolation, monotonic
+span checks, all-instance validation and model history remain the same.
+
+Tests cover tilted planes, reversed order, parameter-driven frame edits, invalid
+mode combinations, forward and backward family variants, saved mode/formulas and
+editor switching. The normal-profile benchmark checks 1,000 regenerations within
+10 seconds alongside the existing unconstrained and explicit-direction cases.

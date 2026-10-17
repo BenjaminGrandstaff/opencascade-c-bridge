@@ -450,7 +450,8 @@ fn loft_end_constraints_follow_profile_and_strength_parameters_and_roundtrip() {
     };
     *ruled = false;
     let c = Box::new(LoftEndConstraint {
-        direction: direction(0., 0., 1.),
+        direction: Some(direction(0., 0., 1.)),
+        normal_to_profile: false,
         magnitude: ScalarExpr::Parameter("height".into()),
     });
     *start_constraint = Some(c.clone());
@@ -528,11 +529,13 @@ fn independent_loft_strength_rebuilds_only_the_loft_and_changes_geometry() {
     };
     *ruled = false;
     *start_constraint = Some(Box::new(LoftEndConstraint {
-        direction: direction(0., 0., 1.),
+        direction: Some(direction(0., 0., 1.)),
+        normal_to_profile: false,
         magnitude: ScalarExpr::Parameter("strength".into()),
     }));
     *end_constraint = Some(Box::new(LoftEndConstraint {
-        direction: direction(0., 0., 1.),
+        direction: Some(direction(0., 0., 1.)),
+        normal_to_profile: false,
         magnitude: ScalarExpr::Parameter("height".into()),
     }));
     let first = part(&family).regenerate(&session).unwrap();
@@ -555,4 +558,68 @@ fn independent_loft_strength_rebuilds_only_the_loft_and_changes_geometry() {
         .unwrap()
         .unwrap();
     assert!(radius > 6.5);
+}
+
+#[test]
+fn normal_loft_constraints_follow_parameter_driven_profile_plane_edits() {
+    let session = Session::new().unwrap();
+    let mut family = native_profile_family();
+    family.parameters.push(ParameterDefinition {
+        id: "tilt".into(),
+        parameter_type: ParameterType::Scalar(Dimension::Scalar),
+        default: ParameterValue::Scalar(Quantity::scalar(0.)),
+        minimum: None,
+        maximum: None,
+    });
+    for feature in &mut family.features {
+        match &mut feature.operation {
+            FeatureOperation::SketchFace { sketch } | FeatureOperation::SketchWire { sketch } => {
+                sketch.y_axis = VectorExpr::Components {
+                    x: ScalarExpr::Literal(Quantity::scalar(0.)),
+                    y: ScalarExpr::Literal(Quantity::scalar(1.)),
+                    z: ScalarExpr::Parameter("tilt".into()),
+                };
+            }
+            FeatureOperation::ProfileLoft {
+                ruled,
+                start_constraint,
+                end_constraint,
+                ..
+            } => {
+                *ruled = false;
+                let c = Box::new(LoftEndConstraint {
+                    direction: None,
+                    normal_to_profile: true,
+                    magnitude: ScalarExpr::Parameter("height".into()),
+                });
+                *start_constraint = Some(c.clone());
+                *end_constraint = Some(c);
+            }
+            _ => {}
+        }
+    }
+    let first = part(&family).regenerate(&session).unwrap();
+    let volume = session.volume(first.shape("body").unwrap()).unwrap();
+    let mut edited = part(&family);
+    edited.overrides.insert(
+        "tilt".into(),
+        ParameterValue::Scalar(Quantity::scalar(0.25)),
+    );
+    let changed = edited.regenerate_incremental(&session, &first).unwrap();
+    assert!(changed.regeneration.rebuilt.contains(&"body".into()));
+    assert!(changed.regeneration.rebuilt.contains(&"lower".into()));
+    assert!(
+        session
+            .face_normal(changed.shape("lower").unwrap())
+            .unwrap()
+            .y
+            .abs()
+            > 0.2
+    );
+    assert!((session.volume(changed.shape("body").unwrap()).unwrap() - volume).abs() > 1.);
+    let json = serde_json::to_string(&family).unwrap();
+    assert_eq!(
+        serde_json::from_str::<FamilyDefinition>(&json).unwrap(),
+        family
+    );
 }

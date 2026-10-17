@@ -1,7 +1,7 @@
 {
   "schema": "occb-model-view-v1",
   "model": {
-    "schema_version": 169,
+    "schema_version": 170,
     "family": {
       "id": "open-corner-pipe",
       "version": 1,

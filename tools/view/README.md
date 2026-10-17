@@ -378,6 +378,12 @@ sections and holes; source sketch parameters remain linked. Lofts can also
 supply union/cut tools. Native limits are 2–1000 stations and at most 100 hole
 tracks; validation rejects invalid sections, crossing holes and non-solid output.
 
+Choose **Normal to profile** for a loft end to derive its direction from the
+terminal section plane. The normal follows profile plane edits and station
+reordering; strength remains entered or parameter-linked. Switching modes keeps
+the strength formula and the explicit direction draft. Ambiguous forward normals
+are rejected by Preview.
+
 For start/end tangent directions and strengths, set the corresponding loft
 condition to **Tangent direction**. Both directions follow increasing station
 order; strength is a length per station interval and accepts a length parameter.

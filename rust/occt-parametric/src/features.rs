@@ -166,26 +166,28 @@ pub(crate) fn execute_feature<'session>(
             start_constraint,
             end_constraint,
         } => {
-            let derivative =
-                |c: &Option<Box<LoftEndConstraint>>| -> Result<Option<Vec3>, ModelError> {
-                    c.as_ref().map(|c| {
-                    let direction=vector(&c.direction,parameters,Dimension::Scalar)?;
-                    let n=(direction.x*direction.x+direction.y*direction.y+direction.z*direction.z).sqrt();
-                    let magnitude=scalar(&c.magnitude,parameters,Dimension::Length)?;
-                    if !n.is_finite() || n<=0.0 || !magnitude.is_finite() || magnitude<=0.0 {
-                        return Err(ModelError::new("loft end constraint requires a finite nonzero direction and positive length magnitude"));
-                    }
-                    Ok(Vec3::new(direction.x/n*magnitude,direction.y/n*magnitude,direction.z/n*magnitude))
-                }).transpose()
-                };
             return loft::execute_profiles_constrained(
                 session,
                 profiles,
                 holes,
                 *ruled,
                 shapes,
-                derivative(start_constraint)?,
-                derivative(end_constraint)?,
+                loft::end_derivative(
+                    session,
+                    profiles,
+                    shapes,
+                    parameters,
+                    start_constraint.as_deref(),
+                    false,
+                )?,
+                loft::end_derivative(
+                    session,
+                    profiles,
+                    shapes,
+                    parameters,
+                    end_constraint.as_deref(),
+                    true,
+                )?,
             );
         }
         FeatureOperation::Loft {

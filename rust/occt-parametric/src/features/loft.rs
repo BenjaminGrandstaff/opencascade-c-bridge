@@ -16,6 +16,80 @@ fn unit_vector(value: Vec3, name: &str) -> Result<Vec3, ModelError> {
     Ok(scale(value, 1.0 / size))
 }
 
+/// Resolve either an explicit derivative direction or the actual terminal plane normal.
+/// Both directions follow increasing station order, independent of wire orientation.
+pub(crate) fn end_derivative(
+    session: &Session,
+    profiles: &[String],
+    shapes: &HashMap<String, Shape<'_>>,
+    parameters: &HashMap<String, ParameterValue>,
+    constraint: Option<&LoftEndConstraint>,
+    end: bool,
+) -> Result<Option<Vec3>, ModelError> {
+    let Some(c) = constraint else { return Ok(None) };
+    let direction = match (c.normal_to_profile, c.direction.as_ref()) {
+        (false, Some(direction)) => vector(direction, parameters, Dimension::Scalar)?,
+        (true, None) => {
+            if profiles.len() < 2 {
+                return Err(ModelError::new(
+                    "normal-to-profile loft constraints need at least two sections",
+                ));
+            }
+            let frame = |id: &str| -> Result<(Vec3, Vec3), ModelError> {
+                let source = shape(shapes, id)?;
+                let face = match session.shape_type(source)? {
+                    ShapeType::Wire => session.create_face_from_wire(source)?,
+                    ShapeType::Face => session.subshape(source, ShapeType::Face, 0)?,
+                    _ => {
+                        return Err(ModelError::new(
+                            "normal-to-profile constraints need planar faces or closed wires",
+                        ));
+                    }
+                };
+                if !session.face_is_planar(&face)?
+                    || session.subshape_count(&face, ShapeType::Wire)? != 1
+                {
+                    return Err(ModelError::new(
+                        "normal-to-profile constraints need single-boundary planar sections",
+                    ));
+                }
+                Ok((session.face_normal(&face)?, session.center_of_mass(&face)?))
+            };
+            let i = if end { profiles.len() - 1 } else { 0 };
+            let j = if end { i - 1 } else { 1 };
+            let (normal, center) = frame(&profiles[i])?;
+            let (_, neighbor) = frame(&profiles[j])?;
+            let advance = if end {
+                crate::assembly::subtract(center, neighbor)
+            } else {
+                crate::assembly::subtract(neighbor, center)
+            };
+            let projection = dot(normal, advance);
+            if !projection.is_finite() || projection.abs() <= 1e-9 * length(advance).max(1.0) {
+                return Err(ModelError::new(
+                    "profile normal has no unambiguous forward direction toward its adjacent station",
+                ));
+            }
+            scale(normal, if projection > 0.0 { 1.0 } else { -1.0 })
+        }
+        _ => {
+            return Err(ModelError::new(
+                "loft end constraint requires exactly one of direction or normal_to_profile",
+            ));
+        }
+    };
+    let magnitude = scalar(&c.magnitude, parameters, Dimension::Length)?;
+    if !magnitude.is_finite() || magnitude <= 0.0 {
+        return Err(ModelError::new(
+            "loft end constraint strength must be a positive finite length",
+        ));
+    }
+    Ok(Some(scale(
+        unit_vector(direction, "end direction")?,
+        magnitude,
+    )))
+}
+
 /// Model-space points of one section: each profile point is rotated about
 /// `pivot`, scaled, and laid out on the section's axes from its origin.
 fn place(
@@ -293,5 +367,127 @@ mod profile_tests {
             assert!(error.message.contains("planar regions"));
         }
         assert_eq!(session.shape_count().unwrap(), 0);
+    }
+}
+
+#[cfg(test)]
+mod normal_tests {
+    use super::*;
+    #[test]
+    fn profile_normals_follow_tilt_and_station_order_and_reject_ambiguous_modes() {
+        let session = Session::new().unwrap();
+        let c = LoftEndConstraint {
+            direction: None,
+            normal_to_profile: true,
+            magnitude: ScalarExpr::Literal(Quantity::length(10., LengthUnit::Millimeter)),
+        };
+        for tilt in [0.0_f64, 0.25] {
+            let normal = Vec3::new(0., -tilt, 1.);
+            let a = session
+                .create_ellipse_wire_axes(
+                    Vec3::new(0., 0., 0.),
+                    normal,
+                    Vec3::new(1., 0., 0.),
+                    4.,
+                    4.,
+                )
+                .unwrap();
+            let b = session
+                .create_ellipse_wire_axes(
+                    Vec3::new(0., 0., 10.),
+                    normal,
+                    Vec3::new(1., 0., 0.),
+                    2.,
+                    2.,
+                )
+                .unwrap();
+            let shapes = HashMap::from([("a".into(), a), ("b".into(), b)]);
+            for reverse in [false, true] {
+                let profiles = if reverse {
+                    vec!["b".into(), "a".into()]
+                } else {
+                    vec!["a".into(), "b".into()]
+                };
+                let expected = scale(
+                    unit_vector(normal, "normal").unwrap(),
+                    if reverse { -10. } else { 10. },
+                );
+                let start = end_derivative(
+                    &session,
+                    &profiles,
+                    &shapes,
+                    &HashMap::new(),
+                    Some(&c),
+                    false,
+                )
+                .unwrap()
+                .unwrap();
+                let end = end_derivative(
+                    &session,
+                    &profiles,
+                    &shapes,
+                    &HashMap::new(),
+                    Some(&c),
+                    true,
+                )
+                .unwrap()
+                .unwrap();
+                assert!(length(crate::assembly::subtract(start, expected)) < 1e-7);
+                assert!(length(crate::assembly::subtract(end, expected)) < 1e-7);
+                let solid = session
+                    .create_constrained_loft(
+                        &[&shapes[&profiles[0]], &shapes[&profiles[1]]],
+                        Some(start),
+                        Some(end),
+                    )
+                    .unwrap();
+                assert!(session.is_valid(&solid).unwrap());
+            }
+            let profiles = vec!["a".into(), "b".into()];
+            let mut invalid = c.clone();
+            invalid.direction = Some(VectorExpr::Literal(VectorQuantity::scalars(0., 0., 1.)));
+            assert!(
+                end_derivative(
+                    &session,
+                    &profiles,
+                    &shapes,
+                    &HashMap::new(),
+                    Some(&invalid),
+                    false
+                )
+                .is_err()
+            );
+            invalid.direction = None;
+            invalid.normal_to_profile = false;
+            assert!(
+                end_derivative(
+                    &session,
+                    &profiles,
+                    &shapes,
+                    &HashMap::new(),
+                    Some(&invalid),
+                    false
+                )
+                .is_err()
+            );
+        }
+        let a = session
+            .create_circle_wire(Vec3::new(0., 0., 0.), Vec3::new(0., 0., 1.), 2.)
+            .unwrap();
+        let b = session
+            .create_circle_wire(Vec3::new(10., 0., 0.), Vec3::new(0., 0., 1.), 2.)
+            .unwrap();
+        let shapes = HashMap::from([("a".into(), a), ("b".into(), b)]);
+        assert!(
+            end_derivative(
+                &session,
+                &["a".into(), "b".into()],
+                &shapes,
+                &HashMap::new(),
+                Some(&c),
+                false
+            )
+            .is_err()
+        );
     }
 }

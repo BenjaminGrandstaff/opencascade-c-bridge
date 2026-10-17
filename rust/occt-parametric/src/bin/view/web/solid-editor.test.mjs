@@ -319,3 +319,15 @@ test('loft end directions and strengths reach the native graph and preserve save
  choose('Start loft condition','tangent');choose('Start loft direction source','literal');for(const key of ['X','Y','Z']){control(host,`Start loft direction ${key}`).value='0';control(host,`Start loft direction ${key}`).oninput();}const n=calls.length;await button(host,'Preview solid').onclick();assert.equal(calls.length,n);
  }finally{delete globalThis.document;delete globalThis.Option;}
 });
+
+test('normal-to-profile loft controls preserve saved strength formulas and explicitly switch direction modes',async()=>{
+ globalThis.document={createElement:tag=>new Element(tag)};globalThis.Option=class extends Element{constructor(text,value){super('option');this.textContent=text;this.value=value;}};
+ try{
+ const constraint={normal_to_profile:true,magnitude:{parameter:'height'}},saved={id:'transition',operation:{profile_loft:{profiles:['profile','upper'],holes:[],ruled:false,start_constraint:constraint,end_constraint:constraint}}};
+ const host=new Element('div'),calls=[];createSolidEditor({host,instance:()=> 'part',preview:async()=>{},applied:async()=>{},restore:async()=>{},request:async(path,options)=>{if(!options)return {version:1,features:[...base,{id:'upper',operation:{sketch_wire:{sketch:{}}}},saved],output:'transition',parameters:[{id:'height',parameter_type:{scalar:'length'}}]};calls.push(JSON.parse(options.body));return {can_apply:true};}});
+ await button(host,'Sketch to solid').onclick();await button(host,'Edit loft transition').onclick();assert.equal(control(host,'Start loft condition').value,'normal');assert.equal(control(host,'Start loft direction Z'),undefined);await button(host,'Preview solid').onclick();assert.deepEqual(calls[0].features,[saved]);
+ const choose=(label,value)=>{control(host,label).value=value;control(host,label).onchange();};
+ choose('Start loft condition','tangent');control(host,'Start loft direction X').value='0.2';control(host,'Start loft direction X').oninput();await button(host,'Preview solid').onclick();let op=calls.at(-1).features[0].operation.profile_loft;assert.equal(op.start_constraint.normal_to_profile,undefined);assert.equal(op.start_constraint.direction.components.x.literal.value,0.2);assert.deepEqual(op.start_constraint.magnitude,constraint.magnitude);
+ choose('Start loft condition','normal');await button(host,'Preview solid').onclick();assert.deepEqual(calls.at(-1).features,[saved]);choose('Start loft condition','tangent');assert.equal(control(host,'Start loft direction X').value,0.2);choose('Start loft condition','free');await button(host,'Preview solid').onclick();assert.equal(calls.at(-1).features[0].operation.profile_loft.start_constraint,undefined);
+ }finally{delete globalThis.document;delete globalThis.Option;}
+});

@@ -323,6 +323,12 @@ the saved section order, hole tracks and parameter-driven source sketches.
 Lofts can create new solids or supply union/cut tools. Native preview checks the
 whole family before Apply.
 
+Choose **Normal to profile** for a loft end to derive its direction from the
+terminal section plane. The normal follows profile plane edits and station
+reordering; strength remains entered or parameter-linked. Switching modes keeps
+the strength formula and the explicit direction draft. Ambiguous forward normals
+are rejected by Preview.
+
 For start/end tangent directions and strengths, set the corresponding loft
 condition to **Tangent direction**. Both directions follow increasing station
 order; strength is a length per station interval and accepts a length parameter.

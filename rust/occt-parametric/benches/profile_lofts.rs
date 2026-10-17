@@ -53,4 +53,9 @@ fn main() {
         20. * std::f64::consts::PI * (64. - 32. + 16. * 13. / 35.),
         "constrained-profile",
     );
+    run(
+        include_str!("../../../tools/model/normal-profile-loft.request.json"),
+        20. * std::f64::consts::PI * (64. - 32. + 16. * 13. / 35.),
+        "normal-profile",
+    );
 }

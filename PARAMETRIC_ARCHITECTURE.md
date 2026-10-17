@@ -2104,3 +2104,14 @@ formulas and validates all family variants through the existing preview/apply
 transaction. See [loft constraints](docs/LOFTS.md#end-constraints-schema-169-abi-77).
 Further loft extensions include guide rails, richer section correspondence and
 face-curvature matching; the current end constraints cover directions/strengths.
+
+
+Schema 170 adds profile-derived end normals. Each end constraint contains exactly
+one of an explicit direction expression or `normal_to_profile: true`, plus its
+strength expression. The normal is obtained from the terminal generated outer
+profile plane and oriented by its adjacent station's area center. Profile
+geometry is already an upstream dependency, so frame edits regenerate the
+constraint and loft without introducing new feature references. Ambiguous
+orientation fails explicitly. Existing schema-169 directions migrate unchanged;
+the native derivative API and ABI 77 are unchanged. The editor retains the mode
+and strength formulas through switching, history and Save.

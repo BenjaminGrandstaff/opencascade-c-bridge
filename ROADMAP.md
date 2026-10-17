@@ -12,12 +12,12 @@ tracks status and order.
 | `occt-types` (shared value types) | — | No native dependency |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI; re-exports `occt-types` |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric-core` (kernel-free engineering layer) | Schema 169 | Definitions, documents, solving and checks without OCCT |
-| `occt-parametric` (kernel regeneration) | Schema 169 | Active development; re-exports the core API |
+| `occt-parametric-core` (kernel-free engineering layer) | Schema 170 | Definitions, documents, solving and checks without OCCT |
+| `occt-parametric` (kernel regeneration) | Schema 170 | Active development; re-exports the core API |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 7/7, bridge 163 + first-use integration 1 (+1 doc test), recipes 3, parametric core 57 + kernel 761 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 87 + viewer Node 429 + branch command 2 + model command 92, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 7/7, bridge 163 + first-use integration 1 (+1 doc test), recipes 3, parametric core 57 + kernel 763 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 88 + viewer Node 431 + branch command 2 + model command 92, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -25,6 +25,20 @@ tracks status and order.
 | Scale benchmarks | Last full suite: 194 Rust cases (195 with the parallel glTF case) plus 5 model-command cases and a 10,000-face Python matcher. Sketch authoring integration rechecked 60 sketch cases and 60 MCP cases within budget. | `tools/bench/run.sh` |
 
 ## Done
+
+- Profile-normal loft ends (schema 170, ABI 77 unchanged): start/end constraints
+  can derive forward tangent directions from their terminal section planes.
+  Native normals follow parameter-driven profile-frame edits and reversed
+  station order; ambiguous forward normals and conflicting direction modes fail
+  before Apply. The studio offers Normal to profile alongside explicit tangent
+  directions and Free, retaining strength formulas and entered direction drafts.
+  Saved constraints keep the derived mode rather than baking in a vector.
+  All examples use schema 170. Core 57, kernel 763, view 88, model 92 and viewer
+  Node 431 pass; Clippy and browser checks pass. Tests include tilted/reversed
+  profiles, incremental plane edits, positive/negative station variants,
+  rejected mode combinations, model history and Save. 1,000 normal-profile lofts
+  take 2.69 s / 10 s; explicit constraints 2.51 s and ordinary lofts 1.29 s.
+  Sketch performance budgets pass. See [profile normals](docs/LOFTS.md#normal-to-profile-schema-170).
 
 - Constrained profile lofts (schema 169, ABI 77): optional start/end tangent
   directions and parameter-linked strengths create exact rational cubic Hermite

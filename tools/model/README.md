@@ -144,3 +144,6 @@ without MCP. The `sketch-repair` example contains a duplicated driving angle.
 
 `constrained-loft.request.json` demonstrates exact profile-loft start/end tangent
 directions and parameter-linked strengths (schema 169); see [constrained lofts](../../docs/LOFTS.md).
+
+`normal-profile-loft.request.json` uses profile-derived end normals and
+parameter-linked strengths (schema 170, ABI 77 unchanged).

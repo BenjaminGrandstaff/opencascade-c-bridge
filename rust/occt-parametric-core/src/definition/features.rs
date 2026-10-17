@@ -155,13 +155,22 @@ pub enum RibProfileMode {
     },
 }
 
+fn is_false(value: &bool) -> bool {
+    !value
+}
+
 /// Terminal derivative of a cubic Hermite loft, along increasing station order.
 /// Direction is dimensionless and transverse to the terminal profile plane;
 /// magnitude is a positive length per station interval.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct LoftEndConstraint {
-    pub direction: VectorExpr,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub direction: Option<VectorExpr>,
+    /// Derive the forward normal of the terminal outer profile (schema 170).
+    /// Exactly one of normal_to_profile or direction must be supplied.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub normal_to_profile: bool,
     pub magnitude: ScalarExpr,
 }
 

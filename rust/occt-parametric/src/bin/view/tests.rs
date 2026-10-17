@@ -6608,3 +6608,91 @@ fn loft_constraint_drafts_cannot_apply_when_another_variants_strength_is_invalid
     );
     assert_eq!(get(&mut studio, "/api/state").1, state);
 }
+
+#[test]
+fn normal_loft_constraints_validate_both_station_directions_and_save_without_fixed_vectors() {
+    let directory = Directory::new();
+    let request: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../tools/model/profile-loft.request.json"
+    ))
+    .unwrap();
+    let mut doc = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+    doc.family
+        .parameters
+        .iter_mut()
+        .find(|p| p.id == "height")
+        .unwrap()
+        .minimum = None;
+    doc.instances.push(InstanceNode::Clone {
+        id: "below".into(),
+        source: "block".into(),
+        overrides: HashMap::from([(
+            "height".into(),
+            ParameterValue::Scalar(Quantity::length(-20., LengthUnit::Millimeter)),
+        )]),
+        placement: Default::default(),
+        frame: None,
+        provenance: "test".into(),
+    });
+    let model = PathBuf::from(directory.model(&doc));
+    let mut studio = serve::Studio::load(&model, Some("body".into())).unwrap();
+    let data = get(&mut studio, "/api/features").1;
+    let state = get(&mut studio, "/api/state").1;
+    let mut feature = data["features"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["id"] == "body")
+        .unwrap()
+        .clone();
+    let c = json!({"normal_to_profile":true,"magnitude":{"literal":{"value":20.,"dimension":"length","unit":"millimeter"}}});
+    feature["operation"]["profile_loft"]["ruled"] = json!(false);
+    feature["operation"]["profile_loft"]["start_constraint"] = c.clone();
+    feature["operation"]["profile_loft"]["end_constraint"] = c;
+    let mut edit = json!({"version":data["version"],"instance":"block","expected":data["features"],"action":"replace","features":[feature],"output":"body","apply":false});
+    let response = studio.handle("POST", "/api/features", edit.to_string().as_bytes());
+    let preview: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+    assert_eq!(preview["can_apply"], true, "{preview}");
+    let expected = 20. * std::f64::consts::PI * (64. - 32. + 16. * 13. / 35.);
+    for id in ["block", "below"] {
+        assert!((preview["geometry"][id]["volume_mm3"].as_f64().unwrap() - expected).abs() < 1e-4);
+    }
+    for both in [false, true] {
+        let mut invalid = edit.clone();
+        let c = &mut invalid["features"][0]["operation"]["profile_loft"]["start_constraint"];
+        if both {
+            c["direction"] = json!({"literal":{"x":{"value":0,"dimension":"scalar","unit":null},"y":{"value":0,"dimension":"scalar","unit":null},"z":{"value":1,"dimension":"scalar","unit":null}}});
+        } else {
+            c["normal_to_profile"] = json!(false);
+        }
+        let response = studio.handle("POST", "/api/features", invalid.to_string().as_bytes());
+        let rejected: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+        assert_eq!(rejected["can_apply"], false, "{rejected}");
+        assert!(rejected.get("gltf").is_none());
+        invalid["apply"] = json!(true);
+        assert_ne!(
+            studio
+                .handle("POST", "/api/features", invalid.to_string().as_bytes())
+                .status,
+            200
+        );
+        assert_eq!(get(&mut studio, "/api/state").1, state);
+    }
+    edit["apply"] = json!(true);
+    assert_eq!(
+        studio
+            .handle("POST", "/api/features", edit.to_string().as_bytes())
+            .status,
+        200
+    );
+    history(&mut studio, "undo");
+    history(&mut studio, "redo");
+    assert_eq!(studio.handle("POST", "/api/save", b"").status, 200);
+    let saved = ModelDocument::from_json(&fs::read_to_string(&model).unwrap()).unwrap();
+    let expected: FeatureDefinition = serde_json::from_value(edit["features"][0].clone()).unwrap();
+    assert_eq!(
+        saved.family.features.iter().find(|f| f.id == "body"),
+        Some(&expected)
+    );
+    assert_eq!(saved.schema_version, 170);
+}

@@ -214,7 +214,8 @@ fn constrained_hollow_lofts_interpolate_both_tracks_without_losing_wall_history(
     };
     *ruled = false;
     let constraint = Box::new(LoftEndConstraint {
-        direction: VectorExpr::Literal(VectorQuantity::scalars(0., 0., 1.)),
+        direction: Some(VectorExpr::Literal(VectorQuantity::scalars(0., 0., 1.))),
+        normal_to_profile: false,
         magnitude: ScalarExpr::Parameter("height".into()),
     });
     *start_constraint = Some(constraint.clone());
