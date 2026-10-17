@@ -18,6 +18,7 @@ import { installDelete } from './sketch-studio-delete.mjs';
 import { installModify } from './sketch-studio-modify.mjs';
 import { installTrim } from './sketch-studio-trim.mjs';
 import { installPatterns } from './sketch-studio-pattern-tools.mjs';
+import { installInstances } from './sketch-studio-instances.mjs';
 
 const SVG = 'http://www.w3.org/2000/svg';
 const format = (value) => Number(Number(value).toPrecision(6)).toString();
@@ -106,6 +107,7 @@ export function startStudio(document) {
     if (turn !== loadTurn || epoch !== studio.modelEpoch || studio.draft !== draft || studio.draft?.definition !== definition) return;
     if (studio.draft && !studio.hasDraftHistory?.() && state.version !== studio.version) studio.drawing.discard(true);
     studio.instance = instance;
+    studio.instances = instances;
     const first = studio.parsed === null;
     studio.version = state.version;
     studio.modelState = state;
@@ -689,6 +691,7 @@ export function startStudio(document) {
   installModify(studio, document);
   installTrim(studio, document);
   installPatterns(studio, document);
+  installInstances(studio, document);
   installExtras(studio, document);
   installPlanes(studio, document);
   installPointPicking(studio, document);

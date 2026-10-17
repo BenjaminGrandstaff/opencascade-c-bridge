@@ -130,6 +130,9 @@ view instead of a flat overlay:
   two; both edit the geometry, holding new ends on the crossing curves.
   Offset (`Z`) grows or shrinks the whole outline by a typed distance or
   parameter with round or sharp corners, drawing a guide as you type.
+- **Instances.** With several instances, a header menu chooses the one
+  whose parameter values and placement the sketches are shown with;
+  sketch edits apply to every instance.
 - **Pattern.** Mirror, Linear and Circular take the selected or clicked
   curves, then the mirror line, direction line or center point, with a
   dashed guide, and record linked sketch patterns. A mirror of half an

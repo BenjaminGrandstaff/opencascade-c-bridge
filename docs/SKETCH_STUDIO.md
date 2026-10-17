@@ -694,10 +694,24 @@ profile and its two ends lie on the axis, the mirrored copies join the
 profile in reverse, closing it: draw or trim half an outline up to a
 center line, mirror it, and the face builds. A hole whose curves are all
 sources gets a copied hole for every instance, so a patterned bore stays a
-bore. Recipes are checked by the classic panel's validator, and editing
-or removing an existing pattern stays in Advanced → patterns (Delete
-removes a pattern with its copies too). Building the pattern and guide for
+bore. Recipes are checked by the same validator as **Mirror and pattern**
+([Picking linked patterns](#picking-linked-patterns)), which edits or
+removes an existing pattern and names it; Delete also removes a pattern
+with its copies. Building the pattern and guide for
 1,000 hole sources takes about 10 ms (500 ms budget in the Node tests).
+
+## Instances
+
+When the model has more than one instance of its family, an instance menu
+appears in the header, each entry with its number of parameter overrides
+(hover for their names). All instances share the family's sketches: the
+chosen instance supplies the parameter values its sketches are solved and
+drawn with, their placement (a face-attached sketch sits on that
+instance's face), and the faces New sketch and face planes pick. Edits
+made while one instance is shown change the sketch for every instance.
+Changing instance reloads the scenes; it is refused while a draft has
+edits or a model request is pending, because the draft's preview belongs
+to the instance it was made on.
 
 ## Parity with the classic editor
 
@@ -726,7 +740,7 @@ removes a pattern with its copies too). Building the pattern and guide for
 | Explicit profiles and full dependencies | Yes | Advanced drawer hosts the classic panels |
 | Sketch to solid | Yes | Advanced drawer |
 | Preview, Apply, Undo, Redo, Save | Yes | Toolbar; Revert stays in the classic viewer |
-| Several instances | Partly | The studio edits the first editable instance's family sketches |
+| Several instances | Yes | Instance menu in the header; see [Instances](#instances) |
 
 Retiring the classic editor is a separate decision, to make with Codex,
 which maintains it.

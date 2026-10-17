@@ -34,6 +34,7 @@ const STUDIO_ASSETS: &[(&str, &str)] = studio_assets!(
     "sketch-studio-sources.mjs",
     "sketch-studio-modify.mjs",
     "sketch-studio-pattern-tools.mjs",
+    "sketch-studio-instances.mjs",
     "sketch-studio-trim.mjs",
 );
 
