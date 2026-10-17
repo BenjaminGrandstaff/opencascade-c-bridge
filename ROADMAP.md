@@ -17,7 +17,7 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 7/7, bridge 173 + first-use integration 1 (+1 doc test), recipes 3, parametric core 57 + kernel 778 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 93 + viewer Node 456 + branch command 2 + model command 94, MCP Python 13, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 7/7, bridge 173 + first-use integration 1 (+1 doc test), recipes 3, parametric core 57 + kernel 778 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 94 + viewer Node 460 + branch command 2 + model command 94, MCP Python 13, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -37,8 +37,13 @@ tracks status and order.
   path, so they follow its constraint and parameter edits. Holed profiles
   twist and scale together. Exact-volume tests cover each option, and a
   constrained duct is re-dimensioned through its route. 250 twisted,
-  sectioned ducts build or rebuild in about 3 s each way. See
-  [advanced sweeps](docs/ADVANCED_SWEEPS.md).
+  sectioned ducts build or rebuild in about 3 s each way.
+
+  In the studio, the sweep form edits twist, scale, guide and sections, and
+  editing keeps every saved option and formula. The plane tool adds *Normal
+  to path*. Browser checks covered the duct example: editor read-back, a
+  180° twist previewed at its exact volume, and a path plane resolved onto
+  the bend. See [advanced sweeps](docs/ADVANCED_SWEEPS.md).
 
 - Size dimensions drawn in 3D (schema 174, ABI 81). Annotation views list
   the size dimensions they show; each is drawn above its frame or datum

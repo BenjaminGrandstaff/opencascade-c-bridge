@@ -120,6 +120,34 @@ test('sweep form chooses an applied wire and edits preserve binormal formula dri
 });
 
 
+test('sweep edits keep twists and sections, and the form adds them',async()=>{
+ globalThis.document={createElement:tag=>new Element(tag)};globalThis.Option=class extends Element{constructor(text,value){super('option');this.textContent=text;this.value=value;}};
+ try{
+ const host=new Element('div'),calls=[];
+ const saved={id:'duct',operation:{sweep:{profile:'profile',path:'route',orientation:'corrected_frenet',twist:{angle_radians:{parameter:'twist'},law:'smooth'},sections:[{profile:'outlet',position:{literal:{value:1,dimension:'scalar',unit:null}}}]}}};
+ const features=[...base,{id:'route',operation:{sketch_open_wire:{sketch:{}}}},{id:'outlet',operation:{sketch_face:{sketch:{}}}},saved];
+ createSolidEditor({host,instance:()=> 'part',preview:async()=>{},applied:async()=>{},restore:async()=>{},request:async(path,options)=>{
+  if(!options)return {version:1,features,output:'duct',parameters:[{id:'twist',parameter_type:{scalar:'scalar'}}]};
+  calls.push(JSON.parse(options.body));return {can_apply:true};
+ }});
+ await button(host,'Sketch to solid').onclick();
+ await button(host,'Edit sweep duct').onclick();
+ assert.equal(control(host,'Twist').value,'parameter:twist');assert.equal(control(host,'Section 1 profile').value,'outlet');
+ await button(host,'Preview solid').onclick();assert.deepEqual(calls[0].features,[saved]);
+ // Entered angle and a scale instead of the section.
+ control(host,'Twist').value='literal';control(host,'Twist').onchange();
+ control(host,'Twist angle (degrees)').value='90';control(host,'Twist angle (degrees)').oninput();
+ await button(host,'Remove section 1').onclick();
+ control(host,'Scale along path').value='literal';control(host,'Scale along path').onchange();
+ control(host,'End scale (× the profile)').value='3';control(host,'End scale (× the profile)').oninput();
+ await button(host,'Preview solid').onclick();
+ const sweep=calls[1].features[0].operation.sweep;
+ assert.ok(Math.abs(sweep.twist.angle_radians.literal.value-Math.PI/2)<1e-15);
+ assert.equal(sweep.scale.end.literal.value,3);assert.equal(sweep.sections,undefined);
+ }finally{delete globalThis.document;delete globalThis.Option;}
+});
+
+
 test('loft definitions validate ordered outer sections, distinct complete hole tracks and limits',()=>{
  const features=['a','b','c','ha','hb','hc'].map(id=>({id})),definition={profiles:['a','b','c'],holes:[['ha','hb','hc']],ruled:true};
  assert.deepEqual(loftDefinition(features,definition),definition);

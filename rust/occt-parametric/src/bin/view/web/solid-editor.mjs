@@ -4,6 +4,7 @@ import {createHoleControls} from './solid-holes.mjs';
 import {isEdgeFinish,edgeFinishDefinition} from './solid-finishes.mjs';
 import {extrusionExtentMode,extrusionExtent,checkedExtrusionExtent} from './solid-extrusion.mjs';
 import {loftDefinition,editLoftStations} from './solid-loft.mjs';
+import {readSweepOptions,sweepOptionsDefinition,renderSweepOptions} from './solid-sweep-options.mjs';
 const quantity = (value,dimension='length',unit='millimeter') => ({literal:{value,dimension,unit}});
 const mm = q => q?.dimension==='length' ? q.value*({millimeter:1,centimeter:10,meter:1000,inch:25.4}[q.unit]??NaN) : NaN;
 export function extrusionDirection(axis,depth) {
@@ -62,12 +63,12 @@ export function sweepOrientation(mode,axis,preserved=null) {
 }
 const pathFeature = f => ['sketch_open_wire','sketch_wire','helix'].some(key=>Object.hasOwn(f.operation,key));
 const solidNames={extrude:'extrusion',revolve:'revolution',sweep:'sweep',profile_loft:'loft',fillet:'fillet',chamfer:'chamfer',hole:'hole'};
-export function solidChanges(features,{mode,id,input,target,direction,extent='distance',editing=null,kind='extrude',revolution=null,path='',orientation='corrected_frenet',loft=null,finish=null,hole=null}) {
+export function solidChanges(features,{mode,id,input,target,direction,extent='distance',editing=null,kind='extrude',revolution=null,path='',orientation='corrected_frenet',sweepOptions={},loft=null,finish=null,hole=null}) {
   if(!id?.trim())throw new Error('Enter a result feature name.');
   if(kind!=='profile_loft'&&!features.some(f=>f.id===input))throw new Error('Choose an existing planar profile.');
   if(!Object.hasOwn(solidNames,kind))throw new Error('Choose a supported solid feature.');
   if(kind==='sweep'&&(!features.some(f=>f.id===path)||path===input))throw new Error('Choose a separate existing sweep path.');
-  const operation=kind==='hole'?{hole:structuredClone(hole)}:isEdgeFinish(kind)?{[kind]:edgeFinishDefinition(kind,input,finish?.edges,finish?.size)}:kind==='profile_loft'?{profile_loft:loftDefinition(features,loft??{})}:kind==='sweep'?{sweep:{profile:input,path,orientation}}:kind==='revolve'?{revolve:{input,...revolution}}:{extrude:{input,direction,extent}};
+  const operation=kind==='hole'?{hole:structuredClone(hole)}:isEdgeFinish(kind)?{[kind]:edgeFinishDefinition(kind,input,finish?.edges,finish?.size)}:kind==='profile_loft'?{profile_loft:loftDefinition(features,loft??{})}:kind==='sweep'?{sweep:{profile:input,path,orientation,...structuredClone(sweepOptions)}}:kind==='revolve'?{revolve:{input,...revolution}}:{extrude:{input,direction,extent}};
   if(kind==='revolve'&&(!revolution||!['angle','symmetric'].includes(revolution.extent)))throw new Error('Choose an angular or symmetric extent.');
   if(kind==='extrude')operation.extrude.extent=checkedExtrusionExtent(features,extent,input,id);
   if(editing){
@@ -96,7 +97,7 @@ export function solidEditOutput(data,editing) {
 }
 export function createSolidEditor({host,request,instance,preview,applied,restore,showSketch=()=>{},showSolid=()=>{},initialProfile=()=>null,profileDirection=()=>null,profileAxis=()=>null,invalidatePreview=()=>{},pickSolidEdge=null,pickLoftAnchor=null,pickLoftSplit=null,pickHolePosition=null,pickLimitingFace=null,cancelLimitingFacePick=()=>{},started=()=>{},autoStart=false}) {
   let data=null,editing=null,busy=false,mode='new',id='',input='',target='',extent='distance',axis=[0,0,1],depth=10,source='literal',preserved=null;
-  let kind='extrude',origin=[0,0,0],angle=360,axisSource='literal',savedRevolve=null,path='',orientation='corrected_frenet',binormal=[0,0,1],savedOrientation=null,loft={profiles:[],holes:[],ruled:false},loftStarted=false;
+  let kind='extrude',origin=[0,0,0],angle=360,axisSource='literal',savedRevolve=null,path='',orientation='corrected_frenet',binormal=[0,0,1],savedOrientation=null,sweepState=readSweepOptions(),loft={profiles:[],holes:[],ruled:false},loftStarted=false;
   let limitTarget='',limitFace='z:maximum',savedFace=null,limitDirectionSource='literal';
   let finishTarget='',finishEdges=[],finishSize=2,finishSource='literal',savedSize=null;
   let formTurn=0,pickedLimit=null,holeControls=null,loftEnds=null,loftCorrespondence=null;
@@ -126,6 +127,7 @@ export function createSolidEditor({host,request,instance,preview,applied,restore
     else angle=360;
     path=feature?.operation.sweep?.path??data.features.find(f=>pathFeature(f)&&f.id===initialProfile()&&f.id!==input)?.id??data.features.find(f=>pathFeature(f)&&!f.operation.sketch_wire&&f.id!==input)?.id??data.features.find(f=>pathFeature(f)&&f.id!==input)?.id??'';
     savedOrientation=feature?.operation.sweep?.orientation??null;
+    sweepState=readSweepOptions(feature?.operation.sweep);
     orientation=savedOrientation&&typeof savedOrientation==='object'?'preserve':savedOrientation??'corrected_frenet';
     binormal=readVector(savedOrientation?.binormal?.direction,'scalar')??[0,0,1];
     loft=feature?.operation.profile_loft?structuredClone(feature.operation.profile_loft):{profiles:[input,data.features.find(f=>profile(f)&&f.id!==input)?.id??''],holes:[],ruled:false};
@@ -204,6 +206,7 @@ export function createSolidEditor({host,request,instance,preview,applied,restore
       if(savedOrientation&&typeof savedOrientation==='object')choices.push(['preserve','Keep existing orientation formula']);
       select('Sweep orientation',choices,orientation,value=>{orientation=value;render();});
       if(orientation==='binormal')for(const [i,key] of ['X','Y','Z'].entries())number(`Binormal ${key}`,binormal[i],value=>binormal[i]=value);
+      renderSweepOptions({state:sweepState,features:data.features,parameters:data.parameters,input,path,select,number,button,content,render});
     }
     if(kind==='profile_loft'){
       const note=document.createElement('p');note.textContent='Order distinct closed profiles along the part. Each section has one boundary. For hollow parts, add a hole track and choose one inner profile per station; reordering stations moves all tracks together.';content.append(note);
@@ -295,7 +298,7 @@ export function createSolidEditor({host,request,instance,preview,applied,restore
       revolution=axisSource==='preserve'?{origin:structuredClone(savedRevolve.origin),axis:structuredClone(savedRevolve.axis),angle_radians:expression,extent}:revolutionDefinition(origin,axis,expression,extent);
     }
     const finish={edges:finishEdges,size:finishSource==='preserve'?savedSize:finishSource.startsWith('parameter:')?{parameter:finishSource.slice(10)}:quantity(finishSize)};
-    const changes=solidChanges(data.features,{mode,id,input:kind==='hole'?holeControls.state.input:isEdgeFinish(kind)?finishTarget:input,target,hole:kind==='hole'?holeControls.definition():null,finish,direction,extent:kind==='extrude'?extrusionExtent(extent,limitTarget,limitFace,savedFace):extent,editing,kind,revolution,path,loft:kind==='profile_loft'?{...loft,...loftEnds.definition(),...loftCorrespondence.definition(loft)}:loft,orientation:kind==='sweep'?sweepOrientation(orientation,binormal,savedOrientation):undefined});
+    const changes=solidChanges(data.features,{mode,id,input:kind==='hole'?holeControls.state.input:isEdgeFinish(kind)?finishTarget:input,target,hole:kind==='hole'?holeControls.definition():null,finish,direction,extent:kind==='extrude'?extrusionExtent(extent,limitTarget,limitFace,savedFace):extent,editing,kind,revolution,path,loft:kind==='profile_loft'?{...loft,...loftEnds.definition(),...loftCorrespondence.definition(loft)}:loft,orientation:kind==='sweep'?sweepOrientation(orientation,binormal,savedOrientation):undefined,sweepOptions:kind==='sweep'?sweepOptionsDefinition(sweepState,data.features,{input,path,orientation:sweepOrientation(orientation,binormal,savedOrientation)}):{}});
     const output=editing?solidEditOutput(data,editing):id,selectedInstance=instance();busy=true;content.inert=true;launch.disabled=true;message('Regenerating solid and checking requirements…');
     try{
       const response=await request('/api/features',{method:'POST',body:JSON.stringify({version:data.version,instance:selectedInstance,expected:data.features,...changes,output,apply})});

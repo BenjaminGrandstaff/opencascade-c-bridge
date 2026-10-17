@@ -1796,6 +1796,10 @@ fn profile_loft_controls_preview_hollow_boolean_tools_and_save_ordered_tracks() 
         let model = PathBuf::from(directory.model(&document));
         let mut studio = serve::Studio::load(&model, Some("body".into())).unwrap();
         assert_eq!(studio.handle("GET", "/solid-loft.mjs", b"").status, 200);
+        assert_eq!(
+            studio.handle("GET", "/solid-sweep-options.mjs", b"").status,
+            200
+        );
         let data = get(&mut studio, "/api/features").1;
         let state = get(&mut studio, "/api/state").1;
         let mesh = studio.handle("GET", "/api/model.gltf", b"").body;
@@ -7212,4 +7216,74 @@ fn loft_profile_diagnosis_reads_drafts_without_accepting_them_or_mutating_geomet
     assert_eq!(get(&mut studio, "/api/state").1, state);
     assert_eq!(studio.handle("GET", "/api/model.gltf", b"").body, gltf);
     assert_eq!(fs::read_to_string(model).unwrap(), file);
+}
+
+#[test]
+fn studio_previews_path_planes_and_edits_advanced_sweeps() {
+    let request: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../tools/model/advanced-sweep.request.json"
+    ))
+    .unwrap();
+    let directory = Directory::new();
+    let document = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+    let model = PathBuf::from(directory.model(&document));
+    let mut studio = serve::Studio::load(&model, Some("duct".into())).unwrap();
+    // A plane across the route halfway along: the run is 40 mm and the
+    // quarter bend 30π/2 mm, so the middle lies on the bend.
+    let (_, state) = get(&mut studio, "/api/state");
+    let datum = json!({"id":"middle","kind":{"path_plane":{"input":"path","position":{"parameter":"middle_position"}}}});
+    let parameter = json!({"id":"middle_position","parameter_type":{"scalar":"scalar"},"default":{"scalar":{"value":0.5,"dimension":"scalar","unit":null}},"minimum":null,"maximum":null});
+    let preview = studio.handle(
+        "POST",
+        "/api/datum",
+        json!({"version":state["version"],"instance":"duct","expected":document.family.datums,"datum":datum,"parameters":[parameter],"apply":false})
+            .to_string()
+            .as_bytes(),
+    );
+    assert_eq!(
+        preview.status,
+        200,
+        "{}",
+        String::from_utf8_lossy(&preview.body)
+    );
+    let planes: serde_json::Value = serde_json::from_slice(&preview.body).unwrap();
+    let plane = |id: &str| {
+        planes["datum_planes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|p| p["id"] == id)
+            .cloned()
+            .unwrap()
+    };
+    let pi = std::f64::consts::PI;
+    let along = (40.0 + 30.0 * pi / 2.0) / 2.0 - 40.0;
+    let angle = along / 30.0;
+    let middle = plane("middle");
+    assert_eq!(middle["status"], "resolved", "{middle}");
+    let origin = middle["origin_mm"].as_array().unwrap();
+    assert!((origin[0].as_f64().unwrap() - (40.0 + 30.0 * angle.sin())).abs() < 1e-6);
+    assert!((origin[1].as_f64().unwrap() - 30.0 * (1.0 - angle.cos())).abs() < 1e-6);
+    assert_eq!(plane("outlet")["status"], "resolved");
+    // Replacing the duct's twist with a scale law previews a valid solid.
+    let (_, features) = get(&mut studio, "/api/features");
+    let mut duct = features["features"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["id"] == "duct")
+        .cloned()
+        .unwrap();
+    let sweep = &mut duct["operation"]["sweep"];
+    sweep.as_object_mut().unwrap().remove("sections");
+    sweep["scale"] =
+        json!({"end":{"literal":{"value":1.5,"dimension":"scalar","unit":null}},"law":"smooth"});
+    let edit = json!({"version":features["version"],"instance":"duct","expected":features["features"],"action":"replace","features":[duct],"output":"duct","apply":false});
+    let response = studio.handle("POST", "/api/features", edit.to_string().as_bytes());
+    assert_eq!(
+        response.status,
+        200,
+        "{}",
+        String::from_utf8_lossy(&response.body)
+    );
 }

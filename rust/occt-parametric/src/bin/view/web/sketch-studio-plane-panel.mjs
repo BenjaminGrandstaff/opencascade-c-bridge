@@ -5,7 +5,7 @@
 // or deletes it.
 import { fromGltf, pickFace } from './sketch-studio-plane.mjs';
 import {
-  PLANE_ICONS, PLANE_TYPES, describePlane, drivingParameters, pickPoint, planeEdit, planeOutline, planeType,
+  isPathFeature, PLANE_ICONS, PLANE_TYPES, describePlane, drivingParameters, pickPoint, planeEdit, planeOutline, planeType,
 } from './sketch-studio-planes.mjs';
 
 // Values within 1e-9 of zero (float noise in unit normals) show as 0.
@@ -115,6 +115,7 @@ export function installPlanes(studio, document) {
     studio.selectedPlane = null;
     form = {
       type, name: nextPlaneName(), base, distance: 10, angle: 30, hinge: 'x',
+      path: studio.features.find(isPathFeature)?.id ?? '', position: 0,
       faces: [], points: [null, null, null], picking: null, preview: null, error: null,
     };
     studio.refresh();
@@ -176,6 +177,16 @@ export function installPlanes(studio, document) {
       controls.push(html('div', { class: 'row' }, pickButton(0, form.faces[0] ? 'First face again' : 'Pick the first face'), facesDone(0)),
         html('div', { class: 'row' }, pickButton(1, form.faces[1] ? 'Second face again' : 'Pick the second face'), facesDone(1)));
     }
+    if (form.type === 'path') {
+      const paths = studio.features.filter(isPathFeature);
+      controls.push(field('Path', html('select', {
+        'aria-label': 'Path', onchange: (event) => { form.path = event.target.value; schedulePreview(); },
+      }, paths.length ? paths.map((f) => html('option', { value: f.id, selected: form.path === f.id }, f.id))
+        : html('option', { value: '' }, 'No sketch wire or helix yet'))),
+      number('position', 'Position along the path (0 start – 1 end)'),
+      html('p', { style: 'margin:0;color:var(--muted)' },
+        'Sketches on this plane sit where the path crosses it and move with the path as its constraints change. Use 0 for a sweep profile and 1 for an end section.'));
+    }
     if (form.type === 'three_point') {
       form.points.forEach((point, index) => {
         controls.push(html('div', { class: 'point-row' }, html('span', {}, `P${index + 1}`),
@@ -209,7 +220,7 @@ export function installPlanes(studio, document) {
 
   // ── Preview and apply ───────────────────────────────────────────────
   function edit() {
-    return planeEdit(form.type, form, studio.planes, takenParameters());
+    return planeEdit(form.type, form, studio.planes, takenParameters(), studio.features);
   }
 
   function schedulePreview() {

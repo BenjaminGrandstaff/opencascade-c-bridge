@@ -1,4 +1,4 @@
-// Datum planes in the sketch studio: the five constructed kinds, the edits
+// Datum planes in the sketch studio: the six constructed kinds, the edits
 // that create them with the parameters that drive them, and their outlines
 // in the 3D view. Every plane is fully defined by its references and those
 // parameters, so it never floats free.
@@ -10,7 +10,12 @@ export const PLANE_TYPES = [
   { id: 'face', label: 'On face', hint: 'Click a flat face; the plane follows it, offset by a distance.' },
   { id: 'midplane', label: 'Midplane', hint: 'Click two parallel faces; the plane stays halfway between them.' },
   { id: 'three_point', label: '3 points', hint: 'Click three points on the model, or type them.' },
+  { id: 'path', label: 'Normal to path', hint: 'Across a sweep path at a fraction of its length; sketches on it follow the path.' },
 ];
+
+/** Features a path plane can sit across: sketch wires and helices. */
+export const isPathFeature = (feature) =>
+  ['sketch_open_wire', 'sketch_wire', 'helix'].some((key) => Object.hasOwn(feature?.operation ?? {}, key));
 
 /** Icons in a 24 × 24 view box drawn with the current text color. */
 export const PLANE_ICONS = {
@@ -18,6 +23,7 @@ export const PLANE_ICONS = {
   angle: '<path d="M3 17l6-4h12l-6 4z"/><path d="M9 13L13 4h8l-4 9" opacity=".7"/>',
   face: '<path d="M4 10h16v10H4z" fill="currentColor" opacity=".25"/><path d="M4 10h16v10H4zM3 7h18"/><path d="M12 7V4"/>',
   midplane: '<path d="M4 4h16M4 20h16"/><path d="M4 12h16" stroke-dasharray="3 2"/><path d="M12 6v4M12 14v4"/>',
+  path: '<path d="M3 19c6 0 6-14 18-14"/><path d="M8 9v10M5 11l3-2 3 2" opacity=".7"/>',
   three_point: '<path d="M4 17L12 5l8 12z" opacity=".55"/><circle cx="4" cy="17" r="2" fill="currentColor"/><circle cx="12" cy="5" r="2" fill="currentColor"/><circle cx="20" cy="17" r="2" fill="currentColor"/>',
 };
 
@@ -32,6 +38,8 @@ export const lengthParameter = (id, mm) =>
   ({ id, parameter_type: { scalar: 'length' }, default: { scalar: length(mm) }, minimum: null, maximum: null });
 export const angleParameter = (id, radians) =>
   ({ id, parameter_type: { scalar: 'scalar' }, default: { scalar: scalar(radians) }, minimum: null, maximum: null });
+export const fractionParameter = (id, fraction) =>
+  ({ id, parameter_type: { scalar: 'scalar' }, default: { scalar: scalar(fraction) }, minimum: scalar(0), maximum: scalar(1) });
 export const pointParameter = (id, point) =>
   ({ id, parameter_type: { vector: 'length' }, default: { vector: lengths(point) }, minimum: null, maximum: null });
 
@@ -62,12 +70,14 @@ export function baseOf(choice, planes = []) {
  * The datum and the new parameters that drive it, for plane type `type`:
  * offset `distance` (mm); angle `angle` (degrees) about the base's `hinge`
  * axis ('x' or 'y'); face `distance` from `faces[0]`; midplane between
- * `faces[0]` and `faces[1]`; three_point through `points`. Faces are
+ * `faces[0]` and `faces[1]`; three_point through `points`; path across
+ * `path` (a path feature among `features`) at `position`, a fraction of its
+ * length (`<name>_position`). Faces are
  * results of the face pick ({face_support: {input, face}}). Parameters are
  * named after the plane (`<name>_distance`, `<name>_angle`, `<name>_p1`…),
  * skipping names in `taken`.
  */
-export function planeEdit(type, values, planes = [], taken = []) {
+export function planeEdit(type, values, planes = [], taken = [], features = []) {
   const id = values.name?.trim();
   if (!id || id !== values.name) throw new Error('Enter a plane name without surrounding spaces.');
   const names = [...taken];
@@ -117,6 +127,13 @@ export function planeEdit(type, values, planes = [], taken = []) {
       return { parameter: name };
     });
     kind = { three_point_plane: { first, second, third } };
+  } else if (type === 'path') {
+    if (!features.some((f) => f.id === values.path && isPathFeature(f))) throw new Error('Choose a sweep path.');
+    const position = finite(values.position, 'The position');
+    if (position < 0 || position > 1) throw new Error('The position is a fraction of the path from 0 to 1.');
+    const name = parameter('position');
+    parameters.push(fractionParameter(name, position));
+    kind = { path_plane: { input: values.path, position: { parameter: name } } };
   } else {
     throw new Error('Choose a plane type.');
   }
@@ -126,7 +143,7 @@ export function planeEdit(type, values, planes = [], taken = []) {
 /** The type id of a datum kind, or null for points, axes and plain planes. */
 export function planeType(kind) {
   const key = Object.keys(kind ?? {})[0];
-  return { offset_plane: 'offset', angle_plane: 'angle', face_plane: 'face', midplane: 'midplane', three_point_plane: 'three_point' }[key] ?? (key === 'plane' ? 'fixed' : null);
+  return { offset_plane: 'offset', angle_plane: 'angle', face_plane: 'face', midplane: 'midplane', three_point_plane: 'three_point', path_plane: 'path' }[key] ?? (key === 'plane' ? 'fixed' : null);
 }
 
 /**
@@ -141,6 +158,7 @@ export function drivingParameters(kind) {
   if (named(body.angle_radians)) {
     driven.push({ id: named(body.angle_radians), label: 'Angle', unit: '°', toView: (r) => r / DEGREE, fromView: (d) => d * DEGREE });
   }
+  if (named(body.position)) driven.push({ id: named(body.position), label: 'Position along path', unit: 'fraction' });
   for (const [key, label] of [['first', 'Point 1'], ['second', 'Point 2'], ['third', 'Point 3']]) {
     if (named(body[key])) driven.push({ id: named(body[key]), label, unit: 'mm', vector: true });
   }
@@ -158,6 +176,7 @@ export function describePlane(definition) {
     case 'face': return `On a face of ${body.input}`;
     case 'midplane': return `Midplane of ${body.input}`;
     case 'three_point': return 'Through 3 points';
+    case 'path': return `Normal to ${body.input}`;
     case 'fixed': return 'Fixed plane';
     default: return 'Datum';
   }

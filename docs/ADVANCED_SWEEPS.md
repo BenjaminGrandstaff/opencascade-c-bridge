@@ -57,6 +57,25 @@ parameters move or turn the path, its profile or section moves and turns
 with it, so the sweep stays valid. Profiles placed by fixed coordinates do
 not follow edits like this.
 
+## Studio
+
+- **Sweep editor:** the solid editor's sweep form (*Sketch to solid*,
+  *Sweep along path*, or *Edit sweep*) adds rows for:
+  - twist: an entered angle in degrees, a scalar parameter in radians, or a
+    kept formula, with its law;
+  - scale along the path;
+  - a guide rail that turns, or turns and resizes, the profile;
+  - sections, each a profile and a position (add and remove rows).
+- **Editing:** an edit keeps every saved option, parameter link and formula.
+- **Checks before preview:** the form refuses the same conflicts as the
+  kernel, with plain messages. Native preview then checks the solid as for
+  other solid edits.
+- **Plane tool:** the sketch studio's *New plane* tool has a *Normal to
+  path* type, which picks a sketch wire or helix and a position from 0 to 1.
+  Its position becomes a parameter in [0, 1], editable under *Driven by*.
+- **Placement:** *Sketch on this plane* starts a profile that the path's
+  constraints carry with it.
+
 ## Native behaviour
 
 ABI 82 adds `occt_bridge_sweep_advanced` and `occt_bridge_path_station`.

@@ -11,7 +11,7 @@ const face = (input, z) => ({
 });
 
 test('every plane type has an icon', () => {
-  assert.equal(PLANE_TYPES.length, 5);
+  assert.equal(PLANE_TYPES.length, 6);
   for (const type of PLANE_TYPES) assert.match(PLANE_ICONS[type.id], /<(path|circle)/, type.id);
 });
 
@@ -81,4 +81,20 @@ test('plane outlines are squares around the model centre dropped onto the plane'
   const path = planeOutline(plane, 100, identity, 200, 200, [100, 0, 300]);
   // Centre (100, 0) mm, half 100 mm: x from 0 to 0.2 m in glTF.
   assert.match(path, /^M100\.0 100\.0L120\.0 100\.0L120\.0 /);
+});
+
+test('path planes sit across a sketch path at a fraction of its length', () => {
+  const features = [
+    { id: 'route', operation: { sketch_open_wire: { sketch: {} } } },
+    { id: 'disc', operation: { sketch_face: { sketch: {} } } },
+  ];
+  const edit = planeEdit('path', { name: 'outlet', path: 'route', position: 1 }, [], ['outlet_position'], features);
+  assert.deepEqual(edit.datum, { id: 'outlet', kind: { path_plane: { input: 'route', position: { parameter: 'outlet_position-2' } } } });
+  assert.deepEqual(edit.parameters[0].default, { scalar: { value: 1, dimension: 'scalar', unit: null } });
+  assert.deepEqual([edit.parameters[0].minimum.value, edit.parameters[0].maximum.value], [0, 1]);
+  assert.equal(planeType(edit.datum.kind), 'path');
+  assert.equal(describePlane(edit.datum), 'Normal to route');
+  assert.deepEqual(drivingParameters(edit.datum.kind).map((d) => [d.id, d.label]), [['outlet_position-2', 'Position along path']]);
+  assert.throws(() => planeEdit('path', { name: 'p', path: 'disc', position: 0 }, [], [], features), /sweep path/);
+  assert.throws(() => planeEdit('path', { name: 'p', path: 'route', position: 1.5 }, [], [], features), /from 0 to 1/);
 });
