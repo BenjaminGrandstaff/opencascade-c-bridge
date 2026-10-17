@@ -1656,6 +1656,130 @@ fn revolution_controls_reject_angles_that_fail_another_instance() {
     assert_eq!(get(&mut studio, "/api/state").1, state);
 }
 
+#[test]
+fn sweep_controls_preview_holes_and_boolean_tools_then_apply_with_history_and_save() {
+    let request: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../tools/model/hollow-sweep.request.json"
+    ))
+    .unwrap();
+    let length = 10.0 + 5.0 * std::f64::consts::PI;
+    for (mode, area_factor) in [("new", 3.0), ("cut", 1.0), ("fuse", 4.0)] {
+        let directory = Directory::new();
+        let mut model_json = request["model"].clone();
+        if mode == "cut" {
+            model_json["family"]["features"][0]["operation"]["sweep"]["profile"] = json!("outer");
+        }
+        let document = ModelDocument::from_json(&model_json.to_string()).unwrap();
+        let model = PathBuf::from(directory.model(&document));
+        let original = fs::read_to_string(&model).unwrap();
+        let mut studio = serve::Studio::load(&model, Some("body".into())).unwrap();
+        let data = get(&mut studio, "/api/features").1;
+        let state = get(&mut studio, "/api/state").1;
+        let mesh = studio.handle("GET", "/api/model.gltf", b"").body;
+        let tool = json!({"id":"tool","operation":{"sweep":{"profile":if mode=="fuse"{"inner"}else{"profile"},"path":"path","orientation":"corrected_frenet"}}});
+        let features = match mode {
+            "cut" => {
+                json!([tool,{"id":"result","operation":{"cut":{"object":"body","tool":"tool"}}}])
+            }
+            "fuse" => {
+                json!([tool,{"id":"result","operation":{"fuse":{"left":"body","right":"tool"}}}])
+            }
+            _ => json!([tool]),
+        };
+        let mut edit = json!({"version":data["version"],"instance":"pipe","expected":data["features"],"action":"add","features":features,"output":if mode=="new"{"tool"}else{"result"},"apply":false});
+        let response = studio.handle("POST", "/api/features", edit.to_string().as_bytes());
+        assert_eq!(
+            response.status,
+            200,
+            "{}",
+            String::from_utf8_lossy(&response.body)
+        );
+        let result: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+        assert_eq!(result["can_apply"], true, "{}", result["error"]);
+        assert!(
+            (result["geometry"]["pipe"]["volume_mm3"].as_f64().unwrap()
+                - area_factor * std::f64::consts::PI * length)
+                .abs()
+                < 1e-5
+        );
+        assert_eq!(result["geometry"]["pipe"]["solids"], 1);
+        assert!(!result["gltf"]["meshes"].as_array().unwrap().is_empty());
+        assert_eq!(get(&mut studio, "/api/state").1, state);
+        assert_eq!(studio.handle("GET", "/api/model.gltf", b"").body, mesh);
+        edit["apply"] = json!(true);
+        let response = studio.handle("POST", "/api/features", edit.to_string().as_bytes());
+        assert_eq!(
+            response.status,
+            200,
+            "{}",
+            String::from_utf8_lossy(&response.body)
+        );
+        history(&mut studio, "undo");
+        assert_eq!(
+            get(&mut studio, "/api/features").1["features"],
+            data["features"]
+        );
+        history(&mut studio, "redo");
+        assert_eq!(studio.handle("POST", "/api/save", b"").status, 200);
+        assert_ne!(fs::read_to_string(&model).unwrap(), original);
+        let saved = ModelDocument::from_json(&fs::read_to_string(&model).unwrap()).unwrap();
+        assert!(saved.family.features.iter().any(|f| f.id == "tool"));
+        assert!(
+            document
+                .family
+                .requirements
+                .iter()
+                .all(|r| saved.family.requirements.contains(r))
+        );
+    }
+}
+
+#[test]
+fn sweep_edits_preserve_binormal_drivers_and_reject_another_instances_zero_direction() {
+    let directory = Directory::new();
+    let mut request: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../tools/model/curved-pipe.request.json"
+    ))
+    .unwrap();
+    request["model"]["family"]["parameters"].as_array_mut().unwrap().push(json!({"id":"normal","parameter_type":{"scalar":"scalar"},"default":{"scalar":{"value":1,"dimension":"scalar","unit":null}}}));
+    request["model"]["instances"].as_array_mut().unwrap().push(json!({"clone":{"id":"zero","source":"pipe","overrides":{"normal":{"scalar":{"value":0,"dimension":"scalar","unit":null}}},"provenance":"test"}}));
+    let document = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+    let model = PathBuf::from(directory.model(&document));
+    let mut studio = serve::Studio::load(&model, Some("body".into())).unwrap();
+    let data = get(&mut studio, "/api/features").1;
+    let state = get(&mut studio, "/api/state").1;
+    let mut feature = data["features"][0].clone();
+    feature["operation"]["sweep"]["orientation"] = json!({"binormal":{"direction":{"components":{"x":{"literal":{"value":0,"dimension":"scalar","unit":null}},"y":{"parameter":"normal"},"z":{"literal":{"value":0,"dimension":"scalar","unit":null}}}}}});
+    let mut edit = json!({"version":data["version"],"instance":"pipe","expected":data["features"],"action":"replace","features":[feature],"output":"body","apply":false});
+    let response = studio.handle("POST", "/api/features", edit.to_string().as_bytes());
+    assert_eq!(response.status, 200);
+    let result: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+    assert_eq!(result["can_apply"], false, "{}", result["error"]);
+    assert!(result["gltf"].is_null());
+    edit["apply"] = json!(true);
+    assert_eq!(
+        studio
+            .handle("POST", "/api/features", edit.to_string().as_bytes())
+            .status,
+        422
+    );
+    assert_eq!(get(&mut studio, "/api/state").1, state);
+    // A nonzero expression works in both instances and survives save without flattening.
+    edit["features"][0]["operation"]["sweep"]["orientation"]["binormal"]["direction"]["components"]
+        ["y"] = json!({"add":[{"parameter":"normal"},{"literal":{"value":1,"dimension":"scalar","unit":null}}]});
+    let response = studio.handle("POST", "/api/features", edit.to_string().as_bytes());
+    assert_eq!(
+        response.status,
+        200,
+        "{}",
+        String::from_utf8_lossy(&response.body)
+    );
+    assert_eq!(studio.handle("POST", "/api/save", b"").status, 200);
+    let saved = ModelDocument::from_json(&fs::read_to_string(&model).unwrap()).unwrap();
+    let expected: FeatureDefinition = serde_json::from_value(edit["features"][0].clone()).unwrap();
+    assert_eq!(saved.family.features[0], expected);
+}
+
 fn history(studio: &mut serve::Studio, direction: &str) -> serde_json::Value {
     let version = get(studio, "/api/state").1["version"].clone();
     let response = studio.handle(

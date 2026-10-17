@@ -241,10 +241,11 @@ catalogue; display-only glyphs and edited-curve names cannot be sources.
 
 ## Making a solid from a sketch
 
-Choose **Extrude, revolve, union or cut** in the left panel after applying the sketch.
+Choose **Extrude, revolve or sweep** in the left panel after applying the sketch.
 The active applied profile is selected by default and its plane normal supplies
-the initial extrusion direction. Choose extrusion or revolution, then a new solid, material addition (union) or
-material removal (cut), name the result and select a target solid for a boolean.
+the initial extrusion direction. Choose extrusion, revolution or path sweep,
+then a new solid, material addition (union) or material removal (cut). Name the
+result and select a target solid for a boolean.
 The applied profile's holes and additional regions become part of the extrusion.
 If the current output is a planar sketch, the form defaults to an available
 solid target instead of using the sketch as a boolean target.
@@ -266,6 +267,20 @@ total angle equally about the profile plane. The feature list also exposes
 **Edit revolution …**; existing axis/origin and angle formulas are retained by
 default and can be explicitly replaced with entered values. The profile must
 sweep into valid solid material; native preview checks this before Apply.
+
+Choose **Sweep along path** to carry the profile along an applied open or
+closed sketch wire or helix. Place the profile at the path start, usually
+perpendicular to its initial direction. Profile holes and material regions are
+retained. Select a separate **Sweep path**; **Show sweep path** activates its
+sketch while keeping the solid form open. When an open path is the active layer,
+it becomes the initial path choice.
+
+**Least twist** is the usual orientation. **Frenet** follows the curvature frame;
+**Fixed** keeps sections parallel; **Binormal direction** uses a finite nonzero
+family-coordinate vector compatible with the whole path. **Edit sweep …** preserves existing binormal formulas
+until explicitly replaced. New solids, unions and cuts all support sweep tools.
+Native preview rejects invalid paths, orientations or non-solid results before
+Apply, and checks every family instance.
 
 **Preview solid** displays the native validated mesh in the 3D viewer, with
 solid count and volume for the selected instance in the form. Fit uses the
@@ -843,7 +858,7 @@ to the instance it was made on.
 | Explicit outer loops, holes and additional regions | Yes | Material boundaries panel, ordered canvas picks, Preview and draft history |
 | Region discovery initialization | Yes | Material boundaries panel, arrangement curves, cell seeds and merging |
 | Full dependencies | Yes | Advanced drawer hosts the classic panel |
-| Sketch to solid | Studio panel | Native 3D extrusion/revolve/union/cut previews, existing sweep editing and model history |
+| Sketch to solid | Studio panel | Native 3D extrusion/revolve/sweep/union/cut previews, existing sweep editing and model history |
 | Preview, Apply, Undo, Redo, Save | Yes | Toolbar; Revert stays in the classic viewer |
 | Several instances | Yes | Instance menu in the header; see [Instances](#instances) |
 

@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {revolutionDefinition,extrusionDirection,readDirection,controlledDirection,solidChanges,createSolidEditor} from './solid-editor.mjs';
+import {sweepOrientation,revolutionDefinition,extrusionDirection,readDirection,controlledDirection,solidChanges,createSolidEditor} from './solid-editor.mjs';
 const depth=value=>({literal:{value,dimension:'length',unit:'millimeter'}});
 const base=[{id:'profile',operation:{sketch_face:{sketch:{}}}},{id:'body',operation:{extrude:{input:'profile',direction:{components:{x:depth(0),y:depth(0),z:{parameter:'depth'}}},extent:'distance'}}}];
 
@@ -77,5 +77,41 @@ test('revolution forms use profile axes and preserve authored formulas on editin
  button(host,'Edit revolution turned').onclick();await button(host,'Preview solid').onclick();assert.deepEqual(calls[1].features,[saved]);
  control(host,'Revolution extent').value='angle';control(host,'Revolution extent').onchange();
  await button(host,'Preview solid').onclick();assert.deepEqual(calls[2].features[0].operation.revolve,{...saved.operation.revolve,extent:'angle'});
+ }finally{delete globalThis.document;delete globalThis.Option;}
+});
+
+
+test('sweep graphs retain a separate path, orientation formula and atomic boolean tool',()=>{
+ const features=[...base,{id:'route',operation:{sketch_open_wire:{sketch:{}}}}];
+ const saved={binormal:{direction:{parameter:'normal'}}};
+ assert.deepEqual(sweepOrientation('preserve',[0,0,1],saved),saved);
+ assert.deepEqual(sweepOrientation('binormal',[0,3,0]),{binormal:{direction:{components:{x:{literal:{value:0,dimension:'scalar',unit:null}},y:{literal:{value:1,dimension:'scalar',unit:null}},z:{literal:{value:0,dimension:'scalar',unit:null}}}}}});
+ assert.throws(()=>sweepOrientation('binormal',[0,0,0]),/nonzero/);
+ for(const mode of ['new','fuse','cut']){
+  const graph=solidChanges(features,{kind:'sweep',mode,id:'pipe',input:'profile',path:'route',orientation:saved,target:'body'});
+  assert.deepEqual(graph.features[0].operation,{sweep:{profile:'profile',path:'route',orientation:saved}});
+  if(mode!=='new')assert.equal(graph.features[0].id,'pipe-sweep');
+ }
+ assert.throws(()=>solidChanges(features,{kind:'sweep',mode:'new',id:'pipe',input:'profile',path:'profile'}),/separate/);
+ assert.throws(()=>solidChanges(features,{kind:'sweep',mode:'new',id:'pipe',input:'profile',path:'missing'}),/path/);
+});
+
+test('sweep form chooses an applied wire and edits preserve binormal formula drivers',async()=>{
+ globalThis.document={createElement:tag=>new Element(tag)};globalThis.Option=class extends Element{constructor(text,value){super('option');this.textContent=text;this.value=value;}};
+ try{
+ const host=new Element('div'),calls=[],shown=[];
+ const saved={id:'pipe',operation:{sweep:{profile:'profile',path:'route',orientation:{binormal:{direction:{parameter:'normal'}}}}}};
+ const features=[...base,{id:'route',operation:{sketch_open_wire:{sketch:{}}}},{id:'active-route',operation:{sketch_open_wire:{sketch:{}}}},saved];
+ createSolidEditor({host,initialProfile:()=> 'active-route',instance:()=> 'part',preview:async()=>{},applied:async()=>{},restore:async()=>{},showSketch:id=>shown.push(id),request:async(path,options)=>{
+  if(!options)return {version:1,features,output:'pipe',parameters:[]};
+  const body=JSON.parse(options.body);calls.push(body);return {can_apply:true};
+ }});
+ await button(host,'Sketch to solid').onclick();control(host,'Solid feature').value='sweep';control(host,'Solid feature').onchange();
+ assert.equal(control(host,'Sweep path').value,'active-route');assert.equal(control(host,'Revolution extent'),undefined);assert.equal(control(host,'Extrusion extent'),undefined);
+ control(host,'Result feature name').value='new-pipe';control(host,'Result feature name').oninput();
+ await button(host,'Show sweep path').onclick();assert.deepEqual(shown,['active-route']);
+ control(host,'Sweep orientation').value='fixed';control(host,'Sweep orientation').onchange();await button(host,'Preview solid').onclick();assert.equal(calls[0].features[0].operation.sweep.orientation,'fixed');
+ await button(host,'Edit sweep pipe').onclick();assert.equal(control(host,'Sweep orientation').value,'preserve');await button(host,'Preview solid').onclick();assert.deepEqual(calls[1].features,[saved]);
+ control(host,'Sweep orientation').value='binormal';control(host,'Sweep orientation').onchange();control(host,'Binormal Y').value='2';control(host,'Binormal Y').oninput();await button(host,'Preview solid').onclick();assert(calls[2].features[0].operation.sweep.orientation.binormal.direction.components.y.literal.value>0);
  }finally{delete globalThis.document;delete globalThis.Option;}
 });
