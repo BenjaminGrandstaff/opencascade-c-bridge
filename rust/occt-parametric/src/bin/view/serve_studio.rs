@@ -33,6 +33,7 @@ const STUDIO_ASSETS: &[(&str, &str)] = studio_assets!(
     "sketch-studio-links.mjs",
     "sketch-studio-sources.mjs",
     "sketch-studio-modify.mjs",
+    "sketch-studio-trim.mjs",
 );
 
 /// The studio page or one of its scripts, or `None` for other paths.

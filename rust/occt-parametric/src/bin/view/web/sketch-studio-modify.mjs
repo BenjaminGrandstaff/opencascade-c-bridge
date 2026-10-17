@@ -22,13 +22,17 @@ function profileCurves(definition) {
  * O(profile + operations).
  */
 export function profileCorners(definition, scene) {
-  const inProfile = new Set(profileCurves(definition));
+  // Curve ends from the definition (a scene lists an arc's center too);
+  // generated sides fall back to their two scene points.
+  const ends = new Map();
+  for (const r of [...(definition?.lines ?? []), ...(definition?.arcs ?? [])]) ends.set(r.id, [r.start, r.end]);
+  for (const s of definition?.splines ?? []) if (!s.basis && s.points?.length) ends.set(s.id, [s.points[0], s.points.at(-1)]);
+  for (const entity of scene?.entities ?? []) if (!ends.has(entity.id) && entity.point_ids?.length === 2) ends.set(entity.id, entity.point_ids);
   const uses = new Map();
-  for (const entity of scene?.entities ?? []) {
-    if (!inProfile.has(entity.id) || entity.point_ids?.length !== 2) continue;
-    const [a, b] = entity.point_ids;
-    if (a === b) continue;
-    for (const id of [a, b]) uses.set(id, (uses.get(id) ?? 0) + 1);
+  for (const id of profileCurves(definition)) {
+    const [a, b] = ends.get(id) ?? [];
+    if (!a || a === b) continue;
+    for (const point of [a, b]) uses.set(point, (uses.get(point) ?? 0) + 1);
   }
   const edited = new Map();
   for (const operation of definition?.profile_operations ?? []) {
@@ -163,11 +167,15 @@ export const MODIFY_TOOLS = [
   { id: 'fillet', label: 'Fillet', key: 'I', hint: 'Click a corner of the outline, then type a radius or parameter and press Enter.' },
   { id: 'chamfer', label: 'Chamfer', key: 'H', hint: 'Click a corner of the outline, then type one distance, or two (incoming, outgoing), and press Enter.' },
   { id: 'extend', label: 'Extend', key: 'W', hint: 'Click near the end of a curve to run it on to the next curve it meets.' },
+  { id: 'trim', label: 'Trim', key: 'M', hint: 'Click the piece of a line, arc or circle to cut away, between the curves that cross it.' },
+  { id: 'split', label: 'Split', key: 'Y', hint: 'Click a line or arc where it should be cut in two.' },
 ];
 
 export const MODIFY_ICONS = {
   fillet: '<path d="M4 4v9a7 7 0 0 0 7 7h9"/><path d="M4 13V20h7" stroke-dasharray="2 2" opacity=".6"/>',
   chamfer: '<path d="M4 4v10l6 6h10"/><path d="M4 14v6h6" stroke-dasharray="2 2" opacity=".6"/>',
+  trim: '<path d="M4 12h5" /><path d="M9 12h6" stroke-dasharray="2 2" opacity=".6"/><path d="M15 12h5M9 4v16M15 4v16"/>',
+  split: '<path d="M3 16L21 8"/><circle cx="12" cy="12" r="2.5" fill="currentColor"/><path d="M10 5l4 0M10 19l4 0" opacity=".6"/>',
   extend: '<path d="M3 12h9"/><path d="M12 12h6" stroke-dasharray="2 2"/><path d="M20 4v16"/><path d="M15 9l3 3-3 3"/>',
 };
 

@@ -16,6 +16,7 @@ import {installStudioLinks} from './sketch-studio-links.mjs';
 import {installPointPicking} from './sketch-studio-picks.mjs';
 import { installDelete } from './sketch-studio-delete.mjs';
 import { installModify } from './sketch-studio-modify.mjs';
+import { installTrim } from './sketch-studio-trim.mjs';
 
 const SVG = 'http://www.w3.org/2000/svg';
 const format = (value) => Number(Number(value).toPrecision(6)).toString();
@@ -685,6 +686,7 @@ export function startStudio(document) {
   installConstraints(studio, document);
   installDelete(studio, document);
   installModify(studio, document);
+  installTrim(studio, document);
   installExtras(studio, document);
   installPlanes(studio, document);
   installPointPicking(studio, document);

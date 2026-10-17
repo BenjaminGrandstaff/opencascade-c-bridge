@@ -87,3 +87,11 @@ test('extension stays fast on 10,000 curves', () => {
   assert.equal(hit.target, 'L0');
   assert.ok(performance.now() - started < 200, `${performance.now() - started} ms`);
 });
+
+test('arc ends count as corners though scenes list arc centers too', () => {
+  const { definition, scene } = fixture();
+  definition.arcs = [{ id: 'bump', center: 'S', start: 'A', end: 'B', clockwise: true }];
+  definition.profile = ['bump', 'BC', 'CD', 'DA'];
+  scene.entities.push({ id: 'bump', point_ids: ['S', 'A', 'B'], points: samples([0, 0], [20, 0]) });
+  assert.deepEqual([...profileCorners(definition, scene).keys()].sort(), ['A', 'B', 'C', 'D']);
+});

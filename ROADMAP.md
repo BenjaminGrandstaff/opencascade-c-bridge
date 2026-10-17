@@ -26,6 +26,15 @@ tracks status and order.
 
 ## Done
 
+- Trim and split in the sketch studio (no schema or ABI change). Trim
+  marks the piece of a line, arc or circle between the curves crossing it
+  and cuts it away by editing the geometry: new ends at the crossings held
+  by point-on-curve constraints (or shared points), a middle piece leaving
+  two collinear lines or equal-radius arcs, a circle becoming a same-named
+  arc, constraints on the old extent dropped. Split cuts a line or arc in
+  two at a shared point. Trimmed outlines reopen and close like deleted
+  ones, so a circle on an edge trims to a closed notch whose corners Fillet
+  can round. See [Modify tools](docs/SKETCH_STUDIO.md#modify-tools).
 - Fillet, chamfer and extend in the sketch studio (no schema or ABI
   change). A Modify group in the palette: Fillet and Chamfer take a corner
   of the outer profile and a typed value or parameter, recorded as profile

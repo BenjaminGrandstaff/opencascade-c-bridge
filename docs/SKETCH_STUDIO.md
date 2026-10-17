@@ -603,8 +603,9 @@ Node tests delete from a 10,000-line chain in well under a second.
 
 ## Modify tools
 
-The palette's Modify group records the model's own edits, so the source
-geometry and its constraints stay and the outline is derived from them.
+Fillet, Chamfer and Extend in the palette's Modify group record the
+model's own edits, so the source geometry and its constraints stay and the
+outline is derived from them; Trim and Split edit the geometry (below).
 Once a sketch has such edits, the edited outline draws solid and the curves
 it was derived from draw dashed behind it.
 
@@ -620,6 +621,28 @@ it was derived from draw dashed behind it.
   `extend_to` curve operation to that curve, with a search limit a little
   past the hit; the kernel finds the exact crossing. Extending the same end
   again replaces it.
+
+- **Trim** (M): hover a line, arc or circle and the piece between the
+  curves crossing it (or between a crossing and its end) turns red; click
+  to cut it away. Trim edits the geometry itself, as other sketchers do:
+  the curve gets a new end at the crossing, held on the crossing curve by
+  a point-on-curve constraint (or sharing a point already there, such as
+  the other curve's end or a circle's rim). A middle piece leaves two
+  curves, kept collinear (lines) or on one radius (arcs); a circle becomes
+  an arc keeping its name, so its radius dimension stays; a curve nothing
+  crosses is deleted. Constraints that measured the old extent (midpoint,
+  curve length, equal length, arc sweep) go, and the status line says how
+  many; direction constraints stay. The trimmed corners are named points,
+  so Fillet and Chamfer can round them.
+- **Split** (Y): click a line or arc to cut it in two at a new shared
+  point, collinear or on the same circle.
+
+Trimming opens an outline the same way Delete does, and a trimmed arc or
+a drawn curve that meets the open ends closes it again: trimming the edge
+inside a circle on an outline, then the circle's outer half, leaves a
+closed notch. Crossings are found on the scene's sampled curves, with
+curve ends lying on the sampled chords counted too, at about 14 ms for a
+curve crossing 10,000 others; they are cached while you hover one curve.
 
 Every edit goes into the draft, previews at once, and Undo removes it; the
 new Delete also removes edits that name deleted geometry. Finding the
@@ -641,7 +664,7 @@ arc, under 200 ms on 10,000 curves in the Node tests.
 | 36 typed constraints and dimensions with parameters | Yes | Selection bar, inspector, Dimension tool |
 | Edit driving dimensions | Studio inline | Double-click a label or Edit in the inspector; reference dimensions are read-only |
 | Remove constraints | Yes | Inspector |
-| Fillet, chamfer and extend by clicking | Studio only | Modify tools; see [Modify tools](#modify-tools) |
+| Fillet, chamfer, extend, trim and split by clicking | Studio only | Modify tools; see [Modify tools](#modify-tools) |
 | Delete geometry | Studio only | Delete key or inspector, with dependents; see [Deleting](#deleting) |
 | Crossing points and spline samples | Yes | Named points panel, native candidates, on-canvas markers and draft history |
 | Weighted point links | Yes | Named points panel, canvas sources, literal/parameter weights and preserved formulas |

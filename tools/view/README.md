@@ -125,7 +125,9 @@ view instead of a flat overlay:
   and a typed value or parameter; Extend (`W`) runs a curve's end on to the
   next curve it meets, previewed while you hover. They record the model's
   profile and curve edits, so the edited outline draws solid over its
-  dashed sources.
+  dashed sources. Trim (`M`) cuts away the piece of a line, arc or circle
+  between the curves crossing it, and Split (`Y`) cuts a line or arc in
+  two; both edit the geometry, holding new ends on the crossing curves.
 - **Planes.** New plane builds a datum plane offset or angled from a base
   plane, on a picked face, midway between two picked faces, or through three
   picked or typed points, with a live preview. Its values become parameters

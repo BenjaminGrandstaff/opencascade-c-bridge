@@ -233,8 +233,8 @@ function reverse(definition, id, ends) {
 }
 
 /**
- * `next` with curves that `previous` lacked joined to any profile, hole or
- * region loop left open (by a deletion): a new line, arc or spline that
+ * `next` with curves that `previous` lacked, and no loop holds yet, joined
+ * to any profile, hole or region loop left open (by a deletion or trim): a new line, arc or spline that
  * meets a loop's free end is appended or prepended, a line or arc turned
  * round when it runs the other way, so redrawing a deleted edge closes the
  * outline again. Other definitions are returned unchanged.
@@ -252,7 +252,8 @@ export function continueOutline(previous, next) {
   if (!loopsOf(next).some((loop) => openEnds(loop, nextEnds))) return next;
   const result = structuredClone(next);
   const ends = curveEnds(result);
-  const unused = new Set(fresh);
+  const placed = new Set(loopsOf(result).flat());
+  const unused = new Set(fresh.filter((id) => !placed.has(id)));
   for (const loop of loopsOf(result)) {
     let free = openEnds(loop, ends);
     while (free && unused.size) {
