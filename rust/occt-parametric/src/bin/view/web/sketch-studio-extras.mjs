@@ -55,8 +55,8 @@ export function installExtras(studio, document) {
       html('div', { style: 'display:flex;gap:6px' },
         html('a', { href: '/', target: '_blank', rel: 'noopener', style: 'color:var(--muted)' }, 'Classic viewer'),
         html('button', { onclick: () => { drawer.hidden = true; } }, 'Close')));
-    if (studio.draft?.dirty) {
-      studio.fill(drawer, header, html('p', {}, `Apply or discard the studio draft of ${studio.draft.feature} first; the drawer edits the applied sketch.`));
+    if (studio.hasDraftHistory?.() || studio.draft?.dirty) {
+      studio.fill(drawer, header, html('p', {}, studio.draft.dirty ? `Apply or discard the studio draft of ${studio.draft.feature} first; the drawer edits the applied sketch.` : `Redo and apply your changes, or discard the local history of ${studio.draft.feature} first; the drawer edits the applied sketch.`));
       drawer.hidden = false;
       return;
     }

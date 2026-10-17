@@ -101,6 +101,35 @@ While a tool is active, a small field next to the cursor accepts typed
 lengths and angles (for example `20, 45` then Enter for a line), so
 exact values don't need a separate step.
 
+## Draft Undo and Redo
+
+Undoing the first studio edit returns to the starting sketch and keeps Redo
+available. The local draft remains open, including for an empty new sketch;
+no empty or unchanged baseline is submitted for native Preview. Its status
+reads **Draft · at starting sketch · Redo available**. Undo is disabled at
+that boundary even if accepted model history exists. Redo restores the edit
+and previews it again. A new edit after Undo clears only the local redo branch.
+
+**Discard** explicitly clears the local draft and both history stacks, leaving
+the accepted model unchanged. **Apply** verifies and accepts the edited draft
+and ends its local history; Undo/Redo then navigate accepted model changes
+using the current model version. Successful model navigation drops any idle
+clean draft from before that change.
+Save and the Advanced drawer require applying or discarding local history,
+including when it is at the starting sketch with Redo held. Browsing another
+layer does not replace that held history; restoring a snapshot selects its
+own layer again. Focused text fields retain their normal text Undo behavior.
+
+Undo/Redo cancels scheduled previews and invalidates outstanding preview
+responses before restoring a snapshot. At the starting sketch, accepted
+geometry and solver feedback return immediately. Late success/error replies
+from undone edits cannot restore old geometry or mark the baseline invalid.
+Snapshot navigation reuses immutable definition references in O(1) stack work;
+restoring solver presentation scans the sketch layers/scenes, and rendering
+and native Preview retain their own costs. The persistent studio benchmark
+checks 10,000 Undo plus 10,000 Redo transitions on 10,000-curve snapshots within
+1 s, excluding browser layout and native regeneration.
+
 ## Additional primitive tools
 
 The toolbar also authors these existing native definitions (schema 164 and ABI

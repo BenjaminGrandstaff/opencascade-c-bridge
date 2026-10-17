@@ -301,7 +301,7 @@ export function startStudio(document) {
 
   function newSketchPanel() {
     if (!studio.newSketch) {
-      return html('button', { style: 'margin-top:10px;width:100%', onclick: openNewSketch }, '+ New sketch');
+      return html('button', { style: 'margin-top:10px;width:100%', onclick: () => openNewSketch() }, '+ New sketch');
     }
     const values = studio.newSketch;
     const field = (label, control) => html('label', {}, label, control);

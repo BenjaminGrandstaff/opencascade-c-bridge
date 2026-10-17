@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { performance } from 'node:perf_hooks';
 import { viewProjection } from '../../rust/occt-parametric/src/bin/view/web/viewer.mjs';
 import { basePlane, lookAt } from '../../rust/occt-parametric/src/bin/view/web/sketch-studio-plane.mjs';
+import {installDrawing} from '../../rust/occt-parametric/src/bin/view/web/sketch-studio-draw.mjs';
 import {commitShape,studioGhost} from '../../rust/occt-parametric/src/bin/view/web/sketch-studio-tools.mjs';
 import { infer } from '../../rust/occt-parametric/src/bin/view/web/sketch-studio-infer.mjs';
 import { sketchPaths, sketchPoints } from '../../rust/occt-parametric/src/bin/view/web/sketch-studio-overlay.mjs';
@@ -71,3 +72,19 @@ for(let i=0;i<20;i++){
 const primitives=performance.now()-start;
 console.log(`Studio primitives: 20 maximum-pole spline commits/previews on 10,000 curves ${primitives.toFixed(1)} ms (budget 2,000 ms)`);
 assert(primitives<2000,'Maximum-pole studio primitive authoring exceeded its budget.');
+
+// Undo/Redo navigates immutable snapshots without cloning large geometry.
+const element=()=>({style:{},addEventListener(){},append(){},replaceChildren(){}});
+const historyStudio={html:element,fill(){},tools:new Map(),tool:'select',definitions:{profile:definition},layers:[{feature:'profile'}],scenes:[],previewScenes:{},modelState:{},activeLayer:()=>({feature:'profile',local:false}),refresh(){},redraw(){},renderStatus(){},say(){},api(){throw Error('Local history must not call the server.')}};
+const history=installDrawing(historyStudio,{getElementById:element});
+historyStudio.ensureDraft();
+const snapshots=Array.from({length:10001},(_,i)=>({...definition,constraints:[{distance:{first:'p0',second:'p1',value:mm(i+1)}}]}));
+historyStudio.draft.undo=snapshots.slice(0,-1);historyStudio.draft.definition=snapshots.at(-1);historyStudio.draft.dirty=true;
+start=performance.now();
+for(let i=0;i<10000;i++)history.undo();
+assert.equal(historyStudio.draft.redo.length,10000);assert.equal(historyStudio.draft.definition,snapshots[0]);
+for(let i=0;i<10000;i++)history.redo();
+assert.equal(historyStudio.draft.definition,snapshots.at(-1));assert.equal(historyStudio.draft.definition.points,definition.points);
+const historyTime=performance.now()-start;history.discard(true);
+console.log(`Studio history: 10,000 Undo + 10,000 Redo on a 10,000-curve sketch ${historyTime.toFixed(1)} ms (budget 1,000 ms; presentation stubs)`);
+assert(historyTime<1000,'Studio snapshot navigation exceeded its scale budget.');
