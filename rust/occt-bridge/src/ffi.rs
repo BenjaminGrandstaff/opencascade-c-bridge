@@ -2,7 +2,7 @@
 
 use super::*;
 
-pub(crate) const ABI_VERSION: u32 = 79;
+pub(crate) const ABI_VERSION: u32 = 80;
 
 #[repr(C)]
 #[derive(Default)]
@@ -195,6 +195,8 @@ pub(crate) struct RawStepView {
     pub(crate) out_tolerances_lost: *mut u8,
     pub(crate) clipping_planes: *const RawStepClippingPlane,
     pub(crate) clipping_plane_count: usize,
+    pub(crate) parts: *const usize,
+    pub(crate) part_count: usize,
 }
 
 #[repr(C)]

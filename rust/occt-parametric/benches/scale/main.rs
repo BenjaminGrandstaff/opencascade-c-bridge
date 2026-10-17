@@ -134,6 +134,9 @@ fn main() -> ExitCode {
         return report(&[datum_planes::datum_plane_chain_case()]);
     }
     let definition: &'static FamilyDefinition = Box::leak(Box::new(block()));
+    if std::env::args().any(|arg| arg == "--view-parts-only") {
+        return report(&[pmi::view_parts_case(definition)]);
+    }
     if std::env::args().any(|arg| arg == "--gltf-only") {
         return report(&[
             mesh::gltf_case(definition),
@@ -163,6 +166,7 @@ fn main() -> ExitCode {
     outcomes.push(step_export::draw_view_case(definition));
     outcomes.push(pmi::pmi_case(definition, false));
     outcomes.push(pmi::pmi_case(definition, true));
+    outcomes.push(pmi::view_parts_case(definition));
     outcomes.push(persistent::persistent_chain_case());
     outcomes.push(persistent::named_reference_case());
     outcomes.push(persistent::feature_colors_case());

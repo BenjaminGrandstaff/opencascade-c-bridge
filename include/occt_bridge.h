@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define OCCT_BRIDGE_ABI_VERSION 79u
+#define OCCT_BRIDGE_ABI_VERSION 80u
 #define OCCT_BRIDGE_INVALID_SHAPE_ID UINT64_C(0)
 
 #if defined(_WIN32) && defined(OCCT_BRIDGE_BUILD_SHARED)
@@ -1528,7 +1528,10 @@ typedef struct occt_bridge_step_clipping_plane {
  * null or one entry per index, get 1 when that item's annotation was not
  * read back in the view. Since ABI 75 a section or clipped view keeps only
  * the region inside all of its clipping_planes (at most 16; may be null when
- * clipping_plane_count is 0). */
+ * clipping_plane_count is 0). Since ABI 80 a view may show only the parts
+ * of the components indexed by parts (each at most once; may be null when
+ * part_count is 0, which shows every part). Occurrences of one part share
+ * its visibility. */
 typedef struct occt_bridge_step_view {
     const char* name;
     double direction[3];
@@ -1541,13 +1544,17 @@ typedef struct occt_bridge_step_view {
     uint8_t* out_tolerances_lost;
     const occt_bridge_step_clipping_plane_t* clipping_planes;
     size_t clipping_plane_count;
+    const size_t* parts;
+    size_t part_count;
 } occt_bridge_step_view_t;
 
 /* Bits of what of a view did not read back: the whole view (no camera of its
- * name), its camera's direction or up, or its clipping planes. */
+ * name), its camera's direction or up, its clipping planes, or (ABI 80) the
+ * parts it shows. */
 #define OCCT_BRIDGE_PMI_VIEW_LOST 1u
 #define OCCT_BRIDGE_PMI_VIEW_LOST_CAMERA 2u
 #define OCCT_BRIDGE_PMI_VIEW_LOST_CLIPPING 4u
+#define OCCT_BRIDGE_PMI_VIEW_LOST_PARTS 8u
 
 /* A sign-off on the dataset's release (ABI 76): a role such as "APPROVED",
  * the approver's name and the ISO date YYYY-MM-DD, all nonempty. */

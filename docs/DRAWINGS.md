@@ -1800,6 +1800,9 @@ direction and the annotations it shows, drawn in 3D on the model.
   `origin`, `normal` and `keep_positive` as for section drawing views. A
   section or clipped view keeps only the region on the kept side of every
   plane.
+- `parts` (schema 173, ABI 80): the instance outputs the view shows, such
+  as `[{"instance": "plate", "output": "body"}]`; empty shows the whole
+  export.
 
 ```json
 {"id": "top", "name": "TOP GD&T",
@@ -1845,8 +1848,21 @@ A view with clipping planes is written as a multi-clipping camera
 (`CAMERA_MODEL_D3_MULTI_CLIPPING`) whose planes intersect, each plane's
 normal pointing into the side the view keeps. On read-back, OCCT must
 recreate the same planes for the view, matched by normal and position, or
-the view reports `lost: clipping`. Views have no per-view model visibility:
-every view shows the whole export, clipped by its planes.
+the view reports `lost: clipping`.
+
+A view may list the instance outputs it shows in `parts` (schema 173, ABI
+80), each at most once; a view that lists none leaves visibility to the
+reader, which shows the whole export. Each listed part is written into the
+view's draughting model as a mapped item of the part's shape
+representation, which OCCT's reader takes as the shapes the view shows.
+Instances sharing a part share its representation, so they show together.
+On read-back the view must show the same distinct parts, matched by volume
+and centroid in their own coordinates, or it reports `lost: parts`. Listed
+parts that the export leaves out appear in the view's `omitted_parts`, and
+a part of an unknown instance is refused.
+
+A saved view showing 500 of 1,000 distinct parts writes and reads back in
+3.15 s, about 0.1 s more than the same export without the view's parts.
 
 At scale, the 400-hole plate's three datums, flat top and 400 position
 controls (or one 400× control) are drawn in a top view showing everything

@@ -508,7 +508,22 @@ impl DrawingDefinition {
                     .iter()
                     .map(AnnotationClippingPlane::kept_side)
                     .collect::<Result<_, _>>()?,
+                parts: Vec::new(),
+                omitted_parts: Vec::new(),
             };
+            for part in &view.parts {
+                if graph.node(&part.instance).is_none() {
+                    return Err(ModelError::new(format!(
+                        "annotation view '{}' shows a part of unknown instance '{}'",
+                        view.id, part.instance
+                    )));
+                }
+                if exported(part) {
+                    planned.parts.push(part);
+                } else {
+                    planned.omitted_parts.push(part);
+                }
+            }
             for id in &view.datum_features {
                 match datum_index.get(id.as_str()) {
                     Some(&datum) => {

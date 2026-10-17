@@ -1,7 +1,7 @@
 {
   "schema": "occb-model-view-v1",
   "model": {
-    "schema_version": 172,
+    "schema_version": 173,
     "family": {
       "id": "projected-tangent-intersection-pad",
       "version": 1,

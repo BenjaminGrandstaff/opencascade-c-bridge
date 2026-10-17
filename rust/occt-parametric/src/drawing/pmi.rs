@@ -355,12 +355,22 @@ impl DrawingStepPmi for DrawingDefinition {
                     .collect::<Vec<_>>()
             })
             .collect::<Vec<_>>();
+        let view_parts = plan
+            .views
+            .iter()
+            .map(|view| {
+                view.parts
+                    .iter()
+                    .map(|part| components[*part])
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
         // STEP cameras look along the view, away from the viewer.
         let step_views = plan
             .views
             .iter()
-            .zip(&planes)
-            .map(|(view, planes)| StepView {
+            .zip(planes.iter().zip(&view_parts))
+            .map(|(view, (planes, parts))| StepView {
                 name: view.name,
                 direction: Vec3::new(
                     -view.axes.direction.x,
@@ -371,6 +381,7 @@ impl DrawingStepPmi for DrawingDefinition {
                 datums: &view.datums,
                 tolerances: &view.tolerances,
                 clipping_planes: planes,
+                parts,
             })
             .collect::<Vec<_>>();
         let approvals = plan
@@ -489,12 +500,19 @@ impl DrawingStepPmi for DrawingDefinition {
                     name: view.name.to_owned(),
                     annotations: view.annotations.iter().map(|id| (*id).to_owned()).collect(),
                     omitted: view.omitted.iter().map(|id| (*id).to_owned()).collect(),
+                    omitted_parts: view
+                        .omitted_parts
+                        .iter()
+                        .map(|&part| part.clone())
+                        .collect(),
                     lost: if loss.view {
                         Some(PmiViewLoss::View)
                     } else if loss.camera {
                         Some(PmiViewLoss::Camera)
                     } else if loss.clipping {
                         Some(PmiViewLoss::Clipping)
+                    } else if loss.parts {
+                        Some(PmiViewLoss::Parts)
                     } else {
                         None
                     },

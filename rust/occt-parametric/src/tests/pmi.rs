@@ -394,6 +394,7 @@ fn annotation_view(
         datum_features: datum_features.iter().map(|s| (*s).into()).collect(),
         feature_control_frames: frames.iter().map(|s| (*s).into()).collect(),
         clipping_planes: Vec::new(),
+        parts: Vec::new(),
     }
 }
 
@@ -584,6 +585,74 @@ fn section_views_export_their_clipping_planes() {
     let plane = many.annotation_views[1].clipping_planes[0];
     many.annotation_views[1].clipping_planes = vec![plane; 17];
     assert!(error(many).contains("more than 16 clipping planes"));
+}
+
+#[test]
+fn annotation_views_show_their_listed_parts() {
+    // Two instances of the plate: the top view shows the first alone, the
+    // front view both, which are one part in the file.
+    let definition = drilled_plate();
+    let mut graph = InstanceGraph::new(&definition);
+    graph.add_base("part", HashMap::new(), "test").unwrap();
+    graph.add_base("spare", HashMap::new(), "test").unwrap();
+    let body = |instance: &str| InstanceOutputRef {
+        instance: instance.into(),
+        output: "body".into(),
+    };
+    let mut page = viewed_page();
+    page.annotation_views[0].parts = vec![body("part")];
+    page.annotation_views[1].parts = vec![
+        body("part"),
+        body("spare"),
+        InstanceOutputRef {
+            instance: "spare".into(),
+            output: "missing".into(),
+        },
+    ];
+    page.validate(&graph).unwrap();
+    let plan = page
+        .pmi_plan(&graph, |output| output.output == "body")
+        .unwrap();
+    assert_eq!(plan.views[0].parts, [&body("part")]);
+    assert_eq!(plan.views[1].parts, [&body("part"), &body("spare")]);
+    assert_eq!(plan.views[1].omitted_parts.len(), 1);
+
+    let session = Session::new().unwrap();
+    let generation = graph.regenerate_all(&session).unwrap();
+    let path = std::env::temp_dir().join(format!("occb-pmi-parts-{}.step", std::process::id()));
+    let report = page
+        .export_step_pmi(
+            &graph,
+            &session,
+            &generation,
+            &path,
+            "plates",
+            &OutputSet::AllWithOutput("body".into()),
+        )
+        .unwrap();
+    assert!(report.verified(), "{report:#?}");
+    assert!(report.views.iter().all(|v| v.lost.is_none()), "{report:#?}");
+    assert_eq!(report.views[1].omitted_parts[0].output, "missing");
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert_eq!(text.matches("MAPPED_ITEM(").count(), 2);
+    std::fs::remove_file(&path).unwrap();
+
+    let error = |page: DrawingDefinition| page.validate(&graph).unwrap_err().message;
+    let mut twice = page.clone();
+    twice.annotation_views[0].parts.push(body("part"));
+    assert!(error(twice).contains("shows part 'part.body' twice"));
+    let mut stray = page.clone();
+    stray.annotation_views[0].parts = vec![body("ghost")];
+    let message = stray.pmi_plan(&graph, |_| true).unwrap_err().message;
+    assert!(message.contains("unknown instance 'ghost'"), "{message}");
+    // Views without parts keep their old JSON.
+    let json = serde_json::to_string(&viewed_page().annotation_views[0]).unwrap();
+    assert!(!json.contains("parts"), "{json}");
+    let json = serde_json::to_string(&page.annotation_views[1]).unwrap();
+    assert_eq!(
+        serde_json::from_str::<DrawingAnnotationView>(&json).unwrap(),
+        page.annotation_views[1]
+    );
 }
 
 #[test]

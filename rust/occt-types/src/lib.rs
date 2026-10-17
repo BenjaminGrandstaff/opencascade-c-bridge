@@ -428,7 +428,9 @@ pub struct StepClippingPlane {
 /// with `up` (not parallel to it), framing the whole export, that shows the
 /// datums and tolerances indexed, each of which has a presentation. A
 /// section or clipped view keeps only the region inside all of its
-/// `clipping_planes` (at most 16).
+/// `clipping_planes` (at most 16). A view that lists `parts` (component
+/// indexes, each at most once) shows those parts alone; one that lists none
+/// leaves visibility to the reader.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct StepView<'a> {
     pub name: &'a str,
@@ -437,6 +439,7 @@ pub struct StepView<'a> {
     pub datums: &'a [usize],
     pub tolerances: &'a [usize],
     pub clipping_planes: &'a [StepClippingPlane],
+    pub parts: &'a [usize],
 }
 
 /// A sign-off on a dataset's release; `date` is `YYYY-MM-DD`.
@@ -514,6 +517,8 @@ pub struct StepViewLoss {
     pub view: bool,
     pub camera: bool,
     pub clipping: bool,
+    /// The parts read back for the view differ from the ones it lists.
+    pub parts: bool,
     pub datums: Vec<bool>,
     pub tolerances: Vec<bool>,
 }
@@ -523,6 +528,7 @@ impl StepViewLoss {
         !self.view
             && !self.camera
             && !self.clipping
+            && !self.parts
             && !self.datums.contains(&true)
             && !self.tolerances.contains(&true)
     }

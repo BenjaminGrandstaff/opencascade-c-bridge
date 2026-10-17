@@ -43,7 +43,7 @@ The current C ABI version is **74**.
 - STEP AP242 semantic GD&T (datums, tolerances, size limits) on part faces,
   with 3D presentations in saved annotation and section views and the
   dataset's identification, revision and approvals, verified by reading the
-  written file back (ABI 76)
+  written file back (ABI 80)
 - Per-session result validation (on by default) for booleans, fillets,
   chamfers, offsets, hollowing, sewing, and STEP and BREP import, with
   optional shape healing that carries operation history, fuzzy booleans,

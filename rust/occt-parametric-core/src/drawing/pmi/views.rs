@@ -32,6 +32,11 @@ pub struct DrawingAnnotationView {
     /// region on the kept side of every plane, at most 16.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub clipping_planes: Vec<AnnotationClippingPlane>,
+    /// Model visibility (schema 173): the instance outputs the view shows,
+    /// each at most once. A view that lists none leaves visibility to the
+    /// reader; one that lists some shows those parts alone.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub parts: Vec<InstanceOutputRef>,
 }
 
 /// A cutting plane of an annotation view, as for section drawing views:
@@ -142,6 +147,15 @@ pub(crate) fn validate(definition: &DrawingDefinition) -> Result<(), ModelError>
         }
         for plane in &view.clipping_planes {
             plane.kept_side()?;
+        }
+        let mut parts = HashSet::new();
+        for part in &view.parts {
+            if !parts.insert(part) {
+                return Err(ModelError::new(format!(
+                    "annotation view '{}' shows part '{}.{}' twice",
+                    view.id, part.instance, part.output
+                )));
+            }
         }
         if !view.scale.is_finite() || view.scale <= 0.0 {
             return Err(ModelError::new(format!(
@@ -271,6 +285,10 @@ pub struct PlannedView<'a> {
     pub omitted: Vec<&'a str>,
     /// Each plane's origin and its unit normal into the kept side.
     pub clipping_planes: Vec<(Vec3, Vec3)>,
+    /// Exported parts the view shows, in its order.
+    pub parts: Vec<&'a InstanceOutputRef>,
+    /// Listed parts that were not exported.
+    pub omitted_parts: Vec<&'a InstanceOutputRef>,
 }
 
 /// What of a saved view did not read back.
@@ -283,6 +301,8 @@ pub enum PmiViewLoss {
     Camera,
     /// Its clipping planes.
     Clipping,
+    /// The parts it shows.
+    Parts,
 }
 
 /// One exported saved view and what reading it back recovered.
@@ -295,6 +315,9 @@ pub struct PmiViewReport {
     /// Listed annotations that were skipped (see the report's `skipped`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub omitted: Vec<String>,
+    /// Listed parts that were not exported, so the view does not show them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub omitted_parts: Vec<InstanceOutputRef>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lost: Option<PmiViewLoss>,
     /// Annotations the read view does not show.

@@ -66,6 +66,13 @@
 #include <StepRepr_ShapeAspect.hxx>
 #include <StepRepr_ShapeAspectRelationship.hxx>
 #include <StepShape_ShapeRepresentation.hxx>
+#include <STEPConstruct.hxx>
+#include <StepRepr_MappedItem.hxx>
+#include <StepRepr_RepresentationMap.hxx>
+#include <TopoDS_Iterator.hxx>
+#include <Transfer_FinderProcess.hxx>
+#include <XSControl_TransferWriter.hxx>
+#include <XSControl_WorkSession.hxx>
 #include <StepGeom_Plane.hxx>
 #include <StepVisual_CameraModelD3.hxx>
 #include <StepVisual_CameraModelD3MultiClipping.hxx>
@@ -809,7 +816,10 @@ uint32_t tolerance_losses(
     return losses;
 }
 
-const char* view_error(const occt_bridge_step_view_t& view, const occt_bridge_step_pmi_t& pmi) {
+const char* view_error(
+    const occt_bridge_step_view_t& view,
+    const occt_bridge_step_pmi_t& pmi,
+    size_t component_count) {
     if (view.name == nullptr || view.name[0] == '\0') {
         return "views need nonempty names";
     }
@@ -834,7 +844,19 @@ const char* view_error(const occt_bridge_step_view_t& view, const occt_bridge_st
             return "a clipping plane needs a finite origin and a unit normal";
         }
     }
+    if (view.part_count != 0 && view.parts == nullptr) {
+        return "view part arrays are missing";
+    }
     std::set<size_t> seen;
+    for (size_t index = 0; index < view.part_count; ++index) {
+        if (view.parts[index] >= component_count) {
+            return "a view shows an unknown component";
+        }
+        if (!seen.insert(view.parts[index]).second) {
+            return "a view shows a component at most once";
+        }
+    }
+    seen.clear();
     for (size_t index = 0; index < view.datum_count; ++index) {
         if (view.datums[index] >= pmi.datum_count) {
             return "a view shows an unknown datum";
@@ -1422,7 +1444,7 @@ const char* pmi_error(const occt_bridge_step_pmi_t& pmi, const std::vector<const
     }
     names.clear();
     for (size_t index = 0; index < pmi.view_count; ++index) {
-        if (const char* error = view_error(pmi.views[index], pmi)) {
+        if (const char* error = view_error(pmi.views[index], pmi, shapes.size())) {
             return error;
         }
         names.push_back(pmi.views[index].name);
@@ -1630,9 +1652,59 @@ void finish_pmi(
     // Each view is a draughting model holding its camera and the callouts
     // it shows, as OCCT's reader expects of a saved view.
     const Bnd_Box bounds = view_bounds(pmi, shapes);
+    // A view that lists parts also holds a mapped item of each part's shape
+    // representation, which OCCT's reader takes as the shapes it shows. A
+    // part's representation is the one holding its transferred solid.
+    std::map<const Standard_Transient*, Handle(StepShape_ShapeRepresentation)> representation_of;
+    const Handle(Transfer_FinderProcess) finder = writer.Writer().WS()->TransferWriter()->FinderProcess();
+    const auto part_representation = [&](size_t component) -> Handle(StepShape_ShapeRepresentation) {
+        if (representation_of.empty()) {
+            for (int index = 1; index <= model->NbEntities(); ++index) {
+                const auto shape = Handle(StepShape_ShapeRepresentation)::DownCast(model->Value(index));
+                if (shape.IsNull() || shape->Items().IsNull()) {
+                    continue;
+                }
+                for (int item = 1; item <= shape->NbItems(); ++item) {
+                    representation_of.emplace(shape->ItemsValue(item).get(), shape);
+                }
+            }
+        }
+        // A compound part is written as its children's items, so the first
+        // child found names the representation.
+        std::vector<TopoDS_Shape> pending{shapes[component]->Located(TopLoc_Location())};
+        while (!pending.empty()) {
+            const TopoDS_Shape shape = pending.back();
+            pending.pop_back();
+            const Handle(StepRepr_RepresentationItem) item = STEPConstruct::FindEntity(finder, shape);
+            if (!item.IsNull()) {
+                const auto found = representation_of.find(item.get());
+                return found == representation_of.end() ? nullptr : found->second;
+            }
+            if (shape.ShapeType() == TopAbs_COMPOUND) {
+                for (TopoDS_Iterator child(shape); child.More(); child.Next()) {
+                    pending.push_back(child.Value());
+                }
+            }
+        }
+        return nullptr;
+    };
     for (size_t index = 0; index < pmi.view_count; ++index) {
         const occt_bridge_step_view_t& view = pmi.views[index];
         std::vector<Handle(StepRepr_RepresentationItem)> items{camera(view, bounds)};
+        std::set<const Standard_Transient*> mapped;
+        for (size_t entry = 0; entry < view.part_count; ++entry) {
+            const Handle(StepShape_ShapeRepresentation) shape = part_representation(view.parts[entry]);
+            if (shape.IsNull() || !mapped.insert(shape.get()).second) {
+                continue;
+            }
+            Handle(StepGeom_Axis2Placement3d) origin = new StepGeom_Axis2Placement3d;
+            origin->Init(text(""), step_point(gp_XYZ(0.0, 0.0, 0.0)), Standard_False, nullptr, Standard_False, nullptr);
+            Handle(StepRepr_RepresentationMap) map = new StepRepr_RepresentationMap;
+            map->Init(origin, shape);
+            Handle(StepRepr_MappedItem) item = new StepRepr_MappedItem;
+            item->Init(text(""), map, origin);
+            items.push_back(item);
+        }
         const auto show = [&](const occt_bridge_step_presentation_t* presentation) {
             if (const auto found = callouts.find(presentation->name); found != callouts.end()) {
                 items.push_back(found->second);
@@ -1763,12 +1835,53 @@ bool verify_pmi(const char* path, occt_bridge_step_pmi_t& pmi, const std::vector
     struct ReadView {
         Handle(XCAFView_Object) object;
         std::vector<gp_Pln> planes;
+        std::vector<std::pair<double, gp_Pnt>> parts;
+    };
+    // A part is known by its volume and centroid in its own coordinates,
+    // computed once per part.
+    using Mass = std::pair<double, gp_Pnt>;
+    const auto mass = [](const TopoDS_Shape& shape) {
+        GProp_GProps properties;
+        BRepGProp::VolumeProperties(shape, properties);
+        return Mass{properties.Mass(), properties.CentreOfMass()};
+    };
+    std::map<size_t, Mass> part_masses;
+    std::map<const Standard_Transient*, Mass> read_masses;
+    const auto part_mass = [&](size_t component) -> const Mass& {
+        auto found = part_masses.find(component);
+        if (found == part_masses.end()) {
+            found = part_masses.emplace(component, mass(shapes[component]->Located(TopLoc_Location()))).first;
+        }
+        return found->second;
+    };
+    const auto same_mass = [](const Mass& a, const Mass& b) {
+        const double scale = std::max({std::abs(a.first), std::abs(b.first), 1.0});
+        return std::abs(a.first - b.first) <= 1e-6 * scale
+            && a.second.Distance(b.second) <= 1e-6 * (1.0 + std::cbrt(scale));
+    };
+    // The parts a view shows, as distinct components, against the ones read.
+    const auto same_parts = [&](const occt_bridge_step_view_t& view, const std::vector<Mass>& read_parts) {
+        std::vector<Mass> expected;
+        std::set<size_t> seen;
+        for (size_t entry = 0; entry < view.part_count; ++entry) {
+            const Mass& part = part_mass(view.parts[entry]);
+            if (seen.insert(view.parts[entry]).second
+                && std::none_of(expected.begin(), expected.end(), [&](const Mass& m) { return same_mass(m, part); })) {
+                expected.push_back(part);
+            }
+        }
+        if (expected.size() != read_parts.size()) {
+            return false;
+        }
+        return std::all_of(expected.begin(), expected.end(), [&](const Mass& part) {
+            return std::any_of(read_parts.begin(), read_parts.end(), [&](const Mass& m) { return same_mass(m, part); });
+        });
     };
     std::multimap<std::string, ReadView> cameras;
     for (const TDF_Label& label : view_labels) {
         Handle(XCAFDoc_View) attribute;
         if (label.FindAttribute(XCAFDoc_View::GetID(), attribute) && !attribute->GetObject().IsNull()) {
-            ReadView entry{attribute->GetObject(), {}};
+            ReadView entry{attribute->GetObject(), {}, {}};
             TDF_LabelSequence planes;
             view_tool->GetRefClippingPlaneLabel(label, planes);
             for (const TDF_Label& plane_label : planes) {
@@ -1778,6 +1891,19 @@ bool verify_pmi(const char* path, occt_bridge_step_pmi_t& pmi, const std::vector
                 if (clipping_tool->GetClippingPlane(plane_label, plane, plane_name, capping)) {
                     entry.planes.push_back(plane);
                 }
+            }
+            TDF_LabelSequence parts;
+            view_tool->GetRefShapeLabel(label, parts);
+            for (const TDF_Label& part_label : parts) {
+                const TopoDS_Shape part = XCAFDoc_ShapeTool::GetShape(part_label);
+                if (part.IsNull()) {
+                    continue;
+                }
+                auto found = read_masses.find(part.TShape().get());
+                if (found == read_masses.end()) {
+                    found = read_masses.emplace(part.TShape().get(), mass(part.Located(TopLoc_Location()))).first;
+                }
+                entry.parts.push_back(found->second);
             }
             cameras.emplace(name_of(entry.object->Name()), std::move(entry));
         }
@@ -1796,7 +1922,11 @@ bool verify_pmi(const char* path, occt_bridge_step_pmi_t& pmi, const std::vector
             const bool clipped = std::any_of(begin, end, [&](const auto& entry) {
                 return same_planes(view, entry.second.planes);
             });
-            losses = (same ? 0u : OCCT_BRIDGE_PMI_VIEW_LOST_CAMERA) | (clipped ? 0u : OCCT_BRIDGE_PMI_VIEW_LOST_CLIPPING);
+            const bool parted = std::any_of(begin, end, [&](const auto& entry) {
+                return same_parts(view, entry.second.parts);
+            });
+            losses = (same ? 0u : OCCT_BRIDGE_PMI_VIEW_LOST_CAMERA) | (clipped ? 0u : OCCT_BRIDGE_PMI_VIEW_LOST_CLIPPING)
+                | (parted ? 0u : OCCT_BRIDGE_PMI_VIEW_LOST_PARTS);
         }
         if (pmi.out_view_losses != nullptr) {
             pmi.out_view_losses[index] = losses;

@@ -391,6 +391,8 @@ impl Session {
                     out_tolerances_lost: tolerances_lost.as_mut_ptr(),
                     clipping_planes: planes.as_ptr(),
                     clipping_plane_count: planes.len(),
+                    parts: view.parts.as_ptr(),
+                    part_count: view.parts.len(),
                 },
             )
             .collect::<Vec<_>>();
@@ -503,6 +505,7 @@ impl Session {
                 view: bits & 1 != 0,
                 camera: bits & 2 != 0,
                 clipping: bits & 4 != 0,
+                parts: bits & 8 != 0,
                 datums: datums.into_iter().map(|lost| lost != 0).collect(),
                 tolerances: tolerances.into_iter().map(|lost| lost != 0).collect(),
             })

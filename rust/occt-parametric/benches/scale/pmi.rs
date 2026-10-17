@@ -208,6 +208,7 @@ fn drawing(pattern: bool) -> DrawingDefinition {
             datum_features: vec!["A".into(), "B".into(), "C".into()],
             feature_control_frames: frames,
             clipping_planes: Vec::new(),
+            parts: Vec::new(),
         }
     };
     let mut annotation_views = vec![
@@ -224,7 +225,12 @@ fn drawing(pattern: bool) -> DrawingDefinition {
             vec!["flat".into()],
         ),
     ];
-    // The isometric view is a section through the middle row of holes.
+    // The isometric view is a section through the middle row of holes,
+    // showing the plate.
+    annotation_views[1].parts = vec![InstanceOutputRef {
+        instance: "part".into(),
+        output: "body".into(),
+    }];
     annotation_views[1].clipping_planes = vec![AnnotationClippingPlane {
         origin: VectorQuantity::lengths(0.0, 205.0, 0.0, LengthUnit::Millimeter),
         normal: VectorQuantity::scalars(0.0, 1.0, 0.0),
@@ -341,4 +347,67 @@ pub(crate) fn pmi_case(definition: &FamilyDefinition, pattern: bool) -> Outcome 
             export.as_secs_f64()
         ))
     })
+}
+
+/// A saved view of 1,000 distinct blocks showing every other one: the view
+/// holds a mapped item per shown part, found from one scan of the written
+/// model, and the read-back compares each part's volume and centroid once.
+/// Measured 3.15 s, of which the 500 shown parts add about 0.1 s to the
+/// export and read-back of 1,000 parts.
+pub(crate) fn view_parts_case(definition: &'static FamilyDefinition) -> Outcome {
+    timed(
+        "STEP PMI: a saved view showing 500 of 1,000 distinct parts, read back".into(),
+        ms(8_000),
+        Expectation::Required,
+        || {
+            let session = Session::new().map_err(|error| failure(error.to_string()))?;
+            let mut graph = InstanceGraph::new(definition);
+            for i in 0..1000 {
+                let overrides = HashMap::from([(
+                    "width".to_owned(),
+                    ParameterValue::Scalar(Quantity::length(
+                        20.0 + i as f64 * 0.01,
+                        LengthUnit::Millimeter,
+                    )),
+                )]);
+                graph.add_base(format!("part{i:04}"), overrides, "bench")?;
+            }
+            let generation = graph.regenerate_all(&session)?;
+            let mut page = drawing(false);
+            page.datum_features.clear();
+            page.feature_control_frames.clear();
+            page.views[0].outputs[0].instance = "part0000".into();
+            page.annotation_views.truncate(1);
+            let view = &mut page.annotation_views[0];
+            view.datum_features.clear();
+            view.feature_control_frames.clear();
+            view.parts = (0..1000)
+                .step_by(2)
+                .map(|i| InstanceOutputRef {
+                    instance: format!("part{i:04}"),
+                    output: "body".into(),
+                })
+                .collect();
+            let path = std::env::temp_dir()
+                .join(format!("occb-bench-view-parts-{}.step", std::process::id()));
+            let start = Instant::now();
+            let report = page.export_step_pmi(
+                &graph,
+                &session,
+                &generation,
+                &path,
+                "blocks",
+                &OutputSet::AllWithOutput("body".into()),
+            )?;
+            let export = start.elapsed();
+            std::fs::remove_file(&path).map_err(|error| failure(error.to_string()))?;
+            if !report.complete() || report.views.len() != 1 {
+                return Err(failure(format!("{:?}", report.views)));
+            }
+            Ok(format!(
+                "1,000 parts written with a 500-part view and read back in {:.2} s",
+                export.as_secs_f64()
+            ))
+        },
+    )
 }

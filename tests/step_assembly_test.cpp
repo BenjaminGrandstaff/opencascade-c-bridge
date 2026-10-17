@@ -5,6 +5,8 @@
 #include <Quantity_Color.hxx>
 #include <STEPCAFControl_Reader.hxx>
 #include <TCollection_AsciiString.hxx>
+#include <XCAFDoc_View.hxx>
+#include <XCAFView_Object.hxx>
 #include <TDF_Label.hxx>
 #include <TDF_LabelSequence.hxx>
 #include <TDataStd_Name.hxx>
@@ -349,12 +351,16 @@ void pmi(occt_bridge_session_t* session, const std::string& file) {
     uint8_t top_tolerances_lost[2] = {9, 9};
     uint8_t front_tolerances_lost[1] = {9};
     const occt_bridge_step_clipping_plane_t section[] = {{{30, 25, 0}, {0, 1, 0}}, {{0, 0, 10}, {0, 0, -1}}};
+    // The top view shows the plate alone; the front view both parts.
+    const size_t plate_only[] = {0};
+    const size_t both_parts[] = {0, 1};
     const occt_bridge_step_view_t views[] = {
         {"TOP", {0, 0, -1}, {0, 2, 0}, top_datums, 2, top_tolerances, 2, top_datums_lost, top_tolerances_lost,
-            nullptr, 0},
+            nullptr, 0, plate_only, 1},
         // Up need not be square to the direction. A section through the
         // first hole, clipped to the plate's lower half.
-        {"FRONT", {0, 1, 0}, {0, 0.5, 1}, nullptr, 0, front_tolerances, 1, nullptr, front_tolerances_lost, section, 2},
+        {"FRONT", {0, 1, 0}, {0, 0.5, 1}, nullptr, 0, front_tolerances, 1, nullptr, front_tolerances_lost, section, 2,
+            both_parts, 2},
     };
     uint32_t view_losses[2] = {9, 9};
     // Released at revision B with two approvals; the model is the authority.
@@ -420,13 +426,24 @@ void pmi(occt_bridge_session_t* session, const std::string& file) {
         TDF_LabelSequence planes;
         XCAFDoc_DocumentTool::ClippingPlaneTool(document->Main())->GetClippingPlanes(planes);
         check(planes.Length() == 2, "the section's two clipping planes");
+        size_t shown[2] = {0, 0};
+        for (const TDF_Label& view : read_views) {
+            Handle(XCAFDoc_View) attribute;
+            TDF_LabelSequence parts;
+            XCAFDoc_DocumentTool::ViewTool(document->Main())->GetRefShapeLabel(view, parts);
+            if (view.FindAttribute(XCAFDoc_View::GetID(), attribute)) {
+                const bool top = TCollection_AsciiString(attribute->GetObject()->Name()->String()) == "TOP";
+                shown[top ? 0 : 1] = static_cast<size_t>(parts.Length());
+            }
+        }
+        check(shown[0] == 1 && shown[1] == 2, "each view shows its parts");
         application->Close(document);
     }
 
     // Tolerances without size dimensions keep their millimetre values,
     // which OCCT's writer alone would write in metres.
     const occt_bridge_step_view_t flat_view{
-        "TOP", {0, 0, -1}, {0, 1, 0}, nullptr, 0, top_tolerances, 1, nullptr, nullptr, nullptr, 0};
+        "TOP", {0, 0, -1}, {0, 1, 0}, nullptr, 0, top_tolerances, 1, nullptr, nullptr, nullptr, 0, nullptr, 0};
     uint32_t alone_losses[1] = {9};
     uint32_t alone_view[1] = {9};
     occt_bridge_step_pmi_t alone{
@@ -483,13 +500,27 @@ void pmi(occt_bridge_session_t* session, const std::string& file) {
     missing.target = {0, beyond, 1};
     refused({nullptr, 0, &missing, 1, nullptr, 0, nullptr, nullptr, nullptr, nullptr, 0, nullptr, nullptr}, "face beyond the plate's");
     const occt_bridge_step_view_t bare{
-        "TOP", {0, 0, -1}, {0, 1, 0}, nullptr, 0, front_tolerances, 1, nullptr, nullptr, nullptr, 0};
+        "TOP", {0, 0, -1}, {0, 1, 0}, nullptr, 0, front_tolerances, 1, nullptr, nullptr, nullptr, 0, nullptr, 0};
     refused({nullptr, 0, tolerances, 2, nullptr, 0, nullptr, nullptr, nullptr, &bare, 1, nullptr, nullptr},
         "view of an annotation without a presentation");
     const occt_bridge_step_view_t level{
-        "TOP", {0, 0, -1}, {0, 0, 2}, nullptr, 0, nullptr, 0, nullptr, nullptr, nullptr, 0};
+        "TOP", {0, 0, -1}, {0, 0, 2}, nullptr, 0, nullptr, 0, nullptr, nullptr, nullptr, 0, nullptr, 0};
     refused({nullptr, 0, nullptr, 0, nullptr, 0, nullptr, nullptr, nullptr, &level, 1, nullptr, nullptr}, "up along the view");
     const occt_bridge_step_clipping_plane_t long_normal[] = {{{0, 0, 0}, {0, 2, 0}}};
+    const size_t unknown_part[] = {2};
+    occt_bridge_step_view_t stray = views[1];
+    stray.parts = unknown_part;
+    stray.part_count = 1;
+    refused({datums, 5, tolerances, 2, nullptr, 0, nullptr, nullptr, nullptr, &stray, 1, nullptr, nullptr},
+        "a view shows an unknown component");
+    const size_t repeated_part[] = {1, 1};
+    stray.parts = repeated_part;
+    stray.part_count = 2;
+    refused({datums, 5, tolerances, 2, nullptr, 0, nullptr, nullptr, nullptr, &stray, 1, nullptr, nullptr},
+        "a component at most once");
+    stray.parts = nullptr;
+    refused({datums, 5, tolerances, 2, nullptr, 0, nullptr, nullptr, nullptr, &stray, 1, nullptr, nullptr},
+        "view part arrays are missing");
     occt_bridge_step_view_t loose = views[1];
     loose.clipping_planes = long_normal;
     loose.clipping_plane_count = 1;
