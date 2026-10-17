@@ -82,8 +82,10 @@ the model version.
   planar support faces. Exact spline references expose refinement/detachment.
 - **Material boundaries (left).** Chooses ordered outer loops, holes and
   additional regions, or discovers material cells from curves and seed points.
+- **Solid features (left).** Creates extrusions, unions and cuts, or edits an
+  existing extrusion, with a native 3D preview before Apply.
 - **Advanced drawer.** Hosts the classic panels for full dependency inspection
-  and sketch-to-solid features.
+  and the remaining detailed definition controls.
 
 ## Drawing
 
@@ -236,6 +238,49 @@ sketch, plane workflow or Advanced editing also ends the pick. Finish or cancel
 an active face/plane pick before starting a sketch point pick. Right-drag and
 Shift-drag remain camera navigation. Generated source curves use the verified
 catalogue; display-only glyphs and edited-curve names cannot be sources.
+
+## Making a solid from a sketch
+
+Choose **Extrude, union or cut** in the left panel after applying the sketch.
+The active applied profile is selected by default and its plane normal supplies
+the initial direction. Choose a new extrusion, material addition (union) or
+material removal (cut), name the result and select a target solid for a boolean.
+The applied profile's holes and additional regions become part of the extrusion.
+If the current output is a planar sketch, the form defaults to an available
+solid target instead of using the sketch as a boolean target.
+
+Depth is a positive length in millimetres or a length parameter. Direction is a
+normalized vector in family coordinates; changing its signs reverses travel.
+**One direction** starts on the sketch plane; **Symmetric** uses the entered
+depth as total travel on both sides of it. **Show source sketch** changes the
+active layer while retaining the form. The feature list exposes **Edit
+extrusion …** for existing distance/symmetric extrusions. Editing preserves the
+feature name and untouched parameter/formula drivers; the preserve option keeps
+a direction expression that the simple fields cannot represent.
+
+**Preview solid** displays the native validated mesh in the 3D viewer, with
+solid count and volume for the selected instance in the form. Fit uses the
+preview's bounds. The accepted model, file, version and history remain unchanged.
+The preview uses the glTF mesh already produced by solid validation. Closing the
+panel, Escape, changing a field, switching tools/layers, starting sketch edits
+or reloading restores the accepted model; late replies cannot restore an old
+preview. A rejected preview also restores the accepted view and retains the form
+for correction. Sketch layers retain their applied definitions during this solid
+preview.
+
+**Apply verified solid** repeats native validation and commits the feature graph
+as one model-history step, including the extrusion and boolean together. All
+family variants must produce valid, nonempty solids; a boolean must actually
+add or remove material. The resulting guarantees remain in the saved model for
+future parameter edits. Apply locks sketch edits, instance switching, model
+history and Save through regeneration and reload. A rejected Apply leaves the
+form available for correction; if Apply succeeds but refresh fails, the status
+reports that the change was accepted rather than offering to apply it again.
+After Apply, model Undo/Redo navigates the feature change, and Save writes it.
+
+Apply or discard sketch draft history before opening this panel, including a
+held Redo stack at the accepted baseline. Solid form changes and previews do not
+create sketch Undo entries; their commit belongs to model history.
 
 ## Choosing material boundaries
 
@@ -789,7 +834,7 @@ to the instance it was made on.
 | Explicit outer loops, holes and additional regions | Yes | Material boundaries panel, ordered canvas picks, Preview and draft history |
 | Region discovery initialization | Yes | Material boundaries panel, arrangement curves, cell seeds and merging |
 | Full dependencies | Yes | Advanced drawer hosts the classic panel |
-| Sketch to solid | Yes | Advanced drawer |
+| Sketch to solid | Studio panel | Native 3D extrusion/union/cut previews, existing extrusion editing and model history |
 | Preview, Apply, Undo, Redo, Save | Yes | Toolbar; Revert stays in the classic viewer |
 | Several instances | Yes | Instance menu in the header; see [Instances](#instances) |
 

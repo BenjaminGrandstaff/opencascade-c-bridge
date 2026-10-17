@@ -110,6 +110,13 @@ export function installDrawing(studio, document) {
     studio.refresh();
   }
 
+  // Serialize external feature mutations with sketch Apply/history/Save.
+  studio.runModelOperation = async (label, operation) => {
+    if (!beginModelOperation(label)) throw Error('Wait for the current model operation.');
+    try { return await operation(); }
+    finally { endModelOperation(); }
+  };
+
   // ── Draft ────────────────────────────────────────────────────────────
   /** The draft of the active layer's sketch, created on first edit. */
   function draft() {

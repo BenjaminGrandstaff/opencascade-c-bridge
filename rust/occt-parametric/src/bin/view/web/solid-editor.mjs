@@ -50,19 +50,21 @@ export function solidChanges(features,{mode,id,input,target,direction,extent='di
   return {action:'add',features:changes};
 }
 const profile = f => ['sketch_face','sketch_wire','planar_region'].some(key=>Object.hasOwn(f.operation,key));
-export function createSolidEditor({host,request,instance,preview,applied,restore,showSketch=()=>{},showSolid=()=>{}}) {
+const solidTarget = f => !profile(f) && !f.operation.sketch_open_wire;
+export function createSolidEditor({host,request,instance,preview,applied,restore,showSketch=()=>{},showSolid=()=>{},initialProfile=()=>null,profileDirection=()=>null,invalidatePreview=()=>{},autoStart=false}) {
   let data=null,editing=null,busy=false,mode='new',id='',input='',target='',extent='distance',axis=[0,0,1],depth=10,source='literal',preserved=null;
   const section=document.createElement('section');section.className='linked-edit solid-editor';
   const launch=document.createElement('button');launch.textContent='Sketch to solid';
   const content=document.createElement('div'),status=document.createElement('p');status.setAttribute('role','status');section.append(launch,content,status);host.prepend(section);
   const message=text=>status.textContent=text;
   function button(text,action){const e=document.createElement('button');e.textContent=text;e.onclick=async()=>{if(busy)return;try{await action();}catch(error){message(error.message);}};return e;}
-  function select(label,choices,value,change){const row=document.createElement('label');row.textContent=label;const e=document.createElement('select');e.setAttribute('aria-label',label);for(const [key,title] of choices)e.append(new Option(title,key));e.value=value;e.onchange=()=>change(e.value);row.append(e);content.append(row);return e;}
-  function number(label,value,change){const row=document.createElement('label');row.textContent=label;const e=document.createElement('input');e.type='number';e.step='any';e.value=value;e.setAttribute('aria-label',label);e.oninput=()=>change(e.value.trim()?Number(e.value):NaN);row.append(e);content.append(row);return e;}
+  function select(label,choices,value,change){const row=document.createElement('label');row.textContent=label;const e=document.createElement('select');e.setAttribute('aria-label',label);for(const [key,title] of choices)e.append(new Option(title,key));e.value=value;e.onchange=()=>{invalidatePreview();change(e.value);};row.append(e);content.append(row);return e;}
+  function number(label,value,change){const row=document.createElement('label');row.textContent=label;const e=document.createElement('input');e.type='number';e.step='any';e.value=value;e.setAttribute('aria-label',label);e.oninput=()=>{invalidatePreview();change(e.value.trim()?Number(e.value):NaN);};row.append(e);content.append(row);return e;}
   function start(feature=null){
-    editing=feature;mode='new';id=feature?.id??'';input=feature?.operation.extrude.input??data.features.find(profile)?.id??'';target=data.output??'';
+    invalidatePreview();
+    editing=feature;mode='new';id=feature?.id??'';input=feature?.operation.extrude.input??(data.features.some(f=>profile(f)&&f.id===initialProfile())?initialProfile():data.features.find(profile)?.id)??'';target=data.features.some(f=>f.id===data.output&&solidTarget(f))?data.output:data.features.findLast(solidTarget)?.id??'';
     extent=feature?.operation.extrude.extent??'distance';preserved=feature?.operation.extrude.direction??null;
-    const known=preserved?readDirection(preserved):null;axis=known?.axis??[0,0,1];
+    const known=preserved?readDirection(preserved):null;axis=known?.axis??profileDirection(input)??[0,0,1];
     const value=known?.depth;depth=value?.literal?mm(value.literal):10;
     source=!feature?'literal':!known?'preserve':value.parameter?`parameter:${value.parameter}`:value.literal?'literal':'preserve';
     render();message(feature?`Editing extrusion ${feature.id}.`:'Choose a profile and operation. Apply any pending sketch edits first.');
@@ -71,11 +73,11 @@ export function createSolidEditor({host,request,instance,preview,applied,restore
     content.replaceChildren();const title=document.createElement('h3');title.textContent=editing?'Edit extrusion':'Create solid feature';content.append(title);
     const note=document.createElement('p');note.textContent='Family-wide edit. Uses the applied profile’s material regions and holes. Direction is normalized in family coordinates; depth is travel distance. Preview keeps the accepted model unchanged.';content.append(note);
     if(!editing)select('Solid operation',[['new','New extrusion'],['fuse','Add material (union)'],['cut','Remove material (cut)']],mode,value=>{mode=value;render();});
-    const nameLabel=document.createElement('label');nameLabel.textContent='Result feature name';const name=document.createElement('input');name.value=id;name.disabled=Boolean(editing);name.setAttribute('aria-label','Result feature name');name.oninput=()=>id=name.value;nameLabel.append(name);content.append(nameLabel);
+    const nameLabel=document.createElement('label');nameLabel.textContent='Result feature name';const name=document.createElement('input');name.value=id;name.disabled=Boolean(editing);name.setAttribute('aria-label','Result feature name');name.oninput=()=>{invalidatePreview();id=name.value;};nameLabel.append(name);content.append(nameLabel);
     const profiles=data.features.filter(profile);if(editing&&!profiles.some(f=>f.id===input)){const original=data.features.find(f=>f.id===input);if(original)profiles.push(original);}
-    select('Sketch / planar profile',[['','Choose profile'],...profiles.map(f=>[f.id,f.id])],input,value=>input=value);
+    select('Sketch / planar profile',[['','Choose profile'],...profiles.map(f=>[f.id,f.id])],input,value=>{input=value;if(!editing){axis=profileDirection(input)??axis;render();}});
     content.append(button('Show source sketch',()=>showSketch(input)));
-    if(!editing&&mode!=='new')select('Target solid',[['','Choose target'],...data.features.filter(f=>!profile(f)&&!f.operation.sketch_open_wire).map(f=>[f.id,f.id])],target,value=>target=value);
+    if(!editing&&mode!=='new')select('Target solid',[['','Choose target'],...data.features.filter(solidTarget).map(f=>[f.id,f.id])],target,value=>target=value);
     select('Extrusion extent',[['distance','One direction'],['symmetric','Symmetric (total depth)']],extent,value=>extent=value);
     const choices=[['literal','Entered depth'],...data.parameters.filter(p=>p.parameter_type?.scalar==='length').map(p=>[`parameter:${p.id}`,`Parameter: ${p.id}`])];
     if(source.startsWith('parameter:')&&!choices.some(([key])=>key===source))choices.push([source,`Existing parameter: ${source.slice(10)}`]);
@@ -93,16 +95,18 @@ export function createSolidEditor({host,request,instance,preview,applied,restore
     }
   }
   async function submit(apply){
+    invalidatePreview();
     const expression=source.startsWith('parameter:')?{parameter:source.slice(10)}:quantity(depth);
     const direction=source==='preserve'?preserved:controlledDirection(axis,expression,preserved);
     const changes=solidChanges(data.features,{mode,id,input,target,direction,extent,editing});
-    const output=editing?data.output:id,selectedInstance=instance();busy=true;content.inert=true;launch.disabled=true;message('Regenerating solid and checking requirements…');
+    const output=editing?(data.features.some(f=>f.id===data.output&&solidTarget(f))?data.output:editing.id):id,selectedInstance=instance();busy=true;content.inert=true;launch.disabled=true;message('Regenerating solid and checking requirements…');
     try{
       const response=await request('/api/features',{method:'POST',body:JSON.stringify({version:data.version,instance:selectedInstance,expected:data.features,...changes,output,apply})});
       if(apply){data=null;content.replaceChildren();await applied(response.state);showSolid(response.output);message('Solid applied. Save writes the feature graph to the model file.');}
-      else{if(response.annotations){await preview(response.annotations);showSolid(response.output);}const evidence=response.geometry?.[selectedInstance];message(response.can_apply?`Solid preview passes. ${evidence?.solids??''} solid(s), ${Number(evidence?.volume_mm3??0).toLocaleString()} mm³. Apply repeats validation.`:`Solid draft rejected: ${response.error}`);}
+      else{if(response.annotations||response.gltf){await preview(response.annotations,response);showSolid(response.output);}const evidence=response.geometry?.[selectedInstance];message(response.can_apply?`Solid preview passes. ${evidence?.solids??''} solid(s), ${Number(evidence?.volume_mm3??0).toLocaleString()} mm³. Apply repeats validation.`:`Solid draft rejected: ${response.error}`);}
     }finally{busy=false;content.inert=false;launch.disabled=false;}
   }
-  launch.onclick=async()=>{if(busy)return;try{data=await request('/api/features');start();}catch(error){message(error.message);}};
+  launch.onclick=async()=>{if(busy)return;try{message('Loading solid features…');data=await request('/api/features');start();}catch(error){message(error.message);}};
+  if(autoStart){launch.hidden=true;launch.onclick();}
   return section;
 }

@@ -137,6 +137,10 @@ view instead of a flat overlay:
   curves, then the mirror line, direction line or center point, with a
   dashed guide, and record linked sketch patterns. A mirror of half an
   outline closes it through the axis, and patterned holes stay holes.
+- **Solid features.** **Extrude, union or cut** uses the active applied sketch
+  and its normal, previews the native result in 3D, then applies one model
+  history step. Existing extrusions retain their parameter/formula drivers.
+  Close or changing values restores the accepted model; all variants must pass.
 - **Planes.** New plane builds a datum plane offset or angled from a base
   plane, on a picked face, midway between two picked faces, or through three
   picked or typed points, with a live preview. Its values become parameters
@@ -302,7 +306,8 @@ annotation view. No schema or native ABI change is needed.
 
 ### Sketch-to-solid controls
 
-Choose **Sketch to solid** to create a new extrusion, add material by union, or
+In the studio, choose **Extrude, union or cut** in the side panel; the classic
+viewer uses **Sketch to solid**. These controls create a new extrusion, add material by union, or
 remove material by cut. Select an existing **Sketch / planar profile**, enter a
 result feature name, and choose a target solid for union/cut. The profile's current
 material regions and holes are used together; individual region picking and new
@@ -324,7 +329,9 @@ parameter. Geometric cutoff extents and editing other operation types remain
 outside this panel.
 
 **Preview solid** displays candidate 3D geometry and per-instance solid count and
-volume while the accepted document, glTF, and file remain unchanged. Apply repeats
+volume while the accepted document, glTF, and file remain unchanged. Valid
+`/api/features` previews return their native `gltf` mesh plus `version`, `instance`
+and `output`; rejected results have no verified preview mesh. Apply repeats
 validation against the expected feature graph and model version. All variants
 regenerate and existing required checks remain enforced. The result must contain
 valid, nonempty solid material; unions/cuts must make an actual material change.

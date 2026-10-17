@@ -12,6 +12,7 @@ import { installConstraints } from './sketch-studio-constrain.mjs';
 import { layoutLabels, sketchLabels } from './sketch-studio-labels.mjs';
 import { installExtras } from './sketch-studio-extras.mjs';
 import { installPlanes } from './sketch-studio-plane-panel.mjs';
+import {installStudioSolids} from './sketch-studio-solids.mjs';
 import {installStudioLinks} from './sketch-studio-links.mjs';
 import {installPointPicking} from './sketch-studio-picks.mjs';
 import { installDelete } from './sketch-studio-delete.mjs';
@@ -112,6 +113,7 @@ export function startStudio(document) {
     studio.version = state.version;
     studio.modelState = state;
     studio.parsed = parseGltf(gltf);
+    studio.solidPreview = null;
     renderer?.setModel(studio.parsed);
     studio.scenes = annotations.scenes ?? [];
     studio.datums = state.datums ?? [];
@@ -133,6 +135,13 @@ export function startStudio(document) {
     refresh();
   }
   studio.reload = load;
+  // Temporary native feature previews never replace the accepted parsed model.
+  studio.setSolidPreview = gltf => {
+    if (!gltf && !studio.solidPreview) return;
+    studio.solidPreview = gltf ? parseGltf(gltf) : null;
+    renderer?.setModel(studio.solidPreview ?? studio.parsed);
+    redraw();
+  };
 
   // ── Drawing ─────────────────────────────────────────────────────────
   function element(name, attributes, parent) {
@@ -645,7 +654,7 @@ export function startStudio(document) {
 
   $('look-at').addEventListener('click', lookAtActive);
   $('fit').addEventListener('click', () => {
-    studio.camera = fitCamera(studio.parsed?.bounds ?? null, aspect());
+    studio.camera = fitCamera(studio.solidPreview?.bounds ?? studio.parsed?.bounds ?? null, aspect());
     redraw();
   });
   document.addEventListener('keydown', (event) => {
@@ -696,6 +705,7 @@ export function startStudio(document) {
   installPlanes(studio, document);
   installPointPicking(studio, document);
   installStudioLinks(studio, document);
+  installStudioSolids(studio, document);
   load()
     .then(() => say(studio.layers.length ? 'Choose a layer, then a tool. Drag to orbit, Shift-drag or right-drag to pan, scroll to zoom.' : 'No sketches yet. Choose New sketch.'))
     .catch((error) => say(error.message, true))

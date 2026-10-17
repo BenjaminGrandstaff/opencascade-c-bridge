@@ -1316,6 +1316,10 @@ fn solid_controls_preview_add_union_cut_and_guard_all_variants_and_outputs() {
                 < 1e-6
         );
         assert_eq!(result["annotations"]["accepted"], false);
+        assert_eq!(result["version"], state["version"]);
+        assert_eq!(result["instance"], "block");
+        assert_eq!(result["gltf"]["asset"]["version"], "2.0");
+        assert!(!result["gltf"]["meshes"].as_array().unwrap().is_empty());
     }
     for (mode, depth, reverse) in [
         ("cut", 7.0, false),
@@ -1328,6 +1332,10 @@ fn solid_controls_preview_add_union_cut_and_guard_all_variants_and_outputs() {
         assert_eq!(response.status, 200);
         let result: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
         assert_eq!(result["can_apply"], false, "{result}");
+        assert!(
+            result["gltf"].is_null(),
+            "Rejected solids cannot be displayed as verified previews."
+        );
         edit["apply"] = json!(true);
         assert_eq!(post(&mut studio, &edit).status, 422);
     }

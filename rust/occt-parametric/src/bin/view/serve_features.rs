@@ -197,11 +197,14 @@ impl Studio {
             )
         } else {
             match generated {
-                Ok((_, _, geometry)) => Ok(
-                    json!({"applied":false,"can_apply":true,"output":edit.output,"geometry":geometry,"annotations":annotations}),
-                ),
+                Ok((gltf, _, geometry)) => {
+                    let gltf: Value = serde_json::from_str(&gltf).map_err(|e| e.to_string())?;
+                    Ok(
+                        json!({"applied":false,"can_apply":true,"version":self.version,"instance":edit.instance,"output":edit.output,"geometry":geometry,"annotations":annotations,"gltf":gltf}),
+                    )
+                }
                 Err(error) => Ok(
-                    json!({"applied":false,"can_apply":false,"output":edit.output,"error":error,"annotations":annotations}),
+                    json!({"applied":false,"can_apply":false,"version":self.version,"instance":edit.instance,"output":edit.output,"error":error,"annotations":annotations}),
                 ),
             }
         }
