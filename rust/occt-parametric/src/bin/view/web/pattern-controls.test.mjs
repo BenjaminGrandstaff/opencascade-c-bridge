@@ -54,3 +54,18 @@ test('unavailable existing source choices remain selected and cannot be silently
   all(host).find(e=>e.textContent==='Update sketch pattern').onclick();assert.equal(changes,0);assert.match(messages.at(-1),/known source/);assert.deepEqual(d.patterns[1].linear.entities,['hole','earlier:2:hole']);
  }finally{delete globalThis.document;delete globalThis.Option;}
 });
+
+test('canvas source picking finishes or resets with the form without editing geometry',()=>{
+ const previousDocument=globalThis.document,previousOption=globalThis.Option;
+ globalThis.document={createElement:tag=>new Element(tag)};globalThis.Option=class extends Element{constructor(text,value){super('option');this.textContent=text;this.value=value;}};
+ try{
+  const d=base(),host=new Element('div');let changes=0;
+  const c=createPatternControls({host,definition:d,beginPicking:()=>{},changed:()=>changes++,message:()=>{}});
+  const button=name=>all(host).find(e=>e.textContent===name),input=name=>all(host).find(e=>e['aria-label']===name);
+  button('Pick pattern sources on canvas').onclick();assert.equal(c.pickGroup,'curves');assert(c.pick('hole'));
+  button('Finish canvas pick').onclick();assert.equal(c.pickGroup,null);assert.equal(c.pick('axis'),false);
+  assert.deepEqual(input('Pattern source curves').selectedOptions.map(o=>o.value),['hole']);
+  button('Pick pattern sources on canvas').onclick();input('Pattern type').value='circular';input('Pattern type').onchange();
+  assert.equal(c.pickGroup,null);assert.equal(c.pick('hole'),false);assert.equal(changes,0);assert.deepEqual(d.patterns,[]);
+ }finally{globalThis.document=previousDocument;globalThis.Option=previousOption;}
+});

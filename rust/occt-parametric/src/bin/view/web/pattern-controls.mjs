@@ -40,12 +40,15 @@ export function makePattern(definition,kind,fields,index=null){
  }
  return {[kind]:result};
 }
-export function createPatternControls({host,definition,parameters=[],changed,message,highlight=()=>{},initialSelection=null,initialOpen=false}){
+export function createPatternControls({host,definition,parameters=[],changed,message,highlight=()=>{},initialSelection=null,initialOpen=false,beginPicking=null}){
  const patterns=definition.patterns??[],section=document.createElement('details'),summary=document.createElement('summary');summary.textContent='Linked sketch patterns';section.open=initialOpen;section.append(summary);host.append(section);
+ let picking=null;
+ const cancelPick=()=>{picking=null;};
  let selected=patterns.some(p=>dataOf(p).id===initialSelection)?initialSelection:'',kind='linear';
  const select=document.createElement('select');select.setAttribute('aria-label','Pattern to edit');select.append(new Option('New pattern',''));for(const p of patterns)select.append(new Option(`${dataOf(p).id} · ${Object.keys(p)[0]}`,dataOf(p).id));section.append(select);
  const form=document.createElement('div');section.append(form);
  function render(){
+  cancelPick();
   form.replaceChildren();select.value=selected;
   const index=patterns.findIndex(p=>dataOf(p).id===selected),existing=index<0?null:patterns[index];if(existing)kind=Object.keys(existing)[0];
   const data=existing?structuredClone(dataOf(existing)):{id:'',entities:[],count:2,on_axis:[]};
@@ -57,9 +60,18 @@ export function createPatternControls({host,definition,parameters=[],changed,mes
   const position=index<0?patterns.length:index,curves=patternGeometry(definition,'curves',position),points=patternGeometry(definition,'points',position),lines=patternGeometry(definition,'lines',position);
   const entities=choice('Pattern source curves',curves.map(id=>[id,id]),data.entities,true),role=kind==='mirror'?'axis':kind==='linear'?'direction':'center';
   const reference=choice(`Pattern ${role}`,(kind==='circular'?points:lines).map(id=>[id,id]),data[role]??(kind==='circular'?points:lines)[0]??'');
+  function pickButton(label,group,control,allowed,multiple=false){
+   if(!beginPicking)return;
+   const button=document.createElement('button');button.textContent=`Pick ${label} on canvas`;
+   button.onclick=()=>{try{beginPicking();picking={group,control,allowed:new Set(allowed),options:multiple?new Map(Array.from(control.children,option=>[option.value,option])):null,multiple,label};message(`Click ${label} on the sketch.${multiple?' Repeat for more, then finish picking or submit.':''}`);}catch(error){message(error.message);}};
+   form.append(button);
+  }
+  pickButton('pattern sources','curves',entities,curves,true);
+  pickButton(`pattern ${role}`,kind==='circular'?'points':'lines',reference,kind==='circular'?points:lines);
   let onAxis,count,driver,value,preserved;
   if(kind==='mirror'){
    onAxis=choice('Shared points on mirror axis',points.map(id=>[id,id]),data.on_axis??[],true);
+   pickButton('shared axis points','points',onAxis,points,true);
    const hint=document.createElement('p');hint.textContent='Select source points that must be shared on the axis, including any axis endpoints used by mirrored curves. Native Preview rejects invalid axis selections.';form.append(hint);
   }else{
    count=input('Pattern count (including source)',data.count,'number');const key=kind==='linear'?'spacing':'angle';preserved=data[key];
@@ -69,6 +81,7 @@ export function createPatternControls({host,definition,parameters=[],changed,mes
    driver=choice('Pattern value driver',choices,source);value=input(kind==='linear'?'Pattern spacing (mm)':'Pattern step angle (degrees)',dimensionNumber(preserved,kind==='linear'?'length':'angle')??(kind==='linear'?10:30),'number');
    driver.onchange=()=>{value.disabled=value.parentElement.hidden=driver.value!=='literal';};driver.onchange();
   }
+  if(beginPicking){const finish=document.createElement('button');finish.textContent='Finish canvas pick';finish.onclick=()=>{cancelPick();message('Canvas pick finished. Review the form and submit the pattern.');};form.append(finish);}
   const selectedValues=e=>Array.from(e.selectedOptions,o=>o.value);
   const show=document.createElement('button');show.textContent='Highlight pattern sources';show.onclick=()=>highlight([...selectedValues(entities),reference.value]);form.append(show);
   const submit=document.createElement('button');submit.textContent=existing?'Update sketch pattern':'Add sketch pattern';submit.onclick=()=>{try{
@@ -79,5 +92,13 @@ export function createPatternControls({host,definition,parameters=[],changed,mes
   if(existing){const remove=document.createElement('button');remove.textContent='Remove sketch pattern';remove.onclick=()=>{definition.patterns.splice(index,1);selected='';changed();message('Pattern removed from the draft. Preview checks dependent references.');};form.append(remove);}
  }
  select.onchange=()=>{selected=select.value;render();};render();
- return {get selected(){return selected;},get open(){return section.open;},inspect(expected){const pattern=patterns.find(p=>dataOf(p).id===dataOf(expected)?.id);if(!pattern||stamp(pattern)!==stamp(expected))return false;selected=dataOf(pattern).id;section.open=true;render();section.scrollIntoView?.({block:'nearest'});return true;}};
+ return {cancelPick,get pickGroup(){return picking?.group??null;},pick(id){
+  if(!picking)return false;
+  if(!picking.allowed.has(id)){message(`Choose a known ${picking.label} from before this pattern.`);return false;}
+  const {control,multiple}=picking;
+  if(multiple)picking.options.get(id).selected=true;
+  else control.value=id;
+  highlight([id]);message(`Selected ${id}. Review and submit the pattern.`);
+  if(!multiple)cancelPick();return true;
+ },get selected(){return selected;},get open(){return section.open;},inspect(expected){const pattern=patterns.find(p=>dataOf(p).id===dataOf(expected)?.id);if(!pattern||stamp(pattern)!==stamp(expected))return false;selected=dataOf(pattern).id;section.open=true;render();section.scrollIntoView?.({block:'nearest'});return true;}};
 }

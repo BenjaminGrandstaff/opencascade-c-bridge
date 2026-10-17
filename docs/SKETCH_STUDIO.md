@@ -76,8 +76,10 @@ the model version.
   and short hints for the active tool.
 - **Curve and region edits (left).** Opens the native operation controls with
   canvas picking and draft Undo/Redo. Named point picking has its own panel.
-- **Advanced drawer.** Hosts the classic panels for projections, patterns,
-  explicit boundary definitions, dependencies and sketch-to-solid features.
+- **Linked patterns (left).** Mirror, linear and circular patterns use native
+  controls with source, axis/direction and center picking on the canvas.
+- **Advanced drawer.** Hosts the classic panels for projections, explicit
+  boundary definitions, dependencies and sketch-to-solid features.
 
 ## Drawing
 
@@ -230,6 +232,41 @@ sketch, plane workflow or Advanced editing also ends the pick. Finish or cancel
 an active face/plane pick before starting a sketch point pick. Right-drag and
 Shift-drag remain camera navigation. Generated source curves use the verified
 catalogue; display-only glyphs and edited-curve names cannot be sources.
+
+## Picking linked patterns
+
+Choose **Mirror and pattern** in the left panel. Choose Linear, Circular or
+Mirror, enter a pattern name, then **Pick pattern sources on canvas**. Click
+source curves to add them to the form; repeated clicks keep one source entry.
+The source pick stays active for more clicks. **Finish canvas pick** returns to
+Select; the form's multi-select list also lets you change the source set.
+
+Pick a direction line for linear copies, an axis line for a mirror or a named
+center point for circular copies. Reference picks finish after one valid click.
+Mirrors also allow repeated picks of shared points on the axis. Preview checks
+that shared points lie on that axis. Source curves cannot include the reference
+line. Verified generated curves from earlier patterns are valid sources; a
+pattern cannot depend on itself or a later pattern. Source picks use the native
+source geometry, rather than display aliases created by later curve edits.
+
+Linear spacing accepts positive or negative millimetres or a length parameter.
+Circular spacing defaults to an equal full turn; an entered step is in degrees,
+or it can use a scalar parameter. Counts include the source and range from 2 to
+1,000. Existing patterns retain their names/types and untouched formulas or
+parameter drivers when you edit the count or picked sources. Select an existing
+pattern in **Pattern to edit** to update or remove it.
+
+Picks and unfinished form changes leave the draft unchanged. Add, update or
+remove stages one Undo entry. Native Preview generates the copies and checks
+dependent profiles and solids; Apply commits the result. Generated copies do
+not automatically enter explicit profile or hole loops. Those boundary choices
+remain in Advanced. A rejected draft can reopen this panel for repair, and a
+previewed new sketch can stage patterns before its first Apply. Context changes,
+Escape and the same stale-form guards as curve edits cancel pending picks.
+
+The scale benchmark checks 1,000 repeated source picks from 20,000 curves within
+one second, excluding browser layout. It reuses the source catalogue and option
+index during the pick; no draft snapshots are created until submission.
 
 ## Editing curves and regions
 
@@ -537,7 +574,8 @@ Node tests delete from a 10,000-line chain in well under a second.
 | Crossing points and spline samples | Yes | Named points panel, native candidates, on-canvas markers and draft history |
 | Weighted point links | Yes | Named points panel, canvas sources, literal/parameter weights and preserved formulas |
 | Curve and region operations | Yes | Studio panel with canvas picking, native Preview and draft Undo/Redo |
-| Patterns, projections, explicit profiles, dependencies | Yes | Advanced drawer hosts the classic panels |
+| Linked mirror, linear and circular patterns | Yes | Studio panel with canvas sources/references, native Preview and draft Undo/Redo |
+| Projections, explicit profiles, dependencies | Yes | Advanced drawer hosts the classic panels |
 | Sketch to solid | Yes | Advanced drawer |
 | Preview, Apply, Undo, Redo, Save | Yes | Toolbar; Revert stays in the classic viewer |
 | Several instances | Partly | The studio edits the first editable instance's family sketches |

@@ -3,39 +3,48 @@
 import {createProfileControls} from './profile-controls.mjs';
 import {inheritGeneratedReferences} from './generated-points.mjs';
 
-export function createStudioProfileEditor({host, definition, parameters = [], current = () => true,
+export function createStudioProfileEditor(options) {
+  return createStudioOperationEditor({...options, createControls: createProfileControls, tool: 'profile', name: 'curve editor',
+    stagedMessage: 'Curve or region edit staged. Preview checks references, boundaries and dependent solids.'});
+}
+
+// Shared form isolation, stale-context guards and click/drag handling for native
+// operation controls. Each accepted form submission is one draft transaction.
+export function createStudioOperationEditor({host, definition, parameters = [], current = () => true,
+  createControls, tool, name, stagedMessage,
   beginPicking = () => {}, modeChanged = () => {}, highlight = () => {}, changed, message}) {
   const working = structuredClone(definition);
   inheritGeneratedReferences(definition, working);
   let controls, gesture = null, armed = false;
   function valid() {
     if (current()) return true;
-    cancel(); message('The sketch changed. Reopen the curve editor.'); return false;
+    cancel(); message(`The sketch changed. Reopen the ${name}.`); return false;
   }
   function cancel() {
     gesture = null;
     controls?.cancelPick();
     if (armed) { armed = false; modeChanged('select'); }
   }
-  controls = createProfileControls({host, definition: working, parameters,
-    initialType: 'trim_between',
+  controls = createControls({host, definition: working, parameters, initialOpen: true,
     highlight: ids => { if (current()) highlight(ids); },
     message: text => { if (current()) message(text); },
     beginPicking: () => {
-      if (!valid()) throw Error('The sketch changed. Reopen the curve editor.');
-      beginPicking(); gesture = null; armed = true; modeChanged('profile');
+      if (!valid()) throw Error(`The sketch changed. Reopen the ${name}.`);
+      beginPicking(); gesture = null; armed = true; modeChanged(tool);
     },
     changed: () => {
       if (!valid()) return;
       const next = structuredClone(working);
       inheritGeneratedReferences(working, next);
       cancel(); changed(next);
-      message('Curve or region edit staged. Preview checks references, boundaries and dependent solids.');
+      message(stagedMessage);
     },
   });
-  host.addEventListener('change', () => {
+  const syncMode = () => {
     if (armed && !controls.pickGroup) { armed = false; modeChanged('select'); }
-  });
+  };
+  host.addEventListener('change', syncMode);
+  host.addEventListener('click', syncMode);
   return {cancel, get active() { return Boolean(controls.pickGroup); }, get pickGroup() { return controls.pickGroup; },
     down(event) {
       if (!controls.pickGroup) return false;

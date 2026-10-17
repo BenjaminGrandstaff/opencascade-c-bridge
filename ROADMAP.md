@@ -17,7 +17,7 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 7/7, bridge 160 + first-use integration 1 (+1 doc test), recipes 3, parametric core 55 + kernel 737 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 71 + viewer Node 300 + branch command 2 + model command 92, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 7/7, bridge 160 + first-use integration 1 (+1 doc test), recipes 3, parametric core 55 + kernel 737 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 71 + viewer Node 312 + branch command 2 + model command 92, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -25,6 +25,18 @@ tracks status and order.
 | Scale benchmarks | Last full suite: 194 Rust cases plus 5 model-command cases and a 10,000-face Python matcher. Sketch authoring integration rechecked 60 sketch cases and 60 MCP cases within budget. | `tools/bench/run.sh` |
 
 ## Done
+
+- Studio linked-pattern canvas authoring (schema 165, ABI 76 unchanged): mirror,
+  linear and circular patterns use the existing native controls directly in
+  the studio, with repeated source picks and axis/direction/center picks.
+  Earlier generated geometry remains usable; self and later dependencies are
+  rejected. Isolated forms preserve parameter/formula drivers, create one draft
+  Undo entry on submission and support rejected-draft repair. Shared operation
+  guards cancel stale forms and preserve camera controls. Native browser checks
+  verify solved copy coordinates, parameter updates, draft/model history, Apply
+  and Save. The new 20,000-curve benchmark checks 1,000 picks within one second;
+  312 viewer Node tests and 71 view-command tests pass. See
+  [linked patterns](docs/SKETCH_STUDIO.md#picking-linked-patterns).
 
 - Studio curve and region editing (schema 165, ABI 76 unchanged): reuse the
   native trim, split, extend, fillet, chamfer and offset controls directly on

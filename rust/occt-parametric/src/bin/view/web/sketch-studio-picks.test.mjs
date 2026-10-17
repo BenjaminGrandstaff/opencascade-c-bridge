@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {captureGeneratedPoints,bindGeneratedPoints} from './generated-points.mjs';
 import {fixture} from './sketch-studio-test-fixture.mjs';
 import {installPointPicking} from './sketch-studio-picks.mjs';
 import {basePlane, lookAt, projectLocal} from './sketch-studio-plane.mjs';
@@ -8,6 +9,7 @@ import {viewProjection} from './viewer.mjs';
 class Element {
  constructor(tag) {this.tag=tag;this.children=[];this.value='';this.style={};this.listeners={};}
  append(...nodes) {for(const n of nodes)n.parentElement=this;this.children.push(...nodes);}
+ get selectedOptions() {return this.children.filter(c=>c.selected);}
  setAttribute(key,value) {this[key]=value;}
  addEventListener(type,handler) {this.listeners[type]=handler;}
  replaceChildren(...nodes) {this.children=[];this.append(...nodes);}
@@ -216,4 +218,67 @@ test('discovery seed picks fill selection without editing until explicitly updat
  f.pickButton('Update region selection').onclick();
  assert.deepEqual(f.studio.draft.definition.region_discovery.seeds,['C']);assert.deepEqual(f.baseline.region_discovery.seeds,[]);
  assert.equal(f.studio.draft.undo.length,1);f.drawing.discard(true);
+});
+
+test('linear pattern canvas sources and direction stage one immutable draft with Undo/Redo',async t=>{
+ const f=setup(t);const original=structuredClone(f.baseline);f.picks.open('pattern');enter(f,'Pattern name','row');
+ f.pickButton('Pick pattern sources on canvas').onclick();await f.click([-5,0]);await f.click([-5,0]);
+ assert.deepEqual(f.input('Pattern source curves').selectedOptions.map(o=>o.value),['horizontal']);assert.equal(f.studio.draft.undo.length,0);
+ f.pickButton('Pick pattern direction on canvas').onclick();await f.click([0,10]);assert.equal(f.input('Pattern direction').value,'vertical');
+ enter(f,'Pattern count (including source)','3');enter(f,'Pattern spacing (mm)','-5');f.pickButton('Add sketch pattern').onclick();
+ assert.deepEqual(f.studio.draft.definition.patterns,[{linear:{id:'row',entities:['horizontal'],direction:'vertical',count:3,spacing:mm(-5)}}]);
+ assert.deepEqual(f.baseline,original);assert.equal(f.studio.draft.undo.length,1);
+ f.drawing.undo();assert.equal(f.studio.draft.definition.patterns,undefined);f.drawing.redo();assert.equal(f.studio.draft.definition.patterns[0].linear.id,'row');f.drawing.discard(true);
+});
+
+test('circular centers and mirror shared axis points use point picking',async t=>{
+ const f=setup(t);f.picks.open('pattern');choose(f,'Pattern type','circular');enter(f,'Pattern name','ring');
+ f.pickButton('Pick pattern sources on canvas').onclick();await f.click([-5,0]);f.pickButton('Pick pattern center on canvas').onclick();await f.click([0,10]);
+ assert.equal(f.input('Pattern center').value,'D');f.pickButton('Add sketch pattern').onclick();
+ assert.deepEqual(f.studio.draft.definition.patterns[0],{circular:{id:'ring',entities:['horizontal'],center:'D',count:2}});f.drawing.discard(true);
+ f.picks.open('pattern');choose(f,'Pattern type','mirror');enter(f,'Pattern name','mirror');
+ f.pickButton('Pick pattern sources on canvas').onclick();await f.click([-5,0]);f.pickButton('Pick pattern axis on canvas').onclick();await f.click([0,5]);
+ f.pickButton('Pick shared axis points on canvas').onclick();await f.click([0,-10]);await f.click([0,10]);f.pickButton('Add sketch pattern').onclick();
+ assert.deepEqual(f.studio.draft.definition.patterns[0],{mirror:{id:'mirror',entities:['horizontal'],axis:'vertical',on_axis:['C','D']}});f.drawing.discard(true);
+});
+
+test('pattern form rejects missing sources and self references without staging history',async t=>{
+ const f=setup(t);f.picks.open('pattern');enter(f,'Pattern name','row');f.pickButton('Add sketch pattern').onclick();assert.match(f.studio.message,/known source/);
+ f.pickButton('Pick pattern sources on canvas').onclick();await f.click([7,7]);assert.match(f.studio.message,/known pattern sources/);
+ await f.click([-5,0]);f.pickButton('Add sketch pattern').onclick();assert.match(f.studio.message,/own reference/);
+ assert.equal(f.studio.draft.undo.length,0);assert.equal(f.studio.draft.definition.patterns,undefined);f.drawing.discard(true);
+});
+
+test('editing a pattern excludes itself and later copies but accepts earlier generated curves',async t=>{
+ const f=setup(t);f.baseline.patterns=[{linear:{id:'earlier',entities:['horizontal'],direction:'vertical',count:2,spacing:mm(2)}},{linear:{id:'later',entities:['horizontal'],direction:'vertical',count:2,spacing:mm(4)}}];
+ bindGeneratedPoints(f.baseline,captureGeneratedPoints(f.baseline,[],{lines:['earlier:1:horizontal','later:1:horizontal']}));
+ f.studio.scenes[0].entities.push({id:'earlier:1:horizontal',points:[[-10,2,0],[10,2,0]]},{id:'later:1:horizontal',points:[[-10,4,0],[10,4,0]]});
+ f.picks.open('pattern');choose(f,'Pattern to edit','later');f.pickButton('Pick pattern sources on canvas').onclick();await f.click([-5,4]);
+ assert.match(f.studio.message,/before this pattern/);await f.click([-5,2]);f.pickButton('Update sketch pattern').onclick();
+ assert.deepEqual(f.studio.draft.definition.patterns[1].linear.entities,['horizontal','earlier:1:horizontal']);assert.equal(f.studio.draft.undo.length,1);f.drawing.discard(true);
+});
+
+test('existing pattern updates retain formulas and removal is one repairable draft edit',t=>{
+ const f=setup(t),formula={multiply:[{parameter:'pitch'},{literal:{value:2,dimension:'scalar',unit:null}}]};
+ f.baseline.patterns=[{linear:{id:'row',entities:['horizontal'],direction:'vertical',count:2,spacing:formula}}];
+ f.picks.open('pattern');choose(f,'Pattern to edit','row');enter(f,'Pattern count (including source)','4');f.pickButton('Update sketch pattern').onclick();
+ assert.deepEqual(f.studio.draft.definition.patterns[0].linear.spacing,formula);assert.equal(f.baseline.patterns[0].linear.count,2);
+ f.studio.draft.previewing=false;f.studio.draft.error='invalid dependent boundary';f.picks.open('pattern');choose(f,'Pattern to edit','row');f.pickButton('Remove sketch pattern').onclick();
+ assert.deepEqual(f.studio.draft.definition.patterns,[]);assert.equal(f.studio.draft.undo.length,2);assert.equal(f.studio.draft.error,null);f.drawing.discard(true);
+});
+
+for(const action of ['close','edit','history','layer','apply'])test(`old pattern callbacks cannot stage after ${action}`,async t=>{
+ const f=setup(t);f.studio.ensureDraft();f.studio.changeDraft({...f.studio.draft.definition,revision:1});f.studio.draft.previewing=false;
+ f.picks.open('pattern');enter(f,'Pattern name','row');f.pickButton('Pick pattern sources on canvas').onclick();await f.click([-5,0]);
+ f.pickButton('Pick pattern direction on canvas').onclick();await f.click([0,5]);const submit=f.pickButton('Add sketch pattern').onclick;
+ if(action==='close')f.picks.close();if(action==='edit')f.studio.changeDraft({...f.studio.draft.definition,revision:2});
+ if(action==='history')f.drawing.undo();if(action==='layer')f.studio.onActivate({feature:'other'});
+ if(action==='apply'){f.studio.api=async()=>({applied:true});await f.drawing.apply();}
+ const d=f.studio.draft,snapshot=d?.definition;submit();assert.equal(f.studio.draft,d);assert.equal(d?.definition,snapshot);assert.match(f.studio.message,/sketch changed/);f.drawing.discard(true);
+});
+
+test('pattern editing supports previewed local sketches and is locked while Preview or Apply is pending',t=>{
+ const f=setup(t);f.studio.ensureDraft();f.studio.draft.local=true;f.layer.local=true;assert(f.picks.open('pattern'));f.picks.close();
+ f.studio.draft.previewing=true;assert.equal(f.picks.open('pattern'),false);f.studio.draft.previewing=false;
+ f.studio.modelPending=true;assert.equal(f.picks.open('pattern'),false);f.studio.modelPending=false;f.drawing.discard(true);
 });

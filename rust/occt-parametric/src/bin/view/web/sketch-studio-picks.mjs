@@ -1,6 +1,7 @@
 // Named points and curve/region operation picking on the studio sketch plane.
 // Existing picker controls own the native candidate/window semantics; this
 // adapter supplies studio events, markers and guarded draft transactions.
+import {createStudioPatternEditor} from './sketch-studio-pattern.mjs';
 import {createStudioProfileEditor} from './sketch-studio-profile.mjs';
 import {profileIds} from './profile-controls.mjs';
 import {createWeightedPointPicker} from './sketch-studio-weighted.mjs';
@@ -43,8 +44,9 @@ export function installPointPicking(studio, document) {
     setTool('select');
     const draft = studio.ensureDraft(), layer = studio.activeLayer();
     if (!draft || !layer) { studio.say('Choose a sketch and apply or discard any other open draft first.', true); return false; }
-    if (draft.local && kind !== 'profile') { studio.say('Apply the new sketch before picking named points from its native curves.', true); return false; }
-    if (draft.previewing || draft.error && kind !== 'profile') { studio.say('Wait for a successful Preview of the current draft before picking named points.', true); return false; }
+    const operation = kind === 'profile' || kind === 'pattern';
+    if (draft.local && !operation) { studio.say('Apply the new sketch before picking named points from its native curves.', true); return false; }
+    if (draft.previewing || draft.error && !operation) { studio.say('Wait for a successful Preview of the current draft before picking named points.', true); return false; }
     const scene = studio.sceneOf(draft.feature);
     if (!scene) return false;
     const source = draft.definition, checkpoint = studio.draftCheckpoint();
@@ -54,9 +56,10 @@ export function installPointPicking(studio, document) {
     const curves = kind === 'profile'
       ? [...(scene.entities ?? []).filter(e => e.curve_id && known.has(e.curve_id)).map(e => ({...e, id: e.curve_id})), ...(scene.entities ?? []).filter(e => known.has(e.id))]
       : (scene.entities ?? []).filter(e => known.has(e.id));
-    const snapshot = {kind, scene, points, curves, picker: null};
+    const lines = new Set(geometryIds(source, 'lines'));
+    const snapshot = {kind, scene, points, curves, lines: curves.filter(e => lines.has(e.id)), picker: null};
     session = snapshot;
-    const current = () => session === snapshot && checkpoint() && !draft.previewing && (!draft.error || kind === 'profile') && studio.sceneOf(draft.feature) === scene;
+    const current = () => session === snapshot && checkpoint() && !draft.previewing && (!draft.error || operation) && studio.sceneOf(draft.feature) === scene;
     const query = async (path, request) => {
       if (!current()) throw Error('The sketch changed. Restart the point pick.');
       const result = await studio.api(path, {method: 'POST', body: JSON.stringify({
@@ -68,9 +71,9 @@ export function installPointPicking(studio, document) {
       }
       return result;
     };
-    panel.ariaLabel = kind === 'profile' ? 'Curve and region editing' : 'Named point picking';
+    panel.ariaLabel = kind === 'profile' ? 'Curve and region editing' : kind === 'pattern' ? 'Linked sketch patterns' : 'Named point picking';
     const host = html('div');
-    studio.fill(panel, html('header', {}, html('h2', {}, ({crossing: 'Intersection point', sample: 'Spline sample', weighted: 'Weighted point', profile: 'Curve and region edits'})[kind]),
+    studio.fill(panel, html('header', {}, html('h2', {}, ({crossing: 'Intersection point', sample: 'Spline sample', weighted: 'Weighted point', profile: 'Curve and region edits', pattern: 'Linked sketch patterns'})[kind]),
       html('button', {onclick: close}, 'Close')), host);
     panel.hidden = false;
     const options = {
@@ -92,6 +95,7 @@ export function installPointPicking(studio, document) {
       ? createCrossingPicker({...options, queryCandidates: request => query('/api/sketch-crossing-candidates', request)})
       : kind === 'sample' ? createSplineSamplePicker({...options, query: request => query('/api/sketch-spline-sample', request)})
       : kind === 'weighted' ? createWeightedPointPicker(options)
+      : kind === 'pattern' ? createStudioPatternEditor(options)
       : createStudioProfileEditor(options);
     return true;
   }
@@ -110,10 +114,10 @@ export function installPointPicking(studio, document) {
     // Curve picks ignore endpoint hits. Operation picks may use saved edited
     // piece names; unrelated display glyphs cannot become source references.
     const hit = pickEntity && layer?.frame && session
-      ? hitTest({scene: (session.kind === 'weighted' || session.picker?.pickGroup === 'points') ? {points: session.points} : {entities: session.curves}, frame: layer.frame, matrix, width, height, at, radius: 7}) : null;
+      ? hitTest({scene: (session.kind === 'weighted' || session.picker?.pickGroup === 'points') ? {points: session.points} : {entities: session.picker?.pickGroup === 'lines' ? session.lines : session.curves}, frame: layer.frame, matrix, width, height, at, radius: 7}) : null;
     return {position, tolerance, entity: hit?.id ?? null, scene: session?.scene, version: studio.version};
   }
-  for (const kind of ['crossing', 'sample', 'weighted', 'profile']) studio.tools.set(kind, {
+  for (const kind of ['crossing', 'sample', 'weighted', 'profile', 'pattern']) studio.tools.set(kind, {
     down(event) { return event.button === 0 && !event.shiftKey && session?.picker?.down(eventFor(event, true)); },
     move(event) { session?.picker?.move(eventFor(event)); },
     up(event) { return session?.picker?.up(eventFor(event)); },
@@ -154,5 +158,7 @@ export function installPointPicking(studio, document) {
     html('button', {onclick: () => open('weighted')}, 'Weighted point'));
   studio.fill(document.getElementById('curve-edits'), html('h2', {}, 'Curve and region edits'),
     html('button', {onclick: () => open('profile')}, 'Edit curves and regions'));
+  studio.fill(document.getElementById('sketch-patterns'), html('h2', {}, 'Linked patterns'),
+    html('button', {onclick: () => open('pattern')}, 'Mirror and pattern'));
   return {open, close, get active() { return session?.picker?.active ?? false; }};
 }

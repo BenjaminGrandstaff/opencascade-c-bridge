@@ -54,3 +54,18 @@ for(let i=0;i<25;i++)assert.equal(makePattern(definition,'linear',{id:'new',enti
 const patternValidation=performance.now()-start;
 console.log(`Sketch patterns: 20,000-curve menu ${patternMenu.toFixed(1)} ms; 25 validations ${patternValidation.toFixed(1)} ms (budget 5,000 ms each)`);
 assert(patternMenu<5000&&patternValidation<5000,'Pattern authoring exceeded its scale budget.');
+
+// A repeated source pick reuses a catalogue and option index; it does not rebuild
+// the 20,000-choice form or edit the definition on each click.
+const patternHost=new Element();let patternChanges=0;
+const patternPicker=createPatternControls({host:patternHost,definition,beginPicking:()=>{},changed:()=>patternChanges++,message:()=>{}});
+const walk=e=>[e,...e.children.flatMap(walk)];
+start=performance.now();
+walk(patternHost).find(e=>e.textContent==='Pick pattern sources on canvas').onclick();
+for(let i=0;i<1000;i++)assert(patternPicker.pick(generated[i]));
+const patternPicks=performance.now()-start;
+const sourceOptions=walk(patternHost).find(e=>e['aria-label']==='Pattern source curves');
+assert.equal(sourceOptions.children.filter(o=>o.selected).length,1000);
+assert.equal(patternChanges,0);patternPicker.cancelPick();assert.equal(patternPicker.pickGroup,null);
+console.log(`Studio pattern source picks: 1,000 clicks / 20,000 curves ${patternPicks.toFixed(1)} ms (budget 1,000 ms; DOM stubs)`);
+assert(patternPicks<1000,'Pattern canvas source picking exceeded its scale budget.');
