@@ -80,8 +80,10 @@ the model version.
   controls with source, axis/direction and center picking on the canvas.
 - **Source links (left).** Projects accepted feature edges and reattaches to
   planar support faces. Exact spline references expose refinement/detachment.
-- **Advanced drawer.** Hosts the classic panels for explicit boundary
-  definitions, full dependency inspection and sketch-to-solid features.
+- **Material boundaries (left).** Chooses ordered outer loops, holes and
+  additional regions, or discovers material cells from curves and seed points.
+- **Advanced drawer.** Hosts the classic panels for full dependency inspection
+  and sketch-to-solid features.
 
 ## Drawing
 
@@ -235,6 +237,52 @@ an active face/plane pick before starting a sketch point pick. Right-drag and
 Shift-drag remain camera navigation. Generated source curves use the verified
 catalogue; display-only glyphs and edited-curve names cannot be sources.
 
+## Choosing material boundaries
+
+Choose **Choose profiles and holes** in the left panel. **Material selection**
+offers an explicit set of loops, native region discovery or the automatic
+single-boundary mode. Opening the form and changing its fields leave the draft
+unchanged. **Stage material boundaries** replaces the material selection in one
+Undo entry, then Preview checks closure, orientation, containment, overlapping
+regions and every dependent solid. Apply commits the verified result.
+
+For explicit selection, **Outer boundary** is the primary material loop.
+**Add hole** adds a void inside that loop. **Add material region** adds another
+outer loop, with its own hole rows. Each loop needs ordered, distinct curve
+names; a curve cannot be reused in another explicit loop. Pick curves in order
+with the row's canvas button, or edit the comma-separated names. Repeated picks
+are ignored. Remove the last entry, clear a row or remove a hole/region to repair
+it. **Finish boundary pick** returns to Select while retaining the form.
+
+Authored curves, projections, verified generated sides/pattern copies and saved
+split-piece names can become boundaries. Whole native shape names can also be
+entered where the native model supports their boundary expansion. Display-only
+glyphs cannot be selected. The editor limits each loop to 1,000 names and each
+region to 1,000 holes; the native solver remains authoritative about geometry.
+Native Preview may reject a set of valid names that does not form a closed loop.
+
+**Discover bounded cells** starts a native arrangement from **Discovery curves**;
+an empty list uses all sketch curves. Choose all bounded cells, or pick named
+seed points strictly inside selected cells. All bounded cells fills inner cells
+as material too; seed selection can retain voids. **Merge adjacent selected
+cells** joins cells that share edges, preserving holes and disconnected regions.
+Outer-profile operations must be removed before discovery can be staged. Curve
+operations and region operations remain in the definition and are checked by
+Preview.
+
+Switching modes replaces the incompatible selection fields on staging. Explicit
+selection clears discovery; discovery clears explicit loops. Automatic mode
+clears explicit loops, holes, extra regions and discovery, then uses all curves
+as one boundary. Geometry, constraints, patterns, projections and edit operations
+remain. Undo restores the previous selection. Rejected drafts can reopen this
+panel for repair; previewed new local sketches also support material selection.
+
+Camera navigation and context guards match the other canvas operation panels.
+Close, Escape, history, layer/tool changes or another draft edit cancel pending
+picks and invalidate the old form. Dimension labels let boundary picks pass
+through. A scale benchmark checks form construction, 1,000 picks and one stage
+on 10,000 curves within one second each, excluding browser layout/native solving.
+
 ## Linking accepted source geometry
 
 Choose **Project geometry and support** in the left panel. Select a source
@@ -248,8 +296,9 @@ Click an edge to add a native linked construction reference. Straight edges
 become line projections; curved edges become exact spline projections. Native
 picking uses a semantic selector where possible and reports an anchored-center
 binding when repicking may be needed after source movement. Projected geometry
-stays outside the material until included in an explicit boundary. Set an outer
-profile or an explicit discovery curve list before adding construction links.
+stays outside the material until included in an explicit boundary. Use Material
+boundaries to set an outer profile or an explicit discovery curve list before
+adding construction links.
 
 Choose **Reattach to picked face** to pick a planar face of that accepted source.
 The sketch retains its local coordinates and support-offset expression; the
@@ -305,9 +354,9 @@ pattern in **Pattern to edit** to update or remove it.
 Picks and unfinished form changes leave the draft unchanged. Add, update or
 remove stages one Undo entry. Native Preview generates the copies and checks
 dependent profiles and solids; Apply commits the result. Generated copies do
-not automatically enter explicit profile or hole loops. Those boundary choices
-remain in Advanced. A rejected draft can reopen this panel for repair, and a
-previewed new sketch can stage patterns before its first Apply. Context changes,
+not automatically enter explicit profile or hole loops. Use Material boundaries
+to include the desired copies in profiles or holes. A rejected draft can reopen
+this panel for repair, and a previewed new sketch can stage patterns before its first Apply. Context changes,
 Escape and the same stale-form guards as curve edits cancel pending picks.
 
 The scale benchmark checks 1,000 repeated source picks from 20,000 curves within
@@ -341,7 +390,7 @@ Previewed new local sketches also support operations before their first Apply.
 Close or Escape cancels the pending pick. Changing sketches, tools, history,
 plane workflows or drafts invalidates the open form, so old callbacks cannot
 stage edits in a newer context. Right-drag and Shift-drag retain camera navigation.
-Initial discovery setup and explicit boundary authoring remain in Advanced.
+Use Material boundaries for initial discovery setup and explicit boundary authoring.
 
 ## Picking weighted points
 
@@ -737,7 +786,9 @@ to the instance it was made on.
 | Linked mirror, linear and circular patterns | Yes | Studio panel with canvas sources/references, native Preview and draft Undo/Redo |
 | Source projection and support reattachment | Yes | Studio source overlay, native edge/face picks and draft history |
 | Projected spline refinement/detachment | Yes | Source links panel, canvas inspection and dependency summary |
-| Explicit profiles and full dependencies | Yes | Advanced drawer hosts the classic panels |
+| Explicit outer loops, holes and additional regions | Yes | Material boundaries panel, ordered canvas picks, Preview and draft history |
+| Region discovery initialization | Yes | Material boundaries panel, arrangement curves, cell seeds and merging |
+| Full dependencies | Yes | Advanced drawer hosts the classic panel |
 | Sketch to solid | Yes | Advanced drawer |
 | Preview, Apply, Undo, Redo, Save | Yes | Toolbar; Revert stays in the classic viewer |
 | Several instances | Yes | Instance menu in the header; see [Instances](#instances) |

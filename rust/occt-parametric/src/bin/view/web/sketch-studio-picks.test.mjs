@@ -282,3 +282,44 @@ test('pattern editing supports previewed local sketches and is locked while Prev
  f.studio.draft.previewing=true;assert.equal(f.picks.open('pattern'),false);f.studio.draft.previewing=false;
  f.studio.modelPending=true;assert.equal(f.picks.open('pattern'),false);f.studio.modelPending=false;f.drawing.discard(true);
 });
+
+test('boundary picks retain click order and ignore repeats without editing until one atomic stage',async t=>{
+ const f=setup(t);f.baseline.profile=['horizontal'];f.picks.open('boundary');
+ f.pickButton('Clear Outer boundary').onclick();f.pickButton('Pick Outer boundary on canvas').onclick();await f.click([0,5]);await f.click([-5,0]);await f.click([0,5]);
+ assert.equal(f.input('Outer boundary').value,'vertical, horizontal');assert.equal(f.studio.draft.undo.length,0);
+ f.pickButton('Remove last from Outer boundary').onclick();f.pickButton('Finish boundary pick').onclick();f.pickButton('Stage material boundaries').onclick();
+ assert.deepEqual(f.studio.draft.definition.profile,['vertical']);assert.deepEqual(f.baseline.profile,['horizontal']);assert.equal(f.studio.draft.undo.length,1);
+ f.drawing.undo();assert.deepEqual(f.studio.draft.definition.profile,['horizontal']);f.drawing.redo();assert.deepEqual(f.studio.draft.definition.profile,['vertical']);f.drawing.discard(true);
+});
+test('primary holes and additional regions with holes stage together and never mutate the baseline',t=>{
+ const f=setup(t);f.baseline.profile=['horizontal'];f.baseline.circles=['inner','extra','extra-hole'].map(id=>({id}));
+ f.picks.open('boundary');f.pickButton('Add hole').onclick();enter(f,'hole 1','inner');f.pickButton('Add material region').onclick();enter(f,'Region 1 outer boundary','extra');f.pickButton('Add Region 1 hole').onclick();enter(f,'Region 1 hole 1','extra-hole');
+ f.pickButton('Stage material boundaries').onclick();assert.deepEqual(f.studio.draft.definition.holes,[['inner']]);assert.deepEqual(f.studio.draft.definition.regions,[{profile:['extra'],holes:[['extra-hole']]}]);assert.equal(f.baseline.holes,undefined);assert.equal(f.studio.draft.undo.length,1);f.drawing.discard(true);
+});
+test('discovery initialization supports canvas curve and seed picks with explicit mode switching',async t=>{
+ const f=setup(t);f.baseline.profile=['horizontal'];f.picks.open('boundary');choose(f,'Material selection','discovery');
+ f.pickButton('Pick Discovery curves on canvas').onclick();await f.click([-5,0]);choose(f,'Discovered cell selection','selected');f.pickButton('Pick Discovery seeds on canvas').onclick();await f.click([0,10]);
+ f.pickButton('Stage material boundaries').onclick();assert.deepEqual(f.studio.draft.definition.region_discovery,{entities:['horizontal'],seeds:['D']});assert.deepEqual(f.studio.draft.definition.profile,[]);assert.deepEqual(f.baseline.profile,['horizontal']);assert.equal(f.studio.draft.undo.length,1);f.drawing.discard(true);
+});
+test('automatic mode explicitly clears material selections and rejected boundaries remain repairable',t=>{
+ const f=setup(t);f.baseline.profile=['horizontal'];f.baseline.holes=[['vertical']];f.studio.ensureDraft();f.studio.draft.error='open boundary';assert(f.picks.open('boundary'));
+ choose(f,'Material selection','automatic');f.pickButton('Stage material boundaries').onclick();assert.deepEqual(f.studio.draft.definition.profile,[]);assert.deepEqual(f.studio.draft.definition.holes,[]);assert.equal(f.studio.draft.error,null);f.drawing.discard(true);
+});
+test('split-piece display names are pickable as material boundary members',async t=>{
+ const f=setup(t);f.baseline.profile=['horizontal'];f.baseline.curve_operations=[{split:{entity:'horizontal',before:'first',after:'last'}}];
+ f.studio.scenes[0].entities.push({id:'edited:first',curve_id:'first',points:[[-10,0,0],[0,0,0]]});f.picks.open('boundary');f.pickButton('Clear Outer boundary').onclick();f.pickButton('Pick Outer boundary on canvas').onclick();await f.click([-5,0]);f.pickButton('Stage material boundaries').onclick();
+ assert.deepEqual(f.studio.draft.definition.profile,['first']);assert.equal(f.studio.draft.undo.length,1);f.drawing.discard(true);
+});
+for(const action of ['close','edit','history','layer','apply'])test(`old boundary forms cannot overwrite a draft after ${action}`,async t=>{
+ const f=setup(t);f.baseline.profile=['horizontal'];f.studio.ensureDraft();f.studio.changeDraft({...f.studio.draft.definition,revision:1});f.studio.draft.previewing=false;
+ f.picks.open('boundary');enter(f,'Outer boundary','vertical');const submit=f.pickButton('Stage material boundaries').onclick;
+ if(action==='close')f.picks.close();if(action==='edit')f.studio.changeDraft({...f.studio.draft.definition,revision:2});if(action==='history')f.drawing.undo();if(action==='layer')f.studio.onActivate({feature:'other'});
+ if(action==='apply'){f.studio.api=async()=>({applied:true});await f.drawing.apply();}
+ const d=f.studio.draft,definition=d?.definition;submit();assert.equal(f.studio.draft,d);assert.equal(d?.definition,definition);assert.match(f.studio.message,/sketch changed/);f.drawing.discard(true);
+});
+test('boundary validation retains the form and local sketches can stage material selection',t=>{
+ const f=setup(t);f.studio.ensureDraft();f.studio.draft.local=true;f.layer.local=true;f.picks.open('boundary');choose(f,'Material selection','explicit');
+ f.pickButton('Stage material boundaries').onclick();assert.match(f.studio.message,/Outer boundary/);assert.equal(f.studio.draft.undo.length,0);
+ enter(f,'Outer boundary','horizontal');f.pickButton('Add hole').onclick();enter(f,'hole 1','horizontal');f.pickButton('Stage material boundaries').onclick();assert.match(f.studio.message,/more than one loop/);assert.equal(f.studio.draft.undo.length,0);
+ f.pickButton('Remove hole 1').onclick();f.pickButton('Stage material boundaries').onclick();assert.equal(f.studio.draft.undo.length,1);f.drawing.discard(true);
+});

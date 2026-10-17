@@ -1,6 +1,7 @@
 // Named points and curve/region operation picking on the studio sketch plane.
 // Existing picker controls own the native candidate/window semantics; this
 // adapter supplies studio events, markers and guarded draft transactions.
+import {createStudioBoundaryEditor} from './sketch-studio-boundaries.mjs';
 import {createStudioPatternEditor} from './sketch-studio-pattern.mjs';
 import {createStudioProfileEditor} from './sketch-studio-profile.mjs';
 import {profileIds} from './profile-controls.mjs';
@@ -44,16 +45,17 @@ export function installPointPicking(studio, document) {
     setTool('select');
     const draft = studio.ensureDraft(), layer = studio.activeLayer();
     if (!draft || !layer) { studio.say('Choose a sketch and apply or discard any other open draft first.', true); return false; }
-    const operation = kind === 'profile' || kind === 'pattern';
+    const operation = kind === 'profile' || kind === 'pattern' || kind === 'boundary';
     if (draft.local && !operation) { studio.say('Apply the new sketch before picking named points from its native curves.', true); return false; }
     if (draft.previewing || draft.error && !operation) { studio.say('Wait for a successful Preview of the current draft before picking named points.', true); return false; }
     const scene = studio.sceneOf(draft.feature);
     if (!scene) return false;
     const source = draft.definition, checkpoint = studio.draftCheckpoint();
-    const known = new Set(kind === 'profile' ? profileIds(source, 'curves') : geometryIds(source, 'curves'));
+    const edited = kind === 'profile' || kind === 'boundary';
+    const known = new Set(edited ? profileIds(source, 'curves') : geometryIds(source, 'curves'));
     const knownPoints = new Set(geometryIds(source, 'points'));
     const points = Object.fromEntries(Object.entries(scene.points ?? {}).filter(([id]) => knownPoints.has(id)));
-    const curves = kind === 'profile'
+    const curves = edited
       ? [...(scene.entities ?? []).filter(e => e.curve_id && known.has(e.curve_id)).map(e => ({...e, id: e.curve_id})), ...(scene.entities ?? []).filter(e => known.has(e.id))]
       : (scene.entities ?? []).filter(e => known.has(e.id));
     const lines = new Set(geometryIds(source, 'lines'));
@@ -71,9 +73,9 @@ export function installPointPicking(studio, document) {
       }
       return result;
     };
-    panel.ariaLabel = kind === 'profile' ? 'Curve and region editing' : kind === 'pattern' ? 'Linked sketch patterns' : 'Named point picking';
+    panel.ariaLabel = kind === 'boundary' ? 'Material boundaries' : kind === 'profile' ? 'Curve and region editing' : kind === 'pattern' ? 'Linked sketch patterns' : 'Named point picking';
     const host = html('div');
-    studio.fill(panel, html('header', {}, html('h2', {}, ({crossing: 'Intersection point', sample: 'Spline sample', weighted: 'Weighted point', profile: 'Curve and region edits', pattern: 'Linked sketch patterns'})[kind]),
+    studio.fill(panel, html('header', {}, html('h2', {}, ({crossing: 'Intersection point', sample: 'Spline sample', weighted: 'Weighted point', profile: 'Curve and region edits', pattern: 'Linked sketch patterns', boundary: 'Material boundaries'})[kind]),
       html('button', {onclick: close}, 'Close')), host);
     panel.hidden = false;
     const options = {
@@ -96,6 +98,7 @@ export function installPointPicking(studio, document) {
       : kind === 'sample' ? createSplineSamplePicker({...options, query: request => query('/api/sketch-spline-sample', request)})
       : kind === 'weighted' ? createWeightedPointPicker(options)
       : kind === 'pattern' ? createStudioPatternEditor(options)
+      : kind === 'boundary' ? createStudioBoundaryEditor(options)
       : createStudioProfileEditor(options);
     return true;
   }
@@ -117,7 +120,7 @@ export function installPointPicking(studio, document) {
       ? hitTest({scene: (session.kind === 'weighted' || session.picker?.pickGroup === 'points') ? {points: session.points} : {entities: session.picker?.pickGroup === 'lines' ? session.lines : session.curves}, frame: layer.frame, matrix, width, height, at, radius: 7}) : null;
     return {position, tolerance, entity: hit?.id ?? null, scene: session?.scene, version: studio.version};
   }
-  for (const kind of ['crossing', 'sample', 'weighted', 'profile', 'pattern']) studio.tools.set(kind, {
+  for (const kind of ['crossing', 'sample', 'weighted', 'profile', 'pattern', 'boundary']) studio.tools.set(kind, {
     down(event) { return event.button === 0 && !event.shiftKey && session?.picker?.down(eventFor(event, true)); },
     move(event) { session?.picker?.move(eventFor(event)); },
     up(event) { return session?.picker?.up(eventFor(event)); },
@@ -160,5 +163,7 @@ export function installPointPicking(studio, document) {
     html('button', {onclick: () => open('profile')}, 'Edit curves and regions'));
   studio.fill(document.getElementById('sketch-patterns'), html('h2', {}, 'Linked patterns'),
     html('button', {onclick: () => open('pattern')}, 'Mirror and pattern'));
+  studio.fill(document.getElementById('material-boundaries'), html('h2', {}, 'Material boundaries'),
+    html('button', {onclick: () => open('boundary')}, 'Choose profiles and holes'));
   return {open, close, get active() { return session?.picker?.active ?? false; }};
 }

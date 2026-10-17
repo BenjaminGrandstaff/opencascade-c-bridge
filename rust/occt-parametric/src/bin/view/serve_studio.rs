@@ -36,6 +36,8 @@ const STUDIO_ASSETS: &[(&str, &str)] = studio_assets!(
     "sketch-studio-pattern-tools.mjs",
     "sketch-studio-instances.mjs",
     "sketch-studio-trim.mjs",
+    "sketch-studio-boundaries.mjs",
+    "sketch-boundaries.mjs",
 );
 
 /// The studio page or one of its scripts, or `None` for other paths.

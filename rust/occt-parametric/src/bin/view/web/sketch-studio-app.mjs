@@ -253,7 +253,7 @@ export function startStudio(document) {
       const node = element('g', {
         class: `label${label.dimension ? ' dimension' : ' glyph'}${failed ? ' failed' : ''}${label.targets.some((t) => selected.has(t)) ? ' related' : ''}`,
       }, group);
-      if (label.dimension && label.constraintIndex >= 0 && studio.tool !== 'source-link') {
+      if (label.dimension && label.constraintIndex >= 0 && !['source-link', 'boundary'].includes(studio.tool)) {
         node.setAttribute('class', `${node.getAttribute('class')} editable`);
         node.setAttribute('tabindex', '0');
         node.setAttribute('role', 'button');
@@ -274,7 +274,7 @@ export function startStudio(document) {
     }
     for (const badge of badges) {
       const [x, y, w, h] = badge.box;
-      const node = element('g', { class: 'badge', style: studio.tool === 'source-link' ? 'pointer-events:none' : '' }, group);
+      const node = element('g', { class: 'badge', style: ['source-link', 'boundary'].includes(studio.tool) ? 'pointer-events:none' : '' }, group);
       element('rect', { x, y, width: w, height: h, rx: 8 }, node);
       const text = element('text', { x: x + w / 2, y: y + h / 2 + 4, 'text-anchor': 'middle' }, node);
       text.textContent = `+${badge.labels.length}`;

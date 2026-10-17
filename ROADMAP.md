@@ -17,7 +17,7 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 7/7, bridge 160 + first-use integration 1 (+1 doc test), recipes 3, parametric core 55 + kernel 738 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 71 + viewer Node 359 + branch command 2 + model command 92, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 7/7, bridge 160 + first-use integration 1 (+1 doc test), recipes 3, parametric core 55 + kernel 738 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 71 + viewer Node 375 + branch command 2 + model command 92, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -25,6 +25,20 @@ tracks status and order.
 | Scale benchmarks | Last full suite: 194 Rust cases plus 5 model-command cases and a 10,000-face Python matcher. Sketch authoring integration rechecked 60 sketch cases and 60 MCP cases within budget. | `tools/bench/run.sh` |
 
 ## Done
+
+- Studio material boundary authoring (schema 165, ABI 76 unchanged): choose
+  ordered outer profiles, holes and additional material regions directly on
+  the canvas, including verified pattern/projection geometry and split pieces.
+  Initialize native arrangement discovery from picked curves and cell seeds,
+  or explicitly return to automatic single-boundary selection. Forms isolate
+  unfinished picks, validate references and exclusive modes, preserve geometry
+  and edit definitions, and stage one draft Undo entry. Rejected loops remain
+  repairable. Native browser checks verify explicit and discovered material
+  producing two solids with the expected volume, generated holes, Apply,
+  draft/model history, repair and Save. All 375 viewer Node tests and 71
+  view-command tests pass. A 10,000-curve benchmark checks 1,000 picks and staging
+  within one second each. See
+  [material boundaries](docs/SKETCH_STUDIO.md#choosing-material-boundaries).
 
 - Studio instance menu (no schema or ABI change). With several instances
   of the family, a header menu chooses the one whose overrides, placement
