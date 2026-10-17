@@ -136,3 +136,84 @@ test('weighted point staging is canceled by an intervening draft edit',async t=>
  f.studio.changeDraft({...f.studio.draft.definition,revision:1});const snapshot=f.studio.draft.definition;stage();
  assert.equal(f.studio.draft.definition,snapshot);assert.equal(f.studio.draft.undo.length,1);f.drawing.discard(true);
 });
+
+function choose(f,label,value) { const input=f.input(label);input.value=value;input.onchange(); }
+function enter(f,label,value) { const input=f.input(label);input.value=value;input.oninput?.();input.onchange?.(); }
+
+test('profile canvas picks fill fields without editing; submit creates one isolated Undo entry',async t=>{
+ const f=setup(t);const original=structuredClone(f.baseline);f.picks.open('profile');choose(f,'Profile operation','fillet');
+ f.pickButton('Pick corner point on canvas').onclick();await f.click([-10,0]);
+ assert.equal(f.input('Corner point').value,'A');assert.equal(f.studio.draft.undo.length,0);
+ enter(f,'Fillet radius (mm)','2.5');f.pickButton('Add profile operation').onclick();
+ assert.deepEqual(f.baseline,original);assert.deepEqual(f.studio.draft.definition.profile_operations,[{fillet:{point:'A',radius:mm(2.5)}}]);assert.equal(f.studio.draft.undo.length,1);
+ f.drawing.undo();assert.equal(f.studio.draft.definition.profile_operations,undefined);f.drawing.redo();assert.equal(f.studio.draft.definition.profile_operations.length,1);f.drawing.discard(true);
+});
+
+test('trim bounds can be picked as named points on the current plane',async t=>{
+ const f=setup(t);f.picks.open('profile');choose(f,'From bound','point');f.pickButton('Pick from point on canvas').onclick();await f.click([-10,0]);
+ choose(f,'To bound','point');f.pickButton('Pick to point on canvas').onclick();await f.click([10,0]);f.pickButton('Add profile operation').onclick();
+ assert.deepEqual(f.studio.draft.definition.profile_operations[0],{trim_between:{entity:'horizontal',from:{point:{point:'A'}},to:{point:{point:'B'}}}});f.drawing.discard(true);
+});
+
+test('splitting replaces explicit boundary references atomically with named pieces',async t=>{
+ const f=setup(t);f.baseline.profile=['horizontal'];f.baseline.points.push({id:'P',x:mm(0),y:mm(0),fixed:true});f.studio.scenes[0].points.P=[0,0,0];
+ f.picks.open('profile');choose(f,'Profile operation','split');choose(f,'Split bound','point');f.pickButton('Pick split point on canvas').onclick();await f.click([0,0]);
+ enter(f,'Before piece name','first');enter(f,'After piece name','last');f.pickButton('Add profile operation').onclick();
+ assert.deepEqual(f.studio.draft.definition.profile,['first','last']);assert.deepEqual(f.baseline.profile,['horizontal']);
+ assert.equal(f.studio.draft.definition.curve_operations[0].split.at.point.point,'P');assert.equal(f.studio.draft.undo.length,1);f.drawing.discard(true);
+});
+
+test('extension target picking uses curves rather than endpoint point hits',async t=>{
+ const f=setup(t);f.picks.open('profile');choose(f,'Profile operation','extend_to');
+ f.pickButton('Pick extension target on canvas').onclick();await f.click([0,10]);f.pickButton('Add profile operation').onclick();
+ assert.deepEqual(f.studio.draft.definition.curve_operations[0],{extend_to:{entity:'horizontal',end:'end',target:'vertical',limit:mm(10)}});f.drawing.discard(true);
+});
+
+for(const action of ['edit','history','layer','apply']) {
+ test(`old curve form callbacks cannot commit after ${action}`,async t=>{
+  const f=setup(t);f.studio.ensureDraft();f.studio.changeDraft({...f.studio.draft.definition,revision:1});f.studio.draft.previewing=false;
+  f.picks.open('profile');choose(f,'Profile operation','offset');const submit=f.pickButton('Add profile operation').onclick;
+  if(action==='edit')f.studio.changeDraft({...f.studio.draft.definition,revision:2});
+  if(action==='history')f.drawing.undo();
+  if(action==='layer')f.studio.onActivate({feature:'other'});
+  if(action==='apply'){f.studio.api=async()=>({applied:true});await f.drawing.apply();}
+  const d=f.studio.draft,snapshot=d?.definition;submit();assert.equal(f.studio.draft,d);assert.equal(d?.definition,snapshot);assert.match(f.studio.message,/sketch changed/);f.drawing.discard(true);
+ });
+}
+
+test('rejected profile operations can be removed through the studio editor',t=>{
+ const f=setup(t);f.studio.ensureDraft();f.studio.changeDraft({...f.studio.draft.definition,profile_operations:[{offset:{distance:mm(999),join:'arc'}}]});
+ f.studio.draft.previewing=false;f.studio.draft.error='invalid boundary';assert(f.picks.open('profile'));
+ f.pickButton('Remove profile operation 1').onclick();assert.deepEqual(f.studio.draft.definition.profile_operations,[]);assert.equal(f.studio.draft.error,null);f.drawing.discard(true);
+});
+
+test('profile operations can be staged on an already previewed new local sketch',t=>{
+ const f=setup(t);f.studio.ensureDraft();f.studio.draft.local=true;f.layer.local=true;assert(f.picks.open('profile'));
+ choose(f,'Profile operation','offset');f.pickButton('Add profile operation').onclick();assert.equal(f.studio.draft.definition.profile_operations.length,1);f.drawing.discard(true);
+});
+
+test('split-piece display aliases resolve to native piece names for operation picking',async t=>{
+ const f=setup(t);f.baseline.curve_operations=[{split:{entity:'horizontal',at:{point:{point:'C'}},before:'piece',after:'other'}}];
+ f.studio.scenes[0].entities.push({id:'edited:piece',curve_id:'piece',points:[[-10,0,0],[0,0,0]]});
+ f.picks.open('profile');choose(f,'Profile operation','extend_to');f.pickButton('Pick source curve on canvas').onclick();await f.click([-5,0]);
+ assert.equal(f.input('Source curve').value,'piece');assert.equal(f.studio.draft.undo.length,0);f.picks.close();f.drawing.discard(true);
+});
+
+test('material region seed picking stages an isolated operation with Undo',async t=>{
+ const f=setup(t);f.picks.open('profile');choose(f,'Profile operation','offset');choose(f,'Boundary target','region');
+ f.pickButton('Pick region seed on canvas').onclick();await f.click([0,10]);
+ assert.equal(f.input('Region seed').value,'D');assert.equal(f.studio.draft.undo.length,0);
+ enter(f,'Offset distance (mm)','-2');f.pickButton('Add profile operation').onclick();
+ assert.deepEqual(f.studio.draft.definition.region_edits,[{seed:'D',operations:[{offset:{distance:mm(-2),join:'arc'}}]}]);
+ assert.equal(f.baseline.region_edits,undefined);assert.equal(f.studio.draft.undo.length,1);
+ f.drawing.undo();assert.equal(f.studio.draft.definition.region_edits,undefined);f.drawing.discard(true);
+});
+
+test('discovery seed picks fill selection without editing until explicitly updated',async t=>{
+ const f=setup(t);f.baseline.region_discovery={entities:['horizontal','vertical'],seeds:[],merge_adjacent:false};
+ f.picks.open('profile');f.pickButton('Pick discovery seed on canvas').onclick();await f.click([0,-10]);
+ assert.equal(f.input('Selected region seeds (comma separated)').value,'C');assert.equal(f.studio.draft.undo.length,0);
+ f.pickButton('Update region selection').onclick();
+ assert.deepEqual(f.studio.draft.definition.region_discovery.seeds,['C']);assert.deepEqual(f.baseline.region_discovery.seeds,[]);
+ assert.equal(f.studio.draft.undo.length,1);f.drawing.discard(true);
+});

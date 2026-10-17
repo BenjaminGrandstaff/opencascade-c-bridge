@@ -74,10 +74,10 @@ the model version.
   constraints and actions. Nothing is shown when nothing is selected.
 - **Status bar (bottom).** Free degrees, solver state, the current snap
   and short hints for the active tool.
-- **Advanced drawer.** Projections, patterns, crossing and spline-sample
-  picking, curve and region edits stay in the existing modules. The
-  studio mounts them in one collapsible drawer instead of re-creating
-  them, so nothing is lost on day one.
+- **Curve and region edits (left).** Opens the native operation controls with
+  canvas picking and draft Undo/Redo. Named point picking has its own panel.
+- **Advanced drawer.** Hosts the classic panels for projections, patterns,
+  explicit boundary definitions, dependencies and sketch-to-solid features.
 
 ## Drawing
 
@@ -230,6 +230,35 @@ sketch, plane workflow or Advanced editing also ends the pick. Finish or cancel
 an active face/plane pick before starting a sketch point pick. Right-drag and
 Shift-drag remain camera navigation. Generated source curves use the verified
 catalogue; display-only glyphs and edited-curve names cannot be sources.
+
+## Editing curves and regions
+
+Choose **Edit curves and regions** in the left panel. The studio reuses the
+native controls for exact trim to named points or crossings, parameter-fraction
+trim, source split, extension to a crossing, corner fillet/chamfer and signed
+profile offset. Corner and offset operations can target the outer profile or
+the material region containing a named seed. Existing discovery definitions
+also expose cell selection, seed selection and adjacent-cell merging here.
+
+Use the form's **Pick … on canvas** buttons to fill a curve, endpoint, crossing
+hint or region seed. Picks and unfinished form edits leave the draft unchanged.
+Submitting, updating or removing an operation stages one Undo entry; updating
+discovery selection does the same. Splitting can replace explicit boundary
+references with the two saved piece names in that same transaction. Native
+edited-piece display aliases resolve to their saved curve names for subsequent
+operations, including after Apply.
+
+Preview checks the edited boundaries and all dependent solids. A trim must
+belong to its selected profile, crossing hints must identify a valid crossing,
+and region seeds must lie strictly inside their material. The editor can reopen
+a rejected draft to repair or remove an operation. Removing the last rejected
+edit back to the accepted definition retains Undo/Redo and leaves Apply disabled.
+Previewed new local sketches also support operations before their first Apply.
+
+Close or Escape cancels the pending pick. Changing sketches, tools, history,
+plane workflows or drafts invalidates the open form, so old callbacks cannot
+stage edits in a newer context. Right-drag and Shift-drag retain camera navigation.
+Initial discovery setup and explicit boundary authoring remain in Advanced.
 
 ## Picking weighted points
 
@@ -507,7 +536,8 @@ Node tests delete from a 10,000-line chain in well under a second.
 | Delete geometry | Studio only | Delete key or inspector, with dependents; see [Deleting](#deleting) |
 | Crossing points and spline samples | Yes | Named points panel, native candidates, on-canvas markers and draft history |
 | Weighted point links | Yes | Named points panel, canvas sources, literal/parameter weights and preserved formulas |
-| Patterns, point links, projections, curve and region edits, profiles, dependencies | Yes | Advanced drawer hosts the classic panels |
+| Curve and region operations | Yes | Studio panel with canvas picking, native Preview and draft Undo/Redo |
+| Patterns, projections, explicit profiles, dependencies | Yes | Advanced drawer hosts the classic panels |
 | Sketch to solid | Yes | Advanced drawer |
 | Preview, Apply, Undo, Redo, Save | Yes | Toolbar; Revert stays in the classic viewer |
 | Several instances | Partly | The studio edits the first editable instance's family sketches |

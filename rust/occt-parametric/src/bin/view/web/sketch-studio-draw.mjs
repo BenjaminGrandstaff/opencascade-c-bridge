@@ -44,6 +44,24 @@ export function localDefinition(layer) {
   return { ...definition, points: [], lines: [], circles: [], profile: [], constraints: [] };
 }
 
+// Native SketchDefinition defaults omit these empty collections. Compare
+// meaning rather than JSON property order when deciding whether Preview is needed.
+const DEFAULT_COLLECTIONS = new Set(['circles', 'arcs', 'profile', 'constraints', 'projections', 'ellipses',
+  'profile_operations', 'splines', 'holes', 'shapes', 'measurements', 'regions', 'curve_operations', 'region_edits', 'texts', 'patterns']);
+export function sameSketchDefinition(first, second) {
+  const canonical = sketch => Object.fromEntries(Object.entries(sketch ?? {}).filter(([key, value]) =>
+    !(DEFAULT_COLLECTIONS.has(key) && Array.isArray(value) && !value.length) &&
+    !(key === 'acceptance' && value === 'solved') &&
+    !(['datum_plane', 'face_support', 'region_discovery'].includes(key) && value === null)));
+  const same = (a, b) => {
+    if (a === b) return true;
+    if (!a || !b || typeof a !== 'object' || typeof b !== 'object' || Array.isArray(a) !== Array.isArray(b)) return false;
+    const keys = Object.keys(a);
+    return keys.length === Object.keys(b).length && keys.every(key => Object.hasOwn(b, key) && same(a[key], b[key]));
+  };
+  return same(canonical(first), canonical(second));
+}
+
 export function installDrawing(studio, document) {
   const { html } = studio;
   let gesture = null; // { tool, clicks: [{xy, point, rules}] }
@@ -160,7 +178,7 @@ export function installDrawing(studio, document) {
   async function preview() {
     const d = studio.draft;
     if (!d?.dirty || studio.modelPending) return;
-    if (!d.local && JSON.stringify(d.definition) === JSON.stringify(d.baseline)) {
+    if (!d.local && sameSketchDefinition(d.definition, d.baseline)) {
       clearDraftPreview(d);
       d.dirty = false;
       studio.say('The draft matches the starting sketch. Undo keeps your local edit history; Discard returns to model history.');

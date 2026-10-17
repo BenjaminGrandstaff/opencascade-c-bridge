@@ -258,6 +258,7 @@ export function createProfileControls({host,definition,parameters=[],changed,mes
   select.onchange=()=>reset(select.value);reset(type);
   return {
     get type(){return type;},
+    get pickGroup(){return picking?.group??null;},
     get scope(){return scope;},get seed(){return values.seed??'';},
     cancelPick(){if(picking){picking=null;message('Profile pick canceled. Form values retained.');}},
     pick(id){

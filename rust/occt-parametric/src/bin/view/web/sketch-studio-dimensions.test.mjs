@@ -1,3 +1,4 @@
+import {sameSketchDefinition} from './sketch-studio-draw.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {dimensionValueText, editDrivingDimension, constraintsTouching} from './sketch-studio-select.mjs';
@@ -130,4 +131,14 @@ test('editing back to the accepted expression skips unchanged Preview but keeps 
  f.drawing.undo();assert.equal(f.studio.draft.definition.constraints[1].distance.value.literal.value,20);
  f.drawing.redo();t.mock.timers.tick(150);await f.flush();assert.equal(f.studio.draft.dirty,false);assert.equal(f.calls.length,0);
  f.drawing.discard(true);
+});
+
+test('unchanged sketch comparison ignores key order and native empty collection defaults',()=>{
+ const baseline=definition(),next=structuredClone(baseline);
+ next.profile_operations=[];next.curve_operations=[];next.region_edits=[];
+ next.constraints[1].distance.value={literal:{unit:'millimeter',dimension:'length',value:10}};
+ assert(sameSketchDefinition(baseline,next));
+ next.constraints[1].distance.value.literal.value=11;assert.equal(sameSketchDefinition(baseline,next),false);
+ assert.equal(sameSketchDefinition({points:[],lines:[]},{lines:[]}),false,'required points are not optional');
+ assert.equal(sameSketchDefinition({points:[1,2]},{points:[2,1]}),false,'array order remains meaningful');
 });
