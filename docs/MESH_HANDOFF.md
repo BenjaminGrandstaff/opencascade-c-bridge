@@ -135,6 +135,19 @@ to its own, as a translation or, when rotated, a matrix. Face-tagged
 definitions are tessellated per instance so their tag names stay their own. Temporary
 geometry is released on success and failure.
 
+`regenerate_gltf_parallel(session, output, settings, threads)`
+(`InstanceGraphParallelExport`) regenerates every instance and builds the
+same scene with distinct parameter variants spread over worker threads,
+each with its own session: a variant is generated once in local
+coordinates, its requirement results and tessellation kept and its shapes
+released, and each instance becomes a node placed by its world transform,
+so no shape is copied or placed in OCCT. It returns the scene, each
+instance's variant and each variant's requirement results, or `None` when
+the assembly has requirements (they need every placed shape in one
+session). Failures report the first failing variant in instance order. A
+scale case builds 400 distinct block variants in 0.08 s on 8 threads
+against 0.42 s serially.
+
 Khronos's glTF validator reported zero errors and warnings for a box, a drilled
 block, and a posed assembly with inherited appearance in the earlier,
 unindexed layout; the indexed layout with edge lines has not been run

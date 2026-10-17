@@ -521,6 +521,183 @@ impl<'definition> InstanceGraphExport<'definition> for InstanceGraph<'definition
     }
 }
 
+/// A regeneration and glTF built across worker threads (see
+/// [`InstanceGraphParallelExport`]): the scene, each generated instance with
+/// the representative whose variant it uses, and each variant's requirement
+/// results.
+#[derive(Debug)]
+pub struct ParallelGltf {
+    pub gltf: String,
+    /// Generated instances, sorted, each with its variant's representative.
+    pub instances: Vec<(String, String)>,
+    /// Requirement results of each representative's variant.
+    pub variants: HashMap<String, Vec<VerificationResult>>,
+    pub generated_variants: usize,
+}
+
+pub trait InstanceGraphParallelExport {
+    /// Regenerates every unsuppressed instance and returns the glTF of
+    /// `output`, as `regenerate_all` and `export_gltf_generated` do, with the
+    /// distinct parameter variants spread over up to `threads` worker
+    /// threads, each with its own session. A worker generates a variant once
+    /// in local coordinates, keeps its requirement results and tessellation,
+    /// and releases its shapes; every instance of the variant becomes a node
+    /// placed by its own world transform, so no shape is copied or placed in
+    /// OCCT. Returns `None` when the assembly has requirements, which need
+    /// every placed shape in one session; callers then regenerate serially.
+    /// O(variants × generation / threads + instances).
+    fn regenerate_gltf_parallel(
+        &mut self,
+        session: &Session,
+        output: &str,
+        settings: MeshSettings,
+        threads: usize,
+    ) -> Result<Option<ParallelGltf>, ModelError>;
+}
+
+impl<'definition> InstanceGraphParallelExport for InstanceGraph<'definition> {
+    fn regenerate_gltf_parallel(
+        &mut self,
+        session: &Session,
+        output: &str,
+        settings: MeshSettings,
+        threads: usize,
+    ) -> Result<Option<ParallelGltf>, ModelError> {
+        if !self.assembly.requirements.is_empty() {
+            return Ok(None);
+        }
+        self.refresh_driven_patterns(session)?;
+        let graph: &InstanceGraph<'definition> = self;
+        let mut ids: Vec<&str> = graph
+            .nodes
+            .keys()
+            .map(String::as_str)
+            .filter(|id| !graph.is_suppressed(id))
+            .collect();
+        ids.sort_unstable();
+        let groups = graph.group_by_parameters(&ids)?;
+        let mut context = ExportContext::new(graph);
+        let generated: HashSet<&str> = ids.iter().copied().collect();
+        let definitions = graph
+            .output_definitions(output, settings, &mut context, |id| generated.contains(id))?;
+        let by_instance: HashMap<&str, &MeshExportDefinition> = definitions
+            .iter()
+            .map(|d| (d.output.instance.as_str(), d))
+            .collect();
+        type Outcome = Result<(Option<TaggedSurfaceMesh>, Vec<VerificationResult>), ModelError>;
+        let next = std::sync::atomic::AtomicUsize::new(0);
+        let failed = std::sync::atomic::AtomicBool::new(false);
+        let workers = threads.clamp(1, groups.len().max(1));
+        let mut outcomes: Vec<Option<Outcome>> = (0..groups.len()).map(|_| None).collect();
+        std::thread::scope(|scope| -> Result<(), ModelError> {
+            let handles: Vec<_> = (0..workers)
+                .map(|_| {
+                    scope.spawn(|| -> Result<Vec<(usize, Outcome)>, ModelError> {
+                        let session = Session::new().map_err(|e| ModelError::new(e.to_string()))?;
+                        let mut context = ExportContext::new(graph);
+                        let mut done = Vec::new();
+                        while !failed.load(std::sync::atomic::Ordering::Relaxed) {
+                            let index = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                            let Some(group) = groups.get(index) else {
+                                break;
+                            };
+                            let (representative, resolved) = &group[0];
+                            let outcome = resolved
+                                .instance
+                                .regenerate(&session)
+                                .map_err(|error| instance_error(representative, error))
+                                .and_then(|local| {
+                                    let mesh = by_instance
+                                        .get(representative)
+                                        .map(|definition| {
+                                            definition.tagged_result(
+                                                graph,
+                                                &session,
+                                                &local,
+                                                &mut context,
+                                                false,
+                                            )
+                                        })
+                                        .transpose();
+                                    let verification = local.verification.clone();
+                                    release_results(&session, [local]);
+                                    mesh.map(|mesh| (mesh, verification))
+                                });
+                            if outcome.is_err() {
+                                failed.store(true, std::sync::atomic::Ordering::Relaxed);
+                            }
+                            done.push((index, outcome));
+                        }
+                        Ok(done)
+                    })
+                })
+                .collect();
+            for handle in handles {
+                let done = handle
+                    .join()
+                    .map_err(|_| ModelError::new("a regeneration worker panicked"))??;
+                for (index, outcome) in done {
+                    outcomes[index] = Some(outcome);
+                }
+            }
+            Ok(())
+        })?;
+        // The first failure in group order, as serial regeneration reports.
+        let mut variants = HashMap::new();
+        let mut meshes = Vec::with_capacity(groups.len());
+        let mut variant_of: HashMap<&str, (usize, &str)> = HashMap::new();
+        let mut instances = Vec::with_capacity(ids.len());
+        for (index, (group, outcome)) in groups.iter().zip(outcomes).enumerate() {
+            let (mesh, verification) =
+                outcome.ok_or_else(|| ModelError::new("a variant was not generated"))??;
+            let representative = group[0].0;
+            for (id, _) in group {
+                variant_of.insert(id, (index, representative));
+            }
+            variants.insert(representative.to_owned(), verification);
+            meshes.push(mesh);
+        }
+        for id in &ids {
+            instances.push(((*id).to_owned(), variant_of[id].1.to_owned()));
+        }
+        let mut scene = Scene::default();
+        let mut placed: HashMap<(usize, usize), (usize, [f64; 3])> = HashMap::new();
+        for definition in &definitions {
+            let instance = definition.output.instance.as_str();
+            let (index, _) = variant_of[instance];
+            let mesh = meshes[index]
+                .as_ref()
+                .ok_or_else(|| ModelError::new("glTF instance was not generated"))?;
+            let material =
+                change_impact::inherited_material(instance, graph, &mut context.material_ids);
+            let appearance = material
+                .as_ref()
+                .and_then(|material| graph.assembly.material_appearances.get(material))
+                .copied()
+                .unwrap_or_default();
+            let material = scene.material(appearance)?;
+            let (mesh_index, center) = match placed.get(&(index, material)) {
+                Some(found) => *found,
+                None => {
+                    let added = scene.add_mesh(mesh, appearance)?;
+                    placed.insert((index, material), added);
+                    added
+                }
+            };
+            let world = world_transform(graph, instance, &mut context)?;
+            scene.add_node(mesh_index, center, Some(world), instance, mesh);
+            scene.nodes.last_mut().expect("added node")["extras"]["familyLocalMatrix"] =
+                json!(family_local_matrix(world));
+        }
+        Ok(Some(ParallelGltf {
+            gltf: scene.finish(groups.len())?,
+            instances,
+            variants,
+            generated_variants: groups.len(),
+        }))
+    }
+}
+
 pub(crate) trait InstanceGraphExportInternal<'definition> {
     /// Writes the glTF scene for already generated `definitions`.
     fn scene(

@@ -22,9 +22,18 @@ tracks status and order.
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
 | Coverage | Last recorded: 93.61% lines overall, test code excluded; C++ 94.13% lines, 87.40% branches, 100% functions; Rust 93.42% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | Last full suite: 194 Rust cases plus 5 model-command cases and a 10,000-face Python matcher. Sketch authoring integration rechecked 60 sketch cases and 60 MCP cases within budget. | `tools/bench/run.sh` |
+| Scale benchmarks | Last full suite: 194 Rust cases (195 with the parallel glTF case) plus 5 model-command cases and a 10,000-face Python matcher. Sketch authoring integration rechecked 60 sketch cases and 60 MCP cases within budget. | `tools/bench/run.sh` |
 
 ## Done
+
+- Parallel regeneration of distinct variants (no schema or ABI change).
+  `regenerate_gltf_parallel` spreads distinct parameter variants over
+  worker threads, each with its own OCCT session, generating each variant
+  once in local coordinates and placing its instances as glTF nodes; the
+  viewer uses up to eight workers and falls back to serial regeneration
+  for assembly requirements. 2,000 distinct brackets load in about 8 s
+  instead of 51 s; beyond eight threads OCCT's shared state costs more than
+  it gains. See [glTF rendering](docs/MESH_HANDOFF.md#gltf-rendering).
 
 - Studio limiting-face canvas picks (schema 168, ABI 76 unchanged): choose an
   extrusion's up-to-face target directly from an accepted feature overlay.

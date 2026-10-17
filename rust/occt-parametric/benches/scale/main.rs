@@ -138,6 +138,7 @@ fn main() -> ExitCode {
         return report(&[
             mesh::gltf_case(definition),
             mesh::gltf_output_case(definition),
+            mesh::gltf_parallel_case(definition),
         ]);
     }
     let mut outcomes = Vec::new();
@@ -250,6 +251,7 @@ fn main() -> ExitCode {
     outcomes.push(textures::face_case(definition));
     outcomes.push(mesh::gltf_case(definition));
     outcomes.push(mesh::gltf_output_case(definition));
+    outcomes.push(mesh::gltf_parallel_case(definition));
     outcomes.push(mesh::manufacturing_case());
     outcomes.push(sheet_metal::sheet_case());
     outcomes.push(sheet_metal::cutout_case());

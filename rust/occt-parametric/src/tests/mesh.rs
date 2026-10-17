@@ -704,3 +704,166 @@ fn gltf_tessellates_shared_variants_once_and_places_rotated_framed_clones() {
     drop(generation);
     assert_eq!(session.shape_count().unwrap(), 0);
 }
+
+/// A base part and twelve clones in four widths, turned, two in a frame.
+fn varied_graph(family: &FamilyDefinition) -> InstanceGraph<'_> {
+    let mut graph = InstanceGraph::new(family);
+    graph.add_base("part", HashMap::new(), "test").unwrap();
+    graph
+        .add_frame(
+            "arm",
+            None,
+            Placement {
+                translation: VectorQuantity::lengths(500.0, 0.0, 0.0, LengthUnit::Millimeter),
+                rotation: Some(AxisAngle {
+                    origin: VectorQuantity::lengths(0.0, 0.0, 0.0, LengthUnit::Millimeter),
+                    axis: VectorQuantity::scalars(0.0, 1.0, 0.0),
+                    angle_radians: 0.4,
+                }),
+            },
+            "test",
+        )
+        .unwrap();
+    for i in 0..12 {
+        let id = format!("c{i:02}");
+        let overrides = HashMap::from([(
+            "width".to_owned(),
+            ParameterValue::Scalar(Quantity::length(
+                10.0 + (i % 4) as f64,
+                LengthUnit::Millimeter,
+            )),
+        )]);
+        graph.add_clone(&id, "part", overrides, "test").unwrap();
+        graph
+            .set_placement(
+                &id,
+                Placement {
+                    translation: VectorQuantity::lengths(
+                        60.0 * i as f64,
+                        7.0,
+                        -3.0,
+                        LengthUnit::Millimeter,
+                    ),
+                    rotation: Some(AxisAngle {
+                        origin: VectorQuantity::lengths(5.0, 5.0, 5.0, LengthUnit::Millimeter),
+                        axis: VectorQuantity::scalars(1.0, 2.0, 3.0),
+                        angle_radians: 0.3 * i as f64,
+                    }),
+                },
+            )
+            .unwrap();
+        if i % 5 == 0 {
+            graph.set_instance_frame(&id, Some("arm")).unwrap();
+        }
+    }
+    graph
+}
+
+#[test]
+fn parallel_gltf_matches_the_serial_scene_and_requirement_results() {
+    let family = family(RequirementPriority::Required, 100_000.0);
+    let mut graph = varied_graph(&family);
+    let session = Session::new().unwrap();
+    let serial: serde_json::Value = serde_json::from_str(
+        &graph
+            .export_gltf_output(&session, "body", MeshSettings::default())
+            .unwrap(),
+    )
+    .unwrap();
+    let generation = graph.regenerate_all(&session).unwrap();
+    // The parallel build leaves nothing in the caller's session.
+    let shapes = session.shape_count().unwrap();
+    for threads in [1, 4] {
+        let parallel = graph
+            .regenerate_gltf_parallel(&session, "body", MeshSettings::default(), threads)
+            .unwrap()
+            .expect("no assembly requirements");
+        let gltf: serde_json::Value = serde_json::from_str(&parallel.gltf).unwrap();
+        // Four widths: four variants and four meshes, thirteen nodes.
+        assert_eq!(parallel.generated_variants, 4);
+        assert_eq!(gltf["extras"]["generatedVariants"], 4);
+        assert_eq!(gltf["meshes"].as_array().unwrap().len(), 4);
+        let nodes = |g: &serde_json::Value| -> Vec<(String, serde_json::Value)> {
+            g["nodes"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|n| (n["name"].as_str().unwrap().to_owned(), n.clone()))
+                .collect()
+        };
+        let (expected, actual) = (nodes(&serial), nodes(&gltf));
+        assert_eq!(
+            expected.iter().map(|(n, _)| n).collect::<Vec<_>>(),
+            actual.iter().map(|(n, _)| n).collect::<Vec<_>>()
+        );
+        // Every node covers the same placed geometry and carries the same
+        // family-local matrix, though meshes are local and nodes placed.
+        for ((name, left), (_, right)) in expected.iter().zip(&actual) {
+            let (a, b) = (
+                gltf_node_bounds(&serial, left),
+                gltf_node_bounds(&gltf, right),
+            );
+            for axis in 0..3 {
+                assert!((a.0[axis] - b.0[axis]).abs() < 1e-4, "{name}: {a:?} {b:?}");
+                assert!((a.1[axis] - b.1[axis]).abs() < 1e-4, "{name}: {a:?} {b:?}");
+            }
+            assert_eq!(
+                left["extras"]["familyLocalMatrix"],
+                right["extras"]["familyLocalMatrix"]
+            );
+        }
+        // Each instance reports its variant's requirement results.
+        for (id, representative) in &parallel.instances {
+            assert_eq!(
+                &parallel.variants[representative],
+                &generation.result(id).unwrap().verification,
+                "{id}"
+            );
+            assert_eq!(generation.shared_from(id), Some(representative.as_str()));
+        }
+    }
+    assert_eq!(session.shape_count().unwrap(), shapes);
+}
+
+#[test]
+fn parallel_gltf_reports_failures_and_defers_assembly_requirements() {
+    // A required volume limit every variant breaks fails the build.
+    let strict = family(RequirementPriority::Required, 1.0);
+    let mut graph = varied_graph(&strict);
+    let session = Session::new().unwrap();
+    let serial = match graph.regenerate_all(&session) {
+        Ok(_) => panic!("every variant breaks the volume limit"),
+        Err(error) => error.message,
+    };
+    let parallel = graph
+        .regenerate_gltf_parallel(&session, "body", MeshSettings::default(), 4)
+        .unwrap_err()
+        .message;
+    assert!(
+        parallel.contains("volume") || parallel == serial,
+        "{parallel} / {serial}"
+    );
+    assert_eq!(session.shape_count().unwrap(), 0);
+    // Assembly requirements need every placed shape in one session.
+    let family = family(RequirementPriority::Required, 100_000.0);
+    let mut graph = varied_graph(&family);
+    graph
+        .add_assembly_requirement(AssemblyRequirement {
+            id: "apart".into(),
+            version: 1,
+            kind: RequirementKind::Assembly,
+            priority: RequirementPriority::Advisory,
+            statement: "apart".into(),
+            rule: AssemblyVerificationRule::NoInterference {
+                outputs: OutputSet::AllWithOutput("body".into()),
+            },
+            provenance: "test".into(),
+        })
+        .unwrap();
+    assert!(
+        graph
+            .regenerate_gltf_parallel(&session, "body", MeshSettings::default(), 4)
+            .unwrap()
+            .is_none()
+    );
+}

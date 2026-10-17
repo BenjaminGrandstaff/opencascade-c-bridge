@@ -511,7 +511,16 @@ to under 0.1 s, the JavaScript heap from 74 MB to about 12 MB, GPU vertex
 data from 54 MB to about 19 MB, and a frame from about 1 ms (one draw call
 per part) to 0.14 ms, measured in Chrome on this machine.
 
-Each edit costs one full regeneration and glTF export. On a 10,000-instance
+Each edit costs one full regeneration and glTF export. Distinct parameter
+variants regenerate in parallel: up to eight worker threads, each with its
+own OCCT session, generate a variant once in local coordinates, keep its
+requirement results and tessellation, and release its shapes; every
+instance becomes a node placed by its own transform. 2,000 distinct
+brackets (two booleans, two holes, and validity and wall checks each)
+load in about 8 s instead of 51 s. More workers lose time: OCCT's shared
+state makes 16 threads slower than 8 on a 16-core machine (9.8 s against
+7.6 s, with three times the CPU time). Models with assembly requirements,
+which need every placed shape in one session, regenerate serially. On a 10,000-instance
 model, startup takes 0.8 s, listing instances about 26 ms, one instance's
 values 33 ms, the requirement report 2 ms, and an override edit with
 regeneration and assembly checks 0.74 s. Instances sharing a

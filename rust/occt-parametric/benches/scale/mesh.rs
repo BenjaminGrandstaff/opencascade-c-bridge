@@ -1,6 +1,7 @@
 use super::*;
 use occt_parametric::{
-    InstanceOutputRef, ManufacturingSettings, MeshExportDefinition, MeshSettings, TaggedSurfaceMesh,
+    InstanceGraphParallelExport, InstanceOutputRef, ManufacturingSettings, MeshExportDefinition,
+    MeshSettings, TaggedSurfaceMesh,
 };
 
 pub(crate) fn gltf_case(definition: &'static FamilyDefinition) -> Outcome {
@@ -146,6 +147,48 @@ pub(crate) fn gltf_output_case(definition: &'static FamilyDefinition) -> Outcome
                 ));
             }
             Ok("10001 named nodes, one shared mesh, no retained handles".into())
+        },
+    )
+}
+
+/// 400 distinct parameter variants (each block its own width), regenerated
+/// and exported on eight worker threads, as the viewer loads a model. The
+/// case's time covers both builds; the detail gives each.
+pub(crate) fn gltf_parallel_case(definition: &'static FamilyDefinition) -> Outcome {
+    timed(
+        "glTF of 400 distinct variants on 8 worker threads".into(),
+        ms(3_000),
+        Expectation::Required,
+        || {
+            let session = Session::new().map_err(|error| failure(error.to_string()))?;
+            let mut graph = InstanceGraph::new(definition);
+            for i in 0..400 {
+                let overrides = HashMap::from([(
+                    "width".to_owned(),
+                    ParameterValue::Scalar(Quantity::length(
+                        20.0 + i as f64 * 0.01,
+                        LengthUnit::Millimeter,
+                    )),
+                )]);
+                graph.add_base(format!("part{i:03}"), overrides, "bench")?;
+            }
+            let started = Instant::now();
+            let parallel = graph
+                .regenerate_gltf_parallel(&session, "body", MeshSettings::default(), 8)?
+                .ok_or_else(|| failure("the parallel build was refused".into()))?;
+            let threaded = started.elapsed();
+            if parallel.generated_variants != 400 || parallel.instances.len() != 400 {
+                return Err(failure("the parallel build lost variants".into()));
+            }
+            let started = Instant::now();
+            let generation = graph.regenerate_all(&session)?;
+            graph.export_gltf_generated(&session, &generation, "body", MeshSettings::default())?;
+            let serial = started.elapsed();
+            Ok(format!(
+                "400 variants and nodes: {:.2} s on 8 threads, {:.2} s serial",
+                threaded.as_secs_f64(),
+                serial.as_secs_f64()
+            ))
         },
     )
 }
