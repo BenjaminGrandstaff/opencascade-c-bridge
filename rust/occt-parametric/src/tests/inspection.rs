@@ -1593,6 +1593,53 @@ fn maximum_material_boundary_lets_the_pattern_shift_together() {
 }
 
 #[test]
+fn a_separate_requirement_lets_a_control_or_its_pattern_shift_alone() {
+    let (definition, mut page) = shift_setup(DatumMaterialBoundary::Maximum);
+    let graph = graph_of(&definition);
+    // Holes 0 and 2 are displaced +x, 1 and 3 -x. Together one shift cannot
+    // remove both; as two separate patterns each shifts its own way.
+    let spread = [[0.05, 0.0], [-0.05, 0.0], [0.05, 0.0], [-0.05, 0.0]];
+    for (i, frame) in page.feature_control_frames.iter_mut().enumerate() {
+        frame.pattern = Some(if i % 2 == 0 { "east" } else { "west" }.into());
+        frame.modifiers.push(ToleranceModifier::SeparateRequirement);
+    }
+    let report = page
+        .evaluate_inspection(&graph, &shift_record(10.06, spread))
+        .unwrap();
+    for i in 0..4 {
+        let m = evaluated(&report, &format!("hole{i}"));
+        assert!(m.deviation_mm < 1e-3 && m.conforms, "{m:?}");
+        assert!((m.datum_shift_mm - 0.05).abs() < 1e-3, "{m:?}");
+    }
+    // A pattern stays one requirement within itself: holes displaced apart
+    // inside "east" still cannot both shift back.
+    let apart = [[0.05, 0.0], [0.0, 0.0], [-0.05, 0.0], [0.0, 0.0]];
+    let report = page
+        .evaluate_inspection(&graph, &shift_record(10.06, apart))
+        .unwrap();
+    assert!(!evaluated(&report, "hole0").conforms);
+    assert!(evaluated(&report, "hole1").conforms);
+    // Only the west pattern separate: the other two holes still share a
+    // shift with each other, so all four conform.
+    for frame in page.feature_control_frames.iter_mut().step_by(2) {
+        frame.modifiers.clear();
+        frame.pattern = None;
+    }
+    let report = page
+        .evaluate_inspection(&graph, &shift_record(10.06, spread))
+        .unwrap();
+    assert!((0..4).all(|i| evaluated(&report, &format!("hole{i}")).conforms));
+    // Without any separate requirement they fail together (see above).
+    for frame in &mut page.feature_control_frames {
+        frame.modifiers.clear();
+    }
+    let report = page
+        .evaluate_inspection(&graph, &shift_record(10.06, spread))
+        .unwrap();
+    assert!(!evaluated(&report, "hole1").conforms);
+}
+
+#[test]
 fn least_material_boundary_shift_uses_the_minimum_material_envelope() {
     let (definition, page) = shift_setup(DatumMaterialBoundary::Least);
     let graph = graph_of(&definition);

@@ -696,8 +696,16 @@ impl DrawingDefinition {
                     .position_data(frame, points)
                     .is_ok_and(|data| data.space.turn_free)
             {
-                let key = serde_json::to_string(&frame.datums)
+                let mut key = serde_json::to_string(&frame.datums)
                     .map_err(|e| ModelError::new(e.to_string()))?;
+                // SEP REQT: the control, or its pattern, shifts on its own.
+                if frame
+                    .modifiers
+                    .contains(&ToleranceModifier::SeparateRequirement)
+                {
+                    key.push('\u{0}');
+                    key.push_str(frame.pattern.as_deref().unwrap_or(frame.id.as_str()));
+                }
                 groups.entry(key).or_default().push(frame);
             }
         }

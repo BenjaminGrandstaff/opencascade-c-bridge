@@ -255,6 +255,11 @@ pub enum ToleranceModifier {
     /// △: a dynamic profile zone, free to grow or shrink uniformly, so it
     /// controls form and orientation but not size.
     DynamicProfile,
+    /// SEP REQT (schema 167): the control, or its `pattern`, is evaluated
+    /// apart from other controls with the same datum references instead of
+    /// sharing one datum shift with them (the simultaneous requirement).
+    /// Position or profile controls with datums, not composite.
+    SeparateRequirement,
 }
 /// Where a projected tolerance zone lies (schema 142): from a plane of the
 /// part, the face the mating part seats on, `height` along that plane's
@@ -357,6 +362,8 @@ fn modifier_width(m: ToleranceModifier) -> f64 {
         ToleranceModifier::Statistical => 9.0,
         ToleranceModifier::ContinuousFeature => 7.0,
         ToleranceModifier::FreeState | ToleranceModifier::DynamicProfile => 6.0,
+        // Noted beneath the frame, not in a compartment.
+        ToleranceModifier::SeparateRequirement => 0.0,
     }
 }
 /// Displayed Ⓟ height, in the tolerance's display unit and precision.
@@ -509,10 +516,16 @@ fn validate_modifiers(
             ToleranceModifier::FreeState | ToleranceModifier::Statistical => true,
             ToleranceModifier::ContinuousFeature => frame.feature_of_size,
             ToleranceModifier::DynamicProfile => frame.characteristic.profile(),
+            ToleranceModifier::SeparateRequirement => {
+                (frame.characteristic == GeometricCharacteristic::Position
+                    || frame.characteristic.profile())
+                    && !frame.datums.is_empty()
+                    && frame.refinement.is_none()
+            }
         };
         if !applies {
             return Err(ModelError::new(
-                "continuous feature applies to features of size and dynamic profile to profile controls",
+                "continuous feature applies to features of size, dynamic profile to profile controls, and a separate requirement to position or profile controls with datums that are not composite",
             ));
         }
     }
@@ -989,6 +1002,10 @@ fn append_row(
             ToleranceModifier::ContinuousFeature => {
                 text(d, [mx - 1.5, y - 1.5], "CF".into());
             }
+            ToleranceModifier::SeparateRequirement => {
+                let below = p[1] - d.lettering.notes - 1.5;
+                text(d, [p[0], below], "SEP REQT".into());
+            }
             ToleranceModifier::DynamicProfile => {
                 line(
                     d,
@@ -1100,6 +1117,7 @@ fn row_vertices(f: &DrawingFeatureControlFrame) -> usize {
                 ToleranceModifier::Statistical => 7,
                 ToleranceModifier::ContinuousFeature => 0,
                 ToleranceModifier::DynamicProfile => 4,
+                ToleranceModifier::SeparateRequirement => 0,
             })
             .sum::<usize>()
         + 4 * f.datums.iter().filter(|r| r.translation).count()

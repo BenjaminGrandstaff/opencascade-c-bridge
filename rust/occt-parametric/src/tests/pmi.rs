@@ -196,6 +196,9 @@ fn pmi_page() -> DrawingDefinition {
         height: Quantity::length(15.0, LengthUnit::Millimeter),
         from: None,
     });
+    projected
+        .modifiers
+        .push(ToleranceModifier::SeparateRequirement);
     let angular = control(
         "angular",
         "top",
@@ -280,8 +283,13 @@ fn drawing_gdt_exports_as_verified_ap242_pmi_on_its_faces() {
     assert_eq!(lower.unrepresented, vec![PmiProperty::CompositeRelation]);
     assert!(lower.lost.is_empty(), "{lower:?}");
     // The projected zone, which OCCT's writer drops, is written by the
-    // bridge and reads back.
-    assert_eq!(item(&report, "projected", 0).lost, Vec::new());
+    // bridge and reads back; its SEP REQT is reported, not written.
+    let projected = item(&report, "projected", 0);
+    assert_eq!(projected.lost, Vec::new());
+    assert_eq!(
+        projected.unrepresented,
+        vec![PmiProperty::SeparateRequirement]
+    );
     // The bore diameter and the width W, each read back.
     let sizes: Vec<_> = report
         .items

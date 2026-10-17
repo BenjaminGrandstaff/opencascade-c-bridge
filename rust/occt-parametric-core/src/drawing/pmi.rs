@@ -42,6 +42,9 @@ pub enum PmiProperty {
     /// How a composite's lower segment relates to the segments above it; the
     /// segment itself is written as a tolerance of its own.
     CompositeRelation,
+    /// SEP REQT. AP242 has a separate-requirement modifier, but the bridge's
+    /// STEP writer does not set it yet.
+    SeparateRequirement,
 }
 
 /// One exported PMI item: `unrepresented` lists what the exchange format
@@ -427,6 +430,9 @@ impl DrawingDefinition {
                         }
                         ToleranceModifier::DynamicProfile => {
                             unrepresented.push(PmiProperty::DynamicProfile)
+                        }
+                        ToleranceModifier::SeparateRequirement => {
+                            unrepresented.push(PmiProperty::SeparateRequirement)
                         }
                         ToleranceModifier::FreeState | ToleranceModifier::Statistical => {}
                     }

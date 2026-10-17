@@ -901,6 +901,14 @@ given, each at most once:
   measured feature.
 - `dynamic_profile` (△), on profile controls only: the zone may grow or
   shrink uniformly, so it controls form and orientation but not size.
+- `separate_requirement` (schema 167; SEP REQT, noted beneath the frame and
+  taking no width in it), on position and profile controls with datums,
+  not composite: the control, or its `pattern`, is a requirement of its
+  own. In measured inspection it no longer shares a datum shift (or a turn
+  about an unclocked datum axis) with other controls on the same datum
+  references; members of one `pattern` still shift together. Profile
+  controls are grouped only by `pattern` already, so for them it records
+  intent.
 
 Each datum reference may also set `translation: true` (▷, drawn after the
 label and any material boundary modifier). The datum feature simulator is
@@ -1287,7 +1295,8 @@ The shift is a rigid motion within plane A: a translation of the frame
 origin and, where a width datum allows it, a rotation about A's normal.
 Under the default simultaneous requirement, every position control with
 identical datum references (features, precedence and boundaries) shares one
-shift. The shift minimizes the largest excess of any control's offset over
+shift; a control marked `separate_requirement` (SEP REQT) shifts alone, or
+with the other members of its `pattern`. The shift minimizes the largest excess of any control's offset over
 its allowed radius (half of tolerance plus bonus). An active set of at most a
 few controls is solved as a small LP with 256-gon zones, within 0.008% of
 optimal, relinearized in the rotation; ties resolve to the smallest shift.
@@ -1654,8 +1663,7 @@ area targets of 1,000 points each evaluate in a few milliseconds.
 tilted to the primary; an axis datum at an angle to a primary plane;
 composite position to a primary datum axis; a tertiary
 hole or pin's form error limiting its rotational shift; a tertiary plane
-re-contacting as a shifting secondary width turns; common width datums; the separate requirement
-(`SEP REQT`); boundaries
+re-contacting as a shifting secondary width turns; common width datums; boundaries
 enlarged by geometric tolerances; common axes of more than two members or
 after a primary plane,
 reporting n× patterns as one frame on drawings, datum targets on axes
@@ -1694,8 +1702,9 @@ AP242 with the drawing's GD&T attached to those faces of each part:
 The file is then read back with OCCT's AP242 reader and every item matched by
 kind and faces (part-local area and centroid). The returned
 `PmiExchangeReport` lists, per item, what the format cannot represent
-(continuous feature, dynamic profile, unequal zone, and how a composite's
-lower segment relates to the one above) and what did not read back. It also
+(continuous feature, dynamic profile, unequal zone, how a composite's
+lower segment relates to the one above, and SEP REQT, which AP242 has but
+the bridge's writer does not set yet) and what did not read back. It also
 lists the annotations skipped and why: no faces, an output not exported, or a
 datum reference that is skipped or lies on another output, and every surface
 texture, which AP242 export through OCCT cannot represent. `verified()` holds

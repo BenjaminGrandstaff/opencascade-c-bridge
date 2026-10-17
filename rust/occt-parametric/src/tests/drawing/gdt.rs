@@ -542,6 +542,7 @@ fn value_modifiers_and_datum_translation_render_and_validate() {
             ToleranceModifier::FreeState,
             ToleranceModifier::Statistical,
             ToleranceModifier::ContinuousFeature,
+            ToleranceModifier::SeparateRequirement,
         ];
         f.datums[2].translation = true;
     }
@@ -557,7 +558,7 @@ fn value_modifiers_and_datum_translation_render_and_validate() {
     let generated = page
         .generate(&graph, &session, DrawingRenderOptions::default())
         .unwrap();
-    for text in ["F", "ST", "CF"] {
+    for text in ["F", "ST", "CF", "SEP REQT"] {
         assert!(
             generated.gdt_labels.iter().any(|l| l.text == text),
             "{text}"
@@ -583,13 +584,15 @@ fn value_modifiers_and_datum_translation_render_and_validate() {
         "\"translation\": true",
         "\"dynamic_profile\"",
         "\"free_state\"",
+        "\"separate_requirement\"",
     ] {
         assert!(json.contains(field), "{field}");
     }
     assert_eq!(ModelDocument::from_json(&json).unwrap(), document);
     // △ belongs to profile, CF to features of size; a modifier appears
     // once; the primary datum has no basic place to translate from.
-    for case in 0..4 {
+    // SEP REQT needs datums on a position or profile control.
+    for case in 0..6 {
         let mut invalid = page.clone();
         let [position, profile] = invalid.feature_control_frames.as_mut_slice() else {
             unreachable!()
@@ -598,6 +601,17 @@ fn value_modifiers_and_datum_translation_render_and_validate() {
             0 => position.modifiers.push(ToleranceModifier::DynamicProfile),
             1 => profile.modifiers.push(ToleranceModifier::ContinuousFeature),
             2 => position.modifiers.push(ToleranceModifier::FreeState),
+            3 => {
+                profile.datums.clear();
+                profile
+                    .modifiers
+                    .push(ToleranceModifier::SeparateRequirement);
+            }
+            4 => {
+                profile.characteristic = GeometricCharacteristic::Flatness;
+                profile.datums.clear();
+                profile.modifiers = vec![ToleranceModifier::SeparateRequirement];
+            }
             _ => position.datums[0].translation = true,
         }
         assert!(

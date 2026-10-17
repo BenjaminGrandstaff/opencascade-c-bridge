@@ -1,7 +1,7 @@
 {
   "schema": "occb-model-view-v1",
   "model": {
-    "schema_version": 166,
+    "schema_version": 167,
     "family": {
       "id": "split-housing",
       "version": 1,
