@@ -28,7 +28,7 @@ impl SheetMetalDefinitionUnfoldingInternal for SheetMetalDefinition {
     ) -> Result<Shape<'a>, ModelError> {
         let sheet = self.evaluate(parameters)?;
         let solid = if sheet.edge_flanges.is_empty() && sheet.reliefs.is_empty() {
-            sheet.solid(session, &sheet.outline())?
+            sheet.profile_solid(session)?
         } else {
             // Slabs across the width, those inside a relief without its
             // bend, and each edge flange as a strip of its own starting on
@@ -123,8 +123,29 @@ pub(crate) trait EvaluatedSheetUnfoldingInternal {
     fn point(&self, point: (f64, f64)) -> Vec3;
 
     /// The closed outline of the strip's cross-section: both faces and the
-    /// two ends.
-    fn outline(&self) -> Vec<WireSegment>;
+    /// two ends, a closed or teardrop hem lying on its flange at either end
+    /// (schema 177); and the teardrops' enclosed voids as inner loops.
+    fn outline(&self) -> (Vec<WireSegment>, Vec<Vec<WireSegment>>);
+
+    /// The cap of a hem lying on its flange at a strip end `end` (2D), facing
+    /// outward along `d`, folded by `turn` (signed toward the hem's side,
+    /// seen looking out) at `radius`, with its flange `length`: the path from
+    /// the hem side's face, cut back by the returned distance, round to the
+    /// other face's end; and a teardrop's void.
+    #[allow(clippy::type_complexity)]
+    fn cap(
+        &self,
+        end: (f64, f64),
+        d: [f64; 2],
+        turn: f64,
+        radius: f64,
+        length: f64,
+        kind: HemEnd,
+    ) -> (Vec<OutlineSegment>, f64, Option<Vec<OutlineSegment>>);
+
+    /// The strip's cross-section, with any voids as holes, pushed across
+    /// the width and checked.
+    fn profile_solid<'a>(&self, session: &'a Session) -> Result<Shape<'a>, ModelError>;
 
     /// An edge flange as a strip of its own: from the base flange's width
     /// edge, a zero-length flange, its bend and its leg, extruded along the
@@ -187,22 +208,215 @@ impl EvaluatedSheetUnfoldingInternal for EvaluatedSheet {
         )
     }
 
-    fn outline(&self) -> Vec<WireSegment> {
-        let left = self.boundary(self.thickness * 0.5);
-        let right = self.boundary(-self.thickness * 0.5);
+    fn outline(&self) -> (Vec<WireSegment>, Vec<Vec<WireSegment>>) {
+        // The walk without hems lying on their flanges, which end the strip
+        // with caps instead of square ends.
+        let (lying_start, lying_end) = (
+            self.start_end != HemEnd::Plain,
+            self.end_end != HemEnd::Plain,
+        );
+        let core = EvaluatedSheet {
+            start: if lying_start {
+                self.flange_frames()[1]
+            } else {
+                self.start
+            },
+            flanges: self.flanges
+                [usize::from(lying_start)..self.flanges.len() - usize::from(lying_end)]
+                .to_vec(),
+            bends: self.bends[usize::from(lying_start)..self.bends.len() - usize::from(lying_end)]
+                .to_vec(),
+            cutouts: Vec::new(),
+            edge_flanges: Vec::new(),
+            reliefs: Vec::new(),
+            start_end: HemEnd::Plain,
+            end_end: HemEnd::Plain,
+            ..*self
+        };
+        let half = self.thickness * 0.5;
+        let mut left = core.boundary(half);
+        let mut right = core.boundary(-half);
+        let to3 = |segment: OutlineSegment| match segment {
+            OutlineSegment::Line(a, b) => WireSegment::Line {
+                start: self.point((a[0], a[1])),
+                end: self.point((b[0], b[1])),
+            },
+            OutlineSegment::Arc(a, m, b) => WireSegment::Arc {
+                start: self.point((a[0], a[1])),
+                middle: self.point((m[0], m[1])),
+                end: self.point((b[0], b[1])),
+            },
+        };
+        let mut inners = Vec::new();
+        // The end cap: from the hem side's truncated face to the other
+        // face's end, with the hem side and any void.
+        let mut end_path = None;
+        if lying_end {
+            let frames = core.flange_frames();
+            let at = advance(
+                frames[frames.len() - 1],
+                core.flanges[core.flanges.len() - 1],
+                None,
+                self.thickness,
+            );
+            let (turn, radius) = self.bends[self.bends.len() - 1];
+            let d = [at.1.cos(), at.1.sin()];
+            let (cap, back, inner) = self.cap(
+                at.0,
+                d,
+                turn,
+                radius,
+                self.flanges[self.flanges.len() - 1],
+                self.end_end,
+            );
+            let truncated = self.point((
+                at.0.0 - back * d[0] + turn.signum() * half * -d[1],
+                at.0.1 - back * d[1] + turn.signum() * half * d[0],
+            ));
+            let side = if turn > 0.0 { &mut left } else { &mut right };
+            if let Some(WireSegment::Line { end, .. }) = side.last_mut() {
+                *end = truncated;
+            }
+            let path: Vec<WireSegment> = cap.into_iter().map(to3).collect();
+            end_path = Some(if turn > 0.0 {
+                path
+            } else {
+                path.iter().rev().copied().map(reverse).collect()
+            });
+            inners.extend(inner.map(|loop_| loop_.into_iter().map(to3).collect::<Vec<_>>()));
+        }
+        let mut start_path = None;
+        if lying_start {
+            let ((x, y), angle) = core.start;
+            let (turn, radius) = self.bends[0];
+            let d = [-angle.cos(), -angle.sin()];
+            // Seen from the start, looking out of the strip, the hem's side
+            // is on the walk's opposite hand.
+            let (cap, back, inner) =
+                self.cap((x, y), d, -turn, radius, self.flanges[0], self.start_end);
+            let left_hand = [-angle.sin(), angle.cos()];
+            let side_sign = turn.signum();
+            let truncated = self.point((
+                x - back * d[0] + side_sign * half * left_hand[0],
+                y - back * d[1] + side_sign * half * left_hand[1],
+            ));
+            let side = if turn > 0.0 { &mut left } else { &mut right };
+            if let Some(WireSegment::Line { start, .. }) = side.first_mut() {
+                *start = truncated;
+            }
+            let path: Vec<WireSegment> = cap.into_iter().map(to3).collect();
+            // The outline closes from the right face's start to the left's.
+            start_path = Some(if turn > 0.0 {
+                path.iter().rev().copied().map(reverse).collect()
+            } else {
+                path
+            });
+            inners.extend(inner.map(|loop_| loop_.into_iter().map(to3).collect::<Vec<_>>()));
+        }
         let mut segments = left;
         let end_left = end(*segments.last().expect("nonempty flanges"));
         let end_right = end(*right.last().expect("nonempty flanges"));
-        segments.push(WireSegment::Line {
-            start: end_left,
-            end: end_right,
-        });
+        match end_path {
+            Some(path) => segments.extend(path),
+            None => segments.push(WireSegment::Line {
+                start: end_left,
+                end: end_right,
+            }),
+        }
+        let start_left = start(*segments.first().unwrap());
+        let start_right = start(*right.first().unwrap());
         segments.extend(right.iter().rev().copied().map(reverse));
-        segments.push(WireSegment::Line {
-            start: start(*right.first().unwrap()),
-            end: start(*segments.first().unwrap()),
-        });
-        segments
+        match start_path {
+            Some(path) => segments.extend(path),
+            None => segments.push(WireSegment::Line {
+                start: start_right,
+                end: start_left,
+            }),
+        }
+        (segments, inners)
+    }
+
+    fn cap(
+        &self,
+        end: (f64, f64),
+        d: [f64; 2],
+        turn: f64,
+        radius: f64,
+        length: f64,
+        kind: HemEnd,
+    ) -> (Vec<OutlineSegment>, f64, Option<Vec<OutlineSegment>>) {
+        let n = [-d[1] * turn.signum(), d[0] * turn.signum()];
+        let at = |[x, y]: [f64; 2]| [end.0 + x * d[0] + y * n[0], end.1 + x * d[1] + y * n[1]];
+        let t = self.thickness;
+        let half = t * 0.5;
+        if kind == HemEnd::Closed {
+            // The leaf on the flange's face, and the fold's half circle of
+            // radius t about the crease at the face's end.
+            return (
+                vec![
+                    OutlineSegment::Line(at([-length, half]), at([-length, 3.0 * half])),
+                    OutlineSegment::Line(at([-length, 3.0 * half]), at([0.0, 3.0 * half])),
+                    OutlineSegment::Arc(at([0.0, 3.0 * half]), at([t, half]), at([0.0, -half])),
+                ],
+                length,
+                None,
+            );
+        }
+        let g = TeardropGeometry::new(radius, turn.abs(), t)
+            .expect("a teardrop validated when the sheet was evaluated");
+        let on_roll =
+            |r: f64, theta: f64| [g.center[0] + r * theta.sin(), g.center[1] - r * theta.cos()];
+        let middle = turn.abs() * 0.5;
+        (
+            vec![
+                OutlineSegment::Line(at(g.outer_landing), at(g.outer_start)),
+                OutlineSegment::Arc(
+                    at(g.outer_start),
+                    at(on_roll(radius + t, middle)),
+                    at([0.0, -half]),
+                ),
+            ],
+            g.covered(),
+            Some(vec![
+                OutlineSegment::Arc(
+                    at([0.0, half]),
+                    at(on_roll(radius, middle)),
+                    at(g.inner_start),
+                ),
+                OutlineSegment::Line(at(g.inner_start), at(g.inner_landing)),
+                OutlineSegment::Line(at(g.inner_landing), at([0.0, half])),
+            ]),
+        )
+    }
+
+    fn profile_solid<'a>(&self, session: &'a Session) -> Result<Shape<'a>, ModelError> {
+        let (outer, inners) = self.outline();
+        if inners.is_empty() {
+            return self.solid(session, &outer);
+        }
+        let wire = session.create_segment_wire(&outer, true)?;
+        let holes = inners
+            .iter()
+            .map(|inner| session.create_segment_wire(inner, true))
+            .collect::<Result<Vec<_>, _>>()?;
+        let face = session.create_face_with_holes(&wire, &holes.iter().collect::<Vec<_>>())?;
+        if !session.is_valid(&face)? {
+            return Err(ModelError::new(
+                "sheet outline is self-intersecting or invalid",
+            ));
+        }
+        let solid = session.create_prism_from_face(&face, scale(self.width_axis, self.width))?;
+        let volume = session.volume(&solid)?;
+        if session.shape_type(&solid)? != ShapeType::Solid
+            || !session.is_valid(&solid)?
+            || !volume.is_finite()
+            || volume <= 0.0
+        {
+            return Err(ModelError::new(
+                "sheet outline did not produce one valid solid",
+            ));
+        }
+        Ok(solid)
     }
 
     fn edge_strip(&self, edge: &EvaluatedEdgeFlange) -> EvaluatedSheet {
@@ -231,6 +445,8 @@ impl EvaluatedSheetUnfoldingInternal for EvaluatedSheet {
             cutouts: Vec::new(),
             edge_flanges: Vec::new(),
             reliefs: Vec::new(),
+            start_end: HemEnd::Plain,
+            end_end: HemEnd::Plain,
         }
     }
 
@@ -281,6 +497,18 @@ impl EvaluatedSheetUnfoldingInternal for EvaluatedSheet {
                         cutouts: Vec::new(),
                         edge_flanges: Vec::new(),
                         reliefs: Vec::new(),
+                        // Hems lying on their flange are never relieved,
+                        // so they stay in the chains holding their flange.
+                        start_end: if first == 0 {
+                            self.start_end
+                        } else {
+                            HemEnd::Plain
+                        },
+                        end_end: if last + 1 == self.flanges.len() {
+                            self.end_end
+                        } else {
+                            HemEnd::Plain
+                        },
                     };
                     pieces.push(chain.piece(session)?);
                 }
@@ -291,8 +519,17 @@ impl EvaluatedSheetUnfoldingInternal for EvaluatedSheet {
     }
 
     fn piece<'a>(&self, session: &'a Session) -> Result<Shape<'a>, ModelError> {
-        let wire = session.create_segment_wire(&self.outline(), true)?;
-        let face = session.create_face_from_wire(&wire)?;
+        let (outer, inners) = self.outline();
+        let wire = session.create_segment_wire(&outer, true)?;
+        let face = if inners.is_empty() {
+            session.create_face_from_wire(&wire)?
+        } else {
+            let holes = inners
+                .iter()
+                .map(|inner| session.create_segment_wire(inner, true))
+                .collect::<Result<Vec<_>, _>>()?;
+            session.create_face_with_holes(&wire, &holes.iter().collect::<Vec<_>>())?
+        };
         Ok(session.create_prism_from_face(&face, scale(self.width_axis, self.width))?)
     }
 

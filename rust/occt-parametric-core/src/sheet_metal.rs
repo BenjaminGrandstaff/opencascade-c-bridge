@@ -144,6 +144,98 @@ pub enum SheetMetalHem {
         inside_radius: ScalarExpr,
         angle_radians: ScalarExpr,
     },
+    /// Folded flat through 180° onto its flange, with no gap, for `length`
+    /// (schema 177). The fold's inside is a crease and its outside a half
+    /// circle of the sheet's thickness.
+    Closed { side: HemSide, length: ScalarExpr },
+    /// Rolled through `angle_radians` (more than 180°) at `inside_radius`,
+    /// then straight on until it lands on its flange, enclosing a teardrop
+    /// (schema 177). The landing is cut on the flange's face, so the hem
+    /// joins the flange there.
+    Teardrop {
+        side: HemSide,
+        inside_radius: ScalarExpr,
+        angle_radians: ScalarExpr,
+    },
+}
+
+/// How a sheet ends: plainly (with any open or rolled hem), or in a hem
+/// that lies on its flange (schema 177).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum HemEnd {
+    #[default]
+    Plain,
+    Closed,
+    Teardrop,
+}
+
+/// A teardrop hem in the plane of its flange's end: x outward along the
+/// flange from its end, y toward the hem's side, origin on the midplane at
+/// the end. The roll is centred at `center`; the leg's inner and outer
+/// faces leave the roll at `inner_start` and `outer_start` and land on the
+/// flange's face (y = t/2) at `inner_landing` and `outer_landing`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TeardropGeometry {
+    pub center: [f64; 2],
+    pub inner_start: [f64; 2],
+    pub outer_start: [f64; 2],
+    pub inner_landing: [f64; 2],
+    pub outer_landing: [f64; 2],
+    /// The leg's midplane length from the roll to the flange's face.
+    pub leg: f64,
+}
+
+impl TeardropGeometry {
+    /// The teardrop of inside radius `radius` rolled through `angle`
+    /// (radians, unsigned) in sheet `thickness`, or why it cannot close: the
+    /// roll's outside would reach into the flange, or the leg would land
+    /// beyond the flange's end.
+    pub fn new(radius: f64, angle: f64, thickness: f64) -> Result<Self, ModelError> {
+        let limit = std::f64::consts::TAU - (radius / (radius + thickness)).acos();
+        if !(angle.is_finite() && angle > std::f64::consts::PI + 1e-6 && angle < limit - 1e-6) {
+            return Err(ModelError::new(format!(
+                "a teardrop hem's angle must lie between pi and {limit} radians, \
+                 where its roll would reach into its flange"
+            )));
+        }
+        let half = thickness * 0.5;
+        let middle = radius + half;
+        let center = [0.0, middle];
+        let (sin, cos) = angle.sin_cos();
+        let point = [center[0] + middle * sin, center[1] - middle * cos];
+        let heading = [cos, sin];
+        let inward = [-sin, cos];
+        let offset = |p: [f64; 2], d: f64| [p[0] + d * inward[0], p[1] + d * inward[1]];
+        let (inner_start, outer_start) = (offset(point, half), offset(point, -half));
+        let land = |p: [f64; 2]| {
+            let along = (half - p[1]) / heading[1];
+            (
+                [p[0] + along * heading[0], p[1] + along * heading[1]],
+                along,
+            )
+        };
+        let (inner_landing, _) = land(inner_start);
+        let (outer_landing, _) = land(outer_start);
+        let (_, leg) = land(point);
+        if inner_landing[0].is_nan() || inner_landing[0] >= -1e-6 * (1.0 + radius) {
+            return Err(ModelError::new(
+                "a teardrop hem's leg must land on its flange, behind its fold",
+            ));
+        }
+        Ok(Self {
+            center,
+            inner_start,
+            outer_start,
+            inner_landing,
+            outer_landing,
+            leg,
+        })
+    }
+
+    /// How far back along the flange from its end the hem covers it.
+    pub fn covered(&self) -> f64 {
+        -self.outer_landing[0]
+    }
 }
 
 impl SheetMetalHem {
@@ -154,17 +246,35 @@ impl SheetMetalHem {
                 inside_radius,
                 angle_radians,
                 ..
+            }
+            | Self::Teardrop {
+                inside_radius,
+                angle_radians,
+                ..
             } => [inside_radius, angle_radians],
+            Self::Closed { length, .. } => [length, length],
         }
     }
 
-    /// The hem's straight length (zero for a roll), signed turn and inside
-    /// radius.
+    /// How far back along its flange the hem lies on the flange (zero for
+    /// hems that do not), for keeping cutouts clear of it.
+    fn covered(&self, length: f64, turn: f64, radius: f64, thickness: f64) -> f64 {
+        match self {
+            Self::Closed { .. } => length,
+            Self::Teardrop { .. } => TeardropGeometry::new(radius, turn.abs(), thickness)
+                .map_or(0.0, |geometry| geometry.covered()),
+            _ => 0.0,
+        }
+    }
+
+    /// The hem's straight length (zero for a roll; a teardrop's leg), signed
+    /// turn and inside radius (zero for a closed hem), and how the sheet
+    /// ends.
     fn evaluate(
         &self,
         parameters: &HashMap<String, ParameterValue>,
         thickness: f64,
-    ) -> Result<(f64, f64, f64), ModelError> {
+    ) -> Result<(f64, f64, f64, HemEnd), ModelError> {
         let length = |e: &ScalarExpr| scalar(e, parameters, Dimension::Length);
         let sign = |side: &HemSide| match side {
             HemSide::Positive => 1.0,
@@ -186,7 +296,24 @@ impl SheetMetalHem {
                     positive(length(l)?)?,
                     sign(side) * std::f64::consts::PI,
                     gap * 0.5,
+                    HemEnd::Plain,
                 ))
+            }
+            Self::Closed { side, length: l } => Ok((
+                positive(length(l)?)?,
+                sign(side) * std::f64::consts::PI,
+                0.0,
+                HemEnd::Closed,
+            )),
+            Self::Teardrop {
+                side,
+                inside_radius,
+                angle_radians,
+            } => {
+                let radius = positive(length(inside_radius)?)?;
+                let angle = scalar(angle_radians, parameters, Dimension::Scalar)?;
+                let geometry = TeardropGeometry::new(radius, angle, thickness)?;
+                Ok((geometry.leg, sign(side) * angle, radius, HemEnd::Teardrop))
             }
             Self::Rolled {
                 side,
@@ -206,7 +333,7 @@ impl SheetMetalHem {
                          where the roll would reach back into its flange"
                     )));
                 }
-                Ok((0.0, sign(side) * angle, radius))
+                Ok((0.0, sign(side) * angle, radius, HemEnd::Plain))
             }
         }
     }
@@ -686,8 +813,13 @@ impl SheetMetalDefinition {
         let mut edge_flanges = self.evaluate_edge_flanges(parameters, &flanges, width)?;
         let (mut flanges, mut bends) = (flanges, bends);
         let mut start = ((0.0, 0.0), 0.0);
+        let user_flanges = flanges.clone();
+        let (mut start_end, mut end_end) = (HemEnd::Plain, HemEnd::Plain);
+        let mut covered = [0.0, 0.0];
         if let Some(hem) = &self.start_hem {
-            let (length, turn, radius) = hem.evaluate(parameters, thickness)?;
+            let (length, turn, radius, ending) = hem.evaluate(parameters, thickness)?;
+            start_end = ending;
+            covered[0] = hem.covered(length, turn, radius, thickness);
             // Walk the hem from a trial start, then shift it to end at the
             // origin heading along the first flange.
             let (end, _) = advance(((0.0, 0.0), -turn), length, Some((turn, radius)), thickness);
@@ -700,13 +832,53 @@ impl SheetMetalDefinition {
                 .for_each(|(flange, _)| flange.flange += 1);
         }
         if let Some(hem) = &self.end_hem {
-            let (length, turn, radius) = hem.evaluate(parameters, thickness)?;
+            let (length, turn, radius, ending) = hem.evaluate(parameters, thickness)?;
+            end_end = ending;
+            covered[1] = hem.covered(length, turn, radius, thickness);
             bends.push((turn, radius));
             flanges.push(length);
         }
+        // A hem lying on its flange must stay on it, clear of its cutouts.
+        let last = user_flanges.len() - 1;
+        for (end, flange, length) in [(0, 0, covered[0]), (1, last, covered[1])] {
+            if length <= 0.0 {
+                continue;
+            }
+            let tolerance = 1e-9 * (1.0 + user_flanges[flange]);
+            if length >= user_flanges[flange] - tolerance {
+                return Err(ModelError::new(
+                    "a closed or teardrop hem must lie within its flange",
+                ));
+            }
+            for cutout in &self.evaluate_cutouts(parameters, &user_flanges, width)? {
+                let (half, _) = cutout.outline.half_extents();
+                let clear = if end == 0 {
+                    cutout.along - half >= length
+                } else {
+                    cutout.along + half <= user_flanges[flange] - length
+                };
+                if cutout.flange == flange && !clear {
+                    return Err(ModelError::new(format!(
+                        "cutout '{}' lies under a closed or teardrop hem",
+                        cutout.id
+                    )));
+                }
+            }
+        }
         let reliefs = relieve(&edge_flanges, &flanges, bends.len(), width)?;
+        let lying = |bend: usize| {
+            (bend == 0 && start_end != HemEnd::Plain && self.start_hem.is_some())
+                || (bend + 1 == bends.len() && end_end != HemEnd::Plain && self.end_hem.is_some())
+        };
+        if reliefs.iter().any(|relief| lying(relief.bend)) {
+            return Err(ModelError::new(
+                "a closed or teardrop hem's bend cannot be relieved",
+            ));
+        }
         let edge_flanges = edge_flanges.into_iter().map(|(flange, _)| flange).collect();
         let result = EvaluatedSheet {
+            start_end,
+            end_end,
             edge_flanges,
             reliefs,
             start,
@@ -1021,6 +1193,10 @@ pub struct EvaluatedSheet {
     /// Edge flanges on the internal flange numbering (schema 176).
     pub edge_flanges: Vec<EvaluatedEdgeFlange>,
     pub reliefs: Vec<EvaluatedRelief>,
+    /// Hems lying on their flange at the start and end (schema 177); their
+    /// bend and flange are the first and last in `bends` and `flanges`.
+    pub start_end: HemEnd,
+    pub end_end: HemEnd,
 }
 
 impl EvaluatedSheet {

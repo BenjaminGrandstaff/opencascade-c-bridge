@@ -12,12 +12,12 @@ tracks status and order.
 | `occt-types` (shared value types) | — | No native dependency |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI; re-exports `occt-types` |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric-core` (kernel-free engineering layer) | Schema 176 | Definitions, documents, solving and checks without OCCT |
-| `occt-parametric` (kernel regeneration) | Schema 176 | Active development; re-exports the core API |
+| `occt-parametric-core` (kernel-free engineering layer) | Schema 177 | Definitions, documents, solving and checks without OCCT |
+| `occt-parametric` (kernel regeneration) | Schema 177 | Active development; re-exports the core API |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 7/7, bridge 174 + first-use integration 1 (+1 doc test), recipes 3, parametric core 57 + kernel 784 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 95 + viewer Node 462 + branch command 2 + model command 95, MCP Python 14, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 7/7, bridge 174 + first-use integration 1 (+1 doc test), recipes 3, parametric core 57 + kernel 788 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 95 + viewer Node 462 + branch command 2 + model command 95, MCP Python 14, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -25,6 +25,14 @@ tracks status and order.
 | Scale benchmarks | Last full suite: 194 Rust cases (198 with the parallel glTF, 1,000-part view, advanced sweep and tray cases) plus 5 model-command cases and a 10,000-face Python matcher. Sketch authoring integration rechecked 60 sketch cases and 60 MCP cases within budget. | `tools/bench/run.sh` |
 
 ## Done
+
+- Closed and teardrop sheet-metal hems (schema 177, no ABI change). A
+  closed hem folds flat onto its flange; a teardrop rolls past half a turn
+  and lands on its flange around a void that runs through the width. Both
+  cap the strip's outline (the void as an inner loop) and unfold exactly:
+  folded and flat volumes agree at K = 0.5, at either end and on either
+  side, and with edge flanges and reliefs. Each costs 1–2 ms per sheet,
+  like an open hem. See [hems](docs/SHEET_METAL.md#closed-and-teardrop-hems-schema-177).
 
 - Hollow loft station diagnostics (schema 176 / ABI 83 unchanged): source
   diagnosis now shares construction's exact planar-region validation, checking
@@ -51,7 +59,7 @@ tracks status and order.
   joined by a new glued fuse (`occt_bridge_fuse_glued`: OCCT glue mode
   plus face merging). Folded and flat volumes agree exactly at K = 0.5. 500
   trays with linked blanks build or rebuild in about 10 s each way. See
-  [edge flanges](docs/SHEET_METAL.md#edge-flanges-and-bend-reliefs-schema-175-abi-82).
+  [edge flanges](docs/SHEET_METAL.md#edge-flanges-and-bend-reliefs-schema-176-abi-83).
 
 - Advanced sweeps (schema 175, ABI 82). Sweeps now take these options:
   - a twist about the path, linear or smooth;

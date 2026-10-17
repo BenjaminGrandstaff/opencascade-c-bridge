@@ -141,6 +141,45 @@ Tests check exact folded and flat volumes with hems, the 1 mm gap of an
 open hem on each side by a probe at its center, a rolled start hem's extent
 and that it leaves flange 0 and its hole in place, and the rejected cases.
 
+### Closed and teardrop hems (schema 177)
+
+```json
+"end_hem": { "kind": "closed", "side": "positive", "length": 10 },
+"start_hem": { "kind": "teardrop", "side": "negative", "inside_radius": 2, "angle_radians": 5.03 }
+```
+
+- **Closed hem.** Folded flat through 180° onto its flange, with no gap,
+  for `length`. The fold's inside is a crease, and its outside a half
+  circle of radius t about the crease. The leaf lies on the flange's
+  face, so the hem and flange are one solid, a sheet's thickness thicker
+  over the leaf.
+- **Teardrop hem.** Rolled through `angle_radians` at `inside_radius`,
+  then straight on until it lands on its flange's face. There it is cut
+  on that face, so the hem joins the flange and encloses a teardrop void.
+  The void runs through the width as a hole in the profile.
+  `TeardropGeometry::new` gives the roll, the leg's landing points and its
+  midplane length. The angle must exceed π, and stay below
+  `2π − acos(r / (r + t))` so the roll stays clear of the flange. The
+  leg must land behind the fold, within the flange.
+- **On the flange.** Either hem must lie within its flange. Cutouts may not
+  lie under it, and its bend cannot be relieved by an edge flange.
+- **Blank.** A closed hem is a 180° bend at zero inside radius: its
+  allowance at K is `π K t`. A teardrop is its roll's bend and then its
+  leg's midplane length. At K = 0.5 the blank's volume equals the folded
+  hem's exactly. That covers the half disc of the closed fold, and the
+  mitred leg, whose area is t times its midplane length. A bend table
+  must cover the hem's bend like any other, so a closed hem (radius 0)
+  needs K.
+- **Construction.** The strip's outline ends in a cap instead of a square
+  end. The hem side's face is cut back to where the hem lands, then the
+  cap runs round the fold to the other face. A teardrop adds the void as
+  an inner loop. Each costs about what an open hem does, 1–2 ms per sheet.
+
+Tests check both kinds at either end and on either side against analytic
+volumes and bounds. They also check that a teardrop is one shell, with its
+void, and a closed hem on a tray whose walls and reliefs take the slab path.
+The rejected cases are covered too.
+
 ## Edge flanges and bend reliefs (schema 176, ABI 83)
 
 `SheetMetalDefinition.edge_flanges` folds flanges up from the strip's width
@@ -262,7 +301,7 @@ interpolated length is checked exactly, against a 1 s budget.
 The strip itself is constant-width, with its bends sharing one axis
 direction; edge flanges fold about the perpendicular axis (schema 176).
 Edge flanges on edge flanges, cutouts in edge flanges, corner closures where
-edge flanges meet, closed and teardrop hems, cutouts across bends,
+edge flanges meet, cutouts across bends,
 corner treatments, tables keyed by material or across thicknesses,
 springback, and mold-line (outside setback) dimensioning
 are not supported. Flange lengths are measured on the midplane between tangent

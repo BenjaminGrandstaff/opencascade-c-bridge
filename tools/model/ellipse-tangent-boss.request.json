@@ -1,7 +1,7 @@
 {
   "schema": "occb-model-view-v1",
   "model": {
-    "schema_version": 176,
+    "schema_version": 177,
     "family": {
       "id": "ellipse-tangent-boss",
       "version": 1,

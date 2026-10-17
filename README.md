@@ -424,7 +424,7 @@ using an explicit neutral factor, with flat-pattern drawings for SVG and DXF;
 schema 160 adds circle, rectangle and slot cutouts through flanges, cut
 alike in the folded sheet and its blank, and schema 161 adds bend tables
 of measured allowances or deductions in place of the neutral factor, and
-schema 162 adds open and rolled hems at either end, and schema 176 adds edge flanges on either width edge with bend reliefs and tabbed blanks; see [Sheet metal](docs/SHEET_METAL.md). It also adds frozen Carr Lane V1 tap-drill
+schema 162 adds open and rolled hems at either end, schema 176 adds edge flanges on either width edge with bend reliefs and tabbed blanks, and schema 177 adds closed and teardrop hems; see [Sheet metal](docs/SHEET_METAL.md). It also adds frozen Carr Lane V1 tap-drill
 and socket-head counterbore catalogs in metric and inch sizes; see
 [Hole-size catalog](docs/HOLE_SIZE_CATALOG.md). Schema 163 adds ISO 286
 tolerance classes (H6–H13 and h6–h13, to 500 mm) on drawing dimensions and
