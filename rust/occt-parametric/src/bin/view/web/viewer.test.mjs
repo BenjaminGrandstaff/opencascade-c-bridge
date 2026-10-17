@@ -1,7 +1,7 @@
 // Run: node --test rust/occt-parametric/src/bin/view/web/viewer.test.mjs
 import assert from "node:assert/strict";
 import test from "node:test";
-import { encodeGlb, eye, fitCamera, instanceGroups, mergeSingles, packNormals, pan, parseGlb, parseGltf, viewProjection } from "./viewer.mjs";
+import { createRenderer, encodeGlb, eye, fitCamera, instanceGroups, mergeSingles, packNormals, pan, parseGlb, parseGltf, viewProjection } from "./viewer.mjs";
 
 function gltf() {
   // One triangle, drawn by two nodes translated apart along X.
@@ -190,4 +190,24 @@ test("parts drawn once merge into world-space batches with offset indices", () =
   assert.deepEqual([...batch.normals.slice(0, 3)], [0, 0, 32767]);
   // A cap splits batches without splitting a part.
   assert.equal(mergeSingles(parsed, [0, 1], 4).length, 2);
+});
+
+
+test("retained GPU models restore after previews without reuploading discarded CPU normals", () => {
+  let serial=0; const uploaded=[],deleted=[];
+  const gl=new Proxy({
+    createBuffer:()=>({id:++serial}),createShader:()=>({}),createProgram:()=>({}),
+    getShaderParameter:()=>true,getProgramParameter:()=>true,getAttribLocation:()=>0,getUniformLocation:()=>0,
+    bufferData:(_target,data)=>uploaded.push(data),deleteBuffer:buffer=>deleted.push(buffer),
+  },{get:(target,key)=>key in target?target[key]:()=>{}});
+  const renderer=createRenderer({getContext:()=>gl});
+  const accepted=parseGlb(glb()); renderer.setModel(accepted,{retain:true});
+  assert.equal(accepted.meshes[0].normals,null);assert.equal(accepted.meshes[0].edges,null);
+  const acceptedUploads=uploaded.length;
+  renderer.setModel(parseGlb(glb())); assert.equal(deleted.length,0,'accepted buffers are parked');
+  const beforeRestore=uploaded.length;
+  renderer.setModel(accepted,{retain:true});assert.equal(uploaded.length,beforeRestore,'restoring needs no CPU payload');assert.equal(deleted.length,acceptedUploads,'preview buffers released');
+  renderer.setModel(parseGlb(glb()));renderer.setModel(parseGlb(glb()));
+  const beforeReload=deleted.length;
+  renderer.setModel(parseGlb(glb()),{retain:true});assert.equal(deleted.length-beforeReload,2*acceptedUploads,'reload releases active preview and parked accepted model');
 });

@@ -321,13 +321,22 @@ the total depth equally about the profile plane. A profile on the top of a plate
 can cut a pocket by extruding toward the plate, for example direction `(0,0,-1)`.
 **Show source sketch** switches the annotated view to its authored geometry.
 
-The **Feature list** opens existing distance/symmetric extrusions, revolutions
+The **Feature list** opens existing extrusions, revolutions
 and sweeps for editing.
 Their IDs stay stable. Known direction/depth expressions retain their authored
 form when unchanged; other formulas have a **Keep existing direction and formula**
 choice and are replaced only when you explicitly choose entered values or a
-parameter. Geometric cutoff extents and editing other operation types remain
-outside this panel.
+parameter. Editing other operation types remains outside this panel.
+
+**Up to next face** and **Up to selected face** use a saved **Limiting feature**
+instead of an entered depth. The direction vector supplies orientation only.
+Up to next chooses the first face covering the complete profile strictly
+forward; selected faces use minimum/maximum face center on a family X/Y/Z axis.
+Selections must resolve one finite covering face. Native preview rejects
+ambiguous, partial or backward limits. Existing direction formulas and arbitrary
+saved face selectors have preserve options; explicit entered values replace
+them. These references stay live when the limiting feature moves, including in
+union/cut tools. Every instance must pass before Apply.
 
 Choose **Solid feature → Revolution** to turn a profile about a family-coordinate
 axis. Set its origin in millimetres and a finite, nonzero direction. In the studio

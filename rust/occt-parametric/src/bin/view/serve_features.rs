@@ -2,8 +2,8 @@
 //! operations, never requirement removal or changes to the accepted document.
 use super::*;
 use occt_parametric::{
-    ExtrudeExtent, FeatureDefinition, FeatureOperation, Requirement, RequirementKind,
-    RequirementPriority, VerificationRule, Volume,
+    FeatureDefinition, FeatureOperation, Requirement, RequirementKind, RequirementPriority,
+    VerificationRule, Volume,
 };
 
 impl Studio {
@@ -56,18 +56,15 @@ impl Studio {
                 return Err("Feature IDs must be distinct.".into());
             }
             match &feature.operation {
-                FeatureOperation::Extrude {
-                    extent: ExtrudeExtent::Distance | ExtrudeExtent::Symmetric,
-                    ..
-                } => (),
-                FeatureOperation::ProfileLoft { .. }
+                FeatureOperation::Extrude { .. }
+                | FeatureOperation::ProfileLoft { .. }
                 | FeatureOperation::Sweep { .. }
                 | FeatureOperation::Revolve { .. }
                 | FeatureOperation::Fuse { .. }
                 | FeatureOperation::Cut { .. } => (),
                 _ => {
                     return Err(
-                        "Solid controls support distance/symmetric extrusions, revolutions, sweeps, profile lofts, unions and cuts."
+                        "Solid controls support extrusions, revolutions, sweeps, profile lofts, unions and cuts."
                             .into(),
                     );
                 }

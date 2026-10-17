@@ -1,3 +1,4 @@
+import {extrusionExtent,extrusionExtentMode,checkedExtrusionExtent} from './solid-extrusion.mjs';
 import {loftDefinition,editLoftStations} from './solid-loft.mjs';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
@@ -154,5 +155,37 @@ test('loft form reorders outer and hole profiles together and preserves edited n
  await button(host,'Preview solid').onclick();assert.deepEqual(calls[1].features,[saved]);
  await button(host,'Add loft hole track').onclick();assert(control(host,'Hole 2 at station 3'));await button(host,'Remove loft hole track 2').onclick();assert.equal(control(host,'Hole 2 at station 3'),undefined);
  assert.deepEqual(features.at(-1),saved);
+ }finally{delete globalThis.document;delete globalThis.Option;}
+});
+
+
+test('geometric extrusion extents retain semantic face selectors and reject missing/self limits',()=>{
+ const features=[...base,{id:'stop',operation:{box:{}}}],selector={persistent:{feature:'stop',selector:{largest_area:{planar_only:true,allow_ties:false,relative_tolerance:{literal:{value:1e-6,dimension:'scalar',unit:null}}}}}};
+ const next=extrusionExtent('up_to_next','stop'),face=extrusionExtent('up_to_face','stop','z:maximum');assert.deepEqual(next,{up_to_next:{target:'stop'}});assert.equal(face.up_to_face.face.at_extreme.axis,'z');assert.equal(extrusionExtentMode(face),'up_to_face');
+ assert.deepEqual(extrusionExtent('up_to_face','stop','preserve',selector).up_to_face.face,selector);
+ for(const extent of ['up_to_next',{up_to_next:{target:'missing'}},{up_to_next:{target:'profile'}},{up_to_face:{target:'stop'}},{}])assert.throws(()=>checkedExtrusionExtent(features,extent,'profile','made'));
+ for(const mode of ['new','cut','fuse']){const graph=solidChanges(features,{id:'made',mode,input:'profile',direction:extrusionDirection([0,0,1],depth(1)),extent:face,target:'body'});assert.deepEqual(graph.features[0].operation.extrude.extent,face);}
+ assert.throws(()=>extrusionExtent('up_to_face','stop','invalid'),/face/);assert.throws(()=>extrusionExtent('up_to_face','stop','preserve'),/face/);
+});
+test('geometric extrusion forms hide depth and preserve existing face and direction formulas',async()=>{
+ globalThis.document={createElement:tag=>new Element(tag)};globalThis.Option=class extends Element{constructor(text,value){super('option');this.textContent=text;this.value=value;}};
+ try{
+ const host=new Element('div'),calls=[],selector={normal_aligned:{direction:{parameter:'face-normal'},minimum_dot:{literal:{value:0.9999,dimension:'scalar',unit:null}}}};
+ const saved={id:'limited',operation:{extrude:{input:'profile',direction:{parameter:'travel'},extent:{up_to_face:{target:'stop',face:selector}}}}};
+ const features=[...base,{id:'stop',operation:{box:{}}},saved];
+ createSolidEditor({host,instance:()=> 'part',preview:async()=>{},applied:async()=>{},restore:async()=>{},request:async(path,options)=>{if(!options)return {version:1,features,output:'limited',parameters:[]};calls.push(JSON.parse(options.body));return {can_apply:true};}});
+ await button(host,'Sketch to solid').onclick();await button(host,'Edit extrusion limited').onclick();assert.equal(control(host,'Extrusion extent').value,'up_to_face');assert.equal(control(host,'Extrusion depth (mm)'),undefined);assert.equal(control(host,'Limiting face').value,'preserve');assert.equal(control(host,'Direction Z').disabled,true);
+ await button(host,'Preview solid').onclick();assert.deepEqual(calls[0].features,[saved]);
+ control(host,'Extrusion extent').value='up_to_next';control(host,'Extrusion extent').onchange();assert.equal(control(host,'Limiting face'),undefined);await button(host,'Preview solid').onclick();assert.deepEqual(calls[1].features[0].operation.extrude.extent,{up_to_next:{target:'stop'}});assert.deepEqual(calls[1].features[0].operation.extrude.direction,saved.operation.extrude.direction);
+ control(host,'Extrusion direction source').value='literal';control(host,'Extrusion direction source').onchange();control(host,'Direction Z').value='-5';control(host,'Direction Z').oninput();await button(host,'Preview solid').onclick();assert.equal(calls[2].features[0].operation.extrude.direction.components.z.multiply[1].literal.value,-1);
+ assert.deepEqual(saved.operation.extrude.extent.up_to_face.face,selector);
+ }finally{delete globalThis.document;delete globalThis.Option;}
+});
+test('new geometric extrusions accept entered directions and switching to depth restores distance controls',async()=>{
+ globalThis.document={createElement:tag=>new Element(tag)};globalThis.Option=class extends Element{constructor(text,value){super('option');this.textContent=text;this.value=value;}};
+ try{
+ const host=new Element('div'),calls=[];createSolidEditor({host,instance:()=> 'part',preview:async()=>{},applied:async()=>{},restore:async()=>{},request:async(path,options)=>{if(!options)return {version:1,features:base,output:'body',parameters:[]};calls.push(JSON.parse(options.body));return {can_apply:true};}});
+ await button(host,'Sketch to solid').onclick();control(host,'Result feature name').value='to-body';control(host,'Result feature name').oninput();control(host,'Extrusion extent').value='up_to_face';control(host,'Extrusion extent').onchange();assert.equal(control(host,'Limiting feature').value,'body');control(host,'Limiting face').value='z:minimum';control(host,'Limiting face').onchange();await button(host,'Preview solid').onclick();assert.equal(calls[0].features[0].operation.extrude.extent.up_to_face.face.at_extreme.extremum,'minimum');
+ control(host,'Extrusion extent').value='distance';control(host,'Extrusion extent').onchange();assert(control(host,'Extrusion depth (mm)'));assert.equal(control(host,'Limiting feature'),undefined);
  }finally{delete globalThis.document;delete globalThis.Option;}
 });

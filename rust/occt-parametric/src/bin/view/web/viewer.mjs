@@ -566,6 +566,7 @@ export function createRenderer(canvas) {
   // Draw items: { color, position, normal, faces, edges, instances? }.
   let items = [];
   let owned = [];
+  let retained = false, parked = null;
 
   function upload(target, data) {
     const buffer = gl.createBuffer();
@@ -658,12 +659,34 @@ export function createRenderer(canvas) {
     /**
      * Uploads a parsed model. Its normals and edge indices then live only on
      * the GPU (the parsed meshes drop them); positions and indices stay for
-     * picking.
+     * picking. With `retain`, keep these GPU buffers available while a temporary
+     * model is shown; replacing the retained model releases the previous one.
      */
-    setModel(parsed) {
-      if (parsed === model && items.length) return;
-      release();
-      model = parsed;
+    setModel(parsed, { retain = false } = {}) {
+      // Studio previews borrow the view while the accepted model stays on the
+      // GPU. Keep at most one such model; no CPU normal/edge copies are needed.
+      const dropParked = () => {
+        if (parked) for (const buffer of parked.owned) gl.deleteBuffer(buffer);
+        parked = null;
+      };
+      if (parsed === model && items.length) {
+        retained = retain;
+        if (retain) dropParked();
+        return;
+      }
+      if (parked?.model === parsed) {
+        release();
+        ({model, items, owned} = parked);
+        parked = null; retained = retain;
+        return;
+      }
+      if (retained && !retain) {
+        dropParked();
+        parked = {model, items, owned};
+        items = []; owned = [];
+      } else release();
+      if (retain) dropParked();
+      model = parsed; retained = retain;
       const groups = instanceGroups(parsed);
       const singles = [];
       groups.forEach((group, mesh) => {

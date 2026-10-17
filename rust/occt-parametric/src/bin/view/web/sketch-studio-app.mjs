@@ -114,7 +114,7 @@ export function startStudio(document) {
     studio.modelState = state;
     studio.parsed = parseGlb(gltf);
     studio.solidPreview = null;
-    renderer?.setModel(studio.parsed);
+    renderer?.setModel(studio.parsed, {retain: true});
     studio.scenes = annotations.scenes ?? [];
     studio.datums = state.datums ?? [];
     studio.planes = annotations.datum_planes ?? [];
@@ -139,7 +139,7 @@ export function startStudio(document) {
   studio.setSolidPreview = gltf => {
     if (!gltf && !studio.solidPreview) return;
     studio.solidPreview = gltf ? parseGltf(gltf) : null;
-    renderer?.setModel(studio.solidPreview ?? studio.parsed);
+    renderer?.setModel(studio.solidPreview ?? studio.parsed, {retain: !studio.solidPreview});
     redraw();
   };
 

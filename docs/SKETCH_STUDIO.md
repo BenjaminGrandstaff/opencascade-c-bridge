@@ -255,9 +255,24 @@ normalized vector in family coordinates; changing its signs reverses travel.
 **One direction** starts on the sketch plane; **Symmetric** uses the entered
 depth as total travel on both sides of it. **Show source sketch** changes the
 active layer while retaining the form. The feature list exposes **Edit
-extrusion …** for existing distance/symmetric extrusions. Editing preserves the
+extrusion …** for existing extrusions. Editing preserves the
 feature name and untouched parameter/formula drivers; the preserve option keeps
 a direction expression that the simple fields cannot represent.
+
+For geometry-driven end conditions, choose **Up to next face** or **Up to
+selected face** and a **Limiting feature**. Direction X/Y/Z supplies orientation;
+the geometry sets travel, so depth controls are hidden. Up to next finds the
+nearest face of that feature that covers the entire profile strictly forward.
+Selected faces use minimum/maximum face center along a family X/Y/Z axis. A
+selector must resolve one valid covering face; ties, incomplete coverage and
+backward limits are rejected by native preview.
+
+Editing an existing geometric extrusion preserves its direction formula and
+face selector by default, including selectors authored outside the studio.
+Explicitly choose entered direction or another face to replace them. Limiting
+feature references remain live, so parameter changes that move the limit also
+regenerate the extrusion. These end conditions work for new solids and
+union/cut tools and are validated in every family instance.
 
 For **Revolution**, enter the axis origin in millimetres and a nonzero axis in
 family coordinates. The initial studio axis follows the sketch's local Y axis
@@ -299,7 +314,8 @@ whole family before Apply.
 **Preview solid** displays the native validated mesh in the 3D viewer, with
 solid count and volume for the selected instance in the form. Fit uses the
 preview's bounds. The accepted model, file, version and history remain unchanged.
-The preview uses the glTF mesh already produced by solid validation. Closing the
+The preview uses the glTF mesh already produced by solid validation. The accepted
+model stays available in GPU memory while a preview is shown. Closing the
 panel, Escape, changing a field, switching tools/layers, starting sketch edits
 or reloading restores the accepted model; late replies cannot restore an old
 preview. A rejected preview also restores the accepted view and retains the form

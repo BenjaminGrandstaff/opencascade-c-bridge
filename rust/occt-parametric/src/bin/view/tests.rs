@@ -1915,6 +1915,160 @@ fn profile_loft_controls_reject_hole_tracks_that_fail_another_instance() {
     assert_eq!(get(&mut studio, "/api/state").1, state);
 }
 
+fn extrusion_limit_document() -> ModelDocument {
+    let mut request: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../tools/model/extrusion-limits.request.json"
+    ))
+    .unwrap();
+    request["model"]["family"]["parameters"][2]["default"]["scalar"]["value"] = json!(10);
+    let mut lifted = request["model"]["family"]["features"][0].clone();
+    lifted["id"] = json!("lifted");
+    lifted["operation"]["sketch_face"]["sketch"]["id"] = json!("lifted-profile");
+    lifted["operation"]["sketch_face"]["sketch"]["origin"]["literal"]["z"]["value"] = json!(2);
+    request["model"]["family"]["features"]
+        .as_array_mut()
+        .unwrap()
+        .push(lifted);
+    request["model"]["instances"].as_array_mut().unwrap().push(json!({"clone":{"id":"thin","source":"block","overrides":{"depth":{"scalar":{"value":5,"dimension":"length","unit":"millimeter"}}},"provenance":"test"}}));
+    ModelDocument::from_json(&request["model"].to_string()).unwrap()
+}
+
+#[test]
+fn geometric_extrusion_controls_follow_limits_and_save_unflattened_boolean_tools() {
+    for (mode, face, profile, volume, thin_volume) in [
+        ("new", false, "profile", 10000.0, 5000.0),
+        ("new", true, "profile", 12000.0, 7000.0),
+        ("cut", false, "lifted", 2000.0, 2000.0),
+        ("fuse", true, "profile", 12000.0, 7000.0),
+    ] {
+        let directory = Directory::new();
+        let document = extrusion_limit_document();
+        let model = PathBuf::from(directory.model(&document));
+        let mut studio = serve::Studio::load(&model, Some("body".into())).unwrap();
+        assert_eq!(
+            studio.handle("GET", "/solid-extrusion.mjs", b"").status,
+            200
+        );
+        let data = get(&mut studio, "/api/features").1;
+        let state = get(&mut studio, "/api/state").1;
+        let mesh = studio.handle("GET", "/api/model.gltf", b"").body;
+        let extent = if face {
+            json!({"up_to_face":{"target":"limit","face":{"at_extreme":{"axis":"z","extremum":"maximum","tolerance":{"literal":{"value":1e-6,"dimension":"length","unit":"millimeter"}}}}}})
+        } else {
+            json!({"up_to_next":{"target":"limit"}})
+        };
+        let tool = json!({"id":"tool","operation":{"extrude":{"input":profile,"direction":{"components":{"x":{"literal":{"value":0,"dimension":"length","unit":"millimeter"}},"y":{"literal":{"value":0,"dimension":"length","unit":"millimeter"}},"z":{"literal":{"value":1,"dimension":"length","unit":"millimeter"}}}},"extent":extent}}});
+        let features = match mode {
+            "cut" => {
+                json!([tool,{"id":"result","operation":{"cut":{"object":"body","tool":"tool"}}}])
+            }
+            "fuse" => {
+                json!([tool,{"id":"result","operation":{"fuse":{"left":"body","right":"tool"}}}])
+            }
+            _ => json!([tool]),
+        };
+        let output = if mode == "new" { "tool" } else { "result" };
+        let mut edit = json!({"version":data["version"],"instance":"block","expected":data["features"],"action":"add","features":features,"output":output,"apply":false});
+        let response = studio.handle("POST", "/api/features", edit.to_string().as_bytes());
+        assert_eq!(
+            response.status,
+            200,
+            "{}",
+            String::from_utf8_lossy(&response.body)
+        );
+        let result: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+        assert_eq!(result["can_apply"], true, "{}", result["error"]);
+        assert!(
+            (result["geometry"]["block"]["volume_mm3"].as_f64().unwrap() - volume).abs() < 1e-6
+        );
+        assert!(
+            (result["geometry"]["thin"]["volume_mm3"].as_f64().unwrap() - thin_volume).abs() < 1e-6
+        );
+        assert!(!result["gltf"]["meshes"].as_array().unwrap().is_empty());
+        assert_eq!(get(&mut studio, "/api/state").1, state);
+        assert_eq!(studio.handle("GET", "/api/model.gltf", b"").body, mesh);
+        edit["apply"] = json!(true);
+        assert_eq!(
+            studio
+                .handle("POST", "/api/features", edit.to_string().as_bytes())
+                .status,
+            200
+        );
+        history(&mut studio, "undo");
+        assert_eq!(
+            get(&mut studio, "/api/features").1["features"],
+            data["features"]
+        );
+        history(&mut studio, "redo");
+        assert_eq!(studio.handle("POST", "/api/save", b"").status, 200);
+        let saved = ModelDocument::from_json(&fs::read_to_string(&model).unwrap()).unwrap();
+        let expected: FeatureDefinition =
+            serde_json::from_value(edit["features"][0].clone()).unwrap();
+        assert_eq!(
+            saved.family.features.iter().find(|f| f.id == "tool"),
+            Some(&expected)
+        );
+        assert_eq!(saved.family.parameters, document.family.parameters);
+        // Later parameter changes move the limiting feature and regenerate the dependent solid.
+        let response = studio.handle("POST", "/api/parameters", br#"{"set":{"depth":12}}"#);
+        assert_eq!(
+            response.status,
+            200,
+            "{}",
+            String::from_utf8_lossy(&response.body)
+        );
+        let current = get(&mut studio, "/api/features").1;
+        let preview = json!({"version":current["version"],"instance":"block","expected":current["features"],"action":"add","features":[{"id":"moved-check","operation":{"extrude":{"input":"profile","direction":{"components":{"x":{"literal":{"value":0,"dimension":"length","unit":"millimeter"}},"y":{"literal":{"value":0,"dimension":"length","unit":"millimeter"}},"z":{"literal":{"value":1,"dimension":"length","unit":"millimeter"}}}},"extent":extent}}}],"output":"moved-check","apply":false});
+        let response = studio.handle("POST", "/api/features", preview.to_string().as_bytes());
+        assert_eq!(response.status, 200);
+        let moved: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+        assert_eq!(moved["can_apply"], true, "{}", moved["error"]);
+        assert!(
+            (moved["geometry"]["block"]["volume_mm3"].as_f64().unwrap()
+                - if face { 14000.0 } else { 12000.0 })
+            .abs()
+                < 1e-6
+        );
+    }
+}
+
+#[test]
+fn geometric_extrusion_controls_reject_limits_behind_another_instance() {
+    let directory = Directory::new();
+    let mut document = extrusion_limit_document();
+    let InstanceNode::Clone { overrides, .. } = &mut document.instances[1] else {
+        panic!()
+    };
+    overrides.insert(
+        "depth".into(),
+        ParameterValue::Scalar(Quantity::length(2.0, LengthUnit::Millimeter)),
+    );
+    let FeatureOperation::SketchFace { sketch } =
+        &mut document.family.features.last_mut().unwrap().operation
+    else {
+        panic!()
+    };
+    sketch.origin = point(0.0, 0.0, 5.0);
+    let model = PathBuf::from(directory.model(&document));
+    let mut studio = serve::Studio::load(&model, Some("body".into())).unwrap();
+    let data = get(&mut studio, "/api/features").1;
+    let state = get(&mut studio, "/api/state").1;
+    let mut edit = json!({"version":data["version"],"instance":"block","expected":data["features"],"action":"add","features":[{"id":"tool","operation":{"extrude":{"input":"lifted","direction":{"components":{"x":{"literal":{"value":0,"dimension":"length","unit":"millimeter"}},"y":{"literal":{"value":0,"dimension":"length","unit":"millimeter"}},"z":{"literal":{"value":1,"dimension":"length","unit":"millimeter"}}}},"extent":{"up_to_next":{"target":"limit"}}}}}],"output":"tool","apply":false});
+    let response = studio.handle("POST", "/api/features", edit.to_string().as_bytes());
+    assert_eq!(response.status, 200);
+    let result: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+    assert_eq!(result["can_apply"], false, "{}", result["error"]);
+    assert!(result["gltf"].is_null());
+    edit["apply"] = json!(true);
+    assert_eq!(
+        studio
+            .handle("POST", "/api/features", edit.to_string().as_bytes())
+            .status,
+        422
+    );
+    assert_eq!(get(&mut studio, "/api/state").1, state);
+}
+
 fn history(studio: &mut serve::Studio, direction: &str) -> serde_json::Value {
     let version = get(studio, "/api/state").1["version"].clone();
     let response = studio.handle(
