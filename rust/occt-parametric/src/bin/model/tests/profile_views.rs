@@ -3007,3 +3007,51 @@ fn reliable_sketch_viewer_exposes_convergence_rank_and_recovery_report() {
             .any(|s| s["kind"] == "solid" && s["valid"] == true)
     );
 }
+
+#[test]
+fn loft_viewer_exposes_resolved_native_end_derivatives_and_true_control_handle_lengths() {
+    let dir = Directory::new();
+    for (example, mode) in [
+        ("constrained-loft", "direction"),
+        ("normal-profile-loft", "normal_to_profile"),
+    ] {
+        let request = view_example(example);
+        view_request(&dir, request, example).unwrap();
+        let data: Value = serde_json::from_str(
+            &fs::read_to_string(dir.0.join(example).join("view.json")).unwrap(),
+        )
+        .unwrap();
+        let scene = data["scenes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["kind"] == "solid" && s["feature"] == "body")
+            .unwrap();
+        for end in ["start", "end"] {
+            let a = scene["annotations"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|a| a["id"] == format!("loft-{end}-tangent"))
+                .unwrap();
+            assert_eq!(a["kind"], "constraint");
+            assert_eq!(a["detail"]["mode"], mode);
+            assert_eq!(a["detail"]["strength_mm"], 20.);
+            assert_eq!(a["detail"]["derivative_mm"], json!([0., 0., 20.]));
+            let z0 = a["anchors"][0][2].as_f64().unwrap();
+            let z1 = a["anchors"][1][2].as_f64().unwrap();
+            assert!((z1 - z0 - 20. / 3.).abs() < 1e-7);
+            if end == "start" {
+                assert_eq!(z0, 0.);
+            } else {
+                assert_eq!(z1, 20.);
+            }
+            assert!(
+                a["parameters"]
+                    .as_array()
+                    .unwrap()
+                    .contains(&json!("height"))
+            );
+        }
+    }
+}

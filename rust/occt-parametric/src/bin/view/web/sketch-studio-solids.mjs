@@ -1,3 +1,4 @@
+import {loftTangentGuides,drawLoftTangentGuides} from './sketch-studio-loft-guides.mjs';
 import {createSolidSourcePicker} from './sketch-studio-limit-pick.mjs';
 import {createSolidEditor} from './solid-editor.mjs';
 import {planeNormal} from './sketch-studio-plane.mjs';
@@ -6,13 +7,15 @@ export function installStudioSolids(studio, document) {
   const {html} = studio;
   const panel = html('section', {class: 'sheet', role: 'dialog', 'aria-label': 'Sketch to solid', hidden: true});
   document.body.append(panel);
-  let session = null, ownAction = false;
+  let session = null, ownAction = false, guides=[];
+  const decorate=studio.decorate;
+  studio.decorate=context=>[...(decorate?.(context)??[]),...(session&&session.checkpoint()?drawLoftTangentGuides(guides,context):[])];
   const picker=createSolidSourcePicker(studio,(active,kind)=>{
     const old=ownAction;ownAction=true;
     try{if(active){studio.setTool('select');studio.tool=kind==='edge'?'solid-finish-edge':'solid-limit-face';}else if(['solid-limit-face','solid-finish-edge'].includes(studio.tool))studio.tool='select';studio.refresh();}
     finally{ownAction=old;}
   },()=>document.getElementById('view').getBoundingClientRect());
-  const clearPreview = () => studio.setSolidPreview(null);
+  const clearPreview = () => {const shown=guides.length>0;guides=[];studio.setSolidPreview(null);if(shown)studio.redraw();};
   function close() {
     if (ownAction) return;
     picker.cancel();session = null; panel.hidden = true; clearPreview();
@@ -62,6 +65,9 @@ export function installStudioSolids(studio, document) {
     studio.fill(panel, html('header', {}, html('h2', {}, 'Sketch to solid'), html('button', {onclick: close}, 'Close')), host);
     panel.hidden = false;
     createSolidEditor({host, request, instance: () => studio.instance, autoStart: true,
+      started: (feature,output) => {
+        if(current()&&feature?.operation.profile_loft&&feature.id===output){guides=loftTangentGuides({scenes:studio.scenes},studio.instance,output);studio.redraw();}
+      },
       pickHolePosition: target => picker.pick(target,current,'hole'),
       pickSolidEdge: target => picker.pick(target,current,'edge'),
       pickLimitingFace: target => picker.pick(target,current),
@@ -79,6 +85,7 @@ export function installStudioSolids(studio, document) {
       preview: async (_, result) => {
         if (!current() || s.response !== result) return;
         if (result.can_apply && result.gltf) {
+          guides=loftTangentGuides(result.annotations,studio.instance,result.output);
           studio.setSolidPreview(result.gltf);
           studio.say('Solid preview shown in 3D. Apply commits it; Close restores the accepted model.');
         } else {

@@ -6509,6 +6509,28 @@ fn loft_end_constraints_preview_save_and_reject_unsatisfied_conditions() {
     let response = studio.handle("POST", "/api/features", edit.to_string().as_bytes());
     let preview: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
     assert_eq!(preview["can_apply"], true, "{preview}");
+    let scene = preview["annotations"]["scenes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["kind"] == "solid" && s["feature"] == "body")
+        .unwrap();
+    for end in ["start", "end"] {
+        let tangent = scene["annotations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|a| a["id"] == format!("loft-{end}-tangent"))
+            .unwrap();
+        assert_eq!(tangent["detail"]["strength_mm"], 20.);
+        assert_eq!(tangent["detail"]["direction"], json!([0., 0., 1.]));
+    }
+    assert_eq!(
+        studio
+            .handle("GET", "/sketch-studio-loft-guides.mjs", b"")
+            .status,
+        200
+    );
     let expected = 20. * std::f64::consts::PI * (64. - 32. + 16. * 13. / 35.);
     assert!((preview["geometry"]["block"]["volume_mm3"].as_f64().unwrap() - expected).abs() < 1e-4);
     assert_eq!(get(&mut studio, "/api/state").1, state);

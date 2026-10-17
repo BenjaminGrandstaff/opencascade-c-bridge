@@ -617,6 +617,24 @@ fn normal_loft_constraints_follow_parameter_driven_profile_plane_edits() {
             > 0.2
     );
     assert!((session.volume(changed.shape("body").unwrap()).unwrap() - volume).abs() > 1.);
+    let count = session.shape_count().unwrap();
+    let tangents = changed
+        .loft_end_tangents(
+            &session,
+            &family.features[0].operation,
+            &edited.resolved_parameters().unwrap(),
+        )
+        .unwrap();
+    assert_eq!(tangents.len(), 2);
+    assert!(!tangents[0].end && tangents[1].end);
+    for t in &tangents {
+        assert!(t.normal_to_profile);
+        assert!(t.derivative.y < -4.);
+        assert!((t.derivative.x.hypot(t.derivative.y.hypot(t.derivative.z)) - 20.).abs() < 1e-7);
+    }
+    assert!(tangents[0].origin.z.abs() < 1e-7);
+    assert!((tangents[1].origin.z - 20.).abs() < 1e-7);
+    assert_eq!(session.shape_count().unwrap(), count);
     let json = serde_json::to_string(&family).unwrap();
     assert_eq!(
         serde_json::from_str::<FamilyDefinition>(&json).unwrap(),

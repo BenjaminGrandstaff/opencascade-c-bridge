@@ -16,6 +16,86 @@ fn unit_vector(value: Vec3, name: &str) -> Result<Vec3, ModelError> {
     Ok(scale(value, 1.0 / size))
 }
 
+fn profile_frame(
+    session: &Session,
+    shapes: &HashMap<String, Shape<'_>>,
+    id: &str,
+) -> Result<(Vec3, Vec3), ModelError> {
+    let source = shape(shapes, id)?;
+    let face = match session.shape_type(source)? {
+        ShapeType::Wire => session.create_face_from_wire(source)?,
+        ShapeType::Face => session.subshape(source, ShapeType::Face, 0)?,
+        _ => {
+            return Err(ModelError::new(
+                "loft end profiles must be planar faces or closed wires",
+            ));
+        }
+    };
+    if !session.face_is_planar(&face)? || session.subshape_count(&face, ShapeType::Wire)? != 1 {
+        return Err(ModelError::new(
+            "loft end profiles must be single-boundary planar sections",
+        ));
+    }
+    Ok((session.face_normal(&face)?, session.center_of_mass(&face)?))
+}
+
+/// A resolved end condition in family millimetres, using the regeneration's
+/// parameters and geometry. The derivative follows increasing station order.
+#[derive(Clone, Debug)]
+pub struct ResolvedLoftEndTangent {
+    pub end: bool,
+    pub profile: String,
+    pub origin: Vec3,
+    pub derivative: Vec3,
+    pub normal_to_profile: bool,
+}
+
+impl GeneratedResult<'_> {
+    /// Inspect terminal conditions with the same resolver used to construct them.
+    /// `operation` and `parameters` must be those used for this generation.
+    pub fn loft_end_tangents(
+        &self,
+        session: &Session,
+        operation: &FeatureOperation,
+        parameters: &HashMap<String, ParameterValue>,
+    ) -> Result<Vec<ResolvedLoftEndTangent>, ModelError> {
+        let FeatureOperation::ProfileLoft {
+            profiles,
+            start_constraint,
+            end_constraint,
+            ..
+        } = operation
+        else {
+            return Ok(Vec::new());
+        };
+        if profiles.len() < 2 {
+            return Err(ModelError::new(
+                "loft tangent inspection needs at least two profiles",
+            ));
+        }
+        let mut result = Vec::with_capacity(2);
+        for (end, c) in [
+            (false, start_constraint.as_deref()),
+            (true, end_constraint.as_deref()),
+        ] {
+            if let Some(derivative) =
+                end_derivative(session, profiles, &self.shapes, parameters, c, end)?
+            {
+                let profile = profiles[if end { profiles.len() - 1 } else { 0 }].clone();
+                let (_, origin) = profile_frame(session, &self.shapes, &profile)?;
+                result.push(ResolvedLoftEndTangent {
+                    end,
+                    profile,
+                    origin,
+                    derivative,
+                    normal_to_profile: c.is_some_and(|c| c.normal_to_profile),
+                });
+            }
+        }
+        Ok(result)
+    }
+}
+
 /// Resolve either an explicit derivative direction or the actual terminal plane normal.
 /// Both directions follow increasing station order, independent of wire orientation.
 pub(crate) fn end_derivative(
@@ -35,30 +115,10 @@ pub(crate) fn end_derivative(
                     "normal-to-profile loft constraints need at least two sections",
                 ));
             }
-            let frame = |id: &str| -> Result<(Vec3, Vec3), ModelError> {
-                let source = shape(shapes, id)?;
-                let face = match session.shape_type(source)? {
-                    ShapeType::Wire => session.create_face_from_wire(source)?,
-                    ShapeType::Face => session.subshape(source, ShapeType::Face, 0)?,
-                    _ => {
-                        return Err(ModelError::new(
-                            "normal-to-profile constraints need planar faces or closed wires",
-                        ));
-                    }
-                };
-                if !session.face_is_planar(&face)?
-                    || session.subshape_count(&face, ShapeType::Wire)? != 1
-                {
-                    return Err(ModelError::new(
-                        "normal-to-profile constraints need single-boundary planar sections",
-                    ));
-                }
-                Ok((session.face_normal(&face)?, session.center_of_mass(&face)?))
-            };
             let i = if end { profiles.len() - 1 } else { 0 };
             let j = if end { i - 1 } else { 1 };
-            let (normal, center) = frame(&profiles[i])?;
-            let (_, neighbor) = frame(&profiles[j])?;
+            let (normal, center) = profile_frame(session, shapes, &profiles[i])?;
+            let (_, neighbor) = profile_frame(session, shapes, &profiles[j])?;
             let advance = if end {
                 crate::assembly::subtract(center, neighbor)
             } else {

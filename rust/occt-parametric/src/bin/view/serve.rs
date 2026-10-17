@@ -637,6 +637,11 @@ impl Studio {
                     None => Response::error(400, "annotations need ?id="),
                 }
             }
+            ("GET", "/sketch-studio-loft-guides.mjs") => Response::text(
+                200,
+                "text/javascript",
+                include_str!("web/sketch-studio-loft-guides.mjs"),
+            ),
             ("GET", "/solid-loft-constraints.mjs") => Response::text(
                 200,
                 "text/javascript",

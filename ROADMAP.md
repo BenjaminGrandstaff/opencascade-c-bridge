@@ -17,7 +17,7 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 7/7, bridge 163 + first-use integration 1 (+1 doc test), recipes 3, parametric core 57 + kernel 763 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 88 + viewer Node 431 + branch command 2 + model command 92, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 7/7, bridge 163 + first-use integration 1 (+1 doc test), recipes 3, parametric core 57 + kernel 763 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 88 + viewer Node 435 + branch command 2 + model command 93, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -25,6 +25,19 @@ tracks status and order.
 | Scale benchmarks | Last full suite: 194 Rust cases (195 with the parallel glTF case) plus 5 model-command cases and a 10,000-face Python matcher. Sketch authoring integration rechecked 60 sketch cases and 60 MCP cases within budget. | `tools/bench/run.sh` |
 
 ## Done
+
+- Loft end visualization (schema 170, ABI 77 unchanged): native annotations
+  expose resolved end directions, full strengths and true one-third-strength
+  control handles through a shared read-only regeneration query. The studio
+  shows blue start/purple end arrows and labels for accepted direct lofts and
+  verified previews. Fields, rejected previews, model changes and Close clear
+  stale guides; all overlays ignore pointer events. Explicit and profile-normal
+  directions use the construction resolver, with no guessed parameter values.
+  Kernel 763, model command 93, view command 88 and viewer Node 435 pass;
+  all-target Clippy and real browser checks pass. Benchmarks include resolved
+  inspection without retained native handles: 1,000 ordinary/explicit/normal
+  lofts take 1.27/2.62/2.85 s against separate 10 s budgets. Sketch budgets pass.
+  See [loft guides](docs/LOFTS.md#tangent-guides-and-inspection).
 
 - Profile-normal loft ends (schema 170, ABI 77 unchanged): start/end constraints
   can derive forward tangent directions from their terminal section planes.

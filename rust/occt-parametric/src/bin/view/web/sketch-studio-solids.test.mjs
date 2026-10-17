@@ -86,3 +86,19 @@ test('solid face picking Escape retains the form; field edits and close clear ta
  pending=f.button('Pick limiting face in canvas').onclick();await f.flush();f.enter('Direction X','1');await pending;assert.equal(f.solids.picker.source,null);assert.equal(f.panel.hidden,false);
  pending=f.button('Pick limiting face in canvas').onclick();await f.flush();f.solids.close();await pending;assert.equal(f.solids.picker.source,null);assert.equal(f.panel.hidden,true);
 });
+
+test('verified loft guides appear with the preview and clear on field edits, rejection and close',async t=>{
+ const response={...preview(),annotations:{scenes:[{kind:'solid',instance:'part',feature:'made-part',annotations:[{anchors:[[0,0,0],[0,0,2]],detail:{measurement:'loft_end_tangent',end:'start',origin_mm:[0,0,0],derivative_mm:[0,0,6],strength_mm:6,handle_scale:1/3}}]}]}};let reject=false;
+ const f=setup(t,{api:(path,options)=>!options?graph():reject?{...response,can_apply:false,gltf:undefined,error:'bad tangent'}:response});await f.open();f.enter('Result feature name','made-part');
+ const context={matrix:[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1],width:100,height:100,element:(tag,attrs)=>({tag,attrs})},shown=()=>f.studio.decorate(context).filter(n=>n.attrs?.['data-loft-tangent']);
+ await f.button('Preview solid').onclick();assert(shown().length>0);f.enter('Extrusion depth (mm)','20');assert.equal(shown().length,0);
+ await f.button('Preview solid').onclick();assert(shown().length>0);reject=true;await f.button('Preview solid').onclick();assert.equal(shown().length,0);reject=false;await f.button('Preview solid').onclick();f.solids.close();assert.equal(shown().length,0);
+});
+
+test('opening an accepted loft shows native guides without requiring a no-change preview',async t=>{
+ const loft={id:'body',operation:{profile_loft:{profiles:['profile','upper'],holes:[],ruled:false,start_constraint:{normal_to_profile:true,magnitude:mm(6)}}}};
+ const f=setup(t,{api:()=>({...graph(),features:[features()[0],{id:'upper',operation:{sketch_wire:{sketch:{}}}},loft]})});
+ f.studio.scenes=[{kind:'solid',instance:'part',feature:'body',annotations:[{anchors:[[0,0,0],[0,0,2]],detail:{measurement:'loft_end_tangent',end:'start',origin_mm:[0,0,0],derivative_mm:[0,0,6],strength_mm:6,handle_scale:1/3}}]}];await f.open();await f.button('Edit loft body').onclick();
+ const context={matrix:[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1],width:100,height:100,element:(tag,attrs)=>({tag,attrs})};assert(f.studio.decorate(context).some(n=>n.attrs?.['data-loft-tangent']));assert.equal(f.studio.solidPreview,null);
+ f.input('Start loft strength source').value='literal';f.input('Start loft strength source').onchange();assert(!f.studio.decorate(context).some(n=>n.attrs?.['data-loft-tangent']));
+});

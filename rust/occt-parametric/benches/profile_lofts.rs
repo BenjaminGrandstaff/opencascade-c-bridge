@@ -9,6 +9,14 @@ fn run(source: &str, expected: f64, label: &str) {
     let request: serde_json::Value = serde_json::from_str(source).unwrap();
     let document = ModelDocument::from_json(&request["model"].to_string()).unwrap();
     let session = Session::new().unwrap();
+    let parameters = PartInstance {
+        id: "inspect".into(),
+        definition: &document.family,
+        overrides: HashMap::new(),
+        provenance: "benchmark".into(),
+    }
+    .resolved_parameters()
+    .unwrap();
     let start = Instant::now();
     for _ in 0..1000 {
         let result = PartInstance {
@@ -28,6 +36,19 @@ fn run(source: &str, expected: f64, label: &str) {
                 .unwrap(),
             1
         );
+        let handles = session.shape_count().unwrap();
+        let tangents = result
+            .loft_end_tangents(
+                &session,
+                &document.family.features[0].operation,
+                &parameters,
+            )
+            .unwrap();
+        if label != "saved-profile" {
+            assert_eq!(tangents.len(), 2);
+            assert!(!tangents[0].end && tangents[1].end);
+        }
+        assert_eq!(session.shape_count().unwrap(), handles);
         drop(result);
         assert_eq!(session.shape_count().unwrap(), 0);
     }

@@ -2115,3 +2115,13 @@ constraint and loft without introducing new feature references. Ambiguous
 orientation fails explicitly. Existing schema-169 directions migrate unchanged;
 the native derivative API and ABI 77 are unchanged. The editor retains the mode
 and strength formulas through switching, history and Save.
+
+
+Loft tangent inspection now reuses the regeneration resolver and source section
+area frames. Native annotations publish the resolved derivative and one-third
+control handle; the studio renders these as read-only guides only for the exact
+accepted/verified output and instance. Form invalidation clears the overlay with
+the solid preview, and existing session/version guards reject stale replies.
+Inspection retains no native handles and is included in the 1,000-loft scale
+gates. This adds metadata and a Rust inspection query without changing schema
+170 or ABI 77.

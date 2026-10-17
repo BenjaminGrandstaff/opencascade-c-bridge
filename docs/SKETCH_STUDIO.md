@@ -323,6 +323,12 @@ the saved section order, hole tracks and parameter-driven source sketches.
 Lofts can create new solids or supply union/cut tools. Native preview checks the
 whole family before Apply.
 
+When editing a displayed loft, blue start and purple end tangent guides show
+its accepted constraints. Verified previews update them from native resolved
+values, including parameters and profile normals. Arrows use one-third-strength
+control handles, and labels show the full strength. They are read-only; edits,
+rejection and Close clear old guides. Free ends have no guide.
+
 Choose **Normal to profile** for a loft end to derive its direction from the
 terminal section plane. The normal follows profile plane edits and station
 reordering; strength remains entered or parameter-linked. Switching modes keeps

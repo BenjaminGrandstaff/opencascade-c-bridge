@@ -378,6 +378,12 @@ sections and holes; source sketch parameters remain linked. Lofts can also
 supply union/cut tools. Native limits are 2–1000 stations and at most 100 hole
 tracks; validation rejects invalid sections, crossing holes and non-solid output.
 
+When editing a displayed loft, blue start and purple end tangent guides show
+its accepted constraints. Verified previews update them from native resolved
+values, including parameters and profile normals. Arrows use one-third-strength
+control handles, and labels show the full strength. They are read-only; edits,
+rejection and Close clear old guides. Free ends have no guide.
+
 Choose **Normal to profile** for a loft end to derive its direction from the
 terminal section plane. The normal follows profile plane edits and station
 reordering; strength remains entered or parameter-linked. Switching modes keeps

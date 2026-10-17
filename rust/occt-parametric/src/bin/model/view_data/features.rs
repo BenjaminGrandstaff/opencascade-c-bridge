@@ -46,6 +46,7 @@ pub(super) fn feature_dimensions(
     revolve_annotation(scene, feature, budget, annotations)?;
     sweep_route_length(scene, feature, budget, annotations)?;
     loft_section_spacing(scene, feature, annotations)?;
+    loft_end_tangents(scene, feature, annotations)?;
     hole_limit(scene, feature, annotations)?;
     extrusion_dimension(scene, feature, annotations)
 }
@@ -1158,6 +1159,48 @@ fn loft_section_spacing(
             }
             .into(),
         );
+    }
+    Ok(())
+}
+
+/// Resolved terminal derivatives; display one-third-strength cubic control handles.
+fn loft_end_tangents(
+    scene: &SolidScene<'_, '_>,
+    feature: &FeatureDefinition,
+    annotations: &mut Vec<Value>,
+) -> Result<(), Failure> {
+    let FeatureOperation::ProfileLoft {
+        start_constraint,
+        end_constraint,
+        ..
+    } = &feature.operation
+    else {
+        return Ok(());
+    };
+    for tangent in scene
+        .generated
+        .loft_end_tangents(scene.session, &feature.operation, scene.parameters)
+        .stage("visualization")?
+    {
+        let origin = point(tangent.origin);
+        let derivative = point(tangent.derivative);
+        let strength = derivative[0].hypot(derivative[1].hypot(derivative[2]));
+        let direction = derivative.map(|v| v / strength);
+        let other = std::array::from_fn::<_, 3, _>(|i| {
+            origin[i] + derivative[i] / 3. * if tangent.end { -1. } else { 1. }
+        });
+        let anchors = if tangent.end {
+            [other, origin]
+        } else {
+            [origin, other]
+        };
+        let end = if tangent.end { "end" } else { "start" };
+        let constraint = if tangent.end {
+            end_constraint
+        } else {
+            start_constraint
+        };
+        annotations.push(Annotation{id:format!("loft-{end}-tangent"),label:format!("{end} tangent · {} mm strength",length_label(strength)),kind:AnnotationKind::Constraint,status:AnnotationStatus::Driving,targets:vec![scene.output.into()],parameters:names(&serde_json::to_value(constraint).stage("visualization")?).into_iter().collect(),anchors:json!(anchors),detail:json!({"measurement":"loft_end_tangent","end":end,"profile":tangent.profile,"mode":if tangent.normal_to_profile {"normal_to_profile"}else{"direction"},"origin_mm":origin,"direction":direction,"derivative_mm":derivative,"strength_mm":strength,"handle_scale":1./3.,"driving":true})}.into());
     }
     Ok(())
 }

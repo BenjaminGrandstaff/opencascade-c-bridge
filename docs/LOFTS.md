@@ -222,3 +222,33 @@ Tests cover tilted planes, reversed order, parameter-driven frame edits, invalid
 mode combinations, forward and backward family variants, saved mode/formulas and
 editor switching. The normal-profile benchmark checks 1,000 regenerations within
 10 seconds alongside the existing unconstrained and explicit-direction cases.
+
+## Tangent guides and inspection
+
+For a direct loft output, opening **Edit loft …** shows the accepted native end
+conditions on the studio canvas. A verified **Preview solid** shows the draft's
+conditions. Start handles are blue and end handles purple, with a point at each
+terminal section's area center. Arrows follow increasing station order: away
+from the start section and toward the end section. Each arrow is one-third of
+the resolved strength, matching a cubic Hermite control handle; its label shows
+the full strength in millimetres. They are read-only overlays.
+
+Field edits clear the old guides until another verified Preview. Rejection,
+Close, model/instance changes and pending Apply also clear them. Late replies
+cannot restore old guides. Free ends have no guide. The canvas only displays
+annotations for the exact selected instance and displayed loft output.
+
+The native annotation stream includes `loft-start-tangent` and
+`loft-end-tangent` constraint records. Their `detail.measurement` is
+`loft_end_tangent`; details include the source profile, direction mode, area
+center, normalized direction, full derivative vector, strength, and handle scale.
+`anchors` give the arrow tail/head in family millimetres. Parameter expressions
+stay in the saved feature graph; these resolved values are inspection metadata.
+
+`GeneratedResult::loft_end_tangents` exposes the same resolved native values to
+Rust callers as `ResolvedLoftEndTangent` records. Supply the operation and resolved
+parameters used for that generation. It shares the construction resolver for
+explicit and profile-normal directions, does not alter source geometry, and
+retains no native handles. The profile-loft scale benchmarks now include these
+inspection queries for every regeneration, with handle-count checks. No model
+schema or C ABI change is needed (schema 170, ABI 77).

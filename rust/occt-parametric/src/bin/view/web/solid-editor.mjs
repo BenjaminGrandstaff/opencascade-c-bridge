@@ -93,7 +93,7 @@ export function solidEditOutput(data,editing) {
   while(pending.length){const id=pending.pop();if(!id||seen.has(id))continue;seen.add(id);pending.push(...(data.dependencies?.[id]??[]));}
   return seen.has(editing.id)&&data.features.some(f=>f.id===data.output&&solidTarget(f))?data.output:editing.id;
 }
-export function createSolidEditor({host,request,instance,preview,applied,restore,showSketch=()=>{},showSolid=()=>{},initialProfile=()=>null,profileDirection=()=>null,profileAxis=()=>null,invalidatePreview=()=>{},pickSolidEdge=null,pickHolePosition=null,pickLimitingFace=null,cancelLimitingFacePick=()=>{},autoStart=false}) {
+export function createSolidEditor({host,request,instance,preview,applied,restore,showSketch=()=>{},showSolid=()=>{},initialProfile=()=>null,profileDirection=()=>null,profileAxis=()=>null,invalidatePreview=()=>{},pickSolidEdge=null,pickHolePosition=null,pickLimitingFace=null,cancelLimitingFacePick=()=>{},started=()=>{},autoStart=false}) {
   let data=null,editing=null,busy=false,mode='new',id='',input='',target='',extent='distance',axis=[0,0,1],depth=10,source='literal',preserved=null;
   let kind='extrude',origin=[0,0,0],angle=360,axisSource='literal',savedRevolve=null,path='',orientation='corrected_frenet',binormal=[0,0,1],savedOrientation=null,loft={profiles:[],holes:[],ruled:false},loftStarted=false;
   let limitTarget='',limitFace='z:maximum',savedFace=null,limitDirectionSource='literal';
@@ -131,7 +131,7 @@ export function createSolidEditor({host,request,instance,preview,applied,restore
     loft.holes??=[];loftStarted=Boolean(feature?.operation.profile_loft);
     finishTarget=isEdgeFinish(kind)?sweep.input:target;finishEdges=isEdgeFinish(kind)?structuredClone(sweep.edges):[];savedSize=isEdgeFinish(kind)?sweep.radius??sweep.distance:null;finishSize=savedSize?(savedSize.literal?mm(savedSize.literal):NaN):2;finishSource=savedSize?.parameter?`parameter:${savedSize.parameter}`:savedSize?'preserve':'literal';
     holeControls=createHoleControls(feature?.operation.hole,target);
-    render();message(feature?`Editing ${solidNames[kind]} ${feature.id}.`:'Choose a profile and operation. Apply any pending sketch edits first.');
+    render();started(feature,data.output);message(feature?`Editing ${solidNames[kind]} ${feature.id}.`:'Choose a profile and operation. Apply any pending sketch edits first.');
   }
   function render(){
     content.replaceChildren();const title=document.createElement('h3');title.textContent=editing?`Edit ${solidNames[kind]}`:'Create solid feature';content.append(title);

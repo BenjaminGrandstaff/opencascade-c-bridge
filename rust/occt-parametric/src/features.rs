@@ -7,6 +7,7 @@ mod holes;
 pub use holes::PartInstanceHoles;
 mod hollow;
 mod loft;
+pub use loft::ResolvedLoftEndTangent;
 mod patterns;
 mod primitives;
 mod regions;

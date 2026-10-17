@@ -53,6 +53,7 @@ pub use drawing::{DrawingDefinitionInspection, DrawingDefinitionRendering, Drawi
 pub use features::PartInstanceHoles;
 pub use features::PartInstanceProjection;
 pub use features::PartInstanceSupport;
+pub use features::ResolvedLoftEndTangent;
 pub use graph::InstanceGraphPatternEdits;
 pub use graph::InstanceGraphRegeneration;
 pub(crate) use graph::InstanceGraphRegenerationInternal;

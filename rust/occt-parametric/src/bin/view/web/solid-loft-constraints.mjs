@@ -24,7 +24,7 @@ export function createLoftEndControls(loft){
    select(`${label} loft strength source`,choices,s.sizeSource,value=>{s.sizeSource=value;render();});
    number(`${label} loft strength (mm)`,s.sizeSource==='literal'?s.size:'',value=>s.size=value).disabled=s.sizeSource!=='literal';
   }
-  const note=document.createElement('p');note.textContent='End directions follow increasing station order, including at the last station. Normal to profile follows edits to the terminal section plane. Strength is a length per station interval. Constrained lofts require smooth surfaces, corresponding edges and seams, and at most 64 stations. Directions must cross the terminal planes; excessive strengths that fold the loft backward are rejected. Preview checks every instance.';content.append(note);
+  const note=document.createElement('p');note.textContent='End directions follow increasing station order, including at the last station. Normal to profile follows edits to the terminal section plane. Strength is a length per station interval. Constrained lofts require smooth surfaces, corresponding edges and seams, and at most 64 stations. Directions must cross the terminal planes; excessive strengths that fold the loft backward are rejected. Preview checks every instance and shows resolved start/end tangent guides for loft outputs. Guide arrows use one-third of the strength; labels show the full strength.';content.append(note);
  }
  };
 }
