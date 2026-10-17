@@ -95,3 +95,93 @@ and construction. Scale gates check 500 tapered hollow lofts and a 100-bore loft
 with analytical volume, wall ancestry and zero retained handles, each within a
 10-second budget. Hollow sweeps use the same validated subtraction/history helper
 and continue to pass their scale gates.
+
+## End constraints (schema 169, ABI 77)
+
+Schema 169 and ABI 77 add optional start/end tangent directions and strengths to
+`profile_loft`. Unconstrained lofts keep their existing native fitting behavior.
+See [the complete example](../tools/model/constrained-loft.request.json).
+
+### Definition
+
+```json
+{
+  "profile_loft": {
+    "profiles": ["lower", "upper"],
+    "ruled": false,
+    "start_constraint": {
+      "direction": {
+        "components": {
+          "x": {"literal": {"value": 0, "dimension": "scalar", "unit": null}},
+          "y": {"literal": {"value": 0, "dimension": "scalar", "unit": null}},
+          "z": {"literal": {"value": 1, "dimension": "scalar", "unit": null}}
+        }
+      },
+      "magnitude": {"parameter": "height"}
+    }
+  }
+}
+```
+
+Either end may be constrained independently. Directions are finite, nonzero,
+dimensionless vectors in family coordinates. Magnitudes are positive lengths.
+Both directions follow **increasing station order**, including the end direction.
+For profiles stacked along +Z, both directions normally point along +Z.
+Each direction is normalized and multiplied by its magnitude during regeneration.
+
+Strength is the longitudinal derivative length per station interval, not an angle
+or a distance to an extra profile. Increasing the start strength changes how far
+the loft travels along its start direction before turning toward the next
+section. Direction and magnitude expressions participate in dependency tracking;
+a change to an independent strength parameter rebuilds the loft without rebuilding
+unchanged source sketches. Sketch dimensions and constraints continue to drive
+all section curves.
+
+### Studio
+
+Choose **Loft through profiles**, select smooth surfaces, and set **Start loft
+condition** or **End loft condition** to **Tangent direction**. Enter direction
+components and a strength, or link a length parameter to the strength. Existing
+constraint expressions start preserved. Choosing **Free** removes that end's
+constraint; switching back retains its draft controls.
+
+Preview verifies every variant before Apply. Unsupported conditions or invalid
+strengths produce an error and no verified preview mesh. Accepted changes use
+model Undo/Redo and Save.
+
+### Geometry and limits
+
+Constrained lofts use exact rational cubic Hermite surface spans, with one span
+between successive stations. All section curves are interpolated; there are no
+sampled replacement profiles or additional near-end sections used to imitate a
+tangent. Repeated endpoint weights make the actual surface derivative equal the
+requested derivative. Native construction independently evaluates the terminal
+surface derivatives at 17 parameters on every terminal edge patch and rejects
+violations. Interior station derivatives agree across adjacent spans.
+
+The current supported range is 2–64 distinct closed planar sections, matching
+ordered edge topology at every station, at most 128 edges per section and 100,000
+combined compatible section poles. Corresponding wire edges and seams must be
+authored in corresponding order. Unlike unconstrained lofts, this mode does not
+automatically split or reorder edges. Changing a circle into a four-edge square
+therefore requires compatible authored section topology first.
+
+Ruled lofts cannot carry these constraints. A terminal direction must cross its
+profile plane. Each span must progress monotonically along a common longitudinal
+direction; excessive or backward strengths that fold the span back are rejected.
+The sewn result must close into one valid solid. Sources remain immutable, and
+source-edge/generated-wall ancestry is recorded. Explicit hole tracks receive
+the same end constraints and are subtracted with retained wall history.
+
+These constraints set longitudinal tangent directions and strengths. They do not
+automatically match another face's curvature or supply guide rails.
+
+### Verification
+
+Tests check analytic circular and polygonal volumes, intermediate cross-section
+radii, altered shape under a strength change, interpolation through three
+stations, one-end and two-end constraints, hollow tracks, source immutability,
+history, incremental parameter rebuilding, persistence, and rejected constraints
+including a bad strength on another family variant. The profile-loft benchmark
+checks 1,000 unconstrained and 1,000 constrained regenerations against separate
+10-second budgets.

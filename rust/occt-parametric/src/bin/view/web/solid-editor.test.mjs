@@ -306,3 +306,16 @@ test('canvas hole placement replaces placement formulas explicitly and ignores s
  await button(host,'Preview solid').onclick();const hole=calls.at(-1).features[0].operation.hole;assert.deepEqual(hole.position.components,{x:depth(8),y:depth(9),z:depth(10)});assert.deepEqual(hole.diameter,saved.operation.hole.diameter);assert.equal(hole.face_index,undefined);
  }finally{delete globalThis.document;delete globalThis.Option;}
 });
+
+test('loft end directions and strengths reach the native graph and preserve saved formulas',async()=>{
+ globalThis.document={createElement:tag=>new Element(tag)};globalThis.Option=class extends Element{constructor(text,value){super('option');this.textContent=text;this.value=value;}};
+ try{
+ const profiles=[...base,{id:'upper',operation:{sketch_wire:{sketch:{}}}}],constraint={direction:{parameter:'axis'},magnitude:{multiply:[{parameter:'height'},depth(1)]}},saved={id:'transition',operation:{profile_loft:{profiles:['profile','upper'],holes:[],ruled:false,start_constraint:constraint,end_constraint:constraint}}};
+ const host=new Element('div'),calls=[];createSolidEditor({host,instance:()=> 'part',preview:async()=>{},applied:async()=>{},restore:async()=>{},request:async(path,options)=>{if(!options)return {version:1,features:[...profiles,saved],output:'transition',parameters:[{id:'height',parameter_type:{scalar:'length'}}]};calls.push(JSON.parse(options.body));return {can_apply:true};}});
+ await button(host,'Sketch to solid').onclick();await button(host,'Edit loft transition').onclick();await button(host,'Preview solid').onclick();assert.deepEqual(calls[0].features,[saved]);
+ const choose=(label,value)=>{control(host,label).value=value;control(host,label).onchange();};
+ choose('Start loft strength source','parameter:height');choose('End loft strength source','literal');control(host,'End loft strength (mm)').value='25';control(host,'End loft strength (mm)').oninput();await button(host,'Preview solid').onclick();let op=calls.at(-1).features[0].operation.profile_loft;assert.deepEqual(op.start_constraint.magnitude,{parameter:'height'});assert.deepEqual(op.end_constraint.magnitude,depth(25));assert.deepEqual(op.start_constraint.direction,constraint.direction);
+ choose('Loft surfaces','ruled');const count=calls.length;await button(host,'Preview solid').onclick();assert.equal(calls.length,count);choose('Loft surfaces','smooth');choose('Start loft condition','free');await button(host,'Preview solid').onclick();op=calls.at(-1).features[0].operation.profile_loft;assert.equal(op.start_constraint,undefined);assert(op.end_constraint);
+ choose('Start loft condition','tangent');choose('Start loft direction source','literal');for(const key of ['X','Y','Z']){control(host,`Start loft direction ${key}`).value='0';control(host,`Start loft direction ${key}`).oninput();}const n=calls.length;await button(host,'Preview solid').onclick();assert.equal(calls.length,n);
+ }finally{delete globalThis.document;delete globalThis.Option;}
+});

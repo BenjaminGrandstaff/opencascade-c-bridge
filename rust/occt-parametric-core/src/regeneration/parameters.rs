@@ -16,7 +16,13 @@ pub fn collect_operation_parameters<'a>(
             collect_vector_parameters(size, names);
         }
         FeatureOperation::Loft { sections, .. } => collect_loft_parameters(sections, names),
-        FeatureOperation::ProfileLoft { .. } | FeatureOperation::PlanarRegion { .. } => {}
+        FeatureOperation::ProfileLoft { start_constraint, end_constraint, .. } => {
+            for constraint in start_constraint.iter().chain(end_constraint.iter()) {
+                collect_vector_parameters(&constraint.direction, names);
+                collect_scalar_parameters(&constraint.magnitude, names);
+            }
+        }
+        FeatureOperation::PlanarRegion { .. } => {}
         FeatureOperation::Sweep { orientation, .. } => {
             if let SweepOrientation::Binormal { direction } = orientation {
                 collect_vector_parameters(direction, names);

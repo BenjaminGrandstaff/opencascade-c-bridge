@@ -434,3 +434,125 @@ fn saved_profile_lofts_reject_bad_counts_duplicates_wrong_shapes_and_open_wires(
     assert!(error.message.contains("closed wires"), "{}", error.message);
     assert_eq!(session.shape_count().unwrap(), 0);
 }
+
+#[test]
+fn loft_end_constraints_follow_profile_and_strength_parameters_and_roundtrip() {
+    let session = Session::new().unwrap();
+    let mut family = native_profile_family();
+    let FeatureOperation::ProfileLoft {
+        ruled,
+        start_constraint,
+        end_constraint,
+        ..
+    } = &mut family.features[0].operation
+    else {
+        panic!()
+    };
+    *ruled = false;
+    let c = Box::new(LoftEndConstraint {
+        direction: direction(0., 0., 1.),
+        magnitude: ScalarExpr::Parameter("height".into()),
+    });
+    *start_constraint = Some(c.clone());
+    *end_constraint = Some(c);
+    let definition = family.clone();
+    let mut p = part(&family);
+    let result = p.regenerate(&session).unwrap();
+    let expected = 20. * std::f64::consts::PI * (64. - 32. + 16. * 13. / 35.);
+    assert!((session.volume(result.shape("body").unwrap()).unwrap() - expected).abs() < 1e-4);
+    let (_, radius) = session
+        .ray_first_hit(
+            result.shape("body").unwrap(),
+            Vec3::new(0., 0., 5.),
+            Vec3::new(1., 0., 0.),
+            20.,
+        )
+        .unwrap()
+        .unwrap();
+    assert!((radius - 7.375).abs() < 1e-6);
+    drop(result);
+    p.overrides.insert(
+        "height".into(),
+        ParameterValue::Scalar(Quantity::length(40., LengthUnit::Millimeter)),
+    );
+    p.overrides.insert(
+        "upper_radius".into(),
+        ParameterValue::Scalar(Quantity::length(6., LengthUnit::Millimeter)),
+    );
+    let changed = p.regenerate(&session).unwrap();
+    let (_, radius) = session
+        .ray_first_hit(
+            changed.shape("body").unwrap(),
+            Vec3::new(0., 0., 10.),
+            Vec3::new(1., 0., 0.),
+            20.,
+        )
+        .unwrap()
+        .unwrap();
+    assert!((radius - 7.6875).abs() < 1e-6);
+    assert_eq!(family, definition);
+    let json = serde_json::to_string(&family).unwrap();
+    assert_eq!(
+        serde_json::from_str::<FamilyDefinition>(&json).unwrap(),
+        family
+    );
+    drop(changed);
+    let FeatureOperation::ProfileLoft { ruled, .. } = &mut family.features[0].operation else {
+        panic!()
+    };
+    *ruled = true;
+    assert!(
+        part(&family)
+            .regenerate(&session)
+            .err()
+            .unwrap()
+            .message
+            .contains("ruled")
+    );
+    assert_eq!(session.shape_count().unwrap(), 0);
+}
+
+#[test]
+fn independent_loft_strength_rebuilds_only_the_loft_and_changes_geometry() {
+    let session = Session::new().unwrap();
+    let mut family = native_profile_family();
+    family.parameters.push(length_parameter("strength", 20.));
+    let FeatureOperation::ProfileLoft {
+        ruled,
+        start_constraint,
+        end_constraint,
+        ..
+    } = &mut family.features[0].operation
+    else {
+        panic!()
+    };
+    *ruled = false;
+    *start_constraint = Some(Box::new(LoftEndConstraint {
+        direction: direction(0., 0., 1.),
+        magnitude: ScalarExpr::Parameter("strength".into()),
+    }));
+    *end_constraint = Some(Box::new(LoftEndConstraint {
+        direction: direction(0., 0., 1.),
+        magnitude: ScalarExpr::Parameter("height".into()),
+    }));
+    let first = part(&family).regenerate(&session).unwrap();
+    let mut edited = part(&family);
+    edited.overrides.insert(
+        "strength".into(),
+        ParameterValue::Scalar(Quantity::length(40., LengthUnit::Millimeter)),
+    );
+    let changed = edited.regenerate_incremental(&session, &first).unwrap();
+    assert!(changed.regeneration.reused.contains(&"lower".into()));
+    assert!(changed.regeneration.reused.contains(&"upper".into()));
+    assert_eq!(changed.regeneration.rebuilt, ["body"]);
+    let (_, radius) = session
+        .ray_first_hit(
+            changed.shape("body").unwrap(),
+            Vec3::new(0., 0., 10.),
+            Vec3::new(1., 0., 0.),
+            20.,
+        )
+        .unwrap()
+        .unwrap();
+    assert!(radius > 6.5);
+}

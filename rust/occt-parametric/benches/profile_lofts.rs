@@ -5,11 +5,8 @@ use std::{
     collections::HashMap,
     time::{Duration, Instant},
 };
-fn main() {
-    let request: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/model/profile-loft.request.json"
-    ))
-    .unwrap();
+fn run(source: &str, expected: f64, label: &str) {
+    let request: serde_json::Value = serde_json::from_str(source).unwrap();
     let document = ModelDocument::from_json(&request["model"].to_string()).unwrap();
     let session = Session::new().unwrap();
     let start = Instant::now();
@@ -23,7 +20,6 @@ fn main() {
         .regenerate(&session)
         .unwrap();
         let solid = result.shape("body").unwrap();
-        let expected = 20.0 * std::f64::consts::PI * (64.0 + 32.0 + 16.0) / 3.0;
         assert!(session.is_valid(solid).unwrap());
         assert!((session.volume(solid).unwrap() - expected).abs() < 1e-5);
         assert_eq!(
@@ -41,7 +37,20 @@ fn main() {
         "profile-loft scale budget exceeded: {elapsed:?}"
     );
     println!(
-        "PASS 1000 saved-profile loft regenerations: {:.3}s / 10s",
+        "PASS 1000 {label} loft regenerations: {:.3}s / 10s",
         elapsed.as_secs_f64()
+    );
+}
+
+fn main() {
+    run(
+        include_str!("../../../tools/model/profile-loft.request.json"),
+        20. * std::f64::consts::PI * (64. + 32. + 16.) / 3.,
+        "saved-profile",
+    );
+    run(
+        include_str!("../../../tools/model/constrained-loft.request.json"),
+        20. * std::f64::consts::PI * (64. - 32. + 16. * 13. / 35.),
+        "constrained-profile",
     );
 }

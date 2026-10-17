@@ -8,16 +8,16 @@ tracks status and order.
 
 | Layer | Version | State |
 |---|---|---|
-| C ABI (`src/`, `include/`) | ABI 76 | Stable; exact version match required |
+| C ABI (`src/`, `include/`) | ABI 77 | Stable; exact version match required |
 | `occt-types` (shared value types) | — | No native dependency |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI; re-exports `occt-types` |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric-core` (kernel-free engineering layer) | Schema 168 | Definitions, documents, solving and checks without OCCT |
-| `occt-parametric` (kernel regeneration) | Schema 168 | Active development; re-exports the core API |
+| `occt-parametric-core` (kernel-free engineering layer) | Schema 169 | Definitions, documents, solving and checks without OCCT |
+| `occt-parametric` (kernel regeneration) | Schema 169 | Active development; re-exports the core API |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 7/7, bridge 160 + first-use integration 1 (+1 doc test), recipes 3, parametric core 57 + kernel 758 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 85 + viewer Node 428 + branch command 2 + model command 92, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 7/7, bridge 163 + first-use integration 1 (+1 doc test), recipes 3, parametric core 57 + kernel 761 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 87 + viewer Node 429 + branch command 2 + model command 92, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -25,6 +25,22 @@ tracks status and order.
 | Scale benchmarks | Last full suite: 194 Rust cases (195 with the parallel glTF case) plus 5 model-command cases and a 10,000-face Python matcher. Sketch authoring integration rechecked 60 sketch cases and 60 MCP cases within budget. | `tools/bench/run.sh` |
 
 ## Done
+
+- Constrained profile lofts (schema 169, ABI 77): optional start/end tangent
+  directions and parameter-linked strengths create exact rational cubic Hermite
+  spans through every section and hole track. End derivatives are verified on
+  generated surfaces; independent strength changes rebuild only the loft.
+  Existing unconstrained fitting remains unchanged. Constrained mode requires
+  smooth surfaces, matching ordered edge topology, 2–64 sections, <=128 edges
+  and <=100,000 compatible section poles. Parallel directions, nonpositive
+  strengths, longitudinal fold-back and invalid solids are rejected. The studio
+  edits both ends while preserving formulas. All examples use schema 169.
+  C 7/7, bridge 163 (+ integration/doc), core 57, kernel 761, view 87, model 92
+  and viewer Node 429 pass; Clippy and browser checks pass. Analytic volumes,
+  cross-sections, multiple stations, hollow history, incremental edits,
+  invalid-variant rejection and Save/history are covered. 1,000 constrained
+  regenerations take 2.50 s / 10 s; existing lofts 1.33 s / 10 s. Sketch budgets
+  pass. See [loft constraints](docs/LOFTS.md#end-constraints-schema-169-abi-77).
 
 - Studio canvas hole placement (schema 168, ABI 76 unchanged): click an actual
   entry point on a planar source face and use the inward native face normal as

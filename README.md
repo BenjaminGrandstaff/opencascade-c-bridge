@@ -746,6 +746,10 @@ viewer depths; input and selector edits regenerate the cut. Schema 76 adds the
 end conditions without changing ABI 48.
 
 
+[Constrained lofts](docs/LOFTS.md#end-constraints-schema-169-abi-77) add start/end
+tangent directions and parameter-linked strengths (schema 169, ABI 77), with
+native derivative checks, exact section curves, and studio controls.
+
 [Saved-profile lofts](docs/LOFTS.md) build solid transitions directly from sketch
 faces and closed wires, including native circles, ellipses, arcs and splines.
 Section edits regenerate the part; viewer spacing links to section controls.

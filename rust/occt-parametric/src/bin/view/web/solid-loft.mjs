@@ -1,3 +1,4 @@
+import {validateLoftConstraint} from './solid-loft-constraints.mjs';
 // Ordered loft stations and hole tracks share the same station ordering.
 export function loftDefinition(features,definition) {
   const {profiles,holes=[],ruled=false}=definition;
@@ -7,7 +8,10 @@ export function loftDefinition(features,definition) {
   if(ids.some(id=>!id||!features.some(f=>f.id===id)))throw Error('Choose an existing profile for every loft station and hole.');
   if(new Set(ids).size!==ids.length)throw Error('Loft profiles must be distinct across outer stations and hole tracks.');
   if(typeof ruled!=='boolean')throw Error('Choose smooth or ruled loft surfaces.');
-  return {profiles:[...profiles],holes:holes.map(track=>[...track]),ruled};
+  const constraints={};
+  for(const key of ['start_constraint','end_constraint'])if(definition[key])constraints[key]=validateLoftConstraint(definition[key]);
+  if(Object.keys(constraints).length&&(ruled||profiles.length>64))throw Error('Loft end constraints require smooth surfaces and at most 64 stations.');
+  return {profiles:[...profiles],holes:holes.map(track=>[...track]),ruled,...constraints};
 }
 export function editLoftStations(definition,action,index=0) {
   const result=structuredClone(definition),tracks=[result.profiles,...(result.holes??[])],count=result.profiles.length;

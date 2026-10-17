@@ -1,7 +1,7 @@
 {
   "schema": "occb-model-view-v1",
   "model": {
-    "schema_version": 168,
+    "schema_version": 169,
     "family": {
       "id": "linked-spline-refinement",
       "version": 1,

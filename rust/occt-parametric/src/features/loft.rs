@@ -109,15 +109,29 @@ pub(crate) fn execute<'session>(
 
 /// Linear profile/topology indexing; native curve compatibility and surface
 /// interpolation cost depends on edge correspondence, sections and degree.
-pub(crate) fn execute_profiles<'a>(
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn execute_profiles_constrained<'a>(
     session: &'a Session,
     profiles: &[String],
     holes: &[Vec<String>],
     ruled: bool,
     shapes: &HashMap<String, Shape<'a>>,
+    start: Option<Vec3>,
+    end: Option<Vec3>,
 ) -> Result<Shape<'a>, ModelError> {
+    let constrained = start.is_some() || end.is_some();
+    if constrained && ruled {
+        return Err(ModelError::new(
+            "loft end constraints require smooth surfaces; ruled lofts cannot enforce end derivatives",
+        ));
+    }
+    if constrained && profiles.len() > 64 {
+        return Err(ModelError::new(
+            "constrained loft supports at most 64 stations",
+        ));
+    }
     if holes.is_empty() {
-        return execute_simple_profiles(session, profiles, ruled, shapes);
+        return execute_simple_profiles_constrained(session, profiles, ruled, shapes, start, end);
     }
     if !(2..=MAXIMUM_SECTIONS).contains(&profiles.len())
         || holes.len() > 100
@@ -145,22 +159,34 @@ pub(crate) fn execute_profiles<'a>(
         let _ = super::regions::execute(session, outer, &inner, shapes)
             .map_err(|e| e.context(&format!("loft section {index}")))?;
     }
-    let outer = execute_simple_profiles(session, profiles, ruled, shapes)?;
+    let outer = execute_simple_profiles_constrained(session, profiles, ruled, shapes, start, end)?;
     let mut inners = Vec::new();
     for (index, track) in holes.iter().enumerate() {
         inners.push(
-            execute_simple_profiles(session, track, ruled, shapes)
+            execute_simple_profiles_constrained(session, track, ruled, shapes, start, end)
                 .map_err(|e| e.context(&format!("loft hole track {index}")))?,
         );
     }
     super::hollow::subtract(session, &outer, &inners)
 }
 
+#[cfg(test)]
 fn execute_simple_profiles<'a>(
     session: &'a Session,
     profiles: &[String],
     ruled: bool,
     shapes: &HashMap<String, Shape<'a>>,
+) -> Result<Shape<'a>, ModelError> {
+    execute_simple_profiles_constrained(session, profiles, ruled, shapes, None, None)
+}
+
+fn execute_simple_profiles_constrained<'a>(
+    session: &'a Session,
+    profiles: &[String],
+    ruled: bool,
+    shapes: &HashMap<String, Shape<'a>>,
+    start: Option<Vec3>,
+    end: Option<Vec3>,
 ) -> Result<Shape<'a>, ModelError> {
     if !(2..=MAXIMUM_SECTIONS).contains(&profiles.len())
         || profiles.iter().collect::<HashSet<_>>().len() != profiles.len()
@@ -204,7 +230,11 @@ fn execute_simple_profiles<'a>(
             profile
         });
     }
-    let result = session.create_loft_from_wires(&wires, true, ruled)?;
+    let result = if start.is_some() || end.is_some() {
+        session.create_constrained_loft(&wires, start, end)?
+    } else {
+        session.create_loft_from_wires(&wires, true, ruled)?
+    };
     let volume = session.volume(&result)?;
     if session.shape_type(&result)? != ShapeType::Solid
         || !session.is_valid(&result)?

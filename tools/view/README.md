@@ -378,6 +378,14 @@ sections and holes; source sketch parameters remain linked. Lofts can also
 supply union/cut tools. Native limits are 2–1000 stations and at most 100 hole
 tracks; validation rejects invalid sections, crossing holes and non-solid output.
 
+For start/end tangent directions and strengths, set the corresponding loft
+condition to **Tangent direction**. Both directions follow increasing station
+order; strength is a length per station interval and accepts a length parameter.
+Existing expressions are preserved. Constrained lofts require smooth surfaces
+and matching ordered profile edges; native construction verifies the terminal
+derivatives and rejects unsupported or folding results. See
+[constrained lofts](../../docs/LOFTS.md) for definitions, limits and verification.
+
 In the studio, choose **Fillet solid edges** or **Chamfer solid edges**, then
 select the **Finish solid** source. **Pick finishing edge in canvas** loads its
 accepted edges as an amber overlay. Fit frames the source; hover highlights an

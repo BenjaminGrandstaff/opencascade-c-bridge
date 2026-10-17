@@ -141,3 +141,6 @@ inspect `sketch_feature`, propose typed `edit_sketch` operations, preview with
 `occt_preview_edit_build`, and publish through `occt_edit_build` after review.
 Use `--preview-edit REQUEST.json NEW_DIRECTORY` for the same diagnostic preview
 without MCP. The `sketch-repair` example contains a duplicated driving angle.
+
+`constrained-loft.request.json` demonstrates exact profile-loft start/end tangent
+directions and parameter-linked strengths (schema 169); see [constrained lofts](../../docs/LOFTS.md).

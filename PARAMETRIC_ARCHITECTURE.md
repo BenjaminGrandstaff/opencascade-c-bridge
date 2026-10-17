@@ -2086,3 +2086,21 @@ chain isolates crossing and stable repeated roots; uncertainty/collinear regions
 remain explicit failures. Aliases, cache keys, model schema 119 and ABI 61 are
 unchanged. Native root-evaluation work is capped per query and all temporary
 geometry remains scoped to materialization.
+
+
+## Profile-loft end constraints
+
+Schema 169 and ABI 77 add optional terminal derivative constraints to saved
+profile lofts. Direction expressions are dimensionless; positive length-valued
+strengths scale normalized directions per station interval. Both expressions
+enter parameter dependency/signature collection. Constrained spans use exact
+rational cubic Hermite surfaces, with source profiles interpolated and repeated
+endpoint weights enforcing the requested derivatives. Native construction checks
+terminal derivatives, bounded topology/pole budgets, monotone longitudinal
+progress and valid closed topology before publishing a result. Explicit hole
+tracks use the same constraints and retained wall ancestry. Unconstrained lofts
+continue through the existing native fitting path. The studio preserves opaque
+formulas and validates all family variants through the existing preview/apply
+transaction. See [loft constraints](docs/LOFTS.md#end-constraints-schema-169-abi-77).
+Further loft extensions include guide rails, richer section correspondence and
+face-curvature matching; the current end constraints cover directions/strengths.

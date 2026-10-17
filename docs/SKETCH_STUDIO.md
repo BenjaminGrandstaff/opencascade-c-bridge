@@ -323,6 +323,14 @@ the saved section order, hole tracks and parameter-driven source sketches.
 Lofts can create new solids or supply union/cut tools. Native preview checks the
 whole family before Apply.
 
+For start/end tangent directions and strengths, set the corresponding loft
+condition to **Tangent direction**. Both directions follow increasing station
+order; strength is a length per station interval and accepts a length parameter.
+Existing expressions are preserved. Constrained lofts require smooth surfaces
+and matching ordered profile edges; native construction verifies the terminal
+derivatives and rejects unsupported or folding results. See
+[constrained lofts](LOFTS.md) for definitions, limits and verification.
+
 In the studio, choose **Fillet solid edges** or **Chamfer solid edges**, then
 select the **Finish solid** source. **Pick finishing edge in canvas** loads its
 accepted edges as an amber overlay. Fit frames the source; hover highlights an

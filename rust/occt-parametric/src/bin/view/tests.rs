@@ -6475,3 +6475,136 @@ fn canvas_hole_face_normals_point_inward_for_top_bottom_and_side_entries() {
         );
     }
 }
+
+#[test]
+fn loft_end_constraints_preview_save_and_reject_unsatisfied_conditions() {
+    let directory = Directory::new();
+    let request: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../tools/model/profile-loft.request.json"
+    ))
+    .unwrap();
+    let document = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+    let model = PathBuf::from(directory.model(&document));
+    let mut studio = serve::Studio::load(&model, Some("body".into())).unwrap();
+    assert_eq!(
+        studio
+            .handle("GET", "/solid-loft-constraints.mjs", b"")
+            .status,
+        200
+    );
+    let data = get(&mut studio, "/api/features").1;
+    let state = get(&mut studio, "/api/state").1;
+    let mut feature = data["features"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["id"] == "body")
+        .unwrap()
+        .clone();
+    let constraint = json!({"direction":{"literal":{"x":{"value":0,"dimension":"scalar","unit":null},"y":{"value":0,"dimension":"scalar","unit":null},"z":{"value":1,"dimension":"scalar","unit":null}}},"magnitude":{"parameter":"height"}});
+    feature["operation"]["profile_loft"]["ruled"] = json!(false);
+    feature["operation"]["profile_loft"]["start_constraint"] = constraint.clone();
+    feature["operation"]["profile_loft"]["end_constraint"] = constraint;
+    let mut edit = json!({"version":data["version"],"instance":"block","expected":data["features"],"action":"replace","features":[feature],"output":"body","apply":false});
+    let response = studio.handle("POST", "/api/features", edit.to_string().as_bytes());
+    let preview: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+    assert_eq!(preview["can_apply"], true, "{preview}");
+    let expected = 20. * std::f64::consts::PI * (64. - 32. + 16. * 13. / 35.);
+    assert!((preview["geometry"]["block"]["volume_mm3"].as_f64().unwrap() - expected).abs() < 1e-4);
+    assert_eq!(get(&mut studio, "/api/state").1, state);
+    for invalid in ["ruled", "parallel", "zero"] {
+        let mut bad = edit.clone();
+        let op = &mut bad["features"][0]["operation"]["profile_loft"];
+        if invalid == "ruled" {
+            op["ruled"] = json!(true);
+        } else if invalid == "parallel" {
+            op["start_constraint"]["direction"]["literal"]["z"]["value"] = json!(0);
+            op["start_constraint"]["direction"]["literal"]["x"]["value"] = json!(1);
+        } else {
+            op["start_constraint"]["magnitude"] =
+                json!({"literal":{"value":0,"dimension":"length","unit":"millimeter"}});
+        }
+        let response = studio.handle("POST", "/api/features", bad.to_string().as_bytes());
+        let rejected: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+        assert_eq!(rejected["can_apply"], false, "{rejected}");
+        assert!(rejected.get("gltf").is_none());
+        bad["apply"] = json!(true);
+        assert_ne!(
+            studio
+                .handle("POST", "/api/features", bad.to_string().as_bytes())
+                .status,
+            200
+        );
+        assert_eq!(get(&mut studio, "/api/state").1, state);
+    }
+    edit["apply"] = json!(true);
+    assert_eq!(
+        studio
+            .handle("POST", "/api/features", edit.to_string().as_bytes())
+            .status,
+        200
+    );
+    history(&mut studio, "undo");
+    history(&mut studio, "redo");
+    assert_eq!(studio.handle("POST", "/api/save", b"").status, 200);
+    let saved = ModelDocument::from_json(&fs::read_to_string(&model).unwrap()).unwrap();
+    let expected: FeatureDefinition = serde_json::from_value(edit["features"][0].clone()).unwrap();
+    assert_eq!(
+        saved.family.features.iter().find(|f| f.id == "body"),
+        Some(&expected)
+    );
+}
+
+#[test]
+fn loft_constraint_drafts_cannot_apply_when_another_variants_strength_is_invalid() {
+    let directory = Directory::new();
+    let request: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../tools/model/profile-loft.request.json"
+    ))
+    .unwrap();
+    let mut doc = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+    doc.family.parameters.push(ParameterDefinition {
+        id: "constraint-strength".into(),
+        parameter_type: ParameterType::Scalar(Dimension::Length),
+        default: ParameterValue::Scalar(Quantity::length(20., LengthUnit::Millimeter)),
+        minimum: None,
+        maximum: None,
+    });
+    doc.instances.push(InstanceNode::Clone {
+        id: "bad-strength".into(),
+        source: "block".into(),
+        overrides: HashMap::from([(
+            "constraint-strength".into(),
+            ParameterValue::Scalar(Quantity::length(-1., LengthUnit::Millimeter)),
+        )]),
+        placement: Default::default(),
+        frame: None,
+        provenance: "test".into(),
+    });
+    let model = PathBuf::from(directory.model(&doc));
+    let mut studio = serve::Studio::load(&model, Some("body".into())).unwrap();
+    let data = get(&mut studio, "/api/features").1;
+    let state = get(&mut studio, "/api/state").1;
+    let mut feature = data["features"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["id"] == "body")
+        .unwrap()
+        .clone();
+    feature["operation"]["profile_loft"]["ruled"] = json!(false);
+    feature["operation"]["profile_loft"]["start_constraint"] = json!({"direction":{"literal":{"x":{"value":0,"dimension":"scalar","unit":null},"y":{"value":0,"dimension":"scalar","unit":null},"z":{"value":1,"dimension":"scalar","unit":null}}},"magnitude":{"parameter":"constraint-strength"}});
+    let mut edit = json!({"version":data["version"],"instance":"block","expected":data["features"],"action":"replace","features":[feature],"output":"body","apply":false});
+    let response = studio.handle("POST", "/api/features", edit.to_string().as_bytes());
+    let rejected: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+    assert_eq!(rejected["can_apply"], false, "{rejected}");
+    assert!(rejected.get("gltf").is_none());
+    edit["apply"] = json!(true);
+    assert_ne!(
+        studio
+            .handle("POST", "/api/features", edit.to_string().as_bytes())
+            .status,
+        200
+    );
+    assert_eq!(get(&mut studio, "/api/state").1, state);
+}

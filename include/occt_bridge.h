@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define OCCT_BRIDGE_ABI_VERSION 76u
+#define OCCT_BRIDGE_ABI_VERSION 77u
 #define OCCT_BRIDGE_INVALID_SHAPE_ID UINT64_C(0)
 
 #if defined(_WIN32) && defined(OCCT_BRIDGE_BUILD_SHARED)
@@ -658,6 +658,17 @@ OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_create_loft_from_wires(
     int ruled,
     occt_bridge_shape_id_t* out_shape
 );
+
+/* ABI 77: cubic Hermite solid loft through 2-64 matching ordered profile
+ * wires (<=128 edges, <=100000 section poles). At least one derivative pointer
+ * is required. Derivatives are finite nonzero length vectors per station
+ * interval, pointing in increasing station order, transverse to the end plane.
+ * Each span must progress monotonically; fold-back strengths are rejected.
+ * Exact rational section curves are retained; sources are immutable. */
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_create_constrained_loft(
+    occt_bridge_session_t*, const occt_bridge_shape_id_t*, size_t,
+    const occt_bridge_vec3_t* start_tangent, const occt_bridge_vec3_t* end_tangent,
+    occt_bridge_shape_id_t*);
 
 /*
  * Like occt_bridge_create_loft, but each section is one non-periodic B-spline

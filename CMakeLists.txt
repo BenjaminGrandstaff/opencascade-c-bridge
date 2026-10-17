@@ -28,6 +28,7 @@ add_library(
     src/wires.cpp
     src/construction.cpp
     src/profile_loft.cpp
+    src/constrained_loft.cpp
     src/extrusion_limits.cpp
     src/sketch_ops.cpp
     src/recipes.cpp

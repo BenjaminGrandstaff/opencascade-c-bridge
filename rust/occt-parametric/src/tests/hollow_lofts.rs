@@ -198,3 +198,40 @@ fn older_profile_lofts_without_hole_tracks_keep_their_solid_behavior() {
             < 1e-6
     );
 }
+
+#[test]
+fn constrained_hollow_lofts_interpolate_both_tracks_without_losing_wall_history() {
+    let session = Session::new().unwrap();
+    let mut doc = document();
+    let FeatureOperation::ProfileLoft {
+        ruled,
+        start_constraint,
+        end_constraint,
+        ..
+    } = &mut doc.family.features[0].operation
+    else {
+        panic!()
+    };
+    *ruled = false;
+    let constraint = Box::new(LoftEndConstraint {
+        direction: VectorExpr::Literal(VectorQuantity::scalars(0., 0., 1.)),
+        magnitude: ScalarExpr::Parameter("height".into()),
+    });
+    *start_constraint = Some(constraint.clone());
+    *end_constraint = Some(constraint);
+    let generated = part(&doc).regenerate(&session).unwrap();
+    let body = generated.shape("body").unwrap();
+    let expected = 20. * std::f64::consts::PI * (64. - 32. + 16. * 13. / 35.) * 0.75;
+    assert!((session.volume(body).unwrap() - expected).abs() < 1e-4);
+    for id in ["lower", "lower-bore"] {
+        let edge = session
+            .subshape(generated.shape(id).unwrap(), ShapeType::Edge, 0)
+            .unwrap();
+        assert!(
+            session
+                .history_count(body, &edge, HistoryRelation::Generated)
+                .unwrap()
+                > 0
+        );
+    }
+}

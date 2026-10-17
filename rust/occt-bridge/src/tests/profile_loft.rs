@@ -190,3 +190,153 @@ fn profile_lofts_support_mixed_edge_counts_arcs_and_native_splines() {
     }
     assert_eq!(session.shape_count().unwrap(), 0);
 }
+
+#[test]
+fn constrained_loft_enforces_exact_end_derivatives_and_retains_rational_sections() {
+    let session = Session::new().unwrap();
+    {
+        let a = session
+            .create_circle_wire(Vec3::new(0., 0., 0.), Vec3::new(0., 0., 1.), 2.)
+            .unwrap();
+        let b = session
+            .create_circle_wire(Vec3::new(0., 0., 10.), Vec3::new(0., 0., 1.), 4.)
+            .unwrap();
+        let before = session.exact_bounds(&a).unwrap();
+        let solid = session
+            .create_constrained_loft(
+                &[&a, &b],
+                Some(Vec3::new(0., 0., 10.)),
+                Some(Vec3::new(0., 0., 10.)),
+            )
+            .unwrap();
+        assert!(session.is_valid(&solid).unwrap());
+        let expected = 10. * std::f64::consts::PI * 332. / 35.;
+        assert!((session.volume(&solid).unwrap() - expected).abs() < 1e-5);
+        for t in [0.001, 0.01, 0.25, 0.5, 0.75, 0.99, 0.999] {
+            let radius = 2. + 2. * (3. * t * t - 2. * t * t * t);
+            let (_, r) = session
+                .ray_first_hit(
+                    &solid,
+                    Vec3::new(0., 0., 10. * t),
+                    Vec3::new(1., 0., 0.),
+                    10.,
+                )
+                .unwrap()
+                .unwrap();
+            assert!((r - radius).abs() < 1e-6, "{t}: {r} vs {radius}");
+        }
+        let edge = session.subshape(&a, ShapeType::Edge, 0).unwrap();
+        assert!(
+            session
+                .history_count(&solid, &edge, HistoryRelation::Generated)
+                .unwrap()
+                > 0
+        );
+        assert_eq!(session.exact_bounds(&a).unwrap(), before);
+        assert!(
+            session
+                .create_constrained_loft(&[&a, &b], Some(Vec3::new(1., 0., 0.)), None)
+                .is_err()
+        );
+        assert!(
+            session
+                .create_constrained_loft(&[&a, &b], Some(Vec3::new(0., 0., 0.)), None)
+                .is_err()
+        );
+    }
+    assert_eq!(session.shape_count().unwrap(), 0);
+}
+
+#[test]
+fn constrained_loft_strength_changes_shape_and_multiple_stations_remain_interpolated() {
+    let session = Session::new().unwrap();
+    let a = session
+        .create_circle_wire(Vec3::new(0., 0., 0.), Vec3::new(0., 0., 1.), 2.)
+        .unwrap();
+    let b = session
+        .create_circle_wire(Vec3::new(0., 0., 10.), Vec3::new(0., 0., 1.), 4.)
+        .unwrap();
+    let c = session
+        .create_circle_wire(Vec3::new(0., 0., 20.), Vec3::new(0., 0., 1.), 3.)
+        .unwrap();
+    let strong = session
+        .create_constrained_loft(
+            &[&a, &b],
+            Some(Vec3::new(0., 0., 20.)),
+            Some(Vec3::new(0., 0., 10.)),
+        )
+        .unwrap();
+    let (_, r) = session
+        .ray_first_hit(&strong, Vec3::new(0., 0., 5.), Vec3::new(1., 0., 0.), 10.)
+        .unwrap()
+        .unwrap();
+    assert!(r < 2.8, "strong start must alter the middle radius: {r}");
+    assert!(
+        session
+            .create_constrained_loft(
+                &[&a, &b],
+                Some(Vec3::new(0., 0., 100.)),
+                Some(Vec3::new(0., 0., 10.))
+            )
+            .is_err()
+    );
+    let three = session
+        .create_constrained_loft(
+            &[&a, &b, &c],
+            Some(Vec3::new(0., 0., 10.)),
+            Some(Vec3::new(0., 0., 10.)),
+        )
+        .unwrap();
+    for (z, radius) in [(0.00001, 2.), (10., 4.), (19.99999, 3.)] {
+        let (_, r) = session
+            .ray_first_hit(&three, Vec3::new(0., 0., z), Vec3::new(1., 0., 0.), 10.)
+            .unwrap()
+            .unwrap();
+        assert!((r - radius).abs() < 1e-5);
+    }
+    let square = session
+        .create_polyline_wire(
+            &[
+                Vec3::new(-2., -2., 10.),
+                Vec3::new(2., -2., 10.),
+                Vec3::new(2., 2., 10.),
+                Vec3::new(-2., 2., 10.),
+            ],
+            true,
+        )
+        .unwrap();
+    assert!(
+        session
+            .create_constrained_loft(&[&a, &square], Some(Vec3::new(0., 0., 10.)), None)
+            .is_err()
+    );
+}
+
+#[test]
+fn constrained_polygon_lofts_preserve_ordered_sections_and_single_end_constraints() {
+    let session = Session::new().unwrap();
+    let square = |r: f64, z: f64| {
+        session
+            .create_polyline_wire(
+                &[
+                    Vec3::new(-r, -r, z),
+                    Vec3::new(r, -r, z),
+                    Vec3::new(r, r, z),
+                    Vec3::new(-r, r, z),
+                ],
+                true,
+            )
+            .unwrap()
+    };
+    let a = square(1., 0.);
+    let b = square(2., 10.);
+    let t = Vec3::new(0., 0., 10.);
+    let solid = session
+        .create_constrained_loft(&[&a, &b], Some(t), Some(t))
+        .unwrap();
+    assert!((session.volume(&solid).unwrap() - 3320. / 35.).abs() < 1e-6);
+    let one = session
+        .create_constrained_loft(&[&a, &b], Some(Vec3::new(2., 0., 10.)), None)
+        .unwrap();
+    assert!(session.is_valid(&one).unwrap());
+}

@@ -155,6 +155,16 @@ pub enum RibProfileMode {
     },
 }
 
+/// Terminal derivative of a cubic Hermite loft, along increasing station order.
+/// Direction is dimensionless and transverse to the terminal profile plane;
+/// magnitude is a positive length per station interval.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct LoftEndConstraint {
+    pub direction: VectorExpr,
+    pub magnitude: ScalarExpr,
+}
+
 /// An interior sample of a smooth radius law. Position is dimensionless and
 /// strictly between 0 and 1; radius is a positive length.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
@@ -257,6 +267,10 @@ pub enum FeatureOperation {
         holes: Vec<Vec<String>>,
         #[serde(default)]
         ruled: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        start_constraint: Option<Box<LoftEndConstraint>>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        end_constraint: Option<Box<LoftEndConstraint>>,
     },
     Cylinder {
         origin: VectorExpr,

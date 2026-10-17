@@ -665,6 +665,34 @@ impl Session {
         Ok(self.shape(result))
     }
 
+    /// Exact rational cubic Hermite loft; derivatives use millimetres per station interval.
+    pub fn create_constrained_loft<'a>(
+        &'a self,
+        sections: &[&Shape<'_>],
+        start: Option<Vec3>,
+        end: Option<Vec3>,
+    ) -> Result<Shape<'a>, BridgeError> {
+        for section in sections {
+            self.validate_shape(section)?;
+        }
+        let ids = sections.iter().map(|s| s.id).collect::<Vec<_>>();
+        let start = start.map(RawVec3::from);
+        let end = end.map(RawVec3::from);
+        let mut result = 0;
+        // SAFETY: all input handles are session-owned; optional vectors and slices live through the call.
+        self.check(unsafe {
+            occt_bridge_create_constrained_loft(
+                self.raw.as_ptr(),
+                ids.as_ptr(),
+                ids.len(),
+                start.as_ref().map_or(std::ptr::null(), |v| v),
+                end.as_ref().map_or(std::ptr::null(), |v| v),
+                &mut result,
+            )
+        })?;
+        Ok(self.shape(result))
+    }
+
     /// Lofts through sections that are each one B-spline interpolated through
     /// their points and closed back to the first point: smooth except for a
     /// corner at the first point, such as an airfoil trailing edge. `ruled`
