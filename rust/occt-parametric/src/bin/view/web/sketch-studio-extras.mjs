@@ -43,6 +43,7 @@ export function installExtras(studio, document) {
 
   let editor = null;
   function openDrawer() {
+    if (studio.modelPending) return;
     help.hidden = true;
     if (!drawer.hidden) {
       drawer.hidden = true;

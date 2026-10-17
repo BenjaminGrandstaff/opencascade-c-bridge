@@ -53,6 +53,7 @@ export function installDrawing(studio, document) {
   const options = {sides:6,closed:false,flip:false,degree:3,weights:'',rho:.5,text:'Text',font:'Liberation Sans',style:'regular',height:5,angle:0,align:'start'};
   let previewTimer = 0;
   let previewTurn = 0;
+  let draftRevision = 0;
 
   // A clean baseline can still own redo entries. Keep that local session
   // separate from accepted model history until Apply or explicit Discard.
@@ -60,9 +61,40 @@ export function installDrawing(studio, document) {
     (studio.draft.dirty || studio.draft.undo.length || studio.draft.redo.length));
   studio.hasDraftHistory = hasDraftHistory;
 
+  // A revision also detects Undo/Redo back to the same immutable definition.
+  // Read-only solver requests may finish only in the context they started in.
+  studio.draftCheckpoint = () => {
+    const d = studio.draft, definition = d?.definition, revision = draftRevision;
+    const version = studio.version, instance = studio.instance, feature = studio.activeLayer()?.feature;
+    return () => !studio.modelPending && studio.draft === d && d?.definition === definition &&
+      draftRevision === revision && studio.version === version && studio.instance === instance &&
+      studio.activeLayer()?.feature === feature;
+  };
+
+  function beginModelOperation(label) {
+    if (studio.modelPending) return false;
+    studio.modelPending = label;
+    studio.modelEpoch = (studio.modelEpoch ?? 0) + 1;
+    studio.busy = true;
+    draftRevision++;
+    clearTimeout(previewTimer);
+    previewTurn++;
+    if (studio.draft) studio.draft.previewing = false;
+    cancelGesture();
+    studio.refresh();
+    return true;
+  }
+
+  function endModelOperation() {
+    studio.modelPending = null;
+    studio.busy = hasDraftHistory();
+    studio.refresh();
+  }
+
   // ── Draft ────────────────────────────────────────────────────────────
   /** The draft of the active layer's sketch, created on first edit. */
   function draft() {
+    if (studio.modelPending) return null;
     const layer = studio.activeLayer();
     if (!layer) return null;
     if (studio.draft?.feature !== layer.feature) {
@@ -87,6 +119,8 @@ export function installDrawing(studio, document) {
 
   function change(next, ghostPaths = []) {
     const d = studio.draft;
+    if (studio.modelPending || !d) return false;
+    draftRevision++;
     d.undo.push(d.definition);
     d.redo = [];
     d.definition = next;
@@ -95,9 +129,12 @@ export function installDrawing(studio, document) {
     studio.busy = true;
     schedulePreview();
     studio.refresh();
+    return true;
   }
 
   function schedulePreview() {
+    previewTurn++; // Invalidate the previous revision before the debounce expires.
+    if (studio.draft) { studio.draft.error = null; studio.draft.previewing = true; }
     clearTimeout(previewTimer);
     previewTimer = setTimeout(preview, 150);
   }
@@ -119,14 +156,15 @@ export function installDrawing(studio, document) {
 
   async function preview() {
     const d = studio.draft;
-    if (!d?.dirty) return;
+    if (!d?.dirty || studio.modelPending) return;
     const turn = ++previewTurn;
     const definition = d.definition;
     d.previewing = true;
-    studio.renderStatus();
+    studio.refresh();
+    const current = () => turn === previewTurn && studio.draft === d && d.definition === definition && !studio.modelPending;
     try {
       const response = await send(false);
-      if (turn !== previewTurn || studio.draft !== d || d.definition !== definition) return;
+      if (!current()) return;
       const scene = response.annotations?.scenes?.find((s) => s.kind === 'sketch' && s.feature === d.feature);
       if (scene) studio.previewScenes[d.feature] = scene;
       d.pending = [];
@@ -138,29 +176,31 @@ export function installDrawing(studio, document) {
       }
       studio.say(d.error ? `Preview: ${d.error}` : 'Draft solved and checked. Apply adds it to the model.', Boolean(d.error));
     } catch (error) {
-      if (turn !== previewTurn) return;
+      if (!current()) return;
       d.error = error.message;
       studio.say(`Preview failed: ${error.message}`, true);
     } finally {
-      if (turn === previewTurn) d.previewing = false;
-      studio.refresh();
+      if (current()) { d.previewing = false; studio.refresh(); }
     }
   }
 
   async function apply() {
     const d = studio.draft;
-    if (!d?.dirty) return;
-    clearTimeout(previewTimer);
+    if (!d?.dirty || !beginModelOperation('Applying')) return;
+    let applied = false;
     try {
       studio.say('Applying: regenerating every variant and checking requirements…');
       const response = await send(true);
       if (!response.applied) throw new Error(response.error ?? 'The draft was not applied.');
-      discard(true);
+      applied = true;
+      releaseDraft();
       await studio.reload();
       studio.activate(d.feature);
       studio.say(`${d.feature} applied to the model.`);
     } catch (error) {
-      studio.say(`Apply rejected: ${error.message}`, true);
+      studio.say(applied ? `${d.feature} applied, but refreshing the view failed: ${error.message}. Reload the page.` : `Apply rejected: ${error.message}`, true);
+    } finally {
+      endModelOperation();
     }
   }
 
@@ -180,6 +220,7 @@ export function installDrawing(studio, document) {
 
   // O(1) snapshot navigation; restoring presentation also scans sketch layers.
   function restoreDraftHistory(d, action) {
+    draftRevision++;
     clearDraftPreview(d);
     cancelGesture();
     d.dirty = d.undo.length > 0;
@@ -194,13 +235,19 @@ export function installDrawing(studio, document) {
     studio.refresh();
   }
 
-  function discard(quiet = false) {
+  function releaseDraft() {
+    draftRevision++;
     const d = studio.draft;
     if (!d) return;
     clearDraftPreview(d);
     studio.draft = null;
-    studio.busy = false;
+    studio.busy = Boolean(studio.modelPending);
     cancelGesture();
+  }
+
+  function discard(quiet = false) {
+    if (studio.modelPending) return;
+    releaseDraft();
     if (!quiet) {
       studio.say('Draft discarded.');
       studio.reload();
@@ -210,28 +257,36 @@ export function installDrawing(studio, document) {
 
   /** Undo or redo a model change through the server's history. */
   async function modelHistory(direction) {
+    if (!beginModelOperation(direction === 'undo' ? 'Undoing' : 'Redoing')) return;
     try {
       await studio.api(`/api/${direction}`, { method: 'POST', body: JSON.stringify({version:studio.version}) });
-      if (studio.draft) discard(true); // Drop an idle baseline from before model navigation.
+      if (studio.draft) releaseDraft(); // Drop an idle baseline from before model navigation.
       await studio.reload();
       studio.say(direction === 'undo' ? 'Model change undone.' : 'Model change redone.');
     } catch (error) {
       studio.say(error.message, true);
+    } finally {
+      endModelOperation();
     }
   }
 
   async function save() {
+    if (studio.modelPending) return;
     if (hasDraftHistory()) { studio.say('Apply or discard the studio draft before saving the model.'); return; }
+    if (!beginModelOperation('Saving')) return;
     try {
       await studio.api('/api/save', { method: 'POST', body: '{}' });
       await studio.reload();
       studio.say('Model saved to its file.');
     } catch (error) {
       studio.say(`Save failed: ${error.message}`, true);
+    } finally {
+      endModelOperation();
     }
   }
 
   function undo() {
+    if (studio.modelPending) return;
     const d = studio.draft;
     if (!hasDraftHistory()) {
       if (studio.modelState?.undo_count) modelHistory('undo');
@@ -244,6 +299,7 @@ export function installDrawing(studio, document) {
   }
 
   function redo() {
+    if (studio.modelPending) return;
     const d = studio.draft;
     if (!hasDraftHistory()) {
       if (studio.modelState?.redo_count) modelHistory('redo');
@@ -257,6 +313,7 @@ export function installDrawing(studio, document) {
 
   // ── Gestures ─────────────────────────────────────────────────────────
   function cancelGesture() {
+    studio.cancelSelectionGesture?.();
     gesture = null;
     cursor = null;
     typed = '';
@@ -313,6 +370,7 @@ export function installDrawing(studio, document) {
 
   function commit(clicks, auto = true) {
     const d = draft();
+    if (!d || !gesture) return;
     const tool = gesture.tool;
     try {
       const profile = d.local && !(d.definition.profile ?? []).length;
@@ -543,28 +601,30 @@ export function installDrawing(studio, document) {
     studio.fill(actions,
       html('button', {
         title: hasDraftHistory() ? 'Undo in the draft (Ctrl+Z)' : 'Undo the last change to the model (Ctrl+Z)',
-        disabled: hasDraftHistory() ? !d.undo.length : !studio.modelState?.undo_count, onclick: undo,
+        disabled: Boolean(studio.modelPending) || (hasDraftHistory() ? !d.undo.length : !studio.modelState?.undo_count), onclick: undo,
       }, 'Undo'),
       html('button', {
         title: hasDraftHistory() ? 'Redo in the draft (Ctrl+Shift+Z)' : 'Redo a model change (Ctrl+Shift+Z)',
-        disabled: hasDraftHistory() ? !d.redo.length : !studio.modelState?.redo_count, onclick: redo,
+        disabled: Boolean(studio.modelPending) || (hasDraftHistory() ? !d.redo.length : !studio.modelState?.redo_count), onclick: redo,
       }, 'Redo'),
-      html('button', { disabled: !hasDraftHistory(), title: 'Clear the local draft and its Undo/Redo history; keep the accepted model', onclick: () => discard() }, 'Discard'),
-      html('button', { 'aria-pressed': d?.dirty && !d.error ? 'true' : 'false', disabled: !d?.dirty || d.previewing || Boolean(d.error), title: d?.error ?? 'Apply the draft to the model', onclick: apply }, 'Apply'),
+      html('button', { disabled: Boolean(studio.modelPending) || !hasDraftHistory(), title: 'Clear the local draft and its Undo/Redo history; keep the accepted model', onclick: () => discard() }, 'Discard'),
+      html('button', { 'aria-pressed': d?.dirty && !d.error ? 'true' : 'false', disabled: Boolean(studio.modelPending) || !d?.dirty || d.previewing || Boolean(d.error), title: d?.error ?? 'Apply the draft to the model', onclick: apply }, 'Apply'),
       html('button', {
         title: studio.modelState?.dirty ? 'Write the model to its file' : 'The model file is up to date',
-        disabled: !studio.modelState?.dirty || hasDraftHistory(), onclick: save,
+        disabled: Boolean(studio.modelPending) || !studio.modelState?.dirty || hasDraftHistory(), onclick: save,
       }, 'Save'));
   };
 
   studio.statusExtra = () => {
     const d = studio.draft;
+    if (studio.modelPending) return html('span', {}, `${studio.modelPending}…`);
     if (!hasDraftHistory()) return null;
     if (!d.dirty) return html('span', {}, 'Draft · at starting sketch · Redo available');
     return html('span', {}, d.previewing ? 'Draft · previewing…' : d.error ? 'Draft · cannot apply' : `Draft · ${d.undo.length} change${d.undo.length === 1 ? '' : 's'}, not applied`);
   };
 
   studio.onActivate = (layer) => {
+    draftRevision++;
     cancelGesture();
     if (layer && hasDraftHistory() && studio.draft.feature !== layer.feature) {
       studio.say(`The draft of ${studio.draft.feature} is still open. Apply or discard it before drawing on ${layer.feature}.`);

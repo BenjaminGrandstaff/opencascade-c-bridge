@@ -39,7 +39,10 @@ export function installConstraints(studio, document) {
   let valueInput = null;
   /** True until the first key replaces the measured value shown. */
   let prefilled = false;
+  let dragTurn = 0;
   let drag = null; // { point, start, current }
+
+  studio.cancelSelectionGesture = () => { drag = null; dragTurn++; };
 
   const layer = () => studio.activeLayer();
   const scene = () => (layer() ? studio.sceneOf(layer().feature) : null);
@@ -193,7 +196,9 @@ export function installConstraints(studio, document) {
       if (!target) return false;
       const additive = event.shiftKey || event.ctrlKey || event.metaKey;
       if (target.kind === 'point' && !additive && draggable(target.id)) {
-        drag = { point: target.id, start: screenAt(event), current: null, moved: false };
+        if (!studio.ensureDraft()) return false;
+        dragTurn++;
+        drag = { point: target.id, start: screenAt(event), current: null, moved: false, currentDraft: studio.draftCheckpoint() };
       }
       const ids = additive
         ? studio.selection.includes(target.id) ? studio.selection.filter((id) => id !== target.id) : [...studio.selection, target.id]
@@ -212,7 +217,7 @@ export function installConstraints(studio, document) {
       const pending = drag;
       drag = null;
       studio.redraw();
-      if (!pending?.moved || !pending.current) return;
+      if (!pending?.moved || !pending.current || !pending.currentDraft()) return;
       await dragPoint(pending.point, pending.current);
     },
     click(event) {
@@ -233,6 +238,8 @@ export function installConstraints(studio, document) {
       studio.say(draft?.local ? 'Apply the new sketch before dragging its points.' : `Apply or discard the draft of ${studio.draft?.feature} first.`, true);
       return;
     }
+    const turn = ++dragTurn, currentDraft = studio.draftCheckpoint();
+    const current = () => turn === dragTurn && currentDraft();
     studio.say('Solving the drag with the existing constraints…');
     try {
       const response = await studio.api('/api/sketch-drag', {
@@ -242,9 +249,11 @@ export function installConstraints(studio, document) {
           expected: draft.baseline, definition: draft.definition, point, target,
         }),
       });
+      if (!current()) return;
       studio.changeDraft(response.definition);
       studio.say(`${point} moved; the solver kept every constraint. Apply to keep it.`);
     } catch (error) {
+      if (!current()) return;
       studio.say(`Drag rejected: ${error.message}`, true);
     }
   }
@@ -422,6 +431,8 @@ export function installConstraints(studio, document) {
 
   const activate = studio.onActivate;
   studio.onActivate = (l) => {
+    drag = null;
+    dragTurn++;
     closeValueBox();
     dimensionIds = [];
     studio.selection = [];
@@ -429,6 +440,8 @@ export function installConstraints(studio, document) {
   };
   const setTool = studio.setTool;
   studio.setTool = (id) => {
+    drag = null;
+    dragTurn++;
     closeValueBox();
     dimensionIds = [];
     if (id !== 'select') studio.selection = [];

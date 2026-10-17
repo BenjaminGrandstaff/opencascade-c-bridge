@@ -130,6 +130,24 @@ and native Preview retain their own costs. The persistent studio benchmark
 checks 10,000 Undo plus 10,000 Redo transitions on 10,000-curve snapshots within
 1 s, excluding browser layout and native regeneration.
 
+## Pending edits and solver replies
+
+Apply locks sketch editing, Discard, Undo/Redo and Save until its request and
+model reload finish. Camera navigation still works. Repeated clicks or keyboard
+shortcuts cannot submit another Apply or change the definition being accepted.
+A rejected Apply keeps the draft and history for correction or retry. If Apply
+succeeds but refreshing fails, the draft is cleared and the status reports that
+the model was applied and the page needs reloading.
+
+Solved point drags are read-only requests until their result becomes a local
+edit. They are accepted only for the same draft revision, model version,
+instance and active layer. A later edit, Undo/Redo, Discard, Apply, layer or tool
+change invalidates the old reply, including errors. Of overlapping drags, only
+the newest may finish; a successful drag creates one Undo entry. A new edit
+invalidates older Preview replies immediately, before the preview debounce
+expires. Older polling/reload results cannot replace the model loaded after a
+studio Apply, model Undo/Redo or Save.
+
 ## Additional primitive tools
 
 The toolbar also authors these existing native definitions (schema 164 and ABI

@@ -82,16 +82,23 @@ export function startStudio(document) {
   studio.say = say;
   studio.api = api;
 
+  let loadTurn = 0;
   async function load() {
+    const turn = ++loadTurn, epoch = studio.modelEpoch;
+    const draft = studio.draft, definition = draft?.definition;
     const state = await api('/api/state');
     const { instances } = await api('/api/instances');
     if (!instances.length) throw new Error('The model has no editable instance.');
-    if (!instances.some((i) => i.id === studio.instance)) studio.instance = instances[0].id;
+    const instance = instances.some((i) => i.id === studio.instance) ? studio.instance : instances[0].id;
     const [gltf, annotations, sketches] = await Promise.all([
       fetch('/api/model.gltf').then((r) => r.json()),
-      api(`/api/annotations?id=${encodeURIComponent(studio.instance)}`),
+      api(`/api/annotations?id=${encodeURIComponent(instance)}`),
       api('/api/sketches'),
     ]);
+    // A poll or Discard reload started before a model operation/new edit must
+    // never publish its old model over that operation's eventual reload.
+    if (turn !== loadTurn || epoch !== studio.modelEpoch || studio.draft !== draft || studio.draft?.definition !== definition) return;
+    studio.instance = instance;
     const first = studio.parsed === null;
     studio.version = state.version;
     studio.modelState = state;
@@ -430,6 +437,10 @@ export function startStudio(document) {
     renderInspector();
     renderStatus();
     studio.renderToolbar?.();
+    for (const id of ['side', 'inspector', 'constraint-bar', 'value-box']) {
+      const panel = $(id);
+      if (panel) panel.inert = Boolean(studio.modelPending);
+    }
     redraw();
   }
   studio.refresh = refresh;
@@ -520,15 +531,16 @@ export function startStudio(document) {
     // (drag to orbit, Shift-drag or right-drag to pan).
     // While a face or point is being picked, clicks go to the pick.
     const picking = studio.picking || studio.isPlanePicking?.();
-    if (event.button === 0 && !picking && studio.tools.get(studio.tool)?.down?.(event)) {
+    if (!studio.modelPending && event.button === 0 && !picking && studio.tools.get(studio.tool)?.down?.(event)) {
       drag = { tool: true };
       return;
     }
-    drag = { x: event.clientX, y: event.clientY, moved: 0, pan: event.shiftKey || event.button === 2 || event.button === 1 };
+    drag = { x: event.clientX, y: event.clientY, moved: 0, navigationOnly: Boolean(studio.modelPending), pan: event.shiftKey || event.button === 2 || event.button === 1 };
     canvas.style.cursor = 'grabbing';
   });
   canvas.addEventListener('pointermove', (event) => {
     if (!drag || drag.tool) {
+      if (studio.modelPending) return;
       studio.tools.get(studio.tool)?.move?.(event, Boolean(drag?.tool));
       return;
     }
@@ -553,11 +565,12 @@ export function startStudio(document) {
     const was = drag;
     drag = null;
     canvas.style.cursor = 'grab';
+    if (studio.modelPending) return;
     if (was?.tool) {
       studio.tools.get(studio.tool)?.up?.(event);
       return;
     }
-    const click = was && was.moved < 4 && event.button === 0;
+    const click = was && !was.navigationOnly && was.moved < 4 && event.button === 0;
     if (!click) return;
     if (await studio.planePick?.(event)) return;
     if (studio.picking) {
@@ -587,6 +600,7 @@ export function startStudio(document) {
     redraw();
   });
   document.addEventListener('keydown', (event) => {
+    if (studio.modelPending && !['n', 'N', 'f', 'F'].includes(event.key)) { event.preventDefault(); return; }
     if (event.target.closest?.('input, select, textarea')) return;
     if (studio.onKey?.(event)) return;
     if (event.key === 'Escape' && studio.picking) {
@@ -602,17 +616,20 @@ export function startStudio(document) {
 
   // Follow edits made elsewhere (the classic viewer, the CLI, the file).
   async function poll() {
+    const epoch = studio.modelEpoch;
     try {
       const state = await api('/api/state');
+      if (epoch !== studio.modelEpoch || studio.modelPending) return;
       if (state.version !== studio.version && !studio.busy) await load();
       else if (state.dirty !== studio.modelState?.dirty) {
         studio.modelState = state;
         studio.renderToolbar?.();
       }
     } catch (error) {
-      say(error.message, true);
+      if (epoch === studio.modelEpoch && !studio.busy) say(error.message, true);
+    } finally {
+      setTimeout(poll, 1000);
     }
-    setTimeout(poll, 1000);
   }
 
   studio.viewport = () => {
