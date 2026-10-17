@@ -29,6 +29,7 @@ use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
 mod continuous_motion;
+mod curve_edits;
 mod datum_planes;
 mod draft;
 mod drawing;
@@ -125,6 +126,9 @@ impl Outcome {
 fn main() -> ExitCode {
     if std::env::args().any(|arg| arg == "--spline-samples-only") {
         return report(&[spline_sample_queries_case()]);
+    }
+    if std::env::args().any(|arg| arg == "--curve-edits-only") {
+        return report(&[curve_edits::turned_plane_case()]);
     }
     if std::env::args().any(|arg| arg == "--datum-planes-only") {
         return report(&[datum_planes::datum_plane_chain_case()]);
@@ -234,6 +238,7 @@ fn main() -> ExitCode {
     outcomes.push(releases::sheet_set_case(definition));
     outcomes.push(releases::change_case(definition));
     outcomes.push(datum_planes::datum_plane_chain_case());
+    outcomes.push(curve_edits::turned_plane_case());
     outcomes.push(textures::texture_case(definition));
     outcomes.push(textures::profile_case(definition));
     outcomes.push(textures::face_case(definition));

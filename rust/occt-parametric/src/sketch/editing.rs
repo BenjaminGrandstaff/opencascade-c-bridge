@@ -8,6 +8,49 @@ pub(crate) struct CurveLibrary<'a> {
     pub active: Vec<String>,
 }
 
+/// `shape`, built in sketch-local XY, moved rigidly into the orthonormal
+/// sketch `frame` (origin, x axis, y axis): Z turns onto the frame normal,
+/// then about it until X lies along the frame's x axis, then it moves to
+/// the origin. Identity steps are skipped.
+fn place_in_frame<'a>(
+    session: &'a Session,
+    mut shape: Shape<'a>,
+    (origin, x, y): (Vec3, Vec3, Vec3),
+) -> Result<Shape<'a>, ModelError> {
+    let zero = Vec3::new(0., 0., 0.);
+    let z = Vec3::new(0., 0., 1.);
+    let normal = cross(x, y);
+    let length = |v: Vec3| dot(v, v).sqrt();
+    // Rodrigues rotation of `v` about unit `axis` by `angle`.
+    let turn = |v: Vec3, axis: Vec3, angle: f64| {
+        let (sin, cos) = angle.sin_cos();
+        add(
+            add(scale(v, cos), scale(cross(axis, v), sin)),
+            scale(axis, dot(axis, v) * (1. - cos)),
+        )
+    };
+    let mut local_x = Vec3::new(1., 0., 0.);
+    let tilt = cross(z, normal);
+    if length(tilt) > 1e-12 {
+        let axis = scale(tilt, 1. / length(tilt));
+        let angle = length(tilt).atan2(dot(z, normal));
+        shape = session.rotate(&shape, zero, axis, angle)?;
+        local_x = turn(local_x, axis, angle);
+    } else if dot(z, normal) < 0. {
+        let axis = Vec3::new(1., 0., 0.);
+        shape = session.rotate(&shape, zero, axis, std::f64::consts::PI)?;
+        local_x = turn(local_x, axis, std::f64::consts::PI);
+    }
+    let spin = dot(normal, cross(local_x, x)).atan2(dot(local_x, x));
+    if spin.abs() > 1e-15 {
+        shape = session.rotate(&shape, zero, normal, spin)?;
+    }
+    if length(origin) > 0. {
+        shape = session.translate(&shape, origin)?;
+    }
+    Ok(shape)
+}
+
 fn distance(a: Vec3, b: Vec3) -> f64 {
     (a.x - b.x).hypot(a.y - b.y).hypot(a.z - b.z)
 }
@@ -153,7 +196,18 @@ impl SketchDefinitionEditingInternal for SketchDefinition {
                 "projected sketch requires source-geometry resolution before native edits",
             ));
         }
-        let (origin, x, y) = frame;
+        // Native crossings are found in the XY plane, so curve edits are
+        // made on sketch-local curves, then placed rigidly in the frame.
+        let placed = !self.curve_operations.is_empty();
+        let (origin, x, y) = if placed {
+            (
+                Vec3::new(0., 0., 0.),
+                Vec3::new(1., 0., 0.),
+                Vec3::new(0., 1., 0.),
+            )
+        } else {
+            frame
+        };
         let place = |p: SketchPoint2| add(origin, add(scale(x, p.x), scale(y, p.y)));
         let direction = |p: SketchPoint2| add(scale(x, p.x), scale(y, p.y));
         let mut curves = HashMap::new();
@@ -239,6 +293,12 @@ impl SketchDefinitionEditingInternal for SketchDefinition {
                     curves.insert(entity.clone(), result);
                 }
             }
+        }
+        if placed {
+            curves = curves
+                .into_iter()
+                .map(|(id, curve)| Ok((id, place_in_frame(session, curve, frame)?)))
+                .collect::<Result<_, ModelError>>()?;
         }
         Ok(CurveLibrary { curves, active })
     }

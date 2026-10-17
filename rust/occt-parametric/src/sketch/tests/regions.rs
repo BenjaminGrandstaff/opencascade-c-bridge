@@ -496,3 +496,56 @@ fn profile_operations_apply_to_the_profile_beside_regions() {
     let expected = 200. - (1. - PI / 4.) * 4. + PI * (16. - 2.25) + (40. + PI * 4.);
     assert!((area - expected).abs() < 1e-9, "{area} vs {expected}");
 }
+
+#[test]
+fn curve_edits_with_crossings_work_on_sketch_planes_other_than_xy() {
+    // A crossing split and an extend-to, on XY and on two other frames.
+    let base = json!({
+        "points":[p("a",0.,0.),p("b",10.,0.),p("c",10.,10.),p("d",0.,10.),p("v0",6.,-2.),p("v1",6.,12.),
+            p("hint",6.,0.),p("m0",2.,5.),p("m1",4.,5.)],
+        "lines":[{"id":"bottom","start":"a","end":"b"},{"id":"right","start":"b","end":"c"},
+            {"id":"top","start":"c","end":"d"},{"id":"left","start":"d","end":"a"},{"id":"stop","start":"v0","end":"v1"},
+            {"id":"spur","start":"m0","end":"m1"}],
+        "curve_operations":[
+            {"split":{"entity":"bottom","at":{"crossing":{"curve":"stop","near":"hint"}},"before":"first","after":"second"}},
+            {"extend_to":{"entity":"spur","end":"end","target":"stop","limit":mm(5.)}}],
+        "profile":["first","second","right","top","left"]
+    });
+    let vector = |x: f64, y: f64, z: f64, dimension: &str, unit: Value| {
+        json!({"literal": {"x": {"value": x, "dimension": dimension, "unit": unit},
+            "y": {"value": y, "dimension": dimension, "unit": unit},
+            "z": {"value": z, "dimension": dimension, "unit": unit}}})
+    };
+    let s = 0.5f64.sqrt();
+    for (origin, x, y) in [
+        ([0., 0., 0.], [1., 0., 0.], [0., 1., 0.]),
+        ([-1., 2., 3.], [0., 1., 0.], [0., 0., 1.]),
+        ([4., -2., 7.], [s, 0., -s], [0.5, s, 0.5]),
+    ] {
+        let mut rest = base.clone();
+        rest["origin"] = vector(
+            origin[0],
+            origin[1],
+            origin[2],
+            "length",
+            json!("millimeter"),
+        );
+        rest["x_axis"] = vector(x[0], x[1], x[2], "scalar", Value::Null);
+        rest["y_axis"] = vector(y[0], y[1], y[2], "scalar", Value::Null);
+        let mut sketch = sketch(rest);
+        let (count, area) = faces(&sketch).unwrap();
+        assert_eq!((count, (area - 100.).abs() < 1e-7), (1, true), "{x:?}");
+        // The spur, extended alone, ends where the stop line crosses it.
+        sketch.profile = vec!["spur".into()];
+        let session = Session::new().unwrap();
+        let wire = sketch.open_wire(&session, &HashMap::new(), None).unwrap();
+        let (_, end, _, _) = session.curve_end_data(&wire).unwrap();
+        let expected = [0, 1, 2].map(|i| origin[i] + 6. * x[i] + 5. * y[i]);
+        assert!(
+            (end.x - expected[0]).abs() < 1e-7
+                && (end.y - expected[1]).abs() < 1e-7
+                && (end.z - expected[2]).abs() < 1e-7,
+            "{end:?} {expected:?}"
+        );
+    }
+}

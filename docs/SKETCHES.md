@@ -2679,6 +2679,12 @@ entity lists and subsequent curve/profile operations:
 - At most 1,024 curve operations. Forward references, repeated piece names,
   inactive edit sources and unknown bounds/targets reject. These names are
   boundary references; driving constraints continue to use authored entities.
+- Edits run on sketch-local curves in the XY plane, where native crossings
+  are found, and the results are then placed rigidly in the sketch's frame.
+  So they work on any sketch plane (XZ, YZ, datum planes, faces), with a
+  few transforms per curve added over an XY sketch. Earlier, crossings on
+  other planes were rejected with "intersection curves must lie in the XY
+  plane".
 
 `region_edits` runs after explicit face construction or discovery/composition
 and before adding text. Each entry selects the current material face strictly
