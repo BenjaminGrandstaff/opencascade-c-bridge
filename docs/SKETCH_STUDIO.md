@@ -603,7 +603,7 @@ Node tests delete from a 10,000-line chain in well under a second.
 
 ## Modify tools
 
-Fillet, Chamfer and Extend in the palette's Modify group record the
+Fillet, Chamfer, Extend and Offset in the palette's Modify group record the
 model's own edits, so the source geometry and its constraints stay and the
 outline is derived from them; Trim and Split edit the geometry (below).
 Once a sketch has such edits, the edited outline draws solid and the curves
@@ -636,6 +636,18 @@ it was derived from draw dashed behind it.
   so Fillet and Chamfer can round them.
 - **Split** (Y): click a line or arc to cut it in two at a new shared
   point, collinear or on the same circle.
+- **Offset** (Z): hover the outer profile to highlight it, click it, and
+  type a distance in millimetres or a parameter name (`-wall` negates
+  one). Positive grows a closed outline and negative shrinks it; an open
+  outline moves to the right of its travel. Choose round or sharp
+  corners (`arc` or `intersection` join). A dashed guide follows the typed
+  number before the native offset previews. The edit is a profile `offset`
+  operation, last in the list; clicking the outline again shows the
+  current offset with Change and Remove (or type 0). Fillets and chamfers
+  added afterwards go before the offset, as the model requires, so they
+  round the source corners and the offset follows them. The guide is an
+  approximate polyline offset, O(points × 48), about 60 ms on a
+  10,000-line outline.
 
 Trimming opens an outline the same way Delete does, and a trimmed arc or
 a drawn curve that meets the open ends closes it again: trimming the edge
@@ -664,7 +676,7 @@ arc, under 200 ms on 10,000 curves in the Node tests.
 | 36 typed constraints and dimensions with parameters | Yes | Selection bar, inspector, Dimension tool |
 | Edit driving dimensions | Studio inline | Double-click a label or Edit in the inspector; reference dimensions are read-only |
 | Remove constraints | Yes | Inspector |
-| Fillet, chamfer, extend, trim and split by clicking | Studio only | Modify tools; see [Modify tools](#modify-tools) |
+| Fillet, chamfer, extend, trim, split and offset by clicking | Studio only | Modify tools; see [Modify tools](#modify-tools) |
 | Delete geometry | Studio only | Delete key or inspector, with dependents; see [Deleting](#deleting) |
 | Crossing points and spline samples | Yes | Named points panel, native candidates, on-canvas markers and draft history |
 | Weighted point links | Yes | Named points panel, canvas sources, literal/parameter weights and preserved formulas |

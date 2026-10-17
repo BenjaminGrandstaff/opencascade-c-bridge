@@ -114,3 +114,41 @@ for (let i = 0; i < moves; i++) {
 const generatedMove = (performance.now() - start) / moves;
 console.log(`Studio generated references: 10,000 pattern lines, ${generatedBuild.toFixed(1)} ms index build, ${generatedMove.toFixed(2)} ms per move (budgets 500/16 ms)`);
 assert(generatedBuild < 500 && generatedMove < 16, 'Generated-reference snapping exceeded its scale budget.');
+
+// Modify tools on a 10,000-line closed outline: one hover's crossings for a
+// line crossing every edge, a delete with its cascade, and the offset guide.
+const web = '../../rust/occt-parametric/src/bin/view/web';
+const { crossings } = await import(`${web}/sketch-studio-trim.mjs`);
+const { deletion } = await import(`${web}/sketch-studio-delete.mjs`);
+const { offsetBase, offsetPolyline } = await import(`${web}/sketch-studio-modify.mjs`);
+{
+  const n = 10000;
+  const mm = (value) => ({ literal: { value, dimension: 'length', unit: 'millimeter' } });
+  const ring = Array.from({ length: n }, (_, i) => [100 * Math.cos((2 * Math.PI * i) / n), 100 * Math.sin((2 * Math.PI * i) / n), 0]);
+  const points = Object.fromEntries(ring.map((p, i) => [`P${i}`, p]));
+  const definition = { id: 'ring', points: ring.map((_, i) => ({ id: `P${i}`, x: mm(0), y: mm(0), fixed: false })), lines: [], constraints: [], profile: [] };
+  const entities = [];
+  for (let i = 0; i < n; i += 1) {
+    const [a, b] = [`P${i}`, `P${(i + 1) % n}`];
+    definition.lines.push({ id: `L${i}`, start: a, end: b });
+    definition.profile.push(`L${i}`);
+    entities.push({ id: `L${i}`, point_ids: [a, b], points: [points[a], points[b]] });
+  }
+  // A comb of 10,000 short segments, each crossed by one long probe line.
+  const comb = Array.from({ length: n }, (_, i) => ({ id: `C${i}`, point_ids: [`c${i}`, `d${i}`], points: [[-150 + (300 * i) / n, -1, 0], [-150 + (300 * i) / n, 1, 0]] }));
+  const probe = { id: 'probe', point_ids: ['p', 'q'], points: [[-151, 0, 0], [151, 0, 0]] };
+  let started = performance.now();
+  const hits = crossings({ points: {}, entities: [probe, ...comb] }, 'probe');
+  const crossTime = performance.now() - started;
+  assert.equal(hits.length, n);
+  started = performance.now();
+  const removed = deletion(definition, ['L0']);
+  const deleteTime = performance.now() - started;
+  assert.equal(removed.definition.lines.length, n - 1);
+  started = performance.now();
+  const guide = offsetPolyline(offsetBase(definition, { points, entities }), 5, 'arc');
+  const guideTime = performance.now() - started;
+  assert(guide.length > n);
+  console.log(`Studio modify tools on 10,000 curves: trim crossings ${crossTime.toFixed(1)} ms, delete ${deleteTime.toFixed(1)} ms, offset guide ${guideTime.toFixed(1)} ms (budgets 100/500/100 ms)`);
+  assert(crossTime < 100 && deleteTime < 500 && guideTime < 100, 'Studio modify tools exceeded their scale budget.');
+}

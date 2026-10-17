@@ -26,6 +26,13 @@ tracks status and order.
 
 ## Done
 
+- Offset in the sketch studio (no schema or ABI change). Offset (`Z`)
+  records the whole-profile `offset` operation from a typed signed
+  distance or parameter with round or sharp corners, drawing an
+  approximate guide while typing; clicking again changes or removes it.
+  Fillets and chamfers now go before an existing offset, as validation
+  requires. The studio bench times trim crossings, delete and the offset
+  guide on 10,000 curves. See [Modify tools](docs/SKETCH_STUDIO.md#modify-tools).
 - Trim and split in the sketch studio (no schema or ABI change). Trim
   marks the piece of a line, arc or circle between the curves crossing it
   and cuts it away by editing the geometry: new ends at the crossings held
@@ -47,6 +54,7 @@ tracks status and order.
   frame; a scale case regenerates 10,000 curves with 1,000 extensions on a
   tilted plane in 0.13 s (0.10 s on XY). See
   [Modify tools](docs/SKETCH_STUDIO.md#modify-tools).
+
 
 - Studio accepted-source links (schema 165, ABI 76 unchanged): project native
   accepted edges and reattach to planar faces directly from a world-space

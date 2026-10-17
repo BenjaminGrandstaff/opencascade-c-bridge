@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { cornerValues, extension, nearerEnd, profileCorners, withCornerEdit, withExtension } from './sketch-studio-modify.mjs';
+import {
+  chainPolylines, cornerValues, extension, nearerEnd, offsetBase, offsetDistance, offsetPolyline, profileCorners, profileOffset,
+  withCornerEdit, withExtension, withOffset,
+} from './sketch-studio-modify.mjs';
 
 const mm = (value) => ({ literal: { value, dimension: 'length', unit: 'millimeter' } });
 const samples = (a, b, n = 32) => Array.from({ length: n }, (_, i) => [a[0] + ((b[0] - a[0]) * i) / (n - 1), a[1] + ((b[1] - a[1]) * i) / (n - 1), 0]);
@@ -94,4 +97,63 @@ test('arc ends count as corners though scenes list arc centers too', () => {
   definition.profile = ['bump', 'BC', 'CD', 'DA'];
   scene.entities.push({ id: 'bump', point_ids: ['S', 'A', 'B'], points: samples([0, 0], [20, 0]) });
   assert.deepEqual([...profileCorners(definition, scene).keys()].sort(), ['A', 'B', 'C', 'D']);
+});
+
+test('offsets read signed distances and parameters, replace the last offset and follow corner edits', () => {
+  assert.deepEqual(offsetDistance('-1.5'), mm(-1.5));
+  assert.deepEqual(offsetDistance('wall'), { parameter: 'wall' });
+  assert.deepEqual(offsetDistance('- wall'), { negate: { parameter: 'wall' } });
+  assert.equal(offsetDistance('0'), 0);
+  assert.equal(offsetDistance(''), null);
+  assert.equal(offsetDistance('1,2'), null);
+  const { definition } = fixture();
+  const grown = withOffset(definition, mm(2), 'intersection');
+  assert.deepEqual(grown.profile_operations, [{ offset: { distance: mm(2), join: 'intersection' } }]);
+  assert.equal(definition.profile_operations, undefined, 'the input is unchanged');
+  assert.deepEqual(profileOffset(grown), { distance: mm(2), join: 'intersection', text: '2' });
+  assert.equal(profileOffset(withOffset(definition, { negate: { parameter: 'wall' } })).text, '-wall');
+  // A fillet added afterwards goes before the offset, as the model requires.
+  const filleted = withCornerEdit(grown, 'fillet', 'B', [mm(1)]);
+  assert.deepEqual(filleted.profile_operations.map((op) => Object.keys(op)[0]), ['fillet', 'offset']);
+  const changed = withOffset(filleted, mm(-1));
+  assert.deepEqual(changed.profile_operations, [{ fillet: { point: 'B', radius: mm(1) } }, { offset: { distance: mm(-1), join: 'arc' } }]);
+  assert.deepEqual(withOffset(changed, 0).profile_operations, [{ fillet: { point: 'B', radius: mm(1) } }]);
+});
+
+test('the offset guide chains the outline and grows it whichever way it runs', () => {
+  const { definition, scene } = fixture();
+  const base = offsetBase(definition, scene);
+  assert.equal(base.closed, true);
+  assert.equal(base.points.length, 4 * 31);
+  const box = (points) => points.reduce((b, p) => ({
+    min: [Math.min(b.min[0], p[0]), Math.min(b.min[1], p[1])], max: [Math.max(b.max[0], p[0]), Math.max(b.max[1], p[1])],
+  }), { min: [Infinity, Infinity], max: [-Infinity, -Infinity] });
+  const near = (a, b) => a.every((v, i) => Math.abs(v - b[i]) < 1e-9);
+  const sharp = box(offsetPolyline(base, 2, 'intersection'));
+  assert.ok(near(sharp.min, [-2, -2]) && near(sharp.max, [22, 12]), JSON.stringify(sharp));
+  const reversed = { points: [...base.points].reverse(), closed: true };
+  const shrunk = box(offsetPolyline(reversed, -1, 'intersection'));
+  assert.ok(near(shrunk.min, [1, 1]) && near(shrunk.max, [19, 9]), JSON.stringify(shrunk));
+  // Round corners stay 2 from the corner.
+  const round = offsetPolyline(base, 2, 'arc');
+  const corner = Math.min(...round.map((p) => Math.hypot(p[0] - 20, p[1])));
+  assert.ok(Math.abs(corner - 2) < 1e-9 && round.every((p) => Math.hypot(p[0] - 20, p[1]) >= 2 - 1e-9 || p[0] < 18 || p[1] > 2));
+  // Open outlines go to the right of travel; curves drawn either way chain.
+  const open = chainPolylines([[[0, 0], [10, 0]], [[10, 5], [10, 0]]]);
+  assert.deepEqual(open, { points: [[0, 0], [10, 0], [10, 5]], closed: false });
+  assert.deepEqual(offsetPolyline(open, 1, 'intersection'), [[0, -1], [11, -1], [11, 5]]);
+  // An edited outline without an offset is the base; with one, the sources are.
+  const edited = { ...scene, edited_profile: [[[0, 0, 0], [5, 0, 0]], [[5, 0, 0], [0, 5, 0]], [[0, 5, 0], [0, 0, 0]]] };
+  assert.equal(offsetBase(definition, edited).points.length, 3);
+  assert.equal(offsetBase(withOffset(definition, mm(1)), edited).points.length, 4 * 31);
+});
+
+test('the offset guide stays linear on a 100,000-point outline', () => {
+  const n = 100000;
+  const points = Array.from({ length: n }, (_, i) => [50 * Math.cos((2 * Math.PI * i) / n), 50 * Math.sin((2 * Math.PI * i) / n)]);
+  const started = performance.now();
+  const chained = chainPolylines([points.slice(0, n / 2 + 1), points.slice(n / 2).concat([points[0]])]);
+  const out = offsetPolyline(chained, 5, 'arc');
+  assert.ok(Math.abs(Math.hypot(...out[123]) - 55) < 1e-6);
+  assert.ok(performance.now() - started < 500, `${performance.now() - started} ms`);
 });
