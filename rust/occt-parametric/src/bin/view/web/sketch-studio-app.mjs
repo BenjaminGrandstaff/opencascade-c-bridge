@@ -112,6 +112,7 @@ export function startStudio(document) {
     studio.planes = annotations.datum_planes ?? [];
     if (!studio.planes.some((plane) => plane.id === studio.selectedPlane)) studio.selectedPlane = null;
     studio.features = sketches.features ?? [];
+    studio.parameters = sketches.parameters ?? [];
     for (const item of sketches.sketches ?? []) {
       bindGeneratedPoints(item.definition, captureGeneratedPoints(item.definition, item.generated_points ?? [], item.generated_curves ?? {}));
     }

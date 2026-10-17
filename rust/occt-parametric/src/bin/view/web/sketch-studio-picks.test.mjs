@@ -6,9 +6,11 @@ import {basePlane, lookAt, projectLocal} from './sketch-studio-plane.mjs';
 import {viewProjection} from './viewer.mjs';
 
 class Element {
- constructor(tag) {this.tag=tag;this.children=[];this.value='';this.style={};}
+ constructor(tag) {this.tag=tag;this.children=[];this.value='';this.style={};this.listeners={};}
  append(...nodes) {for(const n of nodes)n.parentElement=this;this.children.push(...nodes);}
  setAttribute(key,value) {this[key]=value;}
+ addEventListener(type,handler) {this.listeners[type]=handler;}
+ replaceChildren(...nodes) {this.children=[];this.append(...nodes);}
 }
 const all = root => [root,...(root.children??[]).filter(n=>n&&typeof n==='object').flatMap(all)];
 const mm = value => ({literal:{value,dimension:'length',unit:'millimeter'}});
@@ -99,4 +101,38 @@ test('other face and plane picking modes must finish before opening a sketch pic
  const f=setup(t);f.studio.picking=true;assert.equal(f.picks.open('crossing'),false);
  f.studio.picking=false;f.studio.isPlanePicking=()=>true;assert.equal(f.picks.open('sample'),false);
  assert.equal(f.studio.draft,undefined);
+});
+
+test('weighted canvas sources stage one link and support draft Undo/Redo',async t=>{
+ const f=setup(t);f.picks.open('weighted');f.input('New weighted point name').value='average';
+ f.pickButton('Start weighted point pick').onclick();await f.click([-10,0]);await f.click([10,0]);
+ assert.equal(f.pickButton('Stage weighted point').disabled,false);assert.equal(f.studio.draft.undo.length,0);
+ f.pickButton('Stage weighted point').onclick();assert.equal(f.studio.draft.undo.length,1);
+ const link=f.studio.draft.definition.constraints.at(-1).weighted_point;
+ assert.equal(link.point,'average');assert.deepEqual(link.terms.map(t=>t.point),['A','B']);
+ f.drawing.undo();assert.equal(f.studio.draft.definition.points.length,4);f.drawing.redo();assert.equal(f.studio.draft.definition.points.at(-1).id,'average');
+ assert.equal(f.calls.length,0);f.drawing.discard(true);
+});
+
+test('weighted picks reject duplicate and empty canvas hits without changing the draft',async t=>{
+ const f=setup(t);f.picks.open('weighted');f.pickButton('Start weighted point pick').onclick();
+ await f.click([-10,0]);await f.click([-10,0]);assert.match(f.studio.message,/already included/);
+ await f.click([7,7]);assert.match(f.studio.message,/known source point/);
+ f.pickButton('Stage weighted point').onclick();assert.equal(f.studio.draft.definition.constraints.at(-1).weighted_point.terms.length,1);f.drawing.discard(true);
+});
+
+test('relinking an existing weighted target preserves its parameter and formula drivers',async t=>{
+ const f=setup(t);f.baseline.constraints=[{weighted_point:{point:'D',terms:[{point:'A',weight:{parameter:'blend'}},{point:'B',weight:{add:[{literal:{value:1,dimension:'scalar',unit:null}},{literal:{value:2,dimension:'scalar',unit:null}}]}}]}}];
+ f.picks.open('weighted');f.input('Weighted point target').value='D';f.input('Weighted point target').onchange();
+ f.pickButton('Start weighted point pick').onclick();f.pickButton('Stage weighted point').onclick();
+ const next=f.studio.draft.definition;
+ assert.deepEqual(next.constraints[0].weighted_point.terms,f.baseline.constraints[0].weighted_point.terms);
+ assert.equal(next.points.find(p=>p.id==='D').fixed,false);assert.equal(next.constraints.length,1);f.drawing.discard(true);
+});
+
+test('weighted point staging is canceled by an intervening draft edit',async t=>{
+ const f=setup(t);f.picks.open('weighted');f.pickButton('Start weighted point pick').onclick();await f.click([-10,0]);
+ const stage=f.pickButton('Stage weighted point').onclick;
+ f.studio.changeDraft({...f.studio.draft.definition,revision:1});const snapshot=f.studio.draft.definition;stage();
+ assert.equal(f.studio.draft.definition,snapshot);assert.equal(f.studio.draft.undo.length,1);f.drawing.discard(true);
 });

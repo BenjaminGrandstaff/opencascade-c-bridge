@@ -41,5 +41,9 @@ export function createWeightedTermControls({host,definition,parameters=[],messag
   add.disabled=terms.length>=256;
  }
  add.onclick=()=>{if(terms.length>=256){message('Use at most 256 weighted source terms.');return;}const ids=geometryIds(definition,'points').filter(id=>id!==target),used=new Set(terms.map(t=>t.point));terms.push({point:ids.find(id=>!used.has(id))??ids[0]??'',weight:scalar(1)});render();};
- return {get terms(){return structuredClone(terms);},set hidden(value){section.hidden=value;},load(point,existing){target=point;terms=structuredClone(existing??[]);sources.replaceChildren();for(const id of geometryIds(definition,'points'))if(id!==target)sources.append(new Option(id,id));render();}};
+ return {appendSource(point){
+  if(terms.length>=256)throw new Error('Use at most 256 weighted source terms.');
+  if(point===target||!geometryIds(definition,'points').includes(point))throw new Error('Choose a known source point separate from the target.');
+  terms.push({point,weight:scalar(1)});render();
+ },get terms(){return structuredClone(terms);},set hidden(value){section.hidden=value;},load(point,existing){target=point;terms=structuredClone(existing??[]);sources.replaceChildren();for(const id of geometryIds(definition,'points'))if(id!==target)sources.append(new Option(id,id));render();}};
 }

@@ -27,6 +27,7 @@ const STUDIO_ASSETS: &[(&str, &str)] = studio_assets!(
     "sketch-studio-plane-panel.mjs",
     "sketch-studio-delete.mjs",
     "sketch-studio-picks.mjs",
+    "sketch-studio-weighted.mjs",
 );
 
 /// The studio page or one of its scripts, or `None` for other paths.

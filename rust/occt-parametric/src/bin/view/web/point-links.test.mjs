@@ -124,3 +124,18 @@ test('weighted controls add and remove source rows and preserve formulas until r
   assert(controls.inspect('p'));assert.equal(input('Weight driver 1').value,'preserve');
  }finally{delete globalThis.document;delete globalThis.Option;}
 });
+
+test('canvas source appends reuse the 10,000-point catalogue and stop at 256 terms',async()=>{
+ const {createWeightedTermControls}=await import('./weighted-point-controls.mjs');
+ globalThis.document={createElement:tag=>new Element(tag)};globalThis.Option=class extends Element{constructor(text,value){super('option');this.textContent=text;this.value=value;}};
+ try{
+  const d={points:Array.from({length:10000},(_,i)=>({id:`p${i}`}))},host=new Element('div');
+  const start=performance.now(),controls=createWeightedTermControls({host,definition:d,message(){}});controls.load('p9999',[]);
+  const catalogue=all(host).find(e=>e.tagName==='datalist'),options=catalogue.children;
+  assert.throws(()=>controls.appendSource('p9999'),/separate/);assert.throws(()=>controls.appendSource('missing'),/known source/);
+  for(let i=0;i<256;i++)controls.appendSource(`p${i}`);
+  assert.equal(controls.terms.length,256);assert.throws(()=>controls.appendSource('p256'),/256/);
+  assert.equal(catalogue.children,options);assert.equal(options.length,9999);
+  const elapsed=performance.now()-start;assert(elapsed<2000,`${elapsed} ms`);
+ }finally{delete globalThis.document;delete globalThis.Option;}
+});

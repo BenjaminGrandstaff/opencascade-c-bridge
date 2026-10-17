@@ -1,6 +1,7 @@
 // Named crossing and spline-sample points in the studio's sketch plane.
 // Existing picker controls own the native candidate/window semantics; this
 // adapter supplies studio events, markers and guarded draft transactions.
+import {createWeightedPointPicker} from './sketch-studio-weighted.mjs';
 import {createCrossingPicker} from './crossing-pick.mjs';
 import {createSplineSamplePicker} from './spline-sample-pick.mjs';
 import {geometryIds} from './constraint-controls.mjs';
@@ -46,7 +47,9 @@ export function installPointPicking(studio, document) {
     if (!scene) return false;
     const source = draft.definition, checkpoint = studio.draftCheckpoint();
     const known = new Set(geometryIds(source, 'curves'));
-    const snapshot = {kind, scene, curves: (scene.entities ?? []).filter(e => known.has(e.id)), picker: null};
+    const knownPoints = new Set(geometryIds(source, 'points'));
+    const points = Object.fromEntries(Object.entries(scene.points ?? {}).filter(([id]) => knownPoints.has(id)));
+    const snapshot = {kind, scene, points, curves: (scene.entities ?? []).filter(e => known.has(e.id)), picker: null};
     session = snapshot;
     const current = () => session === snapshot && checkpoint() && !draft.previewing && !draft.error && studio.sceneOf(draft.feature) === scene;
     const query = async (path, request) => {
@@ -61,11 +64,11 @@ export function installPointPicking(studio, document) {
       return result;
     };
     const host = html('div');
-    studio.fill(panel, html('header', {}, html('h2', {}, kind === 'crossing' ? 'Intersection point' : 'Spline sample'),
+    studio.fill(panel, html('header', {}, html('h2', {}, ({crossing: 'Intersection point', sample: 'Spline sample', weighted: 'Weighted point'})[kind]),
       html('button', {onclick: close}, 'Close')), host);
     panel.hidden = false;
     const options = {
-      host, definition: source, initialOpen: true, current,
+      host, definition: source, positions: points, parameters: studio.parameters ?? [], initialOpen: true, current,
       beginPicking: () => { if (!current()) throw Error('The sketch changed. Close this panel and restart the point pick.'); },
       modeChanged,
       message: message => studio.say(message),
@@ -81,7 +84,8 @@ export function installPointPicking(studio, document) {
     };
     snapshot.picker = kind === 'crossing'
       ? createCrossingPicker({...options, queryCandidates: request => query('/api/sketch-crossing-candidates', request)})
-      : createSplineSamplePicker({...options, query: request => query('/api/sketch-spline-sample', request)});
+      : kind === 'sample' ? createSplineSamplePicker({...options, query: request => query('/api/sketch-spline-sample', request)})
+      : createWeightedPointPicker(options);
     return true;
   }
 
@@ -99,10 +103,10 @@ export function installPointPicking(studio, document) {
     // Curve picks ignore endpoint hits. Display-only edited curves/glyphs
     // remain visible but cannot become source references.
     const hit = pickEntity && layer?.frame && session
-      ? hitTest({scene: {entities: session.curves}, frame: layer.frame, matrix, width, height, at, radius: 7}) : null;
+      ? hitTest({scene: session.kind === 'weighted' ? {points: session.points} : {entities: session.curves}, frame: layer.frame, matrix, width, height, at, radius: 7}) : null;
     return {position, tolerance, entity: hit?.id ?? null, scene: session?.scene, version: studio.version};
   }
-  for (const kind of ['crossing', 'sample']) studio.tools.set(kind, {
+  for (const kind of ['crossing', 'sample', 'weighted']) studio.tools.set(kind, {
     down(event) { return event.button === 0 && !event.shiftKey && session?.picker?.down(eventFor(event, true)); },
     move(event) { session?.picker?.move(eventFor(event)); },
     up(event) { return session?.picker?.up(eventFor(event)); },
@@ -139,6 +143,7 @@ export function installPointPicking(studio, document) {
   };
   studio.fill(document.getElementById('named-points'), html('h2', {}, 'Named points'),
     html('button', {onclick: () => open('crossing')}, 'Intersection point'),
-    html('button', {onclick: () => open('sample')}, 'Spline sample'));
+    html('button', {onclick: () => open('sample')}, 'Spline sample'),
+    html('button', {onclick: () => open('weighted')}, 'Weighted point'));
   return {open, close, get active() { return session?.picker?.active ?? false; }};
 }

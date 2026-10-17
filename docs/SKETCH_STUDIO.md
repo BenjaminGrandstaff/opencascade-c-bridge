@@ -204,8 +204,8 @@ opens this editor. Use the shape's controls to edit its own definition.
 
 ## Picking named points on the canvas
 
-**Named points** in the side panel opens either **Intersection point** or
-**Spline sample**. Both work on the active applied sketch, including a draft
+**Named points** in the side panel opens **Intersection point**,
+**Spline sample** or **Weighted point**. Both work on the active applied sketch, including a draft
 whose current Preview succeeded. Apply a new sketch first. Picks use the
 studio's sketch plane at any camera angle and native geometry queries.
 
@@ -230,6 +230,34 @@ sketch, plane workflow or Advanced editing also ends the pick. Finish or cancel
 an active face/plane pick before starting a sketch point pick. Right-drag and
 Shift-drag remain camera navigation. Generated source curves use the verified
 catalogue; display-only glyphs and edited-curve names cannot be sources.
+
+## Picking weighted points
+
+Choose **Weighted point** under Named points. Choose a new name or an existing
+authored target, then **Start weighted point pick**. Click authored, projected
+or verified generated source points on the canvas. Each click adds a source
+with weight 1; a repeated click asks you to edit the existing weight. You can
+also add/remove source rows and type source names in the form.
+
+Review up to 256 positive scalar weights. Enter a literal or choose a scalar
+family parameter. Relinking an existing weighted point loads its saved terms,
+including parameter and compound-formula drivers; a formula remains unchanged
+until explicitly replaced. Equal weights make an average or midpoint. The
+source catalogue is shared by the rows, so adding picked sources does not
+rebuild thousands of source options for every row.
+
+With literal weights, the canvas shows source markers and the weighted position
+computed from their current solved coordinates. Parameter/formula weights show
+source markers and defer the result to native Preview. **Stage weighted point**
+creates one draft edit, then Preview evaluates the link and all model variants.
+Apply, Undo/Redo and Save work as for other named points. Changing a referenced
+weight parameter regenerates the linked point.
+
+Relinking unfixes the authored target and replaces its saved point links;
+other dimensions remain active. The target cannot be one of its own sources.
+Invalid literal weights disable staging; native Preview checks parameter values,
+cycles and dependent sources. Close, Escape, a draft edit or a context change
+cancels the un-staged pick. Source markers are review data, never saved geometry.
 
 ## Additional primitive tools
 
@@ -478,7 +506,7 @@ Node tests delete from a 10,000-line chain in well under a second.
 | Remove constraints | Yes | Inspector |
 | Delete geometry | Studio only | Delete key or inspector, with dependents; see [Deleting](#deleting) |
 | Crossing points and spline samples | Yes | Named points panel, native candidates, on-canvas markers and draft history |
-| Weighted point links | Forms | Advanced drawer |
+| Weighted point links | Yes | Named points panel, canvas sources, literal/parameter weights and preserved formulas |
 | Patterns, point links, projections, curve and region edits, profiles, dependencies | Yes | Advanced drawer hosts the classic panels |
 | Sketch to solid | Yes | Advanced drawer |
 | Preview, Apply, Undo, Redo, Save | Yes | Toolbar; Revert stays in the classic viewer |
