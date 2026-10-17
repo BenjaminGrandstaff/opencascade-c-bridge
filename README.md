@@ -1019,13 +1019,13 @@ remains the default when no basis is supplied. The
 [rational spline cap](tools/model/rational-spline-cap.request.json) creates an
 exact rational quarter-circle profile and native solid; its viewer includes
 basis controls and a dashed control polygon. Rebuild the C bridge and Rust
-executables together. See [explicit B-splines](docs/SKETCHES.md#explicit-b-spline-bases-schema-99-abi-53).
+executables together. See [explicit B-splines](docs/SKETCHES.md#explicit-b-spline-bases-schema-99--abi-53).
 
 Schema 100 / ABI 54 add periodic explicit B-spline bases with native seam
 closure. The [periodic spline pad](tools/model/periodic-spline-pad.request.json)
 uses one cubic loop as its profile, with parameter-driven poles and a rational
 corner weight. The viewer closes its control polygon and exposes periodic
-basis metadata. See [periodic B-splines](docs/SKETCHES.md#periodic-b-spline-bases-schema-100-abi-54).
+basis metadata. See [periodic B-splines](docs/SKETCHES.md#periodic-b-spline-bases-schema-100--abi-54).
 
 Schema 101 / ABI 55 add non-clamped explicit B-splines with named geometric
 endpoints. Four solver equations place those endpoints on the native active
@@ -1033,7 +1033,7 @@ curve domain; endpoint tangency uses native derivatives, and mixed profiles
 join actual vertices. The viewer displays measured endpoint relations and
 conflicts. The [non-clamped cap](tools/model/non-clamped-spline-cap.request.json)
 exercises size, rational weight and extrusion-height edits. See
-[non-clamped B-splines](docs/SKETCHES.md#non-clamped-b-spline-bases-schema-101-abi-55).
+[non-clamped B-splines](docs/SKETCHES.md#non-clamped-b-spline-bases-schema-101--abi-55).
 Rebuild the native bridge and Rust consumers together.
 
 Schema 102 adds `line_ellipse_tangent` with a signed left/right side and an exact
@@ -1050,7 +1050,7 @@ oriented derivative for interpolated, rational, non-clamped and periodic
 splines. The viewer displays contact positions, positional residuals and
 tangent sine separately. The [spline tangent cap](tools/model/spline-tangent-cap.request.json)
 checks rational weight/size edits and native solid regeneration. See
-[line–spline tangency](docs/SKETCHES.md#line-spline-tangency-schema-103-abi-56).
+[line–spline tangency](docs/SKETCHES.md#line-spline-tangency-schema-103--abi-56).
 Rebuild the native bridge and Rust consumers together.
 
 Schema 104 adds `spline_circle_tangent` for circles and directed circular arcs.

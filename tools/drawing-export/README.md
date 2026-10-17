@@ -31,7 +31,7 @@ views, polyline and exact curve counts, and shared variant counts. `drawings.mod
 existing definitions and adds supplied definitions, ready to reload as schema 94.
 All drawings share generation and a cumulative vertex budget.
 Views can use `material_hatching` maps for material-ID overrides, paired line
-families, crosshatching or suppression. See [material hatch families](../../docs/DRAWINGS.md#material-hatch-families-schema-68) for defaults and validation.
+families, crosshatching or suppression. See [material hatch families](../../docs/DRAWINGS.md#material-hatch-families-schema-69) for defaults and validation.
 
 `sheet-conventions-example.json` exports the linear dimension layout on an
 ANSI B sheet with an 8 × 4 zone grid and on an ISO A3 sheet with ISO 5457
