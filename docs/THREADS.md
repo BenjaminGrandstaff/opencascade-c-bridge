@@ -201,15 +201,25 @@ thread's helical edges alone:
 - In a view along the axis, three quarters of the root circle are drawn
   with a thin line, open in the upper right quadrant. A tapped hole's circle
   is dashed when its entry faces away from the viewer.
-- Views at other angles to the axis get no representation.
+- In a view at any other angle, the root cylinder's two silhouette lines
+  (exact in orthographic projection: they lie square to both the axis and
+  the view direction, one root diameter apart) and the crest circle at the
+  thread end, which projects to an ellipse (32 segments).
 
 It covers `thread` features and threaded holes that are ancestors of a
 viewed output. A hole's thread runs its modeled length, or its blind depth.
-Through-all and up-to holes without a modeled length are not drawn, nor are
-threads beneath a later translate, rotate, mirror, scale or pattern feature,
-whose placement their own definition no longer gives. The lines count
-exactly toward the drawing's vertex budget; the work is O(views · outputs ·
-features).
+A through-all or up-to hole without a modeled length is measured on the
+generated solid: a line parallel to the axis just outside the crests
+(major radius plus 5%, at least 0.1 mm) finds where material begins and
+ends around the hole, and a line down the axis from the hole's position
+finds the bore's bottom if it stops inside the part; the thread runs from
+the material's start to that bottom or to the material's end. Threads
+beneath a later translate, rotate, mirror, scale or pattern feature, whose
+placement their own definition no longer gives, are not drawn. The lines
+count exactly toward the drawing's vertex budget; the work is O(views ·
+outputs · features), plus at most 65 ray queries per measured hole. Tests
+cover through-all and up-to-next holes through a block; a bore stopping
+inside a part relies on the same ray query but has no test of its own.
 
 ## Not yet included
 

@@ -9,6 +9,7 @@ mod hatching;
 mod nominals;
 mod pmi;
 mod texture_faces;
+mod thread_runs;
 pub use nominals::DrawingDefinitionInspection;
 pub use pmi::DrawingStepPmi;
 pub use texture_faces::{DrawingSurfaceTextureFaces, SurfaceTextureFaces};
@@ -207,7 +208,7 @@ impl DrawingDefinitionRenderingInternal for DrawingDefinition {
                 sum.checked_add(count)
             })
             .ok_or_else(|| ModelError::new("drawing annotation vertex count overflow"))?;
-        let thread_lines = thread_lines::lines(&self.views, graph)?;
+        let thread_lines = thread_runs::lines(&self.views, graph, session, generation)?;
         let added = thread_lines
             .iter()
             .map(|line| line.points_mm.len())

@@ -6,13 +6,17 @@ use crate::assembly::{add, dot, scale, unit};
 
 /// A thread placed in the assembly: its start on the axis, the unit axis
 /// along which it runs, its length, and its major and basic minor diameters.
-struct PlacedThread {
-    start: Vec3,
-    axis: Vec3,
-    length: f64,
-    major: f64,
-    minor: f64,
-    internal: bool,
+/// A through or up-to hole's thread has no length in its definition; the
+/// kernel measures it on the generated solid (see `PlacedThread::length`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct PlacedThread {
+    pub start: Vec3,
+    pub axis: Vec3,
+    /// None for a through-all or up-to hole without a modeled length.
+    pub length: Option<f64>,
+    pub major: f64,
+    pub minor: f64,
+    pub internal: bool,
 }
 
 /// Features that move the geometry before them, so a thread beneath one is
@@ -32,9 +36,9 @@ fn moves(operation: &FeatureOperation) -> bool {
 /// Threads of `output` on `instance` in assembly coordinates: thread
 /// features and threaded holes among the output's ancestors, short of any
 /// feature that moves them. A hole's thread runs its modeled length, or its
-/// blind depth; through and up-to holes without a modeled length are not
-/// drawn. O(features).
-fn placed_threads(
+/// blind depth; through and up-to holes without a modeled length have none
+/// here. O(features).
+pub fn placed_threads(
     graph: &InstanceGraph<'_>,
     output: &InstanceOutputRef,
 ) -> Result<Vec<PlacedThread>, ModelError> {
@@ -73,7 +77,7 @@ fn placed_threads(
             } => local.push((
                 vector(origin, Dimension::Length)?,
                 vector(axis, Dimension::Scalar)?,
-                length(run)?,
+                Some(length(run)?),
                 length(major_diameter)?,
                 length(pitch)?,
                 *internal,
@@ -92,16 +96,14 @@ fn placed_threads(
                     (Some(run), _) | (None, HoleExtent::Blind { depth: run }) => Some(length(run)?),
                     _ => None,
                 };
-                if let Some(run) = run {
-                    local.push((
-                        vector(position, Dimension::Length)?,
-                        vector(axis, Dimension::Scalar)?,
-                        run,
-                        length(&thread.nominal_diameter)?,
-                        length(&thread.pitch)?,
-                        true,
-                    ));
-                }
+                local.push((
+                    vector(position, Dimension::Length)?,
+                    vector(axis, Dimension::Scalar)?,
+                    run,
+                    length(&thread.nominal_diameter)?,
+                    length(&thread.pitch)?,
+                    true,
+                ));
             }
             _ => {}
         }
@@ -140,51 +142,69 @@ fn polyline(points: Vec<[f64; 2]>, hidden: bool) -> DrawingPolyline {
     }
 }
 
-/// The representation of one thread in `view`, or nothing when its axis is
-/// neither square to the view direction nor along it.
-fn represent(
+/// Points of the circle of `radius` about `center` square to unit `axis`
+/// (32 segments), in paper coordinates.
+fn circle(
+    view: &DrawingView,
+    center: Vec3,
+    axis: Vec3,
+    radius: f64,
+) -> Result<Vec<[f64; 2]>, ModelError> {
+    let seed = if axis.x.abs() < 0.9 {
+        Vec3::new(1.0, 0.0, 0.0)
+    } else {
+        Vec3::new(0.0, 1.0, 0.0)
+    };
+    let u = unit(crate::assembly::cross(axis, seed))?;
+    let v = crate::assembly::cross(axis, u);
+    (0..=32)
+        .map(|i| {
+            let angle = std::f64::consts::TAU * i as f64 / 32.0;
+            view.paper(view.project(add(
+                center,
+                add(
+                    scale(u, radius * angle.cos()),
+                    scale(v, radius * angle.sin()),
+                ),
+            ))?)
+        })
+        .collect()
+}
+
+/// The representation of one thread in `view` (ISO 6410-1), or nothing
+/// when its length is unknown.
+///
+/// - Square to the axis: a root line each side and a straight thread-end
+///   line across the crests.
+/// - Along the axis: three quarters of the root circle.
+/// - At any other angle: the root cylinder's two silhouette lines (exact
+///   in orthographic projection) and the crest circle at the thread end,
+///   which projects to an ellipse.
+pub fn represent(
     view: &DrawingView,
     thread: &PlacedThread,
 ) -> Result<Vec<DrawingPolyline>, ModelError> {
+    let Some(length) = thread.length else {
+        return Ok(Vec::new());
+    };
     let frame = view.frame()?;
     let along = dot(thread.axis, frame.direction);
     let paper = |point: Vec3| view.paper(view.project(point)?);
     let section = matches!(view.kind, DrawingViewKind::Section { .. });
-    let end = add(thread.start, scale(thread.axis, thread.length));
-    if along.abs() < 1e-9 {
-        // Side view: a root line each side of the axis, and the thread-end
-        // line across the crests. External roots show; an internal thread
-        // shows only cut open in a section view.
-        let up = unit(crate::assembly::cross(frame.direction, thread.axis))?;
-        let root = if thread.internal {
-            thread.major
-        } else {
-            thread.minor
-        } / 2.0;
-        let crest = if thread.internal {
-            thread.minor
-        } else {
-            thread.major
-        } / 2.0;
-        let hidden = thread.internal && !section;
-        let at = |base: Vec3, radius: f64| paper(add(base, scale(up, radius)));
-        return Ok(vec![
-            polyline(vec![at(thread.start, root)?, at(end, root)?], hidden),
-            polyline(vec![at(thread.start, -root)?, at(end, -root)?], hidden),
-            polyline(
-                vec![at(end, crest.max(root))?, at(end, -crest.max(root))?],
-                hidden,
-            ),
-        ]);
-    }
+    let end = add(thread.start, scale(thread.axis, length));
+    let root = if thread.internal {
+        thread.major
+    } else {
+        thread.minor
+    } / 2.0;
+    let crest = if thread.internal {
+        thread.minor
+    } else {
+        thread.major
+    } / 2.0;
     if (along.abs() - 1.0).abs() < 1e-9 {
         // End view: three quarters of the root circle, open in the upper
         // right quadrant. A tapped hole shows from its entry side.
-        let radius = if thread.internal {
-            thread.major
-        } else {
-            thread.minor
-        } / 2.0;
         let x = frame.x_axis;
         let y = crate::assembly::cross(frame.direction, frame.x_axis);
         let hidden = thread.internal && along > 0.0;
@@ -194,16 +214,30 @@ fn represent(
                     std::f64::consts::FRAC_PI_2 + 1.5 * std::f64::consts::PI * i as f64 / 24.0;
                 paper(add(
                     thread.start,
-                    add(
-                        scale(x, radius * angle.cos()),
-                        scale(y, radius * angle.sin()),
-                    ),
+                    add(scale(x, root * angle.cos()), scale(y, root * angle.sin())),
                 ))
             })
             .collect::<Result<Vec<_>, _>>()?;
         return Ok(vec![polyline(points, hidden)]);
     }
-    Ok(Vec::new())
+    // Side or oblique view: the root cylinder's silhouette lines lie where
+    // its surface turns away from the viewer, square to both the axis and
+    // the view direction. External roots show; an internal thread shows
+    // only cut open in a section view.
+    let up = unit(crate::assembly::cross(frame.direction, thread.axis))?;
+    let hidden = thread.internal && !section;
+    let at = |base: Vec3, radius: f64| paper(add(base, scale(up, radius)));
+    let mut lines = vec![
+        polyline(vec![at(thread.start, root)?, at(end, root)?], hidden),
+        polyline(vec![at(thread.start, -root)?, at(end, -root)?], hidden),
+    ];
+    let edge = crest.max(root);
+    if along.abs() < 1e-9 {
+        lines.push(polyline(vec![at(end, edge)?, at(end, -edge)?], hidden));
+    } else {
+        lines.push(polyline(circle(view, end, thread.axis, edge)?, hidden));
+    }
+    Ok(lines)
 }
 
 /// The thread representation lines of every view that asks for them, in

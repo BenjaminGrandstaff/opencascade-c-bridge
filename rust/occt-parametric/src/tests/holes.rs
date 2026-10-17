@@ -1690,3 +1690,89 @@ fn blind_tapped_holes_are_represented_to_their_depth() {
         "{lines:#?}"
     );
 }
+
+/// The side-view (or `direction`) thread representation of an M3 tapped
+/// hole through the 10 mm block with extent `extent`.
+fn tapped_representation(extent: HoleExtent, direction: VectorQuantity) -> Vec<DrawingPolyline> {
+    let mut definition = bore(extent);
+    if let FeatureOperation::Hole { thread, .. } = &mut definition.features[0].operation {
+        *thread = Some(Box::new(thread_spec()));
+    }
+    let mut graph = InstanceGraph::new(&definition);
+    graph.add_base("part", HashMap::new(), "test").unwrap();
+    let mut drawing = super::drawing::drawing();
+    drawing.dimensions.clear();
+    drawing.notes.clear();
+    let view = &mut drawing.views[0];
+    view.direction = direction;
+    // An image x axis square to any of the tested directions.
+    if direction.x.value != 0.0 {
+        view.x_axis = VectorQuantity::scalars(1.0, 1.0, 0.0);
+    }
+    view.scale = 1.0;
+    view.paper_origin_mm = [0.0, 0.0];
+    view.thread_representation = true;
+    view.outputs[0].output = "hole".into();
+    let session = Session::new().unwrap();
+    let generated = drawing
+        .generate(&graph, &session, DrawingRenderOptions::default())
+        .unwrap();
+    assert_eq!(session.shape_count().unwrap(), 0);
+    generated.polylines[generated.polylines.len() - 3..].to_vec()
+}
+
+#[test]
+fn through_and_up_to_tapped_holes_are_represented_through_the_material() {
+    let near = |a: [f64; 2], b: [f64; 2]| (a[0] - b[0]).abs() < 1e-6 && (a[1] - b[1]).abs() < 1e-6;
+    let side = VectorQuantity::scalars(0.0, -1.0, 0.0);
+    // No modeled length: the thread runs where the material does, from the
+    // entry at z = 10 to the bottom face at z = 0.
+    for extent in [HoleExtent::ThroughAll, HoleExtent::UpToNext] {
+        let lines = tapped_representation(extent.clone(), side);
+        assert!(
+            lines.iter().all(|line| line.thin && line.hidden),
+            "{lines:#?}"
+        );
+        let first = &lines[0].points_mm;
+        assert!(
+            (near(first[0], [3.5, 10.0]) || near(first[0], [6.5, 10.0]))
+                && (near(first[1], [3.5, 0.0]) || near(first[1], [6.5, 0.0])),
+            "{extent:?}: {lines:#?}"
+        );
+        // The thread end across the crests at the bottom.
+        assert!((lines[2].points_mm[0][1]).abs() < 1e-6, "{lines:#?}");
+    }
+}
+
+#[test]
+fn oblique_views_draw_root_silhouettes_and_an_end_ellipse() {
+    // Seen from (1, −1, 1): the root lines stay one root diameter apart and
+    // the thread end becomes the projected crest circle.
+    let lines = tapped_representation(
+        HoleExtent::Blind {
+            depth: ScalarExpr::Parameter("depth".into()),
+        },
+        VectorQuantity::scalars(1.0, -1.0, 1.0),
+    );
+    let [a, b] = [&lines[0].points_mm, &lines[1].points_mm];
+    let along = [a[1][0] - a[0][0], a[1][1] - a[0][1]];
+    let normal = {
+        let l = along[0].hypot(along[1]);
+        [-along[1] / l, along[0] / l]
+    };
+    let gap = ((b[0][0] - a[0][0]) * normal[0] + (b[0][1] - a[0][1]) * normal[1]).abs();
+    // M3 internal: the roots are at the 3 mm major diameter.
+    assert!((gap - 3.0).abs() < 1e-6, "{gap}");
+    let ellipse = &lines[2].points_mm;
+    assert_eq!(ellipse.len(), 33);
+    let center = ellipse[..32]
+        .iter()
+        .fold([0.0, 0.0], |c, p| [c[0] + p[0] / 32.0, c[1] + p[1] / 32.0]);
+    let widest = ellipse
+        .iter()
+        .map(|p| (p[0] - center[0]).hypot(p[1] - center[1]))
+        .fold(0.0, f64::max);
+    // The crest circle's radius is max(major, minor) / 2 = 1.5 mm.
+    assert!((widest - 1.5).abs() < 0.01, "{widest}");
+    assert!(lines.iter().all(|line| line.thin && line.hidden));
+}

@@ -17,7 +17,7 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 7/7, bridge 160 + first-use integration 1 (+1 doc test), recipes 3, parametric core 57 + kernel 754 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 80 + viewer Node 413 + branch command 2 + model command 92, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 7/7, bridge 160 + first-use integration 1 (+1 doc test), recipes 3, parametric core 57 + kernel 758 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 80 + viewer Node 413 + branch command 2 + model command 92, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -25,6 +25,13 @@ tracks status and order.
 | Scale benchmarks | Last full suite: 194 Rust cases (195 with the parallel glTF case) plus 5 model-command cases and a 10,000-face Python matcher. Sketch authoring integration rechecked 60 sketch cases and 60 MCP cases within budget. | `tools/bench/run.sh` |
 
 ## Done
+
+- Thread representation for through-all and up-to holes and oblique views
+  (no schema or ABI change). Threaded holes without a modeled length are
+  measured on the generated solid (material along a line just outside the
+  crests, and the bore's bottom down the axis), and views at any angle to
+  the axis draw the root silhouettes and the projected crest circle at the
+  thread end. See [drawing representation](docs/THREADS.md#drawing-representation-schema-154).
 
 - Parallel regeneration of distinct variants (no schema or ABI change).
   `regenerate_gltf_parallel` spreads distinct parameter variants over
@@ -3090,26 +3097,12 @@ scopes and inspected repo capabilities, not a full conformity audit.
    Unified classes 1A–2B with limits of size, designation and bore checks,
    fit checks and inspection of measured diameters exist (schema 152).
    Engagement length for screw strength is checked (schema 153), and
-   drawings represent threads by the ISO 6410-1 convention (schema 154).
-   Remaining refinements: through-all tapped holes without a modeled length
-   and oblique views in drawings.
-   fit checks and inspection of measured diameters exist (schema 152).
-   Engagement length for screw strength is checked (schema 153). Remaining:
-   fit checks and inspection of measured diameters exist (schema 152).
-   Engagement length for screw strength is checked (schema 153). Remaining:
-   thread representations in drawings.
-   fit checks and inspection of measured diameters exist (schema 152).
-   fit checks and inspection of measured diameters exist (schema 152).
-   Remaining: thread representations in drawings and engagement/strength.
-   Class 3B and metric ISO 965 classes need the standards' own tables, which
-   no public source provided. Live drawing
-   and fit checks exist (schema 152). Remaining: class 3B, metric ISO 965
-   and fit checks exist (schema 152). Remaining: class 3B, metric ISO 965
-   classes, drawing callouts and inspection against the limits, thread
-   representations in drawings, and engagement/strength. Live drawing
-   callouts show recorded intent, and basic-profile thread geometry can be
-   modeled (schema 84); metric callouts and drill catalogs are not yet
-   checked against a standard.
+   drawings represent threads by the ISO 6410-1 convention (schema 154),
+   including through-all and up-to holes measured on the solid and oblique
+   views. Basic-profile thread geometry can be modeled (schema 84).
+   Remaining: class 3B and metric ISO 965 classes need the standards' own
+   tables, which no public source provided, and metric callouts and drill
+   catalogs are not yet checked against a standard.
 5. **Manufacturing surface texture** — [B46.1](https://www.asme.org/codes-standards/about-standards/technology-highlights/advanced-manufacturing):
    Y14.36 symbol placement checked against the standard, which no public
    source provided, and AP242 exchange of textures, which OCCT 7.9 cannot
