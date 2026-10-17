@@ -217,11 +217,33 @@ pub struct TextureMeasurement {
     /// The roughness sampling length the profiles were filtered with.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cutoff_mm: Option<f64>,
+    /// The short-wave cutoff applied to raw traces, when any was raw.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub short_cutoff_mm: Option<f64>,
+    /// Waviness of the profiles against the requirement's waviness limits,
+    /// when it has them and profiles were measured (readings given as
+    /// values carry roughness only).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub waviness: Option<Box<WavinessMeasurement>>,
     /// Readings above the maximum and below the minimum.
     pub above_maximum: usize,
     pub below_minimum: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub readings_required: Option<usize>,
+    pub conforms: bool,
+}
+
+/// Waviness of each measured profile: total height Wt and mean element
+/// spacing WSm of the λc mean line less its form, each at most the
+/// requirement's (maximum rule).
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct WavinessMeasurement {
+    /// Wt of each profile, in mm.
+    pub heights_mm: Vec<f64>,
+    /// WSm of each profile in mm; none where a profile has no whole element.
+    pub spacings_mm: Vec<Option<f64>>,
+    pub maximum_height_mm: f64,
+    pub maximum_spacing_mm: f64,
     pub conforms: bool,
 }
 
@@ -960,11 +982,38 @@ fn texture_measurement(
 ) -> Result<TextureMeasurement, ModelError> {
     let limits = &texture.roughness;
     let cutoff = texture.cutoff_mm.unwrap_or(roughness::DEFAULT_CUTOFF_MM);
-    let profile_values = measured
+    let short = texture
+        .short_cutoff_mm
+        .unwrap_or_else(|| roughness::standard_short_cutoff(cutoff));
+    let primaries = measured
         .profiles
+        .iter()
+        .map(|p| roughness::primary_profile(p, short))
+        .collect::<Result<Vec<_>, _>>()?;
+    let profile_values = primaries
         .iter()
         .map(|p| roughness::profile_parameter(p, cutoff, limits.parameter, texture.unit))
         .collect::<Result<Vec<_>, _>>()?;
+    let waviness = match &texture.waviness {
+        Some(limit) if !primaries.is_empty() => {
+            let measured = primaries
+                .iter()
+                .map(|p| roughness::waviness(p, cutoff))
+                .collect::<Result<Vec<_>, _>>()?;
+            let heights_mm: Vec<f64> = measured.iter().map(|(h, _)| h / 1000.0).collect();
+            let spacings_mm: Vec<Option<f64>> = measured.iter().map(|(_, s)| *s).collect();
+            let conforms = heights_mm.iter().all(|&h| h <= limit.height_mm)
+                && spacings_mm.iter().flatten().all(|&s| s <= limit.spacing_mm);
+            Some(Box::new(WavinessMeasurement {
+                heights_mm,
+                spacings_mm,
+                maximum_height_mm: limit.height_mm,
+                maximum_spacing_mm: limit.spacing_mm,
+                conforms,
+            }))
+        }
+        _ => None,
+    };
     let values: Vec<f64> = measured
         .values
         .iter()
@@ -1000,11 +1049,13 @@ fn texture_measurement(
         maximum: limits.maximum,
         minimum: limits.minimum,
         cutoff_mm: (!profile_values.is_empty()).then_some(cutoff),
+        short_cutoff_mm: measured.profiles.iter().any(|p| p.raw).then_some(short),
         profile_values,
         above_maximum,
         below_minimum,
         readings_required,
-        conforms,
+        conforms: conforms && waviness.as_ref().is_none_or(|w| w.conforms),
+        waviness,
     })
 }
 

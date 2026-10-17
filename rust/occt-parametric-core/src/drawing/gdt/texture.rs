@@ -132,6 +132,12 @@ pub struct DrawingSurfaceTexture {
     /// Roughness sampling length (cutoff); one of B46.1's standard values.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cutoff_mm: Option<f64>,
+    /// Short-wave cutoff λs (schema 168): one of 0.0025, 0.008 or 0.025 mm,
+    /// at most a thirtieth of the roughness cutoff. Raw stylus traces are
+    /// filtered with it; without it, the standard λs for the cutoff applies.
+    /// Drawn with the cutoff as the transmission band `λs-λc`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub short_cutoff_mm: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub waviness: Option<Waviness>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -193,6 +199,16 @@ pub fn validate(
                 "surface texture cutoff must be a B46.1 standard value: 0.08, 0.25, 0.8, 2.5 or 8 mm",
             ));
         }
+        if let Some(short) = texture.short_cutoff_mm {
+            let cutoff = texture
+                .cutoff_mm
+                .unwrap_or(super::inspection::roughness::DEFAULT_CUTOFF_MM);
+            if ![0.0025, 0.008, 0.025].contains(&short) || 30.0 * short > cutoff + 1e-12 {
+                return Err(ModelError::new(
+                    "surface texture short-wave cutoff must be 0.0025, 0.008 or 0.025 mm and at most a thirtieth of the roughness cutoff",
+                ));
+            }
+        }
         if let Some(waviness) = &texture.waviness {
             positive(waviness.height_mm, "waviness height")?;
             positive(waviness.spacing_mm, "waviness spacing")?;
@@ -233,6 +249,7 @@ fn extended(texture: &DrawingSurfaceTexture) -> bool {
     texture.method.is_some()
         || texture.waviness.is_some()
         || texture.cutoff_mm.is_some()
+        || texture.short_cutoff_mm.is_some()
         || texture.lay.is_some()
         || texture.all_around
 }
@@ -251,8 +268,13 @@ fn width(text: &str) -> f64 {
 /// Notes under the extension bar: sampling length and waviness.
 fn below_bar(texture: &DrawingSurfaceTexture) -> String {
     let mut below = Vec::new();
-    if let Some(cutoff) = texture.cutoff_mm {
-        below.push(format!("Lc {}", value(cutoff)));
+    match (texture.short_cutoff_mm, texture.cutoff_mm) {
+        (Some(short), cutoff) => {
+            let cutoff = cutoff.unwrap_or(super::inspection::roughness::DEFAULT_CUTOFF_MM);
+            below.push(format!("{}-{}", value(short), value(cutoff)));
+        }
+        (None, Some(cutoff)) => below.push(format!("Lc {}", value(cutoff))),
+        (None, None) => {}
     }
     if let Some(waviness) = &texture.waviness {
         below.push(format!(

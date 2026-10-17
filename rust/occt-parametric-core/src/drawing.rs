@@ -20,7 +20,7 @@ pub use gdt::{
     MeasuredDatumWidth, MeasuredFeature, MeasuredNominal, MeasuredProfile, MeasuredTexture,
     MeasuredThread, MeasurementUncertainty, ProfileMeasurement, RefinementMeasurement,
     TextureInspection, TextureMeasurement, TextureResult, ThreadDiameter, ThreadDiameterCheck,
-    ThreadInspection, UncertaintySimulation,
+    ThreadInspection, UncertaintySimulation, WavinessMeasurement,
 };
 pub use gdt::{
     DatumMaterialBoundary, DatumPrecedence, DatumTargetShape, DrawingCompositeRefinement,

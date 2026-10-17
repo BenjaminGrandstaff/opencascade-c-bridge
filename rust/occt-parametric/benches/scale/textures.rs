@@ -37,6 +37,7 @@ fn textured(
     };
     let surface_textures = (0..count)
         .map(|i| DrawingSurfaceTexture {
+            short_cutoff_mm: None,
             id: format!("texture-{i}"),
             attachment: DrawingGdtAttachment {
                 view: "top".into(),
@@ -183,6 +184,7 @@ pub(crate) fn profile_case(definition: &FamilyDefinition) -> Outcome {
                     id: format!("texture-{i}"),
                     values: Vec::new(),
                     profiles: vec![MeasuredProfile {
+                        raw: false,
                         spacing_um: 0.4,
                         heights_um: (0..12_000)
                             .map(|j| {

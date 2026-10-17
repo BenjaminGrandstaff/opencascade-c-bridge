@@ -1,6 +1,8 @@
-//! Roughness parameters from measured stylus profiles, by the Gaussian
-//! profile filter of ASME B46.1 and ISO 16610-21, and the ISO 4288 16% rule
-//! for accepting a set of readings.
+//! Roughness and waviness from measured stylus profiles, by the Gaussian
+//! profile filter of ASME B46.1 and ISO 16610-21: the short-wave (λs) filter
+//! that turns a raw trace into the primary profile, the λc filter that
+//! separates roughness from waviness, and the ISO 4288 16% rule for
+//! accepting a set of roughness readings.
 use super::*;
 use crate::drawing::gdt::texture::{RoughnessParameter, RoughnessUnit};
 
@@ -18,10 +20,10 @@ pub const DEFAULT_CUTOFF_MM: f64 = 0.8;
 /// Sampling lengths in the evaluation length.
 pub const SAMPLING_LENGTHS: usize = 5;
 
-/// A primary profile traced by a stylus instrument: heights at equal
-/// spacing along the surface, after any short-wave (λs) filtering. It spans
-/// at least six sampling lengths: five evaluated and half of one at each
-/// end, which the filter needs as run-up and run-out.
+/// A profile traced by a stylus instrument: heights at equal spacing along
+/// the surface. It spans at least six sampling lengths: five evaluated and
+/// half of one at each end, which the filter needs as run-up and run-out
+/// (plus λs at each end for a raw trace).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MeasuredProfile {
@@ -29,6 +31,105 @@ pub struct MeasuredProfile {
     pub spacing_um: f64,
     /// Heights in micrometres.
     pub heights_um: Vec<f64>,
+    /// The trace is raw: the short-wave (λs) filter has not been applied, so
+    /// inspection applies it (schema 168). By default the heights are taken
+    /// as the primary profile, already filtered by the instrument.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub raw: bool,
+}
+
+/// ISO 3274 / B46.1 short-wave cutoffs (λs, mm) for each standard roughness
+/// cutoff (λc, mm).
+pub const SHORT_CUTOFFS_MM: [(f64, f64); 5] = [
+    (0.08, 0.0025),
+    (0.25, 0.0025),
+    (0.8, 0.0025),
+    (2.5, 0.008),
+    (8.0, 0.025),
+];
+/// Fewest samples per short-wave cutoff for the λs filter (ISO 3274's
+/// largest spacing is a fifth of λs).
+pub const MIN_SAMPLES_PER_SHORT_CUTOFF: f64 = 5.0;
+
+/// The standard λs for roughness cutoff `cutoff_mm`, or for a nonstandard
+/// one the largest λs at least 30 times shorter.
+pub fn standard_short_cutoff(cutoff_mm: f64) -> f64 {
+    SHORT_CUTOFFS_MM
+        .iter()
+        .find(|(c, _)| (c - cutoff_mm).abs() < 1e-12)
+        .map(|&(_, s)| s)
+        .unwrap_or_else(|| {
+            SHORT_CUTOFFS_MM
+                .iter()
+                .map(|&(_, s)| s)
+                .filter(|s| 30.0 * s <= cutoff_mm + 1e-12)
+                .fold(0.0025, f64::max)
+        })
+}
+
+/// The primary profile of a raw trace: the Gaussian low-pass at `short_mm`
+/// (λs), truncated at ±λs, over the samples whose window lies inside the
+/// trace. A trace already filtered is returned as it is. O(n · λs/spacing),
+/// at most 67 operations per sample with the standard cutoff ratios.
+pub fn primary_profile(
+    profile: &MeasuredProfile,
+    short_mm: f64,
+) -> Result<std::borrow::Cow<'_, MeasuredProfile>, ModelError> {
+    if !profile.raw {
+        return Ok(std::borrow::Cow::Borrowed(profile));
+    }
+    let spacing = profile.spacing_um;
+    if !(spacing.is_finite() && spacing > 0.0) {
+        return Err(ModelError::new(
+            "profile spacing must be positive and finite",
+        ));
+    }
+    let per_cutoff = short_mm * 1000.0 / spacing;
+    if per_cutoff < MIN_SAMPLES_PER_SHORT_CUTOFF {
+        return Err(ModelError::new(format!(
+            "a raw profile needs a spacing of at most {} µm for its {} µm λs filter",
+            short_mm * 1000.0 / MIN_SAMPLES_PER_SHORT_CUTOFF,
+            short_mm * 1000.0
+        )));
+    }
+    if per_cutoff > MAX_SAMPLES_PER_CUTOFF as f64 {
+        return Err(ModelError::new(
+            "a raw profile is sampled too finely for its λs filter",
+        ));
+    }
+    let z = &profile.heights_um;
+    if !z.iter().all(|h| h.is_finite()) {
+        return Err(ModelError::new("profile heights must be finite"));
+    }
+    let alpha = (std::f64::consts::LN_2 / std::f64::consts::PI).sqrt();
+    let half = per_cutoff.ceil() as usize;
+    let mut weights: Vec<f64> = (0..=2 * half)
+        .map(|j| {
+            let x = (j as f64 - half as f64) / (alpha * per_cutoff);
+            (-std::f64::consts::PI * x * x).exp()
+        })
+        .collect();
+    let sum: f64 = weights.iter().sum();
+    weights.iter_mut().for_each(|w| *w /= sum);
+    if z.len() <= 2 * half {
+        return Err(ModelError::new(
+            "a raw profile is shorter than its λs filter",
+        ));
+    }
+    let heights_um = (half..z.len() - half)
+        .map(|i| {
+            z[i - half..=i + half]
+                .iter()
+                .zip(&weights)
+                .map(|(h, w)| h * w)
+                .sum()
+        })
+        .collect();
+    Ok(std::borrow::Cow::Owned(MeasuredProfile {
+        spacing_um: spacing,
+        heights_um,
+        raw: false,
+    }))
 }
 
 /// Samples per sampling length, from a profile's spacing and the cutoff.
@@ -66,6 +167,100 @@ fn gaussian_weights(k: usize) -> Vec<f64> {
     let sum: f64 = weights.iter().sum();
     weights.iter_mut().for_each(|w| *w /= sum);
     weights
+}
+
+/// The Gaussian mean line at `k` samples per cutoff at every `step`-th
+/// sample whose window (half a cutoff each side) lies inside the profile.
+/// O(n · k / step).
+fn mean_line(z: &[f64], k: usize, step: usize) -> Vec<f64> {
+    let weights = gaussian_weights(k);
+    let half = k / 2;
+    if z.len() <= 2 * half {
+        return Vec::new();
+    }
+    (half..z.len() - half)
+        .step_by(step)
+        .map(|i| {
+            z[i - half..=i + half]
+                .iter()
+                .zip(&weights)
+                .map(|(h, w)| h * w)
+                .sum()
+        })
+        .collect()
+}
+
+/// Mean-line points per cutoff kept for waviness: the λc mean line passes
+/// nothing much shorter than λc, so fifty points a cutoff resolve it.
+const WAVINESS_POINTS_PER_CUTOFF: usize = 50;
+
+/// Waviness of a primary profile with roughness cutoff `cutoff_mm`: the λc
+/// mean line wherever its window is complete, less its least-squares line
+/// (form). Returns the total height Wt (µm) and the mean spacing WSm (mm)
+/// of its profile elements, an element being a rise above and fall below
+/// the mean by more than 5% of Wt each side (ISO 4287's 10% height
+/// discrimination); no spacing when there is not one whole element. The
+/// mean line is evaluated at fifty points per cutoff, so this is
+/// O(n · 50), about 5·10⁷ operations for the largest profile.
+pub fn waviness(
+    profile: &MeasuredProfile,
+    cutoff_mm: f64,
+) -> Result<(f64, Option<f64>), ModelError> {
+    let k = samples_per_cutoff(profile, cutoff_mm)?;
+    let z = &profile.heights_um;
+    if z.len() < SAMPLING_LENGTHS * k + k {
+        return Err(ModelError::new(format!(
+            "a profile must span six {cutoff_mm} mm sampling lengths: {} samples",
+            SAMPLING_LENGTHS * k + k
+        )));
+    }
+    if !z.iter().all(|h| h.is_finite()) {
+        return Err(ModelError::new("profile heights must be finite"));
+    }
+    let step = (k / WAVINESS_POINTS_PER_CUTOFF).max(1);
+    let line = mean_line(z, k, step);
+    let n = line.len() as f64;
+    let mean_x = (n - 1.0) / 2.0;
+    let mean_w = line.iter().sum::<f64>() / n;
+    let (sxy, sxx) = line
+        .iter()
+        .enumerate()
+        .fold((0.0, 0.0), |(sxy, sxx), (i, w)| {
+            let dx = i as f64 - mean_x;
+            (sxy + dx * (w - mean_w), sxx + dx * dx)
+        });
+    let slope = if sxx > 0.0 { sxy / sxx } else { 0.0 };
+    let w: Vec<f64> = line
+        .iter()
+        .enumerate()
+        .map(|(i, v)| v - mean_w - slope * (i as f64 - mean_x))
+        .collect();
+    let (low, high) = w
+        .iter()
+        .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), v| {
+            (lo.min(*v), hi.max(*v))
+        });
+    let height = high - low;
+    // Count up-crossings through the discrimination band.
+    let band = 0.05 * height;
+    let mut state = 0i8; // -1 below the band, +1 above it
+    let mut crossings = Vec::new();
+    for (i, &v) in w.iter().enumerate() {
+        if v > band && state <= 0 {
+            if state < 0 {
+                crossings.push(i);
+            }
+            state = 1;
+        } else if v < -band && state >= 0 {
+            state = -1;
+        }
+    }
+    let spacing = (crossings.len() >= 2).then(|| {
+        let elements = (crossings.len() - 1) as f64;
+        let span = (crossings[crossings.len() - 1] - crossings[0]) as f64;
+        span / elements * (step as f64) * profile.spacing_um / 1000.0
+    });
+    Ok((height, spacing))
 }
 
 /// The roughness profile over the evaluation length: each height minus the
@@ -186,6 +381,7 @@ mod tests {
     /// and amplitude on a sloped, offset mean line.
     fn sine(wavelength_um: f64, amplitude_um: f64) -> MeasuredProfile {
         MeasuredProfile {
+            raw: false,
             spacing_um: 0.5,
             heights_um: (0..9_600)
                 .map(|i| {

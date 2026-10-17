@@ -12,12 +12,12 @@ tracks status and order.
 | `occt-types` (shared value types) | — | No native dependency |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI; re-exports `occt-types` |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric-core` (kernel-free engineering layer) | Schema 167 | Definitions, documents, solving and checks without OCCT |
-| `occt-parametric` (kernel regeneration) | Schema 167 | Active development; re-exports the core API |
+| `occt-parametric-core` (kernel-free engineering layer) | Schema 168 | Definitions, documents, solving and checks without OCCT |
+| `occt-parametric` (kernel regeneration) | Schema 168 | Active development; re-exports the core API |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 7/7, bridge 160 + first-use integration 1 (+1 doc test), recipes 3, parametric core 57 + kernel 751 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 77 + viewer Node 398 + branch command 2 + model command 92, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 7/7, bridge 160 + first-use integration 1 (+1 doc test), recipes 3, parametric core 57 + kernel 754 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 77 + viewer Node 398 + branch command 2 + model command 92, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -25,6 +25,15 @@ tracks status and order.
 | Scale benchmarks | Last full suite: 194 Rust cases plus 5 model-command cases and a 10,000-face Python matcher. Sketch authoring integration rechecked 60 sketch cases and 60 MCP cases within budget. | `tools/bench/run.sh` |
 
 ## Done
+
+- Short-wave filtering and waviness (schema 168; ABI 76 unchanged). Raw
+  stylus traces (`"raw": true`) take the Gaussian λs filter, from the
+  requirement's new `short_cutoff_mm` (drawn as the λs-λc band) or ISO
+  3274's λs for its cutoff, before roughness. Requirements' waviness
+  limits are now checked: Wt and WSm of the λc mean line less its form,
+  per profile, with the texture conforming only when both roughness and
+  waviness do. A 1,000,000-sample raw trace takes about 70 ms. See
+  [checking measured roughness](docs/DRAWINGS.md#checking-measured-roughness).
 
 - Datum boundaries enlarged by geometric tolerances (no schema or ABI
   change). A datum feature of size referenced at MMB or LMB now takes its
@@ -3061,13 +3070,11 @@ scopes and inspected repo capabilities, not a full conformity audit.
    write. Drawing requirements, symbols and maximum-rule reading checks
    exist (schema 71), and requirements govern persistent faces with leaders
    landing on them; the 16% rule and Gaussian filtering of stylus
-   profiles to Ra, Rq, Rz and Rmax exist (schema 155). Short-wave (λs)
-   source provided. Drawing requirements, symbols and maximum-rule reading
-   checks exist (schema 71); the 16% rule and Gaussian filtering of stylus
-   profiles to Ra, Rq, Rz and Rmax exist (schema 155). Short-wave (λs)
-   filtering, waviness evaluation and instrument settings are not modeled.
-   Rendering-material roughness is
-   independent of these requirements.
+   profiles to Ra, Rq, Rz and Rmax exist (schema 155), as do short-wave
+   (λs) filtering of raw traces and waviness height and spacing checks
+   (schema 168). Instrument settings (stylus tip radius, traverse speed)
+   are not modeled. Rendering-material roughness is independent of these
+   requirements.
 6. **Controlled drawing release and assembly lists** — [Y14.100](https://www.asme.org/codes-standards/find-codes-standards/engineering-drawing-practices):
    identity-bound electronic signatures, which need keys outside the
    document, and checking the revision practices against Y14.35's own

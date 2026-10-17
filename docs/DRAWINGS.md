@@ -1993,9 +1993,10 @@ readings, then at most two of twelve below it. When the readings so far
 decide neither way, the result reports `readings_required` (3 or 12) and
 does not conform.
 
-**Profiles.** A `MeasuredProfile` is a primary profile from a stylus
-instrument: `heights_um` at equal `spacing_um`, after any short-wave (λs)
-filtering, which is not modeled. The cutoff λc is the requirement's
+**Profiles.** A `MeasuredProfile` is a trace from a stylus instrument:
+`heights_um` at equal `spacing_um`. By default it is taken as the primary
+profile, already short-wave filtered by the instrument; with `"raw": true`
+(schema 168) inspection applies the λs filter first (below). The cutoff λc is the requirement's
 `cutoff_mm`, or 0.8 mm when it names none. The spacing must divide the
 cutoff into 20–2,000 samples (ISO 3274's standard spacings give 160–1,667),
 and the profile must span six cutoffs: the evaluation length of five
@@ -2013,6 +2014,33 @@ heights over the evaluation length. Each sampling length's peak-to-valley
 height is also taken: Rz is their mean, and Rmax the largest. A microinch
 requirement converts at 0.0254 µm per µin. Filtering costs about one
 operation per sample per sample in a cutoff, which the two limits bound.
+
+**Short-wave cutoff λs (schema 168).** A requirement may name
+`short_cutoff_mm`: 0.0025, 0.008 or 0.025 mm, at most a thirtieth of λc,
+drawn with the cutoff as the transmission band (`0.0025-0.8` where `Lc 0.8`
+stood). Without it, a raw trace takes ISO 3274's λs for its λc: 2.5 µm for
+0.08, 0.25 and 0.8 mm, 8 µm for 2.5 mm and 25 µm for 8 mm. The filter is
+the same Gaussian at λs, truncated at ±λs, over the samples whose window
+lies inside the trace (so a raw trace needs λs more at each end), and
+needs at least five samples per λs (spacing at most 0.5 µm for 2.5 µm).
+The report gives `short_cutoff_mm` when any trace was raw. A 1 µm
+ripple at 0.5 µm amplitude disappears from Ra; taken as already filtered,
+it raises Ra by about 0.04 µm.
+
+**Waviness.** A requirement's `waviness` (height and spacing maxima, mm) is
+checked on the measured profiles: the waviness profile is the λc mean line
+wherever its window is complete, less its least-squares line (the form).
+Wt is its peak-to-valley height and WSm the mean spacing of its profile
+elements, an element being a rise above and a fall below the mean line by
+more than 5% of Wt each side (ISO 4287's 10% height discrimination). Each
+profile must have Wt and WSm at most the requirement's (the maximum rule);
+a profile with no whole element has no spacing and passes on spacing. The
+report's `waviness` lists `heights_mm` and `spacings_mm` per profile, and the
+texture conforms only when roughness and waviness both do. Readings given
+as values carry roughness only, so without profiles `waviness` is absent.
+The mean line is evaluated at fifty points per cutoff, which resolves
+everything it passes. A 1,000,000-sample raw trace is filtered by λs,
+evaluated for roughness and for waviness in about 70 ms.
 
 A scale benchmark generates one drawing with 10,000 texture symbols and exports
 it as SVG and DXF. Another filters 83 profiles at 2,000 samples per cutoff

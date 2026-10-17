@@ -19,7 +19,7 @@ pub use inspection::{
     MeasuredDatumWidth, MeasuredFeature, MeasuredNominal, MeasuredProfile, MeasuredTexture,
     MeasuredThread, MeasurementUncertainty, ProfileMeasurement, RefinementMeasurement,
     TextureInspection, TextureMeasurement, TextureResult, ThreadDiameter, ThreadDiameterCheck,
-    ThreadInspection, UncertaintySimulation,
+    ThreadInspection, UncertaintySimulation, WavinessMeasurement,
 };
 pub use position::{
     DrawingPositionMeasurement, DrawingPositionMeasurementResult, PositionSampleEvaluation,

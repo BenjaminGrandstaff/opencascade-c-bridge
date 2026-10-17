@@ -587,7 +587,8 @@ points, lines and areas that establish a drawing's planar datums, drawn
 with their symbols and used alone in measured inspection
 ([Datum targets](docs/DRAWINGS.md#datum-targets-schema-166)). Schema 167
 adds the separate requirement (SEP REQT), which keeps a position control or
-its pattern out of the shared datum shift.
+its pattern out of the shared datum shift. Schema 168 adds short-wave (λs)
+filtering of raw stylus traces and waviness checks for surface textures.
 Schema 26 adds exact circle/arc sketch entities,
 implicit equal arc radii, tangent constraints at shared contact points, and
 explicit ordered profiles with construction geometry. Schema 25 line sketches
