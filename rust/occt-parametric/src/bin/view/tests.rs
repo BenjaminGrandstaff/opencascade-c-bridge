@@ -1520,6 +1520,142 @@ fn a_standalone_sketch_becomes_a_saved_solid_with_persistent_guarantees() {
     );
 }
 
+#[test]
+fn revolutions_preview_boolean_material_and_preserve_accepted_history_and_drivers() {
+    let directory = Directory::new();
+    let request: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../tools/model/revolved-ring.request.json"
+    ))
+    .unwrap();
+    let document = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+    let model = PathBuf::from(directory.model(&document));
+    let mut studio = serve::Studio::load(&model, Some("body".into())).unwrap();
+    let data = get(&mut studio, "/api/features").1;
+    let state = get(&mut studio, "/api/state").1;
+    let mesh = studio.handle("GET", "/api/model.gltf", b"").body;
+    let post = |studio: &mut serve::Studio, edit: &serde_json::Value| {
+        studio.handle("POST", "/api/features", edit.to_string().as_bytes())
+    };
+    for (mode, expected) in [
+        ("new", 70.0 * std::f64::consts::PI),
+        ("cut", 210.0 * std::f64::consts::PI),
+        ("fuse", 0.0),
+    ] {
+        let mut tool = data["features"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|f| f["id"] == "body")
+            .unwrap()
+            .clone();
+        tool["id"] = json!("tool");
+        if mode == "fuse" {
+            tool["operation"]["revolve"]["origin"]["literal"]["x"]["value"] = json!(1);
+        } else {
+            tool["operation"]["revolve"]["angle_radians"] = json!({"literal":{"value":-std::f64::consts::FRAC_PI_2,"dimension":"scalar","unit":null}});
+            tool["operation"]["revolve"]["extent"] = json!("symmetric");
+        }
+        let features = match mode {
+            "cut" => {
+                json!([tool,{"id":"turned-result","operation":{"cut":{"object":"body","tool":"tool"}}}])
+            }
+            "fuse" => {
+                json!([tool,{"id":"turned-result","operation":{"fuse":{"left":"body","right":"tool"}}}])
+            }
+            _ => json!([tool]),
+        };
+        let edit = json!({"version":data["version"],"instance":"ring","expected":data["features"],"action":"add","features":features,"output":if mode=="new"{"tool"}else{"turned-result"},"apply":false});
+        let response = post(&mut studio, &edit);
+        assert_eq!(
+            response.status,
+            200,
+            "{}",
+            String::from_utf8_lossy(&response.body)
+        );
+        let result: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+        assert_eq!(result["can_apply"], true, "{}", result["error"]);
+        let volume = result["geometry"]["ring"]["volume_mm3"].as_f64().unwrap();
+        if mode == "fuse" {
+            assert!(volume > 280.0 * std::f64::consts::PI && volume < 560.0 * std::f64::consts::PI);
+        } else {
+            assert!((volume - expected).abs() < 1e-6);
+        }
+        assert!(!result["gltf"]["meshes"].as_array().unwrap().is_empty());
+    }
+    assert_eq!(get(&mut studio, "/api/state").1, state);
+    assert_eq!(studio.handle("GET", "/api/model.gltf", b"").body, mesh);
+    let mut feature = data["features"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["id"] == "body")
+        .unwrap()
+        .clone();
+    feature["operation"]["revolve"]["extent"] = json!("symmetric");
+    let mut edit = json!({"version":data["version"],"instance":"ring","expected":data["features"],"action":"replace","features":[feature],"output":"body","apply":true});
+    edit["features"][0]["operation"]["revolve"]["axis"]["literal"]["z"]["value"] = json!(0);
+    assert_eq!(post(&mut studio, &edit).status, 422);
+    assert_eq!(get(&mut studio, "/api/state").1, state);
+    edit["features"][0]["operation"]["revolve"]["axis"]["literal"]["z"]["value"] = json!(1);
+    assert_eq!(post(&mut studio, &edit).status, 200);
+    assert_eq!(get(&mut studio, "/api/state").1["undo_count"], 1);
+    history(&mut studio, "undo");
+    assert_eq!(
+        get(&mut studio, "/api/features").1["features"],
+        data["features"]
+    );
+    history(&mut studio, "redo");
+    assert_eq!(studio.handle("POST", "/api/save", b"").status, 200);
+    let saved = ModelDocument::from_json(&fs::read_to_string(&model).unwrap()).unwrap();
+    let operation = serde_json::to_value(&saved.family.features[0].operation).unwrap();
+    assert_eq!(
+        operation["revolve"]["angle_radians"],
+        json!({"parameter":"angle"})
+    );
+    assert_eq!(operation["revolve"]["extent"], "symmetric");
+    assert!(
+        document
+            .family
+            .requirements
+            .iter()
+            .all(|r| saved.family.requirements.contains(r))
+    );
+}
+
+#[test]
+fn revolution_controls_reject_angles_that_fail_another_instance() {
+    let directory = Directory::new();
+    let mut request: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../tools/model/revolved-ring.request.json"
+    ))
+    .unwrap();
+    request["model"]["family"]["parameters"][3]["default"]["scalar"]["value"] =
+        json!(std::f64::consts::FRAC_PI_2);
+    request["model"]["instances"].as_array_mut().unwrap().push(json!({"clone":{"id":"half","source":"ring","overrides":{"angle":{"scalar":{"value":std::f64::consts::PI,"dimension":"scalar","unit":null}}},"provenance":"test"}}));
+    let document = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+    let model = PathBuf::from(directory.model(&document));
+    let mut studio = serve::Studio::load(&model, Some("body".into())).unwrap();
+    let data = get(&mut studio, "/api/features").1;
+    let state = get(&mut studio, "/api/state").1;
+    let mut tool = data["features"][0].clone();
+    tool["id"] = json!("tool");
+    tool["operation"]["revolve"]["angle_radians"] = json!({"multiply":[{"parameter":"angle"},{"literal":{"value":3,"dimension":"scalar","unit":null}}]});
+    let mut edit = json!({"version":data["version"],"instance":"ring","expected":data["features"],"action":"add","features":[tool],"output":"tool","apply":false});
+    let response = studio.handle("POST", "/api/features", edit.to_string().as_bytes());
+    assert_eq!(response.status, 200);
+    let result: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+    assert_eq!(result["can_apply"], false, "{result}");
+    assert!(result["gltf"].is_null());
+    edit["apply"] = json!(true);
+    assert_eq!(
+        studio
+            .handle("POST", "/api/features", edit.to_string().as_bytes())
+            .status,
+        422
+    );
+    assert_eq!(get(&mut studio, "/api/state").1, state);
+}
+
 fn history(studio: &mut serve::Studio, direction: &str) -> serde_json::Value {
     let version = get(studio, "/api/state").1["version"].clone();
     let response = studio.handle(

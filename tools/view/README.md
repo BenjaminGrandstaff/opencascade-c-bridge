@@ -137,9 +137,9 @@ view instead of a flat overlay:
   curves, then the mirror line, direction line or center point, with a
   dashed guide, and record linked sketch patterns. A mirror of half an
   outline closes it through the axis, and patterned holes stay holes.
-- **Solid features.** **Extrude, union or cut** uses the active applied sketch
-  and its normal, previews the native result in 3D, then applies one model
-  history step. Existing extrusions retain their parameter/formula drivers.
+- **Solid features.** **Extrude, revolve, union or cut** uses the active applied sketch
+  and its plane axes, previews the native result in 3D, then applies one model
+  history step. Existing extrusions and revolutions retain their parameter/formula drivers.
   Close or changing values restores the accepted model; all variants must pass.
 - **Planes.** New plane builds a datum plane offset or angled from a base
   plane, on a picked face, midway between two picked faces, or through three
@@ -306,8 +306,8 @@ annotation view. No schema or native ABI change is needed.
 
 ### Sketch-to-solid controls
 
-In the studio, choose **Extrude, union or cut** in the side panel; the classic
-viewer uses **Sketch to solid**. These controls create a new extrusion, add material by union, or
+In the studio, choose **Extrude, revolve, union or cut** in the side panel; the classic
+viewer uses **Sketch to solid**. These controls create an extrusion or revolution, add material by union, or
 remove material by cut. Select an existing **Sketch / planar profile**, enter a
 result feature name, and choose a target solid for union/cut. The profile's current
 material regions and holes are used together; individual region picking and new
@@ -321,12 +321,20 @@ the total depth equally about the profile plane. A profile on the top of a plate
 can cut a pocket by extruding toward the plate, for example direction `(0,0,-1)`.
 **Show source sketch** switches the annotated view to its authored geometry.
 
-The **Feature list** opens existing distance/symmetric extrusions for editing.
+The **Feature list** opens existing distance/symmetric extrusions and revolutions for editing.
 Their IDs stay stable. Known direction/depth expressions retain their authored
 form when unchanged; other formulas have a **Keep existing direction and formula**
 choice and are replaced only when you explicitly choose entered values or a
 parameter. Geometric cutoff extents and editing other operation types remain
 outside this panel.
+
+Choose **Solid feature → Revolution** to turn a profile about a family-coordinate
+axis. Set its origin in millimetres and a finite, nonzero direction. In the studio
+the initial axis follows the sketch's local Y axis through its origin. The signed
+angle is entered in degrees (nonzero, at most one full turn); scalar parameter
+links use radians. **Symmetric** splits the total angle about the profile plane.
+**Edit revolution …** retains existing axis/origin and angle formulas until you
+explicitly replace them. Revolutions can also supply the tool for union or cut.
 
 **Preview solid** displays candidate 3D geometry and per-instance solid count and
 volume while the accepted document, glTF, and file remain unchanged. Valid

@@ -241,9 +241,9 @@ catalogue; display-only glyphs and edited-curve names cannot be sources.
 
 ## Making a solid from a sketch
 
-Choose **Extrude, union or cut** in the left panel after applying the sketch.
+Choose **Extrude, revolve, union or cut** in the left panel after applying the sketch.
 The active applied profile is selected by default and its plane normal supplies
-the initial direction. Choose a new extrusion, material addition (union) or
+the initial extrusion direction. Choose extrusion or revolution, then a new solid, material addition (union) or
 material removal (cut), name the result and select a target solid for a boolean.
 The applied profile's holes and additional regions become part of the extrusion.
 If the current output is a planar sketch, the form defaults to an available
@@ -257,6 +257,15 @@ active layer while retaining the form. The feature list exposes **Edit
 extrusion …** for existing distance/symmetric extrusions. Editing preserves the
 feature name and untouched parameter/formula drivers; the preserve option keeps
 a direction expression that the simple fields cannot represent.
+
+For **Revolution**, enter the axis origin in millimetres and a nonzero axis in
+family coordinates. The initial studio axis follows the sketch's local Y axis
+through its origin. Enter a signed angle from −360 to 360 degrees, excluding zero,
+or choose a scalar parameter whose value is in radians. **Symmetric** splits the
+total angle equally about the profile plane. The feature list also exposes
+**Edit revolution …**; existing axis/origin and angle formulas are retained by
+default and can be explicitly replaced with entered values. The profile must
+sweep into valid solid material; native preview checks this before Apply.
 
 **Preview solid** displays the native validated mesh in the 3D viewer, with
 solid count and volume for the selected instance in the form. Fit uses the
@@ -834,7 +843,7 @@ to the instance it was made on.
 | Explicit outer loops, holes and additional regions | Yes | Material boundaries panel, ordered canvas picks, Preview and draft history |
 | Region discovery initialization | Yes | Material boundaries panel, arrangement curves, cell seeds and merging |
 | Full dependencies | Yes | Advanced drawer hosts the classic panel |
-| Sketch to solid | Studio panel | Native 3D extrusion/union/cut previews, existing extrusion editing and model history |
+| Sketch to solid | Studio panel | Native 3D extrusion/revolve/union/cut previews, existing sweep editing and model history |
 | Preview, Apply, Undo, Redo, Save | Yes | Toolbar; Revert stays in the classic viewer |
 | Several instances | Yes | Instance menu in the header; see [Instances](#instances) |
 

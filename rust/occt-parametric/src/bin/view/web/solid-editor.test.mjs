@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {extrusionDirection,readDirection,controlledDirection,solidChanges,createSolidEditor} from './solid-editor.mjs';
+import {revolutionDefinition,extrusionDirection,readDirection,controlledDirection,solidChanges,createSolidEditor} from './solid-editor.mjs';
 const depth=value=>({literal:{value,dimension:'length',unit:'millimeter'}});
 const base=[{id:'profile',operation:{sketch_face:{sketch:{}}}},{id:'body',operation:{extrude:{input:'profile',direction:{components:{x:depth(0),y:depth(0),z:{parameter:'depth'}}},extent:'distance'}}}];
 
@@ -38,4 +38,44 @@ test('feature controls preview a guarded graph and retain the form after rejecti
  await button(host,'Preview solid').onclick();assert.equal(calls[0].version,3);assert.deepEqual(calls[0].expected,base);assert.equal(calls[0].features[1].operation.cut.object,'body');assert.equal(views.length,1);assert.equal(accepted,null);
  await button(host,'Apply verified solid').onclick();assert.equal(accepted,null);assert(button(host,'Apply verified solid'));reject=false;await button(host,'Apply verified solid').onclick();assert.deepEqual(accepted,{version:4});
  delete globalThis.document;delete globalThis.Option;
+});
+
+
+test('revolution graphs use signed radians, normalized scalar axes and atomic boolean tools',()=>{
+ const revolution=revolutionDefinition([1,2,3],[0,0,4],{literal:{value:-Math.PI,dimension:'scalar',unit:null}},'symmetric');
+ assert.equal(revolution.axis.components.z.literal.value,1);
+ assert.equal(revolution.origin.components.y.literal.unit,'millimeter');
+ for(const mode of ['new','fuse','cut']){
+  const graph=solidChanges(base,{kind:'revolve',revolution,mode,id:'turned',input:'profile',target:'body'});
+  assert.deepEqual(graph.features[0].operation,{revolve:{input:'profile',...revolution}});
+  assert.equal(graph.features[0].id,mode==='new'?'turned':'turned-revolution');
+  if(mode==='cut')assert.equal(graph.features[1].operation.cut.tool,'turned-revolution');
+  if(mode==='fuse')assert.equal(graph.features[1].operation.fuse.right,'turned-revolution');
+ }
+ for(const value of [0,7,NaN])assert.throws(()=>revolutionDefinition([0,0,0],[0,0,1],{literal:{value,dimension:'scalar',unit:null}}),/angle/);
+ assert.throws(()=>revolutionDefinition([0,0,0],[0,0,0],{parameter:'angle'}),/nonzero/);
+ assert.throws(()=>revolutionDefinition([0,Infinity,0],[0,0,1],{parameter:'angle'}),/origin/);
+ assert.throws(()=>solidChanges(base,{kind:'revolve',revolution,id:'body',input:'profile',editing:base[1]}),/type/);
+});
+
+test('revolution forms use profile axes and preserve authored formulas on editing',async()=>{
+ globalThis.document={createElement:tag=>new Element(tag)};globalThis.Option=class extends Element{constructor(text,value){super('option');this.textContent=text;this.value=value;}};
+ try{
+ const host=new Element('div'),calls=[],frame={origin:[2,3,4],axis:[0,1,0]};
+ const saved={id:'turned',operation:{revolve:{input:'profile',origin:{parameter:'axis-origin'},axis:{parameter:'axis-vector'},angle_radians:{multiply:[{parameter:'angle'},{literal:{value:2,dimension:'scalar',unit:null}}]},extent:'symmetric'}}};
+ createSolidEditor({host,instance:()=> 'part',profileAxis:()=>frame,preview:async()=>{},applied:async()=>{},restore:async()=>{},request:async(path,options)=>{
+  if(!options)return {version:1,features:[...base,saved],output:'turned',parameters:[]};
+  const body=JSON.parse(options.body);calls.push(body);return {can_apply:true};
+ }});
+ await button(host,'Sketch to solid').onclick();
+ control(host,'Solid feature').value='revolve';control(host,'Solid feature').onchange();
+ assert.equal(control(host,'Axis origin X (mm)').value,2);
+ control(host,'Axis origin X (mm)').value='8';control(host,'Axis origin X (mm)').oninput();assert.equal(frame.origin[0],2);
+ control(host,'Result feature name').value='new-ring';control(host,'Result feature name').oninput();
+ control(host,'Revolution angle (degrees)').value='-90';control(host,'Revolution angle (degrees)').oninput();
+ await button(host,'Preview solid').onclick();assert.equal(calls[0].features[0].operation.revolve.angle_radians.literal.value,-Math.PI/2);
+ button(host,'Edit revolution turned').onclick();await button(host,'Preview solid').onclick();assert.deepEqual(calls[1].features,[saved]);
+ control(host,'Revolution extent').value='angle';control(host,'Revolution extent').onchange();
+ await button(host,'Preview solid').onclick();assert.deepEqual(calls[2].features[0].operation.revolve,{...saved.operation.revolve,extent:'angle'});
+ }finally{delete globalThis.document;delete globalThis.Option;}
 });

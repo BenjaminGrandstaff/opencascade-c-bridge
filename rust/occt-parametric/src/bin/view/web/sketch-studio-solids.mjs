@@ -61,6 +61,10 @@ export function installStudioSolids(studio, document) {
         const frame = studio.layers.find(layer => layer.feature === feature)?.frame;
         return frame ? planeNormal(frame) : null;
       },
+      profileAxis: feature => {
+        const frame = studio.layers.find(layer => layer.feature === feature)?.frame;
+        return frame ? {origin: frame.origin_mm, axis: frame.y_axis} : null;
+      },
       invalidatePreview: () => { if (current()) { s.turn++; s.response = null; const shown = Boolean(studio.solidPreview); clearPreview(); if (shown) studio.say('Solid values changed. Preview again to see the updated result.'); } },
       preview: async (_, result) => {
         if (!current() || s.response !== result) return;
@@ -89,6 +93,6 @@ export function installStudioSolids(studio, document) {
   const load = studio.onLoad; studio.onLoad = () => { close(); load?.(); };
   const key = studio.onKey; studio.onKey = event => { if (event.key === 'Escape' && session) { close(); return true; } return key?.(event) ?? false; };
   panel.addEventListener('keydown', event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); } });
-  studio.fill(document.getElementById('solid-features'), html('h2', {}, 'Solid features'), html('button', {onclick: open}, 'Extrude, union or cut'));
+  studio.fill(document.getElementById('solid-features'), html('h2', {}, 'Solid features'), html('button', {onclick: open}, 'Extrude, revolve, union or cut'));
   return {open, close};
 }

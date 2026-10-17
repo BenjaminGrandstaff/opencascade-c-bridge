@@ -60,10 +60,12 @@ impl Studio {
                     extent: ExtrudeExtent::Distance | ExtrudeExtent::Symmetric,
                     ..
                 } => (),
-                FeatureOperation::Fuse { .. } | FeatureOperation::Cut { .. } => (),
+                FeatureOperation::Revolve { .. }
+                | FeatureOperation::Fuse { .. }
+                | FeatureOperation::Cut { .. } => (),
                 _ => {
                     return Err(
-                        "Solid controls support distance/symmetric extrusions, unions and cuts."
+                        "Solid controls support distance/symmetric extrusions, revolutions, unions and cuts."
                             .into(),
                     );
                 }
