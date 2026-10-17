@@ -137,8 +137,8 @@ view instead of a flat overlay:
   curves, then the mirror line, direction line or center point, with a
   dashed guide, and record linked sketch patterns. A mirror of half an
   outline closes it through the axis, and patterned holes stay holes.
-- **Solid features.** **Extrude, revolve, sweep or loft** uses the active applied sketch
-  and its plane axes, previews the native result in 3D, then applies one model
+- **Solid features.** **Build or finish a solid** builds from applied sketches
+  or finishes selected solid edges, previews the native result in 3D, then applies one model
   history step. Existing extrusions, revolutions, sweeps and lofts retain their parameter/formula drivers.
   Close or changing values restores the accepted model; all variants must pass.
 - **Planes.** New plane builds a datum plane offset or angled from a base
@@ -306,7 +306,7 @@ annotation view. No schema or native ABI change is needed.
 
 ### Sketch-to-solid controls
 
-In the studio, choose **Extrude, revolve, sweep or loft** in the side panel; the classic
+In the studio, choose **Build or finish a solid** in the side panel; the classic
 viewer uses **Sketch to solid**. These controls create an extrusion, revolution
 or path sweep, add material by union, or remove material by cut. Select an existing **Sketch / planar profile**, enter a
 result feature name, and choose a target solid for union/cut. The profile's current
@@ -377,6 +377,27 @@ together. All choices must be filled and every saved profile reference distinct.
 sections and holes; source sketch parameters remain linked. Lofts can also
 supply union/cut tools. Native limits are 2–1000 stations and at most 100 hole
 tracks; validation rejects invalid sections, crossing holes and non-solid output.
+
+In the studio, choose **Fillet solid edges** or **Chamfer solid edges**, then
+select the **Finish solid** source. **Pick finishing edge in canvas** loads its
+accepted edges as an amber overlay. Fit frames the source; hover highlights an
+edge in blue and a click adds its native semantic selector. Repeat to add more
+edge sets; use **Remove edge set …** to remove one. Changing the source clears
+the selections. Escape or **Cancel edge pick** cancels picking and retains the
+form. Field/tool/model/instance changes discard stale pick replies.
+
+Enter a positive fillet radius or chamfer distance in millimetres, or link a
+length parameter. **Edit fillet …** and **Edit chamfer …** retain existing edge
+sets and size formulas, including compound expressions. Explicitly choosing an
+entered size replaces that formula. Picks save selectors rather than mesh edge
+indices; a reported fixed center anchor requires re-picking if that edge moves.
+Preview verifies the operation across every instance, so a size that fails on a
+thinner variant is rejected before Apply. These operations append one feature
+and use the same model Undo/Redo and Save flow as other solid edits. The classic
+viewer can edit existing finishing features; canvas creation uses the studio.
+Editing previews the current final output when it depends on that feature;
+otherwise it previews the edited feature's result, so an unrelated branch does
+not hide the change.
 
 **Preview solid** displays candidate 3D geometry and per-instance solid count and
 volume while the accepted document, glTF, and file remain unchanged. Valid

@@ -107,6 +107,8 @@ impl Studio {
                     edges.len() == 1 && session.is_same(&edges[0], &edge).unwrap_or(false)
                 })
         };
+        // Kernel bounds include padding; leave room beyond its 1e-7 scale.
+        // A candidate is still published only after unique identity matching.
         let extremes: Vec<_> = [CoordinateAxis::X, CoordinateAxis::Y, CoordinateAxis::Z]
             .into_iter()
             .flat_map(|axis| {
@@ -116,7 +118,7 @@ impl Studio {
                         axis,
                         extremum,
                         tolerance: ScalarExpr::Literal(Quantity::length(
-                            1e-7,
+                            1e-6,
                             LengthUnit::Millimeter,
                         )),
                     })

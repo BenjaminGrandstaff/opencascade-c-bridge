@@ -645,6 +645,11 @@ impl Studio {
                 "text/javascript",
                 include_str!("web/solid-extrusion.mjs"),
             ),
+            ("GET", "/solid-finishes.mjs") => Response::text(
+                200,
+                "text/javascript",
+                include_str!("web/solid-finishes.mjs"),
+            ),
             ("GET", "/solid-editor.mjs") => {
                 Response::text(200, "text/javascript", include_str!("web/solid-editor.mjs"))
             }

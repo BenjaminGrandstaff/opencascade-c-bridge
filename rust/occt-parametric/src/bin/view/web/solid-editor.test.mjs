@@ -1,8 +1,9 @@
+import {edgeFinishDefinition} from './solid-finishes.mjs';
 import {extrusionExtent,extrusionExtentMode,checkedExtrusionExtent} from './solid-extrusion.mjs';
 import {loftDefinition,editLoftStations} from './solid-loft.mjs';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {sweepOrientation,revolutionDefinition,extrusionDirection,readDirection,controlledDirection,solidChanges,createSolidEditor} from './solid-editor.mjs';
+import {sweepOrientation,revolutionDefinition,extrusionDirection,readDirection,controlledDirection,solidChanges,solidEditOutput,createSolidEditor} from './solid-editor.mjs';
 const depth=value=>({literal:{value,dimension:'length',unit:'millimeter'}});
 const base=[{id:'profile',operation:{sketch_face:{sketch:{}}}},{id:'body',operation:{extrude:{input:'profile',direction:{components:{x:depth(0),y:depth(0),z:{parameter:'depth'}}},extent:'distance'}}}];
 
@@ -200,4 +201,42 @@ test('canvas limiting picks store semantic selectors and late results cannot ove
  const face={normal_aligned:{direction:{parameter:'normal'}}};let pending=button(host,'Pick limiting face in canvas').onclick();resolve({target:'body',face,binding:'normal',origin_mm:[0,0,10]});await pending;assert.equal(control(host,'Limiting face').value,'preserve');await button(host,'Preview solid').onclick();assert.deepEqual(calls[0].features[0].operation.extrude.extent.up_to_face.face,face);assert.equal(JSON.stringify(calls[0].features).includes('face_index'),false);
  pending=button(host,'Pick limiting face in canvas').onclick();control(host,'Extrusion extent').value='distance';control(host,'Extrusion extent').onchange();resolve({target:'body',face:{nearest_center:{}},origin_mm:[0,0,7]});await pending;assert(control(host,'Extrusion depth (mm)'));assert.equal(control(host,'Limiting face'),undefined);assert(canceled>0);
  }finally{delete globalThis.document;delete globalThis.Option;}
+});
+
+
+test('edge finishes create one feature, validate sizes and retain semantic selector expressions',()=>{
+ const edges=[{intersection:[{at_extreme:{axis:'y',extremum:'minimum'}},{at_extreme:{axis:'z',extremum:'maximum'}}]}];
+ for(const kind of ['fillet','chamfer']){
+  const operation=edgeFinishDefinition(kind,'body',edges,{parameter:'size'});assert.deepEqual(operation.edges,edges);assert.deepEqual(operation[kind==='fillet'?'radius':'distance'],{parameter:'size'});
+  const graph=solidChanges(base,{id:'finished',input:'body',kind,finish:{edges,size:depth(1)}});assert.equal(graph.features.length,1);assert.equal(graph.action,'add');assert.deepEqual(graph.features[0].operation[kind].edges,edges);
+  assert.throws(()=>edgeFinishDefinition(kind,'body',[],depth(1)),/edge/);assert.throws(()=>edgeFinishDefinition(kind,'body',edges,depth(-2)),/positive/);
+ }
+});
+test('finishing canvas picks append unique selectors; changing the source clears them and late picks are ignored',async()=>{
+ globalThis.document={createElement:tag=>new Element(tag)};globalThis.Option=class extends Element{constructor(text,value){super('option');this.textContent=text;this.value=value;}};
+ try{
+ const host=new Element('div'),calls=[];let resolve;createSolidEditor({host,instance:()=> 'part',pickSolidEdge:()=>new Promise(r=>resolve=r),preview:async()=>{},applied:async()=>{},restore:async()=>{},request:async(path,options)=>{if(!options)return {version:1,features:[...base,{id:'other',operation:{box:{}}}],output:'body',parameters:[]};calls.push(JSON.parse(options.body));return {can_apply:true};}});
+ await button(host,'Sketch to solid').onclick();control(host,'Solid feature').value='fillet';control(host,'Solid feature').onchange();assert.equal(control(host,'Sketch / planar profile'),undefined);assert.equal(control(host,'Solid operation'),undefined);assert.equal(control(host,'Finish solid').value,'body');control(host,'Result feature name').value='rounded';control(host,'Result feature name').oninput();
+ const edge={at_extreme:{axis:'z',extremum:'maximum'}};let pending=button(host,'Pick finishing edge in canvas').onclick();resolve({target:'body',edge});await pending;assert(button(host,'Remove edge set 1'));
+ pending=button(host,'Pick finishing edge in canvas').onclick();resolve({target:'body',edge});await pending;assert.equal(button(host,'Remove edge set 2'),undefined);await button(host,'Preview solid').onclick();assert.deepEqual(calls[0].features[0].operation.fillet.edges,[edge]);
+ pending=button(host,'Pick finishing edge in canvas').onclick();control(host,'Finish solid').value='other';control(host,'Finish solid').onchange();resolve({target:'body',edge});await pending;assert.equal(button(host,'Remove edge set 1'),undefined);
+ }finally{delete globalThis.document;delete globalThis.Option;}
+});
+test('editing fillets and chamfers preserves compound size formulas and existing edge sets',async()=>{
+ globalThis.document={createElement:tag=>new Element(tag)};globalThis.Option=class extends Element{constructor(text,value){super('option');this.textContent=text;this.value=value;}};
+ try{
+ const host=new Element('div'),calls=[],edges=[{reference:'top-rim'}],size={add:[{parameter:'size'},depth(1)]};
+ const finishes=['fillet','chamfer'].map(kind=>({id:kind,operation:{[kind]:{input:'body',edges,[kind==='fillet'?'radius':'distance']:size}}}));
+ createSolidEditor({host,instance:()=> 'part',preview:async()=>{},applied:async()=>{},restore:async()=>{},request:async(path,options)=>{if(!options)return {version:1,features:[...base,...finishes],output:'body',parameters:[]};calls.push(JSON.parse(options.body));return {can_apply:true};}});
+ await button(host,'Sketch to solid').onclick();for(const kind of ['fillet','chamfer']){await button(host,`Edit ${kind} ${kind}`).onclick();assert.equal(control(host,'Finishing size source').value,'preserve');await button(host,'Preview solid').onclick();assert.deepEqual(calls.at(-1).features,[finishes.find(f=>f.id===kind)]);assert.equal(calls.at(-1).action,'replace');}
+ }finally{delete globalThis.document;delete globalThis.Option;}
+});
+
+
+test('editing an unused solid previews that feature; downstream outputs retain the complete part view',()=>{
+ const features=[...base,{id:'rounded',operation:{fillet:{input:'body'}}},{id:'finished',operation:{translate:{input:'rounded'}}}];
+ const dependencies={profile:[],body:['profile'],rounded:['body'],finished:['rounded']};
+ assert.equal(solidEditOutput({features,dependencies,output:'body'},{id:'rounded'}),'rounded');
+ assert.equal(solidEditOutput({features,dependencies,output:'finished'},{id:'rounded'}),'finished');
+ assert.equal(solidEditOutput({features,dependencies,output:'profile'},{id:'body'}),'body');
 });

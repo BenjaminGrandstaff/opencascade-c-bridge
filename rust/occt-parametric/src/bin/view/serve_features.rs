@@ -8,8 +8,9 @@ use occt_parametric::{
 
 impl Studio {
     pub(super) fn feature_view(&self) -> Value {
+        let dependencies = self.document.family.feature_inputs().ok();
         json!({"version":self.version,"family":self.document.family.id,
-            "features":self.document.family.features,"parameters":self.document.family.parameters,
+            "features":self.document.family.features,"parameters":self.document.family.parameters,"dependencies":dependencies,
             "output":self.output.as_deref().or_else(||self.document.family.features.last().map(|f|f.id.as_str()))})
     }
     pub(super) fn feature_edit(&mut self, body: &[u8]) -> Result<Value, String> {
@@ -56,7 +57,9 @@ impl Studio {
                 return Err("Feature IDs must be distinct.".into());
             }
             match &feature.operation {
-                FeatureOperation::Extrude { .. }
+                FeatureOperation::Fillet { .. }
+                | FeatureOperation::Chamfer { .. }
+                | FeatureOperation::Extrude { .. }
                 | FeatureOperation::ProfileLoft { .. }
                 | FeatureOperation::Sweep { .. }
                 | FeatureOperation::Revolve { .. }
@@ -64,7 +67,7 @@ impl Studio {
                 | FeatureOperation::Cut { .. } => (),
                 _ => {
                     return Err(
-                        "Solid controls support extrusions, revolutions, sweeps, profile lofts, unions and cuts."
+                        "Solid controls support extrusions, revolutions, sweeps, profile lofts, fillets, chamfers, unions and cuts."
                             .into(),
                     );
                 }

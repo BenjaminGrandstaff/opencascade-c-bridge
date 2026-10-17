@@ -31,3 +31,15 @@ test('hover and selected face overlays are read-only and clear on cancel',async(
  const f=fixture(),pending=f.picker.pick('stop',f.current);await flush();f.studio.tools.get('solid-limit-face').move(event);
  const context={matrix:[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1],width:100,height:100,element:(tag,attrs)=>({tag,attrs})};const overlays=f.studio.decorate(context);assert.equal(overlays[0].attrs['data-limit-face'],7);assert.equal(overlays[0].attrs['pointer-events'],'none');f.picker.cancel();assert.equal(await pending,null);assert.deepEqual(f.studio.decorate(context),[]);assert.deepEqual(scene.mesh,mesh);
 });
+
+
+test('finishing edge picks use screen hits and return semantic selectors without edge indices',async()=>{
+ const edgeScene={...scene,lines:[[[0,0,1],[1,0,1]]],edges:[{edge:4,line:0}]};
+ const selected={version:3,instance:'part',binding:'extreme',projection:{id:'solid-finish-edge',input:'stop',edge:{at_extreme:{axis:'x',extremum:'minimum'}}},center_mm:[0.5,0,1],length_mm:1};
+ const f=fixture(path=>path==='/api/sketch-source-view'?{...source(),scenes:[edgeScene]}:selected);f.studio.viewport=()=>({matrix:[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1],width:100,height:100});
+ const pending=f.picker.pick('stop',f.current,'edge');await flush();await f.picker.click({button:0,clientX:50,clientY:49.95});const result=await pending;assert.deepEqual(result.edge,selected.projection.edge);assert.equal(result.edge_index,undefined);assert.equal(f.calls[1].path,'/api/sketch-edge-pick');assert.equal(f.calls[1].body.edge,4);
+});
+test('late finishing edge replies are discarded after cancel',async()=>{
+ let resolve;const edgeScene={...scene,lines:[[[0,0,1],[1,0,1]]],edges:[{edge:4,line:0}]};const f=fixture(path=>path==='/api/sketch-source-view'?{...source(),scenes:[edgeScene]}:new Promise(r=>resolve=r));f.studio.viewport=()=>({matrix:[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1],width:100,height:100});
+ const pending=f.picker.pick('stop',f.current,'edge');await flush();const click=f.picker.click({button:0,clientX:50,clientY:49.95});f.picker.cancel();resolve({});await click;assert.equal(await pending,null);assert.equal(f.picker.source,null);
+});

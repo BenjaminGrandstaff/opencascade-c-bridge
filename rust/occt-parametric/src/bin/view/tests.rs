@@ -2174,6 +2174,204 @@ fn picked_limiting_faces_author_live_extrusion_selectors_without_mesh_indices() 
     assert!((maximum - 16.0).abs() < 1e-8);
 }
 
+fn edge_finish_document() -> ModelDocument {
+    let mut document = sketch_block_document();
+    document.family.parameters.push(ParameterDefinition {
+        id: "finish-size".into(),
+        parameter_type: ParameterType::Scalar(Dimension::Length),
+        default: ParameterValue::Scalar(Quantity::length(1.0, LengthUnit::Millimeter)),
+        minimum: None,
+        maximum: None,
+    });
+    document.instances.push(InstanceNode::Clone {
+        id: "thin".into(),
+        source: "block".into(),
+        overrides: HashMap::from([(
+            "depth".into(),
+            ParameterValue::Scalar(Quantity::length(5.0, LengthUnit::Millimeter)),
+        )]),
+        placement: Default::default(),
+        frame: None,
+        provenance: "test".into(),
+    });
+    document
+}
+
+fn picked_top_edge(studio: &mut serve::Studio) -> serde_json::Value {
+    let version = get(studio, "/api/state").1["version"].clone();
+    let response = studio.handle(
+        "POST",
+        "/api/sketch-source-view",
+        json!({"version":version,"instance":"block","output":"body"})
+            .to_string()
+            .as_bytes(),
+    );
+    assert_eq!(response.status, 200);
+    let source: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+    let solid = source["scenes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["kind"] == "solid" && s["instance"] == "block" && s["feature"] == "body")
+        .unwrap();
+    let edge = solid["edges"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| {
+            solid["lines"][e["line"].as_u64().unwrap() as usize]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|p| {
+                    p[1].as_f64().unwrap().abs() < 1e-8
+                        && (p[2].as_f64().unwrap() - 10.0).abs() < 1e-8
+                })
+        })
+        .unwrap()["edge"]
+        .clone();
+    let response=studio.handle("POST","/api/sketch-edge-pick",json!({"version":version,"instance":"block","output":"body","edge":edge,"id":"solid-finish-edge"}).to_string().as_bytes());
+    assert_eq!(
+        response.status,
+        200,
+        "{}",
+        String::from_utf8_lossy(&response.body)
+    );
+    let pick: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+    assert_eq!(pick["binding"], "extreme");
+    pick["projection"]["edge"].clone()
+}
+
+#[test]
+fn solid_edge_finishes_preview_picked_selectors_and_save_parameter_drivers_with_history() {
+    for kind in ["fillet", "chamfer"] {
+        let directory = Directory::new();
+        let document = edge_finish_document();
+        let model = PathBuf::from(directory.model(&document));
+        let mut studio = serve::Studio::load(&model, Some("body".into())).unwrap();
+        assert_eq!(studio.handle("GET", "/solid-finishes.mjs", b"").status, 200);
+        let data = get(&mut studio, "/api/features").1;
+        assert_eq!(data["dependencies"]["body"], json!(["profile"]));
+        let state = get(&mut studio, "/api/state").1;
+        let mesh = studio.handle("GET", "/api/model.gltf", b"").body;
+        let selector = picked_top_edge(&mut studio);
+        let operation = if kind == "fillet" {
+            json!({"fillet":{"input":"body","edges":[selector],"radius":{"parameter":"finish-size"}}})
+        } else {
+            json!({"chamfer":{"input":"body","edges":[selector],"distance":{"parameter":"finish-size"}}})
+        };
+        let mut edit = json!({"version":data["version"],"instance":"block","expected":data["features"],"action":"add","features":[{"id":"finished","operation":operation}],"output":"finished","apply":false});
+        let response = studio.handle("POST", "/api/features", edit.to_string().as_bytes());
+        assert_eq!(response.status, 200);
+        let preview: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+        assert_eq!(preview["can_apply"], true, "{}", preview["error"]);
+        let removed = 40.0
+            * if kind == "fillet" {
+                1.0 - std::f64::consts::PI / 4.0
+            } else {
+                0.5
+            };
+        assert!(
+            (preview["geometry"]["block"]["volume_mm3"].as_f64().unwrap() - (10000.0 - removed))
+                .abs()
+                < 1e-5
+        );
+        assert!(
+            (preview["geometry"]["thin"]["volume_mm3"].as_f64().unwrap() - (5000.0 - removed))
+                .abs()
+                < 1e-5
+        );
+        assert!(!preview["gltf"]["meshes"].as_array().unwrap().is_empty());
+        assert_eq!(get(&mut studio, "/api/state").1, state);
+        assert_eq!(studio.handle("GET", "/api/model.gltf", b"").body, mesh);
+        edit["apply"] = json!(true);
+        assert_eq!(
+            studio
+                .handle("POST", "/api/features", edit.to_string().as_bytes())
+                .status,
+            200
+        );
+        history(&mut studio, "undo");
+        assert_eq!(
+            get(&mut studio, "/api/features").1["features"],
+            data["features"]
+        );
+        history(&mut studio, "redo");
+        let current = get(&mut studio, "/api/features").1;
+        let mut replacement = current["features"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|f| f["id"] == "finished")
+            .unwrap()
+            .clone();
+        replacement["operation"][kind][if kind == "fillet" {
+            "radius"
+        } else {
+            "distance"
+        }] = json!({"add":[{"parameter":"finish-size"},{"literal":{"value":0.5,"dimension":"length","unit":"millimeter"}}]});
+        let edit = json!({"version":current["version"],"instance":"block","expected":current["features"],"action":"replace","features":[replacement],"output":"finished","apply":true});
+        assert_eq!(
+            studio
+                .handle("POST", "/api/features", edit.to_string().as_bytes())
+                .status,
+            200
+        );
+        assert_eq!(studio.handle("POST", "/api/save", b"").status, 200);
+        let saved = ModelDocument::from_json(&fs::read_to_string(&model).unwrap()).unwrap();
+        let expected: FeatureDefinition =
+            serde_json::from_value(edit["features"][0].clone()).unwrap();
+        assert_eq!(
+            saved.family.features.iter().find(|f| f.id == "finished"),
+            Some(&expected)
+        );
+        assert!(
+            !serde_json::to_string(&expected)
+                .unwrap()
+                .contains("edge_index")
+        );
+        assert!(
+            document
+                .family
+                .requirements
+                .iter()
+                .all(|r| saved.family.requirements.contains(r))
+        );
+    }
+}
+
+#[test]
+fn solid_edge_finishes_reject_sizes_that_fail_another_instance() {
+    for kind in ["fillet", "chamfer"] {
+        let directory = Directory::new();
+        let document = edge_finish_document();
+        let model = PathBuf::from(directory.model(&document));
+        let mut studio = serve::Studio::load(&model, Some("body".into())).unwrap();
+        let data = get(&mut studio, "/api/features").1;
+        let state = get(&mut studio, "/api/state").1;
+        let selector = picked_top_edge(&mut studio);
+        let operation = if kind == "fillet" {
+            json!({"fillet":{"input":"body","edges":[selector],"radius":{"literal":{"value":6,"dimension":"length","unit":"millimeter"}}}})
+        } else {
+            json!({"chamfer":{"input":"body","edges":[selector],"distance":{"literal":{"value":6,"dimension":"length","unit":"millimeter"}}}})
+        };
+        let mut edit = json!({"version":data["version"],"instance":"block","expected":data["features"],"action":"add","features":[{"id":"finished","operation":operation}],"output":"finished","apply":false});
+        let response = studio.handle("POST", "/api/features", edit.to_string().as_bytes());
+        assert_eq!(response.status, 200);
+        let result: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+        assert_eq!(result["can_apply"], false, "{}", result["error"]);
+        assert!(result["gltf"].is_null());
+        edit["apply"] = json!(true);
+        assert_eq!(
+            studio
+                .handle("POST", "/api/features", edit.to_string().as_bytes())
+                .status,
+            422
+        );
+        assert_eq!(get(&mut studio, "/api/state").1, state);
+    }
+}
+
 fn history(studio: &mut serve::Studio, direction: &str) -> serde_json::Value {
     let version = get(studio, "/api/state").1["version"].clone();
     let response = studio.handle(

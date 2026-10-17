@@ -241,7 +241,7 @@ catalogue; display-only glyphs and edited-curve names cannot be sources.
 
 ## Making a solid from a sketch
 
-Choose **Extrude, revolve, sweep or loft** in the left panel after applying the sketch.
+Choose **Build or finish a solid** in the left panel after applying the sketch.
 The active applied profile is selected by default and its plane normal supplies
 the initial extrusion direction. Choose extrusion, revolution, path sweep or loft,
 then a new solid, material addition (union) or material removal (cut). Name the
@@ -322,6 +322,27 @@ and move them earlier/later; these operations keep all hole tracks aligned.
 the saved section order, hole tracks and parameter-driven source sketches.
 Lofts can create new solids or supply union/cut tools. Native preview checks the
 whole family before Apply.
+
+In the studio, choose **Fillet solid edges** or **Chamfer solid edges**, then
+select the **Finish solid** source. **Pick finishing edge in canvas** loads its
+accepted edges as an amber overlay. Fit frames the source; hover highlights an
+edge in blue and a click adds its native semantic selector. Repeat to add more
+edge sets; use **Remove edge set …** to remove one. Changing the source clears
+the selections. Escape or **Cancel edge pick** cancels picking and retains the
+form. Field/tool/model/instance changes discard stale pick replies.
+
+Enter a positive fillet radius or chamfer distance in millimetres, or link a
+length parameter. **Edit fillet …** and **Edit chamfer …** retain existing edge
+sets and size formulas, including compound expressions. Explicitly choosing an
+entered size replaces that formula. Picks save selectors rather than mesh edge
+indices; a reported fixed center anchor requires re-picking if that edge moves.
+Preview verifies the operation across every instance, so a size that fails on a
+thinner variant is rejected before Apply. These operations append one feature
+and use the same model Undo/Redo and Save flow as other solid edits. The classic
+viewer can edit existing finishing features; canvas creation uses the studio.
+Editing previews the current final output when it depends on that feature;
+otherwise it previews the edited feature's result, so an unrelated branch does
+not hide the change.
 
 **Preview solid** displays the native validated mesh in the 3D viewer, with
 solid count and volume for the selected instance in the form. Fit uses the
@@ -900,7 +921,7 @@ to the instance it was made on.
 | Explicit outer loops, holes and additional regions | Yes | Material boundaries panel, ordered canvas picks, Preview and draft history |
 | Region discovery initialization | Yes | Material boundaries panel, arrangement curves, cell seeds and merging |
 | Full dependencies | Yes | Advanced drawer hosts the classic panel |
-| Sketch to solid | Studio panel | Native 3D extrusion/revolve/sweep/loft/union/cut previews, existing sweep editing and model history |
+| Sketch to solid | Studio panel | Native 3D extrusion/revolve/sweep/loft/union/cut and edge-finish previews, existing sweep editing and model history |
 | Preview, Apply, Undo, Redo, Save | Yes | Toolbar; Revert stays in the classic viewer |
 | Several instances | Yes | Instance menu in the header; see [Instances](#instances) |
 

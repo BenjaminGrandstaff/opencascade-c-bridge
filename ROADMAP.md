@@ -17,7 +17,7 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 7/7, bridge 160 + first-use integration 1 (+1 doc test), recipes 3, parametric core 57 + kernel 758 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 80 + viewer Node 413 + branch command 2 + model command 92, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 7/7, bridge 160 + first-use integration 1 (+1 doc test), recipes 3, parametric core 57 + kernel 758 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 82 + viewer Node 419 + branch command 2 + model command 92, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -25,6 +25,21 @@ tracks status and order.
 | Scale benchmarks | Last full suite: 194 Rust cases (195 with the parallel glTF case) plus 5 model-command cases and a 10,000-face Python matcher. Sketch authoring integration rechecked 60 sketch cases and 60 MCP cases within budget. | `tools/bench/run.sh` |
 
 ## Done
+
+- Studio solid edge finishing (schema 168, ABI 76 unchanged): create and edit
+  native fillets and chamfers with semantic canvas edge picks, multiple edge
+  sets, positive entered sizes or length parameter links. Existing selectors
+  and compound size formulas survive editing. Target overlays, Fit, hover and
+  cancellation share the guarded source picker with limiting faces. Edge
+  extrema use enough tolerance for padded kernel bounds, with unique identity
+  matching before a selector is published. Feature-view dependencies choose a
+  downstream final output when relevant and the edited result otherwise.
+  All 419 viewer Node tests and 82 view-command tests pass, covering analytic
+  volumes, thinner-variant rejection, saved drivers, edits and history. Browser
+  checks cover real edge picks, duplicate suppression, native previews,
+  corrections, Apply, Undo/Redo and Save. Sketch performance budgets and
+  all-target Clippy pass. Main's parallel variant generation and thread-view
+  updates are included.
 
 - Thread representation for through-all and up-to holes and oblique views
   (no schema or ABI change). Threaded holes without a modeled length are
