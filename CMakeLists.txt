@@ -49,6 +49,7 @@ add_library(
     src/planar_regions.cpp
     src/face_pull.cpp
     src/sweep.cpp
+    src/sheet_cutters.cpp
     src/step_assembly.cpp
     src/step_pmi.cpp
     src/projection.cpp

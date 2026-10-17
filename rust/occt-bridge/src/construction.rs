@@ -337,28 +337,48 @@ impl Session {
         Ok(self.shape(shape))
     }
 
+    /// A cutter through a cylindrical bend: the closed outline `segments`,
+    /// in developed coordinates (x along the circumference at `radius` from
+    /// `start`, turning right-handed about `axis`; y along `axis` from
+    /// `origin`), laid on the cylinder and pushed radially from `inner` to
+    /// `outer`. Arcs become exact ellipses in the surface's parameters.
+    #[allow(clippy::too_many_arguments)]
+    pub fn create_radial_cutter(
+        &self,
+        origin: Vec3,
+        axis: Vec3,
+        start: Vec3,
+        radius: f64,
+        inner: f64,
+        outer: f64,
+        segments: &[WireSegment],
+    ) -> Result<Shape<'_>, BridgeError> {
+        let raw = raw_segments(segments);
+        let mut shape = 0;
+        // SAFETY: The segment slice, session and output remain valid during the call.
+        self.check(unsafe {
+            occt_bridge_create_radial_cutter(
+                self.raw.as_ptr(),
+                origin.into(),
+                axis.into(),
+                start.into(),
+                radius,
+                inner,
+                outer,
+                raw.as_ptr(),
+                raw.len(),
+                &mut shape,
+            )
+        })?;
+        Ok(self.shape(shape))
+    }
+
     pub fn create_segment_wire(
         &self,
         segments: &[WireSegment],
         closed: bool,
     ) -> Result<Shape<'_>, BridgeError> {
-        let raw = segments
-            .iter()
-            .map(|segment| match *segment {
-                WireSegment::Line { start, end } => RawWireSegment {
-                    kind: 0,
-                    start: start.into(),
-                    middle: start.into(),
-                    end: end.into(),
-                },
-                WireSegment::Arc { start, middle, end } => RawWireSegment {
-                    kind: 1,
-                    start: start.into(),
-                    middle: middle.into(),
-                    end: end.into(),
-                },
-            })
-            .collect::<Vec<_>>();
+        let raw = raw_segments(segments);
         let mut shape = 0;
         // SAFETY: The segment slice, session and output remain valid during the call.
         self.check(unsafe {
@@ -372,7 +392,29 @@ impl Session {
         })?;
         Ok(self.shape(shape))
     }
+}
 
+fn raw_segments(segments: &[WireSegment]) -> Vec<RawWireSegment> {
+    segments
+        .iter()
+        .map(|segment| match *segment {
+            WireSegment::Line { start, end } => RawWireSegment {
+                kind: 0,
+                start: start.into(),
+                middle: start.into(),
+                end: end.into(),
+            },
+            WireSegment::Arc { start, middle, end } => RawWireSegment {
+                kind: 1,
+                start: start.into(),
+                middle: middle.into(),
+                end: end.into(),
+            },
+        })
+        .collect()
+}
+
+impl Session {
     pub fn create_circle_wire(
         &self,
         center: Vec3,

@@ -355,12 +355,13 @@ fn cutouts_cut_folded_flanges_and_their_flat_blank_alike() {
         )
         .unwrap();
     }
-    // Cutouts stay inside their flange's straight region and the width,
-    // name an existing flange, and have unique IDs; slots are not short.
+    // Cutouts stay on the sheet and inside the width (they may cross
+    // bends, schema 178), name an existing flange, and have unique IDs;
+    // slots are not short.
     for case in 0..6 {
         let mut bad = sheet.clone();
         match case {
-            0 => bad.cutouts[1].along = length(1.0),
+            0 => bad.cutouts[1].along = length(-30.0),
             1 => bad.cutouts[1].across = length(9.0),
             2 => bad.cutouts[1].flange = 3,
             3 => bad.cutouts[2].id = "hole".into(),
@@ -370,7 +371,7 @@ fn cutouts_cut_folded_flanges_and_their_flat_blank_alike() {
                     width: length(4.0),
                 }
             }
-            _ => bad.cutouts[0].along = length(18.0),
+            _ => bad.cutouts[0].along = length(1.0),
         }
         assert!(
             bad.flat_pattern(&HashMap::new(), 0.5).is_err(),

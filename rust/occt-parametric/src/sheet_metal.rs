@@ -1,7 +1,7 @@
 //! Constant-width flange strips with circular bends and explicit neutral factors.
 use super::*;
-use crate::assembly::{add, scale};
-use occt_bridge::WireSegment;
+use crate::assembly::{add, cross, dot, length, scale, subtract};
+use occt_bridge::{CurveSegment, WireSegment};
 #[allow(unused_imports)]
 pub use occt_parametric_core::sheet_metal::*;
 pub(crate) trait SheetMetalDefinitionUnfoldingInternal {
@@ -55,19 +55,64 @@ impl SheetMetalDefinitionUnfoldingInternal for SheetMetalDefinition {
         // Each cutout is cut square to its flange, at its midplane frame,
         // in one boolean.
         let frames = sheet.flange_frames();
-        let cutters = sheet
-            .cutouts
-            .iter()
-            .map(|cutout| {
-                let ((x, y), angle) = frames[cutout.flange];
-                sheet.cutter(
+        let developed = sheet.developed_starts();
+        let mut cutters = Vec::with_capacity(sheet.cutouts.len());
+        for cutout in &sheet.cutouts {
+            let ((x, y), angle) = frames[cutout.flange];
+            let center = developed[cutout.flange] + cutout.along;
+            let (half, _) = cutout.outline.half_extents();
+            let flange = cutout.flange;
+            if center - half >= developed[flange]
+                && center + half <= developed[flange] + sheet.flanges[flange]
+            {
+                cutters.push(sheet.cutter(
                     session,
                     (x, y),
                     angle,
                     cutout.outline.segments(cutout.along, cutout.across),
-                )
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+                )?);
+                continue;
+            }
+            // A cutout crossing bends (schema 178): its part on each flange
+            // cut square to that flange, its part in each bend pushed
+            // radially through the bend.
+            let outline = cutout.outline.segments(center, cutout.across);
+            let shift = |piece: Vec<OutlineSegment>, by: f64| -> Vec<OutlineSegment> {
+                let at = |p: [f64; 2]| [p[0] - by, p[1]];
+                piece
+                    .into_iter()
+                    .map(|segment| match segment {
+                        OutlineSegment::Line(a, b) => OutlineSegment::Line(at(a), at(b)),
+                        OutlineSegment::Arc(a, m, b) => OutlineSegment::Arc(at(a), at(m), at(b)),
+                    })
+                    .collect()
+            };
+            for k in 0..sheet.flanges.len() {
+                let low = developed[k];
+                let high = low + sheet.flanges[k];
+                if sheet.flanges[k] > 0.0 && high > center - half && low < center + half {
+                    let piece = clip_outline(&outline, low, high);
+                    if piece.len() > 1 {
+                        let ((x, y), angle) = frames[k];
+                        cutters.push(sheet.cutter(session, (x, y), angle, shift(piece, low))?);
+                    }
+                }
+                if let Some(&(turn, radius)) = sheet.bends.get(k) {
+                    let arc = turn.abs() * (radius + sheet.thickness * 0.5);
+                    if high + arc > center - half && high < center + half {
+                        let piece = clip_outline(&outline, high, high + arc);
+                        if piece.len() > 1 {
+                            cutters.push(sheet.bend_cutter(
+                                session,
+                                k,
+                                frames[k],
+                                shift(piece, high),
+                            )?);
+                        }
+                    }
+                }
+            }
+        }
         sheet.cut(session, solid, &cutters)
     }
 
@@ -108,14 +153,16 @@ impl SheetMetalDefinitionUnfoldingInternal for SheetMetalDefinition {
             return Ok(solid);
         }
         let solid = sheet.solid(session, &segments)?;
+        let reach = sheet.thickness * 0.55;
         let cutters = metrics
             .cutouts
             .iter()
             .map(|cutout| {
-                let [u, v] = cutout.center_mm;
-                sheet.cutter(session, (0.0, 0.0), 0.0, cutout.outline.segments(u, v))
+                let wire = sheet.blank_hole(session, cutout, reach)?;
+                let face = session.create_face_from_wire(&wire)?;
+                Ok(session.create_prism_from_face(&face, scale(sheet.normal, -2.0 * reach))?)
             })
-            .collect::<Result<Vec<_>, _>>()?;
+            .collect::<Result<Vec<_>, ModelError>>()?;
         sheet.cut(session, solid, &cutters)
     }
 }
@@ -181,6 +228,27 @@ pub(crate) trait EvaluatedSheetUnfoldingInternal {
         &self,
         session: &'a Session,
         metrics: &FlatPatternMetrics,
+    ) -> Result<Shape<'a>, ModelError>;
+
+    /// A radial cutter through bend `bend`, starting after flange `bend`
+    /// at `frame`, over an outline in (developed length into the bend,
+    /// across) coordinates.
+    fn bend_cutter<'a>(
+        &self,
+        session: &'a Session,
+        bend: usize,
+        frame: ((f64, f64), f64),
+        outline: Vec<OutlineSegment>,
+    ) -> Result<Shape<'a>, ModelError>;
+
+    /// The wire of a blank cutout's outline in the blank's plane at height
+    /// `height` above the midplane: exact stretched pieces for one crossing
+    /// bends.
+    fn blank_hole<'a>(
+        &self,
+        session: &'a Session,
+        cutout: &FlatCutout,
+        height: f64,
     ) -> Result<Shape<'a>, ModelError>;
 
     /// Cuts all cutters from `solid` in one boolean and checks the result.
@@ -621,10 +689,7 @@ impl EvaluatedSheetUnfoldingInternal for EvaluatedSheet {
         let holes = metrics
             .cutouts
             .iter()
-            .map(|cutout| {
-                let [u, v] = cutout.center_mm;
-                wire(cutout.outline.segments(u, v))
-            })
+            .map(|cutout| self.blank_hole(session, cutout, self.thickness * 0.5))
             .collect::<Result<Vec<_>, _>>()?;
         let face = session.create_face_with_holes(&outer, &holes.iter().collect::<Vec<_>>())?;
         let solid = session.create_prism_from_face(&face, scale(self.normal, -self.thickness))?;
@@ -637,6 +702,121 @@ impl EvaluatedSheetUnfoldingInternal for EvaluatedSheet {
             return Err(ModelError::new("pierced blank is not one valid solid"));
         }
         Ok(solid)
+    }
+
+    fn bend_cutter<'a>(
+        &self,
+        session: &'a Session,
+        bend: usize,
+        frame: ((f64, f64), f64),
+        outline: Vec<OutlineSegment>,
+    ) -> Result<Shape<'a>, ModelError> {
+        let (turn, radius) = self.bends[bend];
+        let ((point, heading), _) = (advance(frame, self.flanges[bend], None, self.thickness), ());
+        let (start, angle) = (point, heading);
+        let middle = radius + self.thickness * 0.5;
+        let left = (-angle.sin(), angle.cos());
+        let sign = turn.signum();
+        let center = (
+            start.0 + sign * middle * left.0,
+            start.1 + sign * middle * left.1,
+        );
+        let origin = self.point(center);
+        let outward = subtract(self.point(start), origin);
+        let outward = scale(outward, 1.0 / length(outward));
+        let along = add(
+            scale(self.tangent, angle.cos()),
+            scale(self.normal, angle.sin()),
+        );
+        let axis = cross(outward, along);
+        // Developed coordinates run along the walk; across runs along the
+        // width, which the cutter's axis follows or opposes.
+        let across = dot(axis, self.width_axis).signum();
+        let segments: Vec<WireSegment> = outline
+            .into_iter()
+            .map(|segment| match segment {
+                OutlineSegment::Line(a, b) => WireSegment::Line {
+                    start: Vec3::new(a[0], across * a[1], 0.0),
+                    end: Vec3::new(b[0], across * b[1], 0.0),
+                },
+                OutlineSegment::Arc(a, m, b) => WireSegment::Arc {
+                    start: Vec3::new(a[0], across * a[1], 0.0),
+                    middle: Vec3::new(m[0], across * m[1], 0.0),
+                    end: Vec3::new(b[0], across * b[1], 0.0),
+                },
+            })
+            .collect();
+        // A little beyond the bend's faces: cutters on exactly its radii
+        // cut several times faster but left material behind in testing.
+        let clearance = 0.05 * self.thickness;
+        Ok(session.create_radial_cutter(
+            origin,
+            axis,
+            outward,
+            middle,
+            (radius - clearance).max(radius * 0.5),
+            radius + self.thickness + clearance,
+            &segments,
+        )?)
+    }
+
+    fn blank_hole<'a>(
+        &self,
+        session: &'a Session,
+        cutout: &FlatCutout,
+        height: f64,
+    ) -> Result<Shape<'a>, ModelError> {
+        let at = |[u, v]: [f64; 2]| add(self.point((u, height)), scale(self.width_axis, v));
+        if cutout.mapped.is_empty() {
+            let [u, v] = cutout.center_mm;
+            let segments: Vec<WireSegment> = cutout
+                .outline
+                .segments(u, v)
+                .into_iter()
+                .map(|segment| match segment {
+                    OutlineSegment::Line(a, b) => WireSegment::Line {
+                        start: at(a),
+                        end: at(b),
+                    },
+                    OutlineSegment::Arc(a, m, b) => WireSegment::Arc {
+                        start: at(a),
+                        middle: at(m),
+                        end: at(b),
+                    },
+                })
+                .collect();
+            return Ok(session.create_segment_wire(&segments, true)?);
+        }
+        let segments: Vec<CurveSegment> = cutout
+            .mapped
+            .iter()
+            .map(|segment| match *segment {
+                FlatSegment::Line { start, end } => CurveSegment::Line {
+                    start: at(start),
+                    end: at(end),
+                },
+                FlatSegment::Arc { start, middle, end } => CurveSegment::Arc {
+                    start: at(start),
+                    middle: at(middle),
+                    end: at(end),
+                },
+                FlatSegment::EllipseArc {
+                    center,
+                    radii,
+                    start,
+                    end,
+                    clockwise,
+                } => CurveSegment::EllipseArc {
+                    center: at(center),
+                    major: at([center[0] + radii[0], center[1]]),
+                    minor: at([center[0], center[1] + radii[1]]),
+                    start: at(start),
+                    end: at(end),
+                    clockwise,
+                },
+            })
+            .collect();
+        Ok(session.create_curve_wire(&segments, true)?)
     }
 
     fn cut<'a>(

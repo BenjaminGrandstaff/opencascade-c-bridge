@@ -104,6 +104,46 @@ thickness, with no boolean. Cutouts that overlap, which one face cannot hold
 as separate holes, fall back to a boolean cut.
 
 Folded and blank volumes both drop by the cut-out area times the thickness.
+
+### Across bends (schema 178, ABI 84)
+
+A cutout may cross bends.
+- **Placement.** `along` is still measured from its flange's start, along
+  the developed midplane: flanges at their length, bends at their midplane
+  arc. It may run past either end of the flange, into bends and the
+  flanges beyond. The whole cutout must lie on the sheet, between the
+  user's first and last flange ends, and inside the width. It must also
+  stay clear of a closed or teardrop hem and of bend relief notches.
+- **Folded sheet.** The outline is clipped at each flange and bend zone
+  edge. Pieces on flanges are cut square to their flange, as before. A
+  piece in a bend is laid on the bend's midplane cylinder and pushed
+  radially through the sheet (`occt_bridge_create_radial_cutter`, ABI 84):
+  - its circular arcs become exact ellipses in the cylinder's parameters;
+  - its walls are ruled surfaces whose rulings are radial lines;
+  - it reaches 5% of the thickness past both faces.
+
+  All pieces are cut in one boolean. The cut keeps the hole's developed
+  area exactly: each crossing cutout removes its area times the
+  thickness.
+- **Blank.** The outline is split at the bend zones' edges. Each piece in
+  a bend's zone is stretched along the blank by the bend's allowance over
+  its midplane arc, which is exactly 1 at K = 0.5. Arcs there become exact
+  ellipse arcs. `FlatCutout.mapped` lists the resulting lines, arcs and
+  ellipse arcs; the blank's face takes them as hole edges, and the drawing
+  samples them.
+- **Cost.** A crossing hole costs about 55 ms against 2.5 ms for one within
+  a flange. Nearly all of that is the boolean meeting the radial cutter's
+  ruled walls with the bend's cylinders. Cutters exactly on the bend's
+  radii cut four times faster but left material behind, so they are not
+  used.
+
+Tests cover holes inside a bend, across a tangent line, and a slot spanning
+a bend into both flanges. Each removes exactly its area times the
+thickness, folded and flat at K = 0.5. At K = 0.3 the blank's hole is
+stretched by the predicted ratio while the folded hole is unchanged. The
+bridge tests measure radial cuts of circles and rectangles through a bend
+exactly. The scale bench cuts 90 holes across 9 bends, folded and flat at
+K = 0.3, with exact volumes, in 5.0 s (12 s budget).
 A test checks that, the blank centers including the bend allowances, and
 that a hole's center in the folded sheet lies its radius from the nearest
 material.
@@ -301,7 +341,7 @@ interpolated length is checked exactly, against a 1 s budget.
 The strip itself is constant-width, with its bends sharing one axis
 direction; edge flanges fold about the perpendicular axis (schema 176).
 Edge flanges on edge flanges, cutouts in edge flanges, corner closures where
-edge flanges meet, cutouts across bends,
+edge flanges meet, cutouts through edge flanges' bends,
 corner treatments, tables keyed by material or across thicknesses,
 springback, and mold-line (outside setback) dimensioning
 are not supported. Flange lengths are measured on the midplane between tangent

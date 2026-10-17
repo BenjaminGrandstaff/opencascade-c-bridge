@@ -306,6 +306,13 @@ static void wires_and_faces(occt_bridge_session_t* session) {
     EXPECT(occt_bridge_sweep(session, unknown, path, OCCT_BRIDGE_SWEEP_FIXED, zero, &out), MISSING);
     occt_bridge_sweep_options_t advanced = {OCCT_BRIDGE_SWEEP_CORRECTED_FRENET, {0, 0, 0}, 0, 0, 1, 0,
         OCCT_BRIDGE_INVALID_SHAPE_ID, 0, NULL, 0};
+    const occt_bridge_wire_segment_t notch[] = {
+        {0, {0, 0, 0}, {0, 0, 0}, {1, 0, 0}}, {0, {1, 0, 0}, {1, 0, 0}, {1, 1, 0}}, {0, {1, 1, 0}, {1, 1, 0}, {0, 0, 0}}};
+    EXPECT(occt_bridge_create_radial_cutter(NULL, zero, vec(0, 0, 1), vec(1, 0, 0), 4, 3, 5, notch, 3, &out), ARG);
+    EXPECT(occt_bridge_create_radial_cutter(session, zero, vec(0, 0, 1), vec(1, 0, 0), 4, 3, 5, NULL, 3, &out), ARG);
+    EXPECT(occt_bridge_create_radial_cutter(session, zero, vec(0, 0, 1), vec(1, 0, 0), 4, 3, 5, notch, 3, NULL), ARG);
+    EXPECT(occt_bridge_create_radial_cutter(session, zero, vec(0, 0, 1), vec(1, 0, 0), 4, 4.5, 5, notch, 3, &out), ARG);
+    EXPECT(occt_bridge_create_radial_cutter(session, zero, vec(0, 0, 1), vec(1, 0, 1), 4, 3, 5, notch, 3, &out), ARG);
     EXPECT(occt_bridge_sweep_advanced(NULL, rim, path, &advanced, &out), ARG);
     EXPECT(occt_bridge_sweep_advanced(session, rim, path, NULL, &out), ARG);
     EXPECT(occt_bridge_sweep_advanced(session, rim, path, &advanced, NULL), ARG);

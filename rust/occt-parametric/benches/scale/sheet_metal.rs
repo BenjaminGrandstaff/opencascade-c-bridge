@@ -472,3 +472,116 @@ pub(crate) fn edge_flange_case() -> Outcome {
         },
     )
 }
+
+/// Ten 40 mm flanges and nine alternating quarter bends, 100 mm wide, with
+/// ten Ø4 holes centred on each bend's midplane arc: 90 cutouts crossing
+/// bends, cut radially in the folded sheet and stretched through the bend
+/// zones of a K = 0.3 blank. Measured 5.0 s: about 55 ms a hole, nearly all
+/// in the one boolean cut, where each radial cutter's ruled walls meet the
+/// bend's cylinders (holes within flanges cost about 2.5 ms each).
+pub(crate) fn bend_cutout_case() -> Outcome {
+    timed(
+        "sheet metal: 90 cutouts across 9 bends, folded and flat".into(),
+        ms(12_000),
+        Expectation::Required,
+        || {
+            let session = Session::new().map_err(|error| failure(error.to_string()))?;
+            let length =
+                |value| ScalarExpr::Literal(Quantity::length(value, LengthUnit::Millimeter));
+            let half = std::f64::consts::FRAC_PI_2;
+            let pi = std::f64::consts::PI;
+            let sheet = SheetMetalDefinition {
+                origin: VectorExpr::Literal(VectorQuantity::lengths(
+                    0.0,
+                    0.0,
+                    0.0,
+                    LengthUnit::Millimeter,
+                )),
+                width_axis: VectorExpr::Literal(VectorQuantity::scalars(0.0, 1.0, 0.0)),
+                start_direction: VectorExpr::Literal(VectorQuantity::scalars(1.0, 0.0, 0.0)),
+                width: length(100.0),
+                thickness: length(2.0),
+                flanges: vec![length(40.0); 10],
+                bends: (0..9)
+                    .map(|i| SheetMetalBend {
+                        angle_radians: ScalarExpr::Literal(Quantity::scalar(if i % 2 == 0 {
+                            half
+                        } else {
+                            -half
+                        })),
+                        inside_radius: length(3.0),
+                    })
+                    .collect(),
+                cutouts: (0..90)
+                    .map(|i| SheetMetalCutout {
+                        id: format!("hole-{i}"),
+                        flange: i / 10,
+                        along: length(40.0 + pi),
+                        across: length(5.0 + 10.0 * (i % 10) as f64),
+                        shape: SheetMetalCutoutShape::Circle {
+                            diameter: length(4.0),
+                        },
+                    })
+                    .collect(),
+                start_hem: None,
+                end_hem: None,
+                edge_flanges: Vec::new(),
+            };
+            let mut definition = block();
+            definition.parameters.clear();
+            definition.datums.clear();
+            definition.requirements.clear();
+            definition.features = vec![
+                FeatureDefinition {
+                    id: "folded".into(),
+                    operation: FeatureOperation::SheetMetal {
+                        definition: Box::new(sheet),
+                    },
+                },
+                FeatureDefinition {
+                    id: "flat".into(),
+                    operation: FeatureOperation::SheetMetalFlat {
+                        input: "folded".into(),
+                        neutral_factor: ScalarExpr::Literal(Quantity::scalar(0.3)),
+                        bend_table: None,
+                    },
+                },
+            ];
+            let generated = PartInstance {
+                id: "part".into(),
+                definition: &definition,
+                overrides: HashMap::new(),
+                provenance: "bench".into(),
+            }
+            .regenerate(&session)?;
+            // Each hole lies inside its bend: folded it removes its area × t;
+            // on the blank its area stretched by allowance over midplane arc.
+            let arc = half * 4.0;
+            let allowance = half * (3.0 + 0.3 * 2.0);
+            let removed = 90.0 * pi * 4.0 * 2.0;
+            for (id, expected) in [
+                ("folded", (400.0 + 9.0 * arc) * 200.0 - removed),
+                (
+                    "flat",
+                    (400.0 + 9.0 * allowance) * 200.0 - removed * allowance / arc,
+                ),
+            ] {
+                let shape = generated
+                    .shape(id)
+                    .ok_or_else(|| failure(format!("missing {id}")))?;
+                let volume = session
+                    .volume(shape)
+                    .map_err(|error| failure(error.to_string()))?;
+                if (volume - expected).abs() > 1e-6 * expected {
+                    return Err(failure(format!(
+                        "{id} volume {volume}, expected {expected}"
+                    )));
+                }
+            }
+            Ok(
+                "90 bend-crossing holes cut radially and stretched on the blank; exact volumes"
+                    .into(),
+            )
+        },
+    )
+}

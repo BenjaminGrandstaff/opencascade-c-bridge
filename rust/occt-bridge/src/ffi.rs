@@ -2,7 +2,7 @@
 
 use super::*;
 
-pub(crate) const ABI_VERSION: u32 = 83;
+pub(crate) const ABI_VERSION: u32 = 84;
 
 #[repr(C)]
 #[derive(Default)]
@@ -622,6 +622,19 @@ unsafe extern "C" {
         points: *const RawVec3,
         point_count: usize,
         closed: c_int,
+        out: *mut RawShapeId,
+    ) -> RawStatus;
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn occt_bridge_create_radial_cutter(
+        session: *mut c_void,
+        origin: RawVec3,
+        axis: RawVec3,
+        start: RawVec3,
+        radius: f64,
+        inner: f64,
+        outer: f64,
+        segments: *const RawWireSegment,
+        count: usize,
         out: *mut RawShapeId,
     ) -> RawStatus;
     pub(crate) fn occt_bridge_create_segment_wire(

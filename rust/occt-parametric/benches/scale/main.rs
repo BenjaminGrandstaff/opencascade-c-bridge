@@ -141,7 +141,11 @@ fn main() -> ExitCode {
         return report(&[sweep::sweep_case(), sweep::advanced_sweep_case()]);
     }
     if std::env::args().any(|arg| arg == "--sheet-metal-only") {
-        return report(&[sheet_metal::sheet_case(), sheet_metal::edge_flange_case()]);
+        return report(&[
+            sheet_metal::sheet_case(),
+            sheet_metal::edge_flange_case(),
+            sheet_metal::bend_cutout_case(),
+        ]);
     }
     if std::env::args().any(|arg| arg == "--pmi-only") {
         return report(&[
@@ -276,6 +280,7 @@ fn main() -> ExitCode {
     outcomes.push(sheet_metal::face_holes_case());
     outcomes.push(sheet_metal::bend_table_case());
     outcomes.push(sheet_metal::edge_flange_case());
+    outcomes.push(sheet_metal::bend_cutout_case());
     outcomes.push(clearance_catalog_case());
     outcomes.push(carr_lane_catalog_case());
     outcomes.push(threaded_hole_features_case());

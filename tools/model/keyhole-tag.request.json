@@ -1,7 +1,7 @@
 {
   "schema": "occb-model-view-v1",
   "model": {
-    "schema_version": 177,
+    "schema_version": 178,
     "family": {
       "id": "keyhole-tag",
       "version": 1,

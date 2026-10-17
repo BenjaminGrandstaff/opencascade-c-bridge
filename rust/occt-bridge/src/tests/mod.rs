@@ -16,6 +16,7 @@ mod open_profile;
 mod operations;
 mod profile_loft;
 mod projection;
+mod radial_cutters;
 mod results;
 mod session;
 mod sketch_ops;

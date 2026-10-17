@@ -44,6 +44,7 @@ mod rotating_motion;
 mod scaling;
 mod selection;
 mod sheet_metal;
+mod sheet_metal_bend_cutouts;
 mod sheet_metal_edges;
 mod sheet_metal_hems;
 mod step_export;

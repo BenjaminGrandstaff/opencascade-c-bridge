@@ -8,23 +8,35 @@ tracks status and order.
 
 | Layer | Version | State |
 |---|---|---|
-| C ABI (`src/`, `include/`) | ABI 83 | Stable; exact version match required |
+| C ABI (`src/`, `include/`) | ABI 84 | Stable; exact version match required |
 | `occt-types` (shared value types) | — | No native dependency |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI; re-exports `occt-types` |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric-core` (kernel-free engineering layer) | Schema 177 | Definitions, documents, solving and checks without OCCT |
-| `occt-parametric` (kernel regeneration) | Schema 177 | Active development; re-exports the core API |
+| `occt-parametric-core` (kernel-free engineering layer) | Schema 178 | Definitions, documents, solving and checks without OCCT |
+| `occt-parametric` (kernel regeneration) | Schema 178 | Active development; re-exports the core API |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 7/7, bridge 174 + first-use integration 1 (+1 doc test), recipes 3, parametric core 57 + kernel 788 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 95 + viewer Node 462 + branch command 2 + model command 95, MCP Python 14, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 7/7, bridge 175 + first-use integration 1 (+1 doc test), recipes 3, parametric core 57 + kernel 791 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 95 + viewer Node 462 + branch command 2 + model command 95, MCP Python 14, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
 | Coverage | Last recorded: 93.61% lines overall, test code excluded; C++ 94.13% lines, 87.40% branches, 100% functions; Rust 93.42% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | Last full suite: 194 Rust cases (198 with the parallel glTF, 1,000-part view, advanced sweep and tray cases) plus 5 model-command cases and a 10,000-face Python matcher. Sketch authoring integration rechecked 60 sketch cases and 60 MCP cases within budget. | `tools/bench/run.sh` |
+| Scale benchmarks | Last full suite: 194 Rust cases (199 with the parallel glTF, 1,000-part view, advanced sweep, tray and bend-cutout cases) plus 5 model-command cases and a 10,000-face Python matcher. Sketch authoring integration rechecked 60 sketch cases and 60 MCP cases within budget. | `tools/bench/run.sh` |
 
 ## Done
+
+- Sheet-metal cutouts across bends (schema 178, ABI 84). A cutout may run
+  from its flange through bends into further flanges, measured along the
+  developed midplane. In the folded sheet its pieces on flanges are cut
+  square to them, and its pieces in bends radially, by a new native radial
+  cutter (`occt_bridge_create_radial_cutter`: the outline laid on the bend's
+  cylinder with exact ellipse pcurves and radial ruled walls). On the blank
+  each bend's piece is stretched by allowance over arc, as exact ellipse
+  arcs. Every crossing cutout removes exactly its area times the thickness,
+  and blanks match the predicted stretch at K = 0.3. 90 crossing holes take
+  5 s (about 55 ms each, in the boolean). See
+  [cutouts across bends](docs/SHEET_METAL.md#across-bends-schema-178-abi-84).
 
 - Closed and teardrop sheet-metal hems (schema 177, no ABI change). A
   closed hem folds flat onto its flange; a teardrop rolls past half a turn

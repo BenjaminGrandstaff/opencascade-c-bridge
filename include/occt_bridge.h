@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define OCCT_BRIDGE_ABI_VERSION 83u
+#define OCCT_BRIDGE_ABI_VERSION 84u
 #define OCCT_BRIDGE_INVALID_SHAPE_ID UINT64_C(0)
 
 #if defined(_WIN32) && defined(OCCT_BRIDGE_BUILD_SHARED)
@@ -822,6 +822,30 @@ OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_create_compound(
     occt_bridge_session_t* session,
     const occt_bridge_shape_id_t* shapes,
     size_t shape_count,
+    occt_bridge_shape_id_t* out_shape
+);
+
+/* A cutter through a cylindrical bend (ABI 84): the region of the cylinder of
+ * radius `radius` about the axis through `origin` along `axis`, bounded by the
+ * closed outline `segments` in developed coordinates, pushed radially from
+ * `inner` to `outer` radius. A point (x, y) of a segment lies x along the
+ * circumference at `radius` from the `start` direction, turning right-handed
+ * about `axis`, and y along `axis` from `origin` (z is ignored). Segments are
+ * lines (kind 0) and circular arcs through their middle point (kind 1),
+ * connected in order; on the cylinder an arc becomes an exact ellipse in the
+ * surface's parameters. `axis` and `start` must be finite, nonzero and
+ * perpendicular; 0 < inner < radius < outer; the outline must span less than
+ * a full turn. O(segments) faces, sewn into one solid. */
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_create_radial_cutter(
+    occt_bridge_session_t* session,
+    occt_bridge_vec3_t origin,
+    occt_bridge_vec3_t axis,
+    occt_bridge_vec3_t start,
+    double radius,
+    double inner,
+    double outer,
+    const occt_bridge_wire_segment_t* segments,
+    size_t segment_count,
     occt_bridge_shape_id_t* out_shape
 );
 

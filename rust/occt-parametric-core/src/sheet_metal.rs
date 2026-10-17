@@ -433,6 +433,162 @@ pub enum OutlineSegment {
     Arc([f64; 2], [f64; 2], [f64; 2]),
 }
 
+/// A circular arc's centre, radius, start angle and signed sweep (through
+/// its middle point).
+fn arc_parameters(a: [f64; 2], m: [f64; 2], b: [f64; 2]) -> ([f64; 2], f64, f64, f64) {
+    let d = 2.0 * (a[0] * (m[1] - b[1]) + m[0] * (b[1] - a[1]) + b[0] * (a[1] - m[1]));
+    let sq = |p: [f64; 2]| p[0] * p[0] + p[1] * p[1];
+    let cx = (sq(a) * (m[1] - b[1]) + sq(m) * (b[1] - a[1]) + sq(b) * (a[1] - m[1])) / d;
+    let cy = (sq(a) * (b[0] - m[0]) + sq(m) * (a[0] - b[0]) + sq(b) * (m[0] - a[0])) / d;
+    let r = (a[0] - cx).hypot(a[1] - cy);
+    let angle = |p: [f64; 2]| (p[1] - cy).atan2(p[0] - cx);
+    let (start, middle, end) = (angle(a), angle(m), angle(b));
+    let tau = std::f64::consts::TAU;
+    let ccw = |from: f64, to: f64| (to - from).rem_euclid(tau);
+    let sweep = if ccw(start, middle) < ccw(start, end) {
+        ccw(start, end)
+    } else {
+        -ccw(end, start)
+    };
+    ([cx, cy], r, start, sweep)
+}
+
+impl OutlineSegment {
+    fn ends(self) -> ([f64; 2], [f64; 2]) {
+        match self {
+            Self::Line(a, b) | Self::Arc(a, _, b) => (a, b),
+        }
+    }
+
+    /// A point inside the segment, for deciding which side of a cut it
+    /// lies on.
+    fn interior(self) -> [f64; 2] {
+        match self {
+            Self::Line(a, b) => [(a[0] + b[0]) * 0.5, (a[1] + b[1]) * 0.5],
+            Self::Arc(_, m, _) => m,
+        }
+    }
+
+    /// The segment split where it crosses the line x = `cut`.
+    fn split(self, cut: f64) -> Vec<Self> {
+        let tolerance = 1e-12 * (1.0 + cut.abs());
+        match self {
+            Self::Line(a, b) => {
+                if (a[0] - cut) * (b[0] - cut) < 0.0
+                    && (a[0] - cut).abs() > tolerance
+                    && (b[0] - cut).abs() > tolerance
+                {
+                    let t = (cut - a[0]) / (b[0] - a[0]);
+                    let p = [cut, a[1] + t * (b[1] - a[1])];
+                    vec![Self::Line(a, p), Self::Line(p, b)]
+                } else {
+                    vec![self]
+                }
+            }
+            Self::Arc(a, _, b) => {
+                let (center, r, start, sweep) = arc_parameters(a, self.interior(), b);
+                let ratio = (cut - center[0]) / r;
+                if ratio.abs() >= 1.0 {
+                    return vec![self];
+                }
+                let base = ratio.acos();
+                let tau = std::f64::consts::TAU;
+                // Angles of the crossings measured along the sweep.
+                let mut at: Vec<f64> = [base, -base]
+                    .iter()
+                    .map(|theta| {
+                        let along = (theta - start).rem_euclid(tau);
+                        if sweep >= 0.0 {
+                            along
+                        } else {
+                            -((start - theta).rem_euclid(tau))
+                        }
+                    })
+                    .filter(|along| along.abs() > 1e-12 && along.abs() < sweep.abs() - 1e-12)
+                    .collect();
+                at.sort_by(|x, y| x.abs().total_cmp(&y.abs()));
+                at.dedup_by(|x, y| (*x - *y).abs() < 1e-12);
+                let point = |angle: f64| [center[0] + r * angle.cos(), center[1] + r * angle.sin()];
+                let mut pieces = Vec::new();
+                let mut from = 0.0;
+                for along in at.into_iter().chain([sweep]) {
+                    let (p, q) = (
+                        if from == 0.0 { a } else { point(start + from) },
+                        if along == sweep {
+                            b
+                        } else {
+                            point(start + along)
+                        },
+                    );
+                    pieces.push(Self::Arc(p, point(start + (from + along) * 0.5), q));
+                    from = along;
+                }
+                pieces
+            }
+        }
+    }
+}
+
+/// The outline with every segment split where it crosses one of the lines
+/// x = `cuts`. O(segments × cuts).
+pub fn split_outline(outline: &[OutlineSegment], cuts: &[f64]) -> Vec<OutlineSegment> {
+    let mut pieces = outline.to_vec();
+    for &cut in cuts {
+        pieces = pieces
+            .into_iter()
+            .flat_map(|segment| segment.split(cut))
+            .collect();
+    }
+    pieces
+}
+
+/// The part of a convex closed outline between x = `low` and x = `high`:
+/// its pieces inside, closed by chords along the cut lines. Empty when the
+/// outline does not reach the strip.
+pub fn clip_outline(outline: &[OutlineSegment], low: f64, high: f64) -> Vec<OutlineSegment> {
+    let kept: Vec<OutlineSegment> = split_outline(outline, &[low, high])
+        .into_iter()
+        .filter(|segment| {
+            let x = segment.interior()[0];
+            x >= low && x <= high
+        })
+        .collect();
+    let mut closed = Vec::with_capacity(kept.len() + 2);
+    for (index, segment) in kept.iter().enumerate() {
+        closed.push(*segment);
+        let end = segment.ends().1;
+        let next = kept[(index + 1) % kept.len()].ends().0;
+        if (end[0] - next[0]).abs() + (end[1] - next[1]).abs() > 1e-9 {
+            closed.push(OutlineSegment::Line(end, next));
+        }
+    }
+    closed
+}
+
+/// A piece of a cutout's outline on the flat blank, where a bend's zone
+/// stretches it along the blank into an ellipse (schema 178).
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", tag = "kind")]
+pub enum FlatSegment {
+    Line {
+        start: [f64; 2],
+        end: [f64; 2],
+    },
+    Arc {
+        start: [f64; 2],
+        middle: [f64; 2],
+        end: [f64; 2],
+    },
+    /// An arc of the axis-aligned ellipse with semi-axes `radii`.
+    EllipseArc {
+        center: [f64; 2],
+        radii: [f64; 2],
+        start: [f64; 2],
+        end: [f64; 2],
+        clockwise: bool,
+    },
+}
+
 /// An evaluated cutout on its flange.
 #[derive(Clone, Debug, PartialEq)]
 pub struct EvaluatedCutout {
@@ -450,6 +606,10 @@ pub struct FlatCutout {
     pub id: String,
     pub center_mm: [f64; 2],
     pub outline: CutoutOutline,
+    /// For a cutout crossing bends (schema 178), its exact outline on the
+    /// blank, stretched through each bend's zone; empty otherwise.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub mapped: Vec<FlatSegment>,
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct FlatPatternMetrics {
@@ -632,6 +792,55 @@ impl FlatPatternMetrics {
         for cutout in &self.cutouts {
             let [u, v] = cutout.center_mm;
             let mut points = Vec::new();
+            if !cutout.mapped.is_empty() {
+                for segment in &cutout.mapped {
+                    let piece: Vec<[f64; 2]> = match *segment {
+                        FlatSegment::Line { start, end } => vec![start, end],
+                        FlatSegment::Arc { start, middle, end } => {
+                            arc_points(start, middle, end, 32)
+                        }
+                        FlatSegment::EllipseArc {
+                            center,
+                            radii,
+                            start,
+                            end,
+                            clockwise,
+                        } => {
+                            let angle = |p: [f64; 2]| {
+                                ((p[1] - center[1]) / radii[1]).atan2((p[0] - center[0]) / radii[0])
+                            };
+                            let tau = std::f64::consts::TAU;
+                            let (from, to) = (angle(start), angle(end));
+                            let sweep = if clockwise {
+                                -(from - to).rem_euclid(tau)
+                            } else {
+                                (to - from).rem_euclid(tau)
+                            };
+                            (0..=32)
+                                .map(|i| match i {
+                                    0 => start,
+                                    32 => end,
+                                    i => {
+                                        let t = from + sweep * i as f64 / 32.0;
+                                        [
+                                            center[0] + radii[0] * t.cos(),
+                                            center[1] + radii[1] * t.sin(),
+                                        ]
+                                    }
+                                })
+                                .collect()
+                        }
+                    };
+                    let skip = usize::from(!points.is_empty());
+                    points.extend(piece.into_iter().skip(skip).map(|p| [x + p[0], y + p[1]]));
+                }
+                polylines.push(DrawingPolyline {
+                    points_mm: points,
+                    hidden: false,
+                    thin: false,
+                });
+                continue;
+            }
             for segment in cutout.outline.segments(u, v) {
                 match segment {
                     OutlineSegment::Line(a, b) => {
@@ -809,7 +1018,11 @@ impl SheetMetalDefinition {
                 Ok((angle, radius))
             })
             .collect::<Result<Vec<_>, ModelError>>()?;
-        let mut cutouts = self.evaluate_cutouts(parameters, &flanges, width)?;
+        let arcs: Vec<f64> = bends
+            .iter()
+            .map(|(angle, radius)| angle.abs() * (radius + thickness * 0.5))
+            .collect();
+        let mut cutouts = self.evaluate_cutouts(parameters, &flanges, &arcs, width)?;
         let mut edge_flanges = self.evaluate_edge_flanges(parameters, &flanges, width)?;
         let (mut flanges, mut bends) = (flanges, bends);
         let mut start = ((0.0, 0.0), 0.0);
@@ -850,14 +1063,22 @@ impl SheetMetalDefinition {
                     "a closed or teardrop hem must lie within its flange",
                 ));
             }
-            for cutout in &self.evaluate_cutouts(parameters, &user_flanges, width)? {
+            // In developed coordinates of the user's flanges and bends.
+            let developed: f64 = user_flanges.iter().sum::<f64>() + arcs.iter().sum::<f64>();
+            let mut starts = vec![0.0];
+            for (index, flange) in user_flanges.iter().enumerate().skip(1) {
+                starts.push(starts[index - 1] + user_flanges[index - 1] + arcs[index - 1]);
+                let _ = flange;
+            }
+            for cutout in &self.evaluate_cutouts(parameters, &user_flanges, &arcs, width)? {
                 let (half, _) = cutout.outline.half_extents();
+                let center = starts[cutout.flange] + cutout.along;
                 let clear = if end == 0 {
-                    cutout.along - half >= length
+                    center - half >= length
                 } else {
-                    cutout.along + half <= user_flanges[flange] - length
+                    center + half <= developed - length
                 };
-                if cutout.flange == flange && !clear {
+                if !clear {
                     return Err(ModelError::new(format!(
                         "cutout '{}' lies under a closed or teardrop hem",
                         cutout.id
@@ -874,6 +1095,41 @@ impl SheetMetalDefinition {
             return Err(ModelError::new(
                 "a closed or teardrop hem's bend cannot be relieved",
             ));
+        }
+        // A cutout may not run into a relief's notch.
+        if !reliefs.is_empty() && !cutouts.is_empty() {
+            let mut starts = Vec::with_capacity(flanges.len());
+            let mut developed = 0.0;
+            for (index, flange) in flanges.iter().enumerate() {
+                starts.push(developed);
+                developed += flange
+                    + bends.get(index).map_or(0.0, |(angle, radius)| {
+                        angle.abs() * (radius + thickness * 0.5)
+                    });
+            }
+            for cutout in &cutouts {
+                let (half_along, half_across) = cutout.outline.half_extents();
+                let center = starts[cutout.flange] + cutout.along;
+                for relief in &reliefs {
+                    let (angle, radius) = bends[relief.bend];
+                    let zone_start = starts[relief.bend] + flanges[relief.bend];
+                    let zone_end = zone_start + angle.abs() * (radius + thickness * 0.5);
+                    let notch = match relief.edge {
+                        SheetEdge::Origin => (0.0, relief.depth),
+                        SheetEdge::Far => (width - relief.depth, width),
+                    };
+                    if center + half_along > zone_start
+                        && center - half_along < zone_end
+                        && cutout.across + half_across > notch.0
+                        && cutout.across - half_across < notch.1
+                    {
+                        return Err(ModelError::new(format!(
+                            "cutout '{}' runs into a bend relief",
+                            cutout.id
+                        )));
+                    }
+                }
+            }
         }
         let edge_flanges = edge_flanges.into_iter().map(|(flange, _)| flange).collect();
         let result = EvaluatedSheet {
@@ -896,14 +1152,23 @@ impl SheetMetalDefinition {
         Ok(result)
     }
 
-    /// Cutouts lie inside one flange's straight region and across the width,
-    /// with unique IDs. At most 10,000. O(cutouts).
+    /// Cutouts lie on the sheet along its developed midplane (they may cross
+    /// bends, schema 178) and inside the width, with unique IDs. At most
+    /// 10,000. O(cutouts + flanges).
     fn evaluate_cutouts(
         &self,
         parameters: &HashMap<String, ParameterValue>,
         flanges: &[f64],
+        arcs: &[f64],
         width: f64,
     ) -> Result<Vec<EvaluatedCutout>, ModelError> {
+        // Developed midplane start of each flange, and the sheet's length.
+        let mut starts = Vec::with_capacity(flanges.len());
+        let mut developed = 0.0;
+        for (index, flange) in flanges.iter().enumerate() {
+            starts.push(developed);
+            developed += flange + arcs.get(index).copied().unwrap_or(0.0);
+        }
         if self.cutouts.len() > 10_000 {
             return Err(ModelError::new("a sheet has at most 10000 cutouts"));
         }
@@ -919,13 +1184,17 @@ impl SheetMetalDefinition {
                     SheetMetalCutoutShape::Circle { diameter } => CutoutOutline::Circle {
                         diameter: positive(length(diameter)?)?,
                     },
-                    SheetMetalCutoutShape::Rectangle { length: l, width: w } => {
-                        CutoutOutline::Rectangle {
-                            length: positive(length(l)?)?,
-                            width: positive(length(w)?)?,
-                        }
-                    }
-                    SheetMetalCutoutShape::Slot { length: l, width: w } => {
+                    SheetMetalCutoutShape::Rectangle {
+                        length: l,
+                        width: w,
+                    } => CutoutOutline::Rectangle {
+                        length: positive(length(l)?)?,
+                        width: positive(length(w)?)?,
+                    },
+                    SheetMetalCutoutShape::Slot {
+                        length: l,
+                        width: w,
+                    } => {
                         let (l, w) = (positive(length(l)?)?, positive(length(w)?)?);
                         if l < w {
                             return Err(ModelError::new(format!(
@@ -933,10 +1202,13 @@ impl SheetMetalDefinition {
                                 cutout.id
                             )));
                         }
-                        CutoutOutline::Slot { length: l, width: w }
+                        CutoutOutline::Slot {
+                            length: l,
+                            width: w,
+                        }
                     }
                 };
-                let flange = *flanges.get(cutout.flange).ok_or_else(|| {
+                let _flange = *flanges.get(cutout.flange).ok_or_else(|| {
                     ModelError::new(format!(
                         "cutout '{}' names flange {}, but the sheet has {}",
                         cutout.id,
@@ -946,15 +1218,16 @@ impl SheetMetalDefinition {
                 })?;
                 let (along, across) = (length(&cutout.along)?, length(&cutout.across)?);
                 let (half_along, half_across) = outline.half_extents();
+                let center = starts[cutout.flange] + along;
                 let inside = along.is_finite()
                     && across.is_finite()
-                    && along - half_along > 0.0
-                    && along + half_along < flange
+                    && center - half_along > 0.0
+                    && center + half_along < developed
                     && across - half_across > 0.0
                     && across + half_across < width;
                 if !inside {
                     return Err(ModelError::new(format!(
-                        "cutout '{}' must lie inside its flange's straight region and the sheet width",
+                        "cutout '{}' must lie on the sheet and inside its width",
                         cutout.id
                     )));
                 }
@@ -1285,6 +1558,7 @@ impl EvaluatedSheet {
                 }
             })
             .collect();
+        let cutouts = self.flat_cutouts(&starts, &lines, &allowances);
         Ok(FlatPatternMetrics {
             edge_tabs,
             reliefs,
@@ -1294,16 +1568,114 @@ impl EvaluatedSheet {
             neutral_factor,
             bend_allowances_mm: allowances,
             bend_lines_mm: lines,
-            cutouts: self
-                .cutouts
-                .iter()
-                .map(|cutout| FlatCutout {
-                    id: cutout.id.clone(),
-                    center_mm: [starts[cutout.flange] + cutout.along, cutout.across],
-                    outline: cutout.outline,
-                })
-                .collect(),
+            cutouts,
             bend_table: table.map(|table| table.name.clone()),
         })
+    }
+
+    /// Each flange's start along the developed midplane: flanges and the
+    /// bends' midplane arcs before it.
+    pub fn developed_starts(&self) -> Vec<f64> {
+        let mut starts = Vec::with_capacity(self.flanges.len());
+        let mut developed = 0.0;
+        for (index, flange) in self.flanges.iter().enumerate() {
+            starts.push(developed);
+            developed += flange
+                + self.bends.get(index).map_or(0.0, |&(angle, radius)| {
+                    angle.abs() * (radius + self.thickness * 0.5)
+                });
+        }
+        starts
+    }
+
+    /// Cutouts on the blank. One inside its flange keeps its outline,
+    /// moved; one crossing bends is split at the bend zones' edges, and
+    /// each piece in a bend's zone stretched along the blank by the bend's
+    /// allowance over its midplane arc: arcs become ellipse arcs unless the
+    /// two agree (K = 0.5). O(cutout segments × zones crossed).
+    fn flat_cutouts(&self, blank: &[f64], lines: &[f64], allowances: &[f64]) -> Vec<FlatCutout> {
+        let developed = self.developed_starts();
+        // The affine map of the zone holding developed x: (developed origin,
+        // blank origin, stretch).
+        let zone = |x: f64| -> (f64, f64, f64) {
+            let k = developed
+                .partition_point(|start| *start <= x)
+                .saturating_sub(1);
+            let flange_end = developed[k] + self.flanges[k];
+            if x <= flange_end || k >= self.bends.len() {
+                (developed[k], blank[k], 1.0)
+            } else {
+                let (angle, radius) = self.bends[k];
+                let arc = angle.abs() * (radius + self.thickness * 0.5);
+                (
+                    flange_end,
+                    lines[k] - allowances[k] * 0.5,
+                    allowances[k] / arc,
+                )
+            }
+        };
+        self.cutouts
+            .iter()
+            .map(|cutout| {
+                let center = developed[cutout.flange] + cutout.along;
+                let (half, _) = cutout.outline.half_extents();
+                let flange = (
+                    developed[cutout.flange],
+                    developed[cutout.flange] + self.flanges[cutout.flange],
+                );
+                let place =
+                    |x: f64, (from, to, stretch): (f64, f64, f64)| to + (x - from) * stretch;
+                if center - half >= flange.0 && center + half <= flange.1 {
+                    return FlatCutout {
+                        id: cutout.id.clone(),
+                        center_mm: [blank[cutout.flange] + cutout.along, cutout.across],
+                        outline: cutout.outline,
+                        mapped: Vec::new(),
+                    };
+                }
+                let cuts: Vec<f64> = developed
+                    .iter()
+                    .zip(&self.flanges)
+                    .flat_map(|(start, flange)| [*start, start + flange])
+                    .filter(|x| *x > center - half && *x < center + half)
+                    .collect();
+                let mapped = split_outline(&cutout.outline.segments(center, cutout.across), &cuts)
+                    .into_iter()
+                    .map(|segment| {
+                        let z = zone(segment.interior()[0]);
+                        let at = |p: [f64; 2]| [place(p[0], z), p[1]];
+                        match segment {
+                            OutlineSegment::Line(a, b) => FlatSegment::Line {
+                                start: at(a),
+                                end: at(b),
+                            },
+                            OutlineSegment::Arc(a, m, b) if (z.2 - 1.0).abs() < 1e-12 => {
+                                FlatSegment::Arc {
+                                    start: at(a),
+                                    middle: at(m),
+                                    end: at(b),
+                                }
+                            }
+                            OutlineSegment::Arc(a, m, b) => {
+                                let (c, r, _, sweep) = arc_parameters(a, m, b);
+                                FlatSegment::EllipseArc {
+                                    center: at(c),
+                                    radii: [r * z.2, r],
+                                    start: at(a),
+                                    end: at(b),
+                                    clockwise: sweep < 0.0,
+                                }
+                            }
+                        }
+                    })
+                    .collect();
+                FlatCutout {
+                    id: cutout.id.clone(),
+                    center_mm: [place(center, zone(center)), cutout.across],
+                    outline: cutout.outline,
+                    mapped,
+                }
+            })
+            .collect()
     }
 }
