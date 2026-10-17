@@ -763,6 +763,127 @@ pub fn fit_common_cylinder(
     Ok((add(center, scale(origin, size)), direction, radii))
 }
 
+/// The simultaneous simulator of a common datum from width features of
+/// size (two slots or tabs, A-B): one center plane shared by every member's
+/// actual mating envelope, its normal starting at `normal` and turning only
+/// about the unit `axes`. Each member starts at its own mating width
+/// ([`fit_width`]) and all change by the same amount, slots narrowing and
+/// tabs widening, until one center plane fits them all; that change is
+/// minimized. `members` holds each member's points on the face toward
+/// `normal`, on the opposite face, and its fit. Returns the normal, the
+/// center plane offset (`normal·p`) and each member's width, exact for the
+/// returned plane. O(linearizations · pivots · n).
+pub fn fit_common_width(
+    members: &[(&[Vec3], &[Vec3], Fit)],
+    normal: Vec3,
+    axes: &[Vec3],
+) -> Result<(Vec3, f64, Vec<f64>), ModelError> {
+    if members.is_empty() {
+        return Err(ModelError::new("a common datum width needs members"));
+    }
+    let own = members
+        .iter()
+        .map(|&(upper, lower, fit)| fit_width(upper, lower, normal, axes, fit))
+        .collect::<Result<Vec<_>, _>>()?;
+    let all: Vec<Vec3> = members
+        .iter()
+        .flat_map(|(upper, lower, _)| upper.iter().chain(lower.iter()).copied())
+        .collect();
+    let (center, size) = normalization(&all);
+    // Each point: normalized position, its member's own half width, its
+    // face (+1 toward the normal) and whether the member is a slot.
+    let q: Vec<(Vec3, f64, f64, bool)> = members
+        .iter()
+        .zip(&own)
+        .flat_map(|(&(upper, lower, fit), &(.., width))| {
+            let half = 0.5 * width / size;
+            let internal = fit == Fit::Inscribed;
+            upper
+                .iter()
+                .map(move |&p| (p, 1.0))
+                .chain(lower.iter().map(move |&p| (p, -1.0)))
+                .map(move |(p, side)| {
+                    (scale(subtract(p, center), 1.0 / size), half, side, internal)
+                })
+        })
+        .collect();
+    // The change every member needs for a center plane (n, c).
+    let excess = |(p, half, side, internal): (Vec3, f64, f64, bool), n: Vec3, c: f64| {
+        let reach = side * (dot(n, p) - c);
+        if internal { half - reach } else { reach - half }
+    };
+    let growth = |n: Vec3, c: f64| {
+        q.iter()
+            .map(|&point| excess(point, n, c))
+            .fold(f64::NEG_INFINITY, f64::max)
+    };
+    let mut n = unit(normal)?;
+    let mut c = own
+        .iter()
+        .map(|&(_, offset, _)| (offset - dot(n, center)) / size)
+        .sum::<f64>()
+        / own.len() as f64;
+    let mut best = (growth(n, c), n, c);
+    let k = axes.len();
+    let mut radius = 0.1;
+    for _ in 0..if k == 0 { 1 } else { MAX_LINEARIZATIONS } {
+        // Variables: rotation angles, the center plane step and the change.
+        let vars = k + 2;
+        let mut rows = Vec::with_capacity((q.len() + 2 * k) * vars);
+        let mut bounds = Vec::with_capacity(q.len() + 2 * k);
+        for &(p, half, side, internal) in &q {
+            let reach = side * (dot(n, p) - c);
+            let sign = if internal { -1.0 } else { 1.0 };
+            rows.extend(axes.iter().map(|&a| sign * side * dot(cross(a, n), p)));
+            rows.extend([-sign * side, -1.0]);
+            bounds.push(if internal { reach - half } else { half - reach });
+        }
+        for j in 0..k {
+            for sign in [1.0, -1.0] {
+                let mut row = vec![0.0; vars];
+                row[j] = sign;
+                rows.extend(row);
+                bounds.push(radius);
+            }
+        }
+        let mut objective = vec![0.0; vars];
+        objective[k + 1] = -1.0;
+        let step = maximize(&objective, &rows, &bounds)?;
+        let mut trial = n;
+        for (&a, &angle) in axes.iter().zip(&step) {
+            trial = rotate(trial, a, angle);
+        }
+        let trial = unit(trial)?;
+        let trial_c = c + step[k];
+        let g = growth(trial, trial_c);
+        if g < best.0 - 1e-15 || k == 0 {
+            best = (g, trial, trial_c);
+            (n, c) = (trial, trial_c);
+        } else {
+            radius *= 0.5;
+        }
+        if step[..k].iter().all(|a| a.abs() < 1e-13) || radius < 1e-12 {
+            break;
+        }
+    }
+    let (g, n, c) = best;
+    let widths = members
+        .iter()
+        .zip(&own)
+        .map(|(&(_, _, fit), &(.., width))| {
+            if fit == Fit::Inscribed {
+                width - 2.0 * g * size
+            } else {
+                width + 2.0 * g * size
+            }
+        })
+        .collect::<Vec<_>>();
+    if widths.iter().any(|&w| w <= 0.0) {
+        return Err(ModelError::new("measured slot faces overlap"));
+    }
+    Ok((n, c * size + dot(n, center), widths))
+}
+
 /// Actual mating envelope of a width feature: two parallel planes with
 /// normal starting at `normal` and turning only about the unit `axes`, the
 /// widest pair fitting between the faces of a slot (`Fit::Inscribed`) or the

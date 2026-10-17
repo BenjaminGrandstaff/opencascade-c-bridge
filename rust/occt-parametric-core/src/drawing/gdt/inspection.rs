@@ -17,8 +17,8 @@ mod shift;
 mod straightness;
 mod threads;
 use fit::{
-    Fit, circle_zone, cylinder_zone, fit_circle, fit_common_cylinder, fit_cylinder, fit_plane,
-    fit_target_plane, fit_width,
+    Fit, circle_zone, cylinder_zone, fit_circle, fit_common_cylinder, fit_common_width,
+    fit_cylinder, fit_plane, fit_target_plane, fit_width,
 };
 use profile::{minimal_rotation, orthonormal};
 pub use roughness::MeasuredProfile;
@@ -1257,25 +1257,45 @@ impl Context<'_, '_> {
         let width =
             |feature: &DrawingDatumFeature| feature.feature_of_size && feature.kind().is_some();
         if members.iter().any(|(feature, _)| width(feature)) {
-            let [(feature, points)] = members else {
-                return Err("common width datums are not evaluated".into());
-            };
-            let (origin, nominal) = self.nominal_datum(&feature.id)?;
-            let (upper, lower): (Vec<Vec3>, Vec<Vec3>) = points
+            if !members.iter().all(|(feature, _)| width(feature)) {
+                return Err(
+                    "a common datum of a width and a plain surface is not evaluated".into(),
+                );
+            }
+            // Each member's faces split by side of its nominal center plane,
+            // upper toward the simulator normal.
+            let split = members
                 .iter()
-                .partition(|&&p| dot(subtract(p, origin), nominal) >= 0.0);
-            let fit = match feature.kind() {
-                Some(FeatureOfSizeKind::Internal) => Fit::Inscribed,
-                _ => Fit::Circumscribed,
-            };
-            let (upper, lower) = if dot(normal, nominal) >= 0.0 {
-                (upper, lower)
-            } else {
-                (lower, upper)
-            };
-            let (n, offset, size) =
-                fit_width(&upper, &lower, normal, axes, fit).map_err(|e| e.to_string())?;
-            return Ok(Simulator::Plane(scale(n, offset), n, Some(size)));
+                .map(|(feature, points)| {
+                    let (origin, nominal) = self.nominal_datum(&feature.id)?;
+                    let (upper, lower): (Vec<Vec3>, Vec<Vec3>) = points
+                        .iter()
+                        .partition(|&&p| dot(subtract(p, origin), nominal) >= 0.0);
+                    let fit = match feature.kind() {
+                        Some(FeatureOfSizeKind::Internal) => Fit::Inscribed,
+                        _ => Fit::Circumscribed,
+                    };
+                    Ok(if dot(normal, nominal) >= 0.0 {
+                        (upper, lower, fit)
+                    } else {
+                        (lower, upper, fit)
+                    })
+                })
+                .collect::<Result<Vec<_>, String>>()?;
+            if let [(upper, lower, fit)] = split.as_slice() {
+                let (n, offset, size) =
+                    fit_width(upper, lower, normal, axes, *fit).map_err(|e| e.to_string())?;
+                return Ok(Simulator::Plane(scale(n, offset), n, Some(size)));
+            }
+            // A common width (A-B): one center plane, the members' envelopes
+            // changing together. Their sizes differ, so none is reported.
+            let views: Vec<(&[Vec3], &[Vec3], Fit)> = split
+                .iter()
+                .map(|(upper, lower, fit)| (upper.as_slice(), lower.as_slice(), *fit))
+                .collect();
+            let (n, offset, _) =
+                fit_common_width(&views, normal, axes).map_err(|e| e.to_string())?;
+            return Ok(Simulator::Plane(scale(n, offset), n, None));
         }
         let fitted = if members.iter().any(|(f, _)| !f.targets.is_empty()) {
             fit_target_plane(points, normal, axes)

@@ -2074,6 +2074,153 @@ fn width_frame_record(turn: f64, t: [f64; 2]) -> InspectionRecord {
     record
 }
 
+/// `width_frame_setup` regardless of size, plus D: a second 7.9-8.1 slot on
+/// B's center plane x = 30, measured 1-9 mm above the origin, and the
+/// reference frame `datums` naming B-D as one common datum.
+fn common_width_page(datums: [&str; 3]) -> (FamilyDefinition, DrawingDefinition) {
+    let (definition, mut page) = width_frame_setup(
+        DatumMaterialBoundary::Regardless,
+        DatumMaterialBoundary::Regardless,
+    );
+    let mut d = page
+        .datum_features
+        .iter()
+        .find(|f| f.id == "B")
+        .unwrap()
+        .clone();
+    d.id = "D".into();
+    d.label = "D".into();
+    page.datum_features.push(d);
+    page.datum_reference_frames = vec![DrawingDatumReferenceFrame {
+        id: "common".into(),
+        datums: datums
+            .iter()
+            .map(|&id| DrawingDatumReference {
+                translation: false,
+                datum_feature: id.into(),
+                boundary: DatumMaterialBoundary::Regardless,
+                common_with: if id == "B" {
+                    vec!["D".into()]
+                } else {
+                    Vec::new()
+                },
+            })
+            .collect(),
+    }];
+    (definition, page)
+}
+
+/// B's slot centered at x = 30 + `b`, D's at 30 + `d`.
+fn common_width_record(b: f64, d: f64, d_width: f64) -> InspectionRecord {
+    let mut record = width_frame_record(0.0, [0.0; 2]);
+    let slot = |center: [f64; 2], width: f64| {
+        let mut points = wall(center, [1.0, 0.0], width / 2.0, |_| 0.0);
+        points.extend(wall(center, [1.0, 0.0], -width / 2.0, |_| 0.0));
+        points
+    };
+    record.datum_features[1] = measured("B", slot([HOLE[0] + b, HOLE[1] + 15.0], 8.0));
+    record
+        .datum_features
+        .push(measured("D", slot([HOLE[0] + d, HOLE[1] - 15.0], d_width)));
+    record
+}
+
+fn common_frame(report: &InspectionReport) -> Option<DrawingDatumCoordinateFrame> {
+    report
+        .datum_frames
+        .iter()
+        .find(|f| f.datum_features.iter().any(|d| d == "D"))
+        .map(|f| f.frame)
+}
+
+#[test]
+fn a_common_width_datum_shares_one_center_plane() {
+    // A | C | B-D: the common width is tertiary, so its orientation is
+    // fixed and only its place is fitted. Slots 0.03 either side of x = 30
+    // put the common center plane at 30, where B alone sits at 30.03.
+    let (definition, page) = common_width_page(["A", "C", "B"]);
+    let graph = graph_of(&definition);
+    let report = page
+        .evaluate_inspection(&graph, &common_width_record(0.03, -0.03, 8.0))
+        .unwrap();
+    let frame = common_frame(&report).expect("common frame");
+    assert!((frame.origin_mm.x - HOLE[0]).abs() < 1e-9, "{frame:?}");
+    // Without the common datum, B alone places the plane at 30.03.
+    let (_, mut alone) = common_width_page(["A", "C", "B"]);
+    alone.datum_reference_frames[0].datums[2]
+        .common_with
+        .clear();
+    alone.datum_features.retain(|f| f.id != "D");
+    let mut record = common_width_record(0.03, -0.03, 8.0);
+    record.datum_features.retain(|f| f.id != "D");
+    let report = alone.evaluate_inspection(&graph, &record).unwrap();
+    let frame = report
+        .datum_frames
+        .iter()
+        .find(|f| f.datum_features == ["A", "C", "B"])
+        .expect("frame")
+        .frame;
+    assert!(
+        (frame.origin_mm.x - HOLE[0] - 0.03).abs() < 1e-9,
+        "{frame:?}"
+    );
+    // A | B-D | C: secondary, the common plane also turns about A's normal,
+    // through both slot centers 30 mm apart: 0.06 / 30 = 2 mrad.
+    let (_, page) = common_width_page(["A", "B", "C"]);
+    let report = page
+        .evaluate_inspection(&graph, &common_width_record(0.03, -0.03, 8.0))
+        .unwrap();
+    let frame = common_frame(&report).expect("common frame");
+    let turn = frame.x_axis.y.abs().max(frame.y_axis.x.abs());
+    assert!((turn - 0.002).abs() < 1e-6, "{frame:?}");
+    // A width and a plain surface do not make one common datum.
+    let (definition, mut page) = common_width_page(["A", "C", "B"]);
+    let graph = graph_of(&definition);
+    let d = page
+        .datum_features
+        .iter_mut()
+        .find(|f| f.id == "D")
+        .unwrap();
+    d.feature_of_size = false;
+    d.size_kind = None;
+    d.size_limits = None;
+    let report = page
+        .evaluate_inspection(&graph, &common_width_record(0.0, 0.0, 8.0))
+        .unwrap();
+    assert!(common_frame(&report).is_none(), "{report:?}");
+}
+
+#[test]
+fn a_common_width_of_forty_thousand_points_fits_quickly() {
+    // Two slots of 20,000 points each, wavy walls, B-D secondary (turning).
+    let (definition, page) = common_width_page(["A", "B", "C"]);
+    let graph = graph_of(&definition);
+    let mut record = common_width_record(0.0, 0.0, 8.0);
+    let slot = |cy: f64, dx: f64| -> Vec<[f64; 3]> {
+        (0..20_000)
+            .map(|i| {
+                let side = if i % 2 == 0 { 1.0 } else { -1.0 };
+                let s = (i / 2) as f64 / 10_000.0 * 8.0 - 4.0;
+                let wave = 0.002 * (7.0 * s + i as f64).sin();
+                [
+                    HOLE[0] + dx + side * (4.0 + wave),
+                    cy + s,
+                    2.0 + (i % 7) as f64,
+                ]
+            })
+            .collect()
+    };
+    record.datum_features[1] = measured("B", slot(HOLE[1] + 15.0, 0.01));
+    *record.datum_features.last_mut().unwrap() = measured("D", slot(HOLE[1] - 15.0, -0.01));
+    let started = std::time::Instant::now();
+    let report = page.evaluate_inspection(&graph, &record).unwrap();
+    let elapsed = started.elapsed().as_secs_f64();
+    let frame = common_frame(&report).expect("common frame");
+    let turn = frame.x_axis.y.abs().max(frame.y_axis.x.abs());
+    assert!((turn - 0.02 / 30.0).abs() < 2e-4, "{frame:?}");
+    assert!(elapsed < 1.0, "{elapsed} s");
+}
+
 #[test]
 fn slot_and_tab_width_datums_shift_a_planar_frame() {
     use DatumMaterialBoundary::{Maximum, Regardless};

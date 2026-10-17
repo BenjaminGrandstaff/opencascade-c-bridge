@@ -1191,6 +1191,17 @@ clocking a plane-axis frame at an angle to A.
   datum features of size without a kind keep the contact-plane simulator. The
   report lists each width datum in a named frame under `datum_widths` (center
   plane point, normal, mating width).
+- **Common width datum:** coplanar width members `A-B` (two slots or tabs,
+  or one of each, on one nominal center plane) share one center plane, the
+  simultaneous simulator. Each member starts at its own actual mating width;
+  all then change by the same amount, slots narrowing and tabs widening,
+  until one center plane fits every member, and that change is minimized
+  (one linear program per linearization, turning only as the precedence
+  allows). Two slots offset 0.03 mm either way place the common plane
+  midway. The members' widths differ, so a common width is not listed in
+  `datum_widths`. A common datum mixing a width and a plain surface, and
+  datum shift of a common width, are reported as not evaluated. Two slots
+  of 20,000 points each fit in about 20 ms.
 - **Plane, axis, plane frames (schema 137):** a primary plane A, a
   secondary axis datum feature of size B normal to it, and an optional
   tertiary plane or hole/pin C form a frame. Its origin is where B's axis
@@ -1580,7 +1591,8 @@ no simulated part. The cost is `trials` further evaluations of the record.
   condition or of a planar surface not seen edge-on, round
   form at a material condition or with a non-characteristic zone, a datum
   feature that was not measured, or an axis datum without a `size_kind`.
-  Width datums report measurements missing a face and common widths.
+  Width datums report measurements missing a face, and common datums
+  mixing a width with a plain surface.
   Datum shift also reports a boundary without `size_limits`, a feature beyond
   its boundary, shift of a common axis or of a common plane, and a
   tertiary plane or regardless-of-size width after a secondary width at a
@@ -1663,7 +1675,8 @@ area targets of 1,000 points each evaluate in a few milliseconds.
 tilted to the primary; an axis datum at an angle to a primary plane;
 composite position to a primary datum axis; a tertiary
 hole or pin's form error limiting its rotational shift; a tertiary plane
-re-contacting as a shifting secondary width turns; common width datums; boundaries
+re-contacting as a shifting secondary width turns; datum shift of a common
+width; boundaries
 enlarged by geometric tolerances; common axes of more than two members or
 after a primary plane,
 reporting n× patterns as one frame on drawings, datum targets on axes
