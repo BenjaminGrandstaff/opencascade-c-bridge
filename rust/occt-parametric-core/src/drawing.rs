@@ -23,14 +23,14 @@ pub use gdt::{
     ThreadInspection, UncertaintySimulation,
 };
 pub use gdt::{
-    DatumMaterialBoundary, DatumPrecedence, DrawingCompositeRefinement,
+    DatumMaterialBoundary, DatumPrecedence, DatumTargetShape, DrawingCompositeRefinement,
     DrawingDatumCoordinateFrame, DrawingDatumFeature, DrawingDatumReference,
-    DrawingDatumReferenceFrame, DrawingFeatureControlFrame, DrawingGdtAttachment,
-    DrawingPositionMeasurement, DrawingPositionMeasurementResult, DrawingProjectedZone,
-    DrawingSizeLimits, FeatureOfSizeKind, GeometricCharacteristic, GeometricToleranceAllowance,
-    GeometricToleranceZone, PositionSampleEvaluation, PositionToleranceAxis,
-    ResolvedDrawingDatumReference, ResolvedDrawingDatumReferenceFrame, ToleranceMaterialCondition,
-    ToleranceModifier,
+    DrawingDatumReferenceFrame, DrawingDatumTarget, DrawingFeatureControlFrame,
+    DrawingGdtAttachment, DrawingPositionMeasurement, DrawingPositionMeasurementResult,
+    DrawingProjectedZone, DrawingSizeLimits, FeatureOfSizeKind, GeometricCharacteristic,
+    GeometricToleranceAllowance, GeometricToleranceZone, MAX_DATUM_TARGETS,
+    PositionSampleEvaluation, PositionToleranceAxis, ResolvedDrawingDatumReference,
+    ResolvedDrawingDatumReferenceFrame, ToleranceMaterialCondition, ToleranceModifier,
 };
 pub use gdt::{
     DrawingSurfaceTexture, MaterialRemoval, RoughnessLimits, RoughnessParameter, RoughnessUnit,

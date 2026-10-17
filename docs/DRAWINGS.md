@@ -702,6 +702,43 @@ labels and frames retain fixed paper sizes through scales and detail offsets.
 Offsets must be finite and at least 8 mm long. Symbols use an open attachment
 triangle, leader and boxed datum label.
 
+### Datum targets (schema 166)
+
+A planar datum feature may list `targets` (ASME Y14.5-2018 §7.24): the
+points, lines or circular areas on its surface that alone establish its
+datum, as when a rough casting rests on fixture pins.
+
+```json
+"targets": [
+  {"index": 1, "offset_mm": [-12, -12],
+   "shape": {"point": {"at": {"x": {"value": 10, "dimension": "length", "unit": "millimeter"}, "y": {"value": 10, "dimension": "length", "unit": "millimeter"}, "z": {"value": 0, "dimension": "length", "unit": "millimeter"}}}}},
+  {"index": 2, "offset_mm": [10, -12],
+   "shape": {"line": {"start": {"x": {"value": 40, "dimension": "length", "unit": "millimeter"}, "y": {"value": 5, "dimension": "length", "unit": "millimeter"}, "z": {"value": 0, "dimension": "length", "unit": "millimeter"}},
+                      "end": {"x": {"value": 55, "dimension": "length", "unit": "millimeter"}, "y": {"value": 5, "dimension": "length", "unit": "millimeter"}, "z": {"value": 0, "dimension": "length", "unit": "millimeter"}}}}},
+  {"index": 3, "offset_mm": [12, 12],
+   "shape": {"area": {"center": {"x": {"value": 30, "dimension": "length", "unit": "millimeter"}, "y": {"value": 30, "dimension": "length", "unit": "millimeter"}, "z": {"value": 0, "dimension": "length", "unit": "millimeter"}},
+                      "diameter": {"value": 6, "dimension": "length", "unit": "millimeter"}}}}
+]
+```
+
+Each target is named by its feature's label and `index` (1 to 99, unique in
+the feature): `A1`, `A2`. Locations are basic, in the anchor instance's
+model coordinates, and must lie on the feature's nominal datum plane
+(within 1e-6 of their distance from its origin); a line needs distinct ends
+and an area a positive diameter. Up to 100 targets per feature. Features of
+size and axis datums cannot have targets.
+
+In the feature's view a point target is drawn as an ×, a line target as a
+phantom line (five long-short-short cycles scaled to its length, so its
+vertex count is fixed), and an area as its projected circle with five hatch
+chords. Each has the divided-circle symbol (Ø10 mm) at `offset_mm` from the
+target: its name below the line, an area's size (`Ø6`) above, and a plain
+leader to the target. Targets count toward the drawing's GD&T vertex budget.
+Semantic PMI export carries the datum feature on its faces but not its
+targets.
+
+For measured inspection, see [datum targets in a record](#datum-targets-in-a-record).
+
 `DrawingFeatureControlFrame` holds the same attachment plus:
 
 - `characteristic`: straightness, flatness, circularity, cylindricity, profile_line,
@@ -1598,6 +1635,21 @@ regenerate the part once and project every point onto the named side face in
 0.59 s (2 s budget). One line profile of 1,000,000 points in 1,000 elements
 takes 0.20 s (1 s budget).
 
+### Datum targets in a record
+
+A record's `datum_targets` lists the points measured at each target, by
+name (`A1`). A datum feature with targets is simulated from the union of
+its targets' points, and only once all of them are measured; otherwise
+its controls report "datum targets of 'A' were not all measured". Surface
+points recorded under `datum_features` for such a feature are refused,
+because the targets alone establish it. The simulators are the same
+constrained-L∞ planes as for surfaces, so an area target contacts its high
+points, but they need only one point more than their free rotations:
+three for a primary, two for a secondary turning about the primary's
+normal, one for a tertiary. So a 3-2-1 frame of six point targets works.
+Uncertainty simulation perturbs target points like any others. Three Ø10
+area targets of 1,000 points each evaluate in a few milliseconds.
+
 **Not yet covered.** Datum shift of common planes; datum shift of widths
 tilted to the primary; an axis datum at an angle to a primary plane;
 composite position to a primary datum axis; a tertiary
@@ -1606,7 +1658,8 @@ re-contacting as a shifting secondary width turns; common width datums; the sepa
 (`SEP REQT`); boundaries
 enlarged by geometric tolerances; common axes of more than two members or
 after a primary plane,
-reporting n× patterns as one frame on drawings, measured datum targets,
+reporting n× patterns as one frame on drawings, datum targets on axes
+or features of size,
 and profile datums at a material boundary. Straightness has no
 per-unit-length zone, and a derived median line's cross sections are
 normal to the nominal axis rather than to the actual mating envelope's.

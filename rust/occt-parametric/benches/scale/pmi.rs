@@ -136,6 +136,7 @@ fn attachment(anchor: &str, faces: &str) -> DrawingGdtAttachment {
 /// all and an isometric section view the datums and the flat top.
 fn drawing(pattern: bool) -> DrawingDefinition {
     let datum = |id: &str, anchor: &str, faces: &str| DrawingDatumFeature {
+        targets: Vec::new(),
         id: id.into(),
         label: id.into(),
         feature_of_size: false,

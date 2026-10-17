@@ -565,6 +565,7 @@ fn main() {
         ("tertiary", "C", "y", true),
     ] {
         gdt.datum_features.push(DrawingDatumFeature {
+            targets: Vec::new(),
             id: id.into(),
             label: label.into(),
             feature_of_size: size,

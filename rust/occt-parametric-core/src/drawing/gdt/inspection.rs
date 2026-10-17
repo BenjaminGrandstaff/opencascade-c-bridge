@@ -18,7 +18,7 @@ mod straightness;
 mod threads;
 use fit::{
     Fit, circle_zone, cylinder_zone, fit_circle, fit_common_cylinder, fit_cylinder, fit_plane,
-    fit_width,
+    fit_target_plane, fit_width,
 };
 use profile::{minimal_rotation, orthonormal};
 pub use roughness::MeasuredProfile;
@@ -59,6 +59,11 @@ pub struct InspectionRecord {
     pub drawing: String,
     #[serde(default)]
     pub datum_features: Vec<MeasuredFeature>,
+    /// Points measured at datum targets, by target name such as `A1`
+    /// (schema 166). A datum feature with targets is simulated from these
+    /// alone, once every one of its targets is measured.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub datum_targets: Vec<MeasuredFeature>,
     #[serde(default)]
     pub controls: Vec<MeasuredFeature>,
     /// Measured roughness values by drawing surface texture ID.
@@ -505,6 +510,7 @@ impl DrawingDefinition {
             for feature in perturbed
                 .datum_features
                 .iter_mut()
+                .chain(&mut perturbed.datum_targets)
                 .chain(&mut perturbed.controls)
             {
                 for p in &mut feature.points_mm {
@@ -579,9 +585,36 @@ impl DrawingDefinition {
             .map(|f| (f.id.as_str(), f))
             .collect();
         let mut total = 0usize;
-        let measured_datums = measured(&record.datum_features, &mut total, |id| {
+        let mut measured_datums = measured(&record.datum_features, &mut total, |id| {
             features.contains_key(id)
         })?;
+        // Targets establish their datums: their features' points are the
+        // union of the targets' points, present only when all are measured.
+        let target_names: HashMap<String, &str> = self
+            .datum_features
+            .iter()
+            .flat_map(|f| f.targets.iter().map(move |t| (t.name(f), f.id.as_str())))
+            .collect();
+        let measured_targets = measured(&record.datum_targets, &mut total, |id| {
+            target_names.contains_key(id)
+        })?;
+        for feature in self.datum_features.iter().filter(|f| !f.targets.is_empty()) {
+            if measured_datums.contains_key(feature.id.as_str()) {
+                return Err(ModelError::new(format!(
+                    "datum feature '{}' is established by its datum targets; record them in datum_targets",
+                    feature.id
+                )));
+            }
+            let points: Option<Vec<Vec3>> = feature
+                .targets
+                .iter()
+                .map(|t| measured_targets.get(t.name(feature).as_str()).cloned())
+                .collect::<Option<Vec<_>>>()
+                .map(|sets| sets.concat());
+            if let Some(points) = points {
+                measured_datums.insert(feature.id.as_str(), points);
+            }
+        }
         let measured_controls =
             measured(&record.controls, &mut total, |id| control_ids.contains(id))?;
         if let Some(uncertainty) = &record.uncertainty {
@@ -1063,7 +1096,12 @@ impl Context<'_, '_> {
                 self.measured_datums
                     .get(member)
                     .map(|points| (self.features[member], points.as_slice()))
-                    .ok_or_else(|| format!("datum feature '{member}' was not measured"))
+                    .ok_or_else(|| match self.features.get(member) {
+                        Some(f) if !f.targets.is_empty() => {
+                            format!("datum targets of '{member}' were not all measured")
+                        }
+                        _ => format!("datum feature '{member}' was not measured"),
+                    })
             })
             .collect::<Result<Vec<_>, String>>()?;
         let feature = self.features[id];
@@ -1231,7 +1269,12 @@ impl Context<'_, '_> {
                 fit_width(&upper, &lower, normal, axes, fit).map_err(|e| e.to_string())?;
             return Ok(Simulator::Plane(scale(n, offset), n, Some(size)));
         }
-        let fitted = fit_plane(points, normal, axes).map_err(|e| e.to_string())?;
+        let fitted = if members.iter().any(|(f, _)| !f.targets.is_empty()) {
+            fit_target_plane(points, normal, axes)
+        } else {
+            fit_plane(points, normal, axes)
+        }
+        .map_err(|e| e.to_string())?;
         Ok(Simulator::Plane(
             scale(fitted.normal, fitted.contact),
             fitted.normal,

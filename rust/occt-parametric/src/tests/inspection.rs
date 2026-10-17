@@ -123,6 +123,7 @@ fn position(
 
 pub(super) fn page() -> DrawingDefinition {
     let datum = |id: &str, label: &str, anchor: &str| DrawingDatumFeature {
+        targets: Vec::new(),
         id: id.into(),
         label: label.into(),
         feature_of_size: false,
@@ -243,6 +244,7 @@ fn measured(id: &str, points_mm: Vec<[f64; 3]>) -> MeasuredFeature {
 /// Exact datum and feature surfaces of the nominal plate.
 pub(super) fn nominal_record() -> InspectionRecord {
     InspectionRecord {
+        datum_targets: Vec::new(),
         threads: Vec::new(),
         uncertainty: None,
         drawing: "plate".into(),
@@ -575,6 +577,7 @@ fn size_limits_validate_persist_and_inspection_records_round_trip() {
             .is_none()
     );
     let record = InspectionRecord {
+        datum_targets: Vec::new(),
         threads: Vec::new(),
         uncertainty: None,
         drawing: "plate".into(),
@@ -649,6 +652,7 @@ fn round_page() -> DrawingDefinition {
 
 fn round_record(round: Vec<[f64; 3]>, straight: Vec<[f64; 3]>) -> InspectionRecord {
     InspectionRecord {
+        datum_targets: Vec::new(),
         threads: Vec::new(),
         uncertainty: None,
         drawing: "plate".into(),
@@ -947,6 +951,7 @@ fn runout_page(
 ) -> DrawingDefinition {
     let mut page = page();
     page.datum_features.push(DrawingDatumFeature {
+        targets: Vec::new(),
         id: "D".into(),
         label: "D".into(),
         feature_of_size: true,
@@ -988,6 +993,7 @@ fn runout_page(
 
 fn runout_record(datum: Vec<[f64; 3]>, surface: Vec<[f64; 3]>) -> InspectionRecord {
     InspectionRecord {
+        datum_targets: Vec::new(),
         threads: Vec::new(),
         uncertainty: None,
         drawing: "plate".into(),
@@ -1206,6 +1212,7 @@ fn common_page() -> DrawingDefinition {
         ("E", "bottom", None),
     ] {
         page.datum_features.push(DrawingDatumFeature {
+            targets: Vec::new(),
             id: id.into(),
             label: if id == "A2" { "F".into() } else { id.into() },
             feature_of_size: kind.is_some(),
@@ -1261,6 +1268,7 @@ fn common_datum_axis_contracts_both_journal_simulators_together() {
         |_| 8.0,
     );
     let record = InspectionRecord {
+        datum_targets: Vec::new(),
         threads: Vec::new(),
         uncertainty: None,
         drawing: "plate".into(),
@@ -1305,6 +1313,7 @@ fn common_datum_axis_contracts_both_journal_simulators_together() {
         |_| 8.0,
     );
     let record = InspectionRecord {
+        datum_targets: Vec::new(),
         threads: Vec::new(),
         uncertainty: None,
         drawing: "plate".into(),
@@ -1355,6 +1364,7 @@ fn common_datum_plane_contacts_both_pads_at_once() {
     // The common simulator's minimum-zone orientation rises 0.01 mm per
     // 40 mm, so a perfectly flat top reads 60 · 0.00025 = 0.015 mm.
     let record = InspectionRecord {
+        datum_targets: Vec::new(),
         threads: Vec::new(),
         uncertainty: None,
         drawing: "plate".into(),
@@ -1411,6 +1421,7 @@ fn common_datums_validate_render_and_round_trip() {
     ] {
         let mut invalid = page.clone();
         invalid.datum_features.push(DrawingDatumFeature {
+            targets: Vec::new(),
             id: "top_feature".into(),
             label: "T".into(),
             feature_of_size: false,
@@ -1455,6 +1466,7 @@ fn shift_setup(boundary: DatumMaterialBoundary) -> (FamilyDefinition, DrawingDef
         upper: Quantity::length(10.1, LengthUnit::Millimeter),
     };
     page.datum_features.push(DrawingDatumFeature {
+        targets: Vec::new(),
         id: "B".into(),
         label: "B".into(),
         feature_of_size: true,
@@ -1490,6 +1502,7 @@ fn shift_setup(boundary: DatumMaterialBoundary) -> (FamilyDefinition, DrawingDef
 /// holes displaced by `offsets[i]` from their true positions.
 fn shift_record(bore: f64, offsets: [[f64; 2]; 4]) -> InspectionRecord {
     InspectionRecord {
+        datum_targets: Vec::new(),
         threads: Vec::new(),
         uncertainty: None,
         drawing: "plate".into(),
@@ -2088,6 +2101,7 @@ fn slot_and_tab_width_datums_shift_a_planar_frame() {
 fn coaxial_page(boundary: DatumMaterialBoundary, ids: &[&str]) -> DrawingDefinition {
     let mut page = page();
     page.datum_features.push(DrawingDatumFeature {
+        targets: Vec::new(),
         id: "D".into(),
         label: "D".into(),
         feature_of_size: true,
@@ -2123,6 +2137,7 @@ fn coaxial_page(boundary: DatumMaterialBoundary, ids: &[&str]) -> DrawingDefinit
 /// z = 10 and z = 20.
 fn coaxial_record(bore: f64, ends: &[[f64; 2]]) -> InspectionRecord {
     InspectionRecord {
+        datum_targets: Vec::new(),
         threads: Vec::new(),
         uncertainty: None,
         drawing: "plate".into(),
@@ -2638,6 +2653,7 @@ fn cross_setup(
 /// own axis (in the plate's plane) by `side[i]`.
 fn cross_record(bore: f64, turn: f64, lift: [f64; 2], side: [f64; 2]) -> InspectionRecord {
     InspectionRecord {
+        datum_targets: Vec::new(),
         threads: Vec::new(),
         uncertainty: None,
         drawing: "plate".into(),
@@ -2978,6 +2994,7 @@ fn common_shift_page(boundary: DatumMaterialBoundary) -> DrawingDefinition {
 /// axis, and a Ø16 counterbore over z 12-22 offset `offset` in x.
 fn common_shift_record(d: f64, e: f64, offset: f64) -> InspectionRecord {
     InspectionRecord {
+        datum_targets: Vec::new(),
         threads: Vec::new(),
         uncertainty: None,
         drawing: "plate".into(),

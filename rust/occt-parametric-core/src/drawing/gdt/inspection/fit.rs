@@ -286,7 +286,37 @@ pub(super) fn rotate(v: Vec3, axis: Vec3, angle: f64) -> Vec3 {
 /// normal; two: free). The contact side is `normal`, so the contacting plane
 /// is the constrained-L∞ datum simulator. O(linearizations · pivots · n).
 pub fn fit_plane(points: &[Vec3], normal: Vec3, axes: &[Vec3]) -> Result<PlaneFit, ModelError> {
-    if points.len() < 3 {
+    fit_plane_from(points, normal, axes, false)
+}
+
+/// [`fit_plane`] for a datum established by targets: it needs only one
+/// point more than its free rotations (three for a primary, two for a
+/// secondary, one for a tertiary), and points need not span a plane.
+pub fn fit_target_plane(
+    points: &[Vec3],
+    normal: Vec3,
+    axes: &[Vec3],
+) -> Result<PlaneFit, ModelError> {
+    fit_plane_from(points, normal, axes, true)
+}
+
+fn fit_plane_from(
+    points: &[Vec3],
+    normal: Vec3,
+    axes: &[Vec3],
+    targets: bool,
+) -> Result<PlaneFit, ModelError> {
+    if targets {
+        if points.len() < axes.len() + 1 {
+            return Err(ModelError::new(format!(
+                "a datum established by targets with {} free rotation{} needs at least {} measured point{}",
+                axes.len(),
+                if axes.len() == 1 { "" } else { "s" },
+                axes.len() + 1,
+                if axes.is_empty() { "" } else { "s" },
+            )));
+        }
+    } else if points.len() < 3 {
         return Err(ModelError::new(
             "a measured plane needs at least three points",
         ));
@@ -304,7 +334,7 @@ pub fn fit_plane(points: &[Vec3], normal: Vec3, axes: &[Vec3]) -> Result<PlaneFi
         .max_by(|a, b| length(*a).total_cmp(&length(*b)))
         .unwrap_or(Vec3::new(0.0, 0.0, 0.0));
     let line = scale(far, 1.0 / length(far).max(f64::MIN_POSITIVE));
-    if q.iter().all(|&p| length(cross(line, p)) < 1e-9) {
+    if (!targets || axes.len() >= 2) && q.iter().all(|&p| length(cross(line, p)) < 1e-9) {
         return Err(ModelError::new("measured plane points are collinear"));
     }
     let spread = |n: Vec3| {

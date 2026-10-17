@@ -155,6 +155,7 @@ fn pmi_page() -> DrawingDefinition {
         feature.attachment.faces = Some(named(face));
     }
     page.datum_features.push(DrawingDatumFeature {
+        targets: Vec::new(),
         id: "W".into(),
         label: "W".into(),
         feature_of_size: true,

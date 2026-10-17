@@ -496,6 +496,21 @@ impl<'definition> InstanceGraph<'definition> {
         Ok(value)
     }
 
+    /// Point `local`, in an instance's own model coordinates, after the
+    /// instance's placement and enclosing frames (as [`Self::datum`] places
+    /// datums).
+    pub fn instance_point(&self, instance: &str, local: Vec3) -> Result<Vec3, ModelError> {
+        let resolved = self.resolve_with_placement(instance)?;
+        let mut value = ResolvedDatum::Point { origin: local };
+        for placement in std::iter::once(resolved.placement).chain(resolved.frames) {
+            value = value.transformed(&placement.normalized()?);
+        }
+        match value {
+            ResolvedDatum::Point { origin } => Ok(origin),
+            _ => unreachable!("a placed point stays a point"),
+        }
+    }
+
     // ---- relationships
 
     /// Records a relationship after checking that both datums resolve and the

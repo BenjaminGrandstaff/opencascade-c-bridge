@@ -10,6 +10,7 @@ fn gdt_page() -> DrawingDefinition {
         ("tertiary", "C", "origin", true),
     ] {
         page.datum_features.push(DrawingDatumFeature {
+            targets: Vec::new(),
             id: id.into(),
             label: label.into(),
             feature_of_size: size,

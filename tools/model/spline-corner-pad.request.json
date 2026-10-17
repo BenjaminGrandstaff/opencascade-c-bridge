@@ -1,7 +1,7 @@
 {
   "schema": "occb-model-view-v1",
   "model": {
-    "schema_version": 165,
+    "schema_version": 166,
     "family": {
       "id": "spline-corner-pad",
       "version": 1,

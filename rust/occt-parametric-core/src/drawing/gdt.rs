@@ -6,6 +6,7 @@ pub mod datums;
 pub mod inspection;
 pub mod position;
 pub mod size;
+pub mod targets;
 pub mod texture;
 pub use composite::DrawingCompositeRefinement;
 pub use datums::{
@@ -25,6 +26,7 @@ pub use position::{
     PositionToleranceAxis,
 };
 pub use size::{DrawingSizeLimits, FeatureOfSizeKind, GeometricToleranceAllowance};
+pub use targets::{DatumTargetShape, DrawingDatumTarget, MAX_DATUM_TARGETS};
 pub use texture::{
     DrawingSurfaceTexture, MaterialRemoval, RoughnessLimits, RoughnessParameter, RoughnessUnit,
     STANDARD_CUTOFFS_MM, SurfaceLay, TextureAcceptance, Waviness,
@@ -63,6 +65,10 @@ pub struct DrawingDatumFeature {
     /// the allowed datum shift (schema 137). The kind must match `size_kind`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub size_limits: Option<DrawingSizeLimits>,
+    /// Datum targets on a planar datum feature (schema 166). When present,
+    /// they alone establish the datum.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub targets: Vec<DrawingDatumTarget>,
 }
 impl DrawingDatumFeature {
     /// Internal or external, from `size_kind` or the size limits.
@@ -411,6 +417,7 @@ pub fn validate(
         }
         anchor(&feature.attachment, views, graph)?;
         validate_faces(&feature.attachment, graph)?;
+        targets::validate(feature, graph)?;
     }
     for frame in reference_frames {
         validate_references(&frame.datums, &index)?;
@@ -806,6 +813,9 @@ pub fn append(
     for f in features {
         let (point, p) = anchor(&f.attachment, views, graph)?;
         draw_datum_feature(f, point, p, d);
+        if let Some(view) = views.get(f.attachment.view.as_str()) {
+            targets::draw(f, view, graph, d)?;
+        }
     }
     for f in effective_frames(frames, reference_frames)? {
         let (point, p) = anchor(&f.attachment, views, graph)?;
@@ -1036,6 +1046,7 @@ pub fn vertex_count(
     let base = features
         .len()
         .checked_mul(11)
+        .and_then(|b| b.checked_add(features.iter().map(targets::vertex_count).sum()))
         .ok_or_else(|| ModelError::new("GD&T vertex count overflow"))?;
     effective_frames(frames, reference_frames)?
         .iter()

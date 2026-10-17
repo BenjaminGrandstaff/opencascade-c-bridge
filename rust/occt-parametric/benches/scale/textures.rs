@@ -196,6 +196,7 @@ pub(crate) fn profile_case(definition: &FamilyDefinition) -> Outcome {
                 })
                 .collect();
             let record = InspectionRecord {
+                datum_targets: Vec::new(),
                 drawing: drawing.id.clone(),
                 datum_features: Vec::new(),
                 controls: Vec::new(),

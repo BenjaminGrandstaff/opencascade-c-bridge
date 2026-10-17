@@ -215,6 +215,7 @@ fn evaluate(document: &ModelDocument, setup: &Setup) -> Result<Report, Box<dyn E
         let (controls, surface_textures, threads) = match &request.points {
             Some(points) => {
                 let record = InspectionRecord {
+                    datum_targets: Vec::new(),
                     uncertainty: points.uncertainty.clone(),
                     drawing: request.drawing.clone(),
                     datum_features: points.datum_features.clone(),

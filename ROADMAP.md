@@ -12,8 +12,8 @@ tracks status and order.
 | `occt-types` (shared value types) | — | No native dependency |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI; re-exports `occt-types` |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric-core` (kernel-free engineering layer) | Schema 165 | Definitions, documents, solving and checks without OCCT |
-| `occt-parametric` (kernel regeneration) | Schema 165 | Active development; re-exports the core API |
+| `occt-parametric-core` (kernel-free engineering layer) | Schema 166 | Definitions, documents, solving and checks without OCCT |
+| `occt-parametric` (kernel regeneration) | Schema 166 | Active development; re-exports the core API |
 
 | Quality gate | Result | Command |
 |---|---|---|
@@ -25,6 +25,14 @@ tracks status and order.
 | Scale benchmarks | Last full suite: 194 Rust cases plus 5 model-command cases and a 10,000-face Python matcher. Sketch authoring integration rechecked 60 sketch cases and 60 MCP cases within budget. | `tools/bench/run.sh` |
 
 ## Done
+
+- Datum targets (schema 166; ABI 76 unchanged). Planar datum features may
+  list point, line and circular-area targets at basic locations on their
+  datum plane; drawings mark them (×, phantom line, hatched circle) with
+  the divided-circle symbol, and measured inspection establishes such a
+  datum from the points recorded at its targets alone, down to a 3-2-1
+  frame of six points. See
+  [datum targets](docs/DRAWINGS.md#datum-targets-schema-166).
 
 - Studio profile lofts (schema 165, ABI 76 unchanged): create and edit native
   lofts through ordered saved profiles, including hollow sections with explicit
@@ -2965,8 +2973,7 @@ scopes and inspected repo capabilities, not a full conformity audit.
    bounded SVG approximation for curves SVG cannot represent. Direct deviations
    and limits render stacked values.
 2. **Structured GD&T** — [Y14.5](https://www.asme.org/codes-standards/find-codes-standards/y14-5-dimensioning-tolerancing):
-   the listed gaps are closed; remaining refinements (datum
-   targets, the separate requirement, common widths, boundaries enlarged by
+   the listed gaps are closed; remaining refinements (the separate requirement, common widths, boundaries enlarged by
    geometric tolerances, and others in docs/DRAWINGS.md) are smaller. Measured planar datum frames, flatness,
    circularity, cylindricity, planar orientation zones and position with
    MMC/LMC bonus are evaluated (schema 68), and cylindrical datum features of

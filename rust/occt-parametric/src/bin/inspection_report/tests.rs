@@ -128,6 +128,7 @@ fn fixture() -> ModelDocument {
     };
     for id in ["A", "B", "C"] {
         page.datum_features.push(DrawingDatumFeature {
+            targets: Vec::new(),
             id: id.into(),
             label: id.into(),
             feature_of_size: false,

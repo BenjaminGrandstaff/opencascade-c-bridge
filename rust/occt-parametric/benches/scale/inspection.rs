@@ -198,6 +198,7 @@ pub(crate) fn inspection_case(definition: &FamilyDefinition, variant: Inspected)
                 datum_features: [("A", "bottom"), ("B", "left"), ("C", "front")]
                     .into_iter()
                     .map(|(id, anchor)| DrawingDatumFeature {
+                        targets: Vec::new(),
                         id: id.into(),
                         label: id.into(),
                         feature_of_size: false,
@@ -274,6 +275,7 @@ pub(crate) fn inspection_case(definition: &FamilyDefinition, variant: Inspected)
                 }),
             });
             let record = InspectionRecord {
+                datum_targets: Vec::new(),
                 threads: Vec::new(),
                 uncertainty: simulated.then(|| MeasurementUncertainty {
                     expanded_mm: 0.0,
@@ -501,6 +503,7 @@ pub(crate) fn form_case(definition: &FamilyDefinition) -> Outcome {
                 }))
                 .collect();
             let record = InspectionRecord {
+                datum_targets: Vec::new(),
                 threads: Vec::new(),
                 uncertainty: None,
                 drawing: "round".into(),
@@ -621,6 +624,7 @@ pub(crate) fn runout_case(definition: &FamilyDefinition, common: bool, conical: 
                             .map(|h| (format!("J{h}"), label(holes + h), h)),
                     )
                     .map(|(id, label, h)| DrawingDatumFeature {
+                        targets: Vec::new(),
                         id,
                         label,
                         feature_of_size: true,
@@ -679,6 +683,7 @@ pub(crate) fn runout_case(definition: &FamilyDefinition, common: bool, conical: 
                 }
             };
             let record = InspectionRecord {
+                datum_targets: Vec::new(),
                 threads: Vec::new(),
                 uncertainty: None,
                 drawing: "runout".into(),
@@ -879,6 +884,7 @@ pub(crate) fn datum_shift_case(definition: &FamilyDefinition, frame: ShiftFrame)
                 .collect();
             let feature =
                 |id: &str, anchor: &str, size: Option<DrawingSizeLimits>| DrawingDatumFeature {
+                    targets: Vec::new(),
                     id: id.into(),
                     label: id.into(),
                     feature_of_size: size.is_some(),
@@ -900,6 +906,7 @@ pub(crate) fn datum_shift_case(definition: &FamilyDefinition, frame: ShiftFrame)
                     ),
                     if frame == ShiftFrame::Pin {
                         DrawingDatumFeature {
+                            targets: Vec::new(),
                             size_kind: Some(FeatureOfSizeKind::Internal),
                             ..feature(
                                 "C",
@@ -909,6 +916,7 @@ pub(crate) fn datum_shift_case(definition: &FamilyDefinition, frame: ShiftFrame)
                         }
                     } else if slot {
                         DrawingDatumFeature {
+                            targets: Vec::new(),
                             size_kind: Some(FeatureOfSizeKind::Internal),
                             feature_of_size: true,
                             ..feature(
@@ -996,6 +1004,7 @@ pub(crate) fn datum_shift_case(definition: &FamilyDefinition, frame: ShiftFrame)
                 .map(|(d, t, z)| [bore[0] + d, bore[1] + t, z])
                 .collect();
             let record = InspectionRecord {
+                datum_targets: Vec::new(),
                 threads: Vec::new(),
                 uncertainty: None,
                 drawing: "shifted".into(),
@@ -1098,6 +1107,7 @@ fn abc_drawing(id: &str, controls: Vec<DrawingFeatureControlFrame>) -> DrawingDe
         datum_features: [("A", "bottom"), ("B", "left"), ("C", "front")]
             .into_iter()
             .map(|(id, anchor)| DrawingDatumFeature {
+                targets: Vec::new(),
                 id: id.into(),
                 label: id.into(),
                 feature_of_size: false,
@@ -1247,6 +1257,7 @@ pub(crate) fn composite_case(definition: &FamilyDefinition, three: bool) -> Outc
                 points_mm: grid(400, point),
             };
             let record = InspectionRecord {
+                datum_targets: Vec::new(),
                 threads: Vec::new(),
                 uncertainty: Some(MeasurementUncertainty {
                     expanded_mm: 0.001,
@@ -1407,6 +1418,7 @@ pub(crate) fn profile_case(definition: &FamilyDefinition, dynamic: bool) -> Outc
                 points_mm: grid(400, point),
             };
             let record = InspectionRecord {
+                datum_targets: Vec::new(),
                 threads: Vec::new(),
                 uncertainty: None,
                 drawing: "profile".into(),
@@ -1489,6 +1501,7 @@ pub(crate) fn profile_surface_case(definition: &FamilyDefinition) -> Outcome {
                 }],
             );
             let record = InspectionRecord {
+                datum_targets: Vec::new(),
                 threads: Vec::new(),
                 uncertainty: None,
                 drawing: "surface".into(),
@@ -1577,6 +1590,7 @@ pub(crate) fn profile_projection_case(definition: &FamilyDefinition) -> Outcome 
                 .collect();
             let drawing = abc_drawing("bands", controls);
             let record = InspectionRecord {
+                datum_targets: Vec::new(),
                 threads: Vec::new(),
                 uncertainty: None,
                 drawing: "bands".into(),
@@ -1663,6 +1677,7 @@ pub(crate) fn profile_line_case(definition: &FamilyDefinition) -> Outcome {
                 }],
             );
             let record = InspectionRecord {
+                datum_targets: Vec::new(),
                 threads: Vec::new(),
                 uncertainty: None,
                 drawing: "rows".into(),
@@ -1769,6 +1784,7 @@ pub(crate) fn coaxial_shift_case(definition: &FamilyDefinition, common: bool) ->
                 datum_reference_frames: Vec::new(),
                 datum_features: ["A", "E"]
                     .map(|id| DrawingDatumFeature {
+                        targets: Vec::new(),
                         id: id.into(),
                         label: id.into(),
                         feature_of_size: true,
@@ -1824,6 +1840,7 @@ pub(crate) fn coaxial_shift_case(definition: &FamilyDefinition, common: bool) ->
             };
             let datum_heights: Vec<f64> = (0..=50).map(|k| k as f64).collect();
             let record = InspectionRecord {
+                datum_targets: Vec::new(),
                 threads: Vec::new(),
                 uncertainty: None,
                 drawing: "coaxial".into(),
@@ -1977,6 +1994,7 @@ pub(crate) fn radial_case(definition: &FamilyDefinition) -> Outcome {
                 datum_reference_frames: Vec::new(),
                 datum_features: vec![
                     DrawingDatumFeature {
+                        targets: Vec::new(),
                         id: "A".into(),
                         label: "A".into(),
                         feature_of_size: true,
@@ -1985,6 +2003,7 @@ pub(crate) fn radial_case(definition: &FamilyDefinition) -> Outcome {
                         size_limits: Some(limits(9.9, 10.1)),
                     },
                     DrawingDatumFeature {
+                        targets: Vec::new(),
                         id: "B".into(),
                         label: "B".into(),
                         feature_of_size: false,
@@ -2046,6 +2065,7 @@ pub(crate) fn radial_case(definition: &FamilyDefinition) -> Outcome {
             };
             let datum_heights: Vec<f64> = (0..=50).map(|k| k as f64).collect();
             let record = InspectionRecord {
+                datum_targets: Vec::new(),
                 threads: Vec::new(),
                 uncertainty: None,
                 drawing: "radial".into(),
@@ -2187,6 +2207,7 @@ pub(crate) fn thread_case(definition: &FamilyDefinition) -> Outcome {
                 })
                 .collect();
             let record = InspectionRecord {
+                datum_targets: Vec::new(),
                 drawing: "threads".into(),
                 datum_features: Vec::new(),
                 controls: Vec::new(),
