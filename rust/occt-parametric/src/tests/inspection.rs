@@ -682,6 +682,223 @@ fn circularity_takes_the_worst_minimum_zone_section_with_free_centers() {
     assert!(evaluated(&report, "straight").deviation_mm < 1e-7);
 }
 
+fn straightness_report(
+    controls: Vec<DrawingFeatureControlFrame>,
+    measured_controls: Vec<MeasuredFeature>,
+) -> InspectionReport {
+    let definition = plate();
+    let mut graph = InstanceGraph::new(&definition);
+    graph.add_base("part", HashMap::new(), "test").unwrap();
+    let mut page = page();
+    page.feature_control_frames = controls;
+    let mut record = nominal_record();
+    record.controls = measured_controls;
+    page.evaluate_inspection(&graph, &record).unwrap()
+}
+
+/// The right face (x = 60) in rows at seven heights, bowed by `bow(y, z)`.
+fn right_rows(id: &str, bow: impl Fn(f64, f64) -> f64) -> MeasuredFeature {
+    measured(
+        id,
+        (0..=6)
+            .flat_map(|k| (0..=20).map(move |i| (2.0 * i as f64, k as f64 * 10.0 / 6.0)))
+            .map(|(y, z)| [60.0 + bow(y, z), y, z])
+            .collect(),
+    )
+}
+
+#[test]
+fn straightness_of_surface_elements_takes_the_worst_line_in_its_view() {
+    // Seen in the top view, the right face's line elements are its rows.
+    // Rows shifted and tilted against each other are each still straight,
+    // though the face is far from flat.
+    let row = |id: &str| {
+        control(
+            id,
+            "right",
+            GeometricCharacteristic::Straightness,
+            0.012,
+            &[],
+        )
+    };
+    let report = straightness_report(
+        vec![row("rows"), row("bent")],
+        vec![
+            right_rows("rows", |y, z| 0.05 * z + 0.001 * z * y),
+            // A 0.01 mm sine bump along each row, growing with height.
+            right_rows("bent", |y, z| {
+                0.002 * z * (std::f64::consts::PI * y / 40.0).sin()
+            }),
+        ],
+    );
+    let rows = evaluated(&report, "rows");
+    assert!(rows.deviation_mm < 1e-9 && rows.conforms, "{rows:?}");
+    let bent = evaluated(&report, "bent");
+    assert!((bent.deviation_mm - 0.02).abs() < 1e-9, "{bent:?}");
+    assert!(!bent.conforms);
+    // The top face seen face-on in the top view has no line elements there.
+    let report = straightness_report(
+        vec![control(
+            "face_on",
+            "top",
+            GeometricCharacteristic::Straightness,
+            0.012,
+            &[],
+        )],
+        vec![measured("face_on", grid(|u, v| [60.0 * u, 40.0 * v, 10.0]))],
+    );
+    assert!(
+        matches!(
+            &report.controls[0].result,
+            ControlResult::NotEvaluated(reason) if reason.contains("edge-on")
+        ),
+        "{report:?}"
+    );
+}
+
+#[test]
+fn straightness_of_a_cylinder_takes_its_generator_lines() {
+    // A barrel 0.05 mm proud at the middle: each generator line bows 0.05.
+    // A tilted, shifted perfect cylinder has straight generators.
+    let control = |id: &str| control(id, "hole", GeometricCharacteristic::Straightness, 0.04, &[]);
+    let report = straightness_report(
+        vec![control("barrel"), control("tilted")],
+        vec![
+            measured(
+                "barrel",
+                cylinder([30.0, 20.0, 0.0], [0.0, 0.0, 1.0], |s| {
+                    5.05 - 0.002 * (s - 5.0) * (s - 5.0)
+                }),
+            ),
+            measured(
+                "tilted",
+                cylinder([30.05, 19.97, 0.0], [0.002, -0.001, 1.0], |_| 5.0),
+            ),
+        ],
+    );
+    let barrel = evaluated(&report, "barrel");
+    assert!(
+        (barrel.deviation_mm - 0.05).abs() < 1e-9 && !barrel.conforms,
+        "{barrel:?}"
+    );
+    let tilted = evaluated(&report, "tilted");
+    assert!(tilted.deviation_mm < 1e-6 && tilted.conforms, "{tilted:?}");
+}
+
+/// A Ø10 pin about the hole axis, sections every 1 mm, its center bent
+/// `bend(z)` along x.
+fn bent_pin(id: &str, diameter: f64, bend: impl Fn(f64) -> f64) -> MeasuredFeature {
+    measured(
+        id,
+        (0..=10)
+            .flat_map(|k| (0..36).map(move |i| (k as f64, i as f64 * std::f64::consts::TAU / 36.0)))
+            .map(|(z, a)| {
+                [
+                    HOLE[0] + bend(z) + diameter / 2.0 * a.cos(),
+                    HOLE[1] + diameter / 2.0 * a.sin(),
+                    z,
+                ]
+            })
+            .collect(),
+    )
+}
+
+#[test]
+fn straightness_of_a_derived_median_line_gains_bonus_from_local_size() {
+    let median = |id: &str, material: ToleranceMaterialCondition| {
+        let mut f = control(id, "hole", GeometricCharacteristic::Straightness, 0.03, &[]);
+        f.zone = GeometricToleranceZone::Diameter;
+        f.feature_of_size = true;
+        f.material = material;
+        f.size_limits = Some(DrawingSizeLimits {
+            kind: FeatureOfSizeKind::External,
+            lower: Quantity::length(9.9, LengthUnit::Millimeter),
+            upper: Quantity::length(10.1, LengthUnit::Millimeter),
+        });
+        f
+    };
+    // Bowed 0.04 at the middle: the thinnest cylinder about the centers is
+    // Ø0.04 (its axis halfway), not the 0.08 an axis through the ends needs.
+    let bow = |z: f64| 0.04 * (std::f64::consts::PI * z / 10.0).sin();
+    let report = straightness_report(
+        vec![
+            median("rfs", ToleranceMaterialCondition::Regardless),
+            median("mmc", ToleranceMaterialCondition::Maximum),
+            median("lmc", ToleranceMaterialCondition::Least),
+            median("fat", ToleranceMaterialCondition::Maximum),
+        ],
+        vec![
+            bent_pin("rfs", 10.0, bow),
+            bent_pin("mmc", 10.0, bow),
+            bent_pin("lmc", 10.0, bow),
+            bent_pin("fat", 10.15, bow),
+        ],
+    );
+    let rfs = evaluated(&report, "rfs");
+    assert!(
+        rfs.deviation_mm >= 0.04 - 1e-9 && rfs.deviation_mm < 0.04 * 1.0013,
+        "{rfs:?}"
+    );
+    assert!(!rfs.conforms && rfs.bonus_mm == 0.0);
+    assert_eq!(rfs.size_conforms, Some(true));
+    // At MMC the Ø10.0 pin is 0.1 from its Ø10.1 maximum-material size.
+    let mmc = evaluated(&report, "mmc");
+    assert!((mmc.bonus_mm - 0.1).abs() < 1e-6 && mmc.conforms, "{mmc:?}");
+    assert!((mmc.actual_size_mm.unwrap() - 10.0).abs() < 1e-6);
+    let lmc = evaluated(&report, "lmc");
+    assert!((lmc.bonus_mm - 0.1).abs() < 1e-6 && lmc.conforms, "{lmc:?}");
+    // A pin over its maximum size fails on size, whatever its bonus.
+    let fat = evaluated(&report, "fat");
+    assert_eq!(fat.size_conforms, Some(false));
+    assert!(fat.bonus_mm == 0.0 && !fat.conforms, "{fat:?}");
+    // A material condition needs a diameter zone on the median line.
+    let mut surface = median("surface", ToleranceMaterialCondition::Maximum);
+    surface.zone = GeometricToleranceZone::Characteristic;
+    let report = straightness_report(vec![surface], vec![bent_pin("surface", 10.0, bow)]);
+    assert!(
+        matches!(
+            &report.controls[0].result,
+            ControlResult::NotEvaluated(reason) if reason.contains("diameter zone")
+        ),
+        "{report:?}"
+    );
+}
+
+#[test]
+fn straightness_of_a_median_line_scales_to_a_thousand_sections() {
+    // 1,000 sections of 36 points (36,000 points), gently bowed.
+    let mut f = control(
+        "long",
+        "hole",
+        GeometricCharacteristic::Straightness,
+        0.05,
+        &[],
+    );
+    f.zone = GeometricToleranceZone::Diameter;
+    f.feature_of_size = true;
+    let points: Vec<[f64; 3]> = (0..1000)
+        .flat_map(|k| {
+            (0..36).map(move |i| (k as f64 * 0.5, i as f64 * std::f64::consts::TAU / 36.0))
+        })
+        .map(|(z, a)| {
+            [
+                HOLE[0] + 0.02 * (z / 80.0).sin() + 5.0 * a.cos(),
+                HOLE[1] + 5.0 * a.sin(),
+                z,
+            ]
+        })
+        .collect();
+    let started = std::time::Instant::now();
+    let report = straightness_report(vec![f], vec![measured("long", points)]);
+    let elapsed = started.elapsed().as_secs_f64();
+    let long = evaluated(&report, "long");
+    assert!(
+        long.deviation_mm > 0.0 && long.deviation_mm < 0.05,
+        "{long:?}"
+    );
+    assert!(elapsed < 2.0, "{elapsed} s");
+}
+
 #[test]
 fn cylindricity_frees_the_axis_and_keeps_taper() {
     let definition = plate();

@@ -14,6 +14,7 @@ pub mod fit;
 mod profile;
 pub mod roughness;
 mod shift;
+mod straightness;
 mod threads;
 use fit::{
     Fit, circle_zone, cylinder_zone, fit_circle, fit_common_cylinder, fit_cylinder, fit_plane,
@@ -1627,6 +1628,9 @@ impl Context<'_, '_> {
         let c = frame.characteristic;
         if c == GeometricCharacteristic::Position {
             return self.position(frame, points, tolerance);
+        }
+        if c == GeometricCharacteristic::Straightness {
+            return self.straightness(frame, points, tolerance);
         }
         if matches!(
             c,

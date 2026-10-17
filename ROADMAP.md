@@ -17,7 +17,7 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 7/7, bridge 160 + first-use integration 1 (+1 doc test), recipes 3, parametric core 55 + kernel 738 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 71 + viewer Node 375 + branch command 2 + model command 92, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 7/7, bridge 160 + first-use integration 1 (+1 doc test), recipes 3, parametric core 57 + kernel 742 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 71 + viewer Node 375 + branch command 2 + model command 92, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -25,6 +25,15 @@ tracks status and order.
 | Scale benchmarks | Last full suite: 194 Rust cases plus 5 model-command cases and a 10,000-face Python matcher. Sketch authoring integration rechecked 60 sketch cases and 60 MCP cases within budget. | `tools/bench/run.sh` |
 
 ## Done
+
+- Measured straightness (no schema or ABI change). Inspection now
+  evaluates straightness instead of reporting it: surface line elements
+  (sections normal to the control's view for a plane, generator lines for a
+  cylinder) by their narrowest strip, and a cylinder's derived median line
+  (Ø zone) by the thinnest cylinder holding its cross-section centers, with
+  MMC/LMC bonus from local size and per-section size checks. 1,000 cross
+  sections take about 10 ms. See
+  [measured inspection](docs/DRAWINGS.md#measured-inspection-schema-68).
 
 - Studio material boundary authoring (schema 165, ABI 76 unchanged): choose
   ordered outer profiles, holes and additional material regions directly on
@@ -2902,7 +2911,7 @@ scopes and inspected repo capabilities, not a full conformity audit.
    bounded SVG approximation for curves SVG cannot represent. Direct deviations
    and limits render stacked values.
 2. **Structured GD&T** — [Y14.5](https://www.asme.org/codes-standards/find-codes-standards/y14-5-dimensioning-tolerancing):
-   the listed gaps are closed; remaining refinements (straightness, datum
+   the listed gaps are closed; remaining refinements (datum
    targets, the separate requirement, common widths, boundaries enlarged by
    geometric tolerances, and others in docs/DRAWINGS.md) are smaller. Measured planar datum frames, flatness,
    circularity, cylindricity, planar orientation zones and position with

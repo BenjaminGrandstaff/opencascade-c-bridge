@@ -1193,6 +1193,8 @@ Supported controls:
 
 | Control | Measured as |
 |---|---|
+| Straightness of surface elements | Worst line element's width between the narrowest pair of parallel lines, oriented freely in its section (exact, by rotating calipers on the convex hull). A planar control's elements are sections normal to its attachment view, which must show the surface edge-on; a cylinder's (axis anchor) are its generator lines, grouped by angle about the nominal axis and split at gaps wider than a quarter of the widest, each projected onto its plane through the axis. Each element needs at least two points |
+| Straightness of a derived median line | Ø zone on a cylindrical feature of size: diameter of the thinnest cylinder, axis free to shift and tilt, holding the centers of the cross sections normal to the nominal axis; each section's center and actual local size come from its actual mating circle (at least four points, at least two sections). At MMC or LMC the bonus is the departure of the section nearest that condition; every local size must lie within `size_limits`, which MMC and LMC require. Rule #1 does not apply, so the feature may exceed its maximum-material envelope |
 | Flatness | Minimum-zone width over all orientations |
 | Circularity | Worst section's radial width between the narrowest concentric circles, center free. Sections are points sharing a position along the anchor's nominal axis (within 1e-3 mm or 1e-6 of the axial span); each needs at least four points |
 | Cylindricity | Radial width between the narrowest coaxial cylinders, axis free to shift and tilt from the anchor's nominal axis; at least six points |
@@ -1528,7 +1530,8 @@ no simulated part. The cost is `trials` further evaluations of the record.
 - `NotMeasured`: the record has no points for the control.
 - `NotEvaluated`: a stated reason, for unsupported cases such as a line
   element with a single point, profile datums at a material boundary, a non-planar profile anchor
-  without nominals, straightness, round
+  without nominals, straightness of surface elements at a material
+  condition or of a planar surface not seen edge-on, round
   form at a material condition or with a non-characteristic zone, a datum
   feature that was not measured, or an axis datum without a `size_kind`.
   Width datums report measurements missing a face and common widths.
@@ -1561,7 +1564,11 @@ circular plus 1,000 total runout controls (471,600 points), with each of 100
 bore datum axes fitted once, in 0.03 s. Against 100 common datum axes from
 200 bore journals (511,200 points), each a simultaneous simulator, the same
 controls take 0.060 s. All six
-cases have 1 s budgets.
+cases have 1 s budgets. One derived-median-line straightness of 1,000
+cross sections (36,000 points) takes about 10 ms (2 s budget in its test):
+its zone is one linear program over a circumscribed 64-gon, recomputed
+exactly for the axis found, so it can overstate the minimum by at most
+0.13% and never understates it.
 Runout readings cost O(n log n) per control after the datum fit. 10,000
 position controls located A | B(MMB) | C from a center bore share one datum
 shift in 0.17 s. The active set keeps each LP small whatever the
@@ -1600,8 +1607,10 @@ re-contacting as a shifting secondary width turns; common width datums; the sepa
 enlarged by geometric tolerances; common axes of more than two members or
 after a primary plane,
 reporting n× patterns as one frame on drawings, measured datum targets,
-profile datums at a material boundary, and
-straightness. Simulated uncertainty covers isotropic, uncorrelated probing
+and profile datums at a material boundary. Straightness has no
+per-unit-length zone, and a derived median line's cross sections are
+normal to the nominal axis rather than to the actual mating envelope's.
+Simulated uncertainty covers isotropic, uncorrelated probing
 error only. Correlated machine errors, form-dependent sampling error and
 temperature are supplied as `expanded_mm`.
 
