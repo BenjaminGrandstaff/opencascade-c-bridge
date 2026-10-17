@@ -36,7 +36,9 @@ impl Studio {
             .subshape(shape, ShapeType::Face, pick.face)
             .map_err(|e| e.to_string())?;
         if !session.face_is_planar(&face).map_err(|e| e.to_string())? {
-            return Err("Pick a planar face. Curved faces cannot support a planar sketch.".into());
+            return Err(
+                "Pick a planar face; curved faces are not supported by this picker.".into(),
+            );
         }
         let centre = session.center_of_mass(&face).map_err(|e| e.to_string())?;
         let n = session.face_normal(&face).map_err(|e| e.to_string())?;

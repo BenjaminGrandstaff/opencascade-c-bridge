@@ -1,3 +1,4 @@
+import {createLimitFacePicker} from './sketch-studio-limit-pick.mjs';
 import {createSolidEditor} from './solid-editor.mjs';
 import {planeNormal} from './sketch-studio-plane.mjs';
 
@@ -6,10 +7,15 @@ export function installStudioSolids(studio, document) {
   const panel = html('section', {class: 'sheet', role: 'dialog', 'aria-label': 'Sketch to solid', hidden: true});
   document.body.append(panel);
   let session = null, ownAction = false;
+  const picker=createLimitFacePicker(studio,active=>{
+    const old=ownAction;ownAction=true;
+    try{if(active){studio.setTool('select');studio.tool='solid-limit-face';}else if(studio.tool==='solid-limit-face')studio.tool='select';studio.refresh();}
+    finally{ownAction=old;}
+  });
   const clearPreview = () => studio.setSolidPreview(null);
   function close() {
     if (ownAction) return;
-    session = null; panel.hidden = true; clearPreview();
+    picker.cancel();session = null; panel.hidden = true; clearPreview();
   }
   function open() {
     if (studio.modelPending) return false;
@@ -56,6 +62,8 @@ export function installStudioSolids(studio, document) {
     studio.fill(panel, html('header', {}, html('h2', {}, 'Sketch to solid'), html('button', {onclick: close}, 'Close')), host);
     panel.hidden = false;
     createSolidEditor({host, request, instance: () => studio.instance, autoStart: true,
+      pickLimitingFace: target => picker.pick(target,current),
+      cancelLimitingFacePick: () => picker.cancel(),
       initialProfile: () => studio.activeLayer()?.feature,
       profileDirection: feature => {
         const frame = studio.layers.find(layer => layer.feature === feature)?.frame;
@@ -91,8 +99,8 @@ export function installStudioSolids(studio, document) {
   const change = studio.changeDraft; studio.changeDraft = (...args) => { close(); return change(...args); };
   const activate = studio.onActivate; studio.onActivate = layer => { close(); activate?.(layer); };
   const load = studio.onLoad; studio.onLoad = () => { close(); load?.(); };
-  const key = studio.onKey; studio.onKey = event => { if (event.key === 'Escape' && session) { close(); return true; } return key?.(event) ?? false; };
-  panel.addEventListener('keydown', event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); } });
+  const key = studio.onKey; studio.onKey = event => { if (event.key === 'Escape' && session) { if(picker.active){picker.cancel();studio.say('Face picking canceled. Solid draft retained.');}else close(); return true; } return key?.(event) ?? false; };
+  panel.addEventListener('keydown', event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); if(picker.active){picker.cancel();studio.say('Face picking canceled. Solid draft retained.');}else close(); } });
   studio.fill(document.getElementById('solid-features'), html('h2', {}, 'Solid features'), html('button', {onclick: open}, 'Extrude, revolve, sweep or loft'));
-  return {open, close};
+  return {open, close, picker};
 }

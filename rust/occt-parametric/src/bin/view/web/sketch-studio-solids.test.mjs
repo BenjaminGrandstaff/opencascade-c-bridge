@@ -76,3 +76,13 @@ test('a planar current output falls back to a solid target and edits preview the
 test('queued value changes invalidate a pending preview without closing the corrected form',async t=>{
  let resolve;const f=setup(t,{api:(path,options)=>!options?graph():new Promise(r=>resolve=r)});await f.open();f.enter('Result feature name','made-part');const pending=f.button('Preview solid').onclick();f.enter('Extrusion depth (mm)','20');resolve(preview());await pending;assert.equal(f.studio.solidPreview,null);assert.equal(f.panel.hidden,false);
 });
+
+
+test('solid face picking Escape retains the form; field edits and close clear target overlays',async t=>{
+ const source={version:1,accepted:true,source_view:true,scenes:[{kind:'solid',instance:'part',feature:'body',mesh:[],edges:[]}]};
+ const f=setup(t,{api:(path,options)=>!options?graph():path==='/api/sketch-source-view'?source:preview()});await f.open();
+ f.input('Extrusion extent').value='up_to_face';f.input('Extrusion extent').onchange();let pending=f.button('Pick limiting face in canvas').onclick();await f.flush();assert(f.solids.picker.active);assert.equal(f.studio.tool,'solid-limit-face');assert.equal(f.panel.hidden,false);
+ f.studio.onKey({key:'Escape'});await pending;assert.equal(f.solids.picker.active,false);assert.equal(f.solids.picker.source,null);assert.equal(f.panel.hidden,false);assert.equal(f.studio.tool,'select');assert.match(all(f.panel).find(e=>e.role==='status').textContent,/canceled/);
+ pending=f.button('Pick limiting face in canvas').onclick();await f.flush();f.enter('Direction X','1');await pending;assert.equal(f.solids.picker.source,null);assert.equal(f.panel.hidden,false);
+ pending=f.button('Pick limiting face in canvas').onclick();await f.flush();f.solids.close();await pending;assert.equal(f.solids.picker.source,null);assert.equal(f.panel.hidden,true);
+});

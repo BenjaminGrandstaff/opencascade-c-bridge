@@ -189,3 +189,15 @@ test('new geometric extrusions accept entered directions and switching to depth 
  control(host,'Extrusion extent').value='distance';control(host,'Extrusion extent').onchange();assert(control(host,'Extrusion depth (mm)'));assert.equal(control(host,'Limiting feature'),undefined);
  }finally{delete globalThis.document;delete globalThis.Option;}
 });
+
+
+test('canvas limiting picks store semantic selectors and late results cannot overwrite edited controls',async()=>{
+ globalThis.document={createElement:tag=>new Element(tag)};globalThis.Option=class extends Element{constructor(text,value){super('option');this.textContent=text;this.value=value;}};
+ try{
+ const host=new Element('div'),calls=[];let resolve,canceled=0;
+ createSolidEditor({host,instance:()=> 'part',preview:async()=>{},applied:async()=>{},restore:async()=>{},pickLimitingFace:()=>new Promise(r=>resolve=r),cancelLimitingFacePick:()=>canceled++,request:async(path,options)=>{if(!options)return {version:1,features:base,output:'body',parameters:[]};calls.push(JSON.parse(options.body));return {can_apply:true};}});
+ await button(host,'Sketch to solid').onclick();control(host,'Result feature name').value='limited';control(host,'Result feature name').oninput();control(host,'Extrusion extent').value='up_to_face';control(host,'Extrusion extent').onchange();
+ const face={normal_aligned:{direction:{parameter:'normal'}}};let pending=button(host,'Pick limiting face in canvas').onclick();resolve({target:'body',face,binding:'normal',origin_mm:[0,0,10]});await pending;assert.equal(control(host,'Limiting face').value,'preserve');await button(host,'Preview solid').onclick();assert.deepEqual(calls[0].features[0].operation.extrude.extent.up_to_face.face,face);assert.equal(JSON.stringify(calls[0].features).includes('face_index'),false);
+ pending=button(host,'Pick limiting face in canvas').onclick();control(host,'Extrusion extent').value='distance';control(host,'Extrusion extent').onchange();resolve({target:'body',face:{nearest_center:{}},origin_mm:[0,0,7]});await pending;assert(control(host,'Extrusion depth (mm)'));assert.equal(control(host,'Limiting face'),undefined);assert(canceled>0);
+ }finally{delete globalThis.document;delete globalThis.Option;}
+});

@@ -338,6 +338,18 @@ saved face selectors have preserve options; explicit entered values replace
 them. These references stay live when the limiting feature moves, including in
 union/cut tools. Every instance must pass before Apply.
 
+In the studio, **Pick limiting face in canvas** loads the chosen limiting
+feature as an amber overlay. **Fit** frames that target while the overlay is
+shown. Hover highlights a face; click selects a planar face. Drag still orbits.
+**Cancel face pick** or Escape cancels picking while retaining the solid form.
+Changing fields, closing the form, switching tools or changing model/instance
+clears the overlay and discards stale replies.
+
+A pick saves the native semantic face selector rather than a mesh face index.
+The face menu shows **Picked face**. Preview still checks complete forward
+coverage in every instance. If the picker reports a fixed center anchor, moving
+that face requires picking again; an ambiguous or invalid face fails validation.
+
 Choose **Solid feature → Revolution** to turn a profile about a family-coordinate
 axis. Set its origin in millimetres and a finite, nonzero direction. In the studio
 the initial axis follows the sketch's local Y axis through its origin. The signed

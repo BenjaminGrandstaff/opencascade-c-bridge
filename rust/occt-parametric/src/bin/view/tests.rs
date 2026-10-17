@@ -2069,6 +2069,111 @@ fn geometric_extrusion_controls_reject_limits_behind_another_instance() {
     assert_eq!(get(&mut studio, "/api/state").1, state);
 }
 
+#[test]
+fn picked_limiting_faces_author_live_extrusion_selectors_without_mesh_indices() {
+    let directory = Directory::new();
+    let document = extrusion_limit_document();
+    let model = PathBuf::from(directory.model(&document));
+    let mut studio = serve::Studio::load(&model, Some("body".into())).unwrap();
+    assert_eq!(
+        studio
+            .handle("GET", "/sketch-studio-limit-pick.mjs", b"")
+            .status,
+        200
+    );
+    let data = get(&mut studio, "/api/features").1;
+    let state = get(&mut studio, "/api/state").1;
+    let response = studio.handle(
+        "POST",
+        "/api/sketch-source-view",
+        json!({"version":data["version"],"instance":"block","output":"limit"})
+            .to_string()
+            .as_bytes(),
+    );
+    assert_eq!(response.status, 200);
+    let source: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+    let solid = source["scenes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["kind"] == "solid" && s["feature"] == "limit" && s["instance"] == "block")
+        .unwrap();
+    let face = solid["mesh"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|triangle| {
+            triangle["points"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|p| (p[2].as_f64().unwrap() - 12.0).abs() < 1e-8)
+        })
+        .unwrap()["face"]
+        .as_u64()
+        .unwrap() as usize;
+    let (status, picked) = pick_face(&mut studio, "block", "limit", face);
+    assert_eq!(status, 200, "{picked}");
+    assert_eq!(picked["binding"], "normal");
+    assert_eq!(get(&mut studio, "/api/state").1, state);
+    let mut feature = data["features"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["id"] == "selected")
+        .unwrap()
+        .clone();
+    feature["id"] = json!("picked-limit");
+    feature["operation"]["extrude"]["extent"]["up_to_face"]["face"] =
+        picked["face_support"]["face"].clone();
+    let mut edit = json!({"version":data["version"],"instance":"block","expected":data["features"],"action":"add","features":[feature],"output":"picked-limit","apply":false});
+    let response = studio.handle("POST", "/api/features", edit.to_string().as_bytes());
+    assert_eq!(response.status, 200);
+    let preview: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+    assert_eq!(preview["can_apply"], true, "{}", preview["error"]);
+    assert!((preview["geometry"]["block"]["volume_mm3"].as_f64().unwrap() - 12000.0).abs() < 1e-6);
+    assert!((preview["geometry"]["thin"]["volume_mm3"].as_f64().unwrap() - 7000.0).abs() < 1e-6);
+    edit["apply"] = json!(true);
+    assert_eq!(
+        studio
+            .handle("POST", "/api/features", edit.to_string().as_bytes())
+            .status,
+        200
+    );
+    assert_eq!(studio.handle("POST", "/api/save", b"").status, 200);
+    let saved = ModelDocument::from_json(&fs::read_to_string(&model).unwrap()).unwrap();
+    let saved = saved
+        .family
+        .features
+        .iter()
+        .find(|f| f.id == "picked-limit")
+        .unwrap();
+    let expected: FeatureDefinition = serde_json::from_value(edit["features"][0].clone()).unwrap();
+    assert_eq!(*saved, expected);
+    assert!(!serde_json::to_string(saved).unwrap().contains("face_index"));
+    assert_eq!(
+        studio
+            .handle("POST", "/api/parameters", br#"{"set":{"depth":14}}"#)
+            .status,
+        200
+    );
+    let annotations = get(&mut studio, "/api/annotations?id=block").1;
+    let solid = annotations["scenes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["kind"] == "solid" && s["feature"] == "picked-limit")
+        .unwrap();
+    let maximum = solid["mesh"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|t| t["points"].as_array().unwrap())
+        .map(|p| p[2].as_f64().unwrap())
+        .fold(f64::NEG_INFINITY, f64::max);
+    assert!((maximum - 16.0).abs() < 1e-8);
+}
+
 fn history(studio: &mut serve::Studio, direction: &str) -> serde_json::Value {
     let version = get(studio, "/api/state").1["version"].clone();
     let response = studio.handle(

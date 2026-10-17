@@ -17,7 +17,7 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 7/7, bridge 160 + first-use integration 1 (+1 doc test), recipes 3, parametric core 57 + kernel 754 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 79 + viewer Node 406 + branch command 2 + model command 92, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 7/7, bridge 160 + first-use integration 1 (+1 doc test), recipes 3, parametric core 57 + kernel 754 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 80 + viewer Node 413 + branch command 2 + model command 92, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -25,6 +25,18 @@ tracks status and order.
 | Scale benchmarks | Last full suite: 194 Rust cases plus 5 model-command cases and a 10,000-face Python matcher. Sketch authoring integration rechecked 60 sketch cases and 60 MCP cases within budget. | `tools/bench/run.sh` |
 
 ## Done
+
+- Studio limiting-face canvas picks (schema 168, ABI 76 unchanged): choose an
+  extrusion's up-to-face target directly from an accepted feature overlay.
+  Amber edges, hover/selected face fill and target-aware Fit guide picking;
+  native semantic selectors are saved instead of transient mesh face indices.
+  Escape/Cancel retain the solid form. Field, tool, model and instance changes
+  clear overlays and guard late source/pick replies. Source picking remains
+  read-only, and verified Preview/Apply still enforce every family instance.
+  All 413 viewer Node tests and 80 view-command tests pass, including stale picks,
+  cancellation, invalid sources/faces, native saved selectors and moving limits.
+  Browser checks cover real hover/click, Fit, preview, Apply, Undo/Redo, Save and
+  instance cleanup. Sketch performance budgets and all-target Clippy pass.
 
 - Studio geometric extrusion end conditions (schema 168, ABI 76 unchanged):
   create/edit up-to-next and up-to-face extrusions, including union/cut tools.

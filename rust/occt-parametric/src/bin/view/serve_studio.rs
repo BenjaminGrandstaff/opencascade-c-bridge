@@ -38,6 +38,7 @@ const STUDIO_ASSETS: &[(&str, &str)] = studio_assets!(
     "sketch-studio-trim.mjs",
     "sketch-studio-boundaries.mjs",
     "sketch-studio-solids.mjs",
+    "sketch-studio-limit-pick.mjs",
     "sketch-boundaries.mjs",
 );
 

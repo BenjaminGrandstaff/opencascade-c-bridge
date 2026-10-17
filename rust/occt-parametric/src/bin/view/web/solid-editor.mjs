@@ -81,25 +81,27 @@ export function solidChanges(features,{mode,id,input,target,direction,extent='di
 }
 const profile = f => ['sketch_face','sketch_wire','planar_region'].some(key=>Object.hasOwn(f.operation,key));
 const solidTarget = f => !profile(f) && !pathFeature(f);
-export function createSolidEditor({host,request,instance,preview,applied,restore,showSketch=()=>{},showSolid=()=>{},initialProfile=()=>null,profileDirection=()=>null,profileAxis=()=>null,invalidatePreview=()=>{},autoStart=false}) {
+export function createSolidEditor({host,request,instance,preview,applied,restore,showSketch=()=>{},showSolid=()=>{},initialProfile=()=>null,profileDirection=()=>null,profileAxis=()=>null,invalidatePreview=()=>{},pickLimitingFace=null,cancelLimitingFacePick=()=>{},autoStart=false}) {
   let data=null,editing=null,busy=false,mode='new',id='',input='',target='',extent='distance',axis=[0,0,1],depth=10,source='literal',preserved=null;
   let kind='extrude',origin=[0,0,0],angle=360,axisSource='literal',savedRevolve=null,path='',orientation='corrected_frenet',binormal=[0,0,1],savedOrientation=null,loft={profiles:[],holes:[],ruled:false},loftStarted=false;
   let limitTarget='',limitFace='z:maximum',savedFace=null,limitDirectionSource='literal';
+  let formTurn=0,pickedLimit=null;
+  const invalidate=()=>{formTurn++;cancelLimitingFacePick();invalidatePreview();};
   const section=document.createElement('section');section.className='linked-edit solid-editor';
   const launch=document.createElement('button');launch.textContent='Sketch to solid';
   const content=document.createElement('div'),status=document.createElement('p');status.setAttribute('role','status');section.append(launch,content,status);host.prepend(section);
   const message=text=>status.textContent=text;
   function button(text,action){const e=document.createElement('button');e.textContent=text;e.onclick=async()=>{if(busy)return;try{await action();}catch(error){message(error.message);}};return e;}
-  function select(label,choices,value,change){const row=document.createElement('label');row.textContent=label;const e=document.createElement('select');e.setAttribute('aria-label',label);for(const [key,title] of choices)e.append(new Option(title,key));e.value=value;e.onchange=()=>{invalidatePreview();change(e.value);};row.append(e);content.append(row);return e;}
-  function number(label,value,change){const row=document.createElement('label');row.textContent=label;const e=document.createElement('input');e.type='number';e.step='any';e.value=value;e.setAttribute('aria-label',label);e.oninput=()=>{invalidatePreview();change(e.value.trim()?Number(e.value):NaN);};row.append(e);content.append(row);return e;}
+  function select(label,choices,value,change){const row=document.createElement('label');row.textContent=label;const e=document.createElement('select');e.setAttribute('aria-label',label);for(const [key,title] of choices)e.append(new Option(title,key));e.value=value;e.onchange=()=>{invalidate();change(e.value);};row.append(e);content.append(row);return e;}
+  function number(label,value,change){const row=document.createElement('label');row.textContent=label;const e=document.createElement('input');e.type='number';e.step='any';e.value=value;e.setAttribute('aria-label',label);e.oninput=()=>{invalidate();change(e.value.trim()?Number(e.value):NaN);};row.append(e);content.append(row);return e;}
   function start(feature=null){
-    invalidatePreview();
+    invalidate();
     kind=feature?.operation.profile_loft?'profile_loft':feature?.operation.sweep?'sweep':feature?.operation.revolve?'revolve':'extrude';
     const sweep=feature?.operation[kind];
     editing=feature;mode='new';id=feature?.id??'';input=sweep?.profiles?.[0]??sweep?.profile??sweep?.input??(data.features.some(f=>profile(f)&&f.id===initialProfile())?initialProfile():data.features.find(profile)?.id)??'';target=data.features.some(f=>f.id===data.output&&solidTarget(f))?data.output:data.features.findLast(solidTarget)?.id??'';
     extent=extrusionExtentMode(sweep?.extent??'distance');
     const limit=sweep?.extent?.up_to_face??sweep?.extent?.up_to_next;
-    limitTarget=limit?.target??data.features.findLast(f=>solidTarget(f)&&f.id!==feature?.id)?.id??'';savedFace=limit?.face??null;limitFace=savedFace?'preserve':'z:maximum';limitDirectionSource=feature?'preserve':'literal';preserved=sweep?.direction??null;
+    limitTarget=limit?.target??data.features.findLast(f=>solidTarget(f)&&f.id!==feature?.id)?.id??'';savedFace=limit?.face??null;limitFace=savedFace?'preserve':'z:maximum';pickedLimit=null;limitDirectionSource=feature?'preserve':'literal';preserved=sweep?.direction??null;
     const known=preserved?readDirection(preserved):null;axis=known?.axis??profileDirection(input)??[0,0,1];
     const value=known?.depth;depth=value?.literal?mm(value.literal):10;
     source=!feature?'literal':!known?'preserve':value.parameter?`parameter:${value.parameter}`:value.literal?'literal':'preserve';
@@ -120,7 +122,7 @@ export function createSolidEditor({host,request,instance,preview,applied,restore
     const note=document.createElement('p');note.textContent='Family-wide edit. Uses the applied profile’s material regions and holes. Axes use family coordinates. Extrusion depth is travel distance; revolution angles are signed degrees (scalar parameters use radians). Preview keeps the accepted model unchanged.';content.append(note);
     if(!editing)select('Solid operation',[['new','New solid'],['fuse','Add material (union)'],['cut','Remove material (cut)']],mode,value=>{mode=value;render();});
     if(!editing)select('Solid feature',[['extrude','Extrusion'],['revolve','Revolution'],['sweep','Sweep along path'],['profile_loft','Loft through profiles']],kind,value=>{kind=value;if(kind==='profile_loft'&&!loftStarted){loft={profiles:[input,data.features.find(f=>profile(f)&&f.id!==input)?.id??''],holes:[],ruled:false};loftStarted=true;}extent=kind==='revolve'?'angle':'distance';source='literal';if(kind==='revolve'){const frame=profileAxis(input);origin=[...(frame?.origin??[0,0,0])];axis=[...(frame?.axis??[0,0,1])];}else axis=profileDirection(input)??[0,0,1];render();});
-    const nameLabel=document.createElement('label');nameLabel.textContent='Result feature name';const name=document.createElement('input');name.value=id;name.disabled=Boolean(editing);name.setAttribute('aria-label','Result feature name');name.oninput=()=>{invalidatePreview();id=name.value;};nameLabel.append(name);content.append(nameLabel);
+    const nameLabel=document.createElement('label');nameLabel.textContent='Result feature name';const name=document.createElement('input');name.value=id;name.disabled=Boolean(editing);name.setAttribute('aria-label','Result feature name');name.oninput=()=>{invalidate();id=name.value;};nameLabel.append(name);content.append(nameLabel);
     const profiles=data.features.filter(profile);if(editing&&!profiles.some(f=>f.id===input)){const original=data.features.find(f=>f.id===input);if(original)profiles.push(original);}
     if(kind==='profile_loft'&&editing)for(const id of [...loft.profiles,...loft.holes.flat()]){if(!profiles.some(f=>f.id===id)){const saved=data.features.find(f=>f.id===id);if(saved)profiles.push(saved);}}
     if(kind!=='profile_loft'){
@@ -138,11 +140,24 @@ export function createSolidEditor({host,request,instance,preview,applied,restore
         number('Extrusion depth (mm)',depth,value=>depth=value).disabled=source!=='literal';
         for(const [index,key] of ['X','Y','Z'].entries())number(`Direction ${key}`,axis[index],value=>axis[index]=value).disabled=source==='preserve';
       }else{
-        select('Limiting feature',[['','Choose limit'],...data.features.filter(f=>f.id!==input&&f.id!==editing?.id).map(f=>[f.id,f.id])],limitTarget,value=>{limitTarget=value;if(value!==editing?.operation.extrude?.extent?.up_to_face?.target)limitFace='z:maximum';render();});
+        select('Limiting feature',[['','Choose limit'],...data.features.filter(f=>f.id!==input&&f.id!==editing?.id).map(f=>[f.id,f.id])],limitTarget,value=>{limitTarget=value;if(value!==editing?.operation.extrude?.extent?.up_to_face?.target){limitFace='z:maximum';pickedLimit=null;}render();});
         if(extent==='up_to_face'){
           const choices=['x','y','z'].flatMap(axis=>[['minimum',`Minimum ${axis.toUpperCase()}`],['maximum',`Maximum ${axis.toUpperCase()}`]].map(([extremum,label])=>[`${axis}:${extremum}`,label]));
-          if(savedFace)choices.push(['preserve','Keep existing face selector']);
-          select('Limiting face',choices,limitFace,value=>limitFace=value);
+          if(savedFace)choices.push(['preserve',pickedLimit?'Picked face':'Keep existing face selector']);
+          select('Limiting face',choices,limitFace,value=>{limitFace=value;if(value!=='preserve')pickedLimit=null;render();});
+          if(pickLimitingFace)content.append(button('Pick limiting face in canvas',async()=>{
+            if(!limitTarget)throw Error('Choose a limiting feature first.');
+            invalidate();const turn=formTurn,target=limitTarget;
+            message('Click a planar face of the amber limiting feature. Escape cancels the pick.');
+            const picked=await pickLimitingFace(target);
+            if(turn!==formTurn||!data)return;
+            if(!picked){message('Face picking canceled. Solid draft retained.');return;}
+            if(picked.target!==target||!picked.face)throw Error('The picked face does not match the limiting feature.');
+            savedFace=structuredClone(picked.face);limitFace='preserve';pickedLimit=picked;render();
+            message(picked.binding==='anchored_center'?'Face selected with a fixed center anchor. Moving it requires picking again; Preview validates the result.':'Limiting face selected. Preview validates every instance.');
+          }),button('Cancel face pick',()=>{invalidate();message('Face picking canceled. Solid draft retained.');}));
+          if(pickedLimit){const info=document.createElement('p');info.textContent='Picked planar face · '+(pickedLimit.origin_mm??[]).map(v=>Number(v.toPrecision(6))).join(', ')+' mm';content.append(info);}
+
         }
         if(preserved)select('Extrusion direction source',[['literal','Entered direction'],['preserve','Keep existing direction formula']],limitDirectionSource,value=>{limitDirectionSource=value;render();});
         for(const [index,key] of ['X','Y','Z'].entries())number(`Direction ${key}`,axis[index],value=>axis[index]=value).disabled=limitDirectionSource==='preserve';
@@ -172,7 +187,7 @@ export function createSolidEditor({host,request,instance,preview,applied,restore
     }
     if(kind==='profile_loft'){
       const note=document.createElement('p');note.textContent='Order distinct closed profiles along the part. Each section has one boundary. For hollow parts, add a hole track and choose one inner profile per station; reordering stations moves all tracks together.';content.append(note);
-      const change=next=>{invalidatePreview();loft=next;render();};
+      const change=next=>{invalidate();loft=next;render();};
       select('Loft surfaces',[['smooth','Smooth'],['ruled','Ruled (straight between sections)']],loft.ruled?'ruled':'smooth',value=>loft.ruled=value==='ruled');
       const choices=[['','Choose profile'],...profiles.map(f=>[f.id,f.id])];
       const stationAction=(label,action,index,disabled)=>{const e=button(label,()=>change(editLoftStations(loft,action,index)));e.disabled=disabled;return e;};
@@ -186,7 +201,7 @@ export function createSolidEditor({host,request,instance,preview,applied,restore
       const addHole=button('Add loft hole track',()=>{if(loft.holes.length>=100)throw Error('A loft supports at most 100 hole tracks.');change({...loft,holes:[...loft.holes,loft.profiles.map(()=> '')]});});addHole.disabled=loft.holes.length>=100;content.append(addHole);
       for(const h of loft.holes.keys())content.append(button(`Remove loft hole track ${h+1}`,()=>change({...loft,holes:loft.holes.filter((_,i)=>i!==h)})));
     }
-    content.append(button('Preview solid',()=>submit(false)),button('Apply verified solid',()=>submit(true)),button('Close solid draft',async()=>{data=null;content.replaceChildren();await restore();message('Solid draft closed.');}));
+    content.append(button('Preview solid',()=>submit(false)),button('Apply verified solid',()=>submit(true)),button('Close solid draft',async()=>{invalidate();data=null;content.replaceChildren();await restore();message('Solid draft closed.');}));
     const heading=document.createElement('h3');heading.textContent='Feature list';content.append(heading);
     for(const feature of data.features){
       const kind=Object.keys(feature.operation)[0],row=document.createElement('div'),label=document.createElement('span');label.textContent=`${feature.id} · ${kind.replaceAll('_',' ')}`;row.append(label);
@@ -199,7 +214,7 @@ export function createSolidEditor({host,request,instance,preview,applied,restore
     }
   }
   async function submit(apply){
-    invalidatePreview();
+    invalidate();
     let direction,revolution;
     if(kind==='extrude'){
       if(['up_to_next','up_to_face'].includes(extent))direction=limitDirectionSource==='preserve'?preserved:extrusionDirection(axis,quantity(1));

@@ -267,6 +267,18 @@ Selected faces use minimum/maximum face center along a family X/Y/Z axis. A
 selector must resolve one valid covering face; ties, incomplete coverage and
 backward limits are rejected by native preview.
 
+In the studio, **Pick limiting face in canvas** loads the chosen limiting
+feature as an amber overlay. **Fit** frames that target while the overlay is
+shown. Hover highlights a face; click selects a planar face. Drag still orbits.
+**Cancel face pick** or Escape cancels picking while retaining the solid form.
+Changing fields, closing the form, switching tools or changing model/instance
+clears the overlay and discards stale replies.
+
+A pick saves the native semantic face selector rather than a mesh face index.
+The face menu shows **Picked face**. Preview still checks complete forward
+coverage in every instance. If the picker reports a fixed center anchor, moving
+that face requires picking again; an ambiguous or invalid face fails validation.
+
 Editing an existing geometric extrusion preserves its direction formula and
 face selector by default, including selectors authored outside the studio.
 Explicitly choose entered direction or another face to replace them. Limiting
