@@ -52,7 +52,7 @@ export function installExtras(studio, document) {
     }
     const intro = html('p', { style: 'color:var(--muted);margin-top:0' },
       'The classic editor\'s panels for this model: point links, patterns, projections, curve and region edits, profiles and dependencies. ' +
-      'Its previews show here. Use Named points in the side panel for intersection and spline-sample picks; projection face and edge picking uses the classic viewer.');
+      'Its previews show here. Use the side panels for Named points, Mirror and pattern, curve edits, and source projection/face picking.');
     const header = html('header', {}, html('h2', { style: 'margin:0' }, 'Advanced'),
       html('div', { style: 'display:flex;gap:6px' },
         html('a', { href: '/', target: '_blank', rel: 'noopener', style: 'color:var(--muted)' }, 'Classic viewer'),

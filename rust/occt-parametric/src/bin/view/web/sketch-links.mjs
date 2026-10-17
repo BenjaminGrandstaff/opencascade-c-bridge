@@ -46,6 +46,7 @@ export function createSketchLinks({context,request,preview,showSolid,changed,mes
       name='reference';for(let i=2;ids.has(name);i++)name=`reference-${i}`;
     }
     const section=document.createElement('fieldset'),legend=document.createElement('legend');legend.textContent='Support & projected references';section.append(legend);
+    if(c.draft.face_support?.face?.nearest_center){const binding=document.createElement('p');binding.textContent='Support uses an anchored face center. Repick it if the source face moves.';section.append(binding);}
     const choices=availableSources(c.features??[],c.feature);if(!choices.some(f=>f.id===source))source=choices[0]?.id??'';
     const label=document.createElement('label');label.textContent='Source feature';const select=document.createElement('select');select.setAttribute('aria-label','Sketch link source');
     for(const f of choices)select.append(new Option(f.id,f.id));select.value=source;select.onchange=()=>{cancel();source=select.value;};label.append(select);section.append(label);
@@ -57,6 +58,7 @@ export function createSketchLinks({context,request,preview,showSolid,changed,mes
     if((c.draft.projections??[]).some(p=>['spline','chain'].includes(p.kind)))section.append(button('Select projected spline from canvas',()=>{beginProjectionPicking();cancel();projectionPicking=true;message('Click an exact projected spline or chain. Escape cancels.');}));
     for(const p of c.draft.projections??[]){
       const row=document.createElement('div'),text=document.createElement('span');text.textContent=`${p.id} · ${p.input} · ${p.kind}`;row.append(text,button(`Remove projection ${p.id}`,()=>{cancel();context().draft.projections=context().draft.projections.filter(v=>v.id!==p.id);changed();message('Projection removed from draft. Repair any constraints or profile references before applying.');}));row.append(button(`Review dependencies ${p.id}`,()=>{cancel();inspectDependencies(p.id);}));section.append(row);
+      if(p.edge?.nearest_center){const binding=document.createElement('p');binding.textContent=`${p.id} uses an anchored edge center. Repick it if the source edge moves.`;row.append(binding);}
       if(['spline','chain'].includes(p.kind))row.append(button(`Detach projected spline ${p.id}`,()=>detachProjection(p.id)));
       if(['spline','chain'].includes(p.kind))refinementHosts.set(p.id,createProjectionRefinementControls({host:section,projection:p,highlight,message,changed:next=>{
         cancel();const draft=context().draft,index=draft.projections.indexOf(p);if(index<0)throw new Error('Projection changed. Reload its controls.');draft.projections[index]=next;changed();

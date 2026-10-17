@@ -78,8 +78,10 @@ the model version.
   canvas picking and draft Undo/Redo. Named point picking has its own panel.
 - **Linked patterns (left).** Mirror, linear and circular patterns use native
   controls with source, axis/direction and center picking on the canvas.
-- **Advanced drawer.** Hosts the classic panels for projections, explicit
-  boundary definitions, dependencies and sketch-to-solid features.
+- **Source links (left).** Projects accepted feature edges and reattaches to
+  planar support faces. Exact spline references expose refinement/detachment.
+- **Advanced drawer.** Hosts the classic panels for explicit boundary
+  definitions, full dependency inspection and sketch-to-solid features.
 
 ## Drawing
 
@@ -232,6 +234,50 @@ sketch, plane workflow or Advanced editing also ends the pick. Finish or cancel
 an active face/plane pick before starting a sketch point pick. Right-drag and
 Shift-drag remain camera navigation. Generated source curves use the verified
 catalogue; display-only glyphs and edited-curve names cannot be sources.
+
+## Linking accepted source geometry
+
+Choose **Project geometry and support** in the left panel. Select a source
+feature; the sketch itself and its downstream dependents are excluded to avoid
+cycles. Source geometry comes from the accepted instance, even when the active
+sketch has an unapplied draft. Apply a new sketch before creating these links.
+
+Enter a projection name and choose **Project picked edge**. The selected
+feature's accepted edges appear as a dashed amber overlay in world space.
+Click an edge to add a native linked construction reference. Straight edges
+become line projections; curved edges become exact spline projections. Native
+picking uses a semantic selector where possible and reports an anchored-center
+binding when repicking may be needed after source movement. Projected geometry
+stays outside the material until included in an explicit boundary. Set an outer
+profile or an explicit discovery curve list before adding construction links.
+
+Choose **Reattach to picked face** to pick a planar face of that accepted source.
+The sketch retains its local coordinates and support-offset expression; the
+native face pick replaces its support and frame. Preview checks the resulting
+sketch, family variants and dependent solids before Apply. Orbit to distinguish
+overlapping source faces or edges. Right-drag and Shift-drag retain camera
+navigation, and dimension labels do not intercept source picks.
+
+Source loading, picking and unfinished names do not change the draft. A picked
+link, reattachment, refinement, removal or detachment stages one Undo entry.
+Close, Escape, tool/layer/history changes and reload remove the source overlay;
+late responses cannot stage edits after the context changes. Rejected drafts
+can reopen this panel to repair or remove an existing reference.
+
+Exact spline and chain projections expose knot insertion and minimum degree
+elevation. These refinements replay against the live source. **Select projected
+spline from canvas** locates its refinement controls without editing it.
+**Review dependencies** lists authored sources and dependents (up to 100 each).
+**Detach projected spline** resolves the current instance into a fixed authored
+spline, preserving its named references while freezing the source geometry.
+Support remains linked; native validation rejects unsupported live consumers.
+Preview and Apply still verify the detached draft, and Undo restores the link.
+
+The source-edge benchmark checks 10,000 edges with 330,000 world-space samples:
+projection build within one second, cached catalogue lookup within one
+millisecond and a click within 100 ms. Camera or viewport changes rebuild the
+catalogue; pointer movement does not query the edge picker. These timings
+exclude browser DOM/SVG layout.
 
 ## Picking linked patterns
 
@@ -575,7 +621,9 @@ Node tests delete from a 10,000-line chain in well under a second.
 | Weighted point links | Yes | Named points panel, canvas sources, literal/parameter weights and preserved formulas |
 | Curve and region operations | Yes | Studio panel with canvas picking, native Preview and draft Undo/Redo |
 | Linked mirror, linear and circular patterns | Yes | Studio panel with canvas sources/references, native Preview and draft Undo/Redo |
-| Projections, explicit profiles, dependencies | Yes | Advanced drawer hosts the classic panels |
+| Source projection and support reattachment | Yes | Studio source overlay, native edge/face picks and draft history |
+| Projected spline refinement/detachment | Yes | Source links panel, canvas inspection and dependency summary |
+| Explicit profiles and full dependencies | Yes | Advanced drawer hosts the classic panels |
 | Sketch to solid | Yes | Advanced drawer |
 | Preview, Apply, Undo, Redo, Save | Yes | Toolbar; Revert stays in the classic viewer |
 | Several instances | Partly | The studio edits the first editable instance's family sketches |

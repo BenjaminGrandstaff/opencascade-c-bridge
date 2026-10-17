@@ -30,6 +30,8 @@ const STUDIO_ASSETS: &[(&str, &str)] = studio_assets!(
     "sketch-studio-weighted.mjs",
     "sketch-studio-profile.mjs",
     "sketch-studio-pattern.mjs",
+    "sketch-studio-links.mjs",
+    "sketch-studio-sources.mjs",
 );
 
 /// The studio page or one of its scripts, or `None` for other paths.

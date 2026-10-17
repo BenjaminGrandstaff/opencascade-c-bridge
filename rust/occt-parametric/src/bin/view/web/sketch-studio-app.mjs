@@ -12,6 +12,7 @@ import { installConstraints } from './sketch-studio-constrain.mjs';
 import { layoutLabels, sketchLabels } from './sketch-studio-labels.mjs';
 import { installExtras } from './sketch-studio-extras.mjs';
 import { installPlanes } from './sketch-studio-plane-panel.mjs';
+import {installStudioLinks} from './sketch-studio-links.mjs';
 import {installPointPicking} from './sketch-studio-picks.mjs';
 import { installDelete } from './sketch-studio-delete.mjs';
 
@@ -226,7 +227,7 @@ export function startStudio(document) {
       const node = element('g', {
         class: `label${label.dimension ? ' dimension' : ' glyph'}${failed ? ' failed' : ''}${label.targets.some((t) => selected.has(t)) ? ' related' : ''}`,
       }, group);
-      if (label.dimension && label.constraintIndex >= 0) {
+      if (label.dimension && label.constraintIndex >= 0 && studio.tool !== 'source-link') {
         node.setAttribute('class', `${node.getAttribute('class')} editable`);
         node.setAttribute('tabindex', '0');
         node.setAttribute('role', 'button');
@@ -247,7 +248,7 @@ export function startStudio(document) {
     }
     for (const badge of badges) {
       const [x, y, w, h] = badge.box;
-      const node = element('g', { class: 'badge' }, group);
+      const node = element('g', { class: 'badge', style: studio.tool === 'source-link' ? 'pointer-events:none' : '' }, group);
       element('rect', { x, y, width: w, height: h, rx: 8 }, node);
       const text = element('text', { x: x + w / 2, y: y + h / 2 + 4, 'text-anchor': 'middle' }, node);
       text.textContent = `+${badge.labels.length}`;
@@ -664,6 +665,7 @@ export function startStudio(document) {
   installExtras(studio, document);
   installPlanes(studio, document);
   installPointPicking(studio, document);
+  installStudioLinks(studio, document);
   load()
     .then(() => say(studio.layers.length ? 'Choose a layer, then a tool. Drag to orbit, Shift-drag or right-drag to pan, scroll to zoom.' : 'No sketches yet. Choose New sketch.'))
     .catch((error) => say(error.message, true))
