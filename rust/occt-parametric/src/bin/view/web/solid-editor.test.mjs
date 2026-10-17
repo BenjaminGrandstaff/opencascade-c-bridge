@@ -273,3 +273,21 @@ test('hole face picks retain semantic selectors and ignore replies after a field
  await button(host,'Preview solid').onclick();assert.deepEqual(calls[0].features[0].operation.hole.extent,{up_to_face:{face}});
  }finally{delete globalThis.document;delete globalThis.Option;}
 });
+
+test('hole recess and drill-point controls convert degrees, link parameters and retain hidden finish drafts',async()=>{
+ globalThis.document={createElement:tag=>new Element(tag)};globalThis.Option=class extends Element{constructor(text,value){super('option');this.textContent=text;this.value=value;}};
+ try{
+ const host=new Element('div'),calls=[],parameters=[{id:'tip',parameter_type:{scalar:'scalar'}},{id:'recess',parameter_type:{scalar:'length'}}];
+ createSolidEditor({host,instance:()=> 'part',preview:async()=>{},applied:async()=>{},restore:async()=>{},request:async(path,options)=>{if(!options)return {version:1,features:base,output:'body',parameters};calls.push(JSON.parse(options.body));return {can_apply:true};}});
+ const choose=(label,value)=>{control(host,label).value=value;control(host,label).onchange();},enter=(label,value)=>{control(host,label).value=String(value);control(host,label).oninput();},last=()=>calls.at(-1).features[0].operation.hole;
+ await button(host,'Sketch to solid').onclick();choose('Solid feature','hole');enter('Result feature name','drilled');
+ choose('Hole bottom','drill_point');enter('Hole drill point angle (degrees)',120);choose('Hole entry finish','counterbore');enter('Hole counterbore diameter (mm)',9);enter('Hole counterbore depth (mm)',1);choose('Counterbore floor relief','relief');choose('Hole relief diameter source','parameter:recess');
+ await button(host,'Preview solid').onclick();assert(Math.abs(last().bottom.drill_point.angle_radians.literal.value-2*Math.PI/3)<1e-12);assert.deepEqual(last().finish.counterbore,{diameter:depth(9),depth:depth(1),relief:{parameter:'recess'}});
+ choose('Hole entry finish','countersink');enter('Hole countersink angle (degrees)',90);choose('Hole countersink diameter source','parameter:recess');choose('Hole drill point angle source','parameter:tip');await button(host,'Preview solid').onclick();assert.equal(last().finish.countersink.angle_radians.literal.value,Math.PI/2);assert.deepEqual(last().bottom.drill_point.angle_radians,{parameter:'tip'});
+ choose('Hole entry finish','plain');await button(host,'Preview solid').onclick();assert.equal(last().finish,'plain');choose('Hole entry finish','counterbore');await button(host,'Preview solid').onclick();assert.equal(last().finish.counterbore.diameter.literal.value,9);assert.equal(last().finish.counterbore.relief.parameter,'recess');
+ choose('Counterbore floor relief','none');await button(host,'Preview solid').onclick();assert.equal(last().finish.counterbore.relief,undefined);
+ choose('Hole extent','through_all');const count=calls.length;await button(host,'Preview solid').onclick();assert.equal(calls.length,count);choose('Hole bottom','flat');await button(host,'Preview solid').onclick();assert.equal(last().bottom,'flat');
+ choose('Hole entry finish','countersink');choose('Hole countersink angle source','literal');for(const v of [0,180,-1,NaN]){enter('Hole countersink angle (degrees)',v);const count=calls.length;await button(host,'Preview solid').onclick();assert.equal(calls.length,count);}
+ enter('Hole countersink angle (degrees)',90);choose('Hole countersink diameter source','literal');enter('Hole countersink diameter (mm)',-2);const rejected=calls.length;await button(host,'Preview solid').onclick();assert.equal(calls.length,rejected);
+ }finally{delete globalThis.document;delete globalThis.Option;}
+});

@@ -9,3 +9,11 @@ test('holes reject invalid axes, positions, missing sources and unset limiting f
  h.state.face={normal:{direction:{parameter:'axis'}}};const d=h.definition();assert.deepEqual(d.extent.up_to_face.face,h.state.face);d.extent.up_to_face.face.normal=null;assert(h.state.face.normal);
  h.state.input='';assert.throws(()=>h.definition(),/solid/);
 });
+test('existing recess, relief, angle and thread formulas survive default editing without aliasing',()=>{
+ const q=v=>({literal:{value:v,dimension:'length',unit:'millimeter'}}),axis={parameter:'axis'},position={parameter:'entry'},diameter={parameter:'bore'},angle={multiply:[{parameter:'angle'},{literal:{value:2,dimension:'scalar',unit:null}}]};
+ for(const finish of [{counterbore:{diameter:q(8),depth:q(1),relief:{parameter:'relief'}}},{countersink:{diameter:q(8),angle_radians:angle}}]){
+  const saved={input:'body',axis,position,diameter,extent:{blind:{depth:q(4)}},bottom:{drill_point:{angle_radians:angle}},finish,thread:{designation:'metadata'}};
+  const controls=createHoleControls(saved),edited=controls.definition();assert.deepEqual(edited,saved);edited.thread.designation='changed';edited.bottom.drill_point.angle_radians=null;assert.deepEqual(controls.definition(),saved);
+  controls.state.finish='plain';assert.equal(controls.definition().finish,'plain');assert.deepEqual(controls.definition().thread,saved.thread);
+ }
+});

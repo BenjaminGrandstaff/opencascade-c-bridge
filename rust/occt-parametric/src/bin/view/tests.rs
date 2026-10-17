@@ -6273,3 +6273,111 @@ fn studio_holes_preview_all_instances_and_apply_with_history_and_save() {
         );
     }
 }
+
+#[test]
+fn studio_hole_finishes_preview_analytic_volumes_and_preserve_edited_drivers() {
+    let q = |v| json!({"literal":{"value":v,"dimension":"length","unit":"millimeter"}});
+    let angle = |v| json!({"literal":{"value":v,"dimension":"scalar","unit":null}});
+    let pi = std::f64::consts::PI;
+    let tip_height = 2.0 / (59.0_f64.to_radians()).tan();
+    for (name, finish, bottom, removed) in [
+        (
+            "drill",
+            json!("plain"),
+            json!({"drill_point":{"angle_radians":angle(118.0_f64.to_radians())}}),
+            pi * 4.0 * 3.0 + pi * 4.0 * tip_height / 3.0,
+        ),
+        (
+            "counterbore",
+            json!({"counterbore":{"diameter":q(8.0),"depth":{"parameter":"finish-size"}}}),
+            json!("flat"),
+            pi * 24.0,
+        ),
+        (
+            "relief",
+            json!({"counterbore":{"diameter":q(8.0),"depth":{"parameter":"finish-size"},"relief":q(6.0)}}),
+            json!("flat"),
+            pi * 24.0 + pi * 3.0_f64.sqrt() * 7.0 / 3.0,
+        ),
+        (
+            "countersink",
+            json!({"countersink":{"diameter":q(8.0),"angle_radians":angle(pi/2.0)}}),
+            json!("flat"),
+            pi * 68.0 / 3.0,
+        ),
+    ] {
+        let directory = Directory::new();
+        let document = edge_finish_document();
+        let model = PathBuf::from(directory.model(&document));
+        let mut studio = serve::Studio::load(&model, Some("body".into())).unwrap();
+        let data = get(&mut studio, "/api/features").1;
+        let state = get(&mut studio, "/api/state").1;
+        let hole = json!({"id":"finished-hole","operation":{"hole":{"input":"body","position":{"components":{"x":q(10.0),"y":q(10.0),"z":q(0.0)}},"axis":{"components":{"x":angle(0.0),"y":angle(0.0),"z":angle(1.0)}},"diameter":q(4.0),"extent":{"blind":{"depth":q(3.0)}},"bottom":bottom,"finish":finish}}});
+        let mut edit = json!({"version":data["version"],"instance":"block","expected":data["features"],"action":"add","features":[hole],"output":"finished-hole","apply":false});
+        let response = studio.handle("POST", "/api/features", edit.to_string().as_bytes());
+        assert_eq!(response.status, 200);
+        let preview: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+        assert_eq!(preview["can_apply"], true, "{name}: {preview}");
+        for (id, volume) in [("block", 10000.0), ("thin", 5000.0)] {
+            assert!(
+                (preview["geometry"][id]["volume_mm3"].as_f64().unwrap() - (volume - removed))
+                    .abs()
+                    < 1e-5,
+                "{name}: {preview}"
+            );
+        }
+        assert_eq!(get(&mut studio, "/api/state").1, state);
+        let mut invalid = edit.clone();
+        let invalid_hole = &mut invalid["features"][0]["operation"]["hole"];
+        match name {
+            "drill" => invalid_hole["extent"]["blind"]["depth"] = q(4.0),
+            "counterbore" => invalid_hole["finish"]["counterbore"]["diameter"] = q(3.0),
+            "relief" => invalid_hole["finish"]["counterbore"]["relief"] = q(8.0),
+            _ => invalid_hole["finish"]["countersink"]["angle_radians"] = angle(pi),
+        }
+        let response = studio.handle("POST", "/api/features", invalid.to_string().as_bytes());
+        let rejected: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+        assert_eq!(rejected["can_apply"], false, "{name}: {rejected}");
+        assert!(rejected.get("gltf").is_none());
+        invalid["apply"] = json!(true);
+        assert_ne!(
+            studio
+                .handle("POST", "/api/features", invalid.to_string().as_bytes())
+                .status,
+            200
+        );
+        assert_eq!(get(&mut studio, "/api/state").1, state);
+        edit["apply"] = json!(true);
+        assert_eq!(
+            studio
+                .handle("POST", "/api/features", edit.to_string().as_bytes())
+                .status,
+            200
+        );
+        history(&mut studio, "undo");
+        history(&mut studio, "redo");
+        let current = get(&mut studio, "/api/features").1;
+        edit["version"] = current["version"].clone();
+        edit["expected"] = current["features"].clone();
+        edit["action"] = json!("replace");
+        edit["features"][0]["operation"]["hole"]["diameter"] = json!({"add":[q(3.5),q(0.5)]});
+        assert_eq!(
+            studio
+                .handle("POST", "/api/features", edit.to_string().as_bytes())
+                .status,
+            200
+        );
+        assert_eq!(studio.handle("POST", "/api/save", b"").status, 200);
+        let saved = ModelDocument::from_json(&fs::read_to_string(&model).unwrap()).unwrap();
+        let expected: FeatureDefinition =
+            serde_json::from_value(edit["features"][0].clone()).unwrap();
+        assert_eq!(
+            saved
+                .family
+                .features
+                .iter()
+                .find(|f| f.id == "finished-hole"),
+            Some(&expected)
+        );
+    }
+}

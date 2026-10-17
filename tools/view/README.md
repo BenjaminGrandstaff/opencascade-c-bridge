@@ -411,9 +411,24 @@ ignore stale replies after a form or model change.
 **Edit hole …** retains existing position/axis formulas, diameter/depth formulas,
 face selectors, drill points, counterbores (including relief), countersinks and
 thread specifications. Choosing entered values explicitly replaces the selected
-formula. New holes are plain with flat bottoms; recess and thread authoring are
-not yet exposed here. Preview checks every instance before Apply. Hole edits
-share model Undo/Redo and Save with the other solid features.
+formula. New holes start plain with flat bottoms. Preview checks every instance
+before Apply. Hole edits share model Undo/Redo and Save with the other solid
+features.
+
+**Hole entry finish** offers a plain bore, counterbore or countersink.
+Counterbores take a diameter and recess depth, plus optional **60° floor relief**
+with its own diameter. Countersinks take an entry diameter and included angle.
+**Hole bottom** offers flat or drill point; the drill point is valid only for
+blind holes and adds a conical tip below the specified full-diameter depth.
+Angles are entered in degrees; scalar parameter links use radians. All lengths
+accept length parameter links. Existing fields start with **Keep existing
+formula** so opening and applying an edit preserves their expressions.
+
+Switching finish types retains the draft values for switching back. Choosing
+plain or no relief explicitly removes that feature from the submitted hole.
+Thread specifications remain intact; thread authoring is not yet exposed here.
+Native Preview checks recess/bore relationships, floor relief, complete drill-tip
+containment, and every instance before Apply.
 
 **Preview solid** displays candidate 3D geometry and per-instance solid count and
 volume while the accepted document, glTF, and file remain unchanged. Valid
