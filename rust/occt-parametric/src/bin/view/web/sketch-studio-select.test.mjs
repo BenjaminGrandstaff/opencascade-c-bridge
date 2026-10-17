@@ -62,7 +62,7 @@ test('typed dimension values become literals or parameter references', () => {
 test('constraints touching a selection are found for removal', () => {
   assert.deepEqual(constraintsTouching(definition, ['L1']), [0]);
   assert.deepEqual(constraintsTouching(definition, ['O']), [1]);
-  assert.deepEqual(constraintsTouching(definition, ['C1']), []);
+  assert.deepEqual(constraintsTouching(definition, ['C1']), [1]); // Includes the circle's defining center.
 });
 
 test('solve states mark free, conflicting and fixed geometry', () => {

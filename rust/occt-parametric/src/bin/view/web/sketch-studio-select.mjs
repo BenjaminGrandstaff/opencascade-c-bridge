@@ -2,7 +2,7 @@
 // each piece of geometry is, which constraints a selection can take, and
 // what a dimension would measure. Constraint kinds and their roles come
 // from the classic editor's `constraintTools`.
-import { constraintTools, geometryIds } from './constraint-controls.mjs';
+import { constraintTools, geometryIds, dimensionNumber, makeConstraint } from './constraint-controls.mjs';
 import {generatedReferenceBinding} from './generated-points.mjs';
 import {geometryReferences} from './sketch-studio-geometry.mjs';
 import { pointPositions } from './sketch-studio-infer.mjs';
@@ -256,11 +256,42 @@ export function dimensionExpression(text, unit) {
     : { literal: { value, dimension: 'length', unit: 'millimeter' } };
 }
 
-/** Indexes of draft constraints that mention any of the ids. */
-export function constraintsTouching(definition, ids) {
+/** Constraints on the selected geometry or its defining points. */
+export function constraintsTouching(definition, ids, scene = {}) {
   const wanted = new Set(ids);
+  for (const curves of Object.values(geometryReferences(definition, scene))) {
+    for (const curve of curves) {
+      if (!wanted.has(curve.id)) continue;
+      for (const key of ['start', 'end', 'center', 'rim', 'major', 'minor']) if (curve[key]) wanted.add(curve[key]);
+      for (const point of curve.points ?? []) wanted.add(point);
+      if (curve.endpoints) { wanted.add(curve.endpoints.start); wanted.add(curve.endpoints.end); }
+    }
+  }
   return (definition.constraints ?? []).flatMap((constraint, index) => {
     const body = Object.values(constraint)[0] ?? {};
     return Object.values(body).some((value) => typeof value === 'string' && wanted.has(value)) ? [index] : [];
   });
+}
+
+/** Text for editing a driving expression; null means a compound formula. */
+export function dimensionValueText(expression, dimension) {
+  if (expression?.parameter) return expression.parameter;
+  const value = dimensionNumber(expression, dimension);
+  return value === null ? null : String(Number(value.toPrecision(12)));
+}
+
+/** Replace one driving value, retaining entity roles and all other constraints. */
+export function editDrivingDimension(definition, index, expected, text) {
+  const current = definition.constraints?.[index];
+  if (!current || JSON.stringify(current) !== JSON.stringify(expected)) throw Error('This dimension changed. Open it again.');
+  const [type, body] = Object.entries(current)[0], tool = constraintTools[type];
+  if (!tool?.dimension) throw Error('Choose a driving dimension.');
+  if (text === dimensionValueText(body.value, tool.dimension) || text === '' && dimensionValueText(body.value, tool.dimension) === null) return definition;
+  const expression = dimensionExpression(text, tool.dimension === 'angle' ? '°' : 'mm');
+  if (!expression) throw Error('Enter a number or a parameter name.');
+  const checked = makeConstraint(definition, type, body, expression)[type];
+  if (JSON.stringify(checked.value) === JSON.stringify(body.value)) return definition;
+  const next = structuredClone(definition);
+  next.constraints[index] = {[type]: {...body, value: checked.value}};
+  return next;
 }

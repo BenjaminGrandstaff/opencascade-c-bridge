@@ -25,16 +25,31 @@ export const labelSize = (text) => [Math.max(16, 6 + 7 * [...text].length), 16];
  */
 export function sketchLabels(scene, definition) {
   const constraints = definition?.constraints ?? [];
+  // Match authored values once, including property-order differences. Generated
+  // annotations must not scan every authored constraint on every redraw.
+  const signature = value => JSON.stringify(value, (_, v) => v && typeof v === 'object' && !Array.isArray(v)
+    ? Object.fromEntries(Object.keys(v).sort().map(key => [key, v[key]])) : v);
+  const signatures = constraints.map(signature), byValue = new Map();
+  signatures.forEach((key, i) => byValue.set(key, byValue.has(key) ? -1 : i));
+  const authoredIndex = annotation => {
+    const expected = annotation.detail?.constraint, index = annotation.detail?.constraint_index;
+    if (!expected) return -1;
+    const key = signature(expected);
+    return Number.isInteger(index) && signatures[index] === key ? index : byValue.get(key) ?? -1;
+  };
   return (scene?.annotations ?? []).flatMap((annotation) => {
     const match = /^constraint-(\d+)$/.exec(annotation.id);
-    if (!match || !annotation.anchors?.length) return [];
-    const type = Object.keys(constraints[Number(match[1])] ?? {})[0];
-    const dimension = DIMENSIONS.has(type) || (!type && /\d/.test(annotation.label ?? ''));
+    const reference = annotation.detail?.driving === false && Boolean(annotation.detail?.measurement);
+    if ((!match && !reference) || !annotation.anchors?.length) return [];
+    const type = Object.keys(annotation.detail?.constraint ?? constraints[Number(match?.[1])] ?? {})[0];
+    const dimension = reference || DIMENSIONS.has(type) || (!type && /\d/.test(annotation.label ?? ''));
     const text = dimension ? annotation.label : GLYPHS[type] ?? annotation.label ?? '?';
     return [{
       id: annotation.id,
+      reference,
+      constraintIndex: reference ? -1 : authoredIndex(annotation),
       text,
-      title: `${annotation.label}${type ? ` · ${type.replaceAll('_', ' ')}` : ''} · ${annotation.status}`,
+      title: `${annotation.label}${type ? ` · ${type.replaceAll('_', ' ')}` : ''} · ${annotation.status}${reference ? ' · reference (read only)' : ''}`,
       dimension,
       status: annotation.status,
       anchors: annotation.anchors,

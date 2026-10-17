@@ -99,6 +99,7 @@ export function startStudio(document) {
     // A poll or Discard reload started before a model operation/new edit must
     // never publish its old model over that operation's eventual reload.
     if (turn !== loadTurn || epoch !== studio.modelEpoch || studio.draft !== draft || studio.draft?.definition !== definition) return;
+    if (studio.draft && !studio.hasDraftHistory?.() && state.version !== studio.version) studio.drawing.discard(true);
     studio.instance = instance;
     const first = studio.parsed === null;
     studio.version = state.version;
@@ -223,11 +224,24 @@ export function startStudio(document) {
       const node = element('g', {
         class: `label${label.dimension ? ' dimension' : ' glyph'}${failed ? ' failed' : ''}${label.targets.some((t) => selected.has(t)) ? ' related' : ''}`,
       }, group);
+      if (label.dimension && label.constraintIndex >= 0) {
+        node.setAttribute('class', `${node.getAttribute('class')} editable`);
+        node.setAttribute('tabindex', '0');
+        node.setAttribute('role', 'button');
+        node.setAttribute('aria-label', `Edit ${label.text}`);
+        const edit = event => {
+          event.preventDefault(); event.stopPropagation();
+          studio.editDimension?.(label.constraintIndex, label.at);
+        };
+        node.addEventListener('dblclick', edit);
+        node.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') edit(event); });
+      }
+      if (label.reference) node.setAttribute('class', `${node.getAttribute('class')} reference`);
       if (label.leader) element('path', { d: `M${label.at[0].toFixed(1)} ${label.at[1].toFixed(1)}L${(x + w / 2).toFixed(1)} ${(y + h / 2).toFixed(1)}`, class: 'leader' }, node);
       element('rect', { x, y, width: w, height: h, rx: 4 }, node);
       const text = element('text', { x: x + w / 2, y: y + h / 2 + 4, 'text-anchor': 'middle' }, node);
       text.textContent = label.text;
-      element('title', {}, node).textContent = label.title;
+      element('title', {}, node).textContent = label.dimension && label.constraintIndex >= 0 ? `${label.title} · double-click or press Enter to edit` : label.title;
     }
     for (const badge of badges) {
       const [x, y, w, h] = badge.box;

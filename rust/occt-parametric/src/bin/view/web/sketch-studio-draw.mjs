@@ -160,6 +160,13 @@ export function installDrawing(studio, document) {
   async function preview() {
     const d = studio.draft;
     if (!d?.dirty || studio.modelPending) return;
+    if (!d.local && JSON.stringify(d.definition) === JSON.stringify(d.baseline)) {
+      clearDraftPreview(d);
+      d.dirty = false;
+      studio.say('The draft matches the starting sketch. Undo keeps your local edit history; Discard returns to model history.');
+      studio.refresh();
+      return;
+    }
     const turn = ++previewTurn;
     const definition = d.definition;
     d.previewing = true;
@@ -625,7 +632,7 @@ export function installDrawing(studio, document) {
     const d = studio.draft;
     if (studio.modelPending) return html('span', {}, `${studio.modelPending}…`);
     if (!hasDraftHistory()) return null;
-    if (!d.dirty) return html('span', {}, 'Draft · at starting sketch · Redo available');
+    if (!d.dirty) return html('span', {}, `Draft · at starting sketch · ${d.redo.length ? 'Redo' : 'Undo'} available`);
     return html('span', {}, d.previewing ? 'Draft · previewing…' : d.error ? 'Draft · cannot apply' : `Draft · ${d.undo.length} change${d.undo.length === 1 ? '' : 's'}, not applied`);
   };
 

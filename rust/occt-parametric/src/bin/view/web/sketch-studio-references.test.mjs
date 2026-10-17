@@ -104,7 +104,9 @@ test('only a current, successful Preview can refresh the draft generated catalog
   let resolve;
   const f = fixture(t, {api: () => new Promise(r => {resolve = r;})});
   const {d, ids, curves} = sample(); Object.assign(f.baseline, d);
-  f.studio.ensureDraft(); f.studio.changeDraft(structuredClone(f.studio.draft.definition));
+  f.studio.ensureDraft();
+  const next = structuredClone(f.studio.draft.definition); next.points.push({id: 'extra', x: mm(100), y: mm(100)});
+  f.studio.changeDraft(next);
   const target = f.studio.draft.definition;
   assert.deepEqual(suggestions(target, ['box:side0']), []);
   t.mock.timers.tick(150); await f.flush(); resolve({can_apply: true, generated_points: ids, generated_curves: curves}); await f.flush();

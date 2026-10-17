@@ -175,6 +175,33 @@ The studio scale benchmark includes 10,000 generated pattern lines with 20,000
 named endpoints and 330,000 curve samples, with the same 500 ms index-build and
 16 ms subsequent-move budgets as authored geometry.
 
+## Editing driving dimensions
+
+Double-click a driving dimension label to edit its value, or focus it with Tab
+and press Enter or Space. Selecting geometry also exposes an **Edit** button
+beside its driving dimensions in the inspector; a curve's defining points are
+included, so selecting a line reveals its endpoint distance. Inline values use
+millimetres or degrees. Enter a number or parameter name and press Enter or
+**Update**. Parameter names change this dimension's binding; they do not edit
+the parameter's global default. Escape cancels.
+
+Restoring the original value/expression skips an unchanged native Preview and
+keeps the local Undo history; Apply stays disabled until there is a model change.
+Updates replace the value of the existing constraint, retaining its geometry
+roles and position in the constraint list. They use the normal draft Preview,
+Apply and Undo/Redo workflow. Invalid values keep the editor open for correction.
+An unchanged value creates no Undo entry and preserves the original units or
+parameter expression exactly. Compound formulas show an empty field with a
+preservation hint: leave it empty to keep the formula, or type a replacement.
+If the draft, history, layer or model version changes while a value is open,
+its old editor cannot write to the changed sketch.
+
+Reference dimensions are drawn as parenthesized measured values with dashed
+label borders. They update with the solved geometry and remain read-only; they
+do not become driving constraints. Dimensions generated internally by shapes
+can be displayed, but only a label matched to an authored driving constraint
+opens this editor. Use the shape's controls to edit its own definition.
+
 ## Additional primitive tools
 
 The toolbar also authors these existing native definitions (schema 164 and ABI
@@ -418,6 +445,7 @@ Node tests delete from a 10,000-line chain in well under a second.
 | Drag free points (solved) | Yes | Select tool |
 | Edit a point's coordinates and fixed flag | Yes | Inspector |
 | 36 typed constraints and dimensions with parameters | Yes | Selection bar, inspector, Dimension tool |
+| Edit driving dimensions | Studio inline | Double-click a label or Edit in the inspector; reference dimensions are read-only |
 | Remove constraints | Yes | Inspector |
 | Delete geometry | Studio only | Delete key or inspector, with dependents; see [Deleting](#deleting) |
 | Crossing points, spline samples, weighted point links | Partly | Forms in the Advanced drawer; canvas picking needs the classic viewer |

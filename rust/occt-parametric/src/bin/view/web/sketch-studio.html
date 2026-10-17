@@ -125,6 +125,9 @@
   #view svg .label rect { fill: var(--panel); stroke: var(--line); }
   #view svg .label text, #view svg .badge text { font-size: 12px; fill: var(--ink); }
   #view svg .label.glyph text { font-weight: 600; fill: var(--muted); }
+  #view svg .label.editable { pointer-events: all; cursor: text; }
+  #view svg .label.editable:focus rect { stroke: var(--accent); stroke-width: 2; }
+  #view svg .label.reference rect { stroke-dasharray: 3 2; }
   #view svg .label.failed rect { stroke: var(--conflict); }
   #view svg .label.failed text { fill: var(--conflict); }
   #view svg .label.related rect { stroke: var(--accent); stroke-width: 2; }
@@ -179,7 +182,7 @@
 </aside>
 <main id="view">
   <canvas id="canvas" aria-label="3D model view"></canvas>
-  <svg id="overlay" aria-hidden="true"></svg>
+  <svg id="overlay" role="group" aria-label="Sketch geometry and dimensions"></svg>
   <p class="empty" id="empty" hidden></p>
 </main>
 <aside id="inspector" aria-label="Inspector"></aside>

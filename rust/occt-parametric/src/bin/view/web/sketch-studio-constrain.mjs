@@ -4,7 +4,7 @@
 import { constraintTools, makeConstraint } from './constraint-controls.mjs';
 import { pathData } from './sketch-studio-overlay.mjs';
 import {
-  constraintsTouching, dimensionExpression, dimensionFor, hitTest, solveStates, suggestions,
+  constraintsTouching, dimensionExpression, dimensionFor, dimensionValueText, editDrivingDimension, hitTest, solveStates, suggestions,
 } from './sketch-studio-select.mjs';
 
 /** Suggestions shown as buttons; the rest are in the menu. */
@@ -110,24 +110,48 @@ export function installConstraints(studio, document) {
   }
 
   // ── Inline value box (dimensions) ────────────────────────────────────
-  function openValueBox(suggestion, ids, at = null) {
-    const def = definition();
+  function openValueBox(suggestion, ids, at = null, editing = null) {
+    const draft = studio.ensureDraft();
+    if (!draft) return;
+    const currentDraft = studio.draftCheckpoint();
+    const def = draft.definition;
+    const expected = editing === null ? null : def.constraints[editing];
     const measured = dimensionFor(def, scene(), ids);
     const sameKind = measured && measured.type === suggestion.type;
     const unit = suggestion.dimension === 'angle' ? '°' : 'mm';
-    dimension = { suggestion, ids, at: at ?? anchorOf(ids) };
+    const initial = editing === null ? null : dimensionValueText(expected[suggestion.type].value, suggestion.dimension);
+    dimension = { suggestion, ids, at: at ?? anchorOf(ids), submit: null };
+    const submit = () => {
+      if (valueInput !== input) return;
+      if (!currentDraft()) {
+        closeValueBox();
+        studio.say('The sketch changed while this value was open. Open the dimension again.', true);
+        return;
+      }
+      if (editing === null) { applySuggestion(suggestion, input.value); return; }
+      try {
+        const next = editDrivingDimension(studio.draft.definition, editing, expected, input.value);
+        if (next !== studio.draft.definition) {
+          studio.changeDraft(next);
+          studio.say(`${suggestion.label} updated. Previewing…`);
+        }
+        closeValueBox();
+        select([]);
+      } catch (error) { studio.say(error.message, true); }
+    };
+    dimension.submit = submit;
     const input = valueInput = html('input', {
       'aria-label': `${suggestion.label} value`,
-      value: sameKind ? Number(measured.value.toFixed(4)).toString() : '',
-      placeholder: 'value or parameter',
+      value: editing !== null ? initial ?? '' : sameKind ? Number(measured.value.toFixed(4)).toString() : '',
+      placeholder: editing !== null && initial === null ? 'Keep formula, or enter a replacement' : 'value or parameter',
       onkeydown: (event) => {
         event.stopPropagation();
-        if (event.key === 'Enter') applySuggestion(suggestion, input.value);
+        if (event.key === 'Enter') submit();
         else if (event.key === 'Escape') closeValueBox();
       },
     });
     studio.fill(valueBox, html('span', {}, suggestion.label), input, html('span', {}, unit),
-      html('button', { onclick: () => applySuggestion(suggestion, input.value) }, 'Add'));
+      html('button', { onclick: submit }, editing === null ? 'Add' : 'Update'));
     valueBox.hidden = false;
     place(valueBox, dimension.at);
     prefilled = true;
@@ -139,6 +163,17 @@ export function installConstraints(studio, document) {
     }, 0);
     input.addEventListener('input', () => { prefilled = false; });
   }
+  studio.editDimension = (index, at = null) => {
+    if (studio.modelPending) return false;
+    const constraint = definition()?.constraints?.[index];
+    if (!constraint) return false;
+    const [type, body] = Object.entries(constraint)[0], tool = constraintTools[type];
+    if (!tool?.dimension) return false;
+    openValueBox({type, label: tool.label, fields: Object.fromEntries(tool.fields.map(([key]) => [key, body[key]])), options: {}, dimension: tool.dimension},
+      tool.fields.map(([key]) => body[key]), at, index);
+    return true;
+  };
+
   function closeValueBox() {
     dimension = null;
     valueInput = null;
@@ -296,7 +331,7 @@ export function installConstraints(studio, document) {
     // focus (the click that opened it may still be finishing).
     if (dimension && valueInput) {
       if (event.key === 'Enter') {
-        applySuggestion(dimension.suggestion, valueInput.value);
+        dimension.submit();
         return true;
       }
       if (event.key.length === 1 && /[\w.\-]/.test(event.key)) {
@@ -355,13 +390,14 @@ export function installConstraints(studio, document) {
       const state = !states ? '' : entities.has(id) ? states.curve(entities.get(id)) : states.point(id);
       return html('li', {}, html('span', {}, id), html('span', { class: `state-${state}` }, state));
     });
-    const touching = def ? constraintsTouching(def, studio.selection) : [];
+    const touching = def ? constraintsTouching(def, studio.selection, s) : [];
     const constraints = touching.map((index) => {
       const constraint = def.constraints[index];
       const [type, body] = Object.entries(constraint)[0];
       const parts = Object.entries(body).filter(([, v]) => typeof v === 'string').map(([, v]) => v).join(', ');
       return html('li', {},
         html('span', {}, `${SYMBOLS[type] ?? ''} ${constraintTools[type]?.label ?? type} · ${parts}`),
+        constraintTools[type]?.dimension ? html('button', { title: 'Edit this driving dimension', onclick: () => studio.editDimension(index) }, 'Edit') : null,
         html('button', { title: 'Remove this constraint from the draft', onclick: () => removeConstraint(index) }, 'Remove'));
     });
     const options = def ? suggestions(def, studio.selection, scene()) : [];
