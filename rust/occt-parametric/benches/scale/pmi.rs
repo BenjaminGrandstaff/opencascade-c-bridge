@@ -394,6 +394,7 @@ pub(crate) fn view_parts_case(definition: &'static FamilyDefinition) -> Outcome 
             let view = &mut page.annotation_views[0];
             view.datum_features.clear();
             view.feature_control_frames.clear();
+            view.sizes.clear();
             view.parts = (0..1000)
                 .step_by(2)
                 .map(|i| InstanceOutputRef {
